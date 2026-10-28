@@ -86,6 +86,7 @@ pub fn load_world_images(
     for name in [
         "Background_0",
         "Background_7",
+        "Background_11",
         "Sun",
         "Moon_0",
         "Star_0",

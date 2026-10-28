@@ -76,7 +76,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | 🟡 | First pass: hopping blue slime (gravity, collision, contact damage, player melee, HP bars); ~700 NPC types remain |
 | Projectiles | `Projectile.cs` | 81 000 | ⬜ | ~1 100 types |
 | Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | 🟡 | Player/slime HP, hurt cooldown, knockback, contact/melee damage and respawn; no defense, crits, projectiles or drops |
-| World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | 🟡 | Native compact generator: surface/layers/caves/ores/ash/trees/plants; no biomes, structures or oceans |
+| World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | 🟡 | Native compact generator: surface/layers/caves/ores/ash/trees/plants, forest lake, snow biome, ocean beaches; no corruption/crimson/jungle/desert/hallow or structures |
 | UI / menus | `UI/*`, `GameContent.UI.*` | ~35 000 | ⬜ | |
 | Audio | `Audio/*`, XACT banks | ~4 000 | ⬜ | `.xsb`/`.xwb` banks extracted later |
 | Networking | `Netplay.cs`, `MessageBuffer.cs` | ~12 000 | ⬜ | Protocol for 1.4.5.8 |
@@ -284,16 +284,18 @@ seed in ~165 ms:
 3. Caves from a large-cavern field plus a worm field, with a 9-tile surface crust.
 4. Dirt/stone/ash blobs, then copper/iron/silver/gold blobs by depth and hellstone in ash.
 5. Slopes on every one-tile surface transition, a forest lake near spawn (a bowl with a
-   raised rim, filled with water) and small lava puddles on cave floors.
+   raised rim, filled with water), small lava puddles on cave floors, sand ocean beaches at
+   both edges and a snow biome in the eastern third (snow surface tiles, winter trees, pine
+   background).
 6. Common trees (22 px trunk frames, canopy marker, branch markers, base forks) and
-   tile-3 grass/flower plants.
+   tile-3 grass/flower plants; snow-ground trees use the biome trunk section and `Tree_Tops_4`.
 
 The result is saved as `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`
 (`tr-core/src/save.rs`): magic/version/seed + header fields + the `frame_important` bitset,
 then per-row RLE of the 14-byte tile struct (~3.9 MB for the default world). Loading restores
 every field; framing/lighting run afterwards exactly as for a `.wld`. `TR_REGEN=1`
-regenerates, `TR_SEED=<n>` selects a seed. Biomes, structures, oceans/liquids and hardmode
-spread are not generated; the original generator remains an M5 milestone.
+regenerates, `TR_SEED=<n>` selects a seed. The other biomes, structures, the full ocean
+biome and hardmode spread are not generated; the original generator remains an M5 milestone.
 
 ## Player (M2 first pass)
 

@@ -17,8 +17,10 @@ clean-room analysis of the decompiled C# game.
 | A world from our own generator (seed 1) | The player, walking on the generated surface |
 | ![editing](docs/screenshots/editing.png) | ![slimes](docs/screenshots/slimes.png) |
 | Mining/placing with the hotbar and local re-framing | First enemy pass: hopping slimes and the health bar |
-| ![lake](docs/screenshots/lake.png) | ![night](docs/screenshots/night.png) |
-| Generated forest lake: animated water, waves, depth tint | Night: moon, stars, parallax mountains |
+| ![lake](docs/screenshots/lake.png) | ![snow](docs/screenshots/snow.png) |
+| Generated forest lake: animated water, waves, depth tint | Snow biome: snow tiles, winter trees, pine background |
+| ![ocean](docs/screenshots/ocean.png) | ![night](docs/screenshots/night.png) |
+| Ocean beach at the world edge | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
 
@@ -27,8 +29,9 @@ clean-room analysis of the decompiled C# game.
 - **World generation** — a native, deterministic generator modelled on `WorldGen`'s passes:
   height-noise surface with a spawn plateau, grass/dirt/stone layers, hill slopes, caves,
   dirt/stone walls, ore blobs (copper/iron/silver/gold), ash-and-hellstone underworld,
-  common trees with canopies and branches, and grass/flowers on the surface. A 4200×1200
-  world generates in ~165 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
+  common trees with canopies and branches, grass/flowers on the surface, a forest lake with
+  water, lava puddles, ocean beaches at both edges and a **snow biome** in the eastern third
+  (snow tiles, winter trees, pine background). A 4200×1200 world generates in ~165 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
   world.
 - **Native saves** — `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`, a compact
   RLE row format that round-trips every tile field. The app loads it on the next start. The
@@ -138,7 +141,8 @@ simulation, waterfalls, water styles, shimmer sparkles and the original's partia
 liquid surface smoothing are still missing; the current pass draws static sources with
 tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
-biomes beyond forest, no structures/dungeons, no ocean/water, no hardmode spread. Common
+biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
+no full ocean biome or hardmode spread. Common
 forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
 but gem/vanity/palm trees and the per-world random forest style variations are approximate.
 Real biome-specific backgrounds, rain, biome weather and the real textured underground

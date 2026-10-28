@@ -1519,6 +1519,8 @@ struct BgTex {
 struct SkyAssets {
     far: Option<BgTex>,
     near: Option<BgTex>,
+    /// Snow-biome pine line (`Background_11`).
+    snow_near: Option<BgTex>,
     sun: Option<BgTex>,
     moon: Option<BgTex>,
     stars: Vec<Option<BgTex>>,
@@ -1631,12 +1633,27 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
     SkyAssets {
         far: mountains,
         near: mountains,
+        snow_near: sky_tex(atlas, "Background_11", None),
         sun: sky_tex(atlas, "Sun", None),
         moon: sky_tex(atlas, "Moon_0", Some((0, 0, 50, 50))),
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
     }
+}
+
+fn is_snow_biome(world: &World, camera: Vec2) -> bool {
+    let cam_tile = (camera.x / TILE_PX) as i32;
+    for dx in [-16, -8, 0, 8, 16] {
+        let x = cam_tile + dx;
+        let top = world.surface_of(x);
+        if let Some(t) = world.tile(x, top) {
+            if matches!(t.kind, 147 | 161 | 162 | 163 | 164 | 200) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn make_stars(world: &World) -> Vec<StarSprite> {
@@ -1799,7 +1816,22 @@ fn draw_sky(
                 r, camera, zoom, screen, &far, 1.25, 0.15, horizon, 80.0, tint,
             );
         }
-        if let Some(near) = sky.near {
+        if is_snow_biome(world, camera) {
+            if let Some(near) = sky.snow_near {
+                draw_bg_layer(
+                    r,
+                    camera,
+                    zoom,
+                    screen,
+                    &near,
+                    1.31,
+                    0.43,
+                    horizon,
+                    20.0,
+                    [tint[0] * 0.9, tint[1] * 0.92, tint[2] * 0.95],
+                );
+            }
+        } else if let Some(near) = sky.near {
             draw_bg_layer(
                 r,
                 camera,

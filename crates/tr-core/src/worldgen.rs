@@ -117,6 +117,8 @@ impl Rng {
 const TILE_DIRT: u16 = 0;
 const TILE_STONE: u16 = 1;
 const TILE_GRASS: u16 = 2;
+const TILE_SNOW: u16 = 147;
+const TILE_SAND: u16 = 53;
 const TILE_IRON: u16 = 6;
 const TILE_COPPER: u16 = 7;
 const TILE_GOLD: u16 = 8;
@@ -188,10 +190,34 @@ pub fn generate(opts: &GenOptions) -> World {
         }
     }
 
+    // Ocean beaches at both edges: a sand ramp down from the sea level into deep water.
+    let beach = 140;
+    let sea_level = (avg as i32 + 4).clamp(90, height - 300);
+    let inner = beach + 30;
+    for (x, d) in (0..inner)
+        .map(|x| (x, x))
+        .chain((width - inner..width).map(|x| (x, width - 1 - x)))
+    {
+        if x < 0 || x >= width {
+            continue;
+        }
+        let t = 1.0 - d as f32 / inner as f32;
+        let ramp = sea_level + (t * t * 30.0) as i32;
+        if d < beach {
+            surface[x as usize] = ramp;
+        } else {
+            let k = (inner - d) as f32 / 30.0;
+            surface[x as usize] =
+                (surface[x as usize] as f32 * (1.0 - k) + ramp as f32 * k).round() as i32;
+        }
+    }
+
     // --- terrain fill -------------------------------------------------------
     let avg_surface = surface.iter().sum::<i32>() as f64 / width as f64;
     let rock_layer = (height as f64 * 0.43).max(avg_surface + 90.0);
     let hell_top = (height - 170) as i32;
+    // Eastern third of the world is a snow biome.
+    let snow_start = width * 2 / 3;
 
     for x in 0..width {
         let top = surface[x as usize];
@@ -201,7 +227,13 @@ pub fn generate(opts: &GenOptions) -> World {
             let mut tile = Tile::default();
             if y >= top {
                 if y == top {
-                    tile.kind = TILE_GRASS;
+                    tile.kind = if x < beach + 24 || x >= width - beach - 24 {
+                        TILE_SAND
+                    } else if x >= snow_start {
+                        TILE_SNOW
+                    } else {
+                        TILE_GRASS
+                    };
                 } else if y < top + dirt_depth {
                     tile.kind = TILE_DIRT;
                 } else if y < hell_top {
@@ -293,6 +325,20 @@ pub fn generate(opts: &GenOptions) -> World {
         }
         for y in lake_level..top {
             let i = world.index(x, y);
+            if !world.tiles[i].active() {
+                world.tiles[i].liquid = 255;
+                world.tiles[i].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY);
+            }
+        }
+    }
+    // Ocean water at both shores.
+    for shore_x in (0..beach).chain(width - beach..width) {
+        if shore_x < 0 || shore_x >= width {
+            continue;
+        }
+        let top = surface[shore_x as usize];
+        for y in sea_level..top {
+            let i = world.index(shore_x, y);
             if !world.tiles[i].active() {
                 world.tiles[i].liquid = 255;
                 world.tiles[i].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY);
@@ -471,7 +517,9 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         }
         let top = surface[x as usize];
         let ground = *world.tile(x, top).unwrap_or(&Tile::default());
-        if !(ground.active() && ground.kind == TILE_GRASS) || ground.slope != 0 {
+        if !(ground.active() && (ground.kind == TILE_GRASS || ground.kind == TILE_SNOW))
+            || ground.slope != 0
+        {
             continue;
         }
         // Require adjacent ground too (vanilla's IsTileTypeFitForTree checks).
@@ -626,6 +674,14 @@ mod tests {
         assert!(
             w.tiles.iter().any(|t| t.liquid > 0),
             "generator should place a lake and lava pools"
+        );
+        assert!(
+            w.tiles.iter().any(|t| t.active() && t.kind == TILE_SAND),
+            "generator should place ocean beaches"
+        );
+        assert!(
+            w.tiles.iter().any(|t| t.active() && t.kind == TILE_SNOW),
+            "generator should place a snow biome"
         );
     }
 }
