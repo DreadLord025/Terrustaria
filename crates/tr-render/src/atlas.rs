@@ -18,6 +18,8 @@ pub enum SheetLayout {
     /// (`Wall_*.png`). The original draws walls with a 32x32 source rect
     /// offset by -8, which maps this inner 16x16 region 1:1 onto the tile.
     Wall,
+    /// Free-form art (sky gradients, clouds...) that is not split into frames.
+    Raw,
 }
 
 impl SheetLayout {
@@ -26,6 +28,7 @@ impl SheetLayout {
         match self {
             SheetLayout::Tile => (18, 0),
             SheetLayout::Wall => (36, 8),
+            SheetLayout::Raw => (0, 0),
         }
     }
 }
@@ -139,7 +142,7 @@ fn pick_plain_frame(
 ) -> (i16, i16) {
     const ART: u32 = 16;
     let (stride, inset) = layout.geometry();
-    if width < stride || height < stride {
+    if layout == SheetLayout::Raw || width < stride || height < stride {
         return (inset as i16, inset as i16);
     }
     let cols = width / stride;

@@ -58,5 +58,9 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     if (tex.a < 0.01) {
         discard;
     }
-    return tex * in.color;
+    // Terraria multiplies sprite tints in gamma space: XNA's `Color * Color` is a
+    // plain byte multiply on sRGB values. The atlas is sRGB-decoded and the swapchain
+    // encodes on write, so pre-linearise the tint to get the same result on screen.
+    let tint = pow(max(in.color.rgb, vec3<f32>(0.0)), vec3<f32>(2.2));
+    return vec4<f32>(tex.rgb * tint, tex.a * in.color.a);
 }

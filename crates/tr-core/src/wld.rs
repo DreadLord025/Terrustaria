@@ -75,6 +75,7 @@ pub fn parse(data: &[u8]) -> Result<World> {
     }
 
     let mut world = World::new(name, width, height);
+    load_header_flags(&mut r, &mut world, version)?;
 
     // --- tile section ------------------------------------------------------
     if sections.len() < 2 {
@@ -86,6 +87,44 @@ pub fn parse(data: &[u8]) -> Result<World> {
     world.frame_important = importance;
     world.compute_spawn_y();
     Ok(world)
+}
+
+fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<()> {
+    // WorldFile.LoadWorldFlags: mostly data we skip, but it also carries the spawn
+    // point and the world layers, which the lighting needs.
+    if version >= 209 {
+        r.skip(4)?; // GameMode
+        for min_version in [222, 227, 238, 239, 241, 249, 266, 267, 302] {
+            if version >= min_version {
+                r.skip(1)?;
+            }
+        }
+    } else {
+        r.skip(1)?; // GameMode as bool
+        if version == 208 {
+            r.skip(1)?;
+        }
+    }
+    if version >= 141 {
+        r.skip(8)?; // creation time
+    }
+    if version >= 284 {
+        r.skip(8)?; // last played
+    }
+    r.skip(1)?; // moon type
+    r.skip(3 * 4)?; // treeX
+    r.skip(4 * 4)?; // treeStyle
+    r.skip(3 * 4)?; // caveBackX
+    r.skip(4 * 4)?; // caveBackStyle
+    r.skip(3 * 4)?; // ice / jungle / hell back style
+
+    world.spawn_x = r.i32()?;
+    world.spawn_y = r.i32()?;
+    world.world_surface = r.f64()?;
+    world.rock_layer = r.f64()?;
+    world.time = r.f64()?;
+    world.day_time = r.u8()? != 0;
+    Ok(())
 }
 
 fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i32) -> Result<()> {
@@ -270,6 +309,13 @@ impl<'a> Reader<'a> {
     fn u64(&mut self) -> Result<u64> {
         self.need(8)?;
         let v = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
+        self.pos += 8;
+        Ok(v)
+    }
+
+    fn f64(&mut self) -> Result<f64> {
+        self.need(8)?;
+        let v = f64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
         self.pos += 8;
         Ok(v)
     }

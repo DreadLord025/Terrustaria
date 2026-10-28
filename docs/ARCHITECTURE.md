@@ -22,6 +22,10 @@
   decoded today; later sections are reachable via the section table.
 - `framing.rs` — autotiling: a port of `WorldGen.TileFrameCosmetic` (block frames) and
   `Framing.WallFrame` (wall frames). See `ANALYSIS.md#autotiling`.
+- `lighting.rs` — `LightMap::compute(rect)`: seeds each tile like `TileLightScanner`
+  (surface, hell, wall, emissive, liquid) and blurs them with the original's two-pass,
+  four-sweep carried-max algorithm and per-mask decay. Flat colour per tile for now; the
+  corners come with the liquid pass. See `ANALYSIS.md#lighting`.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.
@@ -48,19 +52,26 @@
   the atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
 - `sprite.wgsl` — `world = pos + corner*size`, then `(world - cam) * zoom + screen/2`
   → NDC with a flipped Y (world Y grows downward). Alpha-blended, `discard` on a < 0.01.
+  The tint is **pre-linearised** (`pow(color.rgb, 2.2)`) before multiplying the sRGB-decoded
+  texture: XNA's `Color * Color` is a byte multiply on gamma-encoded values, so multiplying
+  linear light would wash the scene out.
 
 ### `tr-app` — application
 
 - Loads the world (argument or most recent save), runs `framing::frame_world` +
-  `framing::frame_walls`, scans used tile/wall ids, decodes only those PNGs, builds the
-  atlas, then creates the window.
+  `framing::frame_walls`, computes the per-column surface (for the sky horizon), scans used
+  tile/wall ids, decodes only those PNGs, builds the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated row-major; walls are pushed before tiles so the order is
   correct in one batch. Wall UVs come from the autotile cell (`wall_col`, `wall_row`) and
   are cached per `(wall, col, row)`.
+- Per frame: `draw_sky` (the `Background_0` gradient above the local surface, a per-column
+  cave fade below it), then `LightMap::compute` for the visible rect, then the tile loop
+  multiplying each wall/tile instance by its tile's light colour.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
-  calls, instances, upload KB, camera/tile/zoom, world size and memory, GPU info.
+  calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles and
+  light-map time, GPU info.
 - Headless tooling: `TR_SHOT`/`TR_SHOT_FRAME` copies the swapchain texture to a mapped
   buffer and writes a PNG; `TR_BENCH=N` switches to `AutoNoVsync`, samples N frame deltas
   and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas.
@@ -68,8 +79,9 @@
 ## Frame flow
 
 1. `about_to_wait` → `request_redraw`.
-2. `frame()`: input → camera; `renderer.begin_frame()`; sky strips; tile loop pushes
-   instances; debug overlay; acquire swapchain texture.
+2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; `draw_sky`;
+   `renderer.begin_frame()`; light map for the visible rect; tile loop pushes lit instances;
+   debug overlay; acquire swapchain texture.
 3. `renderer.render()` writes both globals buffers + all instances, records one pass
    (clear + 2 draws) and submits.
 4. `queue.present(frame)`.
@@ -84,16 +96,17 @@
 | Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
 | Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
 | Manual debug UI | Avoids pinning egui to wgpu 30 (version coupling), keeps binary small |
+| Light computed per frame, not cached | 0.3–0.6 ms for the visible rect; a cached light map is only worth it once tiles change at runtime |
 | `TR_*` env instrumentation | Deterministic screenshots/benchmarks without desktop automation |
 
 ## Where the next systems plug in
 
 - **Chunking / meshing** — replace the per-frame tile loop with cached chunk instance
   buffers keyed by (chunk, frame variant), only rebuilt on change.
-- **Lighting** — a per-tile light map produced by a scanner (port of `LightingEngine`),
-  sampled per vertex in the sprite shader (a third `color` component per corner) or applied
-  as a second pass.
-- **Liquid** — separate instance layer with a wave offset uniform and animated UVs.
+- **Corner lighting** — one extra `vec4` per instance (four corner brightness values) and a
+  bilinear sample in `sprite.wgsl`, matching `Lighting.GetColor`'s interpolation.
+- **Liquid** — separate instance layer with a wave offset uniform and animated UVs; the light
+  masks (`Mask::Water/Honey`) already exist.
 - **Tile entities / furniture** — `TileObjectData` port producing multi-tile sprites.
 - **Entities** — a fixed-step simulation (60 Hz) decoupled from rendering; player/NPC
   physics ported from `Player.cs`/`NPC.cs`.

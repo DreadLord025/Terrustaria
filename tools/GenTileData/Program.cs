@@ -87,12 +87,23 @@ string[] boolArrays =
 [
     "tileSolid", "tileSolidTop", "tileBrick", "tileStone", "tileRope",
     "tilePile", "tileMoss", "tileBlendAll", "tileMergeDirt",
+    "tileBlockLight", "tileNoSunLight", "tileLighted",
 ];
 var mainBools = boolArrays.ToDictionary(n => n, _ => new bool[TileCount]);
 var largeFrames = new byte[TileCount];
 
+const int WallCount = 367;
+var wallLight = new bool[WallCount];
 foreach (Match m in Regex.Matches(mainSrc,
-             @"^\s*(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
+             @"^\s*wallLight\[(\d+)\]\s*=\s*true\s*;",
+             RegexOptions.Multiline))
+{
+    var idx = int.Parse(m.Groups[1].Value);
+    if (idx >= 0 && idx < WallCount) wallLight[idx] = true;
+}
+
+foreach (Match m in Regex.Matches(mainSrc,
+             @"^\s*(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
              RegexOptions.Multiline))
 {
     var arr = m.Groups[1].Value;
@@ -243,6 +254,131 @@ for (int i = bodyStart; i < wgLines.Length; i++)
 // Special normalisations used by the framer (stone variants frame as stone, etc.).
 var stone = mainBools["tileStone"];
 
+// ---------------------------------------------------------------- tile light
+// `TileLightScanner.ApplyTileLight` lights tiles per type. Most cases just assign a
+// constant R/G/B triple at the top level of the case; take the first such triple.
+// Frame-dependent / conditional branches (torches, campfires...) are approximated in
+// `crates/tr-core/src/lighting.rs` instead.
+var scannerSrc = File.ReadAllLines(Path.Combine(decompiled, "Terraria.Graphics.Light",
+                                               "TileLightScanner.cs"));
+var emissive = new float[TileCount, 3];
+int atl = FindLine(scannerSrc, "private void ApplyTileLight");
+int atlEnd = atl;
+{
+    int d = 0;
+    bool started = false;
+    for (int i = atl; i < scannerSrc.Length; i++)
+    {
+        var line = StripComment(scannerSrc[i]);
+        if (!started)
+        {
+            if (line.Contains('{')) { started = true; d = 1; }
+            continue;
+        }
+        d += line.Count(c => c == '{') - line.Count(c => c == '}');
+        if (d <= 0) { atlEnd = i; break; }
+    }
+}
+
+var switchStack = new List<(int OpenDepth, bool IsType)>();
+var pendingSwitch = 0; // 0 = none, 1 = switch (tile.type), 2 = other switch
+List<int>? caseIds = null;
+int caseDepth = -1;
+int ldepth = 0;
+float cr = 0, cg = 0, cb = 0;
+bool hr = false, hg = false, hb = false;
+int litCases = 0;
+
+for (int i = atl; i <= atlEnd; i++)
+{
+    var line = StripComment(scannerSrc[i]);
+    var trimmed = line.Trim();
+    if (trimmed.Length == 0) continue;
+
+    // Case labels are matched at their switch's body depth.
+    if (trimmed.StartsWith("case ") && switchStack.Count > 0)
+    {
+        var top = switchStack[^1];
+        if (top.IsType && ldepth == top.OpenDepth + 1)
+        {
+            var ids = Regex.Matches(trimmed[5..trimmed.IndexOf(':')], @"\d+")
+                .Select(x => int.Parse(x.Value)).ToList();
+            caseIds = ids;
+            caseDepth = ldepth;
+            hr = hg = hb = false;
+        }
+    }
+    else if (trimmed.StartsWith("default:"))
+    {
+        if (switchStack.Count > 0)
+        {
+            var top = switchStack[^1];
+            if (top.IsType && ldepth == top.OpenDepth + 1)
+            {
+                caseIds = null;
+                caseDepth = -1;
+            }
+        }
+    }
+    else if (caseIds != null && ldepth == caseDepth && caseIds.Count > 0)
+    {
+        var m = Regex.Match(trimmed, @"^([RGB]) = ([\d.]+)f;$");
+        if (m.Success)
+        {
+            var v = float.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture);
+            switch (m.Groups[1].Value)
+            {
+                case "R": cr = v; hr = true; break;
+                case "G": cg = v; hg = true; break;
+                default: cb = v; hb = true; break;
+            }
+            if (hr && hg && hb)
+            {
+                foreach (var id in caseIds)
+                {
+                    if (emissive[id, 0] == 0f && emissive[id, 1] == 0f && emissive[id, 2] == 0f)
+                    {
+                        emissive[id, 0] = cr;
+                        emissive[id, 1] = cg;
+                        emissive[id, 2] = cb;
+                        litCases++;
+                    }
+                }
+                hr = hg = hb = false;
+            }
+        }
+    }
+
+    if (trimmed.StartsWith("switch "))
+        pendingSwitch = trimmed.StartsWith("switch (tile.type)") ? 1 : 2;
+
+    int opens = line.Count(c => c == '{');
+    for (int k = 0; k < opens; k++)
+    {
+        ldepth++;
+        if (pendingSwitch != 0)
+        {
+            switchStack.Add((ldepth - 1, pendingSwitch == 1));
+            pendingSwitch = 0;
+        }
+    }
+    int closes = line.Count(c => c == '}');
+    for (int k = 0; k < closes; k++)
+    {
+        ldepth--;
+        while (switchStack.Count > 0 && switchStack[^1].OpenDepth >= ldepth)
+        {
+            var wasType = switchStack[^1].IsType;
+            switchStack.RemoveAt(switchStack.Count - 1);
+            if (wasType)
+            {
+                caseIds = null;
+                caseDepth = -1;
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------- emit
 var sb2 = new StringBuilder();
 sb2.AppendLine("// @generated by tools/GenTileData from the decompiled Terraria sources.");
@@ -300,7 +436,7 @@ string[] wantedSets =
     "Dirt", "Mud", "Ash", "Snow", "IcesSnow", "GrassSpecial", "JungleSpecial", "HellSpecial",
     "MergesWithClouds", "ForcedDirtMerging", "NeedsGrassFraming",
     "OreMergesWithMud", "tileMossBrick", "Platforms", "IsVine", "Falling", "Torches",
-    "MergesWithDirtInASpecialWay",
+    "MergesWithDirtInASpecialWay", "CrackedBricks", "AllowLightInWater",
 ];
 foreach (var name in wantedSets)
 {
@@ -314,6 +450,32 @@ foreach (var name in wantedSets)
 }
 
 // tileLargeFrames as a plain array.
+sb2.AppendLine();
+sb2.AppendLine("/// `Main.wallLight`: walls that transmit sky light.");
+sb2.AppendLine($"pub const WALL_COUNT: usize = {WallCount};");
+sb2.AppendLine();
+sb2.AppendLine("pub static WALL_LIGHT: [bool; WALL_COUNT] = [");
+for (int i = 0; i < WallCount; i += 32)
+{
+    sb2.Append("    ");
+    for (int k = i; k < Math.Min(i + 32, WallCount); k++)
+        sb2.Append(wallLight[k] ? "true, " : "false, ");
+    sb2.AppendLine();
+}
+sb2.AppendLine("];");
+
+sb2.AppendLine();
+sb2.AppendLine("/// Constant emissive light per tile type, from `TileLightScanner.ApplyTileLight`.");
+sb2.AppendLine("/// Types with frame-dependent light are handled procedurally in `lighting.rs`.");
+sb2.AppendLine("pub static EMISSIVE: [[f32; 3]; TILE_COUNT] = [");
+for (int i = 0; i < TileCount; i++)
+{
+    var inv = System.Globalization.CultureInfo.InvariantCulture;
+    sb2.AppendLine(
+        $"    [{emissive[i, 0].ToString("0.0#####", inv)}, {emissive[i, 1].ToString("0.0#####", inv)}, {emissive[i, 2].ToString("0.0#####", inv)}],");
+}
+sb2.AppendLine("];");
+
 sb2.AppendLine();
 sb2.AppendLine("/// `Main.tileLargeFrames`: 0 = normal, 1/2 = 4-frame / 2x2 layouts.");
 sb2.AppendLine("pub static LARGE_FRAMES: [u8; TILE_COUNT] = [");
@@ -374,6 +536,8 @@ Directory.CreateDirectory(Path.GetDirectoryName(outFile)!);
 File.WriteAllText(outFile, sb2.ToString());
 
 Console.WriteLine($"sets: {sets.Count}, merge calls resolved: {mergeCalls}, output: {outFile}");
+Console.WriteLine($"  emissive tile types: {litCases}");
+Console.WriteLine($"  wallLight: {wallLight.Count(v => v)}/{WallCount}");
 Console.WriteLine($"  Dirt={sets.GetValueOrDefault("Dirt")?.Count ?? 0} " +
                   $"Mud={sets.GetValueOrDefault("Mud")?.Count ?? 0} " +
                   $"Snow={sets.GetValueOrDefault("Snow")?.Count ?? 0}");

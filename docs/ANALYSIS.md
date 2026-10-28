@@ -144,6 +144,68 @@ coating. Those are listed in the roadmap.
 `tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
 `tiledata.rs`; rerun it after touching those tables.
 
+## Lighting
+
+Terraria's light is a **tile light map**, not a per-vertex shader effect:
+`Terraria.Graphics.Light.LightingEngine` walks the visible area plus a 28-tile border,
+`TileLightScanner` writes a seed colour per tile, and `LightMap.Blur` spreads those seeds with
+directional sweeps. `Lighting.GetColor(x, y)` then indexes the map (optionally interpolating
+four corners) and every tile, wall, NPC and projectile is drawn multiplied by it.
+
+Ported in `tr-core/src/lighting.rs`:
+
+1. **Region** — `AREA_PADDING = 28` around the visible tile rect, `NON_VISIBLE_PADDING = 18`
+   rows/columns that the sweeps stop before, exactly as `LightingEngine` does.
+2. **Seeds** (`TileLightScanner.GetTileLight`), per tile in this order:
+   - `ApplySurfaceLight` — only for `y <= worldSurface`; the light colour is `Main.tileColor`
+     (`ApplyColorOfTheSkiesToTiles` of the sky colour) and it only passes where
+     `Main.wallLight[wall]` (or wall 73/227, or an invisible wall) and the tile does not block
+     sun (`Main.tileNoSunLight`, with the slope/half-brick liquid rule), plus the gem-wall
+     colour override.
+   - `ApplyHellLight` — below `height - 200`: `0.55 + sin(t·2)·0.08` warm glow.
+   - `ApplyWallLight` — the `Main.wallLight` table (16 glowing wall types) with per-type
+     colours extracted by `tools/GenTileData`.
+   - `ApplyTileLight` — the `EMISSIVE` table (43 types: torches, candles, campfires, glowing
+     mushrooms, crystals, lamps…) scaled by torch flicker.
+   - `ApplyLiquidLight` — lava/honey/shimmer self-illumination.
+3. **Decay per tile** (`LightDecayThrough*`): air `0.91`, solid `0.56`, cracked bricks `0.8`,
+   water `(0.88, 0.96, 1.015)·0.91` with a per-cell jitter, honey `(0.75, 0.7, 0.6)·0.91`.
+   This is why surface dirt is already ~half as bright one tile under the grass — `0.56` per
+   solid tile is the game's own value, and it is what makes torches mandatory underground.
+4. **Blur** (`LightMap.BlurPass`, run twice): four sweeping lines (top→bottom, bottom→top,
+   left→right, right→left), each carrying the brightest colour seen so far and multiplying it
+   by the next tile's decay. The original's `0.0185` per-channel cutoff is kept, so dim light
+   stops propagating instead of tinting the whole map.
+
+Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
+`light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
+`Main.tileColor` (white) × `0.56`.
+
+Deliberate simplifications for this pass:
+
+- Light is applied **flat per tile** (`Lighting.GetColor` without corner interpolation). The
+  original interpolates four corner samples, so the edges of a lit area are slightly softer
+  there; adding four corner colours to `SpriteInstance` is planned for M1.3.
+- `Lighting.GlobalBrightness`, `Main.mouseTextColor` flicker and the shimmer / legacy
+  lighting render paths are not ported.
+- Sky rendering is still a placeholder: the real parallax, cloud and underground background
+  layers (`Main.DrawBackground`, `DrawSurfaceBG_*`, `SkyManager`) are not ported. The blue is
+  the game's own `Background_0.png` gradient anchored to the surface; underground is a
+  per-column fade to cave darkness.
+
+## Sky and daylight
+
+`Main.SetBackColor` (day `0..54000`, night `0..32400`) is ported to `color_of_the_skies`:
+
+- Day `< 13500`: sunrise ramp `(230,220,220)·t + (25,35,35)`.
+- Day `13500..37800`: pure white — this is why vanilla daytime tiles are lit at 100 %.
+- Day `> 37800`: the two sunset ramps (orange, then dusk).
+- Night: `(5,5,5) + 30·t`, floored at `minimalLight = 15` (moon-phase dependent in the
+  original; we use the full-moon value).
+
+`ApplyColorOfTheSkiesToTiles` pulls each channel 70 % towards its own value
+(`(sum + 7·c) / 10`), which is the colour passed to the surface light seed.
+
 ## Asset pipeline
 
 - Terraria ships XNA **XNB v5** containers. Terraria's build uses Xbox `XMemCompress`
@@ -178,7 +240,8 @@ coating. Those are listed in the roadmap.
    ported (~5 900 000 tiles framed in ~150 ms); the remaining gaps are per-type special
    branches, which affect a minority of tile types.
 2. **Lighting is the second factor.** Without it the world is uniformly lit and caves show
-   sky. The original engine uses a tile light scanner + per-corner colour interpolation.
+   sky. The original engine uses a tile light scanner + per-corner colour interpolation; the
+   scanner and blur are ported (see `#lighting`), the four-corner interpolation is still to do.
 3. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100
    projectiles, ~750 tiles; most behaviour is hand-written per id, not data-driven.
 4. **World generation** is a large but well-isolated subsystem (passes + structures) and can

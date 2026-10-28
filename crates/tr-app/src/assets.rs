@@ -60,6 +60,14 @@ pub fn load_world_images(
         }
     }
 
+    // Whole-image sheets used by the sky/background pass.
+    for name in ["Background_0"] {
+        match load_png(dir, name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing background texture {name}"),
+        }
+    }
+
     if !missing.is_empty() {
         log::warn!("{} world sheets have no matching texture (first 10: {:?})", missing.len(), &missing[..missing.len().min(10)]);
     }
@@ -132,6 +140,17 @@ impl Lookups {
             }
         }
         me
+    }
+
+    /// UV rectangle covering a whole raw (non-tiled) sheet, e.g. the sky gradient.
+    pub fn sheet_uv(atlas: &tr_render::Atlas, name: &str) -> Option<[f32; 4]> {
+        let rect = atlas.sheet(name)?;
+        Some([
+            rect.x as f32 / atlas.width as f32,
+            rect.y as f32 / atlas.height as f32,
+            (rect.x + rect.width) as f32 / atlas.width as f32,
+            (rect.y + rect.height) as f32 / atlas.height as f32,
+        ])
     }
 
     /// UV for an arbitrary frame of a tile sheet (important tiles store pixels).

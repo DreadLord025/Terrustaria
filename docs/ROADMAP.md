@@ -23,6 +23,7 @@ uncertainty of roughly ±50 %.
 | Vulkan renderer (wgpu 30) | 2 draw calls, ~1 900 instances |
 | Bench | 1.91 ms avg / 523 FPS @1600×900 |
 | Autotiling data generator | 2 228 merge pairs, 149 tile sets extracted |
+| Lighting (scanner + blur + daylight) | 0.3–0.6 ms per frame, verified against engine constants |
 | Debug overlay, screenshots, bench harness | done |
 
 ## Milestone 1 — visual fidelity (in progress)
@@ -34,14 +35,21 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    merge pairs are ported; wall framing is complete (`Framing.WallFrame`, 20×3 lookup).
    Remaining: per-type special branches (grass edge overrides, moss, vines, cactus),
    `TileFrameImportant` multi-tile objects. *~3–6 agent-days left of ~15.*
-2. **Lighting** — tile light scanner, per-corner colours, `Lighting.GetColor`, torch/glow
-   sources, day/night sky light. *~6–12 agent-days.* ← next
+2. **Lighting** — ✅ *first pass done*: `TileLightScanner` seeds (surface/hell/wall/
+   emissive/liquid), `LightMap`'s two-pass four-sweep blur with per-mask decay, and
+   `Main.SetBackColor` → `ApplyColorOfTheSkiesToTiles` for daylight. Verified numerically
+   against the engine's own constants (`TR_LIGHT_AT`). Remaining: four-corner interpolation,
+   `GlobalBrightness`, sun/moon/star light, per-type frame-dependent lights, invisible
+   blocks/walls, mouse-light flicker. *~2–4 agent-days of ~8 left.*
 3. **Liquids** — water/lava/honey/shimmer surfaces, waves, opacity blending.
-   *~4–8 agent-days.*
-4. **Backgrounds & sky** — parallax layers, sun/moon/stars/clouds, biome backgrounds.
-   *~5–10 agent-days.*
-5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
-   coatings, slopes/half-blocks, gemspark/glow. *~10–20 agent-days.*
+   *~4–8 agent-days.* ← next
+4. **Backgrounds & sky** — the real parallax layers, sun/moon/stars/clouds, biome
+   backgrounds, `Main.DrawBackground` dirt/rock/magma layers. Today only the `Background_0`
+   gradient plus a depth fade are drawn. *~5–10 agent-days.*
+5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), tree
+   canopies/branches (`TileDrawing` composes those from `Tree_Tops_*`/`Tree_Branches_*`
+   instead of tile frames), paint, coatings, slopes/half-blocks, gemspark/glow.
+   *~10–20 agent-days.*
 
 Estimated total: **~30–60 agent-days** remaining. Exit criterion: side-by-side screenshots
 of the same world positions match texture-for-texture.
@@ -89,7 +97,7 @@ engine.
 
 ## Recommended order of attack
 
-1. M1.1 autotiling ✅ → M1.2 lighting ← next (the world stops looking flat).
+1. M1.1 autotiling ✅ → M1.2 lighting ✅ (first pass) → M1.3 liquids ← next.
 2. M2 player + M1.4 parallax → it starts to feel like a game.
 3. M3 inventory + block placement/mining → the core loop.
 4. M4 one enemy family + one boss → combat loop.
