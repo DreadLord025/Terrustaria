@@ -117,7 +117,9 @@ snowflakes that thicken during a storm.
   original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs,
   pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks collide only
   in their bottom 8 px and are walkable on top; ceiling slopes (3/4) block by their
-  triangular geometry. The full draw-layer order is still to port.
+  triangular geometry. The selected hotbar block is drawn in the hand with a swing arc
+  while mining, placing or attacking. The full draw-layer order (front arm, armor,
+  accessories) is still to port.
 - **NPCs & combat (first pass)** — blue slimes spawn on the surface near the player, hop
   toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
   flying demon eye with 25 HP chases the player (14 damage). LMB over an
