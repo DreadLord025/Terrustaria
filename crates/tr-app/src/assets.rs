@@ -712,8 +712,7 @@ impl Lookups {
 
     /// UV and native size of the original `Item_<id>` sprite for a slot kind
     /// (`ItemSlot.Draw` uses the item's own texture at inventory scale).
-    pub fn item_icon(&self, kind: u16) -> Option<([f32; 4], f32, f32)> {
-        let id = crate::item::item_id(kind);
+    pub fn item_icon(&self, id: u16) -> Option<([f32; 4], f32, f32)> {
         let rect = self.item_icons.get(&id)?;
         Some((
             uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),

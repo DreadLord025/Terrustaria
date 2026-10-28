@@ -291,7 +291,8 @@ engine.
 1. M1.1 autotiling ✅ → M1.2 lighting ✅ → M1.3 liquid flow ✅ → M1.4 sky/backgrounds/
    weather ✅.
 2. M2 player ✅ movement, survival, half bricks, held item; next: full draw layers/use.
-3. M3 hotbar/drops/walls ✅; next: inventory/crafting UI and a real item registry.
+3. M3 hotbar/drops/walls ✅; inventory UI + 50 slots + `ItemID` registry ✅; next:
+   `Recipe.cs` crafting menu (`ItemSlot` contexts 4/33) and equipment slots.
 4. Pixel-exact UI fonts: `tr-content` ports the original XNB readers (container, LZX,
    `Texture2DReader`, ReLogic `DynamicSpriteFontReader`) so textures and fonts load from
    the retail `Content` directory at runtime instead of pre-extracted PNGs; HUD and

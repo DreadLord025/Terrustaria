@@ -614,3 +614,16 @@ each table structurally and validates the whole page (mip size == surface size, 
 rects inside the page, one kerning entry per char, UTF-8 characters). Mouse_Text parses
 as one 256x256 DXT3 page with 212 glyphs, line spacing 29; Item_Stack has 212 glyphs,
 line spacing 24.
+
+## Item registry (M3)
+
+`tr-app/src/registry.rs` holds the `Terraria.ID.ItemID` entries the game currently uses
+(dirt/stone/ores/torch/wood/walls/shuriken/coins/sand/ash/hellstone/cactus/snow) with
+their vanilla names, `Item.maxStack` (coins cap at 100), and the tile/wall/projectile
+they place or fire. Inventory slots store vanilla `ItemID`s: mining converts tile ->
+`ItemID` (grass drops dirt), walls map through `by_wall`, weapon items expose
+`Item.shoot`, and pickup uses `Player.PickupItem`'s order (stack into the hotbar, then an
+empty hotbar slot, then the storage rows) with the per-item stack limit. The sidecar save
+is version 3 (ItemIDs); versions 1/2 are migrated on load (`registry::migrate_kind`).
+Item drops and the held item draw the original `Item_<id>` sprite, falling back to the
+tile frame for ids without one.

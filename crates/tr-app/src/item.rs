@@ -11,126 +11,9 @@ use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::{TILE_PX, World};
 
 use crate::assets;
+use crate::registry;
 
 pub const SIZE: f32 = 14.0;
-/// Wall ids are stored as `WALL_ITEM_BASE + WallID` in an item slot.
-pub const WALL_ITEM_BASE: u16 = 10_000;
-/// Weapon/projectile items live in their own range: `WEAPON_ITEM_BASE + projectile id`.
-pub const WEAPON_ITEM_BASE: u16 = 20_000;
-/// Coins: `COIN_ITEM_BASE + 0..3` (copper, silver, gold, platinum).
-pub const COIN_ITEM_BASE: u16 = 30_000;
-pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
-
-pub fn is_wall(kind: u16) -> bool {
-    (WALL_ITEM_BASE..WEAPON_ITEM_BASE).contains(&kind)
-}
-
-pub fn wall_id(kind: u16) -> u16 {
-    kind - WALL_ITEM_BASE
-}
-
-pub fn is_weapon(kind: u16) -> bool {
-    (WEAPON_ITEM_BASE..COIN_ITEM_BASE).contains(&kind)
-}
-
-pub fn weapon_id(kind: u16) -> u16 {
-    kind - WEAPON_ITEM_BASE
-}
-
-pub fn is_coin(kind: u16) -> bool {
-    kind >= COIN_ITEM_BASE
-}
-
-pub fn coin_id(kind: u16) -> u16 {
-    kind - COIN_ITEM_BASE
-}
-
-pub fn coin_value(kind: u16) -> u64 {
-    COIN_VALUES
-        .get(coin_id(kind) as usize)
-        .copied()
-        .unwrap_or(0)
-}
-
-/// `ItemID` of the vanilla item a slot kind stands for, used to pick the original
-/// `Item_*` sprite for HUD and inventory icons (`Terraria.ID.ItemID`).
-pub fn item_id(kind: u16) -> u16 {
-    if is_coin(kind) {
-        return 71 + coin_id(kind).min(3);
-    }
-    if is_weapon(kind) {
-        return match weapon_id(kind) {
-            1 => 42, // Shuriken
-            _ => 0,
-        };
-    }
-    if is_wall(kind) {
-        return match wall_id(kind) {
-            1 => 26, // Stone Wall
-            2 => 30, // Dirt Wall
-            _ => 0,
-        };
-    }
-    match kind {
-        0 | 2 => 2,   // Dirt Block (grass drops dirt, like the original)
-        1 => 3,       // Stone Block
-        4 => 8,       // Torch
-        5 => 9,       // Wood
-        6 => 11,      // Iron Ore
-        7 => 12,      // Copper Ore
-        8 => 13,      // Gold Ore
-        9 => 14,      // Silver Ore
-        53 => 169,    // Sand Block
-        57 => 172,    // Ash Block
-        58 => 174,    // Hellstone
-        80 => 276,    // Cactus
-        147 => 593,   // Snow Block
-        _ => 0,
-    }
-}
-
-/// Display name for a tile or wall item. `Terraria.Lang` would provide these.
-pub fn name(kind: u16) -> &'static str {
-    if is_coin(kind) {
-        return match coin_id(kind) {
-            0 => "Copper Coin",
-            1 => "Silver Coin",
-            2 => "Gold Coin",
-            3 => "Platinum Coin",
-            _ => "Coin",
-        };
-    }
-    if is_weapon(kind) {
-        return match weapon_id(kind) {
-            1 => "Shuriken",
-            _ => "Weapon",
-        };
-    }
-    if is_wall(kind) {
-        return match wall_id(kind) {
-            1 => "Stone Wall",
-            2 => "Dirt Wall",
-            _ => "Wall",
-        };
-    }
-    match kind {
-        0 => "Dirt",
-        1 => "Stone",
-        2 => "Grass Block",
-        4 => "Torch",
-        5 => "Wood",
-        6 => "Iron Ore",
-        7 => "Copper Ore",
-        8 => "Gold Ore",
-        9 => "Silver Ore",
-        53 => "Sand Block",
-        80 => "Cactus",
-        57 => "Ash Block",
-        58 => "Hellstone",
-        147 => "Snow Block",
-        _ => "Block",
-    }
-}
 const MAGNET_RADIUS: f32 = 42.0;
 const GRAVITY: f32 = 0.3;
 const MAX_FALL: f32 = 6.0;
@@ -218,14 +101,18 @@ impl ItemDrop {
         style: &LightStyle,
         anim_time: f32,
     ) -> u32 {
-        let uv = if is_coin(self.kind) {
-            lookups.coin_uv(coin_id(self.kind) as usize)
-        } else if is_weapon(self.kind) {
+        let uv = if let Some((uv, _, _)) = lookups.item_icon(self.kind) {
+            Some(uv)
+        } else if let Some(coin) = registry::coin_index(self.kind) {
+            lookups.coin_uv(coin)
+        } else if registry::projectile(self.kind).is_some() {
             lookups.shuriken_uv()
-        } else if is_wall(self.kind) {
-            lookups.wall_icon_uv(wall_id(self.kind))
+        } else if let Some(wall) = registry::place_wall(self.kind) {
+            lookups.wall_icon_uv(wall)
+        } else if let Some(tile) = registry::place_tile(self.kind) {
+            lookups.plain_tex(tile).map(|t| t.uv)
         } else {
-            lookups.plain_tex(self.kind).map(|t| t.uv)
+            None
         };
         let Some(uv) = uv else {
             return 0;
@@ -281,30 +168,28 @@ mod tests {
     }
 
     #[test]
-    fn wall_items_are_encoded_above_the_tile_range() {
-        let wall = WALL_ITEM_BASE + 2;
-        assert!(is_wall(wall));
-        assert!(!is_wall(1));
-        assert_eq!(wall_id(wall), 2);
-        assert_eq!(name(wall), "Dirt Wall");
-        assert_eq!(name(1), "Stone");
-        let shuriken = WEAPON_ITEM_BASE + 1;
-        assert!(is_weapon(shuriken));
-        assert!(!is_wall(shuriken));
-        assert_eq!(weapon_id(shuriken), 1);
-        assert_eq!(name(shuriken), "Shuriken");
-        let gold = COIN_ITEM_BASE + 2;
-        assert!(is_coin(gold));
-        assert!(!is_weapon(gold));
-        assert_eq!(coin_id(gold), 2);
-        assert_eq!(coin_value(gold), 10_000);
-        assert_eq!(name(gold), "Gold Coin");
+    fn registry_maps_items_to_tiles_walls_and_coins() {
+        // `Terraria.ID.ItemID` ids: Dirt Block 2, Stone Wall 26, Shuriken 42.
+        assert_eq!(registry::place_wall(30), Some(2));
+        assert_eq!(registry::name(30), "Dirt Wall");
+        assert_eq!(registry::name(3), "Stone Block");
+        assert_eq!(registry::by_wall(2), Some(30));
+        assert_eq!(registry::projectile(42), Some(crate::projectile::SHURIKEN));
+        assert!(registry::is_weapon(42));
+        assert_eq!(registry::by_tile(0), Some(2));
+        assert_eq!(registry::coin_index(73), Some(2));
+        assert_eq!(registry::coin_value(73), 10_000);
+        assert_eq!(registry::name(73), "Gold Coin");
+        assert_eq!(registry::migrate_kind(0), 2);
+        assert_eq!(registry::migrate_kind(10_002), 30);
+        assert_eq!(registry::migrate_kind(20_001), 42);
+        assert_eq!(registry::migrate_kind(30_002), 73);
     }
 
     #[test]
     fn drops_fall_and_rest_on_the_ground() {
         let w = ground();
-        let mut it = ItemDrop::new(0, 1, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(2, 1, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
         for _ in 0..240 {
             assert!(!it.update(&w, None, 1.0 / 60.0));
         }
@@ -326,7 +211,7 @@ mod tests {
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        let mut it = ItemDrop::new(0, 1, 10.0 * TILE_PX, 19.0 * TILE_PX, 6.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(2, 1, 10.0 * TILE_PX, 19.0 * TILE_PX, 6.0, 0.0, 0.0);
         for _ in 0..120 {
             it.update(&w, None, 1.0 / 60.0);
         }
@@ -337,7 +222,7 @@ mod tests {
     fn magnet_collects_a_drop_next_to_the_player() {
         let w = ground();
         let player = Vec2::new(16.0 * TILE_PX, 20.0 * TILE_PX - 21.0);
-        let mut it = ItemDrop::new(7, 3, 16.0 * TILE_PX + 8.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(12, 3, 16.0 * TILE_PX + 8.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         let mut collected = false;
         for _ in 0..240 {
             if it.update(&w, Some(player), 1.0 / 60.0) {

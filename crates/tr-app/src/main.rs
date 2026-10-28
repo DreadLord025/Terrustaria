@@ -8,6 +8,7 @@ mod persist;
 mod player;
 mod projectile;
 mod rain;
+mod registry;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -70,12 +71,17 @@ fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> 
         }
     }
     for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range.clone().find(|&i| inventory[i].count == 0) {
-            inventory[i] = ItemSlot {
-                kind,
-                name: item::name(kind),
-                count: 0,
-            };
+        if let Some(i) = range
+            .clone()
+            .find(|&i| inventory[i].count == 0 || (inventory[i].kind == kind && inventory[i].count < registry::max_stack(kind)))
+        {
+            if inventory[i].count == 0 {
+                inventory[i] = ItemSlot {
+                    kind,
+                    name: registry::name(kind),
+                    count: 0,
+                };
+            }
             return Some(i);
         }
     }
@@ -487,23 +493,23 @@ fn main() -> Result<()> {
     let mut coins = 0u64;
     let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
         0 => ItemSlot {
-            kind: 0,
-            name: "Dirt",
+            kind: 2, // ItemID.DirtBlock
+            name: registry::name(2),
             count: 50,
         },
         1 => ItemSlot {
-            kind: 1,
-            name: "Stone",
+            kind: 3, // ItemID.StoneBlock
+            name: registry::name(3),
             count: 50,
         },
         2 => ItemSlot {
-            kind: 4,
-            name: "Torch",
+            kind: 8, // ItemID.Torch
+            name: registry::name(8),
             count: 99,
         },
         3 => ItemSlot {
-            kind: item::WEAPON_ITEM_BASE + projectile::SHURIKEN,
-            name: item::name(item::WEAPON_ITEM_BASE + projectile::SHURIKEN),
+            kind: 42, // ItemID.Shuriken
+            name: registry::name(42),
             count: 99,
         },
         _ => ItemSlot {
@@ -524,7 +530,7 @@ fn main() -> Result<()> {
                 for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
-                        name: item::name(*kind),
+                        name: registry::name(*kind),
                         count: *count,
                     };
                 }
@@ -1317,7 +1323,7 @@ impl App {
         }
         self.edit_target = Some((tx, ty));
         let held = self.inventory[self.selected];
-        let held_weapon = held.count > 0 && item::is_weapon(held.kind);
+        let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
         if self.mine_down && held_weapon && !self.inventory_open {
             // Weapons use LMB toward the cursor instead of mining.
             if self.attack_cd <= 0.0 {
@@ -1346,7 +1352,8 @@ impl App {
             let reach2 = 4.0 * TILE_PX;
             if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
                 if let Some(n) = self.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
-                    n.hurt(15, pcx);
+                    let dmg = if held_weapon { registry::damage(held.kind) } else { 15 };
+                    n.hurt(dmg, pcx);
                     self.attack_cd = 0.3;
                     self.mine_target = None;
                     self.mine_timer = 0.0;
@@ -1366,7 +1373,7 @@ impl App {
             .copied()
             .unwrap_or(false)
             && tile.kind != 80; // cacti have fixed frames but are mineable
-        let held_wall = held.count > 0 && item::is_wall(held.kind);
+        let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
 
         if self.mine_down && tile.active() && !important && !self.inventory_open {
             if self.swing <= 0.0 {
@@ -1413,12 +1420,14 @@ impl App {
         if self.place_down && self.place_cooldown <= 0.0 && !self.inventory_open {
             if held_wall {
                 if self.can_place_wall(tx, ty) {
-                    self.place_wall_item(tx, ty, item::wall_id(held.kind));
+                    self.place_wall_item(tx, ty, registry::place_wall(held.kind).unwrap_or(1));
                     self.place_cooldown = 0.12;
                     self.swing = SWING_TIME;
                 }
             } else if !held_weapon && self.can_place(tx, ty) {
-                let kind = held.kind;
+                let Some(kind) = registry::place_tile(held.kind) else {
+                    return;
+                };
                 self.place_tile(tx, ty, kind);
                 self.place_cooldown = 0.12;
                 self.swing = SWING_TIME;
@@ -1430,7 +1439,9 @@ impl App {
         let Some(wall) = edit::break_wall(&mut self.world, tx, ty) else {
             return;
         };
-        self.spawn_item_drop(item::WALL_ITEM_BASE + wall, tx, ty);
+        if let Some(id) = registry::by_wall(wall) {
+            self.spawn_item_drop(id, tx, ty);
+        }
         self.world_key = None;
     }
 
@@ -1440,7 +1451,7 @@ impl App {
         };
         if t.wall != 0
             || self.inventory[self.selected].count == 0
-            || item::is_weapon(self.inventory[self.selected].kind)
+            || registry::is_weapon(self.inventory[self.selected].kind)
         {
             return false;
         }
@@ -1477,10 +1488,10 @@ impl App {
             while i < self.items.len() {
                 let mut drop = self.items[i].clone();
                 if drop.update(&self.world, player_center, step) {
-                    if item::is_coin(drop.kind) {
+                    if registry::is_coin(drop.kind) {
                         self.coins = self
                             .coins
-                            .saturating_add(item::coin_value(drop.kind) * drop.count as u64);
+                            .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
                         self.items.swap_remove(i);
                         continue;
                     }
@@ -1552,7 +1563,7 @@ impl App {
         let vy = -1.5 - rand01(&mut self.item_rng);
         let phase = rand01(&mut self.item_rng) * std::f32::consts::TAU;
         self.items.push(ItemDrop::new(
-            item::COIN_ITEM_BASE + denom,
+            registry::coin_id(denom as usize),
             count,
             x - 7.0,
             y - 7.0,
@@ -1586,7 +1597,10 @@ impl App {
         let Some(kind) = edit::break_tile(&mut self.world, tx, ty) else {
             return;
         };
-        self.spawn_item_drop(kind, tx, ty);
+        let Some(id) = registry::tile_drop(kind) else {
+            return;
+        };
+        self.spawn_item_drop(id, tx, ty);
         self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
     }
@@ -1597,7 +1611,7 @@ impl App {
         };
         if t.active()
             || self.inventory[self.selected].count == 0
-            || item::is_weapon(self.inventory[self.selected].kind)
+            || registry::is_weapon(self.inventory[self.selected].kind)
             || self.inventory[self.selected].kind == 80
         {
             return false;
@@ -3993,12 +4007,14 @@ fn draw_held_item(
     swing: f32,
     anim_time: f32,
 ) -> u32 {
-    let uv = if item::is_weapon(kind) {
+    let uv = if let Some((uv, _, _)) = lookups.item_icon(kind) {
+        Some(uv)
+    } else if registry::is_weapon(kind) {
         lookups.shuriken_uv()
-    } else if item::is_wall(kind) {
-        lookups.wall_icon_uv(item::wall_id(kind))
+    } else if let Some(wall) = registry::place_wall(kind) {
+        lookups.wall_icon_uv(wall)
     } else {
-        lookups.plain_tex(kind).map(|t| t.uv)
+        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
     };
     let Some(uv) = uv else {
         return 0;
@@ -4954,13 +4970,13 @@ mod tests {
             count: 0,
         });
         inv[0] = ItemSlot {
-            kind: 1,
-            name: "Stone",
+            kind: 3,
+            name: "Stone Block",
             count: 4,
         };
-        assert_eq!(slot_for_pickup(&mut inv, 1), Some(0));
-        assert_eq!(slot_for_pickup(&mut inv, 7), Some(1));
-        assert_eq!(inv[1].kind, 7);
+        assert_eq!(slot_for_pickup(&mut inv, 3), Some(0));
+        assert_eq!(slot_for_pickup(&mut inv, 12), Some(1));
+        assert_eq!(inv[1].kind, 12);
         assert_eq!(inv[1].name, "Copper Ore");
         assert_eq!(inv[1].count, 0);
         for slot in &mut inv {
