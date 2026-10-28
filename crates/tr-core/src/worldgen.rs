@@ -119,6 +119,8 @@ const TILE_STONE: u16 = 1;
 const TILE_GRASS: u16 = 2;
 const TILE_SNOW: u16 = 147;
 const TILE_SAND: u16 = 53;
+const TILE_SANDSTONE: u16 = 396;
+const TILE_HARDENED_SAND: u16 = 397;
 const TILE_IRON: u16 = 6;
 const TILE_COPPER: u16 = 7;
 const TILE_GOLD: u16 = 8;
@@ -127,6 +129,7 @@ const TILE_ASH: u16 = 57;
 const TILE_HELLSTONE: u16 = 58;
 const WALL_STONE: u16 = 1;
 const WALL_DIRT: u16 = 2;
+const WALL_SANDSTONE: u16 = 187;
 
 pub fn generate(opts: &GenOptions) -> World {
     let width = opts.width.max(512);
@@ -143,6 +146,22 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- surface height map -------------------------------------------------
     let avg = height as f32 * 0.30;
     let spawn_center = width / 2;
+    // An inland desert west of spawn (small worlds skip it). The band is kept clear
+    // of the spawn plateau and the lake.
+    let desert_half = 170;
+    let desert_center = spawn_center - 380;
+    let desert_enabled = width >= 2000;
+    let desert_start = if desert_enabled {
+        (desert_center - desert_half).max(200)
+    } else {
+        0
+    };
+    let desert_end = if desert_enabled {
+        (desert_center + desert_half).min(spawn_center - 120)
+    } else {
+        0
+    };
+    let in_desert = |x: i32| desert_enabled && x >= desert_start && x < desert_end;
     let mut surface = vec![0i32; width as usize];
     for x in 0..width {
         let fx = x as f32;
@@ -157,6 +176,25 @@ pub fn generate(opts: &GenOptions) -> World {
             h = h * (1.0 - t * 0.7) + avg * t * 0.7;
         }
         surface[x as usize] = (h.round() as i32).clamp(80, height - 340);
+    }
+    // Flatten the desert into smooth dunes so it reads differently from the forest.
+    if desert_enabled {
+        for x in (desert_start - 30)..(desert_end + 30) {
+            if x < 0 || x >= width {
+                continue;
+            }
+            let d = (x - desert_center).abs();
+            let blend = if d <= desert_half {
+                1.0
+            } else {
+                1.0 - (d - desert_half) as f32 / 30.0
+            };
+            let dune =
+                avg + (x as f32 * 0.045).sin() * 5.0 + noise.value(x as f32 * 0.02, 9.0) * 4.0;
+            surface[x as usize] = (surface[x as usize] as f32 * (1.0 - blend)
+                + dune.clamp(80.0, (height - 340) as f32) * blend)
+                .round() as i32;
+        }
     }
     // Limit adjacent height differences to one tile so the whole surface can be
     // expressed with slope tiles instead of vertical stair-steps.
@@ -225,17 +263,24 @@ pub fn generate(opts: &GenOptions) -> World {
         for y in 0..height {
             let i = world.index(x, y);
             let mut tile = Tile::default();
+            let desert = in_desert(x);
             if y >= top {
                 if y == top {
                     tile.kind = if x < beach + 24 || x >= width - beach - 24 {
                         TILE_SAND
                     } else if x >= snow_start {
                         TILE_SNOW
+                    } else if desert {
+                        TILE_SAND
                     } else {
                         TILE_GRASS
                     };
                 } else if y < top + dirt_depth {
-                    tile.kind = TILE_DIRT;
+                    tile.kind = if desert { TILE_SAND } else { TILE_DIRT };
+                } else if desert && y < top + dirt_depth + 14 {
+                    tile.kind = TILE_HARDENED_SAND;
+                } else if desert && y < top + dirt_depth + 30 {
+                    tile.kind = TILE_SANDSTONE;
                 } else if y < hell_top {
                     tile.kind = TILE_STONE;
                 } else {
@@ -243,7 +288,9 @@ pub fn generate(opts: &GenOptions) -> World {
                 }
                 tile.flags |= FLAG_ACTIVE;
                 if y > top + 2 {
-                    tile.wall = if (y as f64) < rock_layer {
+                    tile.wall = if desert {
+                        WALL_SANDSTONE
+                    } else if (y as f64) < rock_layer {
                         WALL_DIRT
                     } else {
                         WALL_STONE
@@ -648,6 +695,39 @@ mod tests {
                 (y.kind, y.wall, y.flags, y.frame_x, y.frame_y)
             );
         }
+    }
+
+    #[test]
+    fn desert_band_has_sand_dunes_and_no_trees() {
+        let opts = GenOptions::default();
+        let mut w = generate(&opts);
+        w.compute_column_surface();
+        let center = w.width / 2;
+        let start = center - 380 - 170 + 20;
+        let end = center - 380 + 170 - 20;
+        let mut saw_hardened = false;
+        let mut saw_sandstone = false;
+        for x in start..end {
+            let top = w.surface_of(x);
+            let t = w.tile(x, top).unwrap();
+            assert!(
+                t.kind == TILE_SAND,
+                "desert surface at x{x} is kind {}",
+                t.kind
+            );
+            for y in top..top + 40 {
+                let k = w.tile(x, y).unwrap().kind;
+                saw_hardened |= k == TILE_HARDENED_SAND;
+                saw_sandstone |= k == TILE_SANDSTONE;
+            }
+            for y in top..top + 30 {
+                assert!(
+                    !(w.tile(x, y).unwrap().active() && w.tile(x, y).unwrap().kind == tree::TREE),
+                    "tree inside the desert at {x},{y}"
+                );
+            }
+        }
+        assert!(saw_hardened && saw_sandstone, "missing desert strata");
     }
 
     #[test]

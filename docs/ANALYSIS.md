@@ -296,6 +296,20 @@ First-pass simplifications: a session-local random weather schedule instead of a
 `rainTime`/`maxRaining` pair, no lightning bolt geometry or thunder audio, and no wind
 gusts affecting the world (only the rain/snow drift).
 
+## Biomes
+
+The generator has three surface biomes plus beaches. The forest fills the centre, the snow
+biome starts at two thirds of the width, and an inland desert band sits west of spawn
+(`desert_center = width/2 - 380`, 340 tiles wide, disabled below 2000 tiles width). The
+desert surface is blended toward smooth dunes (`sin(x*0.045)*5` plus low-frequency noise)
+before the 1-tile smoothing pass, so it stays slope-friendly. Its strata are 16 px of sand,
+14 px of hardened sand (`397`), 16 px of sandstone (`396`) and then stone, with sandstone
+walls (`187`) instead of dirt/stone. The tree and plant passes only accept grass/snow, so
+the desert stays clear. The background switches to `Background_21` (far, scale 1.25,
+parallax 0.37) and `Background_20` (near, scale 1.34, parallax 0.49) when the sampled
+surface is sand and the camera is away from the beaches. Cacti, desert loot and hardened
+sand/sandstone furniture are not ported.
+
 ## Surface backgrounds
 
 `Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near

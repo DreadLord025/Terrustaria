@@ -26,6 +26,11 @@ clean-room analysis of the decompiled C# game.
 | ![king_slime](docs/screenshots/king_slime.png) | ![night_enemy](docs/screenshots/night_enemy.png) |
 | King Slime boss: 2000 HP, teleport and slime minions | A demon eye at night |
 
+![desert](docs/screenshots/desert.png)
+
+The inland desert: flattened dunes, sand over hardened sand and sandstone, sandstone
+walls, and the `Background_21/20` dune layers. Cacti and desert loot are still to come.
+
 | | |
 | --- | --- |
 | ![rain](docs/screenshots/rain.png) | ![snowfall](docs/screenshots/snowfall.png) |
@@ -42,8 +47,10 @@ snowflakes that thicken during a storm.
   height-noise surface with a spawn plateau, grass/dirt/stone layers, hill slopes, caves,
   dirt/stone walls, ore blobs (copper/iron/silver/gold), ash-and-hellstone underworld,
   common trees with canopies and branches, grass/flowers on the surface, a forest lake with
-  water, lava puddles, ocean beaches at both edges and a **snow biome** in the eastern third
-  (snow tiles, winter trees, pine background). A 4200×1200 world generates in ~165 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
+  water, lava puddles, ocean beaches at both edges, a **snow biome** in the eastern third
+  (snow tiles, winter trees, pine background) and an inland **desert** west of spawn (sand
+  dunes, hardened-sand/sandstone strata, sandstone walls, dune background). A 4200×1200
+  world generates in ~175 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
   world.
 - **Native saves** — `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`, a compact
   RLE row format that round-trips every tile field. The app loads it on the next start. The
@@ -183,8 +190,9 @@ styles, shimmer sparkles and the original's four-corner liquid surface mesh are 
 missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
 biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
-no full ocean biome or hardmode spread. Rain, storms, lightning and snow exist as a first
-pass, but wind gusts, snowfall accumulation and weather audio are missing. Common
+no full ocean biome or hardmode spread; the desert has no cacti or desert structures yet.
+Rain, storms, lightning and snow exist as a first pass, but wind gusts, snowfall
+accumulation and weather audio are missing. Common
 forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
 but gem/vanity/palm trees and the per-world random forest style variations are approximate.
 Real biome-specific backgrounds, biome weather and the real textured underground

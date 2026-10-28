@@ -246,14 +246,15 @@ several times that.
 
 A compact native generator and `.trwld` save exist and are used by default: height-noise
 forest surface, dirt/stone/ash layers, caves, ores, walls, a forest lake, lava puddles,
-common + snow-biome trees, surface plants, a forest lake, lava puddles and sand ocean
-beaches at both edges. Snow biome is the first biome pass (snow surface, winter trees,
-pine background selected near the camera).
+common + snow-biome trees, surface plants, sand ocean beaches at both edges, a snow biome
+(snow surface, winter trees, pine background) and an inland desert (dunes, sand/hardened
+sand/sandstone, sandstone walls, dune background).
 
 Porting the remaining generation passes and structures (`WorldGen.cs` + `Generation/*`:
-corruption/crimson/jungle/desert/hallow biomes, the full ocean biome, dungeons, temples, living trees,
-hardmode spread, chests) is **~40–90 agent-days** for a passable generator; full parity
-much more. Loading existing `.wld` files still works at any time.
+corruption/crimson/jungle/hallow biomes, the full ocean biome, desert cacti and structures,
+dungeons, temples, living trees, hardmode spread, chests) is **~40–90 agent-days** for a
+passable generator; full parity much more. Loading existing `.wld` files still works at any
+time.
 
 ## Milestone 6 — audio, map, networking, polish
 

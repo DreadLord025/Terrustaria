@@ -2031,6 +2031,9 @@ struct SkyAssets {
     snow_trees: [Option<BgTex>; 3],
     /// Ocean horizon with islands (`Background_28`, style 0).
     ocean: Option<BgTex>,
+    /// Desert dunes (`Background_21` far, `Background_20` near).
+    desert_far: Option<BgTex>,
+    desert_near: Option<BgTex>,
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     storm_far: Option<BgTex>,
     storm_near: Option<BgTex>,
@@ -2179,6 +2182,8 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         snow_near: sky_tex(atlas, "Background_36", None),
         snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         ocean: ocean_bg_tex(atlas),
+        desert_far: sky_tex(atlas, "Background_21", None),
+        desert_near: sky_tex(atlas, "Background_20", None),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
         sun: sky_tex(atlas, "Sun", None),
@@ -2194,6 +2199,24 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
 fn is_ocean_biome(world: &World, camera: Vec2) -> bool {
     let x = (camera.x / TILE_PX) as i32;
     x < 200 || x > world.width - 200
+}
+
+/// Sand at the surface away from the beaches marks the inland desert.
+fn is_desert_biome(world: &World, camera: Vec2) -> bool {
+    let cam_tile = (camera.x / TILE_PX) as i32;
+    if cam_tile < 220 || cam_tile > world.width - 220 {
+        return false;
+    }
+    for dx in [-16, -8, 0, 8, 16] {
+        let x = cam_tile + dx;
+        let top = world.surface_of(x);
+        if let Some(t) = world.tile(x, top) {
+            if t.kind == 53 {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn is_snow_biome(world: &World, camera: Vec2) -> bool {
@@ -2367,6 +2390,7 @@ fn draw_sky(
     // the camera's vertical speed; using the local horizon instead would drag the whole
     // forest down into the view whenever the player is on a hill.
     let snow = is_snow_biome(world, camera);
+    let desert = !snow && is_desert_biome(world, camera);
     let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
     let view_top = camera.y - screen.y * 0.5 / zoom;
     let magic = (300.0 - view_top) / world_surface_px;
@@ -2413,7 +2437,25 @@ fn draw_sky(
     // Layers are positioned like `DrawSurfaceBG` but drawn in screen pixels (the
     // original applies the zoom in its sprite-batch transform). Keep the bottom of
     // every layer below the local horizon so no sky leaks between it and the terrain.
-    if show_bg {
+    if show_bg && desert {
+        // `DrawSurfaceBG_Desert`: two dune layers, no tree line.
+        if let Some(far) = sky.desert_far {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &far,
+                1.25,
+                0.37,
+                magic * 1800.0 + 1750.0 + sc_adj,
+                horizon,
+                false,
+                tint,
+                1.0,
+            );
+        }
+    } else if show_bg {
         let far = if snow { sky.snow_far } else { sky.far };
         if let Some(far) = far {
             draw_bg_layer(
@@ -2453,7 +2495,24 @@ fn draw_sky(
     }
 
     let ocean = is_ocean_biome(world, camera);
-    if show_bg {
+    if show_bg && desert {
+        if let Some(near) = sky.desert_near {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &near,
+                1.34,
+                0.49,
+                magic * 2100.0 + 2150.0 + sc_adj,
+                horizon,
+                false,
+                [tint[0] * 0.96, tint[1] * 0.95, tint[2] * 0.9],
+                1.0,
+            );
+        }
+    } else if show_bg {
         let near = if snow { sky.snow_near } else { sky.near };
         if let Some(near) = near {
             draw_bg_layer(
@@ -2491,7 +2550,7 @@ fn draw_sky(
         }
     }
 
-    if show_bg {
+    if show_bg && !desert {
         // `DrawSurfaceBG_Forest`: three tree layers at 0.40/0.43/0.49 parallax with
         // growing scale and descending tops; the middle layer is mirrored horizontally.
         let trees: &[Option<BgTex>; 3] = if ocean {

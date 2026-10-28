@@ -46,8 +46,10 @@
   surface + spawn plateau, height smoothing to 1-tile steps, grass/dirt/stone/ash layers,
   hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld
   hellstone, a forest lake, lava puddles on cave floors, a snow biome (snow surface, winter
-  trees, pine background), common trees (22 px trunk frames, canopy anchor, branch markers)
-  and tile-3 surface plants. Deterministic for a seed; 4200×1200 in ~165 ms.
+  trees, pine background), an inland desert band (flattened dunes, sand/hardened
+  sand/sandstone strata, sandstone walls), common trees (22 px trunk frames, canopy anchor,
+  branch markers) and tile-3 surface plants. Deterministic for a seed; 4200×1200 in
+  ~175 ms.
 - `save.rs` — native `.trwld`: magic/version/seed/header, `frame_important` table, and
   per-row RLE of the 14-byte `Tile`. Default path
   `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`; saves are written to a
