@@ -99,7 +99,7 @@
 - Editing: LMB mines with a per-tile timer, RMB places the selected hotbar block after
   reach/support/overlap checks; `tr_core::edit` performs the world change and local
   re-frame. The 4-slot hotbar and target outline are drawn through the UI sprite batch;
-  F9/close saves the native world.
+  F9/close saves the native world and a `.trplayer` sidecar with position/HP/inventory.
 - NPCs (`npc.rs`): hopping slimes with gravity, AABB collision, contact damage and HP;
   LMB over a slime performs a melee hit. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation

@@ -97,7 +97,8 @@ clean-room analysis of the decompiled C# game.
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
 - **Editing & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore), RMB
   places the selected block, 1–4 select Dirt/Stone/Torch/Copper, mined blocks go into the
-  hotbar counts, and F9 (or closing the window) writes the world back to `.trwld`. Edits
+  hotbar counts, and F9 (or closing the window) writes the world back to `.trwld` plus the
+  player state to a `.trplayer` sidecar (position, HP and slot counts). Edits
   bump the world revision, update the column surface, re-frame the 5×5 neighbourhood and
   invalidate the light/instance caches. No item entities, tools, reach-through-walls or
   chests yet.

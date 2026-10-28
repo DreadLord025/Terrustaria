@@ -2,6 +2,7 @@
 
 mod assets;
 mod npc;
+mod persist;
 mod player;
 
 use std::collections::{HashSet, VecDeque};
@@ -341,7 +342,7 @@ fn main() -> Result<()> {
     let player_assets = make_player_assets(&atlas);
     let npc_assets = make_npc_assets(&atlas);
     let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
-    let player = player_enabled.then(|| Player::spawn(&world));
+    let mut player = player_enabled.then(|| Player::spawn(&world));
     let mut npcs = Vec::new();
     if let Some(p) = &player {
         let xt = (p.x / TILE_PX) as i32;
@@ -354,7 +355,7 @@ fn main() -> Result<()> {
     let follow_player = player.is_some()
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
-    let inventory = [
+    let mut inventory = [
         ItemSlot {
             kind: 0,
             name: "Dirt",
@@ -376,6 +377,22 @@ fn main() -> Result<()> {
             count: 0,
         },
     ];
+    if world_path.extension().is_some_and(|e| e == "trwld") {
+        if let Some(saved) = persist::load(&world_path) {
+            if let Some(p) = player.as_mut() {
+                if !player::collides(&world, saved.x, saved.y) {
+                    p.x = saved.x;
+                    p.y = saved.y;
+                }
+                p.hp = saved.hp.clamp(1, p.max_hp);
+                for (i, (kind, count)) in saved.inventory.iter().enumerate() {
+                    if inventory[i].kind == *kind {
+                        inventory[i].count = *count;
+                    }
+                }
+            }
+        }
+    }
     let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
     let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
         let mut it = v.split(',');
@@ -1037,6 +1054,13 @@ impl App {
             match save::save(&self.world_path, &self.world) {
                 Ok(()) => log::info!("saved {}", self.world_path.display()),
                 Err(e) => log::warn!("save failed: {e:#}"),
+            }
+            if let Some(p) = &self.player {
+                let inv =
+                    std::array::from_fn(|i| (self.inventory[i].kind, self.inventory[i].count));
+                if let Err(e) = persist::save(&self.world_path, p, inv) {
+                    log::warn!("player save failed: {e}");
+                }
             }
         } else {
             log::info!("not saving: the loaded world is not a native .trwld");

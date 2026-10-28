@@ -321,7 +321,9 @@ the world revision is bumped, the chunk is marked and the column surface is reco
 neighbourhood, so a block edit does not need to re-frame the whole world. The app adds a
 4-slot hotbar (Dirt/Stone/Torch/Copper), LMB mining with a per-kind timer, RMB placement
 with reach/support/player-overlap checks, 1–4 selection, a target outline and F9/save-on-
-close to the native `.trwld`. Mining adds to the matching slot; placing consumes it.
+close to the native `.trwld`. Mining adds to the matching slot; placing consumes it. A
+`.trplayer` sidecar stores position, HP and the four slot counts and is applied at load if
+the saved position is not inside a solid tile.
 
 Not ported: item entities/drops, tool requirements and mining speed from `Item.cs`,
 inventory windows/crafting/chests, wall placement, paint, actuators/wiring, and liquid
