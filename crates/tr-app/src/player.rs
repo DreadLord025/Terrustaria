@@ -234,7 +234,7 @@ pub fn collides(world: &World, x: f32, y: f32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);

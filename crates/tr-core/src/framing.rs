@@ -419,6 +419,69 @@ fn wall_variant(x: i32, y: i32) -> usize {
     (h % 3) as usize
 }
 
+/// `Framing.WallFrame` for one tile. `None` when there is no wall.
+pub fn wall_frame_of(world: &World, x: i32, y: i32) -> Option<(u8, u8)> {
+    let tile = world.tile(x, y)?;
+    if tile.wall == 0 {
+        return None;
+    }
+    let mut mask = 0u8;
+    if world.tile(x, y - 1).is_some_and(|t| t.wall != 0) {
+        mask |= 1;
+    }
+    if world.tile(x - 1, y).is_some_and(|t| t.wall != 0) {
+        mask |= 2;
+    }
+    if world.tile(x + 1, y).is_some_and(|t| t.wall != 0) {
+        mask |= 4;
+    }
+    if world.tile(x, y + 1).is_some_and(|t| t.wall != 0) {
+        mask |= 8;
+    }
+    if mask == 15 {
+        mask += CENTER_WALL_FRAMES[x.rem_euclid(3) as usize][y.rem_euclid(3) as usize];
+    }
+    Some(WALL_FRAMES[mask as usize][wall_variant(x, y)])
+}
+
+/// Re-frames a small square after a tile edit. Only the affected area is touched, so
+/// mining/placing does not need a full-world framing pass.
+pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
+    let r = radius.clamp(1, 4);
+    let important = world.frame_important.clone();
+    let mut tiles = Vec::new();
+    let mut walls = Vec::new();
+    for y in (cy - r).max(1)..=(cy + r).min(world.height - 2) {
+        for x in (cx - r).max(1)..=(cx + r).min(world.width - 2) {
+            let Some(t) = world.tile(x, y) else {
+                continue;
+            };
+            if t.active() && !important.get(t.kind as usize).copied().unwrap_or(false) {
+                if let Some(f) = frame_of(world, x, y) {
+                    tiles.push((x, y, f));
+                }
+            }
+            if t.wall != 0 {
+                if let Some(w) = wall_frame_of(world, x, y) {
+                    walls.push((x, y, w));
+                }
+            }
+        }
+    }
+    for (x, y, (fx, fy)) in tiles {
+        let idx = world.index(x, y);
+        let t = &mut world.tiles[idx];
+        t.frame_x = fx;
+        t.frame_y = fy;
+    }
+    for (x, y, (col, row)) in walls {
+        let idx = world.index(x, y);
+        let t = &mut world.tiles[idx];
+        t.wall_col = col;
+        t.wall_row = row;
+    }
+}
+
 /// Port of `Framing.WallFrame`: picks the 36 px cell for every wall.
 #[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_walls(world: &mut World) -> usize {

@@ -48,6 +48,9 @@
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
+- `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
+  chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
+  (`framing::reframe_area`), so edits do not need a full-world framing pass.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.
@@ -93,6 +96,10 @@
   follows the player's centre (unless `TR_CAM`/`TR_PAN` select the free debug camera).
   The starter player is drawn from the original 40×56 part strips at `(x-10, y-10)` after
   the world passes; `render_key` is part of the G6 frame key.
+- Editing: LMB mines with a per-tile timer, RMB places the selected hotbar block after
+  reach/support/overlap checks; `tr_core::edit` performs the world change and local
+  re-frame. The 4-slot hotbar and target outline are drawn through the UI sprite batch;
+  F9/close saves the native world.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
@@ -150,6 +157,7 @@
 | Liquid UV wave in the shader | One `flags` float per instance selects a travelling UV ripple inside the large `Misc/water_*` strip; doing it in the shader avoids a second draw pass and hides the 16 px source repetition |
 | Screen-space sky, sun/moon, stars and parallax layers | Their layout follows `DrawSunAndMoon`/`DrawSurfaceBG` (parallax and screen sizes, not tile units), so zooming the camera does not stretch the sky. The helper converts the screen rectangle back into camera-relative world coordinates for the shared sprite batch |
 | Axis-separated player AABB | Small (20×42) and slow (≤10 px/tick); sub-tile axis resolution plus a one-tile step is enough and keeps slope/tile interactions debuggable. Slopes currently collide as full cells |
+| Local re-frame after edits | A mined/placed block can only change the frames of a 2-tile neighbourhood; re-framing 5×5 cells keeps editing at interactive speed instead of re-framing 5M tiles |
 | Local column sunlight | The original seeds only `y <= worldSurface`; hills above the average would be dark and valleys below it black. Seeding per column keeps every surface slope lit without opening up caves |
 | Native generator + save | The game's own generator is ~45 k lines; a compact deterministic model gives a real world to iterate on, and `.trwld` round-trips every tile field |
 | Tree sprites outside the tile batch | Canopies are 80×80 and branches 40×40, anchored to transparent tiles; drawing them after the tile pass matches `DrawTrees` and keeps normal tiles on the fast path |

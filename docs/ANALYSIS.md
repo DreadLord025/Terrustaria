@@ -72,7 +72,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, water buoyancy, respawn; no slopes/items/buffs/health |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
-| Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | ⬜ | |
+| Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | 🟡 | 4-slot hotbar, mining/placing, counts and native save; no item entities, tools, recipes, chests or full inventory UI |
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | ⬜ | ~700 NPC types, each with bespoke behaviour |
 | Projectiles | `Projectile.cs` | 81 000 | ⬜ | ~1 100 types |
 | Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | ⬜ | |
@@ -310,6 +310,20 @@ walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the 
 camera and `TR_NOPLAYER` hides the player. Not ported yet: slope ramps, item use/placement,
 full draw layers (arms/front arm, armor, accessories), health/drowning, and the rest of
 `Player.cs`.
+
+## Editing and hotbar (M3 first pass)
+
+`tr-core/src/edit.rs` implements a single-tile break/place: the background wall is kept,
+the world revision is bumped, the chunk is marked and the column surface is recomputed.
+`framing::reframe_area` runs the generic frame chain and the wall lookup over a 5×5
+neighbourhood, so a block edit does not need to re-frame the whole world. The app adds a
+4-slot hotbar (Dirt/Stone/Torch/Copper), LMB mining with a per-kind timer, RMB placement
+with reach/support/player-overlap checks, 1–4 selection, a target outline and F9/save-on-
+close to the native `.trwld`. Mining adds to the matching slot; placing consumes it.
+
+Not ported: item entities/drops, tool requirements and mining speed from `Item.cs`,
+inventory windows/crafting/chests, wall placement, paint, actuators/wiring, and liquid
+re-simulation after an edit.
 
 ## Asset pipeline
 

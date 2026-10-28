@@ -332,6 +332,18 @@ impl SpriteRenderer {
         });
     }
 
+    /// Textured sprite in screen space (hotbar icons).
+    pub fn push_ui_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+        self.ui.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            flags: 0.0,
+        });
+    }
+
     /// Draws text in screen space (top-left origin, 8x8 glyphs scaled by `scale`).
     pub fn push_text(&mut self, x: f32, y: f32, scale: f32, color: [f32; 4], text: &str) {
         let gw = self.font_glyph_px;

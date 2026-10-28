@@ -103,6 +103,25 @@ impl World {
         }
     }
 
+    /// Recomputes the first solid tile of one column after a block edit.
+    pub fn recompute_column_surface(&mut self, x: i32) {
+        use crate::tiledata as td;
+        if x < 0 || x >= self.width {
+            return;
+        }
+        let mut top = self.height;
+        for y in 0..self.height {
+            let t = &self.tiles[self.index(x, y)];
+            if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
+                top = y;
+                break;
+            }
+        }
+        if let Some(slot) = self.column_surface.get_mut(x as usize) {
+            *slot = top;
+        }
+    }
+
     /// Marks the chunk owning `(x, y)` as occupied (after placing a tile/wall).
     #[inline]
     pub fn mark_chunk(&mut self, x: i32, y: i32) {

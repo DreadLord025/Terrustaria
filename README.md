@@ -3,9 +3,10 @@
 A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
 clean-room analysis of the decompiled C# game.
 
-> **Status: milestone 2 — a minimal player.** The world renders with the game's own
+> **Status: milestone 3 — a minimal sandbox.** The world renders with the game's own
 > lighting, liquids, trees and sky layers; a player with gravity, collision and a following
-> camera can walk, jump and swim. Items, NPCs, combat and UI are not implemented. See
+> camera can walk, jump, swim, mine and place the starter blocks through a hotbar. NPCs,
+> combat, the full item/inventory system and UI are not implemented. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
 
 ![surface](docs/screenshots/surface.png)
@@ -14,8 +15,10 @@ clean-room analysis of the decompiled C# game.
 | --- | --- |
 | ![generated](docs/screenshots/generated.png) | ![player](docs/screenshots/player.png) |
 | A world from our own generator (seed 1) | The player, walking on the generated surface |
-| ![lake](docs/screenshots/lake.png) | ![night](docs/screenshots/night.png) |
-| Generated forest lake: animated water, waves, depth tint | Night: moon, stars, parallax mountains |
+| ![editing](docs/screenshots/editing.png) | ![lake](docs/screenshots/lake.png) |
+| Mining/placing with the hotbar and local re-framing | Generated forest lake: animated water, waves, depth tint |
+| ![night](docs/screenshots/night.png) | ![debug](docs/screenshots/debug_overlay.png) |
+| Night: moon, stars, parallax mountains | Debug overlay (F1) with light mode, liquids and quad counters |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
 
@@ -64,8 +67,9 @@ clean-room analysis of the decompiled C# game.
   (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK. The world's
   sheets plus all tree canopy/branch styles and the 42 `Cloud_*` textures are decoded in
   parallel.
-- **Atlas** — all sheets used by the current world are shelf-packed into one 4096×2894
-  texture for the generated world (47 MB), nearest filtering, no mipmaps.
+- **Atlas** — all sheets used by the current world (plus tree/cloud/sky/player sheets) are
+  shelf-packed into one 8192×2432 texture for the generated world (80 MB), nearest
+  filtering, no mipmaps. The original world needs 8192×4590 (150 MB).
 - **Renderer** — wgpu 30 on the **Vulkan** backend, one instanced-quad pipeline, one atlas,
   1–2 draw calls per frame (world + optional UI), ~2 200–3 600 instances for a 1600×900
   viewport at the gameplay zoom range.
@@ -83,6 +87,12 @@ clean-room analysis of the decompiled C# game.
   `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs, pants,
   shoes, hair) with walk/jump leg frames and camera follow. Slopes count as full cells
   until slope collision and the full draw-layer order are ported.
+- **Editing & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore), RMB
+  places the selected block, 1–4 select Dirt/Stone/Torch/Copper, mined blocks go into the
+  hotbar counts, and F9 (or closing the window) writes the world back to `.trwld`. Edits
+  bump the world revision, update the column surface, re-frame the 5×5 neighbourhood and
+  invalidate the light/instance caches. No item entities, tools, reach-through-walls or
+  chests yet.
 - **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
   F2 light mode, F5 respawn). `TR_CAM`/`TR_PAN` switch to the free debug camera; `TR_NOPLAYER`
   hides the player for pixel comparisons.
@@ -115,8 +125,9 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 ## What is *not* implemented (yet)
 
-Items, NPCs, projectiles, UI/inventory, audio, networking. The player is a movement/visual
-first pass: no items, mining/placing, inventory, health or combat yet, and slopes are
+Items beyond the starter hotbar, NPCs, projectiles, the full inventory/crafting/chests UI,
+audio, networking. The player is a movement/visual
+first pass: no item use/combat/health, and slopes are
 collision boxes rather than ramps. Liquid flow
 simulation, waterfalls, water styles, shimmer sparkles and the original's partial-wall
 liquid surface smoothing are still missing; the current pass draws static sources with
@@ -183,6 +194,8 @@ another seed.
 | `TR_REGEN=1` | Regenerate the default Terrustaria world |
 | `TR_SEED=<n>` | Seed for `TR_REGEN` / first generation |
 | `TR_NOPLAYER=1` | Hide and disable the player (free-camera A/B captures) |
+| `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
+| `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 
 ## Layout
 

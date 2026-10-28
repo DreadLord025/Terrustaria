@@ -14,7 +14,7 @@ use player::{Player, PlayerInput};
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::tile::LiquidKind;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, framing, save, tree, wld, worldgen};
+use tr_core::{TILE_PX, World, edit, framing, save, tree, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -27,6 +27,13 @@ const PANEL_BG: [f32; 4] = [0.03, 0.04, 0.06, 0.82];
 const TEXT: [f32; 4] = [0.85, 0.90, 0.95, 1.0];
 const ACCENT: [f32; 4] = [0.45, 0.85, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.70, 0.30, 1.0];
+
+#[derive(Clone, Copy)]
+struct ItemSlot {
+    kind: u16,
+    name: &'static str,
+    count: u32,
+}
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
@@ -64,6 +71,11 @@ fn main() -> Result<()> {
     let wall_frame_ms = t_walls.elapsed().as_secs_f32() * 1000.0;
     world.compute_column_surface();
     world.compute_chunks();
+    // Torches are important tiles; generated saves written before the hotbar existed
+    // may lack this bit.
+    if world.frame_important.len() > 4 {
+        world.frame_important[4] = true;
+    }
     let slopes = world
         .tiles
         .iter()
@@ -193,7 +205,10 @@ fn main() -> Result<()> {
         );
     }
 
-    let (tile_ids, wall_ids) = assets::usage(&world);
+    let (mut tile_ids, wall_ids) = assets::usage(&world);
+    // The hotbar can place these even when the loaded world does not use them yet.
+    tile_ids.insert(4); // torch
+    tile_ids.insert(7); // copper ore
     log::info!(
         "world uses {} tile types and {} wall types",
         tile_ids.len(),
@@ -327,6 +342,36 @@ fn main() -> Result<()> {
     let follow_player = player.is_some()
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
+    let inventory = [
+        ItemSlot {
+            kind: 0,
+            name: "Dirt",
+            count: 50,
+        },
+        ItemSlot {
+            kind: 1,
+            name: "Stone",
+            count: 50,
+        },
+        ItemSlot {
+            kind: 4,
+            name: "Torch",
+            count: 99,
+        },
+        ItemSlot {
+            kind: 7,
+            name: "Copper",
+            count: 0,
+        },
+    ];
+    let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
+    let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
+        let mut it = v.split(',');
+        let x = it.next()?.trim().parse::<i32>().ok()?;
+        let y = it.next()?.trim().parse::<i32>().ok()?;
+        let k = it.next()?.trim().parse::<u16>().ok()?;
+        Some((x, y, k))
+    });
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
 
     let mut app = App {
@@ -343,6 +388,18 @@ fn main() -> Result<()> {
         player,
         follow_player,
         player_accum: 0.0,
+        inventory,
+        selected: 0,
+        mouse_pos: Vec2::ZERO,
+        mine_down: false,
+        place_down: false,
+        mine_target: None,
+        mine_timer: 0.0,
+        place_cooldown: 0.0,
+        edit_target: None,
+        world_path: world_path.clone(),
+        dev_break,
+        dev_place,
         camera: Vec2::ZERO,
         zoom: 1.5,
         debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(true),
@@ -427,6 +484,18 @@ struct App {
     player: Option<Player>,
     follow_player: bool,
     player_accum: f32,
+    inventory: [ItemSlot; 4],
+    selected: usize,
+    mouse_pos: Vec2,
+    mine_down: bool,
+    place_down: bool,
+    mine_target: Option<(i32, i32)>,
+    mine_timer: f32,
+    place_cooldown: f32,
+    edit_target: Option<(i32, i32)>,
+    world_path: PathBuf,
+    dev_break: Option<(i32, i32)>,
+    dev_place: Option<(i32, i32, u16)>,
     camera: Vec2,
     zoom: f32,
     debug: bool,
@@ -484,6 +553,11 @@ fn parse_light_mode(v: &str) -> Option<LightMode> {
         "trippy" | "glitch" | "3" => Some(LightMode::Trippy),
         _ => None,
     }
+}
+
+fn parse_xy(v: &str) -> Option<(i32, i32)> {
+    let (a, b) = v.split_once(',')?;
+    Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
 }
 
 /// `TR_NOCACHE=1` disables D2 and G6, so benchmarks measure the full per-frame
@@ -609,7 +683,10 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::CloseRequested => {
+                self.save_world();
+                event_loop.exit();
+            }
             WindowEvent::Resized(size) => {
                 if let Some(gpu) = self.gpu.as_mut() {
                     gpu.resize(size);
@@ -623,7 +700,10 @@ impl ApplicationHandler for App {
                     if event.state == ElementState::Pressed {
                         self.keys.insert(code);
                         match code {
-                            KeyCode::Escape => event_loop.exit(),
+                            KeyCode::Escape => {
+                                self.save_world();
+                                event_loop.exit()
+                            }
                             KeyCode::F1 => self.debug = !self.debug,
                             KeyCode::F2 => {
                                 self.light_mode = self.light_mode.next();
@@ -648,6 +728,11 @@ impl ApplicationHandler for App {
                                 self.zoom = 1.5;
                                 self.world_key = None;
                             }
+                            KeyCode::F9 => self.save_world(),
+                            KeyCode::Digit1 => self.selected = 0,
+                            KeyCode::Digit2 => self.selected = 1,
+                            KeyCode::Digit3 => self.selected = 2,
+                            KeyCode::Digit4 => self.selected = 3,
                             KeyCode::Equal | KeyCode::NumpadAdd => {
                                 self.zoom = (self.zoom * 1.25).min(8.0)
                             }
@@ -669,12 +754,17 @@ impl ApplicationHandler for App {
                 self.zoom = (self.zoom * 1.1f32.powf(d)).clamp(0.25, 8.0);
             }
             WindowEvent::MouseInput { state, button, .. } => {
-                if button == MouseButton::Middle || button == MouseButton::Right {
-                    self.mouse_down = state == ElementState::Pressed;
+                let pressed = state == ElementState::Pressed;
+                match button {
+                    MouseButton::Middle => self.mouse_down = pressed,
+                    MouseButton::Left => self.mine_down = pressed,
+                    MouseButton::Right => self.place_down = pressed,
+                    _ => {}
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
+                self.mouse_pos = p;
                 if self.mouse_down {
                     let delta = p - self.last_mouse;
                     self.camera -= delta / self.zoom;
@@ -693,6 +783,186 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    fn update_player(&mut self, dt: f32) {
+        let input = PlayerInput {
+            left: self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft),
+            right: self.keys.contains(&KeyCode::KeyD) || self.keys.contains(&KeyCode::ArrowRight),
+            jump: self.keys.contains(&KeyCode::Space)
+                || self.keys.contains(&KeyCode::KeyW)
+                || self.keys.contains(&KeyCode::ArrowUp),
+            down: self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown),
+        };
+        if let Some(p) = self.player.as_mut() {
+            let step = 1.0 / 60.0;
+            let mut acc = self.player_accum + dt;
+            let mut steps = 0;
+            while acc >= step && steps < 8 {
+                p.update(&self.world, input);
+                acc -= step;
+                steps += 1;
+            }
+            if acc > step * 8.0 {
+                acc = 0.0;
+            }
+            self.player_accum = acc;
+            if self.follow_player {
+                let (cx, cy) = p.center();
+                self.camera = self
+                    .camera
+                    .lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
+            }
+        }
+    }
+
+    fn update_editing(&mut self, dt: f32, screen: Vec2) {
+        if let Some((x, y)) = self.dev_break.take() {
+            self.break_tile(x, y);
+        }
+        if let Some((x, y, kind)) = self.dev_place.take() {
+            if edit::place_tile(&mut self.world, x, y, kind) {
+                self.world_key = None;
+            }
+        }
+        self.place_cooldown = (self.place_cooldown - dt).max(0.0);
+        let m = self.mouse_pos;
+        let hud_top = screen.y - 96.0;
+        if m.x < 0.0
+            || m.y < 0.0
+            || m.x > screen.x
+            || m.y > screen.y
+            || (m.y > hud_top && m.x < 300.0)
+            || (self.debug && m.x < 780.0 && m.y < 340.0)
+        {
+            self.edit_target = None;
+            self.mine_target = None;
+            self.mine_timer = 0.0;
+            return;
+        }
+        let world_pos = self.camera + (m - screen * 0.5) / self.zoom;
+        let tx = (world_pos.x / TILE_PX).floor() as i32;
+        let ty = (world_pos.y / TILE_PX).floor() as i32;
+        if !self.world.in_bounds(tx, ty) {
+            self.edit_target = None;
+            return;
+        }
+        let Some(player) = &self.player else {
+            self.edit_target = None;
+            return;
+        };
+        let (pcx, pcy) = player.center();
+        let dx = tx as f32 * TILE_PX + 8.0 - pcx;
+        let dy = ty as f32 * TILE_PX + 8.0 - pcy;
+        let reach = 6.0 * TILE_PX;
+        if dx * dx + dy * dy > reach * reach {
+            self.edit_target = None;
+            self.mine_target = None;
+            self.mine_timer = 0.0;
+            return;
+        }
+        self.edit_target = Some((tx, ty));
+        let tile = *self.world.tile(tx, ty).expect("in bounds");
+        let important = self
+            .world
+            .frame_important
+            .get(tile.kind as usize)
+            .copied()
+            .unwrap_or(false);
+
+        if self.mine_down && tile.active() && !important {
+            if self.mine_target == Some((tx, ty)) {
+                self.mine_timer += dt;
+            } else {
+                self.mine_target = Some((tx, ty));
+                self.mine_timer = 0.0;
+            }
+            let hardness = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
+                0.55
+            } else {
+                0.25
+            };
+            if self.mine_timer >= hardness {
+                self.break_tile(tx, ty);
+                self.mine_target = None;
+                self.mine_timer = 0.0;
+            }
+        } else {
+            self.mine_target = None;
+            self.mine_timer = 0.0;
+        }
+
+        if self.place_down && self.place_cooldown <= 0.0 && self.can_place(tx, ty) {
+            let kind = self.inventory[self.selected].kind;
+            self.place_tile(tx, ty, kind);
+            self.place_cooldown = 0.12;
+        }
+    }
+
+    fn slot_for_kind(kind: u16) -> Option<usize> {
+        match kind {
+            0 | 2 => Some(0),
+            1 => Some(1),
+            4 => Some(2),
+            6..=9 => Some(3),
+            _ => None,
+        }
+    }
+
+    fn break_tile(&mut self, tx: i32, ty: i32) {
+        let Some(kind) = edit::break_tile(&mut self.world, tx, ty) else {
+            return;
+        };
+        if let Some(slot) = Self::slot_for_kind(kind) {
+            self.inventory[slot].count = self.inventory[slot].count.saturating_add(1);
+        }
+        self.world_key = None;
+    }
+
+    fn can_place(&self, tx: i32, ty: i32) -> bool {
+        let Some(t) = self.world.tile(tx, ty) else {
+            return false;
+        };
+        if t.active() || self.inventory[self.selected].count == 0 {
+            return false;
+        }
+        if let Some(p) = &self.player {
+            let (x0, y0) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
+            if x0 < p.x + crate::player::WIDTH
+                && x0 + TILE_PX > p.x
+                && y0 < p.y + crate::player::HEIGHT
+                && y0 + TILE_PX > p.y
+            {
+                return false;
+            }
+        }
+        [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+            self.world.tile(tx + dx, ty + dy).is_some_and(|n| {
+                n.wall != 0
+                    || (n.active()
+                        && (n.kind as usize) < td::TILE_COUNT
+                        && td::TILE_SOLID.has(n.kind))
+            })
+        })
+    }
+
+    fn place_tile(&mut self, tx: i32, ty: i32, kind: u16) {
+        if edit::place_tile(&mut self.world, tx, ty, kind) {
+            self.inventory[self.selected].count =
+                self.inventory[self.selected].count.saturating_sub(1);
+            self.world_key = None;
+        }
+    }
+
+    fn save_world(&self) {
+        if self.world_path.extension().is_some_and(|e| e == "trwld") {
+            match save::save(&self.world_path, &self.world) {
+                Ok(()) => log::info!("saved {}", self.world_path.display()),
+                Err(e) => log::warn!("save failed: {e:#}"),
+            }
+        } else {
+            log::info!("not saving: the loaded world is not a native .trwld");
+        }
+    }
+
     fn frame(&mut self) {
         let now = Instant::now();
         let dt = now
@@ -713,6 +983,10 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        self.update_player(dt);
+        self.update_editing(dt, screen);
+        let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
+
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
 
@@ -728,9 +1002,9 @@ impl App {
                 stars,
                 player_assets,
                 player,
-                follow_player,
-                player_accum,
-                keys,
+                inventory,
+                selected,
+                edit_target,
                 camera,
                 zoom,
                 debug,
@@ -750,35 +1024,6 @@ impl App {
             } = self;
 
             if let (Some(gpu), Some(renderer)) = (gpu.as_ref(), renderer.as_mut()) {
-                let input = PlayerInput {
-                    left: keys.contains(&KeyCode::KeyA) || keys.contains(&KeyCode::ArrowLeft),
-                    right: keys.contains(&KeyCode::KeyD) || keys.contains(&KeyCode::ArrowRight),
-                    jump: keys.contains(&KeyCode::Space)
-                        || keys.contains(&KeyCode::KeyW)
-                        || keys.contains(&KeyCode::ArrowUp),
-                    down: keys.contains(&KeyCode::KeyS) || keys.contains(&KeyCode::ArrowDown),
-                };
-                let mut player_key = 0u32;
-                if let Some(p) = player.as_mut() {
-                    *player_accum += dt;
-                    let step = 1.0 / 60.0;
-                    let mut steps = 0;
-                    while *player_accum >= step && steps < 8 {
-                        p.update(world, input);
-                        *player_accum -= step;
-                        steps += 1;
-                    }
-                    if *player_accum > step * 8.0 {
-                        *player_accum = 0.0;
-                    }
-                    if *follow_player {
-                        let (cx, cy) = p.center();
-                        let target = Vec2::new(cx, cy);
-                        *camera = (*camera).lerp(target, 1.0 - (-dt * 12.0).exp());
-                    }
-                    player_key = p.render_key();
-                }
-
                 // `TR_DAY` overrides the time of day (0 = midnight, 1 = noon) so a
                 // screenshot can be compared against the original at a fixed time.
                 let override_day = std::env::var("TR_DAY")
@@ -882,9 +1127,12 @@ impl App {
                         anim_time,
                         player.as_ref(),
                         player_assets,
+                        *edit_target,
                     );
                     *world_key = Some(key);
                 }
+
+                draw_hud(renderer, screen, lookups, inventory, *selected);
 
                 if *debug {
                     draw_debug(
@@ -1674,6 +1922,7 @@ fn draw_tiles(
     anim_time: f32,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
+    edit_target: Option<(i32, i32)>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     let half = screen * 0.5 / zoom;
@@ -1902,6 +2151,19 @@ fn draw_tiles(
     stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     if let Some(p) = player {
         stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
+    }
+    if let Some((tx, ty)) = edit_target {
+        let white = r.white_uv();
+        let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
+        let c = [1.0, 1.0, 1.0, 0.55];
+        for (dx, dy, w, h) in [
+            (0.0, 0.0, 16.0, 1.0),
+            (0.0, 15.0, 16.0, 1.0),
+            (0.0, 0.0, 1.0, 16.0),
+            (15.0, 0.0, 1.0, 16.0),
+        ] {
+            r.push_sprite([pos[0] + dx, pos[1] + dy], [w, h], white, c);
+        }
     }
     stats.instances = stats.quads + stats.walls + stats.dark_rects + stats.foliage + stats.liquids;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
@@ -2286,6 +2548,62 @@ fn draw_tree_foliage(
     quads
 }
 
+/// Bottom-left hotbar: four item slots with tile icons, counts and the selected name.
+fn draw_hud(
+    r: &mut SpriteRenderer,
+    screen: Vec2,
+    lookups: &assets::Lookups,
+    inventory: &[ItemSlot; 4],
+    selected: usize,
+) {
+    let slot = 52.0;
+    let gap = 8.0;
+    let x0 = 20.0;
+    let y0 = screen.y - 20.0 - slot;
+    for (i, item) in inventory.iter().enumerate() {
+        let x = x0 + i as f32 * (slot + gap);
+        r.push_ui_rect([x, y0], [slot, slot], [0.02, 0.03, 0.05, 0.78]);
+        if i == selected {
+            let c = ACCENT;
+            for (dx, dy, w, h) in [
+                (0.0, 0.0, slot, 2.0),
+                (0.0, slot - 2.0, slot, 2.0),
+                (0.0, 0.0, 2.0, slot),
+                (slot - 2.0, 0.0, 2.0, slot),
+            ] {
+                r.push_ui_rect([x + dx, y0 + dy], [w, h], c);
+            }
+        }
+        if let Some(tex) = lookups.plain_tex(item.kind) {
+            r.push_ui_sprite([x + 8.0, y0 + 6.0], [36.0, 36.0], tex.uv, [1.0; 4]);
+        }
+        r.push_text(
+            x + 3.0,
+            y0 + 3.0,
+            1.0,
+            [0.65, 0.70, 0.78, 1.0],
+            &format!("{}", i + 1),
+        );
+        let count = format!("{}", item.count);
+        let tw = r.text_width(&count, 1.0);
+        r.push_text(
+            x + slot - 4.0 - tw,
+            y0 + slot - 12.0,
+            1.0,
+            [1.0, 0.92, 0.75, 1.0],
+            &count,
+        );
+    }
+    let item = &inventory[selected];
+    r.push_text(
+        x0,
+        y0 - 16.0,
+        1.5,
+        TEXT,
+        &format!("{} x{}", item.name, item.count),
+    );
+}
+
 #[allow(clippy::too_many_arguments)]
 fn draw_debug(
     r: &mut SpriteRenderer,
@@ -2416,6 +2734,7 @@ fn draw_debug(
         format!("screen {:.0}x{:.0}   atlas_max 8192", screen.x, screen.y),
         TEXT,
     ));
+    lines.push(("LMB mine   RMB place   1-4 select   F9 save".into(), WARN));
     lines.push((
         "WASD move   Space jump   F1 ui   F2 light   F5 respawn".into(),
         WARN,

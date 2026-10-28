@@ -132,6 +132,8 @@ pub fn generate(opts: &GenOptions) -> World {
     let mut world = World::new(opts.name.clone(), width, height);
     world.frame_important = vec![false; td::TILE_COUNT];
     world.frame_important[tree::TREE as usize] = true;
+    world.frame_important[3] = true;
+    world.frame_important[4] = true;
 
     let noise = Noise { seed: opts.seed };
     let mut rng = Rng(opts.seed ^ 0xA076_1D64_78BD_642F);
