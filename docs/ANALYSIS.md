@@ -406,9 +406,12 @@ and liquid re-simulation after an edit.
 ## NPCs and combat (M4 first pass)
 
 `tr-app/src/npc.rs` adds a hopping blue slime (gravity, AABB collision, hop timer, wall
-bounce, 30 HP, 12 contact damage) and a flying demon eye that steers toward the player with
-a sine bob (25 HP, 14 damage); night spawns include eyes. Up to four NPCs are kept near the
-player and respawn every six seconds. The player has 100 HP,
+bounce, 30 HP, 12 contact damage), a flying demon eye that steers toward the player with a
+sine bob (25 HP, 14 damage) and a zombie standing in for `AI_003_Fighters`: an 18×40 hitbox
+with 45 HP, 14 damage, a 0.6 px/tick chase toward the player, a jump when a one-tile ledge
+blocks the path, and 6 damage/second while the world is in daylight (the vanilla burn).
+Night spawns mix zombies, demon eyes and slimes; daytime spawns are slimes. Up to four NPCs
+are kept near the player and respawn every six seconds. The player has 100 HP,
 0.8 s hurt cooldown, knockback, instant respawn on death and a HUD health bar. LMB over a
 slime within four tiles deals 15 melee damage with a 0.3 s cooldown; damaged slimes show
 an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by the tile

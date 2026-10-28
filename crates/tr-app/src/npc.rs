@@ -1,5 +1,5 @@
-//! First enemy pass: a hopping blue slime and a flying demon eye, modelled on the simplest
-//! `NPC.cs` behaviours.
+//! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
+//! modelled on the simplest `NPC.cs` behaviours.
 
 use tr_core::{TILE_PX, World};
 
@@ -12,6 +12,7 @@ const MAX_FALL: f32 = 8.0;
 pub enum NpcKind {
     Slime,
     DemonEye,
+    Zombie,
 }
 
 impl NpcKind {
@@ -19,6 +20,7 @@ impl NpcKind {
         match self {
             NpcKind::Slime => (30.0, 24.0),
             NpcKind::DemonEye => (30.0, 26.0),
+            NpcKind::Zombie => (18.0, 40.0),
         }
     }
 
@@ -26,6 +28,7 @@ impl NpcKind {
         match self {
             NpcKind::Slime => 30,
             NpcKind::DemonEye => 25,
+            NpcKind::Zombie => 45,
         }
     }
 
@@ -33,6 +36,7 @@ impl NpcKind {
         match self {
             NpcKind::Slime => 12,
             NpcKind::DemonEye => 14,
+            NpcKind::Zombie => 14,
         }
     }
 }
@@ -51,6 +55,8 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// Accumulated daylight burn time (zombies only).
+    burn: f32,
 }
 
 impl Npc {
@@ -77,6 +83,24 @@ impl Npc {
             if seed & 1 == 0 { 1 } else { -1 },
             0.4 + (seed % 80) as f32 * 0.01,
         ))
+    }
+
+    /// Zombies walk on the surface and burn away at dawn.
+    pub fn spawn_zombie(world: &World, x_tile: i32) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = NpcKind::Zombie.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
+            return None;
+        }
+        Some(Self::new(NpcKind::Zombie, x, y, -1, 0.0))
     }
 
     /// Demon eyes spawn a few tiles above the surface and ignore gravity.
@@ -108,6 +132,7 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            burn: 0.0,
         }
     }
 
@@ -145,6 +170,7 @@ impl Npc {
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye => self.update_eye(world, player, dt),
+            NpcKind::Zombie => self.update_zombie(world, player, dt),
         }
         self.contact(player);
     }
@@ -221,6 +247,62 @@ impl Npc {
         }
     }
 
+    /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
+    fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        let (w, h) = NpcKind::Zombie.size();
+        let (pcx, pcy) = player.center();
+        let (cx, cy) = self.center();
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        let near = dx.abs() < 80.0 * TILE_PX && dy.abs() < 40.0 * TILE_PX;
+        if near {
+            self.facing = if dx >= 0.0 { 1 } else { -1 };
+            self.vx = self.facing as f32 * 0.6;
+        } else {
+            self.vx *= 0.9;
+        }
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else if self.on_ground {
+            // Jump a one-tile ledge or wall instead of grinding into it.
+            self.vy = -6.2;
+            self.on_ground = false;
+        } else {
+            self.vx = 0.0;
+        }
+
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+
+        if world.day_time {
+            self.burn += 1.0 / 60.0;
+            if self.burn >= 1.0 {
+                self.burn -= 1.0;
+                self.hp -= 6;
+            }
+        } else {
+            self.burn = 0.0;
+        }
+        if self.y > world.height as f32 * TILE_PX + 200.0 {
+            self.hp = 0;
+        }
+    }
+
     fn contact(&self, player: &mut Player) {
         let (w, h) = self.kind.size();
         if self.x < player.x + crate::player::WIDTH
@@ -240,12 +322,26 @@ impl Npc {
         h ^= (self.facing as u32) << 1;
         h ^= (self.hurt_cd > 0.0) as u32;
         h ^= ((self.anim * 4.0) as u32 & 1) << 2;
-        h ^= (self.kind == NpcKind::DemonEye) as u32;
+        h ^= match self.kind {
+            NpcKind::Slime => 0,
+            NpcKind::DemonEye => 1,
+            NpcKind::Zombie => 2,
+        } << 5;
+        h ^= ((self.anim * 6.0) as u32 % 3) << 7;
         h
     }
 
     pub fn frame(&self) -> u32 {
-        ((self.anim * 4.0) as u32) & 1
+        match self.kind {
+            NpcKind::Zombie => {
+                if self.vx.abs() > 0.05 {
+                    (self.anim * 6.0) as u32 % 3
+                } else {
+                    0
+                }
+            }
+            _ => ((self.anim * 4.0) as u32) & 1,
+        }
     }
 }
 
@@ -310,6 +406,31 @@ mod tests {
             eye.update(&w, &mut player, 1.0 / 60.0);
         }
         assert!(player.hp < player.max_hp, "hp {}", player.hp);
+    }
+
+    #[test]
+    fn zombie_walks_to_the_player_and_burns_at_dawn() {
+        let mut w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut zombie = Npc::spawn_zombie(&w, 30).unwrap();
+        assert_eq!(zombie.kind, NpcKind::Zombie);
+        let start_x = zombie.x;
+        for _ in 0..600 {
+            zombie.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(zombie.x < start_x, "zombie walked the wrong way");
+        assert!(player.hp < player.max_hp, "hp {}", player.hp);
+
+        // Daylight burns the zombie away.
+        w.day_time = true;
+        let hp = zombie.hp;
+        for _ in 0..600 {
+            zombie.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(zombie.hp < hp, "hp {} stayed at {hp}", zombie.hp);
     }
 
     #[test]

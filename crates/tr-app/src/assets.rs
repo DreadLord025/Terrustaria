@@ -116,6 +116,7 @@ pub fn load_world_images(
         "Player_Hair_1",
         "NPC_1",
         "NPC_2",
+        "NPC_3",
         "Rain",
         "Dust",
     ] {

@@ -116,9 +116,10 @@
   first matching or empty slot). The 10-slot hotbar and target outline are drawn through
   the UI sprite batch; F9/close saves the native world and a `.trplayer` sidecar with
   position/HP/10 slots.
-- NPCs (`npc.rs`): hopping slimes with gravity/AABB collision and flying demon eyes with
-  steering/bobbing; both deal contact damage and have HP. LMB over an NPC performs a melee
-  hit; night spawns include demon eyes. Up to four spawn near the player; the player has
+- NPCs (`npc.rs`): hopping slimes with gravity/AABB collision, flying demon eyes with
+  steering/bobbing and walking zombies (`AI_003_Fighters` simplified: chase, jump ledges,
+  burn at dawn); all deal contact damage and have HP. LMB over an NPC performs a melee
+  hit; night spawns mix zombies, eyes and slimes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.
 - Weather (`rain.rs`): `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` as a 60 Hz simulation.

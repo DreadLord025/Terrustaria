@@ -438,13 +438,15 @@ fn main() -> Result<()> {
     let mut npcs = Vec::new();
     if let Some(p) = &player {
         let xt = (p.x / TILE_PX) as i32;
-        let mut eye_spawned = false;
-        for dx in [-20, 16, 26] {
-            let spawned = if !world.day_time && !eye_spawned {
-                eye_spawned = true;
-                Npc::spawn_eye(&world, xt + dx)
-            } else {
+        for (i, dx) in [-20, 16, 26].iter().enumerate() {
+            let spawned = if world.day_time {
                 Npc::spawn_slime(&world, xt + dx)
+            } else {
+                match i {
+                    0 => Npc::spawn_zombie(&world, xt + dx),
+                    1 => Npc::spawn_eye(&world, xt + dx),
+                    _ => Npc::spawn_slime(&world, xt + dx),
+                }
             };
             if let Some(n) = spawned {
                 npcs.push(n);
@@ -1077,10 +1079,14 @@ impl App {
                 let off = 14 + (z >> 33) as i32 % 20;
                 let off = if z & 1 == 0 { off } else { -off };
                 let x = ((player.x / TILE_PX) as i32 + off).clamp(2, self.world.width - 3);
-                let spawned = if !self.world.day_time && (z & 3) == 0 {
-                    Npc::spawn_eye(&self.world, x)
-                } else {
+                let spawned = if self.world.day_time {
                     Npc::spawn_slime(&self.world, x)
+                } else {
+                    match z % 10 {
+                        0..=3 => Npc::spawn_zombie(&self.world, x),
+                        4..=6 => Npc::spawn_eye(&self.world, x),
+                        _ => Npc::spawn_slime(&self.world, x),
+                    }
                 };
                 if let Some(n) = spawned {
                     self.npcs.push(n);
@@ -1911,19 +1917,21 @@ fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
 struct NpcAssets {
     slime: Option<BgTex>,
     eye: Option<BgTex>,
+    zombie: Option<BgTex>,
 }
 
 fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: sky_tex(atlas, "NPC_1", None),
         eye: sky_tex(atlas, "NPC_2", None),
+        zombie: sky_tex(atlas, "NPC_3", None),
     }
 }
 
 /// UV of one slime / demon-eye frame (two frames stacked vertically).
 fn npc_frame_uv(tex: &BgTex, frame_h: f32, frame: u32) -> [f32; 4] {
     let dv = (tex.uv[3] - tex.uv[1]) * (frame_h / tex.h);
-    let r = (frame & 1) as f32;
+    let r = frame as f32;
     [
         tex.uv[0],
         tex.uv[1] + dv * r,
@@ -3177,6 +3185,12 @@ fn draw_npcs(
                 24.0,
                 [38.0, 24.0],
                 [n.x - 4.0, n.y - 1.0],
+            ),
+            NpcKind::Zombie => (
+                assets.zombie.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 8.0],
             ),
         };
         let Some(tex) = tex else {
