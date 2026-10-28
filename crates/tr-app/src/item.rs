@@ -17,6 +17,9 @@ pub const SIZE: f32 = 14.0;
 pub const WALL_ITEM_BASE: u16 = 10_000;
 /// Weapon/projectile items live in their own range: `WEAPON_ITEM_BASE + projectile id`.
 pub const WEAPON_ITEM_BASE: u16 = 20_000;
+/// Coins: `COIN_ITEM_BASE + 0..3` (copper, silver, gold, platinum).
+pub const COIN_ITEM_BASE: u16 = 30_000;
+pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 pub fn is_wall(kind: u16) -> bool {
     (WALL_ITEM_BASE..WEAPON_ITEM_BASE).contains(&kind)
@@ -27,15 +30,39 @@ pub fn wall_id(kind: u16) -> u16 {
 }
 
 pub fn is_weapon(kind: u16) -> bool {
-    kind >= WEAPON_ITEM_BASE
+    (WEAPON_ITEM_BASE..COIN_ITEM_BASE).contains(&kind)
 }
 
 pub fn weapon_id(kind: u16) -> u16 {
     kind - WEAPON_ITEM_BASE
 }
 
+pub fn is_coin(kind: u16) -> bool {
+    kind >= COIN_ITEM_BASE
+}
+
+pub fn coin_id(kind: u16) -> u16 {
+    kind - COIN_ITEM_BASE
+}
+
+pub fn coin_value(kind: u16) -> u64 {
+    COIN_VALUES
+        .get(coin_id(kind) as usize)
+        .copied()
+        .unwrap_or(0)
+}
+
 /// Display name for a tile or wall item. `Terraria.Lang` would provide these.
 pub fn name(kind: u16) -> &'static str {
+    if is_coin(kind) {
+        return match coin_id(kind) {
+            0 => "Copper Coin",
+            1 => "Silver Coin",
+            2 => "Gold Coin",
+            3 => "Platinum Coin",
+            _ => "Coin",
+        };
+    }
     if is_weapon(kind) {
         return match weapon_id(kind) {
             1 => "Shuriken",
@@ -60,6 +87,7 @@ pub fn name(kind: u16) -> &'static str {
         8 => "Gold Ore",
         9 => "Silver Ore",
         53 => "Sand Block",
+        80 => "Cactus",
         57 => "Ash Block",
         58 => "Hellstone",
         147 => "Snow Block",
@@ -153,7 +181,9 @@ impl ItemDrop {
         style: &LightStyle,
         anim_time: f32,
     ) -> u32 {
-        let uv = if is_weapon(self.kind) {
+        let uv = if is_coin(self.kind) {
+            lookups.coin_uv(coin_id(self.kind) as usize)
+        } else if is_weapon(self.kind) {
             lookups.shuriken_uv()
         } else if is_wall(self.kind) {
             lookups.wall_icon_uv(wall_id(self.kind))
@@ -226,6 +256,12 @@ mod tests {
         assert!(!is_wall(shuriken));
         assert_eq!(weapon_id(shuriken), 1);
         assert_eq!(name(shuriken), "Shuriken");
+        let gold = COIN_ITEM_BASE + 2;
+        assert!(is_coin(gold));
+        assert!(!is_weapon(gold));
+        assert_eq!(coin_id(gold), 2);
+        assert_eq!(coin_value(gold), 10_000);
+        assert_eq!(name(gold), "Gold Coin");
     }
 
     #[test]

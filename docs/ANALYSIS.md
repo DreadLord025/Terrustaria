@@ -307,8 +307,10 @@ before the 1-tile smoothing pass, so it stays slope-friendly. Its strata are 16 
 walls (`187`) instead of dirt/stone. The tree and plant passes only accept grass/snow, so
 the desert stays clear. The background switches to `Background_21` (far, scale 1.25,
 parallax 0.37) and `Background_20` (near, scale 1.34, parallax 0.49) when the sampled
-surface is sand and the camera is away from the beaches. Cacti, desert loot and hardened
-sand/sandstone furniture are not ported.
+surface is sand and the camera is away from the beaches. Two-to-four-tile cacti are placed
+on flat sand: tile 80 is flagged important and framed by hand on its 7x3 grid (y=0 top,
+18 middle, 36 base) because `WorldGen.CactusFrame`'s arm rules are not ported; cactus
+items are collectible but not placeable. Desert structures and loot are not ported.
 
 ## Surface backgrounds
 
@@ -448,6 +450,13 @@ with `-8` jump velocity, teleports next to the player when they are more than 70
 minion each time it lands (capped at four slimes). `B` summons it; a top-centre bar shows
 its name and HP. Not ported: the shrink/grow visuals, teleport dust, the full minion
 roster, boss loot and the Expert/Master scaling.
+
+Enemy loot is a first `Item.NewItem` pass: slimes drop 1-3 copper (5 % one silver),
+demon eyes 1-2 copper, zombies 2-5 copper (20 % one silver) and King Slime 3-6 gold coins.
+Each is an `ItemDrop` in the `COIN_ITEM_BASE + 0..3` range drawn from `Item_71..74`; coins
+are collected straight into a copper-valued purse instead of a hotbar slot, and the HUD
+formats it as `12g 34s 56c`. The purse is saved as a fourth optional line in the
+`.trplayer` sidecar. A full loot table/`ItemDropDatabase` is not ported.
 
 `projectile.rs` is the first `Projectile.cs` pass: the starting Shuriken item (a
 `WEAPON_ITEM_BASE + 1` hotbar kind) throws `ProjectileID.Shuriken` (`Projectile_3`) toward

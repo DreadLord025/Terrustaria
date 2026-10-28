@@ -29,7 +29,7 @@ clean-room analysis of the decompiled C# game.
 ![desert](docs/screenshots/desert.png)
 
 The inland desert: flattened dunes, sand over hardened sand and sandstone, sandstone
-walls, and the `Background_21/20` dune layers. Cacti and desert loot are still to come.
+walls, hand-framed cacti and the `Background_21/20` dune layers.
 
 | | |
 | --- | --- |
@@ -49,7 +49,7 @@ snowflakes that thicken during a storm.
   common trees with canopies and branches, grass/flowers on the surface, a forest lake with
   water, lava puddles, ocean beaches at both edges, a **snow biome** in the eastern third
   (snow tiles, winter trees, pine background) and an inland **desert** west of spawn (sand
-  dunes, hardened-sand/sandstone strata, sandstone walls, dune background). A 4200×1200
+  dunes, hardened-sand/sandstone strata, sandstone walls, cacti, dune background). A 4200×1200
   world generates in ~175 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
   world.
 - **Native saves** — `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`, a compact
@@ -137,8 +137,10 @@ snowflakes that thicken during a storm.
   burns away in daylight, while a flying demon eye (25 HP, 14 damage) swoops in. LMB over an
   NPC within four tiles performs a 15-damage melee hit; selecting the starting shuriken
   stack and clicking throws a rotating `Projectile_3` (10 damage, tile bounces, 2 s
-  lifetime) toward the cursor. `B` summons King Slime: 2000 HP, big hops, a teleport when
-  the player outruns it, slime minions on landing and a boss bar. Damaged
+  lifetime) toward the cursor. Enemies drop coins on death (copper/silver, gold from the
+  boss) that fly out, land and are collected into a purse shown above the health bar.
+  `B` summons King Slime: 2000 HP, big hops, a teleport when the player outruns it, slime
+  minions on landing and a boss bar. Damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
 - **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore) or
@@ -146,7 +148,7 @@ snowflakes that thicken during a storm.
   `Terraria.Item`-style drops with gravity, bouncing and a ground bob; walking close
   magnetises them into a matching stack or the first empty slot. F9 (or closing the window)
   writes the world back to `.trwld` plus the player state to a `.trplayer` sidecar
-  (position, HP and ten slot kinds/counts). Edits bump the world revision, update the
+  (position, HP, ten slot kinds/counts and the coin purse). Edits bump the world revision, update the
   column surface, re-frame the 5×5 neighbourhood and invalidate the light/instance caches.
   No tool requirements, reach-through-walls or chests yet.
 - **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
@@ -190,7 +192,7 @@ styles, shimmer sparkles and the original's four-corner liquid surface mesh are 
 missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
 biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
-no full ocean biome or hardmode spread; the desert has no cacti or desert structures yet.
+no full ocean biome or hardmode spread; the desert has no structures or desert loot yet.
 Rain, storms, lightning and snow exist as a first pass, but wind gusts, snowfall
 accumulation and weather audio are missing. Common
 forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
@@ -259,6 +261,7 @@ another seed.
 | `TR_XY=x,y` | Spawn the player at a tile coordinate (camera follows) |
 | `TR_THROW=1` | Throw one shuriken to the right at startup (projectile smoke test) |
 | `TR_BOSS=1` | Spawn King Slime near the player at startup |
+| `TR_COINS=123456` | Set the coin purse (HUD screenshot) |
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 

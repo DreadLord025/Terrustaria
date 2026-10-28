@@ -232,14 +232,14 @@ potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lin
 ✅ *First pass*: a hopping blue slime, a flying demon eye and a walking zombie (both night
 spawns; the zombie burns in daylight), contact damage, player HP, hurt cooldown/knockback/
 respawn, LMB melee, the first projectile (a throwable shuriken with tile bounces), the
-first boss (King Slime: hops, teleport, minions, boss bar), overhead HP bars and a HUD
-health bar. NPCs
+first boss (King Slime: hops, teleport, minions, boss bar), coin loot into a purse,
+overhead HP bars and a HUD health bar. NPCs
 spawn near the player and respawn up to four alive. Data-oriented entity arrays are still
 the plan for the full roster.
 
-Remaining: the rest of `NPC.cs` (~780 types, AI states, spawn/biome/night rules), loot,
-the rest of the projectile system (~1 100 types), damage types/defense/crits, buffs/debuffs,
-the rest of the bosses, town NPCs/shops. **~60–120 agent-days** for a first playable subset; full parity
+Remaining: the rest of `NPC.cs` (~780 types, AI states, spawn/biome/night rules), full
+loot tables/item drops, the rest of the projectile system (~1 100 types), damage
+types/defense/crits, buffs/debuffs, the rest of the bosses, town NPCs/shops. **~60–120 agent-days** for a first playable subset; full parity
 several times that.
 
 ## Milestone 5 — world generation
@@ -251,7 +251,7 @@ common + snow-biome trees, surface plants, sand ocean beaches at both edges, a s
 sand/sandstone, sandstone walls, dune background).
 
 Porting the remaining generation passes and structures (`WorldGen.cs` + `Generation/*`:
-corruption/crimson/jungle/hallow biomes, the full ocean biome, desert cacti and structures,
+corruption/crimson/jungle/hallow biomes, the full ocean biome, desert structures and loot,
 dungeons, temples, living trees, hardmode spread, chests) is **~40–90 agent-days** for a
 passable generator; full parity much more. Loading existing `.wld` files still works at any
 time.

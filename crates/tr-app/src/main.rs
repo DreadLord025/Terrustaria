@@ -437,6 +437,7 @@ fn main() -> Result<()> {
     let follow_player = player.is_some()
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
+    let mut coins = 0u64;
     let mut inventory: [ItemSlot; HOTBAR] = std::array::from_fn(|i| match i {
         0 => ItemSlot {
             kind: 0,
@@ -472,6 +473,7 @@ fn main() -> Result<()> {
                     p.y = saved.y;
                 }
                 p.hp = saved.hp.clamp(1, p.max_hp);
+                coins = saved.coins;
                 for (i, (kind, count)) in saved.inventory.iter().enumerate().take(HOTBAR) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
@@ -480,6 +482,11 @@ fn main() -> Result<()> {
                     };
                 }
             }
+        }
+    }
+    if let Ok(v) = std::env::var("TR_COINS") {
+        if let Ok(n) = v.parse::<u64>() {
+            coins = n;
         }
     }
     // Debug spawn override: place the player at a tile coordinate (the camera follows).
@@ -580,6 +587,7 @@ fn main() -> Result<()> {
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_accum: 0.0,
         swing: 0.0,
+        coins,
         projectiles: Vec::new(),
         projectile_accum: 0.0,
         dev_throw: std::env::var_os("TR_THROW").is_some(),
@@ -691,6 +699,8 @@ struct App {
     item_accum: f32,
     /// Remaining seconds of the current held-item swing.
     swing: f32,
+    /// Coin purse value in copper coins.
+    coins: u64,
     /// Live shuriken/projectile entities.
     projectiles: Vec<Projectile>,
     projectile_accum: f32,
@@ -1073,7 +1083,19 @@ impl App {
                 n.update(world, player, dt);
             }
         }
+        let dead: Vec<(NpcKind, f32, f32)> = self
+            .npcs
+            .iter()
+            .filter(|n| n.hp <= 0)
+            .map(|n| {
+                let (cx, cy) = n.center();
+                (n.kind, cx, cy)
+            })
+            .collect();
         self.npcs.retain(|n| n.hp > 0);
+        for (kind, x, y) in dead {
+            self.spawn_coins(kind, x, y);
+        }
         // `AI_015_KingSlime`: landing bosses request a blue slime minion.
         let mut minions = self
             .npcs
@@ -1226,7 +1248,8 @@ impl App {
             .frame_important
             .get(tile.kind as usize)
             .copied()
-            .unwrap_or(false);
+            .unwrap_or(false)
+            && tile.kind != 80; // cacti have fixed frames but are mineable
         let held_wall = held.count > 0 && item::is_wall(held.kind);
 
         if self.mine_down && tile.active() && !important {
@@ -1338,6 +1361,13 @@ impl App {
             while i < self.items.len() {
                 let mut drop = self.items[i].clone();
                 if drop.update(&self.world, player_center, step) {
+                    if item::is_coin(drop.kind) {
+                        self.coins = self
+                            .coins
+                            .saturating_add(item::coin_value(drop.kind) * drop.count as u64);
+                        self.items.swap_remove(i);
+                        continue;
+                    }
                     if let Some(slot) = slot_for_pickup(&mut self.inventory, drop.kind) {
                         self.inventory[slot].count =
                             self.inventory[slot].count.saturating_add(drop.count);
@@ -1381,6 +1411,41 @@ impl App {
         self.projectile_accum = acc.min(step * 8.0);
     }
 
+    /// `Item.NewItem` coin drops: a few copper from small enemies, gold from the boss.
+    fn spawn_coins(&mut self, kind: NpcKind, x: f32, y: f32) {
+        let roll = rand01(&mut self.item_rng);
+        let (denom, count) = match kind {
+            NpcKind::KingSlime => (2u16, 3 + (roll * 4.0) as u32),
+            NpcKind::Zombie => {
+                if roll < 0.2 {
+                    (1, 1)
+                } else {
+                    (0, 2 + (roll * 30.0) as u32 % 4)
+                }
+            }
+            NpcKind::Slime => {
+                if roll < 0.05 {
+                    (1, 1)
+                } else {
+                    (0, 1 + (roll * 20.0) as u32 % 3)
+                }
+            }
+            NpcKind::DemonEye => (0, 1 + (roll * 10.0) as u32 % 2),
+        };
+        let vx = (rand01(&mut self.item_rng) * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rand01(&mut self.item_rng);
+        let phase = rand01(&mut self.item_rng) * std::f32::consts::TAU;
+        self.items.push(ItemDrop::new(
+            item::COIN_ITEM_BASE + denom,
+            count,
+            x - 7.0,
+            y - 7.0,
+            vx,
+            vy,
+            phase,
+        ));
+    }
+
     /// Spawns the drop left by a broken tile, with a small random pop like `Item.NewItem`.
     fn spawn_item_drop(&mut self, kind: u16, tx: i32, ty: i32) {
         let r1 = rand01(&mut self.item_rng);
@@ -1417,6 +1482,7 @@ impl App {
         if t.active()
             || self.inventory[self.selected].count == 0
             || item::is_weapon(self.inventory[self.selected].kind)
+            || self.inventory[self.selected].kind == 80
         {
             return false;
         }
@@ -1458,7 +1524,7 @@ impl App {
             if let Some(p) = &self.player {
                 let inv =
                     std::array::from_fn(|i| (self.inventory[i].kind, self.inventory[i].count));
-                if let Err(e) = persist::save(&self.world_path, p, inv) {
+                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins) {
                     log::warn!("player save failed: {e}");
                 }
             }
@@ -1537,6 +1603,7 @@ impl App {
                 rain,
                 items,
                 swing,
+                coins,
                 projectiles,
                 world_key,
                 ..
@@ -1721,6 +1788,7 @@ impl App {
                     *selected,
                     player.as_ref(),
                     boss,
+                    *coins,
                 );
 
                 if *debug {
@@ -3524,6 +3592,28 @@ fn draw_npcs(
     quads
 }
 
+/// Formats a copper value as the largest meaningful coin denominations.
+fn format_coins(mut value: u64) -> String {
+    let plat = value / 1_000_000;
+    value %= 1_000_000;
+    let gold = value / 10_000;
+    value %= 10_000;
+    let silver = value / 100;
+    let copper = value % 100;
+    let mut parts = Vec::new();
+    if plat > 0 {
+        parts.push(format!("{plat}p"));
+    }
+    if gold > 0 || plat > 0 {
+        parts.push(format!("{gold}g"));
+    }
+    if silver > 0 || gold > 0 || plat > 0 {
+        parts.push(format!("{silver}s"));
+    }
+    parts.push(format!("{copper}c"));
+    parts.join(" ")
+}
+
 fn draw_tree_foliage(
     r: &mut SpriteRenderer,
     world: &World,
@@ -3606,6 +3696,7 @@ fn draw_hud(
     selected: usize,
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
+    coins: u64,
 ) {
     let gap = 8.0;
     let slot = 52.0f32.min((screen.x - 40.0 - gap * (HOTBAR - 1) as f32) / HOTBAR as f32);
@@ -3687,6 +3778,14 @@ fn draw_hud(
             1.2,
             [1.0, 0.96, 0.92, 1.0],
             &format!("HP {}/{}", p.hp, p.max_hp),
+        );
+        let purse = format_coins(coins);
+        r.push_text(
+            x + w - r.text_width(&purse, 1.1) - 8.0,
+            y - 20.0,
+            1.1,
+            [1.0, 0.85, 0.35, 1.0],
+            &purse,
         );
         if p.breath < player::BREATH_MAX {
             let by = y + h + 4.0;

@@ -47,8 +47,8 @@
   hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld
   hellstone, a forest lake, lava puddles on cave floors, a snow biome (snow surface, winter
   trees, pine background), an inland desert band (flattened dunes, sand/hardened
-  sand/sandstone strata, sandstone walls), common trees (22 px trunk frames, canopy anchor,
-  branch markers) and tile-3 surface plants. Deterministic for a seed; 4200×1200 in
+  sand/sandstone strata, sandstone walls, hand-framed cacti), common trees (22 px trunk
+  frames, canopy anchor, branch markers) and tile-3 surface plants. Deterministic for a seed; 4200×1200 in
   ~175 ms.
 - `save.rs` — native `.trwld`: magic/version/seed/header, `frame_important` table, and
   per-row RLE of the 14-byte `Tile`. Default path
@@ -123,7 +123,9 @@
   steering/bobbing and walking zombies (`AI_003_Fighters` simplified: chase, jump ledges,
   burn at dawn); all deal contact damage and have HP. King Slime (`AI_015` simplified) is a
   98×92 boss with 2000 HP, big hops, a teleport when outrun, slime minions on landing and a
-  boss health bar; `B`/`TR_BOSS` summons it. LMB over an NPC performs a melee
+  boss health bar; `B`/`TR_BOSS` summons it. Dead enemies drop `Item_71..74` coins
+  (copper/silver/zombie/slime, gold from the boss) that are picked up into a purse rather
+  than a hotbar slot; the HUD formats platinum/gold/silver/copper above the health bar. LMB over an NPC performs a melee
   hit; night spawns mix zombies, eyes and slimes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.

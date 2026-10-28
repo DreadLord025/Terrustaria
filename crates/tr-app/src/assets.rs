@@ -125,6 +125,10 @@ pub fn load_world_images(
         "Rain",
         "Dust",
         "Projectile_3",
+        "Item_71",
+        "Item_72",
+        "Item_73",
+        "Item_74",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -265,6 +269,8 @@ pub struct Lookups {
     pub dust: Option<tr_render::SheetRect>,
     /// `Projectile_3.png`: the 22x22 shuriken frame.
     pub shuriken: Option<tr_render::SheetRect>,
+    /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
+    pub coins: [Option<tr_render::SheetRect>; 4],
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -287,6 +293,7 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
@@ -381,6 +388,19 @@ impl Lookups {
             return None;
         }
         Some(uv_rect(rect, self.atlas_size, x, 0, 2, 40))
+    }
+
+    /// UV of a coin item sprite (0 copper .. 3 platinum).
+    pub fn coin_uv(&self, kind: usize) -> Option<[f32; 4]> {
+        let rect = self.coins.get(kind)?.as_ref()?;
+        Some(uv_rect(
+            rect,
+            self.atlas_size,
+            0,
+            0,
+            rect.width,
+            rect.height,
+        ))
     }
 
     /// UV of the shuriken projectile/item sprite.

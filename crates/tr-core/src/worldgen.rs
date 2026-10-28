@@ -479,6 +479,62 @@ pub fn generate(opts: &GenOptions) -> World {
         };
     }
 
+    // --- desert cacti -------------------------------------------------------
+    // Tile 80 has its own 7x3 frame grid, so it is flagged important and framed by
+    // hand: y=0 top, y=18 middle, y=36 base.
+    if desert_enabled {
+        world.frame_important[80] = true;
+        let mut x = desert_start + 6;
+        while x < desert_end - 6 {
+            x += rng.range(6, 18);
+            if x < 4 || x >= width - 4 {
+                continue;
+            }
+            let top = surface[x as usize];
+            if top < 8 {
+                continue;
+            }
+            let flat = surface[(x - 1) as usize] == top && surface[(x + 1) as usize] == top;
+            let ground_ok = world
+                .tile(x, top)
+                .is_some_and(|t| t.active() && t.kind == TILE_SAND && t.slope == 0);
+            if !flat || !ground_ok {
+                continue;
+            }
+            let h = rng.range(2, 5);
+            if top - h < 2 {
+                continue;
+            }
+            let mut clear = true;
+            for dy in 1..=h {
+                if world.tile(x, top - dy).is_some_and(|t| t.active()) {
+                    clear = false;
+                    break;
+                }
+            }
+            if !clear {
+                continue;
+            }
+            for dy in 1..=h {
+                let frame_y = if dy == h {
+                    0
+                } else if dy == 1 {
+                    36
+                } else {
+                    18
+                };
+                let i = world.index(x, top - dy);
+                world.tiles[i] = Tile {
+                    kind: 80,
+                    frame_x: 0,
+                    frame_y,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+    }
+
     world.world_surface = avg_surface;
     world.rock_layer = rock_layer;
     world.spawn_x = spawn_center;
@@ -728,6 +784,19 @@ mod tests {
             }
         }
         assert!(saw_hardened && saw_sandstone, "missing desert strata");
+        let mut cacti = 0;
+        for x in start..end {
+            let top = w.surface_of(x);
+            for y in top.saturating_sub(5)..top {
+                let t = w.tile(x, y).unwrap();
+                if t.active() && t.kind == 80 {
+                    cacti += 1;
+                    assert!(t.frame_y >= 0, "cactus must have a manual frame");
+                    assert!(w.frame_important[80]);
+                }
+            }
+        }
+        assert!(cacti > 5, "only {cacti} cactus tiles");
     }
 
     #[test]

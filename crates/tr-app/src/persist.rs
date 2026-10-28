@@ -13,18 +13,24 @@ pub struct SavedPlayer {
     pub y: f32,
     pub hp: i32,
     pub inventory: [(u16, u32); 10],
+    pub coins: u64,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
     world.with_extension("trplayer")
 }
 
-pub fn save(world: &Path, player: &Player, inventory: [(u16, u32); 10]) -> std::io::Result<()> {
+pub fn save(
+    world: &Path,
+    player: &Player,
+    inventory: [(u16, u32); 10],
+    coins: u64,
+) -> std::io::Result<()> {
     let mut s = format!("1\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
-    s.push('\n');
+    s.push_str(&format!("\n{coins}\n"));
     std::fs::write(player_path(world), s)
 }
 
@@ -46,11 +52,17 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         let Some(kind) = inv_line.next() else { break };
         *slot = (kind.parse().ok()?, inv_line.next()?.parse().ok()?);
     }
+    // The coin line was added after the original format; older files default to 0.
+    let coins = lines
+        .next()
+        .and_then(|l| l.trim().parse::<u64>().ok())
+        .unwrap_or(0);
     Some(SavedPlayer {
         x,
         y,
         hp,
         inventory,
+        coins,
     })
 }
 
@@ -82,6 +94,7 @@ mod tests {
                 (0, 0),
                 (0, 0),
             ],
+            123_456,
         )
         .unwrap();
         let s = load(&path).expect("sidecar");
