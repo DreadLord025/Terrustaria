@@ -6,25 +6,37 @@ record the commit and the verification (tests / screenshots).
 
 ## BUG-001 — Liquids are too dark and do not light the water / underwater terrain
 
-**Status:** open
-**Area:** `tr-core/src/lighting.rs`, `tr-app/src/main.rs` (`draw_liquids`), `Liquid`
+**Status:** fixed — commit `fc0c9bb` ("Port the vanilla liquid draw cache and two-pass water")
+**Area:** `tr-core/src/liquid_draw.rs`, `tr-core/src/lighting.rs`, `tr-app/src/main.rs`
 
-**Report:** the generated lake looks almost black under the surface. Sunlight does not
-seem to reach the underwater ground and the water body is much darker than in the original.
-The water surface shows hard repeated stripes instead of a continuous lit surface.
+**Report:** the generated lake looked almost black under the surface, sunlight did not
+reach the underwater body and the surface showed hard repeated stripes.
 
-**Observed:** lake screenshots at zoom 1.5–2.0; the surface row is visible but the body
-darkens within a few tiles and the lake bed is effectively black.
+**Cause:** the liquid pass was a hand-written approximation, not the original's:
+- every tile sampled the 16 px wave rows of `Misc/water_*` (`32 + frame*80`), so open
+  water repeated white squiggles in a grid; `LiquidRenderer` uses the plain interior row
+  (`FrameOffset` (16,48)) and only surface/edge cells use the crest frames;
+- light was a flat per-tile sample instead of `Lighting.GetCornerColors`' 3x3 corner
+  averages, which is what makes the water surface bright and the body smooth;
+- an invented depth tint darkened the already attenuated water, and a `+1` px quad
+  overlap double-blended a dark 1 px line at every tile row; a per-tile sine offset
+  misaligned neighbouring columns;
+- water was drawn once at 0.6 alpha, skipping `Main.DrawLiquid(bg: true)`, the opaque
+  background pass. The parallax showed through the lake and the body composited over a
+  dark background, so it looked black instead of the original's solid lit blue.
 
-**Reference:** `LightMap.cs` uses `LightDecayThroughWater = (0.88, 0.96, 1.015) * 0.91`
-and `TileLightScanner.ApplySurfaceLight` refuses to seed cells with `liquid >= 200`; light
-must still carry into the water from the adjacent air. `LiquidRenderer.DrawNormalLiquids`
-also uses a per-corner visible height and a depth/tint pass that our single-quad pass does
-not reproduce.
+**Fix:** ported `LiquidRenderer.InternalPrepareDraw` (visible levels, edge walls,
+`FrameOffset`, source rectangle, waterfall-fade opacity, `IsSurfaceLiquid`, half-brick
+visibility), added `LightMap::corner4` (`Lighting.GetCornerColors`) and split each visible
+rect into 3x3 sub-quads that sample the bilinear corner light. The draw runs twice like
+`Main.DrawLiquid`: opaque before walls/tiles, `DEFAULT_OPACITY` (water 0.6, lava/honey
+0.95, shimmer 0.75) after the entities. Removed the depth tint, the per-tile wave offset,
+the overlap and the unused shader UV-ripple flag.
 
-**Next steps:** verify the water mask decay and the sunlight seed near the shoreline with
-`TR_LIGHT_AT`; compare a lake cross-section with the original at the same camera. Check
-whether the liquid pass's depth tint and opacity double-darken the already attenuated light.
+**Verification:** unit tests in `liquid_draw.rs` (open surface uses frame 1280, interior
+(16,48), shore column picks the x=0 edge frame); lake screenshots at zoom 1.0, 1.5 and 2.0
+plus a zoom-4 shore shot; `TR_BENCH=240` at the lake: 1.44 ms average (697 fps),
+0.01 ms draw on cache hits.
 
 ## BUG-002 — Tree bases / forks detached from the trunk
 
@@ -46,19 +58,26 @@ screenshot: trunk, roots and ground are connected.
 
 ## BUG-003 — Empty seams between blocks at some zoom levels
 
-**Status:** open
-**Area:** tile / wall instance emission, sliced-block lighting, dark-rect merging
+**Status:** fixed — commit `e389936` ("Close tile seams with a half-texel sprite UV inset")
+**Area:** `tr-render/src/sprite.wgsl`
 
-**Report:** underground, at several zoom levels, a regular grid of slightly lighter lines
-is visible between the otherwise black tiles ("empty spaces between blocks"). It is visible
-at fractional camera/zoom positions and looks like the cave-fade background showing through
-1 px seams.
+**Report:** underground, at several zoom levels, a regular grid of slightly lighter 1 px
+lines appeared between the otherwise black tiles, as if the cave-fade background showed
+through gaps.
 
-**Observed:** wide underground screenshot below the surface; the seams repeat every tile in
-both axes.
+**Cause:** when a camera/zoom alignment put a sprite edge exactly on a pixel centre, the
+edge pixel interpolated `uv = 1.0`; nearest sampling then picked the transparent 2 px gap
+between the 18 px frames of the tile sheet. Every tile row (or column, depending on the
+phase) lost its outermost pixel, exposing the background in a grid. That is why the
+artefact only appeared at some zoom levels and camera positions and why it vanished when
+the view moved.
 
-**Next steps:** reproduce at zoom 1.0, 1.5 and 2.0 with `TR_CAM` in a cave; dump the edge
-pixels with `TR_SHOT` and compare the tile/wall/dark-rect quads. Check the 9-slice block
-quad edges, the `TILE_PX + 0.5` overlaps, and whether walls are skipped under fully dark
-cells while the background strips are still visible. Any fix must keep the render
-pixel-identical at the reference camera.
+**Fix:** the vertex shader now insets the interpolated UV by half a texel toward the
+sprite centre (`mix(uv0 + 0.5*texel, uv1 - 0.5*texel, corner)`), so nearest sampling
+always lands on a texel centre inside the source rect. This applies to tiles, walls,
+liquids, entities and raw sheets alike.
+
+**Verification:** reproduced with the logged spawn camera (tile 2063.657, 361.688, zoom
+1.5): 1 px background rows every 16 world px. After the fix the same camera and zooms 1.0,
+1.25, 1.5, 1.75 and 2.0 show no periodic rows in the underground; surface/lake screenshots
+are unchanged apart from the seams.

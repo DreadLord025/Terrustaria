@@ -18,7 +18,7 @@ clean-room analysis of the decompiled C# game.
 | ![editing](docs/screenshots/editing.png) | ![slimes](docs/screenshots/slimes.png) |
 | Mining/placing with the hotbar and local re-framing | First enemy pass: hopping slimes and the health bar |
 | ![lake](docs/screenshots/lake.png) | ![snow](docs/screenshots/snow.png) |
-| Generated forest lake: animated water, waves, depth tint | Snow biome: snow tiles, winter trees, pine background |
+| Generated forest lake: vanilla draw cache, two-pass water | Snow biome: snow tiles, winter trees, pine background |
 | ![ocean](docs/screenshots/ocean.png) | ![night](docs/screenshots/night.png) |
 | Ocean beach at the world edge | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
@@ -76,15 +76,18 @@ snowflakes that thicken during a storm.
   run on Rayon, and the finished map is cached with a 32-tile valid region: a static view
   costs 0 ms, and panning within the margin reuses the map (stress panning light
   3.31 → 0.03 ms).
-- **Liquids** — `LiquidRenderer` drawing plus a port of `Liquid.UpdateLiquid`/`Liquid.Update`:
-  water, lava, honey and shimmer are drawn from the original `Misc/water_*` textures with
-  16-frame animation, per-liquid opacity, per-column surface waves, a shader UV ripple and
-  a depth tint, lit by the same light map so lava glows. A bounded active-cell list is
-  pumped at 30 Hz; cells fall and level out with the original six-neighbour rules and
-  retire after eight quiet passes, so a breached lake drains and waterfalls form falling
-  columns. Breaking or placing a block wakes the surrounding liquid. The generator fills a
-  forest lake and puts lava puddles on cave floors. Still missing: the `Waterfall_*` overlay
-  at half-brick spouts, the four-corner shoreline mesh, water styles and shimmer sparkles.
+- **Liquids** — a port of `Liquid.UpdateLiquid`/`Liquid.Update` plus
+  `LiquidRenderer.InternalPrepareDraw`/`DrawNormalLiquids`: the draw cache computes
+  `VisibleLiquidLevel`, edge walls, `FrameOffset`, the source rectangle and
+  `IsSurfaceLiquid` for every visible cell, and `liquid_draw.rs` feeds the two original
+  passes — opaque background water before walls/tiles, `DEFAULT_OPACITY` water over the
+  entities — using `Misc/water_*` animation strips and `Lighting.GetCornerColors` corner
+  light. A bounded active-cell list is pumped at 30 Hz; cells fall and level out with the
+  original six-neighbour rules and retire after eight quiet passes, so a breached lake
+  drains and waterfalls form falling columns. Breaking or placing a block wakes the
+  surrounding liquid. The generator fills a forest lake and puts lava puddles on cave
+  floors. Still missing: the `Waterfall_*` overlay at half-brick spouts, water styles and
+  shimmer sparkles.
 - **Rain & weather** — `rain.rs` follows `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`:
   `cloudAlpha` ramps toward a `maxRaining` target, up to 750 rotated `Rain_0` drops fall at
   the original `(wind*18, 14)` px/tick, spawn only in wall-free sky and die on solid or wet

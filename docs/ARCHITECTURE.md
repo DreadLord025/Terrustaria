@@ -43,6 +43,10 @@
   averaging and edge rules as the C#), and entries retire after eight quiet passes.
   `add_water` mirrors `AddWater` + the `LiquidBuffer` overflow queue; block edits call
   `wake_around` so a broken dam starts flowing immediately.
+- `liquid_draw.rs` — `LiquidRenderer.InternalPrepareDraw`: visible liquid levels
+  (including seepage into empty cells), edge walls, `FrameOffset`, the source rectangle,
+  waterfall-fade opacity, `IsSurfaceLiquid` and the half-brick visibility rule. The app
+  consumes the records twice (`Main.DrawLiquid(bg)`), so this module is pure world logic.
 - `worldgen.rs` — a compact generator modelled on `WorldGen`'s shapes: height-noise
   surface + spawn plateau, height smoothing to 1-tile steps, grass/dirt/stone/ash layers,
   hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld
@@ -156,12 +160,17 @@
 - Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon,
   the `DrawSurfaceBG` layer stack for the current biome (forest `7`/`8` mountains and
   `50..52` tree lines, snow `35`/`36` and `37..39` pines, ocean `28`), clouds, per-column
-  underground fade, walls, tiles, liquids, then foliage. Solid blocks in `Color`/`White`
-  modes are emitted as 9 (or 4) light-sliced quads; slopes use eight 2 px columns + a
-  strip; half bricks the bottom 8 px. Tree marker tiles draw nothing; a separate pass
-  places the canopy/branch sprites from a rect expanded by 5 tiles so canopies at the
-  edge of the view are not clipped. Liquids use the `Misc/water_*` animation strips,
-  opacity per kind, a depth tint and the instance flag that enables the shader ripple.
+  underground fade, the opaque liquid pass, walls, tiles, entities, then the translucent
+  liquid pass and foliage. Solid blocks in `Color`/`White` modes are emitted as 9 (or 4)
+  light-sliced quads; slopes use eight 2 px columns + a strip; half bricks the bottom
+  8 px. Tree marker tiles draw nothing; a separate pass places the canopy/branch sprites
+  from a rect expanded by 5 tiles so canopies at the edge of the view are not clipped.
+  Liquids are a direct port of `LiquidRenderer` (see `liquid_draw.rs`): the draw cache
+  carries `VisibleLiquidLevel`, edge walls, `FrameOffset` and the source rectangle, the
+  pass runs twice like `Main.DrawLiquid(bg)` — opaque before walls, `DEFAULT_OPACITY`
+  (water 0.6, lava/honey 0.95, shimmer 0.75) after entities — and each visible rect is
+  split 3×3 to sample the bilinear `Lighting.GetCornerColors` gradient on the one-tint
+  instance pipeline.
 - A wall under a fully opaque, non-sloped, non-half block is skipped (A2). Cells whose
   quantised light is zero and whose drawn content is fully opaque are merged into greedy
   black rectangles (A3/A4) instead of per-tile quads.
@@ -201,11 +210,13 @@
 | --- | --- |
 | One atlas + instancing | 2 draw calls regardless of scene complexity; no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
+| Half-texel UV inset in the vertex shader | At fractional camera/zoom alignments a sprite edge can land exactly on a pixel centre; nearest sampling at `uv = 1.0` then picks the transparent 2 px gap between 18 px frames, which showed as a 1 px grid of holes. Insisting on texel centres keeps every sample inside the source rect |
 | CPU-side culling | Visible set is ~1–2 k tiles; a compute cull would cost more than it saves at this scale |
 | Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
 | Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
 | 9-sliced solid blocks | Matches `DrawSingleTile_SlicedBlock`: outer 4 px bands average the block's light with its neighbour, which is what makes "Color"/"White" light look smooth instead of tiled |
-| Liquid UV wave in the shader | One `flags` float per instance selects a travelling UV ripple inside the large `Misc/water_*` strip; doing it in the shader avoids a second draw pass and hides the 16 px source repetition |
+| Two liquid draw passes | `Main.DrawLiquid(bg: true)` paints opaque water before walls and tiles (the parallax never shows through), then the foreground pass at `DEFAULT_OPACITY` tints entities, walls and the lakebed. Skipping the background pass is what made the lake look dark and transparent |
+| Liquid light via a 3×3 split | `Lighting.GetCornerColors` interpolates four corner averages on the GPU; the instanced pipeline carries one tint, so the visible rect is split into 3×3 sub-quads whose flat tints sample the same bilinear field, keeping tile-scale light banding out of the water |
 | Screen-space sky, sun/moon, stars and parallax layers | Their layout follows `DrawSunAndMoon`/`DrawSurfaceBG` (parallax and screen sizes, not tile units), so zooming the camera does not stretch the sky. The helper converts the screen rectangle back into camera-relative world coordinates for the shared sprite batch |
 | Axis-separated player AABB | Small (20×42) and slow (≤10 px/tick); sub-tile axis resolution plus a one-tile step is enough and keeps slope/tile interactions debuggable. Slopes currently collide as full cells |
 | Local re-frame after edits | A mined/placed block can only change the frames of a 2-tile neighbourhood; re-framing 5×5 cells keeps editing at interactive speed instead of re-framing 5M tiles |
@@ -224,10 +235,11 @@
   parallax and measured ground-band anchoring. The corruption/crimson/jungle/hallow sets
   plug into the same `SkyAssets`/`draw_bg_layer` pair once those biomes exist; storms,
   lightning and snowfall are the remaining weather pieces.
-- **Liquid surface smoothing** — the flow simulation is a direct port of `Liquid.Update`;
-  the remaining render work is the original's four-corner `VisibleLiquidLevel` mesh (and
-  the `Waterfall_*` overlay for half-brick spouts) so shorelines are diagonal instead of
-  tile steps. The static water/lava/honey/shimmer pass and the wave shader already exist.
+- **Liquid surface smoothing** — the flow simulation is a direct port of `Liquid.Update`
+  and the renderer now uses the original's `VisibleLiquidLevel`/edge-wall draw cache, so
+  shorelines and partly filled cells taper like the original. The remaining pieces are
+  the animated `Waterfall_*` overlay for half-brick spouts and the shimmer-specific
+  `DrawShimmer` distortion, which currently share the normal liquid path.
 - **Tile entities / furniture** — `TileObjectData` port producing multi-tile sprites.
 - **More lighting modes** — add a `LightMode` variant and a `LightStyle` (smoothing,
   grayscale/colour transform, levels, perturbation); the tile pass and shader are driven
