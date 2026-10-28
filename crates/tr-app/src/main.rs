@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 mod assets;
+mod npc;
 mod player;
 
 use std::collections::{HashSet, VecDeque};
@@ -10,6 +11,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use glam::Vec2;
+use npc::Npc;
 use player::{Player, PlayerInput};
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::tile::LiquidKind;
@@ -337,8 +339,18 @@ fn main() -> Result<()> {
     let sky = make_sky_assets(&atlas);
     let stars = make_stars(&world);
     let player_assets = make_player_assets(&atlas);
+    let npc_assets = make_npc_assets(&atlas);
     let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
     let player = player_enabled.then(|| Player::spawn(&world));
+    let mut npcs = Vec::new();
+    if let Some(p) = &player {
+        let xt = (p.x / TILE_PX) as i32;
+        for dx in [-20, 16, 26] {
+            if let Some(n) = Npc::spawn(&world, xt + dx) {
+                npcs.push(n);
+            }
+        }
+    }
     let follow_player = player.is_some()
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
@@ -373,6 +385,7 @@ fn main() -> Result<()> {
         Some((x, y, k))
     });
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
+    let world_seed = world.seed;
 
     let mut app = App {
         window: None,
@@ -388,6 +401,11 @@ fn main() -> Result<()> {
         player,
         follow_player,
         player_accum: 0.0,
+        npcs,
+        npc_assets,
+        npc_timer: 6.0,
+        npc_rng: world_seed,
+        attack_cd: 0.0,
         inventory,
         selected: 0,
         mouse_pos: Vec2::ZERO,
@@ -484,6 +502,11 @@ struct App {
     player: Option<Player>,
     follow_player: bool,
     player_accum: f32,
+    npcs: Vec<Npc>,
+    npc_assets: NpcAssets,
+    npc_timer: f32,
+    npc_rng: u64,
+    attack_cd: f32,
     inventory: [ItemSlot; 4],
     selected: usize,
     mouse_pos: Vec2,
@@ -542,6 +565,8 @@ struct WorldFrameKey {
     anim: u32,
     /// Player position/animation identity; the player is part of the world range.
     player_key: u32,
+    /// Hash of all NPC positions/animations.
+    npc_key: u32,
     world_revision: u64,
 }
 
@@ -814,6 +839,46 @@ impl App {
         }
     }
 
+    fn update_npcs(&mut self, dt: f32) {
+        self.attack_cd = (self.attack_cd - dt).max(0.0);
+        self.npc_timer -= dt;
+        let world = &self.world;
+        if let Some(player) = self.player.as_mut() {
+            for n in self.npcs.iter_mut() {
+                n.update(world, player, dt);
+            }
+        }
+        self.npcs.retain(|n| n.hp > 0);
+        if let Some(player) = self.player.as_mut() {
+            if player.hp <= 0 {
+                log::info!("player died; respawning at the world spawn");
+                player.respawn();
+                self.npcs.clear();
+                self.npc_timer = 4.0;
+                if self.follow_player {
+                    let (cx, cy) = player.center();
+                    self.camera = Vec2::new(cx, cy);
+                }
+            }
+        }
+        if self.npcs.len() < 4 && self.npc_timer <= 0.0 {
+            if let Some(player) = &self.player {
+                let mut z = self.npc_rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                self.npc_rng = z;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                z ^= z >> 31;
+                let off = 14 + (z >> 33) as i32 % 20;
+                let off = if z & 1 == 0 { off } else { -off };
+                let x = ((player.x / TILE_PX) as i32 + off).clamp(2, self.world.width - 3);
+                if let Some(n) = Npc::spawn(&self.world, x) {
+                    self.npcs.push(n);
+                }
+            }
+            self.npc_timer = 6.0;
+        }
+    }
+
     fn update_editing(&mut self, dt: f32, screen: Vec2) {
         if let Some((x, y)) = self.dev_break.take() {
             self.break_tile(x, y);
@@ -860,6 +925,21 @@ impl App {
             return;
         }
         self.edit_target = Some((tx, ty));
+        // Melee: LMB over an NPC within four tiles hits it instead of mining.
+        if self.mine_down && self.attack_cd <= 0.0 {
+            let ax = world_pos.x;
+            let ay = world_pos.y;
+            let reach2 = 4.0 * TILE_PX;
+            if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
+                if let Some(n) = self.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
+                    n.hurt(15, pcx);
+                    self.attack_cd = 0.3;
+                    self.mine_target = None;
+                    self.mine_timer = 0.0;
+                    return;
+                }
+            }
+        }
         let tile = *self.world.tile(tx, ty).expect("in bounds");
         let important = self
             .world
@@ -984,8 +1064,10 @@ impl App {
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
         self.update_player(dt);
+        self.update_npcs(dt);
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
+        let npc_key = npc::render_key(&self.npcs);
 
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
@@ -1002,6 +1084,8 @@ impl App {
                 stars,
                 player_assets,
                 player,
+                npcs,
+                npc_assets,
                 inventory,
                 selected,
                 edit_target,
@@ -1097,6 +1181,7 @@ impl App {
                         liquid_anim
                     },
                     player_key,
+                    npc_key,
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -1127,12 +1212,21 @@ impl App {
                         anim_time,
                         player.as_ref(),
                         player_assets,
+                        npcs,
+                        npc_assets,
                         *edit_target,
                     );
                     *world_key = Some(key);
                 }
 
-                draw_hud(renderer, screen, lookups, inventory, *selected);
+                draw_hud(
+                    renderer,
+                    screen,
+                    lookups,
+                    inventory,
+                    *selected,
+                    player.as_ref(),
+                );
 
                 if *debug {
                     draw_debug(
@@ -1151,6 +1245,7 @@ impl App {
                         debug_cache,
                         style.mode.label(),
                         player.as_ref(),
+                        npcs.len(),
                     );
                 }
 
@@ -1480,6 +1575,28 @@ fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
     } else {
         uv
     }
+}
+
+struct NpcAssets {
+    slime: Option<BgTex>,
+}
+
+fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
+    NpcAssets {
+        slime: sky_tex(atlas, "NPC_1", None),
+    }
+}
+
+/// UV of one 32x26 slime frame (two frames stacked in `NPC_1`).
+fn slime_frame_uv(tex: &BgTex, frame: u32) -> [f32; 4] {
+    let dv = (tex.uv[3] - tex.uv[1]) * (26.0 / tex.h);
+    let r = (frame & 1) as f32;
+    [
+        tex.uv[0],
+        tex.uv[1] + dv * r,
+        tex.uv[2],
+        tex.uv[1] + dv * (r + 1.0),
+    ]
 }
 
 #[derive(Clone, Copy)]
@@ -1922,6 +2039,8 @@ fn draw_tiles(
     anim_time: f32,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
+    npcs: &[Npc],
+    npc_assets: &NpcAssets,
     edit_target: Option<(i32, i32)>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
@@ -2149,6 +2268,7 @@ fn draw_tiles(
 
     stats.liquids = draw_liquids(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+    stats.quads += draw_npcs(r, npc_assets, npcs, light, style, anim_time);
     if let Some(p) = player {
         stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
     }
@@ -2475,6 +2595,56 @@ fn draw_player(
     quads
 }
 
+/// First enemy pass: the blue slime, tinted and lit like the player, with an overhead
+/// health bar once damaged.
+fn draw_npcs(
+    r: &mut SpriteRenderer,
+    assets: &NpcAssets,
+    npcs: &[Npc],
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+) -> u32 {
+    let Some(tex) = assets.slime.as_ref() else {
+        return 0;
+    };
+    let white = r.white_uv();
+    let blue = [0.52, 0.72, 1.0];
+    let mut quads = 0;
+    for n in npcs {
+        let (cx, cy) = n.center();
+        let tx = (cx / TILE_PX) as i32;
+        let ty = (cy / TILE_PX) as i32;
+        let l = light.get(tx, ty);
+        let c = style.shade(l, tx, ty, anim_time);
+        let tint = if n.hurt_cd > 0.0 {
+            [c[0].max(0.8), c[1].max(0.8), c[2].max(0.8), 1.0]
+        } else {
+            [c[0] * blue[0], c[1] * blue[1], c[2] * blue[2], 1.0]
+        };
+        let uv = flip_uv(slime_frame_uv(tex, n.frame()), n.facing < 0);
+        r.push_sprite([n.x - 1.0, n.y - 2.0], [32.0, 26.0], uv, tint);
+        quads += 1;
+        if n.hp < n.max_hp {
+            let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);
+            r.push_sprite(
+                [n.x - 1.0, n.y - 9.0],
+                [32.0, 4.0],
+                white,
+                [0.02, 0.02, 0.02, 0.75],
+            );
+            r.push_sprite(
+                [n.x - 1.0, n.y - 9.0],
+                [32.0 * frac, 4.0],
+                white,
+                [0.85, 0.15, 0.15, 0.95],
+            );
+            quads += 2;
+        }
+    }
+    quads
+}
+
 fn draw_tree_foliage(
     r: &mut SpriteRenderer,
     world: &World,
@@ -2555,6 +2725,7 @@ fn draw_hud(
     lookups: &assets::Lookups,
     inventory: &[ItemSlot; 4],
     selected: usize,
+    player: Option<&Player>,
 ) {
     let slot = 52.0;
     let gap = 8.0;
@@ -2602,6 +2773,27 @@ fn draw_hud(
         TEXT,
         &format!("{} x{}", item.name, item.count),
     );
+
+    if let Some(p) = player {
+        let w = 220.0;
+        let h = 20.0;
+        let x = screen.x - w - 20.0;
+        let y = 20.0;
+        r.push_ui_rect([x, y], [w, h], [0.02, 0.03, 0.05, 0.8]);
+        let frac = (p.hp as f32 / p.max_hp.max(1) as f32).clamp(0.0, 1.0);
+        r.push_ui_rect(
+            [x + 2.0, y + 2.0],
+            [(w - 4.0) * frac, h - 4.0],
+            [0.72, 0.10, 0.10, 0.95],
+        );
+        r.push_text(
+            x + 8.0,
+            y + 5.0,
+            1.2,
+            [1.0, 0.96, 0.92, 1.0],
+            &format!("HP {}/{}", p.hp, p.max_hp),
+        );
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2621,6 +2813,7 @@ fn draw_debug(
     cache: &mut DebugCache,
     light_mode: &str,
     player: Option<&Player>,
+    npc_count: usize,
 ) {
     if !cache.ready {
         let info = gpu.adapter.get_info();
@@ -2681,7 +2874,7 @@ fn draw_debug(
     if let Some(p) = player {
         lines.push((
             format!(
-                "player {:.0},{:.0} tile {:.1},{:.1} vx {:.2} vy {:.2} ground {} water {}",
+                "player {:.0},{:.0} tile {:.1},{:.1} vx {:.2} vy {:.2} ground {} water {} hp {}/{}",
                 p.x,
                 p.y,
                 p.x / TILE_PX,
@@ -2689,11 +2882,14 @@ fn draw_debug(
                 p.vx,
                 p.vy,
                 p.on_ground,
-                p.in_water
+                p.in_water,
+                p.hp,
+                p.max_hp
             ),
             TEXT,
         ));
     }
+    lines.push((format!("npcs {npc_count}"), TEXT));
     lines.push((
         format!(
             "visible tiles {}   quads {}   foliage {}   liquids {}   total {}   grid {}x{}",
@@ -2734,7 +2930,10 @@ fn draw_debug(
         format!("screen {:.0}x{:.0}   atlas_max 8192", screen.x, screen.y),
         TEXT,
     ));
-    lines.push(("LMB mine   RMB place   1-4 select   F9 save".into(), WARN));
+    lines.push((
+        "LMB mine/attack   RMB place   1-4 select   F9 save".into(),
+        WARN,
+    ));
     lines.push((
         "WASD move   Space jump   F1 ui   F2 light   F5 respawn".into(),
         WARN,

@@ -215,9 +215,15 @@ potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lin
 
 ## Milestone 4 — NPCs, combat, projectiles
 
-Damage model, knockback, immunities, buffs/debuffs; projectile system (subset), a first
-batch of enemies (slimes, zombies, demon eyes, skeletons), spawn logic, town NPCs + shops.
-**~60–120 agent-days.** Full 780-NPC / 1 100-projectile parity: several times that.
+✅ *First pass*: a hopping blue slime with gravity/collision/contact damage, player HP,
+hurt cooldown/knockback/respawn, LMB melee, overhead HP bars and a HUD health bar. NPCs
+spawn near the player and respawn up to four alive. Data-oriented entity arrays are still
+the plan for the full roster.
+
+Remaining: the rest of `NPC.cs` (~780 types, AI states, spawn/biome/night rules), loot and
+item drops, projectile system (~1 100 types), damage types/defense/crits, buffs/debuffs,
+bosses, town NPCs/shops. **~60–120 agent-days** for a first playable subset; full parity
+several times that.
 
 ## Milestone 5 — world generation
 

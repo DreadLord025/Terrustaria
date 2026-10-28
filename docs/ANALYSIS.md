@@ -70,12 +70,12 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
-| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, water buoyancy, respawn; no slopes/items/buffs/health |
+| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, water buoyancy, HP/hurt/respawn; no slopes/items/buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | 🟡 | 4-slot hotbar, mining/placing, counts and native save; no item entities, tools, recipes, chests or full inventory UI |
-| NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | ⬜ | ~700 NPC types, each with bespoke behaviour |
+| NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | 🟡 | First pass: hopping blue slime (gravity, collision, contact damage, player melee, HP bars); ~700 NPC types remain |
 | Projectiles | `Projectile.cs` | 81 000 | ⬜ | ~1 100 types |
-| Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | ⬜ | |
+| Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | 🟡 | Player/slime HP, hurt cooldown, knockback, contact/melee damage and respawn; no defense, crits, projectiles or drops |
 | World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | 🟡 | Native compact generator: surface/layers/caves/ores/ash/trees/plants; no biomes, structures or oceans |
 | UI / menus | `UI/*`, `GameContent.UI.*` | ~35 000 | ⬜ | |
 | Audio | `Audio/*`, XACT banks | ~4 000 | ⬜ | `.xsb`/`.xwb` banks extracted later |
@@ -324,6 +324,20 @@ close to the native `.trwld`. Mining adds to the matching slot; placing consumes
 Not ported: item entities/drops, tool requirements and mining speed from `Item.cs`,
 inventory windows/crafting/chests, wall placement, paint, actuators/wiring, and liquid
 re-simulation after an edit.
+
+## NPCs and combat (M4 first pass)
+
+`tr-app/src/npc.rs` adds a hopping blue slime: gravity, AABB collision against solid
+tiles, a hop timer toward the player, wall bounce, 30 HP and 12 contact damage. Up to four
+slimes are kept near the player and respawn every six seconds. The player has 100 HP,
+0.8 s hurt cooldown, knockback, instant respawn on death and a HUD health bar. LMB over a
+slime within four tiles deals 15 melee damage with a 0.3 s cooldown; damaged slimes show
+an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by the tile
+light; NPC position/animation are hashed into the G6 frame key.
+
+Not ported: NPC spawning rules/biomes/night, the other ~780 NPCs, AI state machines,
+projectiles, loot/drops, defense/knockback resistances, crits, buffs/debuffs, boss logic
+and multiplayer sync.
 
 ## Asset pipeline
 

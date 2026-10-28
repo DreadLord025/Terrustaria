@@ -43,6 +43,9 @@ pub struct Player {
     pub in_water: bool,
     pub spawn_x: f32,
     pub spawn_y: f32,
+    pub hp: i32,
+    pub max_hp: i32,
+    pub hurt_cd: f32,
 }
 
 impl Player {
@@ -60,6 +63,9 @@ impl Player {
             in_water: false,
             spawn_x: sx,
             spawn_y: sy,
+            hp: 100,
+            max_hp: 100,
+            hurt_cd: 0.0,
         }
     }
 
@@ -70,6 +76,26 @@ impl Player {
         self.vy = 0.0;
         self.on_ground = false;
         self.walk_time = 0.0;
+        self.hp = self.max_hp;
+        self.hurt_cd = 0.0;
+    }
+
+    /// Contact damage / future combat. Returns true when the hit was accepted.
+    pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
+        if self.hurt_cd > 0.0 || self.hp <= 0 {
+            return false;
+        }
+        self.hp = (self.hp - amount).max(0);
+        self.hurt_cd = 0.8;
+        let dir = if self.x + WIDTH * 0.5 >= from_x {
+            1.0
+        } else {
+            -1.0
+        };
+        self.vx = dir * 4.0;
+        self.vy = -3.0;
+        self.on_ground = false;
+        true
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -78,6 +104,7 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
         self.in_water = world
             .tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32)
@@ -211,10 +238,15 @@ impl Player {
 
 /// Solid collision at a player AABB. Slopes and half bricks count as full cells for now.
 pub fn collides(world: &World, x: f32, y: f32) -> bool {
+    collides_rect(world, x, y, WIDTH, HEIGHT)
+}
+
+/// Generic solid-tile AABB test used by NPCs and the player.
+pub fn collides_rect(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     let x0 = (x / TILE_PX).floor() as i32;
-    let x1 = ((x + WIDTH - 0.01) / TILE_PX).floor() as i32;
+    let x1 = ((x + w - 0.01) / TILE_PX).floor() as i32;
     let y0 = (y / TILE_PX).floor() as i32;
-    let y1 = ((y + HEIGHT - 0.01) / TILE_PX).floor() as i32;
+    let y1 = ((y + h - 0.01) / TILE_PX).floor() as i32;
     for ty in y0..=y1 {
         for tx in x0..=x1 {
             let Some(t) = world.tile(tx, ty) else {

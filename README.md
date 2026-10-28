@@ -3,10 +3,10 @@
 A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
 clean-room analysis of the decompiled C# game.
 
-> **Status: milestone 3 — a minimal sandbox.** The world renders with the game's own
-> lighting, liquids, trees and sky layers; a player with gravity, collision and a following
-> camera can walk, jump, swim, mine and place the starter blocks through a hotbar. NPCs,
-> combat, the full item/inventory system and UI are not implemented. See
+> **Status: milestone 4 — first enemy.** The world renders with the game's own lighting,
+> liquids, trees and sky layers; a player with gravity, collision and a following camera
+> can walk, jump, swim, mine, place starter blocks, fight hopping slimes and respawn on
+> death. The full NPC roster, projectiles, items/UI and networking are not implemented. See
 > [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
 
 ![surface](docs/screenshots/surface.png)
@@ -15,10 +15,10 @@ clean-room analysis of the decompiled C# game.
 | --- | --- |
 | ![generated](docs/screenshots/generated.png) | ![player](docs/screenshots/player.png) |
 | A world from our own generator (seed 1) | The player, walking on the generated surface |
-| ![editing](docs/screenshots/editing.png) | ![lake](docs/screenshots/lake.png) |
-| Mining/placing with the hotbar and local re-framing | Generated forest lake: animated water, waves, depth tint |
-| ![night](docs/screenshots/night.png) | ![debug](docs/screenshots/debug_overlay.png) |
-| Night: moon, stars, parallax mountains | Debug overlay (F1) with light mode, liquids and quad counters |
+| ![editing](docs/screenshots/editing.png) | ![slimes](docs/screenshots/slimes.png) |
+| Mining/placing with the hotbar and local re-framing | First enemy pass: hopping slimes and the health bar |
+| ![lake](docs/screenshots/lake.png) | ![night](docs/screenshots/night.png) |
+| Generated forest lake: animated water, waves, depth tint | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
 
@@ -87,6 +87,11 @@ clean-room analysis of the decompiled C# game.
   `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs, pants,
   shoes, hair) with walk/jump leg frames and camera follow. Slopes count as full cells
   until slope collision and the full draw-layer order are ported.
+- **NPCs & combat (first pass)** — blue slimes spawn on the surface near the player, hop
+  toward them with gravity/collision, deal 12 contact damage and have 30 HP. LMB over an
+  NPC within four tiles performs a 15-damage melee hit with a short cooldown; damaged
+  slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
+  bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
 - **Editing & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore), RMB
   places the selected block, 1–4 select Dirt/Stone/Torch/Copper, mined blocks go into the
   hotbar counts, and F9 (or closing the window) writes the world back to `.trwld`. Edits
@@ -125,9 +130,9 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 ## What is *not* implemented (yet)
 
-Items beyond the starter hotbar, NPCs, projectiles, the full inventory/crafting/chests UI,
-audio, networking. The player is a movement/visual
-first pass: no item use/combat/health, and slopes are
+Items beyond the starter hotbar, the full NPC roster, projectiles, the full
+inventory/crafting/chests UI, audio, networking. The player is a movement/visual
+first pass: no item use/combat variety, armor or health regen, and slopes are
 collision boxes rather than ramps. Liquid flow
 simulation, waterfalls, water styles, shimmer sparkles and the original's partial-wall
 liquid surface smoothing are still missing; the current pass draws static sources with
