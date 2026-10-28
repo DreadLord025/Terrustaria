@@ -12,7 +12,7 @@ pub struct SavedPlayer {
     pub x: f32,
     pub y: f32,
     pub hp: i32,
-    pub inventory: [(u16, u32); 10],
+    pub inventory: [(u16, u32); 50],
     pub coins: u64,
 }
 
@@ -23,10 +23,10 @@ pub fn player_path(world: &Path) -> PathBuf {
 pub fn save(
     world: &Path,
     player: &Player,
-    inventory: [(u16, u32); 10],
+    inventory: [(u16, u32); 50],
     coins: u64,
 ) -> std::io::Result<()> {
-    let mut s = format!("1\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("2\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -37,17 +37,18 @@ pub fn save(
 pub fn load(world: &Path) -> Option<SavedPlayer> {
     let s = std::fs::read_to_string(player_path(world)).ok()?;
     let mut lines = s.lines();
-    if lines.next()?.trim() != "1" {
+    let version = lines.next()?.trim();
+    if version != "1" && version != "2" {
         return None;
     }
     let mut pos = lines.next()?.split_whitespace();
     let x = pos.next()?.parse().ok()?;
     let y = pos.next()?.parse().ok()?;
     let hp = pos.next()?.parse().ok()?;
-    // Version 1 originally stored four slots; accept any number up to ten and leave
-    // the remaining slots empty.
+    // Version 1 stored up to ten hotbar slots; version 2 stores all fifty. Accept
+    // any number up to the version's cap and leave the remaining slots empty.
     let mut inv_line = lines.next()?.split_whitespace();
-    let mut inventory = [(0u16, 0u32); 10];
+    let mut inventory = [(0u16, 0u32); 50];
     for slot in &mut inventory {
         let Some(kind) = inv_line.next() else { break };
         *slot = (kind.parse().ok()?, inv_line.next()?.parse().ok()?);
@@ -79,41 +80,18 @@ mod tests {
         p.y = 45.25;
         p.hp = 73;
         let path = std::env::temp_dir().join("tr-persist-test.trwld");
-        save(
-            &path,
-            &p,
-            [
-                (0, 12),
-                (1, 3),
-                (4, 9),
-                (7, 1),
-                (6, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
-            ],
-            123_456,
-        )
-        .unwrap();
+        let mut inv = [(0u16, 0u32); 50];
+        inv[0] = (0, 12);
+        inv[1] = (1, 3);
+        inv[2] = (4, 9);
+        inv[3] = (7, 1);
+        inv[4] = (6, 0);
+        save(&path, &p, inv, 123_456).unwrap();
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
-        assert_eq!(
-            s.inventory,
-            [
-                (0, 12),
-                (1, 3),
-                (4, 9),
-                (7, 1),
-                (6, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0),
-                (0, 0)
-            ]
-        );
+        assert_eq!(s.inventory[0], (0, 12));
+        assert_eq!(s.inventory[3], (7, 1));
+        assert_eq!(s.inventory[49], (0, 0));
         let _ = std::fs::remove_file(player_path(&path));
     }
 }

@@ -39,6 +39,8 @@ const ACCENT: [f32; 4] = [0.45, 0.85, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.70, 0.30, 1.0];
 
 const HOTBAR: usize = 10;
+/// `Player.inventory` length: hotbar plus the four storage rows of the open grid.
+const INV: usize = 50;
 /// Seconds of one item swing; `Player.itemAnimation` is longer for real items.
 const SWING_TIME: f32 = 0.28;
 
@@ -49,26 +51,26 @@ struct ItemSlot {
     count: u32,
 }
 
-/// Stand-in for the inventory rows the item model does not hold yet (M3).
-const EMPTY_SLOT: ItemSlot = ItemSlot {
-    kind: 0,
-    name: "",
-    count: 0,
-};
-
-/// Finds a hotbar slot for a picked-up item: an existing stack of the same kind, or
-/// an empty slot (which adopts the item's kind/name).
-fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usize> {
-    if let Some(i) = inventory.iter().position(|s| s.count > 0 && s.kind == kind) {
-        return Some(i);
+/// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
+/// then the storage rows.
+fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> {
+    for range in [0..HOTBAR, HOTBAR..INV] {
+        if let Some(i) = range.clone().find(|&i| inventory[i].count > 0 && inventory[i].kind == kind)
+        {
+            return Some(i);
+        }
     }
-    let i = inventory.iter().position(|s| s.count == 0)?;
-    inventory[i] = ItemSlot {
-        kind,
-        name: item::name(kind),
-        count: 0,
-    };
-    Some(i)
+    for range in [0..HOTBAR, HOTBAR..INV] {
+        if let Some(i) = range.clone().find(|&i| inventory[i].count == 0) {
+            inventory[i] = ItemSlot {
+                kind,
+                name: item::name(kind),
+                count: 0,
+            };
+            return Some(i);
+        }
+    }
+    None
 }
 
 fn main() -> Result<()> {
@@ -464,7 +466,7 @@ fn main() -> Result<()> {
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
     let mut coins = 0u64;
-    let mut inventory: [ItemSlot; HOTBAR] = std::array::from_fn(|i| match i {
+    let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
         0 => ItemSlot {
             kind: 0,
             name: "Dirt",
@@ -500,7 +502,7 @@ fn main() -> Result<()> {
                 }
                 p.hp = saved.hp.clamp(1, p.max_hp);
                 coins = saved.coins;
-                for (i, (kind, count)) in saved.inventory.iter().enumerate().take(HOTBAR) {
+                for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
                         name: item::name(*kind),
@@ -691,7 +693,7 @@ struct App {
     npc_timer: f32,
     npc_rng: u64,
     attack_cd: f32,
-    inventory: [ItemSlot; HOTBAR],
+    inventory: [ItemSlot; INV],
     selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     hotbar_scales: [f32; HOTBAR],
@@ -4200,7 +4202,7 @@ fn draw_hud(
     zoom: f32,
     screen: Vec2,
     lookups: &assets::Lookups,
-    inventory: &[ItemSlot; HOTBAR],
+    inventory: &[ItemSlot; INV],
     selected: usize,
     hotbar_scales: &[f32; HOTBAR],
     player: Option<&Player>,
@@ -4225,7 +4227,7 @@ fn draw_hud(
                     let uv = if j == 0 { hot_back } else { back };
                     let c = 220.0 / 255.0;
                     r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
-                    let item = if idx < HOTBAR { &inventory[idx] } else { &EMPTY_SLOT };
+                    let item = &inventory[idx];
                     draw_slot_item(r, lookups, item, x, y, slot, inv_scale);
                     if j == 0 {
                         draw_slot_number(
@@ -4670,7 +4672,7 @@ mod tests {
 
     #[test]
     fn pickup_prefers_stacks_then_empty_slots() {
-        let mut inv: [ItemSlot; HOTBAR] = std::array::from_fn(|_| ItemSlot {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| ItemSlot {
             kind: 0,
             name: "",
             count: 0,

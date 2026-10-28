@@ -630,7 +630,7 @@ mod tests {
         let mut last = p.y + p.gfx_off_y;
         let mut max_step: f32 = 0.0;
         let mut stood_on_step = false;
-        for k in 0..240 {
+        for _ in 0..240 {
             p.update(&w, PlayerInput { right: true, ..Default::default() });
             let vis = p.y + p.gfx_off_y;
             max_step = max_step.max((vis - last).abs());
