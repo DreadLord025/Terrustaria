@@ -174,8 +174,10 @@
 - A wall under a fully opaque, non-sloped, non-half block is skipped (A2). Cells whose
   quantised light is zero and whose drawn content is fully opaque are merged into greedy
   black rectangles (A3/A4) instead of per-tile quads.
-- Per frame: the sky/background always goes into the back range (its parallax follows the
-  camera continuously). The tile/wall/liquid/entity range is keyed by the camera floored to
+- Surface light stops at each column's first solid tile *or* topmost liquid cell, so a
+  lake bed is lit through the water decay instead of a direct sky seed. Per frame: the
+  sky/background always goes into the back range (its parallax follows the camera
+  continuously). The tile/wall/liquid/entity range is keyed by the camera floored to
   a tile, zoom/screen, light params and generation, light mode, animation step, entity
   hashes and `World::revision`. On a hit, `begin_frame_keep_world()` keeps the world range
   and only the back range/UI are rebuilt (G6); on a miss, `LightMap::compute_into`
@@ -216,6 +218,7 @@
 | Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
 | 9-sliced solid blocks | Matches `DrawSingleTile_SlicedBlock`: outer 4 px bands average the block's light with its neighbour, which is what makes "Color"/"White" light look smooth instead of tiled |
 | Two liquid draw passes | `Main.DrawLiquid(bg: true)` paints opaque water before walls and tiles (the parallax never shows through), then the foreground pass at `DEFAULT_OPACITY` tints entities, walls and the lakebed. Skipping the background pass is what made the lake look dark and transparent |
+| Liquid behind shoreline slopes | `DrawTile_LiquidBehindTile` draws `LiquidSlope_*` masks behind blocks standing in liquid, so the transparent corner of a shore slope shows water. The original skips it when water is both above and beside the slope; we fill that case because it is exactly the visible vanilla shoreline gap |
 | Liquid light via a 3×3 split | `Lighting.GetCornerColors` interpolates four corner averages on the GPU; the instanced pipeline carries one tint, so the visible rect is split into 3×3 sub-quads whose flat tints sample the same bilinear field, keeping tile-scale light banding out of the water |
 | Screen-space sky, sun/moon, stars and parallax layers | Their layout follows `DrawSunAndMoon`/`DrawSurfaceBG` (parallax and screen sizes, not tile units), so zooming the camera does not stretch the sky. The helper converts the screen rectangle back into camera-relative world coordinates for the shared sprite batch |
 | Axis-separated player AABB | Small (20×42) and slow (≤10 px/tick); sub-tile axis resolution plus a one-tile step is enough and keeps slope/tile interactions debuggable. Slopes currently collide as full cells |

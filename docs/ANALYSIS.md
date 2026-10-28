@@ -244,16 +244,33 @@ and light are quantised to one-second steps so the map/instance caches still hit
 
 ## Liquids
 
-`LiquidRenderer.DrawNormalLiquids` is ported as a first pass. Each visible tile with
-`liquid > 0` draws one 16x16 sprite from the original `Images/Misc/water_*` strips:
+`LiquidRenderer.InternalPrepareDraw` is ported in `tr-core/src/liquid_draw.rs`. For every
+visible cell the cache computes:
 
-- water → `water_0` (style 0), lava → `water_1`, honey → `water_11`, shimmer → `water_14`;
-- source X = 16 (interior column), the 80 px animation blocks for body tiles, and the
-  surface block at `Y = 1280` for the top layer; 16 frames at 8 fps;
-- opacity from `DEFAULT_OPACITY` (0.6 / 0.95 / 0.95 / 0.75), multiplied by the light map;
-- partial tiles crop the source/destination height to `liquid / 255`;
-- a per-column sine offset plus a shader UV ripple (per-instance `flags = 1`) breaks up
-  the 16 px texture repetition; a small depth tint darkens deep water.
+- `VisibleLiquidLevel` (including seepage into empty cells between two liquid cells), the
+  four edge-wall values and the edge flags, `FrameOffset`, the source rectangle and
+  `LiquidOffset`, the waterfall-fade `Opacity`, `IsSurfaceLiquid` and the half-brick
+  visibility rule. The waterfall pass keeps the original's 10-row lead, so only the bottom
+  rows of an extended draw area see the fade;
+- `DrawNormalLiquids` then runs twice like `Main.DrawLiquid(bg)`: opaque (`Opacity`, usually
+  1.0) before walls/tiles and `DEFAULT_OPACITY` (0.6 / 0.95 / 0.95 / 0.75) after entities,
+  so the parallax never shows through the lake and entities standing in water are tinted;
+- the source frame is chosen by `FrameOffset`: interior water uses the plain row
+  `(16, 48)`, surface tiles near `worldSurface - 40` snap to the still frame at `Y = 1280`,
+  and edge/corner frames use the 3x18 px sheet columns. The old hand-written "always row
+  32 + frame*80" pass, the per-column sine offset, the UV ripple flag and the depth tint
+  are gone: they produced the repeating white squiggles and dark bands;
+- `Lighting.GetCornerColors` is ported as `LightMap::corner4`; the instance format carries
+  one tint, so the visible rect is split 3x3 and each cell samples the bilinear corner
+  field. This is the original's smooth top-lit water surface.
+
+Solid tiles that stand in liquid also get `DrawTile_LiquidBehindTile`: `LiquidSlope_*`
+diagonal masks are drawn behind slopes (and 4 px `Liquid_*` strips behind block edges), so
+the open corner of a shore slope shows water. Deviation: the original skips that quad when
+water is both above and beside the slope and uses 0.5 opacity below `worldSurface`, which
+leaves the known 1 px background gaps at shorelines; we always fill submerged corners and
+use full opacity when the cell is under water, as requested. This affects only the
+transparent part of shoreline slope/edge frames.
 
 The system is completed by `tr-core/src/liquid.rs`, a port of `Liquid.UpdateLiquid` and
 `Liquid.Update`: a 25 000-entry active-cell list (with the 50 000-entry overflow buffer),
@@ -262,10 +279,9 @@ leveling passes (3/4/5/7-cell averages, edge openness, `Math.Round` banker's rou
 and retirement after eight quiet passes. Falling water keeps the original's 254→255
 quirk. Block edits wake the surrounding liquid cells, so a breach visibly drains.
 
-Not ported: the `Liquid` wave mask shader, the `Waterfall_*` overlay drawn at
-half-brick and waterfall-block spouts, the four-corner `VisibleLiquidLevel` render mesh
-that gives the original's diagonal shorelines, water styles and shimmer sparkles. The
-generator adds a forest lake and lava puddles so the pass is visible in the default
+Not ported: the `Liquid` wave mask/vertex displacement, the animated `Waterfall_*` overlay
+at half-brick and waterfall-block spouts, the water-style fountains and shimmer sparkles.
+The generator adds a forest lake and lava puddles so the pass is visible in the default
 world; loaded `.wld` files expose their own liquids.
 
 ## Rain and weather
@@ -374,7 +390,10 @@ biome and hardmode spread are not generated; the original generator remains an M
 ## Player (M2 first pass)
 
 `tr-app/src/player.rs` implements a fixed 60 Hz step with the original movement constants:
-gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump `5.2`.
+gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump speed
+`5.01` with `jumpHeight = 15`: pressing jump sets the upward speed and holding it keeps
+resetting that speed for up to 15 ticks (`Player.JumpMovement`), so a tap jumps ~31 px and
+a full hold ~95 px. A new jump needs a fresh press edge.
 Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
 auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
 Half bricks collide only in the bottom 8 px (and the landing snap puts the feet on their
@@ -397,15 +416,18 @@ Survival ports three `Player.cs` mechanics:
   cooldown; after 5 s without damage the player regenerates 1 HP every 0.5 s.
 
 The character is composed from the original 40×56 part strips (`Player_0_0` head,
-`_1/_2` eyes, `_3` torso, `_6` shirt, `_7` back arm, `_10` legs, `_11` pants, `_12` shoes,
+`_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
-walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
+walk/jump leg frames. Arms use the composite layout from `PlayerDrawSet.CreateCompositeData`
+(the six-column swing table for the front arm, back arm two rows lower); the near-side
+(item-holding) arm is drawn from column 8 because the per-item shoulder rotation is not
+modelled yet. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
 camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. The selected
 hotbar block is drawn in the hand (14×14 tile frame) with a 0.28 s swing arc from raised-
 behind to forward-down when mining, placing or attacking; the world cache key includes the
 kind and quantised phase. Not ported yet:
-the full `itemAnimation` timings and tool-specific swings, full draw layers (front arm,
-armor, accessories), buffs and the rest of `Player.cs`.
+the full `itemAnimation` timings and tool-specific swings, armour/accessory layers, the
+composite-arm rotation while holding items, buffs and the rest of `Player.cs`.
 
 ## Editing and hotbar (M3 first pass)
 
@@ -440,8 +462,11 @@ re-simulation after an edit.
 ## NPCs and combat (M4 first pass)
 
 `tr-app/src/npc.rs` adds a hopping blue slime (gravity, AABB collision, hop timer, wall
-bounce, 30 HP, 12 contact damage), a flying demon eye that steers toward the player with a
-sine bob (25 HP, 14 damage) and a zombie standing in for `AI_003_Fighters`: an 18×40 hitbox
+bounce, 30 HP, 12 contact damage) with the `AI_001_Slimes` water tail: the body counts as
+wet when any liquid tile overlaps it, gravity drops to `0.2`/max fall `7`, and the slime is
+pushed up by `0.5`/tick (capped at `-4`), bounces off the floor with `-2`, and flips
+direction when it rises along the same x — so slimes float and bob at the surface. A
+flying demon eye steers toward the player with a sine bob (25 HP, 14 damage) and a zombie standing in for `AI_003_Fighters`: an 18×40 hitbox
 with 45 HP, 14 damage, a 0.6 px/tick chase toward the player, a jump when a one-tile ledge
 blocks the path, and 6 damage/second while the world is in daylight (the vanilla burn).
 Night spawns mix zombies, demon eyes and slimes; daytime spawns are slimes. Up to four NPCs

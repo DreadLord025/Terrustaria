@@ -81,3 +81,83 @@ liquids, entities and raw sheets alike.
 1.5): 1 px background rows every 16 world px. After the fix the same camera and zooms 1.0,
 1.25, 1.5, 1.75 and 2.0 show no periodic rows in the underground; surface/lake screenshots
 are unchanged apart from the seams.
+
+## BUG-004 — Underwater terrain stayed at daylight brightness
+
+**Status:** fixed — commit `84e7c20` ("Darken underwater terrain, fill shore slopes and fix mobs/player")
+**Area:** `tr-core/src/lighting.rs` (`seed`/`surface_cutoff`), `tr-app/src/main.rs`
+
+**Report:** the lake bed and the part of the bank below the waterline were bright brown, as
+if they were above water. In the original everything under a liquid is attenuated/darkened.
+
+**Cause:** surface light seeds every cell up to each column's first solid tile. For a lake
+column that tile is the lake bed, so it received a full sky seed even though several water
+cells sit above it; the water cells themselves were dark (their seed is blocked by
+`liquid >= 200`), which made the bed brighter than the water.
+
+**Fix:** the per-column surface cutoff is now the top of the terrain **or** the topmost
+liquid cell, whichever is higher, so a lake bed is lit only by the light that propagates
+through the water (`LightDecayThroughWater = (0.88,0.96,1.015)*0.91`). `TR_LIGHT_AT` at the
+lake bed went from `0.996` to `0.46/0.59/0.70` (blue-tinted), below the water column.
+
+## BUG-005 — Background showed through the gap between water and sloped ground
+
+**Status:** fixed — commit `WATERLIGHT`
+**Area:** `tr-app/src/main.rs` (`draw_tile_liquid_behind`), `tr-app/src/assets.rs`
+
+**Report:** along lake shores a regular row of background-coloured wedges sat between the
+water quads and the diagonal dirt slopes, looking like holes.
+
+**Cause:** the liquid cache only draws liquid cells; a sloped block's open corner is not
+covered by the neighbouring water cell. The original fills it with
+`DrawTile_LiquidBehindTile`, which our renderer did not port.
+
+**Fix:** ported the partial-liquid branch: solid tiles with adjacent liquid draw a
+`LiquidSlope_*` mask (or a `Liquid_*` 4 px strip for blocks) behind their open part, with
+the original's `num14` water-level offset, corner lighting and wall/surface opacity rules.
+The original skips the quad when water is both above and beside a slope and keeps 0.5
+opacity below `worldSurface`; that is exactly where the visible vanilla shoreline gaps come
+from, so for submerged cells we fill the corner and use full opacity (intentional deviation,
+documented in `docs/ANALYSIS.md`).
+
+## BUG-006 — Slimes sink instead of floating
+
+**Status:** fixed — commit `84e7c20` ("Darken underwater terrain, fill shore slopes and fix mobs/player")
+**Area:** `tr-app/src/npc.rs` (`update_slime`)
+
+**Report:** slimes dropped into the lake sank and stayed under water; in the original they
+bob on the surface.
+
+**Fix:** ported the `AI_001_Slimes` water tail: any liquid overlapping the body sets `wet`,
+gravity becomes `0.2` with max fall `7`, draining `vy` by `0.5` per tick (floor `-4`), a
+`-2` bounce when touching the floor/surface and the original direction flip when rising
+along the same x. Verified with `TR_SLIME_AT`: two slimes float at the lake surface.
+
+## BUG-007 — Player had no arms and a fixed jump height
+
+**Status:** fixed — commit `84e7c20`
+**Area:** `tr-app/src/player.rs`, `tr-app/src/main.rs` (`draw_player`)
+
+**Report:** the player sprite showed no arms; the jump always reached the same height and
+did not depend on holding the space bar.
+
+**Fix:** arms now use the composite layout from `PlayerDrawSet.CreateCompositeData`
+(`Player_0_7` 9x4 cell sheet; back arm two rows lower, front arm on the near side). The jump
+ports `Player.JumpMovement`: jump speed `5.01`, `jumpHeight 15`; holding the key keeps
+resetting the vertical speed for up to 15 ticks (tap ≈ 31 px, full hold ≈ 95 px), and a new
+jump requires a fresh press edge. Added a tap-vs-hold unit test.
+
+## BUG-008 — Old save still showed detached tree stump tiles
+
+**Status:** fixed by regenerating the world (no code change; generator fix was `318f128`)
+**Area:** `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`
+
+**Report:** trees with a 16x16 bark block detached beside the trunk at ground level, even
+after the `GrowTree` fork port.
+
+**Cause:** tree trunk/fork frames are stored in the save; the world was generated before the
+fork fix, and the load path only re-frames autotiled blocks, not tree markers.
+
+**Fix:** the world was backed up to `.qoder_tmp/world_backup/` and regenerated (seed 1) with
+`TR_REGEN=1`; the new trees show connected roots/forks. Existing worlds written by the old
+generator keep their stored tree frames until regenerated.

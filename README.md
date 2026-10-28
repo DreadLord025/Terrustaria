@@ -127,20 +127,22 @@ snowflakes that thicken during a storm.
   sub-tile pans rebuild only the small back range and the UI.
 - **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants
   simulated at a fixed 60 Hz with render interpolation between ticks:
-  gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated AABB collision,
-  simple water buoyancy, ground-slope support and respawn. Survival follows `Player.cs`:
+  gravity, acceleration/friction, hold-to-jump height (`jumpSpeed 5.01`,
+  `jumpHeight 15`), 1-tile auto-step, axis-separated AABB collision, simple water
+  buoyancy, ground-slope support and respawn. Survival follows `Player.cs`:
   a 200-tick breath meter that drains underwater (2 damage per 7 ticks once empty, with a
   HUD bar), fall damage after 25 tiles (10 per extra tile), lava damage and out-of-combat
   regeneration (5 s delay, 1 HP per 0.5 s). The starter character is composed from the
-  original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs,
-  pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks collide only
+  original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, composite
+  front/back arms, legs, pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks collide only
   in their bottom 8 px and are walkable on top; ceiling slopes (3/4) block by their
   triangular geometry. The selected hotbar block is drawn in the hand with a swing arc
   while mining, placing or attacking. The full draw-layer order (front arm, armor,
-  accessories) is still to port.
+  accessories, composite-arm rotation) is still to port.
 - **NPCs & combat (first pass)** — enemies tick at a fixed 60 Hz (`NPC.cs` rate) regardless
   of the display refresh rate; blue slimes spawn on the surface near the player, hop
-  toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
+  toward them with gravity/collision, float and bob on water via the `AI_001_Slimes`
+  water tail, deal 12 contact damage and have 30 HP; at night a
   walking zombie (18×40, 45 HP, 14 damage) chases the player, jumps one-tile ledges and
   burns away in daylight, while a flying demon eye (25 HP, 14 damage) swoops in. LMB over an
   NPC within four tiles performs a 15-damage melee hit; selecting the starting shuriken
