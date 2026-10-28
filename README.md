@@ -115,8 +115,9 @@ snowflakes that thicken during a storm.
   HUD bar), fall damage after 25 tiles (10 per extra tile), lava damage and out-of-combat
   regeneration (5 s delay, 1 HP per 0.5 s). The starter character is composed from the
   original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs,
-  pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks and ceiling
-  slopes still count as full cells; the full draw-layer order is still to port.
+  pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks collide only
+  in their bottom 8 px and are walkable on top; ceiling slopes (3/4) block by their
+  triangular geometry. The full draw-layer order is still to port.
 - **NPCs & combat (first pass)** — blue slimes spawn on the surface near the player, hop
   toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
   flying demon eye with 25 HP chases the player (14 damage). LMB over an
@@ -165,8 +166,7 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 Items beyond the starter hotbar, the full NPC roster, projectiles, the full
 inventory/crafting/chests UI, audio, networking. The player is a movement/visual
-first pass: no item use/combat variety, armor, buffs or drowning visuals. Ground slopes
-are walkable ramps, but half bricks and ceiling slopes collide as full cells. The
+first pass: no item use/combat variety, armor, buffs or drowning visuals. The
 `Waterfall_*` overlay at half-brick spouts, water
 styles, shimmer sparkles and the original's four-corner liquid surface mesh are still
 missing; the current pass draws tile-level surfaces. The world

@@ -354,8 +354,9 @@ biome and hardmode spread are not generated; the original generator remains an M
 gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump `5.2`.
 Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
 auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
-Half bricks and ceiling slopes still collide as full cells. Respawn returns to
-`spawn_x/spawn_y` from the world header.
+Half bricks collide only in the bottom 8 px (and the landing snap puts the feet on their
+surface); ceiling slopes 3/4 test the AABB against the solid triangle above the diagonal.
+Respawn returns to `spawn_x/spawn_y` from the world header.
 
 Survival ports three `Player.cs` mechanics:
 
@@ -373,8 +374,8 @@ The character is composed from the original 40×56 part strips (`Player_0_0` hea
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
 walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
 camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. Not ported yet:
-half-brick/ceiling-slope collision, item use/placement, full draw layers (front arm, armor,
-accessories), buffs and the rest of `Player.cs`.
+item use/placement, full draw layers (front arm, armor, accessories), buffs and the rest of
+`Player.cs`.
 
 ## Editing and hotbar (M3 first pass)
 

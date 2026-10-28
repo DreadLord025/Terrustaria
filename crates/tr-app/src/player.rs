@@ -2,7 +2,8 @@
 //!
 //! Core movement: gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated
 //! AABB collision against solid tiles, simple water buoyancy and ground-slope support
-//! (slopes 1/2). Survival follows `Player.cs`: a 200-tick breath meter (1 unit every 7
+//! (slopes 1/2) and half bricks/ceiling slopes during movement. Survival follows
+//! `Player.cs`: a 200-tick breath meter (1 unit every 7
 //! ticks underwater, 2 damage once empty), fall damage over 25 tiles, lava damage and
 //! out-of-combat health regeneration. Half bricks and ceiling slopes still count as full
 //! cells.
@@ -312,9 +313,27 @@ impl Player {
                 self.on_ground = false;
             }
         } else if self.vy > 0.0 {
-            // Snap to the highest floor under the feet.
+            // Snap to the highest floor under the feet. A row made only of half
+            // bricks has its walkable surface 8 px below the cell top.
             let ty = ((ny + HEIGHT) / TILE_PX).floor() as i32;
-            self.y = ty as f32 * TILE_PX - HEIGHT;
+            let mut half_only = true;
+            let tx0 = (self.x / TILE_PX).floor() as i32;
+            let tx1 = ((self.x + WIDTH - 0.01) / TILE_PX).floor() as i32;
+            for tx in tx0..=tx1 {
+                if let Some(t) = world.tile(tx, ty) {
+                    if !t.active() || (t.kind as usize) >= td::TILE_COUNT {
+                        continue;
+                    }
+                    if !td::TILE_SOLID.has(t.kind) || t.slope == 1 || t.slope == 2 {
+                        continue;
+                    }
+                    if !t.half_brick() {
+                        half_only = false;
+                    }
+                }
+            }
+            let top = ty as f32 * TILE_PX + if half_only { 8.0 } else { 0.0 };
+            self.y = top - HEIGHT;
             self.vy = 0.0;
             self.on_ground = !down;
         } else if self.vy < 0.0 {
@@ -384,12 +403,43 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
             if !t.active() {
                 continue;
             }
-            if ignore_slopes && (t.slope == 1 || t.slope == 2) {
+            if (t.kind as usize) >= td::TILE_COUNT || !td::TILE_SOLID.has(t.kind) {
                 continue;
             }
-            if (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
-                return true;
+            if ignore_slopes {
+                if t.slope == 1 || t.slope == 2 {
+                    continue; // ground ramps are handled by `slope_floor`
+                }
+                if t.half_brick() {
+                    // Only the bottom 8 px are solid.
+                    if y + h > ty as f32 * TILE_PX + 8.0 {
+                        return true;
+                    }
+                    continue;
+                }
+                if t.slope >= 3 {
+                    // Ceiling ramp: solid above the diagonal, empty below it.
+                    let base_x = tx as f32 * TILE_PX;
+                    let base_y = ty as f32 * TILE_PX;
+                    let sx0 = x.max(base_x);
+                    let sx1 = (x + w).min(base_x + TILE_PX);
+                    let mut cx = sx0;
+                    while cx < sx1 {
+                        let local = cx - base_x;
+                        let boundary = if t.slope == 3 {
+                            base_y + TILE_PX - local
+                        } else {
+                            base_y + local
+                        };
+                        if y < boundary && y + h > base_y {
+                            return true;
+                        }
+                        cx += 2.0;
+                    }
+                    continue;
+                }
             }
+            return true;
         }
     }
     false
@@ -549,6 +599,74 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.hp > 60, "regen only reached {} (sit still, 20 s)", p.hp);
+    }
+
+    #[test]
+    fn stands_on_half_bricks_at_their_own_height() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i] = Tile {
+                kind: 1,
+                flags: FLAG_ACTIVE | tr_core::tile::FLAG_HALF_BRICK,
+                ..Default::default()
+            };
+        }
+        let mut p = Player::spawn(&w);
+        for _ in 0..200 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        let expected = 60.0 * TILE_PX + 8.0 - HEIGHT;
+        assert!(
+            (p.y - expected).abs() < 1.0,
+            "y {} expected {expected}",
+            p.y
+        );
+    }
+
+    #[test]
+    fn half_bricks_only_block_their_bottom_half() {
+        let mut w = ground_world();
+        let i = w.index(20, 50);
+        w.tiles[i] = Tile {
+            kind: 1,
+            flags: FLAG_ACTIVE | tr_core::tile::FLAG_HALF_BRICK,
+            ..Default::default()
+        };
+        assert!(collides_player_rect(
+            &w,
+            20.0 * TILE_PX,
+            50.0 * TILE_PX + 8.0
+        ));
+        assert!(!collides_player_rect(
+            &w,
+            20.0 * TILE_PX,
+            50.0 * TILE_PX + 8.0 - HEIGHT
+        ));
+    }
+
+    #[test]
+    fn ceiling_slopes_block_by_their_triangle() {
+        let mut w = ground_world();
+        let i = w.index(20, 50);
+        w.tiles[i] = Tile {
+            kind: 1,
+            slope: 3,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        // Slope 3 is solid above the diagonal from (0, 16) to (16, 0).
+        assert!(collides_player_rect(
+            &w,
+            20.0 * TILE_PX + 1.0,
+            50.0 * TILE_PX
+        ));
+        assert!(!collides_player_rect(
+            &w,
+            20.0 * TILE_PX + 1.0,
+            51.0 * TILE_PX
+        ));
     }
 
     #[test]

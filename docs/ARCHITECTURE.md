@@ -101,8 +101,8 @@
   cloud textures in parallel, builds the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Player (`player.rs`): 20×42 AABB, fixed 60 Hz steps, gravity/acceleration/friction,
-  1-tile auto-step, axis-separated solid-tile collision, ground-slope (1/2) support and
-  water buoyancy. Survival follows `Player.cs`: 200-tick breath with drowning damage, fall
+  1-tile auto-step, axis-separated solid-tile collision, ground-slope (1/2) support,
+  half-brick (bottom 8 px) and ceiling-slope (3/4) collision, and water buoyancy. Survival follows `Player.cs`: 200-tick breath with drowning damage, fall
   damage over 25 tiles, lava damage and delayed HP regeneration; the HUD draws a breath bar
   while submerged. `TR_XY` teleports the player for screenshots. The camera
   follows the player's centre (unless `TR_CAM`/`TR_PAN` select the free debug camera).
