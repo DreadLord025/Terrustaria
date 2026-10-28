@@ -215,8 +215,9 @@ potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lin
 
 ## Milestone 4 — NPCs, combat, projectiles
 
-✅ *First pass*: a hopping blue slime with gravity/collision/contact damage, player HP,
-hurt cooldown/knockback/respawn, LMB melee, overhead HP bars and a HUD health bar. NPCs
+✅ *First pass*: a hopping blue slime and a flying demon eye (night spawn) with contact
+damage, player HP, hurt cooldown/knockback/respawn, LMB melee, overhead HP bars and a HUD
+health bar. NPCs
 spawn near the player and respawn up to four alive. Data-oriented entity arrays are still
 the plan for the full roster.
 

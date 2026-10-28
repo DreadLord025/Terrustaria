@@ -104,6 +104,7 @@ pub fn load_world_images(
         "Player_0_12",
         "Player_Hair_1",
         "NPC_1",
+        "NPC_2",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),

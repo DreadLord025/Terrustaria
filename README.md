@@ -91,7 +91,8 @@ clean-room analysis of the decompiled C# game.
   shoes, hair) with walk/jump leg frames and camera follow. Slopes count as full cells
   until slope collision and the full draw-layer order are ported.
 - **NPCs & combat (first pass)** — blue slimes spawn on the surface near the player, hop
-  toward them with gravity/collision, deal 12 contact damage and have 30 HP. LMB over an
+  toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
+  flying demon eye with 25 HP chases the player (14 damage). LMB over an
   NPC within four tiles performs a 15-damage melee hit with a short cooldown; damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.

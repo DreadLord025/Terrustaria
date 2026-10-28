@@ -333,15 +333,16 @@ re-simulation after an edit.
 
 ## NPCs and combat (M4 first pass)
 
-`tr-app/src/npc.rs` adds a hopping blue slime: gravity, AABB collision against solid
-tiles, a hop timer toward the player, wall bounce, 30 HP and 12 contact damage. Up to four
-slimes are kept near the player and respawn every six seconds. The player has 100 HP,
+`tr-app/src/npc.rs` adds a hopping blue slime (gravity, AABB collision, hop timer, wall
+bounce, 30 HP, 12 contact damage) and a flying demon eye that steers toward the player with
+a sine bob (25 HP, 14 damage); night spawns include eyes. Up to four NPCs are kept near the
+player and respawn every six seconds. The player has 100 HP,
 0.8 s hurt cooldown, knockback, instant respawn on death and a HUD health bar. LMB over a
 slime within four tiles deals 15 melee damage with a 0.3 s cooldown; damaged slimes show
 an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by the tile
 light; NPC position/animation are hashed into the G6 frame key.
 
-Not ported: NPC spawning rules/biomes/night, the other ~780 NPCs, AI state machines,
+Not ported: biome/event spawning rules and spawn rates, the other ~780 NPCs, AI state machines,
 projectiles, loot/drops, defense/knockback resistances, crits, buffs/debuffs, boss logic
 and multiplayer sync.
 

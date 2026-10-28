@@ -100,8 +100,9 @@
   reach/support/overlap checks; `tr_core::edit` performs the world change and local
   re-frame. The 4-slot hotbar and target outline are drawn through the UI sprite batch;
   F9/close saves the native world and a `.trplayer` sidecar with position/HP/inventory.
-- NPCs (`npc.rs`): hopping slimes with gravity, AABB collision, contact damage and HP;
-  LMB over a slime performs a melee hit. Up to four spawn near the player; the player has
+- NPCs (`npc.rs`): hopping slimes with gravity/AABB collision and flying demon eyes with
+  steering/bobbing; both deal contact damage and have HP. LMB over an NPC performs a melee
+  hit; night spawns include demon eyes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from

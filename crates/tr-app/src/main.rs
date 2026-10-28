@@ -12,7 +12,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use glam::Vec2;
-use npc::Npc;
+use npc::{Npc, NpcKind};
 use player::{Player, PlayerInput};
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::tile::LiquidKind;
@@ -65,6 +65,19 @@ fn main() -> Result<()> {
         world.memory_bytes() as f32 / 1e6,
         t0.elapsed().as_secs_f32() * 1000.0
     );
+    // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
+    if let Some(d) = std::env::var("TR_DAY")
+        .ok()
+        .and_then(|v| v.parse::<f32>().ok())
+        .map(|v| v.clamp(0.0, 1.0))
+    {
+        world.day_time = d >= 0.5;
+        world.time = if world.day_time {
+            d as f64 * 54000.0
+        } else {
+            (1.0 - d as f64) * 32400.0
+        };
+    }
 
     let t_frame = Instant::now();
     let framed = framing::frame_world(&mut world);
@@ -346,8 +359,15 @@ fn main() -> Result<()> {
     let mut npcs = Vec::new();
     if let Some(p) = &player {
         let xt = (p.x / TILE_PX) as i32;
+        let mut eye_spawned = false;
         for dx in [-20, 16, 26] {
-            if let Some(n) = Npc::spawn(&world, xt + dx) {
+            let spawned = if !world.day_time && !eye_spawned {
+                eye_spawned = true;
+                Npc::spawn_eye(&world, xt + dx)
+            } else {
+                Npc::spawn_slime(&world, xt + dx)
+            };
+            if let Some(n) = spawned {
                 npcs.push(n);
             }
         }
@@ -910,7 +930,12 @@ impl App {
                 let off = 14 + (z >> 33) as i32 % 20;
                 let off = if z & 1 == 0 { off } else { -off };
                 let x = ((player.x / TILE_PX) as i32 + off).clamp(2, self.world.width - 3);
-                if let Some(n) = Npc::spawn(&self.world, x) {
+                let spawned = if !self.world.day_time && (z & 3) == 0 {
+                    Npc::spawn_eye(&self.world, x)
+                } else {
+                    Npc::spawn_slime(&self.world, x)
+                };
+                if let Some(n) = spawned {
                     self.npcs.push(n);
                 }
             }
@@ -1633,17 +1658,19 @@ fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
 
 struct NpcAssets {
     slime: Option<BgTex>,
+    eye: Option<BgTex>,
 }
 
 fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: sky_tex(atlas, "NPC_1", None),
+        eye: sky_tex(atlas, "NPC_2", None),
     }
 }
 
-/// UV of one 32x26 slime frame (two frames stacked in `NPC_1`).
-fn slime_frame_uv(tex: &BgTex, frame: u32) -> [f32; 4] {
-    let dv = (tex.uv[3] - tex.uv[1]) * (26.0 / tex.h);
+/// UV of one slime / demon-eye frame (two frames stacked vertically).
+fn npc_frame_uv(tex: &BgTex, frame_h: f32, frame: u32) -> [f32; 4] {
+    let dv = (tex.uv[3] - tex.uv[1]) * (frame_h / tex.h);
     let r = (frame & 1) as f32;
     [
         tex.uv[0],
@@ -2689,9 +2716,6 @@ fn draw_npcs(
     style: &LightStyle,
     anim_time: f32,
 ) -> u32 {
-    let Some(tex) = assets.slime.as_ref() else {
-        return 0;
-    };
     let white = r.white_uv();
     let blue = [0.52, 0.72, 1.0];
     let mut quads = 0;
@@ -2701,25 +2725,43 @@ fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
+        let (w, _) = n.kind.size();
+        let (tex, frame_h, size, pos) = match n.kind {
+            NpcKind::Slime => (
+                assets.slime.as_ref(),
+                26.0,
+                [32.0, 26.0],
+                [n.x - 1.0, n.y - 2.0],
+            ),
+            NpcKind::DemonEye => (
+                assets.eye.as_ref(),
+                24.0,
+                [38.0, 24.0],
+                [n.x - 4.0, n.y - 1.0],
+            ),
+        };
+        let Some(tex) = tex else {
+            continue;
+        };
+        let base = if n.kind == NpcKind::Slime {
+            [c[0] * blue[0], c[1] * blue[1], c[2] * blue[2], 1.0]
+        } else {
+            [c[0], c[1], c[2], 1.0]
+        };
         let tint = if n.hurt_cd > 0.0 {
             [c[0].max(0.8), c[1].max(0.8), c[2].max(0.8), 1.0]
         } else {
-            [c[0] * blue[0], c[1] * blue[1], c[2] * blue[2], 1.0]
+            base
         };
-        let uv = flip_uv(slime_frame_uv(tex, n.frame()), n.facing < 0);
-        r.push_sprite([n.x - 1.0, n.y - 2.0], [32.0, 26.0], uv, tint);
+        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
+        r.push_sprite(pos, size, uv, tint);
         quads += 1;
         if n.hp < n.max_hp {
             let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);
+            r.push_sprite([n.x, n.y - 9.0], [w, 4.0], white, [0.02, 0.02, 0.02, 0.75]);
             r.push_sprite(
-                [n.x - 1.0, n.y - 9.0],
-                [32.0, 4.0],
-                white,
-                [0.02, 0.02, 0.02, 0.75],
-            );
-            r.push_sprite(
-                [n.x - 1.0, n.y - 9.0],
-                [32.0 * frac, 4.0],
+                [n.x, n.y - 9.0],
+                [w * frac, 4.0],
                 white,
                 [0.85, 0.15, 0.15, 0.95],
             );
