@@ -293,11 +293,10 @@ engine.
 2. M2 player ✅ movement, survival, half bricks, held item; next: full draw layers/use.
 3. M3 hotbar/drops/walls ✅; next: inventory/crafting UI and a real item registry.
 4. Pixel-exact UI fonts: `tr-content` ports the original XNB readers (container, LZX,
-   `Texture2DReader`, ReLogic `DynamicSpriteFontReader` from `decompiled-libs/ReLogic`)
-   so textures and fonts load from the retail `Content` directory at runtime instead of
-   pre-extracted PNGs; then HUD/inventory text switches to `Mouse_Text`/`Item_Stack`.
-   Status: in progress (crate `tr-content`, verification = pixel-identical decode of
-   `Images/Tiles_0.xnb` vs the extracted PNG).
+   `Texture2DReader`, ReLogic `DynamicSpriteFontReader`) so textures and fonts load from
+   the retail `Content` directory at runtime instead of pre-extracted PNGs; HUD and
+   inventory text now uses `Mouse_Text`/`Item_Stack`. ✅ (0-diff decode test for
+   `Images/Tiles_0.xnb`; fonts parse as 212-glyph DXT3 pages).
 4. M4 three enemies + King Slime + shuriken ✅; next: more of `NPC.cs` and projectiles.
 5. M5 forest/snow/desert ✅; next: corruption/jungle/structures and hardmode spread.
 6. Everything else.

@@ -451,9 +451,10 @@ Escape opens the inventory instead of quitting: `Main.DrawInventory`'s 10x5 grid
 (grey back at 200/255, selected slot in yellow `InventoryBack14`, `ItemStack` digits with
 slot 10 as "0"). Slot icons come from the original `Item_<id>` sprites through
 `item::item_id` (the `ItemID` of each slot kind), falling back to the tile frame where no
-sprite is loaded yet. Pixel-exact UI *text* still uses the built-in bitmap font: the
-original strings are drawn with ReLogic `DynamicSpriteFont`s (`Fonts/Mouse_Text.xnb`,
-`Fonts/Item_Stack.xnb`), whose XNB reader is being ported in `tr-content` (see ROADMAP).
+sprite is loaded yet. UI text uses the original ReLogic `DynamicSpriteFont`s
+(`Fonts/Mouse_Text.xnb` for labels and item names, `Fonts/Item_Stack.xnb` for stack counts
+and slot numbers), decoded at runtime by `tr-content` and drawn with
+`DynamicSpriteFont.DrawString` metrics (`assets::UiFont`, `push_font_text`).
 Stack interaction is a port of the `ItemSlot.Handle` (context 0) subset: left click
 takes, places or swaps a whole stack, right click takes half or places one, stacks merge
 up to `Item.MAX_STACK = 999`, and the carried stack follows the cursor (`Main.mouseItem`).
