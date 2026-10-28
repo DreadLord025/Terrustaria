@@ -129,6 +129,11 @@ pub fn load_world_images(
         "Item_72",
         "Item_73",
         "Item_74",
+        "Inventory_Back",
+        "Heart",
+        "Bubble",
+        "NPC_Head_Boss_7",
+        "UI/UI_BossBar",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -287,6 +292,12 @@ pub struct Lookups {
     pub shuriken: Option<tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
+    /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
+    pub ui_back: Option<tr_render::SheetRect>,
+    pub ui_heart: Option<tr_render::SheetRect>,
+    pub ui_bubble: Option<tr_render::SheetRect>,
+    pub ui_boss_bar: Option<tr_render::SheetRect>,
+    pub ui_boss_head: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -312,6 +323,11 @@ impl Lookups {
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
+            ui_back: atlas.sheet("Inventory_Back").copied(),
+            ui_heart: atlas.sheet("Heart").copied(),
+            ui_bubble: atlas.sheet("Bubble").copied(),
+            ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
+            ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
@@ -485,6 +501,25 @@ impl Lookups {
         let rect = self.liquid_slopes.get(index)?.as_ref()?;
         let sx = 18 * (slope.clamp(1, 4) as i32 - 1);
         Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
+    }
+
+    /// UV of a whole HUD sheet.
+    pub fn hud_uv(&self, rect: Option<&tr_render::SheetRect>) -> Option<[f32; 4]> {
+        let rect = rect?;
+        Some(uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height))
+    }
+
+    /// UV of one `UI_BossBar` row (516x58, six vertical frames).
+    pub fn boss_bar_uv(&self, row: u32, sx: u32, sy: u32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.ui_boss_bar.as_ref()?;
+        Some(uv_rect(
+            rect,
+            self.atlas_size,
+            sx as i32,
+            (row * 58 + sy) as i32,
+            w,
+            h,
+        ))
     }
 
     /// UV rectangle covering a whole raw (non-tiled) sheet, e.g. the sky gradient.

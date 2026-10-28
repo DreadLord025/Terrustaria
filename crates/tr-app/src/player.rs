@@ -25,7 +25,6 @@ const GROUND_FRICTION: f32 = 0.2;
 /// reach different heights.
 const JUMP_SPEED: f32 = 5.01;
 const JUMP_HEIGHT: i32 = 15;
-const STEP_HEIGHT: f32 = 16.0;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
@@ -320,17 +319,9 @@ impl Player {
             self.x = nx;
             return;
         }
-        // Auto-step one tile when walking against a ledge, like `Player.StepUp`.
-        if self.on_ground || self.in_water {
-            let stepped = self.y - STEP_HEIGHT;
-            if !collides_player_rect(world, self.x, stepped)
-                && !collides_player_rect(world, nx, stepped)
-            {
-                self.y = stepped;
-                self.x = nx;
-                return;
-            }
-        }
+        // Terraria does not step up full tiles: a 16 px ledge needs a jump.
+        // Slopes and half bricks are handled by `slope_floor`/the half-brick
+        // collision, so no auto-step is applied here.
         // Resolve against the tile edge.
         if self.vx > 0.0 {
             let tx = ((self.x + WIDTH + self.vx) / TILE_PX).floor() as i32;
@@ -383,7 +374,10 @@ impl Player {
         if self.vy >= 0.0 {
             let feet = self.y + HEIGHT;
             if let Some(surface) = slope_floor(world, self.x, feet) {
-                if (feet - surface).abs() <= 10.0 {
+                // The slope surface can be up to a full cell away when the feet
+                // clip into the triangle; snap to it instead of falling through
+                // into the solid tile below.
+                if (feet - surface).abs() <= 16.0 {
                     self.y = surface - HEIGHT;
                     self.vy = 0.0;
                     self.on_ground = true;
@@ -589,6 +583,57 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.y < grounded_y - 4.0, "jump did not rise: {}", p.y);
+    }
+
+    #[test]
+    fn walks_down_a_slope_smoothly() {
+        let mut w = World::new("t".into(), 64, 128);
+        for x in 0..64 {
+            let top = if x < 20 { 60 } else { 61 };
+            for y in top..100 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = w.index(19, 60);
+        w.tiles[i].set_slope(1);
+        w.spawn_x = 10;
+        w.spawn_y = 58;
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 { p.update(&w, PlayerInput::default()); }
+        let mut last = p.y;
+        let mut max_step: f32 = 0.0;
+        for _ in 0..180 {
+            p.update(&w, PlayerInput { right: true, ..Default::default() });
+            max_step = max_step.max((p.y - last).abs());
+            last = p.y;
+        }
+        assert!(p.y > 56.0, "should have descended, y={}", p.y);
+        assert!(max_step < 4.0, "slope caused a {max_step} px jump");
+    }
+
+    #[test]
+    fn full_tile_ledges_block_instead_of_stepping_up() {
+        let mut w = ground_world();
+        // A one-tile step at x=20: Terraria requires a jump for full blocks.
+        for x in 20..30 {
+            let i = w.index(x, 59);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        for _ in 0..240 {
+            p.update(&w, PlayerInput { right: true, ..Default::default() });
+        }
+        assert!(
+            p.x + WIDTH <= 20.0 * TILE_PX + 0.5,
+            "player climbed the full-tile step: x={}",
+            p.x
+        );
     }
 
     #[test]

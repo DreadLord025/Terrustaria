@@ -17,7 +17,7 @@ use anyhow::{Context, Result};
 use glam::Vec2;
 use item::ItemDrop;
 use npc::{Npc, NpcKind};
-use player::{Player, PlayerInput};
+use player::{BREATH_MAX, Player, PlayerInput, WIDTH as PLAYER_WIDTH};
 use projectile::Projectile;
 use rain::Rain;
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
@@ -65,6 +65,16 @@ fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usiz
 
 fn main() -> Result<()> {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    // The release build has no console; leave evidence for any panic instead of
+    // losing the message when the window closes.
+    std::panic::set_hook(Box::new(|info| {
+        let backtrace = std::backtrace::Backtrace::force_capture();
+        let msg = format!("panic: {info}
+{backtrace}
+");
+        let _ = std::fs::write("crash.log", &msg);
+        eprintln!("{msg}");
+    }));
 
     let args: Vec<String> = std::env::args().collect();
     // No argument loads our own generated world (`Documents/My Games/Terrustaria`).
@@ -546,6 +556,11 @@ fn main() -> Result<()> {
         attack_cd: 0.0,
         inventory,
         selected: 0,
+        hotbar_scales: {
+            let mut s = [0.75; HOTBAR];
+            s[0] = 1.0;
+            s
+        },
         mouse_pos: Vec2::ZERO,
         mine_down: false,
         place_down: false,
@@ -660,6 +675,8 @@ struct App {
     attack_cd: f32,
     inventory: [ItemSlot; HOTBAR],
     selected: usize,
+    /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
+    hotbar_scales: [f32; HOTBAR],
     mouse_pos: Vec2,
     mine_down: bool,
     place_down: bool,
@@ -1033,10 +1050,19 @@ impl ApplicationHandler for App {
 
 impl App {
     fn update_player(&mut self, dt: f32) {
+        // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
+        static HOLD: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
+        let (hold_right, hold_jump) = *HOLD.get_or_init(|| {
+            let v = std::env::var("TR_HOLD").unwrap_or_default().to_ascii_lowercase();
+            (v.contains("right"), v.contains("jump"))
+        });
         let input = PlayerInput {
             left: self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft),
-            right: self.keys.contains(&KeyCode::KeyD) || self.keys.contains(&KeyCode::ArrowRight),
-            jump: self.keys.contains(&KeyCode::Space)
+            right: hold_right
+                || self.keys.contains(&KeyCode::KeyD)
+                || self.keys.contains(&KeyCode::ArrowRight),
+            jump: hold_jump
+                || self.keys.contains(&KeyCode::Space)
                 || self.keys.contains(&KeyCode::KeyW)
                 || self.keys.contains(&KeyCode::ArrowUp),
             down: self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown),
@@ -1270,7 +1296,10 @@ impl App {
                 }
             }
         }
-        let tile = *self.world.tile(tx, ty).expect("in bounds");
+        let Some(tile) = self.world.tile(tx, ty).copied() else {
+            self.edit_target = None;
+            return;
+        };
         let important = self
             .world
             .frame_important
@@ -1584,6 +1613,14 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
+            let target = if i == self.selected { 1.0 } else { 0.75 };
+            if *scale < target {
+                *scale = (*scale + 0.05).min(target);
+            } else if *scale > target {
+                *scale = (*scale - 0.05).max(target);
+            }
+        }
         self.update_player(dt);
         self.update_npcs(dt);
         self.update_liquids(dt);
@@ -1635,7 +1672,6 @@ impl App {
                 rain,
                 items,
                 swing,
-                coins,
                 projectiles,
                 world_key,
                 ..
@@ -1767,6 +1803,7 @@ impl App {
                     surface_px,
                     is_day,
                     clock_time,
+                    anim_time,
                     sky_uv,
                     sky_tint,
                     rain.cloud_bg(),
@@ -1816,13 +1853,15 @@ impl App {
                     .map(|n| (n.hp, n.max_hp));
                 draw_hud(
                     renderer,
+                    *camera,
+                    *zoom,
                     screen,
                     lookups,
                     inventory,
                     *selected,
+                    &self.hotbar_scales,
                     player.as_ref(),
                     boss,
-                    *coins,
                 );
 
                 if *debug {
@@ -2405,6 +2444,7 @@ fn draw_sky(
     surface_px: f32,
     is_day: bool,
     clock_time: f64,
+    anim_time: f32,
     sky_uv: Option<[f32; 4]>,
     tint: [f32; 3],
     storm: f32,
@@ -2629,7 +2669,8 @@ fn draw_sky(
     for c in clouds {
         let w = c.w * c.scale;
         let h = c.h * c.scale;
-        let wx = c.x + camera.x * 0.5;
+        // Vanilla clouds drift with the wind even when the camera is still.
+        let wx = c.x + camera.x * 0.5 + anim_time * 4.0;
         // Clouds live in a screen-relative band above the camera; anchoring them to
         // `worldSurface` would hide them whenever the player stands on a hill above
         // the average surface.
@@ -3239,9 +3280,13 @@ fn draw_tiles(
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);
     }
-    stats.quads += draw_npcs(r, npc_assets, npcs, light, style, anim_time);
+    stats.quads += draw_npcs(
+        r, npc_assets, npcs, light, style, anim_time, camera, zoom, screen,
+    );
     if let Some(p) = player {
-        stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
+        stats.quads += draw_player(
+            r, player_assets, p, light, style, anim_time, camera, zoom, screen,
+        );
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
@@ -3438,9 +3483,6 @@ fn draw_tile_liquid_behind(
     // the slope, which leaves the open corner showing the parallax (a known
     // vanilla shoreline artefact). Fill it with the side liquid instead.
     let vanilla_draws = (!flag_above || !(flag_left || flag_right)) && !(flag_below && flag_above);
-    if !vanilla_draws && slope == 0 {
-        return 0;
-    }
     let (px, py, src_x, src_y, mut src_w, src_h);
     if flag_above && vanilla_draws {
         px = tx as f32 * TILE_PX;
@@ -3559,6 +3601,18 @@ fn bilerp_corners(c: [[f32; 3]; 4], u: f32, v: f32) -> [f32; 3] {
         out[k] = top + (bottom - top) * v;
     }
     out
+}
+
+/// Snap a sprite's top-left to an integer screen pixel so nearest sampling keeps
+/// the same source texels while the camera moves (no crawling pixel grid).
+#[inline]
+fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32; 2] {
+    let sx = (pos[0] - camera.x) * zoom + screen.x * 0.5;
+    let sy = (pos[1] - camera.y) * zoom + screen.y * 0.5;
+    [
+        camera.x + (sx.round() - screen.x * 0.5) / zoom,
+        camera.y + (sy.round() - screen.y * 0.5) / zoom,
+    ]
 }
 
 /// Tint and push one flat-lit sprite.
@@ -3788,6 +3842,9 @@ fn draw_player(
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
 ) -> u32 {
     let (cx, cy) = player.center();
     let tile_x = (cx / TILE_PX) as i32;
@@ -3811,7 +3868,7 @@ fn draw_player(
     let shoes = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
     let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
 
-    let pos = [player.x - 10.0, player.y - 10.0];
+    let pos = snap_to_screen([player.x - 10.0, player.y - 10.0], camera, zoom, screen);
     let size = [40.0, 56.0];
     let flip = player.facing < 0;
     let leg = player.leg_frame();
@@ -3838,8 +3895,10 @@ fn draw_player(
         cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
         mul(skin),
     );
-    part(assets.torso.as_ref(), frame_uv(assets.torso.as_ref()), mul(skin));
-    part(assets.shirt.as_ref(), frame_uv(assets.shirt.as_ref()), mul(shirt));
+    // `PlayerDrawSet`: the torso/undershirt composite is always frame (0,0);
+    // only the arms and head follow the animation frame.
+    part(assets.torso.as_ref(), cell_uv(assets.torso.as_ref(), 0, 0), mul(skin));
+    part(assets.shirt.as_ref(), cell_uv(assets.shirt.as_ref(), 0, 0), mul(shirt));
     // The frame table's arm sits on the far side of the body; column 8 is the
     // near (item-holding) arm, which the original places with the composite
     // shoulder rotation we do not model yet.
@@ -3861,6 +3920,7 @@ fn draw_player(
 
 /// First enemy pass: the blue slime, tinted and lit like the player, with an overhead
 /// health bar once damaged.
+#[allow(clippy::too_many_arguments)]
 fn draw_npcs(
     r: &mut SpriteRenderer,
     assets: &NpcAssets,
@@ -3868,6 +3928,9 @@ fn draw_npcs(
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
 ) -> u32 {
     let white = r.white_uv();
     let blue = [0.52, 0.72, 1.0];
@@ -3884,25 +3947,27 @@ fn draw_npcs(
                 assets.slime.as_ref(),
                 26.0,
                 [32.0, 26.0],
-                [n.x - 1.0, n.y - 2.0],
+                // The 26 px frame has 2 transparent rows below the feet; align the
+                // art bottom (row 23) with the hitbox bottom.
+                [n.x - 1.0, n.y + 1.0],
             ),
             NpcKind::DemonEye => (
                 assets.eye.as_ref(),
                 24.0,
                 [38.0, 24.0],
-                [n.x - 4.0, n.y - 1.0],
+                [n.x - 4.0, n.y + 2.0],
             ),
             NpcKind::Zombie => (
                 assets.zombie.as_ref(),
                 48.0,
                 [38.0, 48.0],
-                [n.x - 10.0, n.y - 8.0],
+                [n.x - 10.0, n.y - 5.0],
             ),
             NpcKind::KingSlime => (
                 assets.king_slime.as_ref(),
                 120.0,
                 [174.0, 120.0],
-                [n.x - 38.0, n.y - 28.0],
+                [n.x - 38.0, n.y - 25.0],
             ),
         };
         let Some(tex) = tex else {
@@ -3919,7 +3984,7 @@ fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        r.push_sprite(pos, size, uv, tint);
+        r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
         quads += 1;
         if n.hp < n.max_hp {
             let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);
@@ -3934,28 +3999,6 @@ fn draw_npcs(
         }
     }
     quads
-}
-
-/// Formats a copper value as the largest meaningful coin denominations.
-fn format_coins(mut value: u64) -> String {
-    let plat = value / 1_000_000;
-    value %= 1_000_000;
-    let gold = value / 10_000;
-    value %= 10_000;
-    let silver = value / 100;
-    let copper = value % 100;
-    let mut parts = Vec::new();
-    if plat > 0 {
-        parts.push(format!("{plat}p"));
-    }
-    if gold > 0 || plat > 0 {
-        parts.push(format!("{gold}g"));
-    }
-    if silver > 0 || gold > 0 || plat > 0 {
-        parts.push(format!("{silver}s"));
-    }
-    parts.push(format!("{copper}c"));
-    parts.join(" ")
 }
 
 fn draw_tree_foliage(
@@ -4031,122 +4074,191 @@ fn draw_tree_foliage(
     quads
 }
 
-/// Bottom-left hotbar: four item slots with tile icons, counts and the selected name.
+/// Vanilla HUD layout: hotbar top-left, hearts top-right, breath bubbles above the
+/// player and the boss bar at the bottom centre (`GUIHotbarDrawInner`,
+/// `ClassicPlayerResourcesDisplaySet`, `BigProgressBarHelper`).
+#[allow(clippy::too_many_arguments)]
 fn draw_hud(
     r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
     screen: Vec2,
     lookups: &assets::Lookups,
     inventory: &[ItemSlot; HOTBAR],
     selected: usize,
+    hotbar_scales: &[f32; HOTBAR],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
-    coins: u64,
 ) {
-    let gap = 8.0;
-    let slot = 52.0f32.min((screen.x - 40.0 - gap * (HOTBAR - 1) as f32) / HOTBAR as f32);
-    let x0 = 20.0;
-    let y0 = screen.y - 20.0 - slot;
-    for (i, item) in inventory.iter().enumerate() {
-        let x = x0 + i as f32 * (slot + gap);
-        r.push_ui_rect([x, y0], [slot, slot], [0.02, 0.03, 0.05, 0.78]);
-        if i == selected {
-            let c = ACCENT;
-            for (dx, dy, w, h) in [
-                (0.0, 0.0, slot, 2.0),
-                (0.0, slot - 2.0, slot, 2.0),
-                (0.0, 0.0, 2.0, slot),
-                (slot - 2.0, 0.0, 2.0, slot),
-            ] {
-                r.push_ui_rect([x + dx, y0 + dy], [w, h], c);
+    // Hotbar: 10 x 52 px slots at (20,20), the selected one grows to 1.0.
+    if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
+        let mut x = 20.0;
+        for (i, item) in inventory.iter().enumerate() {
+            let scale = hotbar_scales[i].clamp(0.75, 1.0);
+            let slot = 52.0 * scale;
+            let y = 20.0 + 22.0 * (1.0 - scale);
+            let alpha = (75.0 + 150.0 * scale) / 255.0;
+            r.push_ui_sprite([x, y], [slot, slot], back, [1.0, 1.0, 1.0, alpha]);
+            if item.count > 0 {
+                if let Some(tex) = lookups.plain_tex(item.kind) {
+                    let icon = 32.0 * scale;
+                    r.push_ui_sprite(
+                        [x + (slot - icon) * 0.5, y + (slot - icon) * 0.5],
+                        [icon, icon],
+                        tex.uv,
+                        [1.0; 4],
+                    );
+                }
+                let count = format!("{}", item.count);
+                let fs = 0.75 * scale;
+                let tw = r.text_width(&count, fs);
+                let tx = x + slot - tw - 4.0 * scale;
+                let ty = y + slot - 11.0 * scale;
+                r.push_text(tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
+                r.push_text(tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
+            }
+            x += slot + 4.0;
+        }
+        // Selected item name, centred above the bar like the original.
+        let item = &inventory[selected.min(HOTBAR - 1)];
+        if item.count > 0 {
+            let label = item.name;
+            let tw = r.text_width(label, 1.0);
+            let tx = 236.0 - tw * 0.5;
+            r.push_text(tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
+            r.push_text(tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
+        }
+    }
+
+    // Hearts: 20 HP per heart, anchored to the right like the classic display.
+    if let Some(p) = player {
+        if let Some(heart) = lookups.hud_uv(lookups.ui_heart.as_ref()) {
+            let hearts = ((p.max_hp as f32) / 20.0).ceil().max(1.0) as i32;
+            let x0 = screen.x - 300.0;
+            for i in 1..=hearts {
+                let ratio = ((p.hp as f32 - (i - 1) as f32 * 20.0) / 20.0).clamp(0.0, 1.0);
+                let (grey, scale) = if ratio >= 1.0 {
+                    (255.0f32, 1.0f32)
+                } else {
+                    (
+                        (30.0 + 225.0 * ratio).max(30.0),
+                        (ratio / 4.0 + 0.75).max(0.75),
+                    )
+                };
+                let size = 22.0 * scale;
+                let x = x0 + 26.0 * (i - 1) as f32;
+                let y = 32.0 + (22.0 - size) * 0.5;
+                let t = grey / 255.0;
+                r.push_ui_sprite([x, y], [size, size], heart, [t, t, t, 1.0]);
+            }
+            let label = "Life";
+            let value = format!("{}/{}", p.hp, p.max_hp);
+            let center = x0 + 13.0 * hearts as f32;
+            let lw = r.text_width(label, 1.0);
+            r.push_text(
+                center - 3.0 - lw + 1.0,
+                7.0,
+                1.0,
+                [0.0, 0.0, 0.0, 1.0],
+                label,
+            );
+            r.push_text(
+                center - 3.0 - lw,
+                6.0,
+                1.0,
+                [1.0, 1.0, 1.0, 1.0],
+                label,
+            );
+            let vx = center + 3.0;
+            r.push_text(vx + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], &value);
+            r.push_text(vx, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], &value);
+
+            // Breath bubbles above the player's head while submerged.
+            if p.breath < BREATH_MAX {
+                if let Some(bubble) = lookups.hud_uv(lookups.ui_bubble.as_ref()) {
+                    let psx = (p.x + PLAYER_WIDTH * 0.5 - camera.x) * zoom + screen.x * 0.5;
+                    let psy = (p.y - camera.y) * zoom + screen.y * 0.5;
+                    let bx = psx - 125.0;
+                    let by = psy - 100.0;
+                    for i in 1..=10 {
+                        let ratio =
+                            ((p.breath as f32 - (i - 1) as f32 * 20.0) / 20.0).clamp(0.0, 1.0);
+                        let (grey, scale) = if p.breath >= i * 20 {
+                            (255.0f32, 1.0f32)
+                        } else {
+                            (
+                                (30.0 + 225.0 * ratio).max(30.0),
+                                (ratio / 4.0 + 0.75).max(0.75),
+                            )
+                        };
+                        let size = 22.0 * scale;
+                        let x = bx + 26.0 * (i - 1) as f32;
+                        let y = by + (22.0 - size) * 0.5;
+                        let t = grey / 255.0;
+                        r.push_ui_sprite([x, y], [size, size], bubble, [t, t, t, 1.0]);
+                    }
+                }
             }
         }
-        let key_label = if i == 9 {
-            "0".to_string()
-        } else {
-            format!("{}", i + 1)
-        };
-        r.push_text(x + 3.0, y0 + 3.0, 1.0, [0.65, 0.70, 0.78, 1.0], &key_label);
-        if item.count == 0 {
-            continue;
-        }
-        if let Some(tex) = lookups.plain_tex(item.kind) {
-            r.push_ui_sprite([x + 8.0, y0 + 6.0], [36.0, 36.0], tex.uv, [1.0; 4]);
-        }
-        let count = format!("{}", item.count);
-        let tw = r.text_width(&count, 1.0);
-        r.push_text(
-            x + slot - 4.0 - tw,
-            y0 + slot - 12.0,
-            1.0,
-            [1.0, 0.92, 0.75, 1.0],
-            &count,
-        );
     }
-    let item = &inventory[selected.min(HOTBAR - 1)];
-    let label = if item.count == 0 {
-        "Empty".to_string()
-    } else {
-        format!("{} x{}", item.name, item.count)
-    };
-    r.push_text(x0, y0 - 16.0, 1.5, TEXT, &label);
 
+    // Boss bar: `BigProgressBarHelper.DrawFancyBar` (456x22 bar at the bottom).
     if let Some((hp, max_hp)) = boss {
-        let w = 460.0f32.min(screen.x - 120.0);
-        let h = 22.0;
-        let x = (screen.x - w) * 0.5;
-        let y = 22.0;
-        r.push_ui_rect([x, y], [w, h], [0.02, 0.03, 0.05, 0.85]);
         let frac = (hp as f32 / max_hp.max(1) as f32).clamp(0.0, 1.0);
-        r.push_ui_rect(
-            [x + 2.0, y + 2.0],
-            [(w - 4.0) * frac, h - 4.0],
-            [0.55, 0.10, 0.16, 0.95],
-        );
-        r.push_text(x + 8.0, y + 4.0, 1.1, TEXT, "King Slime");
-    }
-    if let Some(p) = player {
-        let w = 220.0;
-        let h = 20.0;
-        let x = screen.x - w - 20.0;
-        let y = 20.0;
-        r.push_ui_rect([x, y], [w, h], [0.02, 0.03, 0.05, 0.8]);
-        let frac = (p.hp as f32 / p.max_hp.max(1) as f32).clamp(0.0, 1.0);
-        r.push_ui_rect(
-            [x + 2.0, y + 2.0],
-            [(w - 4.0) * frac, h - 4.0],
-            [0.72, 0.10, 0.10, 0.95],
-        );
-        r.push_text(
-            x + 8.0,
-            y + 5.0,
-            1.2,
-            [1.0, 0.96, 0.92, 1.0],
-            &format!("HP {}/{}", p.hp, p.max_hp),
-        );
-        let purse = format_coins(coins);
-        r.push_text(
-            x + w - r.text_width(&purse, 1.1) - 8.0,
-            y - 20.0,
-            1.1,
-            [1.0, 0.85, 0.35, 1.0],
-            &purse,
-        );
-        if p.breath < player::BREATH_MAX {
-            let by = y + h + 4.0;
-            let bh = 12.0;
-            r.push_ui_rect([x, by], [w, bh], [0.02, 0.03, 0.05, 0.8]);
-            let frac = (p.breath as f32 / player::BREATH_MAX as f32).clamp(0.0, 1.0);
-            r.push_ui_rect(
-                [x + 2.0, by + 2.0],
-                [(w - 4.0) * frac, bh - 4.0],
-                [0.20, 0.48, 0.95, 0.95],
+        let center = [screen.x * 0.5 - 228.0, screen.y - 61.0];
+        let top_left = [center[0] - 32.0, center[1] - 24.0];
+        if let (Some(back), Some(fill), Some(cap), Some(overlay)) = (
+            lookups.boss_bar_uv(3, 0, 0, 516, 58),
+            lookups.boss_bar_uv(2, 32, 24, 2, 22),
+            lookups.boss_bar_uv(1, 32, 24, 2, 22),
+            lookups.boss_bar_uv(0, 0, 0, 516, 58),
+        ) {
+            r.push_ui_sprite(top_left, [516.0, 58.0], back, [1.0, 1.0, 1.0, 0.2]);
+            let width = ((456.0 * frac) as i32) & !1;
+            if width > 0 {
+                r.push_ui_sprite(
+                    center,
+                    [width as f32, 22.0],
+                    fill,
+                    [1.0, 1.0, 1.0, 1.0],
+                );
+                r.push_ui_sprite(
+                    [center[0] + width as f32 - 2.0, center[1]],
+                    [2.0, 22.0],
+                    cap,
+                    [1.0; 4],
+                );
+            }
+            r.push_ui_sprite(top_left, [516.0, 58.0], overlay, [1.0; 4]);
+            if let Some(icon) = lookups.hud_uv(lookups.ui_boss_head.as_ref()) {
+                r.push_ui_sprite(
+                    [top_left[0] + 2.0, top_left[1] + 19.0],
+                    [30.0, 30.0],
+                    icon,
+                    [1.0; 4],
+                );
+            }
+            let label = format!("{hp}/{max_hp}");
+            let tw = r.text_width(&label, 1.0);
+            let text_x = center[0] + 228.0 - tw * 0.5;
+            r.push_text(
+                text_x + 1.0,
+                center[1] + 8.0,
+                1.0,
+                [0.0, 0.0, 0.0, 1.0],
+                &label,
             );
-            r.push_text(x + 8.0, by + 1.0, 0.9, [0.85, 0.92, 1.0, 1.0], "BREATH");
+            r.push_text(
+                text_x,
+                center[1] + 7.0,
+                1.0,
+                [1.0, 1.0, 1.0, 1.0],
+                &label,
+            );
         }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn draw_debug(
     r: &mut SpriteRenderer,
     screen: Vec2,
