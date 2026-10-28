@@ -22,7 +22,6 @@ use projectile::Projectile;
 use rain::Rain;
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::liquid::LiquidSystem;
-use tr_core::tile::LiquidKind;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World, edit, framing, save, tree, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
@@ -1872,6 +1871,14 @@ impl App {
                 );
                 if let Some(path) = shot_path.as_ref() {
                     if *frame_count >= *shot_at {
+                        log::info!(
+                            "shot camera px {:.2},{:.2} (tile {:.3},{:.3}) zoom {:.3}",
+                            camera.x,
+                            camera.y,
+                            camera.x / TILE_PX,
+                            camera.y / TILE_PX,
+                            *zoom
+                        );
                         capture_frame(gpu, &frame.texture, path);
                         gpu.queue.present(frame);
                         std::process::exit(0);
@@ -2982,6 +2989,21 @@ fn draw_tiles(
     const HIGH_LIGHT: f32 = 142.0 / 255.0;
     const MEDIUM_LIGHT: f32 = 26.0 / 255.0;
 
+    // `LiquidRenderer.InternalPrepareDraw` runs once per frame; both the opaque
+    // background pass and the translucent foreground pass consume this record.
+    let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
+    // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
+    // `Opacity` (usually 1.0), so the parallax background never shows through it.
+    stats.liquids += draw_liquids(
+        r,
+        lookups,
+        light,
+        style,
+        anim_time,
+        &liquid_draws,
+        LiquidPass::Background,
+    );
+
     scratch.open.clear();
     for ty in y0..=y1 {
         scratch.cur.clear();
@@ -3154,7 +3176,6 @@ fn draw_tiles(
         stats.dark_rects += 1;
     }
 
-    stats.liquids = draw_liquids(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);
@@ -3163,6 +3184,17 @@ fn draw_tiles(
     if let Some(p) = player {
         stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
     }
+    // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
+    // layer tints everything that stands in it.
+    stats.liquids += draw_liquids(
+        r,
+        lookups,
+        light,
+        style,
+        anim_time,
+        &liquid_draws,
+        LiquidPass::Foreground,
+    );
     if let Some((tx, ty)) = edit_target {
         let white = r.white_uv();
         let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
@@ -3182,94 +3214,113 @@ fn draw_tiles(
     stats
 }
 
-/// `LiquidRenderer.DrawNormalLiquids`, first pass: one animated 16x16 sprite per
-/// liquid tile, cropped to the liquid height, with the surface frame on the top
-/// layer and a small per-column sine wave. Lighting is flat per tile.
+#[derive(Clone, Copy, PartialEq)]
+enum LiquidPass {
+    /// `isBackgroundDraw = true`: opaque, drawn before walls and tiles.
+    Background,
+    /// `isBackgroundDraw = false`: `DEFAULT_OPACITY`, drawn over entities.
+    Foreground,
+}
+
+/// `LiquidRenderer.DrawNormalLiquids`: emit one pass of the prepared liquid records.
 #[allow(clippy::too_many_arguments)]
 fn draw_liquids(
     r: &mut SpriteRenderer,
-    world: &World,
     lookups: &assets::Lookups,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
+    draws: &[tr_core::liquid_draw::LiquidDraw],
+    pass: LiquidPass,
 ) -> u32 {
-    let frame = ((anim_time * 8.0) as usize) % 16;
+    // `LiquidRenderer.Update`: body/edge frames advance with the (wind-driven)
+    // animation clock, interior frames with the slower waterfall clock.
+    let anim_frame = ((anim_time * 8.0) as i32) & 15;
+    let waterfall_frame = ((anim_time * 0.5) as i32) & 15;
     let mut quads = 0;
-    for ty in y0..=y1 {
-        for tx in x0..=x1 {
-            let Some(t) = world.tile(tx, ty) else {
-                continue;
-            };
-            if t.liquid == 0 {
-                continue;
-            }
-            let (tex, opacity, amplitude) = match t.liquid_kind() {
-                LiquidKind::Lava => (1, 0.95, 0.25),
-                LiquidKind::Honey => (11, 0.95, 0.15),
-                LiquidKind::Shimmer => (14, 0.75, 1.3),
-                LiquidKind::Water => (0, 0.60, 1.0),
-            };
-            let l = light.get(tx, ty);
-            if t.liquid_kind() != LiquidKind::Lava && light_is_zero(l) {
-                continue;
-            }
-            let full = t.liquid >= 255;
-            let surface = !full
-                || world
-                    .tile(tx, ty - 1)
-                    .is_none_or(|a| a.liquid == 0 || a.liquid_kind() != t.liquid_kind());
-            let h = if full {
-                16.0
-            } else {
-                (t.liquid as f32 / 255.0 * 16.0).max(1.0)
-            };
-            // 80 px animation blocks; block 16 is the still surface frame.
-            let base_y = if surface {
-                1280
-            } else {
-                32 + frame as i32 * 80
-            };
-            let crop_y = base_y + (16.0 - h) as i32;
-            let Some(uv) = lookups.liquid_uv(tex, 16, crop_y, 16, h as u32) else {
-                continue;
-            };
-            let wave = (tx as f32 * 0.55 + anim_time * 2.0).sin() * amplitude;
-            // Slight depth falloff; the light map already attenuates, but the sky
-            // showing through a shallow open lake otherwise keeps deep water bright.
-            let mut depth = 0u32;
-            for d in 1..=8 {
-                if world
-                    .tile(tx, ty - d)
-                    .is_some_and(|a| a.liquid > 0 && a.liquid_kind() == t.liquid_kind())
-                {
-                    depth += 1;
-                } else {
-                    break;
+    for d in draws {
+        if !d.visible || d.src_w <= 0 || d.src_h <= 0 {
+            continue;
+        }
+        // `DEFAULT_OPACITY`: water 0.6, lava/honey 0.95, shimmer 0.75.
+        let (tex, default_opacity) = match d.liquid_type {
+            1 => (1, 0.95),
+            2 => (11, 0.95),
+            3 => (14, 0.75),
+            _ => (0, 0.60),
+        };
+        let corners = light.corner4(d.x, d.y);
+        // `DrawNormalLiquids`: surface tiles snap to the still frame at y=1280,
+        // everything else advances inside its 80 px block.
+        let src_y = if d.is_surface {
+            1280
+        } else if d.src_x == 16 {
+            d.src_y + waterfall_frame * 80
+        } else {
+            d.src_y + anim_frame * 80
+        };
+        let Some(uv) = lookups.liquid_uv(
+            tex,
+            d.src_x,
+            src_y,
+            d.src_w as u32,
+            d.src_h as u32,
+        ) else {
+            continue;
+        };
+        let alpha = if pass == LiquidPass::Background {
+            d.opacity
+        } else {
+            d.opacity * default_opacity
+        }
+        .min(1.0);
+        // `Lighting.GetCornerColors` interpolates between the four corners on the
+        // GPU. The instance format carries one tint, so split the visible rect
+        // into a 3x3 grid and evaluate the bilinear corner colour per cell.
+        let xs = [0, d.src_w / 3, d.src_w * 2 / 3, d.src_w];
+        let ys = [0, d.src_h / 3, d.src_h * 2 / 3, d.src_h];
+        for i in 0..3 {
+            for j in 0..3 {
+                let cw = xs[i + 1] - xs[i];
+                let ch = ys[j + 1] - ys[j];
+                if cw <= 0 || ch <= 0 {
+                    continue;
                 }
+                let u = (xs[i] + xs[i + 1]) as f32 * 0.5 / d.src_w as f32;
+                let v = (ys[j] + ys[j + 1]) as f32 * 0.5 / d.src_h as f32;
+                let col = bilerp_corners(corners, u, v);
+                let tint = style.shade(col, d.x, d.y, anim_time);
+                r.push_sprite(
+                    [
+                        d.x as f32 * TILE_PX + d.offset_x + xs[i] as f32,
+                        d.y as f32 * TILE_PX + d.offset_y + ys[j] as f32,
+                    ],
+                    [cw as f32, ch as f32],
+                    sub_uv(uv, xs[i] as f32, ys[j] as f32, cw as f32, ch as f32),
+                    [
+                        tint[0].min(1.0),
+                        tint[1].min(1.0),
+                        tint[2].min(1.0),
+                        alpha,
+                    ],
+                );
+                quads += 1;
             }
-            let depth_tint = 1.0 - (depth as f32 * 0.035).min(0.35);
-            let c = style.shade(l, tx, ty, anim_time);
-            r.push_sprite_flags(
-                [tx as f32 * TILE_PX, ty as f32 * TILE_PX + 16.0 - h + wave],
-                [TILE_PX, h + 1.0],
-                uv,
-                [
-                    c[0] * depth_tint,
-                    c[1] * depth_tint,
-                    c[2] * depth_tint,
-                    opacity,
-                ],
-                1.0,
-            );
-            quads += 1;
         }
     }
     quads
+}
+
+/// Bilinear sample of `LightMap::corner4` (TL, TR, BL, BR).
+#[inline]
+fn bilerp_corners(c: [[f32; 3]; 4], u: f32, v: f32) -> [f32; 3] {
+    let mut out = [0.0f32; 3];
+    for k in 0..3 {
+        let top = c[0][k] + (c[1][k] - c[0][k]) * u;
+        let bottom = c[2][k] + (c[3][k] - c[2][k]) * u;
+        out[k] = top + (bottom - top) * v;
+    }
+    out
 }
 
 /// Tint and push one flat-lit sprite.

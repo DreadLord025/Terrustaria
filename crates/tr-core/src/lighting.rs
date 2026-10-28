@@ -318,6 +318,35 @@ impl LightMap {
         out
     }
 
+    /// `Lighting.GetCornerColors`: each corner averages this tile with its two
+    /// orthogonal neighbours and the diagonal between them. Ordered TL, TR, BL, BR.
+    /// The original clamps after applying `GlobalBrightness`; the draw pass does
+    /// that once it has run the value through the light style.
+    pub fn corner4(&self, x: i32, y: i32) -> [[f32; 3]; 4] {
+        let c = self.get(x, y);
+        let up = self.get(x, y - 1);
+        let down = self.get(x, y + 1);
+        let left = self.get(x - 1, y);
+        let right = self.get(x + 1, y);
+        let up_left = self.get(x - 1, y - 1);
+        let up_right = self.get(x + 1, y - 1);
+        let down_left = self.get(x - 1, y + 1);
+        let down_right = self.get(x + 1, y + 1);
+        let avg = |a: [f32; 3], b: [f32; 3], d: [f32; 3]| {
+            [
+                (c[0] + a[0] + b[0] + d[0]) * 0.25,
+                (c[1] + a[1] + b[1] + d[1]) * 0.25,
+                (c[2] + a[2] + b[2] + d[2]) * 0.25,
+            ]
+        };
+        [
+            avg(up, left, up_left),
+            avg(up, right, up_right),
+            avg(down, left, down_left),
+            avg(down, right, down_right),
+        ]
+    }
+
     /// `Lighting.GetColor4Slice`: four quadrant samples. Each quadrant takes the
     /// brighter of its two axis neighbours (the original's cheap diagonal stand-in)
     /// averaged with this tile, matching the medium-quality block draw.

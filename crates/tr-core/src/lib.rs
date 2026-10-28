@@ -7,6 +7,7 @@ pub mod edit;
 pub mod framing;
 pub mod lighting;
 pub mod liquid;
+pub mod liquid_draw;
 pub mod save;
 pub mod tile;
 pub mod tiledata;
