@@ -402,7 +402,16 @@ fn main() -> Result<()> {
         )
         .ok();
         log::info!("atlas dumped to {path}");
-        for name in ["Tiles_0", "Tiles_1", "Tiles_2", "Wall_1", "Background_0"] {
+        for name in [
+            "Tiles_0",
+            "Tiles_1",
+            "Tiles_2",
+            "Wall_1",
+            "Background_0",
+            "LiquidSlope_0",
+            "Liquid_0",
+            "water_0",
+        ] {
             if let Some(s) = atlas.sheet(name) {
                 log::info!(
                     "{name}: atlas rect {}x{} at {},{} plain {:?}",
@@ -3078,15 +3087,17 @@ fn draw_tiles(
     let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
-    stats.liquids += draw_liquids(
-        r,
-        lookups,
-        light,
-        style,
-        anim_time,
-        &liquid_draws,
-        LiquidPass::Background,
-    );
+    if std::env::var_os("TR_NO_LIQBACK").is_none() {
+        stats.liquids += draw_liquids(
+            r,
+            lookups,
+            light,
+            style,
+            anim_time,
+            &liquid_draws,
+            LiquidPass::Background,
+        );
+    }
 
     scratch.open.clear();
     for ty in y0..=y1 {
@@ -3276,7 +3287,9 @@ fn draw_tiles(
         stats.dark_rects += 1;
     }
 
-    stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+    if std::env::var_os("TR_NO_FOLIAGE").is_none() {
+        stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+    }
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);
     }
@@ -3290,15 +3303,17 @@ fn draw_tiles(
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
-    stats.liquids += draw_liquids(
-        r,
-        lookups,
-        light,
-        style,
-        anim_time,
-        &liquid_draws,
-        LiquidPass::Foreground,
-    );
+    if std::env::var_os("TR_NO_LIQFRONT").is_none() {
+        stats.liquids += draw_liquids(
+            r,
+            lookups,
+            light,
+            style,
+            anim_time,
+            &liquid_draws,
+            LiquidPass::Foreground,
+        );
+    }
     if let Some((tx, ty)) = edit_target {
         let white = r.white_uv();
         let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
@@ -3400,7 +3415,15 @@ fn draw_liquids(
                         d.y as f32 * TILE_PX + d.offset_y + ys[j] as f32,
                     ],
                     [cw as f32, ch as f32],
-                    sub_uv(uv, xs[i] as f32, ys[j] as f32, cw as f32, ch as f32),
+                    sub_uv_frac(
+                        uv,
+                        xs[i] as f32,
+                        ys[j] as f32,
+                        cw as f32,
+                        ch as f32,
+                        d.src_w as f32,
+                        d.src_h as f32,
+                    ),
                     [
                         tint[0].min(1.0),
                         tint[1].min(1.0),
@@ -3430,43 +3453,60 @@ fn draw_tile_liquid_behind(
     ty: i32,
     tile: &tr_core::tile::Tile,
 ) -> u32 {
-    if !tile.active() || td::TILE_SOLID_TOP.has(tile.kind) {
+    // `BlocksWaterDrawingBehindSelf`: chests and friends never draw water behind
+    // themselves, and while sloped they fall back to the plain liquid frame.
+    const BLOCKS_WATER_BEHIND: [u16; 5] = [54, 541, 328, 459, 470];
+    if std::env::var_os("TR_NO_LIQBEHIND").is_some() {
+        return 0;
+    }
+    let blocks_behind = BLOCKS_WATER_BEHIND.contains(&tile.kind);
+    // `!tileSolid[type] || tileSolidTop[type]` both bail out (line 4064).
+    if !tile.active() || !td::TILE_SOLID.has(tile.kind) || td::TILE_SOLID_TOP.has(tile.kind) {
         return 0;
     }
     let slope = tile.slope();
+    if blocks_behind && slope == 0 {
+        return 0;
+    }
     let neighbor = |dx: i32, dy: i32| world.tile(tx + dx, ty + dy).copied().unwrap_or_default();
     let right = neighbor(1, 0);
     let left = neighbor(-1, 0);
     let above = neighbor(0, -1);
     let below = neighbor(0, 1);
-    let mut level = tile.liquid as i32;
+    let mut level = 0i32;
     let mut kind = tile.liquid_kind();
+    let mut flag_self = false;
     let mut flag_left = false;
     let mut flag_right = false;
     let mut flag_above = false;
     let mut flag_below = false;
-    if tile.liquid > 0 {
+    // `flag5`: the tile's own liquid only counts when the block is not full size.
+    if tile.liquid > 0 && (slope != 0 || (tile.half_brick() && tile.liquid > 160)) {
+        flag_self = true;
         kind = tile.liquid_kind();
-    }
-    if right.liquid > 0 && slope != 2 && slope != 4 {
-        flag_right = true;
-        kind = right.liquid_kind();
-        level = level.max(right.liquid as i32);
+        level = tile.liquid as i32;
     }
     if left.liquid > 0 && slope != 1 && slope != 3 {
         flag_left = true;
         kind = left.liquid_kind();
         level = level.max(left.liquid as i32);
     }
+    if right.liquid > 0 && slope != 2 && slope != 4 {
+        flag_right = true;
+        kind = right.liquid_kind();
+        level = level.max(right.liquid as i32);
+    }
     if above.liquid > 0 && slope != 3 && slope != 4 {
         flag_above = true;
         kind = above.liquid_kind();
     }
-    if below.liquid > 240 && slope != 1 && slope != 2 {
-        flag_below = true;
+    if below.liquid > 0 && slope != 1 && slope != 2 {
+        if below.liquid > 240 {
+            flag_below = true;
+        }
         kind = below.liquid_kind();
     }
-    if !(flag_left || flag_right || flag_above || flag_below) {
+    if !(flag_self || flag_left || flag_right || flag_above || flag_below) {
         return 0;
     }
     if flag_below && (flag_left || flag_right) {
@@ -3479,12 +3519,21 @@ fn draw_tile_liquid_behind(
         tr_core::tile::LiquidKind::Shimmer => 14,
         tr_core::tile::LiquidKind::Water => 0,
     };
-    // The original skips the partial liquid when water is both above and beside
-    // the slope, which leaves the open corner showing the parallax (a known
-    // vanilla shoreline artefact). Fill it with the side liquid instead.
-    let vanilla_draws = (!flag_above || !(flag_left || flag_right)) && !(flag_below && flag_above);
-    let (px, py, src_x, src_y, mut src_w, src_h);
-    if flag_above && vanilla_draws {
+    // `(!flag3 || !(flag | flag2)) && !(flag4 & flag3)`: liquid on every side keeps
+    // the default full-cell rect at the tile origin instead of a partial strip.
+    let partial = (!flag_above || !(flag_left || flag_right)) && !(flag_below && flag_above);
+    let (px, py, src_x, src_y, src_w, src_h);
+    if !partial {
+        px = tx as f32 * TILE_PX;
+        py = ty as f32 * TILE_PX;
+        src_x = 0;
+        // The default rect skips the four surface rows of `Liquid_*`; the slope
+        // masks are full-cell triangles, so shifting them would open a seam along
+        // the diagonal.
+        src_y = if slope != 0 { 0 } else { 4 };
+        src_w = 16;
+        src_h = 16;
+    } else if flag_above {
         px = tx as f32 * TILE_PX;
         py = ty as f32 * TILE_PX;
         src_x = 0;
@@ -3499,25 +3548,32 @@ fn draw_tile_liquid_behind(
         src_w = 16;
         src_h = 4;
     } else {
+        // `num14`: how far the liquid surface sits inside the cell (0 at 255).
         let offset = ((256 - level) / 32) * 2;
-        let above_solid = world
-            .tile(tx, ty - 1)
-            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind));
-        let sy = if above.liquid == 0 && !above_solid { 0 } else { 4 };
-        px = tx as f32 * TILE_PX;
+        let sy = if above.liquid == 0
+            && (slope != 0 || tile.half_brick() || !solid_full(world, tx, ty - 1))
+        {
+            0
+        } else {
+            4
+        };
+        let mut x = tx as f32 * TILE_PX;
         py = ty as f32 * TILE_PX + offset as f32;
         src_x = 0;
         src_y = if slope != 0 { offset } else { sy };
         src_h = 16 - offset as u32;
-        if slope == 0 && !((flag_left && flag_right) || tile.half_brick()) && !flag_left {
-            // Water only on the right: a 4 px strip against the right edge.
-            src_w = 4;
+        src_w = if slope != 0 || (flag_left && flag_right) || tile.half_brick() {
+            // A slope always draws the whole diagonal mask; clipping it to 4 px
+            // leaves the shore step showing the parallax background.
+            16
+        } else if flag_left {
+            4
         } else {
-            src_w = 16;
-        }
-        if flag_left && !flag_right {
-            src_w = 4;
-        }
+            // Liquid only on the right: a 4 px strip against the right edge.
+            x += 12.0;
+            4
+        };
+        px = x;
     }
     // `num15`: 1.0 at/above the surface, otherwise 0.5 (0.6/0.9 in front of a
     // wall), with the half-brick and open-corner exceptions.
@@ -3540,16 +3596,16 @@ fn draw_tile_liquid_behind(
     if above.liquid > 0 {
         opacity = 1.0;
     }
-    if slope == 4 && left.liquid == 0 && !world.tile(tx - 1, ty).is_some_and(|t| t.active()) {
+    if slope == 4 && left.liquid == 0 && !solid_full(world, tx - 1, ty) {
         opacity = 0.0;
     }
-    if slope == 3 && right.liquid == 0 && !world.tile(tx + 1, ty).is_some_and(|t| t.active()) {
+    if slope == 3 && right.liquid == 0 && !solid_full(world, tx + 1, ty) {
         opacity = 0.0;
     }
     if opacity <= 0.0 || src_w == 0 || src_h == 0 {
         return 0;
     }
-    let uv = if slope != 0 {
+    let uv = if slope != 0 && !blocks_behind {
         lookups.liquid_slope_uv(tex, slope, src_y, src_h)
     } else {
         // `Liquid_*` is 16 px tall; the original's 4..20 strip relies on texture
@@ -3577,7 +3633,15 @@ fn draw_tile_liquid_behind(
             r.push_sprite(
                 [px + xs[i] as f32, py + ys[j] as f32],
                 [cw as f32, ch as f32],
-                sub_uv(uv, xs[i] as f32, ys[j] as f32, cw as f32, ch as f32),
+                sub_uv_frac(
+                    uv,
+                    xs[i] as f32,
+                    ys[j] as f32,
+                    cw as f32,
+                    ch as f32,
+                    src_w as f32,
+                    src_h as f32,
+                ),
                 [
                     tint[0].min(1.0),
                     tint[1].min(1.0),
@@ -3589,6 +3653,18 @@ fn draw_tile_liquid_behind(
         }
     }
     quads
+}
+
+/// `WorldGen.SolidTile`: active, solid, not a platform, and a full block.
+#[inline]
+fn solid_full(world: &World, x: i32, y: i32) -> bool {
+    world.tile(x, y).is_some_and(|t| {
+        t.active()
+            && td::TILE_SOLID.has(t.kind)
+            && !td::TILE_SOLID_TOP.has(t.kind)
+            && !t.half_brick()
+            && t.slope() == 0
+    })
 }
 
 /// Bilinear sample of `LightMap::corner4` (TL, TR, BL, BR).
@@ -3636,8 +3712,22 @@ fn push_lit(
 /// Sub-rectangle of a 16x16 frame's UV rect, in tile pixels.
 #[inline]
 fn sub_uv(uv: [f32; 4], x: f32, y: f32, w: f32, h: f32) -> [f32; 4] {
-    let du = (uv[2] - uv[0]) / 16.0;
-    let dv = (uv[3] - uv[1]) / 16.0;
+    sub_uv_frac(uv, x, y, w, h, 16.0, 16.0)
+}
+
+/// `sub_uv` over a destination rect that is not 16x16.
+#[inline]
+fn sub_uv_frac(
+    uv: [f32; 4],
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    full_w: f32,
+    full_h: f32,
+) -> [f32; 4] {
+    let du = (uv[2] - uv[0]) / full_w;
+    let dv = (uv[3] - uv[1]) / full_h;
     [
         uv[0] + du * x,
         uv[1] + dv * y,

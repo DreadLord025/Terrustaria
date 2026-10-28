@@ -300,6 +300,7 @@ impl SpriteRenderer {
     }
 
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+        probe(pos, size, uv, color);
         self.world.push(SpriteInstance {
             pos,
             size,
@@ -318,6 +319,7 @@ impl SpriteRenderer {
         uv: [f32; 4],
         color: [f32; 4],
     ) {
+        probe(pos, size, uv, color);
         self.back.push(SpriteInstance {
             pos,
             size,
@@ -580,5 +582,28 @@ impl SpriteRenderer {
 
         gpu.queue.submit(Some(encoder.finish()));
         stats
+    }
+}
+
+/// `TR_PROBE=x,y`: log every sprite whose rect covers that world point, in draw
+/// order, to find which pass paints a stray pixel.
+fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+    static PROBE: std::sync::OnceLock<Option<[f32; 2]>> = std::sync::OnceLock::new();
+    let p = PROBE.get_or_init(|| {
+        std::env::var("TR_PROBE").ok().and_then(|v| {
+            let mut it = v.split(',');
+            let x: f32 = it.next()?.parse().ok()?;
+            let y: f32 = it.next()?.parse().ok()?;
+            Some([x, y])
+        })
+    });
+    if let Some(p) = *p {
+        if p[0] >= pos[0] && p[0] < pos[0] + size[0] && p[1] >= pos[1] && p[1] < pos[1] + size[1] {
+            eprintln!(
+                "PROBE pos {:.1},{:.1} size {:.1}x{:.1} uv {:.4},{:.4}-{:.4},{:.4} color {:.2},{:.2},{:.2},{:.2}",
+                pos[0], pos[1], size[0], size[1], uv[0], uv[1], uv[2], uv[3],
+                color[0], color[1], color[2], color[3]
+            );
+        }
     }
 }

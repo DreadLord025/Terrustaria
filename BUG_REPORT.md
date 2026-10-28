@@ -254,3 +254,27 @@ tile-edit path no longer panics when the cursor maps outside the world (the only
 unchecked `expect("in bounds")` on the input path was replaced with a bounds check). The
 exact crash could not be reproduced (PrintScreen opens the Windows snipping overlay and
 changes focus), so the next run with `crash.log` will identify it.
+
+## BUG-016 — Water corners/seams on sloped shorelines (BUG-005 reopened)
+
+**Status:** fixed — commit `WATERCORNERS`
+**Area:** `tr-app/src/main.rs` (`draw_tile_liquid_behind`), `tr-render/src/sprite.rs` (`probe`)
+
+**Report:** green background slivers ran along every underwater slope step and the
+shoreline corner still showed the parallax instead of water.
+
+**Cause:** three divergences from `TileDrawing.DrawTile_LiquidBehindTile`:
+1. the water-surrounded case keeps the original's default `(0, 4, 16, 16)` source rect;
+   feeding `src_y = 4` into the `LiquidSlope_*` mask shifted the diagonal four pixels down
+   and opened a seam along every hypotenuse (the `y = 4` skip only applies to `Liquid_*`,
+   whose first rows are the surface highlight);
+2. the right-only 4 px strip lost the original's `vector.x += 12` shift, and the
+   `flag_left && !flag_right` width override also clipped slope masks to 4 px;
+3. `sub_uv` subdivided corner-lit quads over a hardcoded 16 px, mis-sampling 4 px strips.
+
+**Fix:** ported the branch selection verbatim (slope masks always full width, `+12` shift,
+surrounded default rect with `src_y = 0` for masks), added the `flag5` own-liquid and
+`tileSolid`/`BlocksWaterDrawingBehindSelf` early-outs, `WorldGen.SolidTile` for the
+neighbour tests, and `sub_uv_frac` for non-16 px destinations. Verified with lake-bank
+screenshots at zoom 1/2/3 (`TR_CAM=2240,362`): the seams are gone. `TR_PROBE=x,y` now logs
+every sprite covering a world point, which is how the mis-sampled mask was found.
