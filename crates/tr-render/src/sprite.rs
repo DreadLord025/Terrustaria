@@ -41,7 +41,11 @@ pub struct SpriteRenderer {
     bind_ui: wgpu::BindGroup,
     globals_world: wgpu::Buffer,
     globals_ui: wgpu::Buffer,
-    instances: wgpu::Buffer,
+    /// Ring of instance buffers so the CPU never rewrites a buffer the GPU may still
+    /// be reading (B3). Three buffers stay ahead of `desired_maximum_frame_latency` (≤2).
+    instances: Vec<wgpu::Buffer>,
+    /// Ring cursor.
+    frame_index: usize,
     capacity: u32,
     pub world: Vec<SpriteInstance>,
     pub ui: Vec<SpriteInstance>,
@@ -52,6 +56,8 @@ pub struct SpriteRenderer {
     font_uv1: [f32; 2],
     white_uv: [f32; 4],
 }
+
+const RING: usize = 3;
 
 impl SpriteRenderer {
     pub fn new(gpu: &Gpu, atlas: &Atlas, font_glyph_px: u32) -> Self {
@@ -137,9 +143,18 @@ impl SpriteRenderer {
                 label: Some(label),
                 layout: &layout,
                 entries: &[
-                    wgpu::BindGroupEntry { binding: 0, resource: buf.as_entire_binding() },
-                    wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(&view) },
-                    wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(&sampler) },
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: buf.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(&view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
                 ],
             })
         };
@@ -198,12 +213,15 @@ impl SpriteRenderer {
         });
 
         let capacity = 262_144u32;
-        let instances = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("instances"),
-            size: capacity as u64 * std::mem::size_of::<SpriteInstance>() as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let make_instances = |cap: u32| {
+            device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("instances"),
+                size: cap as u64 * std::mem::size_of::<SpriteInstance>() as u64,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            })
+        };
+        let instances = (0..RING).map(|_| make_instances(capacity)).collect();
 
         let mut sheets = HashMap::with_capacity(atlas.sheets.len());
         for (k, v) in &atlas.sheets {
@@ -219,7 +237,10 @@ impl SpriteRenderer {
         }
 
         let font = atlas.sheet("__font").expect("font sheet");
-        let font_uv0 = [font.x as f32 / atlas.width as f32, font.y as f32 / atlas.height as f32];
+        let font_uv0 = [
+            font.x as f32 / atlas.width as f32,
+            font.y as f32 / atlas.height as f32,
+        ];
         let font_uv1 = [
             (font.x + font.width) as f32 / atlas.width as f32,
             (font.y + font.height) as f32 / atlas.height as f32,
@@ -239,6 +260,7 @@ impl SpriteRenderer {
             globals_world,
             globals_ui,
             instances,
+            frame_index: 0,
             capacity,
             world: Vec::with_capacity(64 * 1024),
             ui: Vec::with_capacity(8 * 1024),
@@ -257,7 +279,12 @@ impl SpriteRenderer {
         let ah = self.atlas_size.1 as f32;
         let x0 = r[0] * aw;
         let y0 = r[1] * ah;
-        Some([(x0 + sx) / aw, (y0 + sy) / ah, (x0 + sx + sw) / aw, (y0 + sy + sh) / ah])
+        Some([
+            (x0 + sx) / aw,
+            (y0 + sy) / ah,
+            (x0 + sx + sw) / aw,
+            (y0 + sy + sh) / ah,
+        ])
     }
 
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
@@ -360,24 +387,43 @@ impl SpriteRenderer {
         }
         if total as u32 > self.capacity {
             let new_cap = (total as u32).next_power_of_two();
-            self.instances = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("instances"),
-                size: new_cap as u64 * std::mem::size_of::<SpriteInstance>() as u64,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
+            self.instances = (0..RING)
+                .map(|_| {
+                    gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("instances"),
+                        size: new_cap as u64 * std::mem::size_of::<SpriteInstance>() as u64,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    })
+                })
+                .collect();
             self.capacity = new_cap;
+            self.frame_index = 0;
         }
 
-        let all = self.world.iter().chain(self.ui.iter()).copied().collect::<Vec<_>>();
-        let bytes = bytemuck::cast_slice(&all);
-        gpu.queue.write_buffer(&self.instances, 0, bytes);
-        stats.uploaded_bytes = bytes.len() as u64;
-        stats.instances = all.len() as u32;
+        // B1: no per-frame `collect`. The world and UI ranges are written straight
+        // into one buffer at their final offsets (48-byte instances keep 4-byte
+        // alignment, so a single `write_buffer` copy of each slice is valid).
+        let idx = self.frame_index;
+        self.frame_index = (self.frame_index + 1) % RING;
+        let buffer = &self.instances[idx];
+        let world_bytes = std::mem::size_of_val(self.world.as_slice());
+        if !self.world.is_empty() {
+            gpu.queue
+                .write_buffer(buffer, 0, bytemuck::cast_slice(&self.world));
+        }
+        if !self.ui.is_empty() {
+            gpu.queue
+                .write_buffer(buffer, world_bytes as u64, bytemuck::cast_slice(&self.ui));
+        }
+        stats.uploaded_bytes = (world_bytes + std::mem::size_of_val(self.ui.as_slice())) as u64;
+        stats.instances = total as u32;
 
         let mut encoder = gpu
             .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("frame") });
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("frame"),
+            });
 
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -397,7 +443,7 @@ impl SpriteRenderer {
                 multiview_mask: None,
             });
             pass.set_pipeline(&self.pipeline);
-            pass.set_vertex_buffer(0, self.instances.slice(..));
+            pass.set_vertex_buffer(0, buffer.slice(..));
             if !self.world.is_empty() {
                 pass.set_bind_group(0, &self.bind_world, &[]);
                 pass.draw(0..6, 0..self.world.len() as u32);

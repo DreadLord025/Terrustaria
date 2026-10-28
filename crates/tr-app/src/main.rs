@@ -10,7 +10,7 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use glam::Vec2;
 use tr_core::lighting::{LightMap, LightParams};
-use tr_core::{framing, wld, World, TILE_PX};
+use tr_core::{TILE_PX, World, framing, wld};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -30,7 +30,8 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     let world_path = match args.get(1) {
         Some(p) => PathBuf::from(p),
-        None => find_world().context("no .wld given and none found in Documents/My Games/Terraria/Worlds")?,
+        None => find_world()
+            .context("no .wld given and none found in Documents/My Games/Terraria/Worlds")?,
     };
 
     log::info!("world: {}", world_path.display());
@@ -50,6 +51,7 @@ fn main() -> Result<()> {
     let framed = framing::frame_world(&mut world);
     let walled = framing::frame_walls(&mut world);
     world.compute_column_surface();
+    world.compute_chunks();
     log::info!(
         "framed {framed} tiles, {walled} walls in {:.0} ms",
         t_frame.elapsed().as_secs_f32() * 1000.0
@@ -64,7 +66,8 @@ fn main() -> Result<()> {
         if world.day_time { "day" } else { "night" }
     );
 
-    let assets_dir = find_assets_dir().context("assets/Images not found (run tools/XnbExtract first)")?;
+    let assets_dir =
+        find_assets_dir().context("assets/Images not found (run tools/XnbExtract first)")?;
 
     if std::env::var("TR_DUMP_TILES").is_ok() {
         let cx = std::env::var("TR_DUMP_X")
@@ -115,8 +118,8 @@ fn main() -> Result<()> {
                             continue;
                         }
                         let e = td::EMISSIVE[t.kind as usize];
-                        let emissive = (t.kind as usize) < td::TILE_COUNT
-                            && (e[0].max(e[1]).max(e[2]) > 0.2);
+                        let emissive =
+                            (t.kind as usize) < td::TILE_COUNT && (e[0].max(e[1]).max(e[2]) > 0.2);
                         if emissive || t.liquid_kind() == tr_core::tile::LiquidKind::Lava {
                             n += 1;
                         }
@@ -140,13 +143,21 @@ fn main() -> Result<()> {
     }
 
     let (tile_ids, wall_ids) = assets::usage(&world);
-    log::info!("world uses {} tile types and {} wall types", tile_ids.len(), wall_ids.len());
+    log::info!(
+        "world uses {} tile types and {} wall types",
+        tile_ids.len(),
+        wall_ids.len()
+    );
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
-    log::info!("decoded {} sheets in {:.0} ms", images.len(), t1.elapsed().as_secs_f32() * 1000.0);
+    log::info!(
+        "decoded {} sheets in {:.0} ms",
+        images.len(),
+        t1.elapsed().as_secs_f32() * 1000.0
+    );
 
     let t2 = Instant::now();
     let atlas = Atlas::build(images, 4096);
@@ -164,14 +175,24 @@ fn main() -> Result<()> {
 
     let lookups = assets::Lookups::build(
         &atlas,
-        tile_ids.iter().map(|&id| (id, assets::image_name_for_tile(id))),
-        wall_ids.iter().map(|&id| (id, assets::image_name_for_wall(id))),
+        tile_ids
+            .iter()
+            .map(|&id| (id, assets::image_name_for_tile(id))),
+        wall_ids
+            .iter()
+            .map(|&id| (id, assets::image_name_for_wall(id))),
     );
 
-    let atlas_stats = (atlas.width, atlas.height, atlas.memory_bytes(), atlas.sheets.len());
+    let atlas_stats = (
+        atlas.width,
+        atlas.height,
+        atlas.memory_bytes(),
+        atlas.sheets.len(),
+    );
 
     if std::env::var("TR_CHECK_FRAMES").is_ok() {
-        for (kind, tt) in &lookups.tiles {
+        for (kind, slot) in lookups.tiles.iter().enumerate() {
+            let Some(tt) = slot else { continue };
             if let Some(rect) = atlas.sheet(&tt.sheet) {
                 let fx = rect.plain_frame.0.max(0) as u32;
                 let fy = rect.plain_frame.1.max(0) as u32;
@@ -187,11 +208,15 @@ fn main() -> Result<()> {
                     }
                 }
                 if opaque < 200 {
-                    log::warn!("tile {kind} ({}) plain frame is {opaque}/256 opaque", tt.sheet);
+                    log::warn!(
+                        "tile {kind} ({}) plain frame is {opaque}/256 opaque",
+                        tt.sheet
+                    );
                 }
             }
         }
-        for (wall, tt) in &lookups.walls {
+        for (wall, slot) in lookups.walls.iter().enumerate() {
+            let Some(tt) = slot else { continue };
             if let Some(rect) = atlas.sheet(&tt.sheet) {
                 let fx = rect.plain_frame.0.max(0) as u32;
                 let fy = rect.plain_frame.1.max(0) as u32;
@@ -207,7 +232,10 @@ fn main() -> Result<()> {
                     }
                 }
                 if opaque < 200 {
-                    log::warn!("wall {wall} ({}) plain frame is {opaque}/256 opaque", tt.sheet);
+                    log::warn!(
+                        "wall {wall} ({}) plain frame is {opaque}/256 opaque",
+                        tt.sheet
+                    );
                 }
             }
         }
@@ -227,7 +255,11 @@ fn main() -> Result<()> {
             if let Some(s) = atlas.sheet(name) {
                 log::info!(
                     "{name}: atlas rect {}x{} at {},{} plain {:?}",
-                    s.width, s.height, s.x, s.y, s.plain_frame
+                    s.width,
+                    s.height,
+                    s.x,
+                    s.y,
+                    s.plain_frame
                 );
             }
         }
@@ -256,8 +288,17 @@ fn main() -> Result<()> {
         bench_samples: Vec::new(),
         frame_count: 0,
         shot_path: std::env::var("TR_SHOT").ok().map(PathBuf::from),
-        shot_at: std::env::var("TR_SHOT_FRAME").ok().and_then(|v| v.parse().ok()).unwrap_or(20),
+        shot_at: std::env::var("TR_SHOT_FRAME")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(20),
         atlas_stats,
+        light: LightMap::new(),
+        scratch: DrawScratch::default(),
+        tile_stats: TileDrawStats::default(),
+        stats_on: std::env::var("TR_STATS").is_ok(),
+        stats_acc: StatsAcc::default(),
+        debug_cache: DebugCache::default(),
     };
     event_loop.run_app(&mut app)?;
     Ok(())
@@ -281,7 +322,13 @@ fn find_world() -> Option<PathBuf> {
 
 fn dirs_worlds() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
-    Some(PathBuf::from(home).join("Documents").join("My Games").join("Terraria").join("Worlds"))
+    Some(
+        PathBuf::from(home)
+            .join("Documents")
+            .join("My Games")
+            .join("Terraria")
+            .join("Worlds"),
+    )
 }
 
 fn find_assets_dir() -> Option<PathBuf> {
@@ -315,6 +362,69 @@ struct App {
     shot_path: Option<PathBuf>,
     shot_at: u64,
     atlas_stats: (u32, u32, usize, usize),
+    /// Reused light-map storage (D1) and dark-rect merge scratch (A3/A4).
+    light: LightMap,
+    scratch: DrawScratch,
+    tile_stats: TileDrawStats,
+    stats_on: bool,
+    stats_acc: StatsAcc,
+    debug_cache: DebugCache,
+}
+
+/// Static overlay text, built once instead of every frame (G4).
+#[derive(Default)]
+struct DebugCache {
+    ready: bool,
+    gpu_line: String,
+    world_line: String,
+}
+
+/// Accumulates per-phase numbers for `TR_STATS` and prints them every 120 frames.
+#[derive(Default)]
+struct StatsAcc {
+    frames: u32,
+    light_ms: f64,
+    draw_ms: f64,
+    visible: u64,
+    walls: u64,
+    walls_culled: u64,
+    dark_cells: u64,
+    dark_rects: u64,
+    chunks_skipped: u64,
+    instances: u64,
+}
+
+impl StatsAcc {
+    fn add(&mut self, s: &TileDrawStats) {
+        self.frames += 1;
+        self.light_ms += s.light_ms as f64;
+        self.draw_ms += s.draw_ms as f64;
+        self.visible += s.visible as u64;
+        self.walls += s.walls as u64;
+        self.walls_culled += s.walls_culled as u64;
+        self.dark_cells += s.dark_cells as u64;
+        self.dark_rects += s.dark_rects as u64;
+        self.chunks_skipped += s.chunks_skipped as u64;
+        self.instances += s.instances as u64;
+    }
+
+    fn log_and_reset(&mut self) {
+        let n = self.frames.max(1) as f64;
+        log::info!(
+            "TR_STATS frames={} light={:.2}ms draw={:.2}ms visible={} walls={} culled={} dark_cells={} rects={} chunks_skipped={} instances={}",
+            self.frames,
+            self.light_ms / n,
+            self.draw_ms / n,
+            self.visible / self.frames.max(1) as u64,
+            self.walls / self.frames.max(1) as u64,
+            self.walls_culled / self.frames.max(1) as u64,
+            self.dark_cells / self.frames.max(1) as u64,
+            self.dark_rects / self.frames.max(1) as u64,
+            self.chunks_skipped / self.frames.max(1) as u64,
+            self.instances / self.frames.max(1) as u64,
+        );
+        *self = Self::default();
+    }
 }
 
 impl ApplicationHandler for App {
@@ -383,8 +493,12 @@ impl ApplicationHandler for App {
                                 );
                                 self.zoom = 1.5;
                             }
-                            KeyCode::Equal | KeyCode::NumpadAdd => self.zoom = (self.zoom * 1.25).min(8.0),
-                            KeyCode::Minus | KeyCode::NumpadSubtract => self.zoom = (self.zoom / 1.25).max(0.25),
+                            KeyCode::Equal | KeyCode::NumpadAdd => {
+                                self.zoom = (self.zoom * 1.25).min(8.0)
+                            }
+                            KeyCode::Minus | KeyCode::NumpadSubtract => {
+                                self.zoom = (self.zoom / 1.25).max(0.25)
+                            }
                             _ => {}
                         }
                     } else {
@@ -426,7 +540,10 @@ impl ApplicationHandler for App {
 impl App {
     fn frame(&mut self) {
         let now = Instant::now();
-        let dt = now.duration_since(self.last_frame).as_secs_f32().clamp(0.0, 0.1);
+        let dt = now
+            .duration_since(self.last_frame)
+            .as_secs_f32()
+            .clamp(0.0, 0.1);
         self.last_frame = now;
         self.frame_count += 1;
 
@@ -439,6 +556,7 @@ impl App {
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
         let mut stats = tr_render::sprite::RenderStats::default();
+        let mut tile_stats = TileDrawStats::default();
 
         {
             let App {
@@ -456,6 +574,9 @@ impl App {
                 shot_path,
                 shot_at,
                 atlas_stats,
+                light,
+                scratch,
+                debug_cache,
                 ..
             } = self;
 
@@ -494,20 +615,12 @@ impl App {
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
 
-                let sky_anchor =
-                    world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
+                let sky_anchor = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
                 draw_sky(
-                    renderer,
-                    *camera,
-                    *zoom,
-                    screen,
-                    world,
-                    sky_anchor,
-                    sky_uv,
-                    sky_tint,
+                    renderer, *camera, *zoom, screen, world, sky_anchor, sky_uv, sky_tint,
                 );
 
-                let (visible, lit, light_ms) = draw_tiles(
+                tile_stats = draw_tiles(
                     renderer,
                     world,
                     lookups,
@@ -516,13 +629,15 @@ impl App {
                     *zoom,
                     screen,
                     &params,
+                    light,
+                    scratch,
                 );
 
                 if *debug {
                     draw_debug(
                         renderer,
                         screen,
-                        visible,
+                        tile_stats,
                         frame_history,
                         *camera,
                         *zoom,
@@ -531,7 +646,8 @@ impl App {
                         *atlas_stats,
                         gpu,
                         dt,
-                        (lit, light_ms, params.sky),
+                        params.sky,
+                        debug_cache,
                     );
                 }
 
@@ -543,7 +659,9 @@ impl App {
                         return;
                     }
                 };
-                let view = frame.texture.create_view(&wgpu::TextureViewDescriptor::default());
+                let view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
 
                 stats = renderer.render(
                     gpu,
@@ -551,7 +669,12 @@ impl App {
                     camera.to_array(),
                     *zoom,
                     now.elapsed().as_secs_f32(),
-                    wgpu::Color { r: 0.045, g: 0.055, b: 0.085, a: 1.0 },
+                    wgpu::Color {
+                        r: 0.045,
+                        g: 0.055,
+                        b: 0.085,
+                        a: 1.0,
+                    },
                 );
                 if let Some(path) = shot_path.as_ref() {
                     if *frame_count >= *shot_at {
@@ -564,6 +687,13 @@ impl App {
             }
         }
 
+        self.tile_stats = tile_stats;
+        if self.stats_on {
+            self.stats_acc.add(&tile_stats);
+            if self.stats_acc.frames >= 120 {
+                self.stats_acc.log_and_reset();
+            }
+        }
         self.last_stats = stats;
         let ms = dt * 1000.0;
         self.frame_history.push_back(ms);
@@ -614,7 +744,10 @@ impl App {
         );
         println!(
             "BENCH draws={} instances={} visible_world={} zoom={:.2}",
-            self.last_stats.draw_calls, self.last_stats.instances, self.world.tiles.len(), self.zoom
+            self.last_stats.draw_calls,
+            self.last_stats.instances,
+            self.world.tiles.len(),
+            self.zoom
         );
         self.bench_frames = None;
         std::process::exit(0);
@@ -634,11 +767,10 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 4] {
 fn display_name(name: &str) -> String {
     const CYRILLIC: &str = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
     const LATIN: &[&str] = &[
-        "A", "B", "V", "G", "D", "E", "Yo", "Zh", "Z", "I", "Y", "K", "L", "M", "N", "O",
-        "P", "R", "S", "T", "U", "F", "Kh", "Ts", "Ch", "Sh", "Shch", "", "Y", "", "E", "Yu",
-        "Ya", "a", "b", "v", "g", "d", "e", "yo", "zh", "z", "i", "y", "k", "l", "m", "n",
-        "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e",
-        "yu", "ya",
+        "A", "B", "V", "G", "D", "E", "Yo", "Zh", "Z", "I", "Y", "K", "L", "M", "N", "O", "P", "R",
+        "S", "T", "U", "F", "Kh", "Ts", "Ch", "Sh", "Shch", "", "Y", "", "E", "Yu", "Ya", "a", "b",
+        "v", "g", "d", "e", "yo", "zh", "z", "i", "y", "k", "l", "m", "n", "o", "p", "r", "s", "t",
+        "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e", "yu", "ya",
     ];
     let mut out = String::with_capacity(name.len());
     for ch in name.chars() {
@@ -807,6 +939,91 @@ fn draw_sky(
     }
 }
 
+#[derive(Default, Clone, Copy, Debug)]
+struct TileDrawStats {
+    visible: u32,
+    walls: u32,
+    walls_culled: u32,
+    dark_cells: u32,
+    dark_rects: u32,
+    chunks_skipped: u32,
+    lit_tiles: u32,
+    light_ms: f32,
+    draw_ms: f32,
+    instances: u32,
+}
+
+/// Scratch storage for the greedy dark-rectangle merge (A3/A4).
+#[derive(Default)]
+struct DrawScratch {
+    /// Rectangles still being extended downwards: `[x0, x1, y0, y1]`.
+    open: Vec<[i32; 4]>,
+    next: Vec<[i32; 4]>,
+    /// Dark x-runs of the current row.
+    cur: Vec<(i32, i32)>,
+}
+
+/// Vanilla stores light as bytes; a channel below `1/255` is zero. Such a cell is
+/// guaranteed to rasterise to black whatever the texture colour, so it can be
+/// replaced by one opaque black quad without changing a single pixel.
+#[inline]
+fn light_is_zero(l: [f32; 3]) -> bool {
+    l[0] * 255.0 < 1.0 && l[1] * 255.0 < 1.0 && l[2] * 255.0 < 1.0
+}
+
+/// Extends open dark rectangles with this row's runs and emits the ones that end.
+/// Returns the number of emitted quads.
+fn merge_dark_row(
+    r: &mut SpriteRenderer,
+    white: [f32; 4],
+    scratch: &mut DrawScratch,
+    y: i32,
+) -> u32 {
+    let mut emitted = 0u32;
+    scratch.next.clear();
+    let mut oi = 0usize;
+    let mut ci = 0usize;
+    while oi < scratch.open.len() || ci < scratch.cur.len() {
+        let take_old = if oi >= scratch.open.len() {
+            false
+        } else if ci >= scratch.cur.len() {
+            true
+        } else {
+            let o = scratch.open[oi];
+            let c = scratch.cur[ci];
+            o[0] < c.0 || (o[0] == c.0 && o[1] != c.1)
+        };
+        if take_old {
+            let o = scratch.open[oi];
+            r.push_sprite(
+                [o[0] as f32 * TILE_PX, o[2] as f32 * TILE_PX],
+                [
+                    (o[1] - o[0] + 1) as f32 * TILE_PX,
+                    (o[3] - o[2] + 1) as f32 * TILE_PX,
+                ],
+                white,
+                [0.0, 0.0, 0.0, 1.0],
+            );
+            emitted += 1;
+            oi += 1;
+        } else if oi >= scratch.open.len() || scratch.cur[ci].0 < scratch.open[oi][0] {
+            let (s, e) = scratch.cur[ci];
+            scratch.next.push([s, e, y, y]);
+            ci += 1;
+        } else {
+            // Same x span: grow the rectangle one row down.
+            let mut o = scratch.open[oi];
+            o[3] = y;
+            scratch.next.push(o);
+            oi += 1;
+            ci += 1;
+        }
+    }
+    std::mem::swap(&mut scratch.open, &mut scratch.next);
+    emitted
+}
+
+#[allow(clippy::too_many_arguments)]
 fn draw_tiles(
     r: &mut SpriteRenderer,
     world: &World,
@@ -816,7 +1033,10 @@ fn draw_tiles(
     zoom: f32,
     screen: Vec2,
     params: &LightParams,
-) -> (u32, u32, f32) {
+    light: &mut LightMap,
+    scratch: &mut DrawScratch,
+) -> TileDrawStats {
+    let t_total = Instant::now();
     let half = screen * 0.5 / zoom;
     let min = camera - half;
     let max = camera + half;
@@ -826,7 +1046,7 @@ fn draw_tiles(
     let y1 = ((max.y / TILE_PX).ceil() as i32 + 1).clamp(0, world.height - 1);
 
     let t_light = Instant::now();
-    let light = LightMap::compute(world, x0, y0, x1, y1, params);
+    light.compute_into(world, x0, y0, x1, y1, params);
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
     if let Ok(v) = std::env::var("TR_LIGHT_AT") {
@@ -851,52 +1071,123 @@ fn draw_tiles(
         }
     }
 
-    let mut visible = 0u32;
-    // The original draws both walls and tiles multiplied by `Lighting.GetColor`.
-    let light_of = |tx: i32, ty: i32| -> [f32; 4] {
-        let l = light.get(tx, ty);
-        [l[0].min(1.0), l[1].min(1.0), l[2].min(1.0), 1.0]
+    static DRAW_WALLS: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let draw_walls = *DRAW_WALLS.get_or_init(|| std::env::var("TR_NO_WALLS").is_err());
+    let width = world.width as usize;
+    let white = r.white_uv();
+    let mut stats = TileDrawStats {
+        lit_tiles: light.lit_tiles,
+        light_ms,
+        ..Default::default()
     };
-    let draw_walls = std::env::var("TR_NO_WALLS").is_err();
+    let chunk = tr_core::world::CHUNK;
 
+    scratch.open.clear();
     for ty in y0..=y1 {
-        for tx in x0..=x1 {
-            let Some(tile) = world.tile(tx, ty) else { continue };
-            let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
-            let lit = light_of(tx, ty);
+        scratch.cur.clear();
+        let mut run_start = -1i32;
+        let cy = ty / chunk;
+        let row_base = ty as usize * width;
+        for cx in (x0 / chunk)..=(x1 / chunk) {
+            if !world.chunk_has(cx, cy) {
+                stats.chunks_skipped += 1;
+                if run_start >= 0 {
+                    let sx = (cx * chunk).max(x0);
+                    scratch.cur.push((run_start, sx - 1));
+                    run_start = -1;
+                }
+                continue;
+            }
+            let sx = (cx * chunk).max(x0);
+            let ex = ((cx + 1) * chunk - 1).min(x1);
+            for tx in sx..=ex {
+                let tile = &world.tiles[row_base + tx as usize];
+                let l = light.get(tx, ty);
+                let lit = [l[0].min(1.0), l[1].min(1.0), l[2].min(1.0), 1.0];
+                let active = tile.active();
 
-            if tile.wall != 0 && draw_walls {
-                if let Some(a) = atlas {
-                    if let Some(uv) =
-                        lookups.wall_uv(a, tile.wall, tile.wall_col, tile.wall_row)
-                    {
-                        r.push_sprite(pos, [TILE_PX, TILE_PX], uv, lit);
+                // Resolve the drawn tile frame once; reused for opacity and drawing.
+                let mut tile_frame = None;
+                if active {
+                    if tile.frame_x >= 0 && tile.frame_y >= 0 {
+                        tile_frame = atlas.and_then(|a| {
+                            lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                        });
+                    }
+                    if tile_frame.is_none() {
+                        tile_frame = lookups.plain_tex(tile.kind);
                     }
                 }
-            }
-
-            if tile.active() {
-                let uv = if tile.frame_x >= 0 && tile.frame_y >= 0 {
-                    atlas.and_then(|a| lookups.frame_uv(a, tile.kind, tile.frame_x, tile.frame_y))
+                let tile_covers =
+                    tile.slope == 0 && !tile.half_brick() && tile_frame.is_some_and(|f| f.opaque);
+                let wall_frame = if tile.wall != 0 && draw_walls {
+                    lookups.wall_tex(tile.wall, tile.wall_col, tile.wall_row)
                 } else {
                     None
                 };
-                let uv = uv.or_else(|| lookups.tiles.get(&tile.kind).map(|t| t.plain_uv));
-                if let Some(uv) = uv {
-                    r.push_sprite(pos, [TILE_PX, TILE_PX], uv, lit);
-                    visible += 1;
+
+                // A3/A4: fully covered, fully black cell -> greedy merged rectangle.
+                if light_is_zero(l) {
+                    let covered = (active && tile_covers)
+                        || (!active && wall_frame.is_some_and(|f| f.opaque));
+                    if covered {
+                        if run_start < 0 {
+                            run_start = tx;
+                        }
+                        stats.dark_cells += 1;
+                        continue;
+                    }
+                }
+                if run_start >= 0 {
+                    scratch.cur.push((run_start, tx - 1));
+                    run_start = -1;
+                }
+
+                let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
+                if let Some(wf) = wall_frame {
+                    // A2: a fully opaque, non-sloped block hides the wall completely.
+                    if active && tile_covers {
+                        stats.walls_culled += 1;
+                    } else {
+                        r.push_sprite(pos, [TILE_PX, TILE_PX], wf.uv, lit);
+                        stats.walls += 1;
+                    }
+                }
+                if let Some(tf) = tile_frame {
+                    r.push_sprite(pos, [TILE_PX, TILE_PX], tf.uv, lit);
+                    stats.visible += 1;
                 }
             }
         }
+        if run_start >= 0 {
+            scratch.cur.push((run_start, x1));
+        }
+        stats.dark_rects += merge_dark_row(r, white, scratch, ty);
     }
-    (visible, light.lit_tiles, light_ms)
+    // Emit rectangles that reach the bottom edge of the visible area.
+    for o in scratch.open.drain(..) {
+        r.push_sprite(
+            [o[0] as f32 * TILE_PX, o[2] as f32 * TILE_PX],
+            [
+                (o[1] - o[0] + 1) as f32 * TILE_PX,
+                (o[3] - o[2] + 1) as f32 * TILE_PX,
+            ],
+            white,
+            [0.0, 0.0, 0.0, 1.0],
+        );
+        stats.dark_rects += 1;
+    }
+
+    stats.instances = stats.visible + stats.walls + stats.dark_rects;
+    stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
+    stats
 }
 
 #[allow(clippy::too_many_arguments)]
 fn draw_debug(
     r: &mut SpriteRenderer,
     screen: Vec2,
-    visible: u32,
+    tile: TileDrawStats,
     history: &VecDeque<f32>,
     camera: Vec2,
     zoom: f32,
@@ -905,8 +1196,25 @@ fn draw_debug(
     atlas_stats: (u32, u32, usize, usize),
     gpu: &Gpu,
     dt: f32,
-    light: (u32, f32, [f32; 3]),
+    sky: [f32; 3],
+    cache: &mut DebugCache,
 ) {
+    if !cache.ready {
+        let info = gpu.adapter.get_info();
+        cache.gpu_line = format!(
+            "gpu {} [{:?}]   sheets {}",
+            info.name, info.backend, atlas_stats.3
+        );
+        cache.world_line = format!(
+            "world '{}'   tile mem {:.0} MB   atlas {}x{} ({:.0} MB)",
+            display_name(&world.name),
+            world.memory_bytes() as f32 / 1e6,
+            atlas_stats.0,
+            atlas_stats.1,
+            atlas_stats.2 as f32 / 1e6,
+        );
+        cache.ready = true;
+    }
     let scale = 2.0;
     let line_h = 18.0;
     let mut lines: Vec<(String, [f32; 4])> = Vec::new();
@@ -919,10 +1227,14 @@ fn draw_debug(
     let fps = if avg > 0.0 { 1000.0 / avg } else { 0.0 };
     let worst = history.iter().copied().fold(0.0f32, f32::max);
 
-    let info = gpu.adapter.get_info();
-
     lines.push(("TERRARIA-RUST  //  native rust + vulkan".into(), ACCENT));
-    lines.push((format!("fps {fps:6.1}   frame {avg:5.2} ms   worst {worst:5.2} ms   dt {:5.2}", dt * 1000.0), TEXT));
+    lines.push((
+        format!(
+            "fps {fps:6.1}   frame {avg:5.2} ms   worst {worst:5.2} ms   dt {:5.2}",
+            dt * 1000.0
+        ),
+        TEXT,
+    ));
     lines.push((
         format!(
             "draws {}   instances {}   upload {:.1} KB",
@@ -946,7 +1258,7 @@ fn draw_debug(
     lines.push((
         format!(
             "visible tiles {}   total {}   grid {}x{}",
-            visible,
+            tile.visible,
             world.tiles.len(),
             world.width,
             world.height
@@ -955,31 +1267,28 @@ fn draw_debug(
     ));
     lines.push((
         format!(
-            "light {} seeded tiles   {:.2} ms   sky {:.2},{:.2},{:.2}",
-            light.0, light.1, light.2[0], light.2[1], light.2[2]
+            "walls {}   culled {}   dark cells {} -> {} rects   chunks skipped {}",
+            tile.walls, tile.walls_culled, tile.dark_cells, tile.dark_rects, tile.chunks_skipped
         ),
         TEXT,
     ));
     lines.push((
         format!(
-            "world '{}'   tile mem {:.0} MB   atlas {}x{} ({:.0} MB)",
-            display_name(&world.name),
-            world.memory_bytes() as f32 / 1e6,
-            atlas_stats.0,
-            atlas_stats.1,
-            atlas_stats.2 as f32 / 1e6,
+            "draw {:.2} ms   light {} seeded tiles   {:.2} ms   sky {:.2},{:.2},{:.2}",
+            tile.draw_ms, tile.lit_tiles, tile.light_ms, sky[0], sky[1], sky[2]
         ),
+        TEXT,
+    ));
+    lines.push((cache.world_line.clone(), TEXT));
+    lines.push((cache.gpu_line.clone(), TEXT));
+    lines.push((
+        format!("screen {:.0}x{:.0}   atlas_max 8192", screen.x, screen.y),
         TEXT,
     ));
     lines.push((
-        format!(
-            "gpu {} [{:?}]   sheets {}",
-            info.name, info.backend, atlas_stats.3
-        ),
-        TEXT,
+        "WASD pan   wheel zoom   F1 ui   F5 spawn   ESC quit".into(),
+        WARN,
     ));
-    lines.push((format!("screen {:.0}x{:.0}   atlas_max 8192", screen.x, screen.y), TEXT));
-    lines.push(("WASD pan   wheel zoom   F1 ui   F5 spawn   ESC quit".into(), WARN));
 
     let panel_w = 660.0;
     let graph_h = 48.0;
@@ -1017,8 +1326,6 @@ fn draw_debug(
     }
 }
 
-
-
 fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
     let w = gpu.config.width;
     let h = gpu.config.height;
@@ -1032,7 +1339,9 @@ fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
 
     let mut enc = gpu
         .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("screenshot") });
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("screenshot"),
+        });
     enc.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo {
             texture,
@@ -1048,7 +1357,11 @@ fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
                 rows_per_image: Some(h),
             },
         },
-        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        wgpu::Extent3d {
+            width: w,
+            height: h,
+            depth_or_array_layers: 1,
+        },
     );
     gpu.queue.submit(Some(enc.finish()));
 

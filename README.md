@@ -44,24 +44,33 @@ clean-room analysis of the decompiled C# game.
   viewport.
 - **Debug overlay** — FPS, frame graph, draw calls, instance counts, upload size, camera
   state, tile counts, light-seeded tiles and light-map time, memory, GPU/driver info.
+- **Culling** — 64×64 chunk occupancy skips empty areas; walls under fully opaque blocks
+  are not emitted; fully dark cells whose content is opaque collapse into greedy black
+  rectangles. All of it is pixel-identical to drawing every tile.
 - **Camera** — WASD/arrows pan, mouse wheel zoom, F5 respawn.
 - **Headless tooling** — `TR_BENCH` (uncapped frame timing), `TR_SHOT` (deterministic
   screenshot without desktop capture), `TR_CAM`/`TR_ZOOM`, `TR_DAY`, `TR_LIGHT_AT`,
-  `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`.
+  `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS` (phase timings + culling counters), and
+  `tools/pixel_diff.py` for pixel-exact before/after checks.
 
 ## Measured (RTX 4070 Laptop, Ryzen AI 9 365, 1600×900)
 
 | Metric | Value |
 | --- | --- |
-| Frame time, avg (surface, overlay off) | **1.82 ms** (~550 FPS, no vsync) |
-| p50 / p95 / p99 | 1.77 / 2.90 / 3.44 ms |
-| Frame time, avg (cave / underworld) | 1.67 / 1.64 ms |
+| Frame time, avg (surface, zoom 1.5, overlay off) | **1.3–1.9 ms** (present-floor bound) |
+| CPU tile + light (surface, zoom 1.5) | **0.22 ms** |
+| CPU tile + light (cave, zoom 1.0) | 0.48 ms |
+| Debug stress, zoom 0.25 (surface / cave) | 3.70 / 5.58 ms |
 | Draw calls | 1 (world) or 2 (with UI) |
-| Instances | 1 600–2 700 |
-| Lighting (visible rect + 28) | 0.3–0.6 ms |
+| Instances at real zoom (1.0–2.0) | 900–3 600 (was 1 600–5 800) |
+| Instances at zoom 0.25 (surface / cave) | 23 200 / 44 356 (was 40 630 / 77 439) |
+| Lighting (visible rect + 28) | 0.2–0.5 ms real zoom; 2.5–3.6 ms at 0.25 |
 | World load | ~60 ms |
 | Autotiling (5.9 M tiles + 2.7 M walls) | ~150 ms |
-| Atlas build | ~60 ms |
+| Atlas build | ~60 ms + one-time opacity scan |
+
+The present/compositor floor on the test laptop is ~1.10–1.33 ms and bimodal depending on
+power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison at real zooms.
 
 ## What is *not* implemented (yet)
 
@@ -111,6 +120,8 @@ cargo run --release -p tr-app -- "C:\path\to\world.wld"
 | `TR_DUMP_TILES=1` | Log tile ids/frames around spawn (`TR_DUMP_X`, `TR_DUMP_Y`) |
 | `TR_NO_WALLS=1` | Skip wall rendering (compare autotiling / wall layers) |
 | `TR_CHECK_FRAMES=1` | Verify computed frames against the tileset bounds |
+| `TR_STATS=1` | Log average light/draw time and culling counters every 120 frames |
+| `TR_LATENCY=1` | Override `desired_maximum_frame_latency` (default 1) |
 
 ## Layout
 

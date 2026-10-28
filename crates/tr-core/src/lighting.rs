@@ -72,7 +72,25 @@ pub struct LightMap {
     pub lit_tiles: u32,
 }
 
+impl Default for LightMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LightMap {
+    pub fn new() -> Self {
+        Self {
+            x0: 0,
+            y0: 0,
+            w: 0,
+            h: 0,
+            colors: Vec::new(),
+            mask: Vec::new(),
+            lit_tiles: 0,
+        }
+    }
+
     /// Light colour for a tile. Outside the computed rect the world is unlit.
     #[inline]
     pub fn get(&self, x: i32, y: i32) -> [f32; 3] {
@@ -95,11 +113,7 @@ impl LightMap {
         if self.colors.is_empty() {
             return 0.0;
         }
-        let sum: f32 = self
-            .colors
-            .iter()
-            .map(|c| (c[0] + c[1] + c[2]) / 3.0)
-            .sum();
+        let sum: f32 = self.colors.iter().map(|c| (c[0] + c[1] + c[2]) / 3.0).sum();
         sum / self.colors.len() as f32
     }
 
@@ -113,41 +127,59 @@ impl LightMap {
         y1: i32,
         params: &LightParams,
     ) -> Self {
+        let mut map = Self::new();
+        map.compute_into(world, x0, y0, x1, y1, params);
+        map
+    }
+
+    /// Same as [`LightMap::compute`], but reuses the colour/mask storage (D1). The
+    /// per-frame cost drops to zeroing the vectors instead of allocating 1.7 MB.
+    pub fn compute_into(
+        &mut self,
+        world: &World,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        params: &LightParams,
+    ) {
         let rx0 = (x0 - AREA_PADDING).max(0);
         let ry0 = (y0 - AREA_PADDING).max(0);
         let rx1 = (x1 + AREA_PADDING).min(world.width - 1);
         let ry1 = (y1 + AREA_PADDING).min(world.height - 1);
         let w = (rx1 - rx0 + 1).max(0);
         let h = (ry1 - ry0 + 1).max(0);
+        let n = (w * h).max(0) as usize;
 
-        let mut map = Self {
-            x0: rx0,
-            y0: ry0,
-            w,
-            h,
-            colors: vec![[0.0; 3]; (w * h).max(0) as usize],
-            mask: vec![Mask::Air; (w * h).max(0) as usize],
-            lit_tiles: 0,
-        };
+        self.x0 = rx0;
+        self.y0 = ry0;
+        self.w = w;
+        self.h = h;
+        self.lit_tiles = 0;
+        self.colors.clear();
+        self.colors.resize(n, [0.0; 3]);
+        self.mask.clear();
+        self.mask.resize(n, Mask::Air);
 
         for ly in 0..h {
             for lx in 0..w {
                 let x = rx0 + lx;
                 let y = ry0 + ly;
                 let i = (ly * w + lx) as usize;
-                let Some(tile) = world.tile(x, y) else { continue };
-                map.mask[i] = mask_of(tile);
+                let Some(tile) = world.tile(x, y) else {
+                    continue;
+                };
+                self.mask[i] = mask_of(tile);
                 let c = seed(world, tile, x, y, params);
                 if c[0] > 0.0 || c[1] > 0.0 || c[2] > 0.0 {
-                    map.lit_tiles += 1;
+                    self.lit_tiles += 1;
                 }
-                map.colors[i] = c;
+                self.colors[i] = c;
             }
         }
 
-        map.blur();
-        map.blur();
-        map
+        self.blur();
+        self.blur();
     }
 
     fn idx(&self, x: i32, y: i32) -> usize {
@@ -156,7 +188,11 @@ impl LightMap {
 
     /// `LightMap.Blur`: two passes over four line sweeps.
     fn blur(&mut self) {
-        let (w, h, pad) = (self.w, self.h, NON_VISIBLE_PADDING.min(self.w.min(self.h) / 3));
+        let (w, h, pad) = (
+            self.w,
+            self.h,
+            NON_VISIBLE_PADDING.min(self.w.min(self.h) / 3),
+        );
 
         for x in 0..w {
             // top -> bottom, then bottom -> top (stopping at the padding).
@@ -259,9 +295,7 @@ fn surface_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c:
     let avg = (p.sky[0] + p.sky[1] + p.sky[2]) / 3.0;
     let mut light = [0.0f32; 3];
 
-    let open_sides = |dx: i32, dy: i32| {
-        world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0)
-    };
+    let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
     let sloped = tile.slope != 0 || tile.half_brick();
     let transmits = !tile.active()
         || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
@@ -318,9 +352,7 @@ fn surface_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c:
 fn hell_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
     let glow = p.hell_glow;
     let mut light = [0.0f32; 3];
-    let open_sides = |dx: i32, dy: i32| {
-        world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0)
-    };
+    let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
     let sloped = tile.slope != 0 || tile.half_brick();
     let transmits = !tile.active()
         || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
@@ -502,7 +534,10 @@ mod tests {
         let above = lm.get(25, 9);
         let below = lm.get(25, 16);
         assert!(above[0] > 0.9, "above ground {above:?}");
-        assert!(below[0] < above[0] * 0.5, "below ground {below:?} vs {above:?}");
+        assert!(
+            below[0] < above[0] * 0.5,
+            "below ground {below:?} vs {above:?}"
+        );
     }
 
     #[test]

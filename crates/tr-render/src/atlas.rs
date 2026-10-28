@@ -113,11 +113,22 @@ impl Atlas {
             }
             sheets.insert(
                 img.name.clone(),
-                SheetRect { x: px, y: py, width: img.width, height: img.height, plain_frame: plain },
+                SheetRect {
+                    x: px,
+                    y: py,
+                    width: img.width,
+                    height: img.height,
+                    plain_frame: plain,
+                },
             );
         }
 
-        Self { width, height, pixels, sheets }
+        Self {
+            width,
+            height,
+            pixels,
+            sheets,
+        }
     }
 
     pub fn sheet(&self, name: &str) -> Option<&SheetRect> {
@@ -126,6 +137,30 @@ impl Atlas {
 
     pub fn memory_bytes(&self) -> usize {
         self.pixels.len()
+    }
+
+    /// True when every pixel of the 16x16 frame at `(fx, fy)` inside `sheet` is fully
+    /// opaque. Used to skip walls/background that a block covers completely and to
+    /// emit merged black rectangles for fully dark, fully covered cells.
+    pub fn frame_is_opaque(&self, sheet: &SheetRect, fx: i16, fy: i16) -> bool {
+        if fx < 0 || fy < 0 {
+            return false;
+        }
+        let (fx, fy) = (fx as u32, fy as u32);
+        if fx + 16 > sheet.width || fy + 16 > sheet.height {
+            return false;
+        }
+        let stride = self.width as usize * 4;
+        let mut i = ((sheet.y + fy) as usize) * stride + ((sheet.x + fx) as usize) * 4 + 3;
+        for _ in 0..16 {
+            for x in 0..16 {
+                if self.pixels[i + x * 4] != 255 {
+                    return false;
+                }
+            }
+            i += stride;
+        }
+        true
     }
 }
 
@@ -219,5 +254,14 @@ pub fn font_sheet() -> (AtlasImage, u32) {
         }
     }
 
-    (AtlasImage { name: "__font".into(), width, height, rgba, layout: SheetLayout::Tile }, gw)
+    (
+        AtlasImage {
+            name: "__font".into(),
+            width,
+            height,
+            rgba,
+            layout: SheetLayout::Tile,
+        },
+        gw,
+    )
 }

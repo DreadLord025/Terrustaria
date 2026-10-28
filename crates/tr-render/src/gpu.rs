@@ -27,7 +27,9 @@ impl Gpu {
         desc.backends = backends;
         let instance = wgpu::Instance::new(desc);
 
-        let surface = instance.create_surface(window.clone()).context("create surface")?;
+        let surface = instance
+            .create_surface(window.clone())
+            .context("create surface")?;
 
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
@@ -40,7 +42,12 @@ impl Gpu {
             .context("no Vulkan adapter found (set TR_BACKEND=dx12 to fall back)")?;
 
         let info = adapter.get_info();
-        log::info!("adapter: {} ({:?}, driver {})", info.name, info.backend, info.driver);
+        log::info!(
+            "adapter: {} ({:?}, driver {})",
+            info.name,
+            info.backend,
+            info.driver
+        );
 
         let limits = wgpu::Limits {
             max_texture_dimension_2d: 8192,
@@ -80,11 +87,22 @@ impl Gpu {
             },
             alpha_mode: caps.alpha_modes[0],
             view_formats: vec![],
-            desired_maximum_frame_latency: 2,
+            desired_maximum_frame_latency: std::env::var("TR_LATENCY")
+                .ok()
+                .and_then(|v| v.parse::<u32>().ok())
+                .unwrap_or(1)
+                .clamp(1, 2),
         };
         surface.configure(&device, &config);
 
-        Ok(Self { surface, adapter, device, queue, config, size })
+        Ok(Self {
+            surface,
+            adapter,
+            device,
+            queue,
+            config,
+            size,
+        })
     }
 
     pub fn resize(&mut self, size: PhysicalSize<u32>) {

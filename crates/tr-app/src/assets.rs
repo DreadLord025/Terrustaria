@@ -69,7 +69,11 @@ pub fn load_world_images(
     }
 
     if !missing.is_empty() {
-        log::warn!("{} world sheets have no matching texture (first 10: {:?})", missing.len(), &missing[..missing.len().min(10)]);
+        log::warn!(
+            "{} world sheets have no matching texture (first 10: {:?})",
+            missing.len(),
+            &missing[..missing.len().min(10)]
+        );
     }
 
     Ok(images)
@@ -89,23 +93,48 @@ pub fn load_png(dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImag
     })
 }
 
-/// UV lookup for one tile/wall type.
+/// One resolved frame: atlas UV plus whether it fully covers its 16x16 cell.
+#[derive(Clone, Copy, Debug)]
+pub struct FrameTex {
+    pub uv: [f32; 4],
+    pub opaque: bool,
+}
+
+/// Texture information for one tile type present in the world.
 #[derive(Clone, Debug)]
 pub struct TypeTex {
     pub sheet: String,
-    /// UV rectangle of the "plain" 16x16 frame.
+    /// UV rectangle of the "plain" 16x16 frame (fallback / no frame stored).
     pub plain_uv: [f32; 4],
+    pub plain_opaque: bool,
+    /// Dense 18 px frame grid: index `(fy / 18) * cols + fx / 18`.
+    pub cols: u32,
+    pub rows: u32,
+    pub frames: Vec<FrameTex>,
 }
+
+/// Texture information for one wall type present in the world.
+#[derive(Clone, Debug)]
+pub struct WallTex {
+    pub sheet: String,
+    /// `Framing.wallFrameLookup` cells: `row * 13 + col` (36 px cells, 8 px inset).
+    /// `None` when the sheet has no such cell.
+    pub frames: Vec<Option<FrameTex>>,
+}
+
+/// Wall autotile table dimensions (columns 0..=12, rows 0..=4).
+pub const WALL_COLS: usize = 13;
+pub const WALL_ROWS: usize = 5;
 
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
 pub struct Lookups {
-    pub tiles: HashMap<u16, TypeTex>,
-    pub walls: HashMap<u16, TypeTex>,
-    /// Cache for important-tile frames: (type, frameX, frameY) -> UV.
-    pub frame_cache: HashMap<(u16, i16, i16), [f32; 4]>,
-    /// Cache for wall autotile cells: (wall, col, row) -> UV.
-    pub wall_cache: HashMap<(u16, u8, u8), [f32; 4]>,
+    /// Dense per-type tables: one slot per `TileID`, `None` if the sheet is absent.
+    pub tiles: Vec<Option<TypeTex>>,
+    pub walls: Vec<Option<WallTex>>,
+    /// Frames that do not sit on the 18 px grid (furniture and other important
+    /// tiles). Populated lazily; bounded by the number of distinct visible frames.
+    pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
 }
 
 impl Lookups {
@@ -114,29 +143,66 @@ impl Lookups {
         tile_names: impl Iterator<Item = (u16, String)>,
         wall_names: impl Iterator<Item = (u16, String)>,
     ) -> Self {
-        let mut me = Self::default();
+        let mut me = Self {
+            tiles: vec![None; tr_core::tiledata::TILE_COUNT],
+            walls: vec![None; tr_core::tiledata::WALL_COUNT],
+            frame_cache: HashMap::new(),
+        };
         for (kind, name) in tile_names {
-            if let Some(rect) = atlas.sheet(&name) {
-                let plain = rect.plain_frame;
-                me.tiles.insert(
-                    kind,
-                    TypeTex {
-                        sheet: name.clone(),
-                        plain_uv: uv_of(atlas, rect, &name, plain.0, plain.1),
-                    },
-                );
+            let Some(rect) = atlas.sheet(&name) else {
+                continue;
+            };
+            let plain = rect.plain_frame;
+            let plain_uv = uv_of(atlas, rect, &name, plain.0, plain.1);
+            let plain_opaque = atlas.frame_is_opaque(rect, plain.0, plain.1);
+            let cols = rect.width / 18;
+            let rows = rect.height / 18;
+            let mut frames = Vec::with_capacity((cols * rows) as usize);
+            for fy in 0..rows {
+                for fx in 0..cols {
+                    let px = (fx * 18) as i16;
+                    let py = (fy * 18) as i16;
+                    frames.push(FrameTex {
+                        uv: uv_of(atlas, rect, &name, px, py),
+                        opaque: atlas.frame_is_opaque(rect, px, py),
+                    });
+                }
+            }
+            if let Some(slot) = me.tiles.get_mut(kind as usize) {
+                *slot = Some(TypeTex {
+                    sheet: name,
+                    plain_uv,
+                    plain_opaque,
+                    cols,
+                    rows,
+                    frames,
+                });
             }
         }
         for (wall, name) in wall_names {
-            if let Some(rect) = atlas.sheet(&name) {
-                let plain = rect.plain_frame;
-                me.walls.insert(
-                    wall,
-                    TypeTex {
-                        sheet: name.clone(),
-                        plain_uv: uv_of(atlas, rect, &name, plain.0, plain.1),
-                    },
-                );
+            let Some(rect) = atlas.sheet(&name) else {
+                continue;
+            };
+            let mut frames = Vec::with_capacity(WALL_COLS * WALL_ROWS);
+            for row in 0..WALL_ROWS {
+                for col in 0..WALL_COLS {
+                    let fx = col as i16 * 36 + 8;
+                    let fy = row as i16 * 36 + 8;
+                    if fx as u32 + 16 > rect.width || fy as u32 + 16 > rect.height {
+                        frames.push(None);
+                    } else {
+                        frames.push(Some(FrameTex {
+                            uv: uv_of(atlas, rect, &name, fx, fy),
+                            opaque: atlas.frame_is_opaque(rect, fx, fy),
+                        }));
+                    }
+                }
+            }
+            if let Some(slot) = me.walls.get_mut(wall as usize) {
+                *slot = Some(WallTex {
+                    sheet: name,
+                    frames,
+                });
             }
         }
         me
@@ -153,49 +219,64 @@ impl Lookups {
         ])
     }
 
-    /// UV for an arbitrary frame of a tile sheet (important tiles store pixels).
-    pub fn frame_uv(
+    /// Texture for a tile frame. Non-important tiles almost always sit on the 18 px
+    /// grid and hit the dense table; free-form important frames use a small cache.
+    pub fn frame_tex(
         &mut self,
         atlas: &tr_render::Atlas,
         kind: u16,
         fx: i16,
         fy: i16,
-    ) -> Option<[f32; 4]> {
-        if let Some(uv) = self.frame_cache.get(&(kind, fx, fy)) {
-            return Some(*uv);
+    ) -> Option<FrameTex> {
+        let tt = self.tiles.get(kind as usize)?.as_ref()?;
+        if fx >= 0 && fy >= 0 && fx % 18 == 0 && fy % 18 == 0 {
+            let cx = (fx / 18) as u32;
+            let cy = (fy / 18) as u32;
+            if cx < tt.cols && cy < tt.rows {
+                return tt.frames.get((cy * tt.cols + cx) as usize).copied();
+            }
         }
-        let tt = self.tiles.get(&kind)?;
+        if let Some(f) = self.frame_cache.get(&(kind, fx, fy)) {
+            return Some(*f);
+        }
         let rect = atlas.sheet(&tt.sheet)?;
-        let uv = uv_of(atlas, rect, &tt.sheet, fx, fy);
-        self.frame_cache.insert((kind, fx, fy), uv);
-        Some(uv)
+        let frame = FrameTex {
+            uv: uv_of(atlas, rect, &tt.sheet, fx, fy),
+            opaque: atlas.frame_is_opaque(rect, fx, fy),
+        };
+        self.frame_cache.insert((kind, fx, fy), frame);
+        Some(frame)
     }
 
-    /// UV for a wall autotile cell.
+    /// Fallback texture for a tile type (plain interior frame).
+    pub fn plain_tex(&self, kind: u16) -> Option<FrameTex> {
+        let tt = self.tiles.get(kind as usize)?.as_ref()?;
+        Some(FrameTex {
+            uv: tt.plain_uv,
+            opaque: tt.plain_opaque,
+        })
+    }
+
+    /// Texture for a wall autotile cell.
     ///
     /// Wall sheets use 36 px cells with the 16x16 art inset by 8 px, and cells are
     /// addressed by column/row rather than by pixel offset (`Framing.wallFrameLookup`).
-    pub fn wall_uv(
-        &mut self,
-        atlas: &tr_render::Atlas,
-        wall: u16,
-        col: u8,
-        row: u8,
-    ) -> Option<[f32; 4]> {
-        if let Some(uv) = self.wall_cache.get(&(wall, col, row)) {
-            return Some(*uv);
+    pub fn wall_tex(&self, wall: u16, col: u8, row: u8) -> Option<FrameTex> {
+        let wt = self.walls.get(wall as usize)?.as_ref()?;
+        if col as usize >= WALL_COLS || row as usize >= WALL_ROWS {
+            return None;
         }
-        let tt = self.walls.get(&wall)?;
-        let rect = atlas.sheet(&tt.sheet)?;
-        let fx = col as i16 * 36 + 8;
-        let fy = row as i16 * 36 + 8;
-        let uv = uv_of(atlas, rect, &tt.sheet, fx, fy);
-        self.wall_cache.insert((wall, col, row), uv);
-        Some(uv)
+        wt.frames[row as usize * WALL_COLS + col as usize]
     }
 }
 
-fn uv_of(atlas: &tr_render::Atlas, rect: &tr_render::SheetRect, name: &str, fx: i16, fy: i16) -> [f32; 4] {
+fn uv_of(
+    atlas: &tr_render::Atlas,
+    rect: &tr_render::SheetRect,
+    name: &str,
+    fx: i16,
+    fy: i16,
+) -> [f32; 4] {
     let aw = atlas.width as f32;
     let ah = atlas.height as f32;
     let x0 = rect.x as f32 + fx.max(0) as f32;

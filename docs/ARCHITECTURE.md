@@ -46,10 +46,11 @@
   SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4 }  // 48 B
   ```
 
-  Two instance buffers share one arena: `world` (camera transform) and `ui` (screen space).
-  Both are uploaded with a single `write_buffer`, then drawn as 2 instanced calls of 6
-  vertices — the entire scene is 2 draw calls. An 8×8 bitmap font (`font8x8`) is baked into
-  the atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
+  Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
+  space), written as two `write_buffer` calls and drawn as 2 instanced calls of 6 vertices —
+  the entire scene is 2 draw calls. The ring has three buffers so a frame never rewrites
+  memory the GPU may still be reading. An 8×8 bitmap font (`font8x8`) is baked into the
+  atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
 - `sprite.wgsl` — `world = pos + corner*size`, then `(world - cam) * zoom + screen/2`
   → NDC with a flipped Y (world Y grows downward). Alpha-blended, `discard` on a < 0.01.
   The tint is **pre-linearised** (`pow(color.rgb, 2.2)`) before multiplying the sRGB-decoded
@@ -59,19 +60,25 @@
 ### `tr-app` — application
 
 - Loads the world (argument or most recent save), runs `framing::frame_world` +
-  `framing::frame_walls`, computes the per-column surface (for the sky horizon), scans used
-  tile/wall ids, decodes only those PNGs, builds the atlas, then creates the window.
+  `framing::frame_walls`, computes the per-column surface (for the sky horizon) and the
+  64×64 chunk occupancy bitset, scans used tile/wall ids, decodes only those PNGs, builds
+  the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
-  screen/zoom, then iterated row-major; walls are pushed before tiles so the order is
-  correct in one batch. Wall UVs come from the autotile cell (`wall_col`, `wall_row`) and
-  are cached per `(wall, col, row)`.
+  screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
+  dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
+  Frames that do not sit on the 18 px grid (furniture) fall back to a small lazy cache.
+- A wall under a fully opaque, non-sloped block is skipped (A2). Cells whose quantised
+  light is zero and whose drawn content is fully opaque are merged into greedy black
+  rectangles (A3/A4) instead of per-tile quads.
 - Per frame: `draw_sky` (the `Background_0` gradient above the local surface, a per-column
-  cave fade below it), then `LightMap::compute` for the visible rect, then the tile loop
-  multiplying each wall/tile instance by its tile's light colour.
+  cave fade below it), then `LightMap::compute_into` (storage reused every frame) for the
+  visible rect, then the tile loop multiplying each wall/tile instance by its tile's light
+  colour.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
-  calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles and
-  light-map time, GPU info.
+  calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles,
+  light-map/draw time, wall culling and dark-rectangle counters, GPU info. Static lines are
+  formatted once.
 - Headless tooling: `TR_SHOT`/`TR_SHOT_FRAME` copies the swapchain texture to a mapped
   buffer and writes a PNG; `TR_BENCH=N` switches to `AutoNoVsync`, samples N frame deltas
   and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas.
@@ -82,8 +89,8 @@
 2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; `draw_sky`;
    `renderer.begin_frame()`; light map for the visible rect; tile loop pushes lit instances;
    debug overlay; acquire swapchain texture.
-3. `renderer.render()` writes both globals buffers + all instances, records one pass
-   (clear + 2 draws) and submits.
+3. `renderer.render()` writes both globals buffers + the world/UI instance ranges, records
+   one pass (clear + 2 draws) and submits.
 4. `queue.present(frame)`.
 
 ## Design decisions

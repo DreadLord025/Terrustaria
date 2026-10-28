@@ -2,6 +2,10 @@
 
 use crate::tile::Tile;
 
+/// Chunk edge in tiles. Occupancy is per chunk and drives both draw culling and
+/// (later) parallel light work.
+pub const CHUNK: i32 = 64;
+
 #[derive(Clone, Debug)]
 pub struct World {
     pub name: String,
@@ -25,6 +29,11 @@ pub struct World {
     pub day_time: bool,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
+    /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
+    pub chunks_x: i32,
+    pub chunks_y: i32,
+    /// One flag per chunk: contains at least one active tile, wall or liquid.
+    pub chunk_has: Vec<bool>,
 }
 
 impl World {
@@ -42,6 +51,9 @@ impl World {
             time: 0.0,
             day_time: true,
             column_surface: Vec::new(),
+            chunks_x: 0,
+            chunks_y: 0,
+            chunk_has: Vec::new(),
         }
     }
 
@@ -54,16 +66,54 @@ impl World {
             let mut top = self.height;
             for y in 0..self.height {
                 let t = &self.tiles[self.index(x, y)];
-                if t.active()
-                    && (t.kind as usize) < td::TILE_COUNT
-                    && td::TILE_SOLID.has(t.kind)
-                {
+                if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
                     top = y;
                     break;
                 }
             }
             self.column_surface[x as usize] = top;
         }
+    }
+
+    /// Recomputes chunk occupancy. Must be called after loading/framing and after any
+    /// bulk edit; per-tile edits can call [`World::mark_chunk`].
+    pub fn compute_chunks(&mut self) {
+        self.chunks_x = (self.width + CHUNK - 1) / CHUNK;
+        self.chunks_y = (self.height + CHUNK - 1) / CHUNK;
+        self.chunk_has.clear();
+        self.chunk_has
+            .resize((self.chunks_x as usize) * (self.chunks_y as usize), false);
+        let w = self.width as usize;
+        for y in 0..self.height {
+            let cy = (y / CHUNK) as usize;
+            let row = y as usize * w;
+            for x in 0..self.width {
+                let t = &self.tiles[row + x as usize];
+                if t.active() || t.wall != 0 || t.liquid != 0 {
+                    self.chunk_has[cy * self.chunks_x as usize + (x / CHUNK) as usize] = true;
+                }
+            }
+        }
+    }
+
+    /// Marks the chunk owning `(x, y)` as occupied (after placing a tile/wall).
+    #[inline]
+    pub fn mark_chunk(&mut self, x: i32, y: i32) {
+        if self.chunks_x == 0 || self.chunks_y == 0 || !self.in_bounds(x, y) {
+            return;
+        }
+        let cx = (x / CHUNK) as usize;
+        let cy = (y / CHUNK) as usize;
+        self.chunk_has[cy * self.chunks_x as usize + cx] = true;
+    }
+
+    /// True when the chunk contains nothing at all (fully empty air).
+    #[inline]
+    pub fn chunk_has(&self, cx: i32, cy: i32) -> bool {
+        if cx < 0 || cy < 0 || cx >= self.chunks_x || cy >= self.chunks_y {
+            return false;
+        }
+        self.chunk_has[(cy as usize) * (self.chunks_x as usize) + cx as usize]
     }
 
     /// Surface row of a column, falling back to the map bottom outside the world.
@@ -90,7 +140,11 @@ impl World {
 
     #[inline]
     pub fn tile(&self, x: i32, y: i32) -> Option<&Tile> {
-        if self.in_bounds(x, y) { Some(&self.tiles[self.index(x, y)]) } else { None }
+        if self.in_bounds(x, y) {
+            Some(&self.tiles[self.index(x, y)])
+        } else {
+            None
+        }
     }
 
     #[inline]
