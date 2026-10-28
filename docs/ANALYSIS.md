@@ -445,6 +445,17 @@ kind and quantised phase. Not ported yet:
 the full `itemAnimation` timings and tool-specific swings, armour/accessory layers, the
 composite-arm rotation while holding items, buffs and the rest of `Player.cs`.
 
+Escape opens the inventory instead of quitting: `Main.DrawInventory`'s 10x5 grid of
+56 px cells at (20,20) at `inventoryScale = 0.85` (`ItemSlot.Draw` context 0: grey
+`InventoryBack`, hotbar row `InventoryBack9`), while the closed hotbar is context 13
+(grey back at 200/255, selected slot in yellow `InventoryBack14`, `ItemStack` digits with
+slot 10 as "0"). Slot icons come from the original `Item_<id>` sprites through
+`item::item_id` (the `ItemID` of each slot kind), falling back to the tile frame where no
+sprite is loaded yet. Pixel-exact UI *text* still uses the built-in bitmap font: the
+original strings are drawn with ReLogic `DynamicSpriteFont`s (`Fonts/Mouse_Text.xnb`,
+`Fonts/Item_Stack.xnb`), whose XNB reader is being ported in `tr-content` (see ROADMAP).
+Click-to-move stack interaction is M3 work.
+
 ## Editing and hotbar (M3 first pass)
 
 `tr-core/src/edit.rs` implements a single-tile break/place: the background wall is kept,
