@@ -1,0 +1,13 @@
+[package]
+name = "tr-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+bytemuck.workspace = true
+log.workspace = true
+wgpu.workspace = true
+font8x8.workspace = true
+winit.workspace = true

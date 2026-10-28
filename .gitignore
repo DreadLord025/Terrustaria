@@ -1,0 +1,26 @@
+# build output
+/target/
+
+# decompiled game sources (derived from a retail copy, not redistributable)
+/decompiled/
+/decompiled-libs/
+
+# extracted textures (derived from retail assets, not redistributable)
+/assets/Images/
+/assets/test/
+/assets/extract.log
+
+# local run artifacts
+/*.log
+/run.*.log
+/shot*.png
+
+# .NET tooling output
+/tools/**/bin/
+/tools/**/obj/
+
+# editor / OS
+.idea/
+.vs/
+*.user
+Thumbs.db
