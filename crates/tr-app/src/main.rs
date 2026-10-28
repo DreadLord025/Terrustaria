@@ -1686,13 +1686,24 @@ struct BgTex {
     uv: [f32; 4],
     w: f32,
     h: f32,
+    /// Fraction of the height where the texture becomes a fully opaque base (the
+    /// painted ground/hill band). Background layers are lowered until that band
+    /// starts at the horizon, so only the skyline shows above the terrain.
+    ground: f32,
 }
 
 struct SkyAssets {
+    /// Forest far/near mountain layers (`Background_7`/`Background_8`).
     far: Option<BgTex>,
     near: Option<BgTex>,
-    /// Snow-biome pine line (`Background_11`).
+    /// Forest foreground tree line (`Background_50..52`).
+    forest: [Option<BgTex>; 3],
+    /// Snow biome: mountains `Background_35/36`, pine line `Background_37..39`.
+    snow_far: Option<BgTex>,
     snow_near: Option<BgTex>,
+    snow_trees: [Option<BgTex>; 3],
+    /// Ocean horizon with islands (`Background_28`, style 0).
+    ocean: Option<BgTex>,
     sun: Option<BgTex>,
     moon: Option<BgTex>,
     stars: Vec<Option<BgTex>>,
@@ -1790,6 +1801,20 @@ fn sky_tex(atlas: &Atlas, name: &str, sub: Option<(u32, u32, u32, u32)>) -> Opti
     if sx + w > rect.width || sy + h > rect.height {
         return None;
     }
+    let aw = atlas.width as usize;
+    let mut ground = 1.0;
+    'rows: for row in 0..h as usize {
+        for col in 0..w as usize {
+            let px =
+                ((rect.y as usize + sy as usize + row) * aw + rect.x as usize + sx as usize + col)
+                    * 4;
+            if atlas.pixels[px + 3] < 250 {
+                continue 'rows;
+            }
+        }
+        ground = row as f32 / h as f32;
+        break;
+    }
     Some(BgTex {
         uv: [
             (rect.x + sx) as f32 / atlas.width as f32,
@@ -1799,21 +1824,40 @@ fn sky_tex(atlas: &Atlas, name: &str, sub: Option<(u32, u32, u32, u32)>) -> Opti
         ],
         w: w as f32,
         h: h as f32,
+        ground,
     })
 }
 
+/// `Background_28` is fully opaque, so its sea line cannot be detected from alpha.
+/// Measure it once from the source: the row where the texture turns deep water blue.
+fn ocean_bg_tex(atlas: &Atlas) -> Option<BgTex> {
+    let mut tex = sky_tex(atlas, "Background_28", None)?;
+    tex.ground = 0.125;
+    Some(tex)
+}
+
 fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
-    let mountains = sky_tex(atlas, "Background_7", None);
     SkyAssets {
-        far: mountains,
-        near: mountains,
-        snow_near: sky_tex(atlas, "Background_11", None),
+        far: sky_tex(atlas, "Background_7", None),
+        near: sky_tex(atlas, "Background_8", None),
+        forest: [50, 51, 52].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
+        snow_far: sky_tex(atlas, "Background_35", None),
+        snow_near: sky_tex(atlas, "Background_36", None),
+        snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
+        ocean: ocean_bg_tex(atlas),
         sun: sky_tex(atlas, "Sun", None),
         moon: sky_tex(atlas, "Moon_0", Some((0, 0, 50, 50))),
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
     }
+}
+
+/// True near either ocean edge. The generator's beach is 140 tiles wide; 200 leaves
+/// room for the blend into the background.
+fn is_ocean_biome(world: &World, camera: Vec2) -> bool {
+    let x = (camera.x / TILE_PX) as i32;
+    x < 200 || x > world.width - 200
 }
 
 fn is_snow_biome(world: &World, camera: Vec2) -> bool {
@@ -1926,9 +1970,6 @@ fn draw_sky(
 
     // Celestial bodies, stars and the parallax surface background. These are drawn
     // in screen space (compensated for zoom) like `DrawSunAndMoon`/`DrawSurfaceBG`.
-    let cam_tile = (camera.x / TILE_PX) as i32;
-    let local_surface = world.surface_of(cam_tile) as f32 * TILE_PX;
-    let horizon = (local_surface - camera.y) * zoom + screen.y * 0.5;
 
     let sky_luma = (tint[0] + tint[1] + tint[2]) / 3.0;
     let star_alpha = ((1.0 - sky_luma * 2.8).clamp(0.0, 1.0)) * 0.85;
@@ -1984,45 +2025,43 @@ fn draw_sky(
         );
     }
 
-    if horizon > 0.0 {
-        if let Some(far) = sky.far {
-            draw_bg_layer(
-                r, camera, zoom, screen, &far, 1.25, 0.15, horizon, 80.0, tint,
-            );
-        }
-        if is_snow_biome(world, camera) {
-            if let Some(near) = sky.snow_near {
-                draw_bg_layer(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    &near,
-                    1.31,
-                    0.43,
-                    horizon,
-                    20.0,
-                    [tint[0] * 0.9, tint[1] * 0.92, tint[2] * 0.95],
-                );
-            }
-        } else if let Some(near) = sky.near {
+    // `DrawSurfaceBG_BackMountainsStep1/2`: far then near mountain layer, topped by the
+    // biome's tree line. `backgroundTopMagicNumber` makes the layers move at ~30 % of
+    // the camera's vertical speed; using the local horizon instead would drag the whole
+    // forest down into the view whenever the player is on a hill.
+    let snow = is_snow_biome(world, camera);
+    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
+    let view_top = camera.y - screen.y * 0.5 / zoom;
+    let magic = (300.0 - view_top) / world_surface_px;
+    let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
+    let show_bg = view_top < world_surface_px + TILE_PX;
+    // Layers are positioned like `DrawSurfaceBG` but drawn in screen pixels (the
+    // original applies the zoom in its sprite-batch transform). Keep the bottom of
+    // every layer below the local horizon so no sky leaks between it and the terrain.
+    let local_surface = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
+    let horizon = (local_surface - camera.y) * zoom + screen.y * 0.5;
+    if show_bg {
+        let far = if snow { sky.snow_far } else { sky.far };
+        if let Some(far) = far {
             draw_bg_layer(
                 r,
                 camera,
                 zoom,
                 screen,
-                &near,
-                1.31,
-                0.43,
+                &far,
+                1.6,
+                0.15,
+                magic * 1300.0 + 1090.0 + sc_adj,
                 horizon,
-                20.0,
-                [tint[0] * 0.78, tint[1] * 0.82, tint[2] * 0.86],
+                false,
+                tint,
             );
         }
     }
 
     // Parallax clouds. Vertical motion follows the sky horizon, horizontal motion
-    // is half the camera's, like the original's cloud layers.
+    // is half the camera's, like the original's cloud layers. Vanilla draws a cloud
+    // layer between the far and near mountains.
     let right = camera.x + half.x;
     let cloud_tint = [tint[0] * 0.97, tint[1] * 0.98, tint[2], 1.0];
     for c in clouds {
@@ -2037,6 +2076,80 @@ fn draw_sky(
             continue;
         }
         r.push_sprite([wx, wy], [w, h], c.uv, cloud_tint);
+    }
+
+    let ocean = is_ocean_biome(world, camera);
+    if show_bg {
+        let near = if snow { sky.snow_near } else { sky.near };
+        if let Some(near) = near {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &near,
+                1.85,
+                0.20,
+                magic * 1400.0 + 1260.0 + sc_adj,
+                horizon,
+                false,
+                [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
+            );
+        }
+        if ocean {
+            if let Some(sea) = sky.ocean {
+                draw_bg_layer(
+                    r,
+                    camera,
+                    zoom,
+                    screen,
+                    &sea,
+                    1.85,
+                    0.20,
+                    magic * 1400.0 + 1260.0 + sc_adj,
+                    horizon,
+                    false,
+                    tint,
+                );
+            }
+        }
+    }
+
+    if show_bg {
+        // `DrawSurfaceBG_Forest`: three tree layers at 0.40/0.43/0.49 parallax with
+        // growing scale and descending tops; the middle layer is mirrored horizontally.
+        let trees: &[Option<BgTex>; 3] = if ocean {
+            &[None, None, None]
+        } else if snow {
+            &sky.snow_trees
+        } else {
+            &sky.forest
+        };
+        let scales = [0.85f32, 0.90, 0.95];
+        let parallax = [0.40f32, 0.43, 0.49];
+        let k = [1800.0f32, 1950.0, 2100.0];
+        let c = if snow {
+            [1500.0f32, 1750.0, 2000.0]
+        } else {
+            [1450.0f32, 1700.0, 1950.0]
+        };
+        for i in 0..3 {
+            if let Some(t) = trees[i] {
+                draw_bg_layer(
+                    r,
+                    camera,
+                    zoom,
+                    screen,
+                    &t,
+                    scales[i],
+                    parallax[i],
+                    magic * k[i] + c[i] + sc_adj,
+                    horizon,
+                    i == 1,
+                    [tint[0] * 0.97, tint[1] * 0.98, tint[2]],
+                );
+            }
+        }
     }
 
     // Underground: one smooth column gradient starting at that column's own first
@@ -2106,7 +2219,7 @@ fn push_screen(
     r.push_sprite([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color);
 }
 
-/// One tiled parallax mountain/forest layer, anchored to the local terrain horizon.
+/// `Main.ComputeScAdj`: small vertical screen-space correction for backgrounds.
 #[allow(clippy::too_many_arguments)]
 fn draw_bg_layer(
     r: &mut SpriteRenderer,
@@ -2116,14 +2229,19 @@ fn draw_bg_layer(
     tex: &BgTex,
     scale: f32,
     parallax: f32,
+    top: f32,
     horizon: f32,
-    bottom_offset: f32,
+    flip: bool,
     tint: [f32; 3],
 ) {
     let sw = tex.w * scale;
     let sh = tex.h * scale;
-    let bottom = horizon + bottom_offset;
-    let top = bottom - sh;
+    let top = top.max(horizon - tex.ground * sh);
+    let uv = if flip {
+        [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
+    } else {
+        tex.uv
+    };
     let ox = -((camera.x * zoom * parallax).rem_euclid(sw));
     let mut x = ox - sw;
     while x < screen.x {
@@ -2134,11 +2252,32 @@ fn draw_bg_layer(
             screen,
             [x, top],
             [sw, sh],
-            tex.uv,
+            uv,
             [tint[0], tint[1], tint[2], 1.0],
         );
         x += sw;
     }
+}
+
+/// `Main.ComputeScAdj`: a screen-height/altitude correction subtracted from every
+/// background layer's top.
+fn bg_scale_adjust(world: &World, view_top: f32, view_height: f32) -> f32 {
+    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
+    let num = world_surface_px / (view_top + view_height).max(1.0);
+    let mut altitude = world.height as f32 * 0.15 * TILE_PX - view_top;
+    if altitude < 0.0 {
+        altitude = 0.0;
+    }
+    altitude *= 0.00025;
+    let num = num * (0.45 - altitude * altitude);
+    let factor = if world.height <= 1200 {
+        -500.0
+    } else if world.height <= 1800 {
+        -300.0
+    } else {
+        -150.0
+    };
+    num * factor
 }
 
 #[derive(Default, Clone, Copy, Debug)]

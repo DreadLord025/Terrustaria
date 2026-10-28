@@ -128,7 +128,8 @@
   Frames that do not sit on the 18 px grid (furniture) fall back to a small lazy cache.
   Tree trunks use their own 22 px/20×20 geometry and biome sheet section.
 - Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon,
-  two screen-space parallax mountain layers (`Background_7`), clouds, per-column
+  the `DrawSurfaceBG` layer stack for the current biome (forest `7`/`8` mountains and
+  `50..52` tree lines, snow `35`/`36` and `37..39` pines, ocean `28`), clouds, per-column
   underground fade, walls, tiles, liquids, then foliage. Solid blocks in `Color`/`White`
   modes are emitted as 9 (or 4) light-sliced quads; slopes use eight 2 px columns + a
   strip; half bricks the bottom 8 px. Tree marker tiles draw nothing; a separate pass
@@ -192,9 +193,10 @@
 
 - **Chunking / meshing** — replace the per-frame tile loop with cached chunk instance
   buffers keyed by (chunk, light revision), only rebuilt on change.
-- **Parallax backgrounds & biome skylines** — the seeded mountain layers and clouds exist;
-  the biome-specific `DrawSurfaceBG_*` variants, the real foreground tree lines and rain
-  are still to come. `Cloud_*`/`Background_*` textures are already extracted.
+- **Biome skylines** — forest, snow and ocean use the vanilla layer sets with vertical
+  parallax and measured ground-band anchoring. The corruption/crimson/jungle/hallow sets
+  plug into the same `SkyAssets`/`draw_bg_layer` pair once those biomes exist; storms,
+  lightning and snowfall are the remaining weather pieces.
 - **Liquid surface smoothing** — the flow simulation is a direct port of `Liquid.Update`;
   the remaining render work is the original's four-corner `VisibleLiquidLevel` mesh (and
   the `Waterfall_*` overlay for half-brick spouts) so shorelines are diagonal instead of

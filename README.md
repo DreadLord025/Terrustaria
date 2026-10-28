@@ -76,18 +76,21 @@ sky and surface sunlight.
   tiles with a `Dust` splash. `SetBackColor`'s `1 - cloudAlpha*0.9` dims the sky, clouds and
   surface sunlight. `TR_RAIN=<0..1.75>` pins a storm; the scheduler is disabled with
   `TR_NO_WEATHER`.
-- **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, two
-  parallax mountain layers built from `Background_7`, the sun/moon, twinkling stars at
-  night, a 15-minute day / 9-minute night clock, deterministic clouds from the game's `Cloud_*` textures, and a per-column
-  underground fade that starts at each column's own surface (no sky leaks, no screen-wide
-  brown band, no hard rectangles around trees). Biome backgrounds, rain and the real
-  underground background textures are still to come.
+- **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, then the
+  vanilla `DrawSurfaceBG` layering: forest far/near mountains (`Background_7`/`8`) with the
+  three `Background_50..52` foreground tree lines, snow mountains (`35`/`36`) with the
+  `37..39` pine line, and the ocean `Background_28` sea horizon with islands. Layers use
+  `backgroundTopMagicNumber`'s vertical parallax, per-layer scale/parallax and the mirrored
+  middle tree layer; each texture's painted ground band is measured so the skyline sits on
+  the horizon. Sun/moon, twinkling stars, the 15/9-minute clock, deterministic `Cloud_*`
+  clouds and the per-column underground fade remain. Corruption/crimson/jungle/hallow
+  variants and the textured underground backgrounds are still to come.
 - **Asset pipeline** — `tools/XnbExtract` decompresses the game's XNA v5 `.xnb` containers
   (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK. The world's
   sheets plus all tree canopy/branch styles and the 42 `Cloud_*` textures are decoded in
   parallel.
 - **Atlas** — all sheets used by the current world (plus tree/cloud/sky/player sheets) are
-  shelf-packed into one 8192×2432 texture for the generated world (80 MB), nearest
+  shelf-packed into one 8192×3031 texture for the generated world (99 MB), nearest
   filtering, no mipmaps. The original world needs 8192×4590 (150 MB).
 - **Renderer** — wgpu 30 on the **Vulkan** backend, one instanced-quad pipeline, one atlas,
   1–2 draw calls per frame (world + optional UI), ~2 200–3 600 instances for a 1600×900

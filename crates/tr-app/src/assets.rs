@@ -85,8 +85,19 @@ pub fn load_world_images(
     // Whole-image sheets used by the sky/background pass.
     for name in [
         "Background_0",
+        // Surface-background layer sets: forest mountains 7/8, snow mountains 35/36,
+        // forest tree lines 50..52 and snow tree lines 37..39.
         "Background_7",
-        "Background_11",
+        "Background_8",
+        "Background_35",
+        "Background_36",
+        "Background_37",
+        "Background_38",
+        "Background_39",
+        "Background_50",
+        "Background_51",
+        "Background_52",
+        "Background_28",
         "Sun",
         "Moon_0",
         "Star_0",

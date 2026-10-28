@@ -285,6 +285,26 @@ First-pass simplifications: a session-local random weather schedule instead of a
 `rainTime`/`maxRaining` pair, no storm clouds/lightning/wind gusts, no rain audio, and no
 snowfall (the snow biome currently still rains).
 
+## Surface backgrounds
+
+`Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near
+mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at scale
+1.6/1.85 and 0.15/0.20 parallax, followed by the biome's three tree layers
+(`50..52` forest, `37..39` snow) at scale 0.85/0.90/0.95 and 0.40/0.43/0.49 parallax; the
+middle tree layer is mirrored horizontally, exactly as `DrawSurfaceBG_Forest` does with
+`SpriteEffects.FlipHorizontally`. The ocean edge (`x < 200` or `x > width - 200`) suppresses
+the tree line and adds `Background_28`, the sea horizon with islands. Layer tops use
+`backgroundTopMagicNumber = -(screenTop - 300) / (worldSurface * 16)`, which gives the
+original's ~30 % vertical parallax, plus `ComputeScAdj`. Because the layers are drawn in
+screen pixels instead of the original's zoomed sprite transform, each layer is lowered until
+the texture's *painted ground band* (measured from the atlas alpha: the first fully opaque
+row) starts at the local horizon; without that clamp the skyline floats above the terrain.
+
+Not ported: the biome cross-fade (`bgAlphaFarBackLayer`/`bgAlphaFrontLayer` for
+corruption/crimson/jungle/hallow/mushroom), `DrawSurfaceBG_DrawChangeOverlay`, the
+cloud-background (`cloudBG`) storm layers, the far-cloud depth layers and the ocean
+water-line ambience.
+
 ## Sky and daylight
 
 `Main.SetBackColor` (day `0..54000`, night `0..32400`) is ported to `color_of_the_skies`:
