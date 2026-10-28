@@ -1,9 +1,8 @@
 //! Player physics and collision, modelled on `Player.cs`.
 //!
-//! The first pass implements the core movement loop: gravity, horizontal
-//! acceleration/friction, 1-tile auto-step, axis-separated AABB collision against solid
-//! tiles and simple water buoyancy. Sloped and half-brick tiles are treated as full
-//! solid cells for collision until the slope pass is ported.
+//! Core movement: gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated
+//! AABB collision against solid tiles, simple water buoyancy and ground-slope support
+//! (slopes 1/2). Half bricks and ceiling slopes still count as full cells.
 
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
@@ -168,14 +167,16 @@ impl Player {
 
     fn move_x(&mut self, world: &World) {
         let nx = self.x + self.vx;
-        if !collides(world, nx, self.y) {
+        if !collides_player_rect(world, nx, self.y) {
             self.x = nx;
             return;
         }
         // Auto-step one tile when walking against a ledge, like `Player.StepUp`.
         if self.on_ground || self.in_water {
             let stepped = self.y - STEP_HEIGHT;
-            if !collides(world, self.x, stepped) && !collides(world, nx, stepped) {
+            if !collides_player_rect(world, self.x, stepped)
+                && !collides_player_rect(world, nx, stepped)
+            {
                 self.y = stepped;
                 self.x = nx;
                 return;
@@ -194,14 +195,12 @@ impl Player {
 
     fn move_y(&mut self, world: &World, down: bool) {
         let ny = self.y + self.vy;
-        if !collides(world, self.x, ny) {
+        if !collides_player_rect(world, self.x, ny) {
             self.y = ny;
             if !self.in_water {
                 self.on_ground = false;
             }
-            return;
-        }
-        if self.vy > 0.0 {
+        } else if self.vy > 0.0 {
             // Snap to the highest floor under the feet.
             let ty = ((ny + HEIGHT) / TILE_PX).floor() as i32;
             self.y = ty as f32 * TILE_PX - HEIGHT;
@@ -212,6 +211,17 @@ impl Player {
             self.y = (ty + 1) as f32 * TILE_PX;
             self.vy = 0.0;
             self.on_ground = false;
+        }
+        // Ground slopes: keep the feet on the diagonal when standing or falling onto it.
+        if self.vy >= 0.0 {
+            let feet = self.y + HEIGHT;
+            if let Some(surface) = slope_floor(world, self.x, feet) {
+                if (feet - surface).abs() <= 10.0 {
+                    self.y = surface - HEIGHT;
+                    self.vy = 0.0;
+                    self.on_ground = true;
+                }
+            }
         }
     }
 
@@ -236,13 +246,21 @@ impl Player {
     }
 }
 
-/// Solid collision at a player AABB. Slopes and half bricks count as full cells for now.
-pub fn collides(world: &World, x: f32, y: f32) -> bool {
-    collides_rect(world, x, y, WIDTH, HEIGHT)
+/// Player movement collision: ground slopes (slope 1/2) are handled by `slope_floor`.
+pub fn collides_player_rect(world: &World, x: f32, y: f32) -> bool {
+    collides_filtered(world, x, y, WIDTH, HEIGHT, true)
+}
+
+pub fn collides_player(world: &World, x: f32, y: f32) -> bool {
+    collides_player_rect(world, x, y)
 }
 
 /// Generic solid-tile AABB test used by NPCs and the player.
 pub fn collides_rect(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    collides_filtered(world, x, y, w, h, false)
+}
+
+fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slopes: bool) -> bool {
     let x0 = (x / TILE_PX).floor() as i32;
     let x1 = ((x + w - 0.01) / TILE_PX).floor() as i32;
     let y0 = (y / TILE_PX).floor() as i32;
@@ -255,12 +273,32 @@ pub fn collides_rect(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
             if !t.active() {
                 continue;
             }
+            if ignore_slopes && (t.slope == 1 || t.slope == 2) {
+                continue;
+            }
             if (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
                 return true;
             }
         }
     }
     false
+}
+
+/// Surface height of a ground slope under the player's centre, if the feet are on it.
+fn slope_floor(world: &World, x: f32, feet: f32) -> Option<f32> {
+    let tx = ((x + WIDTH * 0.5) / TILE_PX).floor() as i32;
+    let ty = (feet / TILE_PX).floor() as i32;
+    let t = world.tile(tx, ty)?;
+    if !t.active() {
+        return None;
+    }
+    let local = ((x + WIDTH * 0.5) - tx as f32 * TILE_PX).clamp(0.0, TILE_PX);
+    let top = ty as f32 * TILE_PX;
+    match t.slope {
+        1 => Some(top + local),
+        2 => Some(top + TILE_PX - local),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -342,5 +380,45 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.y < grounded_y - 4.0, "jump did not rise: {}", p.y);
+    }
+
+    #[test]
+    fn stands_on_a_ground_slope() {
+        let mut w = World::new("t".into(), 32, 64);
+        for x in 0..32 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let i = w.index(10, 29);
+        w.tiles[i] = Tile {
+            kind: 1,
+            slope: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.spawn_x = 8;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+
+        let mut p = Player::spawn(&w);
+        p.x = 10.0 * TILE_PX + 8.0 - WIDTH * 0.5;
+        p.y = 29.0 * TILE_PX - HEIGHT;
+        for _ in 0..30 {
+            p.update(&w, PlayerInput::default());
+        }
+        let feet = p.y + HEIGHT;
+        let expected = 29.0 * TILE_PX + 8.0;
+        assert!(
+            (feet - expected).abs() <= 1.5,
+            "feet {feet} expected {expected}"
+        );
+        assert!(p.on_ground);
     }
 }

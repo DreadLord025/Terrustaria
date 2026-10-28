@@ -92,7 +92,8 @@
   cloud textures in parallel, builds the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Player (`player.rs`): 20×42 AABB, fixed 60 Hz steps, gravity/acceleration/friction,
-  1-tile auto-step, axis-separated solid-tile collision and water buoyancy. The camera
+  1-tile auto-step, axis-separated solid-tile collision, ground-slope (1/2) support and
+  water buoyancy. The camera
   follows the player's centre (unless `TR_CAM`/`TR_PAN` select the free debug camera).
   The starter player is drawn from the original 40×56 part strips at `(x-10, y-10)` after
   the world passes; `render_key` is part of the G6 frame key.

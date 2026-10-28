@@ -70,7 +70,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
-| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, water buoyancy, HP/hurt/respawn; no slopes/items/buffs |
+| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, ground-slope support, water buoyancy, HP/hurt/respawn; no half-brick/ceiling slopes, items or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | 🟡 | 4-slot hotbar, mining/placing, counts and native save; no item entities, tools, recipes, chests or full inventory UI |
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | 🟡 | First pass: hopping blue slime (gravity, collision, contact damage, player melee, HP bars); ~700 NPC types remain |
@@ -304,8 +304,8 @@ biome and hardmode spread are not generated; the original generator remains an M
 `tr-app/src/player.rs` implements a fixed 60 Hz step with the original movement constants:
 gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump `5.2`.
 Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
-auto-step and simple water buoyancy. Slopes and half bricks currently collide as full
-cells. Respawn returns to `spawn_x/spawn_y` from the world header.
+auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
+Half bricks and ceiling slopes still collide as full cells. Respawn returns to `spawn_x/spawn_y` from the world header.
 
 The character is composed from the original 40×56 part strips (`Player_0_0` head,
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` back arm, `_10` legs, `_11` pants, `_12` shoes,

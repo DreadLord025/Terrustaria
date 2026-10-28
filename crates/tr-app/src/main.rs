@@ -400,7 +400,7 @@ fn main() -> Result<()> {
     if world_path.extension().is_some_and(|e| e == "trwld") {
         if let Some(saved) = persist::load(&world_path) {
             if let Some(p) = player.as_mut() {
-                if !player::collides(&world, saved.x, saved.y) {
+                if !player::collides_player(&world, saved.x, saved.y) {
                     p.x = saved.x;
                     p.y = saved.y;
                 }
