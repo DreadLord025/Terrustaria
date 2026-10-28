@@ -581,6 +581,9 @@ fn main() -> Result<()> {
             s
         },
         inventory_open: std::env::var_os("TR_INV").is_some(),
+        mouse_item: EMPTY_SLOT,
+        ui_left_press: false,
+        ui_right_press: false,
         mouse_pos: Vec2::ZERO,
         mine_down: false,
         place_down: false,
@@ -699,6 +702,10 @@ struct App {
     hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     inventory_open: bool,
+    /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
+    mouse_item: ItemSlot,
+    ui_left_press: bool,
+    ui_right_press: bool,
     mouse_pos: Vec2,
     mine_down: bool,
     place_down: bool,
@@ -1046,8 +1053,18 @@ impl ApplicationHandler for App {
                 let pressed = state == ElementState::Pressed;
                 match button {
                     MouseButton::Middle => self.mouse_down = pressed,
-                    MouseButton::Left => self.mine_down = pressed,
-                    MouseButton::Right => self.place_down = pressed,
+                    MouseButton::Left => {
+                        self.mine_down = pressed;
+                        if pressed {
+                            self.ui_left_press = true;
+                        }
+                    }
+                    MouseButton::Right => {
+                        self.place_down = pressed;
+                        if pressed {
+                            self.ui_right_press = true;
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1282,7 +1299,7 @@ impl App {
         self.edit_target = Some((tx, ty));
         let held = self.inventory[self.selected];
         let held_weapon = held.count > 0 && item::is_weapon(held.kind);
-        if self.mine_down && held_weapon {
+        if self.mine_down && held_weapon && !self.inventory_open {
             // Weapons use LMB toward the cursor instead of mining.
             if self.attack_cd <= 0.0 {
                 let (pcx, pcy) = player.center();
@@ -1304,7 +1321,7 @@ impl App {
             return;
         }
         // Melee: LMB over an NPC within four tiles hits it instead of mining.
-        if self.mine_down && self.attack_cd <= 0.0 {
+        if self.mine_down && self.attack_cd <= 0.0 && !self.inventory_open {
             let ax = world_pos.x;
             let ay = world_pos.y;
             let reach2 = 4.0 * TILE_PX;
@@ -1332,7 +1349,7 @@ impl App {
             && tile.kind != 80; // cacti have fixed frames but are mineable
         let held_wall = held.count > 0 && item::is_wall(held.kind);
 
-        if self.mine_down && tile.active() && !important {
+        if self.mine_down && tile.active() && !important && !self.inventory_open {
             if self.swing <= 0.0 {
                 self.swing = SWING_TIME;
             }
@@ -1352,7 +1369,7 @@ impl App {
                 self.mine_target = None;
                 self.mine_timer = 0.0;
             }
-        } else if self.mine_down && !tile.active() && tile.wall != 0 {
+        } else if self.mine_down && !tile.active() && tile.wall != 0 && !self.inventory_open {
             // No block in the cell: mining it removes the exposed wall.
             if self.swing <= 0.0 {
                 self.swing = SWING_TIME;
@@ -1374,7 +1391,7 @@ impl App {
             self.mine_timer = 0.0;
         }
 
-        if self.place_down && self.place_cooldown <= 0.0 {
+        if self.place_down && self.place_cooldown <= 0.0 && !self.inventory_open {
             if held_wall {
                 if self.can_place_wall(tx, ty) {
                     self.place_wall_item(tx, ty, item::wall_id(held.kind));
@@ -1595,6 +1612,110 @@ impl App {
         }
     }
 
+    /// The slot under the cursor, using the same geometry as `draw_hud`.
+    fn slot_at_mouse(&self) -> Option<usize> {
+        let m = self.mouse_pos;
+        if self.inventory_open {
+            let s = 0.85;
+            let i = ((m.x - 20.0) / (56.0 * s)).floor() as i32;
+            let j = ((m.y - 20.0) / (56.0 * s)).floor() as i32;
+            if !(0..10).contains(&i) || !(0..5).contains(&j) {
+                return None;
+            }
+            let lx = m.x - 20.0 - i as f32 * 56.0 * s;
+            let ly = m.y - 20.0 - j as f32 * 56.0 * s;
+            if lx > 52.0 * s || ly > 52.0 * s {
+                return None;
+            }
+            Some((i + j * 10) as usize)
+        } else {
+            let mut x = 20.0;
+            for i in 0..HOTBAR {
+                let sc = self.hotbar_scales[i].clamp(0.75, 1.0);
+                let slot = 52.0 * sc;
+                let y = 20.0 + 22.0 * (1.0 - sc);
+                if m.x >= x && m.x <= x + slot && m.y >= y && m.y <= y + slot {
+                    return Some(i);
+                }
+                x += slot + 4.0;
+            }
+            None
+        }
+    }
+
+    /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
+    /// stack, right click takes half or places one; on the closed hotbar a left click
+    /// selects the slot like the original.
+    fn handle_inventory_clicks(&mut self) {
+        let left = self.ui_left_press;
+        let right = self.ui_right_press;
+        self.ui_left_press = false;
+        self.ui_right_press = false;
+        if !left && !right {
+            return;
+        }
+        let Some(slot) = self.slot_at_mouse() else {
+            return;
+        };
+        if !self.inventory_open {
+            if left {
+                self.selected = slot;
+            }
+            return;
+        }
+        let mut held = self.mouse_item;
+        let mut target = self.inventory[slot];
+        if left {
+            if held.count == 0 {
+                held = target;
+                target = EMPTY_SLOT;
+            } else if target.count == 0 {
+                target = held;
+                held = EMPTY_SLOT;
+            } else if target.kind == held.kind && target.count < MAX_STACK {
+                let move = (MAX_STACK - target.count).min(held.count);
+                target.count += move;
+                held.count -= move;
+                if held.count == 0 {
+                    held = EMPTY_SLOT;
+                }
+            } else {
+                std::mem::swap(&mut held, &mut target);
+            }
+        } else if held.count == 0 {
+            if target.count > 0 {
+                let take = (target.count + 1) / 2;
+                held = ItemSlot {
+                    kind: target.kind,
+                    name: target.name,
+                    count: take,
+                };
+                target.count -= take;
+                if target.count == 0 {
+                    target = EMPTY_SLOT;
+                }
+            }
+        } else if target.count == 0 {
+            target = ItemSlot {
+                kind: held.kind,
+                name: held.name,
+                count: 1,
+            };
+            held.count -= 1;
+            if held.count == 0 {
+                held = EMPTY_SLOT;
+            }
+        } else if target.kind == held.kind && target.count < MAX_STACK {
+            target.count += 1;
+            held.count -= 1;
+            if held.count == 0 {
+                held = EMPTY_SLOT;
+            }
+        }
+        self.mouse_item = held;
+        self.inventory[slot] = target;
+    }
+
     fn save_world(&self) {
         if self.world_path.extension().is_some_and(|e| e == "trwld") {
             match save::save(&self.world_path, &self.world) {
@@ -1636,6 +1757,7 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        self.handle_inventory_clicks();
         for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
             let target = if i == self.selected { 1.0 } else { 0.75 };
             if *scale < target {
@@ -1886,6 +2008,8 @@ impl App {
                     player.as_ref(),
                     boss,
                     self.inventory_open,
+                    &self.mouse_item,
+                    self.mouse_pos,
                 );
 
                 if *debug {
@@ -4136,10 +4260,6 @@ fn draw_tree_foliage(
     quads
 }
 
-/// Vanilla HUD layout: hotbar top-left, hearts top-right, breath bubbles above the
-/// player and the boss bar at the bottom centre (`GUIHotbarDrawInner`,
-/// `ClassicPlayerResourcesDisplaySet`, `BigProgressBarHelper`).
-#[allow(clippy::too_many_arguments)]
 /// `ItemSlot.Draw`: the item's own texture at inventory scale, centred in the slot,
 /// with the stack size in the bottom-right corner.
 fn draw_slot_item(
@@ -4196,6 +4316,11 @@ fn draw_slot_number(r: &mut SpriteRenderer, x: f32, y: f32, i: usize, scale: f32
     r.push_text(px, py, fs, col, &num);
 }
 
+/// Vanilla HUD layout: hotbar top-left (or the open 10x5 inventory grid), hearts
+/// top-right, breath bubbles above the player and the boss bar at the bottom centre
+/// (`GUIHotbarDrawInner`, `Main.DrawInventory`, `ClassicPlayerResourcesDisplaySet`,
+/// `BigProgressBarHelper`).
+#[allow(clippy::too_many_arguments)]
 fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -4208,6 +4333,8 @@ fn draw_hud(
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
     inventory_open: bool,
+    mouse_item: &ItemSlot,
+    mouse_pos: Vec2,
 ) {
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
     // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`
@@ -4268,6 +4395,19 @@ fn draw_hud(
         let tx = 236.0 - tw * 0.5;
         r.push_text(tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
         r.push_text(tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
+    }
+
+    // `Main.mouseItem`: the stack carried on the cursor, centred on it.
+    if mouse_item.count > 0 {
+        draw_slot_item(
+            r,
+            lookups,
+            mouse_item,
+            mouse_pos.x - 26.0,
+            mouse_pos.y - 26.0,
+            52.0,
+            1.0,
+        );
     }
 
     // Hearts: 20 HP per heart, anchored to the right like the classic display.

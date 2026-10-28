@@ -454,7 +454,13 @@ slot 10 as "0"). Slot icons come from the original `Item_<id>` sprites through
 sprite is loaded yet. Pixel-exact UI *text* still uses the built-in bitmap font: the
 original strings are drawn with ReLogic `DynamicSpriteFont`s (`Fonts/Mouse_Text.xnb`,
 `Fonts/Item_Stack.xnb`), whose XNB reader is being ported in `tr-content` (see ROADMAP).
-Click-to-move stack interaction is M3 work.
+Stack interaction is a port of the `ItemSlot.Handle` (context 0) subset: left click
+takes, places or swaps a whole stack, right click takes half or places one, stacks merge
+up to `Item.MAX_STACK = 999`, and the carried stack follows the cursor (`Main.mouseItem`).
+On the closed hotbar a left click selects the slot. While the inventory is open, mining
+and placing are suppressed like the original's `mouseInterface`. The model now holds all
+50 `Player.inventory` slots (sidecar save version 2); pickup follows `Player.PickupItem`
+(stack into the hotbar, then an empty hotbar slot, then the storage rows).
 
 ## Editing and hotbar (M3 first pass)
 
@@ -589,3 +595,21 @@ bosses and multiplayer sync.
 
 Note: tile id **0 is dirt**, not air. The asset usage scan must include it; the active flag
 is the only air test.
+
+## Content pipeline (`tr-content`)
+
+Textures and fonts are read from the retail `.xnb` files at runtime with the original
+pipeline instead of pre-extracted PNGs: `tr-content` ports the XNB v5 container, the
+Xbox XMemCompress LZX decoder (`LzxDecoder.cs`, 16-bit window, headered blocks),
+`Texture2DReader` (Color/DXT1/DXT3/DXT5) and ReLogic's `DynamicSpriteFontReader`.
+Verified by test: `Images/Tiles_0.xnb` decodes pixel-identically to the old
+`assets/Images/Tiles_0.png` (0 differing pixels). XNA `SurfaceFormat.Color` is RGBA in
+memory (not BGRA), which the old C# extractor already wrote correctly.
+
+The ReLogic in the shipped game differs from `decompiled-libs` in the primitive
+encoding: the glyph character list is a UTF-8 string (not fixed-width chars) and the
+page header carries extra fields. The font parser therefore locates the page texture and
+each table structurally and validates the whole page (mip size == surface size, glyph
+rects inside the page, one kerning entry per char, UTF-8 characters). Mouse_Text parses
+as one 256x256 DXT3 page with 212 glyphs, line spacing 29; Item_Stack has 212 glyphs,
+line spacing 24.
