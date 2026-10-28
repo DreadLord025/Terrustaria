@@ -48,14 +48,15 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    Remaining: sun/moon/star light, per-type frame-dependent lights, invisible
    blocks/walls, mouse-light flicker, shader chromatic aberration once instances carry a
    flag. *~1–2 agent-days of ~8 left.*
-3. **Liquids** — ✅ *second pass*: water/lava/honey/shimmer are drawn from the original
-   `Misc/water_*` strips with 16-frame animation, per-kind opacity, surface waves, a shader
-   UV ripple, a depth tint and light-map lighting; the generator fills a forest lake and
-   lava puddles. `Liquid.UpdateLiquid`/`Liquid.Update` is ported as a 30 Hz active-cell
-   simulation (gravity, six-neighbour leveling, kill/retire, overflow buffer) and block
-   edits wake neighbouring cells. Remaining: the `Waterfall_*` overlay at half-brick
-   spouts, the four-corner `VisibleLiquidLevel` shoreline mesh, water styles and shimmer
-   sparkles. *~2–4 agent-days left of ~8.*
+3. **Liquids** — ✅ *fourth pass*: `LiquidRenderer.InternalPrepareDraw` is ported as
+   `liquid_draw.rs` (visible levels, edge walls, `FrameOffset`, source rect, waterfall-fade
+   opacity, `IsSurfaceLiquid`), `Lighting.GetCornerColors` drives 3x3 bilinear light and the
+   draw runs twice like `Main.DrawLiquid` (opaque behind walls/tiles, `DEFAULT_OPACITY`
+   over entities) from the original `Misc/water_*` frames. The generator fills a forest lake
+   and lava puddles; `Liquid.UpdateLiquid`/`Liquid.Update` is a 30 Hz active-cell simulation
+   (gravity, six-neighbour leveling, kill/retire, overflow buffer) and edits wake neighbours.
+   Remaining: the `Waterfall_*` overlay at half-brick spouts, water styles and shimmer
+   sparkles. *~1–3 agent-days left of ~8.*
 4. **Backgrounds & sky** — ✅ *third pass*: `Background_0` gradient, deterministic
    `Cloud_*` clouds, sun, moon, stars, the 15/9-minute day-night clock, the per-column cave
    fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`, `cloudAlpha` ramp, rotated
