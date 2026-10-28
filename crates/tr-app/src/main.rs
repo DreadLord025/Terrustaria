@@ -37,6 +37,8 @@ const ACCENT: [f32; 4] = [0.45, 0.85, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.70, 0.30, 1.0];
 
 const HOTBAR: usize = 10;
+/// Seconds of one item swing; `Player.itemAnimation` is longer for real items.
+const SWING_TIME: f32 = 0.28;
 
 #[derive(Clone, Copy)]
 struct ItemSlot {
@@ -582,6 +584,7 @@ fn main() -> Result<()> {
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_accum: 0.0,
+        swing: 0.0,
         world_key: None,
     };
     event_loop.run_app(&mut app)?;
@@ -688,6 +691,8 @@ struct App {
     items: Vec<ItemDrop>,
     item_rng: u64,
     item_accum: f32,
+    /// Remaining seconds of the current held-item swing.
+    swing: f32,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     world_key: Option<WorldFrameKey>,
 }
@@ -713,6 +718,8 @@ struct WorldFrameKey {
     npc_key: u32,
     /// Item drops and their ground-bob step.
     items_key: u32,
+    /// Held item kind + swing phase.
+    hand_key: u32,
     world_revision: u64,
 }
 
@@ -1084,6 +1091,7 @@ impl App {
     }
 
     fn update_editing(&mut self, dt: f32, screen: Vec2) {
+        self.swing = (self.swing - dt).max(0.0);
         if let Some((x, y)) = self.dev_break.take() {
             self.break_tile(x, y);
         }
@@ -1141,6 +1149,7 @@ impl App {
                     self.attack_cd = 0.3;
                     self.mine_target = None;
                     self.mine_timer = 0.0;
+                    self.swing = SWING_TIME;
                     return;
                 }
             }
@@ -1154,6 +1163,9 @@ impl App {
             .unwrap_or(false);
 
         if self.mine_down && tile.active() && !important {
+            if self.swing <= 0.0 {
+                self.swing = SWING_TIME;
+            }
             if self.mine_target == Some((tx, ty)) {
                 self.mine_timer += dt;
             } else {
@@ -1179,6 +1191,7 @@ impl App {
             let kind = self.inventory[self.selected].kind;
             self.place_tile(tx, ty, kind);
             self.place_cooldown = 0.12;
+            self.swing = SWING_TIME;
         }
     }
 
@@ -1363,6 +1376,7 @@ impl App {
                 liquids,
                 rain,
                 items,
+                swing,
                 world_key,
                 ..
             } = self;
@@ -1457,6 +1471,18 @@ impl App {
                     player_key,
                     npc_key,
                     items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
+                    hand_key: {
+                        let held = inventory
+                            .get(*selected)
+                            .filter(|s| s.count > 0)
+                            .map_or(0, |s| s.kind as u32);
+                        let phase = if *swing > 0.0 {
+                            (((1.0 - *swing / SWING_TIME) * 40.0) as u32).min(40)
+                        } else {
+                            0
+                        };
+                        held | (phase << 16)
+                    },
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -1492,6 +1518,16 @@ impl App {
                         items,
                         *edit_target,
                     );
+                    if let Some(p) = player.as_ref() {
+                        if let Some(slot) = inventory.get(*selected) {
+                            if slot.count > 0 {
+                                tile_stats.quads += draw_held_item(
+                                    renderer, lookups, light, &style, p, slot.kind, *swing,
+                                    anim_time,
+                                );
+                            }
+                        }
+                    }
                     *world_key = Some(key);
                 }
 
@@ -3001,6 +3037,59 @@ fn push_sliced(
 /// Draws the starter player from the original 40x56 part strips. The composition
 /// mirrors `PlayerDrawLayers`: legs/pants/shoes, torso/shirt, head/eyes/hair, all at
 /// `(x-10, y-10)` so the 40x56 sprite is centred on the 20x42 hitbox.
+/// `PlayerDrawLayers` first pass: the selected block in the player's hand, with a
+/// `Player.itemAnimation`-style swing when mining, placing or attacking.
+#[allow(clippy::too_many_arguments)]
+fn draw_held_item(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    light: &LightMap,
+    style: &LightStyle,
+    player: &Player,
+    kind: u16,
+    swing: f32,
+    anim_time: f32,
+) -> u32 {
+    let Some(tex) = lookups.plain_tex(kind) else {
+        return 0;
+    };
+    let (cx, cy) = player.center();
+    let tx = (cx / TILE_PX) as i32;
+    let ty = (cy / TILE_PX) as i32;
+    let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let dir = player.facing as f32;
+    let progress = if swing > 0.0 {
+        1.0 - (swing / SWING_TIME).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    // Arc from raised-behind to forward-down; mirrored for the left hand.
+    let a = if progress > 0.0 {
+        (-1.7 + progress * 2.5) * dir
+    } else {
+        0.0
+    };
+    let hand = [player.x + player::WIDTH * 0.5 + 5.0 * dir, player.y + 27.0];
+    let reach = 10.0;
+    let center = [hand[0] + a.cos() * reach * dir, hand[1] + a.sin() * reach];
+    // `push_sprite_rot` rotates around the top-left, so offset the pivot by the
+    // rotated half-size to spin the block around its centre.
+    let half = 7.0f32;
+    let (s, co) = a.sin_cos();
+    let top_left = [
+        center[0] - (half * co - half * s),
+        center[1] - (half * s + half * co),
+    ];
+    r.push_sprite_rot(
+        top_left,
+        [half * 2.0, half * 2.0],
+        tex.uv,
+        [c[0], c[1], c[2], 1.0],
+        a,
+    );
+    1
+}
+
 fn draw_player(
     r: &mut SpriteRenderer,
     assets: &PlayerAssets,

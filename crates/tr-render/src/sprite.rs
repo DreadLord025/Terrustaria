@@ -324,6 +324,27 @@ impl SpriteRenderer {
         });
     }
 
+    /// Rotated world sprite. Used by the held item, which the original draws with
+    /// `ItemRotation` around the hand.
+    pub fn push_sprite_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+    ) {
+        self.world.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            flags: 0.0,
+            rot,
+        });
+    }
+
     /// Rotated screen-space sprite. Used by rain, which the original draws rotated by
     /// `atan2(velocity.x, -velocity.y)` around the top-left origin. Rain lives in the
     /// always-rebuilt UI range so the cached world range (G6) stays reusable.

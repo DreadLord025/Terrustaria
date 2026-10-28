@@ -209,8 +209,11 @@ character composed from the original `Player_0_*` strips with walk/jump frames.
 ✅ *Second pass*: breath/drowning with a HUD bar, fall damage, lava damage and
 out-of-combat health regeneration.
 
-Remaining: the full `PlayerDrawLayers` order (front arm, armor, accessories), item
-holding/use, buffs, hooks/mounts/gravity flips, and the rest of the 55k-line `Player.cs`.
+The selected block is held in the hand with a swing arc while mining, placing or attacking.
+
+Remaining: the full `PlayerDrawLayers` order (front arm, armor, accessories), the full
+`itemAnimation`/use timings, buffs, hooks/mounts/gravity flips, and the rest of the
+55k-line `Player.cs`.
 *~12–24 agent-days.*
 
 ## Milestone 3 — items, inventory, crafting, UI

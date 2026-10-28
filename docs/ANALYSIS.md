@@ -373,9 +373,12 @@ The character is composed from the original 40×56 part strips (`Player_0_0` hea
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` back arm, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
 walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
-camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. Not ported yet:
-item use/placement, full draw layers (front arm, armor, accessories), buffs and the rest of
-`Player.cs`.
+camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. The selected
+hotbar block is drawn in the hand (14×14 tile frame) with a 0.28 s swing arc from raised-
+behind to forward-down when mining, placing or attacking; the world cache key includes the
+kind and quantised phase. Not ported yet:
+the full `itemAnimation` timings and tool-specific swings, full draw layers (front arm,
+armor, accessories), buffs and the rest of `Player.cs`.
 
 ## Editing and hotbar (M3 first pass)
 
