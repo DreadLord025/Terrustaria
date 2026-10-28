@@ -1,6 +1,7 @@
 # Bug report
 
-Issues reported from in-game screenshots. Keep this file up to date: when a bug is fixed,
+Tracked issues reported from in-game screenshots. The current performance plan is in
+`docs/ROADMAP.md` (M1.5); this file is only for correctness/visual defects. Keep this file up to date: when a bug is fixed,
 record the commit and the verification (tests / screenshots).
 
 ## BUG-001 — Liquids are too dark and do not light the water / underwater terrain
@@ -27,7 +28,7 @@ whether the liquid pass's depth tint and opacity double-darken the already atten
 
 ## BUG-002 — Tree bases / forks detached from the trunk
 
-**Status:** fixed — commit "Port the tree base forks"
+**Status:** fixed — commit `318f128` ("Port the GrowTree base forks …")
 **Area:** `tr-core/src/worldgen.rs` (`plant_trees`), `TileDrawing.DrawTrees`
 
 **Report:** at the foot of common trees a small stump/block was visibly detached from the

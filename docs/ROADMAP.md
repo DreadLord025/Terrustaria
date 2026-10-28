@@ -173,15 +173,15 @@ machine. `TR_NOCACHE=1` reproduces the uncached per-frame path for future A/B te
 | D2 | Cache the light map by (rect, sky colour, flicker) when nothing changes | 2 | done (static: 0 ms; panning: ~50 % hits) |
 | D3 | Incremental light on camera movement: keep a `CACHE_MARGIN = 32` tile valid region around the visible rect; a pan inside it reuses the map, and the visible rect always keeps the original 28-tile blur padding | 3 | done — surface/cave panning at zoom 0.25: light **3.31 → 0.03 ms**, draw **4.13 → 0.74 ms** (600-frame release runs, `TR_PAN=0.25`; `TR_NOCACHE=1` reproduces the old full path) |
 | D3 | Incremental light on camera movement (overlap reuse + dirty borders) | 3 | done (32-tile valid-region reuse; panning stress light 3.31 → 0.03 ms) |
-| D5 | GPU light: masks/seeds as textures, blur as parallel compute dispatches | 3 | planned |
-| D6 | Deferred lighting: unlit chunk meshes + screen-space light texture | 3 | planned |
-| F1 | Chunk meshes (32×32/64×64), rebuilt only on tile edits | 3 | partial — sky split into a back range and the world range cached by tile/light generation (72 % reuse while panning, 98 % static); per-chunk baking still planned |
-| B7 | Texture array instead of atlas — internal GPU storage only, must be pixel-identical; enables B6 and cuts cache pressure | 3 | evaluate |
-| B8 | Manual `fract` UV wrapping for merged runs (nearest, no mips) | 3 | evaluate |
-| B10 | Crop/repack the atlas to frames actually used by the world | 4 | planned |
+| D5 | GPU light: masks/seeds as textures, blur as parallel compute dispatches | 3 | evaluated — with D3 light is **0.01–0.03 ms** at zoom 0.25–1.5 while the present floor is ~1.1 ms; moving the blur to the GPU cannot improve real-zoom wall-clock and risks float-order pixel drift. Deferred until larger worlds/zoom need it |
+| D6 | Deferred lighting: unlit chunk meshes + screen-space light texture | 3 | evaluated — same reason as D5; the CPU light is already cached and the frame is present-bound at zoom 1.0–2.0. Deferred |
+| F1 | Chunk meshes (32×32/64×64), rebuilt only on tile edits | 3 | partial — sky split into a back range and the world range cached by tile/light generation (72 % reuse while panning, 98 % static). Per-chunk baking evaluated: the remaining rebuild is 0.02–0.03 ms at zoom 1.5 and 0.28 ms in the 0.25 stress view, below the present floor; deferred |
+| B7 | Texture array instead of atlas — internal GPU storage only, must be pixel-identical; enables B6 and cuts cache pressure | 3 | evaluated — one atlas/one bind and no texture-bound cost measured; variable sheet sizes make a pixel-identical array require a layered atlas (same sampling cost) and would touch every UV. Deferred |
+| B8 | Manual `fract` UV wrapping for merged runs (nearest, no mips) | 3 | deferred — only matters after B6 merged runs, which depends on B7 |
+| B10 | Crop/repack the atlas to frames actually used by the world | 4 | planned — atlas is 8192×3458 (~113 MB); cropping non-tree sheets to their framed extents is the next asset-pipeline win (memory/startup only), needs a per-kind crop map and pixel-diff across surface/cave/hell |
 | E1 | Pack `Tile` 16 → 8–10 bytes (bitfields) | 4 | partial — 14 → **12 bytes** by packing slope/paint and the wall frame cell; world memory **70.6 → 60.5 MB**. Going below 12 needs narrower frame fields (only safe for our asset range) — deferred |
-| E2 | SoA/chunked tile storage for the light and draw scans | 4 | planned |
-| F3 | GPU tilemap (tile metadata in a texture, static grid, vertex-shader culling) | 4 | optional |
+| E2 | SoA/chunked tile storage for the light and draw scans | 4 | planned — the 12-byte row-major tile already scans sequentially; a full SoA refactor is a world-model change with no real-zoom frame gain over D3 + the world cache |
+| F3 | GPU tilemap (tile metadata in a texture, static grid, vertex-shader culling) | 4 | optional — 2–80 k instances; not needed at the current scale |
 | G2 | Present-mode / frame-latency tuning under `AutoVsync` | 1 | done (default latency 1, `TR_LATENCY` override) |
 | G3 | Push constants instead of the two globals UBOs | 1 | evaluated — 2×32 B/frame is below noise |
 | G5 | Avoid recreating per-frame descriptors where the API allows | 1 | evaluated — surface views have no stable handle |
