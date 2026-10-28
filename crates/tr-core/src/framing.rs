@@ -350,14 +350,11 @@ pub fn frame_world(world: &mut World) -> usize {
                 let y = (y0 + row_i) as i32;
                 for x in 1..w - 1 {
                     let t = &world.tiles[y as usize * w + x];
-                    if !t.active()
-                        || important.get(t.kind as usize).copied().unwrap_or(false)
-                        || t.slope != 0
-                        || t.half_brick()
-                    {
-                        // Slopes/half blocks use a frame layout we do not draw yet.
+                    if !t.active() || important.get(t.kind as usize).copied().unwrap_or(false) {
                         continue;
                     }
+                    // Slopes and half bricks frame exactly like full blocks; the draw
+                    // pass clips the sprite into the slope/half silhouette.
                     if let Some((fx, fy)) = frame_of(world, x as i32, y) {
                         row[x] = (fx, fy);
                     }

@@ -12,7 +12,8 @@ pub fn usage(world: &World) -> (BTreeSet<u16>, BTreeSet<u16>) {
     let mut tiles = BTreeSet::new();
     let mut walls = BTreeSet::new();
     for t in &world.tiles {
-        if t.active() && t.kind != 0 {
+        // Tile id 0 is dirt, not air; only the active flag distinguishes air.
+        if t.active() {
             tiles.insert(t.kind);
         }
         if t.wall != 0 {
@@ -82,10 +83,47 @@ pub fn load_world_images(
     }
 
     // Whole-image sheets used by the sky/background pass.
-    for name in ["Background_0"] {
+    for name in [
+        "Background_0",
+        "Background_7",
+        "Sun",
+        "Moon_0",
+        "Star_0",
+        "Star_1",
+        "Star_2",
+        "Star_3",
+    ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => log::warn!("missing background texture {name}"),
+        }
+    }
+
+    // Tree canopies and branches are separate free-form textures (`Tree_Tops_*`,
+    // `Tree_Branches_*`); the trunk itself lives in `Tiles_5.png`.
+    for style in 0..32 {
+        for prefix in ["Tree_Tops_", "Tree_Branches_"] {
+            let name = format!("{prefix}{style}");
+            if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
+    }
+
+    // Sky clouds (`Cloud_0`..`Cloud_41`), drawn as a parallax layer.
+    for i in 0..42 {
+        let name = format!("Cloud_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+
+    // Liquid surfaces: `Images/Misc/water_0..14` (water styles, lava, honey,
+    // shimmer). 48x1360 each: 3 columns of 16 px and 17 animation blocks of 80 px.
+    for i in 0..15 {
+        let name = format!("water_{i}");
+        if let Ok(img) = load_misc_png(dir, &name) {
+            images.push(img);
         }
     }
 
@@ -111,6 +149,20 @@ pub fn load_png(dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImag
         height: img.height(),
         rgba: img.into_raw(),
         layout,
+    })
+}
+
+fn load_misc_png(dir: &Path, name: &str) -> Result<AtlasImage> {
+    let path = dir.join("Misc").join(format!("{name}.png"));
+    let img = image::open(&path)
+        .with_context(|| format!("loading {}", path.display()))?
+        .to_rgba8();
+    Ok(AtlasImage {
+        name: name.to_string(),
+        width: img.width(),
+        height: img.height(),
+        rgba: img.into_raw(),
+        layout: SheetLayout::Raw,
     })
 }
 
@@ -147,15 +199,37 @@ pub struct WallTex {
 pub const WALL_COLS: usize = 13;
 pub const WALL_ROWS: usize = 5;
 
+/// Tree canopy + branch sheets for one foliage style.
+#[derive(Clone, Copy, Debug)]
+pub struct FoliageTex {
+    pub top: tr_render::SheetRect,
+    pub branch: tr_render::SheetRect,
+}
+
+/// One cloud texture, already reduced to what the sky pass needs.
+#[derive(Clone, Copy, Debug)]
+pub struct CloudTex {
+    pub uv: [f32; 4],
+    pub w: f32,
+    pub h: f32,
+}
+
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
 pub struct Lookups {
     /// Dense per-type tables: one slot per `TileID`, `None` if the sheet is absent.
     pub tiles: Vec<Option<TypeTex>>,
     pub walls: Vec<Option<WallTex>>,
+    /// `Tree_Tops_*` / `Tree_Branches_*` per foliage style.
+    pub foliage: Vec<Option<FoliageTex>>,
+    /// `Cloud_0`..`Cloud_41`.
+    pub clouds: Vec<Option<CloudTex>>,
+    /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
+    pub liquids: Vec<Option<tr_render::SheetRect>>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
+    pub atlas_size: (u32, u32),
 }
 
 impl Lookups {
@@ -167,7 +241,11 @@ impl Lookups {
         let mut me = Self {
             tiles: vec![None; tr_core::tiledata::TILE_COUNT],
             walls: vec![None; tr_core::tiledata::WALL_COUNT],
+            foliage: vec![None; 32],
+            clouds: vec![None; 42],
+            liquids: vec![None; 15],
             frame_cache: HashMap::new(),
+            atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
             let Some(rect) = atlas.sheet(&name) else {
@@ -226,7 +304,38 @@ impl Lookups {
                 });
             }
         }
+        for style in 0..me.foliage.len() {
+            let top = atlas.sheet(&format!("Tree_Tops_{style}"));
+            let branch = atlas.sheet(&format!("Tree_Branches_{style}"));
+            if let (Some(top), Some(branch)) = (top, branch) {
+                me.foliage[style] = Some(FoliageTex {
+                    top: *top,
+                    branch: *branch,
+                });
+            }
+        }
+        for i in 0..me.clouds.len() {
+            if let Some(rect) = atlas.sheet(&format!("Cloud_{i}")) {
+                me.clouds[i] = Some(CloudTex {
+                    uv: uv_rect(rect, me.atlas_size, 0, 0, rect.width, rect.height),
+                    w: rect.width as f32,
+                    h: rect.height as f32,
+                });
+            }
+        }
+        for i in 0..me.liquids.len() {
+            if let Some(rect) = atlas.sheet(&format!("water_{i}")) {
+                me.liquids[i] = Some(*rect);
+            }
+        }
         me
+    }
+
+    /// UV of a 16x16 source cell inside `Misc/water_{index}`. The sheet is a
+    /// vertical strip of 80 px animation blocks, 3 cells wide.
+    pub fn liquid_uv(&self, index: usize, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.liquids.get(index)?.as_ref()?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
     }
 
     /// UV rectangle covering a whole raw (non-tiled) sheet, e.g. the sky gradient.
@@ -278,6 +387,39 @@ impl Lookups {
         })
     }
 
+    /// UV of any source rectangle inside a tile type's sheet. Tree trunks are 20x20
+    /// sprites on a 22 px grid, so they cannot use the 16x16 block-frame table.
+    pub fn rect_uv(
+        &self,
+        atlas: &tr_render::Atlas,
+        kind: u16,
+        fx: i16,
+        fy: i16,
+        w: u32,
+        h: u32,
+    ) -> Option<FrameTex> {
+        let tt = self.tiles.get(kind as usize)?.as_ref()?;
+        let rect = atlas.sheet(&tt.sheet)?;
+        let uv = uv_rect(rect, self.atlas_size, fx as i32, fy as i32, w, h);
+        let opaque = atlas.rect_is_opaque(rect, fx.max(0) as u32, fy.max(0) as u32, w, h);
+        Some(FrameTex { uv, opaque })
+    }
+
+    /// UV rectangle of a canopy (`top = true`) or branch sprite for a foliage style.
+    pub fn foliage_uv(
+        &self,
+        style: usize,
+        top: bool,
+        sx: i32,
+        sy: i32,
+        w: u32,
+        h: u32,
+    ) -> Option<[f32; 4]> {
+        let f = self.foliage.get(style)?.as_ref()?;
+        let rect = if top { &f.top } else { &f.branch };
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
     /// Texture for a wall autotile cell.
     ///
     /// Wall sheets use 36 px cells with the 16x16 art inset by 8 px, and cells are
@@ -298,8 +440,6 @@ fn uv_of(
     fx: i16,
     fy: i16,
 ) -> [f32; 4] {
-    let aw = atlas.width as f32;
-    let ah = atlas.height as f32;
     let x0 = rect.x as f32 + fx.max(0) as f32;
     let y0 = rect.y as f32 + fy.max(0) as f32;
     if fx.max(0) as u32 + 16 > rect.width || fy.max(0) as u32 + 16 > rect.height {
@@ -309,5 +449,24 @@ fn uv_of(
             rect.height
         );
     }
-    [x0 / aw, y0 / ah, (x0 + 16.0) / aw, (y0 + 16.0) / ah]
+    [
+        x0 / atlas.width as f32,
+        y0 / atlas.height as f32,
+        (x0 + 16.0) / atlas.width as f32,
+        (y0 + 16.0) / atlas.height as f32,
+    ]
+}
+
+fn uv_rect(
+    rect: &tr_render::SheetRect,
+    atlas_size: (u32, u32),
+    sx: i32,
+    sy: i32,
+    w: u32,
+    h: u32,
+) -> [f32; 4] {
+    let (aw, ah) = (atlas_size.0 as f32, atlas_size.1 as f32);
+    let x0 = rect.x as f32 + sx.max(0) as f32;
+    let y0 = rect.y as f32 + sy.max(0) as f32;
+    [x0 / aw, y0 / ah, (x0 + w as f32) / aw, (y0 + h as f32) / ah]
 }

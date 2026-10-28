@@ -33,23 +33,31 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
 1. **Autotiling** — ✅ *mostly done*: the generic 20-frame block chain, the merge families
    (`Dirt`/`Mud`/`Ash`/moss/grass/ore/`BlockMergesWithMergeAllBlock`) and 2 228 per-type
    merge pairs are ported; wall framing is complete (`Framing.WallFrame`, 20×3 lookup).
-   Remaining: per-type special branches (grass edge overrides, moss, vines, cactus),
-   `TileFrameImportant` multi-tile objects. *~3–6 agent-days left of ~15.*
-2. **Lighting** — ✅ *first pass done*: `TileLightScanner` seeds (surface/hell/wall/
-   emissive/liquid), `LightMap`'s two-pass four-sweep blur with per-mask decay, and
-   `Main.SetBackColor` → `ApplyColorOfTheSkiesToTiles` for daylight. Verified numerically
-   against the engine's own constants (`TR_LIGHT_AT`). Remaining: four-corner interpolation,
-   `GlobalBrightness`, sun/moon/star light, per-type frame-dependent lights, invisible
-   blocks/walls, mouse-light flicker. *~2–4 agent-days of ~8 left.*
-3. **Liquids** — water/lava/honey/shimmer surfaces, waves, opacity blending.
-   *~4–8 agent-days.* ← next
-4. **Backgrounds & sky** — the real parallax layers, sun/moon/stars/clouds, biome
-   backgrounds, `Main.DrawBackground` dirt/rock/magma layers. Today only the `Background_0`
-   gradient plus a depth fade are drawn. *~5–10 agent-days.*
-5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), tree
-   canopies/branches (`TileDrawing` composes those from `Tree_Tops_*`/`Tree_Branches_*`
-   instead of tile frames), paint, coatings, slopes/half-blocks, gemspark/glow.
-   *~10–20 agent-days.*
+   Sloped and half-brick tiles are framed and drawn with the original 2 px slices. Common
+   trees are composed (`DrawTrees`: 22 px trunks, `Tree_Tops_*`/`Tree_Branches_*`), and
+   tile-3 surface plants are generated and drawn. Remaining: per-type special branches
+   (grass edge overrides, moss, vines, cactus), `TileFrameImportant` multi-tile objects.
+   *~2–4 agent-days left of ~15.*
+2. **Lighting** — ✅ *second pass done*: `TileLightScanner` seeds (surface/hell/wall/
+   emissive/liquid), `LightMap`'s two-pass four-sweep blur with per-mask decay,
+   `Main.SetBackColor` → `ApplyColorOfTheSkiesToTiles`, per-column surface seeding,
+   `GlobalBrightness = 1.2`, `GetColor9Slice`/`GetColor4Slice` block slicing and all four
+   `LightMode`s (Color/White/Retro/Trippy, F2). Verified numerically with `TR_LIGHT_AT`.
+   Remaining: sun/moon/star light, per-type frame-dependent lights, invisible
+   blocks/walls, mouse-light flicker, shader chromatic aberration once instances carry a
+   flag. *~1–2 agent-days of ~8 left.*
+3. **Liquids** — ✅ *first pass*: water/lava/honey/shimmer are drawn from the original
+   `Misc/water_*` strips with 16-frame animation, per-kind opacity, surface waves, a shader
+   UV ripple, a depth tint and light-map lighting. The generator fills a forest lake and
+   lava puddles. Remaining: flow simulation, waterfalls, water styles, visible-wall height
+   smoothing and shimmer sparkles. *~3–6 agent-days left of ~8.*
+4. **Backgrounds & sky** — ✅ *first pass*: `Background_0` gradient, two screen-space
+   parallax mountain layers (`Background_7`), deterministic `Cloud_*` clouds, sun, moon,
+   stars and the per-column cave fade. Remaining: biome-specific `DrawSurfaceBG_*`
+   variants (corruption/crimson/snow/jungle/hallow/ocean), the foreground tree line, rain,
+   and the textured `Main.DrawBackground` underground layers. *~3–7 agent-days.* ← next
+5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
+   coatings, gemspark/glow. Trees and slopes are done. *~8–18 agent-days.*
 
 Estimated total: **~30–60 agent-days** remaining. Exit criterion: side-by-side screenshots
 of the same world positions match texture-for-texture.
@@ -202,9 +210,11 @@ batch of enemies (slimes, zombies, demon eyes, skeletons), spawn logic, town NPC
 
 ## Milestone 5 — world generation
 
-Port generation passes and structures (`WorldGen.cs` + `Generation/*`). Alternatively keep
-loading existing `.wld` files, which already works. **~40–90 agent-days** for a passable
-generator; full parity much more.
+A compact native generator (surface noise/layers/caves/ores/ash/trees/plants) and a native
+`.trwld` save now exist; the app uses them by default. Porting the remaining generation
+passes and structures (`WorldGen.cs` + `Generation/*`: biomes, dungeons, temples, living
+trees, oceans, hardmode spread, chests) is **~40–90 agent-days** for a passable generator;
+full parity much more. Loading existing `.wld` files still works at any time.
 
 ## Milestone 6 — audio, map, networking, polish
 

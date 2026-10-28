@@ -15,7 +15,10 @@ pub struct Globals {
     pub cam: [f32; 2],
     pub zoom: f32,
     pub time: f32,
-    pub _pad: [f32; 2],
+    /// Screen-space RGB split for the "Trippy" light mode.
+    pub aberration: f32,
+    pub _pad: f32,
+    pub texel: [f32; 2],
 }
 
 #[repr(C)]
@@ -26,6 +29,8 @@ pub struct SpriteInstance {
     pub uv0: [f32; 2],
     pub uv1: [f32; 2],
     pub color: [f32; 4],
+    /// Per-sprite effect flag: 1 = liquid (UV wave in the fragment shader).
+    pub flags: f32,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -52,6 +57,8 @@ pub struct SpriteRenderer {
     pub sheets: HashMap<String, [f32; 4]>,
     pub atlas_size: (u32, u32),
     pub font_glyph_px: f32,
+    /// RGB split applied to the world pass (light mode "Trippy"); 0 disables it.
+    pub aberration: f32,
     font_uv0: [f32; 2],
     font_uv1: [f32; 2],
     white_uv: [f32; 4],
@@ -111,7 +118,7 @@ impl SpriteRenderer {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -187,6 +194,7 @@ impl SpriteRenderer {
                         2 => Float32x2,
                         3 => Float32x2,
                         4 => Float32x4,
+                        5 => Float32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -267,6 +275,7 @@ impl SpriteRenderer {
             sheets,
             atlas_size: (atlas.width, atlas.height),
             font_glyph_px: font_glyph_px as f32,
+            aberration: 0.0,
             font_uv0,
             font_uv1,
             white_uv,
@@ -288,12 +297,26 @@ impl SpriteRenderer {
     }
 
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+        self.push_sprite_flags(pos, size, uv, color, 0.0);
+    }
+
+    /// Same as [`SpriteRenderer::push_sprite`], with a per-instance shader flag
+    /// (currently 1 = liquid UV wave).
+    pub fn push_sprite_flags(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        flags: f32,
+    ) {
         self.world.push(SpriteInstance {
             pos,
             size,
             uv0: [uv[0], uv[1]],
             uv1: [uv[2], uv[3]],
             color,
+            flags,
         });
     }
 
@@ -305,6 +328,7 @@ impl SpriteRenderer {
             uv0: [self.white_uv[0], self.white_uv[1]],
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
+            flags: 0.0,
         });
     }
 
@@ -325,6 +349,7 @@ impl SpriteRenderer {
                     uv0: [u0, self.font_uv0[1]],
                     uv1: [u1, self.font_uv1[1]],
                     color,
+                    flags: 0.0,
                 });
             }
             cx += gw * scale;
@@ -374,7 +399,12 @@ impl SpriteRenderer {
                 cam: camera,
                 zoom,
                 time,
-                _pad: [0.0; 2],
+                aberration: self.aberration,
+                _pad: 0.0,
+                texel: [
+                    1.0 / self.atlas_size.0 as f32,
+                    1.0 / self.atlas_size.1 as f32,
+                ],
             }),
         );
         gpu.queue.write_buffer(
@@ -385,7 +415,12 @@ impl SpriteRenderer {
                 cam: [w * 0.5, h * 0.5],
                 zoom: 1.0,
                 time,
-                _pad: [0.0; 2],
+                aberration: 0.0,
+                _pad: 0.0,
+                texel: [
+                    1.0 / self.atlas_size.0 as f32,
+                    1.0 / self.atlas_size.1 as f32,
+                ],
             }),
         );
 

@@ -63,20 +63,20 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 
 | System | Original location | Size | Status | Notes |
 | --- | --- | --- | --- | --- |
-| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | Header + section table + RLE tile stream parsed; chests/signs/NPCs skipped |
-| Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Generic block chain + merge families ported; per-type grass/moss/weird branches approximated |
+| World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | `.wld` header + section table + RLE tile stream parsed; chests/signs/NPCs skipped. Native `.trwld` writer/reader for generated worlds |
+| Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Generic block chain + merge families ported; slopes/half-bricks framed; per-type grass edge/moss/vines/weird branches approximated |
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | ✅ | Full `wallFrameLookup` + `centerWallFrameLookup` port |
-| Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Simple quads; no paint, slopes, wind, glow, tile entities |
-| Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ⬜ | Currently a screen-space gradient only |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | ⬜ | Solid gradient |
-| Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | ⬜ | Water/lava/honey/shimmer flags parsed but not drawn |
+| Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; no paint, wind, glow, tile entities |
+| Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
+| Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
 | Player physics | `Player.cs` | 55 600 | ⬜ | No player entity |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | ⬜ | |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | ⬜ | |
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | ⬜ | ~700 NPC types, each with bespoke behaviour |
 | Projectiles | `Projectile.cs` | 81 000 | ⬜ | ~1 100 types |
 | Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | ⬜ | |
-| World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | ⬜ | Passes, structures, dungeons, biomes |
+| World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | 🟡 | Native compact generator: surface/layers/caves/ores/ash/trees/plants; no biomes, structures or oceans |
 | UI / menus | `UI/*`, `GameContent.UI.*` | ~35 000 | ⬜ | |
 | Audio | `Audio/*`, XACT banks | ~4 000 | ⬜ | `.xsb`/`.xwb` banks extracted later |
 | Networking | `Netplay.cs`, `MessageBuffer.cs` | ~12 000 | ⬜ | Protocol for 1.4.5.8 |
@@ -144,20 +144,52 @@ coating. Those are listed in the roadmap.
 `tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
 `tiledata.rs`; rerun it after touching those tables.
 
+## Slopes and half bricks
+
+Slope/half-brick tiles are no longer skipped by the framer: the generic 20-rule chain frames
+them with the same slope-aware neighbour rules as `TileFrameCosmetic` (a slope hides its two
+open sides, and sloped neighbours stop contributing a side). The draw pass ports
+`TileDrawing.DrawBasicTile`:
+
+- slopes 1/2 (ground) and 3/4 (ceiling) are eight 2 px columns plus a 2 px strip, each
+  sampling the tile's normal frame with the original source/destination offsets;
+- half bricks keep the top 8 rows of the art and sit on the bottom 8 px of the cell.
+
+Slope tiles still receive flat per-tile light, as the original's slope path does.
+
+## Trees
+
+Trees are tile id 5 columns (plus the gem/vanity/ash variants). The trunk sheet is not on
+the 18 px block grid: `Tiles_5.png` uses **22 px cells with 20×20 sprites**, drawn at
+`x*16 - 2`. `TileDrawing.GetTileDrawData` also shifts `frameX` by `176 × (biome + 1)`; the
+biome comes from the ground tile under the trunk. Top and branch tiles (`frameX` 22/44/66,
+`frameY >= 198`) are transparent markers, not art: `DrawTrees` replaces them with:
+
+- canopy — `Tree_Tops_{style}`, source `treeFrame × 82, 0, 80×80` (jungle 114×96, hallow
+  80×140), anchored at `(x*16 + 8 - w/2, y*16 + 16 - h)`;
+- branches — `Tree_Branches_{style}`, source `(0 | 42, treeFrame × 42, 40×40)`, offset
+  `(-24, -12)` or `(0, -12)`.
+
+`tr-core/src/tree.rs` carries the marker/biome/style tables; the app draws foliage after
+the tile pass. Forest world-style randomisation (`TreeTops.GetTreeStyle`, a later save
+section we do not parse) is approximated as style 0; gem/vanity/palm trees are not composed.
+
 ## Lighting
 
 Terraria's light is a **tile light map**, not a per-vertex shader effect:
 `Terraria.Graphics.Light.LightingEngine` walks the visible area plus a 28-tile border,
 `TileLightScanner` writes a seed colour per tile, and `LightMap.Blur` spreads those seeds with
-directional sweeps. `Lighting.GetColor(x, y)` then indexes the map (optionally interpolating
-four corners) and every tile, wall, NPC and projectile is drawn multiplied by it.
+directional sweeps. Everything is drawn multiplied by `Lighting.GetColor(x, y)`; in Color
+mode solid blocks are further split into 3×3 (or 2×2) light slices.
 
 Ported in `tr-core/src/lighting.rs`:
 
 1. **Region** — `AREA_PADDING = 28` around the visible tile rect, `NON_VISIBLE_PADDING = 18`
    rows/columns that the sweeps stop before, exactly as `LightingEngine` does.
 2. **Seeds** (`TileLightScanner.GetTileLight`), per tile in this order:
-   - `ApplySurfaceLight` — only for `y <= worldSurface`; the light colour is `Main.tileColor`
+   - `ApplySurfaceLight` — for `y <= column_surface(x)` (the first solid tile of that
+     column; the original uses the global `worldSurface`, which leaves hills above the
+     average dark). The light colour is `Main.tileColor`
      (`ApplyColorOfTheSkiesToTiles` of the sky colour) and it only passes where
      `Main.wallLight[wall]` (or wall 73/227, or an invisible wall) and the tile does not block
      sun (`Main.tileNoSunLight`, with the slope/half-brick liquid rule), plus the gem-wall
@@ -176,22 +208,55 @@ Ported in `tr-core/src/lighting.rs`:
    left→right, right→left), each carrying the brightest colour seen so far and multiplying it
    by the next tile's decay. The original's `0.0185` per-channel cutoff is kept, so dim light
    stops propagating instead of tinting the whole map.
+5. **Smooth blocks** (`Lighting.GetColor9Slice` / `GetColor4Slice`,
+   `DrawSingleTile_SlicedBlock`): a solid block in Color/White mode is drawn as nine quads
+   (4/8/4 px) whose tints average the block's light with the corresponding neighbour; below
+   the medium threshold it is four 8×8 quads, and below that one flat quad. A slope or half
+   brick is not sliced.
+6. **Modes** — `LightMode::{Color, White, Retro, Trippy}` match
+   `Terraria.Graphics.Light.LightMode`. `LightStyle` says whether blocks are sliced, whether
+   light is grayscale, quantisation steps, time-dependent channel perturbation and the
+   shader aberration hook. `GlobalBrightness = 1.2` is applied when shading (`Lighting`'s
+   default). Adding a mode (Sepia, Monochrome, ...) is a variant plus a style; the draw pass
+   needs no new path.
 
 Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
-`Main.tileColor` (white) × `0.56`.
+`Main.tileColor` (white) × `0.56`; the renderer multiplies that by `GlobalBrightness`.
 
-Deliberate simplifications for this pass:
+Deliberate simplifications:
 
-- Light is applied **flat per tile** (`Lighting.GetColor` without corner interpolation). The
-  original interpolates four corner samples, so the edges of a lit area are slightly softer
-  there; adding four corner colours to `SpriteInstance` is planned for M1.3.
-- `Lighting.GlobalBrightness`, `Main.mouseTextColor` flicker and the shimmer / legacy
-  lighting render paths are not ported.
-- Sky rendering is still a placeholder: the real parallax, cloud and underground background
-  layers (`Main.DrawBackground`, `DrawSurfaceBG_*`, `SkyManager`) are not ported. The blue is
-  the game's own `Background_0.png` gradient anchored to the surface; underground is a
-  per-column fade to cave darkness.
+- Sun/moon/star light, `Main.mouseTextColor` flicker, per-type frame-dependent lights and
+  invisible blocks/walls are not ported.
+- The shader has an aberration hook (`Globals::aberration`), but it is disabled for Trippy
+  until instances carry a per-sprite flag: shifting full-screen sky quads samples past
+  their atlas sheet.
+- The real parallax, cloud and underground background layers (`Main.DrawBackground`,
+  `DrawSurfaceBG_*`, `DrawClouds_*`, `SkyManager`) are not ported. The blue is the game's
+  own `Background_0.png` gradient anchored to `Main.worldSurface`; two seeded copies of
+  `Background_7` are drawn as screen-space parallax mountain layers, and a deterministic
+  `Cloud_*` layer uses half-speed horizontal parallax. Sun/moon/stars follow
+  `DrawSunAndMoon`'s screen-space arc using `Sun`, `Moon_0` and `Star_0..3`. Biome-specific
+  backgrounds, the foreground tree line and rain are missing; underground is a smooth
+  per-column fade to cave darkness that starts at each column's first solid tile.
+
+## Liquids
+
+`LiquidRenderer.DrawNormalLiquids` is ported as a first pass. Each visible tile with
+`liquid > 0` draws one 16x16 sprite from the original `Images/Misc/water_*` strips:
+
+- water → `water_0` (style 0), lava → `water_1`, honey → `water_11`, shimmer → `water_14`;
+- source X = 16 (interior column), the 80 px animation blocks for body tiles, and the
+  surface block at `Y = 1280` for the top layer; 16 frames at 8 fps;
+- opacity from `DEFAULT_OPACITY` (0.6 / 0.95 / 0.95 / 0.75), multiplied by the light map;
+- partial tiles crop the source/destination height to `liquid / 255`;
+- a per-column sine offset plus a shader UV ripple (per-instance `flags = 1`) breaks up
+  the 16 px texture repetition; a small depth tint darkens deep water.
+
+Not ported: the liquid update/flow simulation, `Liquid` wave mask shader, waterfall
+columns, the visible-wall height smoothing that gives the original's diagonal shorelines,
+water styles and shimmer sparkles. The generator adds a forest lake and lava puddles so
+the pass is visible in the default world; loaded `.wld` files expose their own liquids.
 
 ## Sky and daylight
 
@@ -205,6 +270,30 @@ Deliberate simplifications for this pass:
 
 `ApplyColorOfTheSkiesToTiles` pulls each channel 70 % towards its own value
 (`(sum + 7·c) / 10`), which is the colour passed to the surface light seed.
+
+## World generation and native saves
+
+`tr-core/src/worldgen.rs` is a compact model of the shapes the original generator produces,
+not a port of all 45 000 lines. On first launch it builds a 4200×1200 forest world from a
+seed in ~165 ms:
+
+1. FBM value-noise surface around 30 % of the height, with a flattened spawn plateau and a
+   smoothing pass that limits adjacent height differences to one tile.
+2. Grass (top), dirt (16–22 rows), stone, then ash/hellstone for the bottom 170 rows; dirt
+   walls above the rock layer, stone walls below.
+3. Caves from a large-cavern field plus a worm field, with a 9-tile surface crust.
+4. Dirt/stone/ash blobs, then copper/iron/silver/gold blobs by depth and hellstone in ash.
+5. Slopes on every one-tile surface transition, a forest lake near spawn (a bowl with a
+   raised rim, filled with water) and small lava puddles on cave floors.
+6. Common trees (22 px trunk frames, canopy marker, branch markers, base forks) and
+   tile-3 grass/flower plants.
+
+The result is saved as `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`
+(`tr-core/src/save.rs`): magic/version/seed + header fields + the `frame_important` bitset,
+then per-row RLE of the 14-byte tile struct (~3.9 MB for the default world). Loading restores
+every field; framing/lighting run afterwards exactly as for a `.wld`. `TR_REGEN=1`
+regenerates, `TR_SEED=<n>` selects a seed. Biomes, structures, oceans/liquids and hardmode
+spread are not generated; the original generator remains an M5 milestone.
 
 ## Asset pipeline
 
@@ -237,14 +326,22 @@ Deliberate simplifications for this pass:
 
 1. **Autotiling is the dominant visual factor.** One 16×16 frame per tile type produces
    repeating "cobblestone" seams. The generic block chain and the merge families are now
-   ported (~5 900 000 tiles framed in ~150 ms); the remaining gaps are per-type special
-   branches, which affect a minority of tile types.
-2. **Lighting is the second factor.** Without it the world is uniformly lit and caves show
-   sky. The original engine uses a tile light scanner + per-corner colour interpolation; the
-   scanner and blur are ported (see `#lighting`), the four-corner interpolation is still to do.
-3. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100
+   ported (~5 900 000 tiles framed in ~150 ms); slopes/half-bricks and tree composition are
+   drawn, and the remaining gaps are per-type special branches, which affect a minority of
+   tile types.
+2. **Lighting is the second factor.** The scanner, blur, surface seeding, `GlobalBrightness`,
+   9/4-slice block smoothing and the four original modes are ported (see `#lighting`).
+   Sun/moon light, flicker and invisible blocks remain.
+3. **Backgrounds are the third.** Parallax mountains, clouds, sun/moon and stars now exist,
+   but biome-specific skylines, rain and the real textured underground background are
+   still placeholders; the current sky + per-column cave fade avoids leaks and hard edges
+   but does not cover every biome look.
+4. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100
    projectiles, ~750 tiles; most behaviour is hand-written per id, not data-driven.
-4. **World generation** is a large but well-isolated subsystem (passes + structures) and can
-   be ported independently once the world model supports all tile/object metadata.
-5. **Networking** must match the exact 1.4.5.8 packet layout to interoperate; not required
+5. **World generation** is a large but well-isolated subsystem (passes + structures). The
+   compact generator and native save give a stable test world; full parity is M5.
+6. **Networking** must match the exact 1.4.5.8 packet layout to interoperate; not required
    for single-player parity.
+
+Note: tile id **0 is dirt**, not air. The asset usage scan must include it; the active flag
+is the only air test.

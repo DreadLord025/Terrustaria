@@ -146,15 +146,19 @@ impl Atlas {
         if fx < 0 || fy < 0 {
             return false;
         }
-        let (fx, fy) = (fx as u32, fy as u32);
-        if fx + 16 > sheet.width || fy + 16 > sheet.height {
+        self.rect_is_opaque(sheet, fx as u32, fy as u32, 16, 16)
+    }
+
+    /// True when every pixel of an arbitrary source rect inside `sheet` is opaque.
+    pub fn rect_is_opaque(&self, sheet: &SheetRect, fx: u32, fy: u32, w: u32, h: u32) -> bool {
+        if fx + w > sheet.width || fy + h > sheet.height {
             return false;
         }
         let stride = self.width as usize * 4;
         let mut i = ((sheet.y + fy) as usize) * stride + ((sheet.x + fx) as usize) * 4 + 3;
-        for _ in 0..16 {
-            for x in 0..16 {
-                if self.pixels[i + x * 4] != 255 {
+        for _ in 0..h {
+            for x in 0..w {
+                if self.pixels[i + x as usize * 4] != 255 {
                     return false;
                 }
             }

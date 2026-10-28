@@ -26,12 +26,28 @@
   so the immutable world is shared and results are copied into the tiles afterwards.
 - `lighting.rs` — `LightMap::compute(rect)`: seeds each tile like `TileLightScanner`
   (surface, hell, wall, emissive, liquid) and blurs them with the original's two-pass,
-  four-sweep carried-max algorithm and per-mask decay. Flat colour per tile for now; the
-  corners come with the liquid pass. See `ANALYSIS.md#lighting`. Seeding and the horizontal
-  sweeps run on Rayon's global pool for rects ≥96k cells (below that, dispatch costs more
-  than it saves); vertical sweeps stay serial because row-major storage makes them strided.
-  A bit-exact cache keyed by rect, sky colour, hell glow, flicker and `World::revision`
-  makes a repeated call a no-op.
+  four-sweep carried-max algorithm and per-mask decay. Surface light seeds up to each
+  column's own first solid tile (`World::column_surface`), which keeps hills above the
+  average `worldSurface` in sunlight. `LightMode`/`LightStyle` describe the four original
+  modes: `Color`/`White` slice solid blocks into 4/8/4 px quads whose tints come from
+  `LightMap::slice9` (`Lighting.GetColor9Slice`) or `quad4` (`GetColor4Slice`); `Retro`
+  quantises light, `Trippy` perturbs channels, and every mode applies
+  `GlobalBrightness = 1.2`. Seeding and horizontal sweeps run on Rayon's global pool;
+  the finished map is cached by rect, sky colour, hell glow, flicker and
+  `World::revision`.
+- `worldgen.rs` — a compact generator modelled on `WorldGen`'s shapes: height-noise
+  surface + spawn plateau, height smoothing to 1-tile steps, grass/dirt/stone/ash layers,
+  hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld
+  hellstone, a forest lake, lava puddles on cave floors, common trees (22 px trunk frames,
+  canopy anchor, branch markers) and tile-3 surface plants. Deterministic for a seed;
+  4200×1200 in ~165 ms.
+- `save.rs` — native `.trwld`: magic/version/seed/header, `frame_important` table, and
+  per-row RLE of the 14-byte `Tile`. Default path
+  `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`; saves are written to a
+  temporary file and renamed.
+- `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
+  marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
+  foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.
@@ -49,7 +65,7 @@
 - `sprite.rs` — one instanced pipeline, one bind group per layer:
 
   ```
-  SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4 }  // 48 B
+  SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4, flags: f32 }  // 52 B
   ```
 
   Two instance ranges share one ring buffer: `world` (camera transform) and `ui` (screen
@@ -65,42 +81,54 @@
 
 ### `tr-app` — application
 
-- Loads the world (argument or most recent save), runs the parallel
-  `framing::frame_world` + `framing::frame_walls`, computes the per-column surface (for the
-  sky horizon) and the 64×64 chunk occupancy bitset, scans used tile/wall ids, decodes only
-  those PNGs in parallel (order-preserving, so atlas UVs do not move), builds the atlas,
-  then creates the window.
+- With no argument it opens the generated world (or generates it first) under
+  `Documents/My Games/Terrustaria/Worlds`; an argument still loads an original `.wld` or
+  a native `.trwld`. It runs the parallel `framing::frame_world` +
+  `framing::frame_walls` (sloped and half-brick tiles included), computes the per-column
+  surface (sky horizon + local sunlight) and the 64×64 chunk occupancy bitset, scans used
+  tile/wall ids, decodes only those PNGs plus all 32 tree canopy/branch styles and the 42
+  cloud textures in parallel, builds the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
   Frames that do not sit on the 18 px grid (furniture) fall back to a small lazy cache.
-- A wall under a fully opaque, non-sloped block is skipped (A2). Cells whose quantised
-  light is zero and whose drawn content is fully opaque are merged into greedy black
-  rectangles (A3/A4) instead of per-tile quads.
+  Tree trunks use their own 22 px/20×20 geometry and biome sheet section.
+- Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon,
+  two screen-space parallax mountain layers (`Background_7`), clouds, per-column
+  underground fade, walls, tiles, liquids, then foliage. Solid blocks in `Color`/`White`
+  modes are emitted as 9 (or 4) light-sliced quads; slopes use eight 2 px columns + a
+  strip; half bricks the bottom 8 px. Tree marker tiles draw nothing; a separate pass
+  places the canopy/branch sprites from a rect expanded by 5 tiles so canopies at the
+  edge of the view are not clipped. Liquids use the `Misc/water_*` animation strips,
+  opacity per kind, a depth tint and the instance flag that enables the shader ripple.
+- A wall under a fully opaque, non-sloped, non-half block is skipped (A2). Cells whose
+  quantised light is zero and whose drawn content is fully opaque are merged into greedy
+  black rectangles (A3/A4) instead of per-tile quads.
 - Per frame: compute a `WorldFrameKey` (camera/zoom/screen bits, sky tint, light params,
-  `World::revision`). On a hit, `begin_frame_keep_world()` reuses the previous world instance
-  range and only the UI is rebuilt (G6); on a miss, `draw_sky` (the `Background_0` gradient
-  above the local surface, a per-column cave fade below it), `LightMap::compute_into`
-  (storage reused every frame, D2) for the visible rect, and the tile loop multiplying each
-  wall/tile instance by its tile's light colour run as usual.
+  light mode, liquid animation frame or time for time-dependent modes, `World::revision`).
+  On a hit, `begin_frame_keep_world()` reuses the previous world instance range and only
+  the UI is rebuilt (G6); on a miss, `LightMap::compute_into` (storage reused every frame,
+  D2) for the visible rect and the tile loop.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
   calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles,
-  light-map/draw time, wall culling and dark-rectangle counters, GPU info. Static lines are
-  formatted once.
+  light-map/draw time, wall culling, dark-rectangle counters, quads, foliage, light mode,
+  GPU info. Static lines are formatted once.
 - Headless tooling: `TR_SHOT`/`TR_SHOT_FRAME` copies the swapchain texture to a mapped
   buffer and writes a PNG; `TR_BENCH=N` switches to `AutoNoVsync`, samples N frame deltas
   and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas; `TR_NOCACHE`
   bypasses D2/G6 for A/B tests; `TR_PAN=<tiles/frame>` pans deterministically for
-  moving-camera benchmarks.
+  moving-camera benchmarks; `TR_LIGHT_MODE`, `TR_NO_BG`, `TR_NO_WALLS`, `TR_REGEN`,
+  `TR_SEED` control modes/world setup.
 
 ## Frame flow
 
 1. `about_to_wait` → `request_redraw`.
-2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; check
-   `WorldFrameKey`. On a miss: `draw_sky`, `renderer.begin_frame()`, light map for the
-   visible rect, tile loop pushes lit instances. On a hit: keep the world range. Then the
-   debug overlay (UI) and acquire the swapchain texture.
+2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; resolve the
+   `LightStyle` for the current mode; check `WorldFrameKey`. On a miss: `draw_sky`,
+   `renderer.begin_frame()`, light map for the visible rect, then the tile/slope/wall
+   loop and the tree foliage pass. On a hit: keep the world range. Then the debug overlay
+   (UI) and acquire the swapchain texture.
 3. `renderer.render()` writes both globals buffers + the world/UI instance ranges, records
    one pass (clear + 2 draws) and submits.
 4. `queue.present(frame)`.
@@ -114,6 +142,12 @@
 | CPU-side culling | Visible set is ~1–2 k tiles; a compute cull would cost more than it saves at this scale |
 | Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
 | Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
+| 9-sliced solid blocks | Matches `DrawSingleTile_SlicedBlock`: outer 4 px bands average the block's light with its neighbour, which is what makes "Color"/"White" light look smooth instead of tiled |
+| Liquid UV wave in the shader | One `flags` float per instance selects a travelling UV ripple inside the large `Misc/water_*` strip; doing it in the shader avoids a second draw pass and hides the 16 px source repetition |
+| Screen-space sky, sun/moon, stars and parallax layers | Their layout follows `DrawSunAndMoon`/`DrawSurfaceBG` (parallax and screen sizes, not tile units), so zooming the camera does not stretch the sky. The helper converts the screen rectangle back into camera-relative world coordinates for the shared sprite batch |
+| Local column sunlight | The original seeds only `y <= worldSurface`; hills above the average would be dark and valleys below it black. Seeding per column keeps every surface slope lit without opening up caves |
+| Native generator + save | The game's own generator is ~45 k lines; a compact deterministic model gives a real world to iterate on, and `.trwld` round-trips every tile field |
+| Tree sprites outside the tile batch | Canopies are 80×80 and branches 40×40, anchored to transparent tiles; drawing them after the tile pass matches `DrawTrees` and keeps normal tiles on the fast path |
 | Manual debug UI | Avoids pinning egui to wgpu 30 (version coupling), keeps binary small |
 | Light and world range cached | A static view costs 0 ms of light/tile work (D2 + G6); panning still gets ~50 % light-cache hits, and `TR_NOCACHE` keeps the uncached path measurable |
 | `TR_*` env instrumentation | Deterministic screenshots/benchmarks without desktop automation |
@@ -121,11 +155,16 @@
 ## Where the next systems plug in
 
 - **Chunking / meshing** — replace the per-frame tile loop with cached chunk instance
-  buffers keyed by (chunk, frame variant), only rebuilt on change.
-- **Corner lighting** — one extra `vec4` per instance (four corner brightness values) and a
-  bilinear sample in `sprite.wgsl`, matching `Lighting.GetColor`'s interpolation.
-- **Liquid** — separate instance layer with a wave offset uniform and animated UVs; the light
-  masks (`Mask::Water/Honey`) already exist.
+  buffers keyed by (chunk, light revision), only rebuilt on change.
+- **Parallax backgrounds & biome skylines** — the seeded mountain layers and clouds exist;
+  the biome-specific `DrawSurfaceBG_*` variants, the real foreground tree lines and rain
+  are still to come. `Cloud_*`/`Background_*` textures are already extracted.
+- **Liquid flow and waterfalls** — simulate the original `Liquid` update so surfaces level
+  and fall; render the original's partial-wall smoothing and shimmer sparkles. The static
+  water/lava/honey/shimmer pass and the wave shader already exist.
 - **Tile entities / furniture** — `TileObjectData` port producing multi-tile sprites.
+- **More lighting modes** — add a `LightMode` variant and a `LightStyle` (smoothing,
+  grayscale/colour transform, levels, perturbation); the tile pass and shader are driven
+  by the style, so no new draw path is needed.
 - **Entities** — a fixed-step simulation (60 Hz) decoupled from rendering; player/NPC
   physics ported from `Player.cs`/`NPC.cs`.

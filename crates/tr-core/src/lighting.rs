@@ -49,6 +49,150 @@ impl Mask {
     }
 }
 
+/// `Lighting.GlobalBrightness` in the original.
+pub const GLOBAL_BRIGHTNESS: f32 = 1.2;
+
+/// `Terraria.Graphics.Light.LightMode`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum LightMode {
+    Color,
+    White,
+    Retro,
+    Trippy,
+}
+
+impl LightMode {
+    pub const ALL: [LightMode; 4] = [
+        LightMode::Color,
+        LightMode::White,
+        LightMode::Retro,
+        LightMode::Trippy,
+    ];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            LightMode::Color => "Color",
+            LightMode::White => "White",
+            LightMode::Retro => "Retro",
+            LightMode::Trippy => "Trippy",
+        }
+    }
+
+    /// Wraps around; `F2` in the app uses this.
+    pub fn next(self) -> Self {
+        match self {
+            LightMode::Color => LightMode::White,
+            LightMode::White => LightMode::Retro,
+            LightMode::Retro => LightMode::Trippy,
+            LightMode::Trippy => LightMode::Color,
+        }
+    }
+}
+
+/// Rendering behaviour of one light mode. The tile pass reads this description only,
+/// so a new mode (Sepia, Monochrome, Aberration...) is a new style plus, when needed,
+/// a new shader flag — not a new draw path. Mirrors how `Lighting.Mode` switches the
+/// original between its color engine and the legacy renderer.
+#[derive(Clone, Copy, Debug)]
+pub struct LightStyle {
+    pub mode: LightMode,
+    /// `Lighting.NotRetro`: solid blocks are drawn as 3x3 light-sliced quads
+    /// (`DrawSingleTile_SlicedBlock`), which produces the smooth block edges.
+    pub sliced_blocks: bool,
+    /// Collapse the light colour to luminance ("White").
+    pub grayscale: bool,
+    /// Quantise light into this many steps (0/1 = off). Gives "Retro" its banding.
+    pub levels: u8,
+    /// Position/time-dependent channel mixing ("Trippy").
+    pub perturb: f32,
+    /// Screen-space RGB split in pixels ("Trippy"); consumed by the shader.
+    pub aberration_px: f32,
+    /// Applied after the light map, matching `Lighting.GlobalBrightness`.
+    pub brightness: f32,
+}
+
+impl LightStyle {
+    pub fn for_mode(mode: LightMode) -> Self {
+        match mode {
+            LightMode::Color => Self {
+                mode,
+                sliced_blocks: true,
+                grayscale: false,
+                levels: 0,
+                perturb: 0.0,
+                aberration_px: 0.0,
+                brightness: GLOBAL_BRIGHTNESS,
+            },
+            LightMode::White => Self {
+                mode,
+                sliced_blocks: true,
+                grayscale: true,
+                levels: 0,
+                perturb: 0.0,
+                aberration_px: 0.0,
+                brightness: GLOBAL_BRIGHTNESS,
+            },
+            LightMode::Retro => Self {
+                mode,
+                sliced_blocks: false,
+                grayscale: false,
+                levels: 16,
+                perturb: 0.0,
+                aberration_px: 0.0,
+                brightness: GLOBAL_BRIGHTNESS,
+            },
+            LightMode::Trippy => Self {
+                mode,
+                sliced_blocks: false,
+                grayscale: false,
+                levels: 0,
+                perturb: 0.65,
+                // The shader hook exists (`Globals::aberration`), but applying it to
+                // full-screen sky quads would sample past their atlas sheet. Enable
+                // it only once instances carry a per-sprite flag.
+                aberration_px: 0.0,
+                brightness: GLOBAL_BRIGHTNESS,
+            },
+        }
+    }
+
+    /// Transforms one light sample into the tint written to the instance buffer.
+    #[inline]
+    pub fn shade(&self, light: [f32; 3], x: i32, y: i32, time: f32) -> [f32; 3] {
+        let mut c = [light[0], light[1], light[2]];
+        if self.perturb > 0.0 {
+            let a =
+                ((x as f32 * 0.11 + y as f32 * 0.17 + time * 2.3).sin() * 0.5 + 0.5) * self.perturb;
+            let b =
+                ((x as f32 * 0.07 - y as f32 * 0.13 + time * 1.1).sin() * 0.5 + 0.5) * self.perturb;
+            let (r, g, bl) = (c[0], c[1], c[2]);
+            c = [
+                r * (1.0 - a) + bl * a,
+                g * (1.0 - b) + r * b,
+                bl * (1.0 - a) + g * a,
+            ];
+        }
+        for v in c.iter_mut() {
+            *v *= self.brightness;
+        }
+        if self.grayscale {
+            let l = c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114;
+            c = [l, l, l];
+        }
+        if self.levels > 1 {
+            let n = (self.levels - 1) as f32;
+            for v in c.iter_mut() {
+                *v = (*v * n).round() / n;
+            }
+        }
+        [
+            c[0].clamp(0.0, 1.0),
+            c[1].clamp(0.0, 1.0),
+            c[2].clamp(0.0, 1.0),
+        ]
+    }
+}
+
 /// Ambient parameters for one computation.
 #[derive(Clone, Copy, Debug)]
 pub struct LightParams {
@@ -134,6 +278,53 @@ impl LightMap {
     #[inline]
     pub fn get_px(&self, wx: f32, wy: f32, tile_px: f32) -> [f32; 3] {
         self.get((wx / tile_px).floor() as i32, (wy / tile_px).floor() as i32)
+    }
+
+    /// `Lighting.GetColor9Slice`: nine 3x3 light samples averaged with the center
+    /// tile. Slice `i` is indexed row-major (top-left first), exactly like the
+    /// original's `slices` array, which the draw pass maps onto the 4/8/4 px quad
+    /// grid of a solid block.
+    pub fn slice9(&self, x: i32, y: i32) -> [[f32; 3]; 9] {
+        let own = self.get(x, y);
+        let mut out = [[0.0f32; 3]; 9];
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                let n = self.get(x + dx, y + dy);
+                let idx = ((dy + 1) * 3 + (dx + 1)) as usize;
+                out[idx] = [
+                    (own[0] + n[0]) * 0.5,
+                    (own[1] + n[1]) * 0.5,
+                    (own[2] + n[2]) * 0.5,
+                ];
+            }
+        }
+        out
+    }
+
+    /// `Lighting.GetColor4Slice`: four quadrant samples. Each quadrant takes the
+    /// brighter of its two axis neighbours (the original's cheap diagonal stand-in)
+    /// averaged with this tile, matching the medium-quality block draw.
+    pub fn quad4(&self, x: i32, y: i32) -> [[f32; 3]; 4] {
+        let own = self.get(x, y);
+        let up = self.get(x, y - 1);
+        let down = self.get(x, y + 1);
+        let left = self.get(x - 1, y);
+        let right = self.get(x + 1, y);
+        let sum = |c: [f32; 3]| c[0] + c[1] + c[2];
+        let pick = |a: [f32; 3], b: [f32; 3]| if sum(a) >= sum(b) { a } else { b };
+        let avg = |n: [f32; 3]| {
+            [
+                (own[0] + n[0]) * 0.5,
+                (own[1] + n[1]) * 0.5,
+                (own[2] + n[2]) * 0.5,
+            ]
+        };
+        [
+            avg(pick(up, left)),
+            avg(pick(up, right)),
+            avg(pick(down, left)),
+            avg(pick(down, right)),
+        ]
     }
 
     /// Average brightness across the map (debug overlay).
@@ -476,7 +667,16 @@ fn light_blocked(tile: &Tile) -> bool {
 /// `TileLightScanner.GetTileLight`.
 fn seed(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams) -> [f32; 3] {
     let mut c = [0.0f32; 3];
-    if y as f64 <= world.world_surface {
+    // The original seeds surface light up to the global `Main.worldSurface`. That
+    // leaves hills above the average bright and valleys below it unlit. Seeding up to
+    // each column's own first solid tile keeps every slope in sunlight; the light map
+    // still stops at solid blocks, so caves stay dark.
+    let local_surface = world
+        .column_surface
+        .get(x.max(0) as usize)
+        .copied()
+        .unwrap_or(world.world_surface as i32);
+    if y <= local_surface {
         surface_light(world, tile, x, y, p, &mut c);
     } else if y > world.height - 200 {
         hell_light(world, tile, x, y, p, &mut c);
@@ -802,5 +1002,49 @@ mod tests {
         let lm = LightMap::compute(&w, 24, 24, 38, 38, &LightParams::default());
         let c = lm.get(30, 31);
         assert!(c[0] > 0.3 && c[0] > c[2], "lava light {c:?}");
+    }
+
+    #[test]
+    fn nine_slice_averages_with_neighbours() {
+        let mut w = World::new("t".into(), 32, 32);
+        w.world_surface = 0.0;
+        for y in 0..32 {
+            for x in 0..32 {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 1; // no light
+            }
+        }
+        let i = w.index(10, 10);
+        w.tiles[i].kind = 4; // torch seeds a tile-local light
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].frame_x = 0;
+        w.tiles[i].frame_y = 0;
+        let lm = LightMap::compute(&w, 4, 4, 26, 26, &LightParams::default());
+        let own = lm.get(10, 10);
+        let right = lm.get(11, 10);
+        let s = lm.slice9(10, 10);
+        // Center slice is the tile itself, right edge sits between the two.
+        assert!((s[4][0] - own[0]).abs() < 1e-6, "center {:?}", s[4]);
+        assert!(s[5][0] < s[4][0] && s[5][0] > right[0], "right edge {s:?}");
+    }
+
+    #[test]
+    fn light_styles_transform_samples() {
+        let color = LightStyle::for_mode(LightMode::Color);
+        let white = LightStyle::for_mode(LightMode::White);
+        let retro = LightStyle::for_mode(LightMode::Retro);
+        let c = [0.8, 0.4, 0.2];
+        let col = color.shade(c, 0, 0, 0.0);
+        let wht = white.shade(c, 0, 0, 0.0);
+        assert!(wht[0] == wht[1] && wht[1] == wht[2], "white {wht:?}");
+        assert!(col[0] > col[1] && col[1] > col[2], "color {col:?}");
+        let r = retro.shade([0.13, 0.13, 0.13], 0, 0, 0.0);
+        let raw = 0.13 * GLOBAL_BRIGHTNESS;
+        let quant = (raw * 15.0).round() / 15.0;
+        assert!((r[0] - quant).abs() < 1e-5, "retro {r:?} vs {quant}");
+        assert!(
+            (r[0] - raw).abs() > 0.01,
+            "retro should quantise, got {r:?}"
+        );
     }
 }

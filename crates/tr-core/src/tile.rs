@@ -10,7 +10,7 @@ pub const FLAG_LIQUID_HONEY: u8 = 1 << 6;
 pub const FLAG_LIQUID_SHIMMER: u8 = 1 << 7;
 
 /// Matches `Terraria.Tile` fields used for rendering.
-#[derive(Clone, Copy, Default, Debug)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 #[repr(C)]
 pub struct Tile {
     /// `tile.type` (TileID)

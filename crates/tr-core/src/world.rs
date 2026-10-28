@@ -34,6 +34,8 @@ pub struct World {
     pub chunks_y: i32,
     /// One flag per chunk: contains at least one active tile, wall or liquid.
     pub chunk_has: Vec<bool>,
+    /// Generation seed (`0` for worlds loaded from the original `.wld` format).
+    pub seed: u64,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -57,6 +59,7 @@ impl World {
             chunks_x: 0,
             chunks_y: 0,
             chunk_has: Vec::new(),
+            seed: 0,
             revision: 0,
         }
     }
