@@ -246,6 +246,9 @@ pub struct LightMap {
     valid_y0: i32,
     valid_x1: i32,
     valid_y1: i32,
+    /// Incremented whenever the map is recomputed (not on cache hits); the world
+    /// instance cache keys on it so reused tile colours are never stale.
+    generation: u64,
 }
 
 impl Default for LightMap {
@@ -269,7 +272,12 @@ impl LightMap {
             valid_y0: 1,
             valid_x1: 0,
             valid_y1: 0,
+            generation: 0,
         }
+    }
+
+    pub fn generation(&self) -> u64 {
+        self.generation
     }
 
     /// Light colour for a tile. Outside the computed rect the world is unlit.
@@ -429,6 +437,7 @@ impl LightMap {
             return;
         }
         self.cache_key = Some(key);
+        self.generation = self.generation.wrapping_add(1);
 
         let rx0 = (x0 - AREA_PADDING - CACHE_MARGIN).max(0);
         let ry0 = (y0 - AREA_PADDING - CACHE_MARGIN).max(0);

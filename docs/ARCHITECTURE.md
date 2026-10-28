@@ -73,7 +73,8 @@
   16×16 frame with the most uniform border, used for tiles whose frames are not stored.
   Wall sheets are laid out on a different grid (36 px stride, 8 px inset) — encoding this in
   `SheetLayout` was required for correct wall rendering.
-- `sprite.rs` — one instanced pipeline, one bind group per layer:
+- `sprite.rs` — one instanced pipeline, three ranges per frame (always-rebuilt
+  back/background, cached world, UI), one bind group per range:
 
   ```
   SpriteInstance { pos: vec2, size: vec2, uv0: vec2, uv1: vec2, color: vec4, flags: f32 }  // 52 B
@@ -163,11 +164,12 @@
 - A wall under a fully opaque, non-sloped, non-half block is skipped (A2). Cells whose
   quantised light is zero and whose drawn content is fully opaque are merged into greedy
   black rectangles (A3/A4) instead of per-tile quads.
-- Per frame: compute a `WorldFrameKey` (camera/zoom/screen bits, sky tint, light params,
-  light mode, liquid animation frame or time for time-dependent modes, `World::revision`).
-  On a hit, `begin_frame_keep_world()` reuses the previous world instance range and only
-  the UI is rebuilt (G6); on a miss, `LightMap::compute_into` (storage reused every frame,
-  D2) for the visible rect and the tile loop.
+- Per frame: the sky/background always goes into the back range (its parallax follows the
+  camera continuously). The tile/wall/liquid/entity range is keyed by the camera floored to
+  a tile, zoom/screen, light params and generation, light mode, animation step, entity
+  hashes and `World::revision`. On a hit, `begin_frame_keep_world()` keeps the world range
+  and only the back range/UI are rebuilt (G6); on a miss, `LightMap::compute_into`
+  (D2/D3 storage and valid-region reuse) and the tile loop run.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
   calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles,
   light-map/draw time, wall culling, dark-rectangle counters, quads, foliage, light mode,

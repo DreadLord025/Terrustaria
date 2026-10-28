@@ -54,6 +54,8 @@ pub struct SpriteRenderer {
     /// Ring cursor.
     frame_index: usize,
     capacity: u32,
+    /// Always-rebuilt background range, drawn before the cached world range.
+    pub back: Vec<SpriteInstance>,
     pub world: Vec<SpriteInstance>,
     pub ui: Vec<SpriteInstance>,
     pub sheets: HashMap<String, [f32; 4]>,
@@ -273,6 +275,7 @@ impl SpriteRenderer {
             instances,
             frame_index: 0,
             capacity,
+            back: Vec::with_capacity(1024),
             world: Vec::with_capacity(64 * 1024),
             ui: Vec::with_capacity(8 * 1024),
             sheets,
@@ -301,6 +304,25 @@ impl SpriteRenderer {
 
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
         self.push_sprite_flags(pos, size, uv, color, 0.0);
+    }
+
+    /// Background-range sprite (sky, parallax layers, clouds, cave fade).
+    pub fn push_back_sprite(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+    ) {
+        self.back.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            flags: 0.0,
+            rot: 0.0,
+        });
     }
 
     /// Same as [`SpriteRenderer::push_sprite`], with a per-instance shader flag
@@ -428,6 +450,7 @@ impl SpriteRenderer {
     }
 
     pub fn begin_frame(&mut self) {
+        self.back.clear();
         self.world.clear();
         self.ui.clear();
     }
@@ -437,6 +460,7 @@ impl SpriteRenderer {
     /// contents are unchanged (see `WorldFrameKey` in the app), otherwise the kept
     /// range is stale.
     pub fn begin_frame_keep_world(&mut self) {
+        self.back.clear();
         self.ui.clear();
     }
 
@@ -486,7 +510,7 @@ impl SpriteRenderer {
             }),
         );
 
-        let total = self.world.len() + self.ui.len();
+        let total = self.back.len() + self.world.len() + self.ui.len();
         if total == 0 {
             return stats;
         }
@@ -512,16 +536,25 @@ impl SpriteRenderer {
         let idx = self.frame_index;
         self.frame_index = (self.frame_index + 1) % RING;
         let buffer = &self.instances[idx];
+        let back_bytes = std::mem::size_of_val(self.back.as_slice());
         let world_bytes = std::mem::size_of_val(self.world.as_slice());
+        if !self.back.is_empty() {
+            gpu.queue
+                .write_buffer(buffer, 0, bytemuck::cast_slice(&self.back));
+        }
         if !self.world.is_empty() {
             gpu.queue
-                .write_buffer(buffer, 0, bytemuck::cast_slice(&self.world));
+                .write_buffer(buffer, back_bytes as u64, bytemuck::cast_slice(&self.world));
         }
         if !self.ui.is_empty() {
-            gpu.queue
-                .write_buffer(buffer, world_bytes as u64, bytemuck::cast_slice(&self.ui));
+            gpu.queue.write_buffer(
+                buffer,
+                (back_bytes + world_bytes) as u64,
+                bytemuck::cast_slice(&self.ui),
+            );
         }
-        stats.uploaded_bytes = (world_bytes + std::mem::size_of_val(self.ui.as_slice())) as u64;
+        stats.uploaded_bytes =
+            (back_bytes + world_bytes + std::mem::size_of_val(self.ui.as_slice())) as u64;
         stats.instances = total as u32;
 
         let mut encoder = gpu
@@ -549,13 +582,19 @@ impl SpriteRenderer {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_vertex_buffer(0, buffer.slice(..));
-            if !self.world.is_empty() {
+            if !self.back.is_empty() {
                 pass.set_bind_group(0, &self.bind_world, &[]);
-                pass.draw(0..6, 0..self.world.len() as u32);
+                pass.draw(0..6, 0..self.back.len() as u32);
+                stats.draw_calls += 1;
+            }
+            if !self.world.is_empty() {
+                let start = self.back.len() as u32;
+                pass.set_bind_group(0, &self.bind_world, &[]);
+                pass.draw(0..6, start..(start + self.world.len() as u32));
                 stats.draw_calls += 1;
             }
             if !self.ui.is_empty() {
-                let start = self.world.len() as u32;
+                let start = (self.back.len() + self.world.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
                 pass.draw(0..6, start..(start + self.ui.len() as u32));
                 stats.draw_calls += 1;

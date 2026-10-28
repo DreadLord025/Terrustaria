@@ -118,9 +118,10 @@ snowflakes that thicken during a storm.
   memory, GPU/driver info, active light mode.
 - **Culling** — 64×64 chunk occupancy skips empty areas; walls under fully opaque blocks
   are not emitted; fully dark cells whose content is opaque collapse into greedy black
-  rectangles. All of it is pixel-identical to drawing every tile. When the camera, zoom,
-  screen, ambient light, light mode and world revision are all unchanged, the whole world
-  instance range is reused (G6) and only the UI is rebuilt.
+  rectangles. All of it is pixel-identical to drawing every tile. The sky/parallax layers
+  are a separate always-rebuilt back range; the tile/wall/liquid/entity range is cached by
+  the camera's tile, zoom, light generation and entity hashes (G6), so a static view and
+  sub-tile pans rebuild only the small back range and the UI.
 - **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants
   simulated at a fixed 60 Hz with render interpolation between ticks:
   gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated AABB collision,

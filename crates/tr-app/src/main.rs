@@ -717,10 +717,11 @@ struct App {
 /// only redraws the UI; the light map has its own cache (D2) inside `LightMap`.
 #[derive(Clone, Copy, PartialEq)]
 struct WorldFrameKey {
-    cam: [u32; 2],
+    /// Camera floored to its tile: sub-tile pans keep the world range (the GPU
+    /// transform moves it) while the background range is rebuilt every frame.
+    cam_tile: [i32; 2],
     zoom: u32,
     screen: [u32; 2],
-    sky_tint: [u32; 3],
     sky_light: [u32; 3],
     hell_glow: u32,
     torch_flicker: u32,
@@ -735,6 +736,8 @@ struct WorldFrameKey {
     items_key: u32,
     /// Held item kind + swing phase.
     hand_key: u32,
+    /// Light-map generation; a recompute (D3) changes tile tints.
+    light_generation: u64,
     world_revision: u64,
 }
 
@@ -814,6 +817,7 @@ struct StatsAcc {
     dark_rects: u64,
     chunks_skipped: u64,
     instances: u64,
+    reused: u64,
 }
 
 impl StatsAcc {
@@ -828,15 +832,17 @@ impl StatsAcc {
         self.dark_rects += s.dark_rects as u64;
         self.chunks_skipped += s.chunks_skipped as u64;
         self.instances += s.instances as u64;
+        self.reused += u64::from(s.world_reused);
     }
 
     fn log_and_reset(&mut self) {
         let n = self.frames.max(1) as f64;
         log::info!(
-            "TR_STATS frames={} light={:.2}ms draw={:.2}ms visible={} walls={} culled={} dark_cells={} rects={} chunks_skipped={} instances={}",
+            "TR_STATS frames={} light={:.2}ms draw={:.2}ms reused={}% visible={} walls={} culled={} dark_cells={} rects={} chunks_skipped={} instances={}",
             self.frames,
             self.light_ms / n,
             self.draw_ms / n,
+            self.reused * 100 / self.frames.max(1) as u64,
             self.visible / self.frames.max(1) as u64,
             self.walls / self.frames.max(1) as u64,
             self.walls_culled / self.frames.max(1) as u64,
@@ -1695,14 +1701,12 @@ impl App {
                 // depends on exactly these values. A hit reuses last frame's uploaded
                 // instance range and only rebuilds the UI.
                 let key = WorldFrameKey {
-                    cam: [camera.x.to_bits(), camera.y.to_bits()],
+                    cam_tile: [
+                        (camera.x / TILE_PX).floor() as i32,
+                        (camera.y / TILE_PX).floor() as i32,
+                    ],
                     zoom: zoom.to_bits(),
                     screen: [screen.x.to_bits(), screen.y.to_bits()],
-                    sky_tint: [
-                        sky_tint[0].to_bits(),
-                        sky_tint[1].to_bits(),
-                        sky_tint[2].to_bits(),
-                    ],
                     sky_light: [
                         params.sky[0].to_bits(),
                         params.sky[1].to_bits(),
@@ -1731,6 +1735,7 @@ impl App {
                         };
                         held | (phase << 16)
                     },
+                    light_generation: light.generation(),
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -1741,23 +1746,26 @@ impl App {
                     tile_stats.world_reused = true;
                 } else {
                     renderer.begin_frame();
-                    draw_sky(
-                        renderer,
-                        *camera,
-                        *zoom,
-                        screen,
-                        world,
-                        clouds,
-                        sky,
-                        stars,
-                        surface_px,
-                        is_day,
-                        clock_time,
-                        sky_uv,
-                        sky_tint,
-                        rain.cloud_bg(),
-                    );
-
+                }
+                // The parallax sky follows the camera continuously; it lives in the
+                // always-rebuilt back range so the world range can stay cached.
+                draw_sky(
+                    renderer,
+                    *camera,
+                    *zoom,
+                    screen,
+                    world,
+                    clouds,
+                    sky,
+                    stars,
+                    surface_px,
+                    is_day,
+                    clock_time,
+                    sky_uv,
+                    sky_tint,
+                    rain.cloud_bg(),
+                );
+                if !reuse_world {
                     tile_stats = draw_tiles(
                         renderer,
                         world,
@@ -2369,7 +2377,7 @@ fn draw_sky(
             let v0 = ((y0 - sky_top) / SKY_H).clamp(0.0, 1.0);
             let v1 = ((y1 - sky_top) / SKY_H).clamp(0.0, 1.0);
             let sub = [uv[0], uv[1] + dv * v0, uv[2], uv[1] + dv * v1];
-            r.push_sprite(
+            r.push_back_sprite(
                 [origin.x, y0],
                 [width, y1 - y0],
                 sub,
@@ -2379,7 +2387,7 @@ fn draw_sky(
         // Above the gradient's top edge the sky is a flat zenith blue.
         if y0 > origin.y {
             let zenith = [53.0 / 255.0, 43.0 / 255.0, 243.0 / 255.0];
-            r.push_sprite(
+            r.push_back_sprite(
                 [origin.x, origin.y],
                 [width, y0 - origin.y],
                 white,
@@ -2395,7 +2403,7 @@ fn draw_sky(
         // otherwise show the clear colour under the gradient's bottom edge.
         if bottom > surface_px {
             let horizon = [132.0 / 255.0, 170.0 / 255.0, 248.0 / 255.0];
-            r.push_sprite(
+            r.push_back_sprite(
                 [origin.x, surface_px.max(origin.y)],
                 [width, bottom - surface_px.max(origin.y)],
                 white,
@@ -2408,7 +2416,7 @@ fn draw_sky(
             );
         }
     } else {
-        r.push_sprite(
+        r.push_back_sprite(
             [origin.x, origin.y],
             [width, screen.y / zoom],
             white,
@@ -2579,7 +2587,7 @@ fn draw_sky(
         if wx + w < origin.x || wx > right || wy + h < origin.y || wy > bottom {
             continue;
         }
-        r.push_sprite([wx, wy], [w, h], c.uv, cloud_tint);
+        r.push_back_sprite([wx, wy], [w, h], c.uv, cloud_tint);
     }
 
     let ocean = is_ocean_biome(world, camera);
@@ -2706,7 +2714,7 @@ fn draw_sky(
                     let y = top + i as f32 * strip_h;
                     let depth = ((y - sx) / CAVE_SPAN).clamp(0.0, 1.0);
                     let c = lerp3(cave_top, cave_deep, depth);
-                    r.push_sprite(
+                    r.push_back_sprite(
                         [tx as f32 * TILE_PX, y],
                         [TILE_PX + 0.5, strip_h + 0.5],
                         white,
@@ -2715,7 +2723,7 @@ fn draw_sky(
                 }
             }
             if span_end < bottom {
-                r.push_sprite(
+                r.push_back_sprite(
                     [tx as f32 * TILE_PX, span_end],
                     [TILE_PX + 0.5, bottom - span_end],
                     white,
@@ -2740,7 +2748,7 @@ fn push_screen(
 ) {
     let wx = camera.x + (pos[0] - screen.x * 0.5) / zoom;
     let wy = camera.y + (pos[1] - screen.y * 0.5) / zoom;
-    r.push_sprite([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color);
+    r.push_back_sprite([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color);
 }
 
 /// `Main.ComputeScAdj`: small vertical screen-space correction for backgrounds.

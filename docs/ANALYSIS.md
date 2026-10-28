@@ -475,9 +475,17 @@ slime within four tiles deals 15 melee damage with a 0.3 s cooldown; damaged sli
 an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by the tile
 light; NPC position/animation are hashed into the G6 frame key.
 
-Not ported: biome/event spawning rules and spawn rates, the other ~780 NPCs, AI state machines,
-projectiles, loot/drops, defense/knockback resistances, crits, buffs/debuffs, boss logic
-and multiplayer sync.
+The instanced renderer is split into three ranges: an always-rebuilt back range (sky
+gradient, parallax layers, clouds, cave fade), a cached world range (tiles, walls, slopes,
+liquids, trees, items, player, NPCs) and the UI. The world range is keyed by the camera
+floored to a tile, zoom/screen, light generation, light mode, animation step and the
+entity hashes, so sub-tile pans and static views rebuild only the back range + UI. With the
+D3 light valid region this gives 71–74 % world-range reuse while panning and 98 % when
+static; a 32-tile light cache margin keeps panning light at 0.03 ms in the stress view.
+
+Not ported: biome/event spawning rules and spawn rates, the other ~780 NPCs, AI state
+machines, full loot tables, defense/knockback resistances, crits, buffs/debuffs, the other
+bosses and multiplayer sync.
 
 ## Asset pipeline
 

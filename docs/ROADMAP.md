@@ -117,6 +117,13 @@ debug overlay changed on purpose (more counters).
 \* Within the present-floor noise; GPU instance work is lower, but wall-clock at real zooms
 is dominated by presentation.
 
+### Phase 3 results (in progress)
+
+| Scene | Change | Measured result |
+| --- | --- | --- |
+| D3 | Light cache keeps a 32-tile valid region around the view; pans inside it reuse the map | Panning at zoom 0.25: light **3.31 → 0.03 ms**, draw **4.13 → 0.74 ms** (release, `TR_PAN=0.25`, 600 frames; `TR_NOCACHE=1` gives the old path) |
+| F1 (step 1) | Sky/parallax moved to an always-rebuilt back range; the world range is keyed by camera tile + light generation instead of exact camera bits | Panning at zoom 1.5: **71–74 %** world-range hits, draw 0.02–0.03 ms; zoom 0.25 panning: draw **0.74 → 0.28 ms**; static: **98 %** hits, 0.00 ms. Static screenshots pixel-identical (0 differing pixels) |
+
 ### Phase 2 results (done)
 
 Every change was A/B-tested against the Phase 1 binary. Surface, cave and hell frames at
@@ -168,7 +175,7 @@ machine. `TR_NOCACHE=1` reproduces the uncached per-frame path for future A/B te
 | D3 | Incremental light on camera movement (overlap reuse + dirty borders) | 3 | done (32-tile valid-region reuse; panning stress light 3.31 → 0.03 ms) |
 | D5 | GPU light: masks/seeds as textures, blur as parallel compute dispatches | 3 | planned |
 | D6 | Deferred lighting: unlit chunk meshes + screen-space light texture | 3 | planned |
-| F1 | Chunk meshes (32×32/64×64), rebuilt only on tile edits | 3 | planned |
+| F1 | Chunk meshes (32×32/64×64), rebuilt only on tile edits | 3 | partial — sky split into a back range and the world range cached by tile/light generation (72 % reuse while panning, 98 % static); per-chunk baking still planned |
 | B7 | Texture array instead of atlas — internal GPU storage only, must be pixel-identical; enables B6 and cuts cache pressure | 3 | evaluate |
 | B8 | Manual `fract` UV wrapping for merged runs (nearest, no mips) | 3 | evaluate |
 | B10 | Crop/repack the atlas to frames actually used by the world | 4 | planned |
