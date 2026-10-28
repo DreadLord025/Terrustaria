@@ -110,10 +110,13 @@ snowflakes that thicken during a storm.
   instance range is reused (G6) and only the UI is rebuilt.
 - **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants:
   gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated AABB collision,
-  simple water buoyancy and respawn. The starter character is composed from the original
-  `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs, pants,
-  shoes, hair) with walk/jump leg frames and camera follow. Slopes count as full cells
-  until slope collision and the full draw-layer order are ported.
+  simple water buoyancy, ground-slope support and respawn. Survival follows `Player.cs`:
+  a 200-tick breath meter that drains underwater (2 damage per 7 ticks once empty, with a
+  HUD bar), fall damage after 25 tiles (10 per extra tile), lava damage and out-of-combat
+  regeneration (5 s delay, 1 HP per 0.5 s). The starter character is composed from the
+  original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs,
+  pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks and ceiling
+  slopes still count as full cells; the full draw-layer order is still to port.
 - **NPCs & combat (first pass)** — blue slimes spawn on the surface near the player, hop
   toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
   flying demon eye with 25 HP chases the player (14 damage). LMB over an
@@ -162,8 +165,9 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 Items beyond the starter hotbar, the full NPC roster, projectiles, the full
 inventory/crafting/chests UI, audio, networking. The player is a movement/visual
-first pass: no item use/combat variety, armor or health regen, and slopes are
-collision boxes rather than ramps. The `Waterfall_*` overlay at half-brick spouts, water
+first pass: no item use/combat variety, armor, buffs or drowning visuals. Ground slopes
+are walkable ramps, but half bricks and ceiling slopes collide as full cells. The
+`Waterfall_*` overlay at half-brick spouts, water
 styles, shimmer sparkles and the original's four-corner liquid surface mesh are still
 missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
@@ -233,6 +237,7 @@ another seed.
 | `TR_REGEN=1` | Regenerate the default Terrustaria world |
 | `TR_SEED=<n>` | Seed for `TR_REGEN` / first generation |
 | `TR_NOPLAYER=1` | Hide and disable the player (free-camera A/B captures) |
+| `TR_XY=x,y` | Spawn the player at a tile coordinate (camera follows) |
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 

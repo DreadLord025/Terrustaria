@@ -206,9 +206,12 @@ default" is explicitly not a goal — determinism first.
 axis-separated AABB tile collision, water buoyancy, respawn, camera follow and the starter
 character composed from the original `Player_0_*` strips with walk/jump frames.
 
+✅ *Second pass*: breath/drowning with a HUD bar, fall damage, lava damage and
+out-of-combat health regeneration.
+
 Remaining: half-brick/ceiling-slope collision, the full `PlayerDrawLayers` order (front arm,
-armor, accessories), item holding/use, health/drowning, buffs, hooks/mounts/gravity
-flips, and the rest of the 55k-line `Player.cs`. *~12–25 agent-days.*
+armor, accessories), item holding/use, buffs, hooks/mounts/gravity flips, and the rest of
+the 55k-line `Player.cs`. *~12–24 agent-days.*
 
 ## Milestone 3 — items, inventory, crafting, UI
 

@@ -354,15 +354,27 @@ biome and hardmode spread are not generated; the original generator remains an M
 gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump `5.2`.
 Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
 auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
-Half bricks and ceiling slopes still collide as full cells. Respawn returns to `spawn_x/spawn_y` from the world header.
+Half bricks and ceiling slopes still collide as full cells. Respawn returns to
+`spawn_x/spawn_y` from the world header.
+
+Survival ports three `Player.cs` mechanics:
+
+- **Breath** — `breathMax = 200`; while the centre tile is water/honey, one unit is lost
+  every 7 ticks. At zero the player takes 2 damage per 7 ticks (no i-frames, like the
+  direct `statLife -= 2`), and breath refills at 3/tick out of water. A blue HUD bar appears
+  while breath is below maximum.
+- **Fall damage** — the fall origin is recorded whenever the player is not falling or is
+  wet; landing after more than 25 tiles deals `(tiles - 25) * 10` damage.
+- **Lava and regeneration** — lava applies a knockback hit through the normal 0.8 s hurt
+  cooldown; after 5 s without damage the player regenerates 1 HP every 0.5 s.
 
 The character is composed from the original 40×56 part strips (`Player_0_0` head,
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` back arm, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
 walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
-camera and `TR_NOPLAYER` hides the player. Not ported yet: slope ramps, item use/placement,
-full draw layers (arms/front arm, armor, accessories), health/drowning, and the rest of
-`Player.cs`.
+camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. Not ported yet:
+half-brick/ceiling-slope collision, item use/placement, full draw layers (front arm, armor,
+accessories), buffs and the rest of `Player.cs`.
 
 ## Editing and hotbar (M3 first pass)
 

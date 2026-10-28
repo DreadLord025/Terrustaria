@@ -450,6 +450,15 @@ fn main() -> Result<()> {
             }
         }
     }
+    // Debug spawn override: place the player at a tile coordinate (the camera follows).
+    if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
+        if let Some(p) = player.as_mut() {
+            p.teleport(
+                tx as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5,
+                ty as f32 * TILE_PX,
+            );
+        }
+    }
     let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
     let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
         let mut it = v.split(',');
@@ -3155,6 +3164,18 @@ fn draw_hud(
             [1.0, 0.96, 0.92, 1.0],
             &format!("HP {}/{}", p.hp, p.max_hp),
         );
+        if p.breath < player::BREATH_MAX {
+            let by = y + h + 4.0;
+            let bh = 12.0;
+            r.push_ui_rect([x, by], [w, bh], [0.02, 0.03, 0.05, 0.8]);
+            let frac = (p.breath as f32 / player::BREATH_MAX as f32).clamp(0.0, 1.0);
+            r.push_ui_rect(
+                [x + 2.0, by + 2.0],
+                [(w - 4.0) * frac, bh - 4.0],
+                [0.20, 0.48, 0.95, 0.95],
+            );
+            r.push_text(x + 8.0, by + 1.0, 0.9, [0.85, 0.92, 1.0, 1.0], "BREATH");
+        }
     }
 }
 
@@ -3240,7 +3261,7 @@ fn draw_debug(
     if let Some(p) = player {
         lines.push((
             format!(
-                "player {:.0},{:.0} tile {:.1},{:.1} vx {:.2} vy {:.2} ground {} water {} hp {}/{}",
+                "player {:.0},{:.0} tile {:.1},{:.1} vx {:.2} vy {:.2} ground {} water {} lava {} hp {}/{} breath {}/{}",
                 p.x,
                 p.y,
                 p.x / TILE_PX,
@@ -3249,8 +3270,11 @@ fn draw_debug(
                 p.vy,
                 p.on_ground,
                 p.in_water,
+                p.in_lava,
                 p.hp,
-                p.max_hp
+                p.max_hp,
+                p.breath,
+                player::BREATH_MAX
             ),
             TEXT,
         ));

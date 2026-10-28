@@ -2,7 +2,10 @@
 //!
 //! Core movement: gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated
 //! AABB collision against solid tiles, simple water buoyancy and ground-slope support
-//! (slopes 1/2). Half bricks and ceiling slopes still count as full cells.
+//! (slopes 1/2). Survival follows `Player.cs`: a 200-tick breath meter (1 unit every 7
+//! ticks underwater, 2 damage once empty), fall damage over 25 tiles, lava damage and
+//! out-of-combat health regeneration. Half bricks and ceiling slopes still count as full
+//! cells.
 
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
@@ -18,6 +21,16 @@ const AIR_ACCEL: f32 = 0.1;
 const GROUND_FRICTION: f32 = 0.2;
 const JUMP_SPEED: f32 = 5.2;
 const STEP_HEIGHT: f32 = 16.0;
+/// `Player.breathMax`; `breath` is in ticks.
+pub const BREATH_MAX: i32 = 200;
+/// `Player.breathCDMax`: ticks between breath decrements.
+const BREATH_CD: i32 = 7;
+/// Fall distance (tiles) before damage kicks in (`Player.cs` `num10 = 25`).
+const SAFE_FALL_TILES: f32 = 25.0;
+/// Seconds without damage before regeneration starts.
+const REGEN_DELAY: f32 = 5.0;
+/// Seconds per regenerated hit point once regeneration is active.
+const REGEN_INTERVAL: f32 = 0.5;
 
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
@@ -45,6 +58,15 @@ pub struct Player {
     pub hp: i32,
     pub max_hp: i32,
     pub hurt_cd: f32,
+    /// Remaining breath in ticks (`Player.breath`).
+    pub breath: i32,
+    breath_cd: i32,
+    /// Seconds since the last damage; drives health regeneration.
+    pub regen_time: f32,
+    regen_acc: f32,
+    /// Y (px) where the current fall started, for fall damage.
+    fall_start: f32,
+    pub in_lava: bool,
 }
 
 impl Player {
@@ -65,7 +87,24 @@ impl Player {
             hp: 100,
             max_hp: 100,
             hurt_cd: 0.0,
+            breath: BREATH_MAX,
+            breath_cd: 0,
+            regen_time: REGEN_DELAY,
+            regen_acc: 0.0,
+            fall_start: sy / TILE_PX,
+            in_lava: false,
         }
+    }
+
+    /// Moves the player to a pixel position without changing health or breath.
+    /// Used by the `TR_XY` debug hook and future teleport effects.
+    pub fn teleport(&mut self, x: f32, y: f32) {
+        self.x = x;
+        self.y = y;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.on_ground = false;
+        self.fall_start = y / TILE_PX;
     }
 
     pub fn respawn(&mut self) {
@@ -77,6 +116,12 @@ impl Player {
         self.walk_time = 0.0;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
+        self.breath = BREATH_MAX;
+        self.breath_cd = 0;
+        self.regen_time = REGEN_DELAY;
+        self.regen_acc = 0.0;
+        self.fall_start = self.y / TILE_PX;
+        self.in_lava = false;
     }
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
@@ -86,6 +131,8 @@ impl Player {
         }
         self.hp = (self.hp - amount).max(0);
         self.hurt_cd = 0.8;
+        self.regen_time = 0.0;
+        self.regen_acc = 0.0;
         let dir = if self.x + WIDTH * 0.5 >= from_x {
             1.0
         } else {
@@ -101,19 +148,38 @@ impl Player {
         (self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5)
     }
 
+    /// Direct health loss with no knockback or i-frames, used by drowning and fall
+    /// damage (`statLife -= ...` in `Player.cs`).
+    fn lose_health(&mut self, amount: i32) {
+        if self.hp <= 0 {
+            return;
+        }
+        self.hp = (self.hp - amount).max(0);
+        self.hurt_cd = self.hurt_cd.max(0.8);
+        self.regen_time = 0.0;
+        self.regen_acc = 0.0;
+    }
+
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
-        self.in_water = world
-            .tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32)
-            .is_some_and(|t| {
-                t.liquid > 0
-                    && matches!(
-                        t.liquid_kind(),
-                        tr_core::tile::LiquidKind::Water | tr_core::tile::LiquidKind::Honey
-                    )
-            });
+        let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+        self.in_water = mid.is_some_and(|t| {
+            t.liquid > 0
+                && matches!(
+                    t.liquid_kind(),
+                    tr_core::tile::LiquidKind::Water | tr_core::tile::LiquidKind::Honey
+                )
+        });
+        self.in_lava =
+            mid.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
+
+        // Vanilla resets the fall origin whenever the player is not falling, is wet,
+        // or has just jumped.
+        if self.vy <= 0.0 || self.in_water || input.jump {
+            self.fall_start = self.y / TILE_PX;
+        }
 
         let dir = (input.right as i32 - input.left as i32) as f32;
         let accel = if self.on_ground {
@@ -149,7 +215,21 @@ impl Player {
         }
 
         self.move_x(world);
+        let was_airborne = !self.on_ground;
+        let fall_vy = self.vy;
         self.move_y(world, input.down);
+
+        // `Player.cs`: landing after more than 25 tiles deals 10 damage per extra tile.
+        if was_airborne && fall_vy > 0.0 && self.on_ground && !self.in_water {
+            let fell = self.y / TILE_PX - self.fall_start;
+            if fell > SAFE_FALL_TILES {
+                let dmg = ((fell - SAFE_FALL_TILES) * 10.0) as i32;
+                self.lose_health(dmg);
+            }
+            self.fall_start = self.y / TILE_PX;
+        }
+
+        self.update_survival();
 
         if self.x < 0.0 {
             self.x = 0.0;
@@ -162,6 +242,37 @@ impl Player {
         }
         if self.y > world.height as f32 * TILE_PX + 300.0 {
             self.respawn();
+        }
+    }
+
+    fn update_survival(&mut self) {
+        if self.in_water {
+            self.breath_cd += 1;
+            if self.breath_cd >= BREATH_CD {
+                self.breath_cd = 0;
+                self.breath -= 1;
+                if self.breath <= 0 {
+                    self.breath = 0;
+                    self.lose_health(2);
+                }
+            }
+        } else {
+            self.breath = (self.breath + 3).min(BREATH_MAX);
+            self.breath_cd = 0;
+        }
+
+        if self.in_lava && self.hurt_cd <= 0.0 {
+            let cx = self.x + WIDTH * 0.5;
+            self.hurt(30, cx);
+        }
+
+        self.regen_time += 1.0 / 60.0;
+        if self.regen_time > REGEN_DELAY && self.hp > 0 {
+            self.regen_acc += 1.0 / 60.0;
+            while self.regen_acc >= REGEN_INTERVAL {
+                self.regen_acc -= REGEN_INTERVAL;
+                self.hp = (self.hp + 1).min(self.max_hp);
+            }
         }
     }
 
@@ -383,7 +494,65 @@ mod tests {
     }
 
     #[test]
-    fn stands_on_a_ground_slope() {
+    fn long_falls_hurt_but_short_ones_do_not() {
+        let mut w = ground_world();
+        w.spawn_y = 30;
+        let mut p = Player::spawn(&w);
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+        }
+        // The hitbox top lands at 60 - 42/16 = 57.4 tiles, so the drop is ~27:
+        // 2.4 tiles over the safe distance.
+        assert!(p.on_ground);
+        assert!(p.hp < 90 && p.hp > 0, "hp {}", p.hp);
+
+        let mut w = ground_world();
+        w.spawn_y = 50;
+        let mut p = Player::spawn(&w);
+        for _ in 0..200 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        assert_eq!(p.hp, 100, "a 10-tile fall must not hurt");
+    }
+
+    #[test]
+    fn drowning_drains_breath_and_damages() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            // A pool from y=40 down to the ground, so the player settles on the floor.
+            for y in 40..60 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.spawn_y = 44;
+        let mut p = Player::spawn(&w);
+        for _ in 0..1500 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.in_water);
+        assert_eq!(p.breath, 0, "breath {}", p.breath);
+        assert!(p.hp < 100, "drowning should hurt, hp {}", p.hp);
+    }
+
+    #[test]
+    fn health_regenerates_after_a_delay() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.hp = 50;
+        p.regen_time = 0.0;
+        for _ in 0..1200 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.hp > 60, "regen only reached {} (sit still, 20 s)", p.hp);
+    }
+
+    #[test]
+    fn standing_on_a_ground_slope() {
         let mut w = World::new("t".into(), 32, 64);
         for x in 0..32 {
             for y in 30..64 {
