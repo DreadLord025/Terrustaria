@@ -57,14 +57,14 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
 4. **Backgrounds & sky** — ✅ *third pass*: `Background_0` gradient, deterministic
    `Cloud_*` clouds, sun, moon, stars, the 15/9-minute day-night clock, the per-column cave
    fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`, `cloudAlpha` ramp, rotated
-   drops, splashes, overcast `SetBackColor` dimming, snow-biome `Dust` snowfall), and the
-   vanilla `DrawSurfaceBG`
+   drops, splashes, overcast `SetBackColor` dimming, snow-biome `Dust` snowfall, storm
+   cloud banks and lightning flashes), and the vanilla `DrawSurfaceBG`
    composition for the biomes the world has: forest (`7`/`8` mountains + `50..52` tree
    lines), snow (`35`/`36` + `37..39` pines) and ocean (`28` sea horizon), with
    `backgroundTopMagicNumber` vertical parallax and measured ground-band anchoring.
-   Remaining: corruption/crimson/jungle/hallow variants (no such biomes yet),
-   storms/lightning/wind gusts, and the textured `Main.DrawBackground` underground
-   layers. *~2–5 agent-days.* ← next
+   Remaining: corruption/crimson/jungle/hallow variants (no such biomes yet), wind gusts
+   and weather audio, and the textured `Main.DrawBackground` underground layers.
+   *~2–5 agent-days.* ← next
 5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
    coatings, gemspark/glow. Trees and slopes are done. *~8–18 agent-days.*
 

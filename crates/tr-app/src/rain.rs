@@ -8,6 +8,9 @@
 //! In a snow biome the event renders as snowfall instead: no rain drops, and
 //! `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the time, with
 //! the storm intensity increasing the count and the wind.
+//!
+//! Storms also thicken the cloud deck (`Background_112/113` layered behind the
+//! mountains) and, above 0.65 intensity, throw random lightning flashes.
 //! `TR_RAIN=<intensity>` pins the weather for screenshots; `TR_NO_WEATHER` disables
 //! the scheduler.
 
@@ -69,6 +72,12 @@ pub struct Rain {
     timer: f32,
     /// `Main.windSpeedCurrent`: -1..1.
     wind: f32,
+    /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
+    cloud_bg: f32,
+    /// Remaining lightning flash brightness, 0..1.
+    flash: f32,
+    /// Ticks until the next lightning bolt.
+    lightning_timer: f32,
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
     snow: Vec<Snowflake>,
@@ -104,6 +113,9 @@ impl Rain {
             raining: false,
             timer,
             wind,
+            cloud_bg: 0.0,
+            flash: 0.0,
+            lightning_timer: 0.0,
             drops: Vec::with_capacity(MAX_DROPS),
             splashes: Vec::with_capacity(128),
             snow: Vec::with_capacity(MAX_SNOW),
@@ -126,6 +138,11 @@ impl Rain {
 
     pub fn snow_count(&self) -> usize {
         self.snow.len()
+    }
+
+    /// Storm cloud-bank opacity (`Main.cloudBGAlpha`).
+    pub fn cloud_bg(&self) -> f32 {
+        self.cloud_bg
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -188,6 +205,30 @@ impl Rain {
             let delta = (self.target - self.intensity).clamp(-RAMP_PER_TICK, RAMP_PER_TICK);
             self.intensity += delta;
         }
+
+        // `cloudBGAlpha` ramps toward the storm strength (vanilla 0.0005/tick; a bit
+        // faster here so the cloud deck appears within the ramp, not a minute later).
+        let target = if self.intensity > 0.05 {
+            self.intensity.min(1.0)
+        } else {
+            0.0
+        };
+        let delta = (target - self.cloud_bg).clamp(-0.005, 0.005);
+        self.cloud_bg = (self.cloud_bg + delta).clamp(0.0, 1.0);
+
+        // Thunderstorm lightning above 0.65 intensity: a short white flash every
+        // 5-15 s. `Main.SpawnStormLightning` plays a bolt and sound; this pass draws
+        // the screen flash only.
+        if self.intensity > 0.65 {
+            self.lightning_timer -= 1.0;
+            if self.lightning_timer <= 0.0 {
+                self.flash = 1.0;
+                self.lightning_timer = self.range(300, 900) as f32;
+            }
+        } else {
+            self.lightning_timer = self.range(120, 360) as f32;
+        }
+        self.flash = (self.flash - 0.09).max(0.0);
 
         // Each tick advances the drops at the original 60 Hz velocity.
         self.update_drops(world, camera, screen, zoom);
@@ -366,8 +407,19 @@ impl Rain {
         zoom: f32,
         screen: Vec2,
     ) {
-        if self.drops.is_empty() && self.splashes.is_empty() && self.snow.is_empty() {
+        if self.drops.is_empty()
+            && self.splashes.is_empty()
+            && self.snow.is_empty()
+            && self.flash <= 0.01
+        {
             return;
+        }
+        if self.flash > 0.01 {
+            r.push_ui_rect(
+                [0.0, 0.0],
+                [screen.x, screen.y],
+                [1.0, 0.98, 0.9, self.flash * 0.38],
+            );
         }
         let to_screen = |p: Vec2| {
             [
@@ -514,6 +566,25 @@ mod tests {
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
+    }
+
+    #[test]
+    fn storms_ramp_the_cloud_deck_and_lightning_decays() {
+        let w = ground();
+        let mut rain = Rain::with_forced(23, Some(1.0), false);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        for _ in 0..600 {
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+        }
+        assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
+        rain.flash = 1.0;
+        rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+        assert!(rain.flash < 1.0 && rain.flash > 0.7);
+        for _ in 0..30 {
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+        }
+        assert_eq!(rain.flash, 0.0, "flash must decay");
     }
 
     #[test]

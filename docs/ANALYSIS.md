@@ -281,13 +281,20 @@ the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackCol
 via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
 rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
 
+Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
+`cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
+`cloudBGAlpha`-style ramp tied to the rain intensity, and heavy rain (> 0.65) throws a
+lightning flash every 5–15 s. The flash is a 0.38-alpha full-screen white overlay that
+decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
+
 Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
 ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
 `1 + 2*cloudAlpha`), falling at 2–5 px/tick with a per-flake sine sway and the storm wind.
 Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
 
 First-pass simplifications: a session-local random weather schedule instead of a saved
-`rainTime`/`maxRaining` pair, no storm clouds/lightning/wind gusts, and no weather audio.
+`rainTime`/`maxRaining` pair, no lightning bolt geometry or thunder audio, and no wind
+gusts affecting the world (only the rain/snow drift).
 
 ## Surface backgrounds
 

@@ -1500,8 +1500,20 @@ impl App {
                 } else {
                     renderer.begin_frame();
                     draw_sky(
-                        renderer, *camera, *zoom, screen, world, clouds, sky, stars, surface_px,
-                        is_day, clock_time, sky_uv, sky_tint,
+                        renderer,
+                        *camera,
+                        *zoom,
+                        screen,
+                        world,
+                        clouds,
+                        sky,
+                        stars,
+                        surface_px,
+                        is_day,
+                        clock_time,
+                        sky_uv,
+                        sky_tint,
+                        rain.cloud_bg(),
                     );
 
                     tile_stats = draw_tiles(
@@ -1856,6 +1868,9 @@ struct SkyAssets {
     snow_trees: [Option<BgTex>; 3],
     /// Ocean horizon with islands (`Background_28`, style 0).
     ocean: Option<BgTex>,
+    /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
+    storm_far: Option<BgTex>,
+    storm_near: Option<BgTex>,
     sun: Option<BgTex>,
     moon: Option<BgTex>,
     stars: Vec<Option<BgTex>>,
@@ -1999,6 +2014,8 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         snow_near: sky_tex(atlas, "Background_36", None),
         snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         ocean: ocean_bg_tex(atlas),
+        storm_far: sky_tex(atlas, "Background_112", None),
+        storm_near: sky_tex(atlas, "Background_113", None),
         sun: sky_tex(atlas, "Sun", None),
         moon: sky_tex(atlas, "Moon_0", Some((0, 0, 50, 50))),
         stars: (0..4)
@@ -2056,6 +2073,7 @@ fn draw_sky(
     clock_time: f64,
     sky_uv: Option<[f32; 4]>,
     tint: [f32; 3],
+    storm: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -2189,11 +2207,47 @@ fn draw_sky(
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
     let show_bg = view_top < world_surface_px + TILE_PX;
+    let local_surface = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
+    let horizon = (local_surface - camera.y) * zoom + screen.y * 0.5;
+    if show_bg && storm > 0.01 {
+        // `cloudBG` layers: two storm cloud banks behind the mountains, fading in
+        // with cloudAlpha. They keep the sky busy between the horizon and the zenith.
+        if let Some(t) = sky.storm_far {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &t,
+                1.65,
+                0.09,
+                magic * 900.0 + 600.0 + sc_adj,
+                horizon,
+                false,
+                [tint[0] * 0.9, tint[1] * 0.92, tint[2] * 0.96],
+                storm,
+            );
+        }
+        if let Some(t) = sky.storm_near {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &t,
+                1.85,
+                0.12,
+                magic * 1100.0 + 750.0 + sc_adj,
+                horizon,
+                false,
+                tint,
+                (storm * 1.5).min(1.0),
+            );
+        }
+    }
     // Layers are positioned like `DrawSurfaceBG` but drawn in screen pixels (the
     // original applies the zoom in its sprite-batch transform). Keep the bottom of
     // every layer below the local horizon so no sky leaks between it and the terrain.
-    let local_surface = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
-    let horizon = (local_surface - camera.y) * zoom + screen.y * 0.5;
     if show_bg {
         let far = if snow { sky.snow_far } else { sky.far };
         if let Some(far) = far {
@@ -2209,6 +2263,7 @@ fn draw_sky(
                 horizon,
                 false,
                 tint,
+                1.0,
             );
         }
     }
@@ -2248,6 +2303,7 @@ fn draw_sky(
                 horizon,
                 false,
                 [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
+                1.0,
             );
         }
         if ocean {
@@ -2264,6 +2320,7 @@ fn draw_sky(
                     horizon,
                     false,
                     tint,
+                    1.0,
                 );
             }
         }
@@ -2301,6 +2358,7 @@ fn draw_sky(
                     horizon,
                     i == 1,
                     [tint[0] * 0.97, tint[1] * 0.98, tint[2]],
+                    1.0,
                 );
             }
         }
@@ -2387,10 +2445,15 @@ fn draw_bg_layer(
     horizon: f32,
     flip: bool,
     tint: [f32; 3],
+    alpha: f32,
 ) {
     let sw = tex.w * scale;
     let sh = tex.h * scale;
-    let top = top.max(horizon - tex.ground * sh);
+    let top = if tex.ground < 0.999 {
+        top.max(horizon - tex.ground * sh)
+    } else {
+        top
+    };
     let uv = if flip {
         [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
     } else {
@@ -2407,7 +2470,7 @@ fn draw_bg_layer(
             [x, top],
             [sw, sh],
             uv,
-            [tint[0], tint[1], tint[2], 1.0],
+            [tint[0], tint[1], tint[2], alpha],
         );
         x += sw;
     }

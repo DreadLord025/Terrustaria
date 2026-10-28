@@ -98,6 +98,8 @@ pub fn load_world_images(
         "Background_51",
         "Background_52",
         "Background_28",
+        "Background_112",
+        "Background_113",
         "Sun",
         "Moon_0",
         "Star_0",
