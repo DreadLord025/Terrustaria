@@ -239,6 +239,8 @@ Deliberate simplifications:
   `DrawSunAndMoon`'s screen-space arc using `Sun`, `Moon_0` and `Star_0..3`. Biome-specific
   backgrounds, the foreground tree line and rain are missing; underground is a smooth
   per-column fade to cave darkness that starts at each column's first solid tile.
+`Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
+and light are quantised to one-second steps so the map/instance caches still hit.
 
 ## Liquids
 

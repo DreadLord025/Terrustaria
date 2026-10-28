@@ -53,7 +53,7 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    smoothing and shimmer sparkles. *~3–6 agent-days left of ~8.*
 4. **Backgrounds & sky** — ✅ *first pass*: `Background_0` gradient, two screen-space
    parallax mountain layers (`Background_7`), deterministic `Cloud_*` clouds, sun, moon,
-   stars and the per-column cave fade. Remaining: biome-specific `DrawSurfaceBG_*`
+   stars, the 15/9-minute day-night clock and the per-column cave fade. Remaining: biome-specific `DrawSurfaceBG_*`
    variants (corruption/crimson/snow/jungle/hallow/ocean), the foreground tree line, rain,
    and the textured `Main.DrawBackground` underground layers. *~3–7 agent-days.* ← next
 5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,

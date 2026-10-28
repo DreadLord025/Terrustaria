@@ -62,7 +62,7 @@ clean-room analysis of the decompiled C# game.
   on cave floors. No flow simulation, waterfalls or partial-wall surface smoothing yet.
 - **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, two
   parallax mountain layers built from `Background_7`, the sun/moon, twinkling stars at
-  night, deterministic clouds from the game's `Cloud_*` textures, and a per-column
+  night, a 15-minute day / 9-minute night clock, deterministic clouds from the game's `Cloud_*` textures, and a per-column
   underground fade that starts at each column's own surface (no sky leaks, no screen-wide
   brown band, no hard rectangles around trees). Biome backgrounds, rain and the real
   underground background textures are still to come.

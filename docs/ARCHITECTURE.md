@@ -139,11 +139,12 @@
 ## Frame flow
 
 1. `about_to_wait` → `request_redraw`.
-2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; resolve the
-   `LightStyle` for the current mode; check `WorldFrameKey`. On a miss: `draw_sky`,
-   `renderer.begin_frame()`, light map for the visible rect, then the tile/slope/wall
-   loop and the tree foliage pass. On a hit: keep the world range. Then the debug overlay
-   (UI) and acquire the swapchain texture.
+2. `frame()`: advance `Main.time` unless `TR_DAY` freezes it; player/NPC updates; input →
+   camera; compute `Main.ColorOfTheSkies` → `tileColor` (quantised to one-second steps);
+   resolve the `LightStyle` for the current mode; check `WorldFrameKey`. On a miss:
+   `draw_sky`, `renderer.begin_frame()`, light map for the visible rect, then the
+   tile/slope/wall loop, liquids and the tree foliage pass. On a hit: keep the world range.
+   Then the HUD/debug overlay (UI) and acquire the swapchain texture.
 3. `renderer.render()` writes both globals buffers + the world/UI instance ranges, records
    one pass (clear + 2 draws) and submits.
 4. `queue.present(frame)`.

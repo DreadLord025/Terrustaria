@@ -602,6 +602,28 @@ fn parse_xy(v: &str) -> Option<(i32, i32)> {
     Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
 }
 
+/// `TR_DAY` pins the sky for screenshots; time-of-day advancement pauses.
+fn time_frozen() -> bool {
+    static FROZEN: OnceLock<bool> = OnceLock::new();
+    *FROZEN.get_or_init(|| std::env::var_os("TR_DAY").is_some())
+}
+
+/// `Main.time`: a 15-minute day (`0..54000`) and a 9-minute night (`0..32400`) at 60
+/// ticks per second.
+fn advance_time(world: &mut World, dt: f32) {
+    let mut t = world.time + dt as f64 * 60.0;
+    if world.day_time {
+        if t >= 54000.0 {
+            t -= 54000.0;
+            world.day_time = false;
+        }
+    } else if t >= 32400.0 {
+        t -= 32400.0;
+        world.day_time = true;
+    }
+    world.time = t;
+}
+
 /// `TR_NOCACHE=1` disables D2 and G6, so benchmarks measure the full per-frame
 /// work instead of a cached scene. Also used to A/B the optimisations.
 fn no_cache() -> bool {
@@ -1080,6 +1102,9 @@ impl App {
         if !self.follow_player {
             self.pan_camera(dt);
         }
+        if !time_frozen() {
+            advance_time(&mut self.world, dt);
+        }
 
         let screen = self
             .gpu
@@ -1092,7 +1117,6 @@ impl App {
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
-
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
 
@@ -1157,7 +1181,11 @@ impl App {
                     }
                     // `Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`.
                     None => {
-                        let c = color_of_the_skies(world.time, world.day_time);
+                        // Quantise the daylight/sky colour to one-second steps: the sun
+                        // still moves smoothly on the draw pass, but the light map and
+                        // world range can be reused for a second.
+                        let quantised = (world.time / 60.0).floor() * 60.0;
+                        let c = color_of_the_skies(quantised, world.day_time);
                         (c, tile_color(c), world.day_time, world.time)
                     }
                 };
@@ -2948,6 +2976,14 @@ fn draw_debug(
     lines.push((format!("npcs {npc_count}"), TEXT));
     lines.push((
         format!(
+            "time {:.0} {}   day length 15 min / night 9 min",
+            world.time,
+            if world.day_time { "day" } else { "night" }
+        ),
+        TEXT,
+    ));
+    lines.push((
+        format!(
             "visible tiles {}   quads {}   foliage {}   liquids {}   total {}   grid {}x{}",
             tile.visible,
             tile.quads,
@@ -3097,4 +3133,23 @@ fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
 
     image::save_buffer(path, &rgba, w, h, image::ColorType::Rgba8).expect("save screenshot");
     log::info!("screenshot saved to {}", path.display());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn day_night_clock_wraps() {
+        let mut w = World::new("t".into(), 8, 8);
+        w.time = 53999.0;
+        w.day_time = true;
+        advance_time(&mut w, 1.0);
+        assert!(!w.day_time);
+        assert!(w.time < 100.0, "time {}", w.time);
+        w.time = 32399.0;
+        advance_time(&mut w, 1.0);
+        assert!(w.day_time);
+        assert!(w.time < 100.0, "time {}", w.time);
+    }
 }
