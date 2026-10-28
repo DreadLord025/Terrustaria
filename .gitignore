@@ -14,6 +14,7 @@
 /*.log
 /run.*.log
 /shot*.png
+/.qoder_tmp/
 
 # .NET tooling output
 /tools/**/bin/

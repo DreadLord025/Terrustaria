@@ -46,11 +46,14 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    Remaining: sun/moon/star light, per-type frame-dependent lights, invisible
    blocks/walls, mouse-light flicker, shader chromatic aberration once instances carry a
    flag. *~1–2 agent-days of ~8 left.*
-3. **Liquids** — ✅ *first pass*: water/lava/honey/shimmer are drawn from the original
+3. **Liquids** — ✅ *second pass*: water/lava/honey/shimmer are drawn from the original
    `Misc/water_*` strips with 16-frame animation, per-kind opacity, surface waves, a shader
-   UV ripple, a depth tint and light-map lighting. The generator fills a forest lake and
-   lava puddles. Remaining: flow simulation, waterfalls, water styles, visible-wall height
-   smoothing and shimmer sparkles. *~3–6 agent-days left of ~8.*
+   UV ripple, a depth tint and light-map lighting; the generator fills a forest lake and
+   lava puddles. `Liquid.UpdateLiquid`/`Liquid.Update` is ported as a 30 Hz active-cell
+   simulation (gravity, six-neighbour leveling, kill/retire, overflow buffer) and block
+   edits wake neighbouring cells. Remaining: the `Waterfall_*` overlay at half-brick
+   spouts, the four-corner `VisibleLiquidLevel` shoreline mesh, water styles and shimmer
+   sparkles. *~2–4 agent-days left of ~8.*
 4. **Backgrounds & sky** — ✅ *first pass*: `Background_0` gradient, two screen-space
    parallax mountain layers (`Background_7`), deterministic `Cloud_*` clouds, sun, moon,
    stars, the 15/9-minute day-night clock and the per-column cave fade. Remaining: biome-specific `DrawSurfaceBG_*`

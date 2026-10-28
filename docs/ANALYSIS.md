@@ -69,7 +69,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
-| Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
+| Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, ground-slope support, water buoyancy, HP/hurt/respawn; no half-brick/ceiling slopes, items or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | 🟡 | 4-slot hotbar, mining/placing, counts and native save; no item entities, tools, recipes, chests or full inventory UI |
@@ -255,10 +255,18 @@ and light are quantised to one-second steps so the map/instance caches still hit
 - a per-column sine offset plus a shader UV ripple (per-instance `flags = 1`) breaks up
   the 16 px texture repetition; a small depth tint darkens deep water.
 
-Not ported: the liquid update/flow simulation, `Liquid` wave mask shader, waterfall
-columns, the visible-wall height smoothing that gives the original's diagonal shorelines,
-water styles and shimmer sparkles. The generator adds a forest lake and lava puddles so
-the pass is visible in the default world; loaded `.wld` files expose their own liquids.
+The system is completed by `tr-core/src/liquid.rs`, a port of `Liquid.UpdateLiquid` and
+`Liquid.Update`: a 25 000-entry active-cell list (with the 50 000-entry overflow buffer),
+one tenth pumped every second 60 Hz tick, per-cell gravity plus the six-neighbour
+leveling passes (3/4/5/7-cell averages, edge openness, `Math.Round` banker's rounding),
+and retirement after eight quiet passes. Falling water keeps the original's 254→255
+quirk. Block edits wake the surrounding liquid cells, so a breach visibly drains.
+
+Not ported: the `Liquid` wave mask shader, the `Waterfall_*` overlay drawn at
+half-brick and waterfall-block spouts, the four-corner `VisibleLiquidLevel` render mesh
+that gives the original's diagonal shorelines, water styles and shimmer sparkles. The
+generator adds a forest lake and lava puddles so the pass is visible in the default
+world; loaded `.wld` files expose their own liquids.
 
 ## Sky and daylight
 

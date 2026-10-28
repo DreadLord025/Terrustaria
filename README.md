@@ -55,11 +55,15 @@ clean-room analysis of the decompiled C# game.
   /`GetColor4Slice` block slicing for smooth seams; `Retro` and `Trippy` use the flat legacy
   path. `F2` cycles the four modes, `TR_LIGHT_MODE` pins one. Seeding and horizontal sweeps
   run on Rayon, and the finished map is cached, so a static view costs 0 ms.
-- **Liquids** — first pass of `LiquidRenderer`: water, lava, honey and shimmer are drawn
-  with the original `Misc/water_*` textures, 16-frame animation, per-liquid opacity,
-  per-column surface waves, a shader UV ripple and a depth tint; lighting comes from the
-  same light map, so lava glows. The generator fills a forest lake and puts lava puddles
-  on cave floors. No flow simulation, waterfalls or partial-wall surface smoothing yet.
+- **Liquids** — `LiquidRenderer` drawing plus a port of `Liquid.UpdateLiquid`/`Liquid.Update`:
+  water, lava, honey and shimmer are drawn from the original `Misc/water_*` textures with
+  16-frame animation, per-liquid opacity, per-column surface waves, a shader UV ripple and
+  a depth tint, lit by the same light map so lava glows. A bounded active-cell list is
+  pumped at 30 Hz; cells fall and level out with the original six-neighbour rules and
+  retire after eight quiet passes, so a breached lake drains and waterfalls form falling
+  columns. Breaking or placing a block wakes the surrounding liquid. The generator fills a
+  forest lake and puts lava puddles on cave floors. Still missing: the `Waterfall_*` overlay
+  at half-brick spouts, the four-corner shoreline mesh, water styles and shimmer sparkles.
 - **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, two
   parallax mountain layers built from `Background_7`, the sun/moon, twinkling stars at
   night, a 15-minute day / 9-minute night clock, deterministic clouds from the game's `Cloud_*` textures, and a per-column
@@ -138,10 +142,9 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 Items beyond the starter hotbar, the full NPC roster, projectiles, the full
 inventory/crafting/chests UI, audio, networking. The player is a movement/visual
 first pass: no item use/combat variety, armor or health regen, and slopes are
-collision boxes rather than ramps. Liquid flow
-simulation, waterfalls, water styles, shimmer sparkles and the original's partial-wall
-liquid surface smoothing are still missing; the current pass draws static sources with
-tile-level surfaces. The world
+collision boxes rather than ramps. The `Waterfall_*` overlay at half-brick spouts, water
+styles, shimmer sparkles and the original's four-corner liquid surface mesh are still
+missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
 biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
 no full ocean biome or hardmode spread. Common

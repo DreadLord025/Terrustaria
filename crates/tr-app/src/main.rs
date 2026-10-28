@@ -15,6 +15,7 @@ use glam::Vec2;
 use npc::{Npc, NpcKind};
 use player::{Player, PlayerInput};
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
+use tr_core::liquid::LiquidSystem;
 use tr_core::tile::LiquidKind;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World, edit, framing, save, tree, wld, worldgen};
@@ -127,16 +128,50 @@ fn main() -> Result<()> {
             for x in cx..cx + 16 {
                 let t = world.tile(x, y).copied().unwrap_or_default();
                 line.push_str(&format!(
-                    "{}:{}:{}/{}/w{} ",
+                    "{}:{}:{}/{}/w{}L{} ",
                     if t.active() { t.kind } else { 999 },
                     t.slope,
                     t.frame_x,
                     t.frame_y,
-                    t.wall
+                    t.wall,
+                    t.liquid
                 ));
             }
             log::info!("row {y}: {line}");
         }
+    }
+    if std::env::var("TR_SCAN_WATER").is_ok() {
+        // Finds the densest 40x40 window of liquid cells, for flow/liquid screenshots.
+        // The map edges (oceans) are skipped so the inland lake wins.
+        const STEP: i32 = 40;
+        let mut best = (0usize, 0i32, 0i32);
+        let mut y = 300;
+        while y + STEP < world.height {
+            let mut x = 300;
+            while x + STEP < world.width - 300 {
+                let mut n = 0usize;
+                for yy in y..y + STEP {
+                    for xx in x..x + STEP {
+                        if world.tile(xx, yy).is_some_and(|t| t.liquid > 0) {
+                            n += 1;
+                        }
+                    }
+                }
+                if n > best.0 {
+                    best = (n, x, y);
+                }
+                x += STEP;
+            }
+            y += STEP;
+        }
+        log::info!(
+            "densest liquid window: {} at {},{} -> TR_CAM={},{}",
+            best.0,
+            best.1,
+            best.2,
+            best.1 + STEP / 2,
+            best.2 + STEP / 2
+        );
     }
     if std::env::var("TR_SCAN_TORCH").is_ok() {
         // Finds the densest 40x40 window of torches, for lighting-mode screenshots.
@@ -423,6 +458,7 @@ fn main() -> Result<()> {
     });
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
+    let liquids_sim = LiquidSystem::new(&world);
 
     let mut app = App {
         window: None,
@@ -485,6 +521,9 @@ fn main() -> Result<()> {
             .unwrap_or(LightMode::Color),
         anim_time: 0.0,
         has_liquids,
+        liquids: liquids_sim,
+        liquid_accum: 0.0,
+        liquid_tick: 0,
         world_key: None,
     };
     event_loop.run_app(&mut app)?;
@@ -581,6 +620,10 @@ struct App {
     light_mode: LightMode,
     anim_time: f32,
     has_liquids: bool,
+    /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
+    liquids: LiquidSystem,
+    liquid_accum: f32,
+    liquid_tick: u32,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     world_key: Option<WorldFrameKey>,
 }
@@ -898,6 +941,23 @@ impl App {
         }
     }
 
+    /// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
+    /// tick, matching the original 30 Hz rate.
+    fn update_liquids(&mut self, dt: f32) {
+        let step = 1.0 / 60.0;
+        let mut acc = self.liquid_accum + dt;
+        let mut steps = 0;
+        while acc >= step && steps < 8 {
+            self.liquid_tick = self.liquid_tick.wrapping_add(1);
+            if self.liquid_tick % 2 == 0 {
+                self.liquids.update(&mut self.world);
+            }
+            acc -= step;
+            steps += 1;
+        }
+        self.liquid_accum = acc.min(step * 8.0);
+    }
+
     fn update_npcs(&mut self, dt: f32) {
         self.attack_cd = (self.attack_cd - dt).max(0.0);
         self.npc_timer -= dt;
@@ -949,6 +1009,7 @@ impl App {
         }
         if let Some((x, y, kind)) = self.dev_place.take() {
             if edit::place_tile(&mut self.world, x, y, kind) {
+                self.liquids.wake_around(&self.world, x, y, 3);
                 self.world_key = None;
             }
         }
@@ -1058,6 +1119,7 @@ impl App {
         if let Some(slot) = Self::slot_for_kind(kind) {
             self.inventory[slot].count = self.inventory[slot].count.saturating_add(1);
         }
+        self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
     }
 
@@ -1092,6 +1154,7 @@ impl App {
         if edit::place_tile(&mut self.world, tx, ty, kind) {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
+            self.liquids.wake_around(&self.world, tx, ty, 3);
             self.world_key = None;
         }
     }
@@ -1139,6 +1202,7 @@ impl App {
 
         self.update_player(dt);
         self.update_npcs(dt);
+        self.update_liquids(dt);
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
@@ -1176,6 +1240,7 @@ impl App {
                 debug_cache,
                 light_mode,
                 has_liquids,
+                liquids,
                 world_key,
                 ..
             } = self;
@@ -1323,6 +1388,7 @@ impl App {
                         style.mode.label(),
                         player.as_ref(),
                         npcs.len(),
+                        liquids.active_len(),
                     );
                 }
 
@@ -2940,6 +3006,7 @@ fn draw_debug(
     light_mode: &str,
     player: Option<&Player>,
     npc_count: usize,
+    liquid_active: usize,
 ) {
     if !cache.ready {
         let info = gpu.adapter.get_info();
@@ -3015,7 +3082,10 @@ fn draw_debug(
             TEXT,
         ));
     }
-    lines.push((format!("npcs {npc_count}"), TEXT));
+    lines.push((
+        format!("npcs {npc_count}   liquid cells {liquid_active}"),
+        TEXT,
+    ));
     lines.push((
         format!(
             "time {:.0} {}   day length 15 min / night 9 min",

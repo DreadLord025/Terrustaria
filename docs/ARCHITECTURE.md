@@ -35,6 +35,13 @@
   `GlobalBrightness = 1.2`. Seeding and horizontal sweeps run on Rayon's global pool;
   the finished map is cached by rect, sky colour, hell glow, flicker and
   `World::revision`.
+- `liquid.rs` — `LiquidSystem`: the original `Liquid.UpdateLiquid`/`Liquid.Update` port.
+  A bounded active list (`maxLiquid = 25 000`) plus a membership bitset stands in for
+  `Tile.checkingLiquid`; every 30 Hz call pumps one tenth of the list. Each cell falls
+  into the cell below and levels out with up to six horizontal neighbours (the same
+  averaging and edge rules as the C#), and entries retire after eight quiet passes.
+  `add_water` mirrors `AddWater` + the `LiquidBuffer` overflow queue; block edits call
+  `wake_around` so a broken dam starts flowing immediately.
 - `worldgen.rs` — a compact generator modelled on `WorldGen`'s shapes: height-noise
   surface + spawn plateau, height smoothing to 1-tile steps, grass/dirt/stone/ash layers,
   hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld
@@ -179,9 +186,10 @@
 - **Parallax backgrounds & biome skylines** — the seeded mountain layers and clouds exist;
   the biome-specific `DrawSurfaceBG_*` variants, the real foreground tree lines and rain
   are still to come. `Cloud_*`/`Background_*` textures are already extracted.
-- **Liquid flow and waterfalls** — simulate the original `Liquid` update so surfaces level
-  and fall; render the original's partial-wall smoothing and shimmer sparkles. The static
-  water/lava/honey/shimmer pass and the wave shader already exist.
+- **Liquid surface smoothing** — the flow simulation is a direct port of `Liquid.Update`;
+  the remaining render work is the original's four-corner `VisibleLiquidLevel` mesh (and
+  the `Waterfall_*` overlay for half-brick spouts) so shorelines are diagonal instead of
+  tile steps. The static water/lava/honey/shimmer pass and the wave shader already exist.
 - **Tile entities / furniture** — `TileObjectData` port producing multi-tile sprites.
 - **More lighting modes** — add a `LightMode` variant and a `LightStyle` (smoothing,
   grayscale/colour transform, levels, perturbation); the tile pass and shader are driven

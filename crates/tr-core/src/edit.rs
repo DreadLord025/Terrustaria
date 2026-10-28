@@ -17,6 +17,8 @@ pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let i = world.index(x, y);
     world.tiles[i] = Tile {
         wall: t.wall,
+        liquid: t.liquid,
+        flags: liquid_flags(t.flags),
         ..Default::default()
     };
     after_edit(world, x, y);
@@ -36,8 +38,10 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
     let mut tile = Tile {
         kind,
         wall: t.wall,
+        liquid: t.liquid,
         frame_x: -1,
         frame_y: -1,
+        flags: liquid_flags(t.flags),
         ..Default::default()
     };
     tile.flags |= crate::tile::FLAG_ACTIVE;
@@ -51,6 +55,11 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
     world.tiles[i] = tile;
     after_edit(world, x, y);
     true
+}
+
+fn liquid_flags(flags: u8) -> u8 {
+    use crate::tile::{FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
+    flags & (FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER)
 }
 
 fn after_edit(world: &mut World, x: i32, y: i32) {
