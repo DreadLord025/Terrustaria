@@ -29,8 +29,6 @@ pub struct SpriteInstance {
     pub uv0: [f32; 2],
     pub uv1: [f32; 2],
     pub color: [f32; 4],
-    /// Per-sprite effect flag: 1 = liquid (UV wave in the fragment shader).
-    pub flags: f32,
     /// Clockwise rotation in radians around the sprite's top-left corner.
     pub rot: f32,
 }
@@ -199,7 +197,6 @@ impl SpriteRenderer {
                         3 => Float32x2,
                         4 => Float32x4,
                         5 => Float32,
-                        6 => Float32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -303,7 +300,14 @@ impl SpriteRenderer {
     }
 
     pub fn push_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
-        self.push_sprite_flags(pos, size, uv, color, 0.0);
+        self.world.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot: 0.0,
+        });
     }
 
     /// Background-range sprite (sky, parallax layers, clouds, cave fade).
@@ -320,28 +324,6 @@ impl SpriteRenderer {
             uv0: [uv[0], uv[1]],
             uv1: [uv[2], uv[3]],
             color,
-            flags: 0.0,
-            rot: 0.0,
-        });
-    }
-
-    /// Same as [`SpriteRenderer::push_sprite`], with a per-instance shader flag
-    /// (currently 1 = liquid UV wave).
-    pub fn push_sprite_flags(
-        &mut self,
-        pos: [f32; 2],
-        size: [f32; 2],
-        uv: [f32; 4],
-        color: [f32; 4],
-        flags: f32,
-    ) {
-        self.world.push(SpriteInstance {
-            pos,
-            size,
-            uv0: [uv[0], uv[1]],
-            uv1: [uv[2], uv[3]],
-            color,
-            flags,
             rot: 0.0,
         });
     }
@@ -362,7 +344,6 @@ impl SpriteRenderer {
             uv0: [uv[0], uv[1]],
             uv1: [uv[2], uv[3]],
             color,
-            flags: 0.0,
             rot,
         });
     }
@@ -384,7 +365,6 @@ impl SpriteRenderer {
             uv0: [uv[0], uv[1]],
             uv1: [uv[2], uv[3]],
             color,
-            flags: 0.0,
             rot,
         });
     }
@@ -397,7 +377,6 @@ impl SpriteRenderer {
             uv0: [self.white_uv[0], self.white_uv[1]],
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
-            flags: 0.0,
             rot: 0.0,
         });
     }
@@ -410,7 +389,6 @@ impl SpriteRenderer {
             uv0: [uv[0], uv[1]],
             uv1: [uv[2], uv[3]],
             color,
-            flags: 0.0,
             rot: 0.0,
         });
     }
@@ -432,7 +410,6 @@ impl SpriteRenderer {
                     uv0: [u0, self.font_uv0[1]],
                     uv1: [u1, self.font_uv1[1]],
                     color,
-                    flags: 0.0,
                     rot: 0.0,
                 });
             }

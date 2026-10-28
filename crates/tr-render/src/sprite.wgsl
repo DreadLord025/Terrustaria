@@ -18,16 +18,13 @@ struct Instance {
     @location(2) uv0: vec2<f32>,
     @location(3) uv1: vec2<f32>,
     @location(4) color: vec4<f32>,
-    @location(5) flags: f32,
-    @location(6) rot: f32,
+    @location(5) rot: f32,
 };
 
 struct VsOut {
     @builtin(position) position: vec4<f32>,
     @location(0) uv: vec2<f32>,
     @location(1) color: vec4<f32>,
-    @location(2) world: vec2<f32>,
-    @location(3) @interpolate(flat) flags: f32,
 };
 
 @vertex
@@ -58,24 +55,19 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
 
     var out: VsOut;
     out.position = vec4<f32>(ndc, 0.0, 1.0);
-    out.uv = mix(inst.uv0, inst.uv1, c);
+    // Inset by half a texel: at fractional camera positions a sprite edge can
+    // land exactly on a pixel centre, and nearest sampling of uv = 1.0 would
+    // pick the transparent padding texel outside the source rect (visible as
+    // 1 px holes between tiles). Sampling the texel centres avoids that.
+    let half_texel = globals.texel * 0.5;
+    out.uv = mix(inst.uv0 + half_texel, inst.uv1 - half_texel, c);
     out.color = inst.color;
-    out.world = world;
-    out.flags = inst.flags;
     return out;
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    var uv = in.uv;
-    // Liquids: distort the sample by a small travelling wave. The source frames
-    // sit inside the large `Misc/water_*` strip, so a 1-2 px shift is safe.
-    if (in.flags > 0.5) {
-        let w = sin(in.world.x * 0.31 + globals.time * 1.9)
-            + cos(in.world.y * 0.37 - globals.time * 1.3);
-        uv += vec2<f32>(w, w * 0.35) * globals.texel * 1.4;
-    }
-    var tex = textureSample(atlas, atlas_sampler, uv);
+    var tex = textureSample(atlas, atlas_sampler, in.uv);
     if (tex.a < 0.01) {
         discard;
     }
