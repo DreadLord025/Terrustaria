@@ -64,7 +64,8 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | System | Original location | Size | Status | Notes |
 | --- | --- | --- | --- | --- |
 | World model & save format | `IO/WorldFile.cs`, `Tile.cs` | ~2 600 | ✅ | Header + section table + RLE tile stream parsed; chests/signs/NPCs skipped |
-| Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Only a per-sheet "plain" frame; no merge/mask logic |
+| Tile framing / autotiling | `WorldGen.TileFrame` (line 82852), `TileFrameCosmetic` | ~3 600 | 🟡 | Generic block chain + merge families ported; per-type grass/moss/weird branches approximated |
+| Wall framing | `Framing.WallFrame` (line 326) | 120 | ✅ | Full `wallFrameLookup` + `centerWallFrameLookup` port |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Simple quads; no paint, slopes, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ⬜ | Currently a screen-space gradient only |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | ⬜ | Solid gradient |
@@ -109,8 +110,39 @@ for x in 0..maxTilesX:                 column-major, RLE per column
   wall id, liquid amount, RLE repeat count
 ```
 
-Tile flags we map 1:1 into a packed 12-byte struct (`tr-core/src/tile.rs`): active,
-half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall.
+Tile flags we map 1:1 into a packed 16-byte struct (`tr-core/src/tile.rs`): active,
+half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, paint, wall,
+plus the computed wall autotile cell (`wall_col`, `wall_row`).
+
+## Autotiling
+
+`num6` / `Tile.frameNumber` **is not stored in the save file** (the tile header only carries
+frame X/Y for important tiles). Both `frameNumber` and the wall variant are generated at
+load time in the original and always from `WorldGen.genRand`; we replace them with a
+deterministic per-position hash, which is why two loads of the same world look identical.
+
+Ported pieces (`tr-core/src/framing.rs`):
+
+1. **Block frames** — the 20-entry generic `if/else` chain at `WorldGen.cs:85929–86319`,
+   each row selecting one of three 16×16 frames on the 18 px tile grid. Tile-type
+   normalisation (`Main.tileStone` → stone, `668` → dirt, `697` → `51`) and slope-side
+   clearing match the original.
+2. **Merge families** — `TileID.Sets.Dirt`, `Mud`, `Ash`, `ForcedDirtMerging`,
+   `NeedsGrassFraming` (+ `NeedsGrassFramingDirt`), `OreMergesWithMud`, moss/moss-brick,
+   `BlockMergesWithMergeAllBlock`, plus 2 228 directed pairs extracted mechanically from the
+   per-type `switch (num)` cases in `TileFrameCosmetic`.
+3. **Wall frames** — the complete `wallFrameLookup` (20 masks × 3 variants),
+   `centerWallFrameLookup` and the 36 px cell geometry; comparisons use the wall's own
+   visibility rules minus invisible walls.
+4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern) override
+   the variant instead of using the hash.
+
+Not yet ported: the per-type special-case branches (grass edge override, moss, cactus,
+vines, `TileFrameImportant` multi-tile objects), `TileID.Sets.TruncatesWalls`, paint and
+coating. Those are listed in the roadmap.
+
+`tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
+`tiledata.rs`; rerun it after touching those tables.
 
 ## Asset pipeline
 
@@ -132,17 +164,19 @@ half-brick, actuator, inactive, fullbright, liquid kind, liquid amount, slope, p
 
 - `Wall_1` does not exist (wall ids start at 1 → `Wall_1.xnb` is absent in some
   distributions; the pack maps ids directly and tolerates missing sheets).
+- Block tilesets also contain randomized variants selected per tile (`frameNumber`), which
+  the save file does not store; `framing.rs` substitutes a position hash. The same applies
+  to the wall variant (`wallFrameNumber`).
 - Non-important tiles store `frameX = frameY = -1` in the world; the original computes them
-  every frame in `WorldGen.TileFrame`. Important tiles (torches, furniture, plants, trees…)
+  on load in `WorldGen.TileFrame`. Important tiles (torches, furniture, plants, trees…)
   keep their frames in the save file.
-- Block tilesets also contain randomized variants selected per tile, which a single
-  "plain frame" cannot reproduce — visible as repeated identical blocks in the prototype.
 
 ## Observations / risks
 
 1. **Autotiling is the dominant visual factor.** One 16×16 frame per tile type produces
-   repeating "cobblestone" seams. `TileFrameCosmetic` alone is ~3 400 lines with per-type
-   merge groups; a faithful port is a multi-week task but is highly mechanical.
+   repeating "cobblestone" seams. The generic block chain and the merge families are now
+   ported (~5 900 000 tiles framed in ~150 ms); the remaining gaps are per-type special
+   branches, which affect a minority of tile types.
 2. **Lighting is the second factor.** Without it the world is uniformly lit and caves show
    sky. The original engine uses a tile light scanner + per-corner colour interpolation.
 3. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100

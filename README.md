@@ -15,6 +15,10 @@ clean-room analysis of the decompiled C# game.
 
 - **World loading** — native `.wld` parser (format versions ≥ 87, section table, RLE tile
   section, header metadata). A 6400×1800 world with 11.5 M tiles loads in ~60 ms.
+- **Autotiling** — block frames from a port of `WorldGen.TileFrameCosmetic` (generic frame
+  chain + merge families + 2 228 merge pairs extracted from the decompiled source) and wall
+  frames from `Framing.WallFrame` (full 20×3 lookup). 5.9 M tiles + 2.7 M walls framed in
+  ~150 ms at load.
 - **Asset pipeline** — `tools/XnbExtract` decompresses the game's XNA v5 `.xnb` containers
   (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK.
 - **Atlas** — all sheets used by the current world are shelf-packed into one 4096×6454
@@ -36,13 +40,14 @@ clean-room analysis of the decompiled C# game.
 | Draw calls | 2 |
 | Instances | ~1 900 |
 | World load | ~60 ms |
+| Autotiling (5.9 M tiles + 2.7 M walls) | ~150 ms |
 | Atlas build | ~60 ms |
 
 ## What is *not* implemented (yet)
 
-Autotiling frame selection (the biggest visual gap), lighting, liquids, players, items,
-NPCs, projectiles, world generation, UI/inventory, audio, networking, save writing.
-Details and estimates in [`docs/ROADMAP.md`](docs/ROADMAP.md).
+Lighting, liquids, players, items, NPCs, projectiles, world generation, UI/inventory, audio,
+networking, save writing — and the remaining per-type branches of tile framing (grass edges,
+moss, vines, multi-tile objects). Details and estimates in [`docs/ROADMAP.md`](docs/ROADMAP.md).
 
 ## Build & run
 
@@ -75,15 +80,18 @@ cargo run --release -p tr-app -- "C:\path\to\world.wld"
 | `TR_SHOT=out.png` | Save a screenshot and exit |
 | `TR_SHOT_FRAME=25` | Frame at which the screenshot is taken |
 | `TR_ATLAS_DUMP=atlas.png` | Dump the packed atlas |
-| `TR_DUMP_TILES=1` | Log tile ids/frames around spawn |
+| `TR_DUMP_TILES=1` | Log tile ids/frames around spawn (`TR_DUMP_X`, `TR_DUMP_Y`) |
+| `TR_NO_WALLS=1` | Skip wall rendering (compare autotiling / wall layers) |
+| `TR_CHECK_FRAMES=1` | Verify computed frames against the tileset bounds |
 
 ## Layout
 
 ```
-crates/tr-core     world model, .wld parser, tile packing, framing stub
+crates/tr-core     world model, .wld parser, tile packing, autotiling, generated tile tables
 crates/tr-render   wgpu device, atlas packer, instanced sprite renderer, WGSL shader
 crates/tr-app      winit app, asset loading, camera, debug overlay, bench/screenshot
 tools/XnbExtract   C# XNB (LZX/DXT) -> PNG extractor
+tools/GenTileData  C# generator: TileID/Main/WorldGen tables -> crates/tr-core/src/tiledata.rs
 decompiled/        ILSpy output of Terraria.exe (not redistributed)
 assets/Images/     extracted textures (not redistributed)
 ```

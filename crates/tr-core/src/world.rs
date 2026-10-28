@@ -9,6 +9,8 @@ pub struct World {
     pub height: i32,
     /// Row-major tile storage: `tiles[y * width + x]`.
     pub tiles: Vec<Tile>,
+    /// `Main.tileFrameImportant`: tile types whose frames are stored in the save file.
+    pub frame_important: Vec<bool>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
 }
@@ -20,6 +22,7 @@ impl World {
             width,
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
+            frame_important: Vec::new(),
             spawn_y: height / 4,
         }
     }

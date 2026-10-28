@@ -4,6 +4,7 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod framing;
+pub mod tiledata;
 pub mod tile;
 pub mod wld;
 pub mod world;

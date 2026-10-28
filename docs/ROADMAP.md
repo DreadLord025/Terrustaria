@@ -22,17 +22,20 @@ uncertainty of roughly ±50 %.
 | `.wld` parser | 11.5 M tiles in ~60 ms |
 | Vulkan renderer (wgpu 30) | 2 draw calls, ~1 900 instances |
 | Bench | 1.91 ms avg / 523 FPS @1600×900 |
+| Autotiling data generator | 2 228 merge pairs, 149 tile sets extracted |
 | Debug overlay, screenshots, bench harness | done |
 
-## Milestone 1 — visual fidelity (next)
+## Milestone 1 — visual fidelity (in progress)
 
 Goal: a still frame that is hard to distinguish from the original at the same camera.
 
-1. **Autotiling** — port `WorldGen.TileFrameCosmetic` + merge groups and per-type frame
-   selection, including randomized variants (`frameNumber`) and `TileFrameImportant`.
-   *3 600 lines of C# to port, ~10–20 agent-days.* ← biggest visual win
+1. **Autotiling** — ✅ *mostly done*: the generic 20-frame block chain, the merge families
+   (`Dirt`/`Mud`/`Ash`/moss/grass/ore/`BlockMergesWithMergeAllBlock`) and 2 228 per-type
+   merge pairs are ported; wall framing is complete (`Framing.WallFrame`, 20×3 lookup).
+   Remaining: per-type special branches (grass edge overrides, moss, vines, cactus),
+   `TileFrameImportant` multi-tile objects. *~3–6 agent-days left of ~15.*
 2. **Lighting** — tile light scanner, per-corner colours, `Lighting.GetColor`, torch/glow
-   sources, day/night sky light. *~6–12 agent-days.*
+   sources, day/night sky light. *~6–12 agent-days.* ← next
 3. **Liquids** — water/lava/honey/shimmer surfaces, waves, opacity blending.
    *~4–8 agent-days.*
 4. **Backgrounds & sky** — parallax layers, sun/moon/stars/clouds, biome backgrounds.
@@ -40,8 +43,8 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
 5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
    coatings, slopes/half-blocks, gemspark/glow. *~10–20 agent-days.*
 
-Estimated total: **~35–70 agent-days**. Exit criterion: side-by-side screenshots of the same
-world positions match texture-for-texture.
+Estimated total: **~30–60 agent-days** remaining. Exit criterion: side-by-side screenshots
+of the same world positions match texture-for-texture.
 
 ## Milestone 2 — player
 
@@ -86,12 +89,11 @@ engine.
 
 ## Recommended order of attack
 
-1. M1.1 autotiling → immediate, visible payoff.
-2. M1.2 lighting → the world stops looking flat.
-3. M2 player + M1.4 parallax → it starts to feel like a game.
-4. M3 inventory + block placement/mining → the core loop.
-5. M4 one enemy family + one boss → combat loop.
-6. Everything else.
+1. M1.1 autotiling ✅ → M1.2 lighting ← next (the world stops looking flat).
+2. M2 player + M1.4 parallax → it starts to feel like a game.
+3. M3 inventory + block placement/mining → the core loop.
+4. M4 one enemy family + one boss → combat loop.
+5. Everything else.
 
 ## Non-goals for now
 

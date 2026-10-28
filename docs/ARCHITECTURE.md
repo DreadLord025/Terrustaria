@@ -12,14 +12,19 @@
 
 ### `tr-core` — data & formats
 
-- `tile.rs` — `Tile`, 12 bytes: `kind: u16, wall: u16, frame_x: i16, frame_y: i16,
-  liquid: u8, flags: u8, slope: u8, paint: u8`. The layout mirrors `Terraria.Tile` bit
-  fields so saves can round-trip without lossy conversion (12 B/tile vs. a managed object).
-- `world.rs` — row-major `Vec<Tile>`, bounds helpers, spawn scan, memory accounting.
+- `tile.rs` — `Tile`, 16 bytes: `kind: u16, wall: u16, frame_x: i16, frame_y: i16,
+  liquid: u8, flags: u8, slope: u8, paint: u8, wall_col: u8, wall_row: u8`. The layout
+  mirrors `Terraria.Tile` bit fields so saves can round-trip without lossy conversion
+  (16 B/tile vs. a managed object).
+- `world.rs` — row-major `Vec<Tile>`, bounds helpers, spawn scan, memory accounting,
+  `frame_important` (the save's tile-frame-important bitset).
 - `wld.rs` — sectioned `.wld` reader (see `ANALYSIS.md`). Only header + tile sections are
   decoded today; later sections are reachable via the section table.
-- `framing.rs` — placeholder frame resolution (stored frame for important tiles, per-sheet
-  plain frame otherwise). This is the module the real `TileFrameCosmetic` port will replace.
+- `framing.rs` — autotiling: a port of `WorldGen.TileFrameCosmetic` (block frames) and
+  `Framing.WallFrame` (wall frames). See `ANALYSIS.md#autotiling`.
+- `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
+  `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
+  `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.
 
 ### `tr-render` — GPU
 
@@ -46,12 +51,14 @@
 
 ### `tr-app` — application
 
-- Loads the world (argument or most recent save), scans used tile/wall ids, decodes only
-  those PNGs, builds the atlas, then creates the window.
+- Loads the world (argument or most recent save), runs `framing::frame_world` +
+  `framing::frame_walls`, scans used tile/wall ids, decodes only those PNGs, builds the
+  atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated row-major; walls are pushed before tiles so the order is
-  correct in one batch.
+  correct in one batch. Wall UVs come from the autotile cell (`wall_col`, `wall_row`) and
+  are cached per `(wall, col, row)`.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
   calls, instances, upload KB, camera/tile/zoom, world size and memory, GPU info.
 - Headless tooling: `TR_SHOT`/`TR_SHOT_FRAME` copies the swapchain texture to a mapped
@@ -74,7 +81,8 @@
 | One atlas + instancing | 2 draw calls regardless of scene complexity; no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
 | CPU-side culling | Visible set is ~1–2 k tiles; a compute cull would cost more than it saves at this scale |
-| Row-major tiles, 12 B each | 138 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
+| Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
+| Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
 | Manual debug UI | Avoids pinning egui to wgpu 30 (version coupling), keeps binary small |
 | `TR_*` env instrumentation | Deterministic screenshots/benchmarks without desktop automation |
 

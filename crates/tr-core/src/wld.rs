@@ -83,6 +83,7 @@ pub fn parse(data: &[u8]) -> Result<World> {
     r.seek(sections[1])?;
     load_tiles(&mut r, &mut world, &importance, version)?;
 
+    world.frame_important = importance;
     world.compute_spawn_y();
     Ok(world)
 }

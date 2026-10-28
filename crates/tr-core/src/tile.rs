@@ -27,6 +27,10 @@ pub struct Tile {
     /// 0 = none, 1..=4 = slope type.
     pub slope: u8,
     pub paint: u8,
+    /// Wall autotile cell (column) inside the wall sheet, in 36 px cells.
+    pub wall_col: u8,
+    /// Wall autotile cell (row) inside the wall sheet, in 36 px cells.
+    pub wall_row: u8,
 }
 
 impl Tile {

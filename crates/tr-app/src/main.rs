@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use glam::Vec2;
-use tr_core::{wld, World, TILE_PX};
+use tr_core::{framing, wld, World, TILE_PX};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::application::ApplicationHandler;
 use winit::dpi::PhysicalSize;
@@ -34,7 +34,7 @@ fn main() -> Result<()> {
 
     log::info!("world: {}", world_path.display());
     let t0 = Instant::now();
-    let world = wld::load(&world_path)?;
+    let mut world = wld::load(&world_path)?;
     log::info!(
         "loaded '{}' {}x{} ({} tiles, {:.1} MB) in {:.0} ms",
         world.name,
@@ -43,6 +43,14 @@ fn main() -> Result<()> {
         world.tiles.len(),
         world.memory_bytes() as f32 / 1e6,
         t0.elapsed().as_secs_f32() * 1000.0
+    );
+
+    let t_frame = Instant::now();
+    let framed = framing::frame_world(&mut world);
+    let walled = framing::frame_walls(&mut world);
+    log::info!(
+        "framed {framed} tiles, {walled} walls in {:.0} ms",
+        t_frame.elapsed().as_secs_f32() * 1000.0
     );
 
     let assets_dir = find_assets_dir().context("assets/Images not found (run tools/XnbExtract first)")?;
@@ -603,15 +611,20 @@ fn draw_tiles(
 
     let mut visible = 0u32;
     let wall_tint = [0.72, 0.72, 0.74, 1.0];
+    let draw_walls = std::env::var("TR_NO_WALLS").is_err();
 
     for ty in y0..=y1 {
         for tx in x0..=x1 {
             let Some(tile) = world.tile(tx, ty) else { continue };
             let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
 
-            if tile.wall != 0 {
-                if let Some(tt) = lookups.walls.get(&tile.wall) {
-                    r.push_sprite(pos, [TILE_PX, TILE_PX], tt.plain_uv, wall_tint);
+            if tile.wall != 0 && draw_walls {
+                if let Some(a) = atlas {
+                    if let Some(uv) =
+                        lookups.wall_uv(a, tile.wall, tile.wall_col, tile.wall_row)
+                    {
+                        r.push_sprite(pos, [TILE_PX, TILE_PX], uv, wall_tint);
+                    }
                 }
             }
 

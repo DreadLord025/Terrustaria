@@ -96,6 +96,8 @@ pub struct Lookups {
     pub walls: HashMap<u16, TypeTex>,
     /// Cache for important-tile frames: (type, frameX, frameY) -> UV.
     pub frame_cache: HashMap<(u16, i16, i16), [f32; 4]>,
+    /// Cache for wall autotile cells: (wall, col, row) -> UV.
+    pub wall_cache: HashMap<(u16, u8, u8), [f32; 4]>,
 }
 
 impl Lookups {
@@ -147,6 +149,29 @@ impl Lookups {
         let rect = atlas.sheet(&tt.sheet)?;
         let uv = uv_of(atlas, rect, &tt.sheet, fx, fy);
         self.frame_cache.insert((kind, fx, fy), uv);
+        Some(uv)
+    }
+
+    /// UV for a wall autotile cell.
+    ///
+    /// Wall sheets use 36 px cells with the 16x16 art inset by 8 px, and cells are
+    /// addressed by column/row rather than by pixel offset (`Framing.wallFrameLookup`).
+    pub fn wall_uv(
+        &mut self,
+        atlas: &tr_render::Atlas,
+        wall: u16,
+        col: u8,
+        row: u8,
+    ) -> Option<[f32; 4]> {
+        if let Some(uv) = self.wall_cache.get(&(wall, col, row)) {
+            return Some(*uv);
+        }
+        let tt = self.walls.get(&wall)?;
+        let rect = atlas.sheet(&tt.sheet)?;
+        let fx = col as i16 * 36 + 8;
+        let fy = row as i16 * 36 + 8;
+        let uv = uv_of(atlas, rect, &tt.sheet, fx, fy);
+        self.wall_cache.insert((wall, col, row), uv);
         Some(uv)
     }
 }
