@@ -5,6 +5,7 @@ mod item;
 mod npc;
 mod persist;
 mod player;
+mod projectile;
 mod rain;
 
 use std::collections::{HashSet, VecDeque};
@@ -17,6 +18,7 @@ use glam::Vec2;
 use item::ItemDrop;
 use npc::{Npc, NpcKind};
 use player::{Player, PlayerInput};
+use projectile::Projectile;
 use rain::Rain;
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::liquid::LiquidSystem;
@@ -451,6 +453,11 @@ fn main() -> Result<()> {
             name: "Torch",
             count: 99,
         },
+        3 => ItemSlot {
+            kind: item::WEAPON_ITEM_BASE + projectile::SHURIKEN,
+            name: item::name(item::WEAPON_ITEM_BASE + projectile::SHURIKEN),
+            count: 99,
+        },
         _ => ItemSlot {
             kind: 0,
             name: "",
@@ -566,6 +573,9 @@ fn main() -> Result<()> {
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_accum: 0.0,
         swing: 0.0,
+        projectiles: Vec::new(),
+        projectile_accum: 0.0,
+        dev_throw: std::env::var_os("TR_THROW").is_some(),
         world_key: None,
     };
     event_loop.run_app(&mut app)?;
@@ -674,6 +684,11 @@ struct App {
     item_accum: f32,
     /// Remaining seconds of the current held-item swing.
     swing: f32,
+    /// Live shuriken/projectile entities.
+    projectiles: Vec<Projectile>,
+    projectile_accum: f32,
+    /// `TR_THROW` debug hook: throw one shuriken at startup.
+    dev_throw: bool,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     world_key: Option<WorldFrameKey>,
 }
@@ -1123,6 +1138,29 @@ impl App {
             return;
         }
         self.edit_target = Some((tx, ty));
+        let held = self.inventory[self.selected];
+        let held_weapon = held.count > 0 && item::is_weapon(held.kind);
+        if self.mine_down && held_weapon {
+            // Weapons use LMB toward the cursor instead of mining.
+            if self.attack_cd <= 0.0 {
+                let (pcx, pcy) = player.center();
+                let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+                if dir != Vec2::ZERO {
+                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                    self.projectiles.push(Projectile::shuriken(
+                        spawn.x - 3.0,
+                        spawn.y - 3.0,
+                        dir.x * 11.0,
+                        dir.y * 11.0,
+                    ));
+                    self.inventory[self.selected].count =
+                        self.inventory[self.selected].count.saturating_sub(1);
+                    self.attack_cd = 0.25;
+                    self.swing = SWING_TIME;
+                }
+            }
+            return;
+        }
         // Melee: LMB over an NPC within four tiles hits it instead of mining.
         if self.mine_down && self.attack_cd <= 0.0 {
             let ax = world_pos.x;
@@ -1146,7 +1184,6 @@ impl App {
             .get(tile.kind as usize)
             .copied()
             .unwrap_or(false);
-        let held = self.inventory[self.selected];
         let held_wall = held.count > 0 && item::is_wall(held.kind);
 
         if self.mine_down && tile.active() && !important {
@@ -1198,7 +1235,7 @@ impl App {
                     self.place_cooldown = 0.12;
                     self.swing = SWING_TIME;
                 }
-            } else if self.can_place(tx, ty) {
+            } else if !held_weapon && self.can_place(tx, ty) {
                 let kind = held.kind;
                 self.place_tile(tx, ty, kind);
                 self.place_cooldown = 0.12;
@@ -1219,7 +1256,10 @@ impl App {
         let Some(t) = self.world.tile(tx, ty) else {
             return false;
         };
-        if t.wall != 0 || self.inventory[self.selected].count == 0 {
+        if t.wall != 0
+            || self.inventory[self.selected].count == 0
+            || item::is_weapon(self.inventory[self.selected].kind)
+        {
             return false;
         }
         // A neighbouring wall or block (including one in the cell itself) supports it.
@@ -1271,6 +1311,33 @@ impl App {
         self.item_accum = acc.min(step * 8.0);
     }
 
+    /// Fixed 60 Hz projectile stepping. Damage lands through `Npc::hurt`, so the
+    /// hit cooldown and knockback are shared with melee.
+    fn update_projectiles(&mut self, dt: f32) {
+        if self.dev_throw {
+            if let Some(p) = &self.player {
+                let (cx, cy) = p.center();
+                self.projectiles
+                    .push(Projectile::shuriken(cx - 3.0, cy - 3.0, 11.0, 0.0));
+            }
+            self.dev_throw = false;
+        }
+        let step = 1.0 / 60.0;
+        let mut acc = self.projectile_accum + dt.min(0.25);
+        let mut steps = 0;
+        while acc >= step && steps < 8 {
+            let world = &self.world;
+            let npcs = &mut self.npcs;
+            for p in &mut self.projectiles {
+                p.update(world, npcs, step);
+            }
+            self.projectiles.retain(|p| p.alive);
+            acc -= step;
+            steps += 1;
+        }
+        self.projectile_accum = acc.min(step * 8.0);
+    }
+
     /// Spawns the drop left by a broken tile, with a small random pop like `Item.NewItem`.
     fn spawn_item_drop(&mut self, kind: u16, tx: i32, ty: i32) {
         let r1 = rand01(&mut self.item_rng);
@@ -1304,7 +1371,10 @@ impl App {
         let Some(t) = self.world.tile(tx, ty) else {
             return false;
         };
-        if t.active() || self.inventory[self.selected].count == 0 {
+        if t.active()
+            || self.inventory[self.selected].count == 0
+            || item::is_weapon(self.inventory[self.selected].kind)
+        {
             return false;
         }
         if let Some(p) = &self.player {
@@ -1382,6 +1452,7 @@ impl App {
         self.update_liquids(dt);
         self.update_rain(dt, screen);
         self.update_items(dt);
+        self.update_projectiles(dt);
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
@@ -1423,6 +1494,7 @@ impl App {
                 rain,
                 items,
                 swing,
+                projectiles,
                 world_key,
                 ..
             } = self;
@@ -1590,6 +1662,9 @@ impl App {
                 }
 
                 rain.draw(renderer, lookups, light, *camera, *zoom, screen);
+                for p in projectiles.iter() {
+                    p.draw(renderer, lookups, light, *camera, *zoom, screen);
+                }
 
                 draw_hud(
                     renderer,
@@ -3161,7 +3236,14 @@ fn draw_held_item(
     swing: f32,
     anim_time: f32,
 ) -> u32 {
-    let Some(tex) = lookups.plain_tex(kind) else {
+    let uv = if item::is_weapon(kind) {
+        lookups.shuriken_uv()
+    } else if item::is_wall(kind) {
+        lookups.wall_icon_uv(item::wall_id(kind))
+    } else {
+        lookups.plain_tex(kind).map(|t| t.uv)
+    };
+    let Some(uv) = uv else {
         return 0;
     };
     let (cx, cy) = player.center();
@@ -3194,7 +3276,7 @@ fn draw_held_item(
     r.push_sprite_rot(
         top_left,
         [half * 2.0, half * 2.0],
-        tex.uv,
+        uv,
         [c[0], c[1], c[2], 1.0],
         a,
     );

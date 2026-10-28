@@ -126,11 +126,13 @@ snowflakes that thicken during a storm.
   toward them with gravity/collision, deal 12 contact damage and have 30 HP; at night a
   walking zombie (18×40, 45 HP, 14 damage) chases the player, jumps one-tile ledges and
   burns away in daylight, while a flying demon eye (25 HP, 14 damage) swoops in. LMB over an
-  NPC within four tiles performs a 15-damage melee hit with a short cooldown; damaged
+  NPC within four tiles performs a 15-damage melee hit; selecting the starting shuriken
+  stack and clicking throws a rotating `Projectile_3` (10 damage, tile bounces, 2 s
+  lifetime) toward the cursor. Damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
-- **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore),
-  RMB places the selected block, 1–9/0 select one of ten hotbar slots. Mined tiles spawn
+- **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore) or
+  uses a weapon, RMB places the selected block, 1–9/0 select one of ten hotbar slots. Mined tiles spawn
   `Terraria.Item`-style drops with gravity, bouncing and a ground bob; walking close
   magnetises them into a matching stack or the first empty slot. F9 (or closing the window)
   writes the world back to `.trwld` plus the player state to a `.trplayer` sidecar
@@ -244,6 +246,7 @@ another seed.
 | `TR_SEED=<n>` | Seed for `TR_REGEN` / first generation |
 | `TR_NOPLAYER=1` | Hide and disable the player (free-camera A/B captures) |
 | `TR_XY=x,y` | Spawn the player at a tile coordinate (camera follows) |
+| `TR_THROW=1` | Throw one shuriken to the right at startup (projectile smoke test) |
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 

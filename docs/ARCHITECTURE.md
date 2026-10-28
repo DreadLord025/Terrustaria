@@ -123,6 +123,10 @@
   hit; night spawns mix zombies, eyes and slimes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.
+- Projectiles (`projectile.rs`): the first `Projectile.cs` pass. The shuriken item throws a
+  `Projectile_3` at 11 px/tick toward the cursor, simulated at fixed 60 Hz in two sub-steps
+  with tile bounces (0.6 damping), NPC damage through `Npc::hurt` and a 2 s lifetime.
+  Drawn in the UI range with the sprite rotation, so the world cache is unaffected.
 - Weather (`rain.rs`): `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` as a 60 Hz simulation.
   `cloudAlpha` ramps at 0.0005/tick toward the event's `maxRaining`; drops spawn above the
   view only into wall-free sky, fall at `(wind*18, 14)` px/tick and die on solid or wet

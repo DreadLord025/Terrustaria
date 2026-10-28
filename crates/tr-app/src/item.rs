@@ -15,17 +15,33 @@ use crate::assets;
 pub const SIZE: f32 = 14.0;
 /// Wall ids are stored as `WALL_ITEM_BASE + WallID` in an item slot.
 pub const WALL_ITEM_BASE: u16 = 10_000;
+/// Weapon/projectile items live in their own range: `WEAPON_ITEM_BASE + projectile id`.
+pub const WEAPON_ITEM_BASE: u16 = 20_000;
 
 pub fn is_wall(kind: u16) -> bool {
-    kind >= WALL_ITEM_BASE
+    (WALL_ITEM_BASE..WEAPON_ITEM_BASE).contains(&kind)
 }
 
 pub fn wall_id(kind: u16) -> u16 {
     kind - WALL_ITEM_BASE
 }
 
+pub fn is_weapon(kind: u16) -> bool {
+    kind >= WEAPON_ITEM_BASE
+}
+
+pub fn weapon_id(kind: u16) -> u16 {
+    kind - WEAPON_ITEM_BASE
+}
+
 /// Display name for a tile or wall item. `Terraria.Lang` would provide these.
 pub fn name(kind: u16) -> &'static str {
+    if is_weapon(kind) {
+        return match weapon_id(kind) {
+            1 => "Shuriken",
+            _ => "Weapon",
+        };
+    }
     if is_wall(kind) {
         return match wall_id(kind) {
             1 => "Stone Wall",
@@ -137,7 +153,9 @@ impl ItemDrop {
         style: &LightStyle,
         anim_time: f32,
     ) -> u32 {
-        let uv = if is_wall(self.kind) {
+        let uv = if is_weapon(self.kind) {
+            lookups.shuriken_uv()
+        } else if is_wall(self.kind) {
             lookups.wall_icon_uv(wall_id(self.kind))
         } else {
             lookups.plain_tex(self.kind).map(|t| t.uv)
@@ -203,6 +221,11 @@ mod tests {
         assert_eq!(wall_id(wall), 2);
         assert_eq!(name(wall), "Dirt Wall");
         assert_eq!(name(1), "Stone");
+        let shuriken = WEAPON_ITEM_BASE + 1;
+        assert!(is_weapon(shuriken));
+        assert!(!is_wall(shuriken));
+        assert_eq!(weapon_id(shuriken), 1);
+        assert_eq!(name(shuriken), "Shuriken");
     }
 
     #[test]

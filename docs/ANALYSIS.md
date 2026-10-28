@@ -425,7 +425,16 @@ sine bob (25 HP, 14 damage) and a zombie standing in for `AI_003_Fighters`: an 1
 with 45 HP, 14 damage, a 0.6 px/tick chase toward the player, a jump when a one-tile ledge
 blocks the path, and 6 damage/second while the world is in daylight (the vanilla burn).
 Night spawns mix zombies, demon eyes and slimes; daytime spawns are slimes. Up to four NPCs
-are kept near the player and respawn every six seconds. The player has 100 HP,
+are kept near the player and respawn every six seconds.
+
+`projectile.rs` is the first `Projectile.cs` pass: the starting Shuriken item (a
+`WEAPON_ITEM_BASE + 1` hotbar kind) throws `ProjectileID.Shuriken` (`Projectile_3`) toward
+the cursor at 11 px/tick. The simulation is fixed 60 Hz with two sub-steps so the 6×6
+hitbox cannot tunnel; solid tiles reflect the velocity with 0.6 damping (up to six
+bounces), the first touched NPC takes 10 damage through the shared `Npc::hurt` path, and
+the projectile expires after 2 s. It is drawn rotated in the UI range, tinted by the light
+map. Not ported: the full `Projectile.cs` behaviours (homing, pierce, gravity per type,
+`Projectile.NewProjectile` data) and projectile-vs-projectile logic. The player has 100 HP,
 0.8 s hurt cooldown, knockback, instant respawn on death and a HUD health bar. LMB over a
 slime within four tiles deals 15 melee damage with a 0.3 s cooldown; damaged slimes show
 an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by the tile

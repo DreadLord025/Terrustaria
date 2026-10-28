@@ -121,6 +121,7 @@ pub fn load_world_images(
         "NPC_3",
         "Rain",
         "Dust",
+        "Projectile_3",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -259,6 +260,8 @@ pub struct Lookups {
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
     pub dust: Option<tr_render::SheetRect>,
+    /// `Projectile_3.png`: the 22x22 shuriken frame.
+    pub shuriken: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -280,6 +283,7 @@ impl Lookups {
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
+            shuriken: atlas.sheet("Projectile_3").copied(),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
@@ -374,6 +378,19 @@ impl Lookups {
             return None;
         }
         Some(uv_rect(rect, self.atlas_size, x, 0, 2, 40))
+    }
+
+    /// UV of the shuriken projectile/item sprite.
+    pub fn shuriken_uv(&self) -> Option<[f32; 4]> {
+        let rect = self.shuriken.as_ref()?;
+        Some(uv_rect(
+            rect,
+            self.atlas_size,
+            0,
+            0,
+            rect.width,
+            rect.height,
+        ))
     }
 
     /// UV of a representative wall cell, used as the inventory/drop icon.
