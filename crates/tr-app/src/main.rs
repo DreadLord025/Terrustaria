@@ -524,6 +524,29 @@ fn lerp3(a: [f32; 3], b: [f32; 3], t: f32) -> [f32; 4] {
     ]
 }
 
+/// The debug font is ASCII-only; transliterate Cyrillic names so they stay readable.
+fn display_name(name: &str) -> String {
+    const CYRILLIC: &str = "АБВГДЕЁЖЗИЙКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзийклмнопрстуфхцчшщъыьэюя";
+    const LATIN: &[&str] = &[
+        "A", "B", "V", "G", "D", "E", "Yo", "Zh", "Z", "I", "Y", "K", "L", "M", "N", "O",
+        "P", "R", "S", "T", "U", "F", "Kh", "Ts", "Ch", "Sh", "Shch", "", "Y", "", "E", "Yu",
+        "Ya", "a", "b", "v", "g", "d", "e", "yo", "zh", "z", "i", "y", "k", "l", "m", "n",
+        "o", "p", "r", "s", "t", "u", "f", "kh", "ts", "ch", "sh", "shch", "", "y", "", "e",
+        "yu", "ya",
+    ];
+    let mut out = String::with_capacity(name.len());
+    for ch in name.chars() {
+        if let Some(idx) = CYRILLIC.chars().position(|c| c == ch) {
+            out.push_str(LATIN[idx]);
+        } else if ch.is_ascii() {
+            out.push(ch);
+        } else {
+            out.push('?');
+        }
+    }
+    out
+}
+
 fn draw_sky(r: &mut SpriteRenderer, camera: Vec2, zoom: f32, screen: Vec2, horizon_px: f32) {
     // Screen-space gradient: sky at the surface, fading to cave darkness with depth.
     // Replaced later by the real sky/parallax/background layers.
@@ -672,7 +695,7 @@ fn draw_debug(
     lines.push((
         format!(
             "world '{}'   tile mem {:.0} MB   atlas {}x{} ({:.0} MB)",
-            world.name.chars().map(|c| if c.is_ascii() { c } else { '?' }).collect::<String>(),
+            display_name(&world.name),
             world.memory_bytes() as f32 / 1e6,
             atlas_stats.0,
             atlas_stats.1,
