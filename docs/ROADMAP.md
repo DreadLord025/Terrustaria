@@ -215,14 +215,14 @@ holding/use, buffs, hooks/mounts/gravity flips, and the rest of the 55k-line `Pl
 
 ## Milestone 3 — items, inventory, crafting, UI
 
-✅ *First sandbox pass*: 4-slot hotbar (Dirt/Stone/Torch/Copper), LMB mining with per-kind
-timers, RMB placement with reach/support/overlap checks, mined blocks added to the slot,
-placement consumed, local 5×5 re-framing, target outline and F9/save-on-close to
-`.trwld`.
+✅ *Second sandbox pass*: 10-slot dynamic hotbar, LMB mining with per-kind timers, RMB
+placement with reach/support/overlap checks, drops as physics entities with magnet pickup
+into matching/empty slots, placement consumed, local 5×5 re-framing, target outline and
+F9/save-on-close to `.trwld` + a 10-slot `.trplayer` sidecar.
 
-Remaining: item entities and pickup, tool tiers/durability and proper `Item.cs` use
-logic, the full inventory/hotbar UI, chests, crafting (`Recipe.cs`), prefixes, equipment
-slots, wall placement, paint and actuators. A playable subset (tools, weapons, blocks,
+Remaining: tool tiers/durability and proper `Item.cs` use logic, the full inventory/hotbar
+UI, chests, crafting (`Recipe.cs`), prefixes, equipment slots, wall placement, paint and
+actuators. A playable subset (tools, weapons, blocks,
 potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lines.
 
 ## Milestone 4 — NPCs, combat, projectiles

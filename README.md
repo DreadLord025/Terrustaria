@@ -124,13 +124,14 @@ snowflakes that thicken during a storm.
   NPC within four tiles performs a 15-damage melee hit with a short cooldown; damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
-- **Editing & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore), RMB
-  places the selected block, 1–4 select Dirt/Stone/Torch/Copper, mined blocks go into the
-  hotbar counts, and F9 (or closing the window) writes the world back to `.trwld` plus the
-  player state to a `.trplayer` sidecar (position, HP and slot counts). Edits
-  bump the world revision, update the column surface, re-frame the 5×5 neighbourhood and
-  invalidate the light/instance caches. No item entities, tools, reach-through-walls or
-  chests yet.
+- **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore),
+  RMB places the selected block, 1–9/0 select one of ten hotbar slots. Mined tiles spawn
+  `Terraria.Item`-style drops with gravity, bouncing and a ground bob; walking close
+  magnetises them into a matching stack or the first empty slot. F9 (or closing the window)
+  writes the world back to `.trwld` plus the player state to a `.trplayer` sidecar
+  (position, HP and ten slot kinds/counts). Edits bump the world revision, update the
+  column surface, re-frame the 5×5 neighbourhood and invalidate the light/instance caches.
+  No tool requirements, reach-through-walls or chests yet.
 - **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
   F2 light mode, F5 respawn). `TR_CAM`/`TR_PAN` switch to the free debug camera; `TR_NOPLAYER`
   hides the player for pixel comparisons.
@@ -164,8 +165,8 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 ## What is *not* implemented (yet)
 
-Items beyond the starter hotbar, the full NPC roster, projectiles, the full
-inventory/crafting/chests UI, audio, networking. The player is a movement/visual
+The full item list (tools, weapons, potions), the full inventory/crafting/chests UI, the
+NPC roster, projectiles, audio and networking are still missing. The player is a movement/visual
 first pass: no item use/combat variety, armor, buffs or drowning visuals. The
 `Waterfall_*` overlay at half-brick spouts, water
 styles, shimmer sparkles and the original's four-corner liquid surface mesh are still

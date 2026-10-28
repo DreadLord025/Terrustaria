@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 mod assets;
+mod item;
 mod npc;
 mod persist;
 mod player;
@@ -13,6 +14,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use glam::Vec2;
+use item::ItemDrop;
 use npc::{Npc, NpcKind};
 use player::{Player, PlayerInput};
 use rain::Rain;
@@ -34,11 +36,49 @@ const TEXT: [f32; 4] = [0.85, 0.90, 0.95, 1.0];
 const ACCENT: [f32; 4] = [0.45, 0.85, 0.55, 1.0];
 const WARN: [f32; 4] = [0.95, 0.70, 0.30, 1.0];
 
+const HOTBAR: usize = 10;
+
 #[derive(Clone, Copy)]
 struct ItemSlot {
     kind: u16,
     name: &'static str,
     count: u32,
+}
+
+/// Display name for a mined block. `Terraria.Item` would resolve these from
+/// `ItemID`/`Lang`, which we do not have yet.
+fn item_name(kind: u16) -> &'static str {
+    match kind {
+        0 => "Dirt",
+        1 => "Stone",
+        2 => "Grass Block",
+        4 => "Torch",
+        5 => "Wood",
+        6 => "Iron Ore",
+        7 => "Copper Ore",
+        8 => "Gold Ore",
+        9 => "Silver Ore",
+        53 => "Sand Block",
+        57 => "Ash Block",
+        58 => "Hellstone",
+        147 => "Snow Block",
+        _ => "Block",
+    }
+}
+
+/// Finds a hotbar slot for a picked-up item: an existing stack of the same kind, or
+/// an empty slot (which adopts the item's kind/name).
+fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usize> {
+    if let Some(i) = inventory.iter().position(|s| s.count > 0 && s.kind == kind) {
+        return Some(i);
+    }
+    let i = inventory.iter().position(|s| s.count == 0)?;
+    inventory[i] = ItemSlot {
+        kind,
+        name: item_name(kind),
+        count: 0,
+    };
+    Some(i)
 }
 
 fn main() -> Result<()> {
@@ -412,28 +452,28 @@ fn main() -> Result<()> {
     let follow_player = player.is_some()
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
-    let mut inventory = [
-        ItemSlot {
+    let mut inventory: [ItemSlot; HOTBAR] = std::array::from_fn(|i| match i {
+        0 => ItemSlot {
             kind: 0,
             name: "Dirt",
             count: 50,
         },
-        ItemSlot {
+        1 => ItemSlot {
             kind: 1,
             name: "Stone",
             count: 50,
         },
-        ItemSlot {
+        2 => ItemSlot {
             kind: 4,
             name: "Torch",
             count: 99,
         },
-        ItemSlot {
-            kind: 7,
-            name: "Copper",
+        _ => ItemSlot {
+            kind: 0,
+            name: "",
             count: 0,
         },
-    ];
+    });
     if world_path.extension().is_some_and(|e| e == "trwld") {
         if let Some(saved) = persist::load(&world_path) {
             if let Some(p) = player.as_mut() {
@@ -442,10 +482,12 @@ fn main() -> Result<()> {
                     p.y = saved.y;
                 }
                 p.hp = saved.hp.clamp(1, p.max_hp);
-                for (i, (kind, count)) in saved.inventory.iter().enumerate() {
-                    if inventory[i].kind == *kind {
-                        inventory[i].count = *count;
-                    }
+                for (i, (kind, count)) in saved.inventory.iter().enumerate().take(HOTBAR) {
+                    inventory[i] = ItemSlot {
+                        kind: *kind,
+                        name: item_name(*kind),
+                        count: *count,
+                    };
                 }
             }
         }
@@ -537,6 +579,9 @@ fn main() -> Result<()> {
         liquid_accum: 0.0,
         liquid_tick: 0,
         rain,
+        items: Vec::new(),
+        item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
+        item_accum: 0.0,
         world_key: None,
     };
     event_loop.run_app(&mut app)?;
@@ -596,7 +641,7 @@ struct App {
     npc_timer: f32,
     npc_rng: u64,
     attack_cd: f32,
-    inventory: [ItemSlot; 4],
+    inventory: [ItemSlot; HOTBAR],
     selected: usize,
     mouse_pos: Vec2,
     mine_down: bool,
@@ -639,6 +684,10 @@ struct App {
     liquid_tick: u32,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     rain: Rain,
+    /// World item drops (`Terraria.Item` first pass).
+    items: Vec<ItemDrop>,
+    item_rng: u64,
+    item_accum: f32,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     world_key: Option<WorldFrameKey>,
 }
@@ -662,6 +711,8 @@ struct WorldFrameKey {
     player_key: u32,
     /// Hash of all NPC positions/animations.
     npc_key: u32,
+    /// Item drops and their ground-bob step.
+    items_key: u32,
     world_revision: u64,
 }
 
@@ -875,6 +926,12 @@ impl ApplicationHandler for App {
                             KeyCode::Digit2 => self.selected = 1,
                             KeyCode::Digit3 => self.selected = 2,
                             KeyCode::Digit4 => self.selected = 3,
+                            KeyCode::Digit5 => self.selected = 4,
+                            KeyCode::Digit6 => self.selected = 5,
+                            KeyCode::Digit7 => self.selected = 6,
+                            KeyCode::Digit8 => self.selected = 7,
+                            KeyCode::Digit9 => self.selected = 8,
+                            KeyCode::Digit0 => self.selected = 9,
                             KeyCode::Equal | KeyCode::NumpadAdd => {
                                 self.zoom = (self.zoom * 1.25).min(8.0)
                             }
@@ -1125,13 +1182,53 @@ impl App {
         }
     }
 
-    fn slot_for_kind(kind: u16) -> Option<usize> {
-        match kind {
-            0 | 2 => Some(0),
-            1 => Some(1),
-            4 => Some(2),
-            6..=9 => Some(3),
-            _ => None,
+    /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
+    fn update_items(&mut self, dt: f32) {
+        let step = 1.0 / 60.0;
+        let mut acc = self.item_accum + dt.min(0.25);
+        let mut steps = 0;
+        while acc >= step && steps < 8 {
+            let player_center = self
+                .player
+                .as_ref()
+                .map(|p| Vec2::new(p.center().0, p.center().1));
+            let mut i = 0;
+            while i < self.items.len() {
+                let mut drop = self.items[i].clone();
+                if drop.update(&self.world, player_center, step) {
+                    if let Some(slot) = slot_for_pickup(&mut self.inventory, drop.kind) {
+                        self.inventory[slot].count =
+                            self.inventory[slot].count.saturating_add(drop.count);
+                        self.items.swap_remove(i);
+                        continue;
+                    }
+                }
+                self.items[i] = drop;
+                i += 1;
+            }
+            acc -= step;
+            steps += 1;
+        }
+        self.item_accum = acc.min(step * 8.0);
+    }
+
+    /// Spawns the drop left by a broken tile, with a small random pop like `Item.NewItem`.
+    fn spawn_item_drop(&mut self, kind: u16, tx: i32, ty: i32) {
+        let r1 = rand01(&mut self.item_rng);
+        let r2 = rand01(&mut self.item_rng);
+        let r3 = rand01(&mut self.item_rng);
+        let drop = ItemDrop::new(
+            kind,
+            1,
+            tx as f32 * TILE_PX + 1.0,
+            ty as f32 * TILE_PX,
+            (r1 * 2.0 - 1.0) * 1.4,
+            -2.2 - r2 * 1.2,
+            r3 * std::f32::consts::TAU,
+        );
+        self.items.push(drop);
+        if self.items.len() > 300 {
+            self.items.remove(0);
         }
     }
 
@@ -1139,9 +1236,7 @@ impl App {
         let Some(kind) = edit::break_tile(&mut self.world, tx, ty) else {
             return;
         };
-        if let Some(slot) = Self::slot_for_kind(kind) {
-            self.inventory[slot].count = self.inventory[slot].count.saturating_add(1);
-        }
+        self.spawn_item_drop(kind, tx, ty);
         self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
     }
@@ -1227,6 +1322,7 @@ impl App {
         self.update_npcs(dt);
         self.update_liquids(dt);
         self.update_rain(dt, screen);
+        self.update_items(dt);
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
@@ -1266,6 +1362,7 @@ impl App {
                 has_liquids,
                 liquids,
                 rain,
+                items,
                 world_key,
                 ..
             } = self;
@@ -1359,6 +1456,7 @@ impl App {
                     },
                     player_key,
                     npc_key,
+                    items_key: item::render_key(items, ((anim_time * 8.0) as u32) & 15),
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -1391,6 +1489,7 @@ impl App {
                         player_assets,
                         npcs,
                         npc_assets,
+                        items,
                         *edit_target,
                     );
                     *world_key = Some(key);
@@ -2303,6 +2402,7 @@ struct TileDrawStats {
     quads: u32,
     foliage: u32,
     liquids: u32,
+    items: u32,
     light_ms: f32,
     draw_ms: f32,
     instances: u32,
@@ -2397,6 +2497,7 @@ fn draw_tiles(
     player_assets: &PlayerAssets,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
+    items: &[ItemDrop],
     edit_target: Option<(i32, i32)>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
@@ -2624,6 +2725,9 @@ fn draw_tiles(
 
     stats.liquids = draw_liquids(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+    for it in items {
+        stats.items += it.draw(r, lookups, light, style, anim_time);
+    }
     stats.quads += draw_npcs(r, npc_assets, npcs, light, style, anim_time);
     if let Some(p) = player {
         stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
@@ -2641,7 +2745,8 @@ fn draw_tiles(
             r.push_sprite([pos[0] + dx, pos[1] + dy], [w, h], white, c);
         }
     }
-    stats.instances = stats.quads + stats.walls + stats.dark_rects + stats.foliage + stats.liquids;
+    stats.instances =
+        stats.quads + stats.walls + stats.dark_rects + stats.foliage + stats.liquids + stats.items;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
     stats
 }
@@ -3094,12 +3199,12 @@ fn draw_hud(
     r: &mut SpriteRenderer,
     screen: Vec2,
     lookups: &assets::Lookups,
-    inventory: &[ItemSlot; 4],
+    inventory: &[ItemSlot; HOTBAR],
     selected: usize,
     player: Option<&Player>,
 ) {
-    let slot = 52.0;
     let gap = 8.0;
+    let slot = 52.0f32.min((screen.x - 40.0 - gap * (HOTBAR - 1) as f32) / HOTBAR as f32);
     let x0 = 20.0;
     let y0 = screen.y - 20.0 - slot;
     for (i, item) in inventory.iter().enumerate() {
@@ -3116,16 +3221,18 @@ fn draw_hud(
                 r.push_ui_rect([x + dx, y0 + dy], [w, h], c);
             }
         }
+        let key_label = if i == 9 {
+            "0".to_string()
+        } else {
+            format!("{}", i + 1)
+        };
+        r.push_text(x + 3.0, y0 + 3.0, 1.0, [0.65, 0.70, 0.78, 1.0], &key_label);
+        if item.count == 0 {
+            continue;
+        }
         if let Some(tex) = lookups.plain_tex(item.kind) {
             r.push_ui_sprite([x + 8.0, y0 + 6.0], [36.0, 36.0], tex.uv, [1.0; 4]);
         }
-        r.push_text(
-            x + 3.0,
-            y0 + 3.0,
-            1.0,
-            [0.65, 0.70, 0.78, 1.0],
-            &format!("{}", i + 1),
-        );
         let count = format!("{}", item.count);
         let tw = r.text_width(&count, 1.0);
         r.push_text(
@@ -3136,14 +3243,13 @@ fn draw_hud(
             &count,
         );
     }
-    let item = &inventory[selected];
-    r.push_text(
-        x0,
-        y0 - 16.0,
-        1.5,
-        TEXT,
-        &format!("{} x{}", item.name, item.count),
-    );
+    let item = &inventory[selected.min(HOTBAR - 1)];
+    let label = if item.count == 0 {
+        "Empty".to_string()
+    } else {
+        format!("{} x{}", item.name, item.count)
+    };
+    r.push_text(x0, y0 - 16.0, 1.5, TEXT, &label);
 
     if let Some(p) = player {
         let w = 220.0;
@@ -3295,11 +3401,12 @@ fn draw_debug(
     ));
     lines.push((
         format!(
-            "visible tiles {}   quads {}   foliage {}   liquids {}   total {}   grid {}x{}",
+            "visible tiles {}   quads {}   foliage {}   liquids {}   items {}   total {}   grid {}x{}",
             tile.visible,
             tile.quads,
             tile.foliage,
             tile.liquids,
+            tile.items,
             world.tiles.len(),
             world.width,
             world.height
@@ -3449,6 +3556,33 @@ fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pickup_prefers_stacks_then_empty_slots() {
+        let mut inv: [ItemSlot; HOTBAR] = std::array::from_fn(|_| ItemSlot {
+            kind: 0,
+            name: "",
+            count: 0,
+        });
+        inv[0] = ItemSlot {
+            kind: 1,
+            name: "Stone",
+            count: 4,
+        };
+        assert_eq!(slot_for_pickup(&mut inv, 1), Some(0));
+        assert_eq!(slot_for_pickup(&mut inv, 7), Some(1));
+        assert_eq!(inv[1].kind, 7);
+        assert_eq!(inv[1].name, "Copper Ore");
+        assert_eq!(inv[1].count, 0);
+        for slot in &mut inv {
+            slot.count = 1;
+        }
+        assert_eq!(
+            slot_for_pickup(&mut inv, 53),
+            None,
+            "full hotbar must refuse"
+        );
+    }
 
     #[test]
     fn day_night_clock_wraps() {

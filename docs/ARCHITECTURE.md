@@ -110,8 +110,10 @@
   the world passes; `render_key` is part of the G6 frame key.
 - Editing: LMB mines with a per-tile timer, RMB places the selected hotbar block after
   reach/support/overlap checks; `tr_core::edit` performs the world change and local
-  re-frame. The 4-slot hotbar and target outline are drawn through the UI sprite batch;
-  F9/close saves the native world and a `.trplayer` sidecar with position/HP/inventory.
+  re-frame. Broken tiles spawn `item.rs` drops (gravity, bounce, magnet to the player,
+  first matching or empty slot). The 10-slot hotbar and target outline are drawn through
+  the UI sprite batch; F9/close saves the native world and a `.trplayer` sidecar with
+  position/HP/10 slots.
 - NPCs (`npc.rs`): hopping slimes with gravity/AABB collision and flying demon eyes with
   steering/bobbing; both deal contact damage and have HP. LMB over an NPC performs a melee
   hit; night spawns include demon eyes. Up to four spawn near the player; the player has

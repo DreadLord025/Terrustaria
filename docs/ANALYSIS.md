@@ -383,15 +383,22 @@ item use/placement, full draw layers (front arm, armor, accessories), buffs and 
 the world revision is bumped, the chunk is marked and the column surface is recomputed.
 `framing::reframe_area` runs the generic frame chain and the wall lookup over a 5×5
 neighbourhood, so a block edit does not need to re-frame the whole world. The app adds a
-4-slot hotbar (Dirt/Stone/Torch/Copper), LMB mining with a per-kind timer, RMB placement
-with reach/support/player-overlap checks, 1–4 selection, a target outline and F9/save-on-
-close to the native `.trwld`. Mining adds to the matching slot; placing consumes it. A
-`.trplayer` sidecar stores position, HP and the four slot counts and is applied at load if
-the saved position is not inside a solid tile.
+10-slot dynamic hotbar (kind/name/count, empty slots adopt a new kind), LMB mining with a
+per-kind timer, RMB placement with reach/support/player-overlap checks, 1–9/0 selection, a
+target outline and F9/save-on-close to the native `.trwld`. Placing consumes the slot.
 
-Not ported: item entities/drops, tool requirements and mining speed from `Item.cs`,
-inventory windows/crafting/chests, wall placement, paint, actuators/wiring, and liquid
-re-simulation after an edit.
+Broken tiles spawn an `item.rs` entity instead of teleporting into the inventory:
+`ItemDrop` applies gravity `0.3`, axis-separated collision with the tile grid, 0.35/0.3
+bounce damping and a ground bob. After a 0.35 s delay, drops within 42 px are pulled toward
+the player and collected within 10 px into the first matching stack or empty slot. Drops
+are drawn from the tile's plain 16×16 frame with the light map (separate `Item_*` sprites
+are not extracted yet). A `.trplayer` sidecar stores position, HP and the ten slots (the
+version-1 loader accepts the old four-slot tail) and is applied at load if the saved
+position is not inside a solid tile.
+
+Not ported: the full `Item.cs` use logic, tool requirements and mining speed, item sprite
+sheet lookup, inventory windows/crafting/chests, wall placement, paint, actuators/wiring,
+and liquid re-simulation after an edit.
 
 ## NPCs and combat (M4 first pass)
 
