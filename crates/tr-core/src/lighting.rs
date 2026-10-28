@@ -493,6 +493,11 @@ impl LightMap {
             return;
         }
 
+        // The surface cutoff of a column is the top of its terrain *or* its topmost
+        // liquid. A lakebed is under water, so it must not receive a direct sky
+        // seed; light reaches it through the water with the water decay instead.
+        let cutoffs: Vec<i32> = (rx0..=rx1).map(|x| surface_cutoff(world, x)).collect();
+
         // C1/C3: seeding goes to Rayon's persistent global pool once the rect is
         // large enough to amortise task dispatch; see `PAR_LIGHT_MIN_CELLS`.
         let wu = w as usize;
@@ -511,6 +516,7 @@ impl LightMap {
                         wu,
                         width,
                         params,
+                        &cutoffs,
                         colors_row,
                         mask_row,
                     )
@@ -529,6 +535,7 @@ impl LightMap {
                         wu,
                         width,
                         params,
+                        &cutoffs,
                         colors_row,
                         mask_row,
                     )
@@ -584,6 +591,7 @@ impl LightMap {
 
 /// Seeds one row of the light map (`TileLightScanner` per tile). Returns how many
 /// tiles received light. Rows never share cells, so this is callable from Rayon tasks.
+#[allow(clippy::too_many_arguments)]
 fn seed_row_range(
     world: &World,
     rx0: i32,
@@ -591,6 +599,7 @@ fn seed_row_range(
     wu: usize,
     width: usize,
     params: &LightParams,
+    cutoffs: &[i32],
     colors_row: &mut [[f32; 3]],
     mask_row: &mut [Mask],
 ) -> u32 {
@@ -600,7 +609,7 @@ fn seed_row_range(
         let x = rx0 + lx as i32;
         let tile = &world.tiles[row + x as usize];
         mask_row[lx] = mask_of(tile);
-        let c = seed(world, tile, x, y, params);
+        let c = seed(world, tile, x, y, params, cutoffs[lx]);
         if c[0] > 0.0 || c[1] > 0.0 || c[2] > 0.0 {
             lit += 1;
         }
@@ -698,6 +707,26 @@ fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx:
     }
 }
 
+/// Top of the column's medium: the first solid tile or the first liquid cell,
+/// whichever is higher. Seeding stops there, so a lakebed under water is lit by
+/// the attenuated light coming through the water instead of a direct sky seed.
+fn surface_cutoff(world: &World, x: i32) -> i32 {
+    if x < 0 || x >= world.width {
+        return 0;
+    }
+    let first_solid = world
+        .column_surface
+        .get(x as usize)
+        .copied()
+        .unwrap_or(world.world_surface as i32);
+    for y in 0..first_solid.max(0) {
+        if world.tile(x, y).is_some_and(|t| t.liquid > 0) {
+            return y;
+        }
+    }
+    first_solid
+}
+
 /// `TileLightScanner.GetTileMask`.
 fn mask_of(tile: &Tile) -> Mask {
     if light_blocked(tile) && tile.kind != 131 && tile.slope() == 0 {
@@ -720,17 +749,12 @@ fn light_blocked(tile: &Tile) -> bool {
 }
 
 /// `TileLightScanner.GetTileLight`.
-fn seed(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams) -> [f32; 3] {
+fn seed(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, local_surface: i32) -> [f32; 3] {
     let mut c = [0.0f32; 3];
     // The original seeds surface light up to the global `Main.worldSurface`. That
     // leaves hills above the average bright and valleys below it unlit. Seeding up to
-    // each column's own first solid tile keeps every slope in sunlight; the light map
-    // still stops at solid blocks, so caves stay dark.
-    let local_surface = world
-        .column_surface
-        .get(x.max(0) as usize)
-        .copied()
-        .unwrap_or(world.world_surface as i32);
+    // each column's own surface keeps every slope in sunlight; the light map still
+    // stops at solid blocks, so caves stay dark.
     if y <= local_surface {
         surface_light(world, tile, x, y, p, &mut c);
     } else if y > world.height - 200 {

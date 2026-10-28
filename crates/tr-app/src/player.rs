@@ -20,7 +20,11 @@ const MAX_RUN: f32 = 3.0;
 const GROUND_ACCEL: f32 = 0.2;
 const AIR_ACCEL: f32 = 0.1;
 const GROUND_FRICTION: f32 = 0.2;
-const JUMP_SPEED: f32 = 5.2;
+/// `Player.jumpSpeed` / `Player.jumpHeight`: holding the jump key keeps the
+/// upward velocity at `JUMP_SPEED` for `JUMP_HEIGHT` ticks, so tap and hold jumps
+/// reach different heights.
+const JUMP_SPEED: f32 = 5.01;
+const JUMP_HEIGHT: i32 = 15;
 const STEP_HEIGHT: f32 = 16.0;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
@@ -58,6 +62,10 @@ pub struct Player {
     /// Seconds spent in walk animation.
     pub walk_time: f32,
     pub in_water: bool,
+    /// Remaining ticks of the held-jump boost (`Player.jump`).
+    jump: i32,
+    /// Jump was held on the previous fixed step, for press-edge detection.
+    jump_held: bool,
     pub spawn_x: f32,
     pub spawn_y: f32,
     pub hp: i32,
@@ -89,6 +97,8 @@ impl Player {
             facing: 1,
             walk_time: 0.0,
             in_water: false,
+            jump: 0,
+            jump_held: false,
             spawn_x: sx,
             spawn_y: sy,
             hp: 100,
@@ -113,6 +123,7 @@ impl Player {
         self.vx = 0.0;
         self.vy = 0.0;
         self.on_ground = false;
+        self.jump = 0;
         self.fall_start = y / TILE_PX;
     }
 
@@ -124,6 +135,8 @@ impl Player {
         self.vx = 0.0;
         self.vy = 0.0;
         self.on_ground = false;
+        self.jump = 0;
+        self.jump_held = false;
         self.walk_time = 0.0;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
@@ -212,13 +225,25 @@ impl Player {
         let gravity = if self.in_water { 0.12 } else { GRAVITY };
         self.vy = (self.vy + gravity).min(if self.in_water { 2.0 } else { MAX_FALL });
 
+        let jump_pressed = input.jump && !self.jump_held;
+        self.jump_held = input.jump;
         if input.jump {
-            if self.on_ground {
+            if self.on_ground && jump_pressed {
                 self.vy = -JUMP_SPEED;
+                self.jump = JUMP_HEIGHT;
                 self.on_ground = false;
+            } else if self.jump > 0 {
+                if self.vy == 0.0 {
+                    self.jump = 0;
+                } else {
+                    self.vy = -JUMP_SPEED;
+                    self.jump -= 1;
+                }
             } else if self.in_water {
                 self.vy = -2.0;
             }
+        } else {
+            self.jump = 0;
         }
 
         if self.vx != 0.0 {
@@ -564,6 +589,51 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         assert!(p.y < grounded_y - 4.0, "jump did not rise: {}", p.y);
+    }
+
+    #[test]
+    fn holding_jump_rises_higher_than_tapping() {
+        let w = ground_world();
+        let mut tap = Player::spawn(&w);
+        for _ in 0..120 {
+            tap.update(&w, PlayerInput::default());
+        }
+        let mut tap_peak = tap.y;
+        tap.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        for _ in 0..60 {
+            tap.update(&w, PlayerInput::default());
+            tap_peak = tap_peak.min(tap.y);
+        }
+
+        let mut hold = Player::spawn(&w);
+        for _ in 0..120 {
+            hold.update(&w, PlayerInput::default());
+        }
+        let mut hold_peak = hold.y;
+        for _ in 0..30 {
+            hold.update(
+                &w,
+                PlayerInput {
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+            hold_peak = hold_peak.min(hold.y);
+        }
+        for _ in 0..60 {
+            hold.update(&w, PlayerInput::default());
+            hold_peak = hold_peak.min(hold.y);
+        }
+        assert!(
+            hold_peak + 20.0 < tap_peak,
+            "hold peak {hold_peak} vs tap peak {tap_peak}"
+        );
     }
 
     #[test]

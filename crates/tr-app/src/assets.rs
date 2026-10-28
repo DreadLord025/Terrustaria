@@ -164,6 +164,18 @@ pub fn load_world_images(
         }
     }
 
+    // `DrawTile_LiquidBehindTile`: `Liquid_*` is the 16 px partial strip and
+    // `LiquidSlope_*` the four diagonal masks drawn behind blocks that stand in
+    // liquid.
+    for i in 0..15 {
+        for prefix in ["Liquid_", "LiquidSlope_"] {
+            let name = format!("{prefix}{i}");
+            if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
+    }
+
     if !missing.is_empty() {
         log::warn!(
             "{} world sheets have no matching texture (first 10: {:?})",
@@ -263,6 +275,10 @@ pub struct Lookups {
     pub clouds: Vec<Option<CloudTex>>,
     /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
     pub liquids: Vec<Option<tr_render::SheetRect>>,
+    /// `LiquidSlope_0..14`: 4 diagonal masks (18 px stride) drawn behind slopes.
+    pub liquid_slopes: Vec<Option<tr_render::SheetRect>>,
+    /// `Liquid_0..14`: 16 px partial strips (18 px stride) drawn behind blocks.
+    pub liquid_parts: Vec<Option<tr_render::SheetRect>>,
     /// `Rain.png`: 2x40 drop frames at 4 px strides.
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
@@ -289,6 +305,8 @@ impl Lookups {
             foliage: vec![None; 32],
             clouds: vec![None; 42],
             liquids: vec![None; 15],
+            liquid_slopes: vec![None; 15],
+            liquid_parts: vec![None; 15],
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
@@ -373,6 +391,12 @@ impl Lookups {
             }
         }
         for i in 0..me.liquids.len() {
+            if let Some(rect) = atlas.sheet(&format!("LiquidSlope_{i}")) {
+                me.liquid_slopes[i] = Some(*rect);
+            }
+            if let Some(rect) = atlas.sheet(&format!("Liquid_{i}")) {
+                me.liquid_parts[i] = Some(*rect);
+            }
             if let Some(rect) = atlas.sheet(&format!("water_{i}")) {
                 me.liquids[i] = Some(*rect);
             }
@@ -435,6 +459,32 @@ impl Lookups {
     pub fn liquid_uv(&self, index: usize, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
         let rect = self.liquids.get(index)?.as_ref()?;
         Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a partial `Liquid_*` strip (16 px tall, 18 px frame stride).
+    pub fn liquid_part_uv(
+        &self,
+        index: usize,
+        sx: i32,
+        sy: i32,
+        w: u32,
+        h: u32,
+    ) -> Option<[f32; 4]> {
+        let rect = self.liquid_parts.get(index)?.as_ref()?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a `LiquidSlope_*` mask: 18 px stride, `slope` in 1..=4.
+    pub fn liquid_slope_uv(
+        &self,
+        index: usize,
+        slope: u8,
+        sy: i32,
+        h: u32,
+    ) -> Option<[f32; 4]> {
+        let rect = self.liquid_slopes.get(index)?.as_ref()?;
+        let sx = 18 * (slope.clamp(1, 4) as i32 - 1);
+        Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
     }
 
     /// UV rectangle covering a whole raw (non-tiled) sheet, e.g. the sky gradient.

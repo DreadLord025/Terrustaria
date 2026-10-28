@@ -8,6 +8,22 @@ use crate::player::{Player, collides_rect};
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 8.0;
 
+/// `Collision.WetCollision` (simplified): any water tile overlapping the body.
+fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+    let x0 = (x / TILE_PX).floor() as i32;
+    let x1 = ((x + w - 0.01) / TILE_PX).floor() as i32;
+    let y0 = (y / TILE_PX).floor() as i32;
+    let y1 = ((y + h - 0.01) / TILE_PX).floor() as i32;
+    for ty in y0..=y1 {
+        for tx in x0..=x1 {
+            if world.tile(tx, ty).is_some_and(|t| t.liquid > 0) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NpcKind {
     Slime,
@@ -63,6 +79,8 @@ pub struct Npc {
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
+    /// `ai[3]`: x position while descending through water, for the bounce flip.
+    wet_x: f32,
 }
 
 impl Npc {
@@ -157,6 +175,7 @@ impl Npc {
             hurt_cd: 0.0,
             burn: 0.0,
             wants_minion: false,
+            wet_x: 0.0,
         }
     }
 
@@ -213,7 +232,13 @@ impl Npc {
             self.on_ground = false;
             self.hop_timer = 1.0 + (self.anim * 7.0).sin().abs() * 0.5;
         }
-        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        // `NPC.UpdateNPC_Gravity`: water lowers gravity and the fall cap.
+        let wet = is_wet(world, self.x, self.y, w, h);
+        if wet {
+            self.vy = (self.vy + 0.2).min(7.0);
+        } else {
+            self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        }
 
         let nx = self.x + self.vx;
         if !collides_rect(world, nx, self.y, w, h) {
@@ -222,6 +247,7 @@ impl Npc {
             self.vx = -self.vx * 0.4;
         }
         let ny = self.y + self.vy;
+        let mut collide_y = false;
         if !collides_rect(world, self.x, ny, w, h) {
             self.y = ny;
             self.on_ground = false;
@@ -231,10 +257,33 @@ impl Npc {
             self.vy = 0.0;
             self.on_ground = true;
             self.vx *= 0.6;
+            collide_y = true;
         } else if self.vy < 0.0 {
             let ty = (ny / TILE_PX).floor() as i32;
             self.y = (ty + 1) as f32 * TILE_PX;
             self.vy = 0.0;
+            collide_y = true;
+        }
+        // `AI_001_Slimes` water tail: pushed up every tick, with a small bounce when
+        // it touches the floor or the surface, so slimes bob at the water line.
+        if wet {
+            if collide_y {
+                self.vy = -2.0;
+            }
+            if self.vy < 0.0 && self.wet_x == self.x {
+                self.facing = -self.facing;
+                self.hop_timer = 200.0 / 60.0;
+            }
+            if self.vy > 0.0 {
+                self.wet_x = self.x;
+            }
+            if self.vy > 2.0 {
+                self.vy *= 0.9;
+            }
+            self.vy -= 0.5;
+            if self.vy < -4.0 {
+                self.vy = -4.0;
+            }
         }
         if self.vx != 0.0 {
             self.facing = if self.vx > 0.0 { 1 } else { -1 };

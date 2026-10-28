@@ -504,6 +504,13 @@ fn main() -> Result<()> {
             }
         }
     }
+    if let Ok(v) = std::env::var("TR_SLIME_AT") {
+        for x in v.split(',').filter_map(|s| s.trim().parse::<i32>().ok()) {
+            if let Some(n) = Npc::spawn_slime(&world, x) {
+                npcs.push(n);
+            }
+        }
+    }
     let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
     let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
         let mut it = v.split(',');
@@ -2169,7 +2176,7 @@ fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         // Torso and shirt sheets are 9 columns wide; keep only the first column.
         torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
         shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
-        arm: sky_tex(atlas, "Player_0_7", Some((40, 56, 40, 56))),
+        arm: sky_tex(atlas, "Player_0_7", None),
         legs: sky_tex(atlas, "Player_0_10", None),
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
@@ -2188,6 +2195,42 @@ fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
         tex.uv[2],
         tex.uv[1] + dv * (r + 1.0),
     ]
+}
+
+/// UV of a 40x56 composite cell in a 9x4 player part sheet.
+fn player_cell_uv(tex: &BgTex, col: u32, row: u32) -> [f32; 4] {
+    let cols = (tex.w / 40.0).floor().max(1.0);
+    let rows = (tex.h / 56.0).floor().max(1.0);
+    let du = (tex.uv[2] - tex.uv[0]) / cols;
+    let dv = (tex.uv[3] - tex.uv[1]) / rows;
+    let c = (col as f32).min(cols - 1.0);
+    let r = (row as f32).min(rows - 1.0);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// `PlayerDrawSet.CreateCompositeData`: body frame index -> front-arm cell.
+fn arm_cell(frame: u32) -> (u32, u32) {
+    match frame {
+        0 => (2, 0),
+        1 => (3, 0),
+        2 => (4, 0),
+        3 => (5, 0),
+        4 => (6, 0),
+        5 => (2, 1),
+        6 => (3, 1),
+        7..=10 => (4, 1),
+        11..=13 => (3, 1),
+        14 => (5, 1),
+        15..=16 => (6, 1),
+        17 => (5, 1),
+        18..=19 => (3, 1),
+        _ => (2, 0),
+    }
 }
 
 fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
@@ -3108,6 +3151,22 @@ fn draw_tiles(
                         stats.walls += 1;
                     }
                 }
+                // `DrawTile_LiquidBehindTile` (solid layer): a slope that stands in
+                // liquid draws the water mask behind its open half, so the shoreline
+                // is water instead of the parallax background.
+                if solid && tile_frame.is_none_or(|f| !f.opaque) {
+                    stats.quads += draw_tile_liquid_behind(
+                        r,
+                        world,
+                        lookups,
+                        light,
+                        style,
+                        anim_time,
+                        tx,
+                        ty,
+                        tile,
+                    );
+                }
                 let Some(tf) = tile_frame else {
                     continue;
                 };
@@ -3306,6 +3365,185 @@ fn draw_liquids(
                 );
                 quads += 1;
             }
+        }
+    }
+    quads
+}
+
+/// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
+/// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
+/// water instead of the parallax background.
+#[allow(clippy::too_many_arguments)]
+fn draw_tile_liquid_behind(
+    r: &mut SpriteRenderer,
+    world: &World,
+    lookups: &assets::Lookups,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    tx: i32,
+    ty: i32,
+    tile: &tr_core::tile::Tile,
+) -> u32 {
+    if !tile.active() || td::TILE_SOLID_TOP.has(tile.kind) {
+        return 0;
+    }
+    let slope = tile.slope();
+    let neighbor = |dx: i32, dy: i32| world.tile(tx + dx, ty + dy).copied().unwrap_or_default();
+    let right = neighbor(1, 0);
+    let left = neighbor(-1, 0);
+    let above = neighbor(0, -1);
+    let below = neighbor(0, 1);
+    let mut level = tile.liquid as i32;
+    let mut kind = tile.liquid_kind();
+    let mut flag_left = false;
+    let mut flag_right = false;
+    let mut flag_above = false;
+    let mut flag_below = false;
+    if tile.liquid > 0 {
+        kind = tile.liquid_kind();
+    }
+    if right.liquid > 0 && slope != 2 && slope != 4 {
+        flag_right = true;
+        kind = right.liquid_kind();
+        level = level.max(right.liquid as i32);
+    }
+    if left.liquid > 0 && slope != 1 && slope != 3 {
+        flag_left = true;
+        kind = left.liquid_kind();
+        level = level.max(left.liquid as i32);
+    }
+    if above.liquid > 0 && slope != 3 && slope != 4 {
+        flag_above = true;
+        kind = above.liquid_kind();
+    }
+    if below.liquid > 240 && slope != 1 && slope != 2 {
+        flag_below = true;
+        kind = below.liquid_kind();
+    }
+    if !(flag_left || flag_right || flag_above || flag_below) {
+        return 0;
+    }
+    if flag_below && (flag_left || flag_right) {
+        flag_left = true;
+        flag_right = true;
+    }
+    let tex = match kind {
+        tr_core::tile::LiquidKind::Lava => 1,
+        tr_core::tile::LiquidKind::Honey => 11,
+        tr_core::tile::LiquidKind::Shimmer => 14,
+        tr_core::tile::LiquidKind::Water => 0,
+    };
+    // The original skips the partial liquid when water is both above and beside
+    // the slope, which leaves the open corner showing the parallax (a known
+    // vanilla shoreline artefact). Fill it with the side liquid instead.
+    let vanilla_draws = (!flag_above || !(flag_left || flag_right)) && !(flag_below && flag_above);
+    if !vanilla_draws && slope == 0 {
+        return 0;
+    }
+    let (px, py, src_x, src_y, mut src_w, src_h);
+    if flag_above && vanilla_draws {
+        px = tx as f32 * TILE_PX;
+        py = ty as f32 * TILE_PX;
+        src_x = 0;
+        src_y = 4;
+        src_w = 16;
+        src_h = if slope != 0 || tile.half_brick() { 12 } else { 4 };
+    } else if flag_below && !flag_left && !flag_right {
+        px = tx as f32 * TILE_PX;
+        py = ty as f32 * TILE_PX + 12.0;
+        src_x = 0;
+        src_y = 4;
+        src_w = 16;
+        src_h = 4;
+    } else {
+        let offset = ((256 - level) / 32) * 2;
+        let above_solid = world
+            .tile(tx, ty - 1)
+            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind));
+        let sy = if above.liquid == 0 && !above_solid { 0 } else { 4 };
+        px = tx as f32 * TILE_PX;
+        py = ty as f32 * TILE_PX + offset as f32;
+        src_x = 0;
+        src_y = if slope != 0 { offset } else { sy };
+        src_h = 16 - offset as u32;
+        if slope == 0 && !((flag_left && flag_right) || tile.half_brick()) && !flag_left {
+            // Water only on the right: a 4 px strip against the right edge.
+            src_w = 4;
+        } else {
+            src_w = 16;
+        }
+        if flag_left && !flag_right {
+            src_w = 4;
+        }
+    }
+    // `num15`: 1.0 at/above the surface, otherwise 0.5 (0.6/0.9 in front of a
+    // wall), with the half-brick and open-corner exceptions.
+    let mut opacity = 0.5f32;
+    if ty as f64 <= world.world_surface {
+        opacity = 1.0;
+        if tile.wall == 21 {
+            opacity = 0.9;
+        } else if tile.wall > 0 {
+            opacity = 0.6;
+        }
+    }
+    if tile.half_brick() && above.liquid > 0 && tile.wall > 0 {
+        opacity = 0.0;
+    }
+    // Fully submerged cells sit under an opaque water column: their open corner is
+    // deep water, not a window to the parallax. (The original keys this on the
+    // average surface height; per-cell submersion reads the same at the shoreline
+    // and avoids semi-transparent holes below a lake.)
+    if above.liquid > 0 {
+        opacity = 1.0;
+    }
+    if slope == 4 && left.liquid == 0 && !world.tile(tx - 1, ty).is_some_and(|t| t.active()) {
+        opacity = 0.0;
+    }
+    if slope == 3 && right.liquid == 0 && !world.tile(tx + 1, ty).is_some_and(|t| t.active()) {
+        opacity = 0.0;
+    }
+    if opacity <= 0.0 || src_w == 0 || src_h == 0 {
+        return 0;
+    }
+    let uv = if slope != 0 {
+        lookups.liquid_slope_uv(tex, slope, src_y, src_h)
+    } else {
+        // `Liquid_*` is 16 px tall; the original's 4..20 strip relies on texture
+        // clamp, which for these uniform body rows is the same as cropping.
+        let h = src_h.min(16u32.saturating_sub(src_y as u32)).max(1);
+        lookups.liquid_part_uv(tex, src_x, src_y, src_w, h)
+    };
+    let Some(uv) = uv else {
+        return 0;
+    };
+    let corners = light.corner4(tx, ty);
+    let mut quads = 0;
+    let xs = [0u32, src_w / 3, src_w * 2 / 3, src_w];
+    let ys = [0u32, src_h / 3, src_h * 2 / 3, src_h];
+    for i in 0..3 {
+        for j in 0..3 {
+            let cw = xs[i + 1] - xs[i];
+            let ch = ys[j + 1] - ys[j];
+            if cw == 0 || ch == 0 {
+                continue;
+            }
+            let u = (xs[i] + xs[i + 1]) as f32 * 0.5 / src_w as f32;
+            let v = (ys[j] + ys[j + 1]) as f32 * 0.5 / src_h as f32;
+            let tint = style.shade(bilerp_corners(corners, u, v), tx, ty, anim_time);
+            r.push_sprite(
+                [px + xs[i] as f32, py + ys[j] as f32],
+                [cw as f32, ch as f32],
+                sub_uv(uv, xs[i] as f32, ys[j] as f32, cw as f32, ch as f32),
+                [
+                    tint[0].min(1.0),
+                    tint[1].min(1.0),
+                    tint[2].min(1.0),
+                    opacity,
+                ],
+            );
+            quads += 1;
         }
     }
     quads
@@ -3578,23 +3816,46 @@ fn draw_player(
     let flip = player.facing < 0;
     let leg = player.leg_frame();
     let mut quads = 0;
-    let mut part = |tex: Option<&BgTex>, row: u32, color: [f32; 4]| {
-        if let Some(t) = tex {
-            let uv = flip_uv(player_frame_uv(t, row), flip);
-            r.push_sprite(pos, size, uv, color);
-            quads += 1;
+    let (arm_col, arm_row) = arm_cell(leg);
+    let frame_uv = |t: Option<&BgTex>| t.map(|t| flip_uv(player_frame_uv(t, leg), flip));
+    let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| {
+        t.map(|t| flip_uv(player_cell_uv(t, col, row), flip))
+    };
+    let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
+        if tex.is_some() {
+            if let Some(uv) = uv {
+                r.push_sprite(pos, size, uv, color);
+                quads += 1;
+            }
         }
     };
-    part(assets.legs.as_ref(), leg, mul(skin));
-    part(assets.pants.as_ref(), leg, mul(pants));
-    part(assets.shoes.as_ref(), leg, mul(shoes));
-    part(assets.arm.as_ref(), 0, mul(skin));
-    part(assets.torso.as_ref(), 0, mul(skin));
-    part(assets.shirt.as_ref(), 0, mul(shirt));
-    part(assets.head.as_ref(), 0, mul(skin));
-    part(assets.eye_whites.as_ref(), 0, mul(eye_white));
-    part(assets.eyes.as_ref(), 0, mul(eye));
-    part(assets.hair.as_ref(), 0, mul(hair));
+    part(assets.legs.as_ref(), frame_uv(assets.legs.as_ref()), mul(skin));
+    part(assets.pants.as_ref(), frame_uv(assets.pants.as_ref()), mul(pants));
+    part(assets.shoes.as_ref(), frame_uv(assets.shoes.as_ref()), mul(shoes));
+    // Back arm behind the torso, front arm in front of the shirt (composite layers).
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
+        mul(skin),
+    );
+    part(assets.torso.as_ref(), frame_uv(assets.torso.as_ref()), mul(skin));
+    part(assets.shirt.as_ref(), frame_uv(assets.shirt.as_ref()), mul(shirt));
+    // The frame table's arm sits on the far side of the body; column 8 is the
+    // near (item-holding) arm, which the original places with the composite
+    // shoulder rotation we do not model yet.
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        mul(skin),
+    );
+    part(assets.head.as_ref(), frame_uv(assets.head.as_ref()), mul(skin));
+    part(
+        assets.eye_whites.as_ref(),
+        frame_uv(assets.eye_whites.as_ref()),
+        mul(eye_white),
+    );
+    part(assets.eyes.as_ref(), frame_uv(assets.eyes.as_ref()), mul(eye));
+    part(assets.hair.as_ref(), frame_uv(assets.hair.as_ref()), mul(hair));
     quads
 }
 
