@@ -119,7 +119,9 @@
   position/HP/10 slots.
 - NPCs (`npc.rs`): hopping slimes with gravity/AABB collision, flying demon eyes with
   steering/bobbing and walking zombies (`AI_003_Fighters` simplified: chase, jump ledges,
-  burn at dawn); all deal contact damage and have HP. LMB over an NPC performs a melee
+  burn at dawn); all deal contact damage and have HP. King Slime (`AI_015` simplified) is a
+  98×92 boss with 2000 HP, big hops, a teleport when outrun, slime minions on landing and a
+  boss health bar; `B`/`TR_BOSS` summons it. LMB over an NPC performs a melee
   hit; night spawns mix zombies, eyes and slimes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.

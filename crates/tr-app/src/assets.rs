@@ -119,6 +119,7 @@ pub fn load_world_images(
         "NPC_1",
         "NPC_2",
         "NPC_3",
+        "NPC_50",
         "Rain",
         "Dust",
         "Projectile_3",

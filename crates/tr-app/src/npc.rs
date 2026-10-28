@@ -13,6 +13,7 @@ pub enum NpcKind {
     Slime,
     DemonEye,
     Zombie,
+    KingSlime,
 }
 
 impl NpcKind {
@@ -21,6 +22,7 @@ impl NpcKind {
             NpcKind::Slime => (30.0, 24.0),
             NpcKind::DemonEye => (30.0, 26.0),
             NpcKind::Zombie => (18.0, 40.0),
+            NpcKind::KingSlime => (98.0, 92.0),
         }
     }
 
@@ -29,6 +31,7 @@ impl NpcKind {
             NpcKind::Slime => 30,
             NpcKind::DemonEye => 25,
             NpcKind::Zombie => 45,
+            NpcKind::KingSlime => 2000,
         }
     }
 
@@ -37,6 +40,7 @@ impl NpcKind {
             NpcKind::Slime => 12,
             NpcKind::DemonEye => 14,
             NpcKind::Zombie => 14,
+            NpcKind::KingSlime => 40,
         }
     }
 }
@@ -57,6 +61,8 @@ pub struct Npc {
     pub hurt_cd: f32,
     /// Accumulated daylight burn time (zombies only).
     burn: f32,
+    /// A boss that just landed wants the app to spawn a minion (`AI_015`).
+    pub wants_minion: bool,
 }
 
 impl Npc {
@@ -83,6 +89,23 @@ impl Npc {
             if seed & 1 == 0 { 1 } else { -1 },
             0.4 + (seed % 80) as f32 * 0.01,
         ))
+    }
+
+    /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
+    pub fn spawn_king_slime(world: &World, x_tile: i32) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = NpcKind::KingSlime.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        let mut npc = Self::new(NpcKind::KingSlime, x, y, -1, 1.2);
+        npc.hp = npc.max_hp;
+        Some(npc)
     }
 
     /// Zombies walk on the surface and burn away at dawn.
@@ -133,6 +156,7 @@ impl Npc {
             anim: 0.0,
             hurt_cd: 0.0,
             burn: 0.0,
+            wants_minion: false,
         }
     }
 
@@ -171,6 +195,7 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
+            NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
         self.contact(player);
     }
@@ -303,6 +328,71 @@ impl Npc {
         }
     }
 
+    /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
+    /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
+    /// reported through `spawn_minion` so the app can add them to its NPC list.
+    fn update_king_slime(&mut self, world: &World, player: &mut Player, dt: f32) {
+        let (w, h) = NpcKind::KingSlime.size();
+        let (pcx, pcy) = player.center();
+        let (cx, cy) = self.center();
+        let dx = pcx - cx;
+        self.facing = if dx >= 0.0 { 1 } else { -1 };
+        self.hop_timer -= dt;
+        if self.on_ground && self.hop_timer <= 0.0 {
+            self.vx = self.facing as f32 * 2.4;
+            self.vy = -8.0;
+            self.on_ground = false;
+            self.hop_timer = 1.4 + (self.anim * 2.7).sin().abs() * 0.8;
+        }
+        // Teleport next to the player when they outrun the boss.
+        if (dx.abs() > 70.0 * TILE_PX || (pcy - cy).abs() > 50.0 * TILE_PX) && self.on_ground {
+            let side = if dx >= 0.0 { -1 } else { 1 };
+            let tx = ((pcx / TILE_PX) as i32 + side * 10).clamp(4, world.width - 5);
+            let top = world.surface_of(tx);
+            if top < world.height - 2 {
+                let (w2, h2) = NpcKind::KingSlime.size();
+                let nx = tx as f32 * TILE_PX + 8.0 - w2 * 0.5;
+                let ny = top as f32 * TILE_PX - h2;
+                if !collides_rect(world, nx, ny, w2, h2) {
+                    self.x = nx;
+                    self.y = ny;
+                    self.vx = 0.0;
+                    self.vy = 0.0;
+                    self.on_ground = true;
+                }
+            }
+        }
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = -self.vx * 0.4;
+        }
+        let ny = self.y + self.vy;
+        let was_air = !self.on_ground;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+            self.vx *= 0.5;
+            if was_air {
+                self.wants_minion = true;
+            }
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     fn contact(&self, player: &mut Player) {
         let (w, h) = self.kind.size();
         if self.x < player.x + crate::player::WIDTH
@@ -326,8 +416,12 @@ impl Npc {
             NpcKind::Slime => 0,
             NpcKind::DemonEye => 1,
             NpcKind::Zombie => 2,
+            NpcKind::KingSlime => 3,
         } << 5;
         h ^= ((self.anim * 6.0) as u32 % 3) << 7;
+        if self.kind == NpcKind::KingSlime {
+            h ^= self.frame() << 10;
+        }
         h
     }
 
@@ -338,6 +432,13 @@ impl Npc {
                     (self.anim * 6.0) as u32 % 3
                 } else {
                     0
+                }
+            }
+            NpcKind::KingSlime => {
+                if self.on_ground {
+                    (self.anim * 4.0) as u32 % 4
+                } else {
+                    4 + ((self.anim * 8.0) as u32 & 1)
                 }
             }
             _ => ((self.anim * 4.0) as u32) & 1,
@@ -431,6 +532,32 @@ mod tests {
             zombie.update(&w, &mut player, 1.0 / 60.0);
         }
         assert!(zombie.hp < hp, "hp {} stayed at {hp}", zombie.hp);
+    }
+
+    #[test]
+    fn king_slime_hops_toward_the_player_and_teleports() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..120 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut king = Npc::spawn_king_slime(&w, 34).unwrap();
+        assert_eq!(king.hp, 2000);
+        let start_x = king.x;
+        for _ in 0..1200 {
+            king.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(king.x < start_x, "boss did not approach");
+        assert!(player.hp < player.max_hp, "hp {}", player.hp);
+
+        // Outrun the boss: it should teleport back next to the player.
+        player.x = 4.0 * TILE_PX;
+        player.y = 30.0 * TILE_PX - crate::player::HEIGHT;
+        for _ in 0..120 {
+            king.update(&w, &mut player, 1.0 / 60.0);
+        }
+        let dx = ((king.x + 49.0) - (player.x + crate::player::WIDTH * 0.5)).abs();
+        assert!(dx < 20.0 * TILE_PX, "boss still {dx} px away");
     }
 
     #[test]

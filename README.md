@@ -23,6 +23,8 @@ clean-room analysis of the decompiled C# game.
 | Ocean beach at the world edge | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
+| ![king_slime](docs/screenshots/king_slime.png) | ![night_enemy](docs/screenshots/night_enemy.png) |
+| King Slime boss: 2000 HP, teleport and slime minions | A demon eye at night |
 
 | | |
 | --- | --- |
@@ -128,7 +130,8 @@ snowflakes that thicken during a storm.
   burns away in daylight, while a flying demon eye (25 HP, 14 damage) swoops in. LMB over an
   NPC within four tiles performs a 15-damage melee hit; selecting the starting shuriken
   stack and clicking throws a rotating `Projectile_3` (10 damage, tile bounces, 2 s
-  lifetime) toward the cursor. Damaged
+  lifetime) toward the cursor. `B` summons King Slime: 2000 HP, big hops, a teleport when
+  the player outruns it, slime minions on landing and a boss bar. Damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
 - **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore) or
@@ -247,6 +250,7 @@ another seed.
 | `TR_NOPLAYER=1` | Hide and disable the player (free-camera A/B captures) |
 | `TR_XY=x,y` | Spawn the player at a tile coordinate (camera follows) |
 | `TR_THROW=1` | Throw one shuriken to the right at startup (projectile smoke test) |
+| `TR_BOSS=1` | Spawn King Slime near the player at startup |
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 

@@ -427,6 +427,14 @@ blocks the path, and 6 damage/second while the world is in daylight (the vanilla
 Night spawns mix zombies, demon eyes and slimes; daytime spawns are slimes. Up to four NPCs
 are kept near the player and respawn every six seconds.
 
+King Slime (`NPC_50`, 174×120 frames) is the first boss: a 98×92 hitbox with 2000 HP and
+40 contact damage. The simplified `AI_015_KingSlime` hops every 1.4-2.2 s at ±2.4 px/tick
+with `-8` jump velocity, teleports next to the player when they are more than 70 tiles away
+(with the same surface collision check as the spawn), and asks the app for a blue slime
+minion each time it lands (capped at four slimes). `B` summons it; a top-centre bar shows
+its name and HP. Not ported: the shrink/grow visuals, teleport dust, the full minion
+roster, boss loot and the Expert/Master scaling.
+
 `projectile.rs` is the first `Projectile.cs` pass: the starting Shuriken item (a
 `WEAPON_ITEM_BASE + 1` hotbar kind) throws `ProjectileID.Shuriken` (`Projectile_3`) toward
 the cursor at 11 px/tick. The simulation is fixed 60 Hz with two sub-steps so the 6×6

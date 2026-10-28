@@ -491,6 +491,13 @@ fn main() -> Result<()> {
             );
         }
     }
+    if std::env::var_os("TR_BOSS").is_some() {
+        if let Some(p) = &player {
+            if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
+                npcs.push(n);
+            }
+        }
+    }
     let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
     let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
         let mut it = v.split(',');
@@ -925,6 +932,22 @@ impl ApplicationHandler for App {
                                 self.world_key = None;
                             }
                             KeyCode::F9 => self.save_world(),
+                            KeyCode::KeyB => {
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 12)
+                                            .clamp(2, self.world.width - 3);
+                                        if let Some(n) = Npc::spawn_king_slime(&self.world, xt) {
+                                            log::info!("King Slime spawned");
+                                            self.npcs.push(n);
+                                        }
+                                    }
+                                }
+                            }
                             KeyCode::Digit1 => self.selected = 0,
                             KeyCode::Digit2 => self.selected = 1,
                             KeyCode::Digit3 => self.selected = 2,
@@ -1051,6 +1074,26 @@ impl App {
             }
         }
         self.npcs.retain(|n| n.hp > 0);
+        // `AI_015_KingSlime`: landing bosses request a blue slime minion.
+        let mut minions = self
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Slime)
+            .count();
+        let mut spawned = Vec::new();
+        for n in self.npcs.iter_mut() {
+            if n.wants_minion {
+                n.wants_minion = false;
+                if minions < 4 {
+                    let xt = ((n.x / TILE_PX) as i32 + n.facing * 2).clamp(2, self.world.width - 3);
+                    if let Some(m) = Npc::spawn_slime(&self.world, xt) {
+                        spawned.push(m);
+                        minions += 1;
+                    }
+                }
+            }
+        }
+        self.npcs.extend(spawned);
         if let Some(player) = self.player.as_mut() {
             if player.hp <= 0 {
                 log::info!("player died; respawning at the world spawn");
@@ -1666,6 +1709,10 @@ impl App {
                     p.draw(renderer, lookups, light, *camera, *zoom, screen);
                 }
 
+                let boss = npcs
+                    .iter()
+                    .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                    .map(|n| (n.hp, n.max_hp));
                 draw_hud(
                     renderer,
                     screen,
@@ -1673,6 +1720,7 @@ impl App {
                     inventory,
                     *selected,
                     player.as_ref(),
+                    boss,
                 );
 
                 if *debug {
@@ -2048,6 +2096,7 @@ struct NpcAssets {
     slime: Option<BgTex>,
     eye: Option<BgTex>,
     zombie: Option<BgTex>,
+    king_slime: Option<BgTex>,
 }
 
 fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -2055,6 +2104,7 @@ fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         slime: sky_tex(atlas, "NPC_1", None),
         eye: sky_tex(atlas, "NPC_2", None),
         zombie: sky_tex(atlas, "NPC_3", None),
+        king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
 
@@ -3377,6 +3427,12 @@ fn draw_npcs(
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 8.0],
             ),
+            NpcKind::KingSlime => (
+                assets.king_slime.as_ref(),
+                120.0,
+                [174.0, 120.0],
+                [n.x - 38.0, n.y - 28.0],
+            ),
         };
         let Some(tex) = tex else {
             continue;
@@ -3490,6 +3546,7 @@ fn draw_hud(
     inventory: &[ItemSlot; HOTBAR],
     selected: usize,
     player: Option<&Player>,
+    boss: Option<(i32, i32)>,
 ) {
     let gap = 8.0;
     let slot = 52.0f32.min((screen.x - 40.0 - gap * (HOTBAR - 1) as f32) / HOTBAR as f32);
@@ -3539,6 +3596,20 @@ fn draw_hud(
     };
     r.push_text(x0, y0 - 16.0, 1.5, TEXT, &label);
 
+    if let Some((hp, max_hp)) = boss {
+        let w = 460.0f32.min(screen.x - 120.0);
+        let h = 22.0;
+        let x = (screen.x - w) * 0.5;
+        let y = 22.0;
+        r.push_ui_rect([x, y], [w, h], [0.02, 0.03, 0.05, 0.85]);
+        let frac = (hp as f32 / max_hp.max(1) as f32).clamp(0.0, 1.0);
+        r.push_ui_rect(
+            [x + 2.0, y + 2.0],
+            [(w - 4.0) * frac, h - 4.0],
+            [0.55, 0.10, 0.16, 0.95],
+        );
+        r.push_text(x + 8.0, y + 4.0, 1.1, TEXT, "King Slime");
+    }
     if let Some(p) = player {
         let w = 220.0;
         let h = 20.0;
