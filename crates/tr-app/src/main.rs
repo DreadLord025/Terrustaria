@@ -2172,10 +2172,6 @@ struct BgTex {
     uv: [f32; 4],
     w: f32,
     h: f32,
-    /// Fraction of the height where the texture becomes a fully opaque base (the
-    /// painted ground/hill band). Background layers are lowered until that band
-    /// starts at the horizon, so only the skyline shows above the terrain.
-    ground: f32,
 }
 
 struct SkyAssets {
@@ -2333,20 +2329,6 @@ fn sky_tex(atlas: &Atlas, name: &str, sub: Option<(u32, u32, u32, u32)>) -> Opti
     if sx + w > rect.width || sy + h > rect.height {
         return None;
     }
-    let aw = atlas.width as usize;
-    let mut ground = 1.0;
-    'rows: for row in 0..h as usize {
-        for col in 0..w as usize {
-            let px =
-                ((rect.y as usize + sy as usize + row) * aw + rect.x as usize + sx as usize + col)
-                    * 4;
-            if atlas.pixels[px + 3] < 250 {
-                continue 'rows;
-            }
-        }
-        ground = row as f32 / h as f32;
-        break;
-    }
     Some(BgTex {
         uv: [
             (rect.x + sx) as f32 / atlas.width as f32,
@@ -2356,16 +2338,7 @@ fn sky_tex(atlas: &Atlas, name: &str, sub: Option<(u32, u32, u32, u32)>) -> Opti
         ],
         w: w as f32,
         h: h as f32,
-        ground,
     })
-}
-
-/// `Background_28` is fully opaque, so its sea line cannot be detected from alpha.
-/// Measure it once from the source: the row where the texture turns deep water blue.
-fn ocean_bg_tex(atlas: &Atlas) -> Option<BgTex> {
-    let mut tex = sky_tex(atlas, "Background_28", None)?;
-    tex.ground = 0.125;
-    Some(tex)
 }
 
 fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
@@ -2376,7 +2349,7 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         snow_far: sky_tex(atlas, "Background_35", None),
         snow_near: sky_tex(atlas, "Background_36", None),
         snow_trees: [37, 38, 39].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
-        ocean: ocean_bg_tex(atlas),
+        ocean: sky_tex(atlas, "Background_28", None),
         desert_far: sky_tex(atlas, "Background_21", None),
         desert_near: sky_tex(atlas, "Background_20", None),
         storm_far: sky_tex(atlas, "Background_112", None),
@@ -2592,8 +2565,10 @@ fn draw_sky(
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
     let show_bg = view_top < world_surface_px + TILE_PX;
-    let local_surface = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
-    let horizon = (local_surface - camera.y) * zoom + screen.y * 0.5;
+    // `DrawSurfaceBG` positions every layer from `screenPosition.Y` alone; anchoring
+    // them to the surface of the camera's own column made the whole skyline jump
+    // whenever the camera crossed a hill, so the horizon follows the world's average
+    // surface (a constant) and moves only with the camera.
     if show_bg && storm > 0.01 {
         // `cloudBG` layers: two storm cloud banks behind the mountains, fading in
         // with cloudAlpha. They keep the sky busy between the horizon and the zenith.
@@ -2607,7 +2582,6 @@ fn draw_sky(
                 1.65,
                 0.09,
                 magic * 900.0 + 600.0 + sc_adj,
-                horizon,
                 false,
                 [tint[0] * 0.9, tint[1] * 0.92, tint[2] * 0.96],
                 storm,
@@ -2623,7 +2597,6 @@ fn draw_sky(
                 1.85,
                 0.12,
                 magic * 1100.0 + 750.0 + sc_adj,
-                horizon,
                 false,
                 tint,
                 (storm * 1.5).min(1.0),
@@ -2645,7 +2618,6 @@ fn draw_sky(
                 1.25,
                 0.37,
                 magic * 1800.0 + 1750.0 + sc_adj,
-                horizon,
                 false,
                 tint,
                 1.0,
@@ -2660,10 +2632,9 @@ fn draw_sky(
                 zoom,
                 screen,
                 &far,
-                1.6,
+                2.0,
                 0.15,
                 magic * 1300.0 + 1090.0 + sc_adj,
-                horizon,
                 false,
                 tint,
                 1.0,
@@ -2671,9 +2642,9 @@ fn draw_sky(
         }
     }
 
-    // Parallax clouds. Vertical motion follows the sky horizon, horizontal motion
-    // is half the camera's, like the original's cloud layers. Vanilla draws a cloud
-    // layer between the far and near mountains.
+    // Parallax clouds. They are world objects: a fixed altitude above the average
+    // surface (so they move with the world, not with the player's height) and a
+    // horizontal drift of half the camera plus the wind, like the original's layers.
     let right = camera.x + half.x;
     let cloud_tint = [tint[0] * 0.97, tint[1] * 0.98, tint[2], 1.0];
     for c in clouds {
@@ -2681,10 +2652,7 @@ fn draw_sky(
         let h = c.h * c.scale;
         // Vanilla clouds drift with the wind even when the camera is still.
         let wx = c.x + camera.x * 0.5 + anim_time * 4.0;
-        // Clouds live in a screen-relative band above the camera; anchoring them to
-        // `worldSurface` would hide them whenever the player stands on a hill above
-        // the average surface.
-        let wy = camera.y - (0.08 + c.alt * 0.9) * half.y - h * 0.5;
+        let wy = world_surface_px - (60.0 + c.alt * 260.0) - h * 0.5;
         if wx + w < origin.x || wx > right || wy + h < origin.y || wy > bottom {
             continue;
         }
@@ -2700,10 +2668,9 @@ fn draw_sky(
                 zoom,
                 screen,
                 &near,
-                1.34,
+                2.3,
                 0.49,
                 magic * 2100.0 + 2150.0 + sc_adj,
-                horizon,
                 false,
                 [tint[0] * 0.96, tint[1] * 0.95, tint[2] * 0.9],
                 1.0,
@@ -2718,10 +2685,9 @@ fn draw_sky(
                 zoom,
                 screen,
                 &near,
-                1.85,
+                2.3,
                 0.20,
                 magic * 1400.0 + 1260.0 + sc_adj,
-                horizon,
                 false,
                 [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
                 1.0,
@@ -2735,10 +2701,9 @@ fn draw_sky(
                     zoom,
                     screen,
                     &sea,
-                    1.85,
+                    2.3,
                     0.20,
                     magic * 1400.0 + 1260.0 + sc_adj,
-                    horizon,
                     false,
                     tint,
                     1.0,
@@ -2757,7 +2722,7 @@ fn draw_sky(
         } else {
             &sky.forest
         };
-        let scales = [0.85f32, 0.90, 0.95];
+        let scales = [2.5f32, 2.62, 2.74];
         let parallax = [0.40f32, 0.43, 0.49];
         let k = [1800.0f32, 1950.0, 2100.0];
         let c = if snow {
@@ -2776,7 +2741,6 @@ fn draw_sky(
                     scales[i],
                     parallax[i],
                     magic * k[i] + c[i] + sc_adj,
-                    horizon,
                     i == 1,
                     [tint[0] * 0.97, tint[1] * 0.98, tint[2]],
                     1.0,
@@ -2863,28 +2827,21 @@ fn draw_bg_layer(
     scale: f32,
     parallax: f32,
     top: f32,
-    horizon: f32,
     flip: bool,
     tint: [f32; 3],
     alpha: f32,
 ) {
     // Terraria renders backgrounds through `BackgroundViewMatrix`, whose zoom is
-    // smaller than the game zoom. Scale around the screen centre with half the extra
-    // zoom: fixed-size layers overlapped at high zoom, full zoom was far too large.
-    let bg_zoom = 1.0 + (zoom - 1.0) * 0.5;
-    let sw = tex.w * scale * bg_zoom;
-    let sh = tex.h * scale * bg_zoom;
-    let center_y = screen.y * 0.5;
-    let mut top = center_y + (top - center_y) * bg_zoom;
-    if tex.ground < 0.999 {
-        top = top.max(horizon - tex.ground * sh);
-    }
+    // `ForcedMinimumZoom` (1): the layers keep their screen size at any game zoom,
+    // and `bgTopY` is already a screen-space top, so no further transform applies.
+    let sw = tex.w * scale;
+    let sh = tex.h * scale;
     let uv = if flip {
         [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
     } else {
         tex.uv
     };
-    let ox = -((camera.x * bg_zoom * parallax).rem_euclid(sw));
+    let ox = -((camera.x * parallax).rem_euclid(sw));
     let mut x = ox - sw;
     while x < screen.x {
         push_screen(

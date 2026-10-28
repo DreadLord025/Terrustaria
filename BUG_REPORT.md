@@ -303,3 +303,25 @@ scan margin), and drove them from `Player::update` in the original order with th
 tests (step up/down smoothness, slope standing at the left-edge diagonal) and by
 walking the lake shore in game: the player descends the slope staircase into the
 lake and climbs the far bank without sticking.
+
+## BUG-018 — Background tied to the player's height and moving in jerks
+
+**Status:** fixed — commit `BGANCHOR`
+**Area:** `tr-app/src/main.rs` (`draw_bg_layer`, cloud pass)
+
+**Report:** the skyline followed the player's altitude and snapped whenever the camera
+crossed a hill; compared with the original the whole backdrop sat in the wrong place.
+
+**Cause:** every layer was clamped so its painted ground band started at the horizon of
+the camera's *own column* (`world.surface_of`), which changes per column, and the clamp
+dominated the vanilla `bgTopY`, screen-locking the layers vertically. Clouds were
+anchored to the camera instead of the world. The layer scales had been tuned around that
+clamp (0.85-1.85 instead of the original's 2.0-2.74).
+
+**Fix:** removed the clamp and the per-column horizon: layer tops now come only from
+`backgroundTopMagicNumber` and `ComputeScAdj`, exactly as `DrawSurfaceBG` computes them,
+so they parallax at ~20-30 % of the camera's vertical speed and never jump horizontally.
+Restored the original `bgScale` values and the zoom-1 background matrix, and anchored
+clouds at a fixed world altitude above `worldSurface`. Verified with screenshots at the
+same camera Y over a hill and over the lake (identical skyline) and 12 tiles higher
+(skyline shifts ~31 px, i.e. ~0.16 parallax), at zoom 1 and 2.

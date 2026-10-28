@@ -331,17 +331,19 @@ items are collectible but not placeable. Desert structures and loot are not port
 ## Surface backgrounds
 
 `Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near
-mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at scale
-1.6/1.85 and 0.15/0.20 parallax, followed by the biome's three tree layers
-(`50..52` forest, `37..39` snow) at scale 0.85/0.90/0.95 and 0.40/0.43/0.49 parallax; the
-middle tree layer is mirrored horizontally, exactly as `DrawSurfaceBG_Forest` does with
-`SpriteEffects.FlipHorizontally`. The ocean edge (`x < 200` or `x > width - 200`) suppresses
-the tree line and adds `Background_28`, the sea horizon with islands. Layer tops use
-`backgroundTopMagicNumber = -(screenTop - 300) / (worldSurface * 16)`, which gives the
-original's ~30 % vertical parallax, plus `ComputeScAdj`. Because the layers are drawn in
-screen pixels instead of the original's zoomed sprite transform, each layer is lowered until
-the texture's *painted ground band* (measured from the atlas alpha: the first fully opaque
-row) starts at the local horizon; without that clamp the skyline floats above the terrain.
+mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at the
+original's `bgScale` (1·2 and 1.15·2) and 0.15/0.20 parallax, followed by the biome's three
+tree layers (`50..52` forest, `37..39` snow) at 1.25·2/1.31·2/1.37·2 and 0.40/0.43/0.49
+parallax; the middle tree layer is mirrored horizontally, exactly as
+`DrawSurfaceBG_Forest` does with `SpriteEffects.FlipHorizontally`. The ocean edge
+(`x < 200` or `x > width - 200`) suppresses the tree line and adds `Background_28`, the
+sea horizon with islands. Layer tops use
+`backgroundTopMagicNumber = -(screenTop - 300) / (worldSurface * 16)` plus `ComputeScAdj`,
+exactly like the original, and — like the original — depend only on the camera's Y, never
+on the terrain under the camera; an earlier clamp to the local column's surface made the
+skyline jump at every hill and was removed (BUG-018). The background batch keeps the
+original's zoom-1 matrix, so the layers hold their screen size at any game zoom. Clouds
+are world objects at a fixed altitude above `worldSurface` and drift with the wind.
 
 Not ported: the biome cross-fade (`bgAlphaFarBackLayer`/`bgAlphaFrontLayer` for
 corruption/crimson/jungle/hallow/mushroom), `DrawSurfaceBG_DrawChangeOverlay`, the
