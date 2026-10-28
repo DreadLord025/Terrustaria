@@ -193,8 +193,13 @@ default" is explicitly not a goal — determinism first.
 
 ## Milestone 2 — player
 
-Physics (`Player.cs` subset), collision, input mapping, animation state machine, draw layers
-for the default outfit, camera follow, spawn/respawn, simple HUD. **~15–30 agent-days.**
+✅ *First pass*: fixed 60 Hz gravity/acceleration/friction/jump, 1-tile auto-step,
+axis-separated AABB tile collision, water buoyancy, respawn, camera follow and the starter
+character composed from the original `Player_0_*` strips with walk/jump frames.
+
+Remaining: slope/half-brick collision, the full `PlayerDrawLayers` order (front arm,
+armor, accessories), item holding/use, health/drowning, buffs, hooks/mounts/gravity
+flips, and the rest of the 55k-line `Player.cs`. *~12–25 agent-days.*
 
 ## Milestone 3 — items, inventory, crafting, UI
 

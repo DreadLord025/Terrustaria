@@ -3,21 +3,19 @@
 A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
 clean-room analysis of the decompiled C# game.
 
-> **Status: milestone 1 — visual fidelity in progress.** This is *not* a playable game yet.
-> It generates (or loads) a world, extracts the original textures from the game's `.xnb`
-> files, and renders the tile grid with a single instanced draw call on Vulkan at 500+ FPS:
-> autotiled blocks and slopes, tree canopies, the game's own light engine with all four
-> lighting modes, liquids, and a native save format. Gameplay systems (player, items, NPCs,
-> UI) are not implemented. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
+> **Status: milestone 2 — a minimal player.** The world renders with the game's own
+> lighting, liquids, trees and sky layers; a player with gravity, collision and a following
+> camera can walk, jump and swim. Items, NPCs, combat and UI are not implemented. See
+> [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
 
 ![surface](docs/screenshots/surface.png)
 
 | | |
 | --- | --- |
-| ![generated](docs/screenshots/generated.png) | ![lake](docs/screenshots/lake.png) |
-| A world from our own generator (seed 1) | Generated forest lake: animated water, waves, depth tint |
-| ![night](docs/screenshots/night.png) | ![debug](docs/screenshots/debug_overlay.png) |
-| Night: moon, stars, parallax mountains | Debug overlay (F1) with light mode, liquids and quad counters |
+| ![generated](docs/screenshots/generated.png) | ![player](docs/screenshots/player.png) |
+| A world from our own generator (seed 1) | The player, walking on the generated surface |
+| ![lake](docs/screenshots/lake.png) | ![night](docs/screenshots/night.png) |
+| Generated forest lake: animated water, waves, depth tint | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
 
@@ -79,7 +77,15 @@ clean-room analysis of the decompiled C# game.
   rectangles. All of it is pixel-identical to drawing every tile. When the camera, zoom,
   screen, ambient light, light mode and world revision are all unchanged, the whole world
   instance range is reused (G6) and only the UI is rebuilt.
-- **Camera** — WASD/arrows pan, mouse wheel zoom, F1 debug, F2 light mode, F5 respawn.
+- **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants:
+  gravity, acceleration/friction, jump, 1-tile auto-step, axis-separated AABB collision,
+  simple water buoyancy and respawn. The starter character is composed from the original
+  `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, arms, legs, pants,
+  shoes, hair) with walk/jump leg frames and camera follow. Slopes count as full cells
+  until slope collision and the full draw-layer order are ported.
+- **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
+  F2 light mode, F5 respawn). `TR_CAM`/`TR_PAN` switch to the free debug camera; `TR_NOPLAYER`
+  hides the player for pixel comparisons.
 - **Headless tooling** — `TR_BENCH` (uncapped frame timing), `TR_SHOT` (deterministic
   screenshot without desktop capture), `TR_CAM`/`TR_ZOOM`, `TR_DAY`, `TR_LIGHT_MODE`,
   `TR_LIGHT_AT`, `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS`, `TR_NOCACHE`, `TR_NO_BG`,
@@ -109,7 +115,9 @@ power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison
 
 ## What is *not* implemented (yet)
 
-Players, items, NPCs, projectiles, UI/inventory, audio, networking. Liquid flow
+Items, NPCs, projectiles, UI/inventory, audio, networking. The player is a movement/visual
+first pass: no items, mining/placing, inventory, health or combat yet, and slopes are
+collision boxes rather than ramps. Liquid flow
 simulation, waterfalls, water styles, shimmer sparkles and the original's partial-wall
 liquid surface smoothing are still missing; the current pass draws static sources with
 tile-level surfaces. The world
@@ -174,6 +182,7 @@ another seed.
 | `TR_PAN=0.25` | Pan the camera this many tiles per frame (deterministic benchmarks) |
 | `TR_REGEN=1` | Regenerate the default Terrustaria world |
 | `TR_SEED=<n>` | Seed for `TR_REGEN` / first generation |
+| `TR_NOPLAYER=1` | Hide and disable the player (free-camera A/B captures) |
 
 ## Layout
 
@@ -181,7 +190,8 @@ another seed.
 crates/tr-core     world model, .wld parser, native worldgen + .trwld saves, autotiling,
                    lighting (scanner/blur/modes), tree composition, generated tile tables
 crates/tr-render   wgpu device, atlas packer, instanced sprite renderer, WGSL shader
-crates/tr-app      winit app, asset loading, camera, tile/tree/slope draw pass, debug overlay
+crates/tr-app      winit app, asset loading, camera, player physics, tile/tree/slope/liquid
+                   draw pass, sky layers, debug overlay
 tools/XnbExtract   C# XNB (LZX/DXT) -> PNG extractor
 tools/GenTileData  C# generator: TileID/Main/WorldGen tables -> crates/tr-core/src/tiledata.rs
 decompiled/        ILSpy output of Terraria.exe (not redistributed)

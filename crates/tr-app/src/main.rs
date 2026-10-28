@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 mod assets;
+mod player;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -9,6 +10,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use glam::Vec2;
+use player::{Player, PlayerInput};
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::tile::LiquidKind;
 use tr_core::tiledata as td;
@@ -209,7 +211,7 @@ fn main() -> Result<()> {
     );
 
     let t2 = Instant::now();
-    let atlas = Atlas::build(images, 4096);
+    let atlas = Atlas::build(images, 8192);
     log::info!(
         "atlas {}x{} ({:.1} MB, {} sheets) in {:.0} ms",
         atlas.width,
@@ -319,6 +321,12 @@ fn main() -> Result<()> {
     let clouds = make_clouds(&world, &lookups);
     let sky = make_sky_assets(&atlas);
     let stars = make_stars(&world);
+    let player_assets = make_player_assets(&atlas);
+    let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
+    let player = player_enabled.then(|| Player::spawn(&world));
+    let follow_player = player.is_some()
+        && std::env::var_os("TR_CAM").is_none()
+        && std::env::var_os("TR_PAN").is_none();
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
 
     let mut app = App {
@@ -331,6 +339,10 @@ fn main() -> Result<()> {
         clouds,
         sky,
         stars,
+        player_assets,
+        player,
+        follow_player,
+        player_accum: 0.0,
         camera: Vec2::ZERO,
         zoom: 1.5,
         debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(true),
@@ -411,6 +423,10 @@ struct App {
     clouds: Vec<CloudSprite>,
     sky: SkyAssets,
     stars: Vec<StarSprite>,
+    player_assets: PlayerAssets,
+    player: Option<Player>,
+    follow_player: bool,
+    player_accum: f32,
     camera: Vec2,
     zoom: f32,
     debug: bool,
@@ -455,6 +471,8 @@ struct WorldFrameKey {
     light_mode: u32,
     /// Non-zero only for modes whose light depends on time ("Trippy").
     anim: u32,
+    /// Player position/animation identity; the player is part of the world range.
+    player_key: u32,
     world_revision: u64,
 }
 
@@ -576,6 +594,12 @@ impl ApplicationHandler for App {
                 self.zoom = z.clamp(0.25, 8.0);
             }
         }
+        if self.follow_player {
+            if let Some(p) = &self.player {
+                let (cx, cy) = p.center();
+                self.camera = Vec2::new(cx, cy);
+            }
+        }
         self.last_frame = Instant::now();
 
         self.gpu = Some(gpu);
@@ -607,11 +631,22 @@ impl ApplicationHandler for App {
                                 log::info!("light mode: {}", self.light_mode.label());
                             }
                             KeyCode::F5 => {
-                                self.camera = Vec2::new(
-                                    self.world.width as f32 * TILE_PX * 0.5,
-                                    self.world.spawn_y as f32 * TILE_PX,
-                                );
+                                if let Some(p) = self.player.as_mut() {
+                                    p.respawn();
+                                }
+                                if self.follow_player {
+                                    if let Some(p) = &self.player {
+                                        let (cx, cy) = p.center();
+                                        self.camera = Vec2::new(cx, cy);
+                                    }
+                                } else {
+                                    self.camera = Vec2::new(
+                                        self.world.width as f32 * TILE_PX * 0.5,
+                                        self.world.spawn_y as f32 * TILE_PX,
+                                    );
+                                }
                                 self.zoom = 1.5;
+                                self.world_key = None;
                             }
                             KeyCode::Equal | KeyCode::NumpadAdd => {
                                 self.zoom = (self.zoom * 1.25).min(8.0)
@@ -668,8 +703,9 @@ impl App {
         self.frame_count += 1;
         self.anim_time += dt;
         let anim_time = self.anim_time;
-
-        self.pan_camera(dt);
+        if !self.follow_player {
+            self.pan_camera(dt);
+        }
 
         let screen = self
             .gpu
@@ -690,6 +726,11 @@ impl App {
                 clouds,
                 sky,
                 stars,
+                player_assets,
+                player,
+                follow_player,
+                player_accum,
+                keys,
                 camera,
                 zoom,
                 debug,
@@ -709,6 +750,35 @@ impl App {
             } = self;
 
             if let (Some(gpu), Some(renderer)) = (gpu.as_ref(), renderer.as_mut()) {
+                let input = PlayerInput {
+                    left: keys.contains(&KeyCode::KeyA) || keys.contains(&KeyCode::ArrowLeft),
+                    right: keys.contains(&KeyCode::KeyD) || keys.contains(&KeyCode::ArrowRight),
+                    jump: keys.contains(&KeyCode::Space)
+                        || keys.contains(&KeyCode::KeyW)
+                        || keys.contains(&KeyCode::ArrowUp),
+                    down: keys.contains(&KeyCode::KeyS) || keys.contains(&KeyCode::ArrowDown),
+                };
+                let mut player_key = 0u32;
+                if let Some(p) = player.as_mut() {
+                    *player_accum += dt;
+                    let step = 1.0 / 60.0;
+                    let mut steps = 0;
+                    while *player_accum >= step && steps < 8 {
+                        p.update(world, input);
+                        *player_accum -= step;
+                        steps += 1;
+                    }
+                    if *player_accum > step * 8.0 {
+                        *player_accum = 0.0;
+                    }
+                    if *follow_player {
+                        let (cx, cy) = p.center();
+                        let target = Vec2::new(cx, cy);
+                        *camera = (*camera).lerp(target, 1.0 - (-dt * 12.0).exp());
+                    }
+                    player_key = p.render_key();
+                }
+
                 // `TR_DAY` overrides the time of day (0 = midnight, 1 = noon) so a
                 // screenshot can be compared against the original at a fixed time.
                 let override_day = std::env::var("TR_DAY")
@@ -781,6 +851,7 @@ impl App {
                     } else {
                         liquid_anim
                     },
+                    player_key,
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -809,6 +880,8 @@ impl App {
                         scratch,
                         &style,
                         anim_time,
+                        player.as_ref(),
+                        player_assets,
                     );
                     *world_key = Some(key);
                 }
@@ -829,6 +902,7 @@ impl App {
                         params.sky,
                         debug_cache,
                         style.mode.label(),
+                        player.as_ref(),
                     );
                 }
 
@@ -1105,6 +1179,59 @@ struct SkyAssets {
     sun: Option<BgTex>,
     moon: Option<BgTex>,
     stars: Vec<Option<BgTex>>,
+}
+
+/// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
+/// legs, pants, shoes, hair. Frames are 40x56 on the 40-px-wide strips.
+struct PlayerAssets {
+    head: Option<BgTex>,
+    eye_whites: Option<BgTex>,
+    eyes: Option<BgTex>,
+    torso: Option<BgTex>,
+    shirt: Option<BgTex>,
+    /// Back-arm skin frame from `Player_0_7` (composite arm frame 1).
+    arm: Option<BgTex>,
+    legs: Option<BgTex>,
+    pants: Option<BgTex>,
+    shoes: Option<BgTex>,
+    hair: Option<BgTex>,
+}
+
+fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
+    PlayerAssets {
+        head: sky_tex(atlas, "Player_0_0", None),
+        eye_whites: sky_tex(atlas, "Player_0_1", None),
+        eyes: sky_tex(atlas, "Player_0_2", None),
+        // Torso and shirt sheets are 9 columns wide; keep only the first column.
+        torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
+        shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
+        arm: sky_tex(atlas, "Player_0_7", Some((40, 56, 40, 56))),
+        legs: sky_tex(atlas, "Player_0_10", None),
+        pants: sky_tex(atlas, "Player_0_11", None),
+        shoes: sky_tex(atlas, "Player_0_12", None),
+        hair: sky_tex(atlas, "Player_Hair_1", None),
+    }
+}
+
+/// UV of one 40x56 frame in a player part strip.
+fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
+    let rows = (tex.h / 56.0).floor().max(1.0);
+    let r = (row as f32).min(rows - 1.0);
+    let dv = (tex.uv[3] - tex.uv[1]) * (56.0 / tex.h);
+    [
+        tex.uv[0],
+        tex.uv[1] + dv * r,
+        tex.uv[2],
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
+    if flip {
+        [uv[2], uv[1], uv[0], uv[3]]
+    } else {
+        uv
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1545,6 +1672,8 @@ fn draw_tiles(
     scratch: &mut DrawScratch,
     style: &LightStyle,
     anim_time: f32,
+    player: Option<&Player>,
+    player_assets: &PlayerAssets,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     let half = screen * 0.5 / zoom;
@@ -1771,6 +1900,9 @@ fn draw_tiles(
 
     stats.liquids = draw_liquids(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
     stats.foliage = draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+    if let Some(p) = player {
+        stats.quads += draw_player(r, player_assets, p, light, style, anim_time);
+    }
     stats.instances = stats.quads + stats.walls + stats.dark_rects + stats.foliage + stats.liquids;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
     stats
@@ -2023,6 +2155,64 @@ fn push_sliced(
 /// marker tiles of a tree. The pass scans a slightly larger rect than the tile loop
 /// because an 80x80 canopy sticks out above and beside its anchor.
 #[allow(clippy::too_many_arguments)]
+/// Draws the starter player from the original 40x56 part strips. The composition
+/// mirrors `PlayerDrawLayers`: legs/pants/shoes, torso/shirt, head/eyes/hair, all at
+/// `(x-10, y-10)` so the 40x56 sprite is centred on the 20x42 hitbox.
+fn draw_player(
+    r: &mut SpriteRenderer,
+    assets: &PlayerAssets,
+    player: &Player,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+) -> u32 {
+    let (cx, cy) = player.center();
+    let tile_x = (cx / TILE_PX) as i32;
+    let tile_y = (cy / TILE_PX) as i32;
+    let l = light.get(tile_x, tile_y);
+    let c = style.shade(l, tile_x, tile_y, anim_time);
+    let light_c = [c[0], c[1], c[2]];
+    let mul = |part: [f32; 3]| {
+        [
+            light_c[0] * part[0],
+            light_c[1] * part[1],
+            light_c[2] * part[2],
+            1.0,
+        ]
+    };
+    let skin = [1.0, 125.0 / 255.0, 90.0 / 255.0];
+    let eye_white = [1.0, 1.0, 1.0];
+    let eye = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
+    let shirt = [175.0 / 255.0, 165.0 / 255.0, 140.0 / 255.0];
+    let pants = [255.0 / 255.0, 230.0 / 255.0, 175.0 / 255.0];
+    let shoes = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
+    let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
+
+    let pos = [player.x - 10.0, player.y - 10.0];
+    let size = [40.0, 56.0];
+    let flip = player.facing < 0;
+    let leg = player.leg_frame();
+    let mut quads = 0;
+    let mut part = |tex: Option<&BgTex>, row: u32, color: [f32; 4]| {
+        if let Some(t) = tex {
+            let uv = flip_uv(player_frame_uv(t, row), flip);
+            r.push_sprite(pos, size, uv, color);
+            quads += 1;
+        }
+    };
+    part(assets.legs.as_ref(), leg, mul(skin));
+    part(assets.pants.as_ref(), leg, mul(pants));
+    part(assets.shoes.as_ref(), leg, mul(shoes));
+    part(assets.arm.as_ref(), 0, mul(skin));
+    part(assets.torso.as_ref(), 0, mul(skin));
+    part(assets.shirt.as_ref(), 0, mul(shirt));
+    part(assets.head.as_ref(), 0, mul(skin));
+    part(assets.eye_whites.as_ref(), 0, mul(eye_white));
+    part(assets.eyes.as_ref(), 0, mul(eye));
+    part(assets.hair.as_ref(), 0, mul(hair));
+    quads
+}
+
 fn draw_tree_foliage(
     r: &mut SpriteRenderer,
     world: &World,
@@ -2112,6 +2302,7 @@ fn draw_debug(
     sky: [f32; 3],
     cache: &mut DebugCache,
     light_mode: &str,
+    player: Option<&Player>,
 ) {
     if !cache.ready {
         let info = gpu.adapter.get_info();
@@ -2169,6 +2360,22 @@ fn draw_debug(
         ),
         TEXT,
     ));
+    if let Some(p) = player {
+        lines.push((
+            format!(
+                "player {:.0},{:.0} tile {:.1},{:.1} vx {:.2} vy {:.2} ground {} water {}",
+                p.x,
+                p.y,
+                p.x / TILE_PX,
+                p.y / TILE_PX,
+                p.vx,
+                p.vy,
+                p.on_ground,
+                p.in_water
+            ),
+            TEXT,
+        ));
+    }
     lines.push((
         format!(
             "visible tiles {}   quads {}   foliage {}   liquids {}   total {}   grid {}x{}",
@@ -2210,11 +2417,11 @@ fn draw_debug(
         TEXT,
     ));
     lines.push((
-        "WASD pan   wheel zoom   F1 ui   F5 spawn   ESC quit".into(),
+        "WASD move   Space jump   F1 ui   F2 light   F5 respawn".into(),
         WARN,
     ));
 
-    let panel_w = 660.0;
+    let panel_w = 760.0;
     let graph_h = 48.0;
     let panel_h = 14.0 + lines.len() as f32 * line_h + graph_h + 10.0;
     let x = 14.0;

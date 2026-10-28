@@ -56,8 +56,7 @@
 
 - `gpu.rs` — wgpu 30 instance/device/surface. Backend defaults to **Vulkan**
   (`TR_BACKEND=dx12|gl` to override), `COPY_SRC` enabled for screenshots, HighPerformance
-  adapter, 8192 max 2D texture dimension.
-- `atlas.rs` — shelf packer. Sheets are sorted tallest-first, packed into a fixed-width
+  adapter, 8192 max 2D texture dimension.- `atlas.rs` — shelf packer. Sheets are sorted tallest-first, packed into a fixed-width
   (4096) atlas with 2 px padding. Each sheet also gets a **plain frame**: a fully opaque
   16×16 frame with the most uniform border, used for tiles whose frames are not stored.
   Wall sheets are laid out on a different grid (36 px stride, 8 px inset) — encoding this in
@@ -89,6 +88,11 @@
   tile/wall ids, decodes only those PNGs plus all 32 tree canopy/branch styles and the 42
   cloud textures in parallel, builds the atlas, then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
+- Player (`player.rs`): 20×42 AABB, fixed 60 Hz steps, gravity/acceleration/friction,
+  1-tile auto-step, axis-separated solid-tile collision and water buoyancy. The camera
+  follows the player's centre (unless `TR_CAM`/`TR_PAN` select the free debug camera).
+  The starter player is drawn from the original 40×56 part strips at `(x-10, y-10)` after
+  the world passes; `render_key` is part of the G6 frame key.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
@@ -145,6 +149,7 @@
 | 9-sliced solid blocks | Matches `DrawSingleTile_SlicedBlock`: outer 4 px bands average the block's light with its neighbour, which is what makes "Color"/"White" light look smooth instead of tiled |
 | Liquid UV wave in the shader | One `flags` float per instance selects a travelling UV ripple inside the large `Misc/water_*` strip; doing it in the shader avoids a second draw pass and hides the 16 px source repetition |
 | Screen-space sky, sun/moon, stars and parallax layers | Their layout follows `DrawSunAndMoon`/`DrawSurfaceBG` (parallax and screen sizes, not tile units), so zooming the camera does not stretch the sky. The helper converts the screen rectangle back into camera-relative world coordinates for the shared sprite batch |
+| Axis-separated player AABB | Small (20×42) and slow (≤10 px/tick); sub-tile axis resolution plus a one-tile step is enough and keeps slope/tile interactions debuggable. Slopes currently collide as full cells |
 | Local column sunlight | The original seeds only `y <= worldSurface`; hills above the average would be dark and valleys below it black. Seeding per column keeps every surface slope lit without opening up caves |
 | Native generator + save | The game's own generator is ~45 k lines; a compact deterministic model gives a real world to iterate on, and `.trwld` round-trips every tile field |
 | Tree sprites outside the tile batch | Canopies are 80×80 and branches 40×40, anchored to transparent tiles; drawing them after the tile pass matches `DrawTrees` and keeps normal tiles on the fast path |
@@ -166,5 +171,6 @@
 - **More lighting modes** — add a `LightMode` variant and a `LightStyle` (smoothing,
   grayscale/colour transform, levels, perturbation); the tile pass and shader are driven
   by the style, so no new draw path is needed.
-- **Entities** — a fixed-step simulation (60 Hz) decoupled from rendering; player/NPC
-  physics ported from `Player.cs`/`NPC.cs`.
+- **Entities** — the player physics is the first fixed-step simulation. NPCs/projectiles
+  will share the same update loop with deterministic order; player draw layers, items,
+  health and inventory are the next M2/M3 work.

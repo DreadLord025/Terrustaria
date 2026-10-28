@@ -92,6 +92,16 @@ pub fn load_world_images(
         "Star_1",
         "Star_2",
         "Star_3",
+        "Player_0_0",
+        "Player_0_1",
+        "Player_0_2",
+        "Player_0_3",
+        "Player_0_6",
+        "Player_0_7",
+        "Player_0_10",
+        "Player_0_11",
+        "Player_0_12",
+        "Player_Hair_1",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),

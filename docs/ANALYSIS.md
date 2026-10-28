@@ -70,8 +70,8 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; no flow, waterfalls or partial-wall smoothing |
-| Player physics | `Player.cs` | 55 600 | ⬜ | No player entity |
-| Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | ⬜ | |
+| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, water buoyancy, respawn; no slopes/items/buffs/health |
+| Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | ⬜ | |
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | ⬜ | ~700 NPC types, each with bespoke behaviour |
 | Projectiles | `Projectile.cs` | 81 000 | ⬜ | ~1 100 types |
@@ -294,6 +294,22 @@ then per-row RLE of the 14-byte tile struct (~3.9 MB for the default world). Loa
 every field; framing/lighting run afterwards exactly as for a `.wld`. `TR_REGEN=1`
 regenerates, `TR_SEED=<n>` selects a seed. Biomes, structures, oceans/liquids and hardmode
 spread are not generated; the original generator remains an M5 milestone.
+
+## Player (M2 first pass)
+
+`tr-app/src/player.rs` implements a fixed 60 Hz step with the original movement constants:
+gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump `5.2`.
+Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
+auto-step and simple water buoyancy. Slopes and half bricks currently collide as full
+cells. Respawn returns to `spawn_x/spawn_y` from the world header.
+
+The character is composed from the original 40×56 part strips (`Player_0_0` head,
+`_1/_2` eyes, `_3` torso, `_6` shirt, `_7` back arm, `_10` legs, `_11` pants, `_12` shoes,
+`Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
+walk/jump leg frames. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
+camera and `TR_NOPLAYER` hides the player. Not ported yet: slope ramps, item use/placement,
+full draw layers (arms/front arm, armor, accessories), health/drowning, and the rest of
+`Player.cs`.
 
 ## Asset pipeline
 
