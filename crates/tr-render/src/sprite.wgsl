@@ -19,6 +19,7 @@ struct Instance {
     @location(3) uv1: vec2<f32>,
     @location(4) color: vec4<f32>,
     @location(5) flags: f32,
+    @location(6) rot: f32,
 };
 
 struct VsOut {
@@ -43,7 +44,12 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
         vec2<f32>(1.0, 1.0),
     );
     let c = corners[vi];
-    let world = inst.pos + c * inst.size;
+    // Optional per-sprite rotation around the top-left corner (zero for everything
+    // except rain), exactly like XNA's `SpriteBatch.Draw` with origin `Vector2.Zero`.
+    let local = c * inst.size;
+    let cs = cos(inst.rot);
+    let sn = sin(inst.rot);
+    let world = inst.pos + vec2<f32>(local.x * cs - local.y * sn, local.x * sn + local.y * cs);
     let screen = (world - globals.cam) * globals.zoom + globals.screen * 0.5;
     let ndc = vec2<f32>(
         screen.x / globals.screen.x * 2.0 - 1.0,

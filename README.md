@@ -4,10 +4,10 @@ A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, bu
 clean-room analysis of the decompiled C# game.
 
 > **Status: milestone 4 — first enemy.** The world renders with the game's own lighting,
-> liquids, trees and sky layers; a player with gravity, collision and a following camera
-> can walk, jump, swim, mine, place starter blocks, fight hopping slimes and respawn on
-> death. The full NPC roster, projectiles, items/UI and networking are not implemented. See
-> [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
+> liquids, trees, sky layers and rain; a player with gravity, collision and a following
+> camera can walk, jump, swim, mine, place starter blocks, fight hopping slimes and
+> respawn on death. The full NPC roster, projectiles, items/UI and networking are not
+> implemented. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
 
 ![surface](docs/screenshots/surface.png)
 
@@ -23,6 +23,12 @@ clean-room analysis of the decompiled C# game.
 | Ocean beach at the world edge | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
+
+![rain](docs/screenshots/rain.png)
+
+Rain is a port of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`: slanted 2×40 drops lit by
+the local light map, ground and water splashes, and `SetBackColor`'s overcast dimming of the
+sky and surface sunlight.
 
 ## What works right now
 
@@ -64,6 +70,12 @@ clean-room analysis of the decompiled C# game.
   columns. Breaking or placing a block wakes the surrounding liquid. The generator fills a
   forest lake and puts lava puddles on cave floors. Still missing: the `Waterfall_*` overlay
   at half-brick spouts, the four-corner shoreline mesh, water styles and shimmer sparkles.
+- **Rain & weather** — `rain.rs` follows `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`:
+  `cloudAlpha` ramps toward a `maxRaining` target, up to 750 rotated `Rain_0` drops fall at
+  the original `(wind*18, 14)` px/tick, spawn only in wall-free sky and die on solid or wet
+  tiles with a `Dust` splash. `SetBackColor`'s `1 - cloudAlpha*0.9` dims the sky, clouds and
+  surface sunlight. `TR_RAIN=<0..1.75>` pins a storm; the scheduler is disabled with
+  `TR_NO_WEATHER`.
 - **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, two
   parallax mountain layers built from `Background_7`, the sun/moon, twinkling stars at
   night, a 15-minute day / 9-minute night clock, deterministic clouds from the game's `Cloud_*` textures, and a per-column
@@ -112,6 +124,7 @@ clean-room analysis of the decompiled C# game.
   hides the player for pixel comparisons.
 - **Headless tooling** — `TR_BENCH` (uncapped frame timing), `TR_SHOT` (deterministic
   screenshot without desktop capture), `TR_CAM`/`TR_ZOOM`, `TR_DAY`, `TR_LIGHT_MODE`,
+  `TR_RAIN`,
   `TR_LIGHT_AT`, `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS`, `TR_NOCACHE`, `TR_NO_BG`,
   `TR_NO_WALLS`, `TR_REGEN`, `TR_SEED`, `TR_PAN` and `tools/pixel_diff.py`.
 
@@ -147,10 +160,11 @@ styles, shimmer sparkles and the original's four-corner liquid surface mesh are 
 missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
 biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
-no full ocean biome or hardmode spread. Common
+no full ocean biome or hardmode spread. Rain exists as a first pass but storms/lightning,
+wind gusts, snow and rain audio are missing. Common
 forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
 but gem/vanity/palm trees and the per-world random forest style variations are approximate.
-Real biome-specific backgrounds, rain, biome weather and the real textured underground
+Real biome-specific backgrounds, biome weather and the real textured underground
 background are still missing; the sky is the `Background_0` gradient, two seeded parallax
 mountain layers, sun/moon/stars, a static cloud layer and a per-column cave fade. Per-type special
 framing branches (grass edge overrides, moss, vines, cactus) and `TileObjectData` furniture
@@ -190,6 +204,8 @@ another seed.
 | `TR_ZOOM=1.5` | Initial zoom factor (gameplay range is 1.0–2.0) |
 | `TR_DAY=0.15` | Override the time of day (0 = midnight, 1 = noon) |
 | `TR_LIGHT_MODE=color\|white\|retro\|trippy` | Pin a lighting mode (F2 cycles in-game) |
+| `TR_RAIN=0.75` | Force rain intensity (0..1.75) for screenshots |
+| `TR_NO_WEATHER=1` | Start calm and disable the rain scheduler |
 | `TR_BENCH=600` | Render 600 frames uncapped, print p50/p95/p99, exit |
 | `TR_SHOT=out.png` | Save a screenshot and exit |
 | `TR_SHOT_FRAME=25` | Frame at which the screenshot is taken |
@@ -197,6 +213,7 @@ another seed.
 | `TR_LIGHT_AT=3200,402` | Log the computed light at one tile (tile coords) |
 | `TR_SCAN_LIGHT=1` | Log the most self-lit 40×40 window (`TR_SCAN_Y=min,max` to restrict) |
 | `TR_SCAN_TORCH=1` | Log the densest 40×40 torch window (lighting screenshots) |
+| `TR_SCAN_WATER=1` | Log the densest 40×40 liquid window (flow/liquid screenshots) |
 | `TR_DUMP_TILES=1` | Log tile ids/slopes/frames around spawn (`TR_DUMP_X`, `TR_DUMP_Y`) |
 | `TR_NO_WALLS=1` | Skip wall rendering (compare autotiling / wall layers) |
 | `TR_NO_BG=1` | Skip the per-column cave background (A/B the sky composition) |

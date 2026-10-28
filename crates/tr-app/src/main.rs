@@ -4,6 +4,7 @@ mod assets;
 mod npc;
 mod persist;
 mod player;
+mod rain;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
@@ -14,6 +15,7 @@ use anyhow::{Context, Result};
 use glam::Vec2;
 use npc::{Npc, NpcKind};
 use player::{Player, PlayerInput};
+use rain::Rain;
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
 use tr_core::liquid::LiquidSystem;
 use tr_core::tile::LiquidKind;
@@ -459,6 +461,7 @@ fn main() -> Result<()> {
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
     let liquids_sim = LiquidSystem::new(&world);
+    let rain = Rain::new(world_seed);
 
     let mut app = App {
         window: None,
@@ -524,6 +527,7 @@ fn main() -> Result<()> {
         liquids: liquids_sim,
         liquid_accum: 0.0,
         liquid_tick: 0,
+        rain,
         world_key: None,
     };
     event_loop.run_app(&mut app)?;
@@ -624,6 +628,8 @@ struct App {
     liquids: LiquidSystem,
     liquid_accum: f32,
     liquid_tick: u32,
+    /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
+    rain: Rain,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
     world_key: Option<WorldFrameKey>,
 }
@@ -958,6 +964,13 @@ impl App {
         self.liquid_accum = acc.min(step * 8.0);
     }
 
+    /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
+    /// per-tick velocity regardless of frame rate.
+    fn update_rain(&mut self, dt: f32, screen: Vec2) {
+        self.rain
+            .update(&self.world, self.camera, screen, self.zoom, dt);
+    }
+
     fn update_npcs(&mut self, dt: f32) {
         self.attack_cd = (self.attack_cd - dt).max(0.0);
         self.npc_timer -= dt;
@@ -1203,6 +1216,7 @@ impl App {
         self.update_player(dt);
         self.update_npcs(dt);
         self.update_liquids(dt);
+        self.update_rain(dt, screen);
         self.update_editing(dt, screen);
         let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
@@ -1241,6 +1255,7 @@ impl App {
                 light_mode,
                 has_liquids,
                 liquids,
+                rain,
                 world_key,
                 ..
             } = self;
@@ -1252,7 +1267,7 @@ impl App {
                     .ok()
                     .and_then(|v| v.parse::<f32>().ok())
                     .map(|v| v.clamp(0.0, 1.0));
-                let (sky_tint, sky_light, is_day, clock_time) = match override_day {
+                let (sky_tint, _sky_light, is_day, clock_time) = match override_day {
                     Some(d) => {
                         let night = [0.075f32, 0.08, 0.10];
                         let day = [1.0f32, 1.0, 1.0];
@@ -1279,6 +1294,16 @@ impl App {
                         (c, tile_color(c), world.day_time, world.time)
                     }
                 };
+                // `SetBackColor`: rain multiplies the sky (and therefore the surface
+                // sunlight) by `1 - cloudAlpha * 0.9`.
+                let rain_alpha = rain.visual_alpha();
+                let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
+                let sky_tint = [
+                    sky_tint[0] * rain_dim,
+                    sky_tint[1] * rain_dim,
+                    sky_tint[2] * rain_dim,
+                ];
+                let sky_light = tile_color(sky_tint);
                 let params = LightParams {
                     sky: sky_light,
                     hell_glow: 0.55,
@@ -1361,6 +1386,8 @@ impl App {
                     *world_key = Some(key);
                 }
 
+                rain.draw(renderer, lookups, light, *camera, *zoom, screen);
+
                 draw_hud(
                     renderer,
                     screen,
@@ -1389,6 +1416,8 @@ impl App {
                         player.as_ref(),
                         npcs.len(),
                         liquids.active_len(),
+                        rain.visual_alpha(),
+                        rain.drop_count(),
                     );
                 }
 
@@ -3007,6 +3036,8 @@ fn draw_debug(
     player: Option<&Player>,
     npc_count: usize,
     liquid_active: usize,
+    rain_alpha: f32,
+    rain_drops: usize,
 ) {
     if !cache.ready {
         let info = gpu.adapter.get_info();
@@ -3083,7 +3114,9 @@ fn draw_debug(
         ));
     }
     lines.push((
-        format!("npcs {npc_count}   liquid cells {liquid_active}"),
+        format!(
+            "npcs {npc_count}   liquid cells {liquid_active}   rain {rain_alpha:.2} ({rain_drops} drops)"
+        ),
         TEXT,
     ));
     lines.push((

@@ -105,6 +105,8 @@ pub fn load_world_images(
         "Player_Hair_1",
         "NPC_1",
         "NPC_2",
+        "Rain",
+        "Dust",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -239,6 +241,10 @@ pub struct Lookups {
     pub clouds: Vec<Option<CloudTex>>,
     /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
     pub liquids: Vec<Option<tr_render::SheetRect>>,
+    /// `Rain.png`: 2x40 drop frames at 4 px strides.
+    pub rain: Option<tr_render::SheetRect>,
+    /// `Dust.png`: 10 px cells, 8 px frames.
+    pub dust: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -258,6 +264,8 @@ impl Lookups {
             clouds: vec![None; 42],
             liquids: vec![None; 15],
             frame_cache: HashMap::new(),
+            rain: atlas.sheet("Rain").copied(),
+            dust: atlas.sheet("Dust").copied(),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
@@ -342,6 +350,22 @@ impl Lookups {
             }
         }
         me
+    }
+
+    /// UV of one 2x40 raindrop frame (`DrawRain`: `frame.X = type * 4`).
+    pub fn rain_uv(&self, kind: u8) -> Option<[f32; 4]> {
+        let rect = self.rain.as_ref()?;
+        let x = kind as i32 * 4;
+        if x + 2 > rect.width as i32 {
+            return None;
+        }
+        Some(uv_rect(rect, self.atlas_size, x, 0, 2, 40))
+    }
+
+    /// UV of an 8x8 `Dust.png` cell.
+    pub fn dust_uv(&self, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.dust.as_ref()?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
     }
 
     /// UV of a 16x16 source cell inside `Misc/water_{index}`. The sheet is a

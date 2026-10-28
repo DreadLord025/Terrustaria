@@ -31,6 +31,8 @@ pub struct SpriteInstance {
     pub color: [f32; 4],
     /// Per-sprite effect flag: 1 = liquid (UV wave in the fragment shader).
     pub flags: f32,
+    /// Clockwise rotation in radians around the sprite's top-left corner.
+    pub rot: f32,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -195,6 +197,7 @@ impl SpriteRenderer {
                         3 => Float32x2,
                         4 => Float32x4,
                         5 => Float32,
+                        6 => Float32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -317,6 +320,29 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             flags,
+            rot: 0.0,
+        });
+    }
+
+    /// Rotated screen-space sprite. Used by rain, which the original draws rotated by
+    /// `atan2(velocity.x, -velocity.y)` around the top-left origin. Rain lives in the
+    /// always-rebuilt UI range so the cached world range (G6) stays reusable.
+    pub fn push_ui_sprite_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+    ) {
+        self.ui.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            flags: 0.0,
+            rot,
         });
     }
 
@@ -329,6 +355,7 @@ impl SpriteRenderer {
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
             flags: 0.0,
+            rot: 0.0,
         });
     }
 
@@ -341,6 +368,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             flags: 0.0,
+            rot: 0.0,
         });
     }
 
@@ -362,6 +390,7 @@ impl SpriteRenderer {
                     uv1: [u1, self.font_uv1[1]],
                     color,
                     flags: 0.0,
+                    rot: 0.0,
                 });
             }
             cx += gw * scale;
@@ -457,7 +486,7 @@ impl SpriteRenderer {
         }
 
         // B1: no per-frame `collect`. The world and UI ranges are written straight
-        // into one buffer at their final offsets (48-byte instances keep 4-byte
+        // into one buffer at their final offsets (56-byte instances keep 4-byte
         // alignment, so a single `write_buffer` copy of each slice is valid).
         let idx = self.frame_index;
         self.frame_index = (self.frame_index + 1) % RING;

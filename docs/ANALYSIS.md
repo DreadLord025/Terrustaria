@@ -268,6 +268,23 @@ that gives the original's diagonal shorelines, water styles and shimmer sparkles
 generator adds a forest lake and lava puddles so the pass is visible in the default
 world; loaded `.wld` files expose their own liquids.
 
+## Rain and weather
+
+`rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
+`Main.UpdateWeather`'s intensity ramp: a weather event has a target (`maxRaining`),
+`cloudAlpha` moves toward it at `0.0005` per 60 Hz tick, and drops spawn per tick with
+`25 * (0.25 + cloudAlpha)` attempts per 1920 px of screen width, capped at
+`Main.maxRain = 750`. A drop spawns only into a tile with no wall and no solid block,
+falls at `(windSpeedCurrent * 18, 14)` px/tick, and dies on solid or wet collision or below
+the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackColor`'s
+`1 - cloudAlpha * 0.9 * atmo` multiplies the sky colour, which also dims surface sunlight
+via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
+rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
+
+First-pass simplifications: a session-local random weather schedule instead of a saved
+`rainTime`/`maxRaining` pair, no storm clouds/lightning/wind gusts, no rain audio, and no
+snowfall (the snow biome currently still rains).
+
 ## Sky and daylight
 
 `Main.SetBackColor` (day `0..54000`, night `0..32400`) is ported to `color_of_the_skies`:

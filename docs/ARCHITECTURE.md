@@ -82,11 +82,13 @@
   the entire scene is 2 draw calls. The ring has three buffers so a frame never rewrites
   memory the GPU may still be reading. An 8×8 bitmap font (`font8x8`) is baked into the
   atlas for the debug overlay; a 4×4 white block provides solid-colour quads.
-- `sprite.wgsl` — `world = pos + corner*size`, then `(world - cam) * zoom + screen/2`
+- `sprite.wgsl` — `world = pos + rot(corner*size)`, then `(world - cam) * zoom + screen/2`
   → NDC with a flipped Y (world Y grows downward). Alpha-blended, `discard` on a < 0.01.
   The tint is **pre-linearised** (`pow(color.rgb, 2.2)`) before multiplying the sRGB-decoded
   texture: XNA's `Color * Color` is a byte multiply on gamma-encoded values, so multiplying
-  linear light would wash the scene out.
+  linear light would wash the scene out. The extra `rot` attribute rotates a sprite around
+  its top-left corner (`SpriteBatch.Draw` origin zero); it is 0 for every existing pass, so
+  their output is bit-identical, and rain uses it for the original slanted drops.
 
 ### `tr-app` — application
 
@@ -113,6 +115,13 @@
   hit; night spawns include demon eyes. Up to four spawn near the player; the player has
   100 HP, hurt cooldown/knockback, respawn and a HUD health bar. NPC positions/animation
   are part of the G6 world-range key.
+- Weather (`rain.rs`): `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` as a 60 Hz simulation.
+  `cloudAlpha` ramps at 0.0005/tick toward the event's `maxRaining`; drops spawn above the
+  view only into wall-free sky, fall at `(wind*18, 14)` px/tick and die on solid or wet
+  tiles with a splash from the `Dust` water frame. `SetBackColor`'s
+  `1 - cloudAlpha*0.9` dims the sky tint, surface sunlight and clouds. Drops are drawn in
+  the UI range (screen space, rotated) so the G6 world instance range stays cached while
+  raining.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
@@ -143,7 +152,7 @@
   and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas; `TR_NOCACHE`
   bypasses D2/G6 for A/B tests; `TR_PAN=<tiles/frame>` pans deterministically for
   moving-camera benchmarks; `TR_LIGHT_MODE`, `TR_NO_BG`, `TR_NO_WALLS`, `TR_REGEN`,
-  `TR_SEED` control modes/world setup.
+  `TR_SEED`, `TR_RAIN`, `TR_NO_WEATHER` control modes/world setup.
 
 ## Frame flow
 
