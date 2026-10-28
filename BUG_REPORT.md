@@ -278,3 +278,28 @@ surrounded default rect with `src_y = 0` for masks), added the `flag5` own-liqui
 neighbour tests, and `sub_uv_frac` for non-16 px destinations. Verified with lake-bank
 screenshots at zoom 1/2/3 (`TR_CAM=2240,362`): the seams are gone. `TR_PROBE=x,y` now logs
 every sprite covering a world point, which is how the mis-sampled mask was found.
+
+## BUG-017 — Player could not enter slope/step junctions
+
+**Status:** fixed — commit `STEPCOLLISION`
+**Area:** `tr-app/src/collision.rs` (new), `tr-app/src/player.rs`
+
+**Report:** walking into sloped or stepped ground the player either bumped against it
+when climbing or was thrown back a tile when descending; slopes felt solid from the
+open side.
+
+**Cause:** the movement code was an ad-hoc axis-separated AABB that skipped ground
+slopes entirely and snapped the feet to a slope surface with a 16 px tolerance, while
+the earlier BUG-009 fix had removed auto-stepping altogether. None of that is how the
+original moves: `Collision.StepUp`/`StepDown` lift the hitbox over one-tile ledges
+before the AABB pass, `SlopeCollision` slides the feet along ramps after it, and
+`gfxOffY` hides the lift so the climb looks smooth.
+
+**Fix:** ported `TileCollision`, `SlopeCollision`, `StepUp` and `StepDown` verbatim
+(including the slope pass-through flags, the half-brick heights, the `num3 == num`
+rule that keeps `velocity.Y` at gravity on the contact tick, and the underworld
+scan margin), and drove them from `Player::update` in the original order with the
+`gfxOffY`/`stepSpeed` ease and rendering at `position + gfxOffY`. Verified by unit
+tests (step up/down smoothness, slope standing at the left-edge diagonal) and by
+walking the lake shore in game: the player descends the slope staircase into the
+lake and climbs the far bank without sticking.

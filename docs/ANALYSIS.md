@@ -394,12 +394,17 @@ gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump s
 `5.01` with `jumpHeight = 15`: pressing jump sets the upward speed and holding it keeps
 resetting that speed for up to 15 ticks (`Player.JumpMovement`), so a tap jumps ~31 px and
 a full hold ~95 px. A new jump needs a fresh press edge.
-Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with simple water
-buoyancy and ground-slope support (slopes 1/2 follow the diagonal; the feet snap to the
-surface anywhere inside the slope cell). Full-tile ledges are not auto-stepped — like the
-original, they require a jump.
-Half bricks collide only in the bottom 8 px (and the landing snap puts the feet on their
-surface); ceiling slopes 3/4 test the AABB against the solid triangle above the diagonal.
+Movement is the original pipeline, ported in `tr-app/src/collision.rs` from
+`Collision.cs`: `TileCollision` resolves the AABB against `Main.tileSolid` tiles and lets
+slope triangles pass when the body approaches from their open side; `StepDown`/`StepUp`
+run on the pre-collision velocity and lift the hitbox over one-tile ledges and down
+ledges while walking; `SlopeCollision` runs after the move and slides the feet along
+ramps (slope 1 rests on the diagonal at the hitbox's left edge, slope 2 at the right).
+The instant lift of the step helpers is hidden by `Player.gfxOffY`, which eases back to
+zero at `(1 + |vx| / 3) * stepSpeed` px per tick, and the sprite is drawn at
+`position + gfxOffY` (`Player.VisualPosition`). Jumps gate on `velocity.Y == 0` after
+collision, exactly like `Player.cs`. Water buoyancy, half bricks (bottom 8 px solid) and
+ceiling slopes 3/4 (solid above the diagonal) follow the same code paths.
 The player steps at a fixed 60 Hz and `Player::interpolated(alpha)` blends the previous and
 current positions for rendering and camera follow, so a jump is not a 60 Hz staircase on a
 high-refresh display. NPCs use their own fixed 60 Hz accumulator (`NPC.cs` update rate);

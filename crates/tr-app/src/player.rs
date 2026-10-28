@@ -11,6 +11,8 @@
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
 
+use crate::collision;
+
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
 
@@ -79,6 +81,14 @@ pub struct Player {
     /// Y (px) where the current fall started, for fall damage.
     fall_start: f32,
     pub in_lava: bool,
+    /// `Player.gfxOffY`: visual offset that hides the instant lift of `StepUp` /
+    /// `StepDown`; eases back to zero so steps and slopes look smooth.
+    pub gfx_off_y: f32,
+    prev_gfx_off_y: f32,
+    /// `Player.stepSpeed`: how fast `gfxOffY` eases out.
+    step_speed: f32,
+    /// `Player.stairFall`: slopes may be fallen through this tick.
+    stair_fall: bool,
 }
 
 impl Player {
@@ -109,6 +119,10 @@ impl Player {
             regen_acc: 0.0,
             fall_start: sy / TILE_PX,
             in_lava: false,
+            gfx_off_y: 0.0,
+            prev_gfx_off_y: 0.0,
+            step_speed: 1.0,
+            stair_fall: false,
         }
     }
 
@@ -124,6 +138,8 @@ impl Player {
         self.on_ground = false;
         self.jump = 0;
         self.fall_start = y / TILE_PX;
+        self.gfx_off_y = 0.0;
+        self.prev_gfx_off_y = 0.0;
     }
 
     pub fn respawn(&mut self) {
@@ -145,6 +161,8 @@ impl Player {
         self.regen_acc = 0.0;
         self.fall_start = self.y / TILE_PX;
         self.in_lava = false;
+        self.gfx_off_y = 0.0;
+        self.prev_gfx_off_y = 0.0;
     }
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
@@ -187,6 +205,7 @@ impl Player {
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         self.prev_x = self.x;
         self.prev_y = self.y;
+        self.prev_gfx_off_y = self.gfx_off_y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
@@ -251,10 +270,9 @@ impl Player {
             self.walk_time = 0.0;
         }
 
-        self.move_x(world);
         let was_airborne = !self.on_ground;
         let fall_vy = self.vy;
-        self.move_y(world, input.down);
+        self.move_vanilla(world, input.down, gravity);
 
         // `Player.cs`: landing after more than 25 tiles deals 10 damage per extra tile.
         if was_airborne && fall_vy > 0.0 && self.on_ground && !self.in_water {
@@ -313,87 +331,85 @@ impl Player {
         }
     }
 
-    fn move_x(&mut self, world: &World) {
-        let nx = self.x + self.vx;
-        if !collides_player_rect(world, nx, self.y) {
-            self.x = nx;
-            return;
+    /// The original's movement pipeline (`Player.cs`): `TileCollision` resolves the
+    /// AABB against solid tiles and slope triangles, `StepDown`/`StepUp` lift the
+    /// hitbox over one-tile ledges while `gfxOffY` hides the pop, and
+    /// `SlopeCollision` slides the feet along ramps.
+    fn move_vanilla(&mut self, world: &World, down: bool, gravity: f32) {
+        // `Player.cs`: the visual offset eases back to zero at walk speed.
+        let decay = (1.0 + self.vx.abs() / 3.0) * self.step_speed;
+        if self.gfx_off_y > 0.0 {
+            self.gfx_off_y = (self.gfx_off_y - decay).max(0.0);
+        } else if self.gfx_off_y < 0.0 {
+            self.gfx_off_y = (self.gfx_off_y + decay).min(0.0);
         }
-        // Terraria does not step up full tiles: a 16 px ledge needs a jump.
-        // Slopes and half bricks are handled by `slope_floor`/the half-brick
-        // collision, so no auto-step is applied here.
-        // Resolve against the tile edge.
-        if self.vx > 0.0 {
-            let tx = ((self.x + WIDTH + self.vx) / TILE_PX).floor() as i32;
-            self.x = tx as f32 * TILE_PX - WIDTH;
-        } else if self.vx < 0.0 {
-            let tx = ((self.x + self.vx) / TILE_PX).floor() as i32;
-            self.x = (tx + 1) as f32 * TILE_PX;
-        }
-        self.vx = 0.0;
-    }
+        self.gfx_off_y = self.gfx_off_y.clamp(-32.0, 32.0);
 
-    fn move_y(&mut self, world: &World, down: bool) {
-        let ny = self.y + self.vy;
-        if !collides_player_rect(world, self.x, ny) {
-            self.y = ny;
-            if !self.in_water {
-                self.on_ground = false;
-            }
-        } else if self.vy > 0.0 {
-            // Snap to the highest floor under the feet. A row made only of half
-            // bricks has its walkable surface 8 px below the cell top.
-            let ty = ((ny + HEIGHT) / TILE_PX).floor() as i32;
-            let mut half_only = true;
-            let tx0 = (self.x / TILE_PX).floor() as i32;
-            let tx1 = ((self.x + WIDTH - 0.01) / TILE_PX).floor() as i32;
-            for tx in tx0..=tx1 {
-                if let Some(t) = world.tile(tx, ty) {
-                    if !t.active() || (t.kind as usize) >= td::TILE_COUNT {
-                        continue;
-                    }
-                    if !td::TILE_SOLID.has(t.kind) || t.slope() == 1 || t.slope() == 2 {
-                        continue;
-                    }
-                    if !t.half_brick() {
-                        half_only = false;
-                    }
-                }
-            }
-            let top = ty as f32 * TILE_PX + if half_only { 8.0 } else { 0.0 };
-            self.y = top - HEIGHT;
-            self.vy = 0.0;
-            self.on_ground = !down;
-        } else if self.vy < 0.0 {
-            let ty = (ny / TILE_PX).floor() as i32;
-            self.y = (ty + 1) as f32 * TILE_PX;
-            self.vy = 0.0;
-            self.on_ground = false;
+        let mut pos = [self.x, self.y];
+        let mut vel = [self.vx, self.vy];
+        // `Player.cs` runs the step helpers on the pre-collision velocity (which
+        // still carries this tick's gravity), then resolves the AABB.
+        if vel[1] == gravity {
+            collision::step_down(
+                world,
+                &mut pos,
+                &mut vel,
+                WIDTH,
+                HEIGHT,
+                &mut self.step_speed,
+                &mut self.gfx_off_y,
+            );
         }
-        // Ground slopes: keep the feet on the diagonal when standing or falling onto it.
-        if self.vy >= 0.0 {
-            let feet = self.y + HEIGHT;
-            if let Some(surface) = slope_floor(world, self.x, feet) {
-                // The slope surface can be up to a full cell away when the feet
-                // clip into the triangle; snap to it instead of falling through
-                // into the solid tile below.
-                if (feet - surface).abs() <= 16.0 {
-                    self.y = surface - HEIGHT;
-                    self.vy = 0.0;
-                    self.on_ground = true;
-                }
-            }
+        if vel[1] >= gravity && !down {
+            collision::step_up(
+                world,
+                &mut pos,
+                &mut vel,
+                WIDTH,
+                HEIGHT,
+                &mut self.step_speed,
+                &mut self.gfx_off_y,
+                false,
+            );
         }
+        let tc = collision::tile_collision(world, pos, vel, WIDTH, HEIGHT, false, false);
+        if tc.up {
+            self.jump = 0;
+        }
+        vel = tc.vel;
+        pos[0] += vel[0];
+        pos[1] += vel[1];
+        if down {
+            self.stair_fall = true;
+        }
+        let sc = collision::slope_collision(world, pos, vel, WIDTH, HEIGHT, self.stair_fall);
+        self.stair_fall = sc.stair_fall;
+        if sc.stair && (sc.pos[1] - pos[1]).abs() > 8.0 + vel[0].abs() {
+            self.gfx_off_y -= sc.pos[1] - pos[1];
+            self.step_speed = 4.0;
+        }
+        pos = sc.pos;
+        vel = sc.vel;
+        self.x = pos[0];
+        self.y = pos[1];
+        self.vx = vel[0];
+        self.vy = vel[1];
+        // The original gates jumps on `velocity.Y == 0f` after collision.
+        self.on_ground = self.vy == 0.0;
     }
 
     /// Position between the previous and current fixed steps, for smooth rendering.
+    /// The visual step offset is interpolated too and baked into `y`.
     pub fn interpolated(&self, alpha: f32) -> Self {
         let a = alpha.clamp(0.0, 1.0);
         let mut out = self.clone();
         out.x = self.prev_x + (self.x - self.prev_x) * a;
         out.y = self.prev_y + (self.y - self.prev_y) * a;
+        out.y += self.prev_gfx_off_y + (self.gfx_off_y - self.prev_gfx_off_y) * a;
         out.prev_x = out.x;
         out.prev_y = out.y;
+        out.gfx_off_y = 0.0;
+        out.prev_gfx_off_y = 0.0;
         out
     }
 
@@ -485,23 +501,6 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
         }
     }
     false
-}
-
-/// Surface height of a ground slope under the player's centre, if the feet are on it.
-fn slope_floor(world: &World, x: f32, feet: f32) -> Option<f32> {
-    let tx = ((x + WIDTH * 0.5) / TILE_PX).floor() as i32;
-    let ty = (feet / TILE_PX).floor() as i32;
-    let t = world.tile(tx, ty)?;
-    if !t.active() {
-        return None;
-    }
-    let local = ((x + WIDTH * 0.5) - tx as f32 * TILE_PX).clamp(0.0, TILE_PX);
-    let top = ty as f32 * TILE_PX;
-    match t.slope() {
-        1 => Some(top + local),
-        2 => Some(top + TILE_PX - local),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -602,21 +601,23 @@ mod tests {
         w.spawn_y = 58;
         let mut p = Player::spawn(&w);
         for _ in 0..120 { p.update(&w, PlayerInput::default()); }
-        let mut last = p.y;
+        let mut last = p.y + p.gfx_off_y;
         let mut max_step: f32 = 0.0;
         for _ in 0..180 {
             p.update(&w, PlayerInput { right: true, ..Default::default() });
-            max_step = max_step.max((p.y - last).abs());
-            last = p.y;
+            let vis = p.y + p.gfx_off_y;
+            max_step = max_step.max((vis - last).abs());
+            last = vis;
         }
-        assert!(p.y > 56.0, "should have descended, y={}", p.y);
-        assert!(max_step < 4.0, "slope caused a {max_step} px jump");
+        assert!(p.y > 56.0 * TILE_PX, "should have descended, y={}", p.y);
+        assert!(max_step < 8.0, "slope caused a {max_step} px visual jump");
     }
 
     #[test]
-    fn full_tile_ledges_block_instead_of_stepping_up() {
+    fn walks_up_a_one_tile_step_smoothly() {
         let mut w = ground_world();
-        // A one-tile step at x=20: Terraria requires a jump for full blocks.
+        // A one-tile step at x=20: `Collision.StepUp` lifts the hitbox while
+        // `gfxOffY` keeps the sprite at the old height, so the climb is smooth.
         for x in 20..30 {
             let i = w.index(x, 59);
             w.tiles[i] = Tile { kind: 1, ..Default::default() };
@@ -626,14 +627,28 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
-        for _ in 0..240 {
+        let mut last = p.y + p.gfx_off_y;
+        let mut max_step: f32 = 0.0;
+        let mut stood_on_step = false;
+        for k in 0..240 {
             p.update(&w, PlayerInput { right: true, ..Default::default() });
+            let vis = p.y + p.gfx_off_y;
+            max_step = max_step.max((vis - last).abs());
+            last = vis;
+            if p.x + WIDTH > 20.0 * TILE_PX && p.x < 30.0 * TILE_PX {
+                stood_on_step |= (p.y + HEIGHT - 59.0 * TILE_PX).abs() < 1.0;
+            }
         }
         assert!(
-            p.x + WIDTH <= 20.0 * TILE_PX + 0.5,
-            "player climbed the full-tile step: x={}",
+            p.x + WIDTH > 21.0 * TILE_PX,
+            "player never climbed the step: x={}",
             p.x
         );
+        assert!(stood_on_step, "feet never rested on the step top");
+        // The original eases `gfxOffY` at `(1 + |vx| / 3) * stepSpeed` px per tick
+        // (5 px/tick at walk speed with stepSpeed 2.5); what must never happen is
+        // the instant 16 px teleport of a naive snap.
+        assert!(max_step < 8.0, "step caused a {max_step} px visual jump");
     }
 
     #[test]
@@ -833,13 +848,15 @@ mod tests {
         w.compute_chunks();
 
         let mut p = Player::spawn(&w);
-        p.x = 10.0 * TILE_PX + 8.0 - WIDTH * 0.5;
+        // Left edge six pixels into the ramp: `SlopeCollision` rests slope 1 on
+        // the diagonal at the hitbox's left edge.
+        p.x = 10.0 * TILE_PX + 6.0;
         p.y = 29.0 * TILE_PX - HEIGHT;
         for _ in 0..30 {
             p.update(&w, PlayerInput::default());
         }
         let feet = p.y + HEIGHT;
-        let expected = 29.0 * TILE_PX + 8.0;
+        let expected = 29.0 * TILE_PX + (p.x - 10.0 * TILE_PX);
         assert!(
             (feet - expected).abs() <= 1.5,
             "feet {feet} expected {expected}"

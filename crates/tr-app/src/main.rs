@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 mod assets;
+mod collision;
 mod item;
 mod npc;
 mod persist;
