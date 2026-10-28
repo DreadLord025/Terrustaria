@@ -678,6 +678,74 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         let top_y = top - height;
         rows[height as usize - 1] = (22, 198 + rng.range(0, 3) as i16 * 22);
 
+        // `GrowTree`'s base forks: the lowest trunk tile gets a root frame and the
+        // grass on either side may get a matching fork tile. The fork tiles are
+        // ordinary trunk pieces (frameY 132..176), *not* branch markers (198+), and
+        // the right fork uses frameX 22, the left one 44.
+        let grass_at = |dx: i32| {
+            world.tile(x + dx, top).is_some_and(|t| {
+                t.active() && matches!(t.kind, 2 | 23 | 60 | 109) && t.slope == 0 && !t.half_brick()
+            })
+        };
+        let left_grass = grass_at(-1);
+        let right_grass = grass_at(1);
+        let mut base_style = rng.range(0, 3);
+        if !left_grass {
+            if base_style == 0 {
+                base_style = 2;
+            }
+            if base_style == 1 {
+                base_style = 3;
+            }
+        }
+        if !right_grass {
+            if base_style == 0 {
+                base_style = 1;
+            }
+            if base_style == 2 {
+                base_style = 3;
+            }
+        }
+        if left_grass && !right_grass {
+            base_style = 2;
+        }
+        if right_grass && !left_grass {
+            base_style = 1;
+        }
+        if base_style < 3 {
+            let fy = 132 + rng.range(0, 3) as i16 * 22;
+            let fx = match base_style {
+                0 => 88,
+                1 => 0,
+                _ => 66,
+            };
+            rows[0] = (fx, fy);
+            let mut add_fork = |side: i32, fx: i16| {
+                let bx = x + side;
+                if bx < 1 || bx >= width - 1 {
+                    return;
+                }
+                if world.tile(bx, top - 1).is_some_and(|t| t.active()) {
+                    return;
+                }
+                let i = world.index(bx, top - 1);
+                let fy = 132 + rng.range(0, 3) as i16 * 22;
+                world.tiles[i] = Tile {
+                    kind: tree::TREE,
+                    frame_x: fx,
+                    frame_y: fy,
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            };
+            if base_style == 0 || base_style == 1 {
+                add_fork(1, 22);
+            }
+            if base_style == 0 || base_style == 2 {
+                add_fork(-1, 44);
+            }
+        }
+
         // Branch markers are separate transparent tiles that `DrawTrees` turns into
         // the canopy sprites; they must sit exactly beside the branch trunk piece.
         for (bx, by, fx, fy) in markers {
@@ -702,28 +770,6 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
                 kind: tree::TREE,
                 frame_x: fx,
                 frame_y: fy,
-                flags: FLAG_ACTIVE,
-                ..Default::default()
-            };
-        }
-        // Forked base trunk pieces (the game adds these next to the lowest rows).
-        for side in [-1i32, 1i32] {
-            if !rng.chance(3) {
-                continue;
-            }
-            let bx = x + side;
-            if bx < 1 || bx >= width - 1 {
-                continue;
-            }
-            let by = top - 1;
-            if world.tile(bx, by).is_some_and(|t| t.active()) {
-                continue;
-            }
-            let i = world.index(bx, by);
-            world.tiles[i] = Tile {
-                kind: tree::TREE,
-                frame_x: if side < 0 { 44 } else { 66 },
-                frame_y: 132 + rng.range(0, 3) as i16 * 22,
                 flags: FLAG_ACTIVE,
                 ..Default::default()
             };
