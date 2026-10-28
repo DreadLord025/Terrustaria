@@ -110,6 +110,13 @@ internal static class Program
             throw new InvalidDataException($"bad type id {typeId} (readers={readerNames.Count})");
 
         string assetReader = readerNames[typeId - 1];
+        if (assetReader.Contains("SpriteFontReader", StringComparison.Ordinal)
+            || assetReader.Contains("DynamicSpriteFontReader", StringComparison.Ordinal))
+        {
+            // ReLogic DynamicSpriteFont: layout not yet reverse-engineered (see
+            // docs/ROADMAP.md "pixel-exact UI fonts"); skip instead of failing.
+            return false;
+        }
         if (!assetReader.Contains("Texture2DReader", StringComparison.Ordinal))
         {
             if (Environment.GetEnvironmentVariable("XNB_DEBUG") == "1")

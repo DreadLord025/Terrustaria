@@ -325,3 +325,21 @@ Restored the original `bgScale` values and the zoom-1 background matrix, and anc
 clouds at a fixed world altitude above `worldSurface`. Verified with screenshots at the
 same camera Y over a hill and over the lake (identical skyline) and 12 tiles higher
 (skyline shifts ~31 px, i.e. ~0.16 parallax), at zoom 1 and 2.
+
+## BUG-019 — Escape quit the game
+
+**Status:** fixed — commit `ESCINV`
+**Area:** `tr-app/src/main.rs` (input, `draw_hud`)
+
+**Report:** pressing Escape saved and closed the window; the original opens the
+inventory instead.
+
+**Fix:** Escape now toggles `inventory_open`; the world is still saved on window close
+and with F9. The open inventory is the original's 10x5 grid of 56 px cells at (20,20)
+at `inventoryScale = 0.85` (`Main.DrawInventory`, `ItemSlot.Draw` context 0: grey
+`InventoryBack`, hotbar row `InventoryBack9`), row 0 showing the hotbar stacks. The
+closed hotbar now follows context 13 exactly: grey `InventoryBack` at 200/255, the
+selected slot in yellow `InventoryBack14` at full white, `ItemStack`-style digits with
+slot 10 drawn as "0", and item icons from the original `Item_<id>` sprites
+(`item::item_id` maps slot kinds to `ItemID`), falling back to the tile frame for
+kinds without a sprite yet. Slot interaction (click to move stacks) remains M3 work.

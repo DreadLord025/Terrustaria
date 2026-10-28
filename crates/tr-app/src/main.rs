@@ -49,6 +49,13 @@ struct ItemSlot {
     count: u32,
 }
 
+/// Stand-in for the inventory rows the item model does not hold yet (M3).
+const EMPTY_SLOT: ItemSlot = ItemSlot {
+    kind: 0,
+    name: "",
+    count: 0,
+};
+
 /// Finds a hotbar slot for a picked-up item: an existing stack of the same kind, or
 /// an empty slot (which adopts the item's kind/name).
 fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usize> {
@@ -571,6 +578,7 @@ fn main() -> Result<()> {
             s[0] = 1.0;
             s
         },
+        inventory_open: std::env::var_os("TR_INV").is_some(),
         mouse_pos: Vec2::ZERO,
         mine_down: false,
         place_down: false,
@@ -687,6 +695,8 @@ struct App {
     selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     hotbar_scales: [f32; HOTBAR],
+    /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
+    inventory_open: bool,
     mouse_pos: Vec2,
     mine_down: bool,
     place_down: bool,
@@ -955,8 +965,9 @@ impl ApplicationHandler for App {
                         self.keys.insert(code);
                         match code {
                             KeyCode::Escape => {
-                                self.save_world();
-                                event_loop.exit()
+                                // The original opens the inventory on Escape; the
+                                // world is saved on window close and with F9.
+                                self.inventory_open = !self.inventory_open;
                             }
                             KeyCode::F1 => self.debug = !self.debug,
                             KeyCode::F2 => {
@@ -1872,6 +1883,7 @@ impl App {
                     &self.hotbar_scales,
                     player.as_ref(),
                     boss,
+                    self.inventory_open,
                 );
 
                 if *debug {
@@ -4126,6 +4138,62 @@ fn draw_tree_foliage(
 /// player and the boss bar at the bottom centre (`GUIHotbarDrawInner`,
 /// `ClassicPlayerResourcesDisplaySet`, `BigProgressBarHelper`).
 #[allow(clippy::too_many_arguments)]
+/// `ItemSlot.Draw`: the item's own texture at inventory scale, centred in the slot,
+/// with the stack size in the bottom-right corner.
+fn draw_slot_item(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    x: f32,
+    y: f32,
+    slot: f32,
+    scale: f32,
+) {
+    if item.count == 0 {
+        return;
+    }
+    let (icon_uv, iw, ih) = match lookups.item_icon(item.kind) {
+        Some(v) => v,
+        None => match lookups.plain_tex(item.kind) {
+            Some(t) => (t.uv, 16.0, 16.0),
+            None => return,
+        },
+    };
+    let w = iw * scale;
+    let h = ih * scale;
+    r.push_ui_sprite(
+        [x + (slot - w) * 0.5, y + (slot - h) * 0.5],
+        [w, h],
+        icon_uv,
+        [1.0; 4],
+    );
+    let count = format!("{}", item.count);
+    let fs = 0.75 * scale;
+    let tw = r.text_width(&count, fs);
+    let tx = x + slot - tw - 4.0 * scale;
+    let ty = y + slot - 11.0 * scale;
+    r.push_text(tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
+    r.push_text(tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
+}
+
+/// The hotbar digits (`FontAssets.ItemStack` in the original): grey by default,
+/// white at 1.4x on the selected slot, and slot 10 is drawn as "0".
+fn draw_slot_number(r: &mut SpriteRenderer, x: f32, y: f32, i: usize, scale: f32, selected: bool) {
+    let mut num = format!("{}", i + 1);
+    if num == "10" {
+        num = "0".into();
+    }
+    let (fs, dy, col) = if selected {
+        (scale * 1.4, -2.0 * scale, [1.0, 1.0, 1.0, 200.0 / 255.0])
+    } else {
+        (scale, 0.0, [0.86, 0.86, 0.86, 1.0])
+    };
+    let px = x + 6.0 * scale;
+    let py = y + 4.0 * scale + dy;
+    r.push_text(px + 1.0, py + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &num);
+    r.push_text(px, py, fs, col, &num);
+}
+
 fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -4137,45 +4205,67 @@ fn draw_hud(
     hotbar_scales: &[f32; HOTBAR],
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
+    inventory_open: bool,
 ) {
-    // Hotbar: 10 x 52 px slots at (20,20), the selected one grows to 1.0.
-    if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
+    // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
+    // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`
+    // (context 0: grey `InventoryBack`, hotbar row `InventoryBack9`); closed, the ten
+    // slots animate between 0.75 and 1.0 (context 13: grey back at 200/255, the
+    // selected one yellow `InventoryBack14` at full white).
+    if inventory_open {
+        let inv_scale = 0.85f32;
+        if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
+            let hot_back = lookups.hud_uv(lookups.ui_back_hotbar.as_ref()).unwrap_or(back);
+            for j in 0..5usize {
+                for i in 0..10usize {
+                    let idx = i + j * 10;
+                    let x = 20.0 + i as f32 * 56.0 * inv_scale;
+                    let y = 20.0 + j as f32 * 56.0 * inv_scale;
+                    let slot = 52.0 * inv_scale;
+                    let uv = if j == 0 { hot_back } else { back };
+                    let c = 220.0 / 255.0;
+                    r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
+                    let item = if idx < HOTBAR { &inventory[idx] } else { &EMPTY_SLOT };
+                    draw_slot_item(r, lookups, item, x, y, slot, inv_scale);
+                    if j == 0 {
+                        draw_slot_number(
+                            r,
+                            x,
+                            y,
+                            i,
+                            inv_scale,
+                            idx == selected.min(HOTBAR - 1),
+                        );
+                    }
+                }
+            }
+        }
+    } else if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
+        let sel_back = lookups.hud_uv(lookups.ui_back_sel.as_ref()).unwrap_or(back);
         let mut x = 20.0;
-        for (i, item) in inventory.iter().enumerate() {
+        for i in 0..HOTBAR {
             let scale = hotbar_scales[i].clamp(0.75, 1.0);
             let slot = 52.0 * scale;
             let y = 20.0 + 22.0 * (1.0 - scale);
-            let alpha = (75.0 + 150.0 * scale) / 255.0;
-            r.push_ui_sprite([x, y], [slot, slot], back, [1.0, 1.0, 1.0, alpha]);
-            if item.count > 0 {
-                if let Some(tex) = lookups.plain_tex(item.kind) {
-                    let icon = 32.0 * scale;
-                    r.push_ui_sprite(
-                        [x + (slot - icon) * 0.5, y + (slot - icon) * 0.5],
-                        [icon, icon],
-                        tex.uv,
-                        [1.0; 4],
-                    );
-                }
-                let count = format!("{}", item.count);
-                let fs = 0.75 * scale;
-                let tw = r.text_width(&count, fs);
-                let tx = x + slot - tw - 4.0 * scale;
-                let ty = y + slot - 11.0 * scale;
-                r.push_text(tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
-                r.push_text(tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
-            }
+            let (uv, c) = if i == selected {
+                (sel_back, 255.0 / 255.0)
+            } else {
+                (back, 200.0 / 255.0)
+            };
+            r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
+            draw_slot_item(r, lookups, &inventory[i], x, y, slot, scale);
+            draw_slot_number(r, x, y, i, scale, i == selected);
             x += slot + 4.0;
         }
-        // Selected item name, centred above the bar like the original.
-        let item = &inventory[selected.min(HOTBAR - 1)];
-        if item.count > 0 {
-            let label = item.name;
-            let tw = r.text_width(label, 1.0);
-            let tx = 236.0 - tw * 0.5;
-            r.push_text(tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
-            r.push_text(tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
-        }
+    }
+    // Selected item name, centred above the bar like the original.
+    let item = &inventory[selected.min(HOTBAR - 1)];
+    if item.count > 0 && !inventory_open {
+        let label = item.name;
+        let tw = r.text_width(label, 1.0);
+        let tx = 236.0 - tw * 0.5;
+        r.push_text(tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
+        r.push_text(tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
     }
 
     // Hearts: 20 HP per heart, anchored to the right like the classic display.

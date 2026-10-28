@@ -129,7 +129,26 @@ pub fn load_world_images(
         "Item_72",
         "Item_73",
         "Item_74",
+        "Item_2",
+        "Item_3",
+        "Item_8",
+        "Item_9",
+        "Item_11",
+        "Item_12",
+        "Item_13",
+        "Item_14",
+        "Item_26",
+        "Item_30",
+        "Item_42",
+        "Item_169",
+        "Item_172",
+        "Item_174",
+        "Item_276",
+        "Item_593",
         "Inventory_Back",
+        "Inventory_Back2",
+        "Inventory_Back9",
+        "Inventory_Back14",
         "Heart",
         "Bubble",
         "NPC_Head_Boss_7",
@@ -294,6 +313,12 @@ pub struct Lookups {
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
     pub ui_back: Option<tr_render::SheetRect>,
+    /// `Inventory_Back14`: the yellow frame of the selected hotbar slot.
+    pub ui_back_sel: Option<tr_render::SheetRect>,
+    /// `Inventory_Back9`: the hotbar row frame inside the open inventory.
+    pub ui_back_hotbar: Option<tr_render::SheetRect>,
+    /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
+    pub item_icons: HashMap<u16, tr_render::SheetRect>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
@@ -324,6 +349,14 @@ impl Lookups {
             shuriken: atlas.sheet("Projectile_3").copied(),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
+            ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
+            ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
+            item_icons: [
+                2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
+            ]
+            .into_iter()
+            .filter_map(|i| atlas.sheet(&format!("Item_{i}")).map(|r| (i, *r)))
+            .collect(),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
@@ -507,6 +540,18 @@ impl Lookups {
     pub fn hud_uv(&self, rect: Option<&tr_render::SheetRect>) -> Option<[f32; 4]> {
         let rect = rect?;
         Some(uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height))
+    }
+
+    /// UV and native size of the original `Item_<id>` sprite for a slot kind
+    /// (`ItemSlot.Draw` uses the item's own texture at inventory scale).
+    pub fn item_icon(&self, kind: u16) -> Option<([f32; 4], f32, f32)> {
+        let id = crate::item::item_id(kind);
+        let rect = self.item_icons.get(&id)?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
+        ))
     }
 
     /// UV of one `UI_BossBar` row (516x58, six vertical frames).

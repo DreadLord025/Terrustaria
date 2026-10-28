@@ -52,6 +52,43 @@ pub fn coin_value(kind: u16) -> u64 {
         .unwrap_or(0)
 }
 
+/// `ItemID` of the vanilla item a slot kind stands for, used to pick the original
+/// `Item_*` sprite for HUD and inventory icons (`Terraria.ID.ItemID`).
+pub fn item_id(kind: u16) -> u16 {
+    if is_coin(kind) {
+        return 71 + coin_id(kind).min(3);
+    }
+    if is_weapon(kind) {
+        return match weapon_id(kind) {
+            1 => 42, // Shuriken
+            _ => 0,
+        };
+    }
+    if is_wall(kind) {
+        return match wall_id(kind) {
+            1 => 26, // Stone Wall
+            2 => 30, // Dirt Wall
+            _ => 0,
+        };
+    }
+    match kind {
+        0 | 2 => 2,   // Dirt Block (grass drops dirt, like the original)
+        1 => 3,       // Stone Block
+        4 => 8,       // Torch
+        5 => 9,       // Wood
+        6 => 11,      // Iron Ore
+        7 => 12,      // Copper Ore
+        8 => 13,      // Gold Ore
+        9 => 14,      // Silver Ore
+        53 => 169,    // Sand Block
+        57 => 172,    // Ash Block
+        58 => 174,    // Hellstone
+        80 => 276,    // Cactus
+        147 => 593,   // Snow Block
+        _ => 0,
+    }
+}
+
 /// Display name for a tile or wall item. `Terraria.Lang` would provide these.
 pub fn name(kind: u16) -> &'static str {
     if is_coin(kind) {
