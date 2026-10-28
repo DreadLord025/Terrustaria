@@ -5,6 +5,9 @@
 //! event, and one drop per `MakeRain` spawn slot per tick with the original fall
 //! velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around their top-left
 //! origin with the local light colour, and die on solid or wet tiles with a splash.
+//! In a snow biome the event renders as snowfall instead: no rain drops, and
+//! `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the time, with
+//! the storm intensity increasing the count and the wind.
 //! `TR_RAIN=<intensity>` pins the weather for screenshots; `TR_NO_WEATHER` disables
 //! the scheduler.
 
@@ -18,6 +21,8 @@ use crate::assets;
 
 /// `Main.maxRain`.
 const MAX_DROPS: usize = 750;
+/// Active snowflakes; vanilla caps the snow dust counter near 500 per screen.
+const MAX_SNOW: usize = 600;
 const TICKS_PER_SEC: f32 = 60.0;
 /// `cloudAlpha` change per tick while raining (vanilla `0.0005 * dayRate`).
 const RAMP_PER_TICK: f32 = 0.0005;
@@ -43,6 +48,17 @@ struct Splash {
     frame: u8,
 }
 
+/// One `DustID.Snowflake` (type 76) particle.
+#[derive(Clone, Copy, Debug)]
+struct Snowflake {
+    pos: Vec2,
+    vel: Vec2,
+    scale: f32,
+    /// Sway phase; each flake drifts horizontally on its own sine.
+    phase: f32,
+    frame: u8,
+}
+
 pub struct Rain {
     /// `Main.cloudAlpha`: current visible intensity, 0..~1.5.
     intensity: f32,
@@ -55,6 +71,9 @@ pub struct Rain {
     wind: f32,
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
+    snow: Vec<Snowflake>,
+    /// The camera is in a snow biome: rain is replaced by snowfall.
+    snow_mode: bool,
     rng: u64,
     spawn_acc: f32,
     forced: Option<f32>,
@@ -87,6 +106,8 @@ impl Rain {
             wind,
             drops: Vec::with_capacity(MAX_DROPS),
             splashes: Vec::with_capacity(128),
+            snow: Vec::with_capacity(MAX_SNOW),
+            snow_mode: false,
             rng,
             spawn_acc: 0.0,
             forced,
@@ -101,6 +122,10 @@ impl Rain {
 
     pub fn drop_count(&self) -> usize {
         self.drops.len()
+    }
+
+    pub fn snow_count(&self) -> usize {
+        self.snow.len()
     }
 
     fn next_u64(&mut self) -> u64 {
@@ -120,7 +145,16 @@ impl Rain {
     }
 
     /// Fixed 60 Hz stepping, independent of frame rate.
-    pub fn update(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32, dt: f32) {
+    pub fn update(
+        &mut self,
+        world: &World,
+        camera: Vec2,
+        screen: Vec2,
+        zoom: f32,
+        dt: f32,
+        snow_biome: bool,
+    ) {
+        self.snow_mode = snow_biome;
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
@@ -157,7 +191,14 @@ impl Rain {
 
         // Each tick advances the drops at the original 60 Hz velocity.
         self.update_drops(world, camera, screen, zoom);
-        if self.intensity > 0.01 && rain_zone(world, camera) {
+        self.update_snow(world, camera, screen, zoom);
+        if self.snow_mode {
+            // Vanilla suppresses rain drops in a snow biome and lets the ambient
+            // snow dust carry the weather instead.
+            if rain_zone(world, camera) {
+                self.spawn_snow(world, camera, screen, zoom);
+            }
+        } else if self.intensity > 0.01 && rain_zone(world, camera) {
             self.spawn(world, camera, screen, zoom);
         }
         for s in &mut self.splashes {
@@ -234,6 +275,69 @@ impl Rain {
         }
     }
 
+    fn update_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
+        let bottom = camera.y + screen.y * 0.5 / zoom + 40.0 / zoom;
+        let px = tr_core::TILE_PX;
+        let mut i = 0;
+        while i < self.snow.len() {
+            let mut s = self.snow[i];
+            s.phase += 0.06;
+            s.pos.x += s.vel.x + s.phase.sin() * 0.45;
+            s.pos.y += s.vel.y;
+            let tx = (s.pos.x / px).floor() as i32;
+            let ty = (s.pos.y / px).floor() as i32;
+            let hit = world.tile(tx, ty).is_some_and(|t| {
+                (t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind))
+                    || t.liquid > 0
+            });
+            if hit || s.pos.y > bottom {
+                self.snow.swap_remove(i);
+            } else {
+                self.snow[i] = s;
+                i += 1;
+            }
+        }
+    }
+
+    /// Ambient snowfall: vanilla spawns `500 * screenWidth/1920` dust flakes in a snow
+    /// biome, multiplied by `1 + 2*cloudAlpha` during a storm.
+    fn spawn_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
+        let px = tr_core::TILE_PX;
+        let half = screen * 0.5 / zoom;
+        let rate = screen.x / 1920.0 * 2.4 * (0.6 + 1.8 * self.intensity);
+        if self.snow.len() >= MAX_SNOW {
+            return;
+        }
+        let count = rate.max(0.0).floor() as usize;
+        for _ in 0..count {
+            if self.snow.len() >= MAX_SNOW {
+                break;
+            }
+            let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 90.0);
+            let y = camera.y - half.y - 10.0 - self.rand01() * 60.0;
+            let tx = (x / px).floor() as i32;
+            let ty = (y / px).floor() as i32;
+            if !world
+                .tile(tx, ty)
+                .is_some_and(|t| !t.active() && t.wall == 0)
+            {
+                continue;
+            }
+            let scale = 0.55 + self.rand01() * 0.45;
+            let vy = (2.2 + self.rand01() * 2.4) * scale;
+            let vx = self.wind * (5.0 + 9.0 * self.intensity) + (self.rand01() * 2.0 - 1.0) * 0.5;
+            let frame = self.range(0, 3) as u8;
+            let phase = self.rand01() * std::f32::consts::TAU;
+            self.snow.push(Snowflake {
+                pos: Vec2::new(x, y),
+                vel: Vec2::new(vx, vy),
+                scale,
+                phase,
+                frame,
+            });
+        }
+    }
+
     fn spawn_splash(&mut self, d: Drop) {
         let n = 1 + (self.next_u64() & 1) as usize;
         for _ in 0..n {
@@ -262,7 +366,7 @@ impl Rain {
         zoom: f32,
         screen: Vec2,
     ) {
-        if self.drops.is_empty() && self.splashes.is_empty() {
+        if self.drops.is_empty() && self.splashes.is_empty() && self.snow.is_empty() {
             return;
         }
         let to_screen = |p: Vec2| {
@@ -282,6 +386,21 @@ impl Rain {
                 uv,
                 [c[0] * 0.85, c[1] * 0.85, c[2] * 0.85, 1.0],
                 d.rot,
+            );
+        }
+        for s in &self.snow {
+            let Some(uv) = lookups.dust_uv(760, s.frame as i32 * 10, 8, 8) else {
+                continue;
+            };
+            let c = light_at(light, s.pos);
+            let shade = [c[0] * 0.92 + 0.12, c[1] * 0.95 + 0.12, c[2] + 0.14];
+            let a = (s.scale * 0.75).clamp(0.35, 0.9);
+            r.push_ui_sprite_rot(
+                to_screen(s.pos),
+                [8.0 * s.scale * zoom, 8.0 * s.scale * zoom],
+                uv,
+                [shade[0], shade[1], shade[2], a],
+                0.0,
             );
         }
         for s in &self.splashes {
@@ -344,7 +463,7 @@ mod tests {
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..n {
-            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0);
+            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false);
         }
     }
 
@@ -365,6 +484,36 @@ mod tests {
         run(&mut rain, &w, 240);
         assert_eq!(rain.drop_count(), 0);
         assert_eq!(rain.visual_alpha(), 0.0);
+    }
+
+    #[test]
+    fn snow_replaces_rain_in_a_snow_biome() {
+        let w = ground();
+        let mut rain = Rain::with_forced(17, Some(1.0), false);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        for _ in 0..120 {
+            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true);
+        }
+        assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
+        assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
+    }
+
+    #[test]
+    fn snow_settles_back_into_rain_outside_the_snow_biome() {
+        let w = ground();
+        let mut rain = Rain::with_forced(19, Some(1.0), false);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        for _ in 0..60 {
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true);
+        }
+        let snow = rain.snow_count();
+        assert!(snow > 0);
+        for _ in 0..600 {
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+        }
+        assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
+        assert!(rain.drop_count() > 0);
     }
 
     #[test]

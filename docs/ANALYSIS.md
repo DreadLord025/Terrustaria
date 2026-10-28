@@ -281,9 +281,13 @@ the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackCol
 via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
 rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
 
+Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
+ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
+`1 + 2*cloudAlpha`), falling at 2–5 px/tick with a per-flake sine sway and the storm wind.
+Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
+
 First-pass simplifications: a session-local random weather schedule instead of a saved
-`rainTime`/`maxRaining` pair, no storm clouds/lightning/wind gusts, no rain audio, and no
-snowfall (the snow biome currently still rains).
+`rainTime`/`maxRaining` pair, no storm clouds/lightning/wind gusts, and no weather audio.
 
 ## Surface backgrounds
 

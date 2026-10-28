@@ -121,7 +121,8 @@
   tiles with a splash from the `Dust` water frame. `SetBackColor`'s
   `1 - cloudAlpha*0.9` dims the sky tint, surface sunlight and clouds. Drops are drawn in
   the UI range (screen space, rotated) so the G6 world instance range stays cached while
-  raining.
+  raining. In a snow biome rain drops are suppressed and the same weather spawns ambient
+  `Dust` type-76 flakes (count/wind scaled by `cloudAlpha`) that sway and die on contact.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.

@@ -967,8 +967,9 @@ impl App {
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
     /// per-tick velocity regardless of frame rate.
     fn update_rain(&mut self, dt: f32, screen: Vec2) {
+        let snow = is_snow_biome(&self.world, self.camera);
         self.rain
-            .update(&self.world, self.camera, screen, self.zoom, dt);
+            .update(&self.world, self.camera, screen, self.zoom, dt, snow);
     }
 
     fn update_npcs(&mut self, dt: f32) {
@@ -1418,6 +1419,7 @@ impl App {
                         liquids.active_len(),
                         rain.visual_alpha(),
                         rain.drop_count(),
+                        rain.snow_count(),
                     );
                 }
 
@@ -3177,6 +3179,7 @@ fn draw_debug(
     liquid_active: usize,
     rain_alpha: f32,
     rain_drops: usize,
+    snow_flakes: usize,
 ) {
     if !cache.ready {
         let info = gpu.adapter.get_info();
@@ -3254,7 +3257,7 @@ fn draw_debug(
     }
     lines.push((
         format!(
-            "npcs {npc_count}   liquid cells {liquid_active}   rain {rain_alpha:.2} ({rain_drops} drops)"
+            "npcs {npc_count}   liquid cells {liquid_active}   rain {rain_alpha:.2} ({rain_drops} drops, {snow_flakes} snow)"
         ),
         TEXT,
     ));

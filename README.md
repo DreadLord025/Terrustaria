@@ -24,11 +24,15 @@ clean-room analysis of the decompiled C# game.
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
 
-![rain](docs/screenshots/rain.png)
+| | |
+| --- | --- |
+| ![rain](docs/screenshots/rain.png) | ![snowfall](docs/screenshots/snowfall.png) |
+| Rain: slanted `Rain_0` drops, splashes, overcast sunlight | Snowfall: `Dust` snowflakes in the snow biome |
 
-Rain is a port of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`: slanted 2×40 drops lit by
-the local light map, ground and water splashes, and `SetBackColor`'s overcast dimming of the
-sky and surface sunlight.
+Weather is a port of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`: slanted 2×40 drops lit
+by the local light map, ground and water splashes, and `SetBackColor`'s overcast dimming of
+the sky and surface sunlight. In a snow biome the drops are replaced by ambient `Dust`
+snowflakes that thicken during a storm.
 
 ## What works right now
 
@@ -74,8 +78,9 @@ sky and surface sunlight.
   `cloudAlpha` ramps toward a `maxRaining` target, up to 750 rotated `Rain_0` drops fall at
   the original `(wind*18, 14)` px/tick, spawn only in wall-free sky and die on solid or wet
   tiles with a `Dust` splash. `SetBackColor`'s `1 - cloudAlpha*0.9` dims the sky, clouds and
-  surface sunlight. `TR_RAIN=<0..1.75>` pins a storm; the scheduler is disabled with
-  `TR_NO_WEATHER`.
+  surface sunlight. In a snow biome the same event becomes snowfall: no rain drops, and
+  ambient `Dust` type-76 flakes (thicker, faster and more wind-blown with intensity) drift
+  down. `TR_RAIN=<0..1.75>` pins a storm; the scheduler is disabled with `TR_NO_WEATHER`.
 - **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, then the
   vanilla `DrawSurfaceBG` layering: forest far/near mountains (`Background_7`/`8`) with the
   three `Background_50..52` foreground tree lines, snow mountains (`35`/`36`) with the
@@ -163,8 +168,8 @@ styles, shimmer sparkles and the original's four-corner liquid surface mesh are 
 missing; the current pass draws tile-level surfaces. The world
 generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
 biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
-no full ocean biome or hardmode spread. Rain exists as a first pass but storms/lightning,
-wind gusts, snow and rain audio are missing. Common
+no full ocean biome or hardmode spread. Rain and snow exist as a first pass but
+storms/lightning, wind gusts and weather audio are missing. Common
 forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
 but gem/vanity/palm trees and the per-world random forest style variations are approximate.
 Real biome-specific backgrounds, biome weather and the real textured underground
