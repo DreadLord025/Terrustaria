@@ -15,6 +15,10 @@ use rayon::prelude::*;
 /// Extra tiles around the visible rect (`LightingEngine.AREA_PADDING`); the blur pulls
 /// light in from outside the screen, so the border must not be visible.
 pub const AREA_PADDING: i32 = 28;
+/// D3: extra tiles cached around the visible rect. While the camera pans within this
+/// margin the previous light map is reused without recomputing, and the visible area
+/// always keeps at least `AREA_PADDING` of computed context around it.
+pub const CACHE_MARGIN: i32 = 32;
 /// Edge rows/columns that are not blurred (`LightingEngine.NON_VISIBLE_PADDING`).
 const NON_VISIBLE_PADDING: i32 = 18;
 
@@ -219,10 +223,6 @@ impl Default for LightParams {
 /// any future tile edit invalidate the cache.
 #[derive(Clone, Copy, PartialEq)]
 struct LightKey {
-    x0: i32,
-    y0: i32,
-    x1: i32,
-    y1: i32,
     sky: [u32; 3],
     hell_glow: u32,
     torch_flicker: u32,
@@ -239,8 +239,13 @@ pub struct LightMap {
     mask: Vec<Mask>,
     /// Tiles that actually received light (debug/statistics).
     pub lit_tiles: u32,
-    /// D2: key of the last computation; `None` until the first one.
+    /// D2/D3: key of the last computation and the world rect whose values are valid
+    /// (the computed rect shrunk by `AREA_PADDING` on every side).
     cache_key: Option<LightKey>,
+    valid_x0: i32,
+    valid_y0: i32,
+    valid_x1: i32,
+    valid_y1: i32,
 }
 
 impl Default for LightMap {
@@ -260,6 +265,10 @@ impl LightMap {
             mask: Vec::new(),
             lit_tiles: 0,
             cache_key: None,
+            valid_x0: 1,
+            valid_y0: 1,
+            valid_x1: 0,
+            valid_y1: 0,
         }
     }
 
@@ -395,10 +404,6 @@ impl LightMap {
         force_parallel: Option<bool>,
     ) {
         let key = LightKey {
-            x0,
-            y0,
-            x1,
-            y1,
             sky: [
                 params.sky[0].to_bits(),
                 params.sky[1].to_bits(),
@@ -412,15 +417,27 @@ impl LightMap {
         // measure the uncached path (D2 is otherwise almost always a hit).
         static NO_CACHE: OnceLock<bool> = OnceLock::new();
         let no_cache = *NO_CACHE.get_or_init(|| std::env::var_os("TR_NOCACHE").is_some());
-        if !no_cache && self.cache_key == Some(key) {
+        // D3: the cached map covers the previous visible rect plus CACHE_MARGIN; a
+        // camera pan that stays inside that valid region reuses it untouched.
+        if !no_cache
+            && self.cache_key == Some(key)
+            && x0 >= self.valid_x0
+            && y0 >= self.valid_y0
+            && x1 <= self.valid_x1
+            && y1 <= self.valid_y1
+        {
             return;
         }
         self.cache_key = Some(key);
 
-        let rx0 = (x0 - AREA_PADDING).max(0);
-        let ry0 = (y0 - AREA_PADDING).max(0);
-        let rx1 = (x1 + AREA_PADDING).min(world.width - 1);
-        let ry1 = (y1 + AREA_PADDING).min(world.height - 1);
+        let rx0 = (x0 - AREA_PADDING - CACHE_MARGIN).max(0);
+        let ry0 = (y0 - AREA_PADDING - CACHE_MARGIN).max(0);
+        let rx1 = (x1 + AREA_PADDING + CACHE_MARGIN).min(world.width - 1);
+        let ry1 = (y1 + AREA_PADDING + CACHE_MARGIN).min(world.height - 1);
+        self.valid_x0 = rx0 + AREA_PADDING;
+        self.valid_y0 = ry0 + AREA_PADDING;
+        self.valid_x1 = (rx1 - AREA_PADDING).max(self.valid_x0 - 1);
+        self.valid_y1 = (ry1 - AREA_PADDING).max(self.valid_y0 - 1);
         let w = (rx1 - rx0 + 1).max(0);
         let h = (ry1 - ry0 + 1).max(0);
         let n = (w * h).max(0) as usize;
@@ -1026,6 +1043,45 @@ mod tests {
         // Center slice is the tile itself, right edge sits between the two.
         assert!((s[4][0] - own[0]).abs() < 1e-6, "center {:?}", s[4]);
         assert!(s[5][0] < s[4][0] && s[5][0] > right[0], "right edge {s:?}");
+    }
+
+    #[test]
+    fn panning_within_the_margin_reuses_the_cache() {
+        let mut w = World::new("t".into(), 256, 256);
+        for x in 0..256 {
+            for y in 140..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        let torch = w.index(120, 138);
+        w.tiles[torch].kind = 4;
+        w.tiles[torch].flags |= crate::tile::FLAG_ACTIVE;
+        let params = LightParams {
+            sky: [0.7; 3],
+            hell_glow: 0.55,
+            torch_flicker: 1.0,
+        };
+        let mut map = LightMap::new();
+        map.compute_into(&w, 80, 110, 160, 170, &params);
+        let rect = (map.x0, map.y0, map.w, map.h);
+        map.compute_into(&w, 84, 110, 164, 170, &params);
+        assert_eq!(
+            (map.x0, map.y0, map.w, map.h),
+            rect,
+            "a small pan must reuse the cached map"
+        );
+        // The visible area keeps the same values as a fresh computation.
+        let fresh = LightMap::compute(&w, 84, 110, 164, 170, &params);
+        for y in 110..=170 {
+            for x in 84..=164 {
+                assert_eq!(map.get(x, y), fresh.get(x, y), "light changed at {x},{y}");
+            }
+        }
     }
 
     #[test]

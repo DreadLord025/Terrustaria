@@ -164,7 +164,8 @@ machine. `TR_NOCACHE=1` reproduces the uncached per-frame path for future A/B te
 | B6 | Merge identical textured runs — only after B7; otherwise skipped | 3 | deferred |
 | B9 | Sort instances by sheet/page for texture-cache locality | 2 | evaluated — one atlas and one bind, no locality win |
 | D2 | Cache the light map by (rect, sky colour, flicker) when nothing changes | 2 | done (static: 0 ms; panning: ~50 % hits) |
-| D3 | Incremental light on camera movement (overlap reuse + dirty borders) | 3 | planned |
+| D3 | Incremental light on camera movement: keep a `CACHE_MARGIN = 32` tile valid region around the visible rect; a pan inside it reuses the map, and the visible rect always keeps the original 28-tile blur padding | 3 | done — surface/cave panning at zoom 0.25: light **3.31 → 0.03 ms**, draw **4.13 → 0.74 ms** (600-frame release runs, `TR_PAN=0.25`; `TR_NOCACHE=1` reproduces the old full path) |
+| D3 | Incremental light on camera movement (overlap reuse + dirty borders) | 3 | done (32-tile valid-region reuse; panning stress light 3.31 → 0.03 ms) |
 | D5 | GPU light: masks/seeds as textures, blur as parallel compute dispatches | 3 | planned |
 | D6 | Deferred lighting: unlit chunk meshes + screen-space light texture | 3 | planned |
 | F1 | Chunk meshes (32×32/64×64), rebuilt only on tile edits | 3 | planned |

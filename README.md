@@ -73,7 +73,9 @@ snowflakes that thicken during a storm.
   `GlobalBrightness = 1.2` are applied. `Color`/`White` modes use `Lighting.GetColor9Slice`
   /`GetColor4Slice` block slicing for smooth seams; `Retro` and `Trippy` use the flat legacy
   path. `F2` cycles the four modes, `TR_LIGHT_MODE` pins one. Seeding and horizontal sweeps
-  run on Rayon, and the finished map is cached, so a static view costs 0 ms.
+  run on Rayon, and the finished map is cached with a 32-tile valid region: a static view
+  costs 0 ms, and panning within the margin reuses the map (stress panning light
+  3.31 → 0.03 ms).
 - **Liquids** — `LiquidRenderer` drawing plus a port of `Liquid.UpdateLiquid`/`Liquid.Update`:
   water, lava, honey and shimmer are drawn from the original `Misc/water_*` textures with
   16-frame animation, per-liquid opacity, per-column surface waves, a shader UV ripple and
