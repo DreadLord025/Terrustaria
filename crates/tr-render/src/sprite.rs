@@ -345,6 +345,14 @@ impl SpriteRenderer {
         self.ui.clear();
     }
 
+    /// G6: clear only the UI range and keep the previous frame's world instances. The
+    /// caller must have proven that camera, zoom, screen size, sky tint and world
+    /// contents are unchanged (see `WorldFrameKey` in the app), otherwise the kept
+    /// range is stale.
+    pub fn begin_frame_keep_world(&mut self) {
+        self.ui.clear();
+    }
+
     pub fn render(
         &mut self,
         gpu: &Gpu,

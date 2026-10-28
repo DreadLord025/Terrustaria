@@ -34,6 +34,9 @@ pub struct World {
     pub chunks_y: i32,
     /// One flag per chunk: contains at least one active tile, wall or liquid.
     pub chunk_has: Vec<bool>,
+    /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
+    /// caches key on it so an edit invalidates them. Loading does not bump it.
+    pub revision: u64,
 }
 
 impl World {
@@ -54,6 +57,7 @@ impl World {
             chunks_x: 0,
             chunks_y: 0,
             chunk_has: Vec::new(),
+            revision: 0,
         }
     }
 
@@ -151,6 +155,7 @@ impl World {
     pub fn tile_mut(&mut self, x: i32, y: i32) -> Option<&mut Tile> {
         if self.in_bounds(x, y) {
             let i = self.index(x, y);
+            self.revision = self.revision.wrapping_add(1);
             Some(&mut self.tiles[i])
         } else {
             None

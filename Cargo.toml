@@ -21,6 +21,7 @@ egui-wgpu = "0.37"
 egui-winit = "0.37"
 image = { version = "0.25", default-features = false, features = ["png"] }
 font8x8 = "0.3"
+rayon = "1"
 
 [profile.dev]
 opt-level = 1

@@ -11,6 +11,7 @@
 use crate::tile::Tile;
 use crate::tiledata as td;
 use crate::world::World;
+use rayon::prelude::*;
 
 /// Neighbour slot bits used by the frame table.
 const UP: u8 = 1 << 0;
@@ -60,18 +61,42 @@ static RULES: [Rule; 20] = [
         UP | DOWN | LEFT | RIGHT,
         [(198, 0), (198, 18), (198, 36)],
     ),
-    rule(UP | DOWN | LEFT | RIGHT, UP | DOWN | LEFT | RIGHT, [(18, 18), (36, 18), (54, 18)]),
+    rule(
+        UP | DOWN | LEFT | RIGHT,
+        UP | DOWN | LEFT | RIGHT,
+        [(18, 18), (36, 18), (54, 18)],
+    ),
     // A single open side.
-    rule(DOWN | LEFT | RIGHT, DOWN | LEFT | RIGHT, [(18, 0), (36, 0), (54, 0)]),
-    rule(UP | LEFT | RIGHT, UP | LEFT | RIGHT, [(18, 36), (36, 36), (54, 36)]),
-    rule(UP | DOWN | RIGHT, UP | DOWN | RIGHT, [(0, 0), (0, 18), (0, 36)]),
-    rule(UP | DOWN | LEFT, UP | DOWN | LEFT, [(72, 0), (72, 18), (72, 36)]),
+    rule(
+        DOWN | LEFT | RIGHT,
+        DOWN | LEFT | RIGHT,
+        [(18, 0), (36, 0), (54, 0)],
+    ),
+    rule(
+        UP | LEFT | RIGHT,
+        UP | LEFT | RIGHT,
+        [(18, 36), (36, 36), (54, 36)],
+    ),
+    rule(
+        UP | DOWN | RIGHT,
+        UP | DOWN | RIGHT,
+        [(0, 0), (0, 18), (0, 36)],
+    ),
+    rule(
+        UP | DOWN | LEFT,
+        UP | DOWN | LEFT,
+        [(72, 0), (72, 18), (72, 36)],
+    ),
     // Two open sides, opposing.
     rule(DOWN | RIGHT, DOWN | RIGHT, [(0, 54), (36, 54), (72, 54)]),
     rule(DOWN | LEFT, DOWN | LEFT, [(18, 54), (54, 54), (90, 54)]),
     rule(UP | RIGHT, UP | RIGHT, [(0, 72), (36, 72), (72, 72)]),
     rule(UP | LEFT, UP | LEFT, [(18, 72), (54, 72), (90, 72)]),
-    rule(LEFT | RIGHT, LEFT | RIGHT, [(108, 72), (126, 72), (144, 72)]),
+    rule(
+        LEFT | RIGHT,
+        LEFT | RIGHT,
+        [(108, 72), (126, 72), (144, 72)],
+    ),
     rule(UP | DOWN, UP | DOWN, [(90, 0), (90, 18), (90, 36)]),
     // Two open sides, adjacent (outside corners).
     rule(UP, UP, [(108, 54), (126, 54), (144, 54)]),
@@ -99,7 +124,11 @@ fn framing_type(kind: u16) -> u16 {
 /// `-1` when the tile is not active, otherwise its framing type.
 #[inline]
 fn neighbour(t: &Tile) -> i32 {
-    if t.active() { framing_type(t.kind) as i32 } else { -1 }
+    if t.active() {
+        framing_type(t.kind) as i32
+    } else {
+        -1
+    }
 }
 
 /// Deterministic per-position variant, standing in for the `frameNumber` stored in the
@@ -247,7 +276,9 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     if td::TILE_MOSS.has(me) || td::SET_TILE_MOSS_BRICK.has(me) {
         merge(&mut n, num, |v| td::SET_DIRT.has(v));
     } else if td::SET_DIRT.has(me) {
-        merge(&mut n, num, |v| td::TILE_MOSS.has(v) || td::SET_TILE_MOSS_BRICK.has(v));
+        merge(&mut n, num, |v| {
+            td::TILE_MOSS.has(v) || td::SET_TILE_MOSS_BRICK.has(v)
+        });
     }
     // Grass draws a dirt-coloured border, so it merges with its base dirt.
     if td::SET_NEEDS_GRASS_FRAMING.has(me) {
@@ -257,14 +288,7 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
 
     let mut mask = 0u8;
     for (i, bit) in [
-        UP,
-        DOWN,
-        LEFT,
-        RIGHT,
-        UP_LEFT,
-        UP_RIGHT,
-        DOWN_LEFT,
-        DOWN_RIGHT,
+        UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
     ]
     .iter()
     .enumerate()
@@ -299,30 +323,61 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
 /// Frames every non-important tile in the world (in place).
 ///
 /// `Main.tileFrameImportant` tiles keep the frames stored in the save file.
+#[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_world(world: &mut World) -> usize {
     let important = world.frame_important.clone();
-    let (w, h) = (world.width, world.height);
+    let (w, h) = (world.width as usize, world.height as usize);
+    if w <= 2 || h <= 2 {
+        return 0;
+    }
+
+    // C4: frames depend only on kinds/flags/slopes, never on other frames, so a band
+    // of rows can be framed in parallel. The immutable world is shared by the tasks;
+    // results land in the band buffer and are copied in afterwards. 128 rows is
+    // ~3.3 MB of scratch for a 6400-wide world.
+    const BAND: usize = 128;
+    let mut band = Vec::new();
     let mut framed = 0usize;
-    for y in 1..h - 1 {
-        for x in 1..w - 1 {
-            let i = world.index(x, y);
-            let t = world.tiles[i];
-            if !t.active() {
-                continue;
-            }
-            if important.get(t.kind as usize).copied().unwrap_or(false) {
-                continue;
-            }
-            if t.slope != 0 || t.half_brick() {
-                // Slopes/half blocks use a different frame layout we do not draw yet.
-                continue;
-            }
-            if let Some((fx, fy)) = frame_of(world, x, y) {
-                world.tiles[i].frame_x = fx;
-                world.tiles[i].frame_y = fy;
+    let mut y0 = 1usize;
+    while y0 + 1 < h {
+        let y1 = (y0 + BAND).min(h - 1);
+        let rows = y1 - y0;
+        band.clear();
+        band.resize(rows * w, (i16::MIN, i16::MIN));
+        {
+            let world = &*world;
+            band.par_chunks_mut(w).enumerate().for_each(|(row_i, row)| {
+                let y = (y0 + row_i) as i32;
+                for x in 1..w - 1 {
+                    let t = &world.tiles[y as usize * w + x];
+                    if !t.active()
+                        || important.get(t.kind as usize).copied().unwrap_or(false)
+                        || t.slope != 0
+                        || t.half_brick()
+                    {
+                        // Slopes/half blocks use a frame layout we do not draw yet.
+                        continue;
+                    }
+                    if let Some((fx, fy)) = frame_of(world, x as i32, y) {
+                        row[x] = (fx, fy);
+                    }
+                }
+            });
+        }
+        for (row_i, row) in band.chunks(w).enumerate() {
+            let y = y0 + row_i;
+            for x in 1..w - 1 {
+                let (fx, fy) = row[x];
+                if fx == i16::MIN {
+                    continue;
+                }
+                let t = &mut world.tiles[y * w + x];
+                t.frame_x = fx;
+                t.frame_y = fy;
                 framed += 1;
             }
         }
+        y0 = y1;
     }
     framed
 }
@@ -368,36 +423,67 @@ fn wall_variant(x: i32, y: i32) -> usize {
 }
 
 /// Port of `Framing.WallFrame`: picks the 36 px cell for every wall.
+#[allow(clippy::needless_range_loop)] // `x` also indexes the world, not just `row`
 pub fn frame_walls(world: &mut World) -> usize {
-    let (w, h) = (world.width, world.height);
+    let (w, h) = (world.width as usize, world.height as usize);
+    if w <= 2 || h <= 2 {
+        return 0;
+    }
+
+    // C4: wall frames depend only on the wall ids of the four neighbours. Same
+    // banded-parallel scheme as `frame_world`.
+    const BAND: usize = 128;
+    let mut band = Vec::new();
     let mut framed = 0usize;
-    for y in 1..h - 1 {
-        for x in 1..w - 1 {
-            let i = world.index(x, y);
-            if world.tiles[i].wall == 0 {
-                continue;
-            }
-            let mut mask = 0u8;
-            if world.tiles[world.index(x, y - 1)].wall != 0 {
-                mask |= 1;
-            }
-            if world.tiles[world.index(x - 1, y)].wall != 0 {
-                mask |= 2;
-            }
-            if world.tiles[world.index(x + 1, y)].wall != 0 {
-                mask |= 4;
-            }
-            if world.tiles[world.index(x, y + 1)].wall != 0 {
-                mask |= 8;
-            }
-            if mask == 15 {
-                mask += CENTER_WALL_FRAMES[(x.rem_euclid(3)) as usize][(y.rem_euclid(3)) as usize];
-            }
-            let (col, row) = WALL_FRAMES[mask as usize][wall_variant(x, y)];
-            world.tiles[i].wall_col = col;
-            world.tiles[i].wall_row = row;
-            framed += 1;
+    let mut y0 = 1usize;
+    while y0 + 1 < h {
+        let y1 = (y0 + BAND).min(h - 1);
+        let rows = y1 - y0;
+        band.clear();
+        band.resize(rows * w, (u8::MAX, u8::MAX));
+        {
+            let world = &*world;
+            band.par_chunks_mut(w).enumerate().for_each(|(row_i, row)| {
+                let y = y0 + row_i;
+                for x in 1..w - 1 {
+                    let i = y * w + x;
+                    if world.tiles[i].wall == 0 {
+                        continue;
+                    }
+                    let mut mask = 0u8;
+                    if world.tiles[i - w].wall != 0 {
+                        mask |= 1;
+                    }
+                    if world.tiles[i - 1].wall != 0 {
+                        mask |= 2;
+                    }
+                    if world.tiles[i + 1].wall != 0 {
+                        mask |= 4;
+                    }
+                    if world.tiles[i + w].wall != 0 {
+                        mask |= 8;
+                    }
+                    if mask == 15 {
+                        mask += CENTER_WALL_FRAMES[x % 3][y % 3];
+                    }
+                    row[x] = WALL_FRAMES[mask as usize][wall_variant(x as i32, y as i32)];
+                }
+            });
         }
+        for (row_i, row) in band.chunks(w).enumerate() {
+            let y = y0 + row_i;
+            for x in 1..w - 1 {
+                let (col, wall_row) = row[x];
+                if col == u8::MAX {
+                    continue;
+                }
+                let t = &mut world.tiles[y * w + x];
+                t.wall_col = col;
+                t.wall_row = wall_row;
+                framed += 1;
+            }
+        }
+        y0 = y1;
     }
     framed
 }
@@ -485,12 +571,20 @@ mod tests {
 
         // Enclosed wall at (3,3): mask 15 + centerWallFrameLookup[0][0] == 17.
         let center = *w.tile(3, 3).unwrap();
-        assert!((6..=8).contains(&center.wall_col), "col {}", center.wall_col);
+        assert!(
+            (6..=8).contains(&center.wall_col),
+            "col {}",
+            center.wall_col
+        );
         assert_eq!(center.wall_row, 2);
 
         // Top-left corner (2,2): mask 12 -> WALL_FRAMES[12].
         let corner = *w.tile(2, 2).unwrap();
-        assert!([0, 2, 4].contains(&corner.wall_col), "col {}", corner.wall_col);
+        assert!(
+            [0, 2, 4].contains(&corner.wall_col),
+            "col {}",
+            corner.wall_col
+        );
         assert_eq!(corner.wall_row, 3);
     }
 }

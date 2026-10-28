@@ -98,6 +98,27 @@ debug overlay changed on purpose (more counters).
 \* Within the present-floor noise; GPU instance work is lower, but wall-clock at real zooms
 is dominated by presentation.
 
+### Phase 2 results (done)
+
+Every change was A/B-tested against the Phase 1 binary. Surface, cave and hell frames at
+zoom 1.0–2.0 and the zoom-0.25 stress views are **pixel-identical (0 differing pixels,
+overlay off)**; framed tile/wall counts and instance counts are unchanged.
+
+| ID | Change | Measured result |
+| --- | --- | --- |
+| C1 + C3 | Parallel light on Rayon's persistent global pool | Seeding and the horizontal sweeps are parallel; vertical sweeps stay serial because row-major storage makes them strided. Cave at zoom 0.25: light **7.67 → 3.05 ms**, full draw **9.09 → 3.80 ms**. Rects below 96k cells keep the sequential path: task dispatch cost more than it saved at 1.0–2.0 zoom (light 0.20 → 0.22 ms). |
+| D2 | Light-map cache keyed by rect, sky, glow, flicker and world revision | Static view: light compute **0**. Panning at 0.25 tiles/frame still hits ~50 % of frames (tile rect changes every ~4 frames): cave 0.25 light **3.07 → 1.54 ms**. |
+| G6 | Reuse the world instance range when camera/zoom/screen/light/world are unchanged | Static stress: cave 0.25 frame **9.73 → 2.02 ms**, surface 0.25 **4.01 → 2.05 ms** (600-frame averages). At 1.0–2.0 zoom the frame is present-floor bound, so the gain is CPU headroom rather than wall-clock. Panning always misses (camera bits change), as intended. |
+| C4 | Banded parallel autotiling (128 rows) | Framing **295 → ~70 ms** (5 911 174 tiles in ~53 ms + 2 691 213 walls in ~19 ms) on the reference 6400×1800 world; outputs identical. |
+| C5 | Parallel PNG decode | 258 sheets **68 → ~20 ms**; packed atlas (4096×6454) and every UV unchanged. |
+| C2 | Parallel instance build | **Evaluated, not implemented.** The tile loop is already 0.5–0.9 ms at zoom 0.25 and ~0.05 ms at real zoom; the greedy dark-rect merge is order-sensitive and `Lookups::frame_cache` is a lazy `HashMap`, so a parallel build risks pixel identity for a gain hidden by the present floor. |
+| B2 | Compress 48 B instances to 20–24 B | **Evaluated, deferred.** 42k instances = 2.0 MB/frame at the 0.25 stress zoom and ~140 KB/frame at real zoom; the frame is present- and CPU-bound, not upload-bound, and RGBA8 tint quantisation would break the exact-pixel constraint. |
+| B9 | Sort instances by sheet/page | **Evaluated, deferred.** Everything samples one atlas through one bind group, so sheet sorting cannot improve texture locality; it would only risk changing blend order. |
+
+Startup (excluding window/GPU init) went from **~475 ms to ~210 ms** on the reference
+machine. `TR_NOCACHE=1` reproduces the uncached per-frame path for future A/B tests and
+`TR_PAN=<tiles/frame>` gives a deterministic moving-camera benchmark.
+
 ### Agreed items
 
 | ID | Item | Phase | Status |
@@ -115,15 +136,15 @@ is dominated by presentation.
 | G1 | Measure the ~1.7 ms present/compositor floor, separate it from scene cost | 1 | done (1.10–1.33 ms) |
 | G4 | Cache debug-overlay strings (only when the overlay is open) | 1 | done |
 | H | `TR_STATS` per-phase timings + culling counters; screenshot-diff harness | 1 | done (`tools/pixel_diff.py`) |
-| C1 | Parallel light: seeding + 4 sweeps via rayon (persistent pool) | 2 | planned |
-| C2 | Parallel instance build: count → prefix sum → fill, no atomics | 2 | planned |
-| C3 | Persistent rayon pool (no per-frame thread creation) | 2 | planned |
-| C4 | Parallel world framing at load | 2 | planned |
-| C5 | Parallel PNG decode at load | 2 | planned |
-| B2 | Compress instances 48 → 20–24 B (u16 tile positions/UV, RGBA8 tint) | 2 | planned |
+| C1 | Parallel light: seeding + 4 sweeps via rayon (persistent pool) | 2 | done (seeding + horizontal sweeps; vertical serial by design) |
+| C2 | Parallel instance build: count → prefix sum → fill, no atomics | 2 | evaluated — present-floor hidden, pixel-identity risk |
+| C3 | Persistent rayon pool (no per-frame thread creation) | 2 | done (Rayon global pool) |
+| C4 | Parallel world framing at load | 2 | done (~4.2× faster, identical frames) |
+| C5 | Parallel PNG decode at load | 2 | done (~3.4× faster, identical atlas) |
+| B2 | Compress instances 48 → 20–24 B (u16 tile positions/UV, RGBA8 tint) | 2 | evaluated — upload is not the bottleneck, tint quantisation risks pixels |
 | B6 | Merge identical textured runs — only after B7; otherwise skipped | 3 | deferred |
-| B9 | Sort instances by sheet/page for texture-cache locality | 2 | optional |
-| D2 | Cache the light map by (rect, sky colour, flicker) when nothing changes | 2 | planned |
+| B9 | Sort instances by sheet/page for texture-cache locality | 2 | evaluated — one atlas and one bind, no locality win |
+| D2 | Cache the light map by (rect, sky colour, flicker) when nothing changes | 2 | done (static: 0 ms; panning: ~50 % hits) |
 | D3 | Incremental light on camera movement (overlap reuse + dirty borders) | 3 | planned |
 | D5 | GPU light: masks/seeds as textures, blur as parallel compute dispatches | 3 | planned |
 | D6 | Deferred lighting: unlit chunk meshes + screen-space light texture | 3 | planned |
@@ -137,7 +158,7 @@ is dominated by presentation.
 | G2 | Present-mode / frame-latency tuning under `AutoVsync` | 1 | done (default latency 1, `TR_LATENCY` override) |
 | G3 | Push constants instead of the two globals UBOs | 1 | evaluated — 2×32 B/frame is below noise |
 | G5 | Avoid recreating per-frame descriptors where the API allows | 1 | evaluated — surface views have no stable handle |
-| G6 | Skip instance rebuild when camera/light/world are unchanged | 2 | planned |
+| G6 | Skip instance rebuild when camera/light/world are unchanged | 2 | done (static camera reuses world range) |
 
 ### Explicitly excluded
 

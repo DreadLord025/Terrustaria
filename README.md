@@ -30,13 +30,16 @@ clean-room analysis of the decompiled C# game.
   seeds) and `LightMap.Blur` (2 passes × 4 directional sweeps, `0.91` air / `0.56` solid
   decay, `0.0185` cutoff) over the visible rect inflated by 28 tiles. Torches, glowing
   mushrooms, gem walls, lava, the underworld glow and daylight all come from the same tables
-  the game uses. ~0.3–0.6 ms per frame for a 1600×900 view.
+  the game uses. Seeding and the horizontal sweeps run on Rayon's persistent pool (~2.5×
+  faster at the 0.25 debug zoom), and the finished map is cached by rect/ambient/world
+  revision, so a static view costs 0 ms. ~0.2–0.5 ms per frame at real zoom.
 - **Sky & daylight** — `Main.SetBackColor` ported (day 0–54 000, night 0–32 400) producing
   `Main.ColorOfTheSkies`, then `ApplyColorOfTheSkiesToTiles` for surface sunlight. The sky
   itself is the game's own `Background_0.png` gradient; underground, each column fades into
   cave darkness anchored to its first solid tile.
 - **Asset pipeline** — `tools/XnbExtract` decompresses the game's XNA v5 `.xnb` containers
-  (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK.
+  (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK. The world's
+  sheets are decoded in parallel (~20 ms for 258 sheets).
 - **Atlas** — all sheets used by the current world are shelf-packed into one 4096×6454
   texture at startup (105 MB), nearest filtering, no mipmaps.
 - **Renderer** — wgpu 30 on the **Vulkan** backend, one instanced-quad pipeline, one atlas,
@@ -46,12 +49,15 @@ clean-room analysis of the decompiled C# game.
   state, tile counts, light-seeded tiles and light-map time, memory, GPU/driver info.
 - **Culling** — 64×64 chunk occupancy skips empty areas; walls under fully opaque blocks
   are not emitted; fully dark cells whose content is opaque collapse into greedy black
-  rectangles. All of it is pixel-identical to drawing every tile.
+  rectangles. All of it is pixel-identical to drawing every tile. When the camera, zoom,
+  screen, ambient light and world revision are all unchanged, the whole world instance range
+  is reused (G6) and only the UI is rebuilt.
 - **Camera** — WASD/arrows pan, mouse wheel zoom, F5 respawn.
 - **Headless tooling** — `TR_BENCH` (uncapped frame timing), `TR_SHOT` (deterministic
   screenshot without desktop capture), `TR_CAM`/`TR_ZOOM`, `TR_DAY`, `TR_LIGHT_AT`,
-  `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS` (phase timings + culling counters), and
-  `tools/pixel_diff.py` for pixel-exact before/after checks.
+  `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS` (phase timings + culling counters),
+  `TR_NOCACHE` (force the uncached per-frame path), `TR_PAN` (deterministic moving-camera
+  benchmark), and `tools/pixel_diff.py` for pixel-exact before/after checks.
 
 ## Measured (RTX 4070 Laptop, Ryzen AI 9 365, 1600×900)
 
@@ -59,15 +65,18 @@ clean-room analysis of the decompiled C# game.
 | --- | --- |
 | Frame time, avg (surface, zoom 1.5, overlay off) | **1.3–1.9 ms** (present-floor bound) |
 | CPU tile + light (surface, zoom 1.5) | **0.22 ms** |
-| CPU tile + light (cave, zoom 1.0) | 0.48 ms |
-| Debug stress, zoom 0.25 (surface / cave) | 3.70 / 5.58 ms |
+| CPU tile + light (cave, zoom 1.0) | 0.51 ms |
+| Debug stress, zoom 0.25, full rebuild (surface / cave) | 3.07 / 4.90 ms (was 4.01 / 9.73) |
+| Debug stress, zoom 0.25, static view (surface / cave) | 2.05 / 2.02 ms (world range reused) |
+| Debug stress, zoom 0.25, panning (surface / cave) | 2.62 / 3.47 ms (light cache ~50 % hits) |
+| Lighting (visible rect + 28) | 0.2–0.5 ms real zoom; 3.1 ms at 0.25 cave (was 7.7) |
 | Draw calls | 1 (world) or 2 (with UI) |
 | Instances at real zoom (1.0–2.0) | 900–3 600 (was 1 600–5 800) |
-| Instances at zoom 0.25 (surface / cave) | 23 200 / 44 356 (was 40 630 / 77 439) |
-| Lighting (visible rect + 28) | 0.2–0.5 ms real zoom; 2.5–3.6 ms at 0.25 |
+| Instances at zoom 0.25 (surface / cave) | 20 780 / 41 937 |
 | World load | ~60 ms |
-| Autotiling (5.9 M tiles + 2.7 M walls) | ~150 ms |
-| Atlas build | ~60 ms + one-time opacity scan |
+| Autotiling, parallel (5.9 M tiles + 2.7 M walls) | ~70 ms (was ~295) |
+| PNG decode, parallel (258 sheets) | ~20 ms (was ~68) |
+| Atlas build | ~55 ms + one-time opacity scan |
 
 The present/compositor floor on the test laptop is ~1.10–1.33 ms and bimodal depending on
 power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison at real zooms.
@@ -122,6 +131,8 @@ cargo run --release -p tr-app -- "C:\path\to\world.wld"
 | `TR_CHECK_FRAMES=1` | Verify computed frames against the tileset bounds |
 | `TR_STATS=1` | Log average light/draw time and culling counters every 120 frames |
 | `TR_LATENCY=1` | Override `desired_maximum_frame_latency` (default 1) |
+| `TR_NOCACHE=1` | Disable the light (D2) and world-range (G6) caches for A/B measurement |
+| `TR_PAN=0.25` | Pan the camera this many tiles per frame (deterministic benchmarks) |
 
 ## Layout
 

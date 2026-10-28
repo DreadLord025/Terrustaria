@@ -4,7 +4,7 @@ mod assets;
 
 use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -49,12 +49,14 @@ fn main() -> Result<()> {
 
     let t_frame = Instant::now();
     let framed = framing::frame_world(&mut world);
+    let tile_frame_ms = t_frame.elapsed().as_secs_f32() * 1000.0;
+    let t_walls = Instant::now();
     let walled = framing::frame_walls(&mut world);
+    let wall_frame_ms = t_walls.elapsed().as_secs_f32() * 1000.0;
     world.compute_column_surface();
     world.compute_chunks();
     log::info!(
-        "framed {framed} tiles, {walled} walls in {:.0} ms",
-        t_frame.elapsed().as_secs_f32() * 1000.0
+        "framed {framed} tiles in {tile_frame_ms:.0} ms, {walled} walls in {wall_frame_ms:.0} ms"
     );
     log::info!(
         "spawn {},{}, surface {:.1}, rock layer {:.1}, time {:.0} ({})",
@@ -299,6 +301,7 @@ fn main() -> Result<()> {
         stats_on: std::env::var("TR_STATS").is_ok(),
         stats_acc: StatsAcc::default(),
         debug_cache: DebugCache::default(),
+        world_key: None,
     };
     event_loop.run_app(&mut app)?;
     Ok(())
@@ -369,6 +372,41 @@ struct App {
     stats_on: bool,
     stats_acc: StatsAcc,
     debug_cache: DebugCache,
+    /// G6: identity of the last world instance range; a hit lets the frame reuse it.
+    world_key: Option<WorldFrameKey>,
+}
+
+/// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
+/// depends on, compared bit-exactly. A hit keeps the previous frame's instances and
+/// only redraws the UI; the light map has its own cache (D2) inside `LightMap`.
+#[derive(Clone, Copy, PartialEq)]
+struct WorldFrameKey {
+    cam: [u32; 2],
+    zoom: u32,
+    screen: [u32; 2],
+    sky_tint: [u32; 3],
+    sky_light: [u32; 3],
+    hell_glow: u32,
+    torch_flicker: u32,
+    world_revision: u64,
+}
+
+/// `TR_NOCACHE=1` disables D2 and G6, so benchmarks measure the full per-frame
+/// work instead of a cached scene. Also used to A/B the optimisations.
+fn no_cache() -> bool {
+    static NO_CACHE: OnceLock<bool> = OnceLock::new();
+    *NO_CACHE.get_or_init(|| std::env::var_os("TR_NOCACHE").is_some())
+}
+
+/// `TR_PAN=<tiles/frame>` pans the camera deterministically. Benchmarks use it to
+/// measure the moving-camera path, where the static-scene caches (D2/G6) mostly miss.
+fn pan_step() -> Option<f32> {
+    static PAN: OnceLock<Option<f32>> = OnceLock::new();
+    *PAN.get_or_init(|| {
+        std::env::var("TR_PAN")
+            .ok()
+            .and_then(|v| v.parse::<f32>().ok())
+    })
 }
 
 /// Static overlay text, built once instead of every frame (G4).
@@ -556,7 +594,7 @@ impl App {
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
         let mut stats = tr_render::sprite::RenderStats::default();
-        let mut tile_stats = TileDrawStats::default();
+        let mut tile_stats = self.tile_stats;
 
         {
             let App {
@@ -577,12 +615,11 @@ impl App {
                 light,
                 scratch,
                 debug_cache,
+                world_key,
                 ..
             } = self;
 
             if let (Some(gpu), Some(renderer)) = (gpu.as_ref(), renderer.as_mut()) {
-                renderer.begin_frame();
-
                 // `TR_DAY` overrides the time of day (0 = midnight, 1 = noon) so a
                 // screenshot can be compared against the original at a fixed time.
                 let override_day = std::env::var("TR_DAY")
@@ -615,23 +652,54 @@ impl App {
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
 
-                let sky_anchor = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
-                draw_sky(
-                    renderer, *camera, *zoom, screen, world, sky_anchor, sky_uv, sky_tint,
-                );
+                // G6: the whole world range (sky strips, tiles, walls, dark rects)
+                // depends on exactly these values. A hit reuses last frame's uploaded
+                // instance range and only rebuilds the UI.
+                let key = WorldFrameKey {
+                    cam: [camera.x.to_bits(), camera.y.to_bits()],
+                    zoom: zoom.to_bits(),
+                    screen: [screen.x.to_bits(), screen.y.to_bits()],
+                    sky_tint: [
+                        sky_tint[0].to_bits(),
+                        sky_tint[1].to_bits(),
+                        sky_tint[2].to_bits(),
+                    ],
+                    sky_light: [
+                        params.sky[0].to_bits(),
+                        params.sky[1].to_bits(),
+                        params.sky[2].to_bits(),
+                    ],
+                    hell_glow: params.hell_glow.to_bits(),
+                    torch_flicker: params.torch_flicker.to_bits(),
+                    world_revision: world.revision,
+                };
+                let reuse_world = !no_cache() && *world_key == Some(key);
+                if reuse_world {
+                    renderer.begin_frame_keep_world();
+                    tile_stats.draw_ms = 0.0;
+                    tile_stats.light_ms = 0.0;
+                    tile_stats.world_reused = true;
+                } else {
+                    renderer.begin_frame();
+                    let sky_anchor = world.surface_of((camera.x / TILE_PX) as i32) as f32 * TILE_PX;
+                    draw_sky(
+                        renderer, *camera, *zoom, screen, world, sky_anchor, sky_uv, sky_tint,
+                    );
 
-                tile_stats = draw_tiles(
-                    renderer,
-                    world,
-                    lookups,
-                    atlas.as_ref(),
-                    *camera,
-                    *zoom,
-                    screen,
-                    &params,
-                    light,
-                    scratch,
-                );
+                    tile_stats = draw_tiles(
+                        renderer,
+                        world,
+                        lookups,
+                        atlas.as_ref(),
+                        *camera,
+                        *zoom,
+                        screen,
+                        &params,
+                        light,
+                        scratch,
+                    );
+                    *world_key = Some(key);
+                }
 
                 if *debug {
                     draw_debug(
@@ -725,6 +793,9 @@ impl App {
         }
         if dir != Vec2::ZERO {
             self.camera += dir.normalize() * 900.0 * dt / self.zoom;
+        }
+        if let Some(step) = pan_step() {
+            self.camera.x += step * TILE_PX;
         }
     }
 
@@ -951,6 +1022,7 @@ struct TileDrawStats {
     light_ms: f32,
     draw_ms: f32,
     instances: u32,
+    world_reused: bool,
 }
 
 /// Scratch storage for the greedy dark-rectangle merge (A3/A4).
@@ -1274,8 +1346,14 @@ fn draw_debug(
     ));
     lines.push((
         format!(
-            "draw {:.2} ms   light {} seeded tiles   {:.2} ms   sky {:.2},{:.2},{:.2}",
-            tile.draw_ms, tile.lit_tiles, tile.light_ms, sky[0], sky[1], sky[2]
+            "draw {:.2} ms ({})   light {} seeded tiles   {:.2} ms   sky {:.2},{:.2},{:.2}",
+            tile.draw_ms,
+            if tile.world_reused { "reused" } else { "built" },
+            tile.lit_tiles,
+            tile.light_ms,
+            sky[0],
+            sky[1],
+            sky[2]
         ),
         TEXT,
     ));

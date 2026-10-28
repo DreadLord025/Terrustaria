@@ -5,15 +5,25 @@
 //! blurs it in two passes of four line sweeps. We do the same on demand for the rect the
 //! renderer is about to draw, so panning never shows unlit tiles.
 
+use std::sync::OnceLock;
+
 use crate::tile::*;
 use crate::tiledata as td;
 use crate::world::World;
+use rayon::prelude::*;
 
 /// Extra tiles around the visible rect (`LightingEngine.AREA_PADDING`); the blur pulls
 /// light in from outside the screen, so the border must not be visible.
 pub const AREA_PADDING: i32 = 28;
 /// Edge rows/columns that are not blurred (`LightingEngine.NON_VISIBLE_PADDING`).
 const NON_VISIBLE_PADDING: i32 = 18;
+
+/// Rects with at least this many cells seed and sweep rows on Rayon's persistent
+/// global pool; smaller ones stay sequential. Measured on the reference laptop, task
+/// dispatch makes the parallel path a net loss below ~100k cells (light 0.20 → 0.55 ms
+/// at zoom 1.5), so real zooms (~20k cells max) keep the sequential path and only the
+/// zoom-0.25 debug view (~128k cells) goes parallel.
+const PAR_LIGHT_MIN_CELLS: usize = 96 * 1024;
 
 /// Light carried through a tile; matches `LightMaskMode`.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -60,6 +70,21 @@ impl Default for LightParams {
     }
 }
 
+/// D2: identity of one light computation, compared bit-exactly (no hashing). A hit
+/// means the map's `colors` already hold the correct result. `world_revision` makes
+/// any future tile edit invalidate the cache.
+#[derive(Clone, Copy, PartialEq)]
+struct LightKey {
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+    sky: [u32; 3],
+    hell_glow: u32,
+    torch_flicker: u32,
+    world_revision: u64,
+}
+
 /// A rectangle of per-tile light colours, in world tile coordinates.
 pub struct LightMap {
     pub x0: i32,
@@ -70,6 +95,8 @@ pub struct LightMap {
     mask: Vec<Mask>,
     /// Tiles that actually received light (debug/statistics).
     pub lit_tiles: u32,
+    /// D2: key of the last computation; `None` until the first one.
+    cache_key: Option<LightKey>,
 }
 
 impl Default for LightMap {
@@ -88,6 +115,7 @@ impl LightMap {
             colors: Vec::new(),
             mask: Vec::new(),
             lit_tiles: 0,
+            cache_key: None,
         }
     }
 
@@ -134,6 +162,9 @@ impl LightMap {
 
     /// Same as [`LightMap::compute`], but reuses the colour/mask storage (D1). The
     /// per-frame cost drops to zeroing the vectors instead of allocating 1.7 MB.
+    ///
+    /// D2: when the rect, ambient parameters and world revision match the previous
+    /// call, the storage already holds the correct colours and the compute is a no-op.
     pub fn compute_into(
         &mut self,
         world: &World,
@@ -143,6 +174,58 @@ impl LightMap {
         y1: i32,
         params: &LightParams,
     ) {
+        self.compute_into_impl(world, x0, y0, x1, y1, params, None);
+    }
+
+    /// Test hook: forces the sequential or parallel path regardless of rect size.
+    #[cfg(test)]
+    fn compute_into_with(
+        &mut self,
+        world: &World,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        params: &LightParams,
+        parallel: bool,
+    ) {
+        self.compute_into_impl(world, x0, y0, x1, y1, params, Some(parallel));
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn compute_into_impl(
+        &mut self,
+        world: &World,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        params: &LightParams,
+        force_parallel: Option<bool>,
+    ) {
+        let key = LightKey {
+            x0,
+            y0,
+            x1,
+            y1,
+            sky: [
+                params.sky[0].to_bits(),
+                params.sky[1].to_bits(),
+                params.sky[2].to_bits(),
+            ],
+            hell_glow: params.hell_glow.to_bits(),
+            torch_flicker: params.torch_flicker.to_bits(),
+            world_revision: world.revision,
+        };
+        // `TR_NOCACHE=1` forces the full compute every frame so benchmarks can
+        // measure the uncached path (D2 is otherwise almost always a hit).
+        static NO_CACHE: OnceLock<bool> = OnceLock::new();
+        let no_cache = *NO_CACHE.get_or_init(|| std::env::var_os("TR_NOCACHE").is_some());
+        if !no_cache && self.cache_key == Some(key) {
+            return;
+        }
+        self.cache_key = Some(key);
+
         let rx0 = (x0 - AREA_PADDING).max(0);
         let ry0 = (y0 - AREA_PADDING).max(0);
         let rx1 = (x1 + AREA_PADDING).min(world.width - 1);
@@ -160,90 +243,210 @@ impl LightMap {
         self.colors.resize(n, [0.0; 3]);
         self.mask.clear();
         self.mask.resize(n, Mask::Air);
-
-        for ly in 0..h {
-            for lx in 0..w {
-                let x = rx0 + lx;
-                let y = ry0 + ly;
-                let i = (ly * w + lx) as usize;
-                let Some(tile) = world.tile(x, y) else {
-                    continue;
-                };
-                self.mask[i] = mask_of(tile);
-                let c = seed(world, tile, x, y, params);
-                if c[0] > 0.0 || c[1] > 0.0 || c[2] > 0.0 {
-                    self.lit_tiles += 1;
-                }
-                self.colors[i] = c;
-            }
+        if w <= 0 || h <= 0 {
+            return;
         }
 
-        self.blur();
-        self.blur();
+        // C1/C3: seeding goes to Rayon's persistent global pool once the rect is
+        // large enough to amortise task dispatch; see `PAR_LIGHT_MIN_CELLS`.
+        let wu = w as usize;
+        let width = world.width as usize;
+        let parallel = force_parallel.unwrap_or(n >= PAR_LIGHT_MIN_CELLS);
+        self.lit_tiles = if parallel {
+            self.colors
+                .par_chunks_mut(wu)
+                .zip(self.mask.par_chunks_mut(wu))
+                .enumerate()
+                .map(|(ly, (colors_row, mask_row))| {
+                    seed_row_range(
+                        world,
+                        rx0,
+                        ry0 + ly as i32,
+                        wu,
+                        width,
+                        params,
+                        colors_row,
+                        mask_row,
+                    )
+                })
+                .sum()
+        } else {
+            self.colors
+                .chunks_mut(wu)
+                .zip(self.mask.chunks_mut(wu))
+                .enumerate()
+                .map(|(ly, (colors_row, mask_row))| {
+                    seed_row_range(
+                        world,
+                        rx0,
+                        ry0 + ly as i32,
+                        wu,
+                        width,
+                        params,
+                        colors_row,
+                        mask_row,
+                    )
+                })
+                .sum()
+        };
+
+        self.blur(parallel);
+        self.blur(parallel);
     }
 
-    fn idx(&self, x: i32, y: i32) -> usize {
-        (y * self.w + x) as usize
-    }
-
-    /// `LightMap.Blur`: two passes over four line sweeps.
-    fn blur(&mut self) {
+    /// `LightMap.Blur`: two passes over four line sweeps. Columns are swept first
+    /// (sequential: row-major storage makes them strided) and rows afterwards — in
+    /// parallel for the large rects that pass `PAR_LIGHT_MIN_CELLS`.
+    fn blur(&mut self, parallel: bool) {
         let (w, h, pad) = (
             self.w,
             self.h,
             NON_VISIBLE_PADDING.min(self.w.min(self.h) / 3),
         );
+        let wu = w as usize;
 
         for x in 0..w {
             // top -> bottom, then bottom -> top (stopping at the padding).
-            self.blur_line(x, 0, 0, 1, h - pad);
-            self.blur_line(x, h - 1, 0, -1, h - pad);
+            blur_line_v(&mut self.colors, &self.mask, wu, x, 0, 1, h - pad);
+            blur_line_v(&mut self.colors, &self.mask, wu, x, h - 1, -1, h - pad);
         }
-        for y in 0..h {
-            self.blur_line(0, y, 1, 0, w - pad);
-            self.blur_line(w - 1, y, -1, 0, w - pad);
+        let count = w - pad;
+        if parallel {
+            self.colors
+                .par_chunks_mut(wu)
+                .zip(self.mask.par_chunks(wu))
+                .enumerate()
+                .for_each(|(ly, (colors, mask))| {
+                    let base = ly * wu;
+                    blur_line_h(colors, mask, base, 0, 1, count);
+                    blur_line_h(colors, mask, base, w - 1, -1, count);
+                });
+        } else {
+            for (ly, (colors, mask)) in self
+                .colors
+                .chunks_mut(wu)
+                .zip(self.mask.chunks(wu))
+                .enumerate()
+            {
+                let base = ly * wu;
+                blur_line_h(colors, mask, base, 0, 1, count);
+                blur_line_h(colors, mask, base, w - 1, -1, count);
+            }
         }
     }
+}
 
-    /// One directional sweep that carries the brightest light seen so far, decaying it
-    /// by the tile's opacity (`LightMap.BlurLine`).
-    fn blur_line(&mut self, x0: i32, y0: i32, dx: i32, dy: i32, count: i32) {
-        let mut carried = [0.0f32; 3];
-        let mut done = [false; 3];
-        for k in 0..count.max(0) {
-            let (x, y) = (x0 + dx * k, y0 + dy * k);
-            let i = self.idx(x, y);
-            let mask = self.mask[i];
-            let decay = mask.decay();
-            // The original jitters water decay slightly per cell; a stable hash keeps
-            // the frame identical when the camera does not move.
-            let jitter = if mask == Mask::Water {
-                let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
-                0.985 + j as f32 * 0.001
-            } else {
-                1.0
-            };
-            let color = &mut self.colors[i];
+/// Seeds one row of the light map (`TileLightScanner` per tile). Returns how many
+/// tiles received light. Rows never share cells, so this is callable from Rayon tasks.
+fn seed_row_range(
+    world: &World,
+    rx0: i32,
+    y: i32,
+    wu: usize,
+    width: usize,
+    params: &LightParams,
+    colors_row: &mut [[f32; 3]],
+    mask_row: &mut [Mask],
+) -> u32 {
+    let row = y as usize * width;
+    let mut lit = 0u32;
+    for lx in 0..wu {
+        let x = rx0 + lx as i32;
+        let tile = &world.tiles[row + x as usize];
+        mask_row[lx] = mask_of(tile);
+        let c = seed(world, tile, x, y, params);
+        if c[0] > 0.0 || c[1] > 0.0 || c[2] > 0.0 {
+            lit += 1;
+        }
+        colors_row[lx] = c;
+    }
+    lit
+}
 
-            for c in 0..3 {
-                if carried[c] < color[c] {
-                    carried[c] = color[c];
-                    done[c] = false;
-                } else if !done[c] {
-                    if carried[c] < 0.0185 {
-                        done[c] = true;
-                    } else {
-                        color[c] = carried[c];
-                    }
+/// One vertical sweep through column `x`, carrying the brightest light seen so far
+/// and decaying it by the tile's opacity (`LightMap.BlurLine`).
+fn blur_line_v(
+    colors: &mut [[f32; 3]],
+    mask: &[Mask],
+    w: usize,
+    x: i32,
+    y0: i32,
+    dy: i32,
+    count: i32,
+) {
+    let mut carried = [0.0f32; 3];
+    let mut done = [false; 3];
+    for k in 0..count.max(0) {
+        let y = y0 + dy * k;
+        let i = y as usize * w + x as usize;
+        let m = mask[i];
+        let decay = m.decay();
+        let jitter = if m == Mask::Water {
+            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
+            0.985 + j as f32 * 0.001
+        } else {
+            1.0
+        };
+        let color = &mut colors[i];
+        for c in 0..3 {
+            if carried[c] < color[c] {
+                carried[c] = color[c];
+                done[c] = false;
+            } else if !done[c] {
+                if carried[c] < 0.0185 {
+                    done[c] = true;
+                } else {
+                    color[c] = carried[c];
                 }
             }
-            if done[0] && done[1] && done[2] {
-                continue;
+        }
+        if done[0] && done[1] && done[2] {
+            continue;
+        }
+        for c in 0..3 {
+            if !done[c] {
+                carried[c] *= decay[c] * jitter;
             }
-            for c in 0..3 {
-                if !done[c] {
-                    carried[c] *= decay[c] * jitter;
+        }
+    }
+}
+
+/// One horizontal sweep through a single row slice. `base` is the global index of
+/// `colors[0]` in the full light map, so the water jitter stays bit-identical to the
+/// sequential implementation.
+fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx: i32, count: i32) {
+    let mut carried = [0.0f32; 3];
+    let mut done = [false; 3];
+    for k in 0..count.max(0) {
+        let lx = (x0 + dx * k).max(0) as usize;
+        let i = base + lx;
+        let m = mask[lx];
+        let decay = m.decay();
+        let jitter = if m == Mask::Water {
+            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
+            0.985 + j as f32 * 0.001
+        } else {
+            1.0
+        };
+        let color = &mut colors[lx];
+        for c in 0..3 {
+            if carried[c] < color[c] {
+                carried[c] = color[c];
+                done[c] = false;
+            } else if !done[c] {
+                if carried[c] < 0.0185 {
+                    done[c] = true;
+                } else {
+                    color[c] = carried[c];
                 }
+            }
+        }
+        if done[0] && done[1] && done[2] {
+            continue;
+        }
+        for c in 0..3 {
+            if !done[c] {
+                carried[c] *= decay[c] * jitter;
             }
         }
     }
@@ -553,6 +756,40 @@ mod tests {
         let far = lm.get(22, 42);
         assert!(near[0] > 0.5, "near torch {near:?}");
         assert!(near[0] > far[0], "torch should fade with distance");
+    }
+
+    #[test]
+    fn parallel_light_is_bit_identical_to_sequential() {
+        let mut w = World::new("par".into(), 420, 420);
+        w.world_surface = 120.0;
+        for y in 1..419 {
+            for x in 1..419 {
+                let i = w.index(x, y);
+                let n = (x * 31 + y * 17).rem_euclid(113);
+                if n < 70 {
+                    w.tiles[i].kind = [0u16, 1, 2, 4, 30, 51][(n % 6) as usize];
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+                if (x * 7 + y * 11) % 23 == 0 {
+                    w.tiles[i].wall = 2;
+                }
+                if (x * 5 + y * 3) % 211 == 0 {
+                    w.tiles[i].liquid = 255;
+                    if n % 2 == 0 {
+                        w.tiles[i].flags |= FLAG_LIQUID_LAVA;
+                    }
+                }
+            }
+        }
+        let params = LightParams::default();
+        let mut seq = LightMap::new();
+        seq.compute_into_with(&w, 20, 20, 400, 400, &params, false);
+        let mut par = LightMap::new();
+        par.compute_into_with(&w, 20, 20, 400, 400, &params, true);
+
+        assert_eq!((seq.w, seq.h), (par.w, par.h));
+        assert_eq!(seq.lit_tiles, par.lit_tiles);
+        assert_eq!(seq.colors, par.colors, "parallel light diverged");
     }
 
     #[test]

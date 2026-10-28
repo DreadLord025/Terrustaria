@@ -21,11 +21,17 @@
 - `wld.rs` — sectioned `.wld` reader (see `ANALYSIS.md`). Only header + tile sections are
   decoded today; later sections are reachable via the section table.
 - `framing.rs` — autotiling: a port of `WorldGen.TileFrameCosmetic` (block frames) and
-  `Framing.WallFrame` (wall frames). See `ANALYSIS.md#autotiling`.
+  `Framing.WallFrame` (wall frames). See `ANALYSIS.md#autotiling`. Both passes run in
+  128-row bands on Rayon: frames depend only on kinds/flags/slopes (never on other frames),
+  so the immutable world is shared and results are copied into the tiles afterwards.
 - `lighting.rs` — `LightMap::compute(rect)`: seeds each tile like `TileLightScanner`
   (surface, hell, wall, emissive, liquid) and blurs them with the original's two-pass,
   four-sweep carried-max algorithm and per-mask decay. Flat colour per tile for now; the
-  corners come with the liquid pass. See `ANALYSIS.md#lighting`.
+  corners come with the liquid pass. See `ANALYSIS.md#lighting`. Seeding and the horizontal
+  sweeps run on Rayon's global pool for rects ≥96k cells (below that, dispatch costs more
+  than it saves); vertical sweeps stay serial because row-major storage makes them strided.
+  A bit-exact cache keyed by rect, sky colour, hell glow, flicker and `World::revision`
+  makes a repeated call a no-op.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.
@@ -59,10 +65,11 @@
 
 ### `tr-app` — application
 
-- Loads the world (argument or most recent save), runs `framing::frame_world` +
-  `framing::frame_walls`, computes the per-column surface (for the sky horizon) and the
-  64×64 chunk occupancy bitset, scans used tile/wall ids, decodes only those PNGs, builds
-  the atlas, then creates the window.
+- Loads the world (argument or most recent save), runs the parallel
+  `framing::frame_world` + `framing::frame_walls`, computes the per-column surface (for the
+  sky horizon) and the 64×64 chunk occupancy bitset, scans used tile/wall ids, decodes only
+  those PNGs in parallel (order-preserving, so atlas UVs do not move), builds the atlas,
+  then creates the window.
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Camera is pan/zoom only (`camera` in world pixels). Visible tile range is derived from
   screen/zoom, then iterated chunk by chunk (empty chunks are skipped). Tile frames use a
@@ -71,24 +78,29 @@
 - A wall under a fully opaque, non-sloped block is skipped (A2). Cells whose quantised
   light is zero and whose drawn content is fully opaque are merged into greedy black
   rectangles (A3/A4) instead of per-tile quads.
-- Per frame: `draw_sky` (the `Background_0` gradient above the local surface, a per-column
-  cave fade below it), then `LightMap::compute_into` (storage reused every frame) for the
-  visible rect, then the tile loop multiplying each wall/tile instance by its tile's light
-  colour.
+- Per frame: compute a `WorldFrameKey` (camera/zoom/screen bits, sky tint, light params,
+  `World::revision`). On a hit, `begin_frame_keep_world()` reuses the previous world instance
+  range and only the UI is rebuilt (G6); on a miss, `draw_sky` (the `Background_0` gradient
+  above the local surface, a per-column cave fade below it), `LightMap::compute_into`
+  (storage reused every frame, D2) for the visible rect, and the tile loop multiplying each
+  wall/tile instance by its tile's light colour run as usual.
 - Debug overlay is drawn with the same sprite pipeline (no egui): frame-time graph, draw
   calls, instances, upload KB, camera/tile/zoom, world size and memory, seeded tiles,
   light-map/draw time, wall culling and dark-rectangle counters, GPU info. Static lines are
   formatted once.
 - Headless tooling: `TR_SHOT`/`TR_SHOT_FRAME` copies the swapchain texture to a mapped
   buffer and writes a PNG; `TR_BENCH=N` switches to `AutoNoVsync`, samples N frame deltas
-  and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas.
+  and prints avg/p50/p95/p99/max; `TR_ATLAS_DUMP` writes the packed atlas; `TR_NOCACHE`
+  bypasses D2/G6 for A/B tests; `TR_PAN=<tiles/frame>` pans deterministically for
+  moving-camera benchmarks.
 
 ## Frame flow
 
 1. `about_to_wait` → `request_redraw`.
-2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; `draw_sky`;
-   `renderer.begin_frame()`; light map for the visible rect; tile loop pushes lit instances;
-   debug overlay; acquire swapchain texture.
+2. `frame()`: input → camera; compute `Main.ColorOfTheSkies` → `tileColor`; check
+   `WorldFrameKey`. On a miss: `draw_sky`, `renderer.begin_frame()`, light map for the
+   visible rect, tile loop pushes lit instances. On a hit: keep the world range. Then the
+   debug overlay (UI) and acquire the swapchain texture.
 3. `renderer.render()` writes both globals buffers + the world/UI instance ranges, records
    one pass (clear + 2 draws) and submits.
 4. `queue.present(frame)`.
@@ -103,7 +115,7 @@
 | Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |
 | Generated tile tables | `TileID.Sets.*` and the merge relation are extracted from the decompiled source, so framing stays in sync with the game instead of drifting from hand-copied lists |
 | Manual debug UI | Avoids pinning egui to wgpu 30 (version coupling), keeps binary small |
-| Light computed per frame, not cached | 0.3–0.6 ms for the visible rect; a cached light map is only worth it once tiles change at runtime |
+| Light and world range cached | A static view costs 0 ms of light/tile work (D2 + G6); panning still gets ~50 % light-cache hits, and `TR_NOCACHE` keeps the uncached path measurable |
 | `TR_*` env instrumentation | Deterministic screenshots/benchmarks without desktop automation |
 
 ## Where the next systems plug in

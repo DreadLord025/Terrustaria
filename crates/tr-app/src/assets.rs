@@ -4,6 +4,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use rayon::prelude::*;
 use tr_core::World;
 use tr_render::{AtlasImage, SheetLayout};
 
@@ -38,18 +39,38 @@ pub fn load_world_images(
     let mut images = Vec::new();
     let mut missing = Vec::new();
 
-    for &kind in tiles {
-        let name = image_name_for_tile(kind);
-        match load_png(dir, &name, SheetLayout::Tile) {
+    // C5: decode sheets on Rayon's pool. `par_iter().collect()` keeps iterator
+    // order, so the atlas layout (and every UV) stays bit-identical to the
+    // sequential loader.
+    let tile_images: Vec<(u16, Result<AtlasImage>)> = tiles
+        .par_iter()
+        .map(|&kind| {
+            (
+                kind,
+                load_png(dir, &image_name_for_tile(kind), SheetLayout::Tile),
+            )
+        })
+        .collect();
+    for (kind, result) in tile_images {
+        match result {
             Ok(img) => images.push(img),
-            Err(_) => missing.push(name),
+            Err(_) => missing.push(image_name_for_tile(kind)),
         }
     }
-    for &wall in walls {
-        let name = image_name_for_wall(wall);
-        match load_png(dir, &name, SheetLayout::Wall) {
+
+    let wall_images: Vec<(u16, Result<AtlasImage>)> = walls
+        .par_iter()
+        .map(|&wall| {
+            (
+                wall,
+                load_png(dir, &image_name_for_wall(wall), SheetLayout::Wall),
+            )
+        })
+        .collect();
+    for (wall, result) in wall_images {
+        match result {
             Ok(img) => images.push(img),
-            Err(_) => missing.push(name),
+            Err(_) => missing.push(image_name_for_wall(wall)),
         }
     }
 
