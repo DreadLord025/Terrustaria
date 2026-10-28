@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 
 use crate::tile::*;
 use crate::world::World;
@@ -174,7 +174,8 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
                     }
                 }
                 if b2 & 8 != 0 {
-                    tile.paint = r.u8()?;
+                    let paint = r.u8()?;
+                    tile.set_paint(paint);
                 }
             }
 
@@ -203,7 +204,7 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
                 if slope == 1 {
                     tile.flags |= FLAG_HALF_BRICK;
                 } else if slope > 1 {
-                    tile.slope = slope - 1;
+                    tile.set_slope(slope - 1);
                 }
             }
 

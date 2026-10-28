@@ -24,16 +24,52 @@ pub struct Tile {
     /// Liquid amount 0..=255.
     pub liquid: u8,
     pub flags: u8,
-    /// 0 = none, 1..=4 = slope type.
-    pub slope: u8,
-    pub paint: u8,
-    /// Wall autotile cell (column) inside the wall sheet, in 36 px cells.
-    pub wall_col: u8,
-    /// Wall autotile cell (row) inside the wall sheet, in 36 px cells.
-    pub wall_row: u8,
+    /// Packed `slope | paint << 3` (slope 0..=4, paint 0..=31); E1 keeps the tile
+    /// at 12 bytes without changing any save field. Use the accessors.
+    pub meta: u8,
+    /// Packed `wall_col | wall_row << 4` (col 0..=12, row 0..=4). Use the accessors.
+    pub wall_frame: u8,
 }
 
 impl Tile {
+    /// 0 = none, 1..=4 = slope type (`tile.slope()`).
+    #[inline]
+    pub fn slope(&self) -> u8 {
+        self.meta & 0x7
+    }
+
+    #[inline]
+    pub fn set_slope(&mut self, slope: u8) {
+        self.meta = (self.meta & !0x7) | (slope & 0x7);
+    }
+
+    #[inline]
+    pub fn paint(&self) -> u8 {
+        self.meta >> 3
+    }
+
+    #[inline]
+    pub fn set_paint(&mut self, paint: u8) {
+        self.meta = (self.meta & 0x7) | ((paint & 0x1f) << 3);
+    }
+
+    /// Wall autotile cell (column) inside the wall sheet, in 36 px cells.
+    #[inline]
+    pub fn wall_col(&self) -> u8 {
+        self.wall_frame & 0xf
+    }
+
+    /// Wall autotile cell (row) inside the wall sheet, in 36 px cells.
+    #[inline]
+    pub fn wall_row(&self) -> u8 {
+        self.wall_frame >> 4
+    }
+
+    #[inline]
+    pub fn set_wall_frame(&mut self, col: u8, row: u8) {
+        self.wall_frame = (col & 0xf) | ((row & 0x7) << 4);
+    }
+
     #[inline]
     pub fn active(&self) -> bool {
         self.flags & FLAG_ACTIVE != 0
@@ -60,6 +96,24 @@ impl Tile {
         } else {
             LiquidKind::Water
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn packed_tile_is_twelve_bytes() {
+        assert_eq!(std::mem::size_of::<Tile>(), 12);
+        let mut t = Tile::default();
+        t.set_slope(4);
+        t.set_paint(31);
+        t.set_wall_frame(12, 4);
+        assert_eq!(t.slope(), 4);
+        assert_eq!(t.paint(), 31);
+        assert_eq!((t.wall_col(), t.wall_row()), (12, 4));
+        assert_eq!(std::mem::size_of::<Tile>(), 12);
     }
 }
 

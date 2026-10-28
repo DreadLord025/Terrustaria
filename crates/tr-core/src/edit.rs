@@ -34,8 +34,7 @@ pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let wall = t.wall;
     let i = world.index(x, y);
     world.tiles[i].wall = 0;
-    world.tiles[i].wall_col = 0;
-    world.tiles[i].wall_row = 0;
+    world.tiles[i].set_wall_frame(0, 0);
     after_wall_edit(world, x, y);
     Some(wall)
 }
@@ -51,8 +50,7 @@ pub fn place_wall(world: &mut World, x: i32, y: i32, wall: u16) -> bool {
     }
     let i = world.index(x, y);
     world.tiles[i].wall = wall;
-    world.tiles[i].wall_col = 0;
-    world.tiles[i].wall_row = 0;
+    world.tiles[i].set_wall_frame(0, 0);
     after_wall_edit(world, x, y);
     true
 }
@@ -162,7 +160,7 @@ mod tests {
         assert!(!place_wall(&mut w, 10, 15, 1), "already walled");
         assert!(place_wall(&mut w, 11, 15, 2));
         // The shared edge reframes to a connecting cell.
-        assert_ne!(w.tile(10, 15).unwrap().wall_col, 0);
+        assert_ne!(w.tile(10, 15).unwrap().wall_col(), 0);
         assert_eq!(break_wall(&mut w, 10, 15), Some(2));
         assert_eq!(w.tile(10, 15).unwrap().wall, 0);
         assert_eq!(break_wall(&mut w, 10, 15), None);

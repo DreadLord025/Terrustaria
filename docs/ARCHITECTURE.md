@@ -12,10 +12,11 @@
 
 ### `tr-core` — data & formats
 
-- `tile.rs` — `Tile`, 16 bytes: `kind: u16, wall: u16, frame_x: i16, frame_y: i16,
-  liquid: u8, flags: u8, slope: u8, paint: u8, wall_col: u8, wall_row: u8`. The layout
-  mirrors `Terraria.Tile` bit fields so saves can round-trip without lossy conversion
-  (16 B/tile vs. a managed object).
+- `tile.rs` — `Tile`, 12 bytes: `kind: u16, wall: u16, frame_x: i16, frame_y: i16,
+  liquid: u8, flags: u8, meta: u8, wall_frame: u8`. `meta` packs slope (3 bits) and paint
+  (5 bits); `wall_frame` packs the wall autotile column (4 bits) and row (3 bits). Accessors
+  keep the public API readable and the on-disk `.trwld`/`.wld` fields unchanged.
+  (12 B/tile vs. the managed `Terraria.Tile` object.)
 - `world.rs` — row-major `Vec<Tile>`, bounds helpers, spawn scan, memory accounting,
   `frame_important` (the save's tile-frame-important bitset).
 - `wld.rs` — sectioned `.wld` reader (see `ANALYSIS.md`). Only header + tile sections are

@@ -121,7 +121,7 @@ fn main() -> Result<()> {
     let slopes = world
         .tiles
         .iter()
-        .filter(|t| t.active() && (t.slope != 0 || t.half_brick()))
+        .filter(|t| t.active() && (t.slope() != 0 || t.half_brick()))
         .count();
     log::info!(
         "framed {framed} tiles in {tile_frame_ms:.0} ms, {walled} walls in {wall_frame_ms:.0} ms, {slopes} slopes"
@@ -155,7 +155,7 @@ fn main() -> Result<()> {
                 line.push_str(&format!(
                     "{}:{}:{}/{}/w{}L{} ",
                     if t.active() { t.kind } else { 999 },
-                    t.slope,
+                    t.slope(),
                     t.frame_x,
                     t.frame_y,
                     t.wall,
@@ -3040,11 +3040,11 @@ fn draw_tiles(
                 }
                 let solid = (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind);
                 let tile_covers = !is_tree
-                    && tile.slope == 0
+                    && tile.slope() == 0
                     && !tile.half_brick()
                     && tile_frame.is_some_and(|f| f.opaque);
                 let wall_frame = if tile.wall != 0 && draw_walls {
-                    lookups.wall_tex(tile.wall, tile.wall_col, tile.wall_row)
+                    lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row())
                 } else {
                     None
                 };
@@ -3106,9 +3106,9 @@ fn draw_tiles(
                         anim_time,
                     );
                     stats.quads += 1;
-                } else if tile.slope != 0 {
+                } else if tile.slope() != 0 {
                     stats.quads +=
-                        push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope);
+                        push_slope(r, pos, tf.uv, l, style, tx, ty, anim_time, tile.slope());
                 } else if tile.half_brick() {
                     push_half(r, pos, tf.uv, l, style, tx, ty, anim_time);
                     stats.quads += 1;

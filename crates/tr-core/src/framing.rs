@@ -246,7 +246,7 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     let dl = world.tile(x - 1, y + 1);
     let dr = world.tile(x + 1, y + 1);
 
-    let slope = tile.slope;
+    let slope = tile.slope();
     let mut up = up_t.map_or(-1, neighbour);
     let mut down = down_t.map_or(-1, neighbour);
     let mut left = left_t.map_or(-1, neighbour);
@@ -254,22 +254,22 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
 
     // Sloped neighbours do not contribute their open side.
     if let Some(t) = left_t {
-        if t.slope == 1 || t.slope == 3 {
+        if t.slope() == 1 || t.slope() == 3 {
             left = -1;
         }
     }
     if let Some(t) = right_t {
-        if t.slope == 2 || t.slope == 4 {
+        if t.slope() == 2 || t.slope() == 4 {
             right = -1;
         }
     }
     if let Some(t) = up_t {
-        if t.slope == 3 || t.slope == 4 {
+        if t.slope() == 3 || t.slope() == 4 {
             up = -1;
         }
     }
     if let Some(t) = down_t {
-        if t.slope == 1 || t.slope == 2 {
+        if t.slope() == 1 || t.slope() == 2 {
             down = -1;
         }
     }
@@ -569,8 +569,8 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
     for (x, y, (col, row)) in walls {
         let idx = world.index(x, y);
         let t = &mut world.tiles[idx];
-        t.wall_col = col;
-        t.wall_row = row;
+        t.set_wall_frame(col, t.wall_row());
+        t.set_wall_frame(t.wall_col(), row);
     }
 }
 
@@ -630,8 +630,8 @@ pub fn frame_walls(world: &mut World) -> usize {
                     continue;
                 }
                 let t = &mut world.tiles[y * w + x];
-                t.wall_col = col;
-                t.wall_row = wall_row;
+                t.set_wall_frame(col, t.wall_row());
+                t.set_wall_frame(t.wall_col(), wall_row);
                 framed += 1;
             }
         }
@@ -724,19 +724,19 @@ mod tests {
         // Enclosed wall at (3,3): mask 15 + centerWallFrameLookup[0][0] == 17.
         let center = *w.tile(3, 3).unwrap();
         assert!(
-            (6..=8).contains(&center.wall_col),
+            (6..=8).contains(&center.wall_col()),
             "col {}",
-            center.wall_col
+            center.wall_col()
         );
-        assert_eq!(center.wall_row, 2);
+        assert_eq!(center.wall_row(), 2);
 
         // Top-left corner (2,2): mask 12 -> WALL_FRAMES[12].
         let corner = *w.tile(2, 2).unwrap();
         assert!(
-            [0, 2, 4].contains(&corner.wall_col),
+            [0, 2, 4].contains(&corner.wall_col()),
             "col {}",
-            corner.wall_col
+            corner.wall_col()
         );
-        assert_eq!(corner.wall_row, 3);
+        assert_eq!(corner.wall_row(), 3);
     }
 }

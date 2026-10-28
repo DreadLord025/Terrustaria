@@ -98,7 +98,14 @@ fn write_tile(w: &mut impl Write, t: &Tile) -> Result<()> {
     w.write_all(&t.wall.to_le_bytes())?;
     w.write_all(&t.frame_x.to_le_bytes())?;
     w.write_all(&t.frame_y.to_le_bytes())?;
-    w.write_all(&[t.liquid, t.flags, t.slope, t.paint, t.wall_col, t.wall_row])?;
+    w.write_all(&[
+        t.liquid,
+        t.flags,
+        t.slope(),
+        t.paint(),
+        t.wall_col(),
+        t.wall_row(),
+    ])?;
     Ok(())
 }
 
@@ -161,18 +168,23 @@ pub fn parse(data: &[u8]) -> Result<World> {
 }
 
 fn read_tile(r: &mut Reader) -> Result<Tile> {
-    Ok(Tile {
+    let mut tile = Tile {
         kind: r.u16()?,
         wall: r.u16()?,
         frame_x: r.i16()?,
         frame_y: r.i16()?,
         liquid: r.u8()?,
         flags: r.u8()?,
-        slope: r.u8()?,
-        paint: r.u8()?,
-        wall_col: r.u8()?,
-        wall_row: r.u8()?,
-    })
+        ..Default::default()
+    };
+    let slope = r.u8()?;
+    let paint = r.u8()?;
+    let col = r.u8()?;
+    let row = r.u8()?;
+    tile.set_slope(slope);
+    tile.set_paint(paint);
+    tile.set_wall_frame(col, row);
+    Ok(tile)
 }
 
 struct Reader<'a> {
@@ -251,17 +263,22 @@ mod tests {
             frame_y: 54,
             liquid: 200,
             flags: FLAG_ACTIVE | crate::tile::FLAG_LIQUID_LAVA,
-            slope: 2,
-            paint: 3,
-            wall_col: 4,
-            wall_row: 2,
+            ..Default::default()
         };
+        w.tiles[i].set_slope(2);
+        w.tiles[i].set_paint(3);
+        w.tiles[i].set_wall_frame(4, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
         let back = parse(&buf).unwrap();
         assert_eq!(back.width, 64);
         assert_eq!(back.name, "Test");
         assert_eq!(back.seed, 99);
+        let t = back.tiles[back.index(5, 30)];
+        assert_eq!(
+            (t.slope(), t.paint(), t.wall_col(), t.wall_row()),
+            (2, 3, 4, 2)
+        );
         assert_eq!(back.world_surface, 12.5);
         assert!(back.frame_important[5]);
         assert_eq!(back.tiles, w.tiles);

@@ -336,7 +336,7 @@ impl Player {
                     if !t.active() || (t.kind as usize) >= td::TILE_COUNT {
                         continue;
                     }
-                    if !td::TILE_SOLID.has(t.kind) || t.slope == 1 || t.slope == 2 {
+                    if !td::TILE_SOLID.has(t.kind) || t.slope() == 1 || t.slope() == 2 {
                         continue;
                     }
                     if !t.half_brick() {
@@ -430,7 +430,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
                 continue;
             }
             if ignore_slopes {
-                if t.slope == 1 || t.slope == 2 {
+                if t.slope() == 1 || t.slope() == 2 {
                     continue; // ground ramps are handled by `slope_floor`
                 }
                 if t.half_brick() {
@@ -440,7 +440,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
                     }
                     continue;
                 }
-                if t.slope >= 3 {
+                if t.slope() >= 3 {
                     // Ceiling ramp: solid above the diagonal, empty below it.
                     let base_x = tx as f32 * TILE_PX;
                     let base_y = ty as f32 * TILE_PX;
@@ -449,7 +449,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
                     let mut cx = sx0;
                     while cx < sx1 {
                         let local = cx - base_x;
-                        let boundary = if t.slope == 3 {
+                        let boundary = if t.slope() == 3 {
                             base_y + TILE_PX - local
                         } else {
                             base_y + local
@@ -478,7 +478,7 @@ fn slope_floor(world: &World, x: f32, feet: f32) -> Option<f32> {
     }
     let local = ((x + WIDTH * 0.5) - tx as f32 * TILE_PX).clamp(0.0, TILE_PX);
     let top = ty as f32 * TILE_PX;
-    match t.slope {
+    match t.slope() {
         1 => Some(top + local),
         2 => Some(top + TILE_PX - local),
         _ => None,
@@ -675,10 +675,10 @@ mod tests {
         let i = w.index(20, 50);
         w.tiles[i] = Tile {
             kind: 1,
-            slope: 3,
             flags: FLAG_ACTIVE,
             ..Default::default()
         };
+        w.tiles[i].set_slope(3);
         // Slope 3 is solid above the diagonal from (0, 16) to (16, 0).
         assert!(collides_player_rect(
             &w,
@@ -708,9 +708,9 @@ mod tests {
         let i = w.index(10, 29);
         w.tiles[i] = Tile {
             kind: 1,
-            slope: 1,
             ..Default::default()
         };
+        w.tiles[i].set_slope(1);
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.spawn_x = 8;
         w.spawn_y = 20;

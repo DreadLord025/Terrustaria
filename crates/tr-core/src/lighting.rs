@@ -671,7 +671,7 @@ fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx:
 
 /// `TileLightScanner.GetTileMask`.
 fn mask_of(tile: &Tile) -> Mask {
-    if light_blocked(tile) && tile.kind != 131 && tile.slope == 0 {
+    if light_blocked(tile) && tile.kind != 131 && tile.slope() == 0 {
         if td::SET_CRACKED_BRICKS.has(tile.kind) {
             return Mask::CrackedBricks;
         }
@@ -725,7 +725,7 @@ fn surface_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c:
     let mut light = [0.0f32; 3];
 
     let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
-    let sloped = tile.slope != 0 || tile.half_brick();
+    let sloped = tile.slope() != 0 || tile.half_brick();
     let transmits = !tile.active()
         || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
         || (sloped
@@ -782,7 +782,7 @@ fn hell_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c: &m
     let glow = p.hell_glow;
     let mut light = [0.0f32; 3];
     let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
-    let sloped = tile.slope != 0 || tile.half_brick();
+    let sloped = tile.slope() != 0 || tile.half_brick();
     let transmits = !tile.active()
         || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
         || (sloped

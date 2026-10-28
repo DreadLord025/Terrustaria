@@ -179,7 +179,7 @@ machine. `TR_NOCACHE=1` reproduces the uncached per-frame path for future A/B te
 | B7 | Texture array instead of atlas — internal GPU storage only, must be pixel-identical; enables B6 and cuts cache pressure | 3 | evaluate |
 | B8 | Manual `fract` UV wrapping for merged runs (nearest, no mips) | 3 | evaluate |
 | B10 | Crop/repack the atlas to frames actually used by the world | 4 | planned |
-| E1 | Pack `Tile` 16 → 8–10 bytes (bitfields) | 4 | planned |
+| E1 | Pack `Tile` 16 → 8–10 bytes (bitfields) | 4 | partial — 14 → **12 bytes** by packing slope/paint and the wall frame cell; world memory **70.6 → 60.5 MB**. Going below 12 needs narrower frame fields (only safe for our asset range) — deferred |
 | E2 | SoA/chunked tile storage for the light and draw scans | 4 | planned |
 | F3 | GPU tilemap (tile metadata in a texture, static grid, vertex-shader culling) | 4 | optional |
 | G2 | Present-mode / frame-latency tuning under `AutoVsync` | 1 | done (default latency 1, `TR_LATENCY` override) |

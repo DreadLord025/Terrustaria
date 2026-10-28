@@ -437,9 +437,9 @@ pub fn generate(opts: &GenOptions) -> World {
         let right_lower = x + 1 < width && surface[(x + 1) as usize] == h + 1;
         let left_lower = x > 0 && surface[(x - 1) as usize] == h + 1;
         if right_lower {
-            world.tiles[i].slope = 1;
+            world.tiles[i].set_slope(1);
         } else if left_lower {
-            world.tiles[i].slope = 2;
+            world.tiles[i].set_slope(2);
         }
     }
 
@@ -453,7 +453,7 @@ pub fn generate(opts: &GenOptions) -> World {
     for x in 1..width - 1 {
         let top = surface[x as usize];
         let ground = *world.tile(x, top).unwrap_or(&Tile::default());
-        if !ground.active() || ground.kind != TILE_GRASS || ground.slope != 0 {
+        if !ground.active() || ground.kind != TILE_GRASS || ground.slope() != 0 {
             continue;
         }
         if !rng.chance(4) {
@@ -497,7 +497,7 @@ pub fn generate(opts: &GenOptions) -> World {
             let flat = surface[(x - 1) as usize] == top && surface[(x + 1) as usize] == top;
             let ground_ok = world
                 .tile(x, top)
-                .is_some_and(|t| t.active() && t.kind == TILE_SAND && t.slope == 0);
+                .is_some_and(|t| t.active() && t.kind == TILE_SAND && t.slope() == 0);
             if !flat || !ground_ok {
                 continue;
             }
@@ -609,7 +609,7 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         let top = surface[x as usize];
         let ground = *world.tile(x, top).unwrap_or(&Tile::default());
         if !(ground.active() && (ground.kind == TILE_GRASS || ground.kind == TILE_SNOW))
-            || ground.slope != 0
+            || ground.slope() != 0
         {
             continue;
         }
@@ -684,7 +684,10 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         // the right fork uses frameX 22, the left one 44.
         let grass_at = |dx: i32| {
             world.tile(x + dx, top).is_some_and(|t| {
-                t.active() && matches!(t.kind, 2 | 23 | 60 | 109) && t.slope == 0 && !t.half_brick()
+                t.active()
+                    && matches!(t.kind, 2 | 23 | 60 | 109)
+                    && t.slope() == 0
+                    && !t.half_brick()
             })
         };
         let left_grass = grass_at(-1);
