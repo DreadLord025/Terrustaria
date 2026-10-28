@@ -3,10 +3,10 @@
 A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
 clean-room analysis of the decompiled C# game.
 
-> **Status: milestone 4 — first enemy.** The world renders with the game's own lighting,
-> liquids, trees, sky layers and rain; a player with gravity, collision and a following
-> camera can walk, jump, swim, mine, place starter blocks, fight hopping slimes and
-> respawn on death. The full NPC roster, projectiles, items/UI and networking are not
+> **Status: milestone 4 — first boss.** The world renders with the game's own lighting,
+> liquids, trees, biome backgrounds and weather; a player with gravity, collision,
+> survival, mining/placing, item drops and a shuriken can fight slimes, zombies, demon eyes
+> and King Slime. The full NPC/projectile rosters, most items/UI and networking are not
 > implemented. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
 
 ![surface](docs/screenshots/surface.png)

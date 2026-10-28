@@ -276,11 +276,13 @@ engine.
 
 ## Recommended order of attack
 
-1. M1.1 autotiling ✅ → M1.2 lighting ✅ (first pass) → M1.3 liquids ← next.
-2. M2 player + M1.4 parallax → it starts to feel like a game.
-3. M3 inventory + block placement/mining → the core loop.
-4. M4 one enemy family + one boss → combat loop.
-5. Everything else.
+1. M1.1 autotiling ✅ → M1.2 lighting ✅ → M1.3 liquid flow ✅ → M1.4 sky/backgrounds/
+   weather ✅.
+2. M2 player ✅ movement, survival, half bricks, held item; next: full draw layers/use.
+3. M3 hotbar/drops/walls ✅; next: inventory/crafting UI and a real item registry.
+4. M4 three enemies + King Slime + shuriken ✅; next: more of `NPC.cs` and projectiles.
+5. M5 forest/snow/desert ✅; next: corruption/jungle/structures and hardmode spread.
+6. Everything else.
 
 ## Non-goals for now
 
