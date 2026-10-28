@@ -25,6 +25,38 @@ pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     Some(kind)
 }
 
+/// Removes the background wall at `(x, y)`. Returns the wall id.
+pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
+    let t = *world.tile(x, y)?;
+    if t.wall == 0 {
+        return None;
+    }
+    let wall = t.wall;
+    let i = world.index(x, y);
+    world.tiles[i].wall = 0;
+    world.tiles[i].wall_col = 0;
+    world.tiles[i].wall_row = 0;
+    after_wall_edit(world, x, y);
+    Some(wall)
+}
+
+/// Places a background wall into a cell that has none. The caller checks reach and
+/// support; a wall may sit behind an active tile.
+pub fn place_wall(world: &mut World, x: i32, y: i32, wall: u16) -> bool {
+    let Some(t) = world.tile(x, y).copied() else {
+        return false;
+    };
+    if t.wall != 0 || wall == 0 {
+        return false;
+    }
+    let i = world.index(x, y);
+    world.tiles[i].wall = wall;
+    world.tiles[i].wall_col = 0;
+    world.tiles[i].wall_row = 0;
+    after_wall_edit(world, x, y);
+    true
+}
+
 /// Places a block/torch into an empty cell, preserving the wall. The caller checks
 /// reach, support and player overlap.
 pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
@@ -60,6 +92,12 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
 fn liquid_flags(flags: u8) -> u8 {
     use crate::tile::{FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
     flags & (FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER)
+}
+
+fn after_wall_edit(world: &mut World, x: i32, y: i32) {
+    world.revision = world.revision.wrapping_add(1);
+    world.mark_chunk(x, y);
+    framing::reframe_area(world, x, y, 2);
 }
 
 fn after_edit(world: &mut World, x: i32, y: i32) {
@@ -114,6 +152,20 @@ mod tests {
         let t = *w.tile(5, 19).unwrap();
         assert!(t.active());
         assert_eq!((t.frame_x, t.frame_y), (0, 0));
+    }
+
+    #[test]
+    fn walls_place_and_break_and_reframe_neighbours() {
+        let mut w = ground_world();
+        assert!(place_wall(&mut w, 10, 15, 2));
+        assert_eq!(w.tile(10, 15).unwrap().wall, 2);
+        assert!(!place_wall(&mut w, 10, 15, 1), "already walled");
+        assert!(place_wall(&mut w, 11, 15, 2));
+        // The shared edge reframes to a connecting cell.
+        assert_ne!(w.tile(10, 15).unwrap().wall_col, 0);
+        assert_eq!(break_wall(&mut w, 10, 15), Some(2));
+        assert_eq!(w.tile(10, 15).unwrap().wall, 0);
+        assert_eq!(break_wall(&mut w, 10, 15), None);
     }
 
     #[test]

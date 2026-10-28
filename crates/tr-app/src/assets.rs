@@ -376,6 +376,14 @@ impl Lookups {
         Some(uv_rect(rect, self.atlas_size, x, 0, 2, 40))
     }
 
+    /// UV of a representative wall cell, used as the inventory/drop icon.
+    pub fn wall_icon_uv(&self, wall: u16) -> Option<[f32; 4]> {
+        let tex = self.walls.get(wall as usize)?.as_ref()?;
+        // Row 2, column 6 is an interior cell without exposed edges.
+        let idx = 2 * WALL_COLS + 6;
+        tex.frames.get(idx).and_then(|f| f.as_ref()).map(|f| f.uv)
+    }
+
     /// UV of an 8x8 `Dust.png` cell.
     pub fn dust_uv(&self, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
         let rect = self.dust.as_ref()?;

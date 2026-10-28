@@ -13,6 +13,43 @@ use tr_core::{TILE_PX, World};
 use crate::assets;
 
 pub const SIZE: f32 = 14.0;
+/// Wall ids are stored as `WALL_ITEM_BASE + WallID` in an item slot.
+pub const WALL_ITEM_BASE: u16 = 10_000;
+
+pub fn is_wall(kind: u16) -> bool {
+    kind >= WALL_ITEM_BASE
+}
+
+pub fn wall_id(kind: u16) -> u16 {
+    kind - WALL_ITEM_BASE
+}
+
+/// Display name for a tile or wall item. `Terraria.Lang` would provide these.
+pub fn name(kind: u16) -> &'static str {
+    if is_wall(kind) {
+        return match wall_id(kind) {
+            1 => "Stone Wall",
+            2 => "Dirt Wall",
+            _ => "Wall",
+        };
+    }
+    match kind {
+        0 => "Dirt",
+        1 => "Stone",
+        2 => "Grass Block",
+        4 => "Torch",
+        5 => "Wood",
+        6 => "Iron Ore",
+        7 => "Copper Ore",
+        8 => "Gold Ore",
+        9 => "Silver Ore",
+        53 => "Sand Block",
+        57 => "Ash Block",
+        58 => "Hellstone",
+        147 => "Snow Block",
+        _ => "Block",
+    }
+}
 const MAGNET_RADIUS: f32 = 42.0;
 const GRAVITY: f32 = 0.3;
 const MAX_FALL: f32 = 6.0;
@@ -100,7 +137,12 @@ impl ItemDrop {
         style: &LightStyle,
         anim_time: f32,
     ) -> u32 {
-        let Some(tex) = lookups.plain_tex(self.kind) else {
+        let uv = if is_wall(self.kind) {
+            lookups.wall_icon_uv(wall_id(self.kind))
+        } else {
+            lookups.plain_tex(self.kind).map(|t| t.uv)
+        };
+        let Some(uv) = uv else {
             return 0;
         };
         let tx = (self.pos.x / TILE_PX) as i32;
@@ -111,7 +153,7 @@ impl ItemDrop {
         r.push_sprite(
             [self.pos.x + 1.0, self.pos.y + 1.0 + bob],
             [SIZE, SIZE],
-            tex.uv,
+            uv,
             [c[0], c[1], c[2], 1.0],
         );
         1
@@ -151,6 +193,16 @@ mod tests {
         w.compute_column_surface();
         w.compute_chunks();
         w
+    }
+
+    #[test]
+    fn wall_items_are_encoded_above_the_tile_range() {
+        let wall = WALL_ITEM_BASE + 2;
+        assert!(is_wall(wall));
+        assert!(!is_wall(1));
+        assert_eq!(wall_id(wall), 2);
+        assert_eq!(name(wall), "Dirt Wall");
+        assert_eq!(name(1), "Stone");
     }
 
     #[test]

@@ -111,8 +111,9 @@
   `Player.itemAnimation`-style swing arc (`draw_held_item`, sprite rotation). `render_key`
   and the held-item/swing state are part of the G6 frame key.
 - Editing: LMB mines with a per-tile timer, RMB places the selected hotbar block after
-  reach/support/overlap checks; `tr_core::edit` performs the world change and local
-  re-frame. Broken tiles spawn `item.rs` drops (gravity, bounce, magnet to the player,
+  reach/support/overlap checks; exposed walls mine/place via `edit::break_wall`/
+  `place_wall` with wall items encoded as `10000 + WallID`. `tr_core::edit` performs the
+  world change and local re-frame. Broken tiles spawn `item.rs` drops (gravity, bounce, magnet to the player,
   first matching or empty slot). The 10-slot hotbar and target outline are drawn through
   the UI sprite batch; F9/close saves the native world and a `.trplayer` sidecar with
   position/HP/10 slots.

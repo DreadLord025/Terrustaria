@@ -47,27 +47,6 @@ struct ItemSlot {
     count: u32,
 }
 
-/// Display name for a mined block. `Terraria.Item` would resolve these from
-/// `ItemID`/`Lang`, which we do not have yet.
-fn item_name(kind: u16) -> &'static str {
-    match kind {
-        0 => "Dirt",
-        1 => "Stone",
-        2 => "Grass Block",
-        4 => "Torch",
-        5 => "Wood",
-        6 => "Iron Ore",
-        7 => "Copper Ore",
-        8 => "Gold Ore",
-        9 => "Silver Ore",
-        53 => "Sand Block",
-        57 => "Ash Block",
-        58 => "Hellstone",
-        147 => "Snow Block",
-        _ => "Block",
-    }
-}
-
 /// Finds a hotbar slot for a picked-up item: an existing stack of the same kind, or
 /// an empty slot (which adopts the item's kind/name).
 fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usize> {
@@ -77,7 +56,7 @@ fn slot_for_pickup(inventory: &mut [ItemSlot; HOTBAR], kind: u16) -> Option<usiz
     let i = inventory.iter().position(|s| s.count == 0)?;
     inventory[i] = ItemSlot {
         kind,
-        name: item_name(kind),
+        name: item::name(kind),
         count: 0,
     };
     Some(i)
@@ -489,7 +468,7 @@ fn main() -> Result<()> {
                 for (i, (kind, count)) in saved.inventory.iter().enumerate().take(HOTBAR) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
-                        name: item_name(*kind),
+                        name: item::name(*kind),
                         count: *count,
                     };
                 }
@@ -1167,6 +1146,8 @@ impl App {
             .get(tile.kind as usize)
             .copied()
             .unwrap_or(false);
+        let held = self.inventory[self.selected];
+        let held_wall = held.count > 0 && item::is_wall(held.kind);
 
         if self.mine_down && tile.active() && !important {
             if self.swing <= 0.0 {
@@ -1188,16 +1169,75 @@ impl App {
                 self.mine_target = None;
                 self.mine_timer = 0.0;
             }
+        } else if self.mine_down && !tile.active() && tile.wall != 0 {
+            // No block in the cell: mining it removes the exposed wall.
+            if self.swing <= 0.0 {
+                self.swing = SWING_TIME;
+            }
+            if self.mine_target == Some((tx, ty)) {
+                self.mine_timer += dt;
+            } else {
+                self.mine_target = Some((tx, ty));
+                self.mine_timer = 0.0;
+            }
+            let hardness = if tile.wall == 1 { 0.7 } else { 0.35 };
+            if self.mine_timer >= hardness {
+                self.break_wall(tx, ty);
+                self.mine_target = None;
+                self.mine_timer = 0.0;
+            }
         } else {
             self.mine_target = None;
             self.mine_timer = 0.0;
         }
 
-        if self.place_down && self.place_cooldown <= 0.0 && self.can_place(tx, ty) {
-            let kind = self.inventory[self.selected].kind;
-            self.place_tile(tx, ty, kind);
-            self.place_cooldown = 0.12;
-            self.swing = SWING_TIME;
+        if self.place_down && self.place_cooldown <= 0.0 {
+            if held_wall {
+                if self.can_place_wall(tx, ty) {
+                    self.place_wall_item(tx, ty, item::wall_id(held.kind));
+                    self.place_cooldown = 0.12;
+                    self.swing = SWING_TIME;
+                }
+            } else if self.can_place(tx, ty) {
+                let kind = held.kind;
+                self.place_tile(tx, ty, kind);
+                self.place_cooldown = 0.12;
+                self.swing = SWING_TIME;
+            }
+        }
+    }
+
+    fn break_wall(&mut self, tx: i32, ty: i32) {
+        let Some(wall) = edit::break_wall(&mut self.world, tx, ty) else {
+            return;
+        };
+        self.spawn_item_drop(item::WALL_ITEM_BASE + wall, tx, ty);
+        self.world_key = None;
+    }
+
+    fn can_place_wall(&self, tx: i32, ty: i32) -> bool {
+        let Some(t) = self.world.tile(tx, ty) else {
+            return false;
+        };
+        if t.wall != 0 || self.inventory[self.selected].count == 0 {
+            return false;
+        }
+        // A neighbouring wall or block (including one in the cell itself) supports it.
+        if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
+            return true;
+        }
+        [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
+            self.world
+                .tile(tx + dx, ty + dy)
+                .is_some_and(|n| n.wall != 0)
+        })
+    }
+
+    fn place_wall_item(&mut self, tx: i32, ty: i32, wall: u16) {
+        if edit::place_wall(&mut self.world, tx, ty, wall) {
+            self.inventory[self.selected].count =
+                self.inventory[self.selected].count.saturating_sub(1);
+            self.world_key = None;
         }
     }
 

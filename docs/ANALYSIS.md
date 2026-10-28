@@ -397,6 +397,13 @@ neighbourhood, so a block edit does not need to re-frame the whole world. The ap
 per-kind timer, RMB placement with reach/support/player-overlap checks, 1–9/0 selection, a
 target outline and F9/save-on-close to the native `.trwld`. Placing consumes the slot.
 
+Walls are editable too: `edit::break_wall` clears the wall and re-frames the 5×5 area,
+`edit::place_wall` fills an empty wall cell, and both bump the revision. Wall items are
+encoded as `10000 + WallID` inside the normal hotbar/drop kinds, so the sidecar format and
+pickup logic need no extra field; the HUD and drops use an interior wall cell as the icon.
+LMB mines an exposed wall when the cell has no active tile (0.35 s dirt / 0.7 s stone) and
+RMB places the selected wall when a neighbour wall or the cell's own block supports it.
+
 Broken tiles spawn an `item.rs` entity instead of teleporting into the inventory:
 `ItemDrop` applies gravity `0.3`, axis-separated collision with the tile grid, 0.35/0.3
 bounce damping and a ground bob. After a 0.35 s delay, drops within 42 px are pulled toward
@@ -407,8 +414,8 @@ version-1 loader accepts the old four-slot tail) and is applied at load if the s
 position is not inside a solid tile.
 
 Not ported: the full `Item.cs` use logic, tool requirements and mining speed, item sprite
-sheet lookup, inventory windows/crafting/chests, wall placement, paint, actuators/wiring,
-and liquid re-simulation after an edit.
+sheet lookup, inventory windows/crafting/chests, paint, actuators/wiring, and liquid
+re-simulation after an edit.
 
 ## NPCs and combat (M4 first pass)
 

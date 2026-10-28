@@ -224,8 +224,7 @@ into matching/empty slots, placement consumed, local 5×5 re-framing, target out
 F9/save-on-close to `.trwld` + a 10-slot `.trplayer` sidecar.
 
 Remaining: tool tiers/durability and proper `Item.cs` use logic, the full inventory/hotbar
-UI, chests, crafting (`Recipe.cs`), prefixes, equipment slots, wall placement, paint and
-actuators. A playable subset (tools, weapons, blocks,
+UI, chests, crafting (`Recipe.cs`), prefixes, equipment slots, paint and actuators. A playable subset (tools, weapons, blocks,
 potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lines.
 
 ## Milestone 4 — NPCs, combat, projectiles
