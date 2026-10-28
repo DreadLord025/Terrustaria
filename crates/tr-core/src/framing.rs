@@ -145,6 +145,89 @@ fn variant(x: i32, y: i32) -> usize {
     (h % 3) as usize
 }
 
+/// The grass-edge rectangle table from `WorldGen.TileFrame`: `(frameX, frameY)` for a
+/// grass tile whose dirt base is adjacent on one side. `None` when the generic chain
+/// should be used (the original leaves the rectangle untouched in those cases).
+fn grass_frame(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
+    const GRASS: i32 = 2;
+    const DIRT: i32 = 0;
+    let ty = |dx: i32, dy: i32| {
+        world
+            .tile(x + dx, y + dy)
+            .filter(|t| t.active())
+            .map_or(-1, |t| t.kind as i32)
+    };
+    let up = ty(0, -1);
+    let down = ty(0, 1);
+    let left = ty(-1, 0);
+    let right = ty(1, 0);
+    let ul = ty(-1, -1);
+    let ur = ty(1, -1);
+    let dl = ty(-1, 1);
+    let dr = ty(1, 1);
+    let v = variant(x, y) as i16;
+    let v18 = v * 18;
+    let is_dirt = |k: i32| k == DIRT;
+    let is_grass = |k: i32| k == GRASS;
+    let rect = if !is_grass(up) && !is_dirt(up) && (is_grass(down) || is_dirt(down)) {
+        // Top edge: the green line overhangs the exposed side.
+        if is_dirt(left) && is_grass(right) {
+            (v18, 198)
+        } else if is_grass(left) && is_dirt(right) {
+            (54 + v18, 198)
+        } else {
+            return None;
+        }
+    } else if !is_grass(down) && !is_dirt(down) && (is_grass(up) || is_dirt(up)) {
+        // Bottom edge.
+        if is_dirt(left) && is_grass(right) {
+            (v18, 216)
+        } else if is_grass(left) && is_dirt(right) {
+            (54 + v18, 216)
+        } else {
+            return None;
+        }
+    } else if !is_grass(left) && !is_dirt(left) && (is_grass(right) || is_dirt(right)) {
+        // Left edge.
+        if is_dirt(up) && is_grass(down) {
+            (72, 144 + v18)
+        } else if is_grass(up) && is_dirt(down) {
+            (72, 90 + v18)
+        } else {
+            return None;
+        }
+    } else if !is_grass(right) && !is_dirt(right) && (is_grass(left) || is_dirt(left)) {
+        // Right edge.
+        if is_dirt(up) && is_grass(down) {
+            (90, 144 + v18)
+        } else if is_grass(up) && is_dirt(down) {
+            (90, 90 + v18)
+        } else {
+            return None;
+        }
+    } else if is_grass(up) && is_grass(down) && is_grass(left) && is_grass(right) {
+        // Interior grass with only an inner dirt corner visible.
+        if ul != GRASS && ur != GRASS && dl != GRASS && dr != GRASS {
+            if is_dirt(dr) {
+                (108 + v18, 324)
+            } else if is_dirt(ur) {
+                (108 + v18, 342)
+            } else if is_dirt(dl) {
+                (108 + v18, 360)
+            } else if is_dirt(ul) {
+                (108 + v18, 378)
+            } else {
+                (144 + v * 54, 234)
+            }
+        } else {
+            return None;
+        }
+    } else {
+        return None;
+    };
+    Some(rect)
+}
+
 /// Computes the frame for one tile. Returns `(frameX, frameY)` in tileset pixels.
 pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     let tile = world.tile(x, y)?;
@@ -301,6 +384,15 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     // `frameNumber` is stored per tile in the save file but we approximate it with a
     // position hash. `Main.tileLargeFrames` overrides it with a fixed per-position
     // pattern (used by tiles that must not tile their texture).
+    // `WorldGen.TileFrame`'s grass overrides: grass tiles use a dedicated set of
+    // side/top/corner frames so the green edge wraps around a step instead of ending
+    // in a plain dirt face. Only tile 2 (forest grass) has the matching Tiles_2 layout.
+    if tile.kind == 2 {
+        if let Some(f) = grass_frame(world, x, y) {
+            return Some(f);
+        }
+    }
+
     let mut variant = variant(x, y);
     match td::LARGE_FRAMES[me as usize] {
         1 => {

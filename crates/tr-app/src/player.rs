@@ -46,6 +46,10 @@ pub struct Player {
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
+    /// Position at the previous fixed 60 Hz step, used to interpolate rendering
+    /// between simulation ticks on high-refresh displays.
+    pub prev_x: f32,
+    pub prev_y: f32,
     pub vx: f32,
     pub vy: f32,
     pub on_ground: bool,
@@ -77,6 +81,8 @@ impl Player {
         Self {
             x: sx,
             y: sy,
+            prev_x: sx,
+            prev_y: sy,
             vx: 0.0,
             vy: 0.0,
             on_ground: false,
@@ -102,6 +108,8 @@ impl Player {
     pub fn teleport(&mut self, x: f32, y: f32) {
         self.x = x;
         self.y = y;
+        self.prev_x = x;
+        self.prev_y = y;
         self.vx = 0.0;
         self.vy = 0.0;
         self.on_ground = false;
@@ -111,6 +119,8 @@ impl Player {
     pub fn respawn(&mut self) {
         self.x = self.spawn_x;
         self.y = self.spawn_y;
+        self.prev_x = self.x;
+        self.prev_y = self.y;
         self.vx = 0.0;
         self.vy = 0.0;
         self.on_ground = false;
@@ -163,6 +173,8 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        self.prev_x = self.x;
+        self.prev_y = self.y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
@@ -353,6 +365,17 @@ impl Player {
                 }
             }
         }
+    }
+
+    /// Position between the previous and current fixed steps, for smooth rendering.
+    pub fn interpolated(&self, alpha: f32) -> Self {
+        let a = alpha.clamp(0.0, 1.0);
+        let mut out = self.clone();
+        out.x = self.prev_x + (self.x - self.prev_x) * a;
+        out.y = self.prev_y + (self.y - self.prev_y) * a;
+        out.prev_x = out.x;
+        out.prev_y = out.y;
+        out
     }
 
     /// Deterministic identity for the G6 world-range cache.

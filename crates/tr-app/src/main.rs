@@ -532,6 +532,7 @@ fn main() -> Result<()> {
         player,
         follow_player,
         player_accum: 0.0,
+        npc_accum: 0.0,
         npcs,
         npc_assets,
         npc_timer: 6.0,
@@ -645,6 +646,7 @@ struct App {
     player: Option<Player>,
     follow_player: bool,
     player_accum: f32,
+    npc_accum: f32,
     npcs: Vec<Npc>,
     npc_assets: NpcAssets,
     npc_timer: f32,
@@ -1041,7 +1043,11 @@ impl App {
             }
             self.player_accum = acc;
             if self.follow_player {
-                let (cx, cy) = p.center();
+                // Follow the interpolated position so the camera is smooth between
+                // the 60 Hz simulation steps.
+                let alpha = (acc / step).clamp(0.0, 1.0);
+                let render = p.interpolated(alpha);
+                let (cx, cy) = render.center();
                 self.camera = self
                     .camera
                     .lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
@@ -1077,12 +1083,22 @@ impl App {
     fn update_npcs(&mut self, dt: f32) {
         self.attack_cd = (self.attack_cd - dt).max(0.0);
         self.npc_timer -= dt;
-        let world = &self.world;
-        if let Some(player) = self.player.as_mut() {
-            for n in self.npcs.iter_mut() {
-                n.update(world, player, dt);
+        // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
+        // enemies move faster on high-refresh displays.
+        let step = 1.0 / 60.0;
+        let mut acc = self.npc_accum + dt.min(0.25);
+        let mut steps = 0;
+        while acc >= step && steps < 8 {
+            let world = &self.world;
+            if let Some(player) = self.player.as_mut() {
+                for n in self.npcs.iter_mut() {
+                    n.update(world, player, step);
+                }
             }
+            acc -= step;
+            steps += 1;
         }
+        self.npc_accum = acc.min(step * 8.0);
         let dead: Vec<(NpcKind, f32, f32)> = self
             .npcs
             .iter()
@@ -1563,7 +1579,11 @@ impl App {
         self.update_items(dt);
         self.update_projectiles(dt);
         self.update_editing(dt, screen);
-        let player_key = self.player.as_ref().map_or(0, |p| p.render_key());
+        // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
+        // high-refresh displays.
+        let player_alpha = (self.player_accum / (1.0 / 60.0)).clamp(0.0, 1.0);
+        let render_player = self.player.as_ref().map(|p| p.interpolated(player_alpha));
+        let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
@@ -1751,14 +1771,14 @@ impl App {
                         scratch,
                         &style,
                         anim_time,
-                        player.as_ref(),
+                        render_player.as_ref(),
                         player_assets,
                         npcs,
                         npc_assets,
                         items,
                         *edit_target,
                     );
-                    if let Some(p) = player.as_ref() {
+                    if let Some(p) = render_player.as_ref() {
                         if let Some(slot) = inventory.get(*selected) {
                             if slot.count > 0 {
                                 tile_stats.quads += draw_held_item(
@@ -2739,19 +2759,23 @@ fn draw_bg_layer(
     tint: [f32; 3],
     alpha: f32,
 ) {
-    let sw = tex.w * scale;
-    let sh = tex.h * scale;
-    let top = if tex.ground < 0.999 {
-        top.max(horizon - tex.ground * sh)
-    } else {
-        top
-    };
+    // Terraria renders backgrounds through `BackgroundViewMatrix`, whose zoom is
+    // smaller than the game zoom. Scale around the screen centre with half the extra
+    // zoom: fixed-size layers overlapped at high zoom, full zoom was far too large.
+    let bg_zoom = 1.0 + (zoom - 1.0) * 0.5;
+    let sw = tex.w * scale * bg_zoom;
+    let sh = tex.h * scale * bg_zoom;
+    let center_y = screen.y * 0.5;
+    let mut top = center_y + (top - center_y) * bg_zoom;
+    if tex.ground < 0.999 {
+        top = top.max(horizon - tex.ground * sh);
+    }
     let uv = if flip {
         [tex.uv[2], tex.uv[1], tex.uv[0], tex.uv[3]]
     } else {
         tex.uv
     };
-    let ox = -((camera.x * zoom * parallax).rem_euclid(sw));
+    let ox = -((camera.x * bg_zoom * parallax).rem_euclid(sw));
     let mut x = ox - sw;
     while x < screen.x {
         push_screen(

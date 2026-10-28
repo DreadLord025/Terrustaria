@@ -594,18 +594,6 @@ fn ore_blob(world: &mut World, x: i32, y: i32, kind: u16, size: i32, rng: &mut R
 }
 
 fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
-    // Default trunk pieces, then the branch-bearing variants from `GrowTree`.
-    const STRAIGHT: [(i16, i16); 3] = [(0, 0), (0, 66), (22, 0)];
-    const BRANCHY: [(i16, i16); 8] = [
-        (0, 0),
-        (0, 66),
-        (22, 0),
-        (22, 66),
-        (44, 66),
-        (66, 66),
-        (88, 0),
-        (110, 66),
-    ];
     let width = world.width;
     let mut last = -20;
     let mut x = 12;
@@ -646,54 +634,67 @@ fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         }
         last = x;
 
-        // `rows[dy - 1]` is the trunk tile at y = top - dy; the top row is replaced
-        // by the canopy marker below.
+        // Port of `WorldGen.GrowTree`'s frame table. `num6` picks the trunk piece
+        // (0..4 and 8/9 are straight, 5/6/7 carry a left/right/both branch); the
+        // per-row `num5` style selects one of the three frame-Y variants. The bottom
+        // and top rows force num6 = 0, which is what gives the tree its solid base.
         let mut rows = vec![(0i16, 0i16); height as usize];
-        for (dy, frame) in rows.iter_mut().enumerate() {
-            if dy == 0 {
-                *frame = STRAIGHT[rng.range(0, 3) as usize];
+        let mut markers: Vec<(i32, i32, i16, i16)> = Vec::new();
+        let mut left_last = false;
+        let mut right_last = false;
+        for (i, row) in rows.iter_mut().enumerate() {
+            let mut num6 = if i == 0 || i + 1 == height as usize {
+                0
             } else {
-                // Mostly straight wood; the branch-bearing variants are visual noise
-                // if used on every row (vanilla draws them on ~3 rows per tree).
-                *frame = if rng.chance(10) {
-                    BRANCHY[rng.range(0, BRANCHY.len() as i32) as usize]
-                } else {
-                    STRAIGHT[rng.range(0, 3) as usize]
-                };
+                rng.range(0, 10)
+            };
+            while ((num6 == 5 || num6 == 7) && left_last)
+                || ((num6 == 6 || num6 == 7) && right_last)
+            {
+                num6 = rng.range(0, 10);
+            }
+            let style = rng.range(0, 3) as i16;
+            let dy = style * 22;
+            *row = match num6 {
+                1 => (0, 66 + dy),
+                2 => (22, dy),
+                3 => (44, 66 + dy),
+                4 => (22, 66 + dy),
+                5 => (88, dy),
+                6 => (66, 66 + dy),
+                7 => (110, 66 + dy),
+                _ => (0, dy),
+            };
+            left_last = num6 == 5 || num6 == 7;
+            right_last = num6 == 6 || num6 == 7;
+            let by = top - 1 - i as i32;
+            if left_last {
+                markers.push((x - 1, by, 44, 198 + rng.range(0, 3) as i16 * 22));
+            }
+            if right_last {
+                markers.push((x + 1, by, 66, 198 + rng.range(0, 3) as i16 * 22));
             }
         }
         let top_y = top - height;
         rows[height as usize - 1] = (22, 198 + rng.range(0, 3) as i16 * 22);
 
-        // Leafy branch markers, each paired with a branch-bearing trunk piece.
-        let branches = rng.range(1, 5);
-        let mut used = Vec::new();
-        for _ in 0..branches {
-            let row = rng.range(3, height - 1);
-            if used.contains(&row) {
+        // Branch markers are separate transparent tiles that `DrawTrees` turns into
+        // the canopy sprites; they must sit exactly beside the branch trunk piece.
+        for (bx, by, fx, fy) in markers {
+            if bx < 1 || bx >= width - 1 || by <= top_y || by >= top {
                 continue;
             }
-            used.push(row);
-            let by = top - row;
-            rows[(row - 1) as usize] = BRANCHY[rng.range(0, BRANCHY.len() as i32) as usize];
-            let sides: &[i32] = if rng.chance(3) { &[-1, 1] } else { &[-1] };
-            for &side in sides {
-                let bx = x + side;
-                if bx < 1 || bx >= width - 1 || by <= top_y || by >= top {
-                    continue;
-                }
-                if world.tile(bx, by).is_some_and(|t| t.active()) {
-                    continue;
-                }
-                let i = world.index(bx, by);
-                world.tiles[i] = Tile {
-                    kind: tree::TREE,
-                    frame_x: if side < 0 { 44 } else { 66 },
-                    frame_y: 198 + rng.range(0, 3) as i16 * 22,
-                    flags: FLAG_ACTIVE,
-                    ..Default::default()
-                };
+            if world.tile(bx, by).is_some_and(|t| t.active()) {
+                continue;
             }
+            let i = world.index(bx, by);
+            world.tiles[i] = Tile {
+                kind: tree::TREE,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
         }
         for (dy, &(fx, fy)) in rows.iter().enumerate() {
             let i = world.index(x, top - 1 - dy as i32);

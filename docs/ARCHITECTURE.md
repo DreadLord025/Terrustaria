@@ -104,7 +104,9 @@
 - `winit` 0.30 `ApplicationHandler`, `ControlFlow::Poll`.
 - Player (`player.rs`): 20×42 AABB, fixed 60 Hz steps, gravity/acceleration/friction,
   1-tile auto-step, axis-separated solid-tile collision, ground-slope (1/2) support,
-  half-brick (bottom 8 px) and ceiling-slope (3/4) collision, and water buoyancy. Survival follows `Player.cs`: 200-tick breath with drowning damage, fall
+  half-brick (bottom 8 px) and ceiling-slope (3/4) collision, and water buoyancy. The
+  simulation is fixed 60 Hz; the renderer interpolates the previous/current player position
+  (and the camera follows it) so high-refresh displays do not show a 60 Hz staircase. Survival follows `Player.cs`: 200-tick breath with drowning damage, fall
   damage over 25 tiles, lava damage and delayed HP regeneration; the HUD draws a breath bar
   while submerged. `TR_XY` teleports the player for screenshots. The camera
   follows the player's centre (unless `TR_CAM`/`TR_PAN` select the free debug camera).
@@ -119,7 +121,8 @@
   first matching or empty slot). The 10-slot hotbar and target outline are drawn through
   the UI sprite batch; F9/close saves the native world and a `.trplayer` sidecar with
   position/HP/10 slots.
-- NPCs (`npc.rs`): hopping slimes with gravity/AABB collision, flying demon eyes with
+- NPCs (`npc.rs`): a fixed 60 Hz accumulator drives every NPC (per-frame updates made them
+  frame-rate dependent), hopping slimes with gravity/AABB collision, flying demon eyes with
   steering/bobbing and walking zombies (`AI_003_Fighters` simplified: chase, jump ledges,
   burn at dawn); all deal contact damage and have HP. King Slime (`AI_015` simplified) is a
   98×92 boss with 2000 HP, big hops, a teleport when outrun, slime minions on landing and a

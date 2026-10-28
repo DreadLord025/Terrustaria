@@ -379,6 +379,10 @@ Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a
 auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
 Half bricks collide only in the bottom 8 px (and the landing snap puts the feet on their
 surface); ceiling slopes 3/4 test the AABB against the solid triangle above the diagonal.
+The player steps at a fixed 60 Hz and `Player::interpolated(alpha)` blends the previous and
+current positions for rendering and camera follow, so a jump is not a 60 Hz staircase on a
+high-refresh display. NPCs use their own fixed 60 Hz accumulator (`NPC.cs` update rate);
+before that they advanced once per rendered frame and were far too fast at 500+ FPS.
 Respawn returns to `spawn_x/spawn_y` from the world header.
 
 Survival ports three `Player.cs` mechanics:

@@ -35,8 +35,10 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    merge pairs are ported; wall framing is complete (`Framing.WallFrame`, 20×3 lookup).
    Sloped and half-brick tiles are framed and drawn with the original 2 px slices. Common
    trees are composed (`DrawTrees`: 22 px trunks, `Tree_Tops_*`/`Tree_Branches_*`), and
-   tile-3 surface plants are generated and drawn. Remaining: per-type special branches
-   (grass edge overrides, moss, vines, cactus), `TileFrameImportant` multi-tile objects.
+   tile-3 surface plants are generated and drawn. Grass now uses `WorldGen.TileFrame`'s
+   side/top/corner override rectangles (grass overhang over a step) and the tree generator
+   follows `GrowTree`'s trunk/branch frame table. Remaining: per-type special branches
+   (moss, vines, cactus arms), `TileFrameImportant` multi-tile objects.
    *~2–4 agent-days left of ~15.*
 2. **Lighting** — ✅ *second pass done*: `TileLightScanner` seeds (surface/hell/wall/
    emissive/liquid), `LightMap`'s two-pass four-sweep blur with per-mask decay,
