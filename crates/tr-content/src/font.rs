@@ -394,7 +394,11 @@ mod tests {
         );
         let page = &font.pages[0];
         println!("page {}x{}", page.texture.width, page.texture.height);
-        for g in page.glyphs.iter().take(6) {
+        for g in page
+            .glyphs
+            .iter()
+            .filter(|g| matches!(g.ch, 'A' | 'a' | '1' | ' ' | '.'))
+        {
             println!(
                 "{:?} src {:?} pad {:?} kern {:?}",
                 g.ch, g.src, g.pad, g.kerning

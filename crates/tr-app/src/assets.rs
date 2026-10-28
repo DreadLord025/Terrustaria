@@ -291,6 +291,114 @@ fn load_misc_png(dir: &Path, name: &str) -> Result<AtlasImage> {
     })
 }
 
+/// One glyph of a ReLogic `DynamicSpriteFont`, in screen pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct FontGlyph {
+    pub uv: [f32; 4],
+    pub w: f32,
+    pub h: f32,
+    /// `SpriteCharacterData.Padding`: draw offset inside the line box.
+    pub pad: [f32; 2],
+    /// `Kerning`: (left bearing, advance - z, z).
+    pub kerning: [f32; 3],
+}
+
+/// A decoded `DynamicSpriteFont` bound to the atlas (`DynamicSpriteFont.DrawString`
+/// walks these metrics exactly).
+#[derive(Clone, Debug, Default)]
+pub struct UiFont {
+    pub glyphs: HashMap<char, FontGlyph>,
+    pub line_spacing: f32,
+    pub spacing: f32,
+    pub fallback: char,
+}
+
+impl UiFont {
+    pub fn glyph(&self, c: char) -> Option<&FontGlyph> {
+        self.glyphs
+            .get(&c)
+            .or_else(|| self.glyphs.get(&self.fallback))
+    }
+}
+
+/// Decodes `Fonts/Mouse_Text` and `Fonts/Item_Stack` from the retail content and
+/// returns their page textures as atlas images plus the raw metrics.
+pub fn load_fonts() -> (
+    Vec<AtlasImage>,
+    Option<(String, tr_content::DynamicSpriteFont)>,
+    Option<(String, tr_content::DynamicSpriteFont)>,
+) {
+    let mut images = Vec::new();
+    let Some(images_dir) = content_images_dir() else {
+        return (images, None, None);
+    };
+    let fonts_dir = images_dir.parent().map(|p| p.join("Fonts"));
+    let mut ui = None;
+    let mut item = None;
+    if let Some(dir) = fonts_dir {
+        for (name, slot) in [("Mouse_Text", 0), ("Item_Stack", 1)] {
+            let path = dir.join(format!("{name}.xnb"));
+            match tr_content::load_font(&path) {
+                Ok(font) => {
+                    let sheet = format!("Font_{name}");
+                    for (page, pg) in font.pages.iter().enumerate() {
+                        images.push(AtlasImage {
+                            name: format!("{sheet}_{page}"),
+                            width: pg.texture.width,
+                            height: pg.texture.height,
+                            rgba: pg.texture.pixels.clone(),
+                            layout: SheetLayout::Raw,
+                        });
+                    }
+                    log::info!(
+                        "font {name}: {} glyphs, line spacing {}",
+                        font.pages.first().map_or(0, |p| p.glyphs.len()),
+                        font.line_spacing
+                    );
+                    if slot == 0 {
+                        ui = Some((sheet, font));
+                    } else {
+                        item = Some((sheet, font));
+                    }
+                }
+                Err(e) => log::warn!("font {name}: {e:#}"),
+            }
+        }
+    }
+    (images, ui, item)
+}
+
+/// Binds a decoded font to its atlas page UVs.
+pub fn build_ui_font(
+    atlas: &tr_render::Atlas,
+    sheet: &str,
+    font: &tr_content::DynamicSpriteFont,
+) -> Option<UiFont> {
+    let mut out = UiFont {
+        line_spacing: font.line_spacing as f32,
+        spacing: font.spacing,
+        fallback: font.default_char,
+        glyphs: HashMap::new(),
+    };
+    for (page, pg) in font.pages.iter().enumerate() {
+        let rect = atlas.sheet(&format!("{sheet}_{page}"))?;
+        for g in &pg.glyphs {
+            let [sx, sy, w, h] = g.src;
+            out.glyphs.insert(
+                g.ch,
+                FontGlyph {
+                    uv: uv_rect(rect, (atlas.width, atlas.height), sx, sy, w as u32, h as u32),
+                    w: w as f32,
+                    h: h as f32,
+                    pad: [g.pad[0] as f32, g.pad[1] as f32],
+                    kerning: g.kerning,
+                },
+            );
+        }
+    }
+    Some(out)
+}
+
 /// One resolved frame: atlas UV plus whether it fully covers its 16x16 cell.
 #[derive(Clone, Copy, Debug)]
 pub struct FrameTex {
@@ -371,6 +479,10 @@ pub struct Lookups {
     pub ui_back_hotbar: Option<tr_render::SheetRect>,
     /// `Item_<id>` sprites for the HUD/inventory icons, keyed by `ItemID`.
     pub item_icons: HashMap<u16, tr_render::SheetRect>,
+    /// `Fonts/Mouse_Text` for UI labels and item names.
+    pub ui_font: Option<UiFont>,
+    /// `Fonts/Item_Stack` for stack counts and slot numbers.
+    pub item_font: Option<UiFont>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
@@ -386,6 +498,8 @@ impl Lookups {
         atlas: &tr_render::Atlas,
         tile_names: impl Iterator<Item = (u16, String)>,
         wall_names: impl Iterator<Item = (u16, String)>,
+        ui_font: Option<UiFont>,
+        item_font: Option<UiFont>,
     ) -> Self {
         let mut me = Self {
             tiles: vec![None; tr_core::tiledata::TILE_COUNT],
@@ -403,6 +517,8 @@ impl Lookups {
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
+            ui_font,
+            item_font,
             item_icons: [
                 2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
             ]

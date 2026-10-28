@@ -321,6 +321,8 @@ fn main() -> Result<()> {
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
+    let (font_images, ui_font_meta, item_font_meta) = assets::load_fonts();
+    images.extend(font_images);
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -343,6 +345,12 @@ fn main() -> Result<()> {
         log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
     }
 
+    let ui_font = ui_font_meta
+        .as_ref()
+        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
+    let item_font = item_font_meta
+        .as_ref()
+        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
     let lookups = assets::Lookups::build(
         &atlas,
         tile_ids
@@ -351,6 +359,8 @@ fn main() -> Result<()> {
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
+        ui_font,
+        item_font,
     );
 
     let atlas_stats = (
@@ -4269,6 +4279,126 @@ fn draw_tree_foliage(
     quads
 }
 
+/// `DynamicSpriteFont.DrawString`: the pen advances by `spacing + kerning.X`, the
+/// glyph is drawn at `pen + padding`, then the pen advances by `kerning.Y + kerning.Z`.
+fn push_font_text(
+    r: &mut SpriteRenderer,
+    font: &assets::UiFont,
+    x: f32,
+    y: f32,
+    scale: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let mut pen = Vec2::new(x, y);
+    let mut first = true;
+    for c in text.chars() {
+        match c {
+            '\n' => {
+                pen.x = x;
+                pen.y += font.line_spacing * scale;
+                first = true;
+                continue;
+            }
+            '\r' => continue,
+            _ => {}
+        }
+        let Some(g) = font.glyph(c) else { continue };
+        let mut bearing = g.kerning[0];
+        if first {
+            bearing = bearing.max(0.0);
+        } else {
+            pen.x += font.spacing * scale;
+        }
+        pen.x += bearing * scale;
+        r.push_ui_sprite(
+            [pen.x + g.pad[0] * scale, pen.y + g.pad[1] * scale],
+            [g.w * scale, g.h * scale],
+            g.uv,
+            color,
+        );
+        pen.x += (g.kerning[1] + g.kerning[2]) * scale;
+        first = false;
+    }
+}
+
+/// `DynamicSpriteFont.MeasureString`.
+fn font_width(font: &assets::UiFont, text: &str, scale: f32) -> f32 {
+    let mut w = 0.0;
+    let mut max_z = 0.0f32;
+    let mut first = true;
+    for c in text.chars() {
+        if c == '\n' {
+            break;
+        }
+        if c == '\r' {
+            continue;
+        }
+        let Some(g) = font.glyph(c) else { continue };
+        let mut bearing = g.kerning[0];
+        if first {
+            bearing = bearing.max(0.0);
+        } else {
+            w += (font.spacing + max_z) * scale;
+        }
+        w += (bearing + g.kerning[1]) * scale;
+        max_z = g.kerning[2];
+        first = false;
+    }
+    w + max_z.max(0.0) * scale
+}
+
+/// UI label with the original `Mouse_Text` font, or the built-in bitmap font when
+/// the retail fonts are unavailable (PNG-only fallback).
+fn hud_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    x: f32,
+    y: f32,
+    scale: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    match &lookups.ui_font {
+        Some(f) => push_font_text(r, f, x, y, scale, color, text),
+        None => r.push_text(x, y, scale, color, text),
+    }
+}
+
+fn hud_item_text(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    x: f32,
+    y: f32,
+    scale: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    match &lookups.item_font {
+        Some(f) => push_font_text(r, f, x, y, scale, color, text),
+        None => r.push_text(x, y, scale, color, text),
+    }
+}
+
+fn hud_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str, scale: f32) -> f32 {
+    match &lookups.ui_font {
+        Some(f) => font_width(f, text, scale),
+        None => r.text_width(text, scale),
+    }
+}
+
+fn hud_item_text_width(
+    r: &SpriteRenderer,
+    lookups: &assets::Lookups,
+    text: &str,
+    scale: f32,
+) -> f32 {
+    match &lookups.item_font {
+        Some(f) => font_width(f, text, scale),
+        None => r.text_width(text, scale),
+    }
+}
+
 /// `ItemSlot.Draw`: the item's own texture at inventory scale, centred in the slot,
 /// with the stack size in the bottom-right corner.
 fn draw_slot_item(
@@ -4300,16 +4430,24 @@ fn draw_slot_item(
     );
     let count = format!("{}", item.count);
     let fs = 0.75 * scale;
-    let tw = r.text_width(&count, fs);
+    let tw = hud_item_text_width(r, lookups, &count, fs);
     let tx = x + slot - tw - 4.0 * scale;
     let ty = y + slot - 11.0 * scale;
-    r.push_text(tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
-    r.push_text(tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
+    hud_item_text(r, lookups, tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
+    hud_item_text(r, lookups, tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
 }
 
 /// The hotbar digits (`FontAssets.ItemStack` in the original): grey by default,
 /// white at 1.4x on the selected slot, and slot 10 is drawn as "0".
-fn draw_slot_number(r: &mut SpriteRenderer, x: f32, y: f32, i: usize, scale: f32, selected: bool) {
+fn draw_slot_number(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    x: f32,
+    y: f32,
+    i: usize,
+    scale: f32,
+    selected: bool,
+) {
     let mut num = format!("{}", i + 1);
     if num == "10" {
         num = "0".into();
@@ -4321,8 +4459,8 @@ fn draw_slot_number(r: &mut SpriteRenderer, x: f32, y: f32, i: usize, scale: f32
     };
     let px = x + 6.0 * scale;
     let py = y + 4.0 * scale + dy;
-    r.push_text(px + 1.0, py + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &num);
-    r.push_text(px, py, fs, col, &num);
+    hud_item_text(r, lookups, px + 1.0, py + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &num);
+    hud_item_text(r, lookups, px, py, fs, col, &num);
 }
 
 /// Vanilla HUD layout: hotbar top-left (or the open 10x5 inventory grid), hearts
@@ -4368,6 +4506,7 @@ fn draw_hud(
                     if j == 0 {
                         draw_slot_number(
                             r,
+                            lookups,
                             x,
                             y,
                             i,
@@ -4392,7 +4531,7 @@ fn draw_hud(
             };
             r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
             draw_slot_item(r, lookups, &inventory[i], x, y, slot, scale);
-            draw_slot_number(r, x, y, i, scale, i == selected);
+            draw_slot_number(r, lookups, x, y, i, scale, i == selected);
             x += slot + 4.0;
         }
     }
@@ -4400,10 +4539,10 @@ fn draw_hud(
     let item = &inventory[selected.min(HOTBAR - 1)];
     if item.count > 0 && !inventory_open {
         let label = item.name;
-        let tw = r.text_width(label, 1.0);
+        let tw = hud_text_width(r, lookups, label, 1.0);
         let tx = 236.0 - tw * 0.5;
-        r.push_text(tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
-        r.push_text(tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
+        hud_text(r, lookups, tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
+        hud_text(r, lookups, tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
     }
 
     // `Main.mouseItem`: the stack carried on the cursor, centred on it.
@@ -4443,24 +4582,12 @@ fn draw_hud(
             let label = "Life";
             let value = format!("{}/{}", p.hp, p.max_hp);
             let center = x0 + 13.0 * hearts as f32;
-            let lw = r.text_width(label, 1.0);
-            r.push_text(
-                center - 3.0 - lw + 1.0,
-                7.0,
-                1.0,
-                [0.0, 0.0, 0.0, 1.0],
-                label,
-            );
-            r.push_text(
-                center - 3.0 - lw,
-                6.0,
-                1.0,
-                [1.0, 1.0, 1.0, 1.0],
-                label,
-            );
+            let lw = hud_text_width(r, lookups, label, 1.0);
+            hud_text(r, lookups, center - 3.0 - lw + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
+            hud_text(r, lookups, center - 3.0 - lw, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], label);
             let vx = center + 3.0;
-            r.push_text(vx + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], &value);
-            r.push_text(vx, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], &value);
+            hud_text(r, lookups, vx + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], &value);
+            hud_text(r, lookups, vx, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], &value);
 
             // Breath bubbles above the player's head while submerged.
             if p.breath < BREATH_MAX {

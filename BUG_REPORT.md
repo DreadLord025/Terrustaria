@@ -343,3 +343,24 @@ selected slot in yellow `InventoryBack14` at full white, `ItemStack`-style digit
 slot 10 drawn as "0", and item icons from the original `Item_<id>` sprites
 (`item::item_id` maps slot kinds to `ItemID`), falling back to the tile frame for
 kinds without a sprite yet. Slot interaction (click to move stacks) remains M3 work.
+
+## BUG-020 — HUD and inventory text used a built-in bitmap font
+
+**Status:** fixed — commit `FONTS`
+**Area:** `tr-content` (`font.rs`), `tr-app/src/assets.rs`, `tr-app/src/main.rs`
+
+**Report:** the fonts did not match the original in the HUD, item names, stack counts or
+the inventory.
+
+**Cause:** the HUD drew text with the debug overlay's 8x8 bitmap font; the original uses
+ReLogic `DynamicSpriteFont`s from `Fonts/Mouse_Text.xnb` and `Fonts/Item_Stack.xnb`.
+
+**Fix:** `tr-content` now decodes `DynamicSpriteFont` at runtime (see the content-pipeline
+notes in ANALYSIS): one 256x256 DXT3 page each, 212 glyphs, Mouse_Text line spacing 29,
+Item_Stack 24. `assets::UiFont` binds the glyph rects, padding and kerning to the atlas,
+and `push_font_text`/`font_width` follow `DynamicSpriteFont.DrawString`/`MeasureString`
+exactly (pen += spacing + kerning.X, draw at pen + padding, pen += kerning.Y + kerning.Z;
+the first glyph clamps a negative bearing). HUD labels, item names and the Life readout
+use Mouse_Text; stack counts and slot numbers use Item_Stack. Textures now load from the
+retail `.xnb` files at runtime (`TR_CONTENT`, default Steam install) with the extracted
+PNGs as a fallback; `Images/Tiles_0.xnb` decodes pixel-identically to the PNG.
