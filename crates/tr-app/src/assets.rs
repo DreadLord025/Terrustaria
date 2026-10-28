@@ -1,7 +1,8 @@
 //! Terraria asset loading: real game textures extracted from `.xnb` to PNG.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use anyhow::{Context, Result};
 use rayon::prelude::*;
@@ -211,7 +212,55 @@ pub fn load_world_images(
     Ok(images)
 }
 
+/// Retail `Images` directory used for runtime `.xnb` loading: `TR_CONTENT` when set
+/// (the `Content` directory), otherwise the default Steam install. `None` keeps the
+/// pre-extracted PNG path.
+pub fn content_images_dir() -> Option<&'static Path> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let content = std::env::var_os("TR_CONTENT")
+            .map(PathBuf::from)
+            .or_else(|| {
+                let default = PathBuf::from(
+                    r"C:\Program Files (x86)\Steam\steamapps\common\Terraria\Content",
+                );
+                default.exists().then_some(default)
+            })?;
+        let images = content.join("Images");
+        images.is_dir().then_some(images)
+    })
+    .as_deref()
+}
+
+/// Decodes one sheet straight from the game's `.xnb` (the original pipeline).
+fn load_xnb(dir: &Path, name: &str, layout: SheetLayout) -> Option<AtlasImage> {
+    let base = if dir == Path::new("") {
+        content_images_dir()?.to_path_buf()
+    } else if dir.ends_with("Images") && dir.join("Misc").is_dir() {
+        dir.to_path_buf()
+    } else {
+        content_images_dir()?.to_path_buf()
+    };
+    let path = base.join(format!("{name}.xnb"));
+    match tr_content::load_texture(&path) {
+        Ok(img) => Some(AtlasImage {
+            name: name.to_string(),
+            width: img.width,
+            height: img.height,
+            rgba: img.pixels,
+            layout,
+        }),
+        Err(e) => {
+            log::debug!("xnb {}: {e:#}", path.display());
+            None
+        }
+    }
+}
+
 pub fn load_png(dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImage> {
+    if let Some(img) = load_xnb(dir, name, layout) {
+        return Ok(img);
+    }
     let path = dir.join(format!("{name}.png"));
     let img = image::open(&path)
         .with_context(|| format!("loading {}", path.display()))?
@@ -226,6 +275,9 @@ pub fn load_png(dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImag
 }
 
 fn load_misc_png(dir: &Path, name: &str) -> Result<AtlasImage> {
+    if let Some(img) = load_xnb(dir, &format!("Misc/{name}"), SheetLayout::Raw) {
+        return Ok(img);
+    }
     let path = dir.join("Misc").join(format!("{name}.png"));
     let img = image::open(&path)
         .with_context(|| format!("loading {}", path.display()))?

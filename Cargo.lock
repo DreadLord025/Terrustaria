@@ -2122,6 +2122,7 @@ dependencies = [
  "log",
  "pollster",
  "rayon",
+ "tr-content",
  "tr-core",
  "tr-render",
  "wgpu",

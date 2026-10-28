@@ -9,6 +9,7 @@ name = "terraria-rust"
 path = "src/main.rs"
 
 [dependencies]
+tr-content = { path = "../tr-content" }
 tr-core = { path = "../tr-core" }
 tr-render = { path = "../tr-render" }
 

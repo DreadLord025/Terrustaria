@@ -51,6 +51,15 @@ struct ItemSlot {
     count: u32,
 }
 
+/// `Item.MAX_STACK` for the blocks and items we model.
+const MAX_STACK: u32 = 999;
+
+const EMPTY_SLOT: ItemSlot = ItemSlot {
+    kind: 0,
+    name: "",
+    count: 0,
+};
+
 /// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
 /// then the storage rows.
 fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> {
@@ -1673,9 +1682,9 @@ impl App {
                 target = held;
                 held = EMPTY_SLOT;
             } else if target.kind == held.kind && target.count < MAX_STACK {
-                let move = (MAX_STACK - target.count).min(held.count);
-                target.count += move;
-                held.count -= move;
+                let moved = (MAX_STACK - target.count).min(held.count);
+                target.count += moved;
+                held.count -= moved;
                 if held.count == 0 {
                     held = EMPTY_SLOT;
                 }
