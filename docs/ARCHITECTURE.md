@@ -212,6 +212,8 @@
 | --- | --- |
 | One atlas + instancing | 2 draw calls regardless of scene complexity; no per-tile state changes |
 | Nearest filtering, no mips | Pixel-art identity; avoids shimmer from mip selection at integer zoom |
+| Screen-pixel snapping for entities | Player/NPC sprites are drawn at interpolated sub-pixel world positions; nearest sampling then changes the source texel phase every frame (visible as a face row appearing/disappearing). Rounding the sprite's top-left to an integer screen pixel keeps the texel grid fixed while the camera still moves smoothly |
+| Vanilla HUD textures and layout | The hotbar, hearts, breath and boss bar use the original `Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` sheets with the constants from `GUIHotbarDrawInner`, `ClassicPlayerResourcesDisplaySet` and `BigProgressBarHelper`, instead of custom panels |
 | Half-texel UV inset in the vertex shader | At fractional camera/zoom alignments a sprite edge can land exactly on a pixel centre; nearest sampling at `uv = 1.0` then picks the transparent 2 px gap between 18 px frames, which showed as a 1 px grid of holes. Insisting on texel centres keeps every sample inside the source rect |
 | CPU-side culling | Visible set is ~1–2 k tiles; a compute cull would cost more than it saves at this scale |
 | Row-major tiles, 16 B each | 184 MB for 11.5 M tiles; cache-friendly column scans for the render loop |

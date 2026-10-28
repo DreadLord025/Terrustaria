@@ -161,3 +161,96 @@ fork fix, and the load path only re-frames autotiled blocks, not tree markers.
 **Fix:** the world was backed up to `.qoder_tmp/world_backup/` and regenerated (seed 1) with
 `TR_REGEN=1`; the new trees show connected roots/forks. Existing worlds written by the old
 generator keep their stored tree frames until regenerated.
+
+## BUG-009 — Player hopped up full-tile ledges ("jumps at tile seams")
+
+**Status:** fixed — commit `434efb4` ("Vanilla HUD, screen-snapped sprites and movement fixes")
+**Area:** `tr-app/src/player.rs` (`move_x`, `slope_floor`)
+
+**Report:** walking along the surface, the player appeared to jump by itself at tile
+junctions instead of following the slope smoothly.
+
+**Cause:** `move_x` auto-stepped a full 16 px tile whenever a horizontal collision had free
+space above, so every 1-tile ledge or grass step produced a one-tick vertical teleport. That
+is not Terraria behaviour: full blocks require a jump; only slopes and half bricks step.
+
+**Fix:** removed the full-tile auto-step (slopes/half bricks keep their own collision), and
+widened the slope snap from 10 px to the full 16 px cell so the feet cannot fall through a
+slope triangle into the solid tile below. Added two tests: walking down a slope never moves
+more than 4 px per tick; a full-tile step blocks the player instead of lifting them.
+
+## BUG-010 — Slimes (and other NPCs) floated a few pixels above the ground
+
+**Status:** fixed — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`draw_npcs`)
+
+**Cause:** the NPC draw offsets aligned the *frame* bottom with the hitbox, but the sprites
+have transparent padding rows at the bottom (slime 2 px, zombie/king slime 3 px), so the art
+sat above the floor.
+
+**Fix:** the sprite offsets now align the last opaque art row with the hitbox bottom
+(slime `y+1`, zombie `y-5`, king slime `y-25`; the demon eye is centred in its hitbox).
+
+## BUG-011 — Clouds only moved with the player
+
+**Status:** fixed — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`draw_sky`)
+
+**Cause:** cloud positions combined only the static layout and `camera.x * 0.5`; nothing
+advanced with time, so clouds stood still until the camera moved.
+
+**Fix:** clouds drift horizontally with the animation clock (4 px/s) on top of the existing
+0.5x parallax, so they move independently of the player like `Cloud.Update`.
+
+## BUG-012 — Player lost the torso after the arm change
+
+**Status:** fixed — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`draw_player`)
+
+**Cause:** torso and shirt were switched to the animated body-row frame; their 9x4 sheets
+have empty art in the walking rows. In vanilla the composite torso/undershirt frames are
+always `(0,0)`; only the head and arms follow the animation frame.
+
+**Fix:** torso/shirt use composite cell `(0,0)` again; head/eyes/hair keep the animation row
+and the composite front/back arms use the `PlayerDrawSet` frame table.
+
+## BUG-013 — Player texture grid crawled while moving (face changed height)
+
+**Status:** fixed — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`draw_player`, `draw_npcs`, `snap_to_screen`)
+
+**Cause:** player and NPC sprites were drawn at interpolated sub-pixel world positions, so
+nearest sampling picked different source rows/columns every frame; at fractional zoom this
+made a face row appear/disappear while walking.
+
+**Fix:** entity sprites (player, NPCs) snap their top-left to an integer screen pixel before
+uploading the instance. The camera still moves smoothly; the sprite keeps a constant texel
+grid.
+
+## BUG-014 — HUD was custom, not the vanilla layout
+
+**Status:** fixed — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`draw_hud`), `tr-app/src/assets.rs`
+
+**Report:** the HUD was a custom bottom-left hotbar, red health bar and top-centre boss bar.
+
+**Fix:** ported the classic layout from `GUIHotbarDrawInner`,
+`ClassicPlayerResourcesDisplaySet` and `BigProgressBarHelper` using the original textures:
+ten `Inventory_Back` slots at the top-left (selected slot animates to 1.0 and the item name
+is centred at x=236), hearts at the top-right with the "Life" label, breath bubbles above
+the player's head, and the `UI_BossBar` bar with the boss head icon at the bottom centre.
+The coin counter and custom bars were removed from the HUD (coins still accumulate).
+
+## BUG-015 — Crash when pressing PrintScreen and moving
+
+**Status:** diagnostic added — commit `434efb4`
+**Area:** `tr-app/src/main.rs` (`main`, edit target bounds)
+
+**Report:** the game closed when PrintScreen was pressed and the player moved sharply.
+
+**Changes:** the release build now installs a panic hook that writes the message and a
+backtrace to `crash.log` next to the executable, so the next crash leaves evidence; the
+tile-edit path no longer panics when the cursor maps outside the world (the only
+unchecked `expect("in bounds")` on the input path was replaced with a bounds check). The
+exact crash could not be reproduced (PrintScreen opens the Windows snipping overlay and
+changes focus), so the next run with `crash.log` will identify it.

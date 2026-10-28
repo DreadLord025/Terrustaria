@@ -128,8 +128,9 @@ snowflakes that thicken during a storm.
 - **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants
   simulated at a fixed 60 Hz with render interpolation between ticks:
   gravity, acceleration/friction, hold-to-jump height (`jumpSpeed 5.01`,
-  `jumpHeight 15`), 1-tile auto-step, axis-separated AABB collision, simple water
-  buoyancy, ground-slope support and respawn. Survival follows `Player.cs`:
+  `jumpHeight 15`), axis-separated AABB collision, simple water buoyancy, ground-slope
+  support and respawn. Full-tile ledges require a jump; slopes are followed smoothly and
+  entity sprites are snapped to whole screen pixels so their texel grid never crawls. Survival follows `Player.cs`:
   a 200-tick breath meter that drains underwater (2 damage per 7 ticks once empty, with a
   HUD bar), fall damage after 25 tiles (10 per extra tile), lava damage and out-of-combat
   regeneration (5 s delay, 1 HP per 0.5 s). The starter character is composed from the

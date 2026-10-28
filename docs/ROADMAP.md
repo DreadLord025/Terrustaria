@@ -217,14 +217,15 @@ default" is explicitly not a goal — determinism first.
 axis-separated AABB tile collision, water buoyancy, respawn, camera follow and the starter
 character composed from the original `Player_0_*` strips with walk/jump frames.
 
-✅ *Second pass*: breath/drowning with a HUD bar, fall damage, lava damage and
-out-of-combat health regeneration.
+✅ *Second pass*: breath/drowning, fall damage, lava damage and out-of-combat health
+regeneration. ✅ *Third pass*: hold-to-jump height, composite front/back arms, screen-pixel
+snapping and the classic HUD (hotbar, hearts, breath bubbles, boss bar).
 
 The selected block is held in the hand with a swing arc while mining, placing or attacking.
 
-Remaining: the full `PlayerDrawLayers` order (front arm, armor, accessories), the full
-`itemAnimation`/use timings, buffs, hooks/mounts/gravity flips, and the rest of the
-55k-line `Player.cs`.
+Remaining: the full `PlayerDrawLayers` order (armor/accessories, composite-arm rotation),
+the full `itemAnimation`/use timings, buffs, hooks/mounts/gravity flips, and the rest of
+the 55k-line `Player.cs`.
 *~12–24 agent-days.*
 
 ## Milestone 3 — items, inventory, crafting, UI
@@ -234,8 +235,8 @@ placement with reach/support/overlap checks, drops as physics entities with magn
 into matching/empty slots, placement consumed, local 5×5 re-framing, target outline and
 F9/save-on-close to `.trwld` + a 10-slot `.trplayer` sidecar.
 
-Remaining: tool tiers/durability and proper `Item.cs` use logic, the full inventory/hotbar
-UI, chests, crafting (`Recipe.cs`), prefixes, equipment slots, paint and actuators. A playable subset (tools, weapons, blocks,
+✅ *HUD pass*: classic hotbar/hearts/boss bar. Remaining: tool tiers/durability and proper
+`Item.cs` use logic, the full inventory UI, chests, crafting (`Recipe.cs`), prefixes, equipment slots, paint and actuators. A playable subset (tools, weapons, blocks,
 potions, ~200 items) is **~40–80 agent-days**; full item parity is ~50 000 lines.
 
 ## Milestone 4 — NPCs, combat, projectiles

@@ -70,7 +70,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
 | Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
-| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, jump, 1-tile auto-step, AABB collision, ground-slope support, water buoyancy, HP/hurt/respawn; no half-brick/ceiling slopes, items or buffs |
+| Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
 | Items & inventory | `Item.cs`, `UI/ItemSlot.cs`, `Recipe.cs` | ~70 000 | 🟡 | 4-slot hotbar, mining/placing, counts and native save; no item entities, tools, recipes, chests or full inventory UI |
 | NPC AI | `NPC.cs` + `NPCs/*` | 95 900 | 🟡 | First pass: hopping blue slime (gravity, collision, contact damage, player melee, HP bars); ~700 NPC types remain |
@@ -394,8 +394,10 @@ gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump s
 `5.01` with `jumpHeight = 15`: pressing jump sets the upward speed and holding it keeps
 resetting that speed for up to 15 ticks (`Player.JumpMovement`), so a tap jumps ~31 px and
 a full hold ~95 px. A new jump needs a fresh press edge.
-Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with a one-tile
-auto-step, simple water buoyancy and ground-slope support (slopes 1/2 follow the diagonal).
+Movement is axis-separated AABB collision against `Main.tileSolid` tiles, with simple water
+buoyancy and ground-slope support (slopes 1/2 follow the diagonal; the feet snap to the
+surface anywhere inside the slope cell). Full-tile ledges are not auto-stepped — like the
+original, they require a jump.
 Half bricks collide only in the bottom 8 px (and the landing snap puts the feet on their
 surface); ceiling slopes 3/4 test the AABB against the solid triangle above the diagonal.
 The player steps at a fixed 60 Hz and `Player::interpolated(alpha)` blends the previous and
@@ -418,11 +420,18 @@ Survival ports three `Player.cs` mechanics:
 The character is composed from the original 40×56 part strips (`Player_0_0` head,
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
 `Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
-walk/jump leg frames. Arms use the composite layout from `PlayerDrawSet.CreateCompositeData`
+walk/jump leg frames. Torso and undershirt always use composite cell `(0,0)` (only the
+head and arms animate); the hotbar, hearts, breath bubbles and boss bar use the original
+`Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` textures with the classic layout. Arms use the composite layout from `PlayerDrawSet.CreateCompositeData`
 (the six-column swing table for the front arm, back arm two rows lower); the near-side
 (item-holding) arm is drawn from column 8 because the per-item shoulder rotation is not
-modelled yet. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free debug
-camera, `TR_NOPLAYER` hides the player and `TR_XY` places them at a tile. The selected
+modelled yet. Entity sprites (player and NPCs) snap their top-left to an integer screen pixel before the
+instance is uploaded, so nearest sampling keeps exactly the same source texels while the
+camera moves; the camera itself still interpolates smoothly. NPC sprite offsets align the
+last opaque art row (not the padded frame) with the hitbox bottom, which is what removed
+the slime/zombie hover. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free
+debug camera, `TR_NOPLAYER` hides the player, `TR_XY` places them at a tile and
+`TR_HOLD=right,jump` holds a key for deterministic walk screenshots. The selected
 hotbar block is drawn in the hand (14×14 tile frame) with a 0.28 s swing arc from raised-
 behind to forward-down when mining, placing or attacking; the world cache key includes the
 kind and quantised phase. Not ported yet:
