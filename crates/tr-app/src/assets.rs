@@ -212,83 +212,47 @@ pub fn load_world_images(
     Ok(images)
 }
 
-/// Retail `Images` directory used for runtime `.xnb` loading: `TR_CONTENT` when set
-/// (the `Content` directory), otherwise the default Steam install. `None` keeps the
-/// pre-extracted PNG path.
-pub fn content_images_dir() -> Option<&'static Path> {
-    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
-    DIR.get_or_init(|| {
-        let content = std::env::var_os("TR_CONTENT")
-            .map(PathBuf::from)
-            .or_else(|| {
-                let default = PathBuf::from(
-                    r"C:\Program Files (x86)\Steam\steamapps\common\Terraria\Content",
-                );
-                default.exists().then_some(default)
-            })?;
-        let images = content.join("Images");
-        images.is_dir().then_some(images)
-    })
-    .as_deref()
+/// `Content` directory bundled with the project (the retail `.xnb` files copied into
+/// `assets/Content`), set once at startup by `main`. The game reads them at runtime with
+/// the original XNB readers; there is no pre-extracted fallback.
+pub fn set_content_dir(dir: PathBuf) {
+    let _ = IMAGES_DIR.set(dir.join("Images"));
+    let _ = CONTENT_DIR.set(dir);
+}
+
+static CONTENT_DIR: OnceLock<PathBuf> = OnceLock::new();
+static IMAGES_DIR: OnceLock<PathBuf> = OnceLock::new();
+
+/// The bundled `Content` directory, if it was found at startup.
+pub fn content_dir() -> Option<&'static Path> {
+    CONTENT_DIR.get().map(|p| p.as_path())
+}
+
+fn content_images_dir() -> Option<&'static Path> {
+    IMAGES_DIR.get().map(|p| p.as_path()).filter(|p| p.is_dir())
 }
 
 /// Decodes one sheet straight from the game's `.xnb` (the original pipeline).
-fn load_xnb(dir: &Path, name: &str, layout: SheetLayout) -> Option<AtlasImage> {
-    let base = if dir == Path::new("") {
-        content_images_dir()?.to_path_buf()
-    } else if dir.ends_with("Images") && dir.join("Misc").is_dir() {
-        dir.to_path_buf()
-    } else {
-        content_images_dir()?.to_path_buf()
-    };
-    let path = base.join(format!("{name}.xnb"));
-    match tr_content::load_texture(&path) {
-        Ok(img) => Some(AtlasImage {
-            name: name.to_string(),
-            width: img.width,
-            height: img.height,
-            rgba: img.pixels,
-            layout,
-        }),
-        Err(e) => {
-            log::debug!("xnb {}: {e:#}", path.display());
-            None
-        }
-    }
-}
-
-pub fn load_png(dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImage> {
-    if let Some(img) = load_xnb(dir, name, layout) {
-        return Ok(img);
-    }
-    let path = dir.join(format!("{name}.png"));
-    let img = image::open(&path)
-        .with_context(|| format!("loading {}", path.display()))?
-        .to_rgba8();
+fn load_sheet(name: &str, layout: SheetLayout) -> Result<AtlasImage> {
+    let dir = content_images_dir().context("Content/Images not found")?;
+    let path = dir.join(format!("{name}.xnb"));
+    let img = tr_content::load_texture(&path)
+        .with_context(|| format!("decoding {}", path.display()))?;
     Ok(AtlasImage {
         name: name.to_string(),
-        width: img.width(),
-        height: img.height(),
-        rgba: img.into_raw(),
+        width: img.width,
+        height: img.height,
+        rgba: img.pixels,
         layout,
     })
 }
 
-fn load_misc_png(dir: &Path, name: &str) -> Result<AtlasImage> {
-    if let Some(img) = load_xnb(dir, &format!("Misc/{name}"), SheetLayout::Raw) {
-        return Ok(img);
-    }
-    let path = dir.join("Misc").join(format!("{name}.png"));
-    let img = image::open(&path)
-        .with_context(|| format!("loading {}", path.display()))?
-        .to_rgba8();
-    Ok(AtlasImage {
-        name: name.to_string(),
-        width: img.width(),
-        height: img.height(),
-        rgba: img.into_raw(),
-        layout: SheetLayout::Raw,
-    })
+pub fn load_png(_dir: &Path, name: &str, layout: SheetLayout) -> Result<AtlasImage> {
+    load_sheet(name, layout)
+}
+
+fn load_misc_png(_dir: &Path, name: &str) -> Result<AtlasImage> {
+    load_sheet(&format!("Misc/{name}"), SheetLayout::Raw)
 }
 
 /// One glyph of a ReLogic `DynamicSpriteFont`, in screen pixels.

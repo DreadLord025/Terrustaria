@@ -364,3 +364,20 @@ the first glyph clamps a negative bearing). HUD labels, item names and the Life 
 use Mouse_Text; stack counts and slot numbers use Item_Stack. Textures now load from the
 retail `.xnb` files at runtime (`TR_CONTENT`, default Steam install) with the extracted
 PNGs as a fallback; `Images/Tiles_0.xnb` decodes pixel-identically to the PNG.
+
+## BUG-021 — NPC and item behaviour gaps (deferred to the NPC/AI milestone)
+
+**Status:** recorded — not fixed yet (the user asked to defer this)
+**Area:** `tr-app/src/npc.rs`, placing logic in `tr-app/src/main.rs`
+
+**Report:**
+- The Demon Eye flies through water freely; in the original most flying enemies avoid or
+  behave differently in liquid.
+- Torches can be placed under water; in the original a torch placed in water breaks
+  immediately and drops as an item (`Item.CheckTorch`/`WorldGen` torch rules), and
+  non-torch items placed in liquid follow `Item.PlaceThing`'s checks.
+
+**Plan:** fix together with the full NPC AI port (all enemies/bosses, their AI, behaviour,
+attacks and patterns), where ambient liquid rules and item placement checks are ported
+from `NPC.cs`/`Item.cs` rather than special-cased. Until then the current behaviour is an
+accepted approximation and must be listed in ROADMAP M4.

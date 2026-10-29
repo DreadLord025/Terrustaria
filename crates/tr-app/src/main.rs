@@ -89,7 +89,12 @@ fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> 
 }
 
 fn main() -> Result<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    env_logger::Builder::from_env(
+        // The Vulkan loader logs a benign registry warning on every start when no
+        // Vulkan SDK layer manifests are installed; keep it out of the console.
+        env_logger::Env::default().default_filter_or("info,wgpu_hal::vulkan::instance=error"),
+    )
+    .init();
     // The release build has no console; leave evidence for any panic instead of
     // losing the message when the window closes.
     std::panic::set_hook(Box::new(|info| {
@@ -170,8 +175,12 @@ fn main() -> Result<()> {
         if world.day_time { "day" } else { "night" }
     );
 
-    let assets_dir =
-        find_assets_dir().context("assets/Images not found (run tools/XnbExtract first)")?;
+    let content_dir = find_content_dir().context(
+        "assets/Content not found: copy the retail Content directory next to the executable",
+    )?;
+    assets::set_content_dir(content_dir.clone());
+    log::info!("content: {}", content_dir.display());
+    let assets_dir = content_dir.join("Images");
 
     if std::env::var("TR_DUMP_TILES").is_ok() {
         let cx = std::env::var("TR_DUMP_X")
@@ -692,13 +701,18 @@ fn terrstaria_world() -> Result<PathBuf> {
     Ok(path)
 }
 
-fn find_assets_dir() -> Option<PathBuf> {
-    let candidates = [
-        PathBuf::from("assets/Images"),
-        PathBuf::from("../../assets/Images"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/Images"),
-    ];
-    candidates.into_iter().find(|p| p.is_dir())
+/// Locates the bundled retail `Content` directory: next to the executable first (the
+/// release layout), then the project tree.
+fn find_content_dir() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok();
+    let mut candidates = Vec::new();
+    if let Some(exe) = exe.as_ref().and_then(|p| p.parent()) {
+        candidates.push(exe.join("assets/Content"));
+        candidates.push(exe.join("../../assets/Content"));
+    }
+    candidates.push(PathBuf::from("assets/Content"));
+    candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/Content"));
+    candidates.into_iter().find(|p| p.join("Images").is_dir())
 }
 
 struct App {

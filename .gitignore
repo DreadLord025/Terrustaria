@@ -25,3 +25,6 @@
 .vs/
 *.user
 Thumbs.db
+
+# bundled retail content (local only, not redistributable)
+/assets/Content/

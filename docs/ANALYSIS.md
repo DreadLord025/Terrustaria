@@ -599,8 +599,8 @@ is the only air test.
 
 ## Content pipeline (`tr-content`)
 
-Textures and fonts are read from the retail `.xnb` files at runtime with the original
-pipeline instead of pre-extracted PNGs: `tr-content` ports the XNB v5 container, the
+Textures and fonts are read from the bundled `assets/Content` copy of the retail `.xnb`
+files at runtime with the original pipeline (no pre-extracted PNGs and no fallback): `tr-content` ports the XNB v5 container, the
 Xbox XMemCompress LZX decoder (`LzxDecoder.cs`, 16-bit window, headered blocks),
 `Texture2DReader` (Color/DXT1/DXT3/DXT5) and ReLogic's `DynamicSpriteFontReader`.
 Verified by test: `Images/Tiles_0.xnb` decodes pixel-identically to the old

@@ -27,8 +27,8 @@ down in `docs/ANALYSIS.md` and `docs/ROADMAP.md`.
 
 ## Assets
 
-- `decompiled/`, `decompiled-libs/` and `assets/Images/` are derived from the user's own
-  retail copy.
+- `decompiled/`, `decompiled-libs/` and `assets/Content/` (the game's own `.xnb`
+  content) are derived from the user's own retail copy.
 
 ## Rendering invariants
 
@@ -57,6 +57,6 @@ down in `docs/ANALYSIS.md` and `docs/ROADMAP.md`.
 
 - Do not run `cargo fmt` on the generated `crates/tr-core/src/tiledata.rs` or `wld.rs`;
   use `rustfmt` on the touched files only.
-- `assets/test/`, `target/`, `decompiled/`, `assets/Images/` and `.qoder_tmp/` are local.
+- `assets/test/`, `target/`, `decompiled/` and `.qoder_tmp/` are local.
 - Prefer extending the existing systems (world model, `framing`, `lighting`, `LiquidSystem`,
   `Rain`, `Projectile`, `Npc`) over adding parallel implementations.
