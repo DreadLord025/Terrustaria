@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | ✅ | Full `wallFrameLookup` + `centerWallFrameLookup` port |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + per-column cave fade; no biome backgrounds/rain/underground textures |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + a screen-wide cave backdrop anchored to `worldSurface`; no biome backgrounds/rain/underground textures |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -316,6 +316,10 @@ visible cell the cache computes:
 - `DrawNormalLiquids` then runs twice like `Main.DrawLiquid(bg)`: opaque (`Opacity`, usually
   1.0) before walls/tiles and `DEFAULT_OPACITY` (0.6 / 0.95 / 0.95 / 0.75) after entities,
   so the parallax never shows through the lake and entities standing in water are tinted;
+- water uses the biome style sheet (`Main.CalculateWaterStyle` → `Misc/water_0..14`). The
+  atlas stores these sheets under their `Misc/` path, so `Lookups` must resolve
+  `Misc/water_N`: the old `water_N` key returned `None` and silently skipped every
+  `DrawNormalLiquids` quad — only the `Liquid_*` strips behind blocks were visible;
 - the source frame is chosen by `FrameOffset`: interior water uses the plain row
   `(16, 48)`, surface tiles near `worldSurface - 40` snap to the still frame at `Y = 1280`,
   and edge/corner frames use the 3x18 px sheet columns. The old hand-written "always row
@@ -454,6 +458,15 @@ Not ported: the biome cross-fade (`bgAlphaFarBackLayer`/`bgAlphaFrontLayer` for
 corruption/crimson/jungle/hallow/mushroom), `DrawSurfaceBG_DrawChangeOverlay`, the
 cloud-background (`cloudBG`) storm layers, the far-cloud depth layers and the ocean
 water-line ambience.
+
+The underground backdrop follows `Main.DrawBackground_DirtBackground`'s placement: one
+screen-wide layer that starts at `worldSurface·16 + 16` (the top of the dirt background)
+and is only emitted once the bottom of the screen reaches the surface line. It is a
+vertical gradient (`cave_top` → near black over 34 tiles) instead of the tiled
+`Background_2` texture with per-cell lighting, which is still M1.4-BG work. Anchoring it
+per column (topmost solid tile) made every player-placed row of blocks paint a dark
+"wall" of backdrop underneath itself — the artifact is now gone, and overhangs/valleys
+show the same screen-wide dirt background as the original.
 
 ## Sky and daylight
 
@@ -670,7 +683,7 @@ an overhead bar. The original `NPC_1` 32×26 frames are tinted blue and lit by t
 light; NPC position/animation are hashed into the G6 frame key.
 
 The instanced renderer is split into three ranges: an always-rebuilt back range (sky
-gradient, parallax layers, clouds, cave fade), a cached world range (tiles, walls, slopes,
+gradient, parallax layers, clouds, cave backdrop), a cached world range (tiles, walls, slopes,
 liquids, trees, items, player, NPCs) and the UI. The world range is keyed by the camera
 floored to a tile, zoom/screen, light generation, light mode, animation step and the
 entity hashes, so sub-tile pans and static views rebuild only the back range + UI. With the
@@ -720,8 +733,8 @@ bosses and multiplayer sync.
    Sun/moon light, flicker and invisible blocks remain.
 3. **Backgrounds are the third.** Parallax mountains, clouds, sun/moon and stars now exist,
    but biome-specific skylines, rain and the real textured underground background are
-   still placeholders; the current sky + per-column cave fade avoids leaks and hard edges
-   but does not cover every biome look.
+   still placeholders; the current sky + screen-wide cave backdrop avoids leaks and hard
+   edges but does not cover every biome look.
 4. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100
    projectiles, ~750 tiles; most behaviour is hand-written per id, not data-driven.
 5. **World generation** is a large but well-isolated subsystem (passes + structures). The

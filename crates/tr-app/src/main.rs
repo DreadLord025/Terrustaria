@@ -469,7 +469,7 @@ fn main() -> Result<()> {
             "Background_0",
             "LiquidSlope_0",
             "Liquid_0",
-            "water_0",
+            "Misc/water_0",
         ] {
             if let Some(s) = atlas.sheet(name) {
                 log::info!(
@@ -2418,16 +2418,6 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
-        // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates 190..=255,
-        // changing by 1 per frame, driving the torch/lava/crystal-wall flicker.
-        self.mouse_text_color =
-            (self.mouse_text_color as i32 + self.mouse_text_color_dir as i32).clamp(190, 255) as u8;
-        if self.mouse_text_color >= 255 {
-            self.mouse_text_color_dir = -1;
-        }
-        if self.mouse_text_color <= 190 {
-            self.mouse_text_color_dir = 1;
-        }
         // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
         self.advance_disco();
         let anim_time = self.anim_time;
@@ -2610,6 +2600,15 @@ impl App {
                     sky_tint[2] * rain_dim,
                 ];
                 let sky_light = tile_color(sky_tint);
+                // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
+                // 190..=255, changing by 1 per frame, driving light flicker.
+                self.mouse_text_color = (self.mouse_text_color as i32 + self.mouse_text_color_dir as i32).clamp(190, 255) as u8;
+                if self.mouse_text_color >= 255 {
+                    self.mouse_text_color_dir = -1;
+                }
+                if self.mouse_text_color <= 190 {
+                    self.mouse_text_color_dir = 1;
+                }
                 // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
                 self.demon_torch += self.demon_torch_dir * 0.01;
                 if self.demon_torch > 1.0 {
@@ -3090,19 +3089,6 @@ fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<CloudSprite> {
         .collect()
 }
 
-/// Background anchor for one column: the lowest ground within a small window. Using
-/// the column's own surface would paint the cave fade over the open corner of a slope
-/// or an overhang; taking the deepest neighbour keeps sky there.
-fn bg_surface(world: &World, x: i32) -> i32 {
-    let mut s = world.surface_of(x);
-    for d in 1..=2 {
-        let left = (x - d).clamp(0, world.width - 1);
-        let right = (x + d).clamp(0, world.width - 1);
-        s = s.max(world.surface_of(left)).max(world.surface_of(right));
-    }
-    s
-}
-
 #[derive(Clone, Copy)]
 struct BgTex {
     uv: [f32; 4],
@@ -3335,6 +3321,34 @@ fn is_snow_biome(world: &World, camera: Vec2) -> bool {
         }
     }
     false
+}
+
+
+/// `Main.CalculateWaterStyle`: the `Misc/water_*` style index for the biome under the
+/// camera. 0 is the forest default, 5 snow, 6 desert (12 underground desert), 13 ocean,
+/// 7 shallow cave, 8 deep cave; lava (1), honey (11) and shimmer (14) are per-liquid
+/// and never depend on the biome.
+fn calculate_water_style(world: &World, camera: Vec2) -> usize {
+    let tile_y = camera.y / TILE_PX;
+    if is_desert_biome(world, camera) {
+        return if tile_y > world.world_surface as f32 { 12 } else { 6 };
+    }
+    if is_snow_biome(world, camera) {
+        return 5;
+    }
+    let tile_x = (camera.x / TILE_PX) as i32;
+    if tile_x < 220 || tile_x > world.width - 220 {
+        // `ZoneBeach` -> bgStyle 4 -> water 13.
+        return 13;
+    }
+    if tile_y > world.rock_layer as f32 + 40.0 {
+        // `ZoneGlowshroom` would pick 7 here; our generator has no glowshroom biome.
+        return 8;
+    }
+    if tile_y > world.world_surface as f32 {
+        return 7;
+    }
+    0
 }
 
 fn make_stars(world: &World) -> Vec<StarSprite> {
@@ -3688,10 +3702,10 @@ fn draw_sky(
         }
     }
 
-    // Underground: one smooth column gradient starting at that column's own first
-    // solid tile. Anchoring per column keeps sky visible in valleys and overhangs,
-    // while the long vertical fade avoids the flat "brown sea" and hard rectangle
-    // edges of the old screen-wide band.
+    // `Main.DrawBackground_DirtBackground`: the underground backdrop is one
+    // screen-wide layer anchored to `Main.worldSurface`, not a per-column fill.
+    // Keying it on a column's topmost solid tile turned every player-placed row
+    // of blocks into a dark "wall" hanging underneath it.
     let bright =
         ((tile_color(tint)[0] + tile_color(tint)[1] + tile_color(tint)[2]) / 3.0).clamp(0.0, 1.0);
     let cave_top = [0.30 * bright, 0.22 * bright, 0.16 * bright];
@@ -3700,27 +3714,23 @@ fn draw_sky(
     const CAVE_SPAN: f32 = 34.0 * TILE_PX;
     static BG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if !*BG.get_or_init(|| std::env::var_os("TR_NO_BG").is_some()) {
-        let tx0 = (origin.x / TILE_PX).floor() as i32 - 1;
-        let tx1 = ((camera.x + half.x) / TILE_PX).ceil() as i32 + 1;
-        for tx in tx0..=tx1 {
-            // Start the underground fill at the lowest ground in a small window,
-            // not at this column's own surface: the empty corner of a slope must
-            // show sky, exactly like an exposed hillside in the original.
-            let sx = bg_surface(world, tx) as f32 * TILE_PX;
-            let top = sx.max(origin.y);
-            if top >= bottom {
-                continue;
-            }
-            let span_end = (sx + CAVE_SPAN).min(bottom);
+        // `bgTopY = worldSurface * 16 - screenPosition.Y + 16`: the backdrop starts
+        // one tile below the surface line.
+        let surface_y = world.world_surface as f32 * TILE_PX + TILE_PX;
+        // `if (!(worldSurface * 16 <= screenPosition.Y + screenHeight + offScreen)) return`.
+        if surface_y <= bottom {
+            let top = surface_y.max(origin.y);
+            let span_end = (surface_y + CAVE_SPAN).min(bottom);
+            let w = screen.x / zoom + 0.5;
             let strip_h = (span_end - top) / CAVE_STRIPS as f32;
             if strip_h > 0.0 {
                 for i in 0..CAVE_STRIPS {
                     let y = top + i as f32 * strip_h;
-                    let depth = ((y - sx) / CAVE_SPAN).clamp(0.0, 1.0);
+                    let depth = ((y - surface_y) / CAVE_SPAN).clamp(0.0, 1.0);
                     let c = lerp3(cave_top, cave_deep, depth);
                     r.push_back_sprite(
-                        [tx as f32 * TILE_PX, y],
-                        [TILE_PX + 0.5, strip_h + 0.5],
+                        [origin.x, y],
+                        [w, strip_h + 0.5],
                         white,
                         [c[0], c[1], c[2], 1.0],
                     );
@@ -3728,8 +3738,8 @@ fn draw_sky(
             }
             if span_end < bottom {
                 r.push_back_sprite(
-                    [tx as f32 * TILE_PX, span_end],
-                    [TILE_PX + 0.5, bottom - span_end],
+                    [origin.x, span_end],
+                    [w, bottom - span_end],
                     white,
                     [cave_deep[0], cave_deep[1], cave_deep[2], 1.0],
                 );
@@ -3940,6 +3950,9 @@ fn draw_tiles(
     let y0 = ((min.y / TILE_PX).floor() as i32 - 1).clamp(0, world.height - 1);
     let y1 = ((max.y / TILE_PX).ceil() as i32 + 1).clamp(0, world.height - 1);
 
+    // `Main.waterStyle` is a single biome value for the whole frame, exactly like
+    // `Main.CalculateWaterStyle` (the original evaluates it from the player's biome).
+    let water_style = calculate_water_style(world, camera);
     let t_light = Instant::now();
     light.compute_into(world, x0, y0, x1, y1, params);
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
@@ -3985,6 +3998,44 @@ fn draw_tiles(
     // `LiquidRenderer.InternalPrepareDraw` runs once per frame; both the opaque
     // background pass and the translucent foreground pass consume this record.
     let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
+    if std::env::var_os("TR_DUMP_LIQUID").is_some() {
+        let cam_x = camera.x as i32 / 16;
+        let cam_y = camera.y as i32 / 16;
+        let mut n_vis = 0;
+        let mut n_tot = 0;
+        for d in &liquid_draws {
+            if (d.x - cam_x).abs() < 40 && (d.y - cam_y).abs() < 40 {
+                n_tot += 1;
+                if d.visible {
+                    n_vis += 1;
+                }
+            }
+        }
+        log::info!(
+            "LIQDUMP near cam {},{}: total={} visible={}",
+            cam_x,
+            cam_y,
+            n_tot,
+            n_vis
+        );
+        for d in &liquid_draws {
+            if d.visible && (d.x - cam_x).abs() < 40 && (d.y - cam_y).abs() < 40 {
+                log::info!(
+                    "  vis tile {},{} type{} lvl{} sw{} sh{} fy{} fx{} sx{} sy{}",
+                    d.x,
+                    d.y,
+                    d.liquid_type,
+                    d.src_w,
+                    d.src_h,
+                    d.is_surface as i32,
+                    d.src_y,
+                    d.src_x,
+                    d.offset_x,
+                    d.offset_y
+                );
+            }
+        }
+    }
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
     if std::env::var_os("TR_NO_LIQBACK").is_none() {
@@ -3996,6 +4047,7 @@ fn draw_tiles(
             anim_time,
             &liquid_draws,
             LiquidPass::Background,
+            water_style,
         );
     }
 
@@ -4005,7 +4057,7 @@ fn draw_tiles(
     // wall behind a fall is drawn over it (documented approximation).
     if std::env::var_os("TR_NO_WATERFALL").is_none() {
         let mut falls = Vec::new();
-        waterfall.draw(world, light, style, anim_time, [x0, y0, x1, y1], &mut falls);
+        waterfall.draw(world, light, style, anim_time, water_style as i32, [x0, y0, x1, y1], &mut falls);
         for d in falls {
             let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
                 continue;
@@ -4138,6 +4190,7 @@ fn draw_tiles(
                         tx,
                         ty,
                         tile,
+                        water_style,
                     );
                 }
                 let Some(tf) = tile_frame else {
@@ -4254,6 +4307,7 @@ fn draw_tiles(
             anim_time,
             &liquid_draws,
             LiquidPass::Foreground,
+            water_style,
         );
     }
     if let Some((tx, ty)) = edit_target {
@@ -4298,6 +4352,7 @@ fn draw_liquids(
     anim_time: f32,
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
+    water_style: usize,
 ) -> u32 {
     // `LiquidRenderer.Update`: body/edge frames advance with the (wind-driven)
     // animation clock, interior frames with the slower waterfall clock.
@@ -4313,7 +4368,7 @@ fn draw_liquids(
             1 => (1, 0.95),
             2 => (11, 0.95),
             3 => (14, 0.75),
-            _ => (0, 0.60),
+            _ => (water_style, 0.60),
         };
         let corners = light.corner4(d.x, d.y);
         // `DrawNormalLiquids`: surface tiles snap to the still frame at y=1280,
@@ -4399,6 +4454,7 @@ fn draw_tile_liquid_behind(
     tx: i32,
     ty: i32,
     tile: &tr_core::tile::Tile,
+    water_style: usize,
 ) -> u32 {
     // `BlocksWaterDrawingBehindSelf`: chests and friends never draw water behind
     // themselves, and while sloped they fall back to the plain liquid frame.
@@ -4464,7 +4520,7 @@ fn draw_tile_liquid_behind(
         tr_core::tile::LiquidKind::Lava => 1,
         tr_core::tile::LiquidKind::Honey => 11,
         tr_core::tile::LiquidKind::Shimmer => 14,
-        tr_core::tile::LiquidKind::Water => 0,
+        tr_core::tile::LiquidKind::Water => water_style,
     };
     // `(!flag3 || !(flag | flag2)) && !(flag4 & flag3)`: liquid on every side keeps
     // the default full-cell rect at the tile origin instead of a partial strip.
@@ -5956,5 +6012,66 @@ mod tests {
         advance_time(&mut w, 1.0);
         assert!(w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
+    }
+}
+
+#[cfg(test)]
+mod water_style_tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn test_world() -> World {
+        let mut w = World::new("t".into(), 600, 800);
+        w.world_surface = 200.0;
+        w.rock_layer = 360.0;
+        w.column_surface = vec![200; 600];
+        w
+    }
+
+    fn put(w: &mut World, x: i32, kind: u16) {
+        let i = w.index(x, 200);
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn cam(x: i32, y: i32) -> Vec2 {
+        Vec2::new(x as f32 * TILE_PX, y as f32 * TILE_PX)
+    }
+
+    #[test]
+    fn forest_surface_is_style_zero() {
+        let w = test_world();
+        assert_eq!(calculate_water_style(&w, cam(300, 150)), 0);
+    }
+
+    #[test]
+    fn shallow_cave_is_seven_and_deep_cave_is_eight() {
+        let w = test_world();
+        // `TileCenter.Y > worldSurface` but not past rockLayer + 40 -> 7.
+        assert_eq!(calculate_water_style(&w, cam(300, 250)), 7);
+        // Past rockLayer + 40 -> 8.
+        assert_eq!(calculate_water_style(&w, cam(300, 450)), 8);
+    }
+
+    #[test]
+    fn snow_water_is_five() {
+        let mut w = test_world();
+        put(&mut w, 300, 147);
+        assert_eq!(calculate_water_style(&w, cam(300, 150)), 5);
+    }
+
+    #[test]
+    fn desert_water_is_six_and_twelve_underground() {
+        let mut w = test_world();
+        put(&mut w, 300, 53);
+        assert_eq!(calculate_water_style(&w, cam(300, 150)), 6);
+        assert_eq!(calculate_water_style(&w, cam(300, 250)), 12);
+    }
+
+    #[test]
+    fn ocean_edges_use_thirteen() {
+        let w = test_world();
+        assert_eq!(calculate_water_style(&w, cam(100, 150)), 13);
+        assert_eq!(calculate_water_style(&w, cam(550, 150)), 13);
     }
 }

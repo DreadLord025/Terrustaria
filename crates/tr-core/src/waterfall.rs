@@ -376,21 +376,24 @@ impl WaterfallManager {
         }
     }
 
-    /// `WaterfallManager.Draw`: resets `stopAtStep` and runs the single water-style
-    /// pass our worlds use (`DrawWaterfall(0, liquidAlpha[0] = 1)`).
+    /// `WaterfallManager.Draw`: resets `stopAtStep` and runs the water-style pass for
+    /// the biome the camera is in (`DrawWaterfall(waterStyle, liquidAlpha[waterStyle])`).
+    /// `Main.liquidAlpha` transitions are not modelled yet, so one pass at alpha 1.0
+    /// covers the current style; honey and shimmer falls are drawn by the same pass.
     pub fn draw(
         &mut self,
         world: &World,
         light: &LightMap,
         style: &LightStyle,
         time: f32,
+        water_style: i32,
         view: [i32; 4],
         out: &mut Vec<WaterfallDraw>,
     ) {
         for w in &mut self.waterfalls[..self.current_max] {
             w.stop_at_step = self.waterfall_dist;
         }
-        self.draw_waterfall(0, 1.0, world, light, style, time, view, out);
+        self.draw_waterfall(water_style, 1.0, world, light, style, time, view, out);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1307,7 +1310,7 @@ mod tests {
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
         let mut out = Vec::new();
-        mgr.draw(&w, &light, &style, 0.0, [0, 0, 40, 40], &mut out);
+        mgr.draw(&w, &light, &style, 0.0, 0, [0, 0, 40, 40], &mut out);
         assert!(!out.is_empty());
         assert!(out.iter().any(|d| d.texture == 0));
         assert!(out.iter().any(|d| d.pos[0] == 160.0 && d.pos[1] == 160.0));

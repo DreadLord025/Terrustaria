@@ -607,7 +607,7 @@ impl Lookups {
             if let Some(rect) = atlas.sheet(&format!("Liquid_{i}")) {
                 me.liquid_parts[i] = Some(*rect);
             }
-            if let Some(rect) = atlas.sheet(&format!("water_{i}")) {
+            if let Some(rect) = atlas.sheet(&format!("Misc/water_{i}")) {
                 me.liquids[i] = Some(*rect);
             }
         }
