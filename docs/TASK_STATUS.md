@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29T18:10Z  
+**Last updated:** 2026-10-29T19:15Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -74,7 +74,7 @@
 |----|------|--------|-------------|-------|
 | M6-MUSIC | XACT/WMA music playback | ❌ Pending | - | - |
 | M6-3DAUDIO | 3D audio attenuation | ❌ Pending | - | - |
-| M6-LOCALIZE | Localization system | ❌ Pending | - | - |
+| M6-LOCALIZE | Localization system | ✅ Done | Agent-DeepSeek | `tr-core/src/localization.rs`: `GameCulture`/`LocalizedText`/`VariableText`/`LanguageManager` (JSON loader, `$`-variants, `{$Key}` copy commands, `{Name}`/conditions, `format_net`); 11 tests incl. the shipped `en-US` files. UI wiring still pending |
 
 ### Milestone 7 — UI (1:1 layout)
 

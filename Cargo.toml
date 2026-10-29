@@ -24,6 +24,7 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 font8x8 = "0.3"
 rayon = "1"
 rodio = "0.20"
+serde_json = { version = "1", features = ["preserve_order"] }
 
 [profile.dev]
 opt-level = 1

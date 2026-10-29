@@ -74,6 +74,12 @@
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
   `reframe_area`, like `WorldGen.TileFrame`.
+- `localization.rs` — `Terraria.Localization` core: `GameCulture` (names, legacy ids),
+  `LocalizedText`/`VariableText` (`{Name}`, `{?Name}`/`{!Name}` conditions, `{$Key}` copy
+  commands) and `LanguageManager`. Loads the shipped
+  `Terraria.Localization.Content.<culture>.*.json` (trailing-comma tolerant), with a
+  `Substitution` table standing in for `Lang.GetGlobalSubstitution` and `format_net` for
+  `string.Format`. Not yet wired into the UI.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.

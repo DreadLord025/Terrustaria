@@ -741,3 +741,33 @@ cell (`assets::tile_color_avg`/`wall_color_avg`), with liquid tinting (water/lav
 shimmer). Rendering is chunked: 8x8-tile blocks average their explored colours, so the
 minimap (2 px/tile, top right) and the full map (`M`, 3 px/tile, centred on the player)
 stay at a few thousand quads. Unexplored areas stay dark; the player is a white marker.
+
+## Localization (M6)
+
+`tr-core/src/localization.rs` ports `Terraria.Localization`'s core:
+`GameCulture` (the twelve shipped cultures, their `en-US`-style names and legacy ids,
+`FromName`/`FromLegacyId`/`FromCultureName` with the original fallbacks), `LocalizedText`
+(`Value`/`UnformattedValue`/`EnglishValue`/`HasValue`/`Format`), the internal `VariableText`
+and `LanguageManager` (`SetLanguage`/`ReloadLanguage`/`LoadLanguage`, the per-category key
+lists, `$`-variants, `GetText`/`GetTextValue`, `Random`/`IndexedFromCategory`, `FindAll`).
+
+Strings load from the same JSON the game embeds as
+`Terraria.Localization.Content.<culture>.*.json` (a `Dictionary<string, Dictionary<string,
+string>>`). Register each resource with `add_source(name, text)` and call `set_language`:
+the loader mirrors `LoadLanguageFromFileTextJson`, creating categories only where
+`canCreateCategories` is set, skipping the `.csv` path (mods only). Two compatibility
+notes: the shipped files carry Newtonsoft-style trailing commas, so the parser strips a
+comma that directly precedes a closing brace/bracket outside string literals; and
+`ActiveCulture` starts unset (null in the original), so the first `set_language` always
+loads even for English.
+
+`VariableText` reproduces `{Name}` substitution and the `{?Name}`/`{!Name}` conditions via
+a `Substitution` table (`set_substitution`/`remove_substitution`) that stands in for
+`Lang.GetGlobalSubstitution`; a missing condition or variable leaves the raw text, as the
+original returns `_value.ToString()`. `{$Category.Key}` copy commands expand to the
+referenced `UnformattedValue`, iterated to a fixed point (100 passes, like the original).
+`format_net` implements the `string.Format` holes the content uses (`{0}`, `{{`/`}}`), and
+keeps an out-of-range token instead of throwing so a bad language file cannot crash a frame.
+A test loads the seven shipped `en-US` files and checks `ItemName.DirtBlock`,
+`CommonItemTooltip.UsesMana` and the `ItemName` category size (>1000). Wiring the strings
+into the HUD, item names and menus is still to do.

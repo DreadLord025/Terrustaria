@@ -8,6 +8,7 @@ pub mod framing;
 pub mod lighting;
 pub mod liquid;
 pub mod liquid_draw;
+pub mod localization;
 pub mod save;
 pub mod tile;
 pub mod tile_light;
