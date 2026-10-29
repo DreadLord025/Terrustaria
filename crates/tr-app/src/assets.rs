@@ -86,6 +86,10 @@ pub fn load_world_images(
     // Whole-image sheets used by the sky/background pass.
     for name in [
         "Background_0",
+        // Underground: `Background_1` is the surface transition row, `Background_2`
+        // the tiled dirt backdrop (`_drawBackground_backTexture[0]/[1]`).
+        "Background_1",
+        "Background_2",
         // Surface-background layer sets: forest mountains 7/8, snow mountains 35/36,
         // forest tree lines 50..52 and snow tree lines 37..39.
         "Background_7",

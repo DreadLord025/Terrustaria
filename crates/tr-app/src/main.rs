@@ -2731,6 +2731,7 @@ impl App {
                     sky_tint,
                     rain.cloud_bg(),
                     settings.background,
+                    light,
                 );
                 if !reuse_world {
                     tile_stats = draw_tiles(
@@ -3114,6 +3115,10 @@ struct SkyAssets {
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     storm_far: Option<BgTex>,
     storm_near: Option<BgTex>,
+    /// `Background_1`: the one-row surface transition into the underground backdrop.
+    underground_transition: Option<BgTex>,
+    /// `Background_2`: the tiled dirt backdrop (`_drawBackground_backTexture[1]`).
+    underground: Option<BgTex>,
     sun: Option<BgTex>,
     moon: Option<BgTex>,
     stars: Vec<Option<BgTex>>,
@@ -3276,6 +3281,8 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         desert_near: sky_tex(atlas, "Background_20", None),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
+        underground_transition: sky_tex(atlas, "Background_1", None),
+        underground: sky_tex(atlas, "Background_2", None),
         sun: sky_tex(atlas, "Sun", None),
         moon: sky_tex(atlas, "Moon_0", Some((0, 0, 50, 50))),
         stars: (0..4)
@@ -3382,6 +3389,7 @@ fn draw_sky(
     tint: [f32; 3],
     storm: f32,
     background_enabled: bool,
+    light: &LightMap,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -3702,47 +3710,177 @@ fn draw_sky(
         }
     }
 
-    // `Main.DrawBackground_DirtBackground`: the underground backdrop is one
-    // screen-wide layer anchored to `Main.worldSurface`, not a per-column fill.
-    // Keying it on a column's topmost solid tile turned every player-placed row
-    // of blocks into a dark "wall" hanging underneath it.
-    let bright =
-        ((tile_color(tint)[0] + tile_color(tint)[1] + tile_color(tint)[2]) / 3.0).clamp(0.0, 1.0);
-    let cave_top = [0.30 * bright, 0.22 * bright, 0.16 * bright];
-    let cave_deep = [0.020f32, 0.017, 0.021];
-    const CAVE_STRIPS: i32 = 8;
-    const CAVE_SPAN: f32 = 34.0 * TILE_PX;
+    // `Main.DrawBackground_SurfaceTransitionBackground` +
+    // `Main.DrawBackground_DirtBackground`: the textured underground backdrop, anchored
+    // to `worldSurface` across the whole screen. (A per-column gradient used to hang a
+    // dark "wall" underneath every player-placed row of blocks.)
     static BG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if !*BG.get_or_init(|| std::env::var_os("TR_NO_BG").is_some()) {
-        // `bgTopY = worldSurface * 16 - screenPosition.Y + 16`: the backdrop starts
-        // one tile below the surface line.
-        let surface_y = world.world_surface as f32 * TILE_PX + TILE_PX;
-        // `if (!(worldSurface * 16 <= screenPosition.Y + screenHeight + offScreen)) return`.
-        if surface_y <= bottom {
-            let top = surface_y.max(origin.y);
-            let span_end = (surface_y + CAVE_SPAN).min(bottom);
-            let w = screen.x / zoom + 0.5;
-            let strip_h = (span_end - top) / CAVE_STRIPS as f32;
-            if strip_h > 0.0 {
-                for i in 0..CAVE_STRIPS {
-                    let y = top + i as f32 * strip_h;
-                    let depth = ((y - surface_y) / CAVE_SPAN).clamp(0.0, 1.0);
-                    let c = lerp3(cave_top, cave_deep, depth);
-                    r.push_back_sprite(
-                        [origin.x, y],
-                        [w, strip_h + 0.5],
-                        white,
-                        [c[0], c[1], c[2], 1.0],
+        draw_underground_background(r, camera, zoom, screen, world, sky, light);
+    }
+}
+
+/// `Math.IEEERemainder`: `x - y * Math.Round(x / y)` with banker's rounding.
+fn ieee_remainder(x: f32, y: f32) -> f32 {
+    x - y * round_half_even(x / y)
+}
+
+/// `Math.Round(double)`: round half to even.
+fn round_half_even(v: f32) -> f32 {
+    let f = v.floor();
+    let d = v - f;
+    if d > 0.5 {
+        f + 1.0
+    } else if d < 0.5 {
+        f
+    } else if (f as i64) % 2 == 0 {
+        f
+    } else {
+        f + 1.0
+    }
+}
+
+/// One 16x16 cell of the underground backdrop, lit by the world tile under it.
+#[allow(clippy::too_many_arguments)]
+fn push_cave_cell(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    tex: &BgTex,
+    sx: f32,
+    sy: f32,
+    pos: [f32; 2],
+    light: &LightMap,
+) {
+    if pos[0] >= screen.x || pos[1] >= screen.y || pos[0] + 16.0 <= 0.0 || pos[1] + 16.0 <= 0.0 {
+        return;
+    }
+    // `Lighting.GetColor`: the light of the world tile this screen pixel shows. The
+    // original samples on the unscaled grid (`screenPosition` + screen px); we use the
+    // tile actually behind the pixel so the sample always stays inside the light map.
+    let wx = ((camera.x + (pos[0] + 8.0 - screen.x * 0.5) / zoom) / TILE_PX).floor() as i32;
+    let wy = ((camera.y + (pos[1] + 8.0 - screen.y * 0.5) / zoom) / TILE_PX).floor() as i32;
+    let c = light.get(wx, wy);
+    let du = (tex.uv[2] - tex.uv[0]) / tex.w;
+    let dv = (tex.uv[3] - tex.uv[1]) / tex.h;
+    r.push_back_sprite(
+        [
+            camera.x + (pos[0] - screen.x * 0.5) / zoom,
+            camera.y + (pos[1] - screen.y * 0.5) / zoom,
+        ],
+        [16.0 / zoom, 16.0 / zoom],
+        [
+            tex.uv[0] + du * sx,
+            tex.uv[1] + dv * sy,
+            tex.uv[0] + du * (sx + 16.0),
+            tex.uv[1] + dv * (sy + 16.0),
+        ],
+        [c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 1.0],
+    );
+}
+
+/// `Main.DrawBackground_SurfaceTransitionBackground` + `DrawBackground_DirtBackground`.
+///
+/// Both layers are screen-space and scroll with `Main.caveParallax`. The transition is
+/// one `Background_1` row at `worldSurface`; the dirt backdrop (`Background_2`) starts
+/// one tile lower and tiles down as `96x96` blocks. Every 16x16 cell takes the light of
+/// the world tile it covers, which is what darkens the caves and keeps lit ground lit.
+fn draw_underground_background(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    world: &World,
+    sky: &SkyAssets,
+    light: &LightMap,
+) {
+    let Some(dirt) = sky.underground else {
+        return;
+    };
+    // `Main.caveParallax = 1 - bgScroll / 500`; the options slider defaults to 50.
+    const CAVE_PARALLAX: f32 = 0.9;
+    let origin = camera - screen * 0.5 / zoom;
+    // Screen-space Y of the surface line: `push_cave_cell` maps screen px 1:1.
+    let surface_screen = (world.world_surface as f32 * TILE_PX - origin.y) * zoom;
+
+    // The transition row sits exactly on the surface line.
+    if let Some(transition) = sky.underground_transition {
+        let num = transition.w - 32.0;
+        if num >= 16.0 {
+            let start_x =
+                (0.0 - ieee_remainder(num + origin.x * CAVE_PARALLAX, num) - num * 0.5) as i32
+                    as f32;
+            let loops = (screen.x / num) as i32 + 2;
+            let mut n2 = round_half_even(-ieee_remainder(start_x + origin.x, 16.0));
+            if n2 as i32 == -8 {
+                n2 = 8.0;
+            }
+            for i in 0..loops {
+                for j in 0..(num as i32 / 16) {
+                    push_cave_cell(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &transition,
+                        16.0 * j as f32 + n2 + 16.0,
+                        0.0,
+                        [
+                            start_x + num * i as f32 + 16.0 * j as f32 + n2,
+                            surface_screen,
+                        ],
+                        light,
                     );
                 }
             }
-            if span_end < bottom {
-                r.push_back_sprite(
-                    [origin.x, span_end],
-                    [w, bottom - span_end],
-                    white,
-                    [cave_deep[0], cave_deep[1], cave_deep[2], 1.0],
-                );
+        }
+    }
+
+    // `if (!(worldSurface * 16 <= screenPosition.Y + screenHeight + offScreen)) return`.
+    if surface_screen > screen.y {
+        return;
+    }
+    let num = dirt.w - 32.0;
+    if num < 16.0 {
+        return;
+    }
+    let start_x =
+        (0.0 - ieee_remainder(num + origin.x * CAVE_PARALLAX, num) - num * 0.5) as i32 as f32;
+    let loops = (screen.x / num) as i32 + 2;
+    let mut n2 = round_half_even(-ieee_remainder(start_x + origin.x, 16.0));
+    if n2 as i32 == -8 {
+        n2 = 8.0;
+    }
+    let top = surface_screen + 16.0;
+    // Fully underground, the pattern repeats from above the screen instead of starting
+    // at the surface line.
+    let start_y = if surface_screen < -16.0 {
+        ieee_remainder(top, dirt.h) - dirt.h
+    } else {
+        top
+    };
+    let loops_y = (screen.y as i32 - start_y as i32) / dirt.h as i32 + 1;
+    let rows = (dirt.h as i32 / 16).max(1);
+    for i in 0..loops {
+        for j in 0..loops_y {
+            for k in 0..(num as i32 / 16) {
+                for l in 0..rows {
+                    push_cave_cell(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        &dirt,
+                        16.0 * k as f32 + n2 + 16.0,
+                        16.0 * l as f32,
+                        [
+                            start_x + num * i as f32 + 16.0 * k as f32 + n2,
+                            start_y + dirt.h * j as f32 + 16.0 * l as f32,
+                        ],
+                        light,
+                    );
+                }
             }
         }
     }

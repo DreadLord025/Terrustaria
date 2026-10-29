@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | ✅ | Full `wallFrameLookup` + `centerWallFrameLookup` port |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + a screen-wide cave backdrop anchored to `worldSurface`; no biome backgrounds/rain/underground textures |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + the textured `Background_1/2` underground backdrop anchored to `worldSurface`; no biome backgrounds/rain/rock-layer backdrop yet |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -459,14 +459,17 @@ corruption/crimson/jungle/hallow/mushroom), `DrawSurfaceBG_DrawChangeOverlay`, t
 cloud-background (`cloudBG`) storm layers, the far-cloud depth layers and the ocean
 water-line ambience.
 
-The underground backdrop follows `Main.DrawBackground_DirtBackground`'s placement: one
-screen-wide layer that starts at `worldSurface·16 + 16` (the top of the dirt background)
-and is only emitted once the bottom of the screen reaches the surface line. It is a
-vertical gradient (`cave_top` → near black over 34 tiles) instead of the tiled
-`Background_2` texture with per-cell lighting, which is still M1.4-BG work. Anchoring it
-per column (topmost solid tile) made every player-placed row of blocks paint a dark
-"wall" of backdrop underneath itself — the artifact is now gone, and overhangs/valleys
-show the same screen-wide dirt background as the original.
+The underground backdrop is a port of `Main.DrawBackground_SurfaceTransitionBackground` +
+`DrawBackground_DirtBackground`: `Background_1` supplies the one-row transition at
+`worldSurface`, `Background_2` tiles as 96x96 blocks from `worldSurface + 1` down, both
+scrolled with `Main.caveParallax` (0.9) and covering the whole screen. Every 16x16 cell
+takes the light of the world tile it covers, so lit ground stays lit and caves go black —
+this is the original's screen-wide dirt backdrop, not a per-column fill. Two deviations
+from the source: the light sample uses the tile actually behind the pixel (the original
+samples on the unscaled grid, which leaves the light map at zoom > 1), and below the rock
+layer the same dirt pattern continues where the original switches to `Background_3` and
+the magma layers. Anchoring the old gradient per column made every player-placed row of
+blocks paint a dark "wall" underneath itself; that artifact is gone.
 
 ## Sky and daylight
 
@@ -733,8 +736,8 @@ bosses and multiplayer sync.
    Sun/moon light, flicker and invisible blocks remain.
 3. **Backgrounds are the third.** Parallax mountains, clouds, sun/moon and stars now exist,
    but biome-specific skylines, rain and the real textured underground background are
-   still placeholders; the current sky + screen-wide cave backdrop avoids leaks and hard
-   edges but does not cover every biome look.
+   still placeholders; the sky + textured `Background_1/2` underground backdrop avoids
+   leaks and hard edges but does not cover every biome or the rock/hell layers.
 4. **Content volume dominates long-term effort.** ~6 200 items, ~780 NPCs, ~1 100
    projectiles, ~750 tiles; most behaviour is hand-written per id, not data-driven.
 5. **World generation** is a large but well-isolated subsystem (passes + structures). The
