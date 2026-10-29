@@ -3,6 +3,7 @@
 //! The layout deliberately follows the original `Terraria.Tile` bit flags so that
 //! world files can be mapped 1:1 without lossy conversion.
 
+pub mod drawdata;
 pub mod edit;
 pub mod framing;
 pub mod lighting;
@@ -16,6 +17,7 @@ pub mod tiledata;
 pub mod torch;
 pub mod tree;
 pub mod waterfall;
+pub mod wind;
 pub mod wld;
 pub mod world;
 pub mod worldgen;

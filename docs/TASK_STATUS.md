@@ -17,7 +17,16 @@
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
-| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a`: `draw_sky` anchors the underground backdrop to `worldSurface` like `DrawBackground_DirtBackground` (placed rows no longer paint a "wall"); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again |
+| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a` anchored the backdrop to `worldSurface`; `70bf1eb` replaced the gradient with the real `Background_1/2` tiles + per-cell light (`DrawBackground_SurfaceTransitionBackground`/`DrawBackground_DirtBackground`); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again |
+| M1.4-BG-8 | Walls: 32x32 sprites + corner light | ✅ Done | Agent-Qoder | `e4efa59`: `Main.DrawWalls` geometry (32x32 at 8 px up/left), own pass before tiles, `Lighting.GetCornerColors` per cell with a flat fast path, black-wall skip |
+| M1.4-BG-9 | Surface parallax offsets and X phase | ✅ Done | Agent-Qoder | `f698971`: `pushBGTopHack`, `Background_50..52` -50, 2.68 third layer, desert 2.5/2.68, `bgStartX` from the screen's left edge |
+| M1.4-BG-10 | Rock layer / magma / hell backgrounds | ❌ Pending | - | `DrawBackground_DrawRockLayer`/`DrawMagmaLayer` (Background_3..6,185..187), `GetRockTransitionPoint`, `GlobalBrightness` ramp |
+| M1.4-BG-11 | Sun/moon phases, clouds, stars | ❌ Pending | - | `DrawSunAndMoon` scale/phase/rotation, `Cloud.Parse`+`GetParallax`, `DrawStarsInBackground` density |
+| M1.4-BG-12 | Biome bgStyle selection + cross-fade | ❌ Pending | - | `SceneMetrics` zones, `backgroundLayerTransitionSpeed` 0.05, saved `treeBG*` sets |
+| TILE-DRAW-1 | Per-type draw metrics (GetTileDrawData) | 🔄 In Progress | sub-agent | `tr-core/src/drawdata.rs`: torch 20x20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus |
+| TILE-DRAW-2 | Torch flames + glow masks | ❌ Pending | - | `TextureAssets.Flames`, glow mask table |
+| TILE-DRAW-3 | Wind: swaying plants, tree wind, leaves | 🔄 In Progress | sub-agent | `tr-core/src/wind.rs` + `DrawGrass` path, `EmitTreeLeaves` |
+| TILE-DRAW-4 | Paint / coatings / echo | ❌ Pending | - | `TilePaintSystemV2`, wall paint, invisible flags |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
 | M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) in `d780b99` |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
@@ -85,6 +94,9 @@
 | M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111) | ✅ Done | Agent-DeepSeek | General/Interface/Video rows, labels and toggles; volume sliders, cursor, controls, language left as notices |
 | M7-UI-3 | Main menu screen (logo, items, version, links) | ✅ Done | Agent-DeepSeek | Logo at (w/2,100) with scale/rotation easing, seven vanilla rows, `v1.4.5.8` in Mouse_Text |
 | M7-UI-4 | Inventory / ItemSlot cells exact sizes | ❌ Pending | - | 56 px cells, 0.85 scale, contexts |
+| M7-UI-6 | HUD: life/mana/breath/hotbar/tooltips | ❌ Pending | - | `ClassicPlayerResourcesDisplaySet`, `ItemSlot.Draw`, mouse text, cursor |
+| M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ❌ Pending | - | `Main.DrawInventory` 41001+, contexts 1/2/6/8-12 |
+| M7-UI-8 | Minimap frame + boss bar text | ❌ Pending | - | `MinimapFrame` default, `BigProgressBarHelper` |
 | M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied |
 
 ### Tile Objects & Special Tiles

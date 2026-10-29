@@ -4296,6 +4296,21 @@ fn draw_tiles(
                     None
                 };
 
+                // `GetTileDrawData`: per-type sprite size/top/flip (torches 20x20 with
+                // `tileTop 4`, plants 20 px, herbs, candles, palms...).
+                let dd = if active && marker.is_none() && !is_tree {
+                    let solid_above = world
+                        .tile(tx, ty - 1)
+                        .is_some_and(|t| {
+                            t.active()
+                                && td::TILE_SOLID.has(t.kind)
+                                && !td::TILE_SOLID_TOP.has(t.kind)
+                        });
+                    tr_core::drawdata::draw_data(tile.kind, tx, solid_above)
+                } else {
+                    tr_core::drawdata::TileDrawData::default()
+                };
+
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
                 let mut tile_frame = None;
                 if active && marker.is_none() {
@@ -4316,7 +4331,19 @@ fn draw_tiles(
                         }
                     } else if tile.frame_x >= 0 && tile.frame_y >= 0 {
                         tile_frame = atlas.and_then(|a| {
-                            lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                            if dd.width != 16 || dd.height != 16 || dd.add_fr_x != 0 || dd.add_fr_y != 0
+                            {
+                                lookups.rect_uv(
+                                    a,
+                                    tile.kind,
+                                    tile.frame_x + dd.add_fr_x,
+                                    tile.frame_y + dd.add_fr_y,
+                                    dd.width as u32,
+                                    dd.height as u32,
+                                )
+                            } else {
+                                lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                            }
                         });
                     }
                     if tile_frame.is_none() {
@@ -4383,6 +4410,26 @@ fn draw_tiles(
                         [pos[0] - 2.0, pos[1]],
                         [tree::TRUNK_SIZE, tree::TRUNK_SIZE],
                         tf.uv,
+                        l,
+                        style,
+                        tx,
+                        ty,
+                        anim_time,
+                    );
+                    stats.quads += 1;
+                } else if dd.top != 0
+                    || dd.width != 16
+                    || dd.height != 16
+                    || dd.flip
+                {
+                    // `x*16 - (tileWidth - 16) / 2`, `y*16 + tileTop`; horizontal flip
+                    // swaps the source columns.
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    push_lit(
+                        r,
+                        [pos[0] - (dw - 16.0) * 0.5, pos[1] + dd.top as f32],
+                        [dw, dh],
+                        flip_uv(tf.uv, dd.flip),
                         l,
                         style,
                         tx,
