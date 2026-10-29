@@ -8,6 +8,7 @@
 use std::sync::OnceLock;
 
 use crate::tile::*;
+use crate::tile_light::{self, light_blocked, FastRandom};
 use crate::tiledata as td;
 use crate::world::World;
 use rayon::prelude::*;
@@ -197,16 +198,42 @@ impl LightStyle {
     }
 }
 
-/// Ambient parameters for one computation.
+/// Ambient parameters for one computation. Everything here comes from `Main` and
+/// feeds `TileLightScanner`; the per-type light code in `tile_light` reads it.
 #[derive(Clone, Copy, Debug)]
 pub struct LightParams {
     /// `Main.tileColor`: surface sunlight (derived from the sky colour).
     pub sky: [f32; 3],
     /// `0.55 + sin(t * 2) * 0.08`: the underworld glow.
     pub hell_glow: f32,
-    /// `Main.mouseTextColor` flicker delta: `(270 - mouseTextColor) / 900`,
-    /// added to emissive/liquid/wall light sources (oscilates ~0.017–0.089).
-    pub torch_flicker: f32,
+    /// `Main.mouseTextColor` (190..=255): drives the torch/lamp flicker terms.
+    pub mouse_text_color: u8,
+    /// `Main.demonTorch` (0..=1): the demon torch colour ramp.
+    pub demon_torch: f32,
+    /// `Main.DiscoR/G/B`: the rainbow cycle shared with waterfalls and gemspark.
+    pub disco: [u8; 3],
+    /// `Main.GlobalTimeWrappedHourly` (wall-clock seconds mod 3600).
+    pub global_time: f32,
+    /// `Main.timeForVisualEffects` (ticks since start).
+    pub time_for_visuals: f32,
+    /// `Main.time` (0..=54000 within a day).
+    pub time: f32,
+    /// `Main.dayTime`.
+    pub day_time: bool,
+    /// `Main.raining`.
+    pub raining: bool,
+    /// `Main.shimmerDarken` (0..=1).
+    pub shimmer_darken: f32,
+    /// `Main.liquidAlpha[13]`: the shimmer liquid's opacity.
+    pub shimmer_alpha: f32,
+    /// `Main.sundialCooldown`.
+    pub sundial_cooldown: i32,
+    /// `Main.moondialCooldown`.
+    pub moondial_cooldown: i32,
+    /// `Main.jellyfishCageMode` — `[type - 316][frame]`.
+    pub cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
+    /// Seed for the per-tile `FastRandom` (`TileLightScanner._random`).
+    pub rng_seed: u64,
 }
 
 impl Default for LightParams {
@@ -214,7 +241,46 @@ impl Default for LightParams {
         Self {
             sky: [1.0, 1.0, 1.0],
             hell_glow: 0.55,
-            torch_flicker: 1.0,
+            mouse_text_color: 225,
+            demon_torch: 1.0,
+            disco: [255, 0, 0],
+            global_time: 0.0,
+            time_for_visuals: 0.0,
+            time: 54000.0,
+            day_time: true,
+            raining: false,
+            shimmer_darken: 0.0,
+            shimmer_alpha: 0.0,
+            sundial_cooldown: 0,
+            moondial_cooldown: 0,
+            cage_mode: [[0; crate::tile_light::CAGE_FRAMES]; 3],
+            rng_seed: 0,
+        }
+    }
+}
+
+impl LightParams {
+    /// Everything that can change a light sample. The map cache compares this
+    /// bit-exactly, so a new field here cannot silently go stale.
+    fn key(&self, world_revision: u64) -> LightKey {
+        LightKey {
+            sky: [self.sky[0].to_bits(), self.sky[1].to_bits(), self.sky[2].to_bits()],
+            hell_glow: self.hell_glow.to_bits(),
+            mouse_text_color: self.mouse_text_color,
+            demon_torch: self.demon_torch.to_bits(),
+            disco: self.disco,
+            global_time: self.global_time.to_bits(),
+            time_for_visuals: self.time_for_visuals.to_bits(),
+            time: self.time.to_bits(),
+            day_time: self.day_time,
+            raining: self.raining,
+            shimmer_darken: self.shimmer_darken.to_bits(),
+            shimmer_alpha: self.shimmer_alpha.to_bits(),
+            sundial_cooldown: self.sundial_cooldown,
+            moondial_cooldown: self.moondial_cooldown,
+            cage_mode: self.cage_mode,
+            rng_seed: self.rng_seed,
+            world_revision,
         }
     }
 }
@@ -226,7 +292,20 @@ impl Default for LightParams {
 struct LightKey {
     sky: [u32; 3],
     hell_glow: u32,
-    torch_flicker: u32,
+    mouse_text_color: u8,
+    demon_torch: u32,
+    disco: [u8; 3],
+    global_time: u32,
+    time_for_visuals: u32,
+    time: u32,
+    day_time: bool,
+    raining: bool,
+    shimmer_darken: u32,
+    shimmer_alpha: u32,
+    sundial_cooldown: i32,
+    moondial_cooldown: i32,
+    cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
+    rng_seed: u64,
     world_revision: u64,
 }
 
@@ -441,16 +520,7 @@ impl LightMap {
         params: &LightParams,
         force_parallel: Option<bool>,
     ) {
-        let key = LightKey {
-            sky: [
-                params.sky[0].to_bits(),
-                params.sky[1].to_bits(),
-                params.sky[2].to_bits(),
-            ],
-            hell_glow: params.hell_glow.to_bits(),
-            torch_flicker: params.torch_flicker.to_bits(),
-            world_revision: world.revision,
-        };
+        let key = params.key(world.revision);
         // `TR_NOCACHE=1` forces the full compute every frame so benchmarks can
         // measure the uncached path (D2 is otherwise almost always a hit).
         static NO_CACHE: OnceLock<bool> = OnceLock::new();
@@ -745,259 +815,71 @@ fn mask_of(tile: &Tile) -> Mask {
     Mask::Air
 }
 
-fn light_blocked(tile: &Tile) -> bool {
-    tile.active() && td::TILE_BLOCK_LIGHT.has(tile.kind)
-}
-
-/// `TileLightScanner.GetTileLight`.
-fn seed(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, local_surface: i32) -> [f32; 3] {
+/// `TileLightScanner.GetTileLight`: surface/hell ambient, walls, the self-lit tile
+/// types and liquids, each taking the maximum.
+fn seed(
+    world: &World,
+    tile: &Tile,
+    x: i32,
+    y: i32,
+    p: &LightParams,
+    local_surface: i32,
+) -> [f32; 3] {
     let mut c = [0.0f32; 3];
+    // `TileLightScanner._random.WithModifier(x, y)`: one stream per tile.
+    let mut rng = FastRandom::new(p.rng_seed).with_modifier(x, y);
     // The original seeds surface light up to the global `Main.worldSurface`. That
     // leaves hills above the average bright and valleys below it unlit. Seeding up to
     // each column's own surface keeps every slope in sunlight; the light map still
     // stops at solid blocks, so caves stay dark.
     if y <= local_surface {
-        surface_light(world, tile, x, y, p, &mut c);
+        tile_light::apply_surface_light(world, tile, x, y, &mut rng, p, &mut c);
     } else if y > world.height - 200 {
-        hell_light(world, tile, x, y, p, &mut c);
+        tile_light::apply_hell_light(world, tile, x, y, p, &mut c);
     }
-    wall_light(tile, &mut c, p.torch_flicker);
+    tile_light::apply_wall_light(tile, &mut rng, p, &mut c);
     if tile.active() {
-        tile_light(tile, x, y, p, &mut c);
+        tile_light::apply_tile_light(world, tile, x, y, &mut rng, p, &mut c);
     }
-    liquid_light(tile, &mut c, p.torch_flicker);
+    liquid_light(tile, &mut c, p);
     c
 }
 
-fn wall_is_light(wall: u16) -> bool {
-    wall < td::WALL_COUNT as u16 && td::WALL_LIGHT[wall as usize] || wall == 73 || wall == 227
-}
-
-/// `TileLightScanner.ApplySurfaceLight` (without the shimmer/water-style extras).
-fn surface_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
-    let avg = (p.sky[0] + p.sky[1] + p.sky[2]) / 3.0;
-    let mut light = [0.0f32; 3];
-
-    let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
-    let sloped = tile.slope() != 0 || tile.half_brick();
-    let transmits = !tile.active()
-        || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
-        || (sloped
-            && open_sides(-1, 0)
-            && open_sides(1, 0)
-            && open_sides(0, -1)
-            && open_sides(0, 1));
-
-    if c[0] < avg && wall_is_light(tile.wall) {
-        if transmits {
-            if tile.liquid < 200 {
-                if !tile.half_brick() || world.tile(x, y - 1).map_or(true, |t| t.liquid < 200) {
-                    light = p.sky;
-                }
-            }
-        }
-    }
-
-    if ((!tile.active() || tile.half_brick() || !td::TILE_NO_SUN_LIGHT.has(tile.kind))
-        && ((88..=93).contains(&tile.wall) || tile.wall == 241))
-        && tile.liquid < 255
-    {
-        // Gem walls glow in their own colour at the surface.
-        let mut gem = [p.sky[0], p.sky[1], p.sky[2]];
-        let which = if tile.wall == 241 {
-            6
-        } else {
-            tile.wall as i32 - 88
-        };
-        let k = match which {
-            0 => [0.9, 0.15, 0.9],
-            1 => [0.9, 0.9, 0.15],
-            2 => [0.15, 0.15, 0.9],
-            3 => [0.15, 0.9, 0.15],
-            4 => [0.9, 0.15, 0.15],
-            5 => [0.82, 0.82, 0.82],
-            _ => [0.9, 0.5, 0.0],
-        };
-        for i in 0..3 {
-            gem[i] *= k[i];
-        }
-        light = gem;
-    }
-
-    for i in 0..3 {
-        if c[i] < light[i] {
-            c[i] = light[i];
-        }
-    }
-}
-
-/// `TileLightScanner.ApplyHellLight`.
-fn hell_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
-    let glow = p.hell_glow;
-    let mut light = [0.0f32; 3];
-    let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
-    let sloped = tile.slope() != 0 || tile.half_brick();
-    let transmits = !tile.active()
-        || !td::TILE_NO_SUN_LIGHT.has(tile.kind)
-        || (sloped
-            && open_sides(-1, 0)
-            && open_sides(1, 0)
-            && open_sides(0, -1)
-            && open_sides(0, 1));
-    if transmits
-        && c[0] < glow
-        && wall_is_light(tile.wall)
-        && tile.liquid < 200
-        && (!tile.half_brick() || world.tile(x, y - 1).map_or(true, |t| t.liquid < 200))
-    {
-        light = [glow, glow * 0.6, glow * 0.2];
-    }
-    for i in 0..3 {
-        if c[i] < light[i] {
-            c[i] = light[i];
-        }
-    }
-}
-
-/// `TileLightScanner.ApplyWallLight`: glowing walls (crystal, gem, living fire...).
-/// Crystal wall (137) flickers with `(270 - mouseTextColor) / 1500` added to its base.
-fn wall_light(tile: &Tile, c: &mut [f32; 3], flicker: f32) {
-    let blocked = light_blocked(tile);
-    let light: [f32; 3] = match tile.wall {
-        357 if !blocked => [0.15, 0.27, 0.3],
-        182 if !blocked => [0.24, 0.12, 0.09],
-        33 if !blocked => [0.09, 0.0525, 0.24],
-        174 if !blocked => [0.2975, 0.0, 0.0],
-        175 if !blocked => [0.075, 0.15, 0.4],
-        176 if !blocked => [0.1, 0.1, 0.1],
-        137 if !blocked => {
-            // C#: `0.4f + (270 - mouseTextColor) / 1500f + random * 0.0005f`
-            let num4 = 0.4 + flicker * (900.0 / 1500.0);
-            [1.0 * num4, 0.5 * num4, 0.1 * num4]
-        }
-        44 if !blocked => [0.15, 0.15, 0.15],
-        154 => [0.6, 0.0, 0.6],
-        166 => [0.6, 0.6, 0.0],
-        165 => [0.0, 0.0, 0.6],
-        156 => [0.0, 0.6, 0.0],
-        164 => [0.6, 0.0, 0.0],
-        155 => [0.6, 0.6, 0.6],
-        153 => [0.6, 0.3, 0.0],
-        341 if !blocked => [0.25, 0.1, 0.0],
-        343 if !blocked => [0.0, 0.25, 0.0],
-        344 if !blocked => [0.0, 0.16, 0.34],
-        342 if !blocked => [0.3, 0.0, 0.17],
-        345 if !blocked => [0.3, 0.0, 0.35],
-        346 if !blocked => [0.25, 0.25, 0.25],
-        _ => [0.0; 3],
-    };
-    for i in 0..3 {
-        if c[i] < light[i] {
-            c[i] = light[i];
-        }
-    }
-}
-
-/// `TorchID` base colours (same order as `TorchID.Torch` … `TorchID.Shimmer`).
-const TORCH_LIGHT: [[f32; 3]; 24] = [
-    [1.0, 0.95, 0.8],
-    [0.0, 0.1, 1.3],
-    [1.0, 0.1, 0.1],
-    [0.0, 1.0, 0.1],
-    [0.9, 0.0, 0.9],
-    [1.4, 1.4, 1.4],
-    [0.9, 0.9, 0.0],
-    [0.8, 0.35, 0.35],
-    [1.0, 1.6, 0.5],
-    [0.75, 0.85, 1.4],
-    [1.0, 0.5, 0.0],
-    [1.4, 1.4, 0.7],
-    [0.75, 1.35, 1.5],
-    [0.95, 0.75, 1.3],
-    [0.85, 0.85, 0.85],
-    [1.0, 0.0, 1.0],
-    [1.4, 0.85, 0.55],
-    [0.25, 1.3, 0.8],
-    [0.95, 0.4, 1.4],
-    [1.4, 0.7, 0.5],
-    [1.25, 0.6, 1.2],
-    [0.75, 1.45, 0.9],
-    [0.3, 0.78, 1.2],
-    [0.7, 0.55, 0.9],
-];
-
-/// `TileLightScanner.ApplyTileLight`, using the generated constant table plus the
-/// frame-dependent torch/campfire cases that the table cannot express.
-fn tile_light(tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
-    let mut light = if (tile.kind as usize) < td::TILE_COUNT {
-        td::EMISSIVE[tile.kind as usize]
-    } else {
-        [0.0; 3]
-    };
-
-    match tile.kind {
-        // 4: torch. `frameY / 22` selects the torch colour (18 px layout).
-        4 if tile.frame_x >= 0 && tile.frame_x < 66 => {
-            let id = (tile.frame_y.max(0) as usize) / 22;
-            light = TORCH_LIGHT[id.min(TORCH_LIGHT.len() - 1)];
-        }
-        // 33: candles use the same colour ramp.
-        33 if tile.frame_x == 0 => {
-            let id = (tile.frame_y.max(0) as usize) / 22;
-            light = TORCH_LIGHT[id.min(TORCH_LIGHT.len() - 1)];
-        }
-        // 215: campfire, lit only in its top frame.
-        215 if tile.frame_y < 36 => {
-            light = [0.95, 0.65, 0.3];
-        }
-        _ => {}
-    }
-
-    if td::SET_TORCHES.has(tile.kind) && light == [0.0; 3] {
-        light = TORCH_LIGHT[0];
-    }
-
-    let flicker = if light != [0.0; 3] {
-        // C# TorchID adds `(270 - mouseTextColor) / 900f` to each channel.
-        p.torch_flicker
-    } else {
-        0.0
-    };
-    let _ = (x, y);
-    for i in 0..3 {
-        let v = light[i] + flicker;
-        if c[i] < v {
-            c[i] = v;
-        }
-    }
-}
-
-/// `TileLightScanner.ApplyLiquidLight`: lava and shimmer emit light.
-/// The C# source adds `(270 - Main.mouseTextColor) / 900` (lava) or `/ 125` (shimmer)
-/// to the base value each frame; we fold that into `torch_flicker`.
-fn liquid_light(tile: &Tile, c: &mut [f32; 3], flicker: f32) {
+/// `TileLightScanner.ApplyLiquidLight`: lava and shimmer emit light. The original
+/// compares every channel against the unscaled base and then stores the scaled
+/// value, which is why the green channel can end up brighter than the test.
+fn liquid_light(tile: &Tile, c: &mut [f32; 3], p: &LightParams) {
     if tile.liquid == 0 {
         return;
     }
-    let light = match tile.liquid_kind() {
+    let delta = (270.0 - p.mouse_text_color as f32) / 900.0;
+    match tile.liquid_kind() {
         LiquidKind::Lava => {
-            // C#: `0.55f + (270 - mouseTextColor) / 900f` per channel, scaled.
-            let base = 0.55 + flicker;
-            [base, base * 0.6, base * 0.2]
+            let n = 0.55 + delta;
+            if c[0] < n {
+                c[0] = n;
+            }
+            if c[1] < n {
+                c[1] = n * 0.6;
+            }
+            if c[2] < n {
+                c[2] = n * 0.2;
+            }
         }
         LiquidKind::Shimmer => {
-            // C#: `0.7f + (270 - mouseTextColor) / 900f` (R, Z) and `/ 125f` (G).
-            let r = (0.7 + flicker) * 0.6;
-            let g = (0.7 + flicker * (900.0 / 125.0)) * 0.25;
-            let b = (0.7 + flicker) * 0.9;
-            [r, g, b]
+            let n2 = 0.7 + delta;
+            let n3 = 0.7 + delta * (900.0 / 125.0);
+            if c[0] < n2 {
+                c[0] = n2 * 0.6;
+            }
+            if c[1] < n3 {
+                c[1] = n3 * 0.25;
+            }
+            if c[2] < n2 {
+                c[2] = n2 * 0.9;
+            }
         }
-        _ => return,
-    };
-    for i in 0..3 {
-        if c[i] < light[i] {
-            c[i] = light[i];
-        }
+        _ => {}
     }
 }
 
@@ -1142,8 +1024,7 @@ mod tests {
         w.tiles[torch].flags |= crate::tile::FLAG_ACTIVE;
         let params = LightParams {
             sky: [0.7; 3],
-            hell_glow: 0.55,
-            torch_flicker: 1.0,
+            ..Default::default()
         };
         let mut map = LightMap::new();
         map.compute_into(&w, 80, 110, 160, 170, &params);

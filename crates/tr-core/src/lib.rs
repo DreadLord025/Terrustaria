@@ -10,6 +10,7 @@ pub mod liquid;
 pub mod liquid_draw;
 pub mod save;
 pub mod tile;
+pub mod tile_light;
 pub mod tiledata;
 pub mod torch;
 pub mod tree;

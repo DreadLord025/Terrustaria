@@ -119,6 +119,16 @@ impl WaterfallManager {
         self.current_max
     }
 
+    /// `Main.DiscoR/G/B`: the rainbow cycle, shared with the lighting scanner
+    /// (disco torches, gemspark, painted lamps) so both read the same phase.
+    pub fn disco_rgb(&self) -> [u8; 3] {
+        [
+            self.disco_r.clamp(0, 255) as u8,
+            self.disco_g.clamp(0, 255) as u8,
+            self.disco_b.clamp(0, 255) as u8,
+        ]
+    }
+
     /// `WaterfallManager.CheckForWaterfall`.
     pub fn check_for_waterfall(&self, x: i32, y: i32) -> bool {
         self.waterfalls[..self.current_max]
