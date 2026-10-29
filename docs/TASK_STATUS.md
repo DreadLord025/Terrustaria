@@ -98,9 +98,11 @@
 | M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ❌ Pending | - | `Main.DrawInventory` 41001+, contexts 1/2/6/8-12 |
 | M7-UI-8 | Minimap frame + boss bar text | ❌ Pending | - | `MinimapFrame` default, `BigProgressBarHelper` |
 | M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied. `e51d318`: `Zoom` key (`Main.GameZoomTarget`, 1..2) + Video row; the mouse wheel now cycles hotbar slots instead of zooming |
-| M5-LAKE | Lake basins with grass banks | 🔄 In Progress | sub-agent | `worldgen.rs`: carve a bowl below `lake_level`, water only below the surface, grass on dry banks (was: water floating above the ground, grass turned to dirt) |
+| M5-LAKE | Lake basins with grass banks | ✅ Done | sub-agent | `9307400`: water line one tile below the local ground, 1..6-tile carved bowl with a solid dirt floor, walls cleared above the water, grass kept on the flush banks (was: water floating above the ground) |
 | M1.4-BG-13 | Grass/dirt transition fidelity | 🔄 Research | sub-agent | `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light; fixes hard green/dirt seams |
-| M1.4-BG-14 | Background stack order + zoom behaviour | 🔄 Research | sub-agent | settles whether `DrawSurfaceBG` scales with `GameZoomTarget`, tree-line vs mountains/clouds/sun placement |
+| M1.4-BG-14 | Background stack order + zoom behaviour | ✅ Done | Agent-Qoder | `cb71721`: surface background laid out in unzoomed `screenPosition` space (zoom-invariant), +30 push for cloud/mountain passes, −150 only for front layers. Sky gradient formula/order still pending (BG-16) |
+| M1.4-BG-16 | Sky gradient + sun/moon/clouds/stars pass | ❌ Pending | - | `Main.cs:62036-62080` gradient, `DrawSunAndMoon` arc/scale/phase, `Cloud.GetParallax`, star density, horizon layer order |
+| TILE-DRAW-5 | Full grass framing (WorldGen 82192-83395) | ❌ Pending | - | Port groups A-J + the `-2` marker and per-biome dirt ids; our `grass_frame` covers ~25 % and plateaus on hard frames |
 
 ### Tile Objects & Special Tiles
 

@@ -441,7 +441,9 @@ items are collectible but not placeable. Desert structures and loot are not port
 
 `Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near
 mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at the
-original's `bgScale` (1·2 and 1.15·2) and 0.15/0.20 parallax, followed by the biome's three
+original's `bgScale` (1·2 and 1.15·2) and 0.15/0.20 parallax, laid out in
+`Main.screenPosition` space (camera − screenSize/2, **not** divided by the game zoom, so
+changing `GameZoomTarget` moves only the world), followed by the biome's three
 tree layers (`50..52` forest, `37..39` snow) at 1.25·2/1.31·2/1.34·2 and 0.40/0.43/0.49
 parallax; the middle tree layer is mirrored horizontally, exactly as
 `DrawSurfaceBG_Forest` does with `SpriteEffects.FlipHorizontally`. Every layer top uses
