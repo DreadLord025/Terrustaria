@@ -22,5 +22,10 @@ image.workspace = true
 log.workspace = true
 pollster.workspace = true
 rayon.workspace = true
+rodio.workspace = true
 wgpu.workspace = true
 winit.workspace = true
+
+[build-dependencies]
+tr-content = { path = "../tr-content" }
+image.workspace = true

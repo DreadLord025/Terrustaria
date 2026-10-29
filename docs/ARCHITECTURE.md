@@ -1,11 +1,11 @@
 # Architecture
 
 ```
-                 assets/Images/*.png  (extracted from the retail .xnb pack)
-                          │
-  .wld file ──► tr-core ──┼──► tr-app ──► tr-render ──► wgpu / Vulkan ──► swapchain
-                 │        │      │            │
-        World, Tile      atlas packer     instanced quads
+  assets/Content/*.xnb ──► tr-content ──► tr-app ──► tr-render ──► wgpu / Vulkan ──► swapchain
+                                      │       │            │
+  .wld file ──► tr-core ──────────────┘       │       instanced quads
+                 │                            │
+        World, Tile                      atlas packer
 ```
 
 ## Crates

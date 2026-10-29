@@ -268,11 +268,13 @@ dungeons, temples, living trees, hardmode spread, chests) is **~40–90 agent-da
 passable generator; full parity much more. Loading existing `.wld` files still works at any
 time.
 
-## Milestone 6 — audio, map, networking, polish ✅ networking in progress
+## Milestone 6 — audio, map, networking, polish ✅ first passes landed
 
-XACT bank playback (`xsb`/`xwb`), music, 3D-ish attenuation; minimap/full map; exact
-1.4.5.8 network protocol for multiplayer; localization; settings; save writing.
-**~40–90 agent-days.**
+The runtime `SoundEffectReader` and eight original PCM cues play through `rodio`; the
+explored-tile minimap/full map and a host-authoritative TCP host/join flow are working.
+The music selector chooses boss/underground/day/night tracks, but XACT/WMA decoding and
+playback remain. Still to port: 3D-ish attenuation, the exact 1.4.5.8 network protocol,
+localization and settings. **~40–90 agent-days.**
 
 ## Aggregated
 

@@ -162,6 +162,10 @@ snowflakes that thicken during a storm.
   (position, HP, ten slot kinds/counts and the coin purse). Edits bump the world revision, update the
   column surface, re-frame the 5×5 neighbourhood and invalidate the light/instance caches.
   No tool requirements, reach-through-walls or chests yet.
+- **Original sound effects (first pass)** — `SoundEffectReader` loads the retail PCM XNB
+  cues at runtime and plays mining, placement, pickup, coin, hurt and NPC-hit sounds through
+  `rodio`. Music selection follows boss/underground/day/night state; XACT/WMA playback is
+  still pending.
 - **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
   F2 light mode, F5 respawn). `TR_CAM`/`TR_PAN` switch to the free debug camera; `TR_NOPLAYER`
   hides the player for pixel comparisons.

@@ -78,9 +78,9 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Combat / damage | spread across `Player`, `NPC`, `Projectile`, `Item` | ~15 000 | 🟡 | Player/slime HP, hurt cooldown, knockback, contact/melee damage and respawn; no defense, crits, projectiles or drops |
 | World generation | `WorldGen.cs`, `Generation/*` | ~45 000 | 🟡 | Native compact generator: surface/layers/caves/ores/ash/trees/plants, forest lake, snow biome, ocean beaches; no corruption/crimson/jungle/desert/hallow or structures |
 | UI / menus | `UI/*`, `GameContent.UI.*` | ~35 000 | ⬜ | |
-| Audio | `Audio/*`, XACT banks | ~4 000 | ⬜ | `.xsb`/`.xwb` banks extracted later |
-| Networking | `Netplay.cs`, `MessageBuffer.cs` | ~12 000 | ⬜ | Protocol for 1.4.5.8 |
-| Map / minimap | `Map/*` | ~5 000 | ⬜ | |
+| Audio | `Audio/*`, XACT banks | ~4 000 | 🟡 | Runtime `SoundEffectReader`, eight PCM cues through `rodio`, music selector; XACT/WMA playback pending |
+| Networking | `Netplay.cs`, `MessageBuffer.cs` | ~12 000 | 🟡 | Custom host-authoritative TCP host/join with players, edits, NPCs, drops and time; not vanilla-protocol compatible |
+| Map / minimap | `Map/*` | ~5 000 | 🟡 | Explored-tile bitset, original tile/wall colours, minimap and full map |
 
 ## World file format (`.wld`)
 

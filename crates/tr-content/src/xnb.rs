@@ -6,7 +6,10 @@ use anyhow::{anyhow, bail, Result};
 
 use crate::lzx;
 
+/// Compressed files carry the decompressed size after the 10-byte header, so their
+/// payload starts at 14; uncompressed files start at 10 (the header itself is 10).
 const HEADER_SIZE: usize = 14; // Program.HeaderSize
+const PLAIN_HEADER_SIZE: usize = 10;
 
 /// Little-endian binary reader over the decompressed payload (stands in for
 /// `System.IO.BinaryReader`).
@@ -85,6 +88,11 @@ impl XnbFile {
         } else {
             compressed_size
         };
+        let body_start = if compressed {
+            HEADER_SIZE
+        } else {
+            PLAIN_HEADER_SIZE
+        };
         if decompressed_size < 0 {
             bail!("bad decompressed size {decompressed_size}");
         }
@@ -94,7 +102,7 @@ impl XnbFile {
             decompressed = lzx::decompress(&raw[HEADER_SIZE..compressed_size as usize], decompressed_size as usize)?;
             &decompressed
         } else {
-            &raw[HEADER_SIZE..compressed_size as usize]
+            &raw[body_start..compressed_size as usize]
         };
 
         let mut r = ByteReader::new(body);

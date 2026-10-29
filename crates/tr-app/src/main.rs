@@ -1,6 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
 mod assets;
+mod audio;
 mod collision;
 mod item;
 mod map;
@@ -679,6 +680,9 @@ fn main() -> Result<()> {
         net_timer: 0.0,
         join_target,
         map: Some(world_map),
+        audio: audio::Audio::new(assets::content_dir()),
+        music: audio::Music::new(),
+        last_hp: 100,
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
@@ -824,6 +828,9 @@ struct App {
     join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     map: Option<map::WorldMap>,
+    audio: audio::Audio,
+    music: audio::Music,
+    last_hp: i32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     mouse_item: ItemSlot,
     ui_left_press: bool,
@@ -1035,9 +1042,23 @@ impl ApplicationHandler for App {
             return;
         }
 
-        let attrs = Window::default_attributes()
-            .with_title("Terraria-Rust  |  Vulkan")
+        let mut attrs = Window::default_attributes()
+            .with_title("Terraria-Rust")
             .with_inner_size(PhysicalSize::new(1600, 900));
+        // Window/taskbar icon, generated from the game logo by `build.rs`.
+        if let Ok(img) = image::load_from_memory(include_bytes!(concat!(
+            env!("OUT_DIR"),
+            "/icon.png"
+        ))) {
+            let rgba = img.to_rgba8();
+            if let Ok(icon) = winit::window::Icon::from_rgba(
+                rgba.clone().into_raw(),
+                rgba.width(),
+                rgba.height(),
+            ) {
+                attrs = attrs.with_window_icon(Some(icon));
+            }
+        }
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
 
         let gpu = pollster::block_on(Gpu::new(window.clone())).expect("gpu init");
@@ -1474,6 +1495,7 @@ impl App {
                 if let Some(n) = self.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
                     let dmg = if held_weapon { registry::damage(held.kind) } else { 15 };
                     n.hurt(dmg, pcx);
+                    self.audio.play("NPC_Hit_1");
                     self.attack_cd = 0.3;
                     self.mine_target = None;
                     self.mine_timer = 0.0;
@@ -1562,6 +1584,7 @@ impl App {
         if let Some(id) = registry::by_wall(wall) {
             self.spawn_item_drop(id, tx, ty);
         }
+        self.audio.play("Dig_2");
         self.request_edit(tx, ty, 2, 0);
         self.world_key = None;
     }
@@ -1591,6 +1614,7 @@ impl App {
         if edit::place_wall(&mut self.world, tx, ty, wall) {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
+            self.audio.play("Dig_0");
             self.request_edit(tx, ty, 3, wall);
             self.world_key = None;
         }
@@ -1643,12 +1667,14 @@ impl App {
                         self.coins = self
                             .coins
                             .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
+                        self.audio.play("Coin_0");
                         self.items.swap_remove(i);
                         continue;
                     }
                     if let Some(slot) = slot_for_pickup(&mut self.inventory, drop.kind) {
                         self.inventory[slot].count =
                             self.inventory[slot].count.saturating_add(drop.count);
+                        self.audio.play("Item_1");
                         self.items.swap_remove(i);
                         continue;
                     }
@@ -1753,6 +1779,7 @@ impl App {
             return;
         };
         self.spawn_item_drop(id, tx, ty);
+        self.audio.play("Dig_1");
         self.request_edit(tx, ty, 0, 0);
         self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
@@ -1794,6 +1821,7 @@ impl App {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
             self.liquids.wake_around(&self.world, tx, ty, 3);
+            self.audio.play("Dig_0");
             self.request_edit(tx, ty, 1, kind);
             self.world_key = None;
         }
@@ -2214,6 +2242,20 @@ impl App {
                 }
             }
             self.update_player(dt);
+            let hp = self.player.as_ref().map_or(0, |p| p.hp);
+            if hp < self.last_hp {
+                self.audio.play("Player_Hit_0");
+            }
+            self.last_hp = hp;
+            let boss_alive = self
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0);
+            let underground = self.player.as_ref().is_some_and(|p| {
+                p.y / TILE_PX > self.world.world_surface as f32
+            });
+            self.music
+                .update(dt, self.world.day_time, underground, boss_alive);
             if !self.is_client() {
                 self.update_npcs(dt);
             }

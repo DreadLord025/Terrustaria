@@ -5,10 +5,12 @@
 pub mod dxt;
 pub mod font;
 pub mod lzx;
+pub mod sound;
 pub mod texture;
 pub mod xnb;
 
 pub use font::{load_font, DynamicSpriteFont, FontPage, Glyph};
+pub use sound::{load_sound, Sound};
 pub use texture::{load_texture, RgbaImage};
 
 #[cfg(test)]
