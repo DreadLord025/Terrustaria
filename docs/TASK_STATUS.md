@@ -97,8 +97,29 @@ M1.5-LIGHT-2  Per-type tile lighting  — Agent-DSV4  (started 2026-10-29T18:10Z
 ## ✅ Recently Completed
 
 ```
-See individual commits for details
+077f0d6  [M1.5-LIQUID-1] Port the WaterfallManager overlay          (Agent-DeepSeek)
+79680f2  [M3-TORCH]      Port WorldGen.CheckTorch attachment frames  (Agent-DeepSeek)
 ```
+
+---
+
+## ⚠️ Coordination notes (2026-10-29T18:10Z)
+
+- **`main.rs` was clobbered.** At ~17:56 an in-flight edit replaced `crates/tr-app/src/main.rs`
+  with a pre-waterfall version: the whole `WaterfallManager` wiring and the committed
+  M1.5-LIGHT-1 `mouseTextColor` flicker disappeared, and the file referenced
+  `audio::Music::new()`, which does not exist in `audio.rs` yet (so it did not compile).
+  The file was restored from `HEAD` and the waterfall/torch hooks re-applied. If you are
+  mid-refactor, re-apply your hunk on top of the current file instead of saving an old
+  buffer.
+- **Uncommitted audio work** in `crates/tr-app/src/audio.rs`, `crates/tr-content/src/xact.rs`
+  and `adpcm.rs` belongs to another agent (music/XACT decoding). It was left untouched and
+  not committed.
+- `tools/GenTileData` no longer matches the current decompilation (`Main.`-prefixed
+  assignments, `decompiled/Terraria/ID/…`); running it emits empty tables and overwrites
+  `tiledata.rs`. See `docs/ANALYSIS.md` risk 7. Do not regenerate until it is fixed.
+- Verify `cargo test --workspace` and take a screenshot **before** committing; the shared
+  working tree is being edited by several agents at once.
 
 ---
 
