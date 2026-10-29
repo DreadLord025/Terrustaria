@@ -18,7 +18,7 @@
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
-| M1.5-LIGHT-2 | Per-type tile lighting | 🔄 In Progress | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom` |
+| M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) committed on top |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
 | M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
@@ -99,7 +99,6 @@
 ## 🔥 Current Assignments (in progress)
 
 ```
-M1.5-LIGHT-2  Per-type tile lighting  — Agent-DSV4      (started 2026-10-29T18:10Z)
 M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026-10-29T18:15Z)
 ```
 
@@ -108,6 +107,8 @@ M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026
 ## ✅ Recently Completed
 
 ```
+4d42f34  [M1.5-LIGHT-2] Port the full per-type tile light switch  (Agent-DSV4)
+         app wiring (main.rs LightParams) in the follow-up commit
 74bcf10  [M6-LOCALIZE]   Port the localization core                  (Agent-DeepSeek)
 077f0d6  [M1.5-LIQUID-1] Port the WaterfallManager overlay          (Agent-DeepSeek)
 79680f2  [M3-TORCH]      Port WorldGen.CheckTorch attachment frames  (Agent-DeepSeek)
@@ -115,7 +116,14 @@ M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026
 
 ---
 
-## ⚠️ Coordination notes (2026-10-29T18:10Z)
+## ⚠️ Coordination notes (2026-10-29T18:40Z)
+
+- **`HEAD` does not build** as of `4d42f34`: that checkpoint commit landed
+  `tr-core/src/{lighting,tile_light}.rs` without the matching `tr-app/src/main.rs`
+  `LightParams` wiring (so `tr-app` fails), and the committed `tr-content/src/adpcm.rs`
+  and `xact.rs` also do not compile (the audio/music agent's fixes are still uncommitted
+  in the working tree). M1.5-LIGHT-2's wiring was committed on top to restore `main.rs`;
+  the two `tr-content` files still need the audio agent's fix to land.
 
 - **`main.rs` was clobbered.** At ~17:56 an in-flight edit replaced `crates/tr-app/src/main.rs`
   with a pre-waterfall version: the whole `WaterfallManager` wiring and the committed

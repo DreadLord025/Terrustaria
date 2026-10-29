@@ -754,6 +754,13 @@ fn main() -> Result<()> {
         // `Main.mouseTextColor` starts at 225 and drifts toward 255.
         mouse_text_color: 225,
         mouse_text_color_dir: 1,
+        // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
+        demon_torch: 1.0,
+        demon_torch_dir: 1.0,
+        // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
+        disco: [255, 0, 0],
+        disco_style: 0,
+        light_rng_seed: world_seed | 1,
         anim_time: 0.0,
         has_liquids,
         liquids: liquids_sim,
@@ -904,6 +911,14 @@ struct App {
     /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
     mouse_text_color: u8,
     mouse_text_color_dir: i8,
+    /// `Main.demonTorch` / `Main.demonTorchDir` (`DoUpdate_AnimateTileGlows`).
+    demon_torch: f32,
+    demon_torch_dir: f32,
+    /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
+    disco: [u8; 3],
+    disco_style: u8,
+    /// `TileLightScanner._random` seed; advanced once per frame like `NextSeed()`.
+    light_rng_seed: u64,
     anim_time: f32,
     has_liquids: bool,
     /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
@@ -944,7 +959,9 @@ struct WorldFrameKey {
     screen: [u32; 2],
     sky_light: [u32; 3],
     hell_glow: u32,
-    torch_flicker: u32,
+    /// `LightParams::identity()`: every tile-light parameter (mouseTextColor,
+    /// demon torch, disco, shimmer...) in one value.
+    light_params: u64,
     light_mode: u32,
     /// Non-zero only for modes whose light depends on time ("Trippy").
     anim: u32,
@@ -1336,6 +1353,56 @@ impl App {
                 self.camera = self
                     .camera
                     .lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
+            }
+        }
+    }
+
+    /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
+    ///
+    /// The original runs its six `if`s sequentially, so a style that completes on
+    /// this tick also advances the next style in the same tick; that cascade is kept.
+    fn advance_disco(&mut self) {
+        const NUM: i32 = 7;
+        if self.disco_style == 0 {
+            self.disco[1] = (self.disco[1] as i32 + NUM).min(255) as u8;
+            if self.disco[1] >= 255 {
+                self.disco[1] = 255;
+                self.disco_style += 1;
+            }
+        }
+        if self.disco_style == 1 {
+            self.disco[0] = (self.disco[0] as i32 - NUM).max(0) as u8;
+            if self.disco[0] <= 0 {
+                self.disco[0] = 0;
+                self.disco_style += 1;
+            }
+        }
+        if self.disco_style == 2 {
+            self.disco[2] = (self.disco[2] as i32 + NUM).min(255) as u8;
+            if self.disco[2] >= 255 {
+                self.disco[2] = 255;
+                self.disco_style += 1;
+            }
+        }
+        if self.disco_style == 3 {
+            self.disco[1] = (self.disco[1] as i32 - NUM).max(0) as u8;
+            if self.disco[1] <= 0 {
+                self.disco[1] = 0;
+                self.disco_style += 1;
+            }
+        }
+        if self.disco_style == 4 {
+            self.disco[0] = (self.disco[0] as i32 + NUM).min(255) as u8;
+            if self.disco[0] >= 255 {
+                self.disco[0] = 255;
+                self.disco_style += 1;
+            }
+        }
+        if self.disco_style == 5 {
+            self.disco[2] = (self.disco[2] as i32 - NUM).max(0) as u8;
+            if self.disco[2] <= 0 {
+                self.disco[2] = 0;
+                self.disco_style = 0;
             }
         }
     }
@@ -2284,6 +2351,18 @@ impl App {
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
+        // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates 190..=255,
+        // changing by 1 per frame, driving the torch/lava/crystal-wall flicker.
+        self.mouse_text_color =
+            (self.mouse_text_color as i32 + self.mouse_text_color_dir as i32).clamp(190, 255) as u8;
+        if self.mouse_text_color >= 255 {
+            self.mouse_text_color_dir = -1;
+        }
+        if self.mouse_text_color <= 190 {
+            self.mouse_text_color_dir = 1;
+        }
+        // `Main.DoUpdate_AnimateDiscoRGB`: the disco-ball colour cycle.
+        self.advance_disco();
         let anim_time = self.anim_time;
         if !self.follow_player {
             self.pan_camera(dt);
@@ -2446,20 +2525,44 @@ impl App {
                     sky_tint[2] * rain_dim,
                 ];
                 let sky_light = tile_color(sky_tint);
-                // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
-                // 190..=255, changing by 1 per frame, driving light flicker.
-                self.mouse_text_color = (self.mouse_text_color as i32 + self.mouse_text_color_dir as i32).clamp(190, 255) as u8;
-                if self.mouse_text_color >= 255 {
-                    self.mouse_text_color_dir = -1;
+                // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
+                self.demon_torch += self.demon_torch_dir * 0.01;
+                if self.demon_torch > 1.0 {
+                    self.demon_torch = 1.0;
+                    self.demon_torch_dir = -1.0;
                 }
-                if self.mouse_text_color <= 190 {
-                    self.mouse_text_color_dir = 1;
+                if self.demon_torch < 0.0 {
+                    self.demon_torch = 0.0;
+                    self.demon_torch_dir = 1.0;
                 }
-                let torch_flicker = (270.0 - self.mouse_text_color as f32) / 900.0;
+                // `TileLightScanner.Update()`: one `NextSeed()` per frame, then
+                // `WithModifier(x, y)` per tile (done inside the scanner).
+                let mut light_rng = tr_core::tile_light::FastRandom::new(self.light_rng_seed);
+                light_rng.next_seed_in_place();
+                self.light_rng_seed = light_rng.seed;
                 let params = LightParams {
                     sky: sky_light,
                     hell_glow: 0.55,
-                    torch_flicker,
+                    mouse_text_color: self.mouse_text_color,
+                    demon_torch: self.demon_torch,
+                    disco: self.disco,
+                    // `Main.GlobalTimeWrappedHourly = TotalGameTime.TotalSeconds % 3600`.
+                    global_time: anim_time % 3600.0,
+                    // `Main.timeForVisualEffects`: ticks since start, wrapped at 216000.
+                    time_for_visuals: (anim_time * 60.0) % 216000.0,
+                    time: clock_time as f32,
+                    day_time: is_day,
+                    raining: rain.is_raining(),
+                    // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
+                    // simulated yet, so both stay at their neutral value.
+                    shimmer_darken: 0.0,
+                    shimmer_alpha: 0.0,
+                    sundial_cooldown: 0,
+                    moondial_cooldown: 0,
+                    // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
+                    // every cage stays in mode 0.
+                    cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
+                    rng_seed: self.light_rng_seed,
                 };
                 let sky_uv = atlas
                     .as_ref()
@@ -2490,7 +2593,7 @@ impl App {
                         params.sky[2].to_bits(),
                     ],
                     hell_glow: params.hell_glow.to_bits(),
-                    torch_flicker: params.torch_flicker.to_bits(),
+                    light_params: params.identity(),
                     light_mode: *light_mode as u32,
                     anim: if style.perturb > 0.0 {
                         anim_time.to_bits()

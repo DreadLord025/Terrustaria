@@ -195,10 +195,8 @@ Ported in `tr-core/src/lighting.rs`:
      sun (`Main.tileNoSunLight`, with the slope/half-brick liquid rule), plus the gem-wall
      colour override.
    - `ApplyHellLight` — below `height - 200`: `0.55 + sin(t·2)·0.08` warm glow.
-   - `ApplyWallLight` — the `Main.wallLight` table (16 glowing wall types) with per-type
-     colours extracted by `tools/GenTileData`.
-   - `ApplyTileLight` — the `EMISSIVE` table (43 types: torches, candles, campfires, glowing
-     mushrooms, crystals, lamps…) scaled by torch flicker.
+   - `ApplyWallLight` — the `Main.wallLight` table plus the crystal/gem/living-fire walls.
+   - `ApplyTileLight` — the full `switch (tile.type)` port in `tile_light.rs`.
    - `ApplyLiquidLight` — lava/honey/shimmer self-illumination.
 3. **Decay per tile** (`LightDecayThrough*`): air `0.91`, solid `0.56`, cracked bricks `0.8`,
    water `(0.88, 0.96, 1.015)·0.91` with a per-cell jitter, honey `(0.75, 0.7, 0.6)·0.91`.
@@ -226,8 +224,7 @@ Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 
 Deliberate simplifications:
 
-- Sun/moon/star light, `Main.mouseTextColor` flicker, per-type frame-dependent lights and
-  invisible blocks/walls are not ported.
+- Sun/moon/star light and invisible blocks/walls are not ported.
 - The shader has an aberration hook (`Globals::aberration`), but it is disabled for Trippy
   until instances carry a per-sprite flag: shifting full-screen sky quads samples past
   their atlas sheet.
@@ -241,6 +238,42 @@ Deliberate simplifications:
   per-column fade to cave darkness that starts at each column's first solid tile.
 `Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
 and light are quantised to one-second steps so the map/instance caches still hit.
+
+### Per-type tile light (M1.5-LIGHT-2)
+
+`TileLightScanner.ApplyTileLight` is a 147-case `switch (tile.type)`; the port lives in
+`tile_light.rs` and every case is translated in source order. The large frame→colour tables
+are extracted mechanically by `tools/gen_tile_light_tables.py` so they cannot drift. The
+same module owns `ApplyWallLight`, `ApplySurfaceLight`, `ApplyHellLight`,
+`TorchID.TorchColor` (including the Demon/Disco/Shimmer providers), `Main.hslToRgb`
+(.NET `Math.Round` banker's rounding reproduced), `WorldGen.paintColor` and
+`LiquidRenderer.GetShimmerBaseColor`.
+
+`Terraria.Utilities.FastRandom` is reimplemented (48-bit LCG, `NextSeed`, `WithModifier`,
+`Next(min,max)`); the scanner advances the base seed once per frame and derives one stream
+per tile, which is what makes torch/campfire/crystal light jitter per tile instead of
+pulsing uniformly.
+
+Verified numerically with `TR_LIGHT_AT` (no pixel A/B: `HEAD` does not build, see
+`TASK_STATUS.md`): at midnight a `Torch` (`frameY 0`) tile reads exactly
+`[1.000, 0.950, 0.800] = TorchID.TorchColor` (the base torches are constant; only ids
+7/14/23 animate), and surface air at noon reads `[1,1,1]`.
+
+Deliberate deviations, all because the source state is not simulated yet:
+
+- `Main.invisibleBlock()` and `tile.wallColor()` are not stored in the packed 12-byte
+  `Tile`, so an invisible block is treated as visible and a painted wall as unpainted (the
+  `flag && tile.color() != 0` paint override therefore never fires for walls, only for
+  lamps).
+- `Main.shimmerDarken`, `Main.liquidAlpha[13]`, `Main.sundialCooldown`/`moondialCooldown`
+  are passed as their neutral values, and `Main.jellyfishCageMode` stays 0 (the
+  `Main.AnimateTiles` cage animation is not ported), so the shimmer surface term, the
+  dial/cooldown cases and the animated cages use their default branches.
+- `Main.time` is `f32` here (the original is `double`); the affected comparisons
+  (`time > 40500`, `time < 16200`) are exact at these magnitudes.
+- `demonTorch`, `DiscoR/G/B` and `mouseTextColor` are advanced once per rendered frame
+  rather than per fixed 60 Hz tick; at other frame rates their phase differs from the
+  original (the pre-existing `mouseTextColor` port had the same property).
 
 ## Liquids
 

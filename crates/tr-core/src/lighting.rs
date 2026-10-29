@@ -283,12 +283,22 @@ impl LightParams {
             world_revision,
         }
     }
+
+    /// A cheap identity of every parameter that can change a light sample, for the
+    /// app's world-instance cache. The light map keeps its own exact key; this only
+    /// has to change whenever the map's contents would.
+    pub fn identity(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.key(0).hash(&mut h);
+        h.finish()
+    }
 }
 
 /// D2: identity of one light computation, compared bit-exactly (no hashing). A hit
 /// means the map's `colors` already hold the correct result. `world_revision` makes
 /// any future tile edit invalidate the cache.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Hash)]
 struct LightKey {
     sky: [u32; 3],
     hell_glow: u32,
