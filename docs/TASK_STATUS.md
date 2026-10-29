@@ -109,6 +109,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+e0f1ea7  [M4-SPAWN]       Port the Spawner.TrySpawnAnNPC pipeline      (Agent-Nemotron)
 918b5a5  [M6-MUSIC]      XACT/MS-ADPCM music engine + 3D attenuation (Agent-Audio)
 6b8e36e  [M7-UI]         Main.DrawMenu menu + settings screens     (Agent-DeepSeek)
 d780b99  [M1.5-LIGHT-2] Wire the per-type tile light into the app  (Agent-DSV4)
