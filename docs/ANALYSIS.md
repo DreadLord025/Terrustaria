@@ -627,3 +627,25 @@ empty hotbar slot, then the storage rows) with the per-item stack limit. The sid
 is version 3 (ItemIDs); versions 1/2 are migrated on load (`registry::migrate_kind`).
 Item drops and the held item draw the original `Item_<id>` sprite, falling back to the
 tile frame for ids without one.
+
+## Main menu and multiplayer (M6)
+
+`menu.rs` draws the original-style title screen (Logo texture, Mouse_Text buttons,
+random character name from the game's name syllables) with Singleplayer, Multiplayer
+(Host on a port with a password, Join by IP + port + password) and Quit. Screenshots and
+debug hooks skip the menu; `TR_MENU=1` forces it for captures.
+
+`net.rs` implements a small length-prefixed TCP protocol (version 1): the host owns the
+world, clock, NPCs and drops and broadcasts them at 10 Hz; each client simulates its own
+player and sends its state at 10 Hz. On join the host sends a zlib-compressed `TRWLD`
+world plus the clock; player joins/leaves, player states, tile edits, NPC snapshots, drop
+snapshots and time are replicated. Edits are optimistic on the client and re-applied
+idempotently when the host echoes them. The host binds `0.0.0.0` so LAN and internet
+clients can connect by IP.
+
+Because a joined world can use different tiles, receiving it saves `Remote.trwld` and
+relaunches the executable (`TR_JOIN`/`TR_JOINED`), letting every world-derived system
+(atlas, liquids, lighting) rebuild without tearing down the renderer mid-frame. Known
+v1 limits: clients do not simulate NPCs (host snapshots only, no interpolation), liquid
+flow is simulated locally on both ends, and drops are host-authoritative with an
+optimistic client pickup.

@@ -19,6 +19,7 @@ winit = "0.30"
 egui = "0.37"
 egui-wgpu = "0.37"
 egui-winit = "0.37"
+flate2 = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 font8x8 = "0.3"
 rayon = "1"

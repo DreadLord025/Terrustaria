@@ -146,6 +146,7 @@ pub fn load_world_images(
         "Item_174",
         "Item_276",
         "Item_593",
+        "Logo",
         "Inventory_Back",
         "Inventory_Back2",
         "Inventory_Back9",
@@ -447,6 +448,8 @@ pub struct Lookups {
     pub ui_font: Option<UiFont>,
     /// `Fonts/Item_Stack` for stack counts and slot numbers.
     pub item_font: Option<UiFont>,
+    /// `Logo` (menu title) as UV plus native size.
+    pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
@@ -483,6 +486,13 @@ impl Lookups {
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
             ui_font,
             item_font,
+            logo: atlas.sheet("Logo").map(|r| {
+                (
+                    uv_rect(r, (atlas.width, atlas.height), 0, 0, r.width, r.height),
+                    r.width as f32,
+                    r.height as f32,
+                )
+            }),
             item_icons: [
                 2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
             ]

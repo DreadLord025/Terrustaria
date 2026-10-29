@@ -3,6 +3,8 @@
 mod assets;
 mod collision;
 mod item;
+mod menu;
+mod net;
 mod npc;
 mod persist;
 mod player;
@@ -10,7 +12,7 @@ mod projectile;
 mod rain;
 mod registry;
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -109,9 +111,13 @@ fn main() -> Result<()> {
     let args: Vec<String> = std::env::args().collect();
     // No argument loads our own generated world (`Documents/My Games/Terrustaria`).
     // Passing a path still loads a `.wld` from the original game or a saved `.trwld`.
-    let world_path = match args.get(1) {
-        Some(p) => PathBuf::from(p),
-        None => terrstaria_world()?,
+    let world_path = if let Some(p) = std::env::var_os("TR_WORLD") {
+        PathBuf::from(p)
+    } else {
+        match args.get(1) {
+            Some(p) => PathBuf::from(p),
+            None => terrstaria_world()?,
+        }
     };
 
     log::info!("world: {}", world_path.display());
@@ -587,6 +593,53 @@ fn main() -> Result<()> {
     let liquids_sim = LiquidSystem::new(&world);
     let rain = Rain::new(world_seed);
 
+    // Character name and the session menu (`M6`): screenshots and debug hooks skip
+    // the menu so the deterministic output stays unchanged.
+    let player_name =
+        std::env::var("TR_NAME").unwrap_or_else(|_| menu::random_name());
+    let join_target = std::env::var("TR_JOIN").ok().map(|addr| {
+        (
+            addr,
+            std::env::var("TR_JOIN_PW").unwrap_or_default(),
+        )
+    });
+    let auto_host = std::env::var("TR_HOST")
+        .ok()
+        .and_then(|p| p.parse::<u16>().ok());
+    let joined_before = std::env::var_os("TR_JOINED").is_some();
+    let force_menu = std::env::var_os("TR_MENU").is_some();
+    let skip_menu = (!force_menu && std::env::var_os("TR_SHOT").is_some())
+        || std::env::var_os("TR_CAM").is_some()
+        || std::env::var_os("TR_HOLD").is_some()
+        || std::env::var_os("TR_NOMENU").is_some()
+        || joined_before
+        || auto_host.is_some();
+    let menu_state = if skip_menu {
+        None
+    } else {
+        let mut m = menu::Menu::new(player_name.clone());
+        m.connecting = join_target.is_some();
+        Some(m)
+    };
+    let mut net_role = NetRole::Off;
+    if let Some((addr, pw)) = join_target.as_ref() {
+        match net::Client::connect(addr, player_name.clone(), pw.clone()) {
+            Ok(c) => {
+                log::info!("joining {addr}");
+                net_role = NetRole::Client(c);
+            }
+            Err(e) => log::warn!("connect to {addr} failed: {e:#}"),
+        }
+    }
+    if let Some(port) = auto_host {
+        match net::Server::start(port, String::new(), compressed_world(&world)) {
+            Ok(server) => {
+                log::info!("hosting on {}", server.addr());
+                net_role = NetRole::Host(server);
+            }
+            Err(e) => log::warn!("host on {port} failed: {e:#}"),
+        }
+    }
     let mut app = App {
         window: None,
         gpu: None,
@@ -615,6 +668,13 @@ fn main() -> Result<()> {
             s
         },
         inventory_open: std::env::var_os("TR_INV").is_some(),
+        menu: menu_state,
+        player_name,
+        net: net_role,
+        remote_players: HashMap::new(),
+        local_id: 0,
+        net_timer: 0.0,
+        join_target,
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
@@ -630,7 +690,7 @@ fn main() -> Result<()> {
         dev_place,
         camera: Vec2::ZERO,
         zoom: 1.5,
-        debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(true),
+        debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(false),
         keys: HashSet::new(),
         mouse_down: false,
         last_mouse: Vec2::ZERO,
@@ -715,6 +775,13 @@ fn find_content_dir() -> Option<PathBuf> {
     candidates.into_iter().find(|p| p.join("Images").is_dir())
 }
 
+/// Multiplayer role of this process (`M6`).
+enum NetRole {
+    Off,
+    Host(net::Server),
+    Client(net::Client),
+}
+
 struct App {
     window: Option<Arc<Window>>,
     gpu: Option<Gpu>,
@@ -741,6 +808,16 @@ struct App {
     hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     inventory_open: bool,
+    /// Main menu; `None` while playing.
+    menu: Option<menu::Menu>,
+    player_name: String,
+    net: NetRole,
+    /// Players of other machines streaming from the host/client.
+    remote_players: HashMap<u32, net::PlayerNet>,
+    /// Our id assigned by the host (0 while hosting).
+    local_id: u32,
+    net_timer: f32,
+    join_target: Option<(String, String)>,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     mouse_item: ItemSlot,
     ui_left_press: bool,
@@ -1011,6 +1088,24 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if event.state == ElementState::Pressed {
                         self.keys.insert(code);
+                        if self.menu.is_some() {
+                            if let Some(text) = event.text.as_ref() {
+                                if let Some(m) = self.menu.as_mut() {
+                                    for ch in text.chars() {
+                                        if !ch.is_control() {
+                                            m.character(ch);
+                                        }
+                                    }
+                                }
+                            }
+                            let action = self
+                                .menu
+                                .as_mut()
+                                .map(|m| m.key(code))
+                                .unwrap_or(menu::Action::None);
+                            self.apply_menu_action(action, event_loop);
+                            return;
+                        }
                         match code {
                             KeyCode::Escape => {
                                 // The original opens the inventory on Escape; the
@@ -1456,6 +1551,7 @@ impl App {
         if let Some(id) = registry::by_wall(wall) {
             self.spawn_item_drop(id, tx, ty);
         }
+        self.request_edit(tx, ty, 2, 0);
         self.world_key = None;
     }
 
@@ -1484,12 +1580,42 @@ impl App {
         if edit::place_wall(&mut self.world, tx, ty, wall) {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
+            self.request_edit(tx, ty, 3, wall);
             self.world_key = None;
         }
     }
 
     /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
+    fn is_client(&self) -> bool {
+        matches!(self.net, NetRole::Client(_))
+    }
+
     fn update_items(&mut self, dt: f32) {
+        if self.is_client() {
+            // The host owns the drops: ask it to collect whatever lies under our feet
+            // and hide those locally until the next authoritative snapshot.
+            let Some(pc) = self
+                .player
+                .as_ref()
+                .map(|p| Vec2::new(p.center().0, p.center().1))
+            else {
+                return;
+            };
+            let ids: Vec<u32> = self
+                .items
+                .iter()
+                .enumerate()
+                .filter(|(_, it)| (it.center() - pc).length() < 26.0)
+                .map(|(i, _)| i as u32)
+                .collect();
+            if let NetRole::Client(client) = &self.net {
+                for id in ids {
+                    client.send_pickup(id);
+                }
+            }
+            self.items.retain(|it| (it.center() - pc).length() >= 26.0);
+            return;
+        }
         let step = 1.0 / 60.0;
         let mut acc = self.item_accum + dt.min(0.25);
         let mut steps = 0;
@@ -1612,9 +1738,11 @@ impl App {
             return;
         };
         let Some(id) = registry::tile_drop(kind) else {
+            self.request_edit(tx, ty, 0, 0);
             return;
         };
         self.spawn_item_drop(id, tx, ty);
+        self.request_edit(tx, ty, 0, 0);
         self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
     }
@@ -1655,6 +1783,7 @@ impl App {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
             self.liquids.wake_around(&self.world, tx, ty, 3);
+            self.request_edit(tx, ty, 1, kind);
             self.world_key = None;
         }
     }
@@ -1763,6 +1892,265 @@ impl App {
         self.inventory[slot] = target;
     }
 
+    /// Applies a menu action (start singleplayer, host on a port, join a server).
+    fn apply_menu_action(&mut self, action: menu::Action, event_loop: &ActiveEventLoop) {
+        use menu::Action;
+        match action {
+            Action::None => {}
+            Action::Quit => {
+                self.save_world();
+                event_loop.exit();
+            }
+            Action::Singleplayer => {
+                self.menu = None;
+            }
+            Action::Host { port, password } => {
+                let map = compressed_world(&self.world);
+                match net::Server::start(port, password, map) {
+                    Ok(server) => {
+                        log::info!("hosting on {}", server.addr());
+                        self.net = NetRole::Host(server);
+                        self.menu = None;
+                    }
+                    Err(e) => {
+                        if let Some(m) = self.menu.as_mut() {
+                            m.connecting = false;
+                            m.error = Some(format!("host failed: {e}"));
+                        }
+                    }
+                }
+            }
+            Action::Join { addr, password } => match net::Client::connect(
+                &addr,
+                self.player_name.clone(),
+                password.clone(),
+            ) {
+                Ok(client) => {
+                    self.net = NetRole::Client(client);
+                    self.join_target = Some((addr, password));
+                }
+                Err(e) => {
+                    if let Some(m) = self.menu.as_mut() {
+                        m.connecting = false;
+                        m.error = Some(format!("connect failed: {e}"));
+                    }
+                }
+            },
+        }
+    }
+
+    /// Drains network events without borrowing `self.net` across handlers.
+    fn poll_net(&mut self) {
+        let mut server_events = Vec::new();
+        let mut client_events = Vec::new();
+        match &self.net {
+            NetRole::Host(server) => {
+                while let Ok(ev) = server.events.try_recv() {
+                    server_events.push(ev);
+                }
+            }
+            NetRole::Client(client) => {
+                while let Ok(ev) = client.events.try_recv() {
+                    client_events.push(ev);
+                }
+            }
+            NetRole::Off => {}
+        }
+        let role = std::mem::replace(&mut self.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            for ev in server_events {
+                self.host_event(server, ev);
+            }
+        }
+        if let NetRole::Client(client) = &role {
+            for ev in client_events {
+                self.client_event(client, ev);
+            }
+        }
+        self.net = role;
+    }
+
+    /// Host side: applies client requests and keeps the state broadcast.
+    fn host_event(&mut self, server: &net::Server, ev: net::ServerEvent) {
+        match ev {
+            net::ServerEvent::Joined { id, name } => {
+                log::info!("{name} joined (id {id})");
+                server.welcome(id, self.world.time, self.world.day_time);
+                for p in self.remote_players.values() {
+                    server.send(id, &net_player(p));
+                }
+                self.remote_players.insert(
+                    id,
+                    net::PlayerNet {
+                        id,
+                        name,
+                        ..Default::default()
+                    },
+                );
+                broadcast_joined(server, id, &self.remote_players);
+            }
+            net::ServerEvent::Left { id } => {
+                self.remote_players.remove(&id);
+                broadcast_left(server, id);
+            }
+            net::ServerEvent::Player(p) => {
+                self.remote_players.insert(p.id, p.clone());
+                broadcast_player(server, &p);
+            }
+            net::ServerEvent::Edit { x, y, kind, tile } => {
+                log::info!("net edit kind {kind} at {x},{y}");
+                apply_edit(&mut self.world, x, y, kind, tile);
+                self.world_key = None;
+                server.broadcast(&net_edit(x, y, kind, tile));
+            }
+            net::ServerEvent::Pickup { id, drop } => {
+                let center = self
+                    .remote_players
+                    .get(&id)
+                    .map(|p| Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5));
+                if let Some(center) = center {
+                    if let Some(c) = self.items.get(drop as usize).map(|it| it.center()) {
+                        if (c - center).length() < 60.0 {
+                            self.items.remove(drop as usize);
+                            server.broadcast(&net_items(&self.items));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Client side: clock, edits, NPCs, drops and other players come from the host.
+    fn client_event(&mut self, _client: &net::Client, ev: net::ClientEvent) {
+        match ev {
+            net::ClientEvent::Welcome { id } => {
+                self.local_id = id;
+                log::info!("joined with id {id}");
+            }
+            net::ClientEvent::World { data } => {
+                if self.menu.is_some() {
+                    if let Some((addr, pw)) = self.join_target.clone() {
+                        relaunch_into_world(&data, &addr, &pw, &self.player_name);
+                    }
+                }
+            }
+            net::ClientEvent::Joined { id, name } => {
+                self.remote_players.entry(id).or_insert_with(|| net::PlayerNet {
+                    id,
+                    name,
+                    ..Default::default()
+                });
+            }
+            net::ClientEvent::Left { id } => {
+                self.remote_players.remove(&id);
+            }
+            net::ClientEvent::Player(p) => {
+                self.remote_players.insert(p.id, p);
+            }
+            net::ClientEvent::Time { time, day } => {
+                self.world.time = time;
+                self.world.day_time = day;
+            }
+            net::ClientEvent::Edit { x, y, kind, tile } => {
+                apply_edit(&mut self.world, x, y, kind, tile);
+                self.world_key = None;
+            }
+            net::ClientEvent::Npcs(list) => {
+                self.npcs = list.iter().filter_map(|n| npc_from_net(&self.world, n)).collect();
+            }
+            net::ClientEvent::Items(list) => {
+                self.items = list
+                    .iter()
+                    .map(|it| {
+                        let mut d =
+                            item::ItemDrop::new(it.item, it.count, it.x, it.y, 0.0, 0.0, 0.0);
+                        d.age = 60.0;
+                        d
+                    })
+                    .collect();
+            }
+            net::ClientEvent::Disconnect { reason } => {
+                log::warn!("disconnected: {reason}");
+                self.net = NetRole::Off;
+                if self.menu.is_none() {
+                    let mut m = menu::Menu::new(self.player_name.clone());
+                    m.error = Some(format!("Disconnected: {reason}"));
+                    self.menu = Some(m);
+                }
+            }
+        }
+    }
+
+    /// Sends our player (and, when hosting, the authoritative state) at 10 Hz.
+    fn net_tick(&mut self, dt: f32) {
+        if matches!(self.net, NetRole::Off) {
+            return;
+        }
+        self.net_timer += dt;
+        if self.net_timer < 0.1 {
+            return;
+        }
+        self.net_timer = 0.0;
+        let Some(p) = self.player.as_ref() else {
+            return;
+        };
+        let me = net::PlayerNet {
+            id: self.local_id,
+            name: self.player_name.clone(),
+            x: p.x,
+            y: p.y,
+            vx: p.vx,
+            vy: p.vy,
+            hp: p.hp,
+            max_hp: p.max_hp,
+            facing: p.facing,
+            selected: self.selected as u16,
+            on_ground: p.on_ground,
+            walk_time: p.walk_time,
+        };
+        match &self.net {
+            NetRole::Host(server) => {
+                broadcast_player(server, &me);
+                let npcs: Vec<net::NpcNet> = self
+                    .npcs
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| net::NpcNet {
+                        id: i as u32,
+                        kind: n.kind.to_u16(),
+                        x: n.x,
+                        y: n.y,
+                        vx: n.vx,
+                        vy: n.vy,
+                        hp: n.hp,
+                        max_hp: n.max_hp,
+                        facing: n.facing,
+                        on_ground: n.on_ground,
+                        anim: n.anim,
+                        hurt_cd: n.hurt_cd,
+                    })
+                    .collect();
+                server.broadcast(&net_npcs(npcs));
+                server.broadcast(&net_items(&self.items));
+                server.broadcast(&net::ServerToClient::Time {
+                    time: self.world.time,
+                    day: self.world.day_time,
+                });
+            }
+            NetRole::Client(client) => client.send_player(&me),
+            NetRole::Off => {}
+        }
+    }
+
+    /// Client: asks the host to apply an edit (the host echoes it back to everyone).
+    fn request_edit(&self, x: i32, y: i32, kind: u8, tile: u16) {
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&net_edit(x, y, kind, tile)),
+            NetRole::Client(client) => client.send_edit(x, y, kind, tile),
+            NetRole::Off => {}
+        }
+    }
+
     fn save_world(&self) {
         if self.world_path.extension().is_some_and(|e| e == "trwld") {
             match save::save(&self.world_path, &self.world) {
@@ -1804,22 +2192,39 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
-        self.handle_inventory_clicks();
-        for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
-            let target = if i == self.selected { 1.0 } else { 0.75 };
-            if *scale < target {
-                *scale = (*scale + 0.05).min(target);
-            } else if *scale > target {
-                *scale = (*scale - 0.05).max(target);
+        if self.menu.is_none() {
+            self.handle_inventory_clicks();
+            for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
+                let target = if i == self.selected { 1.0 } else { 0.75 };
+                if *scale < target {
+                    *scale = (*scale + 0.05).min(target);
+                } else if *scale > target {
+                    *scale = (*scale - 0.05).max(target);
+                }
+            }
+            self.update_player(dt);
+            if !self.is_client() {
+                self.update_npcs(dt);
+            }
+            self.update_liquids(dt);
+            self.update_rain(dt, screen);
+            self.update_items(dt);
+            self.update_projectiles(dt);
+            self.update_editing(dt, screen);
+            self.net_tick(dt);
+        }
+        // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
+        if self.is_client() && self.frame_count == 90 {
+            if let Ok(v) = std::env::var("TR_NET_EDIT") {
+                if let Some((sx, sy)) = v.split_once(',') {
+                    if let (Ok(x), Ok(y)) = (sx.trim().parse::<i32>(), sy.trim().parse::<i32>()) {
+                        self.request_edit(x, y, 0, 0);
+                        log::info!("net edit requested at {x},{y}");
+                    }
+                }
             }
         }
-        self.update_player(dt);
-        self.update_npcs(dt);
-        self.update_liquids(dt);
-        self.update_rain(dt, screen);
-        self.update_items(dt);
-        self.update_projectiles(dt);
-        self.update_editing(dt, screen);
+        self.poll_net();
         // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
         // high-refresh displays.
         let player_alpha = (self.player_accum / (1.0 / 60.0)).clamp(0.0, 1.0);
@@ -1866,6 +2271,8 @@ impl App {
                 swing,
                 projectiles,
                 world_key,
+                menu,
+                remote_players,
                 ..
             } = self;
 
@@ -2019,6 +2426,7 @@ impl App {
                         npcs,
                         npc_assets,
                         items,
+                        &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
                     );
                     if let Some(p) = render_player.as_ref() {
@@ -2043,21 +2451,25 @@ impl App {
                     .iter()
                     .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
                     .map(|n| (n.hp, n.max_hp));
-                draw_hud(
-                    renderer,
-                    *camera,
-                    *zoom,
-                    screen,
-                    lookups,
-                    inventory,
-                    *selected,
-                    &self.hotbar_scales,
-                    player.as_ref(),
-                    boss,
-                    self.inventory_open,
-                    &self.mouse_item,
-                    self.mouse_pos,
-                );
+                if menu.is_none() {
+                    draw_hud(
+                        renderer,
+                        *camera,
+                        *zoom,
+                        screen,
+                        lookups,
+                        inventory,
+                        *selected,
+                        &self.hotbar_scales,
+                        player.as_ref(),
+                        boss,
+                        self.inventory_open,
+                        &self.mouse_item,
+                        self.mouse_pos,
+                    );
+                } else if let Some(menu) = menu.as_ref() {
+                    menu.draw(renderer, lookups, screen);
+                }
 
                 if *debug {
                     draw_debug(
@@ -3172,6 +3584,7 @@ fn draw_tiles(
     npcs: &[Npc],
     npc_assets: &NpcAssets,
     items: &[ItemDrop],
+    remote: &[net::PlayerNet],
     edit_target: Option<(i32, i32)>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
@@ -3443,6 +3856,27 @@ fn draw_tiles(
         stats.quads += draw_player(
             r, player_assets, p, light, style, anim_time, camera, zoom, screen,
         );
+    }
+    for rp in remote {
+        let mut p = Player::spawn(world);
+        p.x = rp.x;
+        p.y = rp.y;
+        p.prev_x = rp.x;
+        p.prev_y = rp.y;
+        p.vx = rp.vx;
+        p.vy = rp.vy;
+        p.facing = rp.facing;
+        p.on_ground = rp.on_ground;
+        p.walk_time = rp.walk_time;
+        p.gfx_off_y = 0.0;
+        stats.quads += draw_player(
+            r, player_assets, &p, light, style, anim_time, camera, zoom, screen,
+        );
+        let sx = (p.x + player::WIDTH * 0.5 - camera.x) * zoom + screen.x * 0.5;
+        let sy = (p.y - 14.0 - camera.y) * zoom + screen.y * 0.5;
+        let tw = hud_text_width(r, lookups, &rp.name, 0.8);
+        hud_text(r, lookups, sx + 1.0 - tw * 0.5, sy + 1.0, 0.8, [0.0, 0.0, 0.0, 1.0], &rp.name);
+        hud_text(r, lookups, sx - tw * 0.5, sy, 0.8, [1.0, 1.0, 1.0, 1.0], &rp.name);
     }
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
@@ -4970,6 +5404,143 @@ fn capture_frame(gpu: &Gpu, texture: &wgpu::Texture, path: &std::path::Path) {
 
     image::save_buffer(path, &rgba, w, h, image::ColorType::Rgba8).expect("save screenshot");
     log::info!("screenshot saved to {}", path.display());
+}
+
+/// Compresses a world for the `World` packet (zlib, speed over ratio: the tile array
+/// is mostly empty cells and compresses well).
+fn compressed_world(world: &World) -> Vec<u8> {
+    use std::io::Write;
+    let bytes = save::to_bytes(world).unwrap_or_default();
+    let mut enc = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::fast());
+    let _ = enc.write_all(&bytes);
+    enc.finish().unwrap_or_default()
+}
+
+fn decompressed_world(data: &[u8]) -> Option<World> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    let mut dec = flate2::read::ZlibDecoder::new(data);
+    dec.read_to_end(&mut out).ok()?;
+    save::parse(&out).ok()
+}
+
+fn remote_world_path() -> PathBuf {
+    save::default_world_path("Remote").unwrap_or_else(|| PathBuf::from("Remote.trwld"))
+}
+
+/// Joining receives the host world; saving it and relaunching is the simplest way to
+/// rebuild every world-derived system (atlas, liquids, lighting) without tearing down
+/// the renderer mid-frame. The child process auto-connects through `TR_JOIN`.
+fn relaunch_into_world(data: &[u8], addr: &str, password: &str, name: &str) {
+    let Some(world) = decompressed_world(data) else {
+        log::warn!("received a world that failed to decode");
+        return;
+    };
+    let path = remote_world_path();
+    if let Err(e) = save::save(&path, &world) {
+        log::warn!("saving the joined world failed: {e:#}");
+        return;
+    }
+    let exe = std::env::current_exe().unwrap_or_default();
+    let mut cmd = std::process::Command::new(exe);
+    cmd.env("TR_JOIN", addr)
+        .env("TR_JOIN_PW", password)
+        .env("TR_WORLD", &path)
+        .env("TR_NAME", name)
+        .env("TR_JOINED", "1");
+    match cmd.spawn() {
+        Ok(_) => std::process::exit(0),
+        Err(e) => log::warn!("relaunching failed: {e:#}"),
+    }
+}
+
+/// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
+/// 3 place wall.
+fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) {
+    match kind {
+        0 => {
+            edit::break_tile(world, x, y);
+        }
+        1 => {
+            edit::place_tile(world, x, y, tile);
+        }
+        2 => {
+            edit::break_wall(world, x, y);
+        }
+        3 => {
+            edit::place_wall(world, x, y, tile);
+        }
+        _ => {}
+    }
+}
+
+fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
+    let kind = crate::npc::NpcKind::from_u16(n.kind)?;
+    let tx = (n.x / TILE_PX) as i32;
+    let mut npc = match kind {
+        crate::npc::NpcKind::Slime => crate::npc::Npc::spawn_slime(world, tx)?,
+        crate::npc::NpcKind::DemonEye => crate::npc::Npc::spawn_eye(world, tx)?,
+        crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
+        crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
+    };
+    npc.x = n.x;
+    npc.y = n.y;
+    npc.vx = n.vx;
+    npc.vy = n.vy;
+    npc.hp = n.hp;
+    npc.max_hp = n.max_hp;
+    npc.facing = n.facing;
+    npc.on_ground = n.on_ground;
+    npc.anim = n.anim;
+    npc.hurt_cd = n.hurt_cd;
+    Some(npc)
+}
+
+/// Builders for the host-side broadcast messages.
+fn net_player(p: &net::PlayerNet) -> net::ServerToClient {
+    net::ServerToClient::Player(p.clone())
+}
+
+fn net_edit(x: i32, y: i32, kind: u8, tile: u16) -> net::ServerToClient {
+    net::ServerToClient::Edit {
+        x,
+        y,
+        kind,
+        id: tile,
+    }
+}
+
+fn net_npcs(list: Vec<net::NpcNet>) -> net::ServerToClient {
+    net::ServerToClient::Npcs(list)
+}
+
+fn net_items(items: &[item::ItemDrop]) -> net::ServerToClient {
+    net::ServerToClient::Items(
+        items
+            .iter()
+            .enumerate()
+            .map(|(i, it)| net::ItemNet {
+                id: i as u32,
+                item: it.kind,
+                count: it.count,
+                x: it.pos.x,
+                y: it.pos.y,
+            })
+            .collect(),
+    )
+}
+
+fn broadcast_player(server: &net::Server, p: &net::PlayerNet) {
+    server.broadcast(&net_player(p));
+}
+
+fn broadcast_left(server: &net::Server, id: u32) {
+    server.broadcast(&net::ServerToClient::Left { id });
+}
+
+fn broadcast_joined(server: &net::Server, id: u32, players: &HashMap<u32, net::PlayerNet>) {
+    let name = players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
+    server.broadcast(&net::ServerToClient::Joined { id, name });
 }
 
 #[cfg(test)]

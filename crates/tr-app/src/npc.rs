@@ -33,6 +33,25 @@ pub enum NpcKind {
 }
 
 impl NpcKind {
+    pub fn to_u16(self) -> u16 {
+        match self {
+            NpcKind::Slime => 0,
+            NpcKind::DemonEye => 1,
+            NpcKind::Zombie => 2,
+            NpcKind::KingSlime => 3,
+        }
+    }
+
+    pub fn from_u16(v: u16) -> Option<Self> {
+        Some(match v {
+            0 => NpcKind::Slime,
+            1 => NpcKind::DemonEye,
+            2 => NpcKind::Zombie,
+            3 => NpcKind::KingSlime,
+            _ => return None,
+        })
+    }
+
     pub fn size(self) -> (f32, f32) {
         match self {
             NpcKind::Slime => (30.0, 24.0),

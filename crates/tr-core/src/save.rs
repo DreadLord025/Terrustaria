@@ -47,6 +47,13 @@ pub fn save(path: &Path, world: &World) -> Result<()> {
     Ok(())
 }
 
+/// Serialises a world to memory (multiplayer world transfer).
+pub fn to_bytes(world: &World) -> Result<Vec<u8>> {
+    let mut out = Vec::new();
+    write_world(&mut out, world)?;
+    Ok(out)
+}
+
 fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
     w.write_all(MAGIC)?;
     w.write_all(&VERSION.to_le_bytes())?;
