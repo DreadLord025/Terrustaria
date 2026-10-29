@@ -279,12 +279,15 @@ time.
 
 The runtime `SoundEffectReader` and eight original PCM cues play through `rodio`; the
 explored-tile minimap/full map and a host-authoritative TCP host/join flow are working.
-The music selector chooses boss/underground/day/night tracks, but XACT/WMA decoding and
-playback remain. ✅ The localization core (`GameCulture`/`LocalizedText`/`VariableText`/
+✅ XACT/MS-ADPCM music playback (`tr-content/xact.rs` + `adpcm.rs`, `audio::MusicSystem`)
+ports `Main.UpdateAudio`'s fade/selection/loop over the retail wave bank, and `sound.rs`
+ports `LegacySoundPlayer.PlaySound`'s 2500 px attenuation and pan (M6-MUSIC/M6-3DAUDIO).
+✅ The localization core (`GameCulture`/`LocalizedText`/`VariableText`/
 `LanguageManager`, `tr-core/src/localization.rs`) loads the shipped
 `Terraria.Localization.Content.*.json` resources and is tested against the seven `en-US`
 files; the strings are not yet wired into the HUD, item names or menus. Still to port:
-3D-ish attenuation, the exact 1.4.5.8 network protocol, and settings. **~40–90 agent-days.**
+the remaining biome music branches (they need `SceneMetrics`), the ambient rain/wind cues,
+the exact 1.4.5.8 network protocol, and settings. **~30–80 agent-days.**
 
 ## Aggregated
 
