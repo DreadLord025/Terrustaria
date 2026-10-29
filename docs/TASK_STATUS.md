@@ -76,6 +76,16 @@
 | M6-3DAUDIO | 3D audio attenuation | ❌ Pending | - | - |
 | M6-LOCALIZE | Localization system | ❌ Pending | - | - |
 
+### Milestone 7 — UI (1:1 layout)
+
+| ID | Task | Status | Assigned To | Notes |
+|----|------|--------|-------------|-------|
+| M7-UI-1 | Menu framework (DeathText, item scale, 5-pass shadow, hover) | 🔄 In Progress | Agent-DeepSeek | `Main.DrawMenu` geometry: `num2/num3/num4`, `menuItemScale`, `array4/5/7`, colors |
+| M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111 / 26 / 1125 / 1127 / 1213) | 🔄 In Progress | Agent-DeepSeek | Labels, order, row spacing, toggles, sliders |
+| M7-UI-3 | Main menu screen (logo, items, version, links) | ❌ Pending | - | - |
+| M7-UI-4 | Inventory / ItemSlot cells exact sizes | ❌ Pending | - | 56 px cells, 0.85 scale, contexts |
+| M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ❌ Pending | - | - |
+
 ### Tile Objects & Special Tiles
 
 | ID | Task | Status | Assigned To | Notes |
@@ -89,7 +99,8 @@
 ## 🔥 Current Assignments (in progress)
 
 ```
-M1.5-LIGHT-2  Per-type tile lighting  — Agent-DSV4  (started 2026-10-29T18:10Z)
+M1.5-LIGHT-2  Per-type tile lighting  — Agent-DSV4      (started 2026-10-29T18:10Z)
+M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026-10-29T18:15Z)
 ```
 
 ---
