@@ -4210,6 +4210,56 @@ fn draw_tiles(
         }
     }
 
+    // `Main.DrawWalls`: the whole wall layer is drawn before the tile layer. Each
+    // frame is a 32x32 sprite placed 8 px up/left of the cell, so neighbouring walls
+    // join without seams; drawing it interleaved with tiles would let the overhang
+    // cut into tiles drawn earlier in the row.
+    if draw_walls {
+        for ty in y0..=y1 {
+            for tx in x0..=x1 {
+                let tile = &world.tiles[ty as usize * width + tx as usize];
+                if tile.wall == 0 {
+                    continue;
+                }
+                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
+                    continue;
+                };
+                if tile.active()
+                    && tile_hides_wall(
+                        lookups,
+                        atlas,
+                        tile.kind,
+                        tile.frame_x,
+                        tile.frame_y,
+                        tile.slope(),
+                        tile.half_brick(),
+                    )
+                {
+                    stats.walls_culled += 1;
+                    continue;
+                }
+                // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
+                // fully covered ones into black rectangles.
+                if light_is_zero(light.get(tx, ty)) {
+                    continue;
+                }
+                // The 32 px sprite is centred on the 16 px cell (`x*16 - 8`), like
+                // `new Vector2(j * 16 - 8, i * 16 - 8)` in the original.
+                stats.quads += push_wall_lit(
+                    r,
+                    [tx as f32 * TILE_PX - 8.0, ty as f32 * TILE_PX - 8.0],
+                    wf.uv,
+                    light,
+                    style,
+                    tx,
+                    ty,
+                    anim_time,
+                );
+                stats.walls += 1;
+            }
+        }
+    }
+
     scratch.open.clear();
     for ty in y0..=y1 {
         scratch.cur.clear();
@@ -4295,25 +4345,7 @@ fn draw_tiles(
                 }
 
                 let pos = [tx as f32 * TILE_PX, ty as f32 * TILE_PX];
-                if let Some(wf) = wall_frame {
-                    // A2: a fully opaque, non-sloped block hides the wall completely.
-                    if active && tile_covers {
-                        stats.walls_culled += 1;
-                    } else {
-                        push_lit(
-                            r,
-                            pos,
-                            [TILE_PX, TILE_PX],
-                            wf.uv,
-                            l,
-                            style,
-                            tx,
-                            ty,
-                            anim_time,
-                        );
-                        stats.walls += 1;
-                    }
-                }
+                // Walls are drawn in their own pass above (`Main.DrawWalls`).
                 // `DrawTile_LiquidBehindTile` (solid layer): a slope that stands in
                 // liquid draws the water mask behind its open half, so the shoreline
                 // is water instead of the parallax background.
@@ -4794,6 +4826,75 @@ fn draw_tile_liquid_behind(
         }
     }
     quads
+}
+
+/// `WallDrawing.DrawWalls`: a 32x32 wall sprite lit by the cell's four corner colours
+/// (`Lighting.GetCornerColors`). Flat-lit cells stay a single quad.
+#[allow(clippy::too_many_arguments)]
+fn push_wall_lit(
+    r: &mut SpriteRenderer,
+    pos: [f32; 2],
+    uv: [f32; 4],
+    light: &LightMap,
+    style: &LightStyle,
+    tx: i32,
+    ty: i32,
+    time: f32,
+) -> u32 {
+    let corners = light.corner4(tx, ty);
+    let mut lo = f32::MAX;
+    let mut hi = f32::MIN;
+    for c in &corners {
+        for ch in c {
+            lo = lo.min(*ch);
+            hi = hi.max(*ch);
+        }
+    }
+    let tint = |c: [f32; 3]| {
+        let c = style.shade(c, tx, ty, time);
+        [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0]
+    };
+    if hi - lo < 1.5 / 255.0 {
+        r.push_sprite(pos, [32.0, 32.0], uv, tint(corners[0]));
+        return 1;
+    }
+    let mut quads = 0;
+    for (i, u) in [0.25f32, 0.75].iter().enumerate() {
+        for (j, v) in [0.25f32, 0.75].iter().enumerate() {
+            let x = 16.0 * i as f32;
+            let y = 16.0 * j as f32;
+            r.push_sprite(
+                [pos[0] + x, pos[1] + y],
+                [16.0, 16.0],
+                sub_uv_frac(uv, x, y, 16.0, 16.0, 32.0, 32.0),
+                tint(bilerp_corners(corners, *u, *v)),
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
+/// `WallDrawing.FullTile`: a full, opaque, unsloped block hides its wall completely.
+fn tile_hides_wall(
+    lookups: &mut assets::Lookups,
+    atlas: Option<&Atlas>,
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    slope: u8,
+    half_brick: bool,
+) -> bool {
+    if tree::is_tree(kind) || slope != 0 || half_brick || frame_x < 0 || frame_y < 0 {
+        return false;
+    }
+    let Some(atlas) = atlas else {
+        return false;
+    };
+    match lookups.frame_tex(atlas, kind, frame_x, frame_y) {
+        Some(f) => f.opaque,
+        None => lookups.plain_tex(kind).is_some_and(|f| f.opaque),
+    }
 }
 
 /// `WorldGen.SolidTile`: active, solid, not a platform, and a full block.

@@ -404,7 +404,8 @@ pub struct TypeTex {
 #[derive(Clone, Debug)]
 pub struct WallTex {
     pub sheet: String,
-    /// `Framing.wallFrameLookup` cells: `row * 13 + col` (36 px cells, 8 px inset).
+    /// `Framing.wallFrameLookup` cells: `row * 13 + col`. Each entry is the 32x32
+    /// sprite `WallDrawing.DrawWalls` draws 8 px up/left of the cell.
     /// `None` when the sheet has no such cell.
     pub frames: Vec<Option<FrameTex>>,
 }
@@ -566,14 +567,22 @@ impl Lookups {
             let mut frames = Vec::with_capacity(WALL_COLS * WALL_ROWS);
             for row in 0..WALL_ROWS {
                 for col in 0..WALL_COLS {
-                    let fx = col as i16 * 36 + 8;
-                    let fy = row as i16 * 36 + 8;
-                    if fx as u32 + 16 > rect.width || fy as u32 + 16 > rect.height {
+                    // `WallDrawing.DrawWalls`: a 32x32 source at the 36 px cell origin,
+                    // drawn 8 px up/left of the cell so neighbouring walls join.
+                    let fx = col as i16 * 36;
+                    let fy = row as i16 * 36;
+                    if fx as u32 + 32 > rect.width || fy as u32 + 32 > rect.height {
                         frames.push(None);
                     } else {
                         frames.push(Some(FrameTex {
-                            uv: uv_of(atlas, rect, &name, fx, fy),
-                            opaque: atlas.frame_is_opaque(rect, fx, fy),
+                            uv: uv_of_size(atlas, rect, &name, fx, fy, 32, 32),
+                            opaque: atlas.rect_is_opaque(
+                                rect,
+                                fx as u32,
+                                fy as u32,
+                                32,
+                                32,
+                            ),
                         }));
                     }
                 }
@@ -662,9 +671,13 @@ impl Lookups {
     /// UV of a representative wall cell, used as the inventory/drop icon.
     pub fn wall_icon_uv(&self, wall: u16) -> Option<[f32; 4]> {
         let tex = self.walls.get(wall as usize)?.as_ref()?;
-        // Row 2, column 6 is an interior cell without exposed edges.
+        // Row 2, column 6 is an interior cell without exposed edges. Frames hold the
+        // full 32x32 wall sprite; the icon is its central 16x16.
         let idx = 2 * WALL_COLS + 6;
-        tex.frames.get(idx).and_then(|f| f.as_ref()).map(|f| f.uv)
+        let uv = tex.frames.get(idx).and_then(|f| f.as_ref())?.uv;
+        let du = (uv[2] - uv[0]) * 0.25;
+        let dv = (uv[3] - uv[1]) * 0.25;
+        Some([uv[0] + du, uv[1] + dv, uv[2] - du, uv[3] - dv])
     }
 
     /// UV of an 8x8 `Dust.png` cell.
@@ -871,9 +884,21 @@ fn uv_of(
     fx: i16,
     fy: i16,
 ) -> [f32; 4] {
+    uv_of_size(atlas, rect, name, fx, fy, 16, 16)
+}
+
+fn uv_of_size(
+    atlas: &tr_render::Atlas,
+    rect: &tr_render::SheetRect,
+    name: &str,
+    fx: i16,
+    fy: i16,
+    w: u32,
+    h: u32,
+) -> [f32; 4] {
     let x0 = rect.x as f32 + fx.max(0) as f32;
     let y0 = rect.y as f32 + fy.max(0) as f32;
-    if fx.max(0) as u32 + 16 > rect.width || fy.max(0) as u32 + 16 > rect.height {
+    if fx.max(0) as u32 + w > rect.width || fy.max(0) as u32 + h > rect.height {
         log::warn!(
             "sheet {name}: frame ({fx},{fy}) outside rect {}x{}",
             rect.width,
@@ -883,8 +908,8 @@ fn uv_of(
     [
         x0 / atlas.width as f32,
         y0 / atlas.height as f32,
-        (x0 + 16.0) / atlas.width as f32,
-        (y0 + 16.0) / atlas.height as f32,
+        (x0 + w as f32) / atlas.width as f32,
+        (y0 + h as f32) / atlas.height as f32,
     ]
 }
 
