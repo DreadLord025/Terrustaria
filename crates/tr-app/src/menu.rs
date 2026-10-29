@@ -857,12 +857,13 @@ mod tests {
     fn video_screen_leaves_back_at_scale_one() {
         let m = menu(Page::Video);
         let items = m.items();
-        assert_eq!(items.len(), 11);
-        assert!(items[..10].iter().all(|i| i.scale == 0.6));
-        // The original only sets `array7` for the first ten rows.
-        assert_eq!(items[10].label, "Back");
-        assert_eq!(items[10].scale, 1.0);
-        assert_eq!(items[10].y, 8.0);
+        assert_eq!(items.len(), 12);
+        assert!(items[..11].iter().all(|i| i.scale == 0.6));
+        // The original only sets `array7` for the first ten rows; our Zoom row
+        // shares their 0.6 scale, so only Back keeps 1.0.
+        assert_eq!(items[11].label, "Back");
+        assert_eq!(items[11].scale, 1.0);
+        assert_eq!(items[11].y, 8.0);
     }
 
     #[test]
@@ -889,7 +890,7 @@ mod tests {
         m.activate(7);
         assert_eq!(m.page, Page::Main);
         let mut m = menu(Page::Video);
-        m.activate(10);
+        m.activate(11);
         assert_eq!(m.page, Page::Settings);
     }
 
