@@ -97,7 +97,10 @@
 | M7-UI-6 | HUD: life/mana/breath/hotbar/tooltips | ❌ Pending | - | `ClassicPlayerResourcesDisplaySet`, `ItemSlot.Draw`, mouse text, cursor |
 | M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ❌ Pending | - | `Main.DrawInventory` 41001+, contexts 1/2/6/8-12 |
 | M7-UI-8 | Minimap frame + boss bar text | ❌ Pending | - | `MinimapFrame` default, `BigProgressBarHelper` |
-| M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied |
+| M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied. `e51d318`: `Zoom` key (`Main.GameZoomTarget`, 1..2) + Video row; the mouse wheel now cycles hotbar slots instead of zooming |
+| M5-LAKE | Lake basins with grass banks | 🔄 In Progress | sub-agent | `worldgen.rs`: carve a bowl below `lake_level`, water only below the surface, grass on dry banks (was: water floating above the ground, grass turned to dirt) |
+| M1.4-BG-13 | Grass/dirt transition fidelity | 🔄 Research | sub-agent | `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light; fixes hard green/dirt seams |
+| M1.4-BG-14 | Background stack order + zoom behaviour | 🔄 Research | sub-agent | settles whether `DrawSurfaceBG` scales with `GameZoomTarget`, tree-line vs mountains/clouds/sun placement |
 
 ### Tile Objects & Special Tiles
 
