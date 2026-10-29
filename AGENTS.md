@@ -1,5 +1,21 @@
 # AGENTS.md — working rules for this repository
 
+## ⚠️ READ THIS FIRST — Multi-agent coordination protocol
+
+**Before starting ANY work, you MUST read `docs/TASK_STATUS.md` to check:**
+- What tasks are currently assigned/in progress
+- What tasks are completed (so you don't duplicate work)
+- The current project state and recent changes
+
+**All agents must follow this protocol:**
+1. Read `agents.md`, `docs/TASK_STATUS.md`, and relevant implementation docs
+2. Check `docs/TASK_STATUS.md` for available tasks and current assignments
+3. When taking a task: mark it as "in_progress" in `docs/TASK_STATUS.md` WITH YOUR NAME/ID
+4. Update the task when complete: mark as "done", add commit reference
+5. Never work on the same task as another agent — avoid conflicts
+
+---
+
 Terraria-Rust is a **1:1 reimplementation of Terraria 1.4.5.8** in Rust: same behaviour,
 same constants, same pixels, different engine. These rules are mandatory for every change.
 

@@ -2,16 +2,21 @@
 //! original pipeline (`tools/XnbExtract` for the container, `decompiled-libs/ReLogic`
 //! for `DynamicSpriteFontReader`).
 
+pub mod adpcm;
 pub mod dxt;
 pub mod font;
 pub mod lzx;
 pub mod sound;
 pub mod texture;
+pub mod xact;
 pub mod xnb;
 
+pub use adpcm::decode_msadpcm;
+pub use adpcm::AdpcmBlockInfo;
 pub use font::{load_font, DynamicSpriteFont, FontPage, Glyph};
 pub use sound::{load_sound, Sound};
 pub use texture::{load_texture, RgbaImage};
+pub use xact::{parse_sound_bank, parse_wave_bank_entries, XactSoundBank, XactWaveBankEntry};
 
 #[cfg(test)]
 mod tests {

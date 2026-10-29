@@ -829,7 +829,7 @@ struct App {
     /// Explored-tile minimap and full map (`M`).
     map: Option<map::WorldMap>,
     audio: audio::Audio,
-    music: audio::Music,
+    music: audio::MusicSystem,
     last_hp: i32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     mouse_item: ItemSlot,
