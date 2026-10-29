@@ -108,6 +108,7 @@ M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026
 ## ✅ Recently Completed
 
 ```
+74bcf10  [M6-LOCALIZE]   Port the localization core                  (Agent-DeepSeek)
 077f0d6  [M1.5-LIQUID-1] Port the WaterfallManager overlay          (Agent-DeepSeek)
 79680f2  [M3-TORCH]      Port WorldGen.CheckTorch attachment frames  (Agent-DeepSeek)
 ```
