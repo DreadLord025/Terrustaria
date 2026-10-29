@@ -25,7 +25,6 @@ pub fn decode_msadpcm(
         return Err(AdpcmError::TooShort);
     }
 
-    let file_length = adpcm_data.len();
     let mut out = Vec::new();
 
     match num_channels {
@@ -55,7 +54,9 @@ fn decode_mono(data: &[u8], block_align: u16, out: &mut Vec<i16>) -> Result<(), 
         out.push(s2);
         out.push(s1);
 
-        let n_bytes = ((block_align as usize) + 15) / 16 * 2;
+        // `WAVEFORMATEX` MS-ADPCM: 7-byte preamble, the rest of the block is
+        // nibble pairs (two samples per byte).
+        let n_bytes = (block_align as usize).saturating_sub(7);
         for _ in 0..n_bytes {
             if p >= data.len() {
                 break;
@@ -104,7 +105,9 @@ fn decode_stereo(data: &[u8], block_align: u16, out: &mut Vec<i16>) -> Result<()
         out.push(l_s1);
         out.push(r_s1);
 
-        let n_bytes = (((block_align as usize) + 15) / 16 * 2) * 2;
+        // Stereo: 14-byte preamble; each remaining byte carries one left and one
+        // right nibble (one sample per channel per byte).
+        let n_bytes = (block_align as usize).saturating_sub(14);
         for _ in 0..n_bytes {
             if p >= data.len() {
                 break;
@@ -166,18 +169,14 @@ fn calc_single(
     delta: i16,
 ) -> Result<i16, AdpcmError> {
     let sb = nibble as i8;
-    if (sb & 0x8) != 0 {
-        let b = sb.wrapping_sub(0x10);
-        let signed = b as i16;
-        let sample = s1 * COEFF1[predictor] + s2 * COEFF2[predictor];
-        let sample = sample / 256 + i32::from(signed) * i32::from(delta);
-        Ok(clamp_i16(sample))
+    let signed = if (sb & 0x8) != 0 {
+        i32::from(sb.wrapping_sub(0x10))
     } else {
-        let b = nibble as i16;
-        let sample = s1 * COEFF1[predictor] + s2 * COEFF2[predictor];
-        let sample = sample / 256 + i32::from(b) * i32::from(delta);
-        Ok(clamp_i16(sample))
-    }
+        i32::from(nibble)
+    };
+    let sample = (i32::from(s1) * COEFF1[predictor] + i32::from(s2) * COEFF2[predictor]) / 256
+        + signed * i32::from(delta);
+    Ok(clamp_i16(sample))
 }
 
 fn clamp_i16(v: i32) -> i16 {
@@ -207,19 +206,69 @@ fn update_delta(nibble: u8, delta: i16) -> i16 {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::xact::{XactSoundBank, XactWaveBank};
+
+    /// The retail music is local-only, but when `TR_CONTENT` points at it this
+    /// decodes `Music_1` and checks the result is audio rather than byte noise.
+    #[test]
+    fn decodes_retail_music_to_audio() {
+        let Some(dir) = std::env::var_os("TR_CONTENT").map(std::path::PathBuf::from) else {
+            eprintln!("TR_CONTENT unset; skipping");
+            return;
+        };
+        let wb_path = dir.join("Wave Bank.xwb");
+        if !wb_path.exists() {
+            return;
+        }
+        let bank = XactWaveBank::open(&wb_path).expect("wave bank");
+        let sound = XactSoundBank::load(&dir.join("Sound Bank.xsb")).expect("sound bank");
+        let track = sound.music_track(1).expect("Music_1") as usize;
+        let entry = bank.entries[track].clone();
+        let data = bank.read_data(&wb_path, track).expect("entry data");
+
+        let samples = decode_msadpcm(
+            &data,
+            entry.format.sample_rate,
+            entry.format.channels,
+            entry.format.block_align() as u16,
+        )
+        .expect("decode");
+
+        // Stereo interleaved, so one frame is two samples.
+        let frames = samples.len() / 2;
+        assert!(frames > entry.format.sample_rate as usize, "over a second");
+        let rms = (samples
+            .iter()
+            .map(|s| (f64::from(*s)).powi(2))
+            .sum::<f64>()
+            / samples.len() as f64)
+            .sqrt();
+        assert!(rms > 200.0 && rms < 25000.0, "rms {rms}");
+        assert!(samples.iter().any(|&s| s != samples[0]), "constant output");
+        // A garbage decode would clip constantly; real music rarely does.
+        let clipped = samples.iter().filter(|s| s.abs() == i16::MAX).count();
+        assert!(clipped * 20 < samples.len(), "clipped {clipped}/{}", samples.len());
+    }
+}
+
 #[allow(dead_code)]
 fn calculate_sample(
     nibble: u8,
     predictor: usize,
-    sample_1: [i16],
-    sample_2: [i16],
-    delta: [i16],
+    sample_1: &[i16],
+    sample_2: &[i16],
+    delta: &[i16],
 ) -> i16 {
     let mut signed = nibble as i8;
     if (signed & 0x8) == 0x8 {
         signed -= 0x10;
     }
-    let sample_int = (sample_1[0] * COEFF1[predictor] + sample_2[0] * COEFF2[predictor]) / 256
-        + i32::from(signed) * i32::from(delta[0]);
+    let sample_int =
+        (i32::from(sample_1[0]) * COEFF1[predictor] + i32::from(sample_2[0]) * COEFF2[predictor])
+            / 256
+            + i32::from(signed) * i32::from(delta[0]);
     clamp_i16(sample_int)
 }

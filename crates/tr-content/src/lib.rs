@@ -16,7 +16,10 @@ pub use adpcm::AdpcmBlockInfo;
 pub use font::{load_font, DynamicSpriteFont, FontPage, Glyph};
 pub use sound::{load_sound, Sound};
 pub use texture::{load_texture, RgbaImage};
-pub use xact::{parse_sound_bank, parse_wave_bank_entries, XactSoundBank, XactWaveBankEntry};
+pub use xact::{
+    parse_sound_bank, parse_wave_bank_entries, parse_wave_bank_entry, Codec, MiniFormat,
+    XactSoundBank, XactWaveBank, XactWaveBankEntry,
+};
 
 #[cfg(test)]
 mod tests {

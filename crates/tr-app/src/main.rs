@@ -14,6 +14,7 @@ mod projectile;
 mod rain;
 mod registry;
 mod settings;
+mod sound;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -1653,8 +1654,11 @@ impl App {
             if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
                 if let Some(n) = self.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
                     let dmg = if held_weapon { registry::damage(held.kind) } else { 15 };
+                    // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
+                    // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
+                    let (nx, ny) = (n.x, n.y);
                     n.hurt(dmg, pcx);
-                    self.audio.play("NPC_Hit_1");
+                    self.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                     self.attack_cd = 0.3;
                     self.mine_target = None;
                     self.mine_timer = 0.0;
@@ -1743,7 +1747,8 @@ impl App {
         if let Some(id) = registry::by_wall(wall) {
             self.spawn_item_drop(id, tx, ty);
         }
-        self.audio.play("Dig_2");
+        self.audio
+            .play_at("Dig_2", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
         self.request_edit(tx, ty, 2, 0);
         self.world_key = None;
     }
@@ -1773,7 +1778,8 @@ impl App {
         if edit::place_wall(&mut self.world, tx, ty, wall) {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
-            self.audio.play("Dig_0");
+            self.audio
+                .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
             self.request_edit(tx, ty, 3, wall);
             self.world_key = None;
         }
@@ -1826,14 +1832,16 @@ impl App {
                         self.coins = self
                             .coins
                             .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
-                        self.audio.play("Coin_0");
+                        let c = drop.center();
+                        self.audio.play_at("Coin_0", c.x, c.y, 1.0);
                         self.items.swap_remove(i);
                         continue;
                     }
                     if let Some(slot) = slot_for_pickup(&mut self.inventory, drop.kind) {
                         self.inventory[slot].count =
                             self.inventory[slot].count.saturating_add(drop.count);
-                        self.audio.play("Item_1");
+                        let c = drop.center();
+                        self.audio.play_at("Item_1", c.x, c.y, 1.0);
                         self.items.swap_remove(i);
                         continue;
                     }
@@ -1938,7 +1946,8 @@ impl App {
             return;
         };
         self.spawn_item_drop(id, tx, ty);
-        self.audio.play("Dig_1");
+        self.audio
+            .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
         self.request_edit(tx, ty, 0, 0);
         self.liquids.wake_around(&self.world, tx, ty, 3);
         self.world_key = None;
@@ -1980,7 +1989,8 @@ impl App {
             self.inventory[self.selected].count =
                 self.inventory[self.selected].count.saturating_sub(1);
             self.liquids.wake_around(&self.world, tx, ty, 3);
-            self.audio.play("Dig_0");
+            self.audio
+                .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
             self.request_edit(tx, ty, 1, kind);
             self.world_key = None;
         }
@@ -2418,6 +2428,15 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        // `Main.Camera.Center` + the volume sliders for `LegacySoundPlayer.PlaySound`.
+        self.audio.set_listener(sound::Listener {
+            camera_center: (self.camera.x, self.camera.y),
+            sound_volume: self.settings.sound_volume,
+            ambient_volume: self.settings.ambient_volume,
+            quiet_ambient_sounds: false,
+            game_menu: self.menu.is_some(),
+        });
+
         if self.menu.is_none() {
             self.handle_inventory_clicks();
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
@@ -2434,15 +2453,23 @@ impl App {
                 self.audio.play("Player_Hit_0");
             }
             self.last_hp = hp;
-            let boss_alive = self
+            // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
+            // player: underground once the view centre passes the world surface
+            // (`Main.cs:12815`).
+            let boss_music = self
                 .npcs
                 .iter()
-                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0);
-            let underground = self.player.as_ref().is_some_and(|p| {
-                p.y / TILE_PX > self.world.world_surface as f32
+                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                .then_some(93); // MusicID.KingSlime
+            self.music.update(audio::MusicEnv {
+                music_volume: self.settings.music_volume,
+                day: self.world.day_time,
+                underground: self.camera.y
+                    >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                rain: self.rain.is_raining(),
+                boss_music,
+                clock: self.world.time,
             });
-            self.music
-                .update(dt, self.world.day_time, underground, boss_alive);
             if !self.is_client() {
                 self.update_npcs(dt);
             }
