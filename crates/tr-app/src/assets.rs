@@ -296,22 +296,24 @@ impl UiFont {
     }
 }
 
-/// Decodes `Fonts/Mouse_Text` and `Fonts/Item_Stack` from the retail content and
-/// returns their page textures as atlas images plus the raw metrics.
+/// Decodes `Fonts/Mouse_Text`, `Fonts/Item_Stack` and `Fonts/Death_Text` from the retail
+/// content and returns their page textures as atlas images plus the raw metrics.
 pub fn load_fonts() -> (
     Vec<AtlasImage>,
+    Option<(String, tr_content::DynamicSpriteFont)>,
     Option<(String, tr_content::DynamicSpriteFont)>,
     Option<(String, tr_content::DynamicSpriteFont)>,
 ) {
     let mut images = Vec::new();
     let Some(images_dir) = content_images_dir() else {
-        return (images, None, None);
+        return (images, None, None, None);
     };
     let fonts_dir = images_dir.parent().map(|p| p.join("Fonts"));
     let mut ui = None;
     let mut item = None;
+    let mut death = None;
     if let Some(dir) = fonts_dir {
-        for (name, slot) in [("Mouse_Text", 0), ("Item_Stack", 1)] {
+        for (name, slot) in [("Mouse_Text", 0), ("Item_Stack", 1), ("Death_Text", 2)] {
             let path = dir.join(format!("{name}.xnb"));
             match tr_content::load_font(&path) {
                 Ok(font) => {
@@ -330,17 +332,17 @@ pub fn load_fonts() -> (
                         font.pages.first().map_or(0, |p| p.glyphs.len()),
                         font.line_spacing
                     );
-                    if slot == 0 {
-                        ui = Some((sheet, font));
-                    } else {
-                        item = Some((sheet, font));
+                    match slot {
+                        0 => ui = Some((sheet, font)),
+                        1 => item = Some((sheet, font)),
+                        _ => death = Some((sheet, font)),
                     }
                 }
                 Err(e) => log::warn!("font {name}: {e:#}"),
             }
         }
     }
-    (images, ui, item)
+    (images, ui, item, death)
 }
 
 /// Binds a decoded font to its atlas page UVs.
@@ -460,6 +462,8 @@ pub struct Lookups {
     pub ui_font: Option<UiFont>,
     /// `Fonts/Item_Stack` for stack counts and slot numbers.
     pub item_font: Option<UiFont>,
+    /// `Fonts/Death_Text`: the menu items (`FontAssets.DeathText`).
+    pub death_font: Option<UiFont>,
     /// `Logo` (menu title) as UV plus native size.
     pub logo: Option<([f32; 4], f32, f32)>,
     pub ui_heart: Option<tr_render::SheetRect>,
@@ -479,6 +483,7 @@ impl Lookups {
         wall_names: impl Iterator<Item = (u16, String)>,
         ui_font: Option<UiFont>,
         item_font: Option<UiFont>,
+        death_font: Option<UiFont>,
     ) -> Self {
         let mut me = Self {
             tiles: vec![None; tr_core::tiledata::TILE_COUNT],
@@ -499,6 +504,7 @@ impl Lookups {
             ui_back_hotbar: atlas.sheet("Inventory_Back9").copied(),
             ui_font,
             item_font,
+            death_font,
             logo: atlas.sheet("Logo").map(|r| {
                 (
                     uv_rect(r, (atlas.width, atlas.height), 0, 0, r.width, r.height),

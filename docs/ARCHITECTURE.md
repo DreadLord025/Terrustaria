@@ -157,6 +157,16 @@
   `Projectile_3` at 11 px/tick toward the cursor, simulated at fixed 60 Hz in two sub-steps
   with tile bounces (0.6 damping), NPC damage through `Npc::hurt` and a 2 s lifetime.
   Drawn in the UI range with the sprite rotation, so the world cache is unaffected.
+- Menu/UI (`menu.rs` + `settings.rs`): `Main.DrawMenu` ported as an immediate-mode menu.
+  `Page::layout` holds each screen's `num2`/`num4`/`array7` (main 220/52/1.0, settings
+  210/37/0.75, general 250/52/0.78, interface 210/28/0.6, video 186/30/0.6); items are
+  `Death_Text` strings centred on the screen middle, five-pass text (four black offsets at
+  ±2 px + the coloured pass), `menuItemScale` easing 0.8→1.0 with the focused row lerped to
+  `(255, 215, 0)` and alpha `255 * (scale * 2 - 1)`. The logo sits at
+  `(screenWidth / 2, 100)` with the original scale/rotation easing, and `v1.4.5.8` is drawn
+  in `Mouse_Text` at the bottom-left. Settings screens (General, Interface, Video) toggle a
+  `Settings` struct stored as `config.json` in the game root; `LightingMode`,
+  `BackgroundEnabled` and `MapEnabled` are applied by the renderer. See `docs/UI.md`.
 - Weather (`rain.rs`): `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` as a 60 Hz simulation.
   `cloudAlpha` ramps at 0.0005/tick toward the event's `maxRaining`; drops spawn above the
   view only into wall-free sky, fall at `(wind*18, 14)` px/tick and die on solid or wet

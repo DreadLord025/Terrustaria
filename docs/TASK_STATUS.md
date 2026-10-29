@@ -80,11 +80,11 @@
 
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
-| M7-UI-1 | Menu framework (DeathText, item scale, 5-pass shadow, hover) | 🔄 In Progress | Agent-DeepSeek | `Main.DrawMenu` geometry: `num2/num3/num4`, `menuItemScale`, `array4/5/7`, colors |
-| M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111 / 26 / 1125 / 1127 / 1213) | 🔄 In Progress | Agent-DeepSeek | Labels, order, row spacing, toggles, sliders |
-| M7-UI-3 | Main menu screen (logo, items, version, links) | ❌ Pending | - | - |
+| M7-UI-1 | Menu framework (DeathText, item scale, 5-pass shadow, hover) | ✅ Done | Agent-DeepSeek | `menu.rs`: `Main.DrawMenu` geometry + colours, 9 tests; see docs/UI.md |
+| M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111) | ✅ Done | Agent-DeepSeek | General/Interface/Video rows, labels and toggles; volume sliders, cursor, controls, language left as notices |
+| M7-UI-3 | Main menu screen (logo, items, version, links) | ✅ Done | Agent-DeepSeek | Logo at (w/2,100) with scale/rotation easing, seven vanilla rows, `v1.4.5.8` in Mouse_Text |
 | M7-UI-4 | Inventory / ItemSlot cells exact sizes | ❌ Pending | - | 56 px cells, 0.85 scale, contexts |
-| M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ❌ Pending | - | - |
+| M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied |
 
 ### Tile Objects & Special Tiles
 
@@ -99,7 +99,7 @@
 ## 🔥 Current Assignments (in progress)
 
 ```
-M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026-10-29T18:15Z)
+M7-UI-1/2/3/5 Menu framework + settings — done 2026-10-29T18:45Z (Agent-DeepSeek)
 M6-MUSIC      XACT/MS-ADPCM music playback — Agent-Audio (started 2026-10-29T18:25Z)
 M6-3DAUDIO    SoundEngine 3D attenuation — Agent-Audio (started 2026-10-29T18:25Z)
 ```

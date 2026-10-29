@@ -13,6 +13,7 @@ mod player;
 mod projectile;
 mod rain;
 mod registry;
+mod settings;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -344,7 +345,7 @@ fn main() -> Result<()> {
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let (font_images, ui_font_meta, item_font_meta) = assets::load_fonts();
+    let (font_images, ui_font_meta, item_font_meta, death_font_meta) = assets::load_fonts();
     images.extend(font_images);
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
@@ -374,6 +375,9 @@ fn main() -> Result<()> {
     let item_font = item_font_meta
         .as_ref()
         .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
+    let death_font = death_font_meta
+        .as_ref()
+        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
     let lookups = assets::Lookups::build(
         &atlas,
         tile_ids
@@ -384,6 +388,7 @@ fn main() -> Result<()> {
             .map(|&id| (id, assets::image_name_for_wall(id))),
         ui_font,
         item_font,
+        death_font,
     );
 
     let atlas_stats = (
@@ -700,6 +705,7 @@ fn main() -> Result<()> {
         },
         inventory_open: std::env::var_os("TR_INV").is_some(),
         menu: menu_state,
+        settings: settings::Settings::load(),
         player_name,
         net: net_role,
         remote_players: HashMap::new(),
@@ -857,6 +863,8 @@ struct App {
     inventory_open: bool,
     /// Main menu; `None` while playing.
     menu: Option<menu::Menu>,
+    /// `config.json` options edited by the settings screens.
+    settings: settings::Settings,
     player_name: String,
     net: NetRole,
     /// Players of other machines streaming from the host/client.
@@ -1278,6 +1286,20 @@ impl ApplicationHandler for App {
                 match button {
                     MouseButton::Middle => self.mouse_down = pressed,
                     MouseButton::Left => {
+                        if self.menu.is_some() {
+                            if pressed {
+                                let action = self
+                                    .menu
+                                    .as_mut()
+                                    .map(|m| {
+                                        m.update_hover(self.mouse_pos);
+                                        m.click()
+                                    })
+                                    .unwrap_or(menu::Action::None);
+                                self.apply_menu_action(action, event_loop);
+                            }
+                            return;
+                        }
                         self.mine_down = pressed;
                         if pressed {
                             self.ui_left_press = true;
@@ -1295,6 +1317,9 @@ impl ApplicationHandler for App {
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
                 self.mouse_pos = p;
+                if let Some(m) = self.menu.as_mut() {
+                    m.update_hover(p);
+                }
                 if self.mouse_down {
                     let delta = p - self.last_mouse;
                     self.camera -= delta / self.zoom;
@@ -2075,7 +2100,7 @@ impl App {
                 event_loop.exit();
             }
             Action::Singleplayer => {
-                self.menu = None;
+                self.close_menu();
             }
             Action::Host { port, password } => {
                 let map = compressed_world(&self.world);
@@ -2083,7 +2108,7 @@ impl App {
                     Ok(server) => {
                         log::info!("hosting on {}", server.addr());
                         self.net = NetRole::Host(server);
-                        self.menu = None;
+                        self.close_menu();
                     }
                     Err(e) => {
                         if let Some(m) = self.menu.as_mut() {
@@ -2110,6 +2135,22 @@ impl App {
                 }
             },
         }
+    }
+
+    /// Leaves the menu and applies the settings it edited (`Main.SaveSettings`).
+    fn close_menu(&mut self) {
+        if let Some(m) = self.menu.take() {
+            self.settings = m.settings;
+        }
+        self.apply_settings();
+    }
+
+    /// Applies the options the renderer reads right away.
+    fn apply_settings(&mut self) {
+        self.light_mode = tr_core::lighting::LightMode::ALL
+            [(self.settings.light_mode as usize).min(3)];
+        // The light cache and the world range depend on the mode.
+        self.world_key = None;
     }
 
     /// Drains network events without borrowing `self.net` across handlers.
@@ -2476,6 +2517,7 @@ impl App {
                 projectiles,
                 world_key,
                 menu,
+                settings,
                 remote_players,
                 map,
                 ..
@@ -2646,6 +2688,7 @@ impl App {
                     sky_uv,
                     sky_tint,
                     rain.cloud_bg(),
+                    settings.background,
                 );
                 if !reuse_world {
                     tile_stats = draw_tiles(
@@ -2708,15 +2751,15 @@ impl App {
                         &self.mouse_item,
                         self.mouse_pos,
                     );
-                } else if let Some(menu) = menu.as_ref() {
-                    menu.draw(renderer, lookups, screen);
+                } else if let Some(menu) = menu.as_mut() {
+                    menu.draw(renderer, lookups, screen, dt);
                 }
                 if let Some(map) = map.as_ref() {
                     let pt = player
                         .as_ref()
                         .map(|p| ((p.x / TILE_PX) as i32, (p.y / TILE_PX) as i32))
                         .unwrap_or((world.width / 2, world.height / 2));
-                    if menu.is_none() {
+                    if menu.is_none() && settings.map_enabled {
                         map.draw_minimap(renderer, world, screen, pt);
                         if map.open {
                             map.draw_full(renderer, lookups, world, screen, pt);
@@ -3281,6 +3324,7 @@ fn draw_sky(
     sky_uv: Option<[f32; 4]>,
     tint: [f32; 3],
     storm: f32,
+    background_enabled: bool,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -3414,7 +3458,9 @@ fn draw_sky(
     let view_top = camera.y - screen.y * 0.5 / zoom;
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
-    let show_bg = view_top < world_surface_px + TILE_PX;
+    // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
+    // clouds above stay, exactly like the original toggle.
+    let show_bg = background_enabled && view_top < world_surface_px + TILE_PX;
     // `DrawSurfaceBG` positions every layer from `screenPosition.Y` alone; anchoring
     // them to the surface of the camera's own column made the whole skyline jump
     // whenever the camera crossed a hill, so the horizon follows the world's average
