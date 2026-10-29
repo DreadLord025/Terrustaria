@@ -20,3 +20,5 @@
 .vs/
 *.user
 Thumbs.db
+
+/assets/Content/
