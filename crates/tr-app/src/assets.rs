@@ -678,6 +678,23 @@ impl Lookups {
         Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
     }
 
+    /// Average colour of a tile type's plain 16x16 frame (map colours,
+    /// `MapHelper.GetTileColor` samples the same pixels).
+    pub fn tile_color_avg(&self, atlas: &tr_render::Atlas, kind: u16) -> Option<[f32; 3]> {
+        let tt = self.tiles.get(kind as usize)?.as_ref()?;
+        let rect = atlas.sheet(&tt.sheet)?;
+        sample_avg(atlas, rect, 0, 0, 16, 16)
+    }
+
+    /// Average colour of a wall type's inner 16x16 cell.
+    pub fn wall_color_avg(&self, atlas: &tr_render::Atlas, wall: u16) -> Option<[f32; 3]> {
+        let wt = self.walls.get(wall as usize)?.as_ref()?;
+        let rect = atlas.sheet(&wt.sheet)?;
+        let x0 = (rect.width.saturating_sub(16)) / 2;
+        let y0 = (rect.height.saturating_sub(16)) / 2;
+        sample_avg(atlas, rect, x0, y0, 16, 16)
+    }
+
     /// UV of a whole HUD sheet.
     pub fn hud_uv(&self, rect: Option<&tr_render::SheetRect>) -> Option<[f32; 4]> {
         let rect = rect?;
@@ -825,6 +842,37 @@ fn uv_of(
         (x0 + 16.0) / atlas.width as f32,
         (y0 + 16.0) / atlas.height as f32,
     ]
+}
+
+/// Alpha-weighted average of an atlas region, used for map colours.
+fn sample_avg(
+    atlas: &tr_render::Atlas,
+    rect: &tr_render::SheetRect,
+    ox: u32,
+    oy: u32,
+    w: u32,
+    h: u32,
+) -> Option<[f32; 3]> {
+    let mut acc = [0f32; 3];
+    let mut n = 0u32;
+    for y in oy..oy + h {
+        for x in ox..ox + w {
+            let px = rect.x + x;
+            let py = rect.y + y;
+            if px >= atlas.width || py >= atlas.height {
+                continue;
+            }
+            let i = ((py * atlas.width + px) * 4) as usize;
+            if atlas.pixels[i + 3] < 90 {
+                continue;
+            }
+            acc[0] += atlas.pixels[i] as f32 / 255.0;
+            acc[1] += atlas.pixels[i + 1] as f32 / 255.0;
+            acc[2] += atlas.pixels[i + 2] as f32 / 255.0;
+            n += 1;
+        }
+    }
+    (n > 0).then(|| [acc[0] / n as f32, acc[1] / n as f32, acc[2] / n as f32])
 }
 
 fn uv_rect(

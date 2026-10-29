@@ -3,6 +3,7 @@
 mod assets;
 mod collision;
 mod item;
+mod map;
 mod menu;
 mod net;
 mod npc;
@@ -640,6 +641,8 @@ fn main() -> Result<()> {
             Err(e) => log::warn!("host on {port} failed: {e:#}"),
         }
     }
+    let mut world_map = map::WorldMap::new(&world, &atlas, &lookups);
+    world_map.open = std::env::var_os("TR_MAP").is_some();
     let mut app = App {
         window: None,
         gpu: None,
@@ -675,6 +678,7 @@ fn main() -> Result<()> {
         local_id: 0,
         net_timer: 0.0,
         join_target,
+        map: Some(world_map),
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
@@ -818,6 +822,8 @@ struct App {
     local_id: u32,
     net_timer: f32,
     join_target: Option<(String, String)>,
+    /// Explored-tile minimap and full map (`M`).
+    map: Option<map::WorldMap>,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     mouse_item: ItemSlot,
     ui_left_press: bool,
@@ -1137,6 +1143,11 @@ impl ApplicationHandler for App {
                                 self.world_key = None;
                             }
                             KeyCode::F9 => self.save_world(),
+                            KeyCode::KeyM => {
+                                if let Some(m) = self.map.as_mut() {
+                                    m.open = !m.open;
+                                }
+                            }
                             KeyCode::KeyB => {
                                 if !self
                                     .npcs
@@ -2212,6 +2223,9 @@ impl App {
             self.update_projectiles(dt);
             self.update_editing(dt, screen);
             self.net_tick(dt);
+            if let Some(m) = self.map.as_mut() {
+                m.update(self.player.as_ref(), dt);
+            }
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
         if self.is_client() && self.frame_count == 90 {
@@ -2273,6 +2287,7 @@ impl App {
                 world_key,
                 menu,
                 remote_players,
+                map,
                 ..
             } = self;
 
@@ -2469,6 +2484,18 @@ impl App {
                     );
                 } else if let Some(menu) = menu.as_ref() {
                     menu.draw(renderer, lookups, screen);
+                }
+                if let Some(map) = map.as_ref() {
+                    let pt = player
+                        .as_ref()
+                        .map(|p| ((p.x / TILE_PX) as i32, (p.y / TILE_PX) as i32))
+                        .unwrap_or((world.width / 2, world.height / 2));
+                    if menu.is_none() {
+                        map.draw_minimap(renderer, world, screen, pt);
+                        if map.open {
+                            map.draw_full(renderer, lookups, world, screen, pt);
+                        }
+                    }
                 }
 
                 if *debug {

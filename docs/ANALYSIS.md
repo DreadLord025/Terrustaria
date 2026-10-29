@@ -649,3 +649,13 @@ relaunches the executable (`TR_JOIN`/`TR_JOINED`), letting every world-derived s
 v1 limits: clients do not simulate NPCs (host snapshots only, no interpolation), liquid
 flow is simulated locally on both ends, and drops are host-authoritative with an
 optimistic client pickup.
+
+## Minimap and full map (M6)
+
+`map.rs` keeps a per-tile explored bitset revealed around the player four times a
+second (a 73x45 tile window, matching what the camera sees). Map colours come from the
+original textures: the average of each tile's plain 16x16 frame and each wall's inner
+cell (`assets::tile_color_avg`/`wall_color_avg`), with liquid tinting (water/lava/honey/
+shimmer). Rendering is chunked: 8x8-tile blocks average their explored colours, so the
+minimap (2 px/tile, top right) and the full map (`M`, 3 px/tile, centred on the player)
+stay at a few thousand quads. Unexplored areas stay dark; the player is a white marker.
