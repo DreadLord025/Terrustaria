@@ -279,10 +279,53 @@ leveling passes (3/4/5/7-cell averages, edge openness, `Math.Round` banker's rou
 and retirement after eight quiet passes. Falling water keeps the original's 254→255
 quirk. Block edits wake the surrounding liquid cells, so a breach visibly drains.
 
-Not ported: the `Liquid` wave mask/vertex displacement, the animated `Waterfall_*` overlay
-at half-brick and waterfall-block spouts, the water-style fountains and shimmer sparkles.
+Not ported: the `Liquid` wave mask/vertex displacement, the water-style fountains and
+shimmer sparkles.
 The generator adds a forest lake and lava puddles so the pass is visible in the default
 world; loaded `.wld` files expose their own liquids.
+
+### Waterfall overlay
+
+`tr-core/src/waterfall.rs` ports `Terraria.WaterfallManager`; `main.rs` runs it on the
+60 Hz clock and emits the quads between the non-solid and solid tile passes
+(`Main.DoDraw_Waterfalls`).
+
+- `FindWaterfalls` keeps the 30-tick cadence (`findWaterfallCount < 30 && !forced`), the
+  `waterfallDist = (int)(75 * gfxQuality) + 25` scan rectangle around the view, the
+  `qualityMax` cap and the exact spout test: an active `halfBrick()` tile whose tile above
+  has `liquid < 16` or is solid, with a neighbour holding `liquid > 160` while the other
+  side is dry, non-solid and unsloped. The `196`/`460`/`717` fountain tiles spawn types
+  `11`/`22`/`26` one row below when the cell underneath is open. The liquid kind check
+  order is `tile2` (above) then `tile4` (right) then `tile3` (left), as in the source.
+- `UpdateFrame` reproduces all five counters (regular 3-tick, slow 7-tick, rain,
+  lava-rain and snow), plus `DoUpdate_AnimateDiscoRGB` and `Main.mouseTextColor`, which
+  the lava/shimmer light pulses use.
+- `DrawWaterfall` is a line-by-line port of the 640-line geometry walk: `stopAtStep`,
+  the `num11..num42` state, the slope/half-brick/liquid neighbour rules, the 1 px
+  left/right wobble per row, the `num41 = liquid / 16` clipping of the source rectangle,
+  `GetAlpha` (0.6 under a wall or below `worldSurface`, 1.0 above it; lava 1.0, honey 0.8,
+  shimmer 0.75, both fading over the last 10 steps) and `StylizeColor` (lava floor 190,
+  disco RGB for tile 160, white for 262..268).
+- Tint is `style.shade(LightMap::get(x, y))` quantised to bytes, matching the byte
+  multiplies of `Color` in XNA; the app turns each record into one atlas quad
+  (`Lookups::waterfall_uv`).
+- Deliberate approximation: `Main.gfxQuality` is fixed at 1.0 (the value a machine holding
+  60 FPS converges to), so the scan distance is 100 tiles and the cap 1000 falls — the
+  same as the original at full quality.
+- Not ported yet: the honey/shimmer `Draw()` passes (`Main.liquidAlpha[2..4]`), the
+  shimmer vertex-sparkle pass (`SetShimmerVertexColors*`), `TrySparkling` dust and the
+  ambient lava-waterfall light (`AddLight`). `TR_NO_WATERFALL=1` disables the pass for
+  A/B screenshots; `TR_SPOUT=x,y` stamps a half-brick spout with liquid and a clear drop
+  so the overlay can be captured deterministically.
+
+Verification: unit tests in `waterfall.rs` (spout detection, lava kind, tile 196, frame
+counters, emitted geometry, empty `anim_key`); the lake view at `TR_CAM=2240,360`,
+`TR_DAY=1` is pixel-identical with and without the pass when no waterfall is visible
+(`tools/pixel_diff.py`, 1 440 000 pixels); `docs/screenshots/spout_noon.png` shows a
+spout at `TR_SPOUT=100,25`, `TR_CAM=100,32`, zoom 2 — the column samples the raw
+`Waterfall_0` colours (`147,177,253` / `50,107,197` / `9,61,191`), i.e. a full-brightness
+tint, as `GetAlpha` requires above `worldSurface`.
+
 
 ## Rain and weather
 

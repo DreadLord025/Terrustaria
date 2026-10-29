@@ -11,7 +11,7 @@
 
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
-| M1.4-BG-1 | Background gradients (forest, mountain) | ❌ Pending | - | - |
+| M1.4-BG-1 | Background gradients (forest, mountain) | 🔄 In Progress | Agent-DeepSeek | ... |
 | M1.4-BG-2 | Cloud generation and parallax | ❌ Pending | - | - |
 | M1.4-BG-3 | Sun, moon, stars rendering | ❌ Pending | - | - |
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
@@ -19,7 +19,7 @@
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
 | M1.5-LIGHT-2 | Per-type tile lighting | ❌ Pending | - | - |
-| M1.5-LIQUID-1 | Waterfall overlays | 🔄 In Progress | Agent-DeepSeek | Porting WaterfallManager.cs (FindWaterfalls/UpdateFrame/DrawWaterfall) |
+| M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
 | M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
 ### Milestone 2 — Player

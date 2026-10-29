@@ -53,10 +53,17 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    opacity, `IsSurfaceLiquid`), `Lighting.GetCornerColors` drives 3x3 bilinear light and the
    draw runs twice like `Main.DrawLiquid` (opaque behind walls/tiles, `DEFAULT_OPACITY`
    over entities) from the original `Misc/water_*` frames. The generator fills a forest lake
-   and lava puddles; `Liquid.UpdateLiquid`/`Liquid.Update` is a 30 Hz active-cell simulation
+   and lava puddles;    `Liquid.UpdateLiquid`/`Liquid.Update` is a 30 Hz active-cell simulation
    (gravity, six-neighbour leveling, kill/retire, overflow buffer) and edits wake neighbours.
-   Remaining: the `Waterfall_*` overlay at half-brick spouts, water styles and shimmer
-   sparkles. *~1–3 agent-days left of ~8.*
+   The `Waterfall_*` overlay is ported as `waterfall.rs` (`WaterfallManager.FindWaterfalls`
+   /`DrawWaterfall`): the 30-tick rescan around the view, half-brick spouts and the
+   196/460/717 fountain tiles, the lava/honey/shimmer types, the rain/snow/disco frame
+   counters, the per-row geometry walk with its 1 px wobble, `GetAlpha`/`StylizeColor`
+   and the per-tile light tint; the app draws the quads between the non-solid and solid
+   tile passes (`Main.DoDraw_Waterfalls`).
+   Remaining: the honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), the
+   shimmer vertex-sparkle pass, `WaterfallManager.TrySparkling` dust, the ambient
+   lava-waterfall light (`AddLight`). *~1–2 agent-days left of ~8.*
 4. **Backgrounds & sky** — ✅ *third pass*: `Background_0` gradient, deterministic
    `Cloud_*` clouds, sun, moon, stars, the 15/9-minute day-night clock, the per-column cave
    fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`, `cloudAlpha` ramp, rotated

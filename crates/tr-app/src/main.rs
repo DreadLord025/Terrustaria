@@ -590,6 +590,25 @@ fn main() -> Result<()> {
         let k = it.next()?.trim().parse::<u16>().ok()?;
         Some((x, y, k))
     });
+    // `TR_SPOUT=x,y`: build the `FindWaterfalls` half-brick case at a fixed tile (a half
+    // brick with full liquid on its right and a clear drop below) so the waterfall
+    // overlay can be screenshotted deterministically.
+    if let Some((x, y)) = std::env::var("TR_SPOUT").ok().and_then(|v| parse_xy(&v)) {
+        for j in 1..=14 {
+            edit::break_tile(&mut world, x, y + j);
+        }
+        edit::break_tile(&mut world, x, y);
+        if edit::place_tile(&mut world, x, y, 1) {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.flags |= tr_core::tile::FLAG_HALF_BRICK;
+            }
+        }
+        for (dx, dy) in [(1, 0), (1, -1)] {
+            if let Some(t) = world.tile_mut(x + dx, y + dy) {
+                t.liquid = 255;
+            }
+        }
+    }
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
     let liquids_sim = LiquidSystem::new(&world);

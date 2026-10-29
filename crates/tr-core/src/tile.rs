@@ -80,6 +80,18 @@ impl Tile {
         self.flags & FLAG_HALF_BRICK != 0
     }
 
+    /// `Tile.topSlope`: slope 1 or 2.
+    #[inline]
+    pub fn top_slope(&self) -> bool {
+        matches!(self.slope(), 1 | 2)
+    }
+
+    /// `Tile.bottomSlope`: slope 3 or 4.
+    #[inline]
+    pub fn bottom_slope(&self) -> bool {
+        matches!(self.slope(), 3 | 4)
+    }
+
     #[inline]
     pub fn has_any_liquid(&self) -> bool {
         self.liquid > 0

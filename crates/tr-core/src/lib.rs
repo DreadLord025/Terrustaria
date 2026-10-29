@@ -12,6 +12,7 @@ pub mod save;
 pub mod tile;
 pub mod tiledata;
 pub mod tree;
+pub mod waterfall;
 pub mod wld;
 pub mod world;
 pub mod worldgen;

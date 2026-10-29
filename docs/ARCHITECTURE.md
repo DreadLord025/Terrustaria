@@ -47,6 +47,11 @@
   (including seepage into empty cells), edge walls, `FrameOffset`, the source rectangle,
   waterfall-fade opacity, `IsSurfaceLiquid` and the half-brick visibility rule. The app
   consumes the records twice (`Main.DrawLiquid(bg)`), so this module is pure world logic.
+- `waterfall.rs` — `WaterfallManager`: `FindWaterfalls` (30-tick rescan around the view,
+  half-brick spouts plus the 196/460/717 fountain tiles, lava/honey/shimmer kinds) and
+  `DrawWaterfall` (the per-row geometry walk, `GetAlpha`/`StylizeColor`, the 28
+  `Waterfall_*` sheets, rain/snow/disco frame counters, per-tile light tint). It emits
+  `WaterfallDraw` quads in world pixels; the app turns them into sprites.
 - `worldgen.rs` — a compact generator modelled on `WorldGen`'s shapes: height-noise
   surface + spawn plateau, height smoothing to 1-tile steps, grass/dirt/stone/ash layers,
   hill slope flags, caves from two noise fields, dirt/stone walls, ore blobs, underworld

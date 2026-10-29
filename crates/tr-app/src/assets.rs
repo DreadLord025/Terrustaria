@@ -202,6 +202,16 @@ pub fn load_world_images(
         }
     }
 
+    // `WaterfallManager.waterfallTexture[0..27]`: the common sheet is 512x40
+    // (sixteen 32x40 frames), the rain/dust variants are 144x18 (eight 18x18
+    // frames) and the shimmer/disco companion sheets are 512x124.
+    for i in 0..tr_core::waterfall::MAX_TYPES {
+        let name = format!("Waterfall_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+
     if !missing.is_empty() {
         log::warn!(
             "{} world sheets have no matching texture (first 10: {:?})",
@@ -428,6 +438,8 @@ pub struct Lookups {
     pub liquid_slopes: Vec<Option<tr_render::SheetRect>>,
     /// `Liquid_0..14`: 16 px partial strips (18 px stride) drawn behind blocks.
     pub liquid_parts: Vec<Option<tr_render::SheetRect>>,
+    /// `Waterfall_0..27` (`WaterfallManager.waterfallTexture`).
+    pub waterfalls: [Option<tr_render::SheetRect>; tr_core::waterfall::MAX_TYPES],
     /// `Rain.png`: 2x40 drop frames at 4 px strides.
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
@@ -476,6 +488,7 @@ impl Lookups {
             liquids: vec![None; 15],
             liquid_slopes: vec![None; 15],
             liquid_parts: vec![None; 15],
+            waterfalls: [None; tr_core::waterfall::MAX_TYPES],
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
@@ -592,6 +605,11 @@ impl Lookups {
                 me.liquids[i] = Some(*rect);
             }
         }
+        for i in 0..me.waterfalls.len() {
+            if let Some(rect) = atlas.sheet(&format!("Waterfall_{i}")) {
+                me.waterfalls[i] = Some(*rect);
+            }
+        }
         me
     }
 
@@ -650,6 +668,22 @@ impl Lookups {
     pub fn liquid_uv(&self, index: usize, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
         let rect = self.liquids.get(index)?.as_ref()?;
         Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a `WaterfallManager` source rectangle inside `Waterfall_{texture}`.
+    pub fn waterfall_uv(&self, texture: usize, source: [i32; 4]) -> Option<[f32; 4]> {
+        let rect = self.waterfalls.get(texture)?.as_ref()?;
+        if source[2] <= 0 || source[3] <= 0 {
+            return None;
+        }
+        Some(uv_rect(
+            rect,
+            self.atlas_size,
+            source[0],
+            source[1],
+            source[2] as u32,
+            source[3] as u32,
+        ))
     }
 
     /// UV of a partial `Liquid_*` strip (16 px tall, 18 px frame stride).
