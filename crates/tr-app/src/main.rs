@@ -3753,7 +3753,13 @@ fn round_half_even(v: f32) -> f32 {
     }
 }
 
-/// One 16x16 cell of the underground backdrop, lit by the world tile under it.
+/// One 16x16 cell of the underground backdrop, lit by the world tile behind it.
+///
+/// `pos` is the screen-space top-left of the cell (C#'s
+/// `bgStartX + num * i + 16 * k + num2`, `bgStartY + backgroundHeight * j + 16 * l`);
+/// `sample` is the screen-space point the light is read at (C#'s `num3`). The original
+/// reads the light at the *un-jittered* cell centre, so `sample.x = pos.x + 8 - num2`,
+/// while the draw itself keeps the `num2` half-tile jitter.
 #[allow(clippy::too_many_arguments)]
 fn push_cave_cell(
     r: &mut SpriteRenderer,
@@ -3764,16 +3770,20 @@ fn push_cave_cell(
     sx: f32,
     sy: f32,
     pos: [f32; 2],
+    sample: [f32; 2],
     light: &LightMap,
 ) {
     if pos[0] >= screen.x || pos[1] >= screen.y || pos[0] + 16.0 <= 0.0 || pos[1] + 16.0 <= 0.0 {
         return;
     }
-    // `Lighting.GetColor`: the light of the world tile this screen pixel shows. The
-    // original samples on the unscaled grid (`screenPosition` + screen px); we use the
-    // tile actually behind the pixel so the sample always stays inside the light map.
-    let wx = ((camera.x + (pos[0] + 8.0 - screen.x * 0.5) / zoom) / TILE_PX).floor() as i32;
-    let wy = ((camera.y + (pos[1] + 8.0 - screen.y * 0.5) / zoom) / TILE_PX).floor() as i32;
+    // `Lighting.GetColor((int)((num3 + screenPosition.X) / 16f), ...)`: the light is read on
+    // the *unscaled* grid (`Main.screenPosition = camera - screenSize / 2`), not at the tile
+    // actually behind the pixel. `GetColor` already folds in `GlobalBrightness` (baked into
+    // the light map), and both backdrop layers multiply the result by `backgroundColor`
+    // (0.9) below.
+    let sp = camera - screen * 0.5;
+    let wx = ((sample[0] + sp.x) / TILE_PX).floor() as i32;
+    let wy = ((sample[1] + sp.y) / TILE_PX).floor() as i32;
     let c = light.get(wx, wy);
     let du = (tex.uv[2] - tex.uv[0]) / tex.w;
     let dv = (tex.uv[3] - tex.uv[1]) / tex.h;
@@ -3791,6 +3801,54 @@ fn push_cave_cell(
         ],
         [c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 1.0],
     );
+}
+
+/// `Main.GetRockTransitionPoint`: first rock-backdrop row, in **world** pixels.
+///
+/// ```text
+/// num  = (rockLayer - worldSurface) * 16
+/// num2 = num / backgroundHeight[2]; if (num % h != 0) num2++
+/// return worldSurface * 16 + num2 * h + 32
+/// ```
+fn get_rock_transition_point(world: &World, block: f32) -> f32 {
+    let block = (block as f64).max(1.0);
+    let span = (world.rock_layer - world.world_surface) * TILE_PX as f64;
+    let mut blocks = (span / block) as i32;
+    if span.rem_euclid(block) != 0.0 {
+        blocks += 1;
+    }
+    (world.world_surface * TILE_PX as f64 + blocks as f64 * block + 32.0) as f32
+}
+
+/// Screen-space anchors of the underground backdrop, split out so the layout can be
+/// unit-tested without a GPU.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct UndergroundBgLayout {
+    /// `Main.DrawBG` uses `Main.BackgroundViewMatrix` (zoom `ForcedMinimumZoom` = 1), so
+    /// the backdrop lives in *unscaled* screen space: `Main.screenPosition`, i.e.
+    /// `camera - screenSize / 2`, used verbatim.
+    screen_pos: Vec2,
+    /// `DrawBackground_SurfaceTransitionBackground` `bgTopY = worldSurface*16 - screenPosition.Y`.
+    transition_top: f32,
+    /// `DrawBackground_DirtBackground` `bgTopY = worldSurface*16 - screenPosition.Y + 16`.
+    dirt_top: f32,
+    /// `Main.Camera.ScaledPosition.Y + screenHeight`: the dirt sheet is clamped at the
+    /// rock transition while this bottom edge is below `GetRockTransitionPoint`.
+    scaled_bottom: f32,
+}
+
+fn underground_bg_layout(world: &World, camera: Vec2, zoom: f32, screen: Vec2) -> UndergroundBgLayout {
+    let screen_pos = camera - screen * 0.5;
+    let transition_top = world.world_surface as f32 * TILE_PX - screen_pos.y;
+    UndergroundBgLayout {
+        screen_pos,
+        transition_top,
+        dirt_top: transition_top + 16.0,
+        // `ScaledPosition.Y = UnscaledPosition.Y + GameViewMatrix.Translation.Y` and the
+        // translation is `screenSize.Y / 2 * (1 - 1 / zoom)`, so the top-left of the
+        // scaled view is `camera.Y - screenSize.Y / (2 * zoom)`.
+        scaled_bottom: camera.y - screen.y / (2.0 * zoom) + screen.y,
+    }
 }
 
 /// `Main.DrawBackground_SurfaceTransitionBackground` + `DrawBackground_DirtBackground`.
@@ -3813,24 +3871,30 @@ fn draw_underground_background(
     };
     // `Main.caveParallax = 1 - bgScroll / 500`; the options slider defaults to 50.
     const CAVE_PARALLAX: f32 = 0.9;
-    let origin = camera - screen * 0.5 / zoom;
-    // Screen-space Y of the surface line: `push_cave_cell` maps screen px 1:1.
-    let surface_screen = (world.world_surface as f32 * TILE_PX - origin.y) * zoom;
+    // `Main.DrawBG` runs the backdrop under `Main.BackgroundViewMatrix`, whose zoom is
+    // `ForcedMinimumZoom` (1 for any viewport <= 1920x1200), so the matrix is identity
+    // and the layout is in *unzoomed* screen coordinates: `Main.screenPosition`
+    // (`camera - screenSize / 2`) is used verbatim, never divided by the game zoom.
+    // `push_cave_cell` maps those screen px 1:1 with a fixed 16 px cell.
+    let layout = underground_bg_layout(world, camera, zoom, screen);
+    let screen_pos = layout.screen_pos;
+    let surface_screen = layout.transition_top;
 
     // The transition row sits exactly on the surface line.
     if let Some(transition) = sky.underground_transition {
         let num = transition.w - 32.0;
         if num >= 16.0 {
             let start_x =
-                (0.0 - ieee_remainder(num + origin.x * CAVE_PARALLAX, num) - num * 0.5) as i32
+                (0.0 - ieee_remainder(num + screen_pos.x * CAVE_PARALLAX, num) - num * 0.5) as i32
                     as f32;
             let loops = (screen.x / num) as i32 + 2;
-            let mut n2 = round_half_even(-ieee_remainder(start_x + origin.x, 16.0));
+            let mut n2 = round_half_even(-ieee_remainder(start_x + screen_pos.x, 16.0));
             if n2 as i32 == -8 {
                 n2 = 8.0;
             }
             for i in 0..loops {
                 for j in 0..(num as i32 / 16) {
+                    let cell_x = start_x + num * i as f32 + 16.0 * j as f32;
                     push_cave_cell(
                         r,
                         camera,
@@ -3839,10 +3903,8 @@ fn draw_underground_background(
                         &transition,
                         16.0 * j as f32 + n2 + 16.0,
                         0.0,
-                        [
-                            start_x + num * i as f32 + 16.0 * j as f32 + n2,
-                            surface_screen,
-                        ],
+                        [cell_x + n2, surface_screen],
+                        [cell_x + 8.0, surface_screen],
                         light,
                     );
                 }
@@ -3850,8 +3912,12 @@ fn draw_underground_background(
         }
     }
 
-    // `if (!(worldSurface * 16 <= screenPosition.Y + screenHeight + offScreen)) return`.
-    if surface_screen > screen.y {
+    // `if (!(worldSurface * 16 <= screenPosition.Y + screenHeight + offScreen)) return`:
+    // vanilla still enters while the surface line is up to `offScreenRange` (192) px below
+    // the screen bottom. Those cells are off-screen and clipped by `push_cave_cell`, so the
+    // padding only matters for exactness, not for the visible picture.
+    const OFF_SCREEN_RANGE: f32 = 192.0;
+    if surface_screen > screen.y + OFF_SCREEN_RANGE {
         return;
     }
     let num = dirt.w - 32.0;
@@ -3859,26 +3925,45 @@ fn draw_underground_background(
         return;
     }
     let start_x =
-        (0.0 - ieee_remainder(num + origin.x * CAVE_PARALLAX, num) - num * 0.5) as i32 as f32;
+        (0.0 - ieee_remainder(num + screen_pos.x * CAVE_PARALLAX, num) - num * 0.5) as i32 as f32;
     let loops = (screen.x / num) as i32 + 2;
-    let mut n2 = round_half_even(-ieee_remainder(start_x + origin.x, 16.0));
+    let mut n2 = round_half_even(-ieee_remainder(start_x + screen_pos.x, 16.0));
     if n2 as i32 == -8 {
         n2 = 8.0;
     }
-    let top = surface_screen + 16.0;
-    // Fully underground, the pattern repeats from above the screen instead of starting
-    // at the surface line.
-    let start_y = if surface_screen < -16.0 {
-        ieee_remainder(top, dirt.h) - dirt.h
+    // `bgTopY = worldSurface * 16 - screenPosition.Y + 16` (DrawBackground_DirtBackground).
+    let top = layout.dirt_top;
+    // `bgStartY`: `if (worldSurface * 16 < screenPosition.Y - 16)` the sheet is repeated
+    // from above the screen (`(int)(IEEERemainder(bgTopY, h) - h)`), otherwise it starts
+    // exactly one tile below the surface line (`(int)bgTopY`). The test is on
+    // `screenPosition.Y`, NOT on `bgTopY`, so it still holds while the surface line is a
+    // few tiles off the top of the screen.
+    let start_y = if world.world_surface as f32 * TILE_PX < screen_pos.y - 16.0 {
+        (ieee_remainder(top, dirt.h) - dirt.h) as i32 as f32
     } else {
-        top
+        top as i32 as f32
     };
-    let loops_y = (screen.y as i32 - start_y as i32) / dirt.h as i32 + 1;
+    let mut loops_y = ((screen.y - start_y) / dirt.h) as i32 + 1;
+    // `if (rockTransitionPoint < Main.Camera.ScaledPosition.Y + screenHeight - 16)` clamps
+    // the dirt sheet at the rock transition (`GetRockTransitionPoint`): the rock backdrop
+    // takes over below it (`DrawBackground_DrawRockLayer`), so the dirt must not bleed into
+    // the caverns. The row count is measured from `bgStartY` (the wrapped start above).
+    let rock_transition = get_rock_transition_point(world, dirt.h);
+    if rock_transition < layout.scaled_bottom - 16.0 {
+        // C#: `(int)(rockTransitionPoint - screenPosition.Y - bgStartY) / backgroundHeight[2]`
+        // — the numerator is truncated to `int` *before* the (integer) division.
+        loops_y = ((rock_transition - screen_pos.y - start_y) as i32) / (dirt.h as i32);
+    }
+    if loops_y <= 0 {
+        return;
+    }
     let rows = (dirt.h as i32 / 16).max(1);
     for i in 0..loops {
         for j in 0..loops_y {
             for k in 0..(num as i32 / 16) {
                 for l in 0..rows {
+                    let cell_x = start_x + num * i as f32 + 16.0 * k as f32;
+                    let cell_y = start_y + dirt.h * j as f32 + 16.0 * l as f32;
                     push_cave_cell(
                         r,
                         camera,
@@ -3887,10 +3972,8 @@ fn draw_underground_background(
                         &dirt,
                         16.0 * k as f32 + n2 + 16.0,
                         16.0 * l as f32,
-                        [
-                            start_x + num * i as f32 + 16.0 * k as f32 + n2,
-                            start_y + dirt.h * j as f32 + 16.0 * l as f32,
-                        ],
+                        [cell_x + n2, cell_y],
+                        [cell_x + 8.0, cell_y + 8.0],
                         light,
                     );
                 }
@@ -6375,5 +6458,54 @@ mod water_style_tests {
         let w = test_world();
         assert_eq!(calculate_water_style(&w, cam(100, 150)), 13);
         assert_eq!(calculate_water_style(&w, cam(550, 150)), 13);
+    }
+}
+
+#[cfg(test)]
+mod underground_bg_tests {
+    use super::*;
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 4200, 1200);
+        w.world_surface = 356.0;
+        w.rock_layer = 516.0;
+        w
+    }
+
+    #[test]
+    fn layout_matches_dirt_background_with_identity_background_matrix() {
+        // `Terrustaria.trwld` reference camera: tile (2196, 361) at 1600x900.
+        let w = world();
+        let cam = Vec2::new(2196.0 * TILE_PX, 361.0 * TILE_PX);
+        let l = underground_bg_layout(&w, cam, 1.28, Vec2::new(1600.0, 900.0));
+        assert_eq!(l.screen_pos, Vec2::new(cam.x - 800.0, cam.y - 450.0));
+        // bgTopY = worldSurface*16 - screenPosition.Y  (+16 for the dirt sheet)
+        assert_eq!(l.transition_top, 356.0 * 16.0 - (cam.y - 450.0));
+        assert_eq!(l.dirt_top, l.transition_top + 16.0);
+    }
+
+    #[test]
+    fn backdrop_is_zoom_invariant() {
+        // `Main.BackgroundViewMatrix.Zoom == ForcedMinimumZoom == 1`, so the game zoom
+        // must not move the backdrop: only `ScaledPosition`, the rock clamp, does.
+        let w = world();
+        let cam = Vec2::new(2196.0 * TILE_PX, 361.0 * TILE_PX);
+        let screen = Vec2::new(1600.0, 900.0);
+        let a = underground_bg_layout(&w, cam, 1.0, screen);
+        let b = underground_bg_layout(&w, cam, 2.0, screen);
+        assert_eq!(a.transition_top, b.transition_top);
+        assert_eq!(a.dirt_top, b.dirt_top);
+        // The rock clamp *is* scaled: `camera.Y - screenHeight / (2 * zoom)`.
+        assert_eq!(a.scaled_bottom, cam.y - 450.0 + 900.0);
+        assert_eq!(b.scaled_bottom, cam.y - 225.0 + 900.0);
+    }
+
+    #[test]
+    fn rock_transition_point_matches_getrocktransitionpoint() {
+        // num = (516-356)*16 = 2560; 2560/96 = 26.67 -> 27 blocks; 356*16 + 27*96 + 32.
+        let w = world();
+        assert_eq!(get_rock_transition_point(&w, 96.0), 5696.0 + 27.0 * 96.0 + 32.0);
+        // Exact multiple of the block height must not round up.
+        assert_eq!(get_rock_transition_point(&w, 2560.0), 5696.0 + 2560.0 + 32.0);
     }
 }

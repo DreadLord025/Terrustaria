@@ -468,13 +468,21 @@ The underground backdrop is a port of `Main.DrawBackground_SurfaceTransitionBack
 `DrawBackground_DirtBackground`: `Background_1` supplies the one-row transition at
 `worldSurface`, `Background_2` tiles as 96x96 blocks from `worldSurface + 1` down, both
 scrolled with `Main.caveParallax` (0.9) and covering the whole screen. Every 16x16 cell
-takes the light of the world tile it covers, so lit ground stays lit and caves go black —
-this is the original's screen-wide dirt backdrop, not a per-column fill. Two deviations
-from the source: the light sample uses the tile actually behind the pixel (the original
-samples on the unscaled grid, which leaves the light map at zoom > 1), and below the rock
-layer the same dirt pattern continues where the original switches to `Background_3` and
-the magma layers. Anchoring the old gradient per column made every player-placed row of
-blocks paint a dark "wall" underneath itself; that artifact is gone.
+takes the light of the world tile it covers, sampled at the un-jittered cell centre on the
+*unscaled* grid (`(cellCentre + screenPosition) / 16`, exactly C#'s `num3`/`num4`), so lit
+ground stays lit and caves go black at any zoom — this is the original's screen-wide dirt
+backdrop, not a per-column fill. Two deviations from the source: a cell is tinted with one
+flat colour from `Lighting.GetColor` rather than the original's four `Lighting.GetCornerColors`
+(the tile-batch path, which only smooths the light across a single cell and never moves the
+sheet); and below the rock layer the same dirt pattern continues where the original switches
+to `Background_3` and the magma layers. Anchoring the old gradient per column made every
+player-placed row of blocks paint a dark "wall" underneath itself; that artifact is gone.
+
+The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
+`worldSurface = (int)(max(surfaceY) + 25.0)` — the *deepest* column, not the mean — with
+`rockLayer` snapped up to a multiple of 6 above it (BUG-019). An earlier generator used the
+mean column height, which floated the dirt sheet ~60 tiles (≈1000 px) above the true layer
+boundary; the underground now begins where the original's does.
 
 ## Sky and daylight
 

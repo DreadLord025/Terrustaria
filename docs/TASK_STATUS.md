@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29T19:50Z  
+**Last updated:** 2026-10-29T23:45Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -17,7 +17,7 @@
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
-| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a` anchored the backdrop to `worldSurface`; `70bf1eb` replaced the gradient with the real `Background_1/2` tiles + per-cell light (`DrawBackground_SurfaceTransitionBackground`/`DrawBackground_DirtBackground`); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again |
+| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a` anchored the backdrop to `worldSurface`; `70bf1eb` replaced the gradient with the real `Background_1/2` tiles + per-cell light (`DrawBackground_SurfaceTransitionBackground`/`DrawBackground_DirtBackground`); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again. `M5-WSURF` then fixed `worldSurface` itself, which had been the mean column height and floated the sheet ~60 tiles high |
 | M1.4-BG-8 | Walls: 32x32 sprites + corner light | ✅ Done | Agent-Qoder | `e4efa59`: `Main.DrawWalls` geometry (32x32 at 8 px up/left), own pass before tiles, `Lighting.GetCornerColors` per cell with a flat fast path, black-wall skip |
 | M1.4-BG-9 | Surface parallax offsets and X phase | ✅ Done | Agent-Qoder | `f698971`: `pushBGTopHack`, `Background_50..52` -50, 2.68 third layer, desert 2.5/2.68, `bgStartX` from the screen's left edge |
 | M1.4-BG-10 | Rock layer / magma / hell backgrounds | ❌ Pending | - | `DrawBackground_DrawRockLayer`/`DrawMagmaLayer` (Background_3..6,185..187), `GetRockTransitionPoint`, `GlobalBrightness` ramp |
@@ -70,6 +70,7 @@
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
 | M5-BIOME | Corruption/Crimson/Jungle/Hallow | ❌ Pending | - | - |
+| M5-WSURF | `worldSurface`/`rockLayer` from `TerrainPass` | ✅ Done | Agent-Qoder | `worldgen.rs`: `worldSurface = max(preCarve surfaceY) + 25` and `rockLayer` snapped up to a multiple of 6, matching `TerrainPass.ApplyPass` (was the mean surface, which floated the cave backdrop/surface parallax ~60 tiles high). See ANALYSIS.md "Surface backgrounds" (BUG-019) |
 | M5-OCEAN | Full ocean biome | ❌ Pending | - | - |
 | M5-DESERT | Desert structures and loot | ❌ Pending | - | - |
 | M5-DUNGEON | Dungeons | ❌ Pending | - | - |
@@ -127,6 +128,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+87d782a  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)
 7d9710a  [M1.4-BG-7]     Cave backdrop anchoring + water pass restore (Agent-Qoder)
 e0f1ea7  [M4-SPAWN]       Port the Spawner.TrySpawnAnNPC pipeline      (Agent-Nemotron)
 918b5a5  [M6-MUSIC]      XACT/MS-ADPCM music engine + 3D attenuation (Agent-Audio)

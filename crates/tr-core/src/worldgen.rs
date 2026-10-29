@@ -249,8 +249,19 @@ pub fn generate(opts: &GenOptions) -> World {
     }
 
     // --- terrain fill -------------------------------------------------------
+    // Mean surface height, used as the anchor for cave/ore placement below.
     let avg_surface = surface.iter().sum::<i32>() as f64 / width as f64;
-    let rock_layer = (height as f64 * 0.43).max(avg_surface + 90.0);
+    // `TerrainPass.ApplyPass`: `Main.worldSurface = (int)(max(surfaceY) + 25.0)` — the
+    // *deepest* column of the pre-carve surface, 25 tiles below it, not the mean. The
+    // underground backdrop (`DrawBackground_DirtBackground`) and the surface parallax
+    // (`DrawSurfaceBG`) are both anchored to this line, so it has to track the lowest
+    // terrain or the dirt sheet ends up floating above the ground.
+    let surface_max = surface.iter().max().copied().unwrap_or(0) as f64;
+    let world_surface = surface_max + 25.0;
+    // `TerrainPass.ApplyPass`: `Main.rockLayer = worldSurface + (int)((num8 - worldSurface) / 6) * 6`
+    // with `num8` the deepest per-column rock start.
+    let rock_raw = (height as f64 * 0.43).max(world_surface + 65.0);
+    let rock_layer = world_surface + ((rock_raw - world_surface) / 6.0).floor() * 6.0;
     let hell_top = (height - 170) as i32;
     // Eastern third of the world is a snow biome.
     let snow_start = width * 2 / 3;
@@ -571,7 +582,7 @@ pub fn generate(opts: &GenOptions) -> World {
         }
     }
 
-    world.world_surface = avg_surface;
+    world.world_surface = world_surface;
     world.rock_layer = rock_layer;
     world.spawn_x = spawn_center;
     world.spawn_y = (surface[spawn_center as usize] - 6).max(1);
