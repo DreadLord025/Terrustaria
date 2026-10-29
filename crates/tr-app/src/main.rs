@@ -13,6 +13,7 @@ mod player;
 mod projectile;
 mod rain;
 mod registry;
+mod spawner;
 mod settings;
 mod sound;
 
@@ -1548,30 +1549,45 @@ impl App {
                 }
             }
         }
-        if self.npcs.len() < 4 && self.npc_timer <= 0.0 {
-            if let Some(player) = &self.player {
-                let mut z = self.npc_rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
-                self.npc_rng = z;
-                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-                z ^= z >> 31;
-                let off = 14 + (z >> 33) as i32 % 20;
-                let off = if z & 1 == 0 { off } else { -off };
-                let x = ((player.x / TILE_PX) as i32 + off).clamp(2, self.world.width - 3);
-                let spawned = if self.world.day_time {
-                    Npc::spawn_slime(&self.world, x)
-                } else {
-                    match z % 10 {
-                        0..=3 => Npc::spawn_zombie(&self.world, x),
-                        4..=6 => Npc::spawn_eye(&self.world, x),
-                        _ => Npc::spawn_slime(&self.world, x),
-                    }
+        // `Spawner.SpawnNPC()`: one ambient spawn attempt per 60 Hz tick
+        // (NPC.cs:289-306). The rate, caps, area scan and on-screen check are
+        // the ported pipeline in `spawner.rs`.
+        if self.npcs.len() < 200 && self.npc_timer <= 0.0 {
+            let spawned = if let Some(player) = &self.player {
+                let (pcx, pcy) = player.center();
+                // `player.nearbyActiveNPCs` (NPC.cs:77902-77922): enemy NPCs
+                // within the screen-size rect around the player, counted as
+                // one slot each (`npcSlots == 1` for the implemented kinds).
+                let nearby = self
+                    .npcs
+                    .iter()
+                    .filter(|n| {
+                        let (cx, cy) = n.center();
+                        (cx - pcx).abs() < spawner::S_WIDTH as f32 * 0.5
+                            && (cy - pcy).abs() < spawner::S_HEIGHT as f32 * 0.5
+                    })
+                    .count() as f32;
+                let ctx = spawner::SpawnContext {
+                    world: &self.world,
+                    player_center: (pcx, pcy),
+                    player_pos: (player.x, player.y),
+                    nearby_active_npcs: nearby,
+                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                    day_time: self.world.day_time,
                 };
-                if let Some(n) = spawned {
-                    self.npcs.push(n);
-                }
+                self.npc_rng = self
+                    .npc_rng
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let mut rng = spawner::FastRandom::new(self.npc_rng);
+                spawner::try_spawn_an_npc(&ctx, &mut rng)
+            } else {
+                None
+            };
+            if let Some(n) = spawned {
+                self.npcs.push(n);
             }
-            self.npc_timer = 6.0;
+            self.npc_timer = 1.0 / 60.0;
         }
     }
 

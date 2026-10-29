@@ -11,7 +11,7 @@
 
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
-| M1.4-BG-1 | Background gradients (forest, mountain) | 🔄 In Progress | Agent-DeepSeek | ... |
+| M1.4-BG-1 | Background gradients (forest, mountain) | ❌ Pending | - | - |
 | M1.4-BG-2 | Cloud generation and parallax | ❌ Pending | - | - |
 | M1.4-BG-3 | Sun, moon, stars rendering | ❌ Pending | - | - |
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
@@ -20,7 +20,7 @@
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
 | M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) in `d780b99` |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
-| M1.5-LIQUID-2 | Water styles and shimmer | 🔄 In Progress | Agent-DeepSeek | Finish the liquid draw: honey/shimmer waterfall passes, shimmer sparkle, ambient light; check water style selection |
+| M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
 ### Milestone 2 — Player
 
@@ -48,7 +48,7 @@
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
 | M4-NPC-1 | Remaining NPC types (780 total) | ❌ Pending | - | ~780 AI implementations |
-| M4-SPAWN | NPC spawn/biome/night rules | ❌ Pending | - | - |
+| M4-SPAWN | NPC spawn/biome/night rules | ✅ Done | Agent-Nemotron | `tr-app/src/spawner.rs`: `Spawner.TrySpawnAnNPC` port — `GetSpawnRate` depth/night/town/nearby multipliers + clamps, `GetSpawnArea`/`FindSpawnTile` 50-candidate scan, `CheckNotSpawningOnScreen`, `HasTileSpawnSpace` (2×3), `FindGroundTile`, `PostCheckChosenSpawnTile`, surface day-slime/night-eye/zombie selection; wired into `update_npcs` per 60 Hz tick |
 | M4-LOOT | Full loot tables/item drops | ❌ Pending | - | - |
 | M4-PROJ | Projectile system (~1100 types) | ❌ Pending | - | - |
 | M4-DAMAGE | Damage types/defense/crits | ❌ Pending | - | - |
