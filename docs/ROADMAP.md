@@ -300,9 +300,9 @@ engine.
    the retail `Content` directory at runtime instead of pre-extracted PNGs; HUD and
    inventory text now uses `Mouse_Text`/`Item_Stack`. ✅ (0-diff decode test for
    `Images/Tiles_0.xnb`; fonts parse as 212-glyph DXT3 pages).
-4. M4 three enemies + King Slime + shuriken ✅; next: more of `NPC.cs` and projectiles.
-5. M5 forest/snow/desert ✅; next: corruption/jungle/structures and hardmode spread.
-6. Everything else.
+5. M4 three enemies + King Slime + shuriken ✅; next: more of `NPC.cs` and projectiles.
+6. M5 forest/snow/desert ✅; next: corruption/jungle/structures and hardmode spread.
+7. Everything else.
 
 ## Non-goals for now
 
