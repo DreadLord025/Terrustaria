@@ -128,7 +128,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
-87d782a  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)
+8bc63a1  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)
 7d9710a  [M1.4-BG-7]     Cave backdrop anchoring + water pass restore (Agent-Qoder)
 e0f1ea7  [M4-SPAWN]       Port the Spawner.TrySpawnAnNPC pipeline      (Agent-Nemotron)
 918b5a5  [M6-MUSIC]      XACT/MS-ADPCM music engine + 3D attenuation (Agent-Audio)
