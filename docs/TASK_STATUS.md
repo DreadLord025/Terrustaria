@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29T19:15Z  
+**Last updated:** 2026-10-29T19:40Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -18,7 +18,7 @@
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
-| M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) committed on top |
+| M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) in `d780b99` |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
 | M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
@@ -72,8 +72,8 @@
 
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
-| M6-MUSIC | XACT/WMA music playback | ❌ Pending | - | - |
-| M6-3DAUDIO | 3D audio attenuation | ❌ Pending | - | - |
+| M6-MUSIC | XACT/WMA music playback | 🔄 In Progress | Agent-Audio | `Main.UpdateAudio`/`Main.GetMusicTrack` selection + `SoundEngine.PlayMusic`; MS-ADPCM wave bank decode (`tr-content/xact.rs`, `adpcm.rs`) and `audio::MusicSystem` fade/loop |
+| M6-3DAUDIO | 3D audio attenuation | 🔄 In Progress | Agent-Audio | `SoundEngine.PlaySound` distance/pan math, `SoundEngine.Update` 3D re-positioning, music/sound/ambient volume application |
 | M6-LOCALIZE | Localization system | ✅ Done | Agent-DeepSeek | `tr-core/src/localization.rs`: `GameCulture`/`LocalizedText`/`VariableText`/`LanguageManager` (JSON loader, `$`-variants, `{$Key}` copy commands, `{Name}`/conditions, `format_net`); 11 tests incl. the shipped `en-US` files. UI wiring still pending |
 
 ### Milestone 7 — UI (1:1 layout)
@@ -100,6 +100,8 @@
 
 ```
 M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026-10-29T18:15Z)
+M6-MUSIC      XACT/MS-ADPCM music playback — Agent-Audio (started 2026-10-29T18:25Z)
+M6-3DAUDIO    SoundEngine 3D attenuation — Agent-Audio (started 2026-10-29T18:25Z)
 ```
 
 ---
@@ -107,8 +109,8 @@ M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026
 ## ✅ Recently Completed
 
 ```
-4d42f34  [M1.5-LIGHT-2] Port the full per-type tile light switch  (Agent-DSV4)
-         app wiring (main.rs LightParams) in the follow-up commit
+d780b99  [M1.5-LIGHT-2] Wire the per-type tile light into the app  (Agent-DSV4)
+4d42f34  [M1.5-LIGHT-2] Port the full per-type tile light switch   (Agent-DSV4)
 74bcf10  [M6-LOCALIZE]   Port the localization core                  (Agent-DeepSeek)
 077f0d6  [M1.5-LIQUID-1] Port the WaterfallManager overlay          (Agent-DeepSeek)
 79680f2  [M3-TORCH]      Port WorldGen.CheckTorch attachment frames  (Agent-DeepSeek)
@@ -118,13 +120,13 @@ M7-UI-1/2     Menu framework + settings screens — Agent-DeepSeek (started 2026
 
 ## ⚠️ Coordination notes (2026-10-29T18:40Z)
 
-- **`HEAD` does not build** as of `4d42f34`: that checkpoint commit landed
-  `tr-core/src/{lighting,tile_light}.rs` without the matching `tr-app/src/main.rs`
-  `LightParams` wiring (so `tr-app` fails), and the committed `tr-content/src/adpcm.rs`
-  and `xact.rs` also do not compile (the audio/music agent's fixes are still uncommitted
-  in the working tree). M1.5-LIGHT-2's wiring was committed on top to restore `main.rs`;
-  the two `tr-content` files still need the audio agent's fix to land.
-
+- **`tr-app` does not build in the working tree right now.** As of this note the last
+  `cargo test --workspace` failed inside `crates/tr-app/src/audio.rs` (the uncommitted
+  `impl Source for Panned<S>` uses `current_span_len`, which the pinned `rodio` does not
+  declare) — that is Agent-Audio's in-flight M6-MUSIC work, not a committed regression.
+  `tr-core` alone builds and its 67 tests pass. Earlier, the `HEAD` at `4d42f34` also did
+  not build because it landed `tr-core/src/{lighting,tile_light}.rs` without the matching
+  `tr-app/src/main.rs` `LightParams` wiring; M1.5-LIGHT-2's `d780b99` restored that.
 - **`main.rs` was clobbered.** At ~17:56 an in-flight edit replaced `crates/tr-app/src/main.rs`
   with a pre-waterfall version: the whole `WaterfallManager` wiring and the committed
   M1.5-LIGHT-1 `mouseTextColor` flicker disappeared, and the file referenced

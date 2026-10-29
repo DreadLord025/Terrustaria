@@ -195,9 +195,12 @@ Ported in `tr-core/src/lighting.rs`:
      sun (`Main.tileNoSunLight`, with the slope/half-brick liquid rule), plus the gem-wall
      colour override.
    - `ApplyHellLight` — below `height - 200`: `0.55 + sin(t·2)·0.08` warm glow.
-   - `ApplyWallLight` — the `Main.wallLight` table plus the crystal/gem/living-fire walls.
-   - `ApplyTileLight` — the full `switch (tile.type)` port in `tile_light.rs`.
-   - `ApplyLiquidLight` — lava/honey/shimmer self-illumination.
+   - `ApplyWallLight` — the `Main.wallLight` table (16 glowing wall types) with per-type
+     colours extracted by `tools/GenTileData`, plus the crystal-wall random flicker and the
+     disco walls (44, 346).
+   - `ApplyTileLight` — the full 147-case switch (see "Per-type tile light" below).
+   - `ApplyLiquidLight` — lava/shimmer self-illumination; the original compares every
+     channel against the unscaled base and then stores the scaled value.
 3. **Decay per tile** (`LightDecayThrough*`): air `0.91`, solid `0.56`, cracked bricks `0.8`,
    water `(0.88, 0.96, 1.015)·0.91` with a per-cell jitter, honey `(0.75, 0.7, 0.6)·0.91`.
    This is why surface dirt is already ~half as bright one tile under the grass — `0.56` per
@@ -222,9 +225,70 @@ Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 `light at 3200,402 = 0.560,0.560,0.560` for the first dirt row under the grass — exactly
 `Main.tileColor` (white) × `0.56`; the renderer multiplies that by `GlobalBrightness`.
 
-Deliberate simplifications:
+### Per-type tile light (M1.5-LIGHT-2)
 
-- Sun/moon/star light and invisible blocks/walls are not ported.
+`tr-core/src/tile_light.rs` is a case-for-case port of `TileLightScanner.ApplyTileLight`
+(147 top-level `case` labels in the decompiled source, ~2 800 lines), plus
+`ApplyWallLight`, `ApplySurfaceLight` and `ApplyHellLight`. It replaces the earlier
+`EMISSIVE`-table approximation, which only covered the 43 types whose colour is a plain
+constant and silently missed every conditional arm.
+
+What the port covers:
+
+- **Frame-selected colours** — torches (4), candles (33), lamps (93), chandeliers (34),
+  lanterns (42, 100, 173), campfires (215), chinese lanterns (405), living fire (592-594),
+  gemspark (429), rainbow bricks (719), and the gem tiles whose colour lives in the parent
+  tile's packed `frameY` bits (171).
+- **Animated colours** — `Main.DiscoR/G/B` (disco torches, gemspark, painted lamps),
+  `Main.demonTorch` (demon torch and its hsl variant), `Main.mouseTextColor` (every flicker
+  term), `Main.GlobalTimeWrappedHourly` (rainbow bricks, the 620 pulse),
+  `Main.timeForVisualEffects` (350), `Main.time`/`dayTime`/`raining` (83),
+  `Main.sundialCooldown`/`moondialCooldown` (356/663) and `Main.shimmerDarken`
+  (`ApplySurfaceLight`).
+- **Paint** — `flag` in the original means "this lamp's colour came from its frame, so a
+  paint coat replaces it". The 93/33/34/100/173 tables set it for their painted arms and
+  `739`, `519` and the 70-72/190/348/349/528/578 family set it when painted.
+- **Per-tile randomness** — `Terraria.Utilities.FastRandom`: the scanner keeps one LCG
+  state, re-seeds it every frame and derives a per-tile stream with `WithModifier(x, y)`.
+  `FastRandom` in `tile_light.rs` reproduces the multiplier/mask, `NextBits`,
+  `NextFloat` and both `Next` overloads. Our seed is `world.seed ^ frame * golden` instead
+  of `Guid.NewGuid()`, so screenshots at a fixed frame are reproducible.
+- **Tables** — the five largest arms (93, 33, 34, 100/173, 42: 1 535 lines of C#) are
+  extracted mechanically by `tools/gen_tile_light_tables.py`, which also resolves the
+  stacked `case 7: case 8:` labels and the four dynamic entries each table contains
+  (paint, demon torch, shimmer, `0.5/0.9/1.0 + flag`). Re-run it after a source update.
+
+Deliberate deviations, all invisible in the current content set:
+
+- `tile.invisibleBlock()` / `tile.invisibleWall()` are not stored in the packed 12-byte
+  tile; an invisible block/wall is treated as visible (the scanner's `_drawInvisibleWalls`
+  off path).
+- `tile.wallColor()` is not stored, so a painted glowing wall is treated as unpainted. The
+  tile paint (`tile.color()`) *is* stored and drives the lamp override.
+- The jellyfish-cage animation state machine (`Main.Update`'s `jellyfishCageMode`) is not
+  ticked yet; `LightParams::cage_mode` is zeroed, which selects the dim cage colour.
+- `new Color(230,230,230,0).MultiplyRGBA(hsl) * 0.4f` (type 620) is reproduced with the
+  XNA byte multiply (`>> 8`) and byte truncation, which can differ from XNA by one LSB.
+- The `Main.liquidAlpha[13]` blue boost needs `shimmer_alpha`, which the app still passes
+  as 0 (the shimmer biome does not exist yet).
+- `Main.time` is `f32` here (the original is `double`); the affected comparisons
+  (`time > 40500`, `time < 16200`) are exact at these magnitudes.
+- `demonTorch`, `DiscoR/G/B` and `mouseTextColor` advance once per *rendered* frame rather
+  than per fixed 60 Hz tick, so at other frame rates their phase differs from the original.
+
+Because the flicker inputs change every frame, the D2/D3 light cache now misses on every
+frame (`TR_STATS` reports `reused=0%`). That matches the original, which recomputes the
+whole light map per frame, but it gives back the "static view costs 0 ms" property the
+M1.5 optimisation pass measured; `TR_NOCACHE=1` no longer changes the outcome.
+
+Verified numerically with `TR_LIGHT_AT`: at midnight a `Torch` (`frameY 0`) tile reads
+exactly `[1.000, 0.950, 0.800] = TorchID.TorchColor` (base torches are constant; only ids
+7/14/23 animate), and surface air at noon reads `[1,1,1]`.
+
+Remaining lighting gaps:
+
+- Sun/moon/star light and the `Lighting.GetColor` shader path for light *behind* tiles are
+  not ported.
 - The shader has an aberration hook (`Globals::aberration`), but it is disabled for Trippy
   until instances carry a per-sprite flag: shifting full-screen sky quads samples past
   their atlas sheet.
@@ -238,42 +302,6 @@ Deliberate simplifications:
   per-column fade to cave darkness that starts at each column's first solid tile.
 `Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
 and light are quantised to one-second steps so the map/instance caches still hit.
-
-### Per-type tile light (M1.5-LIGHT-2)
-
-`TileLightScanner.ApplyTileLight` is a 147-case `switch (tile.type)`; the port lives in
-`tile_light.rs` and every case is translated in source order. The large frame→colour tables
-are extracted mechanically by `tools/gen_tile_light_tables.py` so they cannot drift. The
-same module owns `ApplyWallLight`, `ApplySurfaceLight`, `ApplyHellLight`,
-`TorchID.TorchColor` (including the Demon/Disco/Shimmer providers), `Main.hslToRgb`
-(.NET `Math.Round` banker's rounding reproduced), `WorldGen.paintColor` and
-`LiquidRenderer.GetShimmerBaseColor`.
-
-`Terraria.Utilities.FastRandom` is reimplemented (48-bit LCG, `NextSeed`, `WithModifier`,
-`Next(min,max)`); the scanner advances the base seed once per frame and derives one stream
-per tile, which is what makes torch/campfire/crystal light jitter per tile instead of
-pulsing uniformly.
-
-Verified numerically with `TR_LIGHT_AT` (no pixel A/B: `HEAD` does not build, see
-`TASK_STATUS.md`): at midnight a `Torch` (`frameY 0`) tile reads exactly
-`[1.000, 0.950, 0.800] = TorchID.TorchColor` (the base torches are constant; only ids
-7/14/23 animate), and surface air at noon reads `[1,1,1]`.
-
-Deliberate deviations, all because the source state is not simulated yet:
-
-- `Main.invisibleBlock()` and `tile.wallColor()` are not stored in the packed 12-byte
-  `Tile`, so an invisible block is treated as visible and a painted wall as unpainted (the
-  `flag && tile.color() != 0` paint override therefore never fires for walls, only for
-  lamps).
-- `Main.shimmerDarken`, `Main.liquidAlpha[13]`, `Main.sundialCooldown`/`moondialCooldown`
-  are passed as their neutral values, and `Main.jellyfishCageMode` stays 0 (the
-  `Main.AnimateTiles` cage animation is not ported), so the shimmer surface term, the
-  dial/cooldown cases and the animated cages use their default branches.
-- `Main.time` is `f32` here (the original is `double`); the affected comparisons
-  (`time > 40500`, `time < 16200`) are exact at these magnitudes.
-- `demonTorch`, `DiscoR/G/B` and `mouseTextColor` are advanced once per rendered frame
-  rather than per fixed 60 Hz tick; at other frame rates their phase differs from the
-  original (the pre-existing `mouseTextColor` port had the same property).
 
 ## Liquids
 
