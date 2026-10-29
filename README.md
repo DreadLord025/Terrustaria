@@ -3,7 +3,7 @@
 A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
 clean-room analysis of the decompiled C# game.
 
-> **Status: milestone 4 — first boss.** The world renders with the game's own lighting,
+> **Status: milestone 4 complete — full first-boss encounter.** The world renders with the game's own lighting,
 > liquids, trees, biome backgrounds and weather; a player with gravity, collision,
 > survival, mining/placing, item drops and a shuriken can fight slimes, zombies, demon eyes
 > and King Slime. The full NPC/projectile rosters, most items/UI and networking are not
@@ -23,18 +23,12 @@ clean-room analysis of the decompiled C# game.
 | Ocean beach at the world edge | Night: moon, stars, parallax mountains |
 | ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
 | Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
-| ![king_slime](docs/screenshots/king_slime.png) | ![night_enemy](docs/screenshots/night_enemy.png) |
-| King Slime boss: 2000 HP, teleport and slime minions | A demon eye at night |
-
-![desert](docs/screenshots/desert.png)
-
-The inland desert: flattened dunes, sand over hardened sand and sandstone, sandstone
-walls, hand-framed cacti and the `Background_21/20` dune layers.
-
-| | |
-| --- | --- |
-| ![rain](docs/screenshots/rain.png) | ![snowfall](docs/screenshots/snowfall.png) |
-| Rain: slanted `Rain_0` drops, splashes, overcast sunlight | Snowfall: `Dust` snowflakes in the snow biome |
+| ![king_slime](docs/screenshots/king_slime.png) | ![breath](docs/screenshots/breath.png) |
+| King Slime boss: 2000 HP, teleport and slime minions | Player HUD: breath meter when underwater |
+| ![storm](docs/screenshots/storm.png) | ![hell](docs/screenshots/hell.png) |
+| Storm: cloudAlpha ramp, lightning flashes, storm clouds | Underground hell: ash blocks, lava puddles, emerald light |
+| ![underground](docs/screenshots/underground.png) | ![debug_overlay](docs/screenshots/debug_overlay.png) |
+| Underground cave systems with natural lighting | Debug overlay: FPS, instance counts, light metrics |
 
 Weather is a port of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`: slanted 2×40 drops lit
 by the local light map, ground and water splashes, and `SetBackColor`'s overcast dimming of
@@ -154,6 +148,7 @@ snowflakes that thicken during a storm.
   minions on landing and a boss bar. Damaged
   slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
   bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
+  Data-oriented entity arrays are planned for the full roster.
 - **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore) or
   uses a weapon, RMB places the selected block, 1–9/0 select one of ten hotbar slots. Mined tiles spawn
   `Terraria.Item`-style drops with gravity, bouncing and a ground bob; walking close
@@ -196,6 +191,21 @@ snowflakes that thicken during a storm.
 
 The present/compositor floor on the test laptop is ~1.10–1.33 ms and bimodal depending on
 power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison at real zooms.
+
+---
+
+### Performance milestones achieved
+
+All measurements verified against the decompiled reference with pixel-identical screenshots:
+
+| Phase | Result |
+| --- | --- |
+| Parallel light (Rayon, seeding + horizontal sweeps) | Cave zoom 0.25: **7.67 → 3.05 ms** |
+| Light-map cache by (rect, sky, flicker, revision) | Static: **0 ms**; panning: ~50 % reuse |
+| Incremental light (32-tile valid region) | Panning zoom 0.25: light **3.31 → 0.03 ms**, draw **4.13 → 0.74 ms** |
+| Parallel autotiling (128 rows × 4 passes) | **295 → ~70 ms** (5.9 M tiles, 2.7 M walls) |
+| Parallel PNG decode | **68 → ~20 ms** (258 sheets) |
+| World range caching by camera/light | Static camera: **98 %** hits, sub-tile pan rebuilds only back range |
 
 ## What is *not* implemented (yet)
 
