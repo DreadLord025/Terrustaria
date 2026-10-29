@@ -3523,6 +3523,8 @@ fn draw_sky(
     let view_top = camera.y - screen.y * 0.5 / zoom;
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
+    // `Main.DrawSurfaceBG`: `pushBGTopHack = 30`, then `-180` after the horizon layer.
+    const BG_PUSH: f32 = -150.0;
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && view_top < world_surface_px + TILE_PX;
@@ -3576,9 +3578,9 @@ fn draw_sky(
                 zoom,
                 screen,
                 &far,
-                1.25,
+                2.5,
                 0.37,
-                magic * 1800.0 + 1750.0 + sc_adj,
+                magic * 1800.0 + 1750.0 + sc_adj + BG_PUSH,
                 false,
                 tint,
                 1.0,
@@ -3595,7 +3597,7 @@ fn draw_sky(
                 &far,
                 2.0,
                 0.15,
-                magic * 1300.0 + 1090.0 + sc_adj,
+                magic * 1300.0 + 1090.0 + sc_adj + BG_PUSH,
                 false,
                 tint,
                 1.0,
@@ -3629,9 +3631,9 @@ fn draw_sky(
                 zoom,
                 screen,
                 &near,
-                2.3,
+                2.68,
                 0.49,
-                magic * 2100.0 + 2150.0 + sc_adj,
+                magic * 2100.0 + 2150.0 + sc_adj + BG_PUSH,
                 false,
                 [tint[0] * 0.96, tint[1] * 0.95, tint[2] * 0.9],
                 1.0,
@@ -3648,7 +3650,7 @@ fn draw_sky(
                 &near,
                 2.3,
                 0.20,
-                magic * 1400.0 + 1260.0 + sc_adj,
+                magic * 1400.0 + 1260.0 + sc_adj + BG_PUSH,
                 false,
                 [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
                 1.0,
@@ -3664,7 +3666,7 @@ fn draw_sky(
                     &sea,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj,
+                    magic * 1400.0 + 1260.0 + sc_adj + BG_PUSH,
                     false,
                     tint,
                     1.0,
@@ -3683,13 +3685,14 @@ fn draw_sky(
         } else {
             &sky.forest
         };
-        let scales = [2.5f32, 2.62, 2.74];
+        let scales = [2.5f32, 2.62, 2.68];
         let parallax = [0.40f32, 0.43, 0.49];
         let k = [1800.0f32, 1950.0, 2100.0];
+        // `+1500/1750/2000`, `pushBGTopHack`, and the extra `-50` for `Background_50..52`.
         let c = if snow {
-            [1500.0f32, 1750.0, 2000.0]
+            [1350.0f32, 1600.0, 1850.0]
         } else {
-            [1450.0f32, 1700.0, 1950.0]
+            [1300.0f32, 1550.0, 1800.0]
         };
         for i in 0..3 {
             if let Some(t) = trees[i] {
@@ -3928,8 +3931,12 @@ fn draw_bg_layer(
     } else {
         tex.uv
     };
-    let ox = -((camera.x * parallax).rem_euclid(sw));
-    let mut x = ox - sw;
+    // `bgStartX = (int)(-IEEERemainder(screenPosition.X * bgParallax, bgWidthScaled)
+    // - bgWidthScaled / 2)`: phase against the screen's left edge, not the camera
+    // centre, and half a tile of offset so the tiling is centred on the view.
+    let screen_left = camera.x - screen.x * 0.5 / zoom;
+    let start = -(ieee_remainder(screen_left * parallax, sw) as i32 as f32) - sw * 0.5;
+    let mut x = start;
     while x < screen.x {
         push_screen(
             r,

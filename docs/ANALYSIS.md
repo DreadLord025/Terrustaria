@@ -442,9 +442,12 @@ items are collectible but not placeable. Desert structures and loot are not port
 `Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near
 mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at the
 original's `bgScale` (1·2 and 1.15·2) and 0.15/0.20 parallax, followed by the biome's three
-tree layers (`50..52` forest, `37..39` snow) at 1.25·2/1.31·2/1.37·2 and 0.40/0.43/0.49
+tree layers (`50..52` forest, `37..39` snow) at 1.25·2/1.31·2/1.34·2 and 0.40/0.43/0.49
 parallax; the middle tree layer is mirrored horizontally, exactly as
-`DrawSurfaceBG_Forest` does with `SpriteEffects.FlipHorizontally`. The ocean edge
+`DrawSurfaceBG_Forest` does with `SpriteEffects.FlipHorizontally`. Every layer top uses
+`backgroundTopMagicNumber`, `ComputeScAdj` and `pushBGTopHack` (30 − 180 = −150), and the
+X phase is `-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the
+screen's left edge, as in `DrawSurfaceBG`. The ocean edge
 (`x < 200` or `x > width - 200`) suppresses the tree line and adds `Background_28`, the
 sea horizon with islands. Layer tops use
 `backgroundTopMagicNumber = -(screenTop - 300) / (worldSurface * 16)` plus `ComputeScAdj`,
