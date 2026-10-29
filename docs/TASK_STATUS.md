@@ -17,7 +17,7 @@
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
-| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | 🔄 In Progress | Agent-Qoder | `draw_sky` anchors the underground backdrop to `worldSurface` like `DrawBackground_DirtBackground` (placed rows no longer paint a "wall"); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again |
+| M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a`: `draw_sky` anchors the underground backdrop to `worldSurface` like `DrawBackground_DirtBackground` (placed rows no longer paint a "wall"); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
 | M1.5-LIGHT-2 | Per-type tile lighting | ✅ Done | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom`. Scanner core in `4d42f34`; app wiring (`demonTorch` ramp, `DiscoRGB`, per-frame scanner seed, `LightParams`) in `d780b99` |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
@@ -110,6 +110,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+7d9710a  [M1.4-BG-7]     Cave backdrop anchoring + water pass restore (Agent-Qoder)
 e0f1ea7  [M4-SPAWN]       Port the Spawner.TrySpawnAnNPC pipeline      (Agent-Nemotron)
 918b5a5  [M6-MUSIC]      XACT/MS-ADPCM music engine + 3D attenuation (Agent-Audio)
 6b8e36e  [M7-UI]         Main.DrawMenu menu + settings screens     (Agent-DeepSeek)
