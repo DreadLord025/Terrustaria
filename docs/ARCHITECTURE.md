@@ -70,6 +70,10 @@
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
   (`framing::reframe_area`), so edits do not need a full-world framing pass.
+- `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
+  standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
+  variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
+  `reframe_area`, like `WorldGen.TileFrame`.
 - `tiledata.rs` — **generated** (do not edit) by `tools/GenTileData`: bitset tables for
   `TileID.Sets.*`, `Main.tile*`, the directed merge relation extracted from
   `TileFrameCosmetic`, `LARGE_FRAMES` and `GRASS_DIRT`.

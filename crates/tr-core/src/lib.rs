@@ -11,6 +11,7 @@ pub mod liquid_draw;
 pub mod save;
 pub mod tile;
 pub mod tiledata;
+pub mod torch;
 pub mod tree;
 pub mod waterfall;
 pub mod wld;

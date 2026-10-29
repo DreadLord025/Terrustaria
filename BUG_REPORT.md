@@ -367,7 +367,7 @@ PNGs as a fallback; `Images/Tiles_0.xnb` decodes pixel-identically to the PNG.
 
 ## BUG-021 — NPC and item behaviour gaps (deferred to the NPC/AI milestone)
 
-**Status:** recorded — not fixed yet (the user asked to defer this)
+**Status:** partially fixed — torch attachment in `TORCHFRAMES`; the rest deferred
 **Area:** `tr-app/src/npc.rs`, placing logic in `tr-app/src/main.rs`
 
 **Report:**
@@ -377,7 +377,17 @@ PNGs as a fallback; `Images/Tiles_0.xnb` decodes pixel-identically to the PNG.
   immediately and drops as an item (`Item.CheckTorch`/`WorldGen` torch rules), and
   non-torch items placed in liquid follow `Item.PlaceThing`'s checks.
 
-**Plan:** fix together with the full NPC AI port (all enemies/bosses, their AI, behaviour,
-attacks and patterns), where ambient liquid rules and item placement checks are ported
-from `NPC.cs`/`Item.cs` rather than special-cased. Until then the current behaviour is an
-accepted approximation and must be listed in ROADMAP M4.
+**Finding (torches):** 1.4.5.8 has no `Item.CheckTorch` and no water rule for torches —
+`Player.PlaceThing` only refuses a cell whose liquid is **lava**
+(`targetTile.liquid > 0 && targetTile.lava()`). What the source does have is
+`WorldGen.CheckTorch`, which derives every torch's `frameX` from its neighbours and kills
+the torch when nothing holds it; we were placing every torch with frame `(0,0)`, so
+wall-mounted torches rendered upright. That is now ported (`tr-core/src/torch.rs`, called
+from `edit::place_tile` and `framing::reframe_area`): standing torches use frame 0,
+left/right supports use 22/44, wall-only cells use 0, the tall variant keeps its 66 offset,
+and an unsupported torch is removed without consuming the item. Verified with nine unit
+tests and screenshots (`TR_PLACE=102,30,1;101,30,4;103,30,4`).
+
+**Remaining:** the Demon Eye/liquid behaviour, and the wider `Item.PlaceThing` checks, stay
+deferred to the full NPC AI port, where ambient liquid rules are ported from `NPC.cs`
+rather than special-cased.

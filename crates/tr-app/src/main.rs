@@ -583,13 +583,21 @@ fn main() -> Result<()> {
         }
     }
     let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
-    let dev_place = std::env::var("TR_PLACE").ok().and_then(|v| {
-        let mut it = v.split(',');
-        let x = it.next()?.trim().parse::<i32>().ok()?;
-        let y = it.next()?.trim().parse::<i32>().ok()?;
-        let k = it.next()?.trim().parse::<u16>().ok()?;
-        Some((x, y, k))
-    });
+    // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
+    let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
+        .ok()
+        .map(|v| {
+            v.split(';')
+                .filter_map(|entry| {
+                    let mut it = entry.split(',');
+                    let x = it.next()?.trim().parse::<i32>().ok()?;
+                    let y = it.next()?.trim().parse::<i32>().ok()?;
+                    let k = it.next()?.trim().parse::<u16>().ok()?;
+                    Some((x, y, k))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // `TR_SPOUT=x,y`: build the `FindWaterfalls` half-brick case at a fixed tile (a half
     // brick with full liquid on its right and a clear drop below) so the waterfall
     // overlay can be screenshotted deterministically.
@@ -868,7 +876,7 @@ struct App {
     edit_target: Option<(i32, i32)>,
     world_path: PathBuf,
     dev_break: Option<(i32, i32)>,
-    dev_place: Option<(i32, i32, u16)>,
+    dev_place: Vec<(i32, i32, u16)>,
     camera: Vec2,
     zoom: f32,
     debug: bool,
@@ -1479,7 +1487,7 @@ impl App {
         if let Some((x, y)) = self.dev_break.take() {
             self.break_tile(x, y);
         }
-        if let Some((x, y, kind)) = self.dev_place.take() {
+        for (x, y, kind) in std::mem::take(&mut self.dev_place) {
             if edit::place_tile(&mut self.world, x, y, kind) {
                 self.liquids.wake_around(&self.world, x, y, 3);
                 self.world_key = None;

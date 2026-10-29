@@ -5,10 +5,19 @@
 
 use crate::framing;
 use crate::tile::Tile;
+use crate::tiledata as td;
 use crate::world::World;
 
 /// Breaks the active tile at `(x, y)`, keeping its background wall. Returns the tile id.
 pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
+    let kind = remove_tile(world, x, y)?;
+    after_edit(world, x, y);
+    Some(kind)
+}
+
+/// Clears the active tile at `(x, y)` and keeps the wall and the liquid. The caller is
+/// responsible for re-framing; `break_tile` is the version that does it.
+pub(crate) fn remove_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
     if !t.active() {
         return None;
@@ -21,7 +30,8 @@ pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
         flags: liquid_flags(t.flags),
         ..Default::default()
     };
-    after_edit(world, x, y);
+    world.revision = world.revision.wrapping_add(1);
+    world.mark_chunk(x, y);
     Some(kind)
 }
 
@@ -83,8 +93,13 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
         }
     }
     world.tiles[i] = tile;
+    touch(world, x, y);
+    // `WorldGen.TileFrame` runs `CheckTorch` for torch tiles: the frame follows the
+    // attachment, and an unsupported torch is removed again (the caller then keeps the
+    // item instead of consuming it).
+    let kept = !td::SET_TORCHES.has(kind) || crate::torch::check_torch(world, x, y);
     after_edit(world, x, y);
-    true
+    kept
 }
 
 fn liquid_flags(flags: u8) -> u8 {
@@ -92,15 +107,18 @@ fn liquid_flags(flags: u8) -> u8 {
     flags & (FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER)
 }
 
-fn after_wall_edit(world: &mut World, x: i32, y: i32) {
+/// Marks the cell as changed for the caches (`World::revision`, chunk occupancy).
+fn touch(world: &mut World, x: i32, y: i32) {
     world.revision = world.revision.wrapping_add(1);
     world.mark_chunk(x, y);
+}
+
+fn after_wall_edit(world: &mut World, x: i32, y: i32) {
+    touch(world, x, y);
     framing::reframe_area(world, x, y, 2);
 }
 
 fn after_edit(world: &mut World, x: i32, y: i32) {
-    world.revision = world.revision.wrapping_add(1);
-    world.mark_chunk(x, y);
     world.recompute_column_surface(x);
     framing::reframe_area(world, x, y, 2);
 }

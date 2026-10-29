@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29  
+**Last updated:** 2026-10-29T18:10Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -18,7 +18,7 @@
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
 | M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
-| M1.5-LIGHT-2 | Per-type tile lighting | ❌ Pending | - | - |
+| M1.5-LIGHT-2 | Per-type tile lighting | 🔄 In Progress | Agent-DSV4 | Full `TileLightScanner.ApplyTileLight`/`ApplyWallLight` port: all 147 cases, paint-coloured light, disco/demon/shimmer dynamics, per-tile `FastRandom` |
 | M1.5-LIQUID-1 | Waterfall overlays | ✅ Done | Agent-DeepSeek | `waterfall.rs` ports `FindWaterfalls`/`UpdateFrame`/`DrawWaterfall`; wired between the non-solid and solid passes; lake A/B pixel-identical; see ANALYSIS.md "Waterfall overlay" |
 | M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
@@ -36,6 +36,7 @@
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
 | M3-TOOL | Tool tiers and durability | ❌ Pending | - | - |
+| M3-TORCH | Torch attachment frames (`CheckTorch`) | ✅ Done | Agent-DeepSeek | `tr-core/src/torch.rs`: frames 0/22/44, tall 66 offset, removal when unsupported; run from `place_tile` and `reframe_area` |
 | M3-EQUIP | Equipment slots and paint | ❌ Pending | - | - |
 | M3-ACTUATOR | Actuators | ❌ Pending | - | - |
 | M3-CRAFT | Recipe.cs crafting menu | ❌ Pending | - | Port ItemSlot contexts 4/33 |
@@ -88,7 +89,7 @@
 ## 🔥 Current Assignments (in progress)
 
 ```
-No tasks currently assigned
+M1.5-LIGHT-2  Per-type tile lighting  — Agent-DSV4  (started 2026-10-29T18:10Z)
 ```
 
 ---

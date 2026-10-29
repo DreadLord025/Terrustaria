@@ -537,6 +537,36 @@ Not ported: the full `Item.cs` use logic, tool requirements and mining speed, it
 sheet lookup, inventory windows/crafting/chests, paint, actuators/wiring, and liquid
 re-simulation after an edit.
 
+### Torch attachment (`WorldGen.CheckTorch`)
+
+`tr-core/src/torch.rs` ports `WorldGen.CheckTorch` with the helpers it calls
+(`TopEdgeCanBeAttachedTo`, `PlatformProperTopFrame`, `IsTreeType`), because torches are
+`frame-important`: their `frameX` is derived from the neighbours, not stored in the save.
+`WorldGen.TileFrame` runs it for every `TileID.Sets.Torches` tile, so the port is called
+from `edit::place_tile` (right after the block is written) and from
+`framing::reframe_area` for every torch in the 5×5 area — mining the block a torch hangs
+on therefore re-frames or removes it in the same edit, as in the original.
+
+- `frameX` is `0` when the torch stands on a solid, attachable tile below (or a platform
+  whose top edge can be attached to, `PlatformProperTopFrame`), `22` when it hangs on a
+  solid/beam/tree trunk to its left, `44` for the right, and `0` when only a background
+  wall holds it. An existing `frameX >= 66` (the tall/hanging variant) keeps its 66
+  offset, matching the `short num = (tile.frameX >= 66) ? 66 : 0` in the source.
+- When nothing holds it and the cell has no wall, the torch is removed
+  (`WorldGen.KillTile`): `edit::remove_tile` keeps the wall and the liquid, and
+  `place_tile` reports failure so the caller does not consume the item.
+- Data tables: `Main.tileNoAttach` (63 ids), `TileID.Sets.IsBeam` and
+  `TileID.Sets.IsATreeTrunk` are literal extractions held in `torch.rs`, because
+  `tools/GenTileData` no longer matches the current decompilation (see risk 9).
+- Deviation: the saved-world load path does not re-run `CheckTorch` (frames come from the
+  file); only edits and placements do. Vanilla re-frames the whole world on load.
+
+Verification: nine unit tests in `torch.rs` (standing, left/right wall, wall-only,
+no-attach neighbour, platform below, half-brick below, unsupported removal, 66 offset);
+in-game screenshots with `TR_PLACE` (now a `;`-separated list) show an upright torch on a
+block and two torches rotated onto the left/right faces of a block, and an unsupported
+torch never appears.
+
 ## NPCs and combat (M4 first pass)
 
 `tr-app/src/npc.rs` adds a hopping blue slime (gravity, AABB collision, hop timer, wall
@@ -637,6 +667,14 @@ bosses and multiplayer sync.
    compact generator and native save give a stable test world; full parity is M5.
 6. **Networking** must match the exact 1.4.5.8 packet layout to interoperate; not required
    for single-player parity.
+7. **`tools/GenTileData` is stale.** The current decompilation writes `Main.`-prefixed
+   assignments (`Main.tileSolid[0] = true;`) and lives under `decompiled/Terraria/ID/`
+   and `decompiled/Terraria/Graphics/Light/`, while the generator's regexes expect the bare
+   names and the old flat paths. Running it today emits empty tables (`sets: 0`,
+   `tileSolid=0`) and would destroy `tiledata.rs`; it was reverted. Until the generator is
+   updated, new tables that the generated file does not carry are extracted by hand and
+   documented where they live (e.g. `torch.rs`). Fix the generator before the next
+   data-table port.
 
 Note: tile id **0 is dirt**, not air. The asset usage scan must include it; the active flag
 is the only air test.

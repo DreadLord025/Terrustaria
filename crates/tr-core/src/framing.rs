@@ -543,6 +543,7 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
     let important = world.frame_important.clone();
     let mut tiles = Vec::new();
     let mut walls = Vec::new();
+    let mut torches = Vec::new();
     for y in (cy - r).max(1)..=(cy + r).min(world.height - 2) {
         for x in (cx - r).max(1)..=(cx + r).min(world.width - 2) {
             let Some(t) = world.tile(x, y) else {
@@ -552,6 +553,9 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
                 if let Some(f) = frame_of(world, x, y) {
                     tiles.push((x, y, f));
                 }
+            }
+            if t.active() && td::SET_TORCHES.has(t.kind) {
+                torches.push((x, y));
             }
             if t.wall != 0 {
                 if let Some(w) = wall_frame_of(world, x, y) {
@@ -571,6 +575,11 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32) {
         let t = &mut world.tiles[idx];
         t.set_wall_frame(col, t.wall_row());
         t.set_wall_frame(t.wall_col(), row);
+    }
+    // `WorldGen.TileFrame` re-runs `CheckTorch` for the torches it touches: the frame
+    // follows the attachment and a torch whose support is gone is removed.
+    for (x, y) in torches {
+        crate::torch::check_torch(world, x, y);
     }
 }
 
