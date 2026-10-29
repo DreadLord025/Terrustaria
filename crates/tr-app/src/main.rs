@@ -3526,10 +3526,13 @@ fn draw_sky(
     // forest down into the view whenever the player is on a hill.
     let snow = is_snow_biome(world, camera);
     let desert = !snow && is_desert_biome(world, camera);
+    // `Main.screenPosition` is the *unzoomed* view top-left: the surface background
+    // is laid out in that space (`DrawSurfaceBG` uses `screenPosition` directly), so
+    // changing `GameZoomTarget` must not move or resize it.
     let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
-    let view_top = camera.y - screen.y * 0.5 / zoom;
+    let view_top = camera.y - screen.y * 0.5;
     let magic = (300.0 - view_top) / world_surface_px;
-    let sc_adj = bg_scale_adjust(world, view_top, screen.y / zoom);
+    let sc_adj = bg_scale_adjust(world, view_top, screen.y);
     // `Main.DrawSurfaceBG`: `pushBGTopHack = 30`, then `-180` after the horizon layer.
     const BG_PUSH: f32 = -150.0;
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
@@ -3551,7 +3554,7 @@ fn draw_sky(
                 &t,
                 1.65,
                 0.09,
-                magic * 900.0 + 600.0 + sc_adj,
+                magic * 900.0 + 600.0 + sc_adj + 30.0,
                 false,
                 [tint[0] * 0.9, tint[1] * 0.92, tint[2] * 0.96],
                 storm,
@@ -3566,7 +3569,7 @@ fn draw_sky(
                 &t,
                 1.85,
                 0.12,
-                magic * 1100.0 + 750.0 + sc_adj,
+                magic * 1100.0 + 750.0 + sc_adj + 30.0,
                 false,
                 tint,
                 (storm * 1.5).min(1.0),
@@ -3604,7 +3607,7 @@ fn draw_sky(
                 &far,
                 2.0,
                 0.15,
-                magic * 1300.0 + 1090.0 + sc_adj + BG_PUSH,
+                magic * 1300.0 + 1090.0 + sc_adj + 30.0,
                 false,
                 tint,
                 1.0,
@@ -3657,7 +3660,7 @@ fn draw_sky(
                 &near,
                 2.3,
                 0.20,
-                magic * 1400.0 + 1260.0 + sc_adj + BG_PUSH,
+                magic * 1400.0 + 1260.0 + sc_adj + 30.0,
                 false,
                 [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
                 1.0,
@@ -3673,7 +3676,7 @@ fn draw_sky(
                     &sea,
                     2.3,
                     0.20,
-                    magic * 1400.0 + 1260.0 + sc_adj + BG_PUSH,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
                     false,
                     tint,
                     1.0,
@@ -3941,7 +3944,7 @@ fn draw_bg_layer(
     // `bgStartX = (int)(-IEEERemainder(screenPosition.X * bgParallax, bgWidthScaled)
     // - bgWidthScaled / 2)`: phase against the screen's left edge, not the camera
     // centre, and half a tile of offset so the tiling is centred on the view.
-    let screen_left = camera.x - screen.x * 0.5 / zoom;
+    let screen_left = camera.x - screen.x * 0.5;
     let start = -(ieee_remainder(screen_left * parallax, sw) as i32 as f32) - sw * 0.5;
     let mut x = start;
     while x < screen.x {
@@ -4452,7 +4455,6 @@ fn draw_tiles(
                     stats.quads += 1;
                 } else if style.sliced_blocks
                     && solid
-                    && tf.opaque
                     && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT
                 {
                     stats.quads +=

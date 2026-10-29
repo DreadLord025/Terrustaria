@@ -8,7 +8,7 @@
 use std::sync::OnceLock;
 
 use crate::tile::*;
-use crate::tile_light::{self, light_blocked, FastRandom};
+use crate::tile_light::{self, FastRandom, light_blocked};
 use crate::tiledata as td;
 use crate::world::World;
 use rayon::prelude::*;
@@ -264,7 +264,11 @@ impl LightParams {
     /// bit-exactly, so a new field here cannot silently go stale.
     fn key(&self, world_revision: u64) -> LightKey {
         LightKey {
-            sky: [self.sky[0].to_bits(), self.sky[1].to_bits(), self.sky[2].to_bits()],
+            sky: [
+                self.sky[0].to_bits(),
+                self.sky[1].to_bits(),
+                self.sky[2].to_bits(),
+            ],
             hell_glow: self.hell_glow.to_bits(),
             mouse_text_color: self.mouse_text_color,
             demon_torch: self.demon_torch.to_bits(),
@@ -438,8 +442,8 @@ impl LightMap {
     }
 
     /// `Lighting.GetColor4Slice`: four quadrant samples. Each quadrant takes the
-    /// brighter of its two axis neighbours (the original's cheap diagonal stand-in)
-    /// averaged with this tile, matching the medium-quality block draw.
+    /// **darker** of its two axis neighbours (`Lighting.cs:530-586`) averaged with
+    /// this tile (`(slice + own) * 0.5`), matching the medium-quality block draw.
     pub fn quad4(&self, x: i32, y: i32) -> [[f32; 3]; 4] {
         let own = self.get(x, y);
         let up = self.get(x, y - 1);
@@ -447,7 +451,8 @@ impl LightMap {
         let left = self.get(x - 1, y);
         let right = self.get(x + 1, y);
         let sum = |c: [f32; 3]| c[0] + c[1] + c[2];
-        let pick = |a: [f32; 3], b: [f32; 3]| if sum(a) >= sum(b) { a } else { b };
+        // `if (up >= left) slice = left else slice = up`: the darker neighbour wins.
+        let pick = |a: [f32; 3], b: [f32; 3]| if sum(a) >= sum(b) { b } else { a };
         let avg = |n: [f32; 3]| {
             [
                 (own[0] + n[0]) * 0.5,
