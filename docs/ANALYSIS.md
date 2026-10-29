@@ -846,8 +846,14 @@ header; `segments[0]` is `BANKDATA` (`flags`, `entryCount`, `name[64]`, `metaEle
 (`offset`, `length`) and the loop region (`start`, `total`). The mini-format's codec tag
 `2` is MS-ADPCM; the on-disk `blockAlign` field packs `(field + 22) * channels`, so stereo
 music has 140-byte blocks and every play length is a whole number of blocks. The decoder
-lives in `adpcm.rs`. A test decodes `Music_1` through the bank and checks the PCM is
-in-range and non-constant.
+lives in `adpcm.rs`. Stereo blocks use a **field-interleaved** header
+(`pL pR | dL dR | s1L s1R | s2L s2R`, 14 bytes), *not* two contiguous 7-byte channel
+headers; each payload byte carries the left nibble in the high half and the right in the
+low half, and the first two output frames are `sample2` then `sample1`. Reading the header
+per channel seeds every 128-frame block with garbage (audible as broken, crackling music).
+The port matches libsndfile's `msadpcm_decode_block` bit-for-bit on retail `Music_1`.
+Tests cover a synthetic block header, per-channel smoothness and block-boundary continuity,
+and decode `Music_1` through the bank.
 
 The sound bank header stores the counts at `0x13`/`0x15`/`0x19`/`0x1C` and the section
 offsets at `0x22` (simple cues), `0x42` (name table) and `0x4A` (bank name). A simple cue
