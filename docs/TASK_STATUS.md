@@ -17,9 +17,9 @@
 | M1.4-BG-4 | Day-night cycle and sky colors | ❌ Pending | - | - |
 | M1.4-BG-5 | Rain and snow systems | ❌ Pending | - | - |
 | M1.4-BG-6 | Biome background variants | ❌ Pending | - | - |
-| M1.5-LIGHT-1 | Star/Moon/Light flicker | ❌ Pending | - | - |
+| M1.5-LIGHT-1 | Star/Moon/Light flicker | ✅ Done | Agent-Nemotron | Ported mouseTextColor flicker (torch/lava/shimmer/crystal-wall light oscillation), committed |
 | M1.5-LIGHT-2 | Per-type tile lighting | ❌ Pending | - | - |
-| M1.5-LIQUID-1 | Waterfall overlays | ❌ Pending | - | - |
+| M1.5-LIQUID-1 | Waterfall overlays | 🔄 In Progress | Agent-DeepSeek | Porting WaterfallManager.cs (FindWaterfalls/UpdateFrame/DrawWaterfall) |
 | M1.5-LIQUID-2 | Water styles and shimmer | ❌ Pending | - | - |
 
 ### Milestone 2 — Player

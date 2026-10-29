@@ -681,7 +681,7 @@ fn main() -> Result<()> {
         join_target,
         map: Some(world_map),
         audio: audio::Audio::new(assets::content_dir()),
-        music: audio::Music::new(),
+        music: audio::MusicSystem::new(assets::content_dir()),
         last_hp: 100,
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
@@ -724,11 +724,16 @@ fn main() -> Result<()> {
             .ok()
             .and_then(|v| parse_light_mode(&v))
             .unwrap_or(LightMode::Color),
+        // `Main.mouseTextColor` starts at 225 and drifts toward 255.
+        mouse_text_color: 225,
+        mouse_text_color_dir: 1,
         anim_time: 0.0,
         has_liquids,
         liquids: liquids_sim,
         liquid_accum: 0.0,
         liquid_tick: 0,
+        waterfall: tr_core::waterfall::WaterfallManager::new(),
+        waterfall_accum: 0.0,
         rain,
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
@@ -868,12 +873,19 @@ struct App {
     stats_acc: StatsAcc,
     debug_cache: DebugCache,
     light_mode: LightMode,
+    /// `Main.mouseTextColor`: oscillates 190..=255 each frame, driving torch/lava/shimmer
+    /// crystal-wall flicker (`DoUpdate_AnimateCursorColors` in Main.cs).
+    mouse_text_color: u8,
+    mouse_text_color_dir: i8,
     anim_time: f32,
     has_liquids: bool,
     /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
     liquids: LiquidSystem,
     liquid_accum: f32,
     liquid_tick: u32,
+    /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
+    waterfall: tr_core::waterfall::WaterfallManager,
+    waterfall_accum: f32,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     rain: Rain,
     /// World item drops (`Terraria.Item` first pass).
@@ -919,6 +931,8 @@ struct WorldFrameKey {
     hand_key: u32,
     /// Light-map generation; a recompute (D3) changes tile tints.
     light_generation: u64,
+    /// Waterfall animation frames + visible-list revision (0 when none visible).
+    waterfall: u64,
     world_revision: u64,
 }
 
@@ -1314,6 +1328,32 @@ impl App {
             steps += 1;
         }
         self.liquid_accum = acc.min(step * 8.0);
+    }
+
+    /// Fixed 60 Hz `WaterfallManager.UpdateFrame` / `FindWaterfalls`, matching the
+    /// original's per-update tick and 30-tick rescan cadence.
+    fn update_waterfalls(&mut self, dt: f32, screen: Vec2) {
+        let step = 1.0 / 60.0;
+        let mut acc = self.waterfall_accum + dt.min(0.25);
+        let mut steps = 0;
+        while acc >= step && steps < 8 {
+            self.waterfall.update_tick();
+            acc -= step;
+            steps += 1;
+        }
+        self.waterfall_accum = acc.min(step * 8.0);
+        if steps == 0 {
+            return;
+        }
+        let half = screen * 0.5 / self.zoom;
+        let view = [
+            ((self.camera.x - half.x) / TILE_PX).floor() as i32 - 1,
+            ((self.camera.y - half.y) / TILE_PX).floor() as i32 - 1,
+            ((self.camera.x + half.x) / TILE_PX).ceil() as i32 + 1,
+            ((self.camera.y + half.y) / TILE_PX).ceil() as i32 + 1,
+        ];
+        self.waterfall
+            .find_waterfalls(&self.world, view, false);
     }
 
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
@@ -2260,6 +2300,7 @@ impl App {
                 self.update_npcs(dt);
             }
             self.update_liquids(dt);
+            self.update_waterfalls(dt, screen);
             self.update_rain(dt, screen);
             self.update_items(dt);
             self.update_projectiles(dt);
@@ -2322,6 +2363,7 @@ impl App {
                 light_mode,
                 has_liquids,
                 liquids,
+                waterfall,
                 rain,
                 items,
                 swing,
@@ -2377,10 +2419,20 @@ impl App {
                     sky_tint[2] * rain_dim,
                 ];
                 let sky_light = tile_color(sky_tint);
+                // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
+                // 190..=255, changing by 1 per frame, driving light flicker.
+                self.mouse_text_color = (self.mouse_text_color as i32 + self.mouse_text_color_dir as i32).clamp(190, 255) as u8;
+                if self.mouse_text_color >= 255 {
+                    self.mouse_text_color_dir = -1;
+                }
+                if self.mouse_text_color <= 190 {
+                    self.mouse_text_color_dir = 1;
+                }
+                let torch_flicker = (270.0 - self.mouse_text_color as f32) / 900.0;
                 let params = LightParams {
                     sky: sky_light,
                     hell_glow: 0.55,
-                    torch_flicker: 1.0,
+                    torch_flicker,
                 };
                 let sky_uv = atlas
                     .as_ref()
@@ -2434,6 +2486,7 @@ impl App {
                         held | (phase << 16)
                     },
                     light_generation: light.generation(),
+                    waterfall: waterfall.anim_key(),
                     world_revision: world.revision,
                 };
                 let reuse_world = !no_cache() && *world_key == Some(key);
@@ -2478,6 +2531,7 @@ impl App {
                         scratch,
                         &style,
                         anim_time,
+                        waterfall,
                         render_player.as_ref(),
                         player_assets,
                         npcs,
@@ -3557,6 +3611,7 @@ struct TileDrawStats {
     quads: u32,
     foliage: u32,
     liquids: u32,
+    waterfalls: u32,
     items: u32,
     light_ms: f32,
     draw_ms: f32,
@@ -3648,6 +3703,7 @@ fn draw_tiles(
     scratch: &mut DrawScratch,
     style: &LightStyle,
     anim_time: f32,
+    waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
     npcs: &[Npc],
@@ -3722,6 +3778,27 @@ fn draw_tiles(
             &liquid_draws,
             LiquidPass::Background,
         );
+    }
+
+    // `Main.DoDraw_Waterfalls`: vanilla draws falls after the non-solid tile pass
+    // and before solid tiles. This renderer keeps one row-major tile pass, so the
+    // falls are emitted here; tile quads drawn later occlude their base, while a
+    // wall behind a fall is drawn over it (documented approximation).
+    if std::env::var_os("TR_NO_WATERFALL").is_none() {
+        let mut falls = Vec::new();
+        waterfall.draw(world, light, style, anim_time, [x0, y0, x1, y1], &mut falls);
+        for d in falls {
+            let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+                continue;
+            };
+            r.push_sprite(
+                d.pos,
+                [d.source[2] as f32, d.source[3] as f32],
+                flip_uv(uv, d.flip),
+                d.color,
+            );
+            stats.waterfalls += 1;
+        }
     }
 
     scratch.open.clear();
@@ -3973,8 +4050,13 @@ fn draw_tiles(
             r.push_sprite([pos[0] + dx, pos[1] + dy], [w, h], white, c);
         }
     }
-    stats.instances =
-        stats.quads + stats.walls + stats.dark_rects + stats.foliage + stats.liquids + stats.items;
+    stats.instances = stats.quads
+        + stats.walls
+        + stats.dark_rects
+        + stats.foliage
+        + stats.liquids
+        + stats.waterfalls
+        + stats.items;
     stats.draw_ms = t_total.elapsed().as_secs_f32() * 1000.0;
     stats
 }

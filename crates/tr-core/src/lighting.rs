@@ -204,7 +204,8 @@ pub struct LightParams {
     pub sky: [f32; 3],
     /// `0.55 + sin(t * 2) * 0.08`: the underworld glow.
     pub hell_glow: f32,
-    /// Multiplier for emissive tiles (torch flicker).
+    /// `Main.mouseTextColor` flicker delta: `(270 - mouseTextColor) / 900`,
+    /// added to emissive/liquid/wall light sources (oscilates ~0.017–0.089).
     pub torch_flicker: f32,
 }
 
@@ -760,11 +761,11 @@ fn seed(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, local_surfa
     } else if y > world.height - 200 {
         hell_light(world, tile, x, y, p, &mut c);
     }
-    wall_light(tile, &mut c);
+    wall_light(tile, &mut c, p.torch_flicker);
     if tile.active() {
         tile_light(tile, x, y, p, &mut c);
     }
-    liquid_light(tile, &mut c);
+    liquid_light(tile, &mut c, p.torch_flicker);
     c
 }
 
@@ -859,7 +860,8 @@ fn hell_light(world: &World, tile: &Tile, x: i32, y: i32, p: &LightParams, c: &m
 }
 
 /// `TileLightScanner.ApplyWallLight`: glowing walls (crystal, gem, living fire...).
-fn wall_light(tile: &Tile, c: &mut [f32; 3]) {
+/// Crystal wall (137) flickers with `(270 - mouseTextColor) / 1500` added to its base.
+fn wall_light(tile: &Tile, c: &mut [f32; 3], flicker: f32) {
     let blocked = light_blocked(tile);
     let light: [f32; 3] = match tile.wall {
         357 if !blocked => [0.15, 0.27, 0.3],
@@ -868,7 +870,11 @@ fn wall_light(tile: &Tile, c: &mut [f32; 3]) {
         174 if !blocked => [0.2975, 0.0, 0.0],
         175 if !blocked => [0.075, 0.15, 0.4],
         176 if !blocked => [0.1, 0.1, 0.1],
-        137 if !blocked => [0.4, 0.2, 0.04],
+        137 if !blocked => {
+            // C#: `0.4f + (270 - mouseTextColor) / 1500f + random * 0.0005f`
+            let num4 = 0.4 + flicker * (900.0 / 1500.0);
+            [1.0 * num4, 0.5 * num4, 0.1 * num4]
+        }
         44 if !blocked => [0.15, 0.15, 0.15],
         154 => [0.6, 0.0, 0.6],
         166 => [0.6, 0.6, 0.0],
@@ -952,15 +958,14 @@ fn tile_light(tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
     }
 
     let flicker = if light != [0.0; 3] {
-        // `Main.mouseTextColor` pulses the light in the original; approximate it with
-        // a slow brightness wobble unless the caller pins it.
+        // C# TorchID adds `(270 - mouseTextColor) / 900f` to each channel.
         p.torch_flicker
     } else {
-        1.0
+        0.0
     };
     let _ = (x, y);
     for i in 0..3 {
-        let v = light[i] * flicker;
+        let v = light[i] + flicker;
         if c[i] < v {
             c[i] = v;
         }
@@ -968,13 +973,25 @@ fn tile_light(tile: &Tile, x: i32, y: i32, p: &LightParams, c: &mut [f32; 3]) {
 }
 
 /// `TileLightScanner.ApplyLiquidLight`: lava and shimmer emit light.
-fn liquid_light(tile: &Tile, c: &mut [f32; 3]) {
+/// The C# source adds `(270 - Main.mouseTextColor) / 900` (lava) or `/ 125` (shimmer)
+/// to the base value each frame; we fold that into `torch_flicker`.
+fn liquid_light(tile: &Tile, c: &mut [f32; 3], flicker: f32) {
     if tile.liquid == 0 {
         return;
     }
     let light = match tile.liquid_kind() {
-        LiquidKind::Lava => [0.55, 0.55 * 0.6, 0.55 * 0.2],
-        LiquidKind::Shimmer => [0.7 * 0.6, 0.7 * 0.25, 0.7 * 0.9],
+        LiquidKind::Lava => {
+            // C#: `0.55f + (270 - mouseTextColor) / 900f` per channel, scaled.
+            let base = 0.55 + flicker;
+            [base, base * 0.6, base * 0.2]
+        }
+        LiquidKind::Shimmer => {
+            // C#: `0.7f + (270 - mouseTextColor) / 900f` (R, Z) and `/ 125f` (G).
+            let r = (0.7 + flicker) * 0.6;
+            let g = (0.7 + flicker * (900.0 / 125.0)) * 0.25;
+            let b = (0.7 + flicker) * 0.9;
+            [r, g, b]
+        }
         _ => return,
     };
     for i in 0..3 {
