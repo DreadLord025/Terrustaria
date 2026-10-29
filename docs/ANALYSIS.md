@@ -298,8 +298,9 @@ world; loaded `.wld` files expose their own liquids.
   `11`/`22`/`26` one row below when the cell underneath is open. The liquid kind check
   order is `tile2` (above) then `tile4` (right) then `tile3` (left), as in the source.
 - `UpdateFrame` reproduces all five counters (regular 3-tick, slow 7-tick, rain,
-  lava-rain and snow), plus `DoUpdate_AnimateDiscoRGB` and `Main.mouseTextColor`, which
-  the lava/shimmer light pulses use.
+  lava-rain and snow) plus `DoUpdate_AnimateDiscoRGB`. The `Main.mouseTextColor` flicker
+  that the lava/shimmer light pulses use is owned by `lighting.rs` (`M1.5-LIGHT-1`) rather
+  than duplicated in the manager.
 - `DrawWaterfall` is a line-by-line port of the 640-line geometry walk: `stopAtStep`,
   the `num11..num42` state, the slope/half-brick/liquid neighbour rules, the 1 px
   left/right wobble per row, the `num41 = liquid / 16` clipping of the source rectangle,

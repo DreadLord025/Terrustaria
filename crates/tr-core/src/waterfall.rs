@@ -72,9 +72,6 @@ pub struct WaterfallManager {
     snow_frame_counter: i32,
     snow_frame_foreground: i32,
 
-    /// `Main.mouseTextColor` and its direction; lava/shimmer lighting pulses with it.
-    mouse_text_color: u8,
-    mouse_text_color_change: i8,
     /// `Main.DiscoR/G/B/Style` for the disco waterfall (tile 160).
     disco_r: i32,
     disco_g: i32,
@@ -111,8 +108,6 @@ impl WaterfallManager {
             lava_rain_frame_background: 0,
             snow_frame_counter: 0,
             snow_frame_foreground: 0,
-            mouse_text_color: 0,
-            mouse_text_color_change: 1,
             disco_r: 0,
             disco_g: 0,
             disco_b: 0,
@@ -147,8 +142,9 @@ impl WaterfallManager {
             | self.list_revision << 32
     }
 
-    /// `WaterfallManager.UpdateFrame` + `DoUpdate_AnimateDiscoRGB` +
-    /// `Main.mouseTextColor` — all three advance once per 60 Hz tick.
+    /// `WaterfallManager.UpdateFrame` + `DoUpdate_AnimateDiscoRGB` — both advance
+    /// once per 60 Hz tick. `Main.mouseTextColor` (the light flicker) lives in
+    /// `crate::lighting`, and `AddLight` for falls is a documented follow-up.
     pub fn update_tick(&mut self) {
         self.w_fall_fr_counter += 1;
         if self.w_fall_fr_counter > 2 {
@@ -207,7 +203,6 @@ impl WaterfallManager {
         }
 
         self.update_disco_rgb();
-        self.update_mouse_text_color();
     }
 
     fn update_disco_rgb(&mut self) {
@@ -253,16 +248,6 @@ impl WaterfallManager {
                 self.disco_b = 0;
                 self.disco_style = 0;
             }
-        }
-    }
-
-    fn update_mouse_text_color(&mut self) {
-        self.mouse_text_color = self.mouse_text_color.wrapping_add_signed(self.mouse_text_color_change);
-        if self.mouse_text_color >= u8::MAX {
-            self.mouse_text_color_change = -1;
-        }
-        if self.mouse_text_color <= 190 {
-            self.mouse_text_color_change = 1;
         }
     }
 
@@ -314,12 +299,8 @@ impl WaterfallManager {
                         let left = world.tile(i - 1, j).copied().unwrap_or_default();
                         let right = world.tile(i + 1, j).copied().unwrap_or_default();
                         if (left.liquid > 160 || right.liquid > 160)
-                            && ((left.liquid == 0
-                                && !solid_tile(&left)
-                                && left.slope() == 0)
-                                || (right.liquid == 0
-                                    && !solid_tile(&right)
-                                    && right.slope() == 0))
+                            && ((left.liquid == 0 && !solid_tile(&left) && left.slope() == 0)
+                                || (right.liquid == 0 && !solid_tile(&right) && right.slope() == 0))
                             && current < self.quality_max
                         {
                             let mut kind = 0;
@@ -527,14 +508,7 @@ impl WaterfallManager {
                     let color2 = scale_color(color, num25);
                     let color3 = scale_color(color, num26);
                     match num12 {
-                        22 => push(
-                            out,
-                            22,
-                            position,
-                            source2,
-                            color2,
-                            false,
-                        ),
+                        22 => push(out, 22, position, source2, color2, false),
                         26 => {
                             push(out, 27, position, source, color3, false);
                             push(out, 26, position, source2, color2, false);
@@ -625,9 +599,7 @@ impl WaterfallManager {
                         num18 = num17;
                     }
                     num33 = 1;
-                } else if (!solid_tile_draw(&tile5)
-                    && !tile5.bottom_slope()
-                    && !tile3.half_brick())
+                } else if (!solid_tile_draw(&tile5) && !tile5.bottom_slope() && !tile3.half_brick())
                     || (!tile5.active() && !tile3.half_brick())
                 {
                     num29 = 0;
@@ -703,7 +675,10 @@ impl WaterfallManager {
                         push(
                             out,
                             num12 as u8,
-                            [num13 as f32 * 16.0 - 16.0, num14 as f32 * 16.0 + 16.0 - num42 as f32],
+                            [
+                                num13 as f32 * 16.0 - 16.0,
+                                num14 as f32 * 16.0 + 16.0 - num42 as f32,
+                            ],
                             src,
                             color5,
                             true,
@@ -712,7 +687,10 @@ impl WaterfallManager {
                         push(
                             out,
                             num12 as u8,
-                            [num13 as f32 * 16.0, num14 as f32 * 16.0 + 16.0 - num42 as f32],
+                            [
+                                num13 as f32 * 16.0,
+                                num14 as f32 * 16.0 + 16.0 - num42 as f32,
+                            ],
                             src,
                             color5,
                             false,
@@ -739,7 +717,10 @@ impl WaterfallManager {
                         push(
                             out,
                             num12 as u8,
-                            [num13 as f32 * 16.0, num14 as f32 * 16.0 + num11 as f32 + 8.0],
+                            [
+                                num13 as f32 * 16.0,
+                                num14 as f32 * 16.0 + num11 as f32 + 8.0,
+                            ],
                             [num21, 0, 16, 16 - num41 - 8],
                             color,
                             true,
@@ -748,7 +729,10 @@ impl WaterfallManager {
                         push(
                             out,
                             num12 as u8,
-                            [num13 as f32 * 16.0, num14 as f32 * 16.0 + num11 as f32 + 8.0],
+                            [
+                                num13 as f32 * 16.0,
+                                num14 as f32 * 16.0 + num11 as f32 + 8.0,
+                            ],
                             [num21, 0, 16, 16 - num41 - 8],
                             color5,
                             false,
@@ -1052,16 +1036,15 @@ fn scale_color(c: [f32; 4], scale: f32) -> [f32; 4] {
 }
 
 /// `Lighting.GetColor` through the active light style, as byte-normalised colour.
-fn light_tint(
-    light: &LightMap,
-    style: &LightStyle,
-    x: i32,
-    y: i32,
-    time: f32,
-) -> [f32; 4] {
+fn light_tint(light: &LightMap, style: &LightStyle, x: i32, y: i32, time: f32) -> [f32; 4] {
     let c = style.shade(light.get(x, y), x, y, time);
     let byte = |v: f32| (v.clamp(0.0, 1.0) * 255.0) as i32;
-    [byte(c[0]) as f32 / 255.0, byte(c[1]) as f32 / 255.0, byte(c[2]) as f32 / 255.0, 1.0]
+    [
+        byte(c[0]) as f32 / 255.0,
+        byte(c[1]) as f32 / 255.0,
+        byte(c[2]) as f32 / 255.0,
+        1.0,
+    ]
 }
 
 /// `WaterfallManager.StylizeColor`.
@@ -1104,7 +1087,15 @@ fn stylize_color(
 }
 
 /// `WaterfallManager.GetAlpha`.
-fn get_alpha(alpha: f32, max_steps: i32, kind: i32, y: i32, s: i32, tile: &Tile, world: &World) -> f32 {
+fn get_alpha(
+    alpha: f32,
+    max_steps: i32,
+    kind: i32,
+    y: i32,
+    s: i32,
+    tile: &Tile,
+    world: &World,
+) -> f32 {
     let mut num = match kind {
         1 => 1.0,
         14 => 0.8,
@@ -1246,7 +1237,8 @@ mod tests {
         put(&mut w, 10, 10, brick);
         put_liquid(&mut w, 10, 9, 10);
         put_liquid(&mut w, 11, 9, 10);
-        put_liquid(&mut w, 11, 10, 10);        let mut mgr = WaterfallManager::new();
+        put_liquid(&mut w, 11, 10, 10);
+        let mut mgr = WaterfallManager::new();
         mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
         assert!(mgr.entries().is_empty());
     }
