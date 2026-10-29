@@ -102,6 +102,7 @@ enum Toggle {
     Blood,
     MinersWobble,
     TilesSway,
+    Zoom,
 }
 
 enum Act {
@@ -299,6 +300,11 @@ impl Menu {
             // row here (only the first ten rows are set to 0.6), so Back is bigger.
             Page::Video => vec![
                 Item::new("Resolution", Act::Hint("Window resolution is not ported yet")).scaled(0.6),
+                Item::new(
+                    format!("Zoom: {:.0}%", s.zoom * 100.0),
+                    Act::Toggle(Toggle::Zoom),
+                )
+                .scaled(0.6),
                 Item::new(on_off(s.parallax, "Parallax On", "Parallax Off"), Act::Toggle(Toggle::Parallax)).scaled(0.6),
                 Item::new(["Frame Skip Off", "Frame Skip On", "Frame Skip Subtle"][s.frame_skip as usize % 3], Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
                 Item::new(["Lighting: Color", "Lighting: White", "Lighting: Retro", "Lighting: Trippy"][s.light_mode as usize % 4], Act::Toggle(Toggle::LightMode)).scaled(0.6),
@@ -421,6 +427,15 @@ impl Menu {
             Toggle::Blood => s.blood = !s.blood,
             Toggle::MinersWobble => s.miners_wobble = !s.miners_wobble,
             Toggle::TilesSway => s.tiles_sway = !s.tiles_sway,
+            // `Main.GameZoomTarget` steps 0.02 per key press; the row snaps to 25 %.
+            Toggle::Zoom => {
+                let steps = [1.0f32, 1.25, 1.5, 1.75, 2.0];
+                let next = steps
+                    .iter()
+                    .position(|z| *z > s.zoom + 0.001)
+                    .unwrap_or(0);
+                s.zoom = steps[next];
+            }
         }
         if self.persist {
             let _ = s.save();

@@ -46,6 +46,8 @@ pub struct Settings {
     pub miners_wobble: bool,
     /// `Main.SettingsEnabled_TilesSwayInWind`.
     pub tiles_sway: bool,
+    /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
+    pub zoom: f32,
     /// `Main.musicVolume`.
     pub music_volume: f32,
     /// `Main.soundVolume`.
@@ -76,6 +78,7 @@ impl Default for Settings {
             blood: true,
             miners_wobble: true,
             tiles_sway: true,
+            zoom: 1.0,
             music_volume: 0.75,
             sound_volume: 0.75,
             ambient_volume: 0.75,
@@ -136,6 +139,9 @@ impl Settings {
                 "BloodAndGore" => me.blood = boolean(value),
                 "MinersWobble" => me.miners_wobble = boolean(value),
                 "TilesSwayInWind" => me.tiles_sway = boolean(value),
+                "Zoom" => {
+                    me.zoom = value.parse::<f32>().unwrap_or(me.zoom).clamp(1.0, 2.0)
+                }
                 "MusicVolume" => me.music_volume = value.parse().unwrap_or(me.music_volume),
                 "SoundVolume" => me.sound_volume = value.parse().unwrap_or(me.sound_volume),
                 "AmbientVolume" => me.ambient_volume = value.parse().unwrap_or(me.ambient_volume),
@@ -165,7 +171,8 @@ impl Settings {
              \"GamepadInstructions\": {},\n  \"CaveParallax\": {},\n  \"FrameSkipMode\": {},\n  \
              \"LightingMode\": {},\n  \"Quality\": {},\n  \"BackgroundEnabled\": {},\n  \
              \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
-             \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \"AmbientVolume\": {:.3}\n}}\n",
+             \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
+             \"AmbientVolume\": {:.3}\n}}\n",
             self.auto_save,
             self.auto_pause,
             self.map_enabled,
@@ -185,6 +192,7 @@ impl Settings {
             self.blood,
             self.miners_wobble,
             self.tiles_sway,
+            self.zoom,
             self.music_volume,
             self.sound_volume,
             self.ambient_volume,

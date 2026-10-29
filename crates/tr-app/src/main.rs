@@ -732,7 +732,8 @@ fn main() -> Result<()> {
         dev_break,
         dev_place,
         camera: Vec2::ZERO,
-        zoom: 1.5,
+        zoom: 1.0,
+        zoom_pinned: std::env::var_os("TR_ZOOM").is_some(),
         debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(false),
         keys: HashSet::new(),
         mouse_down: false,
@@ -896,6 +897,8 @@ struct App {
     dev_place: Vec<(i32, i32, u16)>,
     camera: Vec2,
     zoom: f32,
+    /// `TR_ZOOM` pins the zoom for screenshots, ignoring the settings value.
+    zoom_pinned: bool,
     debug: bool,
     keys: HashSet<KeyCode>,
     mouse_down: bool,
@@ -1147,9 +1150,11 @@ impl ApplicationHandler for App {
                 self.camera = Vec2::new(x * TILE_PX, y * TILE_PX);
             }
         }
+        self.zoom = self.settings.zoom;
         if let Ok(z) = std::env::var("TR_ZOOM") {
             if let Ok(z) = z.parse::<f32>() {
                 self.zoom = z.clamp(0.25, 8.0);
+                self.zoom_pinned = true;
             }
         }
         if self.follow_player {
@@ -1228,7 +1233,7 @@ impl ApplicationHandler for App {
                                         self.world.spawn_y as f32 * TILE_PX,
                                     );
                                 }
-                                self.zoom = 1.5;
+                                self.zoom = self.settings.zoom;
                                 self.world_key = None;
                             }
                             KeyCode::F9 => self.save_world(),
@@ -1263,12 +1268,6 @@ impl ApplicationHandler for App {
                             KeyCode::Digit8 => self.selected = 7,
                             KeyCode::Digit9 => self.selected = 8,
                             KeyCode::Digit0 => self.selected = 9,
-                            KeyCode::Equal | KeyCode::NumpadAdd => {
-                                self.zoom = (self.zoom * 1.25).min(8.0)
-                            }
-                            KeyCode::Minus | KeyCode::NumpadSubtract => {
-                                self.zoom = (self.zoom / 1.25).max(0.25)
-                            }
                             _ => {}
                         }
                     } else {
@@ -1277,11 +1276,16 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseWheel { delta, .. } => {
+                // Vanilla: the wheel scrolls the hotbar (`HotbarPlus`/`HotbarMinus`);
+                // zoom is only changed by the View Zoom keys or the settings screen.
                 let d = match delta {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
                 };
-                self.zoom = (self.zoom * 1.1f32.powf(d)).clamp(0.25, 8.0);
+                let step = d.round() as i32;
+                if step != 0 && self.menu.is_none() && !self.inventory_open {
+                    self.selected = (self.selected as i32 + step).rem_euclid(HOTBAR as i32) as usize;
+                }
             }
             WindowEvent::MouseInput { state, button, .. } => {
                 let pressed = state == ElementState::Pressed;
@@ -2175,6 +2179,9 @@ impl App {
     fn apply_settings(&mut self) {
         self.light_mode = tr_core::lighting::LightMode::ALL
             [(self.settings.light_mode as usize).min(3)];
+        if !self.zoom_pinned {
+            self.zoom = self.settings.zoom;
+        }
         // The light cache and the world range depend on the mode.
         self.world_key = None;
     }
