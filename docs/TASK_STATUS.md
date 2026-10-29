@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29T19:40Z  
+**Last updated:** 2026-10-29T19:50Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -72,8 +72,8 @@
 
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
-| M6-MUSIC | XACT/WMA music playback | 🔄 In Progress | Agent-Audio | `Main.UpdateAudio`/`Main.GetMusicTrack` selection + `SoundEngine.PlayMusic`; MS-ADPCM wave bank decode (`tr-content/xact.rs`, `adpcm.rs`) and `audio::MusicSystem` fade/loop |
-| M6-3DAUDIO | 3D audio attenuation | 🔄 In Progress | Agent-Audio | `SoundEngine.PlaySound` distance/pan math, `SoundEngine.Update` 3D re-positioning, music/sound/ambient volume application |
+| M6-MUSIC | XACT/WMA music playback | ✅ Done | Agent-Audio | `918b5a5`: XWB/XSB reader + MS-ADPCM decode (`tr-content/xact.rs`, `adpcm.rs`) and `audio::MusicSystem` (`Main.UpdateAudio`/`LegacyAudioSystem.UpdateCommonTrack` fade/selection/loop). See ANALYSIS.md "Audio (M6)" |
+| M6-3DAUDIO | 3D audio attenuation | ✅ Done | Agent-Audio | `918b5a5`: `sound.rs` ports `LegacySoundPlayer.PlaySound` (2500 px falloff, pan, ambient volume); positional `play_at` + listener wiring in `main.rs` |
 | M6-LOCALIZE | Localization system | ✅ Done | Agent-DeepSeek | `tr-core/src/localization.rs`: `GameCulture`/`LocalizedText`/`VariableText`/`LanguageManager` (JSON loader, `$`-variants, `{$Key}` copy commands, `{Name}`/conditions, `format_net`); 11 tests incl. the shipped `en-US` files. UI wiring still pending |
 
 ### Milestone 7 — UI (1:1 layout)
@@ -100,8 +100,8 @@
 
 ```
 M7-UI-1/2/3/5 Menu framework + settings — done 2026-10-29T18:45Z (Agent-DeepSeek)
-M6-MUSIC      XACT/MS-ADPCM music playback — Agent-Audio (started 2026-10-29T18:25Z)
-M6-3DAUDIO    SoundEngine 3D attenuation — Agent-Audio (started 2026-10-29T18:25Z)
+M6-MUSIC      XACT/MS-ADPCM music playback — done 2026-10-29T19:50Z (Agent-Audio)
+M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio)
 ```
 
 ---
@@ -109,6 +109,8 @@ M6-3DAUDIO    SoundEngine 3D attenuation — Agent-Audio (started 2026-10-29T18:
 ## ✅ Recently Completed
 
 ```
+918b5a5  [M6-MUSIC]      XACT/MS-ADPCM music engine + 3D attenuation (Agent-Audio)
+6b8e36e  [M7-UI]         Main.DrawMenu menu + settings screens     (Agent-DeepSeek)
 d780b99  [M1.5-LIGHT-2] Wire the per-type tile light into the app  (Agent-DSV4)
 4d42f34  [M1.5-LIGHT-2] Port the full per-type tile light switch   (Agent-DSV4)
 74bcf10  [M6-LOCALIZE]   Port the localization core                  (Agent-DeepSeek)
@@ -118,25 +120,20 @@ d780b99  [M1.5-LIGHT-2] Wire the per-type tile light into the app  (Agent-DSV4)
 
 ---
 
-## ⚠️ Coordination notes (2026-10-29T18:40Z)
+## ⚠️ Coordination notes (2026-10-29T19:50Z)
 
-- **`tr-app` does not build in the working tree right now.** As of this note the last
-  `cargo test --workspace` failed inside `crates/tr-app/src/audio.rs` (the uncommitted
-  `impl Source for Panned<S>` uses `current_span_len`, which the pinned `rodio` does not
-  declare) — that is Agent-Audio's in-flight M6-MUSIC work, not a committed regression.
-  `tr-core` alone builds and its 67 tests pass. Earlier, the `HEAD` at `4d42f34` also did
-  not build because it landed `tr-core/src/{lighting,tile_light}.rs` without the matching
-  `tr-app/src/main.rs` `LightParams` wiring; M1.5-LIGHT-2's `d780b99` restored that.
-- **`main.rs` was clobbered.** At ~17:56 an in-flight edit replaced `crates/tr-app/src/main.rs`
-  with a pre-waterfall version: the whole `WaterfallManager` wiring and the committed
-  M1.5-LIGHT-1 `mouseTextColor` flicker disappeared, and the file referenced
-  `audio::Music::new()`, which does not exist in `audio.rs` yet (so it did not compile).
-  The file was restored from `HEAD` and the waterfall/torch hooks re-applied. If you are
+- **The `rodio` `current_span_len` build error is fixed** in `918b5a5` (`current_frame_len`),
+  and `cargo test --workspace` now passes (130 tests). The shared tree's remaining
+  uncommitted work (M1.5-LIGHT-2 `mouseTextColor` relocation in `main.rs`,
+  `lighting/tile_light/tiledata/liquid_draw/save`, `ROADMAP.md`) is Agent-DSV4's and was
+  deliberately left uncommitted.
+
+## ⚠️ Notes retained from 2026-10-29T18:40Z
+
+- **`main.rs` was clobbered earlier.** At ~17:56 an in-flight edit replaced
+  `crates/tr-app/src/main.rs` with a pre-waterfall version and it was restored. If you are
   mid-refactor, re-apply your hunk on top of the current file instead of saving an old
   buffer.
-- **Uncommitted audio work** in `crates/tr-app/src/audio.rs`, `crates/tr-content/src/xact.rs`
-  and `adpcm.rs` belongs to another agent (music/XACT decoding). It was left untouched and
-  not committed.
 - `tools/GenTileData` no longer matches the current decompilation (`Main.`-prefixed
   assignments, `decompiled/Terraria/ID/…`); running it emits empty tables and overwrites
   `tiledata.rs`. See `docs/ANALYSIS.md` risk 7. Do not regenerate until it is fixed.

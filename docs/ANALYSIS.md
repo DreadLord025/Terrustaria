@@ -832,3 +832,50 @@ keeps an out-of-range token instead of throwing so a bad language file cannot cr
 A test loads the seven shipped `en-US` files and checks `ItemName.DirtBlock`,
 `CommonItemTooltip.UsesMana` and the `ItemName` category size (>1000). Wiring the strings
 into the HUD, item names and menus is still to do.
+
+## Audio (M6)
+
+### XACT banks (`tr-content/xact.rs`)
+
+SFX come from `Sounds/*.xnb` (`SoundEffectReader`, PCM) and music from `Wave Bank.xwb`
+(MS-ADPCM) addressed through `Sound Bank.xsb`. The wave bank starts with a five-segment
+header; `segments[0]` is `BANKDATA` (`flags`, `entryCount`, `name[64]`, `metaElemSize`,
+`nameElemSize`, `alignment`), `segments[1]` is `ENTRYMETADATA` and `segments[4]` is
+`ENTRYWAVEDATA`. Each metadata entry is 24 bytes: `flagsAndDuration`, a mini-format
+(`codec`, `channels`, `sampleRate`, `blockAlign`, `samplesPerBlock`), the play region
+(`offset`, `length`) and the loop region (`start`, `total`). The mini-format's codec tag
+`2` is MS-ADPCM; the on-disk `blockAlign` field packs `(field + 22) * channels`, so stereo
+music has 140-byte blocks and every play length is a whole number of blocks. The decoder
+lives in `adpcm.rs`. A test decodes `Music_1` through the bank and checks the PCM is
+in-range and non-constant.
+
+The sound bank header stores the counts at `0x13`/`0x15`/`0x19`/`0x1C` and the section
+offsets at `0x22` (simple cues), `0x42` (name table) and `0x4A` (bank name). A simple cue
+is 5 bytes (`flags` + `soundOffset`), the name table entry is 6 bytes (`nameOffset` u32 +
+`hash` u16), and the sound record holds the wave-bank track at `+0x09`. The cue → track
+mapping is **not** `Music_id -> id-1` (e.g. `Music_1 -> 2`, `Music_3 -> 0`), so the sound
+bank must be read to address the wave bank.
+
+### Music engine (`tr-app/audio.rs`)
+
+`MusicSystem` mirrors `Main.UpdateAudio` and `LegacyAudioSystem.UpdateCommonTrack`: one
+rodio `Sink` per `AudioTrack`, a `musicFade` array of `MusicID.Count` (`105`) entries that
+ramps by `±0.005` per frame, `volume = fade * musicVolume` with the `62..=88 ×0.9` and
+`52 ×1.15` (clamped to 1) special cases, and `newMusic`/`curMusic` selection. The ported
+branches are boss (King Slime → 93), underground (`ugMusic` alternates 4/31, `Main.cs:12830`),
+rain (day 59/19, night 19) and surface day/night (1/18, 3). The biome branches still need
+`SceneMetrics`. A track starts when its fade rises and stops when another track is audible
+(`musicFade[curMusic] > 0.25`) and its own fade reaches 0; `curMusic == 0` snaps every other
+fade to 0. Decoding is synchronous on track start (rare, ~5.6 MB of PCM per track, not
+cached yet).
+
+### 3D attenuation (`tr-app/sound.rs`)
+
+`play_sound` ports `LegacySoundPlayer.PlaySound` (`LegacySoundPlayer.cs:360`): the sentinel
+`x == -1 || y == -1` plays 2D, otherwise the distance to `Main.Camera.Center` must be under
+`SoundAttenuationDistance = 2500` px, `volume = 1 - distance/2500`, and
+`pan = dx / (MaxWorldViewSize.X/2)` clamped to `±1`. The final gain follows
+`Main.soundVolume` (or `Main.ambientVolume` for the ambience sound ids, muted in the menu)
+and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a rodio
+source (the far channel is attenuated); the listener is refreshed each frame from the
+camera centre and the three volume sliders.
