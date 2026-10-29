@@ -3772,21 +3772,23 @@ fn push_cave_cell(
     pos: [f32; 2],
     sample: [f32; 2],
     light: &LightMap,
+    bg_brightness: f32,
 ) {
     if pos[0] >= screen.x || pos[1] >= screen.y || pos[0] + 16.0 <= 0.0 || pos[1] + 16.0 <= 0.0 {
         return;
     }
     // `Lighting.GetColor((int)((num3 + screenPosition.X) / 16f), ...)`: the light is read on
     // the *unscaled* grid (`Main.screenPosition = camera - screenSize / 2`), not at the tile
-    // actually behind the pixel. `GetColor` already folds in `GlobalBrightness` (baked into
-    // the light map), and both backdrop layers multiply the result by `backgroundColor`
-    // (0.9) below.
+    // actually behind the pixel. `Lighting.GetColor` folds in the (ramped) `GlobalBrightness`,
+    // which the light map stores unscaled, and both backdrop layers then multiply the result
+    // by `backgroundColor` (0.9).
     let sp = camera - screen * 0.5;
     let wx = ((sample[0] + sp.x) / TILE_PX).floor() as i32;
     let wy = ((sample[1] + sp.y) / TILE_PX).floor() as i32;
     let c = light.get(wx, wy);
     let du = (tex.uv[2] - tex.uv[0]) / tex.w;
     let dv = (tex.uv[3] - tex.uv[1]) / tex.h;
+    let k = bg_brightness * 0.9;
     r.push_back_sprite(
         [
             camera.x + (pos[0] - screen.x * 0.5) / zoom,
@@ -3799,7 +3801,7 @@ fn push_cave_cell(
             tex.uv[0] + du * (sx + 16.0),
             tex.uv[1] + dv * (sy + 16.0),
         ],
-        [c[0] * 0.9, c[1] * 0.9, c[2] * 0.9, 1.0],
+        [c[0] * k, c[1] * k, c[2] * k, 1.0],
     );
 }
 
@@ -3879,6 +3881,13 @@ fn draw_underground_background(
     let layout = underground_bg_layout(world, camera, zoom, screen);
     let screen_pos = layout.screen_pos;
     let surface_screen = layout.transition_top;
+    // `DrawBackground`: the whole background pass runs with
+    // `Lighting.GlobalBrightness = 1.2*(1-num3) + num3`, where
+    // `num3 = clamp((screenPosition.Y - worldSurface*16)/300, 0, 1)`. The light map stores
+    // the unscaled engine value (tiles re-apply `1.2` through `LightStyle::shade`), so the
+    // backdrop has to fold the ramp in itself: `1.2 - 0.2*num3`.
+    let num3 = ((screen_pos.y - world.world_surface as f32 * TILE_PX) / 300.0).clamp(0.0, 1.0);
+    let bg_brightness = 1.2 - 0.2 * num3;
 
     // The transition row sits exactly on the surface line.
     if let Some(transition) = sky.underground_transition {
@@ -3906,6 +3915,7 @@ fn draw_underground_background(
                         [cell_x + n2, surface_screen],
                         [cell_x + 8.0, surface_screen],
                         light,
+                        bg_brightness,
                     );
                 }
             }
@@ -3975,6 +3985,7 @@ fn draw_underground_background(
                         [cell_x + n2, cell_y],
                         [cell_x + 8.0, cell_y + 8.0],
                         light,
+                        bg_brightness,
                     );
                 }
             }
