@@ -490,6 +490,16 @@ set 1 and the pure desert set are assumed), `DrawSurfaceBG_DrawChangeOverlay` (t
 flash on first entering a background), the far-cloud depth layers
 (`DrawClouds_Distant/Closer`), the ocean water-line ambience and the `Background_49` fog.
 
+Also not ported: the per-biome **animated screen effects**. In particular the day-time
+desert **heat shimmer** — `SceneState.ApplyVisuals` enables the `HeatDistortion` filter
+(`FilterHeatDistortion`, `Images/Misc/noise`, `UseIntensity(4)`, registered in
+`ScreenEffectInitializer`) whenever `Main.UseHeatDistortion` and either the camera is on the
+desert surface (`TileCenter.Y < Main.worldSurface && ZoneDesert && !ZoneRain &&
+!ZoneSandstorm`) or in the underworld (`TileCenter.Y > maxTilesY - 320`) or the Sun Scorch
+debuff is active; the shader scrolls the noise so the pixels drift a few pixels side to
+side. The `Blizzard`, `Sandstorm`, `Aurora`, `WaterDistortion` and monolith/story filters
+from the same block are likewise unimplemented.
+
 
 The underground backdrop is a port of `Main.DrawBackground_SurfaceTransitionBackground` +
 `DrawBackground_DirtBackground`: `Background_1` supplies the one-row transition at

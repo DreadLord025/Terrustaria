@@ -112,6 +112,7 @@
 | M1.4-BG-16 | Sky gradient + sun/moon/clouds/stars pass | ❌ Pending | - | `Main.cs:62036-62080` gradient, `DrawSunAndMoon` arc/scale/phase, `Cloud.GetParallax`, star density, horizon layer order |
 | M1.4-BG-17 | Unlit wall black coverage + unbreakable wall 350 | ✅ Done | Agent-Qoder | `b1d07cd`: `DrawOwnBlacks` merging now covers every zero-light walled cell (`light_is_zero && (active || wall != 0)`) as `WallDrawing.DrawWalls` does, not only opaque wall frames; `edit::WALL_UNBREAKABLE = 350` (`WallID.UnbreakableBlockWall`) blocks hammering, tile mining/placement (`CanKillTile`/`IsTileReplaceable`) and wall replacement. Follow-up: echo walls (`WallID.EchoWall`, 318) are skipped like `WallDrawing` with invisible walls hidden — no sprite and no black |
 | TILE-DRAW-5 | Full grass framing (WorldGen 82192-83395) | ❌ Pending | - | Port groups A-J + the `-2` marker and per-biome dirt ids; our `grass_frame` covers ~25 % and plateaus on hard frames |
+| M1.4-BG-18 | Per-biome animated screen effects | ❌ Pending | - | `SceneState.ApplyVisuals` filters: desert-surface day `HeatDistortion` (`FilterHeatDistortion`, scrolling `Misc/noise`, intensity 4), underworld heat, Sun Scorch; also `Blizzard`/`Sandstorm`/`Aurora`/`WaterDistortion` and the monolith/story filters |
 
 ### Tile Objects & Special Tiles
 
