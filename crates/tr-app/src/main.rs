@@ -4290,6 +4290,19 @@ struct DrawScratch {
     cur: Vec<(i32, i32)>,
 }
 
+/// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
+/// `DebugOptions.ShowInvisibleWalls` is on, so it contributes neither a sprite nor a
+/// black quad. (`tile.invisibleWall()` is checked too, but nothing in the original's
+/// code ever sets that bit, and our packed tile does not store it.)
+const WALL_ECHO: u16 = 318;
+
+/// `WallDrawing.DrawWalls` draw test: a wall is visible when it exists and is not an
+/// echo wall.
+#[inline]
+fn wall_visible(wall: u16) -> bool {
+    wall != 0 && wall != WALL_ECHO
+}
+
 /// Vanilla stores light as bytes; a channel below `1/255` is zero. Such a cell is
 /// guaranteed to rasterise to black whatever the texture colour, so it can be
 /// replaced by one opaque black quad without changing a single pixel.
@@ -4512,7 +4525,7 @@ fn draw_tiles(
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let tile = &world.tiles[ty as usize * width + tx as usize];
-                if tile.wall == 0 {
+                if !wall_visible(tile.wall) {
                     continue;
                 }
                 let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
@@ -4651,7 +4664,7 @@ fn draw_tiles(
                 // covering on its own. A fully dark tile renders identically whether
                 // its sprite is drawn or skipped (both are solid black), so the cell
                 // is folded into one merged rectangle.
-                if light_is_zero(l) && (active || (draw_walls && tile.wall != 0)) {
+                if light_is_zero(l) && (active || (draw_walls && wall_visible(tile.wall))) {
                     if run_start < 0 {
                         run_start = tx;
                     }
@@ -6775,6 +6788,16 @@ mod underground_bg_tests {
         // The rock clamp *is* scaled: `camera.Y - screenHeight / (2 * zoom)`.
         assert_eq!(a.scaled_bottom, cam.y - 450.0 + 900.0);
         assert_eq!(b.scaled_bottom, cam.y - 225.0 + 900.0);
+    }
+
+    #[test]
+    fn echo_walls_are_invisible_like_walldrawing() {
+        // `WallDrawing.DrawWalls` skips wall 318 (`WallID.EchoWall`) unless the debug
+        // "show invisible walls" option is on, so it neither draws nor paints black.
+        assert!(!wall_visible(0));
+        assert!(!wall_visible(WALL_ECHO));
+        assert!(wall_visible(1));
+        assert!(wall_visible(350));
     }
 
     #[test]

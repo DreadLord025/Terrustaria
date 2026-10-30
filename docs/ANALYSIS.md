@@ -303,7 +303,9 @@ Remaining lighting gaps:
   `FullTile`; the renderer folds both cases into one merged black rectangle per row
   (`light_is_zero && (active || wall != 0)`), which is what stops the parallax/underground
   backdrop bleeding through unlit caves. A fully dark tile is solid black either way, so
-  skipping its sprite is pixel-identical (glow masks are not implemented yet).
+  skipping its sprite is pixel-identical (glow masks are not implemented yet). Echo walls
+  (`WallID.EchoWall`, 318) are skipped entirely — no sprite and no black — exactly like
+  `WallDrawing` with invisible walls hidden.
 `Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
 and light are quantised to one-second steps so the map/instance caches still hit.
 
