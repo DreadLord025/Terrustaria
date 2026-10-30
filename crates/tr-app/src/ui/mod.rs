@@ -34,6 +34,7 @@ pub fn draw_hud(
     inventory_open: bool,
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
+    cursor_state: &cursor::CursorState,
 ) {
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
     // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`
@@ -225,4 +226,9 @@ pub fn draw_hud(
             );
         }
     }
+
+    // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
+    // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
+    // hidden while the vanilla `Cursor_0` is on screen.
+    cursor::draw(r, lookups, cursor_state, mouse_pos);
 }

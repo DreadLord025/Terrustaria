@@ -748,6 +748,8 @@ fn main() -> Result<()> {
         ui_left_press: false,
         ui_right_press: false,
         mouse_pos: Vec2::ZERO,
+        cursor: ui::cursor::CursorState::default(),
+        os_cursor_hidden: None,
         mine_down: false,
         place_down: false,
         mine_target: None,
@@ -933,6 +935,12 @@ struct App {
     ui_left_press: bool,
     ui_right_press: bool,
     mouse_pos: Vec2,
+    /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
+    /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
+    cursor: ui::cursor::CursorState,
+    /// Last value passed to `Window::set_cursor_visible`, so the OS pointer is only
+    /// toggled when the in-world HUD (and thus the vanilla cursor) appears.
+    os_cursor_hidden: Option<bool>,
     mine_down: bool,
     place_down: bool,
     mine_target: Option<(i32, i32)>,
@@ -2679,6 +2687,20 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        // `FocusHelper.cs:160-163`: while the focused window draws the game's own
+        // cursor the OS pointer is hidden (`Main.instance.IsMouseVisible = false`).
+        // We only draw the vanilla cursor together with the in-world HUD so far, so
+        // the OS pointer stays in menus and on the fullscreen map.
+        let vanilla_cursor = self.menu.is_none()
+            && !no_hud()
+            && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open));
+        if self.os_cursor_hidden != Some(vanilla_cursor) {
+            if let Some(w) = &self.window {
+                w.set_cursor_visible(!vanilla_cursor);
+            }
+            self.os_cursor_hidden = Some(vanilla_cursor);
+        }
+
         // `Main.Camera.Center` + the volume sliders for `LegacySoundPlayer.PlaySound`.
         self.audio.set_listener(sound::Listener {
             camera_center: (self.camera.x, self.camera.y),
@@ -2867,6 +2889,8 @@ impl App {
                 if self.mouse_text_color <= 190 {
                     self.mouse_text_color_dir = 1;
                 }
+                // `Main.CursorColor()` (`Main.cs:52477`): the cursor fade pulse.
+                self.cursor.update();
                 // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
                 self.demon_torch += self.demon_torch_dir * 0.01;
                 if self.demon_torch > 1.0 {
@@ -3071,6 +3095,7 @@ impl App {
                         self.inventory_open,
                         &self.mouse_item,
                         self.mouse_pos,
+                        &self.cursor,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
