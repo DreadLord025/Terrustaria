@@ -105,6 +105,9 @@ pub fn load_world_images(
         "Background_28",
         "Background_21",
         "Background_20",
+        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`).
+        "Background_23",
+        "Background_22",
         "Background_112",
         "Background_113",
         "Sun",

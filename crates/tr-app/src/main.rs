@@ -687,6 +687,22 @@ fn main() -> Result<()> {
         lookups,
         clouds,
         sky,
+        // `Main` statics initialise `bgAlphaFrontLayer[0] = bgAlphaFarBackLayer[0] = 1`
+        // (forest visible from the start).
+        bg_style: 0,
+        bg_delay: 0,
+        // `Main.instantBGTransitionCounter = 2` on world load.
+        bg_instant: 2,
+        bg_alpha_front: {
+            let mut a = [0.0; 16];
+            a[0] = 1.0;
+            a
+        },
+        bg_alpha_far: {
+            let mut a = [0.0; 16];
+            a[0] = 1.0;
+            a
+        },
         stars,
         player_assets,
         player,
@@ -847,6 +863,20 @@ struct App {
     lookups: assets::Lookups,
     clouds: Vec<CloudSprite>,
     sky: SkyAssets,
+    /// `Main.bgStyle`: the biome background style currently being drawn (0 forest,
+    /// 2 desert, 4 ocean, 7 snow; the full vanilla table also has 1/3/5/6/8/9/10..14).
+    bg_style: i32,
+    /// `Main.bgDelay`: ticks to wait before starting a new transition (30 normally,
+    /// 60 for a forest->forest variant swap); negative while the post-switch
+    /// cooldown counts back up.
+    bg_delay: i32,
+    /// `Main.instantBGTransitionCounter`: forces `bgStyle` on the first frames
+    /// after a world load so the background starts on the right biome.
+    bg_instant: i32,
+    /// `Main.bgAlphaFrontLayer` (16 slots): per-front-layer cross-fade alpha.
+    bg_alpha_front: [f32; 16],
+    /// `Main.bgAlphaFarBackLayer` (16 slots): per far-back (mountain) layer alpha.
+    bg_alpha_far: [f32; 16],
     stars: Vec<StarSprite>,
     player_assets: PlayerAssets,
     player: Option<Player>,
@@ -1479,6 +1509,46 @@ impl App {
         ];
         self.waterfall
             .find_waterfalls(&self.world, view, false);
+    }
+
+    /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
+    /// the biome under the screen centre. Supported styles: 0 forest, 2 desert,
+    /// 4 ocean, 7 snow. `SceneMetrics` zones are approximated with the same
+    /// camera-column tests the water style uses (beach before desert before snow).
+    fn preferred_bg_style(&self) -> i32 {
+        if is_ocean_biome(&self.world, self.camera) {
+            4
+        } else if is_desert_biome(&self.world, self.camera) {
+            2
+        } else if is_snow_biome(&self.world, self.camera) {
+            7
+        } else {
+            0
+        }
+    }
+
+    /// `Main.DrawBG` (the cross-fade half): `UpdateBGVisibility_BackLayer` +
+    /// `UpdateBGVisibility_FrontLayer`, then the style/delay timers.
+    ///
+    /// `backgroundLayerTransitionSpeed = 0.05` per drawn frame, so a full
+    /// transition takes 20 frames once the delay elapses.
+    fn update_bg_visibility(&mut self) {
+        let preferred = self.preferred_bg_style();
+        let speed = if self.bg_instant > 0 {
+            // `instantBGTransitionCounter`: adopt the loaded biome immediately.
+            self.bg_instant -= 1;
+            self.bg_style = preferred;
+            1.0
+        } else {
+            advance_bg_style(&mut self.bg_style, &mut self.bg_delay, preferred);
+            0.05 // `Main.backgroundLayerTransitionSpeed`
+        };
+        advance_bg_alphas(
+            &mut self.bg_alpha_front,
+            &mut self.bg_alpha_far,
+            self.bg_style,
+            speed,
+        );
     }
 
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
@@ -2509,6 +2579,9 @@ impl App {
             }
         }
         self.poll_net();
+        // `Main.DrawBG`: advance the surface-background cross-fade once per drawn
+        // frame, exactly where the original runs it (inside the draw pass).
+        self.update_bg_visibility();
         // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
         // high-refresh displays.
         let player_alpha = (self.player_accum / (1.0 / 60.0)).clamp(0.0, 1.0);
@@ -2527,6 +2600,8 @@ impl App {
                 lookups,
                 clouds,
                 sky,
+                bg_alpha_front,
+                bg_alpha_far,
                 stars,
                 player_assets,
                 player,
@@ -2738,6 +2813,8 @@ impl App {
                     sky_tint,
                     rain.cloud_bg(),
                     settings.background,
+                    bg_alpha_front,
+                    bg_alpha_far,
                     light,
                 );
                 if !reuse_world {
@@ -3116,9 +3193,12 @@ struct SkyAssets {
     snow_trees: [Option<BgTex>; 3],
     /// Ocean horizon with islands (`Background_28`, style 0).
     ocean: Option<BgTex>,
-    /// Desert dunes (`Background_21` far, `Background_20` near).
+    /// Desert dunes (`Background_21` far, `Background_20` near) plus the mountain
+    /// layers behind them (`Background_23` far, `Background_22` near).
     desert_far: Option<BgTex>,
     desert_near: Option<BgTex>,
+    desert_far_mnt: Option<BgTex>,
+    desert_near_mnt: Option<BgTex>,
     /// Storm cloud banks (`Background_112/113`), faded in by `cloudBGAlpha`.
     storm_far: Option<BgTex>,
     storm_near: Option<BgTex>,
@@ -3286,6 +3366,8 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         ocean: sky_tex(atlas, "Background_28", None),
         desert_far: sky_tex(atlas, "Background_21", None),
         desert_near: sky_tex(atlas, "Background_20", None),
+        desert_far_mnt: sky_tex(atlas, "Background_23", None),
+        desert_near_mnt: sky_tex(atlas, "Background_22", None),
         storm_far: sky_tex(atlas, "Background_112", None),
         storm_near: sky_tex(atlas, "Background_113", None),
         underground_transition: sky_tex(atlas, "Background_1", None),
@@ -3365,6 +3447,66 @@ fn calculate_water_style(world: &World, camera: Vec2) -> usize {
     0
 }
 
+/// `Main.DrawBG_HandleBackgroundTransition` plus the `bgDelay` branch of
+/// `Main.DrawBG`. The original's instant swap only pairs two forest variant
+/// sets (`GetCurrentBackgroundOfStyle`), and all forest sets are tree set 1 in
+/// our port, so it can never fire here.
+///
+/// Delay is 60 frames when entering a forest style, 30 otherwise; after the
+/// switch `bgDelay` becomes -60 and holds a 60-frame cooldown.
+fn advance_bg_style(style: &mut i32, delay: &mut i32, preferred: i32) {
+    // `SurfaceBackgroundID.Sets.IsForest`: 0 and the four forest set styles.
+    fn is_forest(style: i32) -> bool {
+        matches!(style, 0 | 10 | 11 | 12)
+    }
+    if *delay < 0 {
+        *delay += 1;
+    } else if preferred != *style {
+        let new_is_forest = is_forest(preferred);
+        let wait = if new_is_forest { 60 } else { 30 };
+        *delay += 1;
+        if *delay > wait {
+            *delay = -60;
+            *style = preferred;
+            if new_is_forest {
+                *delay = 0;
+            }
+        }
+    } else if *delay > 0 {
+        *delay -= 1;
+    }
+}
+
+/// `Main.UpdateBGVisibility_BackLayer` + `Main.UpdateBGVisibility_FrontLayer`.
+///
+/// Far indices: forest 0, desert 1, ocean 3, snow 4. Front indices equal the
+/// style in the supported subset (forest 0, desert 2, ocean 4, snow 7).
+fn advance_bg_alphas(front: &mut [f32; 16], far: &mut [f32; 16], style: i32, speed: f32) {
+    // `DrawBG_ModifyBGFarBackLayerAlpha`: only the wanted layer grows; every other
+    // non-zero layer fades out. (The desert-variant swap guard never applies to
+    // the styles we support.)
+    let far_target = match style {
+        2 => 1,
+        4 => 3,
+        7 => 4,
+        _ => 0,
+    };
+    for i in 0..far.len() {
+        let wanted = far_target == i as i32;
+        if wanted || far[i] != 0.0 {
+            far[i] = (far[i] + if wanted { speed } else { -speed }).clamp(0.0, 1.0);
+        }
+    }
+    // `UpdateBGVisibility_FrontLayer`: the target layer fades in, the rest out.
+    for i in 0..front.len() {
+        if style == i as i32 {
+            front[i] = (front[i] + speed).min(1.0);
+        } else if front[i] != 0.0 {
+            front[i] = (front[i] - speed).max(0.0);
+        }
+    }
+}
+
 fn make_stars(world: &World) -> Vec<StarSprite> {
     let mut state = world.seed ^ 0xA076_1D64_78BD_642F;
     (0..140)
@@ -3396,6 +3538,10 @@ fn draw_sky(
     tint: [f32; 3],
     storm: f32,
     background_enabled: bool,
+    // `Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer`: per-layer cross-fade
+    // alphas; two biome layers blend while `Main.bgStyle` transitions.
+    bg_alpha_front: &[f32; 16],
+    bg_alpha_far: &[f32; 16],
     light: &LightMap,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
@@ -3524,8 +3670,19 @@ fn draw_sky(
     // biome's tree line. `backgroundTopMagicNumber` makes the layers move at ~30 % of
     // the camera's vertical speed; using the local horizon instead would drag the whole
     // forest down into the view whenever the player is on a hill.
-    let snow = is_snow_biome(world, camera);
-    let desert = !snow && is_desert_biome(world, camera);
+    // `Main.bgAlphaFrontLayer`/`bgAlphaFarBackLayer`: each biome layer is drawn with
+    // `ColorOfSurfaceBackgroundsBase * alpha`, so two biomes blend while the style
+    // cross-fades (`backgroundLayerTransitionSpeed = 0.05`). Index tables:
+    //   front: forest 0, desert 2, ocean 4, snow 7
+    //   far  : forest 0, desert 1, ocean 3, snow 4     (`UpdateBGVisibility_BackLayer`)
+    let front_forest = bg_alpha_front[0];
+    let front_desert = bg_alpha_front[2];
+    let front_snow = bg_alpha_front[7];
+    let far_forest = bg_alpha_far[0];
+    // `UpdateBGVisibility_BackLayer`: desert far = 1, ocean = 3, snow = 4.
+    let far_desert = bg_alpha_far[1];
+    let far_snow = bg_alpha_far[4];
+    let far_ocean = bg_alpha_far[3];
     // `Main.screenPosition` is the *unzoomed* view top-left: the surface background
     // is laid out in that space (`DrawSurfaceBG` uses `screenPosition` directly), so
     // changing `GameZoomTarget` must not move or resize it.
@@ -3533,8 +3690,9 @@ fn draw_sky(
     let view_top = camera.y - screen.y * 0.5;
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y);
-    // `Main.DrawSurfaceBG`: `pushBGTopHack = 30`, then `-180` after the horizon layer.
-    const BG_PUSH: f32 = -150.0;
+    // `Main.DrawSurfaceBG`: `pushBGTopHack = 30` for the mountain passes, then
+    // `-180` after the horizon layer, so the front layers use `30 - 180 = -150`.
+    // The `+30`/`-150` are folded into the layer tops below.
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && view_top < world_surface_px + TILE_PX;
@@ -3579,39 +3737,38 @@ fn draw_sky(
     // Layers are positioned like `DrawSurfaceBG` but drawn in screen pixels (the
     // original applies the zoom in its sprite-batch transform). Keep the bottom of
     // every layer below the local horizon so no sky leaks between it and the terrain.
-    if show_bg && desert {
-        // `DrawSurfaceBG_Desert`: two dune layers, no tree line.
-        if let Some(far) = sky.desert_far {
-            draw_bg_layer(
-                r,
-                camera,
-                zoom,
-                screen,
-                &far,
-                2.5,
-                0.37,
-                magic * 1800.0 + 1750.0 + sc_adj + BG_PUSH,
-                false,
-                tint,
-                1.0,
-            );
+    //
+    // `DrawSurfaceBG_BackMountainsStep1`: far mountains, parallax 0.15, scale 2.0,
+    // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
+    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
+    // generator never uses that style.
+    if show_bg {
+        if far_forest > 0.0 {
+            if let Some(far) = sky.far {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &far, 2.0, 0.15,
+                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
+                    false, tint, far_forest,
+                );
+            }
         }
-    } else if show_bg {
-        let far = if snow { sky.snow_far } else { sky.far };
-        if let Some(far) = far {
-            draw_bg_layer(
-                r,
-                camera,
-                zoom,
-                screen,
-                &far,
-                2.0,
-                0.15,
-                magic * 1300.0 + 1090.0 + sc_adj + 30.0,
-                false,
-                tint,
-                1.0,
-            );
+        if far_desert > 0.0 {
+            if let Some(far) = sky.desert_far_mnt {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &far, 2.0, 0.15,
+                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
+                    false, tint, far_desert,
+                );
+            }
+        }
+        if far_snow > 0.0 {
+            if let Some(far) = sky.snow_far {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &far, 2.0, 0.15,
+                    magic * 1300.0 + 1090.0 + sc_adj + 30.0,
+                    false, tint, far_snow,
+                );
+            }
         }
     }
 
@@ -3632,95 +3789,75 @@ fn draw_sky(
         r.push_back_sprite([wx, wy], [w, h], c.uv, cloud_tint);
     }
 
-    let ocean = is_ocean_biome(world, camera);
-    if show_bg && desert {
-        if let Some(near) = sky.desert_near {
-            draw_bg_layer(
-                r,
-                camera,
-                zoom,
-                screen,
-                &near,
-                2.68,
-                0.49,
-                magic * 2100.0 + 2150.0 + sc_adj + BG_PUSH,
-                false,
-                [tint[0] * 0.96, tint[1] * 0.95, tint[2] * 0.9],
-                1.0,
-            );
+    // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
+    // in vanilla order: forest (0), desert (1), ocean (`Main.oceanBG`,
+    // `Background_28`, 3), snow (4).
+    if show_bg {
+        if far_forest > 0.0 {
+            if let Some(near) = sky.near {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &near, 2.3, 0.20,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    false, tint, far_forest,
+                );
+            }
         }
-    } else if show_bg {
-        let near = if snow { sky.snow_near } else { sky.near };
-        if let Some(near) = near {
-            draw_bg_layer(
-                r,
-                camera,
-                zoom,
-                screen,
-                &near,
-                2.3,
-                0.20,
-                magic * 1400.0 + 1260.0 + sc_adj + 30.0,
-                false,
-                [tint[0] * 0.94, tint[1] * 0.96, tint[2] * 0.98],
-                1.0,
-            );
+        if far_desert > 0.0 {
+            if let Some(near) = sky.desert_near_mnt {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &near, 2.3, 0.20,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    false, tint, far_desert,
+                );
+            }
         }
-        if ocean {
+        if far_ocean > 0.0 {
             if let Some(sea) = sky.ocean {
                 draw_bg_layer(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    &sea,
-                    2.3,
-                    0.20,
+                    r, camera, zoom, screen, &sea, 2.3, 0.20,
                     magic * 1400.0 + 1260.0 + sc_adj + 30.0,
-                    false,
-                    tint,
-                    1.0,
+                    false, tint, far_ocean,
+                );
+            }
+        }
+        if far_snow > 0.0 {
+            if let Some(near) = sky.snow_near {
+                draw_bg_layer(
+                    r, camera, zoom, screen, &near, 2.3, 0.20,
+                    magic * 1400.0 + 1260.0 + sc_adj + 30.0,
+                    false, tint, far_snow,
                 );
             }
         }
     }
 
-    if show_bg && !desert {
-        // `DrawSurfaceBG_Forest`: three tree layers at 0.40/0.43/0.49 parallax with
-        // growing scale and descending tops; the middle layer is mirrored horizontally.
-        let trees: &[Option<BgTex>; 3] = if ocean {
-            &[None, None, None]
-        } else if snow {
-            &sky.snow_trees
-        } else {
-            &sky.forest
-        };
-        let scales = [2.5f32, 2.62, 2.68];
-        let parallax = [0.40f32, 0.43, 0.49];
-        let k = [1800.0f32, 1950.0, 2100.0];
-        // `+1500/1750/2000`, `pushBGTopHack`, and the extra `-50` for `Background_50..52`.
-        let c = if snow {
-            [1350.0f32, 1600.0, 1850.0]
-        } else {
-            [1300.0f32, 1550.0, 1800.0]
-        };
-        for i in 0..3 {
-            if let Some(t) = trees[i] {
-                draw_bg_layer(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    &t,
-                    scales[i],
-                    parallax[i],
-                    magic * k[i] + c[i] + sc_adj,
-                    i == 1,
-                    [tint[0] * 0.97, tint[1] * 0.98, tint[2]],
-                    1.0,
-                );
-            }
-        }
+    // Front layer loop (`Main.DrawSurfaceBG` 59529): forest (0), desert (2), snow (7).
+    // Each layer draws with `ColorOfSurfaceBackgroundsBase * bgAlphaFrontLayer[i]`.
+    if show_bg {
+        // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): parallax
+        // 0.40/0.43/0.49, scale 2.5/2.62/2.68, tops +1300/+1550/+1800. The middle
+        // layer is mirrored horizontally (`tex == 51`).
+        draw_front_trees(
+            r, camera, zoom, screen, &sky.forest, front_forest,
+            [2.5, 2.62, 2.68], [0.40, 0.43, 0.49], [1800.0, 1950.0, 2100.0],
+            [1300.0, 1550.0, 1800.0], Some(1), magic, sc_adj, tint,
+        );
+        // `DrawSurfaceBG_Desert`: two dune layers (21/20), parallax 0.37/0.49,
+        // scale 2.5/2.68, tops +1600/+2000, no tree line.
+        let desert_trees = [sky.desert_far, sky.desert_near, None];
+        draw_front_trees(
+            r, camera, zoom, screen, &desert_trees, front_desert,
+            [2.5, 2.68, 2.68], [0.37, 0.49, 0.49], [1800.0, 2100.0, 2100.0],
+            [1600.0, 2000.0, 2000.0], None, magic, sc_adj, tint,
+        );
+        // `DrawSurfaceBG_Snow` (tree set `Main.snowBG` style 1 = `Background_37..39`):
+        // same parallax/scale/top as the forest, but none of the layers is mirrored
+        // and there is no -50 texture tweak.
+        draw_front_trees(
+            r, camera, zoom, screen, &sky.snow_trees, front_snow,
+            [2.5, 2.62, 2.68], [0.40, 0.43, 0.49], [1800.0, 1950.0, 2100.0],
+            [1350.0, 1600.0, 1850.0], None, magic, sc_adj, tint,
+        );
     }
 
     // `Main.DrawBackground_SurfaceTransitionBackground` +
@@ -4008,6 +4145,52 @@ fn push_screen(
     let wx = camera.x + (pos[0] - screen.x * 0.5) / zoom;
     let wy = camera.y + (pos[1] - screen.y * 0.5) / zoom;
     r.push_back_sprite([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color);
+}
+
+/// The three foreground layers of one biome (`DrawSurfaceBG_Forest` /
+/// `_Desert` / `_Snow`).
+///
+/// `ks`/`tops` are the `backgroundTopMagicNumber * k + c + scAdj` terms from the
+/// original; `pushBGTopHack` is already folded into `tops` (front layers use
+/// `-150`). Every layer is tinted by `ColorOfSurfaceBackgroundsBase * alpha`,
+/// where `alpha` is the biome's `Main.bgAlphaFrontLayer` entry.
+#[allow(clippy::too_many_arguments)]
+fn draw_front_trees(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    trees: &[Option<BgTex>; 3],
+    alpha: f32,
+    scales: [f32; 3],
+    parallax: [f32; 3],
+    ks: [f32; 3],
+    tops: [f32; 3],
+    flip_layer: Option<usize>,
+    magic: f32,
+    sc_adj: f32,
+    tint: [f32; 3],
+) {
+    if alpha <= 0.0 {
+        return;
+    }
+    for i in 0..3 {
+        if let Some(t) = trees[i] {
+            draw_bg_layer(
+                r,
+                camera,
+                zoom,
+                screen,
+                &t,
+                scales[i],
+                parallax[i],
+                magic * ks[i] + tops[i] + sc_adj,
+                flip_layer == Some(i),
+                tint,
+                alpha,
+            );
+        }
+    }
 }
 
 /// `Main.ComputeScAdj`: small vertical screen-space correction for backgrounds.
@@ -6467,6 +6650,91 @@ mod water_style_tests {
         let w = test_world();
         assert_eq!(calculate_water_style(&w, cam(100, 150)), 13);
         assert_eq!(calculate_water_style(&w, cam(550, 150)), 13);
+    }
+}
+
+#[cfg(test)]
+mod bg_transition_tests {
+    use super::*;
+
+    #[test]
+    fn switching_into_a_non_forest_style_waits_thirty_frames() {
+        // `DrawBG_HandleBackgroundTransition`: delay 30, switch when bgDelay > 30.
+        let (mut style, mut delay) = (0, 0);
+        for _ in 0..30 {
+            advance_bg_style(&mut style, &mut delay, 7);
+        }
+        assert_eq!((style, delay), (0, 30));
+        advance_bg_style(&mut style, &mut delay, 7);
+        assert_eq!((style, delay), (7, -60));
+    }
+
+    #[test]
+    fn switching_into_forest_waits_sixty_frames_and_resets_the_delay() {
+        let (mut style, mut delay) = (7, 0);
+        for _ in 0..60 {
+            advance_bg_style(&mut style, &mut delay, 0);
+        }
+        assert_eq!((style, delay), (7, 60));
+        advance_bg_style(&mut style, &mut delay, 0);
+        assert_eq!((style, delay), (0, 0));
+    }
+
+    #[test]
+    fn negative_delay_is_a_sixty_frame_cooldown() {
+        let (mut style, mut delay) = (7, -60);
+        for _ in 0..60 {
+            advance_bg_style(&mut style, &mut delay, 7);
+            assert_eq!(style, 7);
+        }
+        assert_eq!(delay, 0);
+        // Returning to style 0 is a forest style, so it waits 60 frames.
+        for _ in 0..31 {
+            advance_bg_style(&mut style, &mut delay, 0);
+        }
+        assert_eq!((style, delay), (7, 31));
+        for _ in 0..30 {
+            advance_bg_style(&mut style, &mut delay, 0);
+        }
+        assert_eq!(style, 0);
+    }
+
+    #[test]
+    fn keeping_the_style_decays_a_positive_delay() {
+        let (mut style, mut delay) = (0, 12);
+        advance_bg_style(&mut style, &mut delay, 0);
+        assert_eq!((style, delay), (0, 11));
+    }
+
+    #[test]
+    fn snow_cross_fade_moves_both_alpha_sets() {
+        let mut front = [0.0; 16];
+        let mut far = [0.0; 16];
+        front[0] = 1.0;
+        far[0] = 1.0;
+        // 20 frames at `backgroundLayerTransitionSpeed = 0.05` completes a fade.
+        for _ in 0..20 {
+            advance_bg_alphas(&mut front, &mut far, 7, 0.05);
+        }
+        assert_eq!(front[0], 0.0);
+        assert_eq!(far[0], 0.0);
+        assert_eq!(front[7], 1.0);
+        // `UpdateBGVisibility_BackLayer`: snow is far index 4.
+        assert_eq!(far[4], 1.0);
+        // No other slot may light up.
+        assert_eq!(front.iter().filter(|a| **a != 0.0).count(), 1);
+        assert_eq!(far.iter().filter(|a| **a != 0.0).count(), 1);
+    }
+
+    #[test]
+    fn each_supported_style_selects_its_far_layer() {
+        for (style, index) in [(0, 0), (2, 1), (4, 3), (7, 4)] {
+            let mut front = [0.0; 16];
+            let mut far = [0.0; 16];
+            advance_bg_alphas(&mut front, &mut far, style, 0.05);
+            assert_eq!(front[style as usize], 0.05, "front style {style}");
+            assert_eq!(far[index], 0.05, "far style {style}");
+        }
     }
 }
 
