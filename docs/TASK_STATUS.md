@@ -141,6 +141,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ```
 DOC-GRAPHIFY Knowledge graphs (Terraria + ReLogic + Rust) + PORT_MAP  (Agent-DeepSeek)
 DOC-README  Player-facing README + final screenshot set        (Agent-DeepSeek)
+fc47e85  [M1.4-BG-16]    Sun/moon arc, phases, rotation + tint      (Agent-DeepSeek)
 91888cc  [M1.4-BG-12]    Surface background biome cross-fade + layer stack (Agent-Qoder)
 b1d07cd  [M1.4-BG-17]    Unlit wall black coverage + unbreakable wall 350 (Agent-Qoder)
 8bc63a1  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)
