@@ -20,6 +20,13 @@ pub fn player_path(world: &Path) -> PathBuf {
     world.with_extension("trplayer")
 }
 
+/// The explored-map sidecar (`<world>.map`) next to the world file. Vanilla names
+/// it `<worldName>.map` under the player directory (`MapHelper.cs:3038`); this
+/// engine keeps it beside the `.trwld` like the player sidecar.
+pub fn map_path(world: &Path) -> PathBuf {
+    world.with_extension("map")
+}
+
 pub fn save(
     world: &Path,
     player: &Player,
@@ -124,5 +131,12 @@ mod tests {
         assert_eq!(s.inventory[3], (42, 5));
         assert_eq!(s.inventory[4], (73, 5));
         let _ = std::fs::remove_file(player_path(&path));
+    }
+
+    /// Task 9: the `.map` sidecar shares the world's stem, one directory up from
+    /// the player sidecar.
+    #[test]
+    fn map_path_sits_next_to_the_world() {
+        assert_eq!(map_path(Path::new("a/b.trwld")), PathBuf::from("a/b.map"));
     }
 }

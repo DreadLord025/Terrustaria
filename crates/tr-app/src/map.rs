@@ -368,6 +368,10 @@ pub struct WorldMap {
     dirty: Vec<(i32, i32)>,
     /// The world-sized map texture exists (`ensure_map_texture` has run).
     uploaded: bool,
+    /// A `.map` was loaded into `tiles`: upload the whole texture on the next
+    /// `prepare` (`MapRenderer.CheckMapTargets` uploads every revealed tile on
+    /// the first frame).
+    needs_full_upload: bool,
     /// `Main.resetMapFull`: recentre on the next `prepare`.
     reset_pos: bool,
 }
@@ -383,6 +387,7 @@ impl WorldMap {
             timer: 1.0,
             dirty: Vec::new(),
             uploaded: false,
+            needs_full_upload: false,
             reset_pos: true,
         }
     }
@@ -412,6 +417,19 @@ impl WorldMap {
     /// Tiles changed since the previous call (`prepare` uploads these).
     pub fn take_dirty(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.dirty)
+    }
+
+    /// Loads the explored tiles from `<world>.map` (`MapHelper.LoadMap`, invoked
+    /// at world load). Returns `false` when the file is absent or does not match
+    /// this world. The whole map texture is re-uploaded on the next `prepare`.
+    pub fn load(&mut self, world: &World, path: &std::path::Path) -> bool {
+        if !load_map_file(world, &mut self.tiles, path).unwrap_or(false) {
+            return false;
+        }
+        // Drop any pending single-tile writes; the full upload replaces them.
+        self.dirty.clear();
+        self.needs_full_upload = true;
+        true
     }
 
     /// `KeyM`: opening also arms the recentre (`Main.resetMapFull = true`) and
@@ -453,6 +471,23 @@ impl WorldMap {
         if !self.uploaded {
             r.ensure_map_texture(gpu, world.width as u32, world.height as u32);
             self.uploaded = true;
+        }
+        // A loaded `.map`: one bulk upload of every revealed tile, matching the
+        // first-frame `MapRenderer.DrawChangesToMap` sweep.
+        if self.needs_full_upload {
+            self.needs_full_upload = false;
+            let (w, h) = (world.width as u32, world.height as u32);
+            let mut rgba = vec![[0u8; 4]; (w * h) as usize];
+            for y in 0..world.height {
+                for x in 0..world.width {
+                    let t = self.tiles[world.index(x, y)];
+                    if t.light > 0 {
+                        let [cr, cg, cb] = get_map_tile_color(t, x, y);
+                        rgba[(y as u32 * w + x as u32) as usize] = [cr, cg, cb, 255];
+                    }
+                }
+            }
+            r.write_map_region(gpu, 0, 0, w, h, &rgba);
         }
         // `MapRenderer.DrawChangesToMap`: one texel per revealed map tile.
         for (x, y) in self.take_dirty() {
@@ -525,8 +560,6 @@ impl WorldMap {
 // ---------------------------------------------------------------------------
 
 /// Writes header + option tables + deflated body (`MapHelper.InternalSaveMap`).
-// Wired into the save/autosave path by Task 9; unused until then.
-#[allow(dead_code)]
 pub fn save_map_file(
     world: &World,
     map: &[MapTile],
@@ -552,8 +585,6 @@ pub fn save_map_file(
 ///
 /// `Ok(false)` when the file is absent, unreadable, truncated, has a foreign
 /// version, or its world seed/size do not match `world` (`MapHelper.cs:3763`).
-// Wired into the load path by Task 9; unused until then.
-#[allow(dead_code)]
 pub fn load_map_file(
     world: &World,
     map: &mut [MapTile],
@@ -693,6 +724,31 @@ mod tests {
         other.seed = world.seed ^ 0xff;
         let mut loaded = vec![MapTile::default(); original.len()];
         assert!(!load_map_file(&other, &mut loaded, &path).unwrap());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    // ---- Task 9: `.map` persistence (`WorldMap::load` + `persist::map_path`) ----
+
+    /// A successful load copies the tiles and arms the whole-texture upload; a
+    /// missing file changes nothing.
+    #[test]
+    fn loading_a_saved_map_arms_the_full_upload() {
+        let world = test_world();
+        let saved = test_tiles(40, 40);
+        let dir = unique_dir("wmload");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("w.map");
+        save_map_file(&world, &saved, &path).unwrap();
+
+        let mut wm = WorldMap::new(&world);
+        assert!(!wm.needs_full_upload);
+        assert!(wm.load(&world, &path));
+        assert_eq!(wm.tiles, saved);
+        assert!(wm.needs_full_upload);
+
+        let mut fresh = WorldMap::new(&world);
+        assert!(!fresh.load(&world, std::path::Path::new("does-not-exist.map")));
+        assert!(!fresh.needs_full_upload);
         std::fs::remove_dir_all(&dir).ok();
     }
 

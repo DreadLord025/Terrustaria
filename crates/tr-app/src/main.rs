@@ -736,6 +736,7 @@ fn main() -> Result<()> {
         audio: audio::Audio::new(assets::content_dir()),
         music: audio::MusicSystem::new(assets::content_dir()),
         last_hp: 100,
+        autosave: 0.0,
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
@@ -806,6 +807,8 @@ fn main() -> Result<()> {
         dev_throw: std::env::var_os("TR_THROW").is_some(),
         world_key: None,
     };
+    // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
+    app.load_map();
     event_loop.run_app(&mut app)?;
     Ok(())
 }
@@ -913,6 +916,8 @@ struct App {
     audio: audio::Audio,
     music: audio::MusicSystem,
     last_hp: i32,
+    /// `Main.saveTime`: seconds since the last autosave (`Main.cs:19751-19765`).
+    autosave: f32,
     /// Stack carried on the cursor while the inventory is open (`Main.mouseItem`).
     mouse_item: ItemSlot,
     ui_left_press: bool,
@@ -2560,8 +2565,39 @@ impl App {
                     log::warn!("player save failed: {e}");
                 }
             }
+            // `Player.InternalSaveMap` (`Player.cs:55046`): the explored map is
+            // written alongside the player/world save.
+            self.save_map();
         } else {
             log::info!("not saving: the loaded world is not a native .trwld");
+        }
+    }
+
+    /// `MapHelper.SaveMap` (`MapHelper.cs:3007`): write `<world>.map` next to the
+    /// world. Gated on `Main.mapEnabled` (`MapHelper.cs:3009`).
+    fn save_map(&self) {
+        if !self.settings.map_enabled {
+            return;
+        }
+        let Some(map) = self.map.as_ref() else { return };
+        let path = persist::map_path(&self.world_path);
+        if let Err(e) = map::save_map_file(&self.world, &map.tiles, &path) {
+            log::warn!("map save failed: {e}");
+        }
+    }
+
+    /// `MapHelper.LoadMap`: load the explored map at world load. The wiped-map
+    /// symptom (the map resetting on every restart) came from never calling this.
+    fn load_map(&mut self) {
+        if !self.world_path.extension().is_some_and(|e| e == "trwld")
+            || !self.settings.map_enabled
+        {
+            return;
+        }
+        let path = persist::map_path(&self.world_path);
+        let Some(m) = self.map.as_mut() else { return };
+        if m.load(&self.world, &path) {
+            log::info!("map: loaded {}", path.display());
         }
     }
 
@@ -2582,6 +2618,15 @@ impl App {
         }
         if !time_frozen() {
             advance_time(&mut self.world, dt);
+        }
+        // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
+        // every 600000 ms (10 minutes); the player/map save rides along.
+        if self.menu.is_none() && self.settings.auto_save {
+            self.autosave += dt;
+            if self.autosave >= 600.0 {
+                self.autosave = 0.0;
+                self.save_world();
+            }
         }
 
         let screen = self

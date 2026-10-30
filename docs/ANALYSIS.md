@@ -80,7 +80,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | UI / menus | `UI/*`, `GameContent.UI.*` | ~35 000 | ⬜ | |
 | Audio | `Audio/*`, XACT banks | ~4 000 | 🟡 | Runtime `SoundEffectReader`, eight PCM cues through `rodio`, music selector; XACT/WMA playback pending |
 | Networking | `Netplay.cs`, `MessageBuffer.cs` | ~12 000 | 🟡 | Custom host-authoritative TCP host/join with players, edits, NPCs, drops and time; not vanilla-protocol compatible |
-| Map / minimap | `Map/*` | ~5 000 | 🟡 | Explored-tile bitset, original tile/wall colours, minimap and full map |
+| Map / minimap | `Map/*` | ~5 000 | 🟡 | Per-tile `MapTile` colours from `MapHelper.Initialize`, minimap + fullscreen map with zoom/WASD pan, biome `MapBG` backdrop, player head icon and `.map` v326 persistence. No cloud/team-icon map extras |
 
 ## World file format (`.wld`)
 
@@ -879,15 +879,64 @@ v1 limits: clients do not simulate NPCs (host snapshots only, no interpolation),
 flow is simulated locally on both ends, and drops are host-authoritative with an
 optimistic client pickup.
 
-## Minimap and full map (M6)
+## Minimap and full map (M7-MAP)
 
-`map.rs` keeps a per-tile explored bitset revealed around the player four times a
-second (a 73x45 tile window, matching what the camera sees). Map colours come from the
-original textures: the average of each tile's plain 16x16 frame and each wall's inner
-cell (`assets::tile_color_avg`/`wall_color_avg`), with liquid tinting (water/lava/honey/
-shimmer). Rendering is chunked: 8x8-tile blocks average their explored colours, so the
-minimap (2 px/tile, top right) and the full map (`M`, 3 px/tile, centred on the player)
-stay at a few thousand quads. Unexplored areas stay dark; the player is a white marker.
+The map is a per-tile `MapTile` array (one entry per world cell, row-major
+`y * width + x`, the same layout as `World::index`), not the old 8x8 averaged
+blocks. Colours are the original `MapHelper` lookup tables
+(`tr-core/src/mapdata.rs`, generated from `MapHelper.cs` by
+`tools/gen_map_colors.py`), so each tile/wall shows a single flat colour;
+`MapTile` also carries the `GetTileBaseOption` type index, the per-tile light
+byte and the liquid kind. A tile is revealed by reading the light map
+(`WorldMap.UpdateLighting` / `LightingEngine.ExportToMiniMap`): a 75x47 window
+around the player four times a second (`map.rs::reveal_rect`), written into a
+world-sized RGBA texture (one texel per tile) with `SpriteRenderer::
+write_map_region`. The texture is drawn at `Main.DrawMap`'s geometry: the
+fullscreen map (`M`, `Main.mapFullscreenScale` = 2.5 opened, wheel or key zoom,
+WASD pan, clamped to 10/10/`maxTilesX-10`/`maxTilesY-19`, recentred on the view
+centre) and the minimap (top right, 240x240 drawn panel, 1.05 px/tile, centred
+on the view centre). Unexplored tiles stay transparent.
+
+Behind the fullscreen map, `map_bg_index` ports
+`Main.DrawMapFullscreenBackground` (`Main.cs:56342-56444`) to pick one of the
+`Images/MapBG{index+1}` sheets (whitelisted in `assets.rs`), stretched over the
+screen with the sky tint. The ported-later branch order is kept, but only the
+zones this engine can evaluate are wired: the Lihzahrd wall test (WallID 87 =
+`LihzahrdBrickUnsafe`, index 13/`MapBG14`), the deepest layer, the underground
+wall chain (Hive 86/108, Granite 180/184, Marble 178/183, Spider 62/263), the
+surface chain (snow/desert/beach/forest/space) and snow/desert/rock. Branches
+whose zone we cannot evaluate take the unchanged `false` path and are **not**
+implemented: `ZoneDungeon`, `ZoneGlowshroom`, `ZoneCorrupt`, `ZoneCrimson`,
+`ZoneHallow`, `ZoneJungle`, `bloodMoon` (no doubling), `ZoneGraveyard`. Note that `Images/Map` (the wooden scroll frame) is
+97 % opaque with a near-black interior, so at the default `mapFullscreenScale`
+it covers the `MapBG` backdrop; the backdrop is only visible on screens where the
+frame is smaller than the screen.
+
+The player head icon is the Rust stand-in for vanilla's 84x84
+`MapHeadRenderer`/`PlayerHeadDrawRenderTargetContent` render target (this engine
+has no render targets): `map.rs::head_icon_pos` ports the icon position
+(`Main.cs:55937-55944`) and `main.rs::draw_player_map_icon` draws the head, eye
+whites, eyes and hair (frame row 0, unlit — `MapHeadRenderer.cs:50` blits the
+target with `Color.White`) plus the outline rings (black at Manhattan radius 4,
+`Main.teamColor[0]` = white at radius 2) into the screen-space `ui` range, so it
+lands on top of the map like vanilla's frame -> tiles -> head order
+(`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is passed as `1.0`
+(no UI-scale system here). The HUD is hidden while the fullscreen map is open,
+matching vanilla's early return in `Main.Draw` (`Main.cs:62147-62181`, before
+`DrawInterface` at `62432`).
+
+Persistence: `tr-core/src/map.rs` owns the `.map` v326 byte layout (header,
+option tables, RLE body) and `tr-app/src/map.rs` the raw-deflate wrapping and
+file IO (`save_map_file`/`load_map_file`). The sidecar is `<world>.map` next to
+the `.trwld` (`persist::map_path`), written whenever the world/player is saved —
+F9, window close and the 10-minute autosave (`Main.cs:19757`:
+`saveTime.ElapsedMilliseconds > 600000`) — and loaded at startup through
+`WorldMap::load`, which arms one bulk texture upload. `Main.mapEnabled`
+(`config.json`) gates both. Deviations from `MapHelper`: no edge clearing
+(`ClearEdges`), no cloud/team-icon map extras (`DrawMap_GetMapObjectName` rows,
+pins), no `worldID` validation on load (seed + size are checked), the heat/snow
+`sceneSnowiness` input is fixed at 0 and `invisible_block` wall flags are not
+modelled (our 8-bit option byte cannot hold them).
 
 ## Localization (M6)
 
