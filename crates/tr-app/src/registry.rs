@@ -16,38 +16,42 @@ pub struct ItemDef {
     /// `Item.shoot` (projectile id), if this item fires one.
     pub projectile: Option<u16>,
     pub damage: i32,
+    /// `Item.rare` (`Item.cs`); drives the tooltip name colour
+    /// (`Main.MouseText_DrawItemTooltip_GetItemNameColor`). 0 until the item-data
+    /// port fills it in.
+    pub rare: i32,
 }
 
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 static ITEMS: &[ItemDef] = &[
     // Terraria.ID.ItemID.DirtBlock
-    ItemDef { id: 2, name: "Dirt Block", max_stack: 999, tile: Some(0), wall: None, projectile: None, damage: 0 },
+    ItemDef { id: 2, name: "Dirt Block", max_stack: 999, tile: Some(0), wall: None, projectile: None, damage: 0, rare: 0 },
     // StoneBlock
-    ItemDef { id: 3, name: "Stone Block", max_stack: 999, tile: Some(1), wall: None, projectile: None, damage: 0 },
+    ItemDef { id: 3, name: "Stone Block", max_stack: 999, tile: Some(1), wall: None, projectile: None, damage: 0, rare: 0 },
     // Torch
-    ItemDef { id: 8, name: "Torch", max_stack: 999, tile: Some(4), wall: None, projectile: None, damage: 0 },
+    ItemDef { id: 8, name: "Torch", max_stack: 999, tile: Some(4), wall: None, projectile: None, damage: 0, rare: 0 },
     // Wood
-    ItemDef { id: 9, name: "Wood", max_stack: 999, tile: Some(5), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 11, name: "Iron Ore", max_stack: 999, tile: Some(6), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 12, name: "Copper Ore", max_stack: 999, tile: Some(7), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 13, name: "Gold Ore", max_stack: 999, tile: Some(8), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 14, name: "Silver Ore", max_stack: 999, tile: Some(9), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 26, name: "Stone Wall", max_stack: 999, tile: None, wall: Some(1), projectile: None, damage: 0 },
-    ItemDef { id: 30, name: "Dirt Wall", max_stack: 999, tile: None, wall: Some(2), projectile: None, damage: 0 },
+    ItemDef { id: 9, name: "Wood", max_stack: 999, tile: Some(5), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 11, name: "Iron Ore", max_stack: 999, tile: Some(6), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 12, name: "Copper Ore", max_stack: 999, tile: Some(7), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 13, name: "Gold Ore", max_stack: 999, tile: Some(8), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 14, name: "Silver Ore", max_stack: 999, tile: Some(9), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 26, name: "Stone Wall", max_stack: 999, tile: None, wall: Some(1), projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 30, name: "Dirt Wall", max_stack: 999, tile: None, wall: Some(2), projectile: None, damage: 0, rare: 0 },
     // Shuriken: vanilla `Item.shoot = 3`; our projectile table has a single id.
-    ItemDef { id: 42, name: "Shuriken", max_stack: 999, tile: None, wall: None, projectile: Some(crate::projectile::SHURIKEN), damage: 15 },
+    ItemDef { id: 42, name: "Shuriken", max_stack: 999, tile: None, wall: None, projectile: Some(crate::projectile::SHURIKEN), damage: 15, rare: 0 },
     // Coins (`Item.maxStack = 100`)
-    ItemDef { id: 71, name: "Copper Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 72, name: "Silver Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 73, name: "Gold Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 74, name: "Platinum Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0 },
+    ItemDef { id: 71, name: "Copper Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 72, name: "Silver Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 73, name: "Gold Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 74, name: "Platinum Coin", max_stack: 100, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
     // SandBlock / AshBlock / Hellstone / Cactus / SnowBlock
-    ItemDef { id: 169, name: "Sand Block", max_stack: 999, tile: Some(53), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 172, name: "Ash Block", max_stack: 999, tile: Some(57), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 174, name: "Hellstone", max_stack: 999, tile: Some(58), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 276, name: "Cactus", max_stack: 999, tile: Some(80), wall: None, projectile: None, damage: 0 },
-    ItemDef { id: 593, name: "Snow Block", max_stack: 999, tile: Some(147), wall: None, projectile: None, damage: 0 },
+    ItemDef { id: 169, name: "Sand Block", max_stack: 999, tile: Some(53), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 172, name: "Ash Block", max_stack: 999, tile: Some(57), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 174, name: "Hellstone", max_stack: 999, tile: Some(58), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 276, name: "Cactus", max_stack: 999, tile: Some(80), wall: None, projectile: None, damage: 0, rare: 0 },
+    ItemDef { id: 593, name: "Snow Block", max_stack: 999, tile: Some(147), wall: None, projectile: None, damage: 0, rare: 0 },
 ];
 
 pub fn get(id: u16) -> Option<&'static ItemDef> {
@@ -90,6 +94,11 @@ pub fn place_wall(id: u16) -> Option<u16> {
 
 pub fn damage(id: u16) -> i32 {
     get(id).map_or(0, |d| d.damage)
+}
+
+/// `Item.rare` (`Item.cs`), used by `Main.MouseText_DrawItemTooltip_GetItemNameColor`.
+pub fn rare(id: u16) -> i32 {
+    get(id).map_or(0, |d| d.rare)
 }
 
 pub fn projectile(id: u16) -> Option<u16> {

@@ -1,8 +1,11 @@
 //! In-game HUD: hotbar / open inventory, selected-item name, the item carried on the
 //! cursor, hearts and breath, and the boss bar.
 
+pub mod cursor;
+pub mod resources;
 pub mod slot;
 pub mod text;
+pub mod tooltip;
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;

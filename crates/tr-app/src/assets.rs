@@ -170,6 +170,10 @@ pub fn load_world_images(
         "Bubble",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        "UI/Cursor_0",
+        "UI/Cursor_1",
+        "Mana",
+        "Inventory_Back13",
         // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
         // 928x248; `Main.cs:55434-55485`).
         "Map",
@@ -509,6 +513,13 @@ pub struct Lookups {
     pub ui_bubble: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
     pub ui_boss_head: Option<tr_render::SheetRect>,
+    /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
+    /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
+    pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
+    pub ui_mana: Option<tr_render::SheetRect>,
+    /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
+    pub ui_inv_bg13: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -561,6 +572,9 @@ impl Lookups {
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
+            cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            ui_mana: atlas.sheet("Mana").copied(),
+            ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
