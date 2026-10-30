@@ -79,6 +79,12 @@
 | M5-HARDFORCE | Hardmode spread | ❌ Pending | - | - |
 | M5-CHEST | Chest generation and loot | ❌ Pending | - | - |
 
+### Docs & Presentation
+
+| ID | Task | Status | Assigned To | Notes |
+|----|------|--------|-------------|-------|
+| DOC-README | Player-facing README + final screenshot set | ✅ Done | Agent-DeepSeek | `README.md` rewritten for a non-technical player (what the project is, what you can do, how much faster it runs now, save location, env vars, build-from-your-own-`Content` note, licence/author). 17 regenerated screenshots in `docs/screenshots/` (old `spout_noon.png` removed); captions unchanged |
+
 ### Milestone 6 — Audio & Polish
 
 | ID | Task | Status | Assigned To | Notes |
@@ -129,6 +135,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+DOC-README  Player-facing README + final screenshot set        (Agent-DeepSeek)
 91888cc  [M1.4-BG-12]    Surface background biome cross-fade + layer stack (Agent-Qoder)
 b1d07cd  [M1.4-BG-17]    Unlit wall black coverage + unbreakable wall 350 (Agent-Qoder)
 8bc63a1  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)

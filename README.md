@@ -1,13 +1,17 @@
-# Terraria-Rust
+# Terrustaria
 
-A native reimplementation of Terraria 1.4.5.8 in Rust with a Vulkan renderer, built from a
-clean-room analysis of the decompiled C# game.
+Terrustaria is a fan-made, from-scratch rebuild of **Terraria 1.4.5.8**. Think of it as the
+same game with a different engine underneath: the same world, the same blocks, lighting,
+water and physics, the same moment-to-moment feel — but written as a small, modern program
+that runs comfortably on modest hardware. The aim is a faithful 1:1 match: same behaviour,
+same pixels, different code.
 
-> **Status: milestone 4 complete — full first-boss encounter.** The world renders with the game's own lighting,
-> liquids, trees, biome backgrounds and weather; a player with gravity, collision,
-> survival, mining/placing, item drops and a shuriken can fight slimes, zombies, demon eyes
-> and King Slime. The full NPC/projectile rosters, most items/UI and networking are not
-> implemented. See [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest plan.
+It uses the game's own data (the `Content` folder from *your* copy of Terraria) and does not
+ship any of it.
+
+> **Where it stands today:** the world renders with the game's real lighting, liquids, trees,
+> biome backgrounds and weather, and you can walk, mine, build, fight and even take on the
+> first boss. It is very much a work in progress — see below for what is and is not there yet.
 
 ![surface](docs/screenshots/surface.png)
 
@@ -30,229 +34,67 @@ clean-room analysis of the decompiled C# game.
 | ![underground](docs/screenshots/underground.png) | ![debug_overlay](docs/screenshots/debug_overlay.png) |
 | Underground cave systems with natural lighting | Debug overlay: FPS, instance counts, light metrics |
 
-Weather is a port of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`: slanted 2×40 drops lit
-by the local light map, ground and water splashes, and `SetBackColor`'s overcast dimming of
-the sky and surface sunlight. In a snow biome the drops are replaced by ambient `Dust`
-snowflakes that thicken during a storm.
+## What you can already do
 
-## What works right now
+- **Explore a whole generated world** — rolling hills, caves, a forest lake, a snow biome in
+  the east, a desert west of spawn, oceans at both edges and an ash-and-lava underworld at the
+  very bottom.
+- **See it lit the way the original is** — daylight and darkness, lamps, lava glow and cave
+  shade, with the four switchable lighting styles (Color, White, Retro, Trippy). Press **F2**
+  to cycle them.
+- **Watch water and lava move** — breach a lake and it drains, streams level out, and
+  waterfalls form at ledges. Breaking or placing a block wakes the neighbouring liquid.
+- **Live through the weather** — rain, thunderstorms with lightning and dark storm clouds, and
+  snowfall in the snow biome.
+- **A full day/night cycle** — a sun, a moon, twinkling stars, drifting clouds and parallax
+  mountain layers.
+- **Move and build** — run, jump, swim, mine blocks and place them, with a ten-slot hotbar and
+  item drops you can pick up.
+- **Fight** — hopping slimes by day, zombies and demon eyes at night, and the first boss,
+  **King Slime** (press **B** to summon it). There is a health bar, breath meter, coin purse
+  and an overhead health bar on damaged enemies.
+- **Hear it** — mining, placing, pickups, hits and music are played straight from the game's
+  own sound files.
+- **Poke at it** — a debug overlay (**F1**) and a free camera, plus the environment variables
+  below for screenshots and benchmarks.
 
-- **World generation** — a native, deterministic generator modelled on `WorldGen`'s passes:
-  height-noise surface with a spawn plateau, grass/dirt/stone layers, hill slopes, caves,
-  dirt/stone walls, ore blobs (copper/iron/silver/gold), ash-and-hellstone underworld,
-  common trees with canopies and branches, grass/flowers on the surface, a forest lake with
-  water, lava puddles, ocean beaches at both edges, a **snow biome** in the eastern third
-  (snow tiles, winter trees, pine background) and an inland **desert** west of spawn (sand
-  dunes, hardened-sand/sandstone strata, sandstone walls, cacti, dune background). A 4200×1200
-  world generates in ~175 ms. Re-running with `TR_REGEN=1` and `TR_SEED=<n>` gives a new
-  world.
-- **Native saves** — `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`, a compact
-  RLE row format that round-trips every tile field. The app loads it on the next start. The
-  original `.wld` loader is still available when a path is passed.
-- **World loading** — native `.wld` parser (format versions ≥ 87, section table, RLE tile
-  section, header metadata). A 6400×1800 world with 11.5 M tiles loads in ~60 ms.
-- **Autotiling** — block frames from a port of `WorldGen.TileFrameCosmetic` (generic frame
-  chain + merge families + 2 228 merge pairs extracted from the decompiled source) and wall
-  frames from `Framing.WallFrame` (full 20×3 lookup). Sloped and half-brick tiles are now
-  framed and drawn with the original's 2 px slice geometry (`DrawBasicTile`); 172 k slopes
-  in the reference world render as diagonal terrain instead of stairs.
-- **Trees** — `TileDrawing.DrawTrees` composition: 20×20 trunks on the 22 px `Tiles_5`
-  grid, biome sheet sections, `Tree_Tops_*` canopies and `Tree_Branches_*` branches anchored
-  to the invisible marker frames, with the original offsets and variants.
-- **Lighting** — a port of `TileLightScanner` (surface / hell / wall / emissive / liquid
-  seeds) and `LightMap.Blur` (2 passes × 4 directional sweeps, `0.91` air / `0.56` solid
-  decay, `0.0185` cutoff) over the visible rect inflated by 28 tiles. Surface light now
-  seeds up to each column's own first solid tile, so hills and valleys are lit like the
-  original. Daylight (`Main.SetBackColor` → `ApplyColorOfTheSkiesToTiles`) and
-  `GlobalBrightness = 1.2` are applied. `Color`/`White` modes use `Lighting.GetColor9Slice`
-  /`GetColor4Slice` block slicing for smooth seams; `Retro` and `Trippy` use the flat legacy
-  path. `F2` cycles the four modes, `TR_LIGHT_MODE` pins one. Seeding and horizontal sweeps
-  run on Rayon, and the finished map is cached with a 32-tile valid region: a static view
-  costs 0 ms, and panning within the margin reuses the map (stress panning light
-  3.31 → 0.03 ms).
-- **Liquids** — a port of `Liquid.UpdateLiquid`/`Liquid.Update` plus
-  `LiquidRenderer.InternalPrepareDraw`/`DrawNormalLiquids`: the draw cache computes
-  `VisibleLiquidLevel`, edge walls, `FrameOffset`, the source rectangle and
-  `IsSurfaceLiquid` for every visible cell, and `liquid_draw.rs` feeds the two original
-  passes — opaque background water before walls/tiles, `DEFAULT_OPACITY` water over the
-  entities — using `Misc/water_*` animation strips and `Lighting.GetCornerColors` corner
-  light. A bounded active-cell list is pumped at 30 Hz; cells fall and level out with the
-  original six-neighbour rules and retire after eight quiet passes, so a breached lake
-  drains and waterfalls form falling columns. Breaking or placing a block wakes the
-  surrounding liquid. The generator fills a forest lake and puts lava puddles on cave
-  floors. Still missing: the `Waterfall_*` overlay at half-brick spouts, water styles and
-  shimmer sparkles.
-- **Rain & weather** — `rain.rs` follows `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`:
-  `cloudAlpha` ramps toward a `maxRaining` target, up to 750 rotated `Rain_0` drops fall at
-  the original `(wind*18, 14)` px/tick, spawn only in wall-free sky and die on solid or wet
-  tiles with a `Dust` splash. `SetBackColor`'s `1 - cloudAlpha*0.9` dims the sky, clouds and
-  surface sunlight. Above 0.65 intensity the two `Background_112/113` storm cloud banks
-  fade in behind the mountains and random lightning flashes light the screen. In a snow
-  biome the same event becomes snowfall: no rain drops, and ambient `Dust` type-76 flakes
-  (thicker, faster and more wind-blown with intensity) drift down. `TR_RAIN=<0..1.75>` pins
-  a storm; the scheduler is disabled with `TR_NO_WEATHER`.
-- **Sky & background** — `Background_0` gradient anchored to `Main.worldSurface`, then the
-  vanilla `DrawSurfaceBG` layering: forest far/near mountains (`Background_7`/`8`) with the
-  three `Background_50..52` foreground tree lines, snow mountains (`35`/`36`) with the
-  `37..39` pine line, and the ocean `Background_28` sea horizon with islands. Layers use
-  `backgroundTopMagicNumber`'s vertical parallax, per-layer scale/parallax and the mirrored
-  middle tree layer; each texture's painted ground band is measured so the skyline sits on
-  the horizon. Sun/moon, twinkling stars, the 15/9-minute clock, deterministic `Cloud_*`
-  clouds and the per-column underground fade remain. Corruption/crimson/jungle/hallow
-  variants and the textured underground backgrounds are still to come.
-- **Asset pipeline** — `tools/XnbExtract` decompresses the game's XNA v5 `.xnb` containers
-  (LZX) and writes PNGs. 13 993 textures extracted, 15 100 of 15 123 files OK. The world's
-  sheets plus all tree canopy/branch styles and the 42 `Cloud_*` textures are decoded in
-  parallel.
-- **Atlas** — all sheets used by the current world (plus tree/cloud/sky/player sheets) are
-  shelf-packed into one 8192×3031 texture for the generated world (99 MB), nearest
-  filtering, no mipmaps. The original world needs 8192×4590 (150 MB).
-- **Renderer** — wgpu 30 on the **Vulkan** backend, one instanced-quad pipeline, one atlas,
-  1–2 draw calls per frame (world + optional UI), ~2 200–3 600 instances for a 1600×900
-  viewport at the gameplay zoom range.
-- **Debug overlay** — FPS, frame graph, draw calls, instance/quad/foliage counts, upload
-  size, camera state, tile counts, light-seeded tiles and light-map time, culling counters,
-  memory, GPU/driver info, active light mode.
-- **Culling** — 64×64 chunk occupancy skips empty areas; walls under fully opaque blocks
-  are not emitted; fully dark cells whose content is opaque collapse into greedy black
-  rectangles. All of it is pixel-identical to drawing every tile. The sky/parallax layers
-  are a separate always-rebuilt back range; the tile/wall/liquid/entity range is cached by
-  the camera's tile, zoom, light generation and entity hashes (G6), so a static view and
-  sub-tile pans rebuild only the small back range and the UI.
-- **Player (first pass)** — a 20×42 hitbox with the original `Player.cs` movement constants
-  simulated at a fixed 60 Hz with render interpolation between ticks:
-  gravity, acceleration/friction, hold-to-jump height (`jumpSpeed 5.01`,
-  `jumpHeight 15`), axis-separated AABB collision, simple water buoyancy, ground-slope
-  support and respawn. Full-tile ledges require a jump; slopes are followed smoothly and
-  entity sprites are snapped to whole screen pixels so their texel grid never crawls. Survival follows `Player.cs`:
-  a 200-tick breath meter that drains underwater (2 damage per 7 ticks once empty, with a
-  HUD bar), fall damage after 25 tiles (10 per extra tile), lava damage and out-of-combat
-  regeneration (5 s delay, 1 HP per 0.5 s). The starter character is composed from the
-  original `Player_0_*`/`Player_Hair_1` part strips (head, eyes, torso, shirt, composite
-  front/back arms, legs, pants, shoes, hair) with walk/jump leg frames and camera follow. Half bricks collide only
-  in their bottom 8 px and are walkable on top; ceiling slopes (3/4) block by their
-  triangular geometry. The selected hotbar block is drawn in the hand with a swing arc
-  while mining, placing or attacking. The full draw-layer order (front arm, armor,
-  accessories, composite-arm rotation) is still to port.
-- **NPCs & combat (first pass)** — enemies tick at a fixed 60 Hz (`NPC.cs` rate) regardless
-  of the display refresh rate; blue slimes spawn on the surface near the player, hop
-  toward them with gravity/collision, float and bob on water via the `AI_001_Slimes`
-  water tail, deal 12 contact damage and have 30 HP; at night a
-  walking zombie (18×40, 45 HP, 14 damage) chases the player, jumps one-tile ledges and
-  burns away in daylight, while a flying demon eye (25 HP, 14 damage) swoops in. LMB over an
-  NPC within four tiles performs a 15-damage melee hit; selecting the starting shuriken
-  stack and clicking throws a rotating `Projectile_3` (10 damage, tile bounces, 2 s
-  lifetime) toward the cursor. Enemies drop coins on death (copper/silver, gold from the
-  boss) that fly out, land and are collected into a purse shown above the health bar.
-  `B` summons King Slime: 2000 HP, big hops, a teleport when the player outruns it, slime
-  minions on landing and a boss bar. Damaged
-  slimes show an overhead bar. The player has 100 HP, hurt cooldown/knockback, a HUD health
-  bar and respawns at spawn on death. At most four slimes are kept alive and respawned.
-  Data-oriented entity arrays are planned for the full roster.
-- **Editing, drops & hotbar (first pass)** — LMB mines (0.25 s dirt / 0.55 s stone+ore) or
-  uses a weapon, RMB places the selected block, 1–9/0 select one of ten hotbar slots. Mined tiles spawn
-  `Terraria.Item`-style drops with gravity, bouncing and a ground bob; walking close
-  magnetises them into a matching stack or the first empty slot. F9 (or closing the window)
-  writes the world back to `.trwld` plus the player state to a `.trplayer` sidecar
-  (position, HP, ten slot kinds/counts and the coin purse). Edits bump the world revision, update the
-  column surface, re-frame the 5×5 neighbourhood and invalidate the light/instance caches.
-  No tool requirements, reach-through-walls or chests yet.
-- **Original sound effects (first pass)** — `SoundEffectReader` loads the retail PCM XNB
-  cues at runtime and plays mining, placement, pickup, coin, hurt and NPC-hit sounds through
-  `rodio`. Music selection follows boss/underground/day/night state; XACT/WMA playback is
-  still pending.
-- **Camera** — follows the player (WASD/arrows move, Space/W/Up jump, wheel zoom, F1 debug,
-  F2 light mode, F5 respawn). `TR_CAM`/`TR_PAN` switch to the free debug camera; `TR_NOPLAYER`
-  hides the player for pixel comparisons.
-- **Headless tooling** — `TR_BENCH` (uncapped frame timing), `TR_SHOT` (deterministic
-  screenshot without desktop capture), `TR_CAM`/`TR_ZOOM`, `TR_DAY`, `TR_LIGHT_MODE`,
-  `TR_RAIN`,
-  `TR_LIGHT_AT`, `TR_SCAN_LIGHT`, `TR_ATLAS_DUMP`, `TR_STATS`, `TR_NOCACHE`, `TR_NO_BG`,
-  `TR_NO_WALLS`, `TR_REGEN`, `TR_SEED`, `TR_PAN` and `tools/pixel_diff.py`.
+## Speed: how much faster it is now
 
-## Measured (RTX 4070 Laptop, Ryzen AI 9 365, 1600×900)
+Terrustaria went through a dedicated performance pass ("Milestone 1.5"), and the difference is
+large. Every change was verified to produce the **exact same pixels** as before, so the game
+looks identical — it just does far less work.
 
-| Metric | Value |
-| --- | --- |
-| Frame time, avg (generated surface, zoom 1.5, overlay off) | **2.00 ms** (p50 1.88) |
-| Frame time, avg (original surface, zoom 1.5, overlay off) | **1.96 ms** (p50 1.82) |
-| Frame time, avg (generated lake, zoom 1.5) | **~2.0 ms** (~2 800 instances) |
-| CPU tile + light (surface, zoom 1.5) | ~0.25–0.35 ms (9-sliced blocks add quads, not light work) |
-| Lighting (visible rect + 28) | 0.2–0.5 ms real zoom; 3.1 ms at 0.25 cave |
-| Draw calls | 1 (world) or 2 (with UI) |
-| Instances at real zoom (1.0–2.0) | 2 200–3 600 (9-slice raises the count, frame time stays present-bound) |
-| World generation (4200×1200) | ~165 ms |
-| Generated save (TRWLD, RLE) | ~3.9 MB |
-| World load (generated `.trwld`, frame + walls) | ~20 ms + ~20 ms |
-| World load (original `.wld`, 11.5 M tiles) | ~60 ms |
-| Autotiling, parallel (5.9 M tiles + 2.7 M walls) | ~70 ms (was ~295) |
-| Tree/branch sheets, parallel decode | ~15 ms |
-| Atlas build | ~50 ms + one-time opacity scan |
+Measured on our test machine — an **RTX 4070 Laptop GPU with a Ryzen AI 9 365, at 1600×900** —
+against the project's previous build:
 
-The present/compositor floor on the test laptop is ~1.10–1.33 ms and bimodal depending on
-power/compositor state, so CPU-side `TR_STATS` numbers are the stable comparison at real zooms.
+- **Lighting in caves is roughly 2.5× faster**, and re-using the light map makes a still
+  picture essentially free while smooth panning costs almost nothing.
+- **Preparing the world's sprites (autotiling) went from ~295 ms to ~70 ms.**
+- **Decoding the game's textures went from ~68 ms to ~20 ms.**
+- **Start-up time roughly halved** (about 475 ms → 210 ms).
+- A finished frame now sits around **1.3–2 ms** at 1600×900, drawing the whole scene in one or
+  two GPU calls.
 
----
+The important part: none of this came from cutting corners. The in-game zoom stays at the
+original 1.0–2.0 range, no detail is ever dropped, and every optimisation was checked to be
+pixel-for-pixel identical to the unoptimised version.
 
-### Performance milestones achieved
+## Where your world is saved
 
-All measurements verified against the decompiled reference with pixel-identical screenshots:
+Your world and character are saved to:
 
-| Phase | Result |
-| --- | --- |
-| Parallel light (Rayon, seeding + horizontal sweeps) | Cave zoom 0.25: **7.67 → 3.05 ms** |
-| Light-map cache by (rect, sky, flicker, revision) | Static: **0 ms**; panning: ~50 % reuse |
-| Incremental light (32-tile valid region) | Panning zoom 0.25: light **3.31 → 0.03 ms**, draw **4.13 → 0.74 ms** |
-| Parallel autotiling (128 rows × 4 passes) | **295 → ~70 ms** (5.9 M tiles, 2.7 M walls) |
-| Parallel PNG decode | **68 → ~20 ms** (258 sheets) |
-| World range caching by camera/light | Static camera: **98 %** hits, sub-tile pan rebuilds only back range |
-
-## What is *not* implemented (yet)
-
-The full item list (tools, weapons, potions), the full inventory/crafting/chests UI, the
-NPC roster, projectiles, audio and networking are still missing. The player is a movement/visual
-first pass: no item use/combat variety, armor, buffs or drowning visuals. The
-`Waterfall_*` overlay at half-brick spouts, water
-styles, shimmer sparkles and the original's four-corner liquid surface mesh are still
-missing; the current pass draws tile-level surfaces. The world
-generator is a compact model of `WorldGen`'s shapes, not a port of all 45 000 lines: no
-biomes beyond forest+snow, no corruption/crimson/jungle/desert/hallow, no structures/dungeons,
-no full ocean biome or hardmode spread; the desert has no structures or desert loot yet.
-Rain, storms, lightning and snow exist as a first pass, but wind gusts, snowfall
-accumulation and weather audio are missing. Common
-forest / corrupt / crimson / jungle / snow / hallow / mushroom tree foliage is composed,
-but gem/vanity/palm trees and the per-world random forest style variations are approximate.
-Real biome-specific backgrounds, biome weather and the real textured underground
-background are still missing; the sky is the `Background_0` gradient, two seeded parallax
-mountain layers, sun/moon/stars, a static cloud layer and a per-column cave fade. Per-type special
-framing branches (grass edge overrides, moss, vines, cactus) and `TileObjectData` furniture
-remain on the roadmap. Details and estimates in [`docs/ROADMAP.md`](docs/ROADMAP.md).
-
-## Build & run
-
-Requirements: Rust 1.89+, a Vulkan-capable GPU and driver, Windows (Linux should work but is
-untested).
-
-```powershell
-# 1. decompile the game (once) — requires ilspycmd
-ilspycmd "C:\Program Files (x86)\Steam\steamapps\common\Terraria\Terraria.exe" -p -o decompiled
-
-# 2. extract textures (once) — .NET 10 SDK
-dotnet build tools/XnbExtract -c Release
-.\tools\XnbExtract\bin\Release\net10.0\XnbExtract.exe `
-  "C:\Program Files (x86)\Steam\steamapps\common\Terraria\Content\Images" assets\Images
-
-# 3. build and run
-cargo run --release -p tr-app                     # generate/load Terrustaria
-cargo run --release -p tr-app -- "C:\path\to\world.wld"   # load an original save
-cargo run --release -p tr-app -- "C:\path\to\world.trwld" # load a native save
+```
+Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld
 ```
 
-With no argument the app uses `Documents/My Games/Terrustaria/Worlds/Terrustaria.trwld`,
-generating it from seed 1 on first launch. `TR_REGEN=1` regenerates it, `TR_SEED=<n>` picks
-another seed.
+The game loads that world on the next launch. The first time you run it, the world is
+generated from a fixed seed; `TR_REGEN=1` regenerates it and `TR_SEED=<n>` picks a different
+one.
 
-### Environment variables
+## Environment variables
+
+These mostly exist for screenshots, benchmarks and debugging — a normal player never needs
+them. Set one before launching the program.
 
 | Variable | Meaning |
 | --- | --- |
@@ -290,23 +132,66 @@ another seed.
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 
-## Layout
+## Building it yourself
+
+Terrustaria ships **none** of Terraria's art, sound or data. To build and run it you must own
+Terraria.
+
+1. Create a folder called `assets` in the project root.
+2. Copy the game's `Content` folder into it, so the result is `assets\Content` (i.e.
+   `*\assets\Content`).
+3. With the Rust toolchain installed, build and start it:
+
+```powershell
+cargo run --release -p tr-app
+```
+
+Nothing inside `assets\Content` is ever committed or uploaded — the repository ignores it, and
+neither the decompiled code nor the extracted textures are part of this project.
+
+## What is *not* implemented yet
+
+Terrustaria is an ongoing effort, not a finished game. Still to come: the full item list
+(tools, weapons, potions), the proper inventory/crafting/chest screens, the complete NPC and
+projectile rosters, most of the UI, and networking. Biomes beyond forest, snow and a small
+desert, world structures and dungeons, hardmode, and many background variants are still
+missing. The world generator is a faithful but compact model of the original's shapes, and
+several background/lighting details are approximations. See
+[`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest, detailed plan.
+
+## Project layout
 
 ```
-crates/tr-core     world model, .wld parser, native worldgen + .trwld saves, autotiling,
-                   lighting (scanner/blur/modes), tree composition, generated tile tables
-crates/tr-render   wgpu device, atlas packer, instanced sprite renderer, WGSL shader
-crates/tr-app      winit app, asset loading, camera, player physics, tile/tree/slope/liquid
-                   draw pass, sky layers, debug overlay
-tools/XnbExtract   C# XNB (LZX/DXT) -> PNG extractor
-tools/GenTileData  C# generator: TileID/Main/WorldGen tables -> crates/tr-core/src/tiledata.rs
-decompiled/        ILSpy output of Terraria.exe (not redistributed)
-assets/Images/     extracted textures (not redistributed)
+crates/tr-core     world model, save/load, world generation, autotiling, lighting, liquids
+crates/tr-render   the GPU renderer (wgpu/Vulkan): atlas packing and the instanced sprite pipeline
+crates/tr-app      the game itself: window, input, camera, player, drawing, HUD, debug overlay
+tools/XnbExtract   converts the game's .xnb textures to PNG (run locally)
+tools/GenTileData  generates the Rust tile tables from the game's data
+assets/Content     your own licensed copy of the game's data (never redistributed)
 ```
 
 ## Legal
 
-The decompiled sources and extracted textures are derived from a copy of Terraria you own and
-are **not** part of the project's source. They are excluded by `.gitignore` and must not be
-redistributed. This project is a personal engineering experiment and is not affiliated with
-Re-Logic.
+This is a personal, non-commercial fan project and a hobby. **All Terraria code, art, sounds,
+names and every other asset belong to their original authors — Re-Logic and the people who
+made Terraria.** Everything rights-wise stays with them. This project is not affiliated with,
+approved by, or endorsed by Re-Logic in any way.
+
+It exists for a single reason: as a free, public creation for players whose computers cannot
+comfortably run the normal game, and as a learning project for its author. No game resources
+are distributed here. The decompiled game source and the extracted textures are derived from a
+copy of Terraria that you own, they stay on your machine, and they are never published.
+
+## Licence and author
+
+**[MIT](LICENSE)**, for this project's own original work only. Dependencies keep their own licences.
+Terraria is a trademark of Re-Logic; Terraria's code and assets belong to Re-Logic and are
+covered by the Terraria EULA. Decompiled game source and prepared resources stay on your
+machine and are never published.
+
+The Rust libraries this project is built on keep their own licences; see `Cargo.toml` for the
+full list.
+
+**Author**
+
+Made by **DreadLord025** (@DreadLord025).
