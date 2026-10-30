@@ -15,24 +15,18 @@ ship any of it.
 
 ![surface](docs/screenshots/surface.png)
 
+*A generated forest world — no player, no interface.*
+
 | | |
 | --- | --- |
-| ![generated](docs/screenshots/generated.png) | ![player](docs/screenshots/player.png) |
-| A world from our own generator (seed 1) | The player, walking on the generated surface |
-| ![editing](docs/screenshots/editing.png) | ![slimes](docs/screenshots/slimes.png) |
-| Mining/placing with the hotbar and local re-framing | First enemy pass: hopping slimes and the health bar |
-| ![lake](docs/screenshots/lake.png) | ![snow](docs/screenshots/snow.png) |
-| Generated forest lake: vanilla draw cache, two-pass water | Snow biome: snow tiles, winter trees, pine background |
-| ![ocean](docs/screenshots/ocean.png) | ![night](docs/screenshots/night.png) |
-| Ocean beach at the world edge | Night: moon, stars, parallax mountains |
-| ![light_color](docs/screenshots/light_color.png) | ![light_retro](docs/screenshots/light_retro.png) |
-| Color mode: 9-sliced block light, smooth edges | Retro mode: flat per-tile legacy lighting |
-| ![king_slime](docs/screenshots/king_slime.png) | ![breath](docs/screenshots/breath.png) |
-| King Slime boss: 2000 HP, teleport and slime minions | Player HUD: breath meter when underwater |
-| ![storm](docs/screenshots/storm.png) | ![hell](docs/screenshots/hell.png) |
-| Storm: cloudAlpha ramp, lightning flashes, storm clouds | Underground hell: ash blocks, lava puddles, emerald light |
-| ![underground](docs/screenshots/underground.png) | ![debug_overlay](docs/screenshots/debug_overlay.png) |
-| Underground cave systems with natural lighting | Debug overlay: FPS, instance counts, light metrics |
+| ![player](docs/screenshots/player.png) | ![lake](docs/screenshots/lake.png) |
+| The player, walking on the generated surface | A generated forest lake: vanilla draw cache, two-pass water |
+| ![night](docs/screenshots/night.png) | ![storm](docs/screenshots/storm.png) |
+| Night: moon, stars and parallax mountains, world only | Storm: driving rain, dark storm clouds and lightning flashes |
+| ![underground](docs/screenshots/underground.png) | ![hell](docs/screenshots/hell.png) |
+| Underground caves with natural Color-mode lighting | Underground hell: ash blocks, lava puddles, emerald light |
+| ![king_slime](docs/screenshots/king_slime.png) | |
+| King Slime boss: 2000 HP, teleport and slime minions | |
 
 ## What you can already do
 
@@ -60,8 +54,12 @@ ship any of it.
 
 ## Speed: how much faster it is now
 
-Terrustaria went through a dedicated performance pass ("Milestone 1.5"), and the difference is
-large. Every change was verified to produce the **exact same pixels** as before, so the game
+This is an early, basic optimisation pass — the first real one the project has had. It already
+makes a noticeable difference, but it is only a starting point. As the game edges closer to
+finished, larger parts of the code will be rewritten and the whole thing will speed up
+considerably, building much bigger performance gains on top of the finished mechanics.
+
+Every change so far was checked to produce the **exact same pixels** as before, so the game
 looks identical — it just does far less work.
 
 Measured on our test machine — an **RTX 4070 Laptop GPU with a Ryzen AI 9 365, at 1600×900** —
@@ -100,6 +98,7 @@ them. Set one before launching the program.
 | --- | --- |
 | `TR_BACKEND=dx12\|gl` | Use a different wgpu backend (default `vulkan`) |
 | `TR_DEBUG=0` | Hide the debug overlay |
+| `TR_NOHUD=1` | Hide the HUD, hotbar and minimap (world-only screenshots) |
 | `TR_CAM=x,y` | Start camera at tile coordinates |
 | `TR_ZOOM=1.5` | Initial zoom factor (gameplay range is 1.0–2.0) |
 | `TR_DAY=0.15` | Override the time of day (0 = midnight, 1 = noon) |
@@ -132,31 +131,46 @@ them. Set one before launching the program.
 | `TR_BREAK=x,y` | Headless test: break that tile on the first frame |
 | `TR_PLACE=x,y,kind` | Headless test: place `kind` at that tile on the first frame |
 
-## Building it yourself
+## What you need to run it
 
 Terrustaria ships **none** of Terraria's art, sound or data. To build and run it you must own
-Terraria.
-
-1. Create a folder called `assets` in the project root.
-2. Copy the game's `Content` folder into it, so the result is `assets\Content` (i.e.
-   `*\assets\Content`).
-3. With the Rust toolchain installed, build and start it:
-
-```powershell
-cargo run --release -p tr-app
-```
+Terraria and put the game's `Content` folder in an `assets` folder at the project root, so the
+result is `*\assets\Content`.
 
 Nothing inside `assets\Content` is ever committed or uploaded — the repository ignores it, and
 neither the decompiled code nor the extracted textures are part of this project.
 
 ## What is *not* implemented yet
 
-Terrustaria is an ongoing effort, not a finished game. Still to come: the full item list
-(tools, weapons, potions), the proper inventory/crafting/chest screens, the complete NPC and
-projectile rosters, most of the UI, and networking. Biomes beyond forest, snow and a small
-desert, world structures and dungeons, hardmode, and many background variants are still
-missing. The world generator is a faithful but compact model of the original's shapes, and
-several background/lighting details are approximations. See
+Terrustaria is an ongoing effort, not a finished game. Everything below is still to come.
+
+**Content and items**
+
+- The full item list — tools, weapons, armour, accessories and blocks well beyond today's set.
+- **Potions and buffs**, including their effects over time and the icons that show them.
+- The **stat and attribute system** (defence, damage types, criticals, movement and mining
+  bonuses) and all the numbers and tooltips that come with it.
+
+**World, effects and feel**
+
+- **Particles** — dust, sparks, splashes and blood, and the hundreds of small touches that make
+  mining, hits and footsteps feel alive.
+- **Biome effects** — the ambient weather, colour and status effects each biome applies to the
+  player and the screen (water candles, weather-specific lighting, and much more).
+- Biomes beyond forest, snow and the small desert; world structures, dungeons and the world
+  evils in full; hardmode; and the many background, tree and critter variants.
+- Many of the smaller physics details — liquids that carry items, slope and rail behaviour,
+  ropes, and the rest of the movement rules.
+
+**Systems and interface**
+
+- The proper inventory, crafting, chest, NPC-shop and settings screens — most of the UI.
+- The complete NPC and projectile rosters and their AI.
+- Wiring and mechanisms, signs, and the advanced world-editing tools.
+- **Networking** (multiplayer), plus reading and writing the original Terraria world format.
+
+The world generator is a faithful but compact model of the original's shapes, and several
+background and lighting details are approximations. See
 [`docs/ROADMAP.md`](docs/ROADMAP.md) for the honest, detailed plan.
 
 ## Project layout

@@ -1067,6 +1067,13 @@ fn no_cache() -> bool {
     *NO_CACHE.get_or_init(|| std::env::var_os("TR_NOCACHE").is_some())
 }
 
+/// `TR_NOHUD=1` hides the HUD, hotbar and minimap so screenshots show only the
+/// world. The debug overlay (`TR_DEBUG`) is independent and still drawn.
+fn no_hud() -> bool {
+    static NO_HUD: OnceLock<bool> = OnceLock::new();
+    *NO_HUD.get_or_init(|| std::env::var_os("TR_NOHUD").is_some())
+}
+
 /// `TR_PAN=<tiles/frame>` pans the camera deterministically. Benchmarks use it to
 /// measure the moving-camera path, where the static-scene caches (D2/G6) mostly miss.
 fn pan_step() -> Option<f32> {
@@ -2884,7 +2891,7 @@ impl App {
                     .iter()
                     .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
                     .map(|n| (n.hp, n.max_hp));
-                if menu.is_none() {
+                if menu.is_none() && !no_hud() {
                     draw_hud(
                         renderer,
                         *camera,
@@ -2904,7 +2911,7 @@ impl App {
                     menu.draw(renderer, lookups, screen, dt);
                 }
                 if let Some(map) = map.as_ref() {
-                    if menu.is_none() && settings.map_enabled {
+                    if !no_hud() && menu.is_none() && settings.map_enabled {
                         map.draw_minimap(renderer, screen);
                         if map.open {
                             map.draw_full(renderer, world, screen);
