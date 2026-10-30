@@ -6,6 +6,7 @@
 
 use std::sync::OnceLock;
 
+use crate::lighting::LightMap;
 use crate::mapdata::{TILE_COLORS, TILE_COUNT, WALL_COLORS, WALL_COUNT};
 use crate::tile::{FLAG_FULLBRIGHT, LiquidKind, Tile};
 use crate::tile_light::paint_color;
@@ -1142,6 +1143,60 @@ pub fn create_map_tile(
         new_light as u8,
         new_color as u8,
     )
+}
+
+/// `WorldMap.UpdateLighting` (`WorldMap.cs:49-63`): keep the brighter of the old
+/// and new light, rebuild the tile with `CreateMapTile`, and return true when it
+/// changed (`MapTile.Equals`, which ignores the changed bit). Out of bounds →
+/// false.
+pub fn update_map_lighting(
+    world: &World,
+    map: &mut [MapTile],
+    x: i32,
+    y: i32,
+    light: u8,
+) -> bool {
+    if !world.in_bounds(x, y) {
+        return false;
+    }
+    let idx = world.index(x, y);
+    let other = map[idx];
+    if light == 0 && other.light == 0 {
+        return false; // WorldMap.cs:52-55
+    }
+    let new = create_map_tile(world, map, x, y, other.light.max(light), 0); // :56
+    if new.equals_all(&other) {
+        return false; // :57-60
+    }
+    map[idx] = new;
+    true
+}
+
+/// `LightingEngine.ExportToMiniMap` (`LightingEngine.cs:246-270`): sample the
+/// light map per tile with `light = min(255, max(r, g, b) * 255)` and reveal only
+/// the tiles whose pixels changed (Task 6 uploads exactly these). Tiles outside
+/// the computed light rect read `[0, 0, 0]` and stay dark. The rect is inclusive.
+pub fn reveal_rect(
+    world: &World,
+    map: &mut [MapTile],
+    light: &LightMap,
+    x0: i32,
+    y0: i32,
+    x1: i32,
+    y1: i32,
+) -> Vec<(i32, i32)> {
+    let mut changed = Vec::new();
+    for y in y0..=y1 {
+        for x in x0..=x1 {
+            let [r, g, b] = light.get(x, y);
+            // LightingEngine.cs:264: `(byte)Math.Min(255, (int)(max * 255f))`.
+            let l = ((r.max(g).max(b) * 255.0) as i32).clamp(0, 255) as u8;
+            if update_map_lighting(world, map, x, y, l) {
+                changed.push((x, y));
+            }
+        }
+    }
+    changed
 }
 
 // ---------------------------------------------------------------------------
@@ -2407,5 +2462,73 @@ mod tests {
             prefix.body_offset < bytes.len(),
             "vanilla map has an empty body"
         );
+    }
+
+    // ---- Task 5: reveal the map from the light map ----
+
+    use crate::lighting::{LightMap, LightParams};
+
+    /// A 20x400 world whose whole column is below the surface (so
+    /// `create_map_tile` never forces light 255, `MapHelper.cs:1064`) but still
+    /// above the underworld (`height - 200`).
+    fn reveal_world() -> World {
+        let mut w = World::new("t".into(), 20, 400);
+        w.world_surface = 0.0;
+        w.rock_layer = 200.0;
+        w
+    }
+
+    #[test]
+    fn light_zero_tile_is_never_revealed() {
+        let world = reveal_world();
+        let mut map = blank_map(&world);
+        assert!(!update_map_lighting(&world, &mut map, 1, 1, 0));
+        assert_eq!(map[world.index(1, 1)].light, 0);
+    }
+
+    #[test]
+    fn brighter_light_wins() {
+        let world = reveal_world();
+        let mut map = blank_map(&world);
+        let i = world.index(1, 1);
+        assert!(update_map_lighting(&world, &mut map, 1, 1, 50));
+        assert!(update_map_lighting(&world, &mut map, 1, 1, 120));
+        assert_eq!(map[i].light, 120);
+        assert!(update_map_lighting(&world, &mut map, 1, 1, 200));
+        assert!(!update_map_lighting(&world, &mut map, 1, 1, 100));
+        assert_eq!(map[i].light, 200);
+    }
+
+    #[test]
+    fn out_of_bounds_is_ignored() {
+        let world = reveal_world();
+        let mut map = blank_map(&world);
+        assert!(!update_map_lighting(&world, &mut map, -1, 0, 255));
+        assert!(!update_map_lighting(&world, &mut map, 0, 400, 255));
+    }
+
+    #[test]
+    fn reveal_rect_only_touches_lit_tiles() {
+        let world = reveal_world();
+        let mut map = blank_map(&world);
+        let light = LightMap::compute(&world, 5, 5, 10, 10, &LightParams::default());
+        let changed = reveal_rect(&world, &mut map, &light, 0, 0, 15, 15);
+        let mut revealed = 0;
+        for y in 0..=15 {
+            for x in 0..=15 {
+                if light.get(x, y) == [0.0; 3] {
+                    assert_eq!(
+                        map[world.index(x, y)].light,
+                        0,
+                        "dark tile ({x},{y}) must stay dark"
+                    );
+                } else if map[world.index(x, y)].light > 0 {
+                    revealed += 1;
+                }
+            }
+        }
+        assert!(revealed > 0, "the computed light rect must reveal a tile");
+        // `changed` is exactly the set of newly revealed tiles.
+        assert_eq!(changed.len(), revealed);
     }
 }

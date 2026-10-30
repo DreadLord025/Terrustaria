@@ -676,7 +676,7 @@ fn main() -> Result<()> {
             Err(e) => log::warn!("host on {port} failed: {e:#}"),
         }
     }
-    let mut world_map = map::WorldMap::new(&world, &atlas, &lookups);
+    let mut world_map = map::WorldMap::new(&world);
     world_map.open = std::env::var_os("TR_MAP").is_some();
     let mut app = App {
         window: None,
@@ -2565,7 +2565,7 @@ impl App {
             self.update_editing(dt, screen);
             self.net_tick(dt);
             if let Some(m) = self.map.as_mut() {
-                m.update(self.player.as_ref(), dt);
+                m.update(&self.world, self.player.as_ref(), &self.light, dt);
             }
         }
         // `TR_NET_EDIT=tx,ty`: one client edit request, used to verify the round trip.
@@ -2904,14 +2904,10 @@ impl App {
                     menu.draw(renderer, lookups, screen, dt);
                 }
                 if let Some(map) = map.as_ref() {
-                    let pt = player
-                        .as_ref()
-                        .map(|p| ((p.x / TILE_PX) as i32, (p.y / TILE_PX) as i32))
-                        .unwrap_or((world.width / 2, world.height / 2));
                     if menu.is_none() && settings.map_enabled {
-                        map.draw_minimap(renderer, world, screen, pt);
+                        map.draw_minimap(renderer, screen);
                         if map.open {
-                            map.draw_full(renderer, lookups, world, screen, pt);
+                            map.draw_full(renderer, world, screen);
                         }
                     }
                 }
