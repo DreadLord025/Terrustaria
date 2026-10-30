@@ -3019,6 +3019,20 @@ impl App {
                                 map::draw_map_background(renderer, bg, screen, sky);
                             }
                             map.draw_full(renderer, lookups, world, screen);
+                            // `Main.cs:55931-55954`: the local player's head icon,
+                            // drawn after the map tiles (`Main.cs:55609`).
+                            if let Some(p) = player.as_ref() {
+                                let (cx, cy) = p.center();
+                                // `Main.cs:55938`: `position.Y + gfxOffY + height/2`.
+                                let center_px = [cx, cy + p.gfx_off_y];
+                                let icon_pos =
+                                    map::head_icon_pos(center_px, map.pos, map.scale, screen);
+                                // `Main.GetPlayerHeadBordersColor` (`Main.cs:56616-56618`)
+                                // → `Main.teamColor[0]` = White (singleplayer).
+                                draw_player_map_icon(
+                                    renderer, player_assets, p, icon_pos, 1.0, [1.0; 4],
+                                );
+                            }
                         } else {
                             map.draw_minimap(renderer, world, screen, view_center);
                         }
@@ -5740,6 +5754,87 @@ fn draw_player(
         mul(eye),
     );
     part(assets.hair.as_ref(), frame_uv(assets.hair.as_ref(), body), mul(hair));
+    quads
+}
+
+/// `Main.MapPlayerRenderer.DrawPlayerHead` (`Main.cs:55954`): the local player's
+/// 84x84 head icon for the fullscreen map.
+///
+/// This engine has no render targets, so the `PlayerHeadDrawRenderTargetContent`
+/// composite (skin head + eye whites + eyes + hair) and the
+/// `AnOutlinedDrawRenderTargetContent` black/border rings are reproduced by pushing
+/// the same quads straight into the screen-space `ui` range (drawn after
+/// `map`/`map_back`, matching vanilla's frame → tiles → head order).
+///
+/// `pos` is the icon **centre** (`head_icon_pos`). The target is blitted centred
+/// with origin `(42, 42)` (`MapHeadRenderer.cs:50`), and the head frame sits at
+/// target-local `(26, 28)` (`PlayerDrawHeadSet.cs:150-155` + `147`), so its screen
+/// top-left is `pos + ([-16, -14]) * scale` and its size is `[40, 56] * scale`.
+/// `scale` is `Main.UIScale` — this engine has no UI scale, so it is passed `1.0`.
+/// `border` is `Main.GetPlayerHeadBordersColor` (White in singleplayer).
+fn draw_player_map_icon(
+    r: &mut SpriteRenderer,
+    assets: &PlayerAssets,
+    player: &Player,
+    pos: [f32; 2],
+    scale: f32,
+    border: [f32; 4],
+) -> u32 {
+    // `PlayerDrawHeadSet.cs:129-133` (`BoringSetup`): the raw skin/eye/hair colours,
+    // alpha 1. The icon is unlit — `MapHeadRenderer.cs:50` blits the target with
+    // `Color.White`, so there is no tile-light multiply.
+    let skin = [1.0, 125.0 / 255.0, 90.0 / 255.0, 1.0];
+    let eye_white = [1.0, 1.0, 1.0, 1.0];
+    let eye = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0, 1.0];
+    let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0, 1.0];
+    let black = [0.0, 0.0, 0.0, 1.0];
+    // `PlayerDrawHeadSet.cs:142-146`: `direction < 0` flips horizontally.
+    let flip = player.facing < 0;
+    // `PlayerDrawHeadSet.cs:148-149`: the neutral frame row (`bodyFrameMemory` with
+    // `Y = 0`). `HairFrame` shortens this by 1px (`:82-90`), ignored.
+    let frame = 0u32;
+    let parts: [(Option<&BgTex>, [f32; 4]); 4] = [
+        (assets.head.as_ref(), skin),
+        (assets.eye_whites.as_ref(), eye_white),
+        (assets.eyes.as_ref(), eye),
+        (assets.hair.as_ref(), hair),
+    ];
+    let size = [40.0 * scale, 56.0 * scale];
+    let base = [pos[0] - 16.0 * scale, pos[1] - 14.0 * scale];
+    let mut quads = 0;
+    // One `Draw(helperTarget, offset, tint)` — all four parts of the composite, so
+    // the union of their alphas is the silhouette the outline rings are built from.
+    let mut copy = |offset: [f32; 2], tint: Option<[f32; 4]>| {
+        let at = [base[0] + offset[0] * scale, base[1] + offset[1] * scale];
+        for &(tex, color) in parts.iter() {
+            if let Some(tex) = tex {
+                let uv = flip_uv(player_frame_uv(tex, frame), flip);
+                r.push_ui_sprite(at, size, uv, tint.unwrap_or(color));
+                quads += 1;
+            }
+        }
+    };
+    // `AnOutlinedDrawRenderTargetContent.cs:38-49`: 8 black ring copies at Manhattan
+    // radius 4 (`num = 2`, `num2 = num * 2 = 4`).
+    for offset in [
+        [-4.0, 0.0],
+        [4.0, 0.0],
+        [0.0, -4.0],
+        [0.0, 4.0],
+        [-2.0, -2.0],
+        [-2.0, 2.0],
+        [2.0, -2.0],
+        [2.0, 2.0],
+    ] {
+        copy(offset, Some(black));
+    }
+    // `AnOutlinedDrawRenderTargetContent.cs:50-60`: 4 border copies at Manhattan
+    // radius 2 (`num2 = num = 2`).
+    for offset in [[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]] {
+        copy(offset, Some(border));
+    }
+    // `AnOutlinedDrawRenderTargetContent.cs:62`: the head composite itself.
+    copy([0.0, 0.0], None);
     quads
 }
 

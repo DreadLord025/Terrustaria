@@ -58,6 +58,22 @@ fn map_origin(pos: [f32; 2], scale: f32, screen: Vec2) -> [f32; 2] {
     ]
 }
 
+/// `Main.DrawMap`'s fullscreen head-icon position (`Main.cs:55937-55944`).
+/// `center_px` is `Main.player[k].Center` (world px; `gfxOffY` already added to Y).
+/// `pos`/`scale` are `Main.mapFullscreenPos`/`Main.mapFullscreenScale`; `screen` is
+/// the screen size in px. `num12`/`num13` are 0 on the fullscreen map
+/// (`Main.cs:55302-55303`).
+/// Returns the icon centre in screen px (the 84x84 head target is drawn centred here).
+pub fn head_icon_pos(center_px: [f32; 2], pos: [f32; 2], scale: f32, screen: Vec2) -> [f32; 2] {
+    // `Main.cs:55425-55430`: `num`/`num2`.
+    let origin = map_origin(pos, scale, screen);
+    // `Main.cs:55937-55944`, keeping the C# left-to-right order (`a/16*scale`).
+    let x = center_px[0] / TILE_PX * scale + origin[0] - 6.0 - 10.0 * scale;
+    let y = center_px[1] / TILE_PX * scale + origin[1] - 2.0 - (2.0 - scale / 5.0 * 2.0)
+        - 10.0 * scale;
+    [x, y]
+}
+
 /// `Main.DrawMap` fullscreen geometry (`Main.cs:55425-55430` + `55591-55607`): the
 /// drawn tile window is `[10, 10] ..= [maxTilesX-11, maxTilesY-20]`.
 pub fn map_full_quad(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
@@ -1001,5 +1017,32 @@ mod tests {
         let bg = map_bg_index(&w, cam, screen, (2100, 50)).unwrap();
         assert_eq!(bg.index, 32);
         assert!(bg.sky_tint);
+    }
+
+    // ---- Task 8: fullscreen player head icon (`Main.cs:55931-55954`) ----
+
+    /// `Main.DrawMap`'s fullscreen head-icon position (`Main.cs:55937-55944`).
+    #[test]
+    fn head_icon_pos_matches_vanilla() {
+        // Hand-computed from `Main.cs:55425-55430` (origin) + `55937-55944`.
+        //
+        // origin = [800 - 2100*scale + 10*scale, 450 - 355*scale + 10*scale]
+        // scale 2.5 -> origin = [800 - 5250 + 25, 450 - 887.5 + 25] = [-4425, -412.5]
+        //   x = (33608/16)*2.5 + (-4425) - 6  - 10*2.5
+        //     = 2100.5*2.5 - 4425 - 6 - 25 = 5251.25 - 4456 = 795.25
+        //   y = (5688/16)*2.5 + (-412.5) - 2 - (2 - 2.5/5*2) - 25
+        //     = 355.5*2.5 - 412.5 - 2 - 1 - 25 = 888.75 - 440.5 = 448.25
+        // scale 4.0 -> origin = [800 - 8400 + 40, 450 - 1420 + 40] = [-7560, -930]
+        //   x = 2100.5*4 - 7560 - 6 - 40 = 8402 - 7606 = 796
+        //   y = 355.5*4 - 930 - 2 - (2 - 4/5*2) - 40 = 1422 - 930 - 2 - 0.4 - 40 = 449.6
+        let screen = Vec2::new(1600.0, 900.0);
+        let pos = [2100.0, 355.0];
+        let center_px = [33608.0, 5688.0];
+        let got = head_icon_pos(center_px, pos, 2.5, screen);
+        assert_close(got[0], 795.25, 1e-3);
+        assert_close(got[1], 448.25, 1e-3);
+        let got = head_icon_pos(center_px, pos, 4.0, screen);
+        assert_close(got[0], 796.0, 1e-3);
+        assert_close(got[1], 449.6, 1e-3);
     }
 }
