@@ -78,12 +78,10 @@ pub fn mana_label_x(label_w: f32, screen_w: f32) -> f32 {
     screen_w - (if label_w >= 45.0 { label_w + 5.0 } else { 50.0 })
 }
 
-/// `Player.statMana` / `Player.statManaMax2` are **not yet** modelled by
-/// `tr_app::Player` (see `docs/superpowers/sdd/whole-ui-p1/task-3-report.md`). The
-/// classic display reads both; kept behind this helper so wiring the field later is a
-/// one-line change and no mana HUD is drawn in the meantime.
-fn player_mana(_p: &Player) -> (i32, i32) {
-    (0, 0)
+/// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`); the classic
+/// display reads them directly.
+fn player_mana(p: &Player) -> (i32, i32) {
+    (p.mana, p.mana_max)
 }
 
 /// `ClassicPlayerResourcesDisplaySet.Draw` (line 26): life, then mana.

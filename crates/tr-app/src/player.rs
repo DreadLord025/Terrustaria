@@ -78,6 +78,11 @@ pub struct Player {
     pub spawn_y: f32,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
+    /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
+    /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
+    pub mana: i32,
+    pub mana_max: i32,
     pub hurt_cd: f32,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
@@ -121,6 +126,8 @@ impl Player {
             spawn_y: sy,
             hp: 100,
             max_hp: 100,
+            mana: 20,
+            mana_max: 20,
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
