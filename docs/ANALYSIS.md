@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon, stars, deterministic `Cloud_*` layer + the textured `Background_1/2` underground backdrop anchored to `worldSurface`; no biome backgrounds/rain/rock-layer backdrop yet |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), stars, deterministic `Cloud_*` layer + the textured `Background_1/2` underground backdrop anchored to `worldSurface`; cloud density and biome backgrounds/rain/rock-layer backdrop still partial |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -533,6 +533,32 @@ boundary; the underground now begins where the original's does.
 
 `ApplyColorOfTheSkiesToTiles` pulls each channel 70 % towards its own value
 (`(sum + 7·c) / 10`), which is the colour passed to the surface light seed.
+
+### Sun and moon (`DrawSunAndMoon`)
+
+`crates/tr-core/src/sky.rs` holds the placement maths; `draw_sky` draws the bodies on
+the camera's screen-space arc (`Main.cs:62848`):
+
+- `celestial_body` computes the anchor `time/period · (screenWidth + 2·texWidth) − texWidth`
+  (integer-truncated like the original), the arc `bgTopY + |2·t−1|²·250 + 180`, the scale
+  `1.2 − |2·t−1|²·0.4` (the day branch multiplies by `1.1`) and the rotation `2·t − 7.3`;
+  `period` is `54000` for the sun and `32400` for the moon.
+- `sky_bg_top_y` is the in-game `SceneArea.bgTopY` (`Main.cs:62040`,
+  `−screenPosition.Y / (worldSurface·16 − 600) · 200`), so the bodies ride the camera; they
+  only draw while `screenPosition.Y / 16 < worldSurface + 2` (`Main.cs:62090`).
+- The sun is drawn twice — the raw texture, then `sunColor` at alpha `sunColor.B` — through
+  a new rotated background sprite (`push_back_sprite_rot`) so it spins about its centre.
+  The moon picks `Images/Moon_0..8` by `Main.moonType` and the 50-px source row by
+  `Main.moonPhase`. `sun_color`/`moon_color` port the base (forest) `SetBackColor` branches.
+- `World` gained `moon_type`/`moon_phase`: the phase advances one step at each night→day
+  rollover (`Main.cs:19982`, wrapping 7→0) and `moon_type` is drawn from the generator RNG
+  (`Main.cs:10873`). The native save is now `TRWLD` v2 (v1 still loads with 0/0) and the
+  `.wld` reader picks up both header fields.
+
+Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), the event
+moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
+interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
+Cloud density (`Cloud.GetParallax`) and the exact star density remain (BG-16).
 
 ## World generation and native saves
 

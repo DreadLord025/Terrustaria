@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-30T10:55Z  
+**Last updated:** 2026-10-30T20:36Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -21,7 +21,7 @@
 | M1.4-BG-8 | Walls: 32x32 sprites + corner light | ✅ Done | Agent-Qoder | `e4efa59`: `Main.DrawWalls` geometry (32x32 at 8 px up/left), own pass before tiles, `Lighting.GetCornerColors` per cell with a flat fast path, black-wall skip |
 | M1.4-BG-9 | Surface parallax offsets and X phase | ✅ Done | Agent-Qoder | `f698971`: `pushBGTopHack`, `Background_50..52` -50, 2.68 third layer, desert 2.5/2.68, `bgStartX` from the screen's left edge |
 | M1.4-BG-10 | Rock layer / magma / hell backgrounds | ❌ Pending | - | `DrawBackground_DrawRockLayer`/`DrawMagmaLayer` (Background_3..6,185..187), `GetRockTransitionPoint`, `GlobalBrightness` ramp |
-| M1.4-BG-11 | Sun/moon phases, clouds, stars | ❌ Pending | - | `DrawSunAndMoon` scale/phase/rotation, `Cloud.Parse`+`GetParallax`, `DrawStarsInBackground` density |
+| M1.4-BG-11 | Sun/moon phases, clouds, stars | 🟡 Partial | Agent-DeepSeek | Sun/moon phases/scale/rotation done under `M1.4-BG-16` (see that row); cloud `Parse`/`GetParallax` and star density still pending |
 | M1.4-BG-12 | Biome bgStyle selection + cross-fade | ✅ Done | Agent-Qoder | `91888cc`: `bgStyle`/`bgDelay`/`instantBGTransitionCounter` + 16-slot `bgAlphaFrontLayer`/`bgAlphaFarBackLayer`, 0.05 per-frame fade, 30/60-frame delay + 60-frame cooldown; beach→4, desert→2, snow→7, else 0 (same camera-biome tests as the water style). Full forest/desert/ocean/snow layer stack incl. desert mountains `22/23`; timer/alpha tests in `bg_transition_tests`. `SceneMetrics`-only styles, saved tree sets and `DrawChangeOverlay` remain documented deviations |
 | TILE-DRAW-1 | Per-type draw metrics (GetTileDrawData) | 🔄 In Progress | sub-agent | `tr-core/src/drawdata.rs`: torch 20x20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus |
 | TILE-DRAW-2 | Torch flames + glow masks | ❌ Pending | - | `TextureAssets.Flames`, glow mask table |
@@ -111,7 +111,7 @@
 | M5-LAKE | Lake basins with grass banks | ✅ Done | sub-agent | `9307400`: water line one tile below the local ground, 1..6-tile carved bowl with a solid dirt floor, walls cleared above the water, grass kept on the flush banks (was: water floating above the ground) |
 | M1.4-BG-13 | Grass/dirt transition fidelity | 🔄 Research | sub-agent | `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light; fixes hard green/dirt seams |
 | M1.4-BG-14 | Background stack order + zoom behaviour | ✅ Done | Agent-Qoder | `cb71721`: surface background laid out in unzoomed `screenPosition` space (zoom-invariant), +30 push for cloud/mountain passes, −150 only for front layers. Sky gradient formula/order still pending (BG-16) |
-| M1.4-BG-16 | Sky gradient + sun/moon/clouds/stars pass | ❌ Pending | - | `Main.cs:62036-62080` gradient, `DrawSunAndMoon` arc/scale/phase, `Cloud.GetParallax`, star density, horizon layer order |
+| M1.4-BG-16 | Sky gradient + sun/moon/clouds/stars pass | 🟡 Partial | Agent-DeepSeek | `DrawSunAndMoon` arc/scale/phase/rotation ported (`tr-core/src/sky.rs` + `draw_sky`): faithful `bgTopY`, `Sun`/`Moon_0..8` sheets, `moon_type`/`moon_phase` on `World`, save v2. Remaining: `Cloud.GetParallax` density, exact `DrawStarsInBackground` star density, horizon layer order |
 | M1.4-BG-17 | Unlit wall black coverage + unbreakable wall 350 | ✅ Done | Agent-Qoder | `b1d07cd`: `DrawOwnBlacks` merging now covers every zero-light walled cell (`light_is_zero && (active || wall != 0)`) as `WallDrawing.DrawWalls` does, not only opaque wall frames; `edit::WALL_UNBREAKABLE = 350` (`WallID.UnbreakableBlockWall`) blocks hammering, tile mining/placement (`CanKillTile`/`IsTileReplaceable`) and wall replacement. Follow-up: echo walls (`WallID.EchoWall`, 318) are skipped like `WallDrawing` with invisible walls hidden — no sprite and no black |
 | TILE-DRAW-5 | Full grass framing (WorldGen 82192-83395) | ❌ Pending | - | Port groups A-J + the `-2` marker and per-biome dirt ids; our `grass_frame` covers ~25 % and plateaus on hard frames |
 | M1.4-BG-18 | Per-biome animated screen effects | ❌ Pending | - | `SceneState.ApplyVisuals` filters: desert-surface day `HeatDistortion` (`FilterHeatDistortion`, scrolling `Misc/noise`, intensity 4), underworld heat, Sun Scorch; also `Blizzard`/`Sandstorm`/`Aurora`/`WaterDistortion` and the monolith/story filters |

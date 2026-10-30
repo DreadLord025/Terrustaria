@@ -182,7 +182,8 @@
   dense per-type 18 px UV grid; walls use a precomputed `[wall][13][5]` autotile table.
   Frames that do not sit on the 18 px grid (furniture) fall back to a small lazy cache.
   Tree trunks use their own 22 px/20×20 geometry and biome sheet section.
-- Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon,
+- Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon
+  on `DrawSunAndMoon`'s screen-space arc (scale/phase/rotation from `tr-core::sky`),
   the `DrawSurfaceBG` layer stack for the current biome (forest `7`/`8` mountains and
   `50..52` tree lines, desert `23`/`22` mountains and `21`/`20` dunes, ocean `28`, snow
   `35`/`36` and `37..39` pines) with its `bgStyle` cross-fade, clouds, the underground

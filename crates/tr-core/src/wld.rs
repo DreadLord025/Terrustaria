@@ -111,7 +111,7 @@ fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<
     if version >= 284 {
         r.skip(8)?; // last played
     }
-    r.skip(1)?; // moon type
+    world.moon_type = r.u8()?.min(8); // moon type
     r.skip(3 * 4)?; // treeX
     r.skip(4 * 4)?; // treeStyle
     r.skip(3 * 4)?; // caveBackX
@@ -124,6 +124,8 @@ fn load_header_flags(r: &mut Reader, world: &mut World, version: i32) -> Result<
     world.rock_layer = r.f64()?;
     world.time = r.f64()?;
     world.day_time = r.u8()? != 0;
+    // `WorldFile._tempMoonPhase` follows `_tempDayTime` (`WorldFile.cs:2074`).
+    world.moon_phase = (r.i32()? as u8) & 7;
     Ok(())
 }
 

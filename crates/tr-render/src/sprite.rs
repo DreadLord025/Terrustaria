@@ -422,6 +422,26 @@ impl SpriteRenderer {
         });
     }
 
+    /// Rotated background-range sprite. Used by the sun and moon, which the
+    /// original draws rotated about their centre (`DrawSunAndMoon`).
+    pub fn push_back_sprite_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+    ) {
+        self.back.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+        });
+    }
+
     /// Rotated world sprite. Used by the held item, which the original draws with
     /// `ItemRotation` around the hand.
     pub fn push_sprite_rot(

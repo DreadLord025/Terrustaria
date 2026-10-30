@@ -13,6 +13,7 @@ pub mod localization;
 pub mod map;
 pub mod mapdata;
 pub mod save;
+pub mod sky;
 pub mod tile;
 pub mod tile_light;
 pub mod tiledata;

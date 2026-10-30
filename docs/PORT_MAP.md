@@ -32,6 +32,7 @@ re-implement something that already exists, or to port the wrong file.
 | torch/lamp light seeding | `crates/tr-core/src/torch.rs` | partial |
 | `Map/*`, `MapRenderer.cs`, `Main.Map*` | `crates/tr-core/src/map.rs`, `mapdata.rs` (colours/exports) | partial |
 | `IO/WorldFile.cs` (`.wld` save/load), world IO | `crates/tr-core/src/save.rs`, `wld.rs` | partial |
+| `Main.cs` `DrawSunAndMoon` / `SetBackColor` (sun+moon placement & tint) | `crates/tr-core/src/sky.rs` | partial |
 | `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization.rs` | partial |
 | block place/break/edit rules (`WorldGen.*`, `HitTile`) | `crates/tr-core/src/edit.rs` | partial |
 

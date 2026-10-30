@@ -14,7 +14,8 @@ use crate::tile::Tile;
 use crate::world::World;
 
 const MAGIC: &[u8; 8] = b"TRWLD01\0";
-const VERSION: u32 = 1;
+/// v2 added `moon_type`/`moon_phase`; v1 files still load with 0/0.
+const VERSION: u32 = 2;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -69,6 +70,7 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
     w.write_all(&world.rock_layer.to_le_bytes())?;
     w.write_all(&world.time.to_le_bytes())?;
     w.write_all(&[u8::from(world.day_time)])?;
+    w.write_all(&[world.moon_type, world.moon_phase])?;
     let imp = &world.frame_important;
     w.write_all(&(imp.len() as u32).to_le_bytes())?;
     let packed: Vec<u8> = imp.iter().map(|&b| u8::from(b)).collect();
@@ -127,7 +129,7 @@ pub fn parse(data: &[u8]) -> Result<World> {
         bail!("not a TRWLD save");
     }
     let version = r.u32()?;
-    if version != VERSION {
+    if version == 0 || version > VERSION {
         bail!("unsupported TRWLD version {version}");
     }
     let seed = r.u64()?;
@@ -146,6 +148,10 @@ pub fn parse(data: &[u8]) -> Result<World> {
     world.rock_layer = r.f64()?;
     world.time = r.f64()?;
     world.day_time = r.u8()? != 0;
+    if version >= 2 {
+        world.moon_type = r.u8()?;
+        world.moon_phase = r.u8()?;
+    }
     let imp_len = r.u32()? as usize;
     if imp_len > 1 << 16 {
         bail!("bad importance table length {imp_len}");
@@ -252,6 +258,8 @@ mod tests {
         w.spawn_x = 32;
         w.spawn_y = 10;
         w.time = 27000.0;
+        w.moon_type = 5;
+        w.moon_phase = 3;
         w.frame_important = vec![false; 754];
         w.frame_important[5] = true;
         for x in 0..64 {
@@ -287,6 +295,7 @@ mod tests {
             (2, 3, 4, 2)
         );
         assert_eq!(back.world_surface, 12.5);
+        assert_eq!((back.moon_type, back.moon_phase), (5, 3));
         assert!(back.frame_important[5]);
         assert_eq!(back.tiles, w.tiles);
     }

@@ -1068,6 +1068,12 @@ fn advance_time(world: &mut World, dt: f32) {
     } else if t >= 32400.0 {
         t -= 32400.0;
         world.day_time = true;
+        // `Main.cs:19982`: the moon phase advances when night turns into day.
+        world.moon_phase = if world.moon_phase >= 7 {
+            0
+        } else {
+            world.moon_phase + 1
+        };
     }
     world.time = t;
 }
@@ -3435,7 +3441,9 @@ struct SkyAssets {
     /// `Background_2`: the tiled dirt backdrop (`_drawBackground_backTexture[1]`).
     underground: Option<BgTex>,
     sun: Option<BgTex>,
-    moon: Option<BgTex>,
+    /// `Images/Moon_0..8` (50x400: eight 50 px phase rows); `Main.moonType` picks
+    /// the sheet, `Main.moonPhase` the row.
+    moon: [Option<BgTex>; 9],
     stars: Vec<Option<BgTex>>,
 }
 
@@ -3601,7 +3609,7 @@ fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
         underground_transition: sky_tex(atlas, "Background_1", None),
         underground: sky_tex(atlas, "Background_2", None),
         sun: sky_tex(atlas, "Sun", None),
-        moon: sky_tex(atlas, "Moon_0", Some((0, 0, 50, 50))),
+        moon: std::array::from_fn(|i| sky_tex(atlas, &format!("Moon_{i}"), None)),
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
@@ -3861,37 +3869,92 @@ fn draw_sky(
         }
     }
 
-    let t = if is_day {
-        (clock_time / 54000.0).clamp(0.0, 1.0)
-    } else {
-        (clock_time / 32400.0).clamp(0.0, 1.0)
-    } as f32;
-    let cx = -60.0 + t * (screen.x + 120.0);
-    let cy = screen.y * 0.10 + (2.0 * t - 1.0).powi(2) * screen.y * 0.20;
-    if is_day {
-        if let Some(sun) = sky.sun {
-            push_screen(
+    // `DrawSunAndMoon`: the sun and the moon ride the same arc, anchored to
+    // `Main.bgTopY` (`Main.cs:62040`) and drawn only while the camera is near the
+    // surface (`Main.cs:62090`). The original computes both bodies every frame but
+    // draws only the one matching `Main.dayTime`.
+    let view_top = camera.y - screen.y * 0.5;
+    if view_top / TILE_PX < world.world_surface as f32 + 2.0 {
+        let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface);
+        // `num12`/`num13`: cloud cover fades the second pass; `Main.atmo` is 1 and
+        // the mushroom influence is not modelled.
+        let cloud_dim = (1.0 - storm * 1.5).max(0.0);
+        if is_day {
+            if let Some(sun) = sky.sun {
+                let mut body = tr_core::sky::celestial_body(
+                    clock_time,
+                    tr_core::sky::DAY_LENGTH,
+                    bg_top_y,
+                    sun.w,
+                    screen.x,
+                );
+                // `num5 *= 1.1f` in the day branch (`Main.cs:62914`).
+                body.scale *= 1.1;
+                let size = [sun.w * body.scale, sun.h * body.scale];
+                // First pass: the raw sun (white — `color = Color.White` unless an
+                // eclipse is active, which is not modelled).
+                push_screen_rot(
+                    r,
+                    camera,
+                    zoom,
+                    screen,
+                    [body.x, body.y],
+                    size,
+                    sun.uv,
+                    [1.0, 1.0, 1.0, 1.0],
+                    body.rotation,
+                );
+                // Second pass: `sunColor` at alpha `sunColor.B` (`Main.cs:62941`).
+                let c = tr_core::sky::sun_color(clock_time);
+                push_screen_rot(
+                    r,
+                    camera,
+                    zoom,
+                    screen,
+                    [body.x, body.y],
+                    size,
+                    sun.uv,
+                    [
+                        c[0] as f32 / 255.0 * cloud_dim,
+                        c[1] as f32 / 255.0 * cloud_dim,
+                        c[2] as f32 / 255.0 * cloud_dim,
+                        c[2] as f32 / 255.0 * cloud_dim,
+                    ],
+                    body.rotation,
+                );
+            }
+        } else if let Some(moon) = sky.moon[world.moon_type.min(8) as usize] {
+            let body = tr_core::sky::celestial_body(
+                clock_time,
+                tr_core::sky::NIGHT_LENGTH,
+                bg_top_y,
+                moon.w,
+                screen.x,
+            );
+            // `new Rectangle(0, width * moonPhase, width, width)`: one phase row.
+            let phase = world.moon_phase.min(7) as f32;
+            let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
+            let v0 = moon.uv[1] + dv * phase;
+            let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
+            let c = tr_core::sky::moon_color(clock_time);
+            let size = [moon.w * body.scale, moon.w * body.scale];
+            push_screen_rot(
                 r,
                 camera,
                 zoom,
                 screen,
-                [cx - 62.0, cy - 62.0],
-                [125.0, 125.0],
-                sun.uv,
-                [1.0, 1.0, 1.0, 1.0],
+                [body.x, body.y],
+                size,
+                uv,
+                [
+                    c[0] as f32 / 255.0 * cloud_dim,
+                    c[1] as f32 / 255.0 * cloud_dim,
+                    c[2] as f32 / 255.0 * cloud_dim,
+                    cloud_dim,
+                ],
+                body.rotation,
             );
         }
-    } else if let Some(moon) = sky.moon {
-        push_screen(
-            r,
-            camera,
-            zoom,
-            screen,
-            [cx - 30.0, cy - 30.0],
-            [60.0, 60.0],
-            moon.uv,
-            [1.0, 1.0, 1.0, 0.95],
-        );
     }
 
     // `DrawSurfaceBG_BackMountainsStep1/2`: far then near mountain layer, topped by the
@@ -4373,6 +4436,35 @@ fn push_screen(
     let wx = camera.x + (pos[0] - screen.x * 0.5) / zoom;
     let wy = camera.y + (pos[1] - screen.y * 0.5) / zoom;
     r.push_back_sprite([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color);
+}
+
+/// Like [`push_screen`] but rotates the sprite about its centre (the original's
+/// `origin = size / 2`). `pos` is the *centre* in screen space; the renderer's
+/// rotation pivot is the top-left, so back the offset off by the rotated half-size.
+#[allow(clippy::too_many_arguments)]
+fn push_screen_rot(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    pos: [f32; 2],
+    size: [f32; 2],
+    uv: [f32; 4],
+    color: [f32; 4],
+    rot: f32,
+) {
+    let (s, c) = rot.sin_cos();
+    let (hx, hy) = (size[0] * 0.5, size[1] * 0.5);
+    let tl = [pos[0] - (hx * c - hy * s), pos[1] - (hx * s + hy * c)];
+    let wx = camera.x + (tl[0] - screen.x * 0.5) / zoom;
+    let wy = camera.y + (tl[1] - screen.y * 0.5) / zoom;
+    r.push_back_sprite_rot(
+        [wx, wy],
+        [size[0] / zoom, size[1] / zoom],
+        uv,
+        color,
+        rot,
+    );
 }
 
 /// The three foreground layers of one biome (`DrawSurfaceBG_Forest` /

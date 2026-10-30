@@ -27,6 +27,11 @@ pub struct World {
     pub time: f64,
     /// `Main.dayTime`: whether the saved world is in daylight.
     pub day_time: bool,
+    /// `Main.moonType` (0..8): which `Images/Moon_*` sheet is drawn.
+    pub moon_type: u8,
+    /// `Main.moonPhase` (0..7): the current-moon row in the sheet; advances one
+    /// step each time night turns into day (`Main.cs:19982`).
+    pub moon_phase: u8,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -55,6 +60,8 @@ impl World {
             rock_layer: height as f64 * 0.45,
             time: 0.0,
             day_time: true,
+            moon_type: 0,
+            moon_phase: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,

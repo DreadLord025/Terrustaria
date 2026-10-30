@@ -588,6 +588,10 @@ pub fn generate(opts: &GenOptions) -> World {
     world.spawn_y = (surface[spawn_center as usize] - 6).max(1);
     world.time = 27000.0; // noon
     world.day_time = true;
+    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
+    // generator here so it is fixed for the seed; the phase starts at 0.
+    world.moon_type = (rng.next_u32() % 9) as u8;
+    world.moon_phase = 0;
     world
 }
 
