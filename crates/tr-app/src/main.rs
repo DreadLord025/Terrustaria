@@ -2962,7 +2962,12 @@ impl App {
                     .iter()
                     .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
                     .map(|n| (n.hp, n.max_hp));
-                if menu.is_none() && !no_hud() {
+                // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
+                // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
+                // the HUD (hotbar, life, inventory) is not drawn over the map.
+                let fullscreen_map =
+                    settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                if menu.is_none() && !no_hud() && !fullscreen_map {
                     draw_hud(
                         renderer,
                         *camera,
