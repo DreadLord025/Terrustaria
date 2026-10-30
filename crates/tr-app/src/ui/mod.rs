@@ -193,6 +193,20 @@ pub fn draw_hud(
         }
     }
 
+    // `Main.DrawPendingMouseText()` → `Main.MouseText` (`Main.cs:20162`, `20322`):
+    // the hovered slot's item tooltip, drawn over the interface just before the
+    // cursor.
+    let hovered =
+        tooltip::hovered_slot(mouse_pos, inventory_open, selected, hotbar_scales, inventory);
+    tooltip::draw_item_tooltip(
+        r,
+        lookups,
+        mouse_pos,
+        hovered.map(|i| &inventory[i]),
+        screen,
+        pulse,
+    );
+
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
