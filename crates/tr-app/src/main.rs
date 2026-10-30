@@ -677,7 +677,9 @@ fn main() -> Result<()> {
         }
     }
     let mut world_map = map::WorldMap::new(&world);
-    world_map.open = std::env::var_os("TR_MAP").is_some();
+    if std::env::var_os("TR_MAP").is_some() {
+        world_map.set_open(true);
+    }
     let mut app = App {
         window: None,
         gpu: None,
@@ -1276,7 +1278,8 @@ impl ApplicationHandler for App {
                             KeyCode::F9 => self.save_world(),
                             KeyCode::KeyM => {
                                 if let Some(m) = self.map.as_mut() {
-                                    m.open = !m.open;
+                                    let open = !m.open;
+                                    m.set_open(open);
                                 }
                             }
                             KeyCode::KeyB => {
@@ -1319,9 +1322,23 @@ impl ApplicationHandler for App {
                     MouseScrollDelta::LineDelta(_, y) => y,
                     MouseScrollDelta::PixelDelta(p) => p.y as f32 / 60.0,
                 };
-                let step = d.round() as i32;
-                if step != 0 && self.menu.is_none() && !self.inventory_open {
-                    self.selected = (self.selected as i32 + step).rem_euclid(HOTBAR as i32) as usize;
+                if self.map.as_ref().is_some_and(|m| m.open) {
+                    // `Player.cs:25190-25197`: while the map is fullscreen the wheel
+                    // zooms it instead of cycling the hotbar.
+                    let (sw, _) = self.screen_size();
+                    if let Some(m) = self.map.as_mut() {
+                        m.scale = map::map_scale_clamp(
+                            sw,
+                            self.world.width,
+                            map::map_wheel_scale(m.scale, d * 120.0),
+                        );
+                    }
+                } else {
+                    let step = d.round() as i32;
+                    if step != 0 && self.menu.is_none() && !self.inventory_open {
+                        self.selected =
+                            (self.selected as i32 + step).rem_euclid(HOTBAR as i32) as usize;
+                    }
                 }
             }
             WindowEvent::MouseInput { state, button, .. } => {
@@ -1381,6 +1398,14 @@ impl ApplicationHandler for App {
 }
 
 impl App {
+    /// The swapchain size in pixels (the deterministic fallback mirrors the
+    /// `TR_SHOT`/headless default of 1280x720).
+    fn screen_size(&self) -> (f32, f32) {
+        self.gpu
+            .as_ref()
+            .map_or((1280.0, 720.0), |g| (g.config.width as f32, g.config.height as f32))
+    }
+
     fn update_player(&mut self, dt: f32) {
         // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
         static HOLD: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
@@ -1388,16 +1413,28 @@ impl App {
             let v = std::env::var("TR_HOLD").unwrap_or_default().to_ascii_lowercase();
             (v.contains("right"), v.contains("jump"))
         });
-        let input = PlayerInput {
-            left: self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft),
-            right: hold_right
-                || self.keys.contains(&KeyCode::KeyD)
-                || self.keys.contains(&KeyCode::ArrowRight),
-            jump: hold_jump
-                || self.keys.contains(&KeyCode::Space)
-                || self.keys.contains(&KeyCode::KeyW)
-                || self.keys.contains(&KeyCode::ArrowUp),
-            down: self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown),
+        // `Player.cs:24772-24803`: while the map is fullscreen every movement control
+        // is zeroed, so the player stands still and the WASD keys pan the map.
+        let map_open = self.map.as_ref().is_some_and(|m| m.open);
+        let input = if map_open {
+            PlayerInput {
+                left: false,
+                right: false,
+                jump: false,
+                down: false,
+            }
+        } else {
+            PlayerInput {
+                left: self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft),
+                right: hold_right
+                    || self.keys.contains(&KeyCode::KeyD)
+                    || self.keys.contains(&KeyCode::ArrowRight),
+                jump: hold_jump
+                    || self.keys.contains(&KeyCode::Space)
+                    || self.keys.contains(&KeyCode::KeyW)
+                    || self.keys.contains(&KeyCode::ArrowUp),
+                down: self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown),
+            }
         };
         if let Some(p) = self.player.as_mut() {
             let step = 1.0 / 60.0;
@@ -1423,6 +1460,40 @@ impl App {
                     .lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
             }
         }
+        if map_open {
+            self.update_map_input();
+        }
+    }
+
+    /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
+    /// step is `16 / scale` tiles **once per frame, with no `dt` factor** (the
+    /// original runs it in the per-frame input pass).
+    fn update_map_input(&mut self) {
+        let (sw, _) = self.screen_size();
+        let Some(m) = self.map.as_mut() else { return };
+        let step = 16.0 / m.scale;
+        let k = |code| self.keys.contains(&code);
+        if k(KeyCode::KeyW) || k(KeyCode::ArrowUp) {
+            m.pos[1] -= step;
+        }
+        if k(KeyCode::KeyS) || k(KeyCode::ArrowDown) {
+            m.pos[1] += step;
+        }
+        if k(KeyCode::KeyA) || k(KeyCode::ArrowLeft) {
+            m.pos[0] -= step;
+        }
+        if k(KeyCode::KeyD) || k(KeyCode::ArrowRight) {
+            m.pos[0] += step;
+        }
+        // `Main.cs:50453-50454`: `cMapZoomIn = "Add"`, `cMapZoomOut = "Subtract"`.
+        if k(KeyCode::NumpadAdd) {
+            m.scale = map::map_key_scale(m.scale, true);
+        }
+        if k(KeyCode::NumpadSubtract) {
+            m.scale = map::map_key_scale(m.scale, false);
+        }
+        m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
+        m.pos = map::map_clamp_pos(m.pos, &self.world);
     }
 
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
@@ -2910,11 +2981,25 @@ impl App {
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
                 }
+                // Task 6b: upload the revealed tiles into the world-sized map texture
+                // and clamp/recentre the fullscreen map. Vanilla centres the recentre
+                // and the minimap on the view centre (`Main.cs:55420-55421`,
+                // `55537-55538`): `(screenPosition + screenSize/2)/16`.
+                let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
+                if settings.map_enabled {
+                    if let Some(m) = map.as_mut() {
+                        m.prepare(renderer, gpu, world, screen, view_center);
+                    }
+                }
                 if let Some(map) = map.as_ref() {
                     if !no_hud() && menu.is_none() && settings.map_enabled {
-                        map.draw_minimap(renderer, screen);
+                        // `Main.DrawMap` (`Main.cs:55503`): the minimap
+                        // (`else if (mapStyle == 1)`) and the fullscreen map
+                        // (`if (mapFullscreen)`) branches are exclusive.
                         if map.open {
-                            map.draw_full(renderer, world, screen);
+                            map.draw_full(renderer, lookups, world, screen);
+                        } else {
+                            map.draw_minimap(renderer, world, screen, view_center);
                         }
                     }
                 }

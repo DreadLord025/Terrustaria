@@ -1,23 +1,183 @@
 //! Minimap and full map (`Main.DrawMap`, `Terraria.Map.WorldMap`): reveals
 //! `MapTile`s from the light map (`WorldMap.UpdateLighting`,
-//! `LightingEngine.ExportToMiniMap`). Drawing the tiles is Task 6; for now the
-//! panels are placeholders.
+//! `LightingEngine.ExportToMiniMap`) and draws them from a world-sized texture
+//! (one texel per map tile) at `Main.DrawMap`'s geometry.
 
 use glam::Vec2;
 use tr_core::lighting::LightMap;
-use tr_core::map::{MapTile, reveal_rect};
+use tr_core::map::{MapTile, get_map_tile_color, reveal_rect};
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
 
+use crate::assets;
 use crate::player::Player;
+
+/// `Main.cs:41101`: the scale the fullscreen map opens at.
+pub const MAP_FULLSCREEN_SCALE_DEFAULT: f32 = 2.5;
+
+/// `Main.DrawMap` scale clamp (`Main.cs:55387-55395`): floor
+/// `screen_w / world_w * 0.599`, and anything above `31.2` becomes `31.18`.
+pub fn map_scale_clamp(screen_w: f32, world_w: i32, proposed: f32) -> f32 {
+    let min = screen_w / world_w as f32 * 0.599;
+    let s = proposed.max(min);
+    if s > 31.2 { 31.18 } else { s }
+}
+
+/// `Player.cs:25190-25197`: `scale * (1 + (delta_y / 120) * 0.3)`, `delta_y` in
+/// wheel units (a notch is 120).
+pub fn map_wheel_scale(scale: f32, delta_y: f32) -> f32 {
+    scale * (1.0 + (delta_y / 120.0) * 0.3)
+}
+
+/// `Player.cs:24898-24908`: `MapZoomIn` → `* 1.05`, `MapZoomOut` → `* 0.95`.
+pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
+    if zoom_in { scale * 1.05 } else { scale * 0.95 }
+}
+
+/// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
+pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
+    [
+        pos[0].clamp(10.0, (world.width - 10) as f32),
+        pos[1].clamp(10.0, (world.height - 19) as f32),
+    ]
+}
+
+/// One map quad: `dest` is a screen rect `[x, y, w, h]`, `uv` the texture subrect
+/// `[u0, v0, u1, v1]` (normalised over the world-sized texture).
+pub struct MapQuad {
+    pub dest: [f32; 4],
+    pub uv: [f32; 4],
+}
+
+/// The fullscreen map origin (`num`/`num2`, `Main.cs:55425-55430`): `pos` in tiles,
+/// `scale` in px/tile, `screen` in px.
+fn map_origin(pos: [f32; 2], scale: f32, screen: Vec2) -> [f32; 2] {
+    [
+        screen.x * 0.5 - pos[0] * scale + 10.0 * scale,
+        screen.y * 0.5 - pos[1] * scale + 10.0 * scale,
+    ]
+}
+
+/// `Main.DrawMap` fullscreen geometry (`Main.cs:55425-55430` + `55591-55607`): the
+/// drawn tile window is `[10, 10] ..= [maxTilesX-11, maxTilesY-20]`.
+pub fn map_full_quad(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
+    let origin = map_origin(pos, scale, screen);
+    let x0 = 10.0;
+    let y0 = 10.0;
+    let x1 = (world.width - 11) as f32;
+    let y1 = (world.height - 20) as f32;
+    MapQuad {
+        dest: [origin[0], origin[1], (x1 - x0) * scale, (y1 - y0) * scale],
+        uv: [
+            x0 / world.width as f32,
+            y0 / world.height as f32,
+            x1 / world.width as f32,
+            y1 / world.height as f32,
+        ],
+    }
+}
+
+/// `Images/Map` frame rect (`Main.cs:55431-55484`); the asset is 928x248. Returns
+/// `[x, y, w, h]` in screen pixels.
+pub fn map_frame_rect(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) -> [f32; 4] {
+    let origin = map_origin(pos, scale, screen);
+    // `(float)(Main.maxTilesX / 840)`: integer division first.
+    let mut n = (world.width / 840) as f32 * scale;
+    let (mut x, mut y) = (origin[0], origin[1]);
+    let mut fw = 928.0;
+    let mut fh = 248.0;
+    match world.width {
+        8400 => {
+            n *= 0.999;
+            x -= 40.6 * n;
+            y -= 5.0 * n;
+            fw = (fw - 8.045) * n;
+            fh = (fh + 0.12) * n;
+            if n < 1.2 {
+                fh += 1.0;
+            }
+        }
+        6400 => {
+            n *= 1.09;
+            x -= 38.8 * n;
+            y -= 3.85 * n;
+            fw = (fw - 13.6) * n;
+            fh = (fh - 6.92) * n;
+            if n < 1.2 {
+                fh += 2.0;
+            }
+        }
+        6300 => {
+            n *= 1.09;
+            x -= 39.8 * n;
+            y -= 4.08 * n;
+            fw = (fw - 26.69) * n;
+            fh = (fh - 6.92) * n;
+            if n < 1.2 {
+                fh += 2.0;
+            }
+        }
+        4200 => {
+            n *= 0.998;
+            x -= 37.3 * n;
+            y -= 1.7 * n;
+            fw = (fw - 16.0) * n;
+            fh = (fh - 8.31) * n;
+        }
+        _ => {}
+    }
+    [x, y, fw, fh]
+}
+
+/// Minimap geometry (`Main.cs:55503-55546`): a 240x240 panel at
+/// `(screen_w - 292, 90)` showing `240 / scale` tiles around the view centre.
+pub fn map_minimap_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
+    let scale = scale.clamp(0.2, 3.0);
+    let panel = [screen.x - 292.0, 90.0];
+    let win = 240.0 / scale;
+    let a = center_tile[0].floor() - win * 0.5;
+    let b = center_tile[1].floor() - win * 0.5;
+    let x0 = a.max(10.0);
+    let y0 = b.max(10.0);
+    let x1 = (a + win).min((world.width - 10) as f32);
+    let y1 = (b + win).min((world.height - 19) as f32);
+    // `num10`/`num11`: the sub-tile offset of the (fractional) view centre.
+    let sub = [
+        -(center_tile[0] - center_tile[0].floor()) * scale,
+        -(center_tile[1] - center_tile[1].floor()) * scale,
+    ];
+    MapQuad {
+        dest: [
+            panel[0] + (x0 - a) * scale + sub[0],
+            panel[1] + (y0 - b) * scale + sub[1],
+            (x1 - x0) * scale,
+            (y1 - y0) * scale,
+        ],
+        uv: [
+            x0 / world.width as f32,
+            y0 / world.height as f32,
+            x1 / world.width as f32,
+            y1 / world.height as f32,
+        ],
+    }
+}
 
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
     pub open: bool,
+    /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
+    pub scale: f32,
+    pub pos: [f32; 2],
+    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    pub minimap_scale: f32,
     timer: f32,
     /// Tiles revealed/changed since the last `take_dirty` (Task 6 uploads these).
     dirty: Vec<(i32, i32)>,
+    /// The world-sized map texture exists (`ensure_map_texture` has run).
+    uploaded: bool,
+    /// `Main.resetMapFull`: recentre on the next `prepare`.
+    reset_pos: bool,
 }
 
 impl WorldMap {
@@ -25,8 +185,13 @@ impl WorldMap {
         Self {
             tiles: vec![MapTile::default(); (world.width as usize) * (world.height as usize)],
             open: false,
+            scale: MAP_FULLSCREEN_SCALE_DEFAULT,
+            pos: [0.0, 0.0],
+            minimap_scale: 1.05,
             timer: 1.0,
             dirty: Vec::new(),
+            uploaded: false,
+            reset_pos: true,
         }
     }
 
@@ -52,43 +217,111 @@ impl WorldMap {
         self.dirty.extend(changed);
     }
 
-    /// Tiles changed since the previous call (Task 6 uploads these).
-    // Wired into the texture upload by Task 6; unused until then.
-    #[allow(dead_code)]
+    /// Tiles changed since the previous call (`prepare` uploads these).
     pub fn take_dirty(&mut self) -> Vec<(i32, i32)> {
         std::mem::take(&mut self.dirty)
     }
 
-    /// Placeholder panel + border; Task 6 replaces the body with the tile texture.
-    pub fn draw_minimap(&self, r: &mut SpriteRenderer, screen: Vec2) {
-        let size = Vec2::new(90.0 * 2.0, 60.0 * 2.0);
-        let origin = Vec2::new(screen.x - size.x - 20.0, 92.0);
-        r.push_ui_rect(
-            [origin.x - 2.0, origin.y - 2.0],
-            [size.x + 4.0, size.y + 4.0],
-            [0.25, 0.3, 0.4, 0.9],
-        );
-        r.push_ui_rect(
-            [origin.x, origin.y],
-            [size.x, size.y],
-            [0.05, 0.06, 0.1, 0.9],
+    /// `KeyM`: opening also arms the recentre (`Main.resetMapFull = true`) and
+    /// resets the scale (`Main.mapFullscreenScale = 2.5`, `Main.cs:41101`).
+    pub fn set_open(&mut self, open: bool) {
+        self.open = open;
+        if open {
+            self.reset_pos = true;
+            self.scale = MAP_FULLSCREEN_SCALE_DEFAULT;
+        }
+    }
+
+    /// Per-frame prep: clamp `scale`/`pos`, recentre on the view centre if armed,
+    /// then upload the tiles in `take_dirty()` into the map texture.
+    ///
+    /// `center_tile` is the **view-centre** tile (`[camera.x / TILE_PX,
+    /// camera.y / TILE_PX]`, i.e. `(screenPosition + screenSize/2)/16`); it is only
+    /// read when a recentre is armed.
+    pub fn prepare(
+        &mut self,
+        r: &mut SpriteRenderer,
+        gpu: &tr_render::Gpu,
+        world: &World,
+        screen: Vec2,
+        center_tile: [f32; 2],
+    ) {
+        // `Main.cs:55387-55395`.
+        self.scale = map_scale_clamp(screen.x, world.width, self.scale);
+        // `Main.cs:55398-55413`.
+        self.pos = map_clamp_pos(self.pos, world);
+        // `Main.cs:55416-55424`: `resetMapFull` overrides the clamp with the unclamped
+        // view centre `(screenPosition + screenSize/2)/16f`.
+        if self.reset_pos {
+            self.pos = center_tile;
+            self.reset_pos = false;
+        }
+
+        // `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`).
+        if !self.uploaded {
+            r.ensure_map_texture(gpu, world.width as u32, world.height as u32);
+            self.uploaded = true;
+        }
+        // `MapRenderer.DrawChangesToMap`: one texel per revealed map tile.
+        for (x, y) in self.take_dirty() {
+            if !world.in_bounds(x, y) {
+                continue;
+            }
+            let t = self.tiles[world.index(x, y)];
+            let rgba = if t.light > 0 {
+                let [r, g, b] = get_map_tile_color(t, x, y);
+                [[r, g, b, 255]]
+            } else {
+                [[0, 0, 0, 0]]
+            };
+            r.write_map_region(gpu, x as u32, y as u32, 1, 1, &rgba);
+        }
+    }
+
+    /// `Main.DrawMap` minimap branch (`Main.cs:55503-55546`). The minimap is centred
+    /// on the **view centre** (`Main.cs:55537-55538`), so the caller passes that tile.
+    pub fn draw_minimap(
+        &self,
+        r: &mut SpriteRenderer,
+        world: &World,
+        screen: Vec2,
+        center_tile: [f32; 2],
+    ) {
+        let q = map_minimap_quad(center_tile, self.minimap_scale, screen, world);
+        r.push_map_sprite(
+            [q.dest[0], q.dest[1]],
+            [q.dest[2], q.dest[3]],
+            q.uv,
+            [1.0; 4],
         );
     }
 
-    /// Placeholder panel + border; Task 6 replaces the body with the tile texture.
-    pub fn draw_full(&self, r: &mut SpriteRenderer, _world: &World, screen: Vec2) {
-        r.push_ui_rect([0.0, 0.0], [screen.x, screen.y], [0.02, 0.03, 0.05, 0.93]);
-        let size = Vec2::new((screen.x - 80.0).max(0.0), (screen.y - 120.0).max(0.0));
-        let origin = Vec2::new((screen.x - size.x) * 0.5, (screen.y - size.y) * 0.5);
-        r.push_ui_rect(
-            [origin.x - 2.0, origin.y - 2.0],
-            [size.x + 4.0, size.y + 4.0],
-            [0.25, 0.3, 0.4, 0.9],
-        );
-        r.push_ui_rect(
-            [origin.x, origin.y],
-            [size.x, size.y],
-            [0.05, 0.06, 0.1, 0.95],
+    /// `Main.DrawMap` fullscreen branch (`Main.cs:55425-55609`): the `Images/Map`
+    /// frame behind the tiles (Task 7 inserts the `MapBG` backdrop before the frame).
+    pub fn draw_full(
+        &self,
+        r: &mut SpriteRenderer,
+        _lookups: &assets::Lookups,
+        world: &World,
+        screen: Vec2,
+    ) {
+        // `Main.cs:55431-55485`: the wooden scroll frame (928x248).
+        if let Some(uv) = r.uv("Map", 0.0, 0.0, 928.0, 248.0) {
+            let rect = map_frame_rect(self.pos, self.scale, screen, world);
+            r.push_map_back_sprite(
+                [rect[0], rect[1]],
+                [rect[2], rect[3]],
+                uv,
+                [1.0; 4],
+            );
+        }
+        // `Main.DrawMap`'s `MapRenderer.DrawMap` call (`Main.cs:55609`).
+        let q = map_full_quad(self.pos, self.scale, screen, world);
+        r.push_map_sprite(
+            [q.dest[0], q.dest[1]],
+            [q.dest[2], q.dest[3]],
+            q.uv,
+            [1.0; 4],
         );
     }
 }
@@ -349,5 +582,135 @@ mod tests {
         let mut m = WorldMap::new(&world);
         m.update(&world, None, &light, 1.0);
         assert!(m.tiles.iter().all(|t| t.light == 0));
+    }
+
+    // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
+
+    /// The size the vanilla map-frame branches key on (`Main.maxTilesX == 4200`).
+    fn map_world() -> World {
+        World::new("t".into(), 4200, 1200)
+    }
+
+    fn assert_close(a: f32, b: f32, eps: f32) {
+        assert!((a - b).abs() < eps, "{a} != {b} (eps {eps})");
+    }
+
+    #[test]
+    fn scale_clamp_matches_vanilla() {
+        // `Main.cs:55387-55395`.
+        assert_eq!(
+            map_scale_clamp(1600.0, 4200, 0.1),
+            1600.0 / 4200.0 * 0.599
+        );
+        assert_eq!(map_scale_clamp(1600.0, 4200, 100.0), 31.18);
+    }
+
+    #[test]
+    fn wheel_zoom_matches_vanilla() {
+        // `Player.cs:25197`.
+        assert_eq!(map_wheel_scale(2.0, 120.0), 2.0 * 1.3);
+        assert_eq!(map_wheel_scale(2.0, -120.0), 2.0 * 0.7);
+        assert_eq!(map_wheel_scale(2.0, 0.0), 2.0);
+    }
+
+    #[test]
+    fn key_zoom_matches_vanilla() {
+        // `Player.cs:24900-24907`.
+        assert_eq!(map_key_scale(2.0, true), 2.1);
+        assert_eq!(map_key_scale(2.0, false), 1.9);
+    }
+
+    #[test]
+    fn pan_clamps_to_the_world() {
+        // `Main.cs:55295-55296` + `55398-55413`.
+        let w = map_world();
+        assert_eq!(map_clamp_pos([0.0, 0.0], &w), [10.0, 10.0]);
+        assert_eq!(
+            map_clamp_pos([1e6, 1e6], &w),
+            [(w.width - 10) as f32, (w.height - 19) as f32]
+        );
+    }
+
+    #[test]
+    fn full_quad_matches_drawmap() {
+        // `Main.cs:55425-55430` + `55591-55607`.
+        let w = map_world();
+        let q = map_full_quad([2100.0, 355.0], 2.5, Vec2::new(1600.0, 900.0), &w);
+        assert_eq!(
+            q.dest,
+            [
+                800.0 - 2090.0 * 2.5,
+                450.0 - 345.0 * 2.5,
+                4179.0 * 2.5,
+                1170.0 * 2.5
+            ]
+        );
+        assert_eq!(
+            q.uv,
+            [10.0 / 4200.0, 10.0 / 1200.0, 4189.0 / 4200.0, 1180.0 / 1200.0]
+        );
+    }
+
+    #[test]
+    fn frame_rect_matches_the_4200_branch() {
+        // `Main.cs:55431-55484`.
+        let w = map_world();
+        let rect = map_frame_rect([2100.0, 355.0], 2.5, Vec2::new(1600.0, 900.0), &w);
+        let n = (4200 / 840) as f32 * 2.5 * 0.998;
+        assert_eq!(
+            rect,
+            [
+                800.0 - 2090.0 * 2.5 - 37.3 * n,
+                450.0 - 345.0 * 2.5 - 1.7 * n,
+                (928.0 - 16.0) * n,
+                (248.0 - 8.31) * n
+            ]
+        );
+    }
+
+    #[test]
+    fn minimap_clamps_to_the_world_edge() {
+        // Main.cs:55295-55296 + 55591-55607: the minimap caps at maxTilesX-10 / maxTilesY-19.
+        let w = map_world();
+        let q = map_minimap_quad([4190.0, 1180.0], 1.05, Vec2::new(1600.0, 900.0), &w);
+        let win = 240.0 / 1.05;
+        let a = 4190.0 - win / 2.0;
+        let b = 1180.0 - win / 2.0;
+        let eps = 1e-3;
+        for (got, want) in q.dest.iter().zip([
+            1308.0,
+            90.0,
+            (4190.0 - a) * 1.05,
+            (1181.0 - b) * 1.05,
+        ]) {
+            assert_close(*got, want, eps);
+        }
+        for (got, want) in q.uv.iter().zip([
+            a / 4200.0,
+            b / 1200.0,
+            4190.0 / 4200.0,
+            1181.0 / 1200.0,
+        ]) {
+            assert_close(*got, want, eps);
+        }
+    }
+
+    #[test]
+    fn minimap_quad_matches_the_panel() {
+        // `Main.cs:55503-55546`.
+        let w = map_world();
+        let q = map_minimap_quad([500.0, 300.0], 1.05, Vec2::new(1600.0, 900.0), &w);
+        let eps = 1e-3;
+        for (got, want) in q.dest.iter().zip([1308.0, 90.0, 240.0, 240.0]) {
+            assert_close(*got, want, eps);
+        }
+        for (got, want) in q.uv.iter().zip([
+            385.7143 / 4200.0,
+            185.7143 / 1200.0,
+            614.2857 / 4200.0,
+            414.2857 / 1200.0,
+        ]) {
+            assert_close(*got, want, eps);
+        }
     }
 }

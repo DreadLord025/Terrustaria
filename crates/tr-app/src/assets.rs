@@ -162,6 +162,9 @@ pub fn load_world_images(
         "Bubble",
         "NPC_Head_Boss_7",
         "UI/UI_BossBar",
+        // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
+        // 928x248; `Main.cs:55434-55485`).
+        "Map",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
