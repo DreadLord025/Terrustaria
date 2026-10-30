@@ -162,6 +162,182 @@ pub fn map_minimap_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: 
     }
 }
 
+/// `Main.DrawMapFullscreenBackground` (`Main.cs:56342-56444`). `index` is the
+/// `TextureAssets.MapBGs` index (`0` = `MapBG1`); `sky_tint` is true when the
+/// original tinted the backdrop with `Main.ColorOfTheSkies` (`Main.cs:56395`),
+/// i.e. the surface branch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MapBg {
+    pub index: i32,
+    pub sky_tint: bool,
+}
+
+/// `Main.DrawMapFullscreenBackground` (`Main.cs:56342-56444`): which `MapBG`
+/// backdrop the fullscreen map sits on.
+///
+/// `camera` is the view **centre** in px and `screen` the px size, so
+/// `camera - screen/2` is vanilla's `Main.screenPosition` (the camera top-left).
+/// `player_center_tile` is `Main.player[myPlayer].Center` in tiles; the caller
+/// falls back to the view-centre tile when there is no player (`Main.player` is
+/// never null in vanilla, but our engine has `TR_NOPLAYER`).
+///
+/// Returns `None` for the vanilla early return
+/// (`!WorldGen.InWorld(playerTile, 10)`, `Main.cs:56347-56350`).
+pub fn map_bg_index(
+    world: &World,
+    camera: Vec2,
+    screen: Vec2,
+    player_center_tile: (i32, i32),
+) -> Option<MapBg> {
+    let (tx, ty) = player_center_tile;
+    // `WorldGen.InWorld(x, y, 10)` (`WorldGen.cs`): `10 <= x < w - 10`,
+    // `10 <= y < h - 10`.
+    if !(tx >= 10 && tx < world.width - 10 && ty >= 10 && ty < world.height - 10) {
+        return None;
+    }
+    // `Main.cs:56347`: a null tile also returns. `InWorld` already implies
+    // in-bounds, but keep the explicit check for fidelity.
+    let t = world.tile(tx, ty)?;
+    let wall = t.wall;
+    // `Main.screenPosition` is the camera top-left.
+    let sp = camera - screen * 0.5;
+    let snow = crate::is_snow_biome(world, camera);
+    let desert = crate::is_desert_biome(world, camera);
+    // `SceneMetrics.cs:669`: `TileCenter.Y <= Main.UnderworldLayer &&
+    // TileCenter.Y > Main.rockLayer`, `Main.UnderworldLayer = maxTilesY - 200`.
+    let rock = ty > world.rock_layer as i32 && ty <= world.height - 200;
+    // `SceneMetrics.cs:665`: `TileCenter.Y <= Main.worldSurface * 0.3499999940395355`
+    // (i.e. `(double)0.35f`).
+    let sky = (ty as f64) <= world.world_surface * (0.35_f32 as f64);
+    // `Main.cs:56396`: `(int)((screenPosition.X + (float)(screenWidth / 2)) / 16f)`.
+    // `screenWidth / 2` is **integer** division in C#.
+    let num2 = ((sp.x + (screen.x as i32 / 2) as f32) / TILE_PX as f32) as i32;
+    // `Main.cs:56413`: `(screenPosition.Y / 16f) < worldSurface + 10` and near an
+    // ocean edge.
+    let beach = (sp.y as f64 / TILE_PX as f64) < world.world_surface + 10.0
+        && (num2 < 380 || num2 > world.width - 380);
+
+    let mut index = -1;
+    // `color` stays `Color.White` in every branch except the surface one.
+    let mut sky_tint = false;
+    if sp.y > ((world.height - 232) * 16) as f32 {
+        // `Main.cs:56352-56354`.
+        index = 2;
+    } else if false {
+        // not simulated: ZoneDungeon (`Main.cs:56356`)
+        index = 4;
+    } else if wall == 87 {
+        // `Main.cs:56360-56362`.
+        index = 13;
+    } else if (sp.y as f64) > world.world_surface * TILE_PX as f64 {
+        // `Main.cs:56364-56388`.
+        index = match wall {
+            86 | 108 => 15,  // `Main.cs:56368-56371`
+            180 | 184 => 16, // `Main.cs:56372-56375`
+            178 | 183 => 17, // `Main.cs:56376-56379`
+            62 | 263 => 18,  // `Main.cs:56380-56383`
+            _ => {
+                if false {
+                    // not simulated: ZoneGlowshroom (`Main.cs:56385`)
+                    20
+                } else if false {
+                    // not simulated: ZoneCorrupt
+                    if desert {
+                        39
+                    } else if snow {
+                        33
+                    } else {
+                        22
+                    }
+                } else if false {
+                    // not simulated: ZoneCrimson
+                    if desert {
+                        40
+                    } else if snow {
+                        34
+                    } else {
+                        23
+                    }
+                } else if false {
+                    // not simulated: ZoneHallow
+                    if desert {
+                        41
+                    } else if snow {
+                        35
+                    } else {
+                        21
+                    }
+                } else if snow {
+                    3
+                } else if false {
+                    // not simulated: ZoneJungle
+                    12
+                } else if desert {
+                    14
+                } else if rock {
+                    31
+                } else {
+                    1
+                }
+            }
+        };
+    } else if false {
+        // not simulated: ZoneGlowshroom (`Main.cs:56389-56391`)
+        index = 19;
+    } else {
+        // `Main.cs:56393-56395`: the surface branch tints with
+        // `Main.ColorOfTheSkies`.
+        sky_tint = true;
+        if sky {
+            // `Main.cs:56397-56399`: ZoneSkyHeight.
+            index = 32;
+        } else if false {
+            // not simulated: ZoneCorrupt (`Main.cs:56401-56403`)
+            index = if desert { 36 } else { 5 };
+        } else if false {
+            // not simulated: ZoneCrimson (`Main.cs:56405-56407`)
+            index = if desert { 37 } else { 6 };
+        } else if false {
+            // not simulated: ZoneHallow (`Main.cs:56409-56411`)
+            index = if desert { 38 } else { 7 };
+        } else if beach {
+            // `Main.cs:56413-56415`.
+            index = 10;
+        } else if snow {
+            // `Main.cs:56417-56419`.
+            index = 11;
+        } else if false {
+            // not simulated: ZoneJungle (`Main.cs:56421-56423`)
+            index = 8;
+        } else if desert {
+            // `Main.cs:56425-56427`.
+            index = 9;
+        } else if false {
+            // not simulated: bloodMoon (`Main.cs:56429-56432`: color *= 2; num = 25)
+        } else if false {
+            // not simulated: ZoneGraveyard (`Main.cs:56434-56436`)
+            index = 26;
+        }
+    }
+    // `Main.cs:56439-56442`: `num == -1` keeps the `MapBGs[0]` default.
+    Some(MapBg {
+        index: if index < 0 { 0 } else { index },
+        sky_tint,
+    })
+}
+
+/// `Main.cs:56443`: stretches `MapBG{index+1}` (or the `sky`-tinted surface
+/// variant) over the whole screen. `sky` is `[ColorOfTheSkies.r, .g, .b, 1.0]`;
+/// unused unless `bg.sky_tint`.
+pub fn draw_map_background(r: &mut SpriteRenderer, bg: MapBg, screen: Vec2, sky: [f32; 4]) {
+    let name = format!("MapBG{}", bg.index + 1);
+    let Some(uv) = r.sheets.get(&name).copied() else {
+        return;
+    };
+    let color = if bg.sky_tint { sky } else { [1.0; 4] };
+    r.push_map_back_sprite([0.0, 0.0], [screen.x, screen.y], uv, color);
+}
+
 pub struct WorldMap {
     /// Row-major `y * width + x`, matching `World::index`.
     pub tiles: Vec<MapTile>,
@@ -712,5 +888,118 @@ mod tests {
         ]) {
             assert_close(*got, want, eps);
         }
+    }
+
+    // ---- Task 7: biome `MapBG` backdrop (`Main.DrawMapFullscreenBackground`) ----
+
+    /// `Main.DrawMapFullscreenBackground` (`Main.cs:56347-56350`): the early return.
+    #[test]
+    fn bg_none_out_of_world() {
+        // 4200x1200 -> `InWorld(..., 10)` needs 10 <= x < 4190, 10 <= y < 1190.
+        let w = map_world();
+        let screen = Vec2::new(1600.0, 900.0);
+        assert!(map_bg_index(&w, Vec2::new(33600.0, 6000.0), screen, (5, 5)).is_none());
+        assert!(map_bg_index(&w, Vec2::new(33600.0, 6000.0), screen, (2100, 5)).is_none());
+    }
+
+    /// `Main.cs:56352-56354`: `screenPosition.Y > (maxTilesY - 232) * 16`.
+    #[test]
+    fn bg_deepest_is_mapbg3() {
+        let w = map_world();
+        let screen = Vec2::new(1600.0, 900.0);
+        // sp.y = 15939 - 450 = 15489 > (1200 - 232) * 16 = 15488.
+        let bg = map_bg_index(&w, Vec2::new(33600.0, 15939.0), screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 2);
+        assert!(!bg.sky_tint);
+    }
+
+    /// `Main.cs:56360-56362`: the Lihzahrd brick wall (WallID 87) forces `MapBG14`.
+    #[test]
+    fn bg_lihzahrd_wall_is_mapbg14() {
+        let mut w = map_world();
+        w.tile_mut(2100, 355).unwrap().wall = 87;
+        let screen = Vec2::new(1600.0, 900.0);
+        // sp.y = 2050 - 450 = 1600, above the deepest branch.
+        let bg = map_bg_index(&w, Vec2::new(33600.0, 2050.0), screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 13);
+        assert!(!bg.sky_tint);
+    }
+
+    /// `Main.cs:56364-56388`: the underground wall / biome chain.
+    #[test]
+    fn bg_underground_chain() {
+        let screen = Vec2::new(1600.0, 900.0);
+        // sp.y = 5251 - 450 = 4801 > worldSurface * 16 = 4800.
+        let cam = Vec2::new(33600.0, 5251.0);
+        let mut w = map_world();
+
+        // No biome, tile y 355 <= rockLayer 540 -> cave default (num 1).
+        let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 1);
+        assert!(!bg.sky_tint);
+
+        for (wall, want) in [(86u16, 15), (180, 16), (178, 17), (62, 18)] {
+            w.tile_mut(2100, 355).unwrap().wall = wall;
+            let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+            assert_eq!(bg.index, want, "wall {wall}");
+        }
+        w.tile_mut(2100, 355).unwrap().wall = 0;
+
+        // Rock layer: 540 < 650 <= 1000 (height - 200).
+        let bg = map_bg_index(&w, cam, screen, (2100, 650)).unwrap();
+        assert_eq!(bg.index, 31);
+        assert!(!bg.sky_tint);
+
+        // Snow biome at the surface of the camera column.
+        w.column_surface = vec![100; 4200];
+        w.tile_mut(2100, 100).unwrap().kind = 147;
+        let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 3);
+        assert!(!bg.sky_tint);
+
+        // Desert biome.
+        w.tile_mut(2100, 100).unwrap().kind = 53;
+        let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 14);
+        assert!(!bg.sky_tint);
+    }
+
+    /// `Main.cs:56393-56438`: the surface chain, all tinted with
+    /// `Main.ColorOfTheSkies` (`sky_tint = true`).
+    #[test]
+    fn bg_surface_chain() {
+        let screen = Vec2::new(1600.0, 900.0);
+        // sp.y = 4850 - 450 = 4400 <= worldSurface * 16 = 4800.
+        let cam = Vec2::new(33600.0, 4850.0);
+
+        // Plain forest falls through every branch: the `MapBGs[0]` default.
+        let bg = map_bg_index(&map_world(), cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 0);
+        assert!(bg.sky_tint);
+
+        let mut w = map_world();
+        w.column_surface = vec![100; 4200];
+
+        w.tile_mut(2100, 100).unwrap().kind = 53;
+        let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 9);
+        assert!(bg.sky_tint);
+
+        w.tile_mut(2100, 100).unwrap().kind = 147;
+        let bg = map_bg_index(&w, cam, screen, (2100, 355)).unwrap();
+        assert_eq!(bg.index, 11);
+        assert!(bg.sky_tint);
+
+        // Beach: sp.x = 4800 - 800 = 4000, num2 = (4000 + 800) / 16 = 300 < 380.
+        let bg = map_bg_index(&map_world(), Vec2::new(4800.0, 4850.0), screen, (2100, 355))
+            .unwrap();
+        assert_eq!(bg.index, 10);
+        assert!(bg.sky_tint);
+
+        // Space: the player-centre tile is above `worldSurface * 0.35` = 105.
+        let w = map_world();
+        let bg = map_bg_index(&w, cam, screen, (2100, 50)).unwrap();
+        assert_eq!(bg.index, 32);
+        assert!(bg.sky_tint);
     }
 }

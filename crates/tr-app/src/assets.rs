@@ -165,6 +165,26 @@ pub fn load_world_images(
         // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
         // 928x248; `Main.cs:55434-55485`).
         "Map",
+        // The biome backdrops behind the fullscreen map: `TextureAssets.MapBGs[i]
+        // = "Images/MapBG" + (i + 1)` (`AssetInitializer.cs:341-343`). Only the
+        // indices `map_bg_index` can select are listed; the unreachable `false`
+        // guards (dungeon, glowshroom, corrupt/crimson/hallow/jungle, bloodMoon,
+        // graveyard) can never pick theirs.
+        "MapBG1",  // 0  surface default (forest)
+        "MapBG2",  // 1  underground forest
+        "MapBG3",  // 2  deepest layer
+        "MapBG4",  // 3  snow (underground)
+        "MapBG10", // 9  desert (surface)
+        "MapBG11", // 10 beach
+        "MapBG12", // 11 snow (surface)
+        "MapBG14", // 13 Lihzahrd brick wall (WallID 87)
+        "MapBG15", // 14 desert (underground)
+        "MapBG16", // 15 Hive wall (WallID 86/108)
+        "MapBG17", // 16 Granite wall (WallID 180/184)
+        "MapBG18", // 17 Marble wall (WallID 178/183)
+        "MapBG19", // 18 Spider wall (WallID 62/263)
+        "MapBG32", // 31 rock layer
+        "MapBG33", // 32 space
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),

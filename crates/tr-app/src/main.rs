@@ -2997,6 +2997,27 @@ impl App {
                         // (`else if (mapStyle == 1)`) and the fullscreen map
                         // (`if (mapFullscreen)`) branches are exclusive.
                         if map.open {
+                            // `Main.cs:55483`: the biome `MapBG` backdrop is
+                            // drawn before the wooden frame, so it goes into
+                            // `map_back` first (`draw_full` pushes the frame).
+                            // `Main.player[myPlayer]` always exists in vanilla;
+                            // with no player we fall back to the view centre.
+                            let player_tile = player
+                                .as_ref()
+                                .map(|p| {
+                                    let (cx, cy) = p.center();
+                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32)
+                                })
+                                .unwrap_or((
+                                    (camera.x / TILE_PX) as i32,
+                                    (camera.y / TILE_PX) as i32,
+                                ));
+                            if let Some(bg) =
+                                map::map_bg_index(world, *camera, screen, player_tile)
+                            {
+                                let sky = [sky_tint[0], sky_tint[1], sky_tint[2], 1.0];
+                                map::draw_map_background(renderer, bg, screen, sky);
+                            }
                             map.draw_full(renderer, lookups, world, screen);
                         } else {
                             map.draw_minimap(renderer, world, screen, view_center);
@@ -3498,7 +3519,7 @@ fn is_ocean_biome(world: &World, camera: Vec2) -> bool {
 }
 
 /// Sand at the surface away from the beaches marks the inland desert.
-fn is_desert_biome(world: &World, camera: Vec2) -> bool {
+pub(crate) fn is_desert_biome(world: &World, camera: Vec2) -> bool {
     let cam_tile = (camera.x / TILE_PX) as i32;
     if cam_tile < 220 || cam_tile > world.width - 220 {
         return false;
@@ -3515,7 +3536,7 @@ fn is_desert_biome(world: &World, camera: Vec2) -> bool {
     false
 }
 
-fn is_snow_biome(world: &World, camera: Vec2) -> bool {
+pub(crate) fn is_snow_biome(world: &World, camera: Vec2) -> bool {
     let cam_tile = (camera.x / TILE_PX) as i32;
     for dx in [-16, -8, 0, 8, 16] {
         let x = cam_tile + dx;
