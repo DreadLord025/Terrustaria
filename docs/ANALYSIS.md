@@ -923,7 +923,10 @@ lands on top of the map like vanilla's frame -> tiles -> head order
 (`Main.cs:55485` -> `55609` -> `55954`). `Main.UIScale` is passed as `1.0`
 (no UI-scale system here). The HUD is hidden while the fullscreen map is open,
 matching vanilla's early return in `Main.Draw` (`Main.cs:62147-62181`, before
-`DrawInterface` at `62432`).
+`DrawInterface` at `62432`). While the map is open the world input is modal
+(`Player.cs:24798-24807`): movement and use/tile controls are cleared, so nothing
+is mined, placed or attacked behind it, the middle-button camera drag is inert,
+and the left button drags the map by the cursor delta (`Main.cs:55342-55359`).
 
 Persistence: `tr-core/src/map.rs` owns the `.map` v326 byte layout (header,
 option tables, RLE body) and `tr-app/src/map.rs` the raw-deflate wrapping and
@@ -932,11 +935,17 @@ the `.trwld` (`persist::map_path`), written whenever the world/player is saved â
 F9, window close and the 10-minute autosave (`Main.cs:19757`:
 `saveTime.ElapsedMilliseconds > 600000`) â€” and loaded at startup through
 `WorldMap::load`, which arms one bulk texture upload. `Main.mapEnabled`
-(`config.json`) gates both. Deviations from `MapHelper`: no edge clearing
+(`config.json`) gates both, and the `M` toggle (`Player.cs:29105`). Deviations
+from `MapHelper`: no edge clearing
 (`ClearEdges`), no cloud/team-icon map extras (`DrawMap_GetMapObjectName` rows,
 pins), no `worldID` validation on load (seed + size are checked), the heat/snow
 `sceneSnowiness` input is fixed at 0 and `invisible_block` wall flags are not
-modelled (our 8-bit option byte cannot hold them).
+modelled (our 8-bit option byte cannot hold them). `MapBG`'s snow/desert branches
+use the shared camera-centred `is_snow_biome`/`is_desert_biome` heuristics rather
+than the player's `ZoneSnow`/`ZoneDesert` flags. The encoder closes a light run
+that reaches a row's end with a full run (`num6 = 0`, `MapHelper.cs:3214-3225`,
+is written as the run's length), so the port's own decoder round-trips it; a
+byte-level vanilla `LoadMapVersion2` would misread that one case.
 
 ## Localization (M6)
 

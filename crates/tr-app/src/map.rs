@@ -42,6 +42,15 @@ pub fn map_clamp_pos(pos: [f32; 2], world: &World) -> [f32; 2] {
     ]
 }
 
+/// `Main.cs:55355-55358`: the left-button drag. `delta` is the cursor's pixel
+/// delta since the previous frame; the map centre moves
+/// `-delta * 0.06255 * (16 / scale)` tiles (`num20 *= 0.06255f` then
+/// `* (16f / mapFullscreenScale)`).
+pub fn map_drag_delta(delta: [f32; 2], scale: f32) -> [f32; 2] {
+    let s = 0.06255 * (16.0 / scale);
+    [-delta[0] * s, -delta[1] * s]
+}
+
 /// One map quad: `dest` is a screen rect `[x, y, w, h]`, `uv` the texture subrect
 /// `[u0, v0, u1, v1]` (normalised over the world-sized texture).
 pub struct MapQuad {
@@ -877,6 +886,15 @@ mod tests {
             map_clamp_pos([1e6, 1e6], &w),
             [(w.width - 10) as f32, (w.height - 19) as f32]
         );
+    }
+
+    #[test]
+    fn drag_pan_is_cursor_pixels_over_scale() {
+        // `Main.cs:55355-55358`: `0.06255 * 16` ≈ 1, so 100 px at scale 2.5 ≈ 40
+        // tiles. The map moves opposite to the cursor.
+        let d = map_drag_delta([100.0, 0.0], 2.5);
+        assert!((d[0] + 40.032).abs() < 1e-3, "{d:?}");
+        assert_eq!(d[1], 0.0);
     }
 
     #[test]

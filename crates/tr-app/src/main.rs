@@ -648,6 +648,7 @@ fn main() -> Result<()> {
         || std::env::var_os("TR_CAM").is_some()
         || std::env::var_os("TR_HOLD").is_some()
         || std::env::var_os("TR_NOMENU").is_some()
+        || std::env::var_os("TR_MAP").is_some()
         || joined_before
         || auto_host.is_some();
     let menu_state = if skip_menu {
@@ -733,6 +734,7 @@ fn main() -> Result<()> {
         net_timer: 0.0,
         join_target,
         map: Some(world_map),
+        map_grab: None,
         audio: audio::Audio::new(assets::content_dir()),
         music: audio::MusicSystem::new(assets::content_dir()),
         last_hp: 100,
@@ -913,6 +915,9 @@ struct App {
     join_target: Option<(String, String)>,
     /// Explored-tile minimap and full map (`M`).
     map: Option<map::WorldMap>,
+    /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
+    /// fullscreen-map drag (`Main.cs:55346-55354`).
+    map_grab: Option<[f32; 2]>,
     audio: audio::Audio,
     music: audio::MusicSystem,
     last_hp: i32,
@@ -1282,9 +1287,13 @@ impl ApplicationHandler for App {
                             }
                             KeyCode::F9 => self.save_world(),
                             KeyCode::KeyM => {
-                                if let Some(m) = self.map.as_mut() {
-                                    let open = !m.open;
-                                    m.set_open(open);
+                                // `Main.TryOpeningFullscreenMap` (`Player.cs:29105`):
+                                // `M` only toggles the map when `Main.mapEnabled`.
+                                if self.settings.map_enabled {
+                                    if let Some(m) = self.map.as_mut() {
+                                        let open = !m.open;
+                                        m.set_open(open);
+                                    }
                                 }
                             }
                             KeyCode::KeyB => {
@@ -1385,7 +1394,9 @@ impl ApplicationHandler for App {
                 if let Some(m) = self.menu.as_mut() {
                     m.update_hover(p);
                 }
-                if self.mouse_down {
+                // The middle-button world-camera drag is suppressed while the map is
+                // fullscreen, like the other world controls (`Player.cs:24798`).
+                if self.mouse_down && !self.map.as_ref().is_some_and(|m| m.open) {
                     let delta = p - self.last_mouse;
                     self.camera -= delta / self.zoom;
                 }
@@ -1496,6 +1507,19 @@ impl App {
         }
         if k(KeyCode::NumpadSubtract) {
             m.scale = map::map_key_scale(m.scale, false);
+        }
+        // `Main.cs:55342-55359`: the left button drags the fullscreen map by the
+        // per-frame cursor delta (`Main.grabMapX`/`grabMapY`).
+        let cursor = self.mouse_pos;
+        if self.mine_down {
+            if let Some(anchor) = self.map_grab {
+                let d = map::map_drag_delta([cursor.x - anchor[0], cursor.y - anchor[1]], m.scale);
+                m.pos[0] += d[0];
+                m.pos[1] += d[1];
+            }
+            self.map_grab = Some([cursor.x, cursor.y]);
+        } else {
+            self.map_grab = None;
         }
         m.scale = map::map_scale_clamp(sw, self.world.width, m.scale);
         m.pos = map::map_clamp_pos(m.pos, &self.world);
@@ -1760,6 +1784,15 @@ impl App {
             }
         }
         self.place_cooldown = (self.place_cooldown - dt).max(0.0);
+        // `Player.cs:24798-24807`: while the map is fullscreen `controlUseItem`/
+        // `controlUseTile` are cleared, so no mining, placing or attacking happens
+        // behind it; the left button drags the map instead (`update_map_input`).
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            self.edit_target = None;
+            self.mine_target = None;
+            self.mine_timer = 0.0;
+            return;
+        }
         let m = self.mouse_pos;
         let hud_top = screen.y - 96.0;
         if m.x < 0.0
