@@ -5,9 +5,12 @@ target **separately** and cannot link them across languages. This file *is* that
 Keep it current — a wrong or missing row is the fastest way for an agent to
 re-implement something that already exists, or to port the wrong file.
 
-- **Source of truth (C#):** `decompiled/` (Terraria 1.4.5.8 + `decompiled-libs/ReLogic`).
+- **Source of truth (C#):** `decompiled/` (Terraria 1.4.5.8) and `decompiled-libs/ReLogic`
+  (the game's own library — `.xnb`/LZX/DXT content, IO, OS, utilities).
 - **Target (Rust):** `crates/`.
-- Graphs: see [`AGENTS.md`](../AGENTS.md) → "Knowledge graph (graphify)".
+- **Graphs:** Terraria, ReLogic and the Rust target are each indexed, plus a merged graph
+  of all three; see [`AGENTS.md`](../AGENTS.md) → "Knowledge graph (graphify)". In the
+  merged graph ids are tagged `decompiled::`, `decompiled-libs::` and `repo::`.
 
 **State legend:** `done` = ported and tested · `partial` = core present, gaps remain ·
 `wip` = actively being ported · `todo` = not started · `n/a` = deliberately not ported.
@@ -82,7 +85,10 @@ re-implement something that already exists, or to port the wrong file.
 
 When you start or finish a system:
 
-1. Find the C# entry point: `cd decompiled && graphify explain "Terraria/<File>.cs::<Symbol>"`.
+1. Find the C# entry point in the matching graph:
+   - Terraria: `cd decompiled && graphify explain "Terraria/<File>.cs::<Symbol>"`.
+   - ReLogic: `cd decompiled-libs && graphify explain "<File>.cs::<Symbol>"` (paths are
+     relative to `decompiled-libs/`, e.g. `ReLogic/ReLogic.Content/ContentManager.cs`).
 2. Confirm the Rust counterpart exists once (not twice):
    `graphify query "<symbol or concept>" --graph graphify-out/merged-graph.json`.
 3. Add a row here mapping **C# file(s) → Rust file(s)** and set the state.

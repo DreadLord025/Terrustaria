@@ -85,6 +85,7 @@
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
 | DOC-README | Player-facing README + final screenshot set | ✅ Done | Agent-DeepSeek | `README.md` rewritten for a non-technical player (what the project is, what you can do, how much faster it runs now, save location, env vars, build-from-your-own-`Content` note, licence/author). 17 regenerated screenshots in `docs/screenshots/` (old `spout_noon.png` removed); captions unchanged |
+| DOC-GRAPHIFY | Knowledge-graph (graphify) setup for the 1:1 port | ✅ Done | Agent-DeepSeek | Indexed Terraria C# (`decompiled/`), ReLogic C# (`decompiled-libs/`) and Rust (`crates/`) + a merged graph; query workflow and recipes in `AGENTS.md`; C#→Rust map in `docs/PORT_MAP.md`; `/graphify-out/` ignored. Commits `04ea3e4`, `c89e236` |
 
 ### Milestone 6 — Audio & Polish
 
@@ -137,6 +138,7 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+DOC-GRAPHIFY Knowledge graphs (Terraria + ReLogic + Rust) + PORT_MAP  (Agent-DeepSeek)
 DOC-README  Player-facing README + final screenshot set        (Agent-DeepSeek)
 91888cc  [M1.4-BG-12]    Surface background biome cross-fade + layer stack (Agent-Qoder)
 b1d07cd  [M1.4-BG-17]    Unlit wall black coverage + unbreakable wall 350 (Agent-Qoder)

@@ -48,9 +48,10 @@ C# to port and the exact Rust to extend, instead of grepping raw files:
 
 | Graph | File | Scope | Size |
 | --- | --- | --- | --- |
-| **C# (source of truth)** | `decompiled/graphify-out/graph.json` | `decompiled/` (Terraria; ~40 BCrypt/csproj noise nodes) | 20 871 nodes · 68 495 edges · 447 communities |
+| **C# game (source of truth)** | `decompiled/graphify-out/graph.json` | `decompiled/` (Terraria; ~40 BCrypt/csproj noise nodes) | 20 871 nodes · 68 495 edges · 447 communities |
+| **C# library** | `decompiled-libs/graphify-out/graph.json` | `decompiled-libs/` (ReLogic: Content, IO, OS, Utilities, RGB, Threading) | 1 992 nodes · 3 659 edges · 102 communities |
 | **Rust (target)** | `graphify-out/graph.json` | `crates/` | 2 101 nodes · 4 518 edges |
-| **Merged (both languages)** | `graphify-out/merged-graph.json` | C# + Rust | 22 966 nodes · 73 013 edges |
+| **Merged (all three)** | `graphify-out/merged-graph.json` | Terraria + ReLogic + Rust | 24 928 nodes · 76 909 edges |
 
 **Rule:** for a codebase question ("where is X", "what calls Y", "what does Z touch"),
 run a `graphify` query first. It returns a scoped subgraph with **file + line + community**,
@@ -99,16 +100,19 @@ graphify explain "<RustSymbol>"        --graph graphify-out/merged-graph.json
 `docs/PORT_MAP.md` is the C#→Rust cross-language map that the graphs cannot build
 themselves — update it when you start or finish a system.
 
-> `decompiled-libs/ReLogic` is **not** indexed yet. If you are porting a `tr-content`
-> decoder, add it with `/graphify decompiled-libs` and re-merge.
+> In the merged graph every id is prefixed with its source — `decompiled::` (Terraria),
+> `decompiled-libs::` (ReLogic), `repo::` (Rust) — and some labels (e.g. `ContentManager`)
+> exist in more than one source, so always disambiguate with `path::symbol` or the full id.
 
 ### Keeping the graphs fresh
 
 ```powershell
 graphify update .                       # refresh the Rust graph after touching crates/
-# (C# side) /graphify decompiled --update   — only needed when the decompiled source changes
-graphify merge-graphs decompiled/graphify-out/graph.json graphify-out/graph.json `
-        --out graphify-out/merged-graph.json   # re-merge after either side changes
+# (C# side) /graphify decompiled --update  and  /graphify decompiled-libs --update
+#           — only needed when the decompiled source changes
+graphify merge-graphs decompiled/graphify-out/graph.json `
+        decompiled-libs/graphify-out/graph.json graphify-out/graph.json `
+        --out graphify-out/merged-graph.json   # re-merge after any side changes
 ```
 
 ## Assets
