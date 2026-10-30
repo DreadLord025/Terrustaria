@@ -60,8 +60,15 @@ pub struct Player {
     pub on_ground: bool,
     /// 1 = right, -1 = left.
     pub facing: i32,
-    /// Seconds spent in walk animation.
-    pub walk_time: f32,
+    /// `Player.legFrame.Y / 56`: the current leg animation row (0..=19), driven by
+    /// `PlayerFrame()`.
+    pub leg_frame: u32,
+    /// `Player.bodyFrame.Y / 56`: the current body animation row (0..=19). Mirrors the
+    /// legs while walking; the app overrides it with the item-use rows during a swing.
+    pub body_frame: u32,
+    /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
+    /// advances a leg row every `8.0`.
+    leg_frame_counter: f32,
     pub in_water: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
@@ -104,7 +111,9 @@ impl Player {
             vy: 0.0,
             on_ground: false,
             facing: 1,
-            walk_time: 0.0,
+            leg_frame: 0,
+            body_frame: 0,
+            leg_frame_counter: 0.0,
             in_water: false,
             jump: 0,
             jump_held: false,
@@ -152,7 +161,9 @@ impl Player {
         self.on_ground = false;
         self.jump = 0;
         self.jump_held = false;
-        self.walk_time = 0.0;
+        self.leg_frame = 0;
+        self.body_frame = 0;
+        self.leg_frame_counter = 0.0;
         self.hp = self.max_hp;
         self.hurt_cd = 0.0;
         self.breath = BREATH_MAX;
@@ -264,12 +275,6 @@ impl Player {
             self.jump = 0;
         }
 
-        if self.vx != 0.0 {
-            self.walk_time += 1.0 / 60.0;
-        } else {
-            self.walk_time = 0.0;
-        }
-
         let was_airborne = !self.on_ground;
         let fall_vy = self.vy;
         self.move_vanilla(world, input.down, gravity);
@@ -298,6 +303,61 @@ impl Player {
         if self.y > world.height as f32 * TILE_PX + 300.0 {
             self.respawn();
         }
+
+        self.update_frames();
+    }
+
+    /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
+    /// every tick after movement:
+    /// - idle: legs and body row `0` (the rest pose);
+    /// - airborne (`velocity.Y != 0`): row `5` (the jump/fall pose);
+    /// - walking (`velocity.X != 0`): legs advance one row per `8.0` of
+    ///   `legFrameCounter += |velocity.X| * 1.3`, cycling the walk band rows `7..=19`,
+    ///   and the body copies the leg row.
+    ///
+    /// The wings/mount/pulley/hold-style branches of the original are not modelled yet,
+    /// and item-use body frames are applied by the app via [`Player::apply_item_use_frame`]
+    /// while a swing is active.
+    fn update_frames(&mut self) {
+        if self.vy != 0.0 {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 5;
+        } else if self.vx != 0.0 {
+            self.leg_frame_counter += self.vx.abs() * 1.3;
+            while self.leg_frame_counter > 8.0 {
+                self.leg_frame_counter -= 8.0;
+                self.leg_frame += 1;
+            }
+            if self.leg_frame < 7 {
+                self.leg_frame = 19;
+            } else if self.leg_frame > 19 {
+                self.leg_frame = 7;
+            }
+        } else {
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 0;
+        }
+
+        if self.vy != 0.0 {
+            self.body_frame = 5;
+        } else if self.vx != 0.0 {
+            self.body_frame = self.leg_frame;
+        } else {
+            self.body_frame = 0;
+        }
+    }
+
+    /// `PlayerFrame()` item-use branch for `useStyle == 1` (blocks and other placeables):
+    /// the body steps rows `1 -> 2 -> 3` as `itemAnimation` runs out. `remaining` is
+    /// `itemAnimation / itemAnimationMax` (1 at the start of the swing, 0 at the end).
+    pub fn apply_item_use_frame(&mut self, remaining: f32) {
+        self.body_frame = if remaining < 0.333 {
+            3
+        } else if remaining < 0.666 {
+            2
+        } else {
+            1
+        };
     }
 
     fn update_survival(&mut self) {
@@ -419,18 +479,9 @@ impl Player {
         h ^= self.y.to_bits().wrapping_mul(0x85EB_CA77);
         h ^= (self.facing as u32) << 1;
         h ^= self.on_ground as u32;
-        h ^= self.leg_frame() << 8;
+        h ^= self.leg_frame << 8;
+        h ^= self.body_frame << 16;
         h
-    }
-
-    pub fn leg_frame(&self) -> u32 {
-        if !self.on_ground {
-            2
-        } else if self.vx.abs() > 0.2 {
-            7 + ((self.walk_time * 12.0) as u32 % 12)
-        } else {
-            5
-        }
     }
 }
 
@@ -534,6 +585,68 @@ mod tests {
         }
         assert!(p.on_ground, "player should land, y={}", p.y);
         assert!((p.y - (60.0 * TILE_PX - HEIGHT)).abs() < 1.0, "y={}", p.y);
+    }
+
+    #[test]
+    fn idle_uses_the_rest_pose_row_zero() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        // `PlayerFrame`: standing still is leg/body frame row 0, never the jump
+        // pose (row 5) that made the character look like it was about to leap.
+        assert_eq!(p.leg_frame, 0, "idle legs must be row 0");
+        assert_eq!(p.body_frame, 0, "idle body must be row 0");
+    }
+
+    #[test]
+    fn airborne_uses_row_five() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        for _ in 0..8 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.vy != 0.0, "should be airborne, vy={}", p.vy);
+        assert_eq!(p.leg_frame, 5, "airborne legs must be row 5");
+        assert_eq!(p.body_frame, 5, "airborne body must be row 5");
+    }
+
+    #[test]
+    fn walking_cycles_the_walk_rows() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for _ in 0..240 {
+            p.update(
+                &w,
+                PlayerInput {
+                    right: true,
+                    ..Default::default()
+                },
+            );
+            assert!(
+                (7..=19).contains(&p.leg_frame),
+                "walk row {} outside 7..=19",
+                p.leg_frame
+            );
+            assert_eq!(p.body_frame, p.leg_frame, "body must copy the leg row");
+            seen.insert(p.leg_frame);
+        }
+        assert!(seen.len() >= 4, "walk cycle did not advance: {seen:?}");
     }
 
     #[test]

@@ -587,23 +587,37 @@ Survival ports three `Player.cs` mechanics:
 
 The character is composed from the original 40×56 part strips (`Player_0_0` head,
 `_1/_2` eyes, `_3` torso, `_6` shirt, `_7` arms, `_10` legs, `_11` pants, `_12` shoes,
-`Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and the
-walk/jump leg frames. Torso and undershirt always use composite cell `(0,0)` (only the
-head and arms animate); the hotbar, hearts, breath bubbles and boss bar use the original
+`Player_Hair_1`) at `(x-10, y-10)`, using the default skin/clothing colours and a faithful `Player.PlayerFrame` port
+(`player.rs::update_frames`). The legs and body each carry a frame row (`leg_frame`/
+`body_frame`): idle is row 0 (the rest pose), airborne (`velocity.Y != 0`) is row 5, and
+walking advances one row per `8.0` of `legFrameCounter += |velocity.X| * 1.3`, cycling the
+walk band `7..=19` with the body copying the leg row; during an item swing the app applies
+the `useStyle 1` body rows `1 -> 2 -> 3` via `apply_item_use_frame`. (An earlier version
+returned row 5 at rest, which made the idle character look like it was about to jump, and
+used an unrelated `walk_time` counter that flickered between rows.) The legs/pants/shoes
+draw with `leg_frame`, the torso/arms/head/eyes/hair with `body_frame`. Torso and undershirt
+always use composite cell `(0,0)` (only the head and arms animate); the hotbar, hearts,
+breath bubbles and boss bar use the original
 `Inventory_Back`, `Heart`, `Bubble` and `UI_BossBar` textures with the classic layout. Arms use the composite layout from `PlayerDrawSet.CreateCompositeData`
 (the six-column swing table for the front arm, back arm two rows lower); the near-side
 (item-holding) arm is drawn from column 8 because the per-item shoulder rotation is not
 modelled yet. Entity sprites (player and NPCs) snap their top-left to an integer screen pixel before the
 instance is uploaded, so nearest sampling keeps exactly the same source texels while the
-camera moves; the camera itself still interpolates smoothly. NPC sprite offsets align the
+camera moves; the camera itself still interpolates smoothly, and the world render camera is
+snapped to `round(cam * zoom) / zoom` before any world pass so integer world coordinates land
+on whole screen pixels at every zoom (without it, tiles crawled sub-pixel under the
+already-snapped player while moving, which read as a shimmering pixel grid). NPC sprite
+offsets align the
 last opaque art row (not the padded frame) with the hitbox bottom, which is what removed
 the slime/zombie hover. The camera follows the player; `TR_CAM`/`TR_PAN` keep the free
 debug camera, `TR_NOPLAYER` hides the player, `TR_XY` places them at a tile and
 `TR_HOLD=right,jump` holds a key for deterministic walk screenshots. The selected
 hotbar block is drawn in the hand (14×14 tile frame) with a 0.28 s swing arc from raised-
-behind to forward-down when mining, placing or attacking; the world cache key includes the
-kind and quantised phase. Not ported yet:
-the full `itemAnimation` timings and tool-specific swings, armour/accessory layers, the
+behind to forward-down **only while a swing is active** (`PlayerDrawLayers.DrawPlayer_27_HeldItem`
+gates on `itemAnimation > 0 && useStyle != 0`), so the hand is empty at rest like the
+original; the world cache key includes the kind and quantised phase. Not ported yet:
+hold-style items (torches and other `holdStyle != 0` items are still hidden), the full
+`itemAnimation` timings and tool-specific swings, armour/accessory layers, the
 composite-arm rotation while holding items, buffs and the rest of `Player.cs`.
 
 Escape opens the inventory instead of quitting: `Main.DrawInventory`'s 10x5 grid of

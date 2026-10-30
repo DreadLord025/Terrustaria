@@ -39,6 +39,7 @@
 | M2-DRAW-1 | Player draw layers (armor/accessories) | ❌ Pending | - | - |
 | M2-DRAW-2 | Composite arm rotation | ❌ Pending | - | - |
 | M2-ANIM | Full itemAnimation/use timings | ❌ Pending | - | - |
+| M2-FRAME | Player locomotion frames + held-item gate | ✅ Done | Agent-DeepSeek | `player.rs` ports `Player.PlayerFrame`: idle row 0 / airborne row 5 / walk rows `7..=19` (`legFrameCounter += |vx| * 1.3`, wrap 8.0), body copies the leg row, item-use rows `1→2→3`; held item drawn only while swinging (`itemAnimation > 0`); world render camera snapped to `round(cam*zoom)/zoom` (kills the moving pixel-grid shimmer); net `VERSION = 2` (`leg_frame`/`body_frame`). 3 new tests. Not ported: hold-style items, wings/mount/pulley branches |
 | M2-BUFF | Buffs, hooks, mounts, gravity flips | ❌ Pending | - | - |
 
 ### Milestone 3 — Items & Crafting

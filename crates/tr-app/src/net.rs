@@ -9,7 +9,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Default)]
 pub struct PlayerNet {
@@ -24,7 +24,8 @@ pub struct PlayerNet {
     pub facing: i32,
     pub selected: u16,
     pub on_ground: bool,
-    pub walk_time: f32,
+    pub leg_frame: u32,
+    pub body_frame: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -238,7 +239,8 @@ impl W {
             .i32(p.facing)
             .u16(p.selected)
             .bool(p.on_ground)
-            .f32(p.walk_time)
+            .u32(p.leg_frame)
+            .u32(p.body_frame)
     }
 }
 
@@ -309,7 +311,8 @@ impl<'a> R<'a> {
             facing: self.i32(),
             selected: self.u16(),
             on_ground: self.bool(),
-            walk_time: self.f32(),
+            leg_frame: self.u32(),
+            body_frame: self.u32(),
         }
     }
 }

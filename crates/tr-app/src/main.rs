@@ -2423,7 +2423,8 @@ impl App {
             facing: p.facing,
             selected: self.selected as u16,
             on_ground: p.on_ground,
-            walk_time: p.walk_time,
+            leg_frame: p.leg_frame,
+            body_frame: p.body_frame,
         };
         match &self.net {
             NetRole::Host(server) => {
@@ -2585,7 +2586,15 @@ impl App {
         // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
         // high-refresh displays.
         let player_alpha = (self.player_accum / (1.0 / 60.0)).clamp(0.0, 1.0);
-        let render_player = self.player.as_ref().map(|p| p.interpolated(player_alpha));
+        let mut render_player = self.player.as_ref().map(|p| p.interpolated(player_alpha));
+        // `PlayerFrame` item-use branch: while a swing is active the body shows the use
+        // rows instead of the idle/air pose. `swing` counts down from `SWING_TIME`,
+        // which is `itemAnimation / itemAnimationMax` in the original.
+        if let Some(p) = render_player.as_mut() {
+            if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
+                p.apply_item_use_frame(self.swing / SWING_TIME);
+            }
+        }
         let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
         let npc_key = npc::render_key(&self.npcs);
         let mut stats = tr_render::sprite::RenderStats::default();
@@ -2734,6 +2743,13 @@ impl App {
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
                 let style = LightStyle::for_mode(*light_mode);
+                // Snap the render camera so integer world coordinates land on whole
+                // screen pixels at any zoom. With a fractional camera, nearest-neighbour
+                // sampling makes every tile texture crawl sub-pixel as the camera moves
+                // while the player (drawn with `snap_to_screen`) stayed crisp, so the
+                // world appeared to slide under the character. Rounding `cam * zoom`
+                // keeps the step at one screen pixel even at 1.5x / 2x.
+                let draw_cam = (*camera * *zoom).round() / *zoom;
                 let surface_px = world.world_surface as f32 * TILE_PX;
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
@@ -2798,7 +2814,7 @@ impl App {
                 // always-rebuilt back range so the world range can stay cached.
                 draw_sky(
                     renderer,
-                    *camera,
+                    draw_cam,
                     *zoom,
                     screen,
                     world,
@@ -2823,7 +2839,7 @@ impl App {
                         world,
                         lookups,
                         atlas.as_ref(),
-                        *camera,
+                        draw_cam,
                         *zoom,
                         screen,
                         &params,
@@ -2840,22 +2856,28 @@ impl App {
                         &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
                     );
-                    if let Some(p) = render_player.as_ref() {
-                        if let Some(slot) = inventory.get(*selected) {
-                            if slot.count > 0 {
-                                tile_stats.quads += draw_held_item(
-                                    renderer, lookups, light, &style, p, slot.kind, *swing,
-                                    anim_time,
-                                );
+                    // `PlayerDrawLayers.DrawPlayer_27_HeldItem`: the item is only drawn
+                    // while it is being used (`itemAnimation > 0 && useStyle != 0`), so
+                    // the hand is empty at rest. Hold-style items (torches etc.) are not
+                    // modelled yet.
+                    if *swing > 0.0 {
+                        if let Some(p) = render_player.as_ref() {
+                            if let Some(slot) = inventory.get(*selected) {
+                                if slot.count > 0 {
+                                    tile_stats.quads += draw_held_item(
+                                        renderer, lookups, light, &style, p, slot.kind,
+                                        *swing, anim_time,
+                                    );
+                                }
                             }
                         }
                     }
                     *world_key = Some(key);
                 }
 
-                rain.draw(renderer, lookups, light, *camera, *zoom, screen);
+                rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 for p in projectiles.iter() {
-                    p.draw(renderer, lookups, light, *camera, *zoom, screen);
+                    p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 }
 
                 let boss = npcs
@@ -2935,7 +2957,7 @@ impl App {
                 stats = renderer.render(
                     gpu,
                     &view,
-                    camera.to_array(),
+                    draw_cam.to_array(),
                     *zoom,
                     now.elapsed().as_secs_f32(),
                     wgpu::Color {
@@ -4806,7 +4828,8 @@ fn draw_tiles(
         p.vy = rp.vy;
         p.facing = rp.facing;
         p.on_ground = rp.on_ground;
-        p.walk_time = rp.walk_time;
+        p.leg_frame = rp.leg_frame;
+        p.body_frame = rp.body_frame;
         p.gfx_off_y = 0.0;
         stats.quads += draw_player(
             r, player_assets, &p, light, style, anim_time, camera, zoom, screen,
@@ -5556,10 +5579,12 @@ fn draw_player(
     let pos = snap_to_screen([player.x - 10.0, player.y - 10.0], camera, zoom, screen);
     let size = [40.0, 56.0];
     let flip = player.facing < 0;
-    let leg = player.leg_frame();
+    let leg = player.leg_frame;
+    let body = player.body_frame;
     let mut quads = 0;
-    let (arm_col, arm_row) = arm_cell(leg);
-    let frame_uv = |t: Option<&BgTex>| t.map(|t| flip_uv(player_frame_uv(t, leg), flip));
+    let (arm_col, arm_row) = arm_cell(body);
+    let frame_uv =
+        |t: Option<&BgTex>, row: u32| t.map(|t| flip_uv(player_frame_uv(t, row), flip));
     let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| {
         t.map(|t| flip_uv(player_cell_uv(t, col, row), flip))
     };
@@ -5571,9 +5596,11 @@ fn draw_player(
             }
         }
     };
-    part(assets.legs.as_ref(), frame_uv(assets.legs.as_ref()), mul(skin));
-    part(assets.pants.as_ref(), frame_uv(assets.pants.as_ref()), mul(pants));
-    part(assets.shoes.as_ref(), frame_uv(assets.shoes.as_ref()), mul(shoes));
+    // `PlayerFrame`: the legs animate on `legFrame`, the body/arms/head on
+    // `bodyFrame` (which copies the leg row while walking).
+    part(assets.legs.as_ref(), frame_uv(assets.legs.as_ref(), leg), mul(skin));
+    part(assets.pants.as_ref(), frame_uv(assets.pants.as_ref(), leg), mul(pants));
+    part(assets.shoes.as_ref(), frame_uv(assets.shoes.as_ref(), leg), mul(shoes));
     // Back arm behind the torso, front arm in front of the shirt (composite layers).
     part(
         assets.arm.as_ref(),
@@ -5592,14 +5619,18 @@ fn draw_player(
         cell_uv(assets.arm.as_ref(), 8, arm_row),
         mul(skin),
     );
-    part(assets.head.as_ref(), frame_uv(assets.head.as_ref()), mul(skin));
+    part(assets.head.as_ref(), frame_uv(assets.head.as_ref(), body), mul(skin));
     part(
         assets.eye_whites.as_ref(),
-        frame_uv(assets.eye_whites.as_ref()),
+        frame_uv(assets.eye_whites.as_ref(), body),
         mul(eye_white),
     );
-    part(assets.eyes.as_ref(), frame_uv(assets.eyes.as_ref()), mul(eye));
-    part(assets.hair.as_ref(), frame_uv(assets.hair.as_ref()), mul(hair));
+    part(
+        assets.eyes.as_ref(),
+        frame_uv(assets.eyes.as_ref(), body),
+        mul(eye),
+    );
+    part(assets.hair.as_ref(), frame_uv(assets.hair.as_ref(), body), mul(hair));
     quads
 }
 
