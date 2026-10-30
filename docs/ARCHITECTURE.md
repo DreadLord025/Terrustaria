@@ -184,8 +184,9 @@
   Tree trunks use their own 22 px/20×20 geometry and biome sheet section.
 - Draw pass: sky (`Background_0` gradient + horizon fill), twinkling stars, sun/moon,
   the `DrawSurfaceBG` layer stack for the current biome (forest `7`/`8` mountains and
-  `50..52` tree lines, snow `35`/`36` and `37..39` pines, ocean `28`), clouds, per-column
-  underground fade, the opaque liquid pass, walls, tiles, entities, then the translucent
+  `50..52` tree lines, desert `23`/`22` mountains and `21`/`20` dunes, ocean `28`, snow
+  `35`/`36` and `37..39` pines) with its `bgStyle` cross-fade, clouds, the underground
+  backdrop, the opaque liquid pass, walls, tiles, entities, then the translucent
   liquid pass and foliage. Solid blocks in `Color`/`White` modes are emitted as 9 (or 4)
   light-sliced quads; slopes use eight 2 px columns + a strip; half bricks the bottom
   8 px. Tree marker tiles draw nothing; a separate pass places the canopy/branch sprites
@@ -261,10 +262,12 @@
 
 - **Chunking / meshing** — replace the per-frame tile loop with cached chunk instance
   buffers keyed by (chunk, light revision), only rebuilt on change.
-- **Biome skylines** — forest, snow and ocean use the vanilla layer sets with vertical
-  parallax and measured ground-band anchoring. The corruption/crimson/jungle/hallow sets
-  plug into the same `SkyAssets`/`draw_bg_layer` pair once those biomes exist; storms,
-  lightning and snowfall are the remaining weather pieces.
+- **Biome skylines** — forest, desert, ocean and snow use the vanilla layer sets with
+  vertical parallax and the original's `bgAlphaFrontLayer`/`bgAlphaFarBackLayer`
+  cross-fade. The corruption/crimson/jungle/hallow/mushroom sets plug into the same
+  `SkyAssets`/`draw_bg_layer`/`advance_bg_alphas` path once those biomes (and their
+  `SceneMetrics` zones) exist; storms, lightning and snowfall are the remaining weather
+  pieces.
 - **Liquid surface smoothing** — the flow simulation is a direct port of `Liquid.Update`
   and the renderer now uses the original's `VisibleLiquidLevel`/edge-wall draw cache, so
   shorelines and partly filled cells taper like the original. The remaining pieces are

@@ -292,14 +292,18 @@ Remaining lighting gaps:
 - The shader has an aberration hook (`Globals::aberration`), but it is disabled for Trippy
   until instances carry a per-sprite flag: shifting full-screen sky quads samples past
   their atlas sheet.
-- The real parallax, cloud and underground background layers (`Main.DrawBackground`,
-  `DrawSurfaceBG_*`, `DrawClouds_*`, `SkyManager`) are not ported. The blue is the game's
-  own `Background_0.png` gradient anchored to `Main.worldSurface`; two seeded copies of
-  `Background_7` are drawn as screen-space parallax mountain layers, and a deterministic
-  `Cloud_*` layer uses half-speed horizontal parallax. Sun/moon/stars follow
-  `DrawSunAndMoon`'s screen-space arc using `Sun`, `Moon_0` and `Star_0..3`. Biome-specific
-  backgrounds, the foreground tree line and rain are missing; underground is a smooth
-  per-column fade to cave darkness that starts at each column's first solid tile.
+- The real parallax, cloud and underground background layers are ported (see
+  "Surface backgrounds" and "Sky and daylight"): the game's own `Background_0.png`
+  gradient anchored to `Main.worldSurface`, the `DrawSurfaceBG` layer stack for the four
+  generated biomes with its cross-fade, drifting `Cloud_*` sprites, the `Background_1/2`
+  underground backdrop, and sun/moon/stars on `DrawSunAndMoon`'s screen-space arc.
+- `TileDrawingBase.DrawOwnBlacks`: an exactly-zero-light cell paints opaque black before
+  its sprite/wall. Vanilla emits that quad from `TileDrawing.DrawSingleTile` for every
+  active tile and from `WallDrawing.DrawWalls` for every walled cell that is not a
+  `FullTile`; the renderer folds both cases into one merged black rectangle per row
+  (`light_is_zero && (active || wall != 0)`), which is what stops the parallax/underground
+  backdrop bleeding through unlit caves. A fully dark tile is solid black either way, so
+  skipping its sprite is pixel-identical (glow masks are not implemented yet).
 `Main.time` advances with a 15-minute day and 9-minute night (60 ticks/s); the sky colour
 and light are quantised to one-second steps so the map/instance caches still hit.
 
@@ -439,30 +443,51 @@ items are collectible but not placeable. Desert structures and loot are not port
 
 ## Surface backgrounds
 
-`Main.DrawSurfaceBG` is ported for the three biomes the generator has. The far and near
-mountain layers (`Background_7`/`8` for forest, `35`/`36` for snow) are drawn at the
-original's `bgScale` (1·2 and 1.15·2) and 0.15/0.20 parallax, laid out in
-`Main.screenPosition` space (camera − screenSize/2, **not** divided by the game zoom, so
-changing `GameZoomTarget` moves only the world), followed by the biome's three
-tree layers (`50..52` forest, `37..39` snow) at 1.25·2/1.31·2/1.34·2 and 0.40/0.43/0.49
-parallax; the middle tree layer is mirrored horizontally, exactly as
-`DrawSurfaceBG_Forest` does with `SpriteEffects.FlipHorizontally`. Every layer top uses
-`backgroundTopMagicNumber`, `ComputeScAdj` and `pushBGTopHack` (30 − 180 = −150), and the
-X phase is `-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the
-screen's left edge, as in `DrawSurfaceBG`. The ocean edge
-(`x < 200` or `x > width - 200`) suppresses the tree line and adds `Background_28`, the
-sea horizon with islands. Layer tops use
+`Main.DrawSurfaceBG` is ported for the four biomes the generator has: forest (0),
+desert (2), ocean (4) and snow (7). Every layer is gated and tinted by its
+`Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer` entry
+(`ColorOfSurfaceBackgroundsBase * alpha`), so two biomes blend while `Main.bgStyle`
+cross-fades; a zero alpha skips the layer.
+
+The far pass (`DrawSurfaceBG_BackMountainsStep1`) draws forest `Background_7`, desert
+`23` (only when `desertBG != 4`) and snow `35` at parallax 0.15, scale 1·2 and top
+`magic·1300 + 1090 + scAdj + 30`. The near pass (`...Step2`) draws forest `8`, desert
+`22`, ocean `28` (`Main.oceanBG`, default style 0) and snow `36` at parallax 0.20,
+scale 1.15·2 and top `magic·1400 + 1260 + scAdj + 30`, in the original's index order
+(0, 1, 3, 4). The front pass draws the biome's three layers: forest `50..52` and snow
+`37..39` at 1.25·2/1.31·2/1.34·2, 0.40/0.43/0.49 and `magic·1800/1950/2100 +
+1300/1550/1800` (forest; `-50` per texture and the middle layer mirrored horizontally)
+resp. `+1350/1600/1850` (snow; no flip); desert `21`/`20` at 2.5/2.68, 0.37/0.49 and
+`+1600/+2000`, with no tree line. Everything is laid out in `Main.screenPosition` space
+(camera − screenSize/2, **not** divided by the game zoom, so changing `GameZoomTarget`
+moves only the world) and the X phase is
+`-IEEERemainder(screenLeft·parallax, scaledWidth) − scaledWidth/2` against the screen's
+left edge, as in `DrawSurfaceBG`.
+
+`Main.GetPreferredBGStyleForPlayer` is approximated with the same camera-column biome
+tests the water style uses — beach → 4, desert → 2, snow → 7, otherwise 0 (the dungeon,
+corruption etc. do not exist in our generator). `DrawBG_HandleBackgroundTransition`
+waits 30 frames before adopting a new style (60 when entering a forest style), then sets
+`bgDelay = -60` as a 60-frame cooldown (0 for a forest target);
+`UpdateBGVisibility_BackLayer`/`_FrontLayer` move 16 alpha slots at
+`backgroundLayerTransitionSpeed = 0.05` per drawn frame, and
+`instantBGTransitionCounter = 2` forces the loaded biome on the first two frames. The
+timer/alpha maths is unit-tested in `bg_transition_tests`. Layer tops use
 `backgroundTopMagicNumber = -(screenTop - 300) / (worldSurface * 16)` plus `ComputeScAdj`,
 exactly like the original, and — like the original — depend only on the camera's Y, never
 on the terrain under the camera; an earlier clamp to the local column's surface made the
 skyline jump at every hill and was removed (BUG-018). The background batch keeps the
 original's zoom-1 matrix, so the layers hold their screen size at any game zoom. Clouds
-are world objects at a fixed altitude above `worldSurface` and drift with the wind.
+are world objects at a fixed altitude above `worldSurface` and drift with the wind; the
+storm `cloudBG` banks (`Background_112/113`) fade in with `cloudAlpha`.
 
-Not ported: the biome cross-fade (`bgAlphaFarBackLayer`/`bgAlphaFrontLayer` for
-corruption/crimson/jungle/hallow/mushroom), `DrawSurfaceBG_DrawChangeOverlay`, the
-cloud-background (`cloudBG`) storm layers, the far-cloud depth layers and the ocean
-water-line ambience.
+Not ported: the styles that need `SceneMetrics` beyond our four biomes (corruption 1,
+jungle 3, hallow 6, crimson 8, glowshroom 9, the extra forest sets 10..12 and the desert
+evil variants 5/13/14), the saved `treeBG*` / `desertBackgroundSet` randomisation (tree
+set 1 and the pure desert set are assumed), `DrawSurfaceBG_DrawChangeOverlay` (the black
+flash on first entering a background), the far-cloud depth layers
+(`DrawClouds_Distant/Closer`), the ocean water-line ambience and the `Background_49` fog.
+
 
 The underground backdrop is a port of `Main.DrawBackground_SurfaceTransitionBackground` +
 `DrawBackground_DirtBackground`: `Background_1` supplies the one-row transition at
@@ -622,6 +647,12 @@ are drawn from the tile's plain 16×16 frame with the light map (separate `Item_
 are not extracted yet). A `.trplayer` sidecar stores position, HP and the ten slots (the
 version-1 loader accepts the old four-slot tail) and is applied at load if the saved
 position is not inside a solid tile.
+
+`WallID.UnbreakableBlockWall` (350) is faithful too: `Player.CanPlayerSmashWall` refuses
+it, `WorldGen.ReplaceWall` cannot overwrite it, and `CanKillTile`/`IsTileReplaceable` make
+any tile in front of it unbreakable and unplaceable. `edit::WALL_UNBREAKABLE` guards
+`break_wall`, `break_tile` (`remove_tile`) and `place_tile`; the dungeon's pre-Skeletron
+wall rule is not needed because the dungeon is not generated.
 
 Not ported: the full `Item.cs` use logic, tool requirements and mining speed, item sprite
 sheet lookup, inventory windows/crafting/chests, paint, actuators/wiring, and liquid

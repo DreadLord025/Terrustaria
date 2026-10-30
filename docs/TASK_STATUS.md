@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-29T23:45Z  
+**Last updated:** 2026-10-30T10:55Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -22,7 +22,7 @@
 | M1.4-BG-9 | Surface parallax offsets and X phase | ✅ Done | Agent-Qoder | `f698971`: `pushBGTopHack`, `Background_50..52` -50, 2.68 third layer, desert 2.5/2.68, `bgStartX` from the screen's left edge |
 | M1.4-BG-10 | Rock layer / magma / hell backgrounds | ❌ Pending | - | `DrawBackground_DrawRockLayer`/`DrawMagmaLayer` (Background_3..6,185..187), `GetRockTransitionPoint`, `GlobalBrightness` ramp |
 | M1.4-BG-11 | Sun/moon phases, clouds, stars | ❌ Pending | - | `DrawSunAndMoon` scale/phase/rotation, `Cloud.Parse`+`GetParallax`, `DrawStarsInBackground` density |
-| M1.4-BG-12 | Biome bgStyle selection + cross-fade | ❌ Pending | - | `SceneMetrics` zones, `backgroundLayerTransitionSpeed` 0.05, saved `treeBG*` sets |
+| M1.4-BG-12 | Biome bgStyle selection + cross-fade | ✅ Done | Agent-Qoder | `91888cc`: `bgStyle`/`bgDelay`/`instantBGTransitionCounter` + 16-slot `bgAlphaFrontLayer`/`bgAlphaFarBackLayer`, 0.05 per-frame fade, 30/60-frame delay + 60-frame cooldown; beach→4, desert→2, snow→7, else 0 (same camera-biome tests as the water style). Full forest/desert/ocean/snow layer stack incl. desert mountains `22/23`; timer/alpha tests in `bg_transition_tests`. `SceneMetrics`-only styles, saved tree sets and `DrawChangeOverlay` remain documented deviations |
 | TILE-DRAW-1 | Per-type draw metrics (GetTileDrawData) | 🔄 In Progress | sub-agent | `tr-core/src/drawdata.rs`: torch 20x20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus |
 | TILE-DRAW-2 | Torch flames + glow masks | ❌ Pending | - | `TextureAssets.Flames`, glow mask table |
 | TILE-DRAW-3 | Wind: swaying plants, tree wind, leaves | 🔄 In Progress | sub-agent | `tr-core/src/wind.rs` + `DrawGrass` path, `EmitTreeLeaves` |
@@ -103,6 +103,7 @@
 | M1.4-BG-13 | Grass/dirt transition fidelity | 🔄 Research | sub-agent | `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light; fixes hard green/dirt seams |
 | M1.4-BG-14 | Background stack order + zoom behaviour | ✅ Done | Agent-Qoder | `cb71721`: surface background laid out in unzoomed `screenPosition` space (zoom-invariant), +30 push for cloud/mountain passes, −150 only for front layers. Sky gradient formula/order still pending (BG-16) |
 | M1.4-BG-16 | Sky gradient + sun/moon/clouds/stars pass | ❌ Pending | - | `Main.cs:62036-62080` gradient, `DrawSunAndMoon` arc/scale/phase, `Cloud.GetParallax`, star density, horizon layer order |
+| M1.4-BG-17 | Unlit wall black coverage + unbreakable wall 350 | ✅ Done | Agent-Qoder | `b1d07cd`: `DrawOwnBlacks` merging now covers every zero-light walled cell (`light_is_zero && (active || wall != 0)`) as `WallDrawing.DrawWalls` does, not only opaque wall frames; `edit::WALL_UNBREAKABLE = 350` (`WallID.UnbreakableBlockWall`) blocks hammering, tile mining/placement (`CanKillTile`/`IsTileReplaceable`) and wall replacement |
 | TILE-DRAW-5 | Full grass framing (WorldGen 82192-83395) | ❌ Pending | - | Port groups A-J + the `-2` marker and per-biome dirt ids; our `grass_frame` covers ~25 % and plateaus on hard frames |
 
 ### Tile Objects & Special Tiles
@@ -128,6 +129,8 @@ M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio
 ## ✅ Recently Completed
 
 ```
+91888cc  [M1.4-BG-12]    Surface background biome cross-fade + layer stack (Agent-Qoder)
+b1d07cd  [M1.4-BG-17]    Unlit wall black coverage + unbreakable wall 350 (Agent-Qoder)
 8bc63a1  [M5-WSURF]       Derive worldSurface from the deepest column   (Agent-Qoder)
 7d9710a  [M1.4-BG-7]     Cave backdrop anchoring + water pass restore (Agent-Qoder)
 e0f1ea7  [M4-SPAWN]       Port the Spawner.TrySpawnAnNPC pipeline      (Agent-Nemotron)
