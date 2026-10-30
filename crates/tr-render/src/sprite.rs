@@ -42,8 +42,15 @@ pub struct RenderStats {
 
 pub struct SpriteRenderer {
     pipeline: wgpu::RenderPipeline,
+    bgl: wgpu::BindGroupLayout,
+    sampler: wgpu::Sampler,
     bind_world: wgpu::BindGroup,
     bind_ui: wgpu::BindGroup,
+    /// Bind group for the world-sized map texture (one texel = one map tile). `None`
+    /// until `ensure_map_texture` has run, in which case the `map` range is not drawn.
+    bind_map: Option<wgpu::BindGroup>,
+    map_tex: Option<wgpu::Texture>,
+    map_size: (u32, u32),
     globals_world: wgpu::Buffer,
     globals_ui: wgpu::Buffer,
     /// Ring of instance buffers so the CPU never rewrites a buffer the GPU may still
@@ -55,6 +62,11 @@ pub struct SpriteRenderer {
     /// Always-rebuilt background range, drawn before the cached world range.
     pub back: Vec<SpriteInstance>,
     pub world: Vec<SpriteInstance>,
+    /// Screen-space atlas sprites drawn behind the map (biome `MapBG` backdrop and
+    /// the `Images/Map` scroll frame). Always rebuilt; empty until Task 7.
+    pub map_back: Vec<SpriteInstance>,
+    /// Screen-space quads sampling the map texture, drawn after `map_back`.
+    pub map: Vec<SpriteInstance>,
     pub ui: Vec<SpriteInstance>,
     pub sheets: HashMap<String, [f32; 4]>,
     pub atlas_size: (u32, u32),
@@ -147,28 +159,8 @@ impl SpriteRenderer {
             ],
         });
 
-        let mk_bind = |buf: &wgpu::Buffer, label: &str| {
-            device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some(label),
-                layout: &layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: buf.as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ],
-            })
-        };
-        let bind_world = mk_bind(&globals_world, "bg-world");
-        let bind_ui = mk_bind(&globals_ui, "bg-ui");
+        let bind_world = Self::mk_bind(device, &layout, &sampler, &globals_world, &view, "bg-world");
+        let bind_ui = Self::mk_bind(device, &layout, &sampler, &globals_ui, &view, "bg-ui");
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sprite"),
@@ -265,8 +257,13 @@ impl SpriteRenderer {
 
         Self {
             pipeline,
+            bgl: layout,
+            sampler,
             bind_world,
             bind_ui,
+            bind_map: None,
+            map_tex: None,
+            map_size: (0, 0),
             globals_world,
             globals_ui,
             instances,
@@ -274,6 +271,8 @@ impl SpriteRenderer {
             capacity,
             back: Vec::with_capacity(1024),
             world: Vec::with_capacity(64 * 1024),
+            map_back: Vec::with_capacity(64),
+            map: Vec::with_capacity(8),
             ui: Vec::with_capacity(8 * 1024),
             sheets,
             atlas_size: (atlas.width, atlas.height),
@@ -283,6 +282,99 @@ impl SpriteRenderer {
             font_uv1,
             white_uv,
         }
+    }
+
+    /// Builds one sprite bind group: globals uniform + a texture view + the shared
+    /// sampler. Used for the atlas view (`bg-world`/`bg-ui`) and the map view.
+    fn mk_bind(
+        device: &wgpu::Device,
+        bgl: &wgpu::BindGroupLayout,
+        sampler: &wgpu::Sampler,
+        buf: &wgpu::Buffer,
+        tex: &wgpu::TextureView,
+        label: &str,
+    ) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some(label),
+            layout: bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(tex),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        })
+    }
+
+    /// `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`): (re)creates the
+    /// world-sized map texture (one texel = one map tile) and its bind group.
+    /// Only recreates when width/height differ from the current size.
+    pub fn ensure_map_texture(&mut self, gpu: &Gpu, width: u32, height: u32) {
+        if self.map_size == (width, height) && self.map_tex.is_some() {
+            return;
+        }
+        let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("map"),
+            size: wgpu::Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            // Same sRGB convention as the atlas texture (`sprite.rs:86`): the map
+            // colours are authored sRGB bytes and must round-trip, whereas a plain
+            // `Rgba8Unorm` view would brighten them.
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+        // The map quad is screen-space, so it binds the UI globals (cam = [w/2, h/2],
+        // zoom = 1) with the existing nearest sampler.
+        self.bind_map = Some(Self::mk_bind(
+            &gpu.device,
+            &self.bgl,
+            &self.sampler,
+            &self.globals_ui,
+            &view,
+            "bg-map",
+        ));
+        self.map_tex = Some(tex);
+        self.map_size = (width, height);
+    }
+
+    /// `MapRenderer.DrawChangesToMap` upload: writes an RGBA8 region (row-major) into
+    /// the map texture; `rgba.len() == (w * h) as usize`.
+    pub fn write_map_region(&mut self, gpu: &Gpu, x: u32, y: u32, w: u32, h: u32, rgba: &[[u8; 4]]) {
+        gpu.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: self.map_tex.as_ref().expect("map texture"),
+                mip_level: 0,
+                origin: wgpu::Origin3d { x, y, z: 0 },
+                aspect: wgpu::TextureAspect::All,
+            },
+            bytemuck::cast_slice(rgba),
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(w * 4),
+                rows_per_image: Some(h),
+            },
+            wgpu::Extent3d {
+                width: w,
+                height: h,
+                depth_or_array_layers: 1,
+            },
+        );
     }
 
     pub fn uv(&self, sheet: &str, sx: f32, sy: f32, sw: f32, sh: f32) -> Option<[f32; 4]> {
@@ -395,6 +487,37 @@ impl SpriteRenderer {
         });
     }
 
+    /// Screen-space atlas sprite drawn *behind* the map (biome `MapBG` backdrop —
+    /// Task 7 — and the `Images/Map` scroll frame).
+    pub fn push_map_back_sprite(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+    ) {
+        self.map_back.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot: 0.0,
+        });
+    }
+
+    /// Screen-space sprite sampling the map texture (the per-tile map quad).
+    pub fn push_map_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+        self.map.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot: 0.0,
+        });
+    }
+
     /// Draws text in screen space (top-left origin, 8x8 glyphs scaled by `scale`).
     pub fn push_text(&mut self, x: f32, y: f32, scale: f32, color: [f32; 4], text: &str) {
         let gw = self.font_glyph_px;
@@ -431,6 +554,8 @@ impl SpriteRenderer {
     pub fn begin_frame(&mut self) {
         self.back.clear();
         self.world.clear();
+        self.map_back.clear();
+        self.map.clear();
         self.ui.clear();
     }
 
@@ -440,6 +565,8 @@ impl SpriteRenderer {
     /// range is stale.
     pub fn begin_frame_keep_world(&mut self) {
         self.back.clear();
+        self.map_back.clear();
+        self.map.clear();
         self.ui.clear();
     }
 
@@ -489,7 +616,11 @@ impl SpriteRenderer {
             }),
         );
 
-        let total = self.back.len() + self.world.len() + self.ui.len();
+        let total = self.back.len()
+            + self.world.len()
+            + self.map_back.len()
+            + self.map.len()
+            + self.ui.len();
         if total == 0 {
             return stats;
         }
@@ -517,6 +648,8 @@ impl SpriteRenderer {
         let buffer = &self.instances[idx];
         let back_bytes = std::mem::size_of_val(self.back.as_slice());
         let world_bytes = std::mem::size_of_val(self.world.as_slice());
+        let map_back_bytes = std::mem::size_of_val(self.map_back.as_slice());
+        let map_bytes = std::mem::size_of_val(self.map.as_slice());
         if !self.back.is_empty() {
             gpu.queue
                 .write_buffer(buffer, 0, bytemuck::cast_slice(&self.back));
@@ -525,15 +658,32 @@ impl SpriteRenderer {
             gpu.queue
                 .write_buffer(buffer, back_bytes as u64, bytemuck::cast_slice(&self.world));
         }
-        if !self.ui.is_empty() {
+        if !self.map_back.is_empty() {
             gpu.queue.write_buffer(
                 buffer,
                 (back_bytes + world_bytes) as u64,
+                bytemuck::cast_slice(&self.map_back),
+            );
+        }
+        if !self.map.is_empty() {
+            gpu.queue.write_buffer(
+                buffer,
+                (back_bytes + world_bytes + map_back_bytes) as u64,
+                bytemuck::cast_slice(&self.map),
+            );
+        }
+        if !self.ui.is_empty() {
+            gpu.queue.write_buffer(
+                buffer,
+                (back_bytes + world_bytes + map_back_bytes + map_bytes) as u64,
                 bytemuck::cast_slice(&self.ui),
             );
         }
-        stats.uploaded_bytes =
-            (back_bytes + world_bytes + std::mem::size_of_val(self.ui.as_slice())) as u64;
+        stats.uploaded_bytes = (back_bytes
+            + world_bytes
+            + map_back_bytes
+            + map_bytes
+            + std::mem::size_of_val(self.ui.as_slice())) as u64;
         stats.instances = total as u32;
 
         let mut encoder = gpu
@@ -572,8 +722,23 @@ impl SpriteRenderer {
                 pass.draw(0..6, start..(start + self.world.len() as u32));
                 stats.draw_calls += 1;
             }
-            if !self.ui.is_empty() {
+            if !self.map_back.is_empty() {
                 let start = (self.back.len() + self.world.len()) as u32;
+                pass.set_bind_group(0, &self.bind_ui, &[]);
+                pass.draw(0..6, start..(start + self.map_back.len() as u32));
+                stats.draw_calls += 1;
+            }
+            if !self.map.is_empty() {
+                if let Some(bind_map) = &self.bind_map {
+                    let start = (self.back.len() + self.world.len() + self.map_back.len()) as u32;
+                    pass.set_bind_group(0, bind_map, &[]);
+                    pass.draw(0..6, start..(start + self.map.len() as u32));
+                    stats.draw_calls += 1;
+                }
+            }
+            if !self.ui.is_empty() {
+                let start = (self.back.len() + self.world.len() + self.map_back.len() + self.map.len())
+                    as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
                 pass.draw(0..6, start..(start + self.ui.len() as u32));
                 stats.draw_calls += 1;

@@ -50,7 +50,10 @@ impl Gpu {
         );
 
         let limits = wgpu::Limits {
-            max_texture_dimension_2d: 8192,
+            // `MapRenderer.CheckMapTargets` (`MapRenderer.cs:357-378`) sizes the map
+            // texture to the world (up to 8400 px for a large world). 8192 truncates
+            // it, so take the adapter's real limit capped at the vanilla max.
+            max_texture_dimension_2d: adapter.limits().max_texture_dimension_2d.min(16384),
             ..wgpu::Limits::default()
         };
 
