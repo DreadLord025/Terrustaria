@@ -10,6 +10,7 @@ pub mod lighting;
 pub mod liquid;
 pub mod liquid_draw;
 pub mod localization;
+pub mod map;
 pub mod mapdata;
 pub mod save;
 pub mod tile;
