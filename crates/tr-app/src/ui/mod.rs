@@ -12,8 +12,28 @@ use tr_render::SpriteRenderer;
 
 use crate::ItemSlot;
 use crate::assets;
-use crate::player::{BREATH_MAX, Player, WIDTH as PLAYER_WIDTH};
+use crate::player::Player;
 use crate::{HOTBAR, INV};
+
+/// Per-frame animated UI values shared by the HUD passes: `Main.mouseTextColor`
+/// (which multiplies every interface label/colour) and `Main.cursorScale` (the
+/// heart/mana pulse, `Main.cs:52491`).
+#[derive(Clone, Copy, Debug)]
+pub struct UiPulse {
+    /// `Main.mouseTextColor / 255` (`Main.cs:18216`; oscillates `190/255..=1.0`).
+    pub text: f32,
+    /// `Main.cursorScale` = `cursorAlpha * 0.3 + 0.7 + 0.1` (`Main.cs:52491`).
+    pub cursor_scale: f32,
+}
+
+impl Default for UiPulse {
+    fn default() -> Self {
+        Self {
+            text: 1.0,
+            cursor_scale: 1.0,
+        }
+    }
+}
 
 /// Vanilla HUD layout: hotbar top-left (or the open 10x5 inventory grid), hearts
 /// top-right, breath bubbles above the player and the boss bar at the bottom centre
@@ -35,7 +55,13 @@ pub fn draw_hud(
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
+    pulse: UiPulse,
 ) {
+    // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
+    // resources are the first interface layer, before the inventory (27) and the
+    // hotbar (30).
+    resources::draw(r, lookups, screen, player, camera, zoom, pulse);
+
     // `ItemSlot.Draw` / `Main.DrawInventory`: with the inventory open the hotbar is
     // row 0 of a 10x5 grid of 56 px cells at (20,20) at `inventoryScale = 0.85`
     // (context 0: grey `InventoryBack`, hotbar row `InventoryBack9`); closed, the ten
@@ -109,66 +135,6 @@ pub fn draw_hud(
             52.0,
             1.0,
         );
-    }
-
-    // Hearts: 20 HP per heart, anchored to the right like the classic display.
-    if let Some(p) = player {
-        if let Some(heart) = lookups.hud_uv(lookups.ui_heart.as_ref()) {
-            let hearts = ((p.max_hp as f32) / 20.0).ceil().max(1.0) as i32;
-            let x0 = screen.x - 300.0;
-            for i in 1..=hearts {
-                let ratio = ((p.hp as f32 - (i - 1) as f32 * 20.0) / 20.0).clamp(0.0, 1.0);
-                let (grey, scale) = if ratio >= 1.0 {
-                    (255.0f32, 1.0f32)
-                } else {
-                    (
-                        (30.0 + 225.0 * ratio).max(30.0),
-                        (ratio / 4.0 + 0.75).max(0.75),
-                    )
-                };
-                let size = 22.0 * scale;
-                let x = x0 + 26.0 * (i - 1) as f32;
-                let y = 32.0 + (22.0 - size) * 0.5;
-                let t = grey / 255.0;
-                r.push_ui_sprite([x, y], [size, size], heart, [t, t, t, 1.0]);
-            }
-            let label = "Life";
-            let value = format!("{}/{}", p.hp, p.max_hp);
-            let center = x0 + 13.0 * hearts as f32;
-            let lw = text::hud_text_width(r, lookups, label, 1.0);
-            text::hud_text(r, lookups, center - 3.0 - lw + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
-            text::hud_text(r, lookups, center - 3.0 - lw, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], label);
-            let vx = center + 3.0;
-            text::hud_text(r, lookups, vx + 1.0, 7.0, 1.0, [0.0, 0.0, 0.0, 1.0], &value);
-            text::hud_text(r, lookups, vx, 6.0, 1.0, [1.0, 1.0, 1.0, 1.0], &value);
-
-            // Breath bubbles above the player's head while submerged.
-            if p.breath < BREATH_MAX {
-                if let Some(bubble) = lookups.hud_uv(lookups.ui_bubble.as_ref()) {
-                    let psx = (p.x + PLAYER_WIDTH * 0.5 - camera.x) * zoom + screen.x * 0.5;
-                    let psy = (p.y - camera.y) * zoom + screen.y * 0.5;
-                    let bx = psx - 125.0;
-                    let by = psy - 100.0;
-                    for i in 1..=10 {
-                        let ratio =
-                            ((p.breath as f32 - (i - 1) as f32 * 20.0) / 20.0).clamp(0.0, 1.0);
-                        let (grey, scale) = if p.breath >= i * 20 {
-                            (255.0f32, 1.0f32)
-                        } else {
-                            (
-                                (30.0 + 225.0 * ratio).max(30.0),
-                                (ratio / 4.0 + 0.75).max(0.75),
-                            )
-                        };
-                        let size = 22.0 * scale;
-                        let x = bx + 26.0 * (i - 1) as f32;
-                        let y = by + (22.0 - size) * 0.5;
-                        let t = grey / 255.0;
-                        r.push_ui_sprite([x, y], [size, size], bubble, [t, t, t, 1.0]);
-                    }
-                }
-            }
-        }
     }
 
     // Boss bar: `BigProgressBarHelper.DrawFancyBar` (456x22 bar at the bottom).

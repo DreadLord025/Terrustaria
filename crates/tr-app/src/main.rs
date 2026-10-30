@@ -3096,6 +3096,11 @@ impl App {
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
+                        ui::UiPulse {
+                            // `Main.mouseTextColor / 255` (`Main.cs:20355`).
+                            text: self.mouse_text_color as f32 / 255.0,
+                            cursor_scale: self.cursor.scale(),
+                        },
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
