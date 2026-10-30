@@ -8,6 +8,12 @@ use crate::tile::Tile;
 use crate::tiledata as td;
 use crate::world::World;
 
+/// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon
+/// control lines. Vanilla refuses it in every removal/replacement path:
+/// `Player.CanPlayerSmashWall` (hammering), `WorldGen.ReplaceWall`, and it makes any
+/// tile in front of it unbreakable (`WorldGen.CanKillTile`, `IsTileReplaceable`).
+pub const WALL_UNBREAKABLE: u16 = 350;
+
 /// Breaks the active tile at `(x, y)`, keeping its background wall. Returns the tile id.
 pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let kind = remove_tile(world, x, y)?;
@@ -19,7 +25,7 @@ pub fn break_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
 /// responsible for re-framing; `break_tile` is the version that does it.
 pub(crate) fn remove_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
-    if !t.active() {
+    if !t.active() || t.wall == WALL_UNBREAKABLE {
         return None;
     }
     let kind = t.kind;
@@ -38,7 +44,7 @@ pub(crate) fn remove_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
 /// Removes the background wall at `(x, y)`. Returns the wall id.
 pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
-    if t.wall == 0 {
+    if t.wall == 0 || t.wall == WALL_UNBREAKABLE {
         return None;
     }
     let wall = t.wall;
@@ -71,7 +77,7 @@ pub fn place_tile(world: &mut World, x: i32, y: i32, kind: u16) -> bool {
     let Some(t) = world.tile(x, y).copied() else {
         return false;
     };
-    if t.active() {
+    if t.active() || t.wall == WALL_UNBREAKABLE {
         return false;
     }
     let i = world.index(x, y);
@@ -189,5 +195,26 @@ mod tests {
         let mut w = ground_world();
         assert!(!place_tile(&mut w, 5, 25, 0));
         assert!(!place_tile(&mut w, 999, 25, 0));
+    }
+
+    #[test]
+    fn unbreakable_wall_blocks_wall_and_tile_edits() {
+        let mut w = ground_world();
+        // Wall 350 (`WallID.UnbreakableBlockWall`) cannot be hammered away
+        // (`Player.CanPlayerSmashWall`).
+        let i = w.index(10, 15);
+        w.tiles[i].wall = WALL_UNBREAKABLE;
+        w.compute_chunks();
+        assert_eq!(break_wall(&mut w, 10, 15), None);
+        assert_eq!(w.tile(10, 15).unwrap().wall, WALL_UNBREAKABLE);
+        // A tile in front of it cannot be mined (`WorldGen.CanKillTile`,
+        // `IsTileReplaceable`), and nothing may be placed into that cell.
+        let i = w.index(10, 20);
+        w.tiles[i].wall = WALL_UNBREAKABLE;
+        w.compute_chunks();
+        assert_eq!(break_tile(&mut w, 10, 20), None);
+        assert!(w.tile(10, 20).unwrap().active());
+        assert_eq!(break_wall(&mut w, 10, 20), None);
+        assert_eq!(w.tile(10, 20).unwrap().wall, WALL_UNBREAKABLE);
     }
 }

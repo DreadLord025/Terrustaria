@@ -4455,27 +4455,25 @@ fn draw_tiles(
                     }
                 }
                 let solid = (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind);
-                let tile_covers = !is_tree
-                    && tile.slope() == 0
-                    && !tile.half_brick()
-                    && tile_frame.is_some_and(|f| f.opaque);
-                let wall_frame = if tile.wall != 0 && draw_walls {
-                    lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row())
-                } else {
-                    None
-                };
-
-                // A3/A4: fully covered, fully black cell -> greedy merged rectangle.
-                if light_is_zero(l) {
-                    let covered = (active && tile_covers)
-                        || (!active && wall_frame.is_some_and(|f| f.opaque));
-                    if covered {
-                        if run_start < 0 {
-                            run_start = tx;
-                        }
-                        stats.dark_cells += 1;
-                        continue;
+                // A3/A4: fully black cell -> greedy merged rectangle.
+                // Vanilla paints black coverage from two places, both under
+                // `TileDrawingBase.DrawOwnBlacks`:
+                //  * `TileDrawing.DrawSingleTile`: every *active* tile whose light is
+                //    exactly zero emits a black quad behind its sprite (`DrawBlack`).
+                //  * `WallDrawing.DrawWalls`: every cell with a wall that is not a
+                //    `FullTile` (block already covering it) emits a black quad.
+                // That coverage is what hides the parallax background inside unlit
+                // caves. A 32x32 wall sheet frame is mostly transparent outside its
+                // 16x16 core, so `frame.opaque` is false; a wall has to count as
+                // covering on its own. A fully dark tile renders identically whether
+                // its sprite is drawn or skipped (both are solid black), so the cell
+                // is folded into one merged rectangle.
+                if light_is_zero(l) && (active || (draw_walls && tile.wall != 0)) {
+                    if run_start < 0 {
+                        run_start = tx;
                     }
+                    stats.dark_cells += 1;
+                    continue;
                 }
                 if run_start >= 0 {
                     scratch.cur.push((run_start, tx - 1));
