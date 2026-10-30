@@ -747,7 +747,7 @@ fn main() -> Result<()> {
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
-        mouse_pos: Vec2::ZERO,
+        mouse_pos: mouse_pin().unwrap_or(Vec2::ZERO),
         cursor: ui::cursor::CursorState::default(),
         os_cursor_hidden: None,
         mine_down: false,
@@ -1105,6 +1105,21 @@ fn no_hud() -> bool {
     *NO_HUD.get_or_init(|| std::env::var_os("TR_NOHUD").is_some())
 }
 
+/// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
+/// motion, so screenshots can deterministically show the cursor and a hovered
+/// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).
+fn mouse_pin() -> Option<Vec2> {
+    static PIN: OnceLock<Option<Vec2>> = OnceLock::new();
+    *PIN.get_or_init(|| {
+        let s = std::env::var("TR_MOUSE").ok()?;
+        let mut it = s.split(',').map(|v| v.trim().parse::<f32>());
+        match (it.next(), it.next()) {
+            (Some(Ok(x)), Some(Ok(y))) => Some(Vec2::new(x, y)),
+            _ => None,
+        }
+    })
+}
+
 /// `TR_PAN=<tiles/frame>` pans the camera deterministically. Benchmarks use it to
 /// measure the moving-camera path, where the static-scene caches (D2/G6) mostly miss.
 fn pan_step() -> Option<f32> {
@@ -1409,7 +1424,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
-                self.mouse_pos = p;
+                if mouse_pin().is_none() {
+                    self.mouse_pos = p;
+                }
                 if let Some(m) = self.menu.as_mut() {
                     m.update_hover(p);
                 }
