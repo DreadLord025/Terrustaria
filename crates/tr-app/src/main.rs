@@ -3,6 +3,7 @@
 mod assets;
 mod audio;
 mod collision;
+mod inv;
 mod item;
 mod map;
 mod menu;
@@ -723,6 +724,8 @@ fn main() -> Result<()> {
         npc_rng: world_seed,
         attack_cd: 0.0,
         inventory,
+        equip: inv::EquipSlots::empty(),
+        equip_page: 0,
         selected: 0,
         hotbar_scales: {
             let mut s = [0.75; HOTBAR];
@@ -903,6 +906,11 @@ struct App {
     npc_rng: u64,
     attack_cd: f32,
     inventory: [ItemSlot; INV],
+    /// The non-grid inventory slots (`EquipSlots`): coins, ammo, equipment,
+    /// vanity, dye, misc equips and the trash slot (`Main.DrawInventory`).
+    equip: inv::EquipSlots,
+    /// `Main.EquipPage`: 0 armour/vanity/dye, 2 misc equips, 3 camera.
+    equip_page: i32,
     selected: usize,
     /// Vanilla-style per-slot hotbar scale (selected grows to 1.0).
     hotbar_scales: [f32; HOTBAR],

@@ -174,6 +174,29 @@ pub fn load_world_images(
         "UI/Cursor_1",
         "Mana",
         "Inventory_Back13",
+        // P2 inventory panels: coins/ammo/misc/trash backgrounds, page tabs and
+        // the PVP icon (`Main.DrawInventory`, `ItemSlot.Draw`).
+        "Inventory_Back3",
+        "Inventory_Back4",
+        "Inventory_Back6",
+        "Inventory_Back7",
+        "Inventory_Back12",
+        "Trash",
+        "Extra_54",
+        "Extra_58",
+        "UI/DisplaySlots_0",
+        "UI/DisplaySlots_1",
+        "UI/DisplaySlots_2",
+        "UI/DisplaySlots_3",
+        "UI/DisplaySlots_4",
+        "UI/DisplaySlots_5",
+        "UI/DisplaySlots_6",
+        "UI/DisplaySlots_7",
+        "UI/DisplaySlots_8",
+        "UI/DisplaySlots_9",
+        "UI/DisplaySlots_10",
+        "UI/PVP_0",
+        "UI/PVP_1",
         // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
         // 928x248; `Main.cs:55434-55485`).
         "Map",
@@ -520,6 +543,28 @@ pub struct Lookups {
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
     pub ui_inv_bg13: Option<tr_render::SheetRect>,
+    /// `Inventory_Back3`: misc-equip slot frame (`ItemSlot.cs:2280`).
+    pub ui_back3: Option<tr_render::SheetRect>,
+    /// `Inventory_Back4`: reforge/guide/crafting slot frame (`ItemSlot.cs:2286`).
+    pub ui_back4: Option<tr_render::SheetRect>,
+    /// `Inventory_Back6`: shop slot frame (`ItemSlot.cs:2292`).
+    pub ui_back6: Option<tr_render::SheetRect>,
+    /// `Inventory_Back7`: the trash slot frame (`ItemSlot.cs:2295`).
+    pub ui_back7: Option<tr_render::SheetRect>,
+    /// `Inventory_Back12`: misc-dye slot frame (`ItemSlot.cs:2310`).
+    pub ui_back12: Option<tr_render::SheetRect>,
+    /// `Trash`: the trash-can glyph (`TextureAssets.Trash`).
+    pub ui_trash: Option<tr_render::SheetRect>,
+    /// `Extra_54`: the empty-equipment slot glyphs (`TextureAssets.Extra[54]`,
+    /// `ItemSlot.cs:2490-2498`).
+    pub ui_equip_glyph: Option<tr_render::SheetRect>,
+    /// `UI/DisplaySlots_0..10`: the equipment page tabs (`DrawPageIcons`,
+    /// `Main.cs:42787`).
+    pub page_icons: [Option<tr_render::SheetRect>; 11],
+    /// `UI/PVP_0`/`PVP_1`: the PVP toggle and team icons (`Main.cs:42654`).
+    pub pvp: [Option<tr_render::SheetRect>; 2],
+    /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
+    pub ui_defense_shield: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -575,6 +620,18 @@ impl Lookups {
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
+            ui_back3: atlas.sheet("Inventory_Back3").copied(),
+            ui_back4: atlas.sheet("Inventory_Back4").copied(),
+            ui_back6: atlas.sheet("Inventory_Back6").copied(),
+            ui_back7: atlas.sheet("Inventory_Back7").copied(),
+            ui_back12: atlas.sheet("Inventory_Back12").copied(),
+            ui_trash: atlas.sheet("Trash").copied(),
+            ui_equip_glyph: atlas.sheet("Extra_54").copied(),
+            ui_defense_shield: atlas.sheet("Extra_58").copied(),
+            page_icons: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
+            }),
+            pvp: [0, 1].map(|i| atlas.sheet(&format!("UI/PVP_{i}")).copied()),
             atlas_size: (atlas.width, atlas.height),
         };
         for (kind, name) in tile_names {
