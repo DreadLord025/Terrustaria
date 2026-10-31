@@ -165,8 +165,6 @@ pub enum Page {
     Interface,
     Video,
     Multiplayer,
-    Host,
-    Join,
     // The P5 settings sub-screens, keyed by their vanilla `menuMode` (the tasks
     // fill their rows in; Task 1 registers the pages so `TR_PAGE=<menuMode>`
     // can screenshot each one as it lands):
@@ -215,8 +213,7 @@ pub struct Layout {
 }
 
 impl Page {
-    /// The per-screen constants from `Main.DrawMenu`. Custom screens (multiplayer)
-    /// reuse the main-menu spacing.
+    /// The per-screen constants from `Main.DrawMenu`.
     pub fn layout(self) -> Layout {
         match self {
             Page::Main => Layout { y0: 220.0, row: 52.0, scale: 1.0 },
@@ -224,9 +221,9 @@ impl Page {
             Page::General => Layout { y0: 250.0, row: 52.0, scale: 0.78 },
             Page::Interface => Layout { y0: 210.0, row: 28.0, scale: 0.6 },
             Page::Video => Layout { y0: 186.0, row: 30.0, scale: 0.6 },
-            Page::Multiplayer | Page::Host | Page::Join => {
-                Layout { y0: 220.0, row: 52.0, scale: 1.0 }
-            }
+            // menuMode 12 keeps the vanilla `num2`/`num4` defaults of 250/80
+            // (`Main.cs:50699` falls through to `:48419-48421`).
+            Page::Multiplayer => Layout { y0: 250.0, row: 80.0, scale: 1.0 },
             // menuMode 26 (`Main.cs:50362-50365`).
             Page::Volume => Layout { y0: 200.0, row: 10.0, scale: 1.0 },
             // menuMode 28 (`Main.cs:50381-50384`).
@@ -264,13 +261,6 @@ impl Page {
             Page::ServerSettings => Layout { y0: 200.0, row: 60.0, scale: 1.0 },
         }
     }
-}
-
-pub struct Field {
-    pub label: &'static str,
-    pub value: String,
-    pub secret: bool,
-    pub digits: bool,
 }
 
 pub enum Action {
@@ -324,6 +314,9 @@ enum Toggle {
     PortraitPreference,
     BossBarText,
     FlashyEffectsInterface,
+    // The menuMode 889 "Steam Multiplayer" row (`Main.cs:48784-48787`): the
+    // `ServerMode.Lobby` toggle. Menu state, not a config setting.
+    ServerLobby,
 }
 
 enum Act {
@@ -432,6 +425,30 @@ pub fn slider_label_color(backdrop_r: u8) -> [u8; 4] {
     [r, r, r, 255]
 }
 
+/// The menuMode 131 Accept gate (`Main.cs:50905-50923`): `array2[2]` stays
+/// `true` unless `Convert.ToInt32(Main.getPort)` lands in `1..=65535`.
+/// `Convert.ToInt32` accepts surrounding whitespace and a sign
+/// (`NumberStyles.Integer`), so the port trims before parsing.
+fn port_is_valid(text: &str) -> bool {
+    text.trim().parse::<i32>().is_ok_and(|port| port > 0 && port <= 65535)
+}
+
+/// The password row text of the menuMode 30/31 screens
+/// (`Main.cs:48691-48699` / `:48567-48575`): the raw `Netplay.ServerPassword`,
+/// or one `*` per character while `Main.HidePassword` (`Main.cs:271`) is set —
+/// before the blinker suffix is appended.
+fn password_display(m: &Menu) -> String {
+    let value = match m.page {
+        Page::HostPassword => &m.server_password,
+        _ => &m.join_password,
+    };
+    if m.settings.hide_password {
+        "*".repeat(value.chars().count())
+    } else {
+        value.clone()
+    }
+}
+
 pub struct Menu {
     pub page: Page,
     /// Keyboard cursor (`focusMenu` while the mouse is elsewhere).
@@ -444,7 +461,32 @@ pub struct Menu {
     item_scale: [f32; MAX_ITEMS],
     /// Screen-space boxes of the last frame, for hit-testing.
     boxes: Vec<[f32; 4]>,
-    pub fields: Vec<Field>,
+    /// `Main.getIP` (`Main.cs:1953`): the menuMode 13 input string. The static
+    /// initializer seeds it from `Main.defaultIP`, which is `""`
+    /// (`:67159` / `:66711`).
+    pub get_ip: String,
+    /// `Main.getPort` (`Main.cs:1955`): the menuMode 131 input string, seeded
+    /// from `Netplay.ListenPort` — `7777` in the static ctor
+    /// (`:67160` / `Netplay.cs:863`).
+    pub get_port: String,
+    /// `Netplay.ServerPassword` (`Netplay.cs:858`): the menuMode 30 input
+    /// string. Vanilla shares one string with 31; the port splits them so a
+    /// host password never leaks into a join.
+    pub server_password: String,
+    /// The menuMode 31 input string — vanilla reuses `Netplay.ServerPassword`
+    /// (cleared on entry by the password demand, `MessageBuffer.cs:2212`); the
+    /// port keeps a separate string (plan Task 6).
+    pub join_password: String,
+    /// `Main.textBlinkerCount` (`Main.cs:2287`): frames since the input cursor
+    /// last toggled. Advanced once per drawn frame on the input screens.
+    pub blink_timer: u32,
+    /// `Main.textBlinkerState` (`Main.cs:2289`): `1` draws the `|` cursor and
+    /// nudges the row one pixel right (`array5[1] = 1`).
+    pub blink_on: bool,
+    /// `Main.MenuServerMode & ServerMode.Lobby` (`Main.cs:48747`; the static
+    /// itself is `:1361`): the one menuMode 889 flag the non-Steam screen
+    /// shows. A plain `Main` static, not a `config.json` setting.
+    pub server_lobby: bool,
     pub error: Option<String>,
     pub connecting: bool,
     pub name: String,
@@ -515,7 +557,13 @@ impl Menu {
             focus_keyboard: false,
             item_scale: [0.8; MAX_ITEMS],
             boxes: Vec::new(),
-            fields: Vec::new(),
+            get_ip: String::new(), // `Main.getIP = Main.defaultIP` (`Main.cs:67159`; `defaultIP = ""` at `:66711`)
+            get_port: "7777".into(), // `Main.getPort = Convert.ToString(Netplay.ListenPort)` (`:67160`; `Netplay.cs:863`)
+            server_password: String::new(), // `Netplay.ServerPassword = ""` (`Netplay.cs:858`)
+            join_password: String::new(),
+            blink_timer: 0,
+            blink_on: false,
+            server_lobby: false,
             error: None,
             connecting: false,
             name,
@@ -589,25 +637,6 @@ impl Menu {
             "889" => Page::ServerSettings,
             _ => return None,
         })
-    }
-
-    fn open_host(&mut self) {
-        self.page = Page::Host;
-        self.selected = 0;
-        self.fields = vec![
-            Field { label: "Port", value: "7777".into(), secret: false, digits: true },
-            Field { label: "Password", value: String::new(), secret: true, digits: false },
-        ];
-    }
-
-    fn open_join(&mut self) {
-        self.page = Page::Join;
-        self.selected = 0;
-        self.fields = vec![
-            Field { label: "Server IP", value: "127.0.0.1".into(), secret: false, digits: false },
-            Field { label: "Port", value: "7777".into(), secret: false, digits: true },
-            Field { label: "Password", value: String::new(), secret: true, digits: false },
-        ];
     }
 
     /// The rows of the current screen, in `Main.DrawMenu` order.
@@ -749,28 +778,76 @@ impl Menu {
                 Item::new("Effects", Act::Nav(Page::Effects)).scaled(0.6),
                 Item::new("Back", Act::Nav(Page::Settings)).at(8.0),
             ],
+            // menuMode 12 (`Main.cs:50699-50736`): `num41` is 0 without Steam
+            // networking (`SocialAPI.Network == null`, `:50700`), so the
+            // `Lang.menu[145]` "Join via Steam" row stored at index 1
+            // (`:50703`) is immediately overwritten by `Lang.menu[88]` at
+            // `1 + num41` (`:50704`) — the non-Steam screen is
+            // Join / Host & Play / Back (`:50702`, `:50704`, `:50705`).
+            // Vanilla routes both joins through the character select
+            // (`:50713-50730`, then `:66241`/`:66234-66236`); the port has no
+            // character picker yet (P6), so the rows open the input screens
+            // directly (plan Task 6 deviations).
             Page::Multiplayer => vec![
-                Item::new("Host & Play", Act::Nav(Page::Host)),
-                Item::new("Join", Act::Nav(Page::Join)),
+                // Row 0 (`:50702`): `Lang.menu[87]` "Join" — vanilla opens the
+                // character select, then 13 (`:50714-50718`, `:66241`).
+                Item::new("Join", Act::Nav(Page::JoinIp)),
+                // Row 1 (`:50704`, the `1 + num41` overwrite): `Lang.menu[88]`
+                // "Host & Play" — vanilla opens the character select with
+                // `menuServer` (`:50720-50726`), the port goes to 30.
+                Item::new("Host & Play", Act::Nav(Page::HostPassword)),
+                // Row 2 (`:50705`, the `2 + num41` Back): `Lang.menu[5]`
+                // returns to menuMode 0 (`:50727-50733`).
                 Item::new("Back", Act::Nav(Page::Main)),
             ],
-            Page::Host => vec![
-                Item::new("Start Server", Act::Out(Action::Host {
-                    port: self.fields.first().and_then(|f| f.value.trim().parse().ok()).unwrap_or(7777),
-                    password: self.fields.get(1).map(|f| f.value.clone()).unwrap_or_default(),
-                })),
-                Item::new("Back", Act::Nav(Page::Multiplayer)),
-            ],
-            Page::Join => {
-                let host = self.fields.first().map(|f| f.value.trim().to_string()).unwrap_or_default();
-                let port = self.fields.get(1).and_then(|f| f.value.trim().parse().ok()).unwrap_or(7777);
-                let addr = if host.contains(':') { host } else { format!("{host}:{port}") };
+            // menuMode 13 (`Main.cs:50737-50883`, the keyboard branch from
+            // `:50790`): `num5 = 11`, `num2 = 180`, `num4 = 30`
+            // (`:50798-50800`). Row 0 is the `Lang.menu[89]` header
+            // (`:50801-50802`), row 1 the input text with the blinker cursor
+            // (`:50803-50814`), rows 2-8 the recent servers at scale 0.6
+            // (`:50834-50848` — the port keeps no recents, so they stay the
+            // blank non-clickable rows), row 9 `Lang.menu[4]` "Accept"
+            // (`:50815-50817`) and row 10 `Lang.menu[5]` "Back"
+            // (`:50832-50833`).
+            Page::JoinIp => {
+                // `array9[1] = Main.getIP` plus `|` on the blink frame — the
+                // `|` frame also nudges the row one pixel right
+                // (`array5[1] = 1`, `:50805-50813`).
+                let input = if self.blink_on {
+                    Item::new(format!("{}|", self.get_ip), Act::None).at(19.0).heading().offset_x(1.0)
+                } else {
+                    Item::new(format!("{} ", self.get_ip), Act::None).at(19.0).heading()
+                };
+                // `array2[9]` disables Accept while the IP is blank or a lone
+                // space (`:50817-50831`); the branch also wipes a leading
+                // space off the text itself (`:50818-50823`).
+                let accept_ready =
+                    !self.get_ip.is_empty() && !self.get_ip.starts_with(' ');
                 vec![
-                    Item::new("Connect", Act::Out(Action::Join {
-                        addr,
-                        password: self.fields.get(2).map(|f| f.value.clone()).unwrap_or_default(),
-                    })),
-                    Item::new("Back", Act::Nav(Page::Multiplayer)),
+                    Item::new("Enter Server IP Address:", Act::None).heading(),
+                    input,
+                    // Rows 2-8 (`:50834-50848`): `array4 = 40`, `array7 = 0.6`,
+                    // blank + `array[i] = true` without a recent entry.
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    Item::new("", Act::None).at(40.0).heading().scaled(0.6),
+                    // Row 9 (`:50815-50817`): `array4[9] = 44`; a disabled
+                    // Accept row is non-clickable like a header
+                    // (`Main.cs:51790-51796` covers `array2` too).
+                    if accept_ready {
+                        Item::new("Accept", Act::Nav(Page::JoinPort)).at(44.0)
+                    } else {
+                        Item::new("Accept", Act::None).at(44.0).heading()
+                    },
+                    // Row 10 (`:50832-50833`): `array4[10] = 64`; vanilla
+                    // returns to the character select (`:50859-50864`), the
+                    // port returns to the multiplayer menu (documented
+                    // deviation, pinned by the escape test).
+                    Item::new("Back", Act::Nav(Page::Multiplayer)).at(64.0),
                 ]
             }
             // menuMode 26 (`Main.cs:50362-50380`): `num5 = 3`, `array9[0] = ""`,
@@ -1116,14 +1193,140 @@ impl Menu {
                 rows.push(Item::new("Back", Act::Nav(Page::Settings)).at(16.0));
                 rows
             }
-            // The remaining P5 screens land with Task 6; Task 1 registers the
-            // pages so `TR_PAGE=<menuMode>` resolves and each screen can be
-            // screenshotted as its rows are filled in.
-            Page::JoinIp
-            | Page::JoinPort
-            | Page::HostPassword
-            | Page::JoinPassword
-            | Page::ServerSettings => Vec::new(),
+            // menuMode 131 (`Main.cs:50884-50964`): keeps the vanilla
+            // `num2`/`num4` defaults of 250/80 (`:48419-48421`). Row 0 is the
+            // `Lang.menu[90]` header (`:50903`, `array[0] = true` at
+            // `:50947`), row 1 the input with the blinker (`:50937-50948`,
+            // `array4[1] = -20` at `:50949`), row 2 `Lang.menu[4]` "Accept"
+            // (`:50950-50951`, `array4[2] = 20`) and row 3 `Lang.menu[5]`
+            // "Back" (`:50952`).
+            Page::JoinPort => {
+                // `array2[2]` disables Accept unless the text parses to a port
+                // in 1..=65535 (`:50904-50923`).
+                let accept_ready = port_is_valid(&self.get_port);
+                vec![
+                    Item::new("Enter Server Port:", Act::None).heading(),
+                    // `array9[1] = Main.getPort` plus the blinker cursor and
+                    // the `array5[1] = 1` nudge (`:50937-50946`).
+                    if self.blink_on {
+                        Item::new(format!("{}|", self.get_port), Act::None)
+                            .at(-20.0)
+                            .heading()
+                            .offset_x(1.0)
+                    } else {
+                        Item::new(format!("{} ", self.get_port), Act::None).at(-20.0).heading()
+                    },
+                    if accept_ready {
+                        Item::new("Accept", Act::Nav(Page::JoinPassword)).at(20.0)
+                    } else {
+                        Item::new("Accept", Act::None).at(20.0).heading()
+                    },
+                    // Row 3 (`:50954-50959`): vanilla Back returns to the
+                    // character select, the port returns to the IP screen.
+                    Item::new("Back", Act::Nav(Page::JoinIp)),
+                ]
+            }
+            // menuMode 30 (`Main.cs:48660-48725`): the host password screen —
+            // `num5 = 4` over the 250/80 defaults, the `Lang.menu[7]` header
+            // (`:48677`), the masked input (`:48691-48707`), "Accept"
+            // (`:48712-48713`) and "Back" (`:48714`). Accept runs
+            // `HostAndPlay` (`:48721-48724`), whose listen port is fixed at
+            // 7777 (`Main.cs:52011`) — the plan's `Action::Host { port: 7777 }`.
+            Page::HostPassword => vec![
+                Item::new("Enter Server Password:", Act::None).heading(),
+                // `array9[1] = Netplay.ServerPassword`, `*`-masked while
+                // `Main.HidePassword` is set (`:48691-48707`).
+                if self.blink_on {
+                    Item::new(format!("{}|", password_display(self)), Act::None)
+                        .at(-20.0)
+                        .heading()
+                        .offset_x(1.0)
+                } else {
+                    Item::new(format!("{} ", password_display(self)), Act::None).at(-20.0).heading()
+                },
+                Item::new(
+                    "Accept",
+                    Act::Out(Action::Host {
+                        port: 7777, // `Netplay.ListenPort = 7777` (`Main.cs:52011`)
+                        password: self.server_password.clone(),
+                    }),
+                )
+                .at(20.0),
+                // Row 3 (`:48716-48720`): vanilla Back runs
+                // `ExitServerPasswordMenu` (Steam 889, else the world select,
+                // `:52018-52028`); the port returns to the multiplayer menu.
+                Item::new("Back", Act::Nav(Page::Multiplayer)),
+            ],
+            // menuMode 31 (`Main.cs:48536-48601`): the join twin — the
+            // `Lang.menu[3]` header (`:48553`), the masked input
+            // (`:48567-48583`), "Accept" (`:48587-48589`) and "Back"
+            // (`:48590`). Accept answers the demand (`:48597-48600`,
+            // `OnSubmitServerPasswordFromRequest` `:51944-51948`); vanilla
+            // reaches the screen when a server demands a password
+            // (`MessageBuffer.cs:2214`), the port always shows it after the
+            // port screen (plan deviation).
+            Page::JoinPassword => vec![
+                Item::new("Server Requires Password:", Act::None).heading(),
+                if self.blink_on {
+                    Item::new(format!("{}|", password_display(self)), Act::None)
+                        .at(-20.0)
+                        .heading()
+                        .offset_x(1.0)
+                } else {
+                    Item::new(format!("{} ", password_display(self)), Act::None).at(-20.0).heading()
+                },
+                Item::new(
+                    "Accept",
+                    Act::Out(Action::Join {
+                        // `OnSubmitServerPort` connects to `Main.getIP` on the
+                        // parsed port (`Main.cs:52047-52054`).
+                        addr: format!("{}:{}", self.get_ip, self.get_port),
+                        password: self.join_password.clone(),
+                    }),
+                )
+                .at(20.0),
+                // Row 3 (`:48592-48596`): vanilla Back runs
+                // `CanceledGivingServerPassword` (back to menuMode 0 and
+                // disconnects, `:51950-51957`); the port returns to the port
+                // screen (plan deviation).
+                Item::new("Back", Act::Nav(Page::JoinIp)),
+            ],
+            // menuMode 889 (`Main.cs:48726-48809`): `num2 = 200`, `num4 = 60`
+            // (`:48728-48729`), `array4 = [_, 30, 30, 30, 70, 70]`
+            // (`:48730-48734`). The `Lang.menu[135]` header (`:48736`,
+            // `array[0] = true` at `:48739`), the Lobby toggle row
+            // (`:48745`/`:48751`), two blank rows without Steam
+            // (`:48743-48747`), `Lang.menu[144]` "Start" (`:48737`) and
+            // "Back" (`:48738`).
+            Page::ServerSettings => vec![
+                Item::new("Server Settings", Act::None).heading(),
+                // Row 1: `Lang.menu[136]` "Steam Multiplayer: Disabled", or
+                // [137] "…: Enabled" while the Lobby bit is set. The click
+                // XORs the flag (`:48784-48787`).
+                Item::new(
+                    on_off(
+                        self.server_lobby,
+                        "Steam Multiplayer: Enabled",
+                        "Steam Multiplayer: Disabled",
+                    ),
+                    Act::Toggle(Toggle::ServerLobby),
+                )
+                .at(30.0),
+                // Rows 2-3 (`:48743-48747`): blank and non-clickable without
+                // Steam — the vanilla lobby branch (`:48749-48777`) fills them
+                // with the Allowed Users rows only under Steam networking,
+                // which the port does not have (spec §9.1).
+                Item::new("", Act::None).at(30.0).heading(),
+                Item::new("", Act::None).at(30.0).heading(),
+                // Row 4 (`:48737`, `array4[4] = 70`): "Start" clears the
+                // password and opens the host password screen
+                // (`:48796-48802`).
+                Item::new("Start", Act::Nav(Page::HostPassword)).at(70.0),
+                // Row 5 (`:48738`, `array4[5] = 70`): "Back" — vanilla opens
+                // the world select (`:48804-48806`), the port returns to the
+                // multiplayer menu (plan deviation).
+                Item::new("Back", Act::Nav(Page::Multiplayer)).at(70.0),
+            ],
         }
     }
 
@@ -1133,9 +1336,9 @@ impl Menu {
             Page::Settings => Some(Page::Main),
             Page::General | Page::Interface | Page::Video => Some(Page::Settings),
             Page::Multiplayer => Some(Page::Main),
-            Page::Host | Page::Join => Some(Page::Multiplayer),
-            // The Back rows of the Task 2-6 tables; the pages stay row-less
-            // until their tasks fill `items()` in.
+            // The Escape targets of the Task 2-6 screens — for the multiplayer
+            // chain these are the port's own Back rows, which vanilla routes
+            // through the character/world selects instead (Task 6 deviations).
             Page::Volume | Page::Cursor | Page::Language | Page::Controls
             | Page::Keybindings | Page::MapKeys => Some(Page::Settings),
             Page::Parallax | Page::Resolution | Page::Effects => Some(Page::Video),
@@ -1217,14 +1420,17 @@ impl Menu {
 
     /// Shared body of [`Act::Nav`] / [`Act::PickColor`].
     fn nav_to(&mut self, page: Page) {
-        if page == Page::Host {
-            self.open_host();
-        } else if page == Page::Join {
-            self.open_join();
-        } else {
-            self.page = page;
-            self.selected = 0;
-            self.fields.clear();
+        self.page = page;
+        self.selected = 0;
+        // Vanilla clears the password on every entry to the password screens:
+        // 31 is entered only through the demand, which resets
+        // `Netplay.ServerPassword` first (`MessageBuffer.cs:2212-2214`), and 30
+        // only through the 889 Start row, which does the same
+        // (`Main.cs:48797-48799`).
+        match page {
+            Page::HostPassword => self.server_password.clear(),
+            Page::JoinPassword => self.join_password.clear(),
+            _ => {}
         }
         // A grab never follows a page change (vanilla resets `rightLock`
         // in the `!Main.mouseLeft` guard of whichever screen runs next).
@@ -1338,6 +1544,13 @@ impl Menu {
             Toggle::FlashyEffectsInterface => {
                 s.flashy_effects_interface = !s.flashy_effects_interface
             }
+            // The menuMode 889 Lobby row XORs `Main.MenuServerMode & Lobby`
+            // (`Main.cs:48784-48787`) — a `Main` static, not a config value,
+            // so nothing is persisted.
+            Toggle::ServerLobby => {
+                self.server_lobby = !self.server_lobby;
+                return;
+            }
         }
         if self.persist {
             let _ = s.save();
@@ -1381,16 +1594,19 @@ impl Menu {
                 }
                 return Action::None;
             }
-            K::Tab => {
-                if !self.fields.is_empty() && !self.connecting {
-                    self.selected = 0;
-                }
-                return Action::None;
-            }
             K::Backspace => {
-                if matches!(self.page, Page::Host | Page::Join) && !self.connecting {
-                    if let Some(f) = self.fields.get_mut(0) {
-                        f.value.pop();
+                // `Main.GetInputText` pops the last character of the string the
+                // screen edits (`Main.cs:50793`, `:50898`, `:48672`, `:48548`).
+                if !self.connecting {
+                    let target = match self.page {
+                        Page::JoinIp => Some(&mut self.get_ip),
+                        Page::JoinPort => Some(&mut self.get_port),
+                        Page::HostPassword => Some(&mut self.server_password),
+                        Page::JoinPassword => Some(&mut self.join_password),
+                        _ => None,
+                    };
+                    if let Some(target) = target {
+                        target.pop();
                     }
                 }
                 return Action::None;
@@ -1399,35 +1615,80 @@ impl Menu {
                 if let Some(parent) = Self::parent(self.page) {
                     self.page = parent;
                     self.selected = 0;
-                    self.fields.clear();
                     self.hint = None;
                     self.bar_grab = None;
                 }
                 return Action::None;
             }
-            K::Enter | K::NumpadEnter => {}
+            K::Enter | K::NumpadEnter => {
+                // The input screens submit on Enter no matter which row the
+                // cursor sits on (`Main.inputTextEnter`): 13 calls
+                // `OnSubmitServerIP` (`:50865-50868` — the `!array2[2]` of the
+                // guard is a vanilla quirk that never disables it, since
+                // `array2[2]` is only ever set on 131), 131 keeps its
+                // `!array2[2]` gate (`:50960-50963`), and 30/31 submit
+                // unconditionally (`:48721-48724`, `:48597-48600`).
+                match self.page {
+                    Page::JoinIp => {
+                        self.submit_join_ip();
+                        return Action::None;
+                    }
+                    Page::JoinPort => {
+                        if port_is_valid(&self.get_port) {
+                            self.nav_to(Page::JoinPassword);
+                        }
+                        return Action::None;
+                    }
+                    Page::HostPassword => return self.host_and_play(),
+                    Page::JoinPassword => return self.send_join_password(),
+                    _ => {}
+                }
+            }
             _ => return Action::None,
         }
         self.activate(self.selected)
     }
 
-    /// Text typed into the host/join fields (the original uses `UIInput`).
+    /// `Main.OnSubmitServerIP` (`Main.cs:52056-52062`): store the text, then
+    /// `menuMode = 131` and `clrInput()` (the key-state reset, `:20001-20004`).
+    /// No validation — the vanilla quirk above lets a blank IP through.
+    fn submit_join_ip(&mut self) {
+        self.nav_to(Page::JoinPort);
+    }
+
+    /// `Main.HostAndPlay` (`Main.cs:51972-52016`) as the port's host action:
+    /// the listen port is fixed at 7777 (`:52011`); the password travels with
+    /// the request (`:48677` seeds it from `Netplay.ServerPassword`).
+    fn host_and_play(&mut self) -> Action {
+        Action::Host { port: 7777, password: self.server_password.clone() }
+    }
+
+    /// `Main.OnSubmitServerPasswordFromRequest` (`Main.cs:51944-51948`): the
+    /// join continues with the typed password against the address collected on
+    /// 13/131 (`OnSubmitServerPort`, `:52047-52054`).
+    fn send_join_password(&mut self) -> Action {
+        Action::Join {
+            addr: format!("{}:{}", self.get_ip, self.get_port),
+            password: self.join_password.clone(),
+        }
+    }
+
+    /// Text typed into the input screens' single row — `Main.GetInputText`
+    /// runs once per frame on 13/131/30/31 (`Main.cs:50793`, `:50898`,
+    /// `:48672`, `:48548`); backspace lands in [`Menu::key`]. The port caps
+    /// nothing: the original appends every key to these strings as-is.
     pub fn character(&mut self, c: char) {
-        if !matches!(self.page, Page::Host | Page::Join) || self.connecting {
+        if self.connecting {
             return;
         }
-        if self.selected != 0 {
-            return;
-        }
-        let field = if self.fields.len() > 1 { 1 } else { 0 };
-        if let Some(f) = self.fields.get_mut(field) {
-            if f.digits && !c.is_ascii_digit() {
-                return;
-            }
-            if f.value.len() < 64 {
-                f.value.push(c);
-            }
-        }
+        let target = match self.page {
+            Page::JoinIp => &mut self.get_ip,
+            Page::JoinPort => &mut self.get_port,
+            Page::HostPassword => &mut self.server_password,
+            Page::JoinPassword => &mut self.join_password,
+            _ => return,
+        };
+        target.push(c);
     }
 
     /// Hit-tests the boxes recorded by the last [`Menu::draw`]. The position is
@@ -1513,6 +1774,16 @@ impl Menu {
         if !matches!(self.page, Page::CursorColor | Page::BorderColor) {
             self.color_grab = 0;
             self.hsl_bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+        }
+
+        // The input screens advance the blinker once per drawn frame
+        // (`this.textBlinkerCount++` … `>= 20` — `Main.cs:50869-50881` for 13,
+        // `:50924-50936` for 131, `:48678-48690` for 30, `:48554-48566` for
+        // 31) and 13 wipes a leading space off the IP text
+        // (`:50818-50823`).
+        if matches!(self.page, Page::JoinIp | Page::JoinPort | Page::HostPassword | Page::JoinPassword)
+        {
+            self.input_frame();
         }
 
         // `TextureAssets.Logo` at (screenWidth / 2, 100), centre origin.
@@ -1620,29 +1891,6 @@ impl Menu {
             crate::push_font_text(r, font, top[0], top[1], scale_now, tint, &item.label);
         }
 
-        // Host/join text fields (the original uses `UIInput` with `Mouse_Text`).
-        if matches!(self.page, Page::Host | Page::Join) {
-            let start = cx - 230.0;
-            let mut y = layout.y0 + layout.row * items.len() as f32 + 10.0;
-            for (i, f) in self.fields.iter().enumerate() {
-                let active = i == 1 && self.selected == 0 && !self.connecting;
-                crate::hud_text(r, lookups, start, y, 0.9, [0.78, 0.82, 0.88, 1.0], f.label);
-                let shown = if f.secret {
-                    "*".repeat(f.value.chars().count())
-                } else {
-                    f.value.clone()
-                };
-                let box_x = start + 140.0;
-                r.push_ui_rect(
-                    [box_x, y - 6.0],
-                    [300.0, 34.0],
-                    if active { [0.85, 0.75, 0.3, 0.95] } else { [0.15, 0.16, 0.2, 0.95] },
-                );
-                crate::hud_text(r, lookups, box_x + 8.0, y, 0.9, [1.0; 4], &shown);
-                y += 44.0;
-            }
-        }
-
         // `Main.DrawVersionNumber`: bottom-left `Mouse_Text`.
         if let Some(ui) = lookups.ui_font.as_ref() {
             let text = "v1.4.5.8";
@@ -1710,6 +1958,22 @@ impl Menu {
                 [0.7, 0.95, 0.7, 1.0],
                 status,
             );
+        }
+    }
+
+    /// One drawn frame of the input screens (`Main.cs:50869-50881` for 13,
+    /// `:50924-50936` for 131, `:48678-48690` for 30, `:48554-48566` for 31):
+    /// the blinker counts up and toggles `textBlinkerState` every 20th frame,
+    /// and the mode-13 branch wipes an IP that starts with a space
+    /// (`:50818-50823` — `Substring(0, 1) == " "` resets `getIP`).
+    fn input_frame(&mut self) {
+        self.blink_timer += 1;
+        if self.blink_timer >= 20 {
+            self.blink_on = !self.blink_on;
+            self.blink_timer = 0;
+        }
+        if self.page == Page::JoinIp && self.get_ip.starts_with(' ') {
+            self.get_ip.clear();
         }
     }
 
@@ -2244,9 +2508,8 @@ mod tests {
     }
 
     #[test]
-    fn p5_pages_register_layouts_parents_and_stay_row_less() {
-        // The layout constants come from the Task 2-6 tables; the pages stay
-        // row-less until their tasks fill `items()` in.
+    fn p5_pages_register_layouts_and_parents() {
+        // The layout constants come from the Task 2-6 tables.
         let volume = Page::Volume.layout();
         assert_eq!((volume.y0, volume.row, volume.scale), (200.0, 10.0, 1.0));
         let parallax = Page::Parallax.layout();
@@ -2275,19 +2538,6 @@ mod tests {
         assert_eq!((join_port.y0, join_port.row, join_port.scale), (250.0, 80.0, 1.0));
         let server = Page::ServerSettings.layout();
         assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
-
-        // Resolution/Effects/Language/LanguageInitial grew their rows with
-        // Task 4 and Controls/Keybindings/MapKeys with Task 5; the rest stay
-        // row-less until Task 6 fills `items()` in.
-        for page in [
-            Page::JoinIp,
-            Page::JoinPort,
-            Page::HostPassword,
-            Page::JoinPassword,
-            Page::ServerSettings,
-        ] {
-            assert!(menu(page).items().is_empty(), "{page:?} has no rows yet");
-        }
         // The Back rows of the Task 2-6 tables.
         assert_eq!(Menu::parent(Page::Volume), Some(Page::Settings));
         assert_eq!(Menu::parent(Page::Parallax), Some(Page::Video));
@@ -3261,5 +3511,384 @@ mod tests {
         assert_eq!(m.items()[10].label, "Inventory Effects: Reduced");
         m.activate(10);
         assert_eq!(m.items()[10].label, "Inventory Effects: On");
+    }
+
+    #[test]
+    fn input_strings_seed_from_the_vanilla_statics() {
+        // `Main.getIP = Main.defaultIP` (`Main.cs:67159`; `defaultIP = ""` at
+        // `:66711`), `Main.getPort = Convert.ToString(Netplay.ListenPort)`
+        // (`:67160`; the static ctor sets 7777, `Netplay.cs:863`), the
+        // passwords start empty (`Netplay.cs:858`) and the blinker is idle.
+        let m = Menu::new("Test".into());
+        assert!(m.get_ip.is_empty());
+        assert_eq!(m.get_port, "7777");
+        assert!(m.server_password.is_empty() && m.join_password.is_empty());
+        assert!(!m.blink_on && m.blink_timer == 0);
+        assert!(!m.server_lobby);
+    }
+
+    #[test]
+    fn multiplayer_screen_shows_join_first() {
+        // `Main.cs:50699-50736` with `num41 = 0` (no Steam network): the
+        // `Lang.menu[145]` "Join via Steam" row stored at index 1 (`:50704`)
+        // is overwritten by "Host & Play" (`:50705`), so the screen is
+        // Join / Host & Play / Back over the 250/80 defaults — Join first
+        // (Review Focus 6; the old port showed Host & Play first).
+        let m = menu(Page::Multiplayer);
+        let items = m.items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Join", "Host & Play", "Back"]);
+        assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0 && !i.header));
+        let layout = Page::Multiplayer.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32;
+        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (250.0, 330.0, 410.0));
+        // Join opens the IP screen (vanilla `:50714-50718` routes through the
+        // character select, then `:66241` opens 13); Host & Play the host
+        // password screen (plan deviation); Back the main menu
+        // (`:50732-50735`).
+        let mut m = menu(Page::Multiplayer);
+        m.activate(0);
+        assert_eq!(m.page, Page::JoinIp);
+        let mut m = menu(Page::Multiplayer);
+        m.activate(1);
+        assert_eq!(m.page, Page::HostPassword);
+        let mut m = menu(Page::Multiplayer);
+        m.activate(2);
+        assert_eq!(m.page, Page::Main);
+    }
+
+    #[test]
+    fn join_ip_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50798-50848`: the header, the input row at
+        // `array4[1] = 19`, seven blank recent rows (`array4 = 40`,
+        // `array7 = 0.6` — the port keeps no recents), Accept
+        // (`array4[9] = 44`) and Back (`array4[10] = 64`).
+        let m = menu(Page::JoinIp);
+        let items = m.items();
+        assert_eq!(items.len(), 11);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels[0], "Enter Server IP Address:");
+        assert_eq!(labels[1], " ", "the blank frame appends a space to the empty IP");
+        assert!(labels[2..9].iter().all(|l| l.is_empty()));
+        assert_eq!(labels[9], "Accept");
+        assert_eq!(labels[10], "Back");
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 19.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 40.0, 44.0, 64.0]);
+        assert!(items[0].header && items[1].header);
+        assert!(items[2..9].iter().all(|i| i.header && i.scale == 0.6));
+        assert!(items[9].header && items[9].scale == 1.0, "a blank IP disables Accept (`array2[9] = true`)");
+        assert!(!items[10].header);
+        let layout = Page::JoinIp.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 180.0);
+        assert_eq!(draw_y(1), 229.0);
+        assert_eq!(draw_y(2), 280.0, "the recent rows run 280..460 step 30");
+        assert_eq!(draw_y(8), 460.0);
+        assert_eq!(draw_y(9), 494.0);
+        assert_eq!(draw_y(10), 544.0);
+        // Typing enables Accept (`array2[9] = false`, `:50824-50831`).
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        assert!(!m.items()[9].header);
+        // A lone space keeps it disabled.
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = " ".into();
+        assert!(m.items()[9].header);
+        // Accept navigates to the port screen (`OnSubmitServerIP`,
+        // `Main.cs:52056-52062`).
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        m.activate(9);
+        assert_eq!(m.page, Page::JoinPort);
+    }
+
+    #[test]
+    fn join_port_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50903-50953` over the 250/80 defaults: header, input at
+        // `array4[1] = -20`, Accept at `array4[2] = 20`, Back.
+        let mut m = menu(Page::JoinPort);
+        m.get_port = "7777".into();
+        let items = m.items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Enter Server Port:", "7777 ", "Accept", "Back"]);
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, -20.0, 20.0, 0.0]);
+        assert!(items[0].header && items[1].header);
+        assert!(!items[2].header && !items[3].header);
+        let layout = Page::JoinPort.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!((draw_y(0), draw_y(1), draw_y(2), draw_y(3)), (250.0, 310.0, 430.0, 490.0));
+        // The Accept gate (`Main.cs:50905-50923`): blank, 0, 65536 and
+        // non-numeric text disable the row; 1..=65535 enables it.
+        // `Convert.ToInt32` tolerates surrounding whitespace, so " 5 " passes.
+        for (text, ok) in
+            [("", false), ("0", false), ("65536", false), ("abc", false), ("7777", true), ("65535", true), (" 5 ", true)]
+        {
+            let mut m = menu(Page::JoinPort);
+            m.get_port = text.into();
+            assert_eq!(port_is_valid(text), ok, "port {text:?}");
+            assert_eq!(!m.items()[2].header, ok, "Accept for port {text:?}");
+        }
+        // Accept navigates to the password screen — the plan deviation;
+        // vanilla connects immediately (`OnSubmitServerPort`,
+        // `Main.cs:52047-52054`).
+        let mut m = menu(Page::JoinPort);
+        m.get_port = "27015".into();
+        m.activate(2);
+        assert_eq!(m.page, Page::JoinPassword);
+    }
+
+    #[test]
+    fn password_screens_match_the_vanilla_rows() {
+        // `Main.cs:48677-48715` (30) / `:48553-48591` (31): the
+        // `Lang.menu[7]` / `Lang.menu[3]` headers, the input at
+        // `array4[1] = -20`, Accept at `array4[2] = 20`, Back — `num5 = 4`
+        // over the 250/80 defaults.
+        for (page, header) in
+            [(Page::HostPassword, "Enter Server Password:"), (Page::JoinPassword, "Server Requires Password:")]
+        {
+            let m = menu(page);
+            let items = m.items();
+            let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+            assert_eq!(labels, [header, " ", "Accept", "Back"]);
+            let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+            assert_eq!(ys, [0.0, -20.0, 20.0, 0.0]);
+            assert!(items[0].header && items[1].header);
+            assert!(!items[2].header && !items[3].header);
+            let layout = page.layout();
+            let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+            assert_eq!((draw_y(0), draw_y(1), draw_y(2), draw_y(3)), (250.0, 310.0, 430.0, 490.0));
+        }
+        // Entering either screen clears the password — vanilla resets
+        // `Netplay.ServerPassword` on every entry route (`MessageBuffer.cs
+        // :2212-2214` for 31, `Main.cs:48797-48799` for 30).
+        let mut m = menu(Page::Multiplayer);
+        m.server_password = "leak".into();
+        m.activate(1);
+        assert_eq!(m.page, Page::HostPassword);
+        assert!(m.server_password.is_empty());
+        let mut m = menu(Page::JoinPort);
+        m.join_password = "leak".into();
+        m.nav_to(Page::JoinPassword);
+        assert!(m.join_password.is_empty());
+    }
+
+    #[test]
+    fn password_rows_mask_while_hide_password_is_set() {
+        // `Main.cs:48692-48699` (30) / `:48568-48575` (31): one `*` per
+        // character while `Main.HidePassword` is set, the raw text otherwise.
+        let mut m = menu(Page::HostPassword);
+        m.settings.hide_password = true;
+        for ch in "ab3".chars() {
+            m.character(ch);
+        }
+        assert_eq!(m.server_password, "ab3");
+        assert_eq!(m.items()[1].label, "*** ");
+        let mut m = menu(Page::HostPassword);
+        for ch in "ab".chars() {
+            m.character(ch);
+        }
+        assert_eq!(m.items()[1].label, "ab ");
+        // The join twin masks its own string.
+        let mut m = menu(Page::JoinPassword);
+        m.settings.hide_password = true;
+        m.character('x');
+        assert_eq!(m.join_password, "x");
+        assert_eq!(m.items()[1].label, "* ");
+    }
+
+    #[test]
+    fn the_input_blinker_toggles_every_twentieth_frame() {
+        // `Main.cs:50869-50881` (and the 131/30/31 twins): `textBlinkerCount`
+        // counts drawn frames and flips `textBlinkerState` on the 20th.
+        let mut m = menu(Page::JoinIp);
+        for _ in 0..19 {
+            m.input_frame();
+        }
+        assert!(!m.blink_on, "19 frames show no cursor");
+        assert_eq!(m.blink_timer, 19);
+        assert_eq!(m.items()[1].label, " ");
+        assert_eq!(m.items()[1].x, 0.0, "the blank frame carries no nudge");
+        m.input_frame();
+        assert!(m.blink_on, "the 20th frame toggles the cursor on");
+        assert_eq!(m.blink_timer, 0);
+        assert_eq!(m.items()[1].label, "|");
+        assert_eq!(m.items()[1].x, 1.0, "the cursor frame nudges the row (`array5[1] = 1`)");
+        for _ in 0..20 {
+            m.input_frame();
+        }
+        assert!(!m.blink_on, "the 40th frame toggles the cursor back off");
+    }
+
+    #[test]
+    fn join_ip_wipes_a_leading_space_each_frame() {
+        // `Main.cs:50818-50823`: a leading space resets `getIP`.
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = " 127.0.0.1".into();
+        m.input_frame();
+        assert!(m.get_ip.is_empty());
+        // A space inside the text survives.
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "12 34".into();
+        m.input_frame();
+        assert_eq!(m.get_ip, "12 34");
+    }
+
+    #[test]
+    fn the_join_chain_collects_ip_port_and_password() {
+        // JoinIp Accept → 131 (`OnSubmitServerIP`, `Main.cs:52056-52062`);
+        // the port screen's Accept → the password screen (the plan deviation
+        // — vanilla connects immediately, `:52047-52054`); the password
+        // screen's Accept emits the join action against the collected
+        // address.
+        let mut m = menu(Page::JoinIp);
+        for ch in "127.0.0.1".chars() {
+            m.character(ch);
+        }
+        assert_eq!(m.get_ip, "127.0.0.1");
+        m.activate(9);
+        assert_eq!(m.page, Page::JoinPort);
+        // The user wipes the seeded 7777 and types their port.
+        m.get_port.clear();
+        for ch in "27015".chars() {
+            m.character(ch);
+        }
+        m.activate(2);
+        assert_eq!(m.page, Page::JoinPassword);
+        assert!(m.join_password.is_empty(), "the demand clears the password (`MessageBuffer.cs:2212`)");
+        m.character('h');
+        m.character('i');
+        match m.activate(2) {
+            Action::Join { addr, password } => {
+                assert_eq!(addr, "127.0.0.1:27015");
+                assert_eq!(password, "hi");
+            }
+            _ => panic!("expected Action::Join"),
+        }
+        // Backspace pops the edited string (`Main.GetInputText`).
+        let mut m = menu(Page::JoinPort);
+        m.get_port.clear();
+        for ch in "777".chars() {
+            m.character(ch);
+        }
+        m.key(winit::keyboard::KeyCode::Backspace);
+        assert_eq!(m.get_port, "77");
+    }
+
+    #[test]
+    fn host_and_play_keeps_the_fixed_port() {
+        // `Main.HostAndPlay` fixes the listen port at 7777 (`Main.cs:52011`);
+        // the typed password rides along.
+        let mut m = menu(Page::Multiplayer);
+        m.activate(1);
+        assert_eq!(m.page, Page::HostPassword);
+        m.character('p');
+        match m.activate(2) {
+            Action::Host { port, password } => {
+                assert_eq!(port, 7777);
+                assert_eq!(password, "p");
+            }
+            _ => panic!("expected Action::Host"),
+        }
+    }
+
+    #[test]
+    fn enter_submits_the_input_screens_from_any_row() {
+        // `Main.inputTextEnter` submits regardless of `selectedMenu`
+        // (`Main.cs:50865-50868`, `:50960-50963`, `:48721-48724`,
+        // `:48597-48600`); 131 keeps its validity gate, and 13's guard is a
+        // vanilla quirk that never disables it (`array2[2]` is only ever set
+        // on 131), so a blank IP still submits.
+        let mut m = menu(Page::JoinIp);
+        m.get_ip = "127.0.0.1".into();
+        m.selected = 10; // Back
+        m.key(winit::keyboard::KeyCode::Enter);
+        assert_eq!(m.page, Page::JoinPort);
+        let mut m = menu(Page::JoinIp);
+        m.key(winit::keyboard::KeyCode::Enter);
+        assert_eq!(m.page, Page::JoinPort, "the blank-IP quirk submits too");
+        let mut m = menu(Page::JoinPort);
+        m.get_port = "abc".into();
+        m.key(winit::keyboard::KeyCode::Enter);
+        assert_eq!(m.page, Page::JoinPort, "an invalid port gate blocks Enter");
+        m.get_port = "27015".into();
+        m.key(winit::keyboard::KeyCode::Enter);
+        assert_eq!(m.page, Page::JoinPassword);
+        let mut m = menu(Page::HostPassword);
+        m.selected = 3;
+        match m.key(winit::keyboard::KeyCode::Enter) {
+            Action::Host { port: 7777, password } => assert_eq!(password, ""),
+            _ => panic!("expected Action::Host"),
+        }
+        let mut m = menu(Page::JoinPassword);
+        match m.key(winit::keyboard::KeyCode::NumpadEnter) {
+            Action::Join { addr, password } => {
+                assert_eq!(addr, ":7777", "the vanilla defaults feed the address");
+                assert_eq!(password, "");
+            }
+            _ => panic!("expected Action::Join"),
+        }
+    }
+
+    #[test]
+    fn escape_from_the_input_screens_walks_the_parents() {
+        // The documented deviation: vanilla's Back rows return to the
+        // character/world selects (`Main.cs:50859-50864`, `:50954-50959`,
+        // `:52018-52028`); the port walks its own page chain, pinned here.
+        let mut m = menu(Page::JoinIp);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::Multiplayer);
+        let mut m = menu(Page::JoinPort);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::JoinIp);
+        let mut m = menu(Page::HostPassword);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::Multiplayer);
+        let mut m = menu(Page::JoinPassword);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::JoinPort);
+        let mut m = menu(Page::ServerSettings);
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::Multiplayer);
+    }
+
+    #[test]
+    fn server_settings_screen_matches_the_vanilla_rows() {
+        // `Main.cs:48726-48809`: `num2 = 200`, `num4 = 60` (`:48728-48729`),
+        // `array4 = [_, 30, 30, 30, 70, 70]` (`:48730-48734`); the [135]
+        // header, the Lobby toggle, two blank non-clickable rows without
+        // Steam (`:48743-48747`), [144] Start and Back.
+        let mut m = menu(Page::ServerSettings);
+        let items = m.items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            ["Server Settings", "Steam Multiplayer: Disabled", "", "", "Start", "Back"]
+        );
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 30.0, 30.0, 30.0, 70.0, 70.0]);
+        assert!(items[0].header && items[2].header && items[3].header);
+        assert!(!items[1].header && !items[4].header && !items[5].header);
+        let layout = Page::ServerSettings.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (200.0, 290.0, 350.0));
+        assert_eq!((draw_y(3), draw_y(4), draw_y(5)), (410.0, 510.0, 570.0));
+        // The Lobby row XORs `Main.MenuServerMode & Lobby`
+        // (`:48784-48787`) and shows [137] while set.
+        m.activate(1);
+        assert!(m.server_lobby);
+        assert_eq!(m.items()[1].label, "Steam Multiplayer: Enabled");
+        m.activate(1);
+        assert!(!m.server_lobby);
+        // Start clears the password and opens the host password screen
+        // (`:48796-48802`); Back returns to the multiplayer menu (vanilla
+        // opens the world select, `:48804-48806` — plan deviation).
+        m.server_password = "leak".into();
+        m.activate(4);
+        assert_eq!(m.page, Page::HostPassword);
+        assert!(m.server_password.is_empty());
+        let mut m = menu(Page::ServerSettings);
+        m.activate(5);
+        assert_eq!(m.page, Page::Multiplayer);
     }
 }
