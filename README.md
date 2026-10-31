@@ -177,8 +177,6 @@ background and lighting details are approximations. See
 crates/tr-core     world model, save/load, world generation, autotiling, lighting, liquids
 crates/tr-render   the GPU renderer (wgpu/Vulkan): atlas packing and the instanced sprite pipeline
 crates/tr-app      the game itself: window, input, camera, player, drawing, HUD, debug overlay
-tools/XnbExtract   converts the game's .xnb textures to PNG (run locally)
-tools/GenTileData  generates the Rust tile tables from the game's data
 assets/Content     your own licensed copy of the game's data (never redistributed)
 ```
 
