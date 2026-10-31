@@ -753,6 +753,8 @@ fn main() -> Result<()> {
         players: Vec::new(),
         worlds: Vec::new(),
         front_hint: None,
+        front_mouse_down: false,
+        session_draft: None,
         vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
         settings: settings::Settings::load(),
         player_name,
@@ -919,6 +921,12 @@ enum FrontScreen {
     CharSelect,
     /// `_worldSelectMenu` (`Main.cs:66798`); the list lives on `App.worlds`.
     WorldSelect,
+    /// Task 7's `UICharacterCreation` — the draft plus the screen state the
+    /// C# keeps on the `UIState` itself (`_selectedPicker`, `_lastSelected-
+    /// Hairstyle`'s gate, the slider lock). The payload is the exact value the
+    /// mode-40 round-trip parks in `App.front_backup`
+    /// (`UICharacterCreation.BackupConfirmationState`, `:1215`).
+    CharCreation(ui::char_creation::CreationState),
     /// Task 6's `UIVirtualKeyboard` — the plan Task 5 enum arm, live now:
     /// the card renames and `TR_UI=vk` open it. Boxed: the session's `back`
     /// target is another `FrontScreen`.
@@ -937,6 +945,25 @@ struct KeyboardSession {
     request: ui::keyboard::Request,
     state: ui::keyboard::KeyboardState,
     back: FrontScreen,
+    /// Which submit tail runs — the rename notice (Task 6) or the character
+    /// creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
+    /// `UICharacterCreation.cs:1659-1689`; `Click_NamingAndCreating` ->
+    /// `OnFinishedNamingAndCreating` -> `FinishCreatingCharacter`, `:1668-1702`).
+    tail: KeyboardTail,
+}
+
+/// The keyboard's on-submit behaviour (`UIVirtualKeyboard.cs:86`'s event pair).
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum KeyboardTail {
+    /// The card renames: the port has no `.plr` writer, so Submit notices
+    /// (Task 6's documented deviation).
+    Rename,
+    /// `Click_Naming` (`:1659-1666`): the name lands in the draft, the
+    /// creation screen returns.
+    Name,
+    /// `Click_NamingAndCreating` with an empty name (`:1668-1677`): the name
+    /// lands, then `FinishCreatingCharacter` runs (`:1701`).
+    NameAndCreate,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -947,12 +974,9 @@ struct KeyboardSession {
 enum FlowClick {
     /// `GoBackClick`: `menuMode = 0` (`UICharacterSelect.cs:116-120`).
     CharBack,
-    /// `NewCharacterClick` (`:108-114`) — opens the character creator
-    /// (Task 7); a documented no-op until its variant lands. The row stays
-    /// constructed only by the tests: the App's `New` click shows the
-    /// not-ported notice instead.
-    #[allow(dead_code)] // stub until Task 7 (the table row + the exhaustive
-    // invariant test pin it; the click site is the notice).
+    /// `NewCharacterClick` (`:108-114`): `Main.PendingPlayer = new Player()`,
+    /// `menuMode = 888` + `SetState(new UICharacterCreation(...))` — a fresh
+    /// draft on the creation screen.
     CharNew,
     /// `PlayGame` (`:256-261`) -> `SelectPlayer`'s single-player tail
     /// `menuMode = 6` (`Main.cs:66245-66249`) -> 888 world select
@@ -994,9 +1018,13 @@ fn next_flow_state(
     use menu::Page as P;
     match click {
         FlowClick::CharBack => (None, backup, Some(P::Main)),
-        // Task 7's screen: the click keeps the state until its variant lands
-        // (the App shows the not-ported notice instead).
-        FlowClick::CharNew => (front, backup, page),
+        // `NewCharacterClick` (`UICharacterSelect.cs:108-114`): a fresh
+        // `PendingPlayer`, the creation screen opens in 888.
+        FlowClick::CharNew => (
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            None,
+            None,
+        ),
         FlowClick::CharPlay => (Some(FrontScreen::WorldSelect), None, None),
         // `menuMode = 5` clears the 888 state (`Main.cs:51066-51069`'s else
         // branch — `MenuUI.SetState(null)`).
@@ -1146,6 +1174,15 @@ struct App {
     /// The port's not-ported notice for front-screen clicks whose target
     /// lands with Tasks 6-8 (ours, like `Menu.hint`).
     front_hint: Option<String>,
+    /// `Main.mouseLeft`'s port for the front screens (`Main.cs:51101`'s role):
+    /// held between the press and release events while `front` is live — the
+    /// creation screen's HSL sliders drag off it, like the menu's value bars.
+    front_mouse_down: bool,
+    /// `Main.PendingPlayer`'s recorded twin — `FinishCreatingCharacter`'s
+    /// `PlayerFileData.CreateAndSave` + `Main.LoadPlayers` port: the created
+    /// draft feeds the implicit session entry's name/difficulty
+    /// (`UICharacterCreation.cs:1704-1711`; no `.plr` writer — documented).
+    session_draft: Option<ui::char_creation::NewPlayerDraft>,
     /// `PlayerInput.SettingsForUI.ShowGamepadHints`'s port stand-in: the
     /// keyboard's two-layer gate (`UIVirtualKeyboard.cs:675-678`) — false
     /// without a gamepad, so the desktop `outerLayer2` draws (Review Focus 6);
@@ -1680,6 +1717,13 @@ impl ApplicationHandler for App {
                 match button {
                     MouseButton::Middle => self.mouse_down = pressed,
                     MouseButton::Left => {
+                        // The flag belongs to whichever side owns the input;
+                        // while a legacy page is live the 888 side is closed,
+                        // so a release here must not leak a stale `true` into
+                        // a restored front screen.
+                        if self.menu.is_some() {
+                            self.front_mouse_down = false;
+                        }
                         if let Some(m) = self.menu.as_mut() {
                             // `Main.mouseLeft` (`Main.cs:51101`): the value
                             // bars drag off this flag (`Main.cs:51533-51576`),
@@ -1695,7 +1739,10 @@ impl ApplicationHandler for App {
                         if self.front.is_some() {
                             // The 888 screens are click-driven: the press
                             // routes through the card-hit table (`Main.
-                            // MouseUI`'s click while `MenuUI` is live).
+                            // MouseUI`'s click while `MenuUI` is live). The
+                            // held flag rides along for the creation screen's
+                            // HSL drags (`Main.mouseLeft`, `Main.cs:51101`).
+                            self.front_mouse_down = pressed;
                             if pressed {
                                 self.handle_front_click();
                             }
@@ -2883,6 +2930,11 @@ impl App {
             // §J.3). It enters through `open_keyboard`, which parks the menu
             // side the same way.
             FrontScreen::Keyboard(_) => {}
+            // The creation screen re-lists nothing — `NewCharacterClick`
+            // (`UICharacterSelect.cs:108-114`) just sets `Main.PendingPlayer`
+            // and the state. Entering through `enter_front` (the Back/New
+            // hops) keeps the single-mode invariant's write pattern.
+            FrontScreen::CharCreation(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -2896,23 +2948,87 @@ impl App {
     /// menu side closes with the settings sync first, so exactly one of
     /// `front`/`menu` stays live (Review Focus 1).
     fn open_keyboard(&mut self, request: ui::keyboard::Request, back: FrontScreen) {
-        let state = ui::keyboard::KeyboardState::new(&request);
-        self.park_menu();
-        self.front = Some(FrontScreen::Keyboard(Box::new(KeyboardSession { request, state, back })));
+        self.open_keyboard_with_tail(request, back, KeyboardTail::Rename);
     }
 
-    /// The submit tail. Vanilla renames the save file and reopens the select
-    /// screen the keyboard came from (`OnFinishedSettingName`: `menuMode = 10`
-    /// + `Rename` + the reopen, `UICharacterListItem.cs:205-213`; the world
-    /// twin `UIWorldListItem.cs:422-426`). The port has no `.plr`/`.trwld`
-    /// writer to rename into (spec §9.4), so the reopen runs and the rename
-    /// itself stays the not-ported notice — the same "not yet" the flow's
-    /// other parked screens show.
+    /// The [`App::open_keyboard`] twin for the creator's naming flows — the
+    /// `tail` selects the submit behaviour (`KeyboardTail`).
+    fn open_keyboard_with_tail(
+        &mut self,
+        request: ui::keyboard::Request,
+        back: FrontScreen,
+        tail: KeyboardTail,
+    ) {
+        let state = ui::keyboard::KeyboardState::new(&request);
+        self.park_menu();
+        self.front = Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+            request,
+            state,
+            back,
+            tail,
+        })));
+    }
+
+    /// The submit tail. The rename tail keeps Task 6's notice (no `.plr`
+    /// writer, spec §9.4); the creator's naming tails run
+    /// `OnFinishedNaming` (`:1684-1689`: the trimmed name lands in the draft,
+    /// `SetState(this)` restores the screen) and `OnFinishedNamingAndCreating`
+    /// (`:1696-1702`: the same, then `FinishCreatingCharacter`).
     fn keyboard_submit(&mut self) {
-        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else { return };
-        let back = session.back.clone();
-        self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
-        self.enter_front(back);
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
+            return;
+        };
+        let name = session.state.text.trim().to_string();
+        match session.tail {
+            KeyboardTail::Rename => {
+                let back = session.back.clone();
+                self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
+                self.enter_front(back);
+            }
+            KeyboardTail::Name => {
+                let mut back = session.back.clone();
+                if let FrontScreen::CharCreation(state) = &mut back {
+                    state.draft.name = name;
+                }
+                self.enter_front(back);
+            }
+            KeyboardTail::NameAndCreate => {
+                let mut back = session.back.clone();
+                if let FrontScreen::CharCreation(state) = &mut back {
+                    state.draft.name = name;
+                }
+                self.enter_front(back);
+                self.finish_creating_character();
+            }
+        }
+    }
+
+    /// `FinishCreatingCharacter` (`UICharacterCreation.cs:1704-1711`) minus
+    /// the out-of-scope pieces: `TryAutoAssigningHair` (the cloth-style
+    /// default, `:631-637`), then the stat/inventory setup is the fresh
+    /// player the port already runs, `PlayerFileData.CreateAndSave` has no
+    /// `.plr` writer (the draft records into `App.session_draft` — the
+    /// documented deviation), and `Main.LoadPlayers` + `menuMode = 1` reopen
+    /// the character select through the real opener.
+    fn finish_creating_character(&mut self) {
+        let Some(FrontScreen::CharCreation(state)) = self.front.as_ref() else {
+            return;
+        };
+        let mut draft = state.draft.clone();
+        if !state.hair_picked {
+            // `TryAutoAssigningHair` (`:630-637`).
+            if let Some(hair) =
+                ui::char_creation::default_hairstyle_for_cloth_style(draft.skin_variant)
+            {
+                draft.hair = hair;
+            }
+        }
+        draft.name = draft.name.trim().to_string();
+        self.player_name = draft.name.clone();
+        self.session_draft = Some(draft);
+        self.front_backup = None;
+        self.front = None;
+        self.enter_front(FrontScreen::CharSelect);
     }
 
     /// The cancel tail — `_cancelAction` (`UIVirtualKeyboard.cs:86`) is the
@@ -2961,13 +3077,17 @@ impl App {
 
     /// The implicit session character as a card entry: the fresh `Player`
     /// defaults — difficulty 0 (`Player.cs:1654`), life 100 (`:1924`), mana 20
-    /// (`:56075`) — named by the port's seeded `player_name`. No `.plr`
-    /// exists, so it is not deletable (`Main.ErasePlayer` needs a file) and
-    /// always playable.
+    /// (`:56075`) — named by the port's seeded `player_name`, overridden by
+    /// the recorded creation draft once one is created
+    /// (`FinishCreatingCharacter`'s port). No `.plr` exists, so it is not
+    /// deletable (`Main.ErasePlayer` needs a file) and always playable.
     fn session_entry(&self) -> ui::save_list::PlayerEntry {
         ui::save_list::PlayerEntry {
-            name: self.player_name.clone(),
-            difficulty: 0,
+            name: self
+                .session_draft
+                .as_ref()
+                .map_or_else(|| self.player_name.clone(), |d| d.name.clone()),
+            difficulty: self.session_draft.as_ref().map_or(0, |d| d.difficulty),
             life_max: self.player.as_ref().map_or(100, |p| p.max_hp),
             mana_max: 20,
             is_favorite: false,
@@ -3035,12 +3155,9 @@ impl App {
                 let mut delete_name = None;
                 match ui::char_select::hit(&l, &favorites, mouse) {
                     Some(ui::char_select::CardAction::Back) => flow = Some(FlowClick::CharBack),
-                    // `NewCharacterClick` (`:108-114`) opens the character
-                    // creator — Task 7's variant; the notice stands in until
-                    // it lands.
-                    Some(ui::char_select::CardAction::New) => {
-                        self.front_hint = Some("The character creator is not ported yet".into());
-                    }
+                    // `NewCharacterClick` (`:108-114`): a fresh `PendingPlayer`
+                    // and the creation screen (`FlowClick::CharNew`).
+                    Some(ui::char_select::CardAction::New) => flow = Some(FlowClick::CharNew),
                     // `PlayGame` (`:256-261`): only a playable entry reaches
                     // `SelectPlayer` (`loadStatus == Ok`); the rest is a dead
                     // click, like the source.
@@ -3133,6 +3250,126 @@ impl App {
                                 self.park_menu();
                             }
                         },
+                    }
+                }
+            }
+            FrontScreen::CharCreation(_) => {
+                // The creator's click table (`UICharacterCreation`'s handlers
+                // through the App): the categories, the Back/Create pair, and
+                // the live middle menu's controls. The HSL rows drag in the
+                // draw pass, not here (`UIColoredSlider`'s lock latch).
+                let l = ui::char_creation::layout(screen, 0.0);
+                // The screen-state mutations run under the borrow; the
+                // navigation clicks clone the payload they need and drop it.
+                enum Nav {
+                    None,
+                    Name(ui::char_creation::CreationState),
+                    Create(ui::char_creation::CreationState),
+                    Back(ui::char_creation::CreationState),
+                }
+                let nav = {
+                    let Some(FrontScreen::CharCreation(state)) = self.front.as_mut() else {
+                        return;
+                    };
+                    match ui::char_creation::click_at(&l, state.category, mouse) {
+                        // `SelectColorPicker`/`Click_*` (`:1810-1833`): the
+                        // picker selects and the middle menu follows
+                        // (`middle_for`), seeding `_currentColorHSL` from the
+                        // live colour — the draw re-derives it.
+                        ui::char_creation::Click::Category(id) => {
+                            state.category = id;
+                            Nav::None
+                        }
+                        // `UIDifficultyButton.LeftMouseDown`
+                        // (`UIDifficultyButton.cs:67-71`).
+                        ui::char_creation::Click::Difficulty(d) => {
+                            state.draft.difficulty = d;
+                            Nav::None
+                        }
+                        // `UIHairStyleButton.LeftMouseDown` (`UIHairStyleButton.
+                        // cs:66-70`) + `RecordThatHairWasSelected` (`:306-309`):
+                        // the auto-assign gate closes.
+                        ui::char_creation::Click::Hair(h) => {
+                            state.draft.hair = h;
+                            state.hair_picked = true;
+                            Nav::None
+                        }
+                        // `Click_CharClothStyle` (`:1277-1291`): the armor
+                        // guard is out of scope (no armor preview); the
+                        // variant lands and the hair auto-assigns while
+                        // untouched (`TryAutoAssigningHair`, `:630-637`).
+                        ui::char_creation::Click::ClothStyle(v) => {
+                            state.draft.skin_variant = v;
+                            if !state.hair_picked {
+                                if let Some(hair) =
+                                    ui::char_creation::default_hairstyle_for_cloth_style(v)
+                                {
+                                    state.draft.hair = hair;
+                                }
+                            }
+                            Nav::None
+                        }
+                        ui::char_creation::Click::Name => Nav::Name(state.clone()),
+                        ui::char_creation::Click::Create => Nav::Create(state.clone()),
+                        ui::char_creation::Click::Back => Nav::Back(state.clone()),
+                        ui::char_creation::Click::None => Nav::None,
+                    }
+                };
+                match nav {
+                    Nav::None => {}
+                    Nav::Name(state) => {
+                        // `Click_Naming` (`:1659-1666`): the name clears
+                        // (`Main.clrInput()`'s effect on the draft), the
+                        // keyboard opens with `allowEmpty: true`.
+                        let back = FrontScreen::CharCreation(state);
+                        self.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: ui::char_creation::MAX_NAME_LENGTH,
+                            },
+                            back,
+                            KeyboardTail::Name,
+                        );
+                    }
+                    Nav::Create(state) => {
+                        // `Click_NamingAndCreating` (`:1668-1682`): an empty
+                        // name opens the naming keyboard (no `allowEmpty` —
+                        // the ctor default `false`), a filled one finishes.
+                        if state.draft.name.is_empty() {
+                            let back = FrontScreen::CharCreation(state);
+                            self.open_keyboard_with_tail(
+                                ui::keyboard::Request {
+                                    label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                    initial: String::new(),
+                                    allow_empty: false,
+                                    max_length: ui::char_creation::MAX_NAME_LENGTH,
+                                },
+                                back,
+                                KeyboardTail::NameAndCreate,
+                            );
+                        } else {
+                            self.finish_creating_character();
+                        }
+                    }
+                    Nav::Back(state) => {
+                        // `GoBack` (`:1210-1222`): dirty parks the exact
+                        // screen for the mode-40 round trip
+                        // (`BackupConfirmationState`, `:1215`); clean goes
+                        // straight back to the char select
+                        // (`OpenCharacterSelectUI`).
+                        if state.draft.dirty {
+                            let name =
+                                (!state.draft.name.is_empty()).then(|| state.draft.name.clone());
+                            self.front = None;
+                            self.front_backup = Some(FrontScreen::CharCreation(state));
+                            self.park_menu();
+                            self.menu = Some(menu::Menu::open_confirm_discard(name));
+                        } else {
+                            self.front = None;
+                            self.enter_front(FrontScreen::CharSelect);
+                        }
                     }
                 }
             }
@@ -3313,9 +3550,16 @@ impl App {
         match preset {
             TrUiPreset::CharSelect => self.enter_front(FrontScreen::CharSelect),
             TrUiPreset::WorldSelect => self.enter_front(FrontScreen::WorldSelect),
-            // Tasks 7-8's screens: the variants land with their tasks.
-            TrUiPreset::CharNew | TrUiPreset::WorldNew => {
-                log::info!("TR_UI: the screen lands with Tasks 7-8");
+            // Task 7's screen: `NewCharacterClick`'s fresh draft
+            // (`UICharacterSelect.cs:108-114`).
+            TrUiPreset::CharNew => {
+                self.enter_front(FrontScreen::CharCreation(
+                    ui::char_creation::CreationState::new(),
+                ));
+            }
+            // Task 8's screen — the variant lands with its task.
+            TrUiPreset::WorldNew => {
+                log::info!("TR_UI: the screen lands with Task 8");
             }
             TrUiPreset::Keyboard => {
                 // The keyboard screenshot (`TR_UI=vk`): the naming request the
@@ -3352,12 +3596,16 @@ impl App {
                 self.menu = Some(menu::Menu::open_confirm_delete_world(name));
             }
             TrUiPreset::Discard => {
-                // Mode 40's screenshot: the parked state is the char select
-                // (vanilla parks the character creation — Task 7's variant),
-                // so the No branch has a screen to restore.
+                // Mode 40's screenshot: the parked state is the character
+                // creation — vanilla parks the live `UICharacterCreation`
+                // (`BackupConfirmationState`, `UICharacterCreation.cs:1215`),
+                // named so the header shows `Discard {0}?`.
+                let mut state = ui::char_creation::CreationState::new();
+                state.draft.name = "Zealot".into();
+                state.draft.refresh_dirty();
                 self.front = None;
-                self.front_backup = Some(FrontScreen::CharSelect);
-                self.menu = Some(menu::Menu::open_confirm_discard(None));
+                self.front_backup = Some(FrontScreen::CharCreation(state));
+                self.menu = Some(menu::Menu::open_confirm_discard(Some("Zealot".into())));
             }
         }
     }
@@ -4132,7 +4380,7 @@ impl App {
                         );
                     }
                 }
-                if let Some(front) = front.as_ref() {
+                if let Some(front) = front.as_mut() {
                     // `Main.menuMode == 888` (`Main.cs:51059-51064`): the
                     // front-end draws over the world backdrop the frame
                     // already rendered — the draw site picks `front` first,
@@ -4172,6 +4420,25 @@ impl App {
                                 &self.worlds,
                                 0,
                                 self.mouse_pos,
+                            );
+                        }
+                        FrontScreen::CharCreation(state) => {
+                            // `Main.MenuUI.Draw`'s `UICharacterCreation` state
+                            // (`:1876-2022`'s Draw): the panel, the animated
+                            // preview (`GlobalTimeWrappedHourly`'s clock —
+                            // `anim_time`), the categories, the one middle
+                            // menu, Back/Create and the hover tooltip. The
+                            // HSL drag runs inside (the `CurrentLockedSlider`
+                            // latch) off `front_mouse_down`.
+                            ui::char_creation::draw(
+                                renderer,
+                                lookups,
+                                player_assets,
+                                state,
+                                screen,
+                                anim_time,
+                                self.mouse_pos,
+                                self.front_mouse_down,
                             );
                         }
                         FrontScreen::Keyboard(session) => {
@@ -7828,6 +8095,89 @@ fn draw_player(
     quads
 }
 
+/// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
+/// existing frame-UV machinery of [`draw_player`] at a fixed screen rect,
+/// full-white light (the preview is unlit), the draft's colours, `scale` =
+/// `UICharacter._characterScale` (1.5 creation / 1.0 card), `frame_row` =
+/// `UICharacter`'s animation row (0 static, `ui::char_creation::
+/// animated_frame_row(time)` animated, `:85-95`). `pos` is
+/// `GetPlayerPosition`'s hitbox anchor (`UICharacter.cs:122-130` — the port's
+/// `preview_anchor`); the 40x56 art box rides the hitbox at the same
+/// `(-10, -10)` offset the world draw uses, scaled. The preview faces right —
+/// `PreparePreview_Main`'s `direction = 1` (`UICharacterCreation.cs:616`).
+///
+/// The port decodes only the base body sheets (no per-variant sets), so every
+/// `skinVariant`/`hair` id renders the base male frame — the documented
+/// preview deviation that mirrors the char-select card's.
+pub(crate) fn draw_player_preview(
+    r: &mut SpriteRenderer,
+    assets: &PlayerAssets,
+    pos: [f32; 2],
+    scale: f32,
+    frame_row: u32,
+    colors: &ui::char_creation::PreviewColors,
+) -> u32 {
+    let byte = |c: u8| c as f32 / 255.0;
+    let skin = [byte(colors.skin[0]), byte(colors.skin[1]), byte(colors.skin[2]), 1.0];
+    let eye_white = [1.0, 1.0, 1.0, 1.0];
+    let eye = [byte(colors.eye[0]), byte(colors.eye[1]), byte(colors.eye[2]), 1.0];
+    let shirt = [byte(colors.shirt[0]), byte(colors.shirt[1]), byte(colors.shirt[2]), 1.0];
+    let undershirt = [
+        byte(colors.undershirt[0]),
+        byte(colors.undershirt[1]),
+        byte(colors.undershirt[2]),
+        1.0,
+    ];
+    let pants = [byte(colors.pants[0]), byte(colors.pants[1]), byte(colors.pants[2]), 1.0];
+    let shoes = [byte(colors.shoe[0]), byte(colors.shoe[1]), byte(colors.shoe[2]), 1.0];
+    let hair = [byte(colors.hair[0]), byte(colors.hair[1]), byte(colors.hair[2]), 1.0];
+
+    let pos = [pos[0] - 10.0 * scale, pos[1] - 10.0 * scale];
+    let size = [40.0 * scale, 56.0 * scale];
+    let body = frame_row;
+    let mut quads = 0;
+    let (arm_col, arm_row) = arm_cell(body);
+    let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| player_frame_uv(t, row));
+    let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| t.map(|t| player_cell_uv(t, col, row));
+    let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
+        if tex.is_some() {
+            if let Some(uv) = uv {
+                r.push_ui_sprite(pos, size, uv, color);
+                quads += 1;
+            }
+        }
+    };
+    // `PlayerFrame`: the legs animate on `legFrame`, the body/arms/head on
+    // `bodyFrame` (`UICharacter.UpdateAnim` writes all three, `:92-93`).
+    part(assets.legs.as_ref(), frame_uv(assets.legs.as_ref(), body), skin);
+    part(assets.pants.as_ref(), frame_uv(assets.pants.as_ref(), body), pants);
+    part(assets.shoes.as_ref(), frame_uv(assets.shoes.as_ref(), body), shoes);
+    // Back arm behind the torso, front arm in front of the shirt (composite
+    // layers), the under-shirt between the torso and the shirt.
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
+        skin,
+    );
+    part(assets.torso.as_ref(), cell_uv(assets.torso.as_ref(), 0, 0), skin);
+    part(assets.torso.as_ref(), cell_uv(assets.torso.as_ref(), 0, 0), undershirt);
+    part(assets.shirt.as_ref(), cell_uv(assets.shirt.as_ref(), 0, 0), shirt);
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        skin,
+    );
+    part(assets.head.as_ref(), frame_uv(assets.head.as_ref(), body), skin);
+    part(
+        assets.eye_whites.as_ref(),
+        frame_uv(assets.eye_whites.as_ref(), body),
+        eye_white,
+    );
+    part(assets.eyes.as_ref(), frame_uv(assets.eyes.as_ref(), body), eye);
+    part(assets.hair.as_ref(), frame_uv(assets.hair.as_ref(), body), hair);
+    quads
+}
+
 /// `Main.MapPlayerRenderer.DrawPlayerHead` (`Main.cs:55954`): the local player's
 /// 84x84 head icon for the fullscreen map.
 ///
@@ -8953,8 +9303,18 @@ mod front_flow_tests {
         // `Main.cs:49460-49467`: `menuMode = 888` +
         // `SetState(BackupConfirmationState)` — the parked value returns
         // untouched and the backup clears (Review Focus 1's round-trip;
-        // `App.front_backup` is the port's `BackupConfirmationState`).
-        for parked in [FrontScreen::CharSelect, FrontScreen::WorldSelect] {
+        // `App.front_backup` is the port's `BackupConfirmationState`). The
+        // creation screen joins with Task 7: its draft/category/grab payload
+        // is exactly what `GoBack` parks (`UICharacterCreation.cs:1215`).
+        let mut creation = ui::char_creation::CreationState::new();
+        creation.category = 4;
+        creation.draft.name = "Zealot".into();
+        creation.hsl_grab = 2;
+        for parked in [
+            FrontScreen::CharSelect,
+            FrontScreen::WorldSelect,
+            FrontScreen::CharCreation(creation),
+        ] {
             let (front, backup, page) = next_flow_state(
                 None,
                 Some(parked.clone()),
@@ -8970,9 +9330,38 @@ mod front_flow_tests {
     fn front_and_menu_are_never_both_some() {
         // Review Focus 1: every row of the flow table keeps the single-mode
         // invariant `Main.menuMode` carries (`Main.cs:51059-51069` — 888
-        // draws `MenuUI`, every other mode has `SetState(null)`).
-        let fronts = [None, Some(FrontScreen::CharSelect), Some(FrontScreen::WorldSelect)];
-        let backs = [None, Some(FrontScreen::CharSelect), Some(FrontScreen::WorldSelect)];
+        // draws `MenuUI`, every other mode has `SetState(null)`). The matrix
+        // covers every live `FrontScreen` variant — the keyboard session was
+        // the Task 6 gap, the creation screen joins with Task 7.
+        let session = || {
+            let request = ui::keyboard::Request {
+                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                initial: String::new(),
+                allow_empty: true,
+                max_length: 20,
+            };
+            let state = ui::keyboard::KeyboardState::new(&request);
+            Box::new(KeyboardSession {
+                request,
+                state,
+                back: FrontScreen::CharSelect,
+                tail: KeyboardTail::Rename,
+            })
+        };
+        let fronts = [
+            None,
+            Some(FrontScreen::CharSelect),
+            Some(FrontScreen::WorldSelect),
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Some(FrontScreen::Keyboard(session())),
+        ];
+        let backs = [
+            None,
+            Some(FrontScreen::CharSelect),
+            Some(FrontScreen::WorldSelect),
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Some(FrontScreen::Keyboard(session())),
+        ];
         let pages = [
             None,
             Some(P::Main),
@@ -9106,6 +9495,8 @@ mod front_flow_tests {
             players,
             worlds,
             front_hint: None,
+            front_mouse_down: false,
+            session_draft: None,
             vk_grid: false,
             settings: settings::Settings::default(),
             player_name: "flow".into(),
@@ -9280,6 +9671,7 @@ mod front_flow_tests {
                 request,
                 state,
                 back: FrontScreen::CharSelect,
+                tail: KeyboardTail::Rename,
             }))),
             vec![entry("Bob", false)],
             vec![],
@@ -9355,6 +9747,7 @@ mod front_flow_tests {
                 request,
                 state,
                 back: FrontScreen::CharSelect,
+                tail: KeyboardTail::Rename,
             }))),
             vec![],
             vec![],
@@ -9396,5 +9789,220 @@ mod front_flow_tests {
             "the empty text seeds Shift (`UIVirtualKeyboard.cs:430-433`)"
         );
         assert_eq!(session.back, FrontScreen::CharSelect);
+    }
+
+    // --- Task 7: the character creator's flow hops ---------------------------
+
+    /// One creation screen for the flow tests, optionally pre-dirtied.
+    fn creation_app(dirty: bool) -> App {
+        let mut state = ui::char_creation::CreationState::new();
+        if dirty {
+            state.draft.name = "Zealot".into();
+            state.draft.refresh_dirty();
+        }
+        flow_app(Some(FrontScreen::CharCreation(state)), vec![], vec![])
+    }
+
+    /// Aims the pointer at a char-creation rect's centre and clicks.
+    fn click_creation(app: &mut App, rect: [f32; 4]) {
+        app.mouse_pos = Vec2::new(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        app.handle_front_click();
+    }
+
+    #[test]
+    fn new_click_opens_a_fresh_creation_screen() {
+        // `NewCharacterClick` (`UICharacterSelect.cs:108-114`): a fresh
+        // `PendingPlayer`, the creation screen live alone.
+        let mut app = flow_app(Some(FrontScreen::CharSelect), vec![], vec![]);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(sw, sh),
+            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.players.len(),
+        );
+        click_creation(&mut app, l.new);
+        let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() else {
+            panic!("the New click opens the creator");
+        };
+        assert_eq!(state.draft, ui::char_creation::NewPlayerDraft::new());
+        assert_eq!(state.category, 0, "the CharInfo menu seeds (`:233`)");
+        assert!(app.menu.is_none(), "the invariant holds");
+        assert!(app.front_hint.is_none());
+    }
+
+    #[test]
+    fn tr_ui_charnew_presets_the_creation_screen() {
+        // The Task 5 hook table's `charnew` now presets the real screen.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.preset_ui(TrUiPreset::CharNew);
+        assert!(matches!(app.front, Some(FrontScreen::CharCreation(_))));
+        assert!(app.menu.is_none());
+    }
+
+    #[test]
+    fn creation_clicks_mutate_the_draft() {
+        // Category 4 (Eye) switches the picker; a difficulty row sets the
+        // byte (`UIDifficultyButton.cs:67-71`); a cloth-style button maps
+        // through `_validClothStyles` and auto-assigns the hair (`:630-637`).
+        let mut app = creation_app(false);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Info menu is live (category 0): a difficulty row sets the byte.
+        click_creation(&mut app, l.difficulty_buttons[3]);
+        let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() else {
+            panic!("the creator stays live");
+        };
+        assert_eq!(state.draft.difficulty, 2, "the Hardcore row");
+        // The Clothing menu: a cloth-style button maps through
+        // `_validClothStyles` and auto-assigns the hair (`:630-637`).
+        click_creation(&mut app, l.cloth_buttons[0]);
+        let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() else {
+            panic!("the creator stays live");
+        };
+        assert_eq!(state.draft.skin_variant, 0);
+        assert_eq!(
+            state.draft.hair,
+            ui::char_creation::default_hairstyle_for_cloth_style(0).unwrap_or_default(),
+            "the untouched hair auto-assigns"
+        );
+        // Category 4 (Eye) switches the picker (`Click_ColorPicker`).
+        click_creation(&mut app, l.categories[4]);
+        let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() else {
+            panic!("the creator stays live");
+        };
+        assert_eq!(state.category, 4);
+    }
+
+    #[test]
+    fn clean_creation_back_reopens_the_char_select() {
+        // `GoBack`'s not-dirty branch (`UICharacterCreation.cs:1218-1221`):
+        // `OpenCharacterSelectUI`, no backup, no confirm.
+        let mut app = creation_app(false);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        click_creation(&mut app, l.back);
+        assert_eq!(app.front, Some(FrontScreen::CharSelect));
+        assert!(app.front_backup.is_none());
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn dirty_creation_back_parks_the_mode_40_round_trip() {
+        // `GoBack`'s dirty branch (`:1213-1217`): the exact screen parks in
+        // `front_backup` (`BackupConfirmationState`) and menuMode 40 opens —
+        // the header carries the draft's name (`:49441-49445`).
+        let mut app = creation_app(true);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        click_creation(&mut app, l.back);
+        assert!(app.front.is_none(), "mode 40 clears the 888 state");
+        let Some(FrontScreen::CharCreation(parked)) = app.front_backup.as_ref() else {
+            panic!("the creation screen parks");
+        };
+        assert_eq!(parked.draft.name, "Zealot");
+        assert_eq!(parked.draft.dirty, true);
+        let m = app.menu.as_ref().expect("mode 40 opens");
+        assert_eq!(m.page, menu::Page::ConfirmDiscard);
+        assert_eq!(m.confirm_name.as_deref(), Some("Zealot"));
+        // The No branch's restore is the flow table's (`:49460-49467`), and
+        // Yes drops the parked state for the char select (`:49454-49459`).
+        let (front, backup, page) = next_flow_state(
+            app.front.clone(),
+            app.front_backup.clone(),
+            Some(menu::Page::ConfirmDiscard),
+            FlowClick::ConfirmNo,
+        );
+        assert_eq!(front, Some(FrontScreen::CharCreation(parked.clone())));
+        assert!(backup.is_none() && page.is_none());
+        let (front, backup, page) = next_flow_state(
+            app.front.clone(),
+            app.front_backup.clone(),
+            Some(menu::Page::ConfirmDiscard),
+            FlowClick::ConfirmYes,
+        );
+        assert_eq!(front, Some(FrontScreen::CharSelect));
+        assert!(backup.is_none() && page.is_none());
+    }
+
+    #[test]
+    fn naming_keyboard_round_trips_into_the_draft() {
+        // `Click_Naming` (`:1659-1666`) -> `OnFinishedNaming` (`:1684-1689`):
+        // the keyboard opens with `allowEmpty: true`, the trimmed name lands
+        // in the parked draft and the creation screen returns.
+        let mut app = creation_app(false);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        click_creation(&mut app, l.info_name);
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the name plate opens the keyboard");
+        };
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, ui::char_creation::MAX_NAME_LENGTH);
+        assert!(matches!(session.back, FrontScreen::CharCreation(_)));
+        assert_eq!(session.tail, KeyboardTail::Name);
+        // The empty name also cleared the draft's own (`:1662`).
+        if let FrontScreen::CharCreation(back) = &session.back {
+            assert!(back.draft.name.is_empty());
+        }
+        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+            ui::keyboard::write_str(&mut session.state, "  Zealot ");
+        }
+        app.keyboard_submit();
+        let Some(FrontScreen::CharCreation(state)) = app.front.as_ref() else {
+            panic!("the creation screen returns");
+        };
+        assert_eq!(state.draft.name, "Zealot", "`name.Trim()` (`:1686`)");
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn create_with_an_empty_name_opens_the_naming_keyboard() {
+        // `Click_NamingAndCreating`'s empty branch (`:1668-1677`): the
+        // keyboard opens WITHOUT `allowEmpty` (the ctor default `false`), and
+        // the submit tail finishes the creation (`OnFinishedNamingAnd-
+        // Creating`, `:1696-1702`).
+        let mut app = creation_app(false);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        click_creation(&mut app, l.create);
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("Create with no name opens the keyboard");
+        };
+        assert!(!session.request.allow_empty);
+        assert_eq!(session.tail, KeyboardTail::NameAndCreate);
+        if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {
+            ui::keyboard::write_str(&mut session.state, "Zealot");
+        }
+        app.keyboard_submit();
+        assert_eq!(app.front, Some(FrontScreen::CharSelect), "`menuMode = 1` (`:1710`)");
+        assert!(app.menu.is_none());
+    }
+
+    #[test]
+    fn create_with_a_name_records_the_draft_as_the_session_player() {
+        // `FinishCreatingCharacter` (`:1704-1711`): the draft records (no
+        // `.plr` writer — documented), the session entry carries the name and
+        // difficulty, and the char select re-lists.
+        let mut app = creation_app(false);
+        if let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() {
+            state.draft.name = "Zealot".into();
+            state.draft.difficulty = 2;
+            state.category = 0;
+        }
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        click_creation(&mut app, l.create);
+        assert_eq!(app.front, Some(FrontScreen::CharSelect));
+        assert!(app.front_backup.is_none(), "the backup drops");
+        let Some(draft) = app.session_draft.as_ref() else {
+            panic!("the draft records");
+        };
+        assert_eq!(draft.name, "Zealot");
+        assert_eq!(draft.difficulty, 2);
+        // `Main.LoadPlayers` re-lists with the created entry first-shaped.
+        let entry = app.session_entry();
+        assert_eq!(entry.name, "Zealot");
+        assert_eq!(entry.difficulty, 2);
+        assert!(app.players.iter().any(|p| p.name == "Zealot"));
     }
 }

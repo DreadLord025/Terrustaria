@@ -360,6 +360,7 @@ pub fn load_world_images(
         "UI/CharCreation/ClothStyleMale",
         "UI/CharCreation/ClothStyleFemale",
         "UI/CharCreation/Voice",
+        "UI/CharCreation/ColorCharacter",
         "UI/WorldCreation/PreviewBorder",
         "UI/WorldCreation/IconRandomName",
         "UI/WorldCreation/IconRandomSeed",
@@ -834,6 +835,10 @@ pub struct Lookups {
     pub cc_cloth_styles: [Option<tr_render::SheetRect>; 2],
     /// `UI/CharCreation/Voice` 26x32 (`:482`).
     pub cc_voice: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/ColorCharacter` 26x238 — the Clothing category's
+    /// 7-frame body stack, one 26x34 frame per layer
+    /// (`UICharacterCreation.cs:747-759`).
+    pub cc_color_character: Option<tr_render::SheetRect>,
     /// `UI/WorldCreation/PreviewBorder` 84x84 (`UIWorldCreationPreview.cs:46`).
     pub wc_preview_border: Option<tr_render::SheetRect>,
     /// `UI/WorldCreation/IconRandomName` / `IconRandomSeed` 38x38
@@ -996,6 +1001,7 @@ impl Lookups {
             cc_cloth_styles: ["UI/CharCreation/ClothStyleMale", "UI/CharCreation/ClothStyleFemale"]
                 .map(|n| atlas.sheet(n).copied()),
             cc_voice: atlas.sheet("UI/CharCreation/Voice").copied(),
+            cc_color_character: atlas.sheet("UI/CharCreation/ColorCharacter").copied(),
             wc_preview_border: atlas.sheet("UI/WorldCreation/PreviewBorder").copied(),
             wc_icons: [
                 "UI/WorldCreation/IconRandomName",
