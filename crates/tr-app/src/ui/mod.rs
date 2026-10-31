@@ -2,6 +2,7 @@
 //! cursor, hearts and breath, and the boss bar.
 
 pub mod bars;
+pub mod char_select;
 pub mod chrome;
 pub mod color;
 pub mod crafting;
