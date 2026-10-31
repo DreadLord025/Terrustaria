@@ -3,6 +3,7 @@
 
 pub mod chrome;
 pub mod color;
+pub mod crafting;
 pub mod cursor;
 pub mod inventory;
 pub mod panel;
