@@ -209,6 +209,8 @@ fn bar_value(left: f32, mouse_x: f32) -> f32 {
 /// The draw-time drag half of the HSL block (`Main.cs:51102-51284`) as one pure
 /// pass, so [`draw_color_sliders`] keeps hit-test → mutate in the same pass that
 /// draws (Review Focus 1) and the grab semantics stay testable without a GPU.
+/// Also drives the `menu.rs` colour-screen tests, which compose it with the
+/// seeding and recompose steps around this function.
 ///
 /// Releasing the button clears the sticky grab (`Main.cs:51112-51115`); while it
 /// is down, an active row takes the grab (1 hue, 2 sat, 3 lum, 4 alpha) and
@@ -217,7 +219,7 @@ fn bar_value(left: f32, mouse_x: f32) -> f32 {
 /// `l = t * (1 - floor) + floor` (`Main.cs:51232`). Returns the four
 /// `Slider_Highlight` flags.
 #[allow(clippy::too_many_arguments)]
-fn color_sliders_update(
+pub(crate) fn color_sliders_update(
     screen_w: f32,
     top: f32,
     bars: &mut HslBars,
@@ -272,8 +274,7 @@ fn color_sliders_update(
 /// `lum_floor` is 0.15 for menuMode 25 and 0.0 for 252 (`Main.cs:51201-51202`):
 /// the knob maps `(l - floor) / (1 - floor)` and a grab stores
 /// `l = t * (1 - floor) + floor`.
-// Consumed by the cursor / border colour screens (Task 3).
-#[allow(dead_code)]
+// Consumed by the cursor / border colour screens (`menu.rs`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_color_sliders(
     r: &mut SpriteRenderer,

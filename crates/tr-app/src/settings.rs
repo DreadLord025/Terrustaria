@@ -70,6 +70,34 @@ pub struct Settings {
     /// `MinimapFrameManager.cs:13-18`: the active minimap frame style key
     /// (`"Default"`, `"Golden"`, ...; unknown names fall back to index 0).
     pub minimap_frame: String,
+    /// `Main.mouseColor` (`Main.cs:67199`, default `new Color(255, 50, 95)`):
+    /// the cursor colour the menuMode 25 screen edits (`Main.cs:50324`).
+    /// Vanilla persists R/G/B only (`:4164-4176`, `:4448-4460`), so the alpha
+    /// byte stays 255.
+    pub mouse_color: [u8; 4],
+    /// `Main.MouseBorderColor` (`Main.cs:66514`, default
+    /// `new Color(64, 64, 64, 64)`): the smart-cursor border colour the
+    /// menuMode 252 screen edits (`Main.cs:50346`). Vanilla persists R/G/B/A
+    /// (`:4179-4197`, `:4462-4478`).
+    pub mouse_border_color: [u8; 4],
+    /// `Main.cSmartCursorModeIsToggleAndNotHold` (`Main.cs:67178`, default
+    /// true): the "Smart Cursor Mode" row of menuMode 1125
+    /// (`Main.cs:50269-50277`).
+    pub smart_cursor_toggle: bool,
+    /// `Player.SmartCursorSettings.SmartAxeAfterPickaxe` (`Player.cs:334`, a
+    /// plain static: default false): the "Smart Cursor Priority" row
+    /// (`Main.cs:50278-50285`).
+    pub smart_axe_first: bool,
+    /// `Player.SmartCursorSettings.SmartBlocksEnabled` (`Player.cs:331`, a
+    /// plain static: default false): the "Smart Block Placement" row
+    /// (`Main.cs:50286-50293`).
+    pub smart_blocks: bool,
+    /// `LockOnHelper.UseMode` (`LockOnHelper.cs:24`): 0 FocusTarget,
+    /// 1 TargetClosest, 2 ThreeDS. Default **2**, not the enum's 0:
+    /// `LoadSettings` runs the `"LockOnPriority"` chain on every boot
+    /// (`Main.cs:4496-4505`), clamps to 0..=2 and remaps FocusTarget to
+    /// ThreeDS, so a fresh config boots into ThreeDS.
+    pub lock_on_priority: u8,
 }
 
 impl Default for Settings {
@@ -100,6 +128,12 @@ impl Default for Settings {
             ambient_volume: 0.75,
             map_scale: 1.0,
             minimap_frame: "Default".to_string(),
+            mouse_color: [255, 50, 95, 255],      // Main.cs:67199
+            mouse_border_color: [64, 64, 64, 64], // Main.cs:66514
+            smart_cursor_toggle: true,            // Main.cs:67178
+            smart_axe_first: false,               // Player.cs:334
+            smart_blocks: false,                  // Player.cs:331
+            lock_on_priority: 2,                  // Main.cs:4496-4505
         }
     }
 }
@@ -182,6 +216,58 @@ impl Settings {
                         .unwrap_or(v)
                         .to_string();
                 }
+                // `configuration.Put("MouseColor", ...)` (`Main.cs:4164-4176`)
+                // is an R/G/B dict; `LoadSettings` reads the entries
+                // individually and leaves the alpha alone (`:4448-4460`).
+                "MouseColor" => {
+                    if let Some(v) = dict_byte(value, "R") {
+                        me.mouse_color[0] = v;
+                    }
+                    if let Some(v) = dict_byte(value, "G") {
+                        me.mouse_color[1] = v;
+                    }
+                    if let Some(v) = dict_byte(value, "B") {
+                        me.mouse_color[2] = v;
+                    }
+                }
+                // The `"MouseBorderColor"` twin, with an `A` byte
+                // (`Main.cs:4179-4197`, `:4462-4478`).
+                "MouseBorderColor" => {
+                    if let Some(v) = dict_byte(value, "R") {
+                        me.mouse_border_color[0] = v;
+                    }
+                    if let Some(v) = dict_byte(value, "G") {
+                        me.mouse_border_color[1] = v;
+                    }
+                    if let Some(v) = dict_byte(value, "B") {
+                        me.mouse_border_color[2] = v;
+                    }
+                    if let Some(v) = dict_byte(value, "A") {
+                        me.mouse_border_color[3] = v;
+                    }
+                }
+                // `configuration.Put("SmartCursorToggle", ...)` (`Main.cs:4094`,
+                // read back at `:4330`).
+                "SmartCursorToggle" => me.smart_cursor_toggle = boolean(value),
+                // `configuration.Put("UseSmartAxeAfterSmartPickaxe",
+                // Player.SmartCursorSettings.SmartAxeAfterPickaxe)`
+                // (`Main.cs:4139`, read back at `:4412`).
+                "UseSmartAxeAfterSmartPickaxe" => me.smart_axe_first = boolean(value),
+                // `configuration.Put("UseSmartCursorForCommonBlocks",
+                // Player.SmartCursorSettings.SmartBlocksEnabled)`
+                // (`Main.cs:4138`, read back at `:4411`).
+                "UseSmartCursorForCommonBlocks" => me.smart_blocks = boolean(value),
+                // `configuration.Get("LockOnPriority", ...)` (`Main.cs:4496-4505`):
+                // the stored value clamps to 0..=2 and FocusTarget (0) reloads
+                // as ThreeDS (2), so 0 never survives a boot.
+                "LockOnPriority" => {
+                    if let Ok(v) = value.parse::<u8>() {
+                        me.lock_on_priority = match v.min(2) {
+                            0 => 2,
+                            other => other,
+                        };
+                    }
+                }
                 _ => {}
             }
         }
@@ -211,6 +297,10 @@ impl Settings {
              \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
              \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
              \"AmbientVolume\": {:.3},\n  \"MapScale\": {:.3},\n  \
+             \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
+             \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
+             \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
+             \"UseSmartCursorForCommonBlocks\": {},\n  \"LockOnPriority\": {},\n  \
              \"MinimapFrame\": \"{}\"\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -236,9 +326,37 @@ impl Settings {
             self.sound_volume,
             self.ambient_volume,
             self.map_scale,
+            // `configuration.Put("MouseColor", new Dictionary<string, byte> ...)`
+            // (`Main.cs:4164-4176`) — one-line R/G/B dict, `A` only on the
+            // border colour (`:4179-4197`).
+            self.mouse_color[0],
+            self.mouse_color[1],
+            self.mouse_color[2],
+            self.mouse_border_color[0],
+            self.mouse_border_color[1],
+            self.mouse_border_color[2],
+            self.mouse_border_color[3],
+            self.smart_cursor_toggle,
+            self.smart_axe_first,
+            self.smart_blocks,
+            self.lock_on_priority,
             self.minimap_frame,
         )
     }
+}
+
+/// One byte of a vanilla one-line colour dict (`"MouseColor": {"R": 255, ...}`):
+/// finds `"key"` and reads the decimal number that follows it. `LoadSettings`
+/// reads the same entries individually out of the deserialized dictionary
+/// (`Main.cs:4448-4478`).
+fn dict_byte(dict: &str, key: &str) -> Option<u8> {
+    let rest = dict.split_once(&format!("\"{key}\""))?.1;
+    let digits: String = rest
+        .chars()
+        .skip_while(|c| !c.is_ascii_digit())
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
 }
 
 #[cfg(test)]
@@ -270,6 +388,20 @@ mod tests {
         assert!((s.music_volume - 0.75).abs() < 1e-6);
         assert_eq!(s.map_scale, 1.0);
         assert_eq!(s.minimap_frame, "Default");
+        // `Main.mouseColor = new Color(255, 50, 95)` (`Main.cs:67199`) and
+        // `Main.MouseBorderColor = new Color(64, 64, 64, 64)` (`:66514`): the
+        // static-initializer defaults, not field declarations.
+        assert_eq!(s.mouse_color, [255, 50, 95, 255]);
+        assert_eq!(s.mouse_border_color, [64, 64, 64, 64]);
+        // `Main.cSmartCursorModeIsToggleAndNotHold = true` (`:67178`); the two
+        // `SmartCursorSettings` statics are plain bools (`Player.cs:331-334`).
+        assert!(s.smart_cursor_toggle);
+        assert!(!s.smart_axe_first);
+        assert!(!s.smart_blocks);
+        // `LockOnHelper.UseMode` boots into ThreeDS: `LoadSettings` clamps the
+        // keyless -1 to 0 and remaps FocusTarget to ThreeDS
+        // (`Main.cs:4496-4505`).
+        assert_eq!(s.lock_on_priority, 2);
     }
 
     #[test]
@@ -293,6 +425,12 @@ mod tests {
         s.parallax_scroll = 37;
         s.map_scale = 0.5;
         s.minimap_frame = "Golden".to_string();
+        s.mouse_color = [1, 2, 3, 255];
+        s.mouse_border_color = [4, 5, 6, 7];
+        s.smart_cursor_toggle = false;
+        s.smart_axe_first = true;
+        s.smart_blocks = true;
+        s.lock_on_priority = 1;
         let back = Settings::parse(&s.to_json());
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
@@ -312,6 +450,12 @@ mod tests {
         assert_eq!(back.parallax_scroll, 37);
         assert!((back.map_scale - s.map_scale).abs() < 1e-3);
         assert_eq!(back.minimap_frame, s.minimap_frame);
+        assert_eq!(back.mouse_color, [1, 2, 3, 255]);
+        assert_eq!(back.mouse_border_color, [4, 5, 6, 7]);
+        assert!(!back.smart_cursor_toggle);
+        assert!(back.smart_axe_first);
+        assert!(back.smart_blocks);
+        assert_eq!(back.lock_on_priority, 1);
     }
 
     #[test]
@@ -336,5 +480,37 @@ mod tests {
         assert_eq!(s.parallax_scroll, 60, "u8 parse fails, the default stays");
         let s = Settings::parse("{\n \"BackgroundParallax\": 90\n}");
         assert_eq!(s.parallax_scroll, 90);
+    }
+
+    #[test]
+    fn colour_keys_read_the_vanilla_dictionaries() {
+        // `Main.SaveSettings` writes one-line `"MouseColor": {"R": .., "G": ..,
+        // "B": ..}` (`Main.cs:4164-4176`) and `"MouseBorderColor"` with an `A`
+        // byte (`:4179-4197`); `LoadSettings` reads the entries individually
+        // and leaves the cursor colour's alpha alone (`:4448-4478`).
+        let s = Settings::parse(
+            "{\n \"MouseColor\": {\"R\": 10, \"G\": 20, \"B\": 30},\n \
+             \"MouseBorderColor\": {\"R\": 40, \"G\": 50, \"B\": 60, \"A\": 70}\n}",
+        );
+        assert_eq!(s.mouse_color, [10, 20, 30, 255]);
+        assert_eq!(s.mouse_border_color, [40, 50, 60, 70]);
+        // A partial dict keeps the untouched channels, like the C#
+        // `TryGetValue` guards.
+        let s = Settings::parse("{\n \"MouseColor\": {\"G\": 90}\n}");
+        assert_eq!(s.mouse_color, [255, 90, 95, 255]);
+    }
+
+    #[test]
+    fn lock_on_priority_loads_through_the_vanilla_chain() {
+        // `Main.cs:4496-4505`: the stored value clamps to 0..=2 and FocusTarget
+        // (0) reloads as ThreeDS (2); a missing key falls through -1 -> 0 -> 2.
+        let s = Settings::parse("{}");
+        assert_eq!(s.lock_on_priority, 2, "a fresh config boots into ThreeDS");
+        let s = Settings::parse("{\n \"LockOnPriority\": 0\n}");
+        assert_eq!(s.lock_on_priority, 2);
+        let s = Settings::parse("{\n \"LockOnPriority\": 1\n}");
+        assert_eq!(s.lock_on_priority, 1);
+        let s = Settings::parse("{\n \"LockOnPriority\": 9\n}");
+        assert_eq!(s.lock_on_priority, 2, "clamped to 0..=2");
     }
 }

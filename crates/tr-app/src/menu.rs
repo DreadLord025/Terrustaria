@@ -175,11 +175,19 @@ enum Toggle {
     MinersWobble,
     TilesSway,
     Zoom,
+    // The menuMode 1125 rows (`Main.cs:50269-50308`).
+    SmartCursorToggle,
+    SmartAxeFirst,
+    SmartBlocks,
+    LockOnPriority,
 }
 
 enum Act {
     None,
     Nav(Page),
+    /// The menuMode 1125 colour rows (`Main.cs:50253-50268`): seed
+    /// `Main.selColor` from the stored colour, then open 25 or 252.
+    PickColor(Page),
     Out(Action),
     Toggle(Toggle),
     /// A vanilla screen that is not ported yet: clicking shows the reason.
@@ -276,6 +284,18 @@ pub struct Menu {
     /// grab — 0 music, 1 sound, 2 ambient, 3 parallax (`rightLock` 3/2/4 and
     /// the parallax block's 2). Cleared on release and on page changes.
     pub bar_grab: Option<u8>,
+    /// `Main.grabColorSlider` (`Main.cs:51104-51115`): the sticky HSL grab —
+    /// 1 hue, 2 sat, 3 lum, 4 alpha; 0 when idle. Reset whenever the menu is
+    /// not on a colour screen.
+    pub color_grab: u8,
+    /// `Main.hBar`/`sBar`/`lBar`/`aBar` (`Main.cs:51104-51137`): the HSL bar
+    /// values, `-1.0` meaning "unseeded" until the first slider frame seeds
+    /// them from `rgbToHsl(selColor)`.
+    pub hsl_bars: sliders::HslBars,
+    /// `Main.selColor` (`Main.cs:50255` / `:50266` / `:51279-51284`): the live
+    /// edit colour of the 25/252 screens. The struct default is all-zero, like
+    /// XNA `Color`'s.
+    pub sel_color: [u8; 4],
     /// "Not ported yet" notice for the vanilla screens we do not have.
     pub hint: Option<String>,
     /// Write `config.json` on every toggle (off in unit tests).
@@ -307,6 +327,9 @@ impl Menu {
             mouse: Vec2::ZERO,
             mouse_down: false,
             bar_grab: None,
+            color_grab: 0,
+            hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
+            sel_color: [0, 0, 0, 0],
             hint: None,
             persist: true,
             time: 0.0,
@@ -408,7 +431,9 @@ impl Menu {
                 Item::new("Interface", Act::Nav(Page::Interface)).scaled(0.75),
                 Item::new("Video", Act::Nav(Page::Video)).scaled(0.75),
                 Item::new("Volume", Act::Nav(Page::Volume)).scaled(0.75),
-                Item::new("Cursor", Act::Hint("Cursor colour is not ported yet")).scaled(0.75),
+                // menuMode 11 row 4 (`Main.cs:49753-49759`): opens 1125
+                // (`Main.cs:50309-50316` is the 1125 Back twin).
+                Item::new("Cursor", Act::Nav(Page::Cursor)).scaled(0.75),
                 Item::new("Controls", Act::Hint("Key rebinding is not ported yet")).scaled(0.75),
                 Item::new("Language", Act::Hint("Only English is bundled")).scaled(0.75),
                 Item::new("Back", Act::Nav(Page::Main)).scaled(0.75).at(8.0),
@@ -504,13 +529,83 @@ impl Menu {
                 Item::new("Parallax", Act::None).at(10.0).heading(),
                 Item::new("Back", Act::Nav(Page::Video)).at(170.0),
             ],
-            // The P5 screens land with their own tasks (2-6); Task 1 only
+            // menuMode 1125 (`Main.cs:50242-50317`): `num5 = 7`,
+            // `array4[6] = 18` (`:50245`), every `array7` 0.73 (`:50247-50251`).
+            Page::Cursor => vec![
+                // Rows 0-1 (`Main.cs:50253-50268`): the colour rows seed
+                // `Main.selColor` from the stored colour, then open 25 / 252.
+                Item::new("Cursor Color", Act::PickColor(Page::CursorColor)).scaled(0.73),
+                Item::new("Border Color", Act::PickColor(Page::BorderColor)).scaled(0.73),
+                // Row 2 (`Main.cs:50269-50277`):
+                // `cSmartCursorModeIsToggleAndNotHold ? Lang.menu[121] : [122]`.
+                Item::new(
+                    on_off(
+                        s.smart_cursor_toggle,
+                        "Smart Cursor Mode: Toggle",
+                        "Smart Cursor Mode: Hold",
+                    ),
+                    Act::Toggle(Toggle::SmartCursorToggle),
+                )
+                .scaled(0.73),
+                // Row 3 (`Main.cs:50278-50285`):
+                // `SmartAxeAfterPickaxe ? Lang.menu[214] : [213]`.
+                Item::new(
+                    on_off(
+                        s.smart_axe_first,
+                        "Smart Cursor Priority: Axe → Pickaxe",
+                        "Smart Cursor Priority: Pickaxe → Axe",
+                    ),
+                    Act::Toggle(Toggle::SmartAxeFirst),
+                )
+                .scaled(0.73),
+                // Row 4 (`Main.cs:50286-50293`):
+                // `SmartBlocksEnabled ? Lang.menu[215] : [216]`.
+                Item::new(
+                    on_off(
+                        s.smart_blocks,
+                        "Smart Block Placement: To Cursor",
+                        "Smart Block Placement: Disabled",
+                    ),
+                    Act::Toggle(Toggle::SmartBlocks),
+                )
+                .scaled(0.73),
+                // Row 5 (`Main.cs:50294-50308`): the `LockOnHelper.UseMode`
+                // switch — FocusTarget [232], TargetClosest [233], ThreeDS [234]
+                // (`LockOnHelper.cs:13-17`). FocusTarget only shows if the
+                // stored value is 0, which `LoadSettings` rewrites to ThreeDS
+                // (`Main.cs:4502-4505`).
+                Item::new(
+                    match s.lock_on_priority {
+                        0 => "Lock On Priority: Focus Target",
+                        1 => "Lock On Priority: Target Closest",
+                        _ => "Lock On Priority: Clearest Line",
+                    },
+                    Act::Toggle(Toggle::LockOnPriority),
+                )
+                .scaled(0.73),
+                // Row 6 (`Main.cs:50309-50316`): Back opens 11.
+                Item::new("Back", Act::Nav(Page::Settings)).scaled(0.73).at(18.0),
+            ],
+            // menuMode 25 (`Main.cs:50318-50339`): `num5 = 3`,
+            // `array9[1] = Lang.menu[64]` with `array4[1] = 10` and
+            // `array[1] = true`, `array4[2] = 250`; the HSL sliders draw before
+            // the rows and Back opens 1125 (`:50333-50338`).
+            Page::CursorColor => vec![
+                Item::new("", Act::None),
+                Item::new("Cursor Color", Act::None).at(10.0).heading(),
+                Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
+            ],
+            // menuMode 252 (`Main.cs:50340-50361`): the `Lang.menu[217]` twin —
+            // same rows, full-range luminosity and the alpha bar.
+            Page::BorderColor => vec![
+                Item::new("", Act::None),
+                Item::new("Border Color", Act::None).at(10.0).heading(),
+                Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
+            ],
+            // The remaining P5 screens land with their own tasks (4-6); Task 1
             // registers the pages so `TR_PAGE=<menuMode>` resolves and each
             // screen can be screenshotted as its rows are filled in.
-            Page::Cursor
-            | Page::CursorColor
-            | Page::BorderColor
-            | Page::Resolution
+            Page::Resolution
             | Page::Effects
             | Page::Language
             | Page::LanguageInitial
@@ -557,20 +652,20 @@ impl Menu {
         match &item.act {
             Act::None => Action::None,
             Act::Nav(page) => {
-                let page = *page;
-                if page == Page::Host {
-                    self.open_host();
-                } else if page == Page::Join {
-                    self.open_join();
-                } else {
-                    self.page = page;
-                    self.selected = 0;
-                    self.fields.clear();
-                }
-                // A grab never follows a page change (vanilla resets `rightLock`
-                // in the `!Main.mouseLeft` guard of whichever screen runs next).
-                self.bar_grab = None;
-                self.error = None;
+                self.nav_to(*page);
+                Action::None
+            }
+            Act::PickColor(page) => {
+                // `Main.selColor = Main.mouseColor; ... Main.menuMode = 25;`
+                // (`Main.cs:50254-50258`) / `Main.selColor =
+                // Main.MouseBorderColor; ... Main.menuMode = 252;`
+                // (`:50263-50267`). The `ColorSlidersSet.SetHSL` calls there
+                // are gamepad chrome and are not ported.
+                self.sel_color = match page {
+                    Page::CursorColor => self.settings.mouse_color,
+                    _ => self.settings.mouse_border_color,
+                };
+                self.nav_to(*page);
                 Action::None
             }
             Act::Out(action) => match action {
@@ -593,6 +688,23 @@ impl Menu {
                 Action::None
             }
         }
+    }
+
+    /// Shared body of [`Act::Nav`] / [`Act::PickColor`].
+    fn nav_to(&mut self, page: Page) {
+        if page == Page::Host {
+            self.open_host();
+        } else if page == Page::Join {
+            self.open_join();
+        } else {
+            self.page = page;
+            self.selected = 0;
+            self.fields.clear();
+        }
+        // A grab never follows a page change (vanilla resets `rightLock`
+        // in the `!Main.mouseLeft` guard of whichever screen runs next).
+        self.bar_grab = None;
+        self.error = None;
     }
 
     /// `Main`/`ItemSlot` toggles. Every row changes the stored setting; the ones the
@@ -629,6 +741,25 @@ impl Menu {
                     .position(|z| *z > s.zoom + 0.001)
                     .unwrap_or(0);
                 s.zoom = steps[next];
+            }
+            // The menuMode 1125 rows (`Main.cs:50269-50308`).
+            // `Main.cSmartCursorModeIsToggleAndNotHold = !...` (`:50273-50275`).
+            Toggle::SmartCursorToggle => s.smart_cursor_toggle = !s.smart_cursor_toggle,
+            // `Player.SmartCursorSettings.SmartAxeAfterPickaxe = !...`
+            // (`Main.cs:50282-50284`).
+            Toggle::SmartAxeFirst => s.smart_axe_first = !s.smart_axe_first,
+            // `Player.SmartCursorSettings.SmartBlocksEnabled = !...`
+            // (`Main.cs:50287-50289`).
+            Toggle::SmartBlocks => s.smart_blocks = !s.smart_blocks,
+            // `LockOnHelper.CycleUseModes()` (`Main.cs:50301-50303`): the
+            // vanilla quirk — ThreeDS cycles back to TargetClosest, not
+            // FocusTarget (`LockOnHelper.cs:103-116`).
+            Toggle::LockOnPriority => {
+                s.lock_on_priority = match s.lock_on_priority {
+                    0 => 1, // FocusTarget -> TargetClosest
+                    1 => 2, // TargetClosest -> ThreeDS
+                    _ => 1, // ThreeDS -> TargetClosest
+                };
             }
         }
         if self.persist {
@@ -774,6 +905,17 @@ impl Menu {
     ) {
         self.step_animation(dt);
 
+        // `if (!flag) { this.grabColorSlider = 0; Main.hBar = -1f; Main.sBar
+        // = -1f; Main.lBar = -1f; Main.aBar = -1f; }` (`Main.cs:51104-51109`):
+        // the colour screens reset their slider state whenever DrawMenu runs
+        // anywhere else, so re-entering 25/252 reseeds from `selColor`. (The
+        // character-creation pickers 17-24 share the block and set the same
+        // `flag`; they land with P6.)
+        if !matches!(self.page, Page::CursorColor | Page::BorderColor) {
+            self.color_grab = 0;
+            self.hsl_bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+        }
+
         // `TextureAssets.Logo` at (screenWidth / 2, 100), centre origin.
         if let Some((uv, w, h)) = lookups.logo {
             let scale = self.logo_scale;
@@ -805,11 +947,15 @@ impl Menu {
 
         // menuMode 26 (`Main.cs:51478-51577`) / 28 (`Main.cs:51578-51653`): the
         // value bars draw before the rows, like `DrawMenu`'s `flag2`/`flag3`
-        // blocks, and drag in the same pass (Review Focus 1).
+        // blocks, and drag in the same pass (Review Focus 1). The colour
+        // screens' HSL block (`Main.cs:51102-51284`) sits even earlier in
+        // `DrawMenu` and does the same.
         if self.page == Page::Volume {
             self.draw_volume_chrome(r, lookups, font, screen);
         } else if self.page == Page::Parallax {
             self.draw_parallax_chrome(r, lookups, font, screen);
+        } else if matches!(self.page, Page::CursorColor | Page::BorderColor) {
+            self.draw_color_screen_chrome(r, lookups, screen);
         }
 
         self.boxes.clear();
@@ -1098,6 +1244,82 @@ impl Menu {
             let _ = self.settings.save();
         }
     }
+
+    /// The menuMode 25/252 HSL block (`Main.cs:51102-51284`), drawn before the
+    /// rows like the volume chrome. One frame runs in the original order: the
+    /// menuMode branch stores `selColor` into the page's colour
+    /// (`Main.cs:50324` / `:50346`), the `-1f` bars seed from
+    /// `rgbToHsl(selColor)` (`:51118-51131`), [`sliders::draw_color_sliders`]
+    /// draws and drags in one pass (Review Focus 1), and `selColor` recomposes
+    /// from the bars (`:51279-51284`) — so the stored colour trails the knobs by
+    /// one frame, like the original.
+    fn draw_color_screen_chrome(
+        &mut self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        screen: Vec2,
+    ) {
+        let alpha_bar = self.page == Page::BorderColor;
+        // The branch copy (`Main.cs:50324` / `:50346`).
+        if alpha_bar {
+            self.settings.mouse_border_color = self.sel_color;
+        } else {
+            self.settings.mouse_color = self.sel_color;
+        }
+        // The seeding (`Main.cs:51118-51131`).
+        seed_hsl_bars(self.sel_color, &mut self.hsl_bars);
+        // `num59 = 0.15f` (`Main.cs:51238-51239`), `0f` for 252 (`:51240-51241`).
+        let lum_floor = if alpha_bar { 0.0 } else { 0.15 };
+        let had_grab = self.color_grab != 0;
+        sliders::draw_color_sliders(
+            r,
+            lookups,
+            screen.x,
+            320.0, // `num9` (`Main.cs:50319` / `:50341`)
+            &mut self.hsl_bars,
+            lum_floor,
+            alpha_bar,
+            self.mouse,
+            self.mouse_down,
+            &mut self.color_grab,
+        );
+        // `Main.selColor = Main.hslToRgb(Main.hBar, Main.sBar, Main.lBar)`
+        // (`Main.cs:51279-51284`).
+        self.sel_color = recompose_sel_color(alpha_bar, &self.hsl_bars);
+        // One config write per drag, on release — the Task 2 write-per-edit
+        // rule, not per frame.
+        if had_grab && !self.mouse_down && self.persist {
+            let _ = self.settings.save();
+        }
+    }
+}
+
+/// The `-1f` seeding of the HSL bars (`Main.cs:51118-51131`): on the first
+/// slider frame the four bars take `rgbToHsl(selColor)` — the `Vector3` fields
+/// stored into the `float` bars — and `selColor.A / 255f`. Any bar still at
+/// `-1f` reseeds all four; otherwise the stored bars win (`:51133-51137`).
+fn seed_hsl_bars(sel_color: [u8; 4], bars: &mut sliders::HslBars) {
+    if bars.h == -1.0 || bars.s == -1.0 || bars.l == -1.0 || bars.a == -1.0 {
+        let (h, s, l) = color::rgb_to_hsl(sel_color);
+        *bars = sliders::HslBars {
+            h: h as f32,
+            s: s as f32,
+            l: l as f32,
+            // `float num57 = (float)(int)Main.selColor.A / 255f` (`Main.cs:51122`).
+            a: sel_color[3] as f32 / 255.0,
+        };
+    }
+}
+
+/// `Main.selColor = Main.hslToRgb(Main.hBar, Main.sBar, Main.lBar)`
+/// (`Main.cs:51279-51282`); the menuMode 252 twin also stores the alpha bar,
+/// `selColor.A = (byte)(Main.aBar * 255f)` (`:51282-51284` — truncation).
+fn recompose_sel_color(alpha_bar: bool, bars: &sliders::HslBars) -> [u8; 4] {
+    let mut c = color::hsl_to_rgb(bars.h as f64, bars.s as f64, bars.l as f64, 255);
+    if alpha_bar {
+        c[3] = (bars.a * 255.0f32) as u8;
+    }
+    c
 }
 
 /// XNA `Rectangle.Contains(Point)` (`IngameOptions.cs:1557`): inclusive
@@ -1374,7 +1596,7 @@ mod tests {
     #[test]
     fn unported_screens_show_a_notice_instead_of_navigating() {
         let mut m = menu(Page::Settings);
-        m.activate(4); // Cursor
+        m.activate(5); // Controls
         assert_eq!(m.page, Page::Settings);
         assert!(m.hint.is_some());
     }
@@ -1441,9 +1663,6 @@ mod tests {
         assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
 
         for page in [
-            Page::Cursor,
-            Page::CursorColor,
-            Page::BorderColor,
             Page::Resolution,
             Page::Effects,
             Page::Language,
@@ -1631,5 +1850,229 @@ mod tests {
         m.mouse = Vec2::new(100.0, 100.0);
         m.drag_parallax_screen(1600.0);
         assert_eq!(m.bar_grab, None);
+    }
+
+    #[test]
+    fn cursor_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50242-50317`: `num5 = 7`, `array4[6] = 18`, every `array7`
+        // 0.73. The defaults column: a fresh `Menu` shows Toggle [121] (the
+        // `:67178` default) and Disabled [216] (the `Player.cs:331` default).
+        // The lock-on row reads "Clearest Line" [234], not the plan's Focus
+        // Target: `LoadSettings` clamps the keyless -1 to 0 and remaps
+        // FocusTarget to ThreeDS (`Main.cs:4496-4505`), so a fresh boot never
+        // sits on FocusTarget.
+        let items = menu(Page::Cursor).items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Cursor Color",
+                "Border Color",
+                "Smart Cursor Mode: Toggle",
+                "Smart Cursor Priority: Pickaxe → Axe",
+                "Smart Block Placement: Disabled",
+                "Lock On Priority: Clearest Line",
+                "Back",
+            ]
+        );
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 18.0]);
+        assert!(items.iter().all(|i| i.scale == 0.73));
+        assert!(!items[0].header && !items[6].header);
+        // The toggled twins (`Main.cs:50271-50293`): `? 122 : 121` /
+        // `? 214 : 213` / `? 215 : 216`.
+        let mut m = menu(Page::Cursor);
+        m.settings.smart_cursor_toggle = false;
+        m.settings.smart_axe_first = true;
+        m.settings.smart_blocks = true;
+        m.settings.lock_on_priority = 1;
+        let labels: Vec<String> = m.items().iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels[2], "Smart Cursor Mode: Hold");
+        assert_eq!(labels[3], "Smart Cursor Priority: Axe → Pickaxe");
+        assert_eq!(labels[4], "Smart Block Placement: To Cursor");
+        assert_eq!(labels[5], "Lock On Priority: Target Closest");
+    }
+
+    #[test]
+    fn colour_screens_match_the_vanilla_rows() {
+        // `Main.cs:50318-50339` / `:50340-50361`: `num5 = 3`,
+        // `array9 = ["", Lang.menu[64]/[217], Lang.menu[5]]`,
+        // `array4 = [0, 10, 250]`, `array[1] = true`; Back opens 1125.
+        for (page, header) in
+            [(Page::CursorColor, "Cursor Color"), (Page::BorderColor, "Border Color")]
+        {
+            let items = menu(page).items();
+            let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+            assert_eq!(labels, ["", header, "Back"]);
+            let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+            assert_eq!(ys, [0.0, 10.0, 250.0]);
+            assert!(items[1].header, "array[1] = true");
+            assert!(!items[0].header && !items[2].header);
+        }
+        let mut m = menu(Page::CursorColor);
+        m.activate(2);
+        assert_eq!(m.page, Page::Cursor);
+        let mut m = menu(Page::BorderColor);
+        m.activate(2);
+        assert_eq!(m.page, Page::Cursor);
+    }
+
+    #[test]
+    fn colour_rows_seed_sel_color_and_navigate() {
+        // Rows 0-1 (`Main.cs:50253-50268`): `selColor = mouseColor` → 25,
+        // `selColor = MouseBorderColor` → 252; the Settings "Cursor" row opens
+        // 1125.
+        let mut m = menu(Page::Cursor);
+        m.settings.mouse_color = [10, 20, 30, 255];
+        m.settings.mouse_border_color = [1, 2, 3, 4];
+        m.activate(0);
+        assert_eq!(m.page, Page::CursorColor);
+        assert_eq!(m.sel_color, [10, 20, 30, 255]);
+        let mut m = menu(Page::Cursor);
+        m.settings.mouse_color = [10, 20, 30, 255];
+        m.settings.mouse_border_color = [1, 2, 3, 4];
+        m.activate(1);
+        assert_eq!(m.page, Page::BorderColor);
+        assert_eq!(m.sel_color, [1, 2, 3, 4]);
+        let mut m = menu(Page::Settings);
+        m.activate(4);
+        assert_eq!(m.page, Page::Cursor);
+        assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn lock_on_cycles_to_target_closest_not_focus_target() {
+        // `LockOnHelper.CycleUseModes` (`LockOnHelper.cs:103-116`): FocusTarget
+        // → TargetClosest → ThreeDS → TargetClosest — the vanilla quirk pins
+        // the third hop to 1, not 0.
+        let mut m = menu(Page::Cursor);
+        m.settings.lock_on_priority = 0;
+        m.activate(5);
+        assert_eq!(m.settings.lock_on_priority, 1);
+        m.activate(5);
+        assert_eq!(m.settings.lock_on_priority, 2);
+        m.activate(5);
+        assert_eq!(
+            m.settings.lock_on_priority, 1,
+            "ThreeDS cycles to TargetClosest, not FocusTarget"
+        );
+        assert_eq!(m.items()[5].label, "Lock On Priority: Target Closest");
+    }
+
+    #[test]
+    fn smart_cursor_rows_flip_their_settings() {
+        // `Main.cs:50273-50275` / `:50282-50284` / `:50287-50289`.
+        let mut m = menu(Page::Cursor);
+        m.activate(2);
+        assert!(!m.settings.smart_cursor_toggle);
+        assert_eq!(m.items()[2].label, "Smart Cursor Mode: Hold");
+        m.activate(3);
+        assert!(m.settings.smart_axe_first);
+        m.activate(4);
+        assert!(m.settings.smart_blocks);
+    }
+
+    #[test]
+    fn hsl_bars_seed_from_sel_color() {
+        // `Main.cs:51118-51131`: the `-1f` bars take `rgbToHsl(selColor)` and
+        // `selColor.A / 255f` on the first slider frame — asserted through
+        // `color.rs`'s own tested `rgb_to_hsl`, not literals.
+        let mut bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+        seed_hsl_bars([255, 50, 95, 255], &mut bars);
+        let (h, s, l) = color::rgb_to_hsl([255, 50, 95, 255]);
+        assert_eq!(bars.h, h as f32);
+        assert_eq!(bars.s, s as f32);
+        assert_eq!(bars.l, l as f32);
+        // Hand-computed anchors for (255, 50, 95): h = 1185/1230 (not the
+        // plan's 0.9556), s = 1, l = 305/510.
+        assert!((bars.h - 1185.0 / 1230.0).abs() < 1e-6);
+        assert!((bars.s - 1.0).abs() < 1e-6);
+        assert!((bars.l - 305.0 / 510.0).abs() < 1e-6);
+        assert_eq!(bars.a, 1.0);
+        // The HSL round trip is byte-exact for the default cursor colour, so
+        // the entry-frame recompose leaves it alone.
+        assert_eq!(color::hsl_to_rgb(h, s, l, 255), [255, 50, 95, 255]);
+        // A border colour seeds the alpha bar from its stored byte
+        // (`(float)(int)selColor.A / 255f`).
+        let mut bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+        seed_hsl_bars([64, 64, 64, 64], &mut bars);
+        assert!((bars.a - 64.0 / 255.0).abs() < 1e-6);
+        assert_eq!(bars.h, 0.0, "grey has no hue");
+        // Already-seeded bars stay put (`Main.cs:51133-51137` else branch).
+        let mut bars = sliders::HslBars { h: 0.25, s: 0.5, l: 0.75, a: 0.5 };
+        seed_hsl_bars([255, 50, 95, 255], &mut bars);
+        assert_eq!(bars, sliders::HslBars { h: 0.25, s: 0.5, l: 0.75, a: 0.5 });
+    }
+
+    #[test]
+    fn menu_25_floors_luminosity_and_252_does_not() {
+        // `Main.cs:51238-51241` (`num59 = 0.15`, `0f` for 252) with the
+        // `:51226-51232` store: a grab from inside the row clamps to 0 left of
+        // the bar, then re-floors — 0.15 on 25, 0.0 on 252.
+        for (alpha_bar, floor) in [(false, 0.15f32), (true, 0.0f32)] {
+            let mut bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+            seed_hsl_bars([64, 64, 64, 64], &mut bars);
+            let mut grab = 0u8;
+            let left = sliders::color_slider_left(1600.0);
+            let tops = sliders::color_slider_tops(320.0);
+            // Press mid-row to take the sticky grab (`Main.cs:51222-51224`).
+            let mouse = Vec2::new(left + 89.0, tops[2] + 8.0);
+            sliders::color_sliders_update(
+                1600.0, 320.0, &mut bars, floor, alpha_bar, mouse, true, &mut grab,
+            );
+            assert_eq!(grab, 3);
+            // Drag far left while held: the sticky grab clamps to 0 and the
+            // floor applies.
+            let mouse = Vec2::new(left - 20.0, tops[2] + 8.0);
+            sliders::color_sliders_update(
+                1600.0, 320.0, &mut bars, floor, alpha_bar, mouse, true, &mut grab,
+            );
+            assert_eq!(bars.l, floor, "lum floor {floor}");
+        }
+    }
+
+    #[test]
+    fn menu_252_stores_alpha_and_25_leaves_it_255() {
+        // `Main.cs:51279-51284`: `selColor = hslToRgb(h, s, l)`, then — only
+        // when the alpha bar shows (252) — `selColor.A = (byte)(aBar * 255f)`.
+        let mut bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+        seed_hsl_bars([64, 64, 64, 64], &mut bars);
+        let mut grab = 0u8;
+        let left = sliders::color_slider_left(1600.0);
+        let tops = sliders::color_slider_tops(320.0);
+        // Drag the alpha row to t = 0.5 (`Main.cs:51264-51269`).
+        let mouse = Vec2::new(left + 89.0, tops[3] + 8.0);
+        sliders::color_sliders_update(1600.0, 320.0, &mut bars, 0.0, true, mouse, true, &mut grab);
+        assert_eq!(grab, 4);
+        assert!((bars.a - 0.5).abs() < 1e-6);
+        // 252 recomposes with the dragged alpha: (byte)(0.5f * 255f) = 127.
+        assert_eq!(recompose_sel_color(true, &bars)[3], 127);
+        // 25 always recomposes opaque (the 3-arg `hslToRgb` defaults `a` to 255).
+        assert_eq!(recompose_sel_color(false, &bars)[3], 255);
+    }
+
+    #[test]
+    fn one_frame_of_the_colour_screens_recomposes_byte_exact() {
+        // The full state sequence of a no-input frame: seed, update with the
+        // pointer outside every hit box, recompose — the stored colours survive
+        // the HSL round trip byte-exactly, so opening a colour screen and
+        // leaving it never drifts the settings.
+        for (sel, alpha_bar) in [([255u8, 50, 95, 255], false), ([64, 64, 64, 64], true)] {
+            let mut bars = sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 };
+            seed_hsl_bars(sel, &mut bars);
+            let mut grab = 0u8;
+            sliders::color_sliders_update(
+                1600.0,
+                320.0,
+                &mut bars,
+                if alpha_bar { 0.0 } else { 0.15 },
+                alpha_bar,
+                Vec2::new(10.0, 10.0),
+                true,
+                &mut grab,
+            );
+            assert_eq!(grab, 0, "no hit box at (10, 10)");
+            assert_eq!(recompose_sel_color(alpha_bar, &bars), sel);
+        }
     }
 }
