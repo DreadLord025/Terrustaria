@@ -3062,6 +3062,15 @@ impl App {
                 if self.mouse_text_color <= 190 {
                     self.mouse_text_color_dir = 1;
                 }
+                // `Main.mouseColor = Main.selColor` runs every frame the colour
+                // screen is open (`Main.cs:50324`), and `CursorColor`
+                // (`Main.cs:52490`) reads that static, so the tint follows the
+                // bars live during a drag and keeps the stored colour once the
+                // menu closes. The menu owns the live copy while it is open.
+                self.cursor.mouse_color = match menu {
+                    Some(m) => m.settings.mouse_color,
+                    None => settings.mouse_color,
+                };
                 // `Main.CursorColor()` (`Main.cs:52477`): the cursor fade pulse.
                 self.cursor.update();
                 // `Main.DoUpdate_AnimateTileGlows`: the demon torch colour ramp.
