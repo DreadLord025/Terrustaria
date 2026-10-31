@@ -254,6 +254,8 @@ pub fn list_players(
     fake_count: usize,
 ) -> Vec<PlayerEntry> {
     let mut out = Vec::new();
+    // The fakes rebuild on every re-list: a Yes-deleted one returns in memory
+    // until `TR_FAKE_CHARS` clears (the erase is in-memory only).
     for i in 1..=fake_count {
         out.push(PlayerEntry {
             name: format!("Player {i}"),

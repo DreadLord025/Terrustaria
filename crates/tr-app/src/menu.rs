@@ -272,11 +272,13 @@ impl Page {
             // menuMode 889 (`Main.cs:48726-48809`).
             Page::ServerSettings => Layout { y0: 200.0, row: 60.0, scale: 1.0 },
             // menuModes 5 / 9 / 40 (`Main.cs:49420-49439`, `:49674-49692`,
-            // `:49440-49467`) keep the vanilla `num2`/`num4` defaults of
-            // 220/52 (`:48419-48421`).
+            // `:49440-49467`) do not override `num2`/`num4`, so the vanilla
+            // defaults of 250/80 hold (`:48419 = int num2 = 250`, `:48421 =
+            // int num4 = 80`) — rows at y 250/330/410. (220/52 is mode 0's
+            // override, `:48911-48913`.)
             Page::ConfirmDeletePlayer
             | Page::ConfirmDeleteWorld
-            | Page::ConfirmDiscard => Layout { y0: 220.0, row: 52.0, scale: 1.0 },
+            | Page::ConfirmDiscard => Layout { y0: 250.0, row: 80.0, scale: 1.0 },
             // menuMode 3000 (`Main.cs:49693-49698`): `num2 = 500`,
             // `array7[0] = 0.9f`.
             Page::Credits => Layout { y0: 500.0, row: 52.0, scale: 0.9 },
@@ -1421,7 +1423,7 @@ impl Menu {
             // " " + Main.PlayerList[Main.selectedPlayer].Player.name + "?"`
             // with `array[0] = true` (`:49421-49422`), rows 1-2
             // `Lang.menu[104]` "Yes" (`:49423`) and `Lang.menu[105]` "No"
-            // (`:49424`), `num5 = 3` — the vanilla 220/52 defaults.
+            // (`:49424`), `num5 = 3` — the vanilla 250/80 defaults.
             Page::ConfirmDeletePlayer => vec![
                 Item::new(
                     format!("Delete {}?", self.confirm_name.as_deref().unwrap_or_default()),
@@ -4055,13 +4057,13 @@ mod tests {
 
     #[test]
     fn confirm_pages_use_the_vanilla_default_row_metrics() {
-        // Modes 5/9/40 keep the `num2`/`num4` defaults of 220/52
-        // (`Main.cs:48419-48421`; `:49420-49439`, `:49674-49692`,
-        // `:49440-49467`); mode 3000 sits at `num2 = 500` with
-        // `array7[0] = 0.9f` (`:49694-49697`).
+        // Modes 5/9/40 do not override `num2`/`num4`, so the vanilla defaults
+        // of 250/80 hold (`Main.cs:48419 = int num2 = 250`, `:48421 = int
+        // num4 = 80`; `:49420-49439`, `:49674-49692`, `:49440-49467`); mode
+        // 3000 sits at `num2 = 500` with `array7[0] = 0.9f` (`:49694-49697`).
         for page in [Page::ConfirmDeletePlayer, Page::ConfirmDeleteWorld, Page::ConfirmDiscard] {
             let l = page.layout();
-            assert_eq!((l.y0, l.row, l.scale), (220.0, 52.0, 1.0), "{page:?}");
+            assert_eq!((l.y0, l.row, l.scale), (250.0, 80.0, 1.0), "{page:?}");
         }
         let credits = Page::Credits.layout();
         assert_eq!((credits.y0, credits.row, credits.scale), (500.0, 52.0, 0.9));
@@ -4072,7 +4074,7 @@ mod tests {
         // `Main.cs:49420-49439` (mode 5) and `:49674-49692` (mode 9): the
         // `Lang.menu[46] + " " + name + "?"` header (`array[0] = true`),
         // rows 1-2 `Lang.menu[104]`/`[105]`, `num5 = 3` — three rows over the
-        // 220/52 defaults.
+        // 250/80 defaults.
         let m = Menu::open_confirm_delete_player("Bob".into());
         assert_eq!(m.page, Page::ConfirmDeletePlayer);
         let items = m.items();
@@ -4081,10 +4083,10 @@ mod tests {
         assert!(items[0].header, "array[0] = true");
         assert!(!items[1].header && !items[2].header);
         assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0));
-        // Draw y = `num2 + num4 * i` (`Main.cs:51769`): 220, 272, 324.
+        // Draw y = `num2 + num4 * i` (`Main.cs:51769`): 250, 330, 410.
         let layout = Page::ConfirmDeletePlayer.layout();
         let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
-        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (220.0, 272.0, 324.0));
+        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (250.0, 330.0, 410.0));
         // The world twin names the world (`:49675`).
         let m = Menu::open_confirm_delete_world("World 1".into());
         assert_eq!(m.page, Page::ConfirmDeleteWorld);

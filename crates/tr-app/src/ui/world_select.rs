@@ -31,10 +31,9 @@ use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
 
 use super::char_select::{
-    attach_scrollbar, button_label, detached_list_width, list_content_height, resolved_layout,
-    scrollbar_attaches, Layout, BACK, BUTTON_DELETE, BUTTON_FAVORITE, BUTTON_PLAY, BUTTON_RENAME,
-    CARD_BG_REST, CARD_BORDER_HOVER, CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH,
-    CONTAINER_PANEL_BG, GRAY, NEW,
+    button_label, list_content_height, resolved_layout, scrollbar_attaches, Layout, BACK,
+    BUTTON_DELETE, BUTTON_FAVORITE, BUTTON_PLAY, BUTTON_RENAME, CARD_BG_REST, CARD_BORDER_HOVER,
+    CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH, CONTAINER_PANEL_BG, GRAY, NEW,
 };
 use super::color;
 use super::panel;
@@ -162,6 +161,8 @@ pub fn difficulty_text(game_mode: u8) -> (&'static str, [u8; 4]) {
 /// measures "Select World" instead of "Select Player" (`UIWorldSelect.cs:62`).
 /// `list_w` carries the `Recalculate` branch (`:90-108`): 626 detached /
 /// 601 attached, [`attach_scrollbar`].
+#[allow(dead_code)] // pins tested only; consumed by Task 8 (the App routes
+// the world clicks through `char_select::resolved_layout`, the twin body).
 pub fn layout(screen: Vec2, header_w: f32, list_w: f32) -> Layout {
     super::char_select::layout(screen, header_w, list_w)
 }
@@ -328,6 +329,8 @@ pub fn card_layout(row_rect: [f32; 4], index: usize, has_been_played: bool) -> C
 /// that squeezes the completion overlay's *element box* to the 60x58 icon
 /// inner, while `UIImage.DrawSelf` still draws the texture at its own size
 /// from that box's position.
+#[allow(dead_code)] // pins tested only; consumed by Task 8 (the overlays
+// stay unconditionally off until the world creator's data lands).
 pub fn overlay_rects(icon: [f32; 4]) -> [[f32; 4]; 3] {
     // The element box: 64x70 clamped to the 60x58 icon inner by the Fill
     // maxima. Resolved with the pre-clamped size so the alignment matches the
@@ -935,6 +938,9 @@ pub fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Test-only pins: the attach branch's two knobs (the draw routes through
+    // `resolved_layout`, which folds them in).
+    use super::super::char_select::{attach_scrollbar, detached_list_width};
 
     // Expected values hand-derived from the C# (`UIWorldSelect.cs:38-186`,
     // `UIWorldListItem.cs:59-532`, `AWorldListItem.cs:43-200`,

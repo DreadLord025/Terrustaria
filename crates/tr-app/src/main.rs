@@ -927,7 +927,11 @@ enum FlowClick {
     /// `GoBackClick`: `menuMode = 0` (`UICharacterSelect.cs:116-120`).
     CharBack,
     /// `NewCharacterClick` (`:108-114`) — opens the character creator
-    /// (Task 7); a documented no-op until its variant lands.
+    /// (Task 7); a documented no-op until its variant lands. The row stays
+    /// constructed only by the tests: the App's `New` click shows the
+    /// not-ported notice instead.
+    #[allow(dead_code)] // stub until Task 7 (the table row + the exhaustive
+    // invariant test pin it; the click site is the notice).
     CharNew,
     /// `PlayGame` (`:256-261`) -> `SelectPlayer`'s single-player tail
     /// `menuMode = 6` (`Main.cs:66245-66249`) -> 888 world select
@@ -2957,6 +2961,12 @@ impl App {
                     let (front, backup, page) =
                         next_flow_state(Some(front), self.front_backup, None, click);
                     self.front_backup = backup;
+                    // Review Focus 1: the table result is the App's state —
+                    // `front` is written on every hop, so the page arms below
+                    // (`menuMode = 5` / `= 0`) clear the 888 side
+                    // (`Main.cs:51066-51069`'s else branch) and the legacy page
+                    // goes live instead of hiding under the front screen.
+                    self.front = front;
                     match page {
                         // Mode 5 opens with the parked name/index
                         // (`Main.selectedPlayer`, `UICharacterListItem.cs:
@@ -3053,6 +3063,12 @@ impl App {
                     let (front, backup, page) =
                         next_flow_state(Some(front), self.front_backup, None, click);
                     self.front_backup = backup;
+                    // Review Focus 1: the table result is the App's state —
+                    // `front` is written on every hop, so the page arms below
+                    // (`menuMode = 9` / `= 1`) clear the 888 side
+                    // (`Main.cs:51066-51069`'s else branch) and the legacy page
+                    // goes live instead of hiding under the front screen.
+                    self.front = front;
                     match page {
                         // Mode 9 opens with the parked name/index
                         // (`Main.selectedWorld`, `UIWorldListItem.cs:350-353`).
@@ -4330,6 +4346,9 @@ struct BgTex {
     h: f32,
 }
 
+/// Default-derivable: every sheet is an `Option` guard (`None` draws nothing),
+/// which is also what the headless flow tests construct.
+#[derive(Default)]
 struct SkyAssets {
     /// Forest far/near mountain layers (`Background_7`/`Background_8`).
     far: Option<BgTex>,
@@ -4381,6 +4400,7 @@ struct SkyAssets {
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
 /// legs, pants, shoes, hair. Frames are 40x56 on the 40-px-wide strips.
+#[derive(Default)]
 struct PlayerAssets {
     head: Option<BgTex>,
     eye_whites: Option<BgTex>,
@@ -4468,6 +4488,9 @@ fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
     }
 }
 
+/// Default-derivable: every sheet is an `Option` guard (the headless flow
+/// tests construct the empty set).
+#[derive(Default)]
 struct NpcAssets {
     slime: Option<BgTex>,
     eye: Option<BgTex>,
@@ -8768,5 +8791,232 @@ mod front_flow_tests {
         assert_eq!(tr_ui_preset("discard"), Some(TrUiPreset::Discard));
         assert_eq!(tr_ui_preset("CHARSEL"), Some(TrUiPreset::CharSelect));
         assert_eq!(tr_ui_preset("nonsense"), None);
+    }
+
+    // --- App-level click tests (Review Focus 1's regression) -----------------
+    //
+    // `next_flow_state` is pure — the bug these tests pin was in the
+    // *application* of its result: `handle_front_click` set `menu` but never
+    // the table's `front`, so the opened page lived under the still-live
+    // screen.
+
+    /// One list entry for the flow tests: playable, optionally deletable (the
+    /// `DeleteButtonClick` gate, `UICharacterListItem.cs:242-254`).
+    fn entry(name: &str, deletable: bool) -> ui::save_list::PlayerEntry {
+        ui::save_list::PlayerEntry {
+            name: name.into(),
+            difficulty: 0,
+            life_max: 100,
+            mana_max: 20,
+            is_favorite: false,
+            playable: true,
+            deletable,
+        }
+    }
+
+    /// A headless App for the flow tests: no window/GPU/renderer, the audio
+    /// pair without a content dir, an 8x8 world — everything the flow state
+    /// does not read stays at its cheap default. `screen_size()` falls back
+    /// to the deterministic 1280x720, so the tests aim the pointer through
+    /// the same layout the click handler builds.
+    fn flow_app(
+        front: Option<FrontScreen>,
+        players: Vec<ui::save_list::PlayerEntry>,
+        worlds: Vec<ui::save_list::WorldEntry>,
+    ) -> App {
+        let world = World::new("flow".into(), 8, 8);
+        let liquids = LiquidSystem::new(&world);
+        App {
+            window: None,
+            gpu: None,
+            renderer: None,
+            atlas: None,
+            world,
+            lookups: assets::Lookups::default(),
+            clouds: Vec::new(),
+            sky: SkyAssets::default(),
+            bg_style: 0,
+            bg_delay: 0,
+            bg_instant: 0,
+            bg_alpha_front: [0.0; 16],
+            bg_alpha_far: [0.0; 16],
+            stars: Vec::new(),
+            player_assets: PlayerAssets::default(),
+            player: None,
+            follow_player: false,
+            player_accum: 0.0,
+            npc_accum: 0.0,
+            npcs: Vec::new(),
+            npc_assets: NpcAssets::default(),
+            npc_timer: 0.0,
+            npc_rng: 0,
+            attack_cd: 0.0,
+            inventory: std::array::from_fn(|_| EMPTY_SLOT),
+            equip: inv::EquipSlots::empty(),
+            equip_page: 0,
+            selected: 0,
+            hotbar_scales: [0.75; HOTBAR],
+            inventory_open: false,
+            crafting_open: false,
+            menu: None,
+            front,
+            front_backup: None,
+            players,
+            worlds,
+            front_hint: None,
+            settings: settings::Settings::default(),
+            player_name: "flow".into(),
+            net: NetRole::Off,
+            remote_players: HashMap::new(),
+            local_id: 0,
+            net_timer: 0.0,
+            join_target: None,
+            map: None,
+            map_grab: None,
+            minimap_hover: None,
+            map_style: 1,
+            audio: audio::Audio::new(None),
+            music: audio::MusicSystem::new(None),
+            last_hp: 100,
+            autosave: 0.0,
+            mouse_item: EMPTY_SLOT,
+            ui_left_press: false,
+            ui_right_press: false,
+            mouse_pos: Vec2::ZERO,
+            cursor: ui::cursor::CursorState::default(),
+            os_cursor_hidden: None,
+            mine_down: false,
+            place_down: false,
+            mine_target: None,
+            mine_timer: 0.0,
+            place_cooldown: 0.0,
+            edit_target: None,
+            world_path: PathBuf::new(),
+            dev_break: None,
+            dev_place: Vec::new(),
+            camera: Vec2::ZERO,
+            zoom: 1.0,
+            zoom_pinned: false,
+            debug: false,
+            keys: HashSet::new(),
+            mouse_down: false,
+            last_mouse: Vec2::ZERO,
+            last_frame: Instant::now(),
+            frame_history: VecDeque::new(),
+            last_stats: tr_render::sprite::RenderStats::default(),
+            bench_frames: None,
+            bench_samples: Vec::new(),
+            frame_count: 0,
+            shot_path: None,
+            shot_at: 0,
+            atlas_stats: (0, 0, 0, 0),
+            light: LightMap::new(),
+            scratch: DrawScratch::default(),
+            tile_stats: TileDrawStats::default(),
+            stats_on: false,
+            stats_acc: StatsAcc::default(),
+            debug_cache: DebugCache::default(),
+            light_mode: LightMode::Color,
+            mouse_text_color: 225,
+            mouse_text_color_dir: 1,
+            demon_torch: 1.0,
+            demon_torch_dir: 1.0,
+            disco: [255, 0, 0],
+            disco_style: 0,
+            light_rng_seed: 1,
+            anim_time: 0.0,
+            has_liquids: false,
+            liquids,
+            liquid_accum: 0.0,
+            liquid_tick: 0,
+            waterfall: tr_core::waterfall::WaterfallManager::new(),
+            waterfall_accum: 0.0,
+            rain: Rain::new(1),
+            items: Vec::new(),
+            item_rng: 0,
+            item_accum: 0.0,
+            swing: 0.0,
+            coins: 0,
+            projectiles: Vec::new(),
+            projectile_accum: 0.0,
+            dev_throw: false,
+            world_key: None,
+            hell_black_box_bottom: 0.0,
+        }
+    }
+
+    #[test]
+    fn back_click_lands_the_legacy_main_page_with_the_front_cleared() {
+        // The Back row's `menuMode = 0` hop (`UICharacterSelect.cs:116-120`
+        // through the table) must clear the 888 side (`Main.cs:51066-51069`'s
+        // else branch): the port used to leave `front` live, so the Main page
+        // was invisible under the screen and the invariant broke.
+        let mut app =
+            flow_app(Some(FrontScreen::CharSelect), vec![entry("flow", false)], vec![]);
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.players.len(),
+        );
+        app.mouse_pos = Vec2::new(l.back[0] + l.back[2] * 0.5, l.back[1] + l.back[3] * 0.5);
+        app.handle_front_click();
+        // Review Focus 1's invariant: exactly one side is live, and it is the
+        // legacy page.
+        assert!(app.front.is_none(), "the 888 state clears");
+        let m = app.menu.as_ref().expect("the legacy page opens");
+        assert_eq!(m.page, P::Main);
+    }
+
+    #[test]
+    fn delete_click_opens_the_mode_5_confirm_with_the_front_cleared() {
+        // `DeleteButtonClick` (`UICharacterListItem.cs:242-254`) -> `menuMode
+        // = 5`: the confirm opens alone, parking the target name/index
+        // (`Main.selectedPlayer`).
+        let mut app = flow_app(Some(FrontScreen::CharSelect), vec![entry("Bob", true)], vec![]);
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.players.len(),
+        );
+        let delete = ui::char_select::card_layout(l.list, 0).delete;
+        app.mouse_pos = Vec2::new(delete[0] + delete[2] * 0.5, delete[1] + delete[3] * 0.5);
+        app.handle_front_click();
+        assert!(app.front.is_none(), "mode 5 clears the 888 state");
+        let m = app.menu.as_ref().expect("the confirm opens");
+        assert_eq!(m.page, P::ConfirmDeletePlayer);
+        assert_eq!(m.confirm_name.as_deref(), Some("Bob"));
+        assert_eq!(m.confirm_index, 0);
+    }
+
+    #[test]
+    fn world_delete_click_opens_the_mode_9_confirm_with_the_front_cleared() {
+        // `DeleteButtonClick` (`UIWorldListItem.cs:346-358`) -> `menuMode = 9`
+        // — the world twin of the mode-5 hop.
+        let mut app = flow_app(
+            Some(FrontScreen::WorldSelect),
+            vec![],
+            vec![ui::save_list::WorldEntry {
+                name: "World 1".into(),
+                difficulty: 0,
+                size_id: 0,
+                is_favorite: false,
+                valid: true,
+                has_been_played: false,
+                path: Some(PathBuf::from("World 1.trwld")),
+            }],
+        );
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.worlds.len(),
+        );
+        let delete = ui::world_select::card_layout(l.list, 0, false).delete;
+        app.mouse_pos = Vec2::new(delete[0] + delete[2] * 0.5, delete[1] + delete[3] * 0.5);
+        app.handle_front_click();
+        assert!(app.front.is_none(), "mode 9 clears the 888 state");
+        let m = app.menu.as_ref().expect("the confirm opens");
+        assert_eq!(m.page, P::ConfirmDeleteWorld);
+        assert_eq!(m.confirm_name.as_deref(), Some("World 1"));
+        assert_eq!(m.confirm_index, 0);
     }
 }
