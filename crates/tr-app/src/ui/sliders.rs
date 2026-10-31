@@ -27,6 +27,10 @@ pub const BLIP_H: f32 = 8.0;
 pub const KNOB_W: f32 = 11.0;
 pub const KNOB_H: f32 = 25.0;
 /// `IngameOptions.cs:1549` (`int num = 167`) and `Main.cs:51121` (`num54 = 167`).
+/// The consumers loop it differently: the value bar runs
+/// `for (num4 = 0f; num4 < (float)num; num++)` (`IngameOptions.cs:1552`) — 167
+/// blips — while the HSL rows run `num <= num54` (`Main.cs:51169`, `:51206`,
+/// `:51243`) — 168 blips.
 pub const BLIPS: i32 = 167;
 /// `Main.cs:51146` — the knob rides `(Hue.Width() - 2) * bar` on the HSL sliders.
 pub const HUE_TRAVEL: f32 = 176.0; // Hue.Width() - 2
@@ -54,12 +58,20 @@ pub fn value_bar_rects(right_x: f32, center_y: f32) -> ([f32; 4], [f32; 4]) {
     (rect, hit)
 }
 
-/// `IngameOptions.cs:1567-1579`: `(mouseX - rect.X) / rect.Width` over the bar
-/// width; the mouse left of the bar reads 0, right of it 1. (The plan pins the
-/// *uninflated* `rect` here; the C# divides by the already-`Inflate`d rectangle —
-/// same clamps, slightly different slope off centre.)
+/// `IngameOptions.cs:1570-1579` over the *post-Inflate* rectangle: `:1556`
+/// mutates the bar rect with `Inflate((int)(-5f*scale), 0)` (X + 5, W - 10)
+/// before the read, so the caller passes the drawn (uninflated) `rect` and this
+/// divides over the hit geometry — `(mouseX - rect.X) / rect.Width` while the
+/// mouse is inside it (both edges inclusive per `Main.mouseX >= rectangle.X &&
+/// Main.mouseX <= rectangle.X + rectangle.Width`), 0 left of it, 1 right of it.
 pub fn value_bar_value(rect: [f32; 4], mouse_x: f32) -> f32 {
-    ((mouse_x - rect[0]) / rect[2]).clamp(0.0, 1.0)
+    // `rectangle.Inflate((int)(-5f * scale), 0)` (`IngameOptions.cs:1556`).
+    let x = rect[0] + 5.0;
+    let w = rect[2] - 10.0;
+    // The clamp reproduces the C# branch chain exactly: inside [x, x + w] the
+    // ratio already lies in [0, 1]; left of x it is negative (C# returns 0f),
+    // right of x + w it exceeds 1 (C# returns 1f).
+    ((mouse_x - x) / w).clamp(0.0, 1.0)
 }
 
 /// Knob centre (`IngameOptions.cs:1566`, drawn with the sheet's centre as
@@ -68,11 +80,12 @@ pub fn value_bar_knob(rect: [f32; 4], value: f32) -> [f32; 2] {
     [rect[0] + 5.0 + BLIPS as f32 * value, rect[1] + 8.0]
 }
 
-/// Draws one value bar: the ColorBar sheet, `BLIPS+1` ColorBlips in
-/// `color_lerp_black_to_white(i/167)` (the plan pins the inclusive count; the C#
-/// loop at `IngameOptions.cs:1552-1555` runs `num4 < 167`), the
-/// `Slider_Highlight` overlay tinted `OurFavoriteColor` while the mouse is inside
-/// the hit box (`IngameOptions.cs:1557-1564`), then the ColorSlider knob.
+/// Draws one value bar: the ColorBar sheet, `BLIPS` ColorBlips in
+/// `color_lerp_black_to_white(i/167)` — the C# loop `for (num4 = 0f; num4 <
+/// (float)num; num++)` with `num = 167` (`IngameOptions.cs:1549-1555`) draws 167
+/// blips, not 168 — the `Slider_Highlight` overlay tinted `OurFavoriteColor`
+/// while the mouse is inside the hit box (`IngameOptions.cs:1557-1564`), then
+/// the ColorSlider knob.
 // Consumed by the volume / parallax screens (Task 2).
 #[allow(dead_code)]
 pub fn draw_value_bar(
@@ -91,7 +104,7 @@ pub fn draw_value_bar(
     // The gradient blips (`IngameOptions.cs:1550-1555`): one per step, starting
     // 5 px in and 4 px down.
     if let Some(uv) = lookups.hud_uv(lookups.ui_color_blip.as_ref()) {
-        for i in 0..=BLIPS {
+        for i in 0..BLIPS {
             let c = color_lerp_black_to_white(i as f32 / BLIPS as f32);
             r.push_ui_sprite(
                 [rect[0] + 5.0 + i as f32, rect[1] + 4.0],
@@ -154,26 +167,38 @@ pub fn color_slider_hit(left: f32, top: f32) -> [f32; 4] {
 }
 
 /// Knob top-left (`Main.cs:51146` and the sBar/lBar/aBar twins): the 3-arg
-/// `SpriteBatch.Draw` has a zero origin, so
-/// `(left + HUE_TRAVEL*t - KNOB_W/2, top - KNOB_H/2 + BAR_H/2)`.
+/// `SpriteBatch.Draw` has a zero origin and the C# int-divides the sheet sizes
+/// *before* the float cast — `ColorSlider.Width()/2 = 5`,
+/// `ColorSlider.Height()/2 = 12`, `Hue.Height()/2 = 8` — so the offset is
+/// `(left + HUE_TRAVEL*t - 5.0, top - 12.0 + 8.0)`, not the float halves.
 pub fn color_slider_knob(left: f32, top: f32, t: f32) -> [f32; 2] {
+    // `(float)(TextureAssets.ColorSlider.Width() / 2)` and friends
+    // (`Main.cs:51146`): integer division (5, 12, 8), then the cast.
     [
-        left + HUE_TRAVEL * t - KNOB_W / 2.0,
-        top - KNOB_H / 2.0 + BAR_H / 2.0,
+        left + HUE_TRAVEL * t - (KNOB_W as i32 / 2) as f32,
+        top - (KNOB_H as i32 / 2) as f32 + (BAR_H as i32 / 2) as f32,
     ]
 }
 
 /// XNA `Rectangle.Contains(Point)` (`IngameOptions.cs:1557`): inclusive left/top,
-/// exclusive right/bottom.
+/// exclusive right/bottom. The value-bar hover uses this; the HSL rows compare
+/// strictly, see [`inside_strict`].
 fn inside(rect: [f32; 4], p: Vec2) -> bool {
     p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
 }
 
-/// Whether one colour-slider row takes the mouse: it hovers the row's hit box
-/// while no grab is held, or it holds the grab ((hover && grab == 0) || grab ==
-/// id — `Main.cs:51142`, `:51177`, `:51212`, `:51253`).
+/// The strict four-side comparison of the HSL hit test (`Main.cs:51142` and the
+/// row twins: `mouseX > num53 - 4 && mouseX < num53 + Hue.Width() + 4 && ...`) —
+/// open on every edge, unlike [`inside`].
+fn inside_strict(rect: [f32; 4], p: Vec2) -> bool {
+    p.x > rect[0] && p.x < rect[0] + rect[2] && p.y > rect[1] && p.y < rect[1] + rect[3]
+}
+
+/// Whether one colour-slider row takes the mouse: it strictly hovers the row's
+/// hit box while no grab is held, or it holds the grab ((hover && grab == 0) ||
+/// grab == id — `Main.cs:51142`, `:51177`, `:51212`, `:51253`).
 fn bar_active(left: f32, top: f32, id: u8, mouse: Vec2, grab: u8) -> bool {
-    (inside(color_slider_hit(left, top), mouse) && grab == 0) || grab == id
+    (inside_strict(color_slider_hit(left, top), mouse) && grab == 0) || grab == id
 }
 
 /// The dragged 0..1 value of a row: `(mouseX - num53) / Hue.Width()`, clamped
@@ -343,8 +368,10 @@ pub fn draw_color_sliders(
     }
 }
 
-/// `(float)num / (float)num54` of the C# blip loops, widened to the `double`
-/// `hslToRgb` parameter exactly as the call sites do.
+/// `(float)num / (float)num54` of the C# blip loops (`Main.cs:51171` and the row
+/// twins). C# `hslToRgb` takes `float` parameters (`Main.cs:47890`), so the
+/// ratio is computed in `f32` exactly as upstream and only widened to the `f64`
+/// parameters of the Rust `color::hsl_to_rgb` port at the call sites.
 fn blip_step(i: i32) -> f64 {
     (i as f32 / BLIPS as f32) as f64
 }
@@ -415,12 +442,23 @@ mod tests {
     }
 
     #[test]
-    fn value_bar_value_divides_over_the_bar_width_and_clamps() {
+    fn value_bar_value_divides_over_the_inflated_hit_rect() {
         let (rect, _) = value_bar_rects(797.0, 332.0);
+        // `IngameOptions.cs:1556` inflates the drawn rect to X = 624, W = 168
+        // before `:1570-1579` divide, so the hit geometry is the divisor.
+        // Centre: (708 - 624) / 168 = 0.5.
+        assert_eq!(value_bar_value(rect, 708.0), 0.5, "708 = 624 + 84");
+        // The inflated slope, not the drawn one: 666 is 42 px into the hit box
+        // (0.25), not 47 px into the drawn bar ((666-619)/178 ~= 0.264).
+        assert_eq!(value_bar_value(rect, 666.0), 0.25);
+        // Both hit edges are inclusive (`Main.mouseX >= rectangle.X &&
+        // Main.mouseX <= rectangle.X + rectangle.Width`).
+        assert_eq!(value_bar_value(rect, 624.0), 0.0);
+        assert_eq!(value_bar_value(rect, 792.0), 1.0);
+        // Positional clamp outside the hit box (`IngameOptions.cs:1575-1579`):
+        // left of X reads 0 (619 is the drawn left edge), right of X + W reads 1.
         assert_eq!(value_bar_value(rect, 619.0), 0.0);
-        assert_eq!(value_bar_value(rect, 708.0), 0.5, "708 = 619 + 89");
         assert_eq!(value_bar_value(rect, 797.0), 1.0);
-        // Positional clamp (`IngameOptions.cs:1573-1579`).
         assert_eq!(value_bar_value(rect, 100.0), 0.0);
         assert_eq!(value_bar_value(rect, 1000.0), 1.0);
     }
@@ -442,9 +480,10 @@ mod tests {
         assert_eq!(color_slider_tops(320.0), [320.0, 346.0, 372.0, 398.0]);
         // `Main.cs:51120`: screenWidth/2 - Hue.Width()/2 = 800 - 89.
         assert_eq!(color_slider_left(1600.0), 711.0);
-        // `Main.cs:51146` with float halves (the C# divides the int sheet sizes,
-        // which lands half a pixel higher/left — see the report).
-        assert_eq!(color_slider_knob(711.0, 320.0, 0.5), [793.5, 315.5]);
+        // `Main.cs:51146`: the C# int-divides the sheet sizes before the float
+        // cast (11/2 = 5, 25/2 = 12, 16/2 = 8), so
+        // x = 711 + 176*0.5 - 5 = 794 and y = 320 - 12 + 8 = 316.
+        assert_eq!(color_slider_knob(711.0, 320.0, 0.5), [794.0, 316.0]);
         // `Main.cs:51142`: the hit box inflates by 4 on every side.
         assert_eq!(color_slider_hit(711.0, 320.0), [707.0, 316.0, 186.0, 24.0]);
     }

@@ -65,7 +65,7 @@ pub enum Page {
     Keybindings,
     /// menuMode 272727 (`Main.cs:50401`) — unreachable upstream, `TR_PAGE=272727` only.
     MapKeys,
-    /// menuMode 13 (`Main.cs:50744`).
+    /// menuMode 13 (`Main.cs:50737`).
     JoinIp,
     /// menuMode 131 (`Main.cs:50884`).
     JoinPort,
