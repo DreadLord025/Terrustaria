@@ -1245,6 +1245,15 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
 * **The menuMode 888 destinations stay hints**: the 1127 "Keybindings" row shows
   the not-ported notice because `ManageControlsMenu` is a `UIState` screen, out
   of P5 scope (spec §9.1) — the 27/272727 lists below cover the raw bind data.
+* **The Video page carries a port-only "Zoom: …%" row** the original does not
+  have (menuMode 1111 is Resolution, Parallax, Frame Skip, Lighting, Quality,
+  Background, Blood and Gore, Miner's Wobble, Windy Environment, Effects, Back —
+  11 rows, `Main.cs:49988-50096`); vanilla persists Zoom to `config.json`
+  (`"Zoom"`, `Main.cs:4200`) but no `DrawMenu` row edits it — drop the row in a
+  follow-up (or P6).
+* The Settings "Language" row label is vanilla `Lang.menu[103]` and the screen
+  it opens here is the 1213 list (`Main.cs:49759-49764`) — noted for the P6
+  phase.
 
 ### Task 5 notes (C# facts that override the plan tables)
 

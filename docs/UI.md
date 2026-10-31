@@ -94,10 +94,10 @@ row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89
 
 | Screen | `menuMode` | `num2`/`num4`/`array7` | Rows |
 | --- | --- | --- | --- |
-| Volume | `26` | 200 / 10 / 1.0 | blank, "Volume" header @210, Back @470 → Settings |
-| Parallax | `28` | 240 / 60 / 1.0 | blank, "Parallax" header @250, Back @530 → Video |
+| Volume | `26` | 200 / 10 / 1.0 | blank, "Volume" header @220, Back @470 → Settings |
+| Parallax | `28` | 240 / 60 / 1.0 | blank, "Parallax" header @310, Back @530 → Video |
 | Cursor | `1125` | 232 / 38 / 0.73 | Cursor Color, Border Color, Smart Cursor Mode/Priority/Placement, Lock On Priority, Back @478 |
-| Cursor Color | `25` | 200 / 10 / 1.0 | header @210, Back @470; HSL sliders with luminosity floored at `0.15` and no alpha bar |
+| Cursor Color | `25` | 200 / 10 / 1.0 | header @220, Back @470; HSL sliders with luminosity floored at `0.15` and no alpha bar |
 | Border Color | `252` | 200 / 10 / 1.0 | the 25 twin: full luminosity range and the alpha bar |
 | Resolution | `111` | 210 / 55 / 0.85 | Fullscreen Resolution @210, Borderless Window @265, Go Fullscreen @320, Apply @475, Back @530 |
 | Effects | `2008` | 210 / 28 / 0.6 (header 0.7) | header @202 (`array4 = −8`), six effect rows, Back @406 — the branch declares 9 rows but leaves row 8 null and the item loop skips it |
@@ -107,7 +107,7 @@ row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89
 | Keybindings | `27` | 176 / 22 / 0.45 | 14 left-aligned bind rows (`array5 = −80`) + Reset + Back, both scale 0.8 |
 | Map Keys | `272727` | 200 / 30 / 0.55 | 6 left-aligned bind rows (`array5 = −140`) + Reset (0.8) + Back (scale **1.0** — the branch never sets `array7[7]`) |
 | Multiplayer | `12` | 250 / 80 / 1.0 | Join @250, Host & Play @330, Back @410 — "Join via Steam" is overwritten without `SocialAPI.Network`, so Join is first |
-| Join IP | `13` | 180 / 30 / 1.0 | header @180, input @199 (`array4 = 19`), 7 blank recent rows @280..460 (scale 0.6), Accept @494, Back @544 |
+| Join IP | `13` | 180 / 30 / 1.0 | header @180, input @229 (`array4 = 19`), 7 blank recent rows @280..460 (scale 0.6), Accept @494, Back @544 |
 | Join Port | `131` | 250 / 80 / 1.0 | header @250, input @310, Accept @430 (disabled unless the text parses to 1..=65535), Back @490 |
 | Host Password | `30` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Host (fixed port 7777), Back @490 |
 | Join Password | `31` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Join, Back @490 |
