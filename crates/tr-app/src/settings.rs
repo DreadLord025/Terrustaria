@@ -54,6 +54,13 @@ pub struct Settings {
     pub sound_volume: f32,
     /// `Main.ambientVolume`.
     pub ambient_volume: f32,
+    /// `Main.MapScale`: saved as "MapScale" (`Main.cs:4202`), load-clamped
+    /// [0.5, 1] (`:4494`), default 1 (`:67298`). P4 draws the reference 1.0
+    /// only (the whole-UI P4 plan, Uncertainty 5 ruling).
+    pub map_scale: f32,
+    /// `MinimapFrameManager.cs:13-18`: the active minimap frame style key
+    /// (`"Default"`, `"Golden"`, ...; unknown names fall back to index 0).
+    pub minimap_frame: String,
 }
 
 impl Default for Settings {
@@ -82,6 +89,8 @@ impl Default for Settings {
             music_volume: 0.75,
             sound_volume: 0.75,
             ambient_volume: 0.75,
+            map_scale: 1.0,
+            minimap_frame: "Default".to_string(),
         }
     }
 }
@@ -145,6 +154,20 @@ impl Settings {
                 "MusicVolume" => me.music_volume = value.parse().unwrap_or(me.music_volume),
                 "SoundVolume" => me.sound_volume = value.parse().unwrap_or(me.sound_volume),
                 "AmbientVolume" => me.ambient_volume = value.parse().unwrap_or(me.ambient_volume),
+                "MapScale" => {
+                    me.map_scale = value.parse::<f32>().unwrap_or(1.0).clamp(0.5, 1.0)
+                }
+                "MinimapFrame" => {
+                    // `Preferences.Put` writes `"MinimapFrame": "Default"`
+                    // (`MinimapFrameManager.cs:18`); the string runs between
+                    // the quotes.
+                    let v = value.trim();
+                    me.minimap_frame = v
+                        .strip_prefix('"')
+                        .and_then(|rest| rest.split_once('"').map(|(s, _)| s))
+                        .unwrap_or(v)
+                        .to_string();
+                }
                 _ => {}
             }
         }
@@ -172,7 +195,8 @@ impl Settings {
              \"LightingMode\": {},\n  \"Quality\": {},\n  \"BackgroundEnabled\": {},\n  \
              \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
              \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
-             \"AmbientVolume\": {:.3}\n}}\n",
+             \"AmbientVolume\": {:.3},\n  \"MapScale\": {:.3},\n  \
+             \"MinimapFrame\": \"{}\"\n}}\n",
             self.auto_save,
             self.auto_pause,
             self.map_enabled,
@@ -196,6 +220,8 @@ impl Settings {
             self.music_volume,
             self.sound_volume,
             self.ambient_volume,
+            self.map_scale,
+            self.minimap_frame,
         )
     }
 }
@@ -222,6 +248,8 @@ mod tests {
         assert!(s.blood);
         assert_eq!(s.event_progress, 1);
         assert!((s.music_volume - 0.75).abs() < 1e-6);
+        assert_eq!(s.map_scale, 1.0);
+        assert_eq!(s.minimap_frame, "Default");
     }
 
     #[test]
@@ -242,6 +270,8 @@ mod tests {
         s.music_volume = 0.4;
         s.sound_volume = 0.2;
         s.ambient_volume = 0.9;
+        s.map_scale = 0.5;
+        s.minimap_frame = "Golden".to_string();
         let back = Settings::parse(&s.to_json());
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
@@ -258,6 +288,8 @@ mod tests {
         assert!((back.music_volume - s.music_volume).abs() < 1e-3);
         assert!((back.sound_volume - s.sound_volume).abs() < 1e-3);
         assert!((back.ambient_volume - s.ambient_volume).abs() < 1e-3);
+        assert!((back.map_scale - s.map_scale).abs() < 1e-3);
+        assert_eq!(back.minimap_frame, s.minimap_frame);
     }
 
     #[test]

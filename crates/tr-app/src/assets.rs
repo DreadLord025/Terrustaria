@@ -222,6 +222,52 @@ pub fn load_world_images(
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
+        // P4 minimap chrome (`MinimapFrameTemplate.cs:30-35`) — 9 styles x 4 sheets.
+        "UI/Minimap/Default/MinimapFrame",
+        "UI/Minimap/Default/MinimapButton_Reset",
+        "UI/Minimap/Default/MinimapButton_ZoomIn",
+        "UI/Minimap/Default/MinimapButton_ZoomOut",
+        "UI/Minimap/Golden/MinimapFrame",
+        "UI/Minimap/Golden/MinimapButton_Reset",
+        "UI/Minimap/Golden/MinimapButton_ZoomIn",
+        "UI/Minimap/Golden/MinimapButton_ZoomOut",
+        "UI/Minimap/Remix/MinimapFrame",
+        "UI/Minimap/Remix/MinimapButton_Reset",
+        "UI/Minimap/Remix/MinimapButton_ZoomIn",
+        "UI/Minimap/Remix/MinimapButton_ZoomOut",
+        "UI/Minimap/Sticks/MinimapFrame",
+        "UI/Minimap/Sticks/MinimapButton_Reset",
+        "UI/Minimap/Sticks/MinimapButton_ZoomIn",
+        "UI/Minimap/Sticks/MinimapButton_ZoomOut",
+        "UI/Minimap/StoneGold/MinimapFrame",
+        "UI/Minimap/StoneGold/MinimapButton_Reset",
+        "UI/Minimap/StoneGold/MinimapButton_ZoomIn",
+        "UI/Minimap/StoneGold/MinimapButton_ZoomOut",
+        "UI/Minimap/TwigLeaf/MinimapFrame",
+        "UI/Minimap/TwigLeaf/MinimapButton_Reset",
+        "UI/Minimap/TwigLeaf/MinimapButton_ZoomIn",
+        "UI/Minimap/TwigLeaf/MinimapButton_ZoomOut",
+        "UI/Minimap/Leaf/MinimapFrame",
+        "UI/Minimap/Leaf/MinimapButton_Reset",
+        "UI/Minimap/Leaf/MinimapButton_ZoomIn",
+        "UI/Minimap/Leaf/MinimapButton_ZoomOut",
+        "UI/Minimap/Retro/MinimapFrame",
+        "UI/Minimap/Retro/MinimapButton_Reset",
+        "UI/Minimap/Retro/MinimapButton_ZoomIn",
+        "UI/Minimap/Retro/MinimapButton_ZoomOut",
+        "UI/Minimap/Valkyrie/MinimapFrame",
+        "UI/Minimap/Valkyrie/MinimapButton_Reset",
+        "UI/Minimap/Valkyrie/MinimapButton_ZoomIn",
+        "UI/Minimap/Valkyrie/MinimapButton_ZoomOut",
+        // P4 map-style icon row (`AssetInitializer.cs:386-389`).
+        "Map_0",
+        "Map_1",
+        "Map_2",
+        "Map_3",
+        "Map_4",
+        "Map_5",
+        "Map_6",
+        "Map_7",
         // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
         // 928x248; `Main.cs:55434-55485`).
         "Map",
@@ -619,6 +665,14 @@ pub struct Lookups {
     pub ui_search_border: Option<tr_render::SheetRect>,
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
+    /// `UI/Minimap/<style>/MinimapFrame` per `ui::minimap::FRAME_STYLES`
+    /// (`MinimapFrameTemplate.cs:30`), indexed by style.
+    pub minimap_frames: [Option<tr_render::SheetRect>; 9],
+    /// `UI/Minimap/<style>/MinimapButton_{ZoomIn,ZoomOut,Reset}` (`:33-35`), the
+    /// index order of `MinimapFrame.cs:189-191` (`BUTTON_*`).
+    pub minimap_buttons: [[Option<tr_render::SheetRect>; 3]; 9],
+    /// `Images/Map_0..7` (`AssetInitializer.cs:386-389`).
+    pub map_icons: [Option<tr_render::SheetRect>; 8],
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -700,6 +754,32 @@ impl Lookups {
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
+            minimap_frames: std::array::from_fn(|i| {
+                atlas
+                    .sheet(&format!(
+                        "UI/Minimap/{}/MinimapFrame",
+                        crate::ui::minimap::FRAME_STYLES[i].name
+                    ))
+                    .copied()
+            }),
+            minimap_buttons: std::array::from_fn(|s| {
+                let name = crate::ui::minimap::FRAME_STYLES[s].name;
+                [
+                    crate::ui::minimap::BUTTON_ZOOM_IN,
+                    crate::ui::minimap::BUTTON_ZOOM_OUT,
+                    crate::ui::minimap::BUTTON_RESET,
+                ]
+                .map(|b| {
+                    atlas
+                        .sheet(&format!(
+                            "UI/Minimap/{}/MinimapButton_{}",
+                            name,
+                            ["ZoomIn", "ZoomOut", "Reset"][b]
+                        ))
+                        .copied()
+                })
+            }),
+            map_icons: std::array::from_fn(|i| atlas.sheet(&format!("Map_{i}")).copied()),
             page_icons: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
             }),

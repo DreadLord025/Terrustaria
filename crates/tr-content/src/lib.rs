@@ -42,4 +42,27 @@ mod tests {
     }
 
     const HASH: u64 = 0xdb76_2213_37e7_e205;
+
+    /// Pins the P4 minimap/boss-bar sheet sizes decoded from the retail
+    /// `.xnb`s (the whole-UI P4 research §C/§H): the Default frame 256x264,
+    /// the three Default buttons 18x18 and `UI_BossBar` 516x348. The geometry
+    /// in `tr-app/src/ui/minimap.rs` hard-codes no sheet size — it reads
+    /// `SheetRect::width/height` like `Button.Size` does (`MinimapFrame.cs:24`)
+    /// — so this is the runtime pin that the geometry tables and the shipped
+    /// assets cannot drift apart.
+    #[test]
+    fn decodes_minimap_and_boss_bar_sheets_at_the_pinned_sizes() {
+        let Some(dir) = std::env::var_os("TR_CONTENT") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let frame = crate::load_texture(dir.join("Images/UI/Minimap/Default/MinimapFrame.xnb"))
+            .expect("MinimapFrame");
+        assert_eq!((frame.width, frame.height), (256, 264));
+        for name in ["MinimapButton_Reset", "MinimapButton_ZoomIn", "MinimapButton_ZoomOut"] {
+            let img = crate::load_texture(dir.join(format!("Images/UI/Minimap/Default/{name}.xnb")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!((img.width, img.height), (18, 18), "{name}");
+        }
+        let boss = crate::load_texture(dir.join("Images/UI/UI_BossBar.xnb")).expect("UI_BossBar");
+        assert_eq!((boss.width, boss.height), (516, 348));
+    }
 }
