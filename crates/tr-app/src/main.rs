@@ -4423,7 +4423,11 @@ fn draw_sky(
 
 /// `Main.caveParallax = 1f - (float)Main.bgScroll / 500f` (`Main.cs:50383`,
 /// `:51643`): the "Parallax" slider (`Main.bgScroll`, `Main.cs:2429`) maps to
-/// the underground backdrop's scroll factor.
+/// the underground backdrop's scroll factor. A fresh config lands on 60, not 0:
+/// `static Main()` seeds `caveParallax = 0.88f` (`Main.cs:66809`); with no
+/// stored keys `bgScroll = (int)((1f - 0.88f) * 500f)` = 60 and both
+/// `Get("Parallax", ...)` / `Get("BackgroundParallax", ...)` keep it
+/// (`Main.cs:4405-4408`) — the 0.88 backdrop factor, "Parallax: 60" on screen.
 fn cave_parallax(bg_scroll: u8) -> f32 {
     1.0 - bg_scroll as f32 / 500.0
 }

@@ -232,16 +232,17 @@ pub fn volume_percent(v: f32) -> String {
 
 /// The volume/parallax label colour (`Main.cs:48253-48254` + `:51515-51525`):
 /// `b = (255 + 2 * tileColor.R) / 3` of the backdrop grey, then the draw-site
-/// chain `R = (255 + b) / 2` feeding `G = B = (255 + R) / 2` — every step reads
-/// the previous channel's result.
+/// `R = (255 + b) / 2`; the final
+/// `new Color((byte)num85, (byte)num85, (byte)num85, (byte)num84)` repeats
+/// `color10.R` for all three channels, so the G/B assignments at
+/// `:51516-51518` are dead stores (the parallax twin: `:51596-51606`).
 pub fn slider_label_color(backdrop_r: u8) -> [u8; 4] {
     // `byte b = (byte)((255 + Main.tileColor.R * 2) / 3)` (`Main.cs:48253`).
     let b = ((255u32 + 2 * backdrop_r as u32) / 3) as u8;
-    // `color10.R = (byte)((255 + color10.R) / 2)` and the G/B twins
-    // (`Main.cs:51516-51518`): the assignments chain, so G and B take the new R.
+    // `color10.R = (byte)((255 + color10.R) / 2)` (`Main.cs:51515-51516`); the
+    // G/B twins at `:51516-51518` are overwritten before anything is drawn.
     let r = ((255u32 + b as u32) / 2) as u8;
-    let gb = ((255u32 + r as u32) / 2) as u8;
-    [r, gb, gb, 255]
+    [r, r, r, 255]
 }
 
 pub struct Menu {
@@ -709,9 +710,16 @@ impl Menu {
         self.hover = self.boxes.iter().position(|b| {
             pos.x >= b[0] && pos.x < b[0] + b[2] && pos.y >= b[1] && pos.y < b[1] + b[3]
         });
+        // Heading rows are drawn but not clickable: the C# hit-test answers
+        // `focusMenu = -1` for them (`Main.cs:51790-51796`), so a pointer over
+        // a title neither highlights it nor moves the cursor.
         if let Some(i) = self.hover {
-            self.selected = i;
-            self.focus_keyboard = true;
+            if self.items().get(i).is_some_and(|item| item.header) {
+                self.hover = None;
+            } else {
+                self.selected = i;
+                self.focus_keyboard = true;
+            }
         }
     }
 
@@ -1531,11 +1539,33 @@ mod tests {
     }
 
     #[test]
-    fn slider_label_color_feeds_each_channel_the_last() {
+    fn slider_label_color_repeats_the_red_channel() {
         assert_eq!(slider_label_color(255), [255, 255, 255, 255]);
-        // b = (255 + 2*85)/3 = 141, r = (255 + 141)/2 = 198, then
-        // g = b2 = (255 + 198)/2 = 226 for both G and B (`Main.cs:51516-51518`).
-        assert_eq!(slider_label_color(85), [198, 226, 226, 255]);
+        // b = (255 + 2*85)/3 = 141, r = (255 + 141)/2 = 198; the final
+        // `new Color((byte)num85, (byte)num85, (byte)num85, (byte)num84)`
+        // repeats `color10.R` for G and B (`Main.cs:51519-51525`) — the G/B
+        // twins at `:51516-51518` are dead stores.
+        assert_eq!(slider_label_color(85), [198, 198, 198, 255]);
+    }
+
+    #[test]
+    fn headings_never_take_the_hover_focus() {
+        // The C# hit-test answers `focusMenu = -1` for the non-clickable rows
+        // (`if (array[num99] || array2[num99])`, `Main.cs:51790-51796`), so a
+        // pointer over a title neither highlights it nor moves the cursor.
+        let mut m = menu(Page::Parallax);
+        m.selected = 0;
+        // Boxes in `items()` order: row 0 is the empty label, row 1 the
+        // "Parallax" title (`heading()`), row 2 "Back".
+        m.boxes.push([0.0, 240.0, 1600.0, 30.0]);
+        m.boxes.push([0.0, 300.0, 1600.0, 30.0]);
+        m.boxes.push([0.0, 360.0, 1600.0, 30.0]);
+        m.update_hover(Vec2::new(500.0, 310.0));
+        assert!(m.hover.is_none());
+        assert_eq!(m.selected, 0);
+        m.update_hover(Vec2::new(500.0, 370.0));
+        assert_eq!(m.hover, Some(2));
+        assert_eq!(m.selected, 2);
     }
 
     #[test]

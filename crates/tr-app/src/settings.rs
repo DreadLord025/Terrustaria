@@ -34,7 +34,12 @@ pub struct Settings {
     /// value, 0..=100 — the bar stores `(int)(value * 100f)` (`Main.cs:51642`)
     /// and the backdrop scrolls by `caveParallax = 1 - bgScroll / 500`
     /// (`Main.cs:50383`, `:51643`). Vanilla persists it under "BackgroundParallax"
-    /// (`:4134`, read back at `:4407`); a fresh config keeps the static's 0.
+    /// (`:4134`, read back at `:4407`). A fresh config still starts at 60, not 0:
+    /// `static Main()` seeds `caveParallax = 0.88f` (`Main.cs:66809`), the
+    /// `Get("Parallax", ref caveParallax)` finds no key so 0.88 survives, then
+    /// `bgScroll = (int)((1f - 0.88f) * 500f)` = 60 and the trailing
+    /// `Get("BackgroundParallax", ref bgScroll)` keeps it (`Main.cs:4405-4408`)
+    /// — the screen shows "Parallax: 60" with the 0.88 backdrop factor.
     pub parallax_scroll: u8,
     /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle.
     pub frame_skip: u8,
@@ -81,7 +86,7 @@ impl Default for Settings {
             highlight_new_items: true,
             tile_grid: false,
             gamepad_instructions: true,
-            parallax_scroll: 0,
+            parallax_scroll: 60,
             frame_skip: 0,
             light_mode: 0,
             quality: 0,
@@ -250,9 +255,12 @@ mod tests {
         assert!(s.play_when_unfocused);
         assert!(s.placement_preview);
         assert!(!s.tile_grid);
-        // `Main.bgScroll` is a plain static (`Main.cs:2429`): 0 until the slider
-        // (or a stored "BackgroundParallax") touches it.
-        assert_eq!(s.parallax_scroll, 0);
+        // `Main.bgScroll` is a plain static (`Main.cs:2429`) that a fresh config
+        // seeds to 60: `caveParallax = 0.88f` (`Main.cs:66809`) survives the
+        // keyless `Get("Parallax", ...)`, then `(int)((1f - 0.88f) * 500f)` = 60
+        // and the keyless `Get("BackgroundParallax", ...)` keeps it
+        // (`Main.cs:4405-4408`).
+        assert_eq!(s.parallax_scroll, 60);
         assert_eq!(s.frame_skip, 0);
         assert_eq!(s.light_mode, 0);
         assert_eq!(s.quality, 0);
@@ -317,11 +325,15 @@ mod tests {
     fn parallax_scroll_reads_the_vanilla_key() {
         // `Main.SaveSettings` writes "BackgroundParallax" (`Main.cs:4134`) and
         // `LoadSettings` reads it back (`:4407`), so a vanilla config.json
-        // round-trips; out-of-range values clamp to the slider's 0..=100.
+        // round-trips. The `.min(100)` only clamps 101..=255 (values the u8
+        // can still parse); anything >= 256 fails the parse and falls back to
+        // the default untouched.
         let s = Settings::parse("{\n \"BackgroundParallax\": 50\n}");
         assert_eq!(s.parallax_scroll, 50);
+        let s = Settings::parse("{\n \"BackgroundParallax\": 200\n}");
+        assert_eq!(s.parallax_scroll, 100, "101..=255 clamp to the slider max");
         let s = Settings::parse("{\n \"BackgroundParallax\": 500\n}");
-        assert_eq!(s.parallax_scroll, 0, "u8 parse fails, the default stays");
+        assert_eq!(s.parallax_scroll, 60, "u8 parse fails, the default stays");
         let s = Settings::parse("{\n \"BackgroundParallax\": 90\n}");
         assert_eq!(s.parallax_scroll, 90);
     }
