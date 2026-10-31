@@ -14,6 +14,10 @@
 //! Every draw reads the sheets from `Lookups` `Option`s: a missing sheet draws
 //! nothing, so `Lookups::default()` renders blank chrome and panics nowhere
 //! (plan Review Focus 7).
+//!
+//! Also not ported (documented deviation): the ctor's `GameTipsDisplay`
+//! (`:170`) — the rotating hint line the `Draw` tail paints under the panel
+//! (`:1998-2005`); the ANALYSIS pass records it in Task 9.
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
@@ -1024,16 +1028,17 @@ pub enum MiddleMenu {
 
 /// The picker texture per category (`CreateColorPicker`'s texture paths,
 /// `:735-743`, plus `:765`'s CharInfo): the index into `Lookups::cc_colors`
-/// (0..=6) — `HairStyle`/`CharInfo` use their own Lookups fields.
+/// (0..=7 — Hair, Eye, EyeBack, Skin, Shirt, Undershirt, Pants, Shoes,
+/// `assets.rs:988-997`) — `HairStyle`/`CharInfo` use their own Lookups fields.
 pub fn category_texture(id: usize) -> Option<usize> {
     match id {
         3 => Some(0), // ColorHair (`:735`)
-        4 => Some(1), // ColorEye (`:736`; the `ColorEyeBack` middle is 1)
-        5 => Some(2), // ColorSkin (`:737`)
-        6 => Some(3), // ColorShirt (`:738`)
-        7 => Some(4), // ColorUndershirt (`:739`)
-        8 => Some(5), // ColorPants (`:740`)
-        9 => Some(6), // ColorShoes (`:741`)
+        4 => Some(1), // ColorEye (`:736`; the `ColorEyeBack` middle is 2)
+        5 => Some(3), // ColorSkin (`:737`)
+        6 => Some(4), // ColorShirt (`:738`)
+        7 => Some(5), // ColorUndershirt (`:739`)
+        8 => Some(6), // ColorPants (`:740`)
+        9 => Some(7), // ColorShoes (`:741`)
         _ => None,
     }
 }
@@ -1428,12 +1433,17 @@ fn draw_hair_button(
     // other cell).
 }
 
-/// The whole screen in the source's z-order (`BuildPage`'s append order,
-/// `:195-233`): the panel, the preview, the top container (categories +
-/// separator), then the one active middle menu, then Back/Create, then the
-/// hover tooltip. `time` is `Main.GlobalTimeWrappedHourly` (the preview's
-/// animation clock, `:92`); `mouse_down` feeds the HSL drag latch. Mutates the
-/// draft like the source's draw-side paths do (`:1102-1124`, `:2011-2021`).
+/// The whole screen in the source's z-order (`UIElement.Draw` draws self,
+/// then the children in append order): the panel, the preview, the top
+/// container (categories + separator), then the one active middle menu, then
+/// Back/Create, then the hover tooltip. `BuildPage` appends Back/Create
+/// before the preview (`:204-206`), not after the middle menus (`:220-233`)
+/// — as later siblings of the panel the pair still draws after its subtree,
+/// so the port draws them last as well; the buttons overlap nothing, which
+/// makes the timing unobservable. `time` is `Main.GlobalTimeWrappedHourly`
+/// (the preview's animation clock, `:92`); `mouse_down` feeds the HSL drag
+/// latch. Mutates the draft like the source's draw-side paths do
+/// (`:1102-1124`, `:2011-2021`).
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1487,11 +1497,11 @@ pub fn draw(
         let selected = state.category == id;
         let (icon, icon_color, middle) = match id {
             // The seven colour pickers: the picker's own colour (`:735-741`),
-            // the Eye button's `ColorEyeBack` middle (`:742`).
+            // the Eye button's `ColorEyeBack` middle (`:742`) — `cc_colors[2]`.
             3..=9 => (
                 category_texture(id).and_then(|k| lookups.cc_colors[k]),
                 state.draft.color_of(id).unwrap_or([255; 4]),
-                if id == 4 { lookups.cc_colors[1] } else { None },
+                if id == 4 { lookups.cc_colors[2] } else { None },
             ),
             // Clothing: the male/female icon at `Color.Transparent` (`:743`,
             // `:748`) — the `ColorCharacter` stack draws instead (`:747-759`).
@@ -1887,6 +1897,12 @@ fn draw_hsl_menu(
 /// `MakeHairstylesMenu` (`:254-304`): the 46/48 grid of hair buttons and the
 /// scrollbar. Rows past the container bottom would be clipped by the
 /// `UIList`'s `OverflowHidden`; the port has no scissor, so they are skipped.
+/// The scrollbar draws statically — it never scrolls, leaving the ~40 first
+/// of the 213 styles visible — while clicks on the clipped rows stay valid
+/// (the source's `UIElement.GetElementAt` does not cull clipped children
+/// either). The boundary row (row 3 at the 1600x900 reference: top 484) has
+/// only ~8 px above the menu's bottom edge (492) and hangs ~36 px below it,
+/// an artifact C# clips away to that sliver.
 fn draw_hairstyles_menu(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1976,7 +1992,9 @@ fn draw_cloth_styles_menu(
         );
     }
     // The voice play button (`:474-504`): a null-texture `UIColoredImageButton`
-    // (no back panel draws) with the `Voice` icon in `OurFavoriteColor`.
+    // — the SmallPanel back panel still draws (`UIColoredImageButton.cs:33-45`,
+    // `:72`), the null only silences the icon slot (`:87`) — here carrying the
+    // `Voice` icon in `OurFavoriteColor`.
     uistate::draw_colored_image_button(
         r,
         lookups,
@@ -2233,9 +2251,16 @@ mod tests {
         for id in 3..=9 {
             assert_eq!(middle_for(id), MiddleMenu::Hsl { color_id: id });
         }
-        // The category texture table (`:735-741`).
+        // The category texture table (`:735-741`) over the 8 `cc_colors`
+        // sheets — Hair, Eye, EyeBack, Skin, Shirt, Undershirt, Pants, Shoes
+        // (`assets.rs:988-997`); Skin..Shoes sit past the `EyeBack` entry.
         assert_eq!(category_texture(3), Some(0));
-        assert_eq!(category_texture(9), Some(6));
+        assert_eq!(category_texture(4), Some(1));
+        assert_eq!(category_texture(5), Some(3));
+        assert_eq!(category_texture(6), Some(4));
+        assert_eq!(category_texture(7), Some(5));
+        assert_eq!(category_texture(8), Some(6));
+        assert_eq!(category_texture(9), Some(7));
         assert_eq!(category_texture(0), None);
         assert_eq!(category_texture(1), None);
         assert_eq!(category_texture(2), None);

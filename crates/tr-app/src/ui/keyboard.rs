@@ -106,8 +106,8 @@ const SILVER: [u8; 4] = [192, 192, 192, 255];
 /// What the keyboard edits — the `UIVirtualKeyboard` ctor args (`:159`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Request {
-    /// The `UIText` label above the box (`:408`): `Lang.menu[45]` /
-    /// `Lang.menu[48]` ([`ENTER_CHARACTER_NAME`] / [`ENTER_WORLD_NAME`]).
+    /// The `UIText` label above the box (`:408`): `Lang.menu[45]`
+    /// ([`ENTER_CHARACTER_NAME`]) / `Lang.menu[48]` ([`ENTER_WORLD_NAME`]).
     pub label: String,
     /// `startingText` — `this.Text = startingText` (`:429`).
     pub initial: String,
