@@ -104,7 +104,7 @@ pub fn draw_panel(
 }
 
 /// `UIHorizontalSeparator` + `Utils.DrawPanel(tex, edgeWidth=2, edgeShove=0, ...)`
-/// (`UIHorizontalSeparator.cs:31-37`, `Utils.cs:2612-2617`): three pieces —
+/// (`UIHorizontalSeparator.cs:31-35`, `Utils.cs:2612-2617`): three pieces —
 /// `edgeWidth` left, stretched middle, `edgeWidth` right — all the sheet's height.
 ///
 /// The height element of each rect is a placeholder: `UIHorizontalSeparator`'s
@@ -129,7 +129,7 @@ pub fn separator_srcs(sheet_w: f32, sheet_h: f32) -> [[f32; 4]; 3] {
     ]
 }
 
-/// `UIHorizontalSeparator.DrawSelf` (`UIHorizontalSeparator.cs:31-37`): three pieces
+/// `UIHorizontalSeparator.DrawSelf` (`UIHorizontalSeparator.cs:31-35`): three pieces
 /// of `ui_separator` (`Images/UI/CharCreation/Separator1`). Missing sheet draws
 /// nothing.
 pub fn draw_horizontal_separator(

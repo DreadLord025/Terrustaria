@@ -543,7 +543,9 @@ mod tests {
             assert_eq!(context_texture_index(c, 0), 7, "context {c}");
             assert_eq!(context_texture_index(c, 5), 7, "context {c} slot 5");
         }
-        // Contexts 22/34 are not part of P3 and keep the default.
+        // Contexts 22/34 are out of P3 scope -- deliberately left on the default,
+        // even though the C# maps 22 -> `Inventory_Back4` (`ItemSlot.cs:2264-2267`)
+        // and 34 -> `Inventory_Back18` (`:2257-2259`).
         assert_eq!(context_texture_index(22, 0), 0);
         assert_eq!(context_texture_index(34, 0), 0);
     }

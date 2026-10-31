@@ -79,13 +79,16 @@ pub fn hue2rgb(c: f64, t1: f64, t2: f64) -> f64 {
 /// original receives, so the parameters are narrowed to `f32` for it and for the
 /// `Luminosity + Saturation - Luminosity * Saturation` sub-expression, which the C#
 /// casts to `double` **after** evaluating in `float` (`:47904`).
+///
+/// The `(byte)` casts wrap modulo 256 (ECMA-335 `conv.u1`) rather than saturate, so
+/// they go through an `i64` first (e.g. `(byte)(-20.0) == 236`).
 pub fn hsl_to_rgb(h: f64, s: f64, l: f64, a: u8) -> [u8; 4] {
     let hue = h as f32;
     let sat = s as f32;
     let lum = l as f32;
     if sat == 0.0 {
         // `r = (byte)Math.Round((double)Luminosity * 255.0);` (`Main.cs:47897-47899`).
-        let v = (lum as f64 * 255.0).round_ties_even() as u8;
+        let v = (lum as f64 * 255.0).round_ties_even() as i64 as u8;
         return [v, v, v, a];
     }
     let num = hue as f64; // `double num = Hue;` (`:47903`)
@@ -101,9 +104,9 @@ pub fn hsl_to_rgb(h: f64, s: f64, l: f64, a: u8) -> [u8; 4] {
     let c = num + 1.0 / 3.0; // `:47906`
     let c2 = num; // `:47907`
     let c3 = num - 1.0 / 3.0; // `:47908`
-    let r = (hue2rgb(c, t, num2) * 255.0).round_ties_even() as u8; // `:47912`
-    let g = (hue2rgb(c2, t, num2) * 255.0).round_ties_even() as u8; // `:47913`
-    let b = (hue2rgb(c3, t, num2) * 255.0).round_ties_even() as u8; // `:47914`
+    let r = (hue2rgb(c, t, num2) * 255.0).round_ties_even() as i64 as u8; // `:47912`
+    let g = (hue2rgb(c2, t, num2) * 255.0).round_ties_even() as i64 as u8; // `:47913`
+    let b = (hue2rgb(c3, t, num2) * 255.0).round_ties_even() as i64 as u8; // `:47914`
     [r, g, b, a]
 }
 
@@ -130,10 +133,14 @@ pub fn shift_blue_to_cyan(rgb: [u8; 4]) -> [u8; 4] {
     shift_hue(rgb, -0.04, 0.04, 0.2)
 }
 
-/// XNA `Color * float`: every channel, alpha included, is **truncated**
+/// XNA `Color * float`: every channel, alpha included, is **truncated** toward zero
 /// (`(byte)(c * m)`), not rounded.
+///
+/// C# `(byte)` of a `float`/`double` wraps modulo 256 (ECMA-335 `conv.u1`), unlike
+/// Rust's saturating `as u8`, so the emulation casts through a signed 64-bit integer
+/// first: `(byte)(-2.5f) == (byte)(-2) == 254`.
 pub fn mul(rgb: [u8; 4], m: f32) -> [u8; 4] {
-    let f = |c: u8| (c as f32 * m) as u8;
+    let f = |c: u8| ((c as f32 * m) as i64) as u8;
     [f(rgb[0]), f(rgb[1]), f(rgb[2]), f(rgb[3])]
 }
 
@@ -219,13 +226,19 @@ mod tests {
     }
 
     #[test]
-    fn shift_hue_passes_the_unclamped_saturation() {
+    fn shift_hue_keeps_saturation_unclamped_and_wraps_channels() {
         // `Utils.cs:420` feeds `hslToRgb` `vector.Y + saturationBoost` with no clamp.
         // For (204,102,0) the source saturation is exactly 1.0, so the boost makes it
         // 1.2. Derived from the C# `hslToRgb` by hand: `num2 = 0.4*(1+1.2) = 0.88`,
-        // `t = -0.08`, red reads the `2c < 1` branch -> `t2*255 = 224.4 -> 224`.
-        // Clamping `s` back to 1.0 would leave red at 204.
-        assert_eq!(shift_hue([204, 102, 0, 255], 0.0, 0.0, 0.2), [224, 102, 0, 255]);
+        // `t = -0.08`; red reads the `2c < 1` branch -> `t2*255 = 224.4 -> 224`, and
+        // blue reads `t1 = -0.08` -> `Math.Round(-0.08*255) = -20.0`, which C#'s
+        // `(byte)` cast wraps modulo 256 (ECMA-335 `conv.u1`) to 236 -- not Rust's
+        // saturating `as u8`, which would give 0. Clamping `s` back to 1.0 would
+        // instead leave red at 204.
+        assert_eq!(
+            shift_hue([204, 102, 0, 255], 0.0, 0.0, 0.2),
+            [224, 102, 236, 255]
+        );
     }
 
     #[test]

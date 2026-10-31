@@ -606,13 +606,14 @@ pub struct Lookups {
     pub ui_craft_icon: Option<tr_render::SheetRect>,
     /// `UI/Craft_Toggle_0..5`: the grid-toggle button (`CraftingUI.cs:290`).
     pub craft_toggles: [Option<tr_render::SheetRect>; 6],
-    /// `UI/ChestCraft_0..3`: the nearby-chests toggle (`CraftingUI.cs:350`).
+    /// `UI/ChestCraft_0..3`: the nearby-chests toggle (`CraftingUI.cs:341`).
     pub chest_craft: [Option<tr_render::SheetRect>; 4],
     /// `UI/Creative/Infinite_Icons`: the filter-strip icons (`ItemFilters.cs`).
     pub ui_infinite_icons: Option<tr_render::SheetRect>,
     /// `UI/Creative/Infinite_Tabs_B_2`: the filter-strip button frames.
     pub ui_infinite_tabs_b2: Option<tr_render::SheetRect>,
-    /// `UI/Bestiary/Button_Search_2`: the search-bar icon button (`UIImageButton.cs:31`).
+    /// `UI/Bestiary/Button_Search_2`: the search-bar icon button
+    /// (`UIWrappedSearchBar.cs:100`).
     pub ui_search_icon: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_Border`: the hovered search-bar border.
     pub ui_search_border: Option<tr_render::SheetRect>,
