@@ -1,6 +1,6 @@
 # Task Status — Multi-Agent Coordination
 
-**Last updated:** 2026-10-30T20:36Z  
+**Last updated:** 2026-10-31T15:05Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
 ---
@@ -20,7 +20,7 @@
 | M1.4-BG-7 | Screen-wide cave backdrop + water pass restored | ✅ Done | Agent-Qoder | `7d9710a` anchored the backdrop to `worldSurface`; `70bf1eb` replaced the gradient with the real `Background_1/2` tiles + per-cell light (`DrawBackground_SurfaceTransitionBackground`/`DrawBackground_DirtBackground`); `Lookups` resolves `Misc/water_*` so `DrawNormalLiquids` emits water again. `M5-WSURF` then fixed `worldSurface` itself, which had been the mean column height and floated the sheet ~60 tiles high |
 | M1.4-BG-8 | Walls: 32x32 sprites + corner light | ✅ Done | Agent-Qoder | `e4efa59`: `Main.DrawWalls` geometry (32x32 at 8 px up/left), own pass before tiles, `Lighting.GetCornerColors` per cell with a flat fast path, black-wall skip |
 | M1.4-BG-9 | Surface parallax offsets and X phase | ✅ Done | Agent-Qoder | `f698971`: `pushBGTopHack`, `Background_50..52` -50, 2.68 third layer, desert 2.5/2.68, `bgStartX` from the screen's left edge |
-| M1.4-BG-10 | Rock layer / magma / hell backgrounds | ❌ Pending | - | `DrawBackground_DrawRockLayer`/`DrawMagmaLayer` (Background_3..6,185..187), `GetRockTransitionPoint`, `GlobalBrightness` ramp |
+| M1.4-BG-10 | Rock layer / magma / hell backgrounds | ✅ Done | Agent-GLM | `[M1.4-BG-10] Port the rock layer and hell background passes`: `DrawBackground` order restored (transition → dirt + its `Background_4` band → underworld black box → rock → magma), `DrawBackground_DrawRockLayer`/`_DrawMagmaLayer`/`_DrawMagmaTransition`/`_DrawUnderworldBlackBox` with the faithful cell skip chains (`ShouldDrawBackgroundTileAt`/`WallLightAt`/`InWorld`), `GetRockTransitionPoint` now truncates each row before the difference, `hellBackStyle` on `World` (rolled at generation, `WorldGen.cs:8247`) picking `Background_125..127`/`185..187`, `magmaBGFrame` 8-tick cycle. 9/4-slice smoothing collapsed to flat cells like the dirt pass; `undergroundBackground` pinned to the classic set (caveBackStyle/SceneMetrics unmodelled); backdrop cells are light/wall-gated, so natural walls hide them exactly like the original |
 | M1.4-BG-11 | Sun/moon phases, clouds, stars | 🟡 Partial | Agent-DeepSeek | Sun/moon phases/scale/rotation done under `M1.4-BG-16` (see that row); cloud `Parse`/`GetParallax` and star density still pending |
 | M1.4-BG-12 | Biome bgStyle selection + cross-fade | ✅ Done | Agent-Qoder | `91888cc`: `bgStyle`/`bgDelay`/`instantBGTransitionCounter` + 16-slot `bgAlphaFrontLayer`/`bgAlphaFarBackLayer`, 0.05 per-frame fade, 30/60-frame delay + 60-frame cooldown; beach→4, desert→2, snow→7, else 0 (same camera-biome tests as the water style). Full forest/desert/ocean/snow layer stack incl. desert mountains `22/23`; timer/alpha tests in `bg_transition_tests`. `SceneMetrics`-only styles, saved tree sets and `DrawChangeOverlay` remain documented deviations |
 | TILE-DRAW-1 | Per-type draw metrics (GetTileDrawData) | 🔄 In Progress | sub-agent | `tr-core/src/drawdata.rs`: torch 20x20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus |

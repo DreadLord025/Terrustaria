@@ -32,6 +32,12 @@ pub struct World {
     /// `Main.moonPhase` (0..7): the current-moon row in the sheet; advances one
     /// step each time night turns into day (`Main.cs:19982`).
     pub moon_phase: u8,
+    /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
+    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
+    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); it is not
+    /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
+    /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
+    pub hell_back_style: u8,
     /// Y of the first solid tile in each column (background/sky horizon).
     pub column_surface: Vec<i32>,
     /// Chunk grid size (`ceil(width / CHUNK) * ceil(height / CHUNK)`).
@@ -62,6 +68,7 @@ impl World {
             day_time: true,
             moon_type: 0,
             moon_phase: 0,
+            hell_back_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
             chunks_y: 0,

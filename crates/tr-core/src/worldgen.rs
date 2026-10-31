@@ -592,6 +592,9 @@ pub fn generate(opts: &GenOptions) -> World {
     // generator here so it is fixed for the seed; the phase starts at 0.
     world.moon_type = (rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
+    // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
+    // from the same generator; it picks the animated magma/hell sheets at draw time.
+    world.hell_back_style = (rng.next_u32() % 3) as u8;
     world
 }
 

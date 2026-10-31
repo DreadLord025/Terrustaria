@@ -41,6 +41,7 @@ re-implement something that already exists, or to port the wrong file.
 | C# source (under `Terraria/`) | Rust target | State |
 | --- | --- | --- |
 | `Main.cs` (loop, update, sky, draw orchestration) | `crates/tr-app/src/main.rs` | wip |
+| `Main.DrawBackground` underground tree (`DrawBackground_*`, `Main.cs:52798-53402`) | `crates/tr-app/src/main.rs` (`draw_background` + passes) | done (classic style set; per-biome cave sets + 9-slice documented deviations) |
 | `Player.cs` | `crates/tr-app/src/player.rs` | partial |
 | `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` | partial |
 | `Projectile.cs` | `crates/tr-app/src/projectile.rs` | partial |

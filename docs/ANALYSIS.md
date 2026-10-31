@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), stars, deterministic `Cloud_*` layer + the textured `Background_1/2` underground backdrop anchored to `worldSurface`; cloud density and biome backgrounds/rain/rock-layer backdrop still partial |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), stars, deterministic `Cloud_*` layer, the textured `Background_1/2` underground backdrop anchored to `worldSurface` and the rock/magma/hell passes (`Background_3/4/6/125..127/185..187`, underworld black box) in `DrawBackground` order; cloud density and biome backgrounds/rain still partial |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -511,9 +511,43 @@ ground stays lit and caves go black at any zoom — this is the original's scree
 backdrop, not a per-column fill. Two deviations from the source: a cell is tinted with one
 flat colour from `Lighting.GetColor` rather than the original's four `Lighting.GetCornerColors`
 (the tile-batch path, which only smooths the light across a single cell and never moves the
-sheet); and below the rock layer the same dirt pattern continues where the original switches
-to `Background_3` and the magma layers. Anchoring the old gradient per column made every
+sheet); and the `Background_4` band that closes the clamped dirt sheet at the rock
+transition was added with M1.4-BG-10. Anchoring the old gradient per column made every
 player-placed row of blocks paint a dark "wall" underneath itself; that artifact is gone.
+
+The rock layer and hell are a port of `Main.DrawBackground_DrawRockLayer`,
+`_DrawMagmaTransition`, `_DrawMagmaLayer` and `_DrawUnderworldBlackBox` (`Main.cs:53100`,
+`:53344`, `:52856`, `:53382`), driven by the same orchestration order as `Main.DrawBackground`
+(`Main.cs:52844-52849`: transition → dirt → black box → rock → magma, all under one
+`GlobalBrightness` ramp). `GetRockTransitionPoint` truncates `(int)rockLayer -
+(int)worldSurface` per row before the difference and snaps up to the dirt block height
+(`Main.cs:53088-53099`); `magmaLayer` truncates the span below the surface to 6-row blocks
+(`Main.cs:52812-52813`). `hellBackStyle` lives on `World`, rolled at generation from the
+same generator as `moonType` (`WorldGen.cs:8247`; vanilla re-rolls it per session at load —
+it is not a `.wld` field), and picks the animated magma sheet `Background_125..127` (three
+96 px frames cycled every 8 ticks, `Main.cs:62218-62224`) plus the hell floor row
+`Background_185..187`. Unlike the dirt pass, the rock/magma cells carry the original's skip
+chain: a cell is skipped when it is covered by an active tile but fully lit, when it is
+dark, or when it has no `wallLight` wall and the parallax is zero (`Main.cs:53152-53159`),
+with the hell variant letting rows below `maxTilesY - 300` draw even when dark
+(`Main.cs:52907`). The result is faithful to the original's data: natural walls hide the
+backdrop (the wall pass draws over it), so the rock bands and magma only show in open
+air — the generated world places `Wall_1/2/187` behind everything underground, which hides
+them exactly like vanilla's DirtUnsafe/Cave walls would; the underworld floor row and the
+magma transition band draw unconditionally, and the black box fills the gaps above the
+hell floor line (`hellBlackBoxBottom` is produced by the previous frame's magma pass).
+
+Deviations kept for the rock/magma passes: the 9-slice/4-slice light smoothing
+(`Lighting.GetColor9Slice/4Slice`) is collapsed to the flat per-cell colour, like the dirt
+pass; `undergroundBackground` is pinned to the classic set (`Main.cs:53817-53824`) because
+`PickUndergroundBackgroundStyle` needs `Main.caveBackX`/`caveBackStyle` and the
+`SceneMetrics` zone counts, so the per-biome cave sets (`Main.cs:53825-53987`) and the
+`ugBackTransition` cross-fade are dead code; XNA clamps out-of-range source rectangles to
+the sheet edge (`SamplerState.PointClamp`, `Main.cs:2774`) and the port clamps the cell's
+source offset instead — the quad-UV pipeline cannot smear per pixel, which only affects
+the last 16 px column of each 128 px rock block. The draw pad `Main.offScreenRange` (the
+padded render target of `WorldSceneLayerTarget`) cancels out of the draw positions in the
+port's unpadded viewport and survives only as the dirt sheet's visibility padding.
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` — the *deepest* column, not the mean — with

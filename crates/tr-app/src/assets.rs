@@ -90,6 +90,22 @@ pub fn load_world_images(
         // the tiled dirt backdrop (`_drawBackground_backTexture[0]/[1]`).
         "Background_1",
         "Background_2",
+        // Rock layer / hell (`DrawBackground_DrawRockLayer`/`_DrawMagmaLayer`):
+        // `Background_3` rock bands, `Background_4` the rock-transition row the dirt
+        // sheet ends with, `Background_6` the magma transition band
+        // (`_drawBackground_backTexture[2]/[3]/[4]`); `125+hellBackStyle` is the
+        // animated magma field (three 96 px frames) and `185+hellBackStyle` the hell
+        // floor row (`Main.cs:54000-54008`). `Black_Tile` fills the underworld box.
+        "Background_3",
+        "Background_4",
+        "Background_6",
+        "Background_125",
+        "Background_126",
+        "Background_127",
+        "Background_185",
+        "Background_186",
+        "Background_187",
+        "Black_Tile",
         // Surface-background layer sets: forest mountains 7/8, snow mountains 35/36,
         // forest tree lines 50..52 and snow tree lines 37..39.
         "Background_7",
