@@ -102,9 +102,9 @@
 | M7-UI-1 | Menu framework (DeathText, item scale, 5-pass shadow, hover) | ✅ Done | Agent-DeepSeek | `menu.rs`: `Main.DrawMenu` geometry + colours, 9 tests; see docs/UI.md |
 | M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111) | ✅ Done | Agent-DeepSeek | General/Interface/Video rows, labels and toggles; volume sliders, cursor, controls, language left as notices |
 | M7-UI-3 | Main menu screen (logo, items, version, links) | ✅ Done | Agent-DeepSeek | Logo at (w/2,100) with scale/rotation easing, seven vanilla rows, `v1.4.5.8` in Mouse_Text |
-| M7-UI-4 | Inventory / ItemSlot cells exact sizes | ❌ Pending | - | 56 px cells, 0.85 scale, contexts |
-| M7-UI-6 | HUD: life/mana/breath/hotbar/tooltips | ❌ Pending | - | `ClassicPlayerResourcesDisplaySet`, `ItemSlot.Draw`, mouse text, cursor |
-| M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ❌ Pending | - | `Main.DrawInventory` 41001+, contexts 1/2/6/8-12 |
+| M7-UI-4 | Inventory / ItemSlot cells exact sizes | ✅ Done | Agent-DeepSeek | Faithful `ItemSlot.Draw` port (`ui/slot.rs`): per-context `Inventory_Back*` background, `Size()*Main.inventoryScale` cell, icon (max 32), stack text at `(10, 26+LineSpacing)*scale`, hotbar digits ("10"→"0", selected `-2`), `Extra_54` empty-equip glyphs. Full `Main.DrawInventory` panels in `ui/inventory.rs` (grid/coins/ammo/equipment/misc/trash). Commits `213a7d4`,`353d917`,`35c3438`,`f8e01a5`. See docs/UI.md, deviations in ANALYSIS.md |
+| M7-UI-6 | HUD: life/mana/breath/hotbar/tooltips | ✅ Done | Agent-DeepSeek | Whole-UI P1: `ui/` module extracted from `main.rs`, vanilla `Cursor_0`, hearts + mana stars, source-exact "Life x/y"/"Mana" text, `Main.mouseTextColor` tint. Commits `1c1eb1d`,`ea4ee14`,`e1265dd`,`7c17d76`,`704dec2`,`a08401a`,`16f0264`. Sources: `ClassicPlayerResourcesDisplaySet`, `Main.DrawCursor`, `Main.MouseText` |
+| M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ✅ Done | Agent-DeepSeek | `ui/inventory.rs` + `ui/chrome.rs` at the original geometry: grid pitch 56/scale 0.85, coins/ammo scale 0.6, equipment columns at `screenWidth-186/-139/-92` with the loadout-1 tint, misc page pitch 47, trash `(448,258)`, page tabs, defence counter (beside the last accessory row), guide text, PVP icons. Commits `35c3438`,`8f5651d`,`f8e01a5` |
 | M7-UI-8 | Minimap frame + boss bar text | ❌ Pending | - | `MinimapFrame` default, `BigProgressBarHelper` |
 | M7-MAP | World map: per-tile colours, zoom/WASD pan, biome `MapBG`, head icon, `.map` persistence | ✅ Done | Agent-DeepSeek (SDD) | `Map/WorldMap`+`MapHelper` port: `tr-core/src/map.rs` (`MapTile`, `.map` v326 layout) + `tr-core/src/mapdata.rs` (colour tables) + `tr-app/src/map.rs` (reveal from the light map, world-sized texture, `Main.DrawMap` geometry, `MapBG`, head icon, deflate/IO). Commits `34cd054`…`2c8c0a1` + Task 9. Deviations in ANALYSIS.md "Minimap and full map (M7-MAP)". `docs/ROADMAP.md` left untouched (another agent's uncommitted edit) |
 | M7-UI-5 | Settings persistence (`config.json`, `Main.SaveSettings`) | ✅ Done | Agent-DeepSeek | `settings.rs`: same keys as vanilla, round-trip test; LightingMode/Background/MapEnabled applied. `e51d318`: `Zoom` key (`Main.GameZoomTarget`, 1..2) + Video row; the mouse wheel now cycles hotbar slots instead of zooming |
@@ -130,6 +130,8 @@
 
 ```
 M7-UI-1/2/3/5 Menu framework + settings — done 2026-10-29T18:45Z (Agent-DeepSeek)
+M7-UI-6      HUD core (resources, cursor, tooltips) — done 2026-10-30 (Agent-DeepSeek)
+M7-UI-4/7    Inventory panel + ItemSlot cells — done 2026-10-30 (Agent-DeepSeek)
 M6-MUSIC      XACT/MS-ADPCM music playback — done 2026-10-29T19:50Z (Agent-Audio)
 M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio)
 ```

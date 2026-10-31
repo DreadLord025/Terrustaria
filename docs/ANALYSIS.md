@@ -1055,3 +1055,60 @@ cached yet).
 and is multiplied by the caller's `volumeScale`. `audio.rs` applies the pan to a rodio
 source (the far channel is attenuated); the listener is refreshed each frame from the
 camera centre and the three volume sliders.
+
+## In-game interface (M7-UI)
+
+The in-game HUD and inventory are immediate-mode in the original (`Main.DrawInterface`,
+`Main.DrawInventory`), so the port keeps one Rust function per original function in
+`crates/tr-app/src/ui/` with the original's constants and pass order (see `docs/UI.md`).
+The deviations below are deliberate and are the places the port is **not** pixel-exact.
+
+### Resources (`ui/resources.rs`, `ClassicPlayerResourcesDisplaySet.cs`)
+
+* `Player.statLifeMax`/`statLifeMax2` are collapsed into a single `Player.max_hp`, so
+  the bonus-heart branch (`ClassicPlayerResourcesDisplaySet.cs:112-116`, only reached
+  when `statLifeMax2 > statLifeMax > 400`) is unreachable and **not ported**. A fresh
+  character has `max_hp = 100`, where the branch cannot trigger; the `Heart2` sheet is
+  therefore never drawn.
+* `Player.ghost` (`:39-42`) is not modelled, so a dead player still draws hearts.
+* Breath bubbles are drawn at the heart row without the source's `+32` y offset and use
+  the per-bubble alpha directly rather than `num2` (`:223-241`); the bubble count is
+  correct.
+* `Main.statLifeMax`-driven heart *count* and the per-heart scale/alpha/`Main.cursorScale`
+  pulse are ported exactly.
+
+### Cursor and mouse text (`ui/cursor.rs`, `ui/tooltip.rs`)
+
+* `Main.ThickMouse` / `Main.mouseItem`'s `+34` tooltip offsets (`Main.cs:20162`) are not
+  modelled; the tooltip is anchored at the pointer.
+* Tooltip stat lines are placeholders (zeros) until `Item.ToolTip`'s data-driven lines
+  are ported; the 9-slice box, the rarity colour and the 4-direction
+  `DrawColorCodedStringWithPadding` shadow are exact. `rare` values below the ported
+  table (`-12`, `-13`, `diff` colours) fall back to white.
+
+### Inventory (`ui/inventory.rs`, `ui/chrome.rs`, `ui/slot.rs`)
+
+* Vanilla keeps one 59-slot `Player.inventory` plus the `armor`/`dye`/`miscEquips`/
+  `miscDyes` arrays. The port keeps the 50-slot grid in `App::inventory` (so the saved
+  format in `persist.rs` is unchanged) and the rest in `inv::EquipSlots`.
+* `Main.invAlpha` pulses `180..=240` at `±0.2`/frame (`Main.cs:45697-45708`) and tints
+  every slot background; the port uses the fixed `220` (`Main.cs:67274`) so screenshots
+  stay deterministic. The equipment columns keep the **loadout-1** colours
+  (`ItemSlot.LoadoutSlotColors[0]`, `ItemSlot.cs:365-371`) since loadouts 2/3 are not
+  modelled.
+* The page tabs, defence counter, guide text and PVP icons are drawn but not
+  interactive (`ItemSlot.Handle` is out of scope for this milestone), and
+  `Player.statDefense` is not modelled, so the defence counter always shows `0`.
+* The bestiary/emote/achievement shortcut buttons, the NPC-housing page (`EquipPage 1`)
+  and the map-style icons (`Main.cs:41056-41124`, `Images/Map_0..3`) are not drawn yet.
+* `Main.inventoryBack`-tinted labels use white instead of the pulsing
+  `Main.mouseTextColor` (`ui/inventory.rs` `LABEL_COLOR`).
+* The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
+  their menus are not opened, so they show as empty frames.
+
+### Determinism hooks
+
+`TR_MOUSE=x,y` (pin the (UI-space) pointer), `TR_INV=1` (open the inventory),
+`TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`,
+`TR_SHOT=path`. Screenshots are byte-identical across runs with
+`TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.

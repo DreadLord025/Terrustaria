@@ -48,7 +48,8 @@ re-implement something that already exists, or to port the wrong file.
 | `Collision.cs`, `Physics/*` | `crates/tr-app/src/collision.rs` | partial |
 | `Rain.cs`, `Cloud.cs` | `crates/tr-app/src/rain.rs` | partial |
 | `Map/*` (client-side map view) | `crates/tr-app/src/map.rs` | partial |
-| `UI/*`, `IngameOptions.cs`, menus | `crates/tr-app/src/menu.rs` | todo |
+| `UI/*`, `IngameOptions.cs`, menus | `crates/tr-app/src/menu.rs` | partial |
+| in-game HUD/inventory (`Main.DrawInterface`/`DrawInventory`/`MouseText`, `ItemSlot.cs`, `ClassicPlayerResourcesDisplaySet`) | `crates/tr-app/src/ui/{mod,resources,cursor,tooltip,slot,inventory,chrome,text}.rs` | partial |
 | settings/config (`Main.*Settings`, `Preferences`) | `crates/tr-app/src/settings.rs` | partial |
 | asset lookup tables (`TextureAssets`, `SoundID`, `ItemID` caches) | `crates/tr-app/src/registry.rs`, `assets.rs` | partial |
 | `Audio/*`, `SoundEngine` | `crates/tr-app/src/audio.rs`, `sound.rs` | partial |

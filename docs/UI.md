@@ -71,6 +71,36 @@ The renderer reads `LightingMode` (applied when the menu closes, through
 systems that will consume it (volumes for `audio`, `PlacementPreview` for the outline,
 `FrameSkipMode` for the loop).
 
+## In-game interface (`crates/tr-app/src/ui/`)
+
+The in-game HUD is immediate mode in the original too: `Main.DrawInterface` calls
+`DrawInterface_25_ResourceBars` → … → `DrawInterface_36_Cursor` in one pass, with the
+constants hard-coded inside `ClassicPlayerResourcesDisplaySet` / `Main.DrawInventory` /
+`Main.MouseText`. The port mirrors that: each panel is a function named after the
+original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass order
+(resources 25 → inventory 27 → hotbar 30 → mouse-text 33 → cursor 36).
+
+| Module | Original | What it draws |
+| --- | --- | --- |
+| `ui/resources.rs` | `ClassicPlayerResourcesDisplaySet.DrawLife/DrawMana` | hearts, mana stars, "Life x/y" / "Mana" text, breath bubbles |
+| `ui/cursor.rs` | `Main.DrawCursor` | the vanilla `Cursor_0` at its pulse scale |
+| `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name |
+| `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph |
+| `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
+| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` | page tabs, defence shield, guide text, PVP icons |
+
+Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
+
+* Hearts start at `screenWidth − 300` and step 26 px; mana stars at `775 + anchor`.
+* Grid slot `(i, j)` is at `(20 + i*56*0.85, 20 + j*56*0.85)` with a hard-coded
+  56 px pitch; the drawn cell is the sheet's own `Size()*scale` (52 px sheet).
+* Coins and ammo use `inventoryScale = 0.6` at x `497` / `534`, rows at
+  `(int)(85 + k*56*0.6 + 20)`.
+* Equipment columns are right-anchored at `screenWidth − 92 / − 139 / − 186`
+  (armour, vanity, dye) from `num20 = 174`, `+4` on the rows past the third.
+* The misc-equipment page uses pitch `47`; trash is at `(448, 258)`; the page tabs
+  sit at `screenWidth − 80 / − 128 / − 176`.
+
 ## Deviations
 
 * The world behind the menu is our own surface render (the original draws the world at the
@@ -83,6 +113,10 @@ systems that will consume it (volumes for `audio`, `PlacementPreview` for the ou
 * The social-media buttons under the logo are not drawn (no icon assets loaded).
 * `Main.UIScale` is assumed to be 1.0 (the DPI scale of the reference machine); the
   original multiplies the whole menu by it.
+* In-game HUD/inventory deviations are collected in
+  `docs/ANALYSIS.md` → "In-game interface (M7-UI)" (breath-bubble offsets, the
+  `Main.invAlpha` pulse, `Main.ThickMouse` tooltip offsets, the missing
+  bestiary/emote/achievement shortcut buttons, `Player.statDefense` not modelled …).
 
 ## Dev hooks and verification
 
