@@ -753,6 +753,7 @@ fn main() -> Result<()> {
         players: Vec::new(),
         worlds: Vec::new(),
         front_hint: None,
+        vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
         settings: settings::Settings::load(),
         player_name,
         net: net_role,
@@ -909,13 +910,33 @@ enum NetRole {
 /// 51069`). `App.front` owns one of these while `App.menu` is `None` — the
 /// same single variable `Main.menuMode` is; exactly one side is live, never
 /// both (Review Focus 1). The Task 6-8 screens join as their own variants.
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// The Keyboard payload keeps the live textbox state, so the enum is
+/// `Clone`-only (`CharCreation`/`WorldCreation` payloads make it so anyway).
+#[derive(Clone, Debug, PartialEq)]
 enum FrontScreen {
     /// `_characterSelectMenu` — the one `UICharacterSelect` singleton
     /// (`Main.cs:66797`); the port's list lives on `App.players`.
     CharSelect,
     /// `_worldSelectMenu` (`Main.cs:66798`); the list lives on `App.worlds`.
     WorldSelect,
+    /// Task 6's `UIVirtualKeyboard` — the plan Task 5 enum arm, live now:
+    /// the card renames and `TR_UI=vk` open it. Boxed: the session's `back`
+    /// target is another `FrontScreen`.
+    Keyboard(Box<KeyboardSession>),
+}
+
+/// The App-side payload of `FrontScreen::Keyboard` — the plan's
+/// `KeyboardRequest` (`label`, `initial`, on-submit target) split into the
+/// [`ui::keyboard::Request`] ctor args, the live [`ui::keyboard::KeyboardState`]
+/// both the on-screen keys and the physical keyboard edit, and the screen the
+/// Cancel/Submit tails return to (the `_cancelAction` target,
+/// `UIVirtualKeyboard.cs:86`; the tails reopen the select screens,
+/// `UICharacterListItem.cs:205-216`, `UIWorldListItem.cs:420-433`).
+#[derive(Clone, Debug, PartialEq)]
+struct KeyboardSession {
+    request: ui::keyboard::Request,
+    state: ui::keyboard::KeyboardState,
+    back: FrontScreen,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -1125,6 +1146,11 @@ struct App {
     /// The port's not-ported notice for front-screen clicks whose target
     /// lands with Tasks 6-8 (ours, like `Menu.hint`).
     front_hint: Option<String>,
+    /// `PlayerInput.SettingsForUI.ShowGamepadHints`'s port stand-in: the
+    /// keyboard's two-layer gate (`UIVirtualKeyboard.cs:675-678`) — false
+    /// without a gamepad, so the desktop `outerLayer2` draws (Review Focus 6);
+    /// `TR_VK_GRID=1` overrides it for screenshots (the plan Task 6 hook).
+    vk_grid: bool,
     /// `config.json` options edited by the settings screens.
     settings: settings::Settings,
     player_name: String,
@@ -1520,11 +1546,29 @@ impl ApplicationHandler for App {
                             return;
                         }
                         if self.front.is_some() {
-                            // menuMode 888 takes no keyboard routes (the
-                            // screens are mouse-driven; the gamepad snap
+                            // menuMode 888 takes no world keyboard routes
+                            // (the screens are mouse-driven; the gamepad snap
                             // points are out of scope, §J.3) — the world
                             // controls stay parked while a front screen is
-                            // live.
+                            // live. The virtual keyboard is the exception:
+                            // `Main.GetInputText` edits its text every frame
+                            // (`UIVirtualKeyboard.cs:750-788`), Enter submits
+                            // through `CanSubmit` (`:763-766`) and Escape
+                            // runs the cancel (`:771-774`'s
+                            // `TryEscapingMenu`).
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() {
+                                        self.keyboard_character(ch);
+                                    }
+                                }
+                            }
+                            match code {
+                                KeyCode::Backspace => self.keyboard_backspace(),
+                                KeyCode::Escape => self.keyboard_cancel(),
+                                KeyCode::Enter | KeyCode::NumpadEnter => self.keyboard_enter(),
+                                _ => {}
+                            }
                             return;
                         }
                         match code {
@@ -2721,8 +2765,10 @@ impl App {
                     .as_ref()
                     .map_or((None, 0usize), |m| (Some(m.page), m.confirm_index));
                 let click = if yes { FlowClick::ConfirmYes } else { FlowClick::ConfirmNo };
+                // Clones: `FrontScreen` is no longer `Copy`, and the erase
+                // calls below need `self` whole.
                 let (front, backup, _) =
-                    next_flow_state(self.front, self.front_backup, page, click);
+                    next_flow_state(self.front.clone(), self.front_backup.clone(), page, click);
                 // Mode 40's Yes drops the parked state (`Main.cs:49455`:
                 // `BackupConfirmationState = null`); the flow function returns
                 // `None` for it, and No's restore value for the reopen.
@@ -2832,9 +2878,85 @@ impl App {
                 self.worlds = ui::save_list::list_worlds(&dir, fakes);
                 ui::world_select::sort_worlds(&mut self.worlds, false);
             }
+            // The keyboard re-lists nothing (`UIVirtualKeyboard.OnActivate`'s
+            // only setup is the gamepad snap point, `:843-850` — out of scope,
+            // §J.3). It enters through `open_keyboard`, which parks the menu
+            // side the same way.
+            FrontScreen::Keyboard(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
+    }
+
+    /// Opens the virtual keyboard the way `RenameButtonClick` does
+    /// (`Main.clrInput()` + `Main.MenuUI.SetState(state)`,
+    /// `UICharacterListItem.cs:197-201`): the ctor args become the session's
+    /// [`ui::keyboard::Request`], the [`ui::keyboard::KeyboardState`] seeds
+    /// from them (`:429-433`), and `back` is the `_cancelAction` target. The
+    /// menu side closes with the settings sync first, so exactly one of
+    /// `front`/`menu` stays live (Review Focus 1).
+    fn open_keyboard(&mut self, request: ui::keyboard::Request, back: FrontScreen) {
+        let state = ui::keyboard::KeyboardState::new(&request);
+        self.park_menu();
+        self.front = Some(FrontScreen::Keyboard(Box::new(KeyboardSession { request, state, back })));
+    }
+
+    /// The submit tail. Vanilla renames the save file and reopens the select
+    /// screen the keyboard came from (`OnFinishedSettingName`: `menuMode = 10`
+    /// + `Rename` + the reopen, `UICharacterListItem.cs:205-213`; the world
+    /// twin `UIWorldListItem.cs:422-426`). The port has no `.plr`/`.trwld`
+    /// writer to rename into (spec §9.4), so the reopen runs and the rename
+    /// itself stays the not-ported notice — the same "not yet" the flow's
+    /// other parked screens show.
+    fn keyboard_submit(&mut self) {
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else { return };
+        let back = session.back.clone();
+        self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
+        self.enter_front(back);
+    }
+
+    /// The cancel tail — `_cancelAction` (`UIVirtualKeyboard.cs:86`) is the
+    /// card lists' `GoBackHere` (`UICharacterListItem.cs:214-216`,
+    /// `UIWorldListItem.cs:428-430`): reopen the screen the keyboard came
+    /// from, no rename, no notice.
+    fn keyboard_cancel(&mut self) {
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else { return };
+        let back = session.back.clone();
+        self.enter_front(back);
+    }
+
+    /// One printable character from the physical keyboard — `Main.GetInputText`'s
+    /// result landing in `this.Text` (`UIVirtualKeyboard.cs:778-788`). That
+    /// path never touches `KeyState`, so a seeded Shift stays latched (the
+    /// on-screen keys' [`ui::keyboard::type_char`] is the only unlatcher).
+    fn keyboard_character(&mut self, c: char) {
+        if let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() {
+            ui::keyboard::write_str(&mut session.state, &c.to_string());
+        }
+    }
+
+    /// The physical Backspace — `Main.GetInputText` shrinks the string the
+    /// same frame (`Main.cs:50793`'s handler the keyboard state feeds through).
+    fn keyboard_backspace(&mut self) {
+        if let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() {
+            session.state.backspace();
+        }
+    }
+
+    /// The physical Enter — `Main.inputTextEnter && UIVirtualKeyboard.CanSubmit`
+    /// fires the submit (`:763-766`); `CanSubmit` is `ValidateText`'s cached
+    /// `TextIsValidForSubmit` (`:108-145`, `:585-626`), so an invalid text
+    /// keeps the keyboard open, exactly like the dead Submit click.
+    fn keyboard_enter(&mut self) {
+        let valid = match self.front.as_ref() {
+            Some(FrontScreen::Keyboard(session)) => {
+                ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
+            }
+            _ => return,
+        };
+        if valid {
+            self.keyboard_submit();
+        }
     }
 
     /// The implicit session character as a card entry: the fresh `Player`
@@ -2893,7 +3015,9 @@ impl App {
     /// `FavoriteButtonClick`'s `UpdateOrder` (`UICharacterListItem.cs:280-282`
     /// / `UIWorldListItem.cs:455-458`).
     fn handle_front_click(&mut self) {
-        let Some(front) = self.front else { return };
+        // `FrontScreen` stopped being `Copy` when the keyboard variant grew a
+        // payload — the snapshot clones instead of moving out of `self`.
+        let Some(front) = self.front.clone() else { return };
         // A click clears the notice, like `Menu::activate`'s `hint = None`.
         self.front_hint = None;
         let (sw, sh) = self.screen_size();
@@ -2935,11 +3059,24 @@ impl App {
                         }
                         ui::char_select::sort_players(&mut self.players);
                     }
-                    // `RenameButtonClick` (`:196-204`) opens the virtual
-                    // keyboard (Task 6); there is no `.plr` reader to rename
-                    // into either.
-                    Some(ui::char_select::CardAction::Rename(_)) => {
-                        self.front_hint = Some("Renaming is not ported yet".into());
+                    // `RenameButtonClick` (`:196-206`): the virtual keyboard
+                    // opens over the card's name — `Lang.menu[45]` "Enter
+                    // Character Name:", `allowEmpty: true`, the ctor's
+                    // 20-character cap (`:199`, `UIVirtualKeyboard.cs:159`).
+                    // There is no `.plr` writer to rename into (spec §9.4),
+                    // so Submit stays the not-ported notice (Task 6's flow).
+                    Some(ui::char_select::CardAction::Rename(i)) => {
+                        let name =
+                            self.players.get(i).map(|p| p.name.clone()).unwrap_or_default();
+                        self.open_keyboard(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                initial: name,
+                                allow_empty: true,
+                                max_length: 20,
+                            },
+                            FrontScreen::CharSelect,
+                        );
                     }
                     // `DeleteButtonClick` (`:242-254`): parks the target,
                     // then `menuMode = 5`. The favourited gate never subscribed
@@ -2959,14 +3096,16 @@ impl App {
                         _ => None,
                     };
                     let (front, backup, page) =
-                        next_flow_state(Some(front), self.front_backup, None, click);
+                        next_flow_state(Some(front), self.front_backup.clone(), None, click);
                     self.front_backup = backup;
                     // Review Focus 1: the table result is the App's state —
                     // `front` is written on every hop, so the page arms below
                     // (`menuMode = 5` / `= 0`) clear the 888 side
                     // (`Main.cs:51066-51069`'s else branch) and the legacy page
                     // goes live instead of hiding under the front screen.
-                    self.front = front;
+                    // `front` stays owned for the `None => match front` tail
+                    // below (`FrontScreen` is no longer `Copy`).
+                    self.front = front.clone();
                     match page {
                         // Mode 5 opens with the parked name/index
                         // (`Main.selectedPlayer`, `UICharacterListItem.cs:
@@ -3042,8 +3181,21 @@ impl App {
                         }
                         ui::world_select::sort_worlds(&mut self.worlds, false);
                     }
-                    Some(ui::world_select::CardAction::Rename(_)) => {
-                        self.front_hint = Some("Renaming is not ported yet".into());
+                    // `RenameButtonClick` (`UIWorldListItem.cs:415-421`): the
+                    // world twin — `Lang.menu[48]` "Enter World Name:",
+                    // `allowEmpty: true`, the 27-character cap (`:419`).
+                    Some(ui::world_select::CardAction::Rename(i)) => {
+                        let name =
+                            self.worlds.get(i).map(|w| w.name.clone()).unwrap_or_default();
+                        self.open_keyboard(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: name,
+                                allow_empty: true,
+                                max_length: 27,
+                            },
+                            FrontScreen::WorldSelect,
+                        );
                     }
                     // `DeleteButtonClick` (`:346-358`): parks the target,
                     // then `menuMode = 9`.
@@ -3061,14 +3213,16 @@ impl App {
                         _ => None,
                     };
                     let (front, backup, page) =
-                        next_flow_state(Some(front), self.front_backup, None, click);
+                        next_flow_state(Some(front), self.front_backup.clone(), None, click);
                     self.front_backup = backup;
                     // Review Focus 1: the table result is the App's state —
                     // `front` is written on every hop, so the page arms below
                     // (`menuMode = 9` / `= 1`) clear the 888 side
                     // (`Main.cs:51066-51069`'s else branch) and the legacy page
                     // goes live instead of hiding under the front screen.
-                    self.front = front;
+                    // `front` stays owned for the `None => match front` tail
+                    // below (`FrontScreen` is no longer `Copy`).
+                    self.front = front.clone();
                     match page {
                         // Mode 9 opens with the parked name/index
                         // (`Main.selectedWorld`, `UIWorldListItem.cs:350-353`).
@@ -3098,6 +3252,55 @@ impl App {
                     }
                 }
             }
+            FrontScreen::Keyboard(_) => {
+                // The keyboard's own click table (`UIVirtualKeyboard`'s
+                // handlers): the on-screen keys type, the toggles cycle the
+                // `KeyState`, Submit re-checks the validation, Cancel runs
+                // the `_cancelAction`.
+                let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() else {
+                    return;
+                };
+                let l = ui::keyboard::layout(screen, self.vk_grid);
+                match ui::keyboard::click_at(&session.state, &l, self.vk_grid, mouse) {
+                    ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
+                    // The shift button: `(keyState != Shift) ? Shift : Default`
+                    // (`:250-254`).
+                    ui::keyboard::Click::Shift => {
+                        let next = if session.state.key_state == ui::keyboard::KeyState::Shift {
+                            ui::keyboard::KeyState::Default
+                        } else {
+                            ui::keyboard::KeyState::Shift
+                        };
+                        session.state.set_key_state(next);
+                    }
+                    // The symbol button: `(keyState != Symbol) ? Symbol : Default`
+                    // (`:284-289`).
+                    ui::keyboard::Click::Symbol => {
+                        let next = if session.state.key_state == ui::keyboard::KeyState::Symbol {
+                            ui::keyboard::KeyState::Default
+                        } else {
+                            ui::keyboard::KeyState::Symbol
+                        };
+                        session.state.set_key_state(next);
+                    }
+                    // `PressSpace` writes without the Shift unlatch (`:491-502`).
+                    ui::keyboard::Click::Space => ui::keyboard::write_str(&mut session.state, " "),
+                    // The backspace key pops (`:392-397`).
+                    ui::keyboard::Click::Backspace => session.state.backspace(),
+                    // The desktop pair's handler checks the validation first
+                    // (`:358-365`); the small pair's `InternalSubmit` re-checks
+                    // too (`:970-978`) — the invalid click is dead either way.
+                    ui::keyboard::Click::Submit => {
+                        if ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
+                        {
+                            self.keyboard_submit();
+                        }
+                    }
+                    // `_cancelAction` (`:319-323`, `:385-389`).
+                    ui::keyboard::Click::Cancel => self.keyboard_cancel(),
+                    ui::keyboard::Click::None => {}
+                }
+            }
         }
     }
 
@@ -3110,9 +3313,25 @@ impl App {
         match preset {
             TrUiPreset::CharSelect => self.enter_front(FrontScreen::CharSelect),
             TrUiPreset::WorldSelect => self.enter_front(FrontScreen::WorldSelect),
-            // Tasks 6-8's screens: the variants land with their tasks.
-            TrUiPreset::CharNew | TrUiPreset::WorldNew | TrUiPreset::Keyboard => {
-                log::info!("TR_UI: the screen lands with Tasks 6-8");
+            // Tasks 7-8's screens: the variants land with their tasks.
+            TrUiPreset::CharNew | TrUiPreset::WorldNew => {
+                log::info!("TR_UI: the screen lands with Tasks 7-8");
+            }
+            TrUiPreset::Keyboard => {
+                // The keyboard screenshot (`TR_UI=vk`): the naming request the
+                // character creator opens with (`Lang.menu[45]`, empty text —
+                // `Player.cs:826`'s fresh name, so the Shift state seeds),
+                // Cancel returning to the char select. `TR_VK_GRID=1` shows
+                // the 50-key grid layer instead (Review Focus 6).
+                self.open_keyboard(
+                    ui::keyboard::Request {
+                        label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                        initial: String::new(),
+                        allow_empty: true,
+                        max_length: 20,
+                    },
+                    FrontScreen::CharSelect,
+                );
             }
             TrUiPreset::Credits => {
                 self.front = None;
@@ -3953,6 +4172,25 @@ impl App {
                                 &self.worlds,
                                 0,
                                 self.mouse_pos,
+                            );
+                        }
+                        FrontScreen::Keyboard(session) => {
+                            // `Main.MenuUI.Draw`'s keyboard state
+                            // (`UIVirtualKeyboard.DrawSelf`, `:680-746`): the
+                            // desktop layer by default (`ShowGamepadHints` is
+                            // false without a gamepad), the 50-key grid under
+                            // `TR_VK_GRID=1` (Review Focus 6). `frame_count`
+                            // is the caret's `UITextBox._frameCount`.
+                            let l = ui::keyboard::layout(screen, self.vk_grid);
+                            ui::keyboard::draw(
+                                renderer,
+                                lookups,
+                                &session.state,
+                                &session.request,
+                                &l,
+                                self.vk_grid,
+                                self.mouse_pos,
+                                *frame_count,
                             );
                         }
                     }
@@ -8719,7 +8957,7 @@ mod front_flow_tests {
         for parked in [FrontScreen::CharSelect, FrontScreen::WorldSelect] {
             let (front, backup, page) = next_flow_state(
                 None,
-                Some(parked),
+                Some(parked.clone()),
                 Some(P::ConfirmDiscard),
                 FlowClick::ConfirmNo,
             );
@@ -8754,8 +8992,8 @@ mod front_flow_tests {
             FlowClick::ConfirmYes,
             FlowClick::ConfirmNo,
         ];
-        for front in fronts {
-            for backup in backs {
+        for front in &fronts {
+            for backup in &backs {
                 for page in &pages {
                     // The invariant holds on the way in: the App never parks
                     // both sides, so front+page inputs are unreachable.
@@ -8763,8 +9001,12 @@ mod front_flow_tests {
                         continue;
                     }
                     for click in &clicks {
-                        let (front, backup, menu) =
-                            next_flow_state(front, backup, *page, click.clone());
+                        let (front, backup, menu) = next_flow_state(
+                            front.clone(),
+                            backup.clone(),
+                            *page,
+                            click.clone(),
+                        );
                         assert!(
                             !(front.is_some() && menu.is_some()),
                             "{click:?} from front {front:?}/page {page:?} left both sides live"
@@ -8864,6 +9106,7 @@ mod front_flow_tests {
             players,
             worlds,
             front_hint: None,
+            vk_grid: false,
             settings: settings::Settings::default(),
             player_name: "flow".into(),
             net: NetRole::Off,
@@ -9018,5 +9261,140 @@ mod front_flow_tests {
         assert_eq!(m.page, P::ConfirmDeleteWorld);
         assert_eq!(m.confirm_name.as_deref(), Some("World 1"));
         assert_eq!(m.confirm_index, 0);
+    }
+
+    // --- Task 6: the keyboard's flow hops ------------------------------------
+
+    /// An App with the keyboard front live over the char select — the session
+    /// `RenameButtonClick` builds (`UICharacterListItem.cs:196-206`).
+    fn keyboard_app() -> App {
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            initial: "Bob".into(),
+            allow_empty: true,
+            max_length: 20,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: FrontScreen::CharSelect,
+            }))),
+            vec![entry("Bob", false)],
+            vec![],
+        )
+    }
+
+    #[test]
+    fn rename_click_opens_the_keyboard_session() {
+        // `RenameButtonClick` (`:196-206`): `Lang.menu[45]`, the card's name,
+        // `allowEmpty: true`, the ctor's 20-character cap; the cancel target
+        // is the screen the keyboard came from.
+        let mut app = flow_app(Some(FrontScreen::CharSelect), vec![entry("Bob", false)], vec![]);
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(ui::char_select::SELECT_PLAYER),
+            app.players.len(),
+        );
+        let rename = ui::char_select::card_layout(l.list, 0).rename;
+        app.mouse_pos = Vec2::new(rename[0] + rename[2] * 0.5, rename[1] + rename[3] * 0.5);
+        app.handle_front_click();
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the rename click opens the keyboard");
+        };
+        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert_eq!(session.request.initial, "Bob");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, 20);
+        assert_eq!(session.back, FrontScreen::CharSelect);
+        // The state seeds from the request (`UIVirtualKeyboard.cs:429-433`) —
+        // a non-empty start stays Default.
+        assert_eq!(session.state.text, "Bob");
+        assert_eq!(session.state.key_state, ui::keyboard::KeyState::Default);
+        // Review Focus 1: the menu side stayed closed while the keyboard is up.
+        assert!(app.menu.is_none());
+    }
+
+    #[test]
+    fn keyboard_cancel_click_reopens_the_parked_screen() {
+        // `_cancelAction` -> `GoBackHere` (`:214-216`): the reopen, no notice.
+        let mut app = keyboard_app();
+        let (sw, sh) = app.screen_size();
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        app.mouse_pos = Vec2::new(l.cancel[0] + l.cancel[2] * 0.5, l.cancel[1] + l.cancel[3] * 0.5);
+        app.handle_front_click();
+        assert_eq!(app.front, Some(FrontScreen::CharSelect));
+        assert!(app.front_hint.is_none(), "cancel notices nothing");
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn keyboard_submit_reopens_with_the_not_ported_notice() {
+        // The rename tail (`:205-213`) reopens the screen; the port's rename
+        // itself is the notice (no save-file writer, spec §9.4).
+        let mut app = keyboard_app();
+        app.keyboard_submit();
+        assert_eq!(app.front, Some(FrontScreen::CharSelect));
+        assert!(app.front_hint.is_some(), "the submit tail notices");
+    }
+
+    #[test]
+    fn keyboard_enter_gates_on_the_validation() {
+        // `:763-766`: `Main.inputTextEnter && CanSubmit` — an empty text with
+        // `allowEmpty: false` keeps the keyboard up; typing fixes it.
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+            initial: String::new(),
+            allow_empty: false,
+            max_length: 20,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        let mut app = flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: FrontScreen::CharSelect,
+            }))),
+            vec![],
+            vec![],
+        );
+        // The empty start seeds Shift (`:430-433`).
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the keyboard is live");
+        };
+        assert_eq!(session.state.key_state, ui::keyboard::KeyState::Shift);
+        app.keyboard_enter();
+        assert!(
+            matches!(app.front, Some(FrontScreen::Keyboard(_))),
+            "the invalid Enter is dead"
+        );
+        // The physical path never unlatches the seeded Shift (`:778-788`).
+        app.keyboard_character('N');
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the keyboard stays live");
+        };
+        assert_eq!(session.state.text, "N");
+        assert_eq!(session.state.key_state, ui::keyboard::KeyState::Shift);
+        app.keyboard_enter();
+        assert_eq!(app.front, Some(FrontScreen::CharSelect), "the valid Enter submits");
+    }
+
+    #[test]
+    fn tr_ui_vk_presets_the_keyboard_now() {
+        // Task 5 parsed `vk` without presetting; Task 6's variant is live.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.preset_ui(TrUiPreset::Keyboard);
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("TR_UI=vk presets the keyboard");
+        };
+        assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
+        assert!(session.state.text.is_empty(), "the fresh name is empty (`Player.cs:826`)");
+        assert_eq!(
+            session.state.key_state,
+            ui::keyboard::KeyState::Shift,
+            "the empty text seeds Shift (`UIVirtualKeyboard.cs:430-433`)"
+        );
+        assert_eq!(session.back, FrontScreen::CharSelect);
     }
 }

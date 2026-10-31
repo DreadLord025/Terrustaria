@@ -8,6 +8,7 @@ pub mod color;
 pub mod crafting;
 pub mod cursor;
 pub mod inventory;
+pub mod keyboard;
 pub mod minimap;
 pub mod panel;
 pub mod resources;
