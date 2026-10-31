@@ -17,6 +17,7 @@ pub mod slot;
 pub mod text;
 pub mod tooltip;
 pub mod uistate;
+pub mod world_select;
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;
