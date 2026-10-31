@@ -1178,10 +1178,115 @@ behaviour notes:
 
 ### Determinism hooks
 
-`TR_MOUSE=x,y` (pin the (UI-space) pointer), `TR_INV=1` (open the inventory),
+`TR_MOUSE=x,y` (pin the (UI-space) pointer), `TR_PAGE=name` (open a menu screen
+directly — the word aliases `settings|general|interface|video|multiplayer` and the
+numeric `menuMode` of every P5 sub-screen: 26, 28, 25, 252, 1125, 111, 2008, 1212,
+1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889), `TR_MENU=1` (keep the menu on
+screen), `TR_INV=1` (open the inventory),
 `TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
 `TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_MAPSTYLE=0|1|2` (select
 `Main.mapStyle`; invalid/missing → 1, `Main.cs:66750`), `TR_BOSS` (spawn King
 Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap),
 `TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`, `TR_SHOT=path`. Screenshots are
 byte-identical across runs with `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.
+
+## Menu sub-screens (P5) (`menu.rs`, `ui/sliders.rs`)
+
+The seventeen `Main.DrawMenu` settings branches below menuMode 11 (26, 28, 25,
+252, 1125, 111, 2008, 1212, 1213, 1127, 27, 272727, 13, 131, 30, 31, 889) and the
+multiplayer branch (12) are ported as visual-only pages at the source geometry
+(`docs/UI.md` → "Menu sub-screens (P5)"); `IngameOptions.DrawValueBar` and the
+HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
+
+* **Config write timing.** Vanilla saves `config.json` when the menu closes;
+  the port writes it immediately on every toggle and once per drag on slider
+  release (the port's write-per-edit convention from the settings-persistence
+  milestone) — same keys and values, different moments.
+* `parallax_scroll` defaults to **60** with a fresh config, not 0: vanilla seeds
+  `Main.caveParallax = 0.88f` (`Main.cs:66809`) and `LoadSettings`'s keyless
+  `Get("BackgroundParallax", ref bgScroll)` derives `bgScroll = 60` from it
+  (`:4405-4408`), so the screen shows "Parallax: 60" and the backdrop applies
+  the 0.88 factor — matching vanilla's out-of-box look.
+* **The colour screens** differ in exactly two flags: menuMode 25 clamps
+  luminosity to `[0.15, 1]` and hides the alpha bar, 252 uses the full range and
+  shows it (`Main.cs:51239-51276`). Each frame the branch copies `selColor` into
+  the page's colour (`:50324` / `:50346`) before the sliders seed/drag/recompose
+  it, so the stored colour trails the knob by one frame — the original's order.
+  The cursor tint reads the stored colour per frame (`main.rs`, before
+  `cursor.update()`), so dragging re-colours the pointer live (`Main.cs:50324` →
+  `:52490`).
+* **Lock-on priority cycles 0 → 1 → 2 → 1**, not back to 0: `CycleUseModes`
+  ThreeDS→TargetClosest (`LockOnHelper.cs:103-116`) skips `FocusTarget`, which is
+  unreachable by cycling (a fresh `LoadSettings` also rewrites 0 to 2,
+  `Main.cs:4496-4505`).
+* **Multiplayer transitions are cut down to the menu.** Without a character/world
+  select (P6): Multiplayer "Join"/"Host & Play" open the input screens directly
+  instead of the character select (`Main.cs:50713-50730`); menuMode 131 Accept
+  opens the password screen (31) instead of connecting (`OnSubmitServerPort`,
+  `:52047-52054`); the password screens' Back rows return to Join Port /
+  Multiplayer instead of cancelling the connect / the world select
+  (`:51950-51957`, `ExitServerPasswordMenu :52018-52028`); 889 Back returns to
+  Multiplayer instead of the world select (`:48804-48806`). The 889 "Allowed
+  Users" rows stay blank — the Steam-only lobby branch (`:48749-48777`) never
+  fills them without `SocialAPI.Network`. The port splits the host and join
+  password strings where vanilla shares one `Netplay.ServerPassword`. Host keeps
+  the vanilla fixed listen port 7777 (`HostAndPlay`, `:52011`); the old custom
+  port row is gone (`TR_HOST` still overrides for tests).
+* **`"HidePassword"` vs vanilla `"HidePasswords"`** (`Main.cs:4144` Put,
+  `:4422` Get): the port's config key drops the plural — pre-existing from the
+  settings-persistence milestone, kept so existing port configs still load
+  (a vanilla `config.json`'s `HidePasswords` entry is ignored by the port).
+* **Stored without consumers yet** (visual-only, spec §9.1): the volume sliders
+  (no audio engine reads the volumes), the six Effects toggles / smart-cursor
+  flags / `FlashyEffects*` (no gameplay consumer), `boss_bar_text` (P4's boss bar
+  draws the numbers unconditionally), `resource_sets` (the HUD always renders the
+  Classic set — the default above) and `portrait_preference`. The Interface
+  "Minimap Border" row is the exception — live, see below.
+* **The menuMode 888 destinations stay hints**: the 1127 "Keybindings" row shows
+  the not-ported notice because `ManageControlsMenu` is a `UIState` screen, out
+  of P5 scope (spec §9.1) — the 27/272727 lists below cover the raw bind data.
+
+### Task 5 notes (C# facts that override the plan tables)
+
+* `menuMode` 27 (Keybindings) and 272727 (Map Keys) are **unreachable
+  upstream**: no `menuMode = 27` / `= 272727` assignment exists anywhere under
+  `decompiled/` — the Settings "Controls" row opens 1127, whose "Keybindings"
+  row opens the menuMode 888 `ManageControlsMenu` UIState
+  (`Main.cs:50661-50666`, out of scope). Both list screens are ported for
+  completeness and are reachable only via `TR_PAGE=27` / `TR_PAGE=272727`; no
+  navigation leads to them.
+* `Reset Keybindings` (`Main.ResetKeyBindings`, `Main.cs:52459-52475`) is only
+  called by the mode-27 Reset row (`Main.cs:50561`); it restores
+  `W S A D Space T Escape H J B E LeftShift LeftControl R`
+  (`:52461-52474`). The 272727 Reset row inlines the map seeds
+  `Tab M Add Subtract PageUp PageDown` (`:50451-50456` = the
+  `:67190-67195` defaults). 1127 has no Reset row. The port keeps the binds
+  session-only (vanilla saves them in the player file, not `config.json`);
+  captured keys store winit debug names (`KeyW`) where XNA would store `W`.
+* C# facts that override the plan table (plan arithmetic/reading slips, C# is
+  truth):
+  - 1127 Back draw y = `250 + 52*3 + 18` = **424**, not the plan's 464.
+  - 272727 Back keeps **scale 1.0**: the branch assigns `array7[6] = 0.8f`
+    twice (`Main.cs:50439-50440`) and never touches `array7[7]`
+    (`:50441-50444`), unlike the mode-27 twin's 0.8 (`:50550`).
+  - `SelectionHolder.CycleSelection` (`SelectionHolder.cs:44-58`) activates
+    the option **before** the active one, wrapping the first to the last —
+    the Interface selector cycles run *backwards* (Default → Valkyrie → … →
+    Golden → Default; resource sets: Default → New → NewWithText → … →
+    Default). The plan's "next-in-order" and its "cycling from Valkyrie lands
+    on Default" oracle were both wrong; from Valkyrie the cycle lands on
+    Retro.
+  - `BigProgressBarSystem.ShowText` defaults **true** (static ctor,
+    `BigProgressBarSystem.cs:259`), so `TR_PAGE=interface` shows "Boss Health
+    Bar Numbers: On" by default, not the plan's "Off". The flag is stored
+    only; P4's boss bar draws the numbers unconditionally (its note above
+    still holds until a consumer lands).
+* `resource_sets` defaults to `"Default"` (label "Classic") while vanilla's
+  config default is `"New"` (`PlayerResourceSetsManager.cs:28`) — the planned
+  deviation: the port renders the Classic set, so the row must agree with the
+  HUD. A vanilla `config.json` value still round-trips unchanged.
+* The Interface "Minimap Border" row is *live* behaviour, not visual-only:
+  cycling rewrites `settings.minimap_frame`, which the game loop feeds
+  through `ui::minimap::style_index` (`main.rs:2355`), so the minimap frame
+  re-renders immediately. Map Scale stays the P4 visual-only ruling
+  (reference 1.0).

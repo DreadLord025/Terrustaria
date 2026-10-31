@@ -61,15 +61,85 @@ ignored, missing keys keep their default):
 
 `AutoSave`, `AutoPause`, `MapEnabled`, `HidePassword`, `SettingPlayWhenUnfocused`,
 `PickupText`, `InvasionProgressMode`, `PlacementPreview`, `HighlightNewItems`,
-`MouseShowBuildingGrid`, `GamepadInstructions`, `CaveParallax`, `FrameSkipMode`,
-`LightingMode`, `Quality`, `BackgroundEnabled`, `BloodAndGore`, `MinersWobble`,
-`TilesSwayInWind`, `MusicVolume`, `SoundVolume`, `AmbientVolume`.
+`MouseShowBuildingGrid`, `GamepadInstructions`, `BackgroundParallax`,
+`FrameSkipMode`, `LightingMode`, `Quality`, `BackgroundEnabled`, `BloodAndGore`,
+`MinersWobble`, `TilesSwayInWind`, `UseStormEffect`, `UseHeatDistortion`,
+`ForegroundSunlightEffects`, `WaveQuality`, `FlashyEffectsWorld`, `UseScreenShake`,
+`Zoom`, `MusicVolume`, `SoundVolume`, `AmbientVolume`, `MapScale`, `MouseColor`
+(R/G/B dict), `MouseBorderColor` (R/G/B/A dict), `SmartCursorToggle`,
+`UseSmartAxeAfterSmartPickaxe`, `UseSmartCursorForCommonBlocks`, `LockOnPriority`,
+`ReverseUpDownForArmorSetBonuses`, `DisableLeftShiftTrashCan`, `DisableQuickTrash`,
+`PlayerResourcesSet`, `PortraitPreference`, `ShowBossBarHealthText`,
+`FlashyEffectsInterface`, `MinimapFrame`.
 
 The renderer reads `LightingMode` (applied when the menu closes, through
 `LightMode::ALL`), `BackgroundEnabled` (the parallax layer gate in `draw_sky`) and
 `MapEnabled` (minimap/full map). The rest is stored and shown in the labels, ready for the
 systems that will consume it (volumes for `audio`, `PlacementPreview` for the outline,
 `FrameSkipMode` for the loop).
+
+## Menu sub-screens (P5)
+
+Every `Main.DrawMenu` settings branch below menuMode 11 is ported as one `Page` in
+`menu.rs`, keyed by its original `menuMode` — which is also accepted as a `TR_PAGE`
+name so each screen can be opened directly. The shared slider chrome is
+`ui/sliders.rs`: the `IngameOptions.DrawValueBar` port (ColorBar 178×16 track,
+167 ColorBlips 2×8 graded with the truncating `ColorLerp_BlackToWhite`, the 11×25
+ColorSlider knob at `rect.x + 5 + 167·value`, the hit box inflated −5 px
+horizontally, and the `UI/Slider_Highlight` overlay tinted `OurFavoriteColor
+(255, 231, 69)` while hovered) and the HSL colour-slider block (Hue + 168 blips per
+row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89`,
+176 px knob travel, hit inflated 4 px; the alpha row's blips are
+`hsl_to_rgb(h, s, l, 255) · i/167`).
+
+| Screen | `menuMode` | `num2`/`num4`/`array7` | Rows |
+| --- | --- | --- | --- |
+| Volume | `26` | 200 / 10 / 1.0 | blank, "Volume" header @210, Back @470 → Settings |
+| Parallax | `28` | 240 / 60 / 1.0 | blank, "Parallax" header @250, Back @530 → Video |
+| Cursor | `1125` | 232 / 38 / 0.73 | Cursor Color, Border Color, Smart Cursor Mode/Priority/Placement, Lock On Priority, Back @478 |
+| Cursor Color | `25` | 200 / 10 / 1.0 | header @210, Back @470; HSL sliders with luminosity floored at `0.15` and no alpha bar |
+| Border Color | `252` | 200 / 10 / 1.0 | the 25 twin: full luminosity range and the alpha bar |
+| Resolution | `111` | 210 / 55 / 0.85 | Fullscreen Resolution @210, Borderless Window @265, Go Fullscreen @320, Apply @475, Back @530 |
+| Effects | `2008` | 210 / 28 / 0.6 (header 0.7) | header @202 (`array4 = −8`), six effect rows, Back @406 — the branch declares 9 rows but leaves row 8 null and the item loop skips it |
+| Language | `1213` | 200 / 26 / 0.65 | "Select language" @180 (scale 0.85), 12 languages, Back @547 (scale 0.8) |
+| Language Initial | `1212` | 200 / 30 / 0.65 | the first-launch picker: header scale 1.0, 12 languages, no Back |
+| Controls | `1127` | 250 / 52 / 0.78 | Set Bonuses @250, Quick Trash @302, Keybindings @354 (notice — the original opens the 888 UIState), Back @424 |
+| Keybindings | `27` | 176 / 22 / 0.45 | 14 left-aligned bind rows (`array5 = −80`) + Reset + Back, both scale 0.8 |
+| Map Keys | `272727` | 200 / 30 / 0.55 | 6 left-aligned bind rows (`array5 = −140`) + Reset (0.8) + Back (scale **1.0** — the branch never sets `array7[7]`) |
+| Multiplayer | `12` | 250 / 80 / 1.0 | Join @250, Host & Play @330, Back @410 — "Join via Steam" is overwritten without `SocialAPI.Network`, so Join is first |
+| Join IP | `13` | 180 / 30 / 1.0 | header @180, input @199 (`array4 = 19`), 7 blank recent rows @280..460 (scale 0.6), Accept @494, Back @544 |
+| Join Port | `131` | 250 / 80 / 1.0 | header @250, input @310, Accept @430 (disabled unless the text parses to 1..=65535), Back @490 |
+| Host Password | `30` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Host (fixed port 7777), Back @490 |
+| Join Password | `31` | 250 / 80 / 1.0 | header @250, masked input @310, Accept @430 → Join, Back @490 |
+| Server Settings | `889` | 200 / 60 / 1.0 | header @200, Steam Multiplayer toggle @290, two blank lobby rows, Start @510, Back @570 |
+
+* **Slider drag is draw-time and sticky.** The bars draw *and* drag in one pass,
+  exactly like `DrawValueBar`/`DrawMenu`: the bar renders at the stored value,
+  then the drag pass stores `(mouseX − rect.x) / rect.width`, so the knob trails
+  the pointer by one frame — the original's order. `Menu::bar_grab` /
+  `Menu::color_grab` mirror `IngameOptions.rightLock` / `Main.grabColorSlider`:
+  the lock sticks to the bar while the button is held even outside it, and clears
+  on release or page change. Volume labels sit at `370 + screenWidth/2 − 400 + 37`
+  (x 807 at 1600×900: "Music:" @320, "Sound:" @350, "Ambient:" @380, each value
+  90 px right); the bar right edge is `screenWidth/2 − 40 + 37` (797) with centres
+  y 332/362/392, and the percentages print `Math.Round(v·100)` with ties-to-even
+  (`0.125` → `"12%"`). Parallax draws `"Parallax: {bgScroll}"` at (770, 400) with
+  its bar right edge at 760, centre y 412.
+* **The colour screens** copy `selColor` into `mouseColor` / `MouseBorderColor`
+  every frame, seed the bars from `rgbToHsl` while any is still `−1`, and
+  recompose `selColor` from the bars at the end of the pass; the cursor tint reads
+  the stored colour per frame, so dragging re-colours the pointer live. A config
+  write lands once per drag, on release.
+* **The input rows are headers with a blinking cursor**, not boxes: the
+  IP / port / password rows are non-clickable, append `|` on a 20-frame blinker
+  (nudging the row one pixel right, `array5[1] = 1`) and a space otherwise.
+  Passwords render `*`-masked while "Passwords: Hidden" is set, Enter submits from
+  any row, and the port keeps separate host/join password strings where vanilla
+  shares one.
+* **Keybind capture** (27/272727): clicking a bind row shows `"_"`, the next key
+  press stores it and closes the capture, Reset restores the vanilla defaults;
+  the lists are left-aligned at `array5` with the raw `Lang.menu` values,
+  trailing spaces included.
 
 ## In-game interface (`crates/tr-app/src/ui/`)
 
@@ -226,10 +296,13 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 * The world behind the menu is our own surface render (the original draws the world at the
   surface with `Main.DrawMenu`'s camera); the logo, items, font and colours are the
   original's.
-* Not ported yet, shown as a notice when clicked: Achievements, Resource Packs, Credits,
-  Volume (the three `IngameOptions.DrawValueBar` sliders), Cursor colour, Controls/key
-  rebinding, Language selection, Resolution, Effects, map borders, health/mana styles,
-  portraits, boss-bar numbers and inventory effects.
+* Not ported yet, shown as a notice when clicked: Achievements, Resource Packs,
+  Credits, and the backing systems behind rows that now render at the original
+  geometry — window resolution / borderless / fullscreen (menuMode 111), language
+  switching (1213/1212), and the menuMode-888 `ManageControlsMenu` UIState (the
+  1127 "Keybindings" row). The P5 sub-screens themselves are ported (see
+  "Menu sub-screens (P5)"); their remaining gaps are collected in
+  `docs/ANALYSIS.md` → "Menu sub-screens (P5)".
 * The social-media buttons under the logo are not drawn (no icon assets loaded).
 * `Main.UIScale` is assumed to be 1.0 (the DPI scale of the reference machine); the
   original multiplies the whole menu by it.
@@ -241,11 +314,16 @@ caller) — the full list is in `docs/ANALYSIS.md` →
 ## Dev hooks and verification
 
 * `TR_MENU=1` keeps the menu on screen even with `TR_SHOT` (screenshots skip it by
-  default), `TR_PAGE=settings|general|interface|video|multiplayer` opens a screen directly,
-  `TR_FOCUS=n` focuses row `n` (the yellow hover state).
+  default), `TR_PAGE=name` opens a screen directly — the word aliases
+  (`settings|general|interface|video|multiplayer`) plus the numeric `menuMode` of
+  every P5 screen (`26`, `28`, `25`, `252`, `1125`, `111`, `2008`, `1212`, `1213`,
+  `1127`, `27`, `272727`, `12`, `13`, `131`, `30`, `31`, `889`), `TR_FOCUS=n`
+  focuses row `n` (the yellow hover state).
 * `cargo test -p tr-app` covers the per-screen `num2/num4/array7` table, the seven main-menu
   rows, the eight settings rows, the twelve interface rows, the Video Back-row quirk, the
-  toggle cycles, Back navigation and the not-ported notices, plus the `config.json`
-  round-trip.
+  toggle cycles, Back navigation and the not-ported notices, the P5 sub-screen row tables
+  (slider chrome maths and drag locks, the colour-screen floors, the Effects phantom-row
+  skip, the language lists, the bind lists and capture machine, the multiplayer row gates
+  and the submit chain), plus the `config.json` round-trip.
 * Screenshots at 1600×900: `.qoder_tmp/ui_{main,settings,general,interface,video}.png`
   (local; regenerate with the hooks above).

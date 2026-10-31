@@ -100,8 +100,8 @@
 | ID | Task | Status | Assigned To | Notes |
 |----|------|--------|-------------|-------|
 | M7-UI-1 | Menu framework (DeathText, item scale, 5-pass shadow, hover) | ✅ Done | Agent-DeepSeek | `menu.rs`: `Main.DrawMenu` geometry + colours, 9 tests; see docs/UI.md |
-| M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111) | ✅ Done | Agent-DeepSeek | General/Interface/Video rows, labels and toggles; volume sliders, cursor, controls, language left as notices |
-| M7-UI-3 | Main menu screen (logo, items, version, links) | ✅ Done | Agent-DeepSeek | Logo at (w/2,100) with scale/rotation easing, seven vanilla rows, `v1.4.5.8` in Mouse_Text |
+| M7-UI-2 | Settings screens (menuMode 11 / 112 / 1112 / 1111) | ✅ Done | Agent-DeepSeek; P5: Agent-controller + subagents | General/Interface/Video rows, labels and toggles. Whole-UI P5: the 17 sub-screens ported visual-only — volume 26 / parallax 28 `DrawValueBar` sliders, cursor 1125 + colour screens 25/252 (HSL), resolution 111, effects 2008, language 1212/1213, controls 1127, keybind lists 27/272727, five live Interface selector rows — shared chrome in `ui/sliders.rs`. Commits `0e562e3..HEAD`. Deviations in ANALYSIS.md "Menu sub-screens (P5)"; see docs/UI.md, docs/PORT_MAP.md |
+| M7-UI-3 | Main menu screen (logo, items, version, links) | ✅ Done | Agent-DeepSeek; P5: Agent-controller + subagents | Logo at (w/2,100) with scale/rotation easing, seven vanilla rows, `v1.4.5.8` in Mouse_Text. Whole-UI P5 multiplayer alignment: menuMode 12/13/131/30/31/889 at the original geometry (Join first, blinker input rows, port gate 1..=65535, password masking; old boxed Field UI deleted), commit `5cf6684` |
 | M7-UI-4 | Inventory / ItemSlot cells exact sizes | ✅ Done | Agent-DeepSeek | Faithful `ItemSlot.Draw` port (`ui/slot.rs`): per-context `Inventory_Back*` background, `Size()*Main.inventoryScale` cell, icon (max 32), stack text at `(10, 26+LineSpacing)*scale`, hotbar digits ("10"→"0", selected `-2`), `Extra_54` empty-equip glyphs. Full `Main.DrawInventory` panels in `ui/inventory.rs` (grid/coins/ammo/equipment/misc/trash). Commits `213a7d4`,`353d917`,`35c3438`,`f8e01a5`. See docs/UI.md, deviations in ANALYSIS.md |
 | M7-UI-6 | HUD: life/mana/breath/hotbar/tooltips | ✅ Done | Agent-DeepSeek | Whole-UI P1: `ui/` module extracted from `main.rs`, vanilla `Cursor_0`, hearts + mana stars, source-exact "Life x/y"/"Mana" text, `Main.mouseTextColor` tint. Commits `1c1eb1d`,`ea4ee14`,`e1265dd`,`7c17d76`,`704dec2`,`a08401a`,`16f0264`. Sources: `ClassicPlayerResourcesDisplaySet`, `Main.DrawCursor`, `Main.MouseText` |
 | M7-UI-7 | Inventory grid, trash/coins/ammo, equipment | ✅ Done | Agent-DeepSeek | `ui/inventory.rs` + `ui/chrome.rs` at the original geometry: grid pitch 56/scale 0.85, coins/ammo scale 0.6, equipment columns at `screenWidth-186/-139/-92` with the loadout-1 tint, misc page pitch 47, trash `(448,258)`, page tabs, defence counter (beside the last accessory row), guide text, PVP icons. Commits `35c3438`,`8f5651d`,`f8e01a5` |
@@ -134,6 +134,7 @@ M7-UI-6      HUD core (resources, cursor, tooltips) — done 2026-10-30 (Agent-D
 M7-UI-4/7    Inventory panel + ItemSlot cells — done 2026-10-30 (Agent-DeepSeek)
 M7-UI-7      Whole-UI P3 crafting panel (chrome, filter strip, search bar) — done 2026-10-31 (Agent-controller + subagents)
 M7-UI-8      Whole-UI P4 minimap frame + boss bar (styles, zoom, icon row, mH, DrawFancyBar) — done 2026-10-31 (Agent-controller + subagents)
+M7-UI-2/3    Whole-UI P5 menu sub-screens (sliders, 17 settings pages, multiplayer alignment) — done 2026-10-31 (Agent-controller + subagents)
 M6-MUSIC      XACT/MS-ADPCM music playback — done 2026-10-29T19:50Z (Agent-Audio)
 M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio)
 ```

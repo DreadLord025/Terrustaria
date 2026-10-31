@@ -49,6 +49,8 @@ re-implement something that already exists, or to port the wrong file.
 | `Rain.cs`, `Cloud.cs` | `crates/tr-app/src/rain.rs` | partial |
 | `Map/*` (client-side map view) | `crates/tr-app/src/map.rs` | partial |
 | `UI/*`, `IngameOptions.cs`, menus | `crates/tr-app/src/menu.rs` | partial |
+| `Main.DrawMenu` settings/multiplayer branches (`menuMode` 26, 28, 25, 252, 1125, 111, 2008, 1212, 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889 — the P5 sub-screens; 27/272727 reachable via `TR_PAGE` only) | `crates/tr-app/src/menu.rs` (+ `crates/tr-app/src/ui/sliders.rs`) | done (visual only) |
+| `IngameOptions.DrawValueBar` (+ `Main.DrawMenu`'s HSL colour-slider block, `Main.cs:51102-51284`) | `crates/tr-app/src/ui/sliders.rs` | done |
 | in-game HUD/inventory (`Main.DrawInterface`/`DrawInventory`/`MouseText`, `ItemSlot.cs`, `ClassicPlayerResourcesDisplaySet`) | `crates/tr-app/src/ui/{mod,resources,cursor,tooltip,slot,inventory,chrome,text}.rs` | partial |
 | `GameContent/UI/Minimap/*` (`MinimapFrame.cs`, `MinimapFrameManager.cs`, `MinimapFrameTemplate.cs`) + `DataStructures/SelectionHolder.cs` (`CycleSelection`) | `crates/tr-app/src/ui/minimap.rs` (+ the `MinimapFrame`/`MapScale` config keys in `settings.rs`) | done |
 | `GameContent/UI/BigProgressBar/*` (`BigProgressBarHelper` 4-arg `DrawFancyBar` + `DrawHealthText`, `CommonBossBigProgressBar`) | `crates/tr-app/src/ui/bars.rs` | partial |
