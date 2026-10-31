@@ -316,6 +316,78 @@ pub fn load_world_images(
         "ColorBlip",
         "ColorSlider",
         "UI/Slider_Highlight",
+        // P6 front-end (`UICharacterListItem.cs:52-60`, `UIWorldListItem.cs:210-221`,
+        // `UICharacter.cs:45`, `AWorldListItem.cs:199`, `UICharacterCreation.cs`,
+        // `UIWorldCreation.cs`, `UIVirtualKeyboard.cs:171-172`). Includes
+        // `PreviewDifficultyExpert2` — the fourth bunny slot the Lookups table
+        // carries (the plan's whitelist list omits it; `UIWorldCreationPreview.cs:53`).
+        "UI/ButtonPlay",
+        "UI/ButtonRename",
+        "UI/ButtonDelete",
+        "UI/ButtonSeed",
+        "UI/ButtonFavoriteActive",
+        "UI/ButtonFavoriteInactive",
+        "UI/ButtonCloudActive",
+        "UI/ButtonCloudInactive",
+        "UI/Divider",
+        "UI/InnerPanelBackground",
+        "UI/PlayerBackground",
+        "UI/IconCrimson",
+        "UI/IconCompletion",
+        "UI/IconMixedSeed",
+        "UI/IconPlayedBefore",
+        "UI/IconNewlyGenerated",
+        "UI/CharCreation/CategoryPanel",
+        "UI/CharCreation/CategoryPanelBorder",
+        "UI/CharCreation/CategoryPanelHighlight",
+        "UI/CharCreation/PanelGrayscale",
+        "UI/CharCreation/SmallPanel",
+        "UI/CharCreation/SmallPanelBorder",
+        "UI/CharCreation/CharInfo",
+        "UI/CharCreation/HairStyle_Hair",
+        "UI/CharCreation/HairStyle_Arrow",
+        "UI/CharCreation/ColorHair",
+        "UI/CharCreation/ColorEye",
+        "UI/CharCreation/ColorEyeBack",
+        "UI/CharCreation/ColorSkin",
+        "UI/CharCreation/ColorShirt",
+        "UI/CharCreation/ColorUndershirt",
+        "UI/CharCreation/ColorPants",
+        "UI/CharCreation/ColorShoes",
+        "UI/CharCreation/Copy",
+        "UI/CharCreation/Paste",
+        "UI/CharCreation/Randomize",
+        "UI/CharCreation/ClothStyleMale",
+        "UI/CharCreation/ClothStyleFemale",
+        "UI/CharCreation/Voice",
+        "UI/WorldCreation/PreviewBorder",
+        "UI/WorldCreation/IconRandomName",
+        "UI/WorldCreation/IconRandomSeed",
+        "UI/WorldCreation/IconSizeSmall",
+        "UI/WorldCreation/IconSizeMedium",
+        "UI/WorldCreation/IconSizeLarge",
+        "UI/WorldCreation/IconDifficultyCreative",
+        "UI/WorldCreation/IconDifficultyNormal",
+        "UI/WorldCreation/IconDifficultyExpert",
+        "UI/WorldCreation/IconDifficultyMaster",
+        "UI/WorldCreation/IconEvilRandom",
+        "UI/WorldCreation/IconEvilCorruption",
+        "UI/WorldCreation/IconEvilCrimson",
+        "UI/WorldCreation/PreviewDifficultyNormal1",
+        "UI/WorldCreation/PreviewDifficultyExpert1",
+        "UI/WorldCreation/PreviewDifficultyMaster1",
+        "UI/WorldCreation/PreviewDifficultyNormal2",
+        "UI/WorldCreation/PreviewDifficultyCreative2",
+        "UI/WorldCreation/PreviewDifficultyExpert2",
+        "UI/WorldCreation/PreviewDifficultyMaster2",
+        "UI/WorldCreation/PreviewEvilRandom",
+        "UI/WorldCreation/PreviewEvilCorruption",
+        "UI/WorldCreation/PreviewEvilCrimson",
+        "UI/WorldCreation/PreviewSizeSmall",
+        "UI/WorldCreation/PreviewSizeMedium",
+        "UI/WorldCreation/PreviewSizeLarge",
+        "UI/VK_Shift",
+        "UI/VK_Backspace",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -706,6 +778,85 @@ pub struct Lookups {
     /// `Images/UI/Slider_Highlight`: the hover overlay — `TextureAssets.ColorHighlight`
     /// (`AssetInitializer.cs:349`; NOT `Images/ColorHighlight`), 178x16.
     pub ui_slider_highlight: Option<tr_render::SheetRect>,
+    // --- P6 front-end sheets (the character/world select + creation screens) ---
+    /// P6 card buttons (`UICharacterListItem.cs:52-60`): Play,
+    /// FavoriteActive, FavoriteInactive, Rename, Delete, 22x22 each. The
+    /// cloud pair is loaded separately for completeness but unused:
+    /// `SocialAPI.Cloud == null` (plan §J.2).
+    pub card_buttons: [Option<tr_render::SheetRect>; 5],
+    /// `UI/ButtonCloudActive` / `ButtonCloudInactive` (unused — no cloud saves).
+    pub card_cloud: [Option<tr_render::SheetRect>; 2],
+    /// `UI/Divider` 8x4 (`UICharacterListItem.cs:52`).
+    pub ui_divider: Option<tr_render::SheetRect>,
+    /// `UI/InnerPanelBackground` 24x27 — the card info panels (`:53`, `DrawPanel`
+    /// `:310-315` splices it 8/8/8/8).
+    pub ui_inner_panel: Option<tr_render::SheetRect>,
+    /// `UI/PlayerBackground` 59x58 — the card preview backdrop (`UICharacter.cs:45`).
+    pub ui_player_background: Option<tr_render::SheetRect>,
+    /// `UI/IconCrimson` 60x58 — the plain world-card icon (`AWorldListItem.cs:199`).
+    pub ui_world_icon: Option<tr_render::SheetRect>,
+    /// `UI/IconCompletion` 64x70 (`UIWorldListItem.cs:73`; unused — no Moon Lord data).
+    pub ui_icon_completion: Option<tr_render::SheetRect>,
+    /// `UI/IconMixedSeed` 22x18 (`:85`; unused — no mixed-seed data).
+    pub ui_icon_mixed_seed: Option<tr_render::SheetRect>,
+    /// `UI/IconPlayedBefore` 25x28 (`:220`).
+    pub ui_icon_played_before: Option<tr_render::SheetRect>,
+    /// `UI/IconNewlyGenerated` 24x28 (`:221`; unused — fresh entries only).
+    pub ui_icon_newly_generated: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/CategoryPanel` 44x44 (`UIColoredImageButton.cs:41`).
+    pub cc_panel: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/CategoryPanelBorder` 44x44 (`UIColoredImageButton.cs:52`).
+    pub cc_panel_border: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/CategoryPanelHighlight` 36x36 (`UIColoredImageButton.cs:45`).
+    pub cc_panel_highlight: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/PanelGrayscale` 44x44 (`GroupOptionButton.cs:126`,
+    /// `UIDifficultyButton.cs:34`).
+    pub cc_panel_gray: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/SmallPanel` 32x32 (`UIColoredImageButton.cs:37`).
+    pub cc_small_panel: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/SmallPanelBorder` 32x32 (`UIColoredImageButton.cs:48`).
+    pub cc_small_panel_border: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/CharInfo` 30x30 (`UICharacterCreation.cs:765`).
+    pub cc_char_info: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/HairStyle_Hair` 30x30 (`UICharacterCreation.cs:760`).
+    pub cc_hair_style: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/HairStyle_Arrow` 30x30 (`UICharacterCreation.cs:762`).
+    pub cc_hair_arrow: Option<tr_render::SheetRect>,
+    /// The colour-picker icons 30x30 (`UICharacterCreation.cs:735-742`):
+    /// ColorHair, ColorEye, ColorEyeBack, ColorSkin, ColorShirt,
+    /// ColorUndershirt, ColorPants, ColorShoes.
+    pub cc_colors: [Option<tr_render::SheetRect>; 8],
+    /// The middle-texture buttons 20x20 (`UICharacterCreation.cs:406-429`
+    /// categories bar, `:1006-1031` HSL menu): Copy, Paste, Randomize.
+    pub cc_copy_paste_random: [Option<tr_render::SheetRect>; 3],
+    /// `UI/CharCreation/ClothStyleMale` / `ClothStyleFemale` 34x36
+    /// (`UICharacterCreation.cs:743,1289`).
+    pub cc_cloth_styles: [Option<tr_render::SheetRect>; 2],
+    /// `UI/CharCreation/Voice` 26x32 (`:482`).
+    pub cc_voice: Option<tr_render::SheetRect>,
+    /// `UI/WorldCreation/PreviewBorder` 84x84 (`UIWorldCreationPreview.cs:46`).
+    pub wc_preview_border: Option<tr_render::SheetRect>,
+    /// `UI/WorldCreation/IconRandomName` / `IconRandomSeed` 38x38
+    /// (`UIWorldCreation.cs:223,250`).
+    pub wc_icons: [Option<tr_render::SheetRect>; 2],
+    /// `IconSizeSmall/Medium/Large` 32x32 (`:384`).
+    pub wc_size_icons: [Option<tr_render::SheetRect>; 3],
+    /// `IconDifficultyCreative/Normal/Expert/Master` 32x32 (`:433`).
+    pub wc_difficulty_icons: [Option<tr_render::SheetRect>; 4],
+    /// `IconEvilRandom/Corruption/Crimson` 32x32 (`:478`).
+    pub wc_evil_icons: [Option<tr_render::SheetRect>; 3],
+    /// `PreviewDifficultyNormal1/Expert1/Master1` 76x76 (`UIWorldCreationPreview.cs:48-50`).
+    pub wc_preview_bg: [Option<tr_render::SheetRect>; 3],
+    /// The bunny overlay 76x76 (`:51-54`): Normal2, Creative2, Expert2, Master2.
+    pub wc_preview_bunny: [Option<tr_render::SheetRect>; 4],
+    /// `PreviewEvilRandom/Corruption/Crimson` 76x76 (`:55-59`).
+    pub wc_preview_evil: [Option<tr_render::SheetRect>; 3],
+    /// `PreviewSizeSmall/Medium/Large` 76x76 (`:60-62`).
+    pub wc_preview_size: [Option<tr_render::SheetRect>; 3],
+    /// `UI/VK_Shift` 26x26 (`UIVirtualKeyboard.cs:171`).
+    pub vk_shift: Option<tr_render::SheetRect>,
+    /// `UI/VK_Backspace` 54x26 (`UIVirtualKeyboard.cs:172`).
+    pub vk_backspace: Option<tr_render::SheetRect>,
     /// `UI/Minimap/<style>/MinimapFrame` per `ui::minimap::FRAME_STYLES`
     /// (`MinimapFrameTemplate.cs:30`), indexed by style.
     pub minimap_frames: [Option<tr_render::SheetRect>; 9],
@@ -800,6 +951,103 @@ impl Lookups {
             ui_color_blip: atlas.sheet("ColorBlip").copied(),
             ui_color_slider: atlas.sheet("ColorSlider").copied(),
             ui_slider_highlight: atlas.sheet("UI/Slider_Highlight").copied(),
+            // P6 card buttons (`UICharacterListItem.cs:52-60` — cloud sheets
+            // loaded for completeness but unused: SocialAPI.Cloud is null, plan §J.2).
+            card_buttons: [
+                "UI/ButtonPlay",
+                "UI/ButtonFavoriteActive",
+                "UI/ButtonFavoriteInactive",
+                "UI/ButtonRename",
+                "UI/ButtonDelete",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            card_cloud: ["UI/ButtonCloudActive", "UI/ButtonCloudInactive"]
+                .map(|n| atlas.sheet(n).copied()),
+            ui_divider: atlas.sheet("UI/Divider").copied(),
+            ui_inner_panel: atlas.sheet("UI/InnerPanelBackground").copied(),
+            ui_player_background: atlas.sheet("UI/PlayerBackground").copied(),
+            ui_world_icon: atlas.sheet("UI/IconCrimson").copied(),
+            ui_icon_completion: atlas.sheet("UI/IconCompletion").copied(),
+            ui_icon_mixed_seed: atlas.sheet("UI/IconMixedSeed").copied(),
+            ui_icon_played_before: atlas.sheet("UI/IconPlayedBefore").copied(),
+            ui_icon_newly_generated: atlas.sheet("UI/IconNewlyGenerated").copied(),
+            cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
+            cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
+            cc_panel_highlight: atlas.sheet("UI/CharCreation/CategoryPanelHighlight").copied(),
+            cc_panel_gray: atlas.sheet("UI/CharCreation/PanelGrayscale").copied(),
+            cc_small_panel: atlas.sheet("UI/CharCreation/SmallPanel").copied(),
+            cc_small_panel_border: atlas.sheet("UI/CharCreation/SmallPanelBorder").copied(),
+            cc_char_info: atlas.sheet("UI/CharCreation/CharInfo").copied(),
+            cc_hair_style: atlas.sheet("UI/CharCreation/HairStyle_Hair").copied(),
+            cc_hair_arrow: atlas.sheet("UI/CharCreation/HairStyle_Arrow").copied(),
+            cc_colors: [
+                "UI/CharCreation/ColorHair",
+                "UI/CharCreation/ColorEye",
+                "UI/CharCreation/ColorEyeBack",
+                "UI/CharCreation/ColorSkin",
+                "UI/CharCreation/ColorShirt",
+                "UI/CharCreation/ColorUndershirt",
+                "UI/CharCreation/ColorPants",
+                "UI/CharCreation/ColorShoes",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            cc_copy_paste_random: ["UI/CharCreation/Copy", "UI/CharCreation/Paste", "UI/CharCreation/Randomize"]
+                .map(|n| atlas.sheet(n).copied()),
+            cc_cloth_styles: ["UI/CharCreation/ClothStyleMale", "UI/CharCreation/ClothStyleFemale"]
+                .map(|n| atlas.sheet(n).copied()),
+            cc_voice: atlas.sheet("UI/CharCreation/Voice").copied(),
+            wc_preview_border: atlas.sheet("UI/WorldCreation/PreviewBorder").copied(),
+            wc_icons: [
+                "UI/WorldCreation/IconRandomName",
+                "UI/WorldCreation/IconRandomSeed",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_size_icons: [
+                "UI/WorldCreation/IconSizeSmall",
+                "UI/WorldCreation/IconSizeMedium",
+                "UI/WorldCreation/IconSizeLarge",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_difficulty_icons: [
+                "UI/WorldCreation/IconDifficultyCreative",
+                "UI/WorldCreation/IconDifficultyNormal",
+                "UI/WorldCreation/IconDifficultyExpert",
+                "UI/WorldCreation/IconDifficultyMaster",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_evil_icons: [
+                "UI/WorldCreation/IconEvilRandom",
+                "UI/WorldCreation/IconEvilCorruption",
+                "UI/WorldCreation/IconEvilCrimson",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_preview_bg: [
+                "UI/WorldCreation/PreviewDifficultyNormal1",
+                "UI/WorldCreation/PreviewDifficultyExpert1",
+                "UI/WorldCreation/PreviewDifficultyMaster1",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_preview_bunny: [
+                "UI/WorldCreation/PreviewDifficultyNormal2",
+                "UI/WorldCreation/PreviewDifficultyCreative2",
+                "UI/WorldCreation/PreviewDifficultyExpert2",
+                "UI/WorldCreation/PreviewDifficultyMaster2",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_preview_evil: [
+                "UI/WorldCreation/PreviewEvilRandom",
+                "UI/WorldCreation/PreviewEvilCorruption",
+                "UI/WorldCreation/PreviewEvilCrimson",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_preview_size: [
+                "UI/WorldCreation/PreviewSizeSmall",
+                "UI/WorldCreation/PreviewSizeMedium",
+                "UI/WorldCreation/PreviewSizeLarge",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            vk_shift: atlas.sheet("UI/VK_Shift").copied(),
+            vk_backspace: atlas.sheet("UI/VK_Backspace").copied(),
             minimap_frames: std::array::from_fn(|i| {
                 atlas
                     .sheet(&format!(

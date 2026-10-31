@@ -14,6 +14,7 @@ pub mod sliders;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
+pub mod uistate;
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;

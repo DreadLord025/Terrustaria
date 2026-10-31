@@ -65,4 +65,34 @@ mod tests {
         let boss = crate::load_texture(dir.join("Images/UI/UI_BossBar.xnb")).expect("UI_BossBar");
         assert_eq!((boss.width, boss.height), (516, 348));
     }
+
+    /// Pins the P6 front-end sheet sizes decoded from the retail `.xnb`s
+    /// (the whole-UI P6 plan's Uncertainty-1 table, load-bearing rows). The
+    /// card/creation geometry reads `SheetRect::width/height` at runtime like
+    /// `UIImageButton.cs:30-33` does, so this is the pin that keeps the
+    /// geometry tables and the shipped assets from drifting apart.
+    #[test]
+    fn decodes_p6_front_end_sheets_at_the_pinned_sizes() {
+        let Some(dir) = std::env::var_os("TR_CONTENT") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let cases: &[(&str, u32, u32)] = &[
+            ("UI/ButtonPlay", 22, 22),
+            ("UI/PlayerBackground", 59, 58),
+            ("UI/InnerPanelBackground", 24, 27),
+            ("UI/Divider", 8, 4),
+            ("UI/IconPlayedBefore", 25, 28),
+            ("UI/CharCreation/CategoryPanel", 44, 44),
+            ("UI/CharCreation/SmallPanel", 32, 32),
+            ("UI/CharCreation/PanelGrayscale", 44, 44),
+            ("UI/WorldCreation/PreviewBorder", 84, 84),
+            ("UI/WorldCreation/PreviewDifficultyNormal1", 76, 76),
+            ("UI/VK_Shift", 26, 26),
+            ("UI/VK_Backspace", 54, 26),
+        ];
+        for (name, w, h) in cases {
+            let img = crate::load_texture(dir.join(format!("Images/{name}.xnb")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!((img.width, img.height), (*w, *h), "{name}");
+        }
+    }
 }
