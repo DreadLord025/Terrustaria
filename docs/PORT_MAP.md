@@ -50,6 +50,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Map/*` (client-side map view) | `crates/tr-app/src/map.rs` | partial |
 | `UI/*`, `IngameOptions.cs`, menus | `crates/tr-app/src/menu.rs` | partial |
 | in-game HUD/inventory (`Main.DrawInterface`/`DrawInventory`/`MouseText`, `ItemSlot.cs`, `ClassicPlayerResourcesDisplaySet`) | `crates/tr-app/src/ui/{mod,resources,cursor,tooltip,slot,inventory,chrome,text}.rs` | partial |
+| `GameContent/UI/NewCraftingUI.cs` (+ `GameContent/UI/Elements/UIWrappedSearchBar.cs`, `GameContent/UI/Elements/UICreativeItemsInfiniteFilteringOptions.cs`, `UI/CraftingUI.cs` `DrawGridToggle`, `Utils.DrawSelectedCraftingBarIndicator`) | `crates/tr-app/src/ui/crafting.rs` (+ 9-slice/colour primitives `ui/panel.rs`, `ui/color.rs`) | partial |
 | settings/config (`Main.*Settings`, `Preferences`) | `crates/tr-app/src/settings.rs` | partial |
 | asset lookup tables (`TextureAssets`, `SoundID`, `ItemID` caches) | `crates/tr-app/src/registry.rs`, `assets.rs` | partial |
 | `Audio/*`, `SoundEngine` | `crates/tr-app/src/audio.rs`, `sound.rs` | partial |

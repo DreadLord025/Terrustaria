@@ -60,6 +60,7 @@ pub fn draw_hud(
     player: Option<&Player>,
     boss: Option<(i32, i32)>,
     inventory_open: bool,
+    crafting_open: bool,
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
@@ -99,6 +100,14 @@ pub fn draw_hud(
         // `Main.DrawPVPIcons` (`Main.cs:41003`).
         chrome::draw_pvp_icons(r, lookups, screen, equip_page, 0.0);
         chrome::draw_hotbar_lock(r, lookups, false);
+        // `Main.cs:41706-41709`: with `NewCraftingUI.Visible` the crafting panel is
+        // drawn after `Main.DrawInventory`'s own passes. The guide slot cannot be
+        // opened in the port yet (see `draw_guide_text` above), so `guide_mode`
+        // stays off, and a fresh character has neither expert mode nor the
+        // creative inventory unblocked.
+        if crafting_open {
+            crafting::draw(r, lookups, screen, mouse_pos, false, false);
+        }
     } else if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
         let sel_back = lookups.hud_uv(lookups.ui_back_sel.as_ref()).unwrap_or(back);
         let mut x = 20.0;

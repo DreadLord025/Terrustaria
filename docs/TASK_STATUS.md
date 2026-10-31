@@ -50,7 +50,7 @@
 | M3-TORCH | Torch attachment frames (`CheckTorch`) | ✅ Done | Agent-DeepSeek | `tr-core/src/torch.rs`: frames 0/22/44, tall 66 offset, removal when unsupported; run from `place_tile` and `reframe_area` |
 | M3-EQUIP | Equipment slots and paint | ❌ Pending | - | - |
 | M3-ACTUATOR | Actuators | ❌ Pending | - | - |
-| M3-CRAFT | Recipe.cs crafting menu | ❌ Pending | - | Port ItemSlot contexts 4/33 |
+| M3-CRAFT | Recipe.cs crafting menu | 🟡 Partial | Agent-controller + subagents | Panel chrome done (P3: `ui/crafting.rs`, commits b030f12..HEAD); recipe data/interaction later (ItemSlot contexts 4/33) |
 | M3-PREFIX | Item prefixes system | ❌ Pending | - | - |
 | M3-INV | Full inventory UI | ❌ Pending | - | - |
 
@@ -132,6 +132,7 @@
 M7-UI-1/2/3/5 Menu framework + settings — done 2026-10-29T18:45Z (Agent-DeepSeek)
 M7-UI-6      HUD core (resources, cursor, tooltips) — done 2026-10-30 (Agent-DeepSeek)
 M7-UI-4/7    Inventory panel + ItemSlot cells — done 2026-10-30 (Agent-DeepSeek)
+M7-UI-7      Whole-UI P3 crafting panel (chrome, filter strip, search bar) — done 2026-10-31 (Agent-controller + subagents)
 M6-MUSIC      XACT/MS-ADPCM music playback — done 2026-10-29T19:50Z (Agent-Audio)
 M6-3DAUDIO    SoundEngine 3D attenuation — done 2026-10-29T19:50Z (Agent-Audio)
 ```

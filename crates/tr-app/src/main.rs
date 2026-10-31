@@ -738,6 +738,11 @@ fn main() -> Result<()> {
             s
         },
         inventory_open: std::env::var_os("TR_INV").is_some(),
+        // The panel ships open with the inventory (`Main.cs:41706-41709`);
+        // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
+        // (the `TR_INV` presence pattern).
+        crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
+            || std::env::var_os("TR_CRAFT").is_some(),
         menu: menu_state,
         settings: settings::Settings::load(),
         player_name,
@@ -921,6 +926,10 @@ struct App {
     hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     inventory_open: bool,
+    /// The modern crafting panel, open alongside the inventory
+    /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
+    /// `TR_CRAFT=1` forces it on.
+    crafting_open: bool,
     /// Main menu; `None` while playing.
     menu: Option<menu::Menu>,
     /// `config.json` options edited by the settings screens.
@@ -3125,6 +3134,7 @@ impl App {
                         player.as_ref(),
                         boss,
                         self.inventory_open,
+                        self.crafting_open,
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,

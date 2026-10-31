@@ -88,6 +88,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph |
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
 | `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` | page tabs, defence shield, guide text, PVP icons |
+| `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 
 Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
 
@@ -100,6 +101,32 @@ Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
   (armour, vanity, dye) from `num20 = 174`, `+4` on the rows past the third.
 * The misc-equipment page uses pitch `47`; trash is at `(448, 258)`; the page tabs
   sit at `screenWidth − 80 / − 128 / − 176`.
+
+### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
+
+The panel opens with the inventory: a 490 px-wide cyan `UIPanel` frame at
+`(20, 312 + 38)` that fills down to `screenHeight − 350` (`NewCraftingUI.cs:300-325`),
+everything laid out against the panel's 12/8 px padding. Draw order follows the
+source's child order:
+
+* the white "Crafting" title at the panel's top-left, 4-direction shadow at
+  spread 1.5 (`UIText.cs:138`);
+* the right-aligned search bar, its width inset by the title's measured width
+  (`:424`): the 22 px magnifier (`Button_Search_2`), the 24 px `Name:` text field
+  and the 24 px cancel button (`UIWrappedSearchBar.cs`);
+* the 4 px `UIHorizontalSeparator`, then the empty recipe grid
+  (`Recipe.maxRecipes == 0`) with its auto-hidden scrollbar;
+* the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
+  sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
+  `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`
+  frame table;
+* the detail area — craft slot (`Inventory_Back18` context 42) plus the
+  `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
+  `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
+
+Deviations: draw-only chrome (no filter/search/scrollbar interaction), the detail
+area renders without a selected recipe, the cancel button never hides — the full
+list is in `docs/ANALYSIS.md` → "Crafting panel".
 
 ## Deviations
 

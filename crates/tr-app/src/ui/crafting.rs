@@ -655,9 +655,11 @@ pub fn draw_filter_strip(
 /// `UIWrappedSearchBar` (`UIWrappedSearchBar.cs:76-151`) + its inner `UIPanel`.
 /// `layout` supplies `search` / `search_button` / `search_box` / `search_cancel`.
 ///
-/// Deviation (documented): vanilla hides the cancel icon while the search box is
-/// empty (`UIWrappedSearchBar.cs:155-159` only reacts to clicks; the port has no
-/// search state) — the port draws it always so the chrome is legible.
+/// The plan assumed vanilla hides the cancel icon while the box is empty; it does
+/// not: `UIImageButton` in 1.4.5.8 never hides (`_visibilityInactive = 0.4f`,
+/// `UIImageButton.cs:13-15`) and draws always, `White * 0.4` at rest and `White`
+/// on hover (`:51`) — which is exactly what the port does. The search bar has no
+/// state in P3 (`UIWrappedSearchBar.cs:155-159` only reacts to clicks).
 pub fn draw_search_bar(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,

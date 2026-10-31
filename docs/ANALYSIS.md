@@ -1106,9 +1106,34 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
   their menus are not opened, so they show as empty frames.
 
+### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
+
+The modern crafting panel is ported as draw-only chrome at the source's geometry and
+z-order (`docs/UI.md` → "Crafting panel"). The deviations:
+
+* The detail area (craft slot + `Images/UI/Craft` arrow) is drawn without a selected
+  recipe; vanilla draws it only inside the
+  `recipeEntry = _hoveredEntry ?? SelectedEntry` block (`NewCraftingUI.cs:447-448`,
+  the `:448-482` range). With `Recipe.maxRecipes == 0` the port always renders it as
+  static chrome.
+* The panel ships open with the inventory (`NewCraftingUI.Visible`,
+  `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it and `TR_CRAFT=1` forces it on
+  (mirroring `TR_INV`).
+* No filter, search or scrollbar interaction: the panel is draw-only, without
+  `ItemSlot.Handle` (out of scope, as documented for the inventory panels above).
+* The cancel button is always visible — `White * 0.4` at rest, `White` on hover.
+  Vanilla's `UIImageButton` never hides the icon (`_visibilityInactive = 0.4f`,
+  `UIImageButton.cs:13-15`); the port's plan wrongly assumed it hid while the search
+  box was empty.
+* The `Main.InGuideCraftMenu` variants (guide slot, "Place a material here" label,
+  hidden nearby-chests toggle) are ported behind `crafting::draw`'s `guide_mode`
+  parameter but never reached: the guide slot cannot be opened in the port yet, so
+  the menu is never entered and `guide_mode` stays false.
+
 ### Determinism hooks
 
 `TR_MOUSE=x,y` (pin the (UI-space) pointer), `TR_INV=1` (open the inventory),
+`TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
 `TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`,
 `TR_SHOT=path`. Screenshots are byte-identical across runs with
 `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.
