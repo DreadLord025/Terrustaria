@@ -22,12 +22,10 @@
 //! behind both the hit-tests and the draw (Review Focus 2), and a [`draw`]
 //! that replays the source's child order. Nothing panics with
 //! `Lookups::default()` — every sheet is an `Option` guard (Review Focus 7).
-
-// Every pub item here is the Task 5 App-flow surface (`App.front =
-// FrontScreen::WorldSelect`); until it lands the module is tests-only, so the
-// dead_code lint is carried deliberately instead of annotating 40+ items.
-// Remove the attribute in Task 5 (the Task 3 precedent).
-#![allow(dead_code)]
+//!
+//! Every pub item here is live since Task 5: the App-flow surface drives
+//! `App.front = FrontScreen::WorldSelect` (`main.rs` — `resolved_layout` +
+//! `hit` for the clicks, `draw` for the frame, `sort_worlds` for the re-list).
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
@@ -47,8 +45,8 @@ use crate::assets;
 
 // The T2-owned ordering, re-exported so Task 5 has one import site (the plan's
 // "sort_worlds delegation" — the chain lives in save_list.rs, this module does
-// not duplicate it).
-#[allow(unused_imports)]
+// not duplicate it). The App's re-list and the favourite toggle call it
+// through this path.
 pub use super::save_list::sort_worlds;
 
 // --- Source strings (Localization `UI.*`, English) -----------------------------
@@ -312,21 +310,25 @@ pub fn card_layout(row_rect: [f32; 4], index: usize, has_been_played: bool) -> C
     }
 }
 
-/// The two icon overlays' rects — `IconCompletion` when the world has defeated
-/// the Moon Lord (`UIWorldListItem.cs:71-82`: `HAlign 0.5, VAlign 0.5, Top
-/// (-10, 0), Left (-3, 0)`, the 64x70 texture) and `IconMixedSeed` for the
-/// multi-seed worlds (`:83-93`: `HAlign 0, VAlign 1, Top/Left (0, 0)`, 22x18),
-/// both children of the [`CardLayout::icon`] element.
+/// The status icon overlays' rects — `IconCompletion` when the world has
+/// defeated the Moon Lord (`UIWorldListItem.cs:71-82`: `HAlign 0.5, VAlign
+/// 0.5, Top (-10, 0), Left (-3, 0)`, the 64x70 texture), `IconMixedSeed` for
+/// the multi-seed worlds (`:83-93`: `HAlign 0, VAlign 1, Top/Left (0, 0)`,
+/// 22x18) — both children of the [`CardLayout::icon`] element — and
+/// `IconNewlyGenerated` for a never-played new world (`:186-199`: `HAlign 1,
+/// Left = num2 - 2`, `Top -6`, the 24x28 texture at `ImageScale 0.75`), a
+/// sibling of the played icon with the played draw's `num2 -= 24` ahead of it
+/// (`:187-200`; the played twin is `:173-185`).
 ///
 /// **`draw` never draws them**: `save_list::WorldEntry` carries no Moon Lord /
-/// seed-flag data, so the overlays stay unconditionally off (plan Task 4
-/// step 3's documented deviation). This pins the geometry for the record —
-/// including the `MaxWidth`/`MaxHeight = StyleDimension.Fill` clamp
-/// (`UIElement.cs:33-34`, `StyleDimension.cs:44-46`) that squeezes the
-/// completion overlay's *element box* to the 60x58 icon inner, while
-/// `UIImage.DrawSelf` still draws the texture at its own size from that box's
-/// position.
-pub fn overlay_rects(icon: [f32; 4]) -> [[f32; 4]; 2] {
+/// seed-flag data (the newly-generated pin is Task 8's), so the overlays stay
+/// unconditionally off (plan Task 4 step 3's documented deviation). This pins
+/// the geometry for the record — including the `MaxWidth`/`MaxHeight =
+/// StyleDimension.Fill` clamp (`UIElement.cs:33-34`, `StyleDimension.cs:44-46`)
+/// that squeezes the completion overlay's *element box* to the 60x58 icon
+/// inner, while `UIImage.DrawSelf` still draws the texture at its own size
+/// from that box's position.
+pub fn overlay_rects(icon: [f32; 4]) -> [[f32; 4]; 3] {
     // The element box: 64x70 clamped to the 60x58 icon inner by the Fill
     // maxima. Resolved with the pre-clamped size so the alignment matches the
     // C# (`x += parentW*HAlign - W*HAlign` on the clamped W/H).
@@ -357,10 +359,21 @@ pub fn overlay_rects(icon: [f32; 4]) -> [[f32; 4]; 2] {
         [0.0; 4],
     );
     // `UIImage.DrawSelf` draws the texture at its own size (`ImageScale` 1,
-    // origin zero) from the element box's position.
+    // origin zero) from the element box's position. The newly-generated twin
+    // (Task 8's pin) resolves the same `UIImage.DrawSelf` shrink: element
+    // `HAlign 1, Left = num2 - 2` with the played icon's `num2 -= 24` ahead
+    // (`:187-200` — both icons, the plan's correction), so x =
+    // `icon right - 24 - 26`, and the 24x28 texture draws 18x21 from the
+    // shrunk-around-centre origin, `Top -6`.
     [
         [completion[0], completion[1], 64.0, 70.0],
         [mixed[0], mixed[1], 22.0, 18.0],
+        [
+            icon[0] + icon[2] - 50.0 + 24.0 * 0.125,
+            icon[1] - 6.0 + 28.0 * 0.125,
+            24.0 * 0.75,
+            28.0 * 0.75,
+        ],
     ]
 }
 
@@ -434,7 +447,6 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 /// with a future multiplayer-flow task (plan phase close-out).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CardAction {
-    None,
     Play(usize),
     ToggleFavorite(usize),
     Rename(usize),
@@ -477,6 +489,14 @@ pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, 
         return (None, Some(CardAction::Back)); // `GoBackClick` (`:118-122`)
     }
     for i in 0..favorites.len() {
+        // The `UIList`'s `OverflowHidden` clips rows past the list bottom, so
+        // a click below it never reaches a card — the same gate the draw's
+        // `break` uses (Task 3/4 review fix; a row straddling the edge stays
+        // hit, like the draw that still paints it).
+        let row_top = l.list[1] + i as f32 * CARD_PITCH;
+        if row_top >= l.list[1] + l.list[3] {
+            break;
+        }
         let c = card_layout(l.list, i, false);
         if !in_rect(mouse, c.card) {
             continue;
@@ -1093,9 +1113,10 @@ mod tests {
 
     #[test]
     fn overlay_rects_pin_the_not_drawn_icon_overlays() {
-        // `UIWorldListItem.cs:71-93`, children of the icon element
-        // (497, 238, 60, 58). Both stay undrawn (no Moon Lord / mixed-seed
-        // data) — this pins the geometry for the record.
+        // `UIWorldListItem.cs:71-93` + `:187-200`, children/siblings of the
+        // icon element (497, 238, 60, 58). All stay undrawn (no Moon Lord /
+        // mixed-seed / newly-generated data) — this pins the geometry for the
+        // record.
         let o = overlay_rects([497.0, 238.0, 60.0, 58.0]);
         // IconCompletion: `HAlign/VAlign 0.5, Top -10, Left -3` (`:75-78`) —
         // the element box clamps to the 60x58 parent (`MaxWidth`/`MaxHeight =
@@ -1106,6 +1127,12 @@ mod tests {
         // IconMixedSeed: `HAlign 0, VAlign 1, Top/Left 0` (`:87-90`) —
         // (497, 238 + 58 - 18), no clamp (22x18 fits).
         assert_eq!(o[1], [497.0, 278.0, 22.0, 18.0]);
+        // IconNewlyGenerated (`:187-200`): `HAlign 1, Left = num2 - 2` with
+        // the played icon's `num2 -= 24` ahead (`:185` — both icons, the
+        // plan's correction), `Top -6`, `ImageScale 0.75` — the element box
+        // is x = 557 - 24 - 26 = 507, y = 232; the 24x28 texture draws 18x21
+        // from the shrunk-around-centre origin (24*0.125 / 28*0.125 in).
+        assert_eq!(o[2], [510.0, 235.5, 18.0, 21.0]);
     }
 
     #[test]
@@ -1284,6 +1311,24 @@ mod tests {
         // Just above the fat buttons the card still owns the click (a
         // hovered body, no button).
         assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 800.0)), (Some(5), None));
+    }
+
+    #[test]
+    fn clicks_below_the_list_bottom_never_reach_a_card() {
+        // The `OverflowHidden` break gate (Task 3/4 review fix): with 6
+        // worlds the list scrolls, card 6 would start at y 838 — past the
+        // list bottom 778 — and the draw never paints it, so the hit-test
+        // must not answer for it either. (550, 860) is inside that phantom
+        // row and below Back's hit box (y 805-855).
+        let l = resolved_layout(SCREEN, 100.0, 6); // attached
+        assert_eq!(l.list[1] + l.list[3], 778.0);
+        assert_eq!(card_layout(l.list, 6, false).card[1], 838.0, "the phantom row's top");
+        assert!(!in_rect(Vec2::new(550.0, 860.0), l.back), "below Back too");
+        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0)), (None, None));
+        // Card 5 straddles the bottom (top 737 < 778) and stays hit — the
+        // same rows the draw still paints.
+        let favorites = [false; 6];
+        assert_eq!(card_hit(&l, &favorites, Vec2::new(550.0, 777.0)), (Some(5), None));
     }
 
     #[test]

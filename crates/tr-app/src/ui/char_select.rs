@@ -11,11 +11,10 @@
 //! The player sprite inside the 59x58 preview is Task 7's `draw_player_preview`;
 //! until then the preview draws the `PlayerBackground` only and the sprite draw
 //! site is a documented no-op (plan Task 3 step 3).
-
-// Every pub item here is the Task 5 App-flow surface (`App.front =
-// FrontScreen::CharSelect`); until it lands the module is tests-only, so the
-// dead_code lint is carried deliberately instead of annotating 40+ items.
-#![allow(dead_code)]
+//!
+//! Every pub item here is live since Task 5: the App-flow surface drives
+//! `App.front = FrontScreen::CharSelect` (`main.rs` — `resolved_layout` +
+//! `hit` for the clicks, `draw` for the frame, `sort_players` for the re-list).
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
@@ -420,11 +419,8 @@ pub fn card_layout(row_rect: [f32; 4], index: usize) -> CardLayout {
 /// `UICharacterSelect.UpdatePlayersList` (`UICharacterSelect.cs:146-157`):
 /// favourite desc, then `LastPlayed` (the port has no play times — the list's
 /// insertion order stands in), then Name, then filename. T2 owns the
-/// implementation; the re-export keeps one copy of the chain.
-// Consumed by Task 5 (the App-flow surface); until then this bin crate has no
-// caller for the re-export, so the lint is carried deliberately — remove the
-// attribute in Task 5 (Task 3b review fix 3).
-#[allow(unused_imports)]
+/// implementation; the re-export keeps one copy of the chain — the App's
+/// re-list and the favourite toggle call it through this path (Task 5).
 pub use super::save_list::sort_players;
 
 /// Hover colours (`MouseOver` `:294-300` / `MouseOut` `:302-308`): the card
@@ -504,7 +500,6 @@ fn button_sheet(button: usize, is_favorite: bool) -> usize {
 /// Task 5 confirm (`menuMode = 5`, `:250`).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum CardAction {
-    None,
     Play(usize),
     ToggleFavorite(usize),
     Rename(usize),
@@ -548,6 +543,14 @@ pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, 
         return (None, Some(CardAction::Back)); // `GoBackClick` (`:116-120`)
     }
     for i in 0..favorites.len() {
+        // The `UIList`'s `OverflowHidden` clips rows past the list bottom, so
+        // a click below it never reaches a card — the same gate the draw's
+        // `break` uses (Task 3/4 review fix; a row straddling the edge stays
+        // hit, like the draw that still paints it).
+        let row_top = l.list[1] + i as f32 * CARD_PITCH;
+        if row_top >= l.list[1] + l.list[3] {
+            break;
+        }
         let c = card_layout(l.list, i);
         if !in_rect(mouse, c.card) {
             continue;
@@ -1260,6 +1263,27 @@ mod tests {
         // hovered body, no button).
         assert_eq!(
             card_hit(&l, &favorites, Vec2::new(550.0, 800.0)),
+            (Some(5), None)
+        );
+    }
+
+    #[test]
+    fn clicks_below_the_list_bottom_never_reach_a_card() {
+        // The `OverflowHidden` break gate (Task 3/4 review fix): with 6
+        // players the list scrolls, card 6 would start at y 838 — past the
+        // list bottom 778 — and the draw never paints it, so the hit-test
+        // must not answer for it either. (550, 860) is inside that phantom
+        // row and below Back's hit box (y 805-855).
+        let l = resolved_layout(SCREEN, 100.0, 6); // attached
+        assert_eq!(l.list[1] + l.list[3], 778.0);
+        assert_eq!(card_layout(l.list, 6).card[1], 838.0, "the phantom row's top");
+        assert!(!in_rect(Vec2::new(550.0, 860.0), l.back), "below Back too");
+        assert_eq!(card_hit(&l, &[false; 7], Vec2::new(550.0, 860.0)), (None, None));
+        // Card 5 straddles the bottom (top 737 < 778) and stays hit — the
+        // same rows the draw still paints.
+        let favorites = [false; 6];
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(550.0, 777.0)),
             (Some(5), None)
         );
     }

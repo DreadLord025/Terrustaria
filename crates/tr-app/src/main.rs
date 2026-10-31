@@ -650,13 +650,17 @@ fn main() -> Result<()> {
         .and_then(|p| p.parse::<u16>().ok());
     let joined_before = std::env::var_os("TR_JOINED").is_some();
     let force_menu = std::env::var_os("TR_MENU").is_some();
+    // `TR_UI=<screen>` presets the front-end flow state after construction
+    // (the `TR_PAGE` pattern; the plan Task 5 hook table).
+    let tr_ui = std::env::var("TR_UI").ok();
     let skip_menu = (!force_menu && std::env::var_os("TR_SHOT").is_some())
         || std::env::var_os("TR_CAM").is_some()
         || std::env::var_os("TR_HOLD").is_some()
         || std::env::var_os("TR_NOMENU").is_some()
         || std::env::var_os("TR_MAP").is_some()
         || joined_before
-        || auto_host.is_some();
+        || auto_host.is_some()
+        || tr_ui.is_some();
     let menu_state = if skip_menu {
         None
     } else {
@@ -744,6 +748,11 @@ fn main() -> Result<()> {
         crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
             || std::env::var_os("TR_CRAFT").is_some(),
         menu: menu_state,
+        front: None,
+        front_backup: None,
+        players: Vec::new(),
+        worlds: Vec::new(),
+        front_hint: None,
         settings: settings::Settings::load(),
         player_name,
         net: net_role,
@@ -839,6 +848,11 @@ fn main() -> Result<()> {
         world_key: None,
         hell_black_box_bottom: 0.0,
     };
+    // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
+    // `TR_PAGE` pattern — the plan Task 5 hook table).
+    if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
+        app.preset_ui(preset);
+    }
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
     event_loop.run_app(&mut app)?;
@@ -889,6 +903,153 @@ enum NetRole {
     Off,
     Host(net::Server),
     Client(net::Client),
+}
+
+/// The modern front-end screens (`Main.menuMode == 888`, `Main.cs:51059-
+/// 51069`). `App.front` owns one of these while `App.menu` is `None` — the
+/// same single variable `Main.menuMode` is; exactly one side is live, never
+/// both (Review Focus 1). The Task 6-8 screens join as their own variants.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum FrontScreen {
+    /// `_characterSelectMenu` — the one `UICharacterSelect` singleton
+    /// (`Main.cs:66797`); the port's list lives on `App.players`.
+    CharSelect,
+    /// `_worldSelectMenu` (`Main.cs:66798`); the list lives on `App.worlds`.
+    WorldSelect,
+}
+
+/// One click into the front-end flow — the rows of the
+/// [`next_flow_state`] table. The card actions carry the clicked index where
+/// the App needs it (`FlowClick::CharDelete(i)` parks the confirm target the
+/// way `Main.selectedPlayer` is parked, `UICharacterListItem.cs:246-249`).
+#[derive(Clone, Copy, Debug)]
+enum FlowClick {
+    /// `GoBackClick`: `menuMode = 0` (`UICharacterSelect.cs:116-120`).
+    CharBack,
+    /// `NewCharacterClick` (`:108-114`) — opens the character creator
+    /// (Task 7); a documented no-op until its variant lands.
+    CharNew,
+    /// `PlayGame` (`:256-261`) -> `SelectPlayer`'s single-player tail
+    /// `menuMode = 6` (`Main.cs:66245-66249`) -> 888 world select
+    /// (`:49468-49472`).
+    CharPlay,
+    /// `DeleteButtonClick` (`UICharacterListItem.cs:242-254`): `menuMode = 5`.
+    CharDelete(usize),
+    /// `GoBackClick`: `menuMode = (!menuMultiplayer) ? 1 : 12`
+    /// (`UIWorldSelect.cs:118-122`) — the port is single-player.
+    WorldBack,
+    /// `PlayGame` (`UIWorldListItem.cs:360-374`): the launch. `WorldGen.
+    /// playWorld` + `UIWorldLoad` are the out-of-scope loading flow (spec
+    /// §9.4), so the port closes everything and plays the loaded world.
+    WorldPlay,
+    /// `DeleteButtonClick` (`UIWorldListItem.cs:346-358`): `menuMode = 9`.
+    WorldDelete(usize),
+    /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
+    /// `:49681`, `:49454`).
+    ConfirmYes,
+    /// The No row (`selectedMenu == 2`) — Escape's `flag5` target on the
+    /// confirms (`:49435-49438`, `:49687-49690`, `:49464-49467`).
+    ConfirmNo,
+}
+
+/// One hop of the `Main.menuMode` alternation as a pure table — the plan's
+/// `next_state(action) -> (front, menu)` flow-state function, returning
+/// `(front, front_backup, menu)`. The parked backup rides along so the
+/// mode-40 round-trip is assertable in one place (`App.front_backup` is
+/// `UICharacterCreation.BackupConfirmationState`, parked at
+/// `UICharacterCreation.cs:1215`). Exactly one of `front`/`menu` is `Some` in
+/// every result — the callers hold the same invariant on the way in
+/// (Review Focus 1).
+fn next_flow_state(
+    front: Option<FrontScreen>,
+    backup: Option<FrontScreen>,
+    page: Option<menu::Page>,
+    click: FlowClick,
+) -> (Option<FrontScreen>, Option<FrontScreen>, Option<menu::Page>) {
+    use menu::Page as P;
+    match click {
+        FlowClick::CharBack => (None, backup, Some(P::Main)),
+        // Task 7's screen: the click keeps the state until its variant lands
+        // (the App shows the not-ported notice instead).
+        FlowClick::CharNew => (front, backup, page),
+        FlowClick::CharPlay => (Some(FrontScreen::WorldSelect), None, None),
+        // `menuMode = 5` clears the 888 state (`Main.cs:51066-51069`'s else
+        // branch — `MenuUI.SetState(null)`).
+        FlowClick::CharDelete(_) => (None, backup, Some(P::ConfirmDeletePlayer)),
+        FlowClick::WorldBack => (Some(FrontScreen::CharSelect), None, None),
+        // The launch closes both sides (the loading flow is out of scope).
+        FlowClick::WorldPlay => (None, None, None),
+        FlowClick::WorldDelete(_) => (None, backup, Some(P::ConfirmDeleteWorld)),
+        // Modes 5/9: Yes and No both reopen the screen the confirm came from
+        // (`Main.cs:49434-49439`, `:49684-49692`).
+        FlowClick::ConfirmYes | FlowClick::ConfirmNo
+            if page == Some(P::ConfirmDeletePlayer) =>
+        {
+            (Some(FrontScreen::CharSelect), None, None)
+        }
+        FlowClick::ConfirmYes | FlowClick::ConfirmNo
+            if page == Some(P::ConfirmDeleteWorld) =>
+        {
+            (Some(FrontScreen::WorldSelect), None, None)
+        }
+        // Mode 40 Yes: `BackupConfirmationState = null` +
+        // `OpenCharacterSelectUI` (`:49454-49459`).
+        FlowClick::ConfirmYes if page == Some(P::ConfirmDiscard) => {
+            (Some(FrontScreen::CharSelect), None, None)
+        }
+        // Mode 40 No: `menuMode = 888` + `SetState(BackupConfirmationState)`
+        // (`:49460-49467`) — the exact parked screen returns.
+        FlowClick::ConfirmNo if page == Some(P::ConfirmDiscard) => (backup, None, None),
+        // Any other combination is a no-op (a click kind its screen never
+        // sends); the state passes through unchanged.
+        _ => (front, backup, page),
+    }
+}
+
+/// The `TR_UI=<screen>` presets (the plan Task 5 hook table): the front-end
+/// screens plus the legacy pages their clicks park onto.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum TrUiPreset {
+    CharSelect,
+    WorldSelect,
+    /// Task 7's screen — parsed now, presettable when its variant lands.
+    CharNew,
+    /// Task 8's screen.
+    WorldNew,
+    /// Task 6's keyboard.
+    Keyboard,
+    /// menuMode 3000.
+    Credits,
+    /// menuMode 5.
+    DelPlayer,
+    /// menuMode 9.
+    DelWorld,
+    /// menuMode 40.
+    Discard,
+}
+
+/// The `TR_UI` name table (the `TR_PAGE` pattern, `menu.rs`
+/// `page_from_name`): the plan Task 5 hook list, case-insensitive; unknown
+/// names resolve to nothing.
+fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
+    Some(match name.to_ascii_lowercase().as_str() {
+        "charsel" => TrUiPreset::CharSelect,
+        "worldsel" => TrUiPreset::WorldSelect,
+        "charnew" => TrUiPreset::CharNew,
+        "worldnew" => TrUiPreset::WorldNew,
+        "vk" => TrUiPreset::Keyboard,
+        "credits" => TrUiPreset::Credits,
+        "delplayer" => TrUiPreset::DelPlayer,
+        "delworld" => TrUiPreset::DelWorld,
+        "discard" => TrUiPreset::Discard,
+        _ => return None,
+    })
+}
+
+/// `TR_FAKE_CHARS`/`TR_FAKE_WORLDS=<n>`: the screenshot lists' fake counts
+/// (`save_list::list_players`/`list_worlds` prepend `Player n`/`World n`).
+fn tr_fake_count(key: &str) -> usize {
+    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(0)
 }
 
 struct App {
@@ -942,6 +1103,24 @@ struct App {
     crafting_open: bool,
     /// Main menu; `None` while playing.
     menu: Option<menu::Menu>,
+    /// `Main.menuMode == 888`'s half of the single-mode invariant
+    /// (`Main.cs:51059-51069`): exactly one of `front` and `menu` is `Some` —
+    /// the draw site picks `front` first, then `menu`, and every navigation
+    /// sets/clears both sides through [`next_flow_state`]'s table
+    /// (Review Focus 1).
+    front: Option<FrontScreen>,
+    /// `UICharacterCreation.BackupConfirmationState` (`UICharacterCreation.cs:
+    /// 152`, parked at `:1215`): the screen menuMode 40's No branch restores.
+    /// `None` except across a discard confirm.
+    front_backup: Option<FrontScreen>,
+    /// `_characterSelectMenu`'s card list — `OnActivate`'s `LoadPlayers` +
+    /// `UpdatePlayersList` (`UICharacterSelect.cs:135-157`).
+    players: Vec<ui::save_list::PlayerEntry>,
+    /// `_worldSelectMenu`'s card list (`UIWorldSelect.cs:137-166`).
+    worlds: Vec<ui::save_list::WorldEntry>,
+    /// The port's not-ported notice for front-screen clicks whose target
+    /// lands with Tasks 6-8 (ours, like `Menu.hint`).
+    front_hint: Option<String>,
     /// `config.json` options edited by the settings screens.
     settings: settings::Settings,
     player_name: String,
@@ -1336,6 +1515,14 @@ impl ApplicationHandler for App {
                             self.apply_menu_action(action, event_loop);
                             return;
                         }
+                        if self.front.is_some() {
+                            // menuMode 888 takes no keyboard routes (the
+                            // screens are mouse-driven; the gamepad snap
+                            // points are out of scope, §J.3) — the world
+                            // controls stay parked while a front screen is
+                            // live.
+                            return;
+                        }
                         match code {
                             KeyCode::Escape => {
                                 // The original opens the inventory on Escape; the
@@ -1430,7 +1617,11 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     let step = d.round() as i32;
-                    if step != 0 && self.menu.is_none() && !self.inventory_open {
+                    if step != 0
+                        && self.menu.is_none()
+                        && self.front.is_none()
+                        && !self.inventory_open
+                    {
                         self.selected =
                             (self.selected as i32 + step).rem_euclid(HOTBAR as i32) as usize;
                     }
@@ -1450,6 +1641,15 @@ impl ApplicationHandler for App {
                                 m.update_hover(self.mouse_pos);
                                 let action = m.click();
                                 self.apply_menu_action(action, event_loop);
+                            }
+                            return;
+                        }
+                        if self.front.is_some() {
+                            // The 888 screens are click-driven: the press
+                            // routes through the card-hit table (`Main.
+                            // MouseUI`'s click while `MenuUI` is live).
+                            if pressed {
+                                self.handle_front_click();
                             }
                             return;
                         }
@@ -2502,7 +2702,55 @@ impl App {
                 event_loop.exit();
             }
             Action::Singleplayer => {
-                self.close_menu();
+                // `Main.cs:48981-48987`: menuMode 1 -> `OpenCharacterSelectUI`
+                // (888) — the real screen flow replaces the old "Single
+                // Player closes the menu" shortcut.
+                self.enter_front(FrontScreen::CharSelect);
+            }
+            // The confirm pages (`Main.cs:49420-49439`, `:49674-49692`,
+            // `:49440-49467`): the resolution runs the erase on Yes, then
+            // reopens the screen the confirm came from.
+            Action::ConfirmYes | Action::ConfirmNo => {
+                let yes = matches!(action, menu::Action::ConfirmYes);
+                let (page, index) = self
+                    .menu
+                    .as_ref()
+                    .map_or((None, 0usize), |m| (Some(m.page), m.confirm_index));
+                let click = if yes { FlowClick::ConfirmYes } else { FlowClick::ConfirmNo };
+                let (front, backup, _) =
+                    next_flow_state(self.front, self.front_backup, page, click);
+                // Mode 40's Yes drops the parked state (`Main.cs:49455`:
+                // `BackupConfirmationState = null`); the flow function returns
+                // `None` for it, and No's restore value for the reopen.
+                self.front_backup = backup;
+                if yes && page == Some(menu::Page::ConfirmDeletePlayer) {
+                    // `Main.ErasePlayer` (`:49432-49434` -> `:4772-4791`).
+                    self.erase_player_entry(index);
+                }
+                if yes && page == Some(menu::Page::ConfirmDeleteWorld) {
+                    // `Main.EraseWorld` (`:49682-49684` -> `:4796-4813`).
+                    self.erase_world_entry(index);
+                }
+                match (page, front) {
+                    // Mode 40's No restores the exact parked screen without
+                    // the `OnActivate` re-list (`menuMode = 888` +
+                    // `SetState(BackupConfirmationState)`, `:49460-49467`).
+                    (Some(menu::Page::ConfirmDiscard), Some(f)) if !yes => {
+                        self.menu = None;
+                        self.front = Some(f);
+                    }
+                    // Modes 5/9 (both rows) and 40's Yes re-enter through the
+                    // openers, which run the `OnActivate` re-list
+                    // (`menuMode = 1/6` -> `OpenCharacterSelectUI` /
+                    // `OpenWorldSelectUI`).
+                    (_, Some(f)) => self.enter_front(f),
+                    // Unreachable from the confirm pages (every branch
+                    // navigates); keep the invariant by closing both sides.
+                    (_, None) => {
+                        self.front = None;
+                        self.park_menu();
+                    }
+                }
             }
             Action::Host { port, password } => {
                 let map = compressed_world(&self.world);
@@ -2545,6 +2793,338 @@ impl App {
             self.settings = m.settings;
         }
         self.apply_settings();
+    }
+
+    /// Takes the legacy menu into the App without the launch semantics — the
+    /// settings sync of [`App::close_menu`] for every hop where a front screen
+    /// takes over or the world launches.
+    fn park_menu(&mut self) {
+        if let Some(m) = self.menu.take() {
+            self.settings = m.settings;
+        }
+        self.apply_settings();
+    }
+
+    /// Enters a front screen the way `OpenCharacterSelectUI`/
+    /// `OpenWorldSelectUI` do (`Main.cs:52346-52350`, `:52362-52366`): the
+    /// singleton state is set and `OnActivate` re-lists (`LoadPlayers`/
+    /// `LoadWorlds` + `UpdatePlayersList`/`UpdateWorldsList`,
+    /// `UICharacterSelect.cs:135-157` / `UIWorldSelect.cs:137-166`). The menu
+    /// side closes with the settings sync first.
+    fn enter_front(&mut self, front: FrontScreen) {
+        match front {
+            FrontScreen::CharSelect => {
+                let fakes = tr_fake_count("TR_FAKE_CHARS");
+                self.players =
+                    ui::save_list::list_players(None, Some(self.session_entry()), fakes);
+                ui::char_select::sort_players(&mut self.players);
+            }
+            FrontScreen::WorldSelect => {
+                let fakes = tr_fake_count("TR_FAKE_WORLDS");
+                // The listing root is the port's `Documents/My Games/
+                // Terrustaria/Worlds` (`Main.WorldPath`'s directory,
+                // `Main.cs:67065-67075`; `save.rs:20-29`).
+                let dir = save::default_world_dir().unwrap_or_default();
+                self.worlds = ui::save_list::list_worlds(&dir, fakes);
+                ui::world_select::sort_worlds(&mut self.worlds, false);
+            }
+        }
+        self.park_menu();
+        self.front = Some(front);
+    }
+
+    /// The implicit session character as a card entry: the fresh `Player`
+    /// defaults — difficulty 0 (`Player.cs:1654`), life 100 (`:1924`), mana 20
+    /// (`:56075`) — named by the port's seeded `player_name`. No `.plr`
+    /// exists, so it is not deletable (`Main.ErasePlayer` needs a file) and
+    /// always playable.
+    fn session_entry(&self) -> ui::save_list::PlayerEntry {
+        ui::save_list::PlayerEntry {
+            name: self.player_name.clone(),
+            difficulty: 0,
+            life_max: self.player.as_ref().map_or(100, |p| p.max_hp),
+            mana_max: 20,
+            is_favorite: false,
+            playable: true,
+            deletable: false,
+        }
+    }
+
+    /// `Main.ErasePlayer` (`Main.cs:4772-4791`) for the port: no `.plr`
+    /// exists (plan §9.4), so `erase_player(None)` drops the entry in memory
+    /// only — the reopen's re-list rebuilds from the (unchanged) disk state,
+    /// which is what the vanilla call's file deletion achieves.
+    fn erase_player_entry(&mut self, index: usize) {
+        let _ = ui::save_list::erase_player(None);
+        if index < self.players.len() {
+            self.players.remove(index);
+        }
+    }
+
+    /// `Main.EraseWorld` (`Main.cs:4796-4813`): the `.trwld` and its sidecars
+    /// go (`save_list::erase_world`); the reopen's re-list then reads the
+    /// directory without it.
+    fn erase_world_entry(&mut self, index: usize) {
+        if let Some(path) = self.worlds.get(index).and_then(|w| w.path.clone()) {
+            if let Err(e) = ui::save_list::erase_world(&path) {
+                log::warn!("world erase failed: {e:#}");
+            }
+        }
+    }
+
+    /// The Death-font width a large `UITextPanel` measures (`UITextPanel.cs:
+    /// 126-131`), or the bitmap fallback's — the front screens' `header_w`
+    /// convention (the P3 `title_width` rule).
+    fn front_header_w(&self, text: &str) -> f32 {
+        match (&self.lookups.death_font, self.renderer.as_ref()) {
+            (Some(f), _) => font_width(f, text, 1.0),
+            (None, Some(r)) => r.text_width(text, 1.0),
+            (None, None) => 0.0,
+        }
+    }
+
+    /// One left click on a live front screen: the card-hit table routed into
+    /// the flow (`UICharacterSelect.cs:108-133` / `UIWorldSelect.cs:110-135`'s
+    /// handlers through the App). The favourite toggles re-order the list like
+    /// `FavoriteButtonClick`'s `UpdateOrder` (`UICharacterListItem.cs:280-282`
+    /// / `UIWorldListItem.cs:455-458`).
+    fn handle_front_click(&mut self) {
+        let Some(front) = self.front else { return };
+        // A click clears the notice, like `Menu::activate`'s `hint = None`.
+        self.front_hint = None;
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        match front {
+            FrontScreen::CharSelect => {
+                let l = ui::char_select::resolved_layout(
+                    screen,
+                    self.front_header_w(ui::char_select::SELECT_PLAYER),
+                    self.players.len(),
+                );
+                let favorites: Vec<bool> = self.players.iter().map(|p| p.is_favorite).collect();
+                let mut flow = None;
+                let mut delete_name = None;
+                match ui::char_select::hit(&l, &favorites, mouse) {
+                    Some(ui::char_select::CardAction::Back) => flow = Some(FlowClick::CharBack),
+                    // `NewCharacterClick` (`:108-114`) opens the character
+                    // creator — Task 7's variant; the notice stands in until
+                    // it lands.
+                    Some(ui::char_select::CardAction::New) => {
+                        self.front_hint = Some("The character creator is not ported yet".into());
+                    }
+                    // `PlayGame` (`:256-261`): only a playable entry reaches
+                    // `SelectPlayer` (`loadStatus == Ok`); the rest is a dead
+                    // click, like the source.
+                    Some(ui::char_select::CardAction::Play(i))
+                        if self.players.get(i).is_some_and(|p| p.playable) =>
+                    {
+                        flow = Some(FlowClick::CharPlay);
+                    }
+                    // `FavoriteButtonClick` (`:264-283`): the flag flips and
+                    // the list re-orders (`UpdateOrder`). No `.plr` exists to
+                    // persist it — the toggle is session-only (documented
+                    // deviation).
+                    Some(ui::char_select::CardAction::ToggleFavorite(i)) => {
+                        if let Some(p) = self.players.get_mut(i) {
+                            p.is_favorite = !p.is_favorite;
+                        }
+                        ui::char_select::sort_players(&mut self.players);
+                    }
+                    // `RenameButtonClick` (`:196-204`) opens the virtual
+                    // keyboard (Task 6); there is no `.plr` reader to rename
+                    // into either.
+                    Some(ui::char_select::CardAction::Rename(_)) => {
+                        self.front_hint = Some("Renaming is not ported yet".into());
+                    }
+                    // `DeleteButtonClick` (`:242-254`): parks the target,
+                    // then `menuMode = 5`. The favourited gate never subscribed
+                    // the handler (`:114-117`), so only `deletable` entries
+                    // reach it — and the implicit session entry has no file.
+                    Some(ui::char_select::CardAction::Delete(i))
+                        if self.players.get(i).is_some_and(|p| p.deletable) =>
+                    {
+                        delete_name = self.players.get(i).map(|p| p.name.clone());
+                        flow = Some(FlowClick::CharDelete(i));
+                    }
+                    _ => {}
+                }
+                if let Some(click) = flow {
+                    let delete_index = match click {
+                        FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
+                        _ => None,
+                    };
+                    let (front, backup, page) =
+                        next_flow_state(Some(front), self.front_backup, None, click);
+                    self.front_backup = backup;
+                    match page {
+                        // Mode 5 opens with the parked name/index
+                        // (`Main.selectedPlayer`, `UICharacterListItem.cs:
+                        // 246-249`).
+                        Some(menu::Page::ConfirmDeletePlayer) => {
+                            self.park_menu();
+                            let mut m = menu::Menu::open_confirm_delete_player(
+                                delete_name.unwrap_or_default(),
+                            );
+                            m.confirm_index = delete_index.unwrap_or(0);
+                            self.menu = Some(m);
+                        }
+                        Some(p) => {
+                            // A plain legacy page (the Back row's
+                            // `menuMode = 0`).
+                            self.park_menu();
+                            let mut m = menu::Menu::new(self.player_name.clone());
+                            m.page = p;
+                            self.menu = Some(m);
+                        }
+                        None => match front {
+                            Some(f) => self.enter_front(f),
+                            None => {
+                                self.front = None;
+                                self.park_menu();
+                            }
+                        },
+                    }
+                }
+            }
+            FrontScreen::WorldSelect => {
+                // The world screen's ctor is the char select's twin
+                // (`UIWorldSelect.cs:40-87`), so the shared `resolved_layout`
+                // lives on `char_select` and serves both hit-tests.
+                let l = ui::char_select::resolved_layout(
+                    screen,
+                    self.front_header_w(ui::world_select::SELECT_WORLD),
+                    self.worlds.len(),
+                );
+                let favorites: Vec<bool> = self.worlds.iter().map(|w| w.is_favorite).collect();
+                let mut flow = None;
+                let mut delete_name = None;
+                match ui::world_select::hit(&l, &favorites, mouse) {
+                    Some(ui::world_select::CardAction::Back) => flow = Some(FlowClick::WorldBack),
+                    // `NewWorldClick` (`:110-116`) opens the world creator —
+                    // Task 8's variant.
+                    Some(ui::world_select::CardAction::New) => {
+                        self.front_hint = Some("The world creator is not ported yet".into());
+                    }
+                    // `PlayGame` (`:360-374`): `_data.IsValid` gates the
+                    // launch; an invalid world's click is dead, like the
+                    // source's rejection route (out of scope, spec §9.4).
+                    Some(ui::world_select::CardAction::Play(i))
+                        if self.worlds.get(i).is_some_and(|w| w.valid) =>
+                    {
+                        flow = Some(FlowClick::WorldPlay);
+                    }
+                    // `FavoriteButtonClick` (`:439-458`): `ToggleFavorite`
+                    // saves (`FileData.cs:38-40`) and the list re-orders. The
+                    // port's marker is the `.trfav` sidecar
+                    // (`save_list::WorldEntry::is_favorite`'s reader).
+                    Some(ui::world_select::CardAction::ToggleFavorite(i)) => {
+                        if let Some(w) = self.worlds.get_mut(i) {
+                            w.is_favorite = !w.is_favorite;
+                            if let Some(path) = &w.path {
+                                let marker = path.with_extension("trfav");
+                                if w.is_favorite {
+                                    let _ = std::fs::write(&marker, b"");
+                                } else {
+                                    let _ = std::fs::remove_file(&marker);
+                                }
+                            }
+                        }
+                        ui::world_select::sort_worlds(&mut self.worlds, false);
+                    }
+                    Some(ui::world_select::CardAction::Rename(_)) => {
+                        self.front_hint = Some("Renaming is not ported yet".into());
+                    }
+                    // `DeleteButtonClick` (`:346-358`): parks the target,
+                    // then `menuMode = 9`.
+                    Some(ui::world_select::CardAction::Delete(i))
+                        if self.worlds.get(i).is_some_and(|w| w.path.is_some()) =>
+                    {
+                        delete_name = self.worlds.get(i).map(|w| w.name.clone());
+                        flow = Some(FlowClick::WorldDelete(i));
+                    }
+                    _ => {}
+                }
+                if let Some(click) = flow {
+                    let delete_index = match click {
+                        FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
+                        _ => None,
+                    };
+                    let (front, backup, page) =
+                        next_flow_state(Some(front), self.front_backup, None, click);
+                    self.front_backup = backup;
+                    match page {
+                        // Mode 9 opens with the parked name/index
+                        // (`Main.selectedWorld`, `UIWorldListItem.cs:350-353`).
+                        Some(menu::Page::ConfirmDeleteWorld) => {
+                            self.park_menu();
+                            let mut m = menu::Menu::open_confirm_delete_world(
+                                delete_name.unwrap_or_default(),
+                            );
+                            m.confirm_index = delete_index.unwrap_or(0);
+                            self.menu = Some(m);
+                        }
+                        Some(p) => {
+                            self.park_menu();
+                            let mut m = menu::Menu::new(self.player_name.clone());
+                            m.page = p;
+                            self.menu = Some(m);
+                        }
+                        None => match front {
+                            Some(f) => self.enter_front(f),
+                            None => {
+                                // The launch: everything closes and the
+                                // settings apply (`close_menu`'s tail).
+                                self.front = None;
+                                self.park_menu();
+                            }
+                        },
+                    }
+                }
+            }
+        }
+    }
+
+    /// Applies a `TR_UI` preset (App init): the screens re-list through the
+    /// real openers; the legacy pages park the front exactly as their vanilla
+    /// entries do — modes 5/9 clear the 888 state (`Main.cs:51066-51069`'s
+    /// else branch), mode 40 parks it in `front_backup`
+    /// (`UICharacterCreation.BackupConfirmationState`).
+    fn preset_ui(&mut self, preset: TrUiPreset) {
+        match preset {
+            TrUiPreset::CharSelect => self.enter_front(FrontScreen::CharSelect),
+            TrUiPreset::WorldSelect => self.enter_front(FrontScreen::WorldSelect),
+            // Tasks 6-8's screens: the variants land with their tasks.
+            TrUiPreset::CharNew | TrUiPreset::WorldNew | TrUiPreset::Keyboard => {
+                log::info!("TR_UI: the screen lands with Tasks 6-8");
+            }
+            TrUiPreset::Credits => {
+                self.front = None;
+                self.front_backup = None;
+                self.menu = Some(menu::Menu::open_credits());
+            }
+            TrUiPreset::DelPlayer => {
+                self.enter_front(FrontScreen::CharSelect);
+                let name =
+                    self.players.first().map(|p| p.name.clone()).unwrap_or_default();
+                self.front = None;
+                self.menu = Some(menu::Menu::open_confirm_delete_player(name));
+            }
+            TrUiPreset::DelWorld => {
+                self.enter_front(FrontScreen::WorldSelect);
+                let name = self.worlds.first().map(|w| w.name.clone()).unwrap_or_default();
+                self.front = None;
+                self.menu = Some(menu::Menu::open_confirm_delete_world(name));
+            }
+            TrUiPreset::Discard => {
+                // Mode 40's screenshot: the parked state is the char select
+                // (vanilla parks the character creation — Task 7's variant),
+                // so the No branch has a screen to restore.
+                self.front = None;
+                self.front_backup = Some(FrontScreen::CharSelect);
+                self.menu = Some(menu::Menu::open_confirm_discard(None));
+            }
+        }
     }
 
     /// Applies the options the renderer reads right away.
@@ -2840,7 +3420,7 @@ impl App {
         }
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
         // every 600000 ms (10 minutes); the player/map save rides along.
-        if self.menu.is_none() && self.settings.auto_save {
+        if self.menu.is_none() && self.front.is_none() && self.settings.auto_save {
             self.autosave += dt;
             if self.autosave >= 600.0 {
                 self.autosave = 0.0;
@@ -2868,6 +3448,7 @@ impl App {
         // We only draw the vanilla cursor together with the in-world HUD so far, so
         // the OS pointer stays in menus and on the fullscreen map.
         let vanilla_cursor = self.menu.is_none()
+            && self.front.is_none()
             && !no_hud()
             && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open));
         if self.os_cursor_hidden != Some(vanilla_cursor) {
@@ -2883,10 +3464,10 @@ impl App {
             sound_volume: self.settings.sound_volume,
             ambient_volume: self.settings.ambient_volume,
             quiet_ambient_sounds: false,
-            game_menu: self.menu.is_some(),
+            game_menu: self.menu.is_some() || self.front.is_some(),
         });
 
-        if self.menu.is_none() {
+        if self.menu.is_none() && self.front.is_none() {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
@@ -3009,6 +3590,8 @@ impl App {
                 projectiles,
                 world_key,
                 menu,
+                front,
+                front_hint,
                 settings,
                 remote_players,
                 map,
@@ -3286,6 +3869,7 @@ impl App {
                 let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
                 if settings.map_enabled
                     && menu.is_none()
+                    && front.is_none()
                     && !no_hud()
                     && !fullscreen_map
                     && self.map_style == 1
@@ -3313,7 +3897,64 @@ impl App {
                         );
                     }
                 }
-                if menu.is_none() && !no_hud() && !fullscreen_map {
+                if let Some(front) = front.as_ref() {
+                    // `Main.menuMode == 888` (`Main.cs:51059-51064`): the
+                    // front-end draws over the world backdrop the frame
+                    // already rendered — the draw site picks `front` first,
+                    // then `menu` (Review Focus 1).
+                    match front {
+                        FrontScreen::CharSelect => {
+                            let text = ui::char_select::SELECT_PLAYER;
+                            let header_w = match &lookups.death_font {
+                                Some(f) => font_width(f, text, 1.0),
+                                None => renderer.text_width(text, 1.0),
+                            };
+                            ui::char_select::draw(
+                                renderer,
+                                lookups,
+                                screen,
+                                header_w,
+                                &self.players,
+                                self.mouse_pos,
+                            );
+                        }
+                        FrontScreen::WorldSelect => {
+                            let text = ui::world_select::SELECT_WORLD;
+                            let header_w = match &lookups.death_font {
+                                Some(f) => font_width(f, text, 1.0),
+                                None => renderer.text_width(text, 1.0),
+                            };
+                            // The active player's difficulty for the joinable
+                            // grey-out (`Main.ActivePlayerFileData.Player.
+                            // difficulty`, `UIWorldSelect.cs:179`): the port's
+                            // active character is the fresh session player —
+                            // difficulty 0 (`Player.cs:1654`'s default).
+                            ui::world_select::draw(
+                                renderer,
+                                lookups,
+                                screen,
+                                header_w,
+                                &self.worlds,
+                                0,
+                                self.mouse_pos,
+                            );
+                        }
+                    }
+                    // The port's not-ported notice for the front screens
+                    // (ours, like `Menu.hint` — not in the original).
+                    if let Some(hint) = front_hint {
+                        let w = hud_text_width(renderer, lookups, hint, 0.8);
+                        hud_text(
+                            renderer,
+                            lookups,
+                            (screen.x - w) * 0.5,
+                            screen.y - 64.0,
+                            0.8,
+                            [1.0, 0.8, 0.45, 1.0],
+                            hint,
+                        );
+                    }
+                } else if menu.is_none() && !no_hud() && !fullscreen_map {
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -3354,7 +3995,7 @@ impl App {
                     }
                 }
                 if let Some(map) = map.as_ref() {
-                    if !no_hud() && menu.is_none() && settings.map_enabled {
+                    if !no_hud() && menu.is_none() && front.is_none() && settings.map_enabled {
                         if map.open {
                             // `Main.cs:55483`: the biome `MapBG` backdrop is
                             // drawn before the wooden frame, so it goes into
@@ -7972,5 +8613,160 @@ mod underground_bg_tests {
         let b = tr_core::worldgen::generate(&opts);
         assert_eq!(a.hell_back_style, b.hell_back_style);
         assert!(a.hell_back_style < 3);
+    }
+}
+
+#[cfg(test)]
+mod front_flow_tests {
+    use super::*;
+
+    use menu::Page as P;
+
+    #[test]
+    fn the_flow_table_routes_every_front_hop() {
+        // Char select Back -> menuMode 0 (`UICharacterSelect.cs:116-120`).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharBack);
+        assert_eq!((front.is_some(), backup.is_some(), page), (false, false, Some(P::Main)));
+        // Play -> the world select (`Main.cs:66245-66249` + `:49468-49472`).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharPlay);
+        assert_eq!((front, backup.is_some(), page.is_some()), (Some(FrontScreen::WorldSelect), false, false));
+        // Delete -> mode 5 clears the 888 state (`UICharacterListItem.cs:
+        // 242-254`, `Main.cs:51066-51069`'s else branch).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharDelete(2));
+        assert_eq!(
+            (front.is_some(), backup.is_some(), page),
+            (false, false, Some(P::ConfirmDeletePlayer))
+        );
+        // World Back -> the char select (`UIWorldSelect.cs:118-122`, the
+        // single-player arm of `menuMode = (!menuMultiplayer) ? 1 : 12`).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldBack);
+        assert_eq!((front, backup.is_some(), page.is_some()), (Some(FrontScreen::CharSelect), false, false));
+        // World Play launches: both sides close (the loading flow is out of
+        // scope, spec §9.4).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldPlay);
+        assert_eq!((front.is_some(), backup.is_some(), page.is_some()), (false, false, false));
+        // World Delete -> mode 9 (`UIWorldListItem.cs:346-358`).
+        let (front, backup, page) =
+            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldDelete(1));
+        assert_eq!(
+            (front.is_some(), backup.is_some(), page),
+            (false, false, Some(P::ConfirmDeleteWorld))
+        );
+    }
+
+    #[test]
+    fn confirm_resolutions_reopen_their_screen() {
+        // Mode 5: both branches reopen the char select (`Main.cs:49434-49439`).
+        for click in [FlowClick::ConfirmYes, FlowClick::ConfirmNo] {
+            let (front, backup, page) =
+                next_flow_state(None, None, Some(P::ConfirmDeletePlayer), click);
+            assert_eq!(front, Some(FrontScreen::CharSelect), "{click:?}");
+            assert!((backup.is_none()) && page.is_none(), "{click:?}");
+        }
+        // Mode 9: the world select (`:49684-49690`).
+        for click in [FlowClick::ConfirmYes, FlowClick::ConfirmNo] {
+            let (front, backup, page) =
+                next_flow_state(None, None, Some(P::ConfirmDeleteWorld), click);
+            assert_eq!(front, Some(FrontScreen::WorldSelect), "{click:?}");
+            assert!((backup.is_none()) && page.is_none(), "{click:?}");
+        }
+        // Mode 40 Yes: the parked state drops and the char select reopens
+        // (`BackupConfirmationState = null` + `OpenCharacterSelectUI`,
+        // `:49454-49459`).
+        let (front, backup, page) = next_flow_state(
+            None,
+            Some(FrontScreen::CharSelect),
+            Some(P::ConfirmDiscard),
+            FlowClick::ConfirmYes,
+        );
+        assert_eq!((front.is_some(), backup.is_some(), page.is_some()), (true, false, false));
+    }
+
+    #[test]
+    fn the_mode_40_no_branch_restores_the_exact_parked_screen() {
+        // `Main.cs:49460-49467`: `menuMode = 888` +
+        // `SetState(BackupConfirmationState)` — the parked value returns
+        // untouched and the backup clears (Review Focus 1's round-trip;
+        // `App.front_backup` is the port's `BackupConfirmationState`).
+        for parked in [FrontScreen::CharSelect, FrontScreen::WorldSelect] {
+            let (front, backup, page) = next_flow_state(
+                None,
+                Some(parked),
+                Some(P::ConfirmDiscard),
+                FlowClick::ConfirmNo,
+            );
+            assert_eq!(front, Some(parked), "the exact parked screen returns");
+            assert!((backup.is_none()) && page.is_none());
+        }
+    }
+
+    #[test]
+    fn front_and_menu_are_never_both_some() {
+        // Review Focus 1: every row of the flow table keeps the single-mode
+        // invariant `Main.menuMode` carries (`Main.cs:51059-51069` — 888
+        // draws `MenuUI`, every other mode has `SetState(null)`).
+        let fronts = [None, Some(FrontScreen::CharSelect), Some(FrontScreen::WorldSelect)];
+        let backs = [None, Some(FrontScreen::CharSelect), Some(FrontScreen::WorldSelect)];
+        let pages = [
+            None,
+            Some(P::Main),
+            Some(P::ConfirmDeletePlayer),
+            Some(P::ConfirmDeleteWorld),
+            Some(P::ConfirmDiscard),
+            Some(P::Credits),
+        ];
+        let clicks = [
+            FlowClick::CharBack,
+            FlowClick::CharNew,
+            FlowClick::CharPlay,
+            FlowClick::CharDelete(0),
+            FlowClick::WorldBack,
+            FlowClick::WorldPlay,
+            FlowClick::WorldDelete(0),
+            FlowClick::ConfirmYes,
+            FlowClick::ConfirmNo,
+        ];
+        for front in fronts {
+            for backup in backs {
+                for page in &pages {
+                    // The invariant holds on the way in: the App never parks
+                    // both sides, so front+page inputs are unreachable.
+                    if front.is_some() && page.is_some() {
+                        continue;
+                    }
+                    for click in &clicks {
+                        let (front, backup, menu) =
+                            next_flow_state(front, backup, *page, click.clone());
+                        assert!(
+                            !(front.is_some() && menu.is_some()),
+                            "{click:?} from front {front:?}/page {page:?} left both sides live"
+                        );
+                        let _ = backup;
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tr_ui_names_map_the_hook_table() {
+        // The plan Task 5 hook list (the `TR_PAGE` pattern); unknown names
+        // resolve to nothing and the match is case-insensitive.
+        assert_eq!(tr_ui_preset("charsel"), Some(TrUiPreset::CharSelect));
+        assert_eq!(tr_ui_preset("worldsel"), Some(TrUiPreset::WorldSelect));
+        assert_eq!(tr_ui_preset("charnew"), Some(TrUiPreset::CharNew));
+        assert_eq!(tr_ui_preset("worldnew"), Some(TrUiPreset::WorldNew));
+        assert_eq!(tr_ui_preset("vk"), Some(TrUiPreset::Keyboard));
+        assert_eq!(tr_ui_preset("credits"), Some(TrUiPreset::Credits));
+        assert_eq!(tr_ui_preset("delplayer"), Some(TrUiPreset::DelPlayer));
+        assert_eq!(tr_ui_preset("delworld"), Some(TrUiPreset::DelWorld));
+        assert_eq!(tr_ui_preset("discard"), Some(TrUiPreset::Discard));
+        assert_eq!(tr_ui_preset("CHARSEL"), Some(TrUiPreset::CharSelect));
+        assert_eq!(tr_ui_preset("nonsense"), None);
     }
 }

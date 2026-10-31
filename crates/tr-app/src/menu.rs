@@ -202,6 +202,18 @@ pub enum Page {
     JoinPassword,
     /// menuMode 889 (`Main.cs:48726`).
     ServerSettings,
+    // The P6 legacy modes — the confirms and the credits Back row that
+    // `Main.DrawMenu` still renders as rows when the modern 888 front-end is
+    // not the live state (Task 5). Their nav runs through the actions, not
+    // `parent()` (the confirms have no Back row; see [`Menu::parent`]).
+    /// menuMode 5 (`Main.cs:49420`): the `Delete {player}?` confirm.
+    ConfirmDeletePlayer,
+    /// menuMode 9 (`Main.cs:49674`): the `Delete {world}?` confirm.
+    ConfirmDeleteWorld,
+    /// menuMode 40 (`Main.cs:49440`): the `Discard your new player?` confirm.
+    ConfirmDiscard,
+    /// menuMode 3000 (`Main.cs:49693`): the credits' single Back row.
+    Credits,
 }
 
 /// `num2` / `num4` / `array7` of one screen.
@@ -259,6 +271,15 @@ impl Page {
             }
             // menuMode 889 (`Main.cs:48726-48809`).
             Page::ServerSettings => Layout { y0: 200.0, row: 60.0, scale: 1.0 },
+            // menuModes 5 / 9 / 40 (`Main.cs:49420-49439`, `:49674-49692`,
+            // `:49440-49467`) keep the vanilla `num2`/`num4` defaults of
+            // 220/52 (`:48419-48421`).
+            Page::ConfirmDeletePlayer
+            | Page::ConfirmDeleteWorld
+            | Page::ConfirmDiscard => Layout { y0: 220.0, row: 52.0, scale: 1.0 },
+            // menuMode 3000 (`Main.cs:49693-49698`): `num2 = 500`,
+            // `array7[0] = 0.9f`.
+            Page::Credits => Layout { y0: 500.0, row: 52.0, scale: 0.9 },
         }
     }
 }
@@ -269,6 +290,15 @@ pub enum Action {
     Host { port: u16, password: String },
     Join { addr: String, password: String },
     Quit,
+    /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
+    /// `:49681`, `:49454`) — the App runs the erase and reopens the screen the
+    /// confirm came from.
+    ConfirmYes,
+    /// The confirm pages' No row (`selectedMenu == 2`) — also the target of
+    /// the screens' gamepad Back, which the port maps to Escape (`flag5`
+    /// ORs into the No branch, `Main.cs:49435-49438`, `:49687-49690`,
+    /// `:49464-49467`).
+    ConfirmNo,
 }
 
 /// One settings row. Every variant is a `Main`/`ItemSlot` field the screens toggle.
@@ -490,6 +520,17 @@ pub struct Menu {
     pub error: Option<String>,
     pub connecting: bool,
     pub name: String,
+    /// The confirm pages' target: the parked player/world name on 5/9
+    /// (`Main.PlayerList[Main.selectedPlayer].Player.name` /
+    /// `Main.WorldList[Main.selectedWorld].Name`, `Main.cs:49421`/`:49675`),
+    /// and the discard draft's `Some(name)` / `None` pair on 40
+    /// (`Main.PendingPlayer.name`'s `IsNullOrEmpty` branch, `:49441-49448`).
+    pub confirm_name: Option<String>,
+    /// `Main.selectedPlayer`/`Main.selectedWorld` (`Main.cs:2263`/`:2265`):
+    /// the list index the confirm's Yes erases, parked by the card's
+    /// `DeleteButtonClick` (`UICharacterListItem.cs:246-249` /
+    /// `UIWorldListItem.cs:350-353`) before the mode opens.
+    pub confirm_index: usize,
     /// Host/join address shown after the server starts.
     pub status: Option<String>,
     /// The settings screens edit this; `App` copies it when the menu closes.
@@ -567,6 +608,8 @@ impl Menu {
             error: None,
             connecting: false,
             name,
+            confirm_name: None,
+            confirm_index: 0,
             status: None,
             settings: Settings::load(),
             mouse: Vec2::ZERO,
@@ -639,6 +682,48 @@ impl Menu {
         })
     }
 
+    // The P6 legacy-mode entries (plan Task 5). Each builds a fresh `Menu`
+    // parked on its page; the App supplies the confirm target's name/index the
+    // way `Main.selectedPlayer`/`selectedWorld` are parked before the mode
+    // opens (`UICharacterListItem.cs:246-249` / `UIWorldListItem.cs:350-353`).
+
+    /// menuMode 5 (`Main.cs:49420-49439`): the `Delete {name}?` confirm.
+    pub fn open_confirm_delete_player(name: String) -> Self {
+        let mut me = Self::new(String::new());
+        me.page = Page::ConfirmDeletePlayer;
+        me.confirm_name = Some(name);
+        me
+    }
+
+    /// menuMode 9 (`Main.cs:49674-49692`): the `Delete {world}?` confirm.
+    pub fn open_confirm_delete_world(name: String) -> Self {
+        let mut me = Self::new(String::new());
+        me.page = Page::ConfirmDeleteWorld;
+        me.confirm_name = Some(name);
+        me
+    }
+
+    /// menuMode 40 (`Main.cs:49440-49467`): `Discard your new player?` while
+    /// the draft has no name, `Discard {name}?` otherwise
+    /// (`Main.PendingPlayer.name`'s `IsNullOrEmpty` branch, `:49441-49445`).
+    pub fn open_confirm_discard(name: Option<String>) -> Self {
+        let mut me = Self::new(String::new());
+        me.page = Page::ConfirmDiscard;
+        me.confirm_name = name;
+        me
+    }
+
+    /// menuMode 3000 (`Main.cs:49693-49704`): the credits' single Back row at
+    /// `num2 = 500`. The `SkyManager.Activate("CreditsRoll")` cinematic that
+    /// vanilla runs alongside (`Main.cs:48967-48969`'s entry) is the
+    /// documented deviation — the port's credits page draws over the world
+    /// backdrop.
+    pub fn open_credits() -> Self {
+        let mut me = Self::new(String::new());
+        me.page = Page::Credits;
+        me
+    }
+
     /// The rows of the current screen, in `Main.DrawMenu` order.
     fn items(&self) -> Vec<Item> {
         let s = &self.settings;
@@ -652,7 +737,12 @@ impl Menu {
                 Item::new("Achievements", Act::Hint("Achievements are not ported yet")),
                 Item::new("Resource Packs", Act::Hint("Resource packs are not ported yet")),
                 Item::new("Settings", Act::Nav(Page::Settings)),
-                Item::new("Credits", Act::Hint("Credits are not ported yet")),
+                // Row 5 (`Main.cs:48964-48971`): `UI.Credits` sets
+                // `menuMode = 3000` (`:48967-48969`); the
+                // `SkyManager.Activate("CreditsRoll")` cinematic is the
+                // documented deviation — the port's credits page draws the
+                // world backdrop + the Back row.
+                Item::new("Credits", Act::Nav(Page::Credits)),
                 Item::new("Exit", Act::Out(Action::Quit)),
             ],
             // `menuMode == 11`.
@@ -1327,6 +1417,54 @@ impl Menu {
                 // multiplayer menu (plan deviation).
                 Item::new("Back", Act::Nav(Page::Multiplayer)).at(70.0),
             ],
+            // menuMode 5 (`Main.cs:49420-49439`): `array9[0] = Lang.menu[46] +
+            // " " + Main.PlayerList[Main.selectedPlayer].Player.name + "?"`
+            // with `array[0] = true` (`:49421-49422`), rows 1-2
+            // `Lang.menu[104]` "Yes" (`:49423`) and `Lang.menu[105]` "No"
+            // (`:49424`), `num5 = 3` — the vanilla 220/52 defaults.
+            Page::ConfirmDeletePlayer => vec![
+                Item::new(
+                    format!("Delete {}?", self.confirm_name.as_deref().unwrap_or_default()),
+                    Act::None,
+                )
+                .heading(),
+                Item::new("Yes", Act::Out(Action::ConfirmYes)),
+                Item::new("No", Act::Out(Action::ConfirmNo)),
+            ],
+            // menuMode 9 (`Main.cs:49674-49692`): the world twin — the header
+            // names `Main.WorldList[Main.selectedWorld].Name` (`:49675`), the
+            // same Yes/No rows (`:49677-49678`).
+            Page::ConfirmDeleteWorld => vec![
+                Item::new(
+                    format!("Delete {}?", self.confirm_name.as_deref().unwrap_or_default()),
+                    Act::None,
+                )
+                .heading(),
+                Item::new("Yes", Act::Out(Action::ConfirmYes)),
+                Item::new("No", Act::Out(Action::ConfirmNo)),
+            ],
+            // menuMode 40 (`Main.cs:49440-49467`): the discard confirm —
+            // `UI.PlayerCreateDiscardWarningNoName` while the draft has no
+            // name, `UI.PlayerCreateDiscardWarningWithName` ("Discard {0}?")
+            // otherwise (`:49441-49448`), rows `…WarningYes`
+            // "Yes, discard edits!" (`:49449`) and `…WarningNo`
+            // "No, keep editing..." (`:49450`).
+            Page::ConfirmDiscard => vec![
+                Item::new(
+                    match &self.confirm_name {
+                        Some(name) => format!("Discard {name}?"),
+                        None => "Discard your new player?".to_string(),
+                    },
+                    Act::None,
+                )
+                .heading(),
+                Item::new("Yes, discard edits!", Act::Out(Action::ConfirmYes)),
+                Item::new("No, keep editing...", Act::Out(Action::ConfirmNo)),
+            ],
+            // menuMode 3000 (`Main.cs:49693-49704`): `num5 = 1`, `num2 = 500`,
+            // `array7[0] = 0.9f`, `array9[0] = Lang.menu[5]` "Back" — the
+            // click (or `flag5`) returns to menuMode 0 (`:49700-49703`).
+            Page::Credits => vec![Item::new("Back", Act::Nav(Page::Main)).scaled(0.9)],
         }
     }
 
@@ -1347,6 +1485,14 @@ impl Menu {
             Page::JoinIp | Page::HostPassword | Page::ServerSettings => Some(Page::Multiplayer),
             Page::JoinPort => Some(Page::JoinIp),
             Page::JoinPassword => Some(Page::JoinPort),
+            // The confirms have no Back row and no parent: their nav happens
+            // through the Yes/No actions, Escape included — vanilla's
+            // gamepad Back (`flag5`) ORs into the No branch
+            // (`Main.cs:49435-49438`, `:49687-49690`, `:49464-49467`).
+            Page::ConfirmDeletePlayer | Page::ConfirmDeleteWorld | Page::ConfirmDiscard => None,
+            // menuMode 3000's Back row (`flag5` included) returns to
+            // menuMode 0 (`Main.cs:49700-49703`).
+            Page::Credits => Some(Page::Main),
         }
     }
 
@@ -1388,6 +1534,11 @@ impl Menu {
                     Action::Join { addr: addr.clone(), password: password.clone() }
                 }
                 Action::None => Action::None,
+                // The confirm pages' rows: the App resolves the page against
+                // its front state (the erase and the reopen, `Main.cs
+                // :49431-49439`, `:49681-49692`, `:49454-49467`).
+                Action::ConfirmYes => Action::ConfirmYes,
+                Action::ConfirmNo => Action::ConfirmNo,
             },
             Act::Toggle(toggle) => {
                 self.toggle(*toggle);
@@ -1612,6 +1763,16 @@ impl Menu {
                 return Action::None;
             }
             K::Escape => {
+                // The confirm pages walk no parent: vanilla's gamepad Back
+                // (`flag5`) ORs into the No branch (`Main.cs:49435-49438`,
+                // `:49687-49690`, `:49464-49467`), so Escape resolves the No
+                // row and the App handles it per page.
+                if matches!(
+                    self.page,
+                    Page::ConfirmDeletePlayer | Page::ConfirmDeleteWorld | Page::ConfirmDiscard
+                ) {
+                    return self.activate(2);
+                }
                 if let Some(parent) = Self::parent(self.page) {
                     self.page = parent;
                     self.selected = 0;
@@ -3890,5 +4051,135 @@ mod tests {
         let mut m = menu(Page::ServerSettings);
         m.activate(5);
         assert_eq!(m.page, Page::Multiplayer);
+    }
+
+    #[test]
+    fn confirm_pages_use_the_vanilla_default_row_metrics() {
+        // Modes 5/9/40 keep the `num2`/`num4` defaults of 220/52
+        // (`Main.cs:48419-48421`; `:49420-49439`, `:49674-49692`,
+        // `:49440-49467`); mode 3000 sits at `num2 = 500` with
+        // `array7[0] = 0.9f` (`:49694-49697`).
+        for page in [Page::ConfirmDeletePlayer, Page::ConfirmDeleteWorld, Page::ConfirmDiscard] {
+            let l = page.layout();
+            assert_eq!((l.y0, l.row, l.scale), (220.0, 52.0, 1.0), "{page:?}");
+        }
+        let credits = Page::Credits.layout();
+        assert_eq!((credits.y0, credits.row, credits.scale), (500.0, 52.0, 0.9));
+    }
+
+    #[test]
+    fn confirm_delete_pages_match_the_vanilla_rows() {
+        // `Main.cs:49420-49439` (mode 5) and `:49674-49692` (mode 9): the
+        // `Lang.menu[46] + " " + name + "?"` header (`array[0] = true`),
+        // rows 1-2 `Lang.menu[104]`/`[105]`, `num5 = 3` — three rows over the
+        // 220/52 defaults.
+        let m = Menu::open_confirm_delete_player("Bob".into());
+        assert_eq!(m.page, Page::ConfirmDeletePlayer);
+        let items = m.items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Delete Bob?", "Yes", "No"]);
+        assert!(items[0].header, "array[0] = true");
+        assert!(!items[1].header && !items[2].header);
+        assert!(items.iter().all(|i| i.scale == 1.0 && i.y == 0.0));
+        // Draw y = `num2 + num4 * i` (`Main.cs:51769`): 220, 272, 324.
+        let layout = Page::ConfirmDeletePlayer.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!((draw_y(0), draw_y(1), draw_y(2)), (220.0, 272.0, 324.0));
+        // The world twin names the world (`:49675`).
+        let m = Menu::open_confirm_delete_world("World 1".into());
+        assert_eq!(m.page, Page::ConfirmDeleteWorld);
+        assert_eq!(m.items()[0].label, "Delete World 1?");
+        assert_eq!(m.items()[1].label, "Yes");
+        assert_eq!(m.items()[2].label, "No");
+        // `confirm_index` parks `Main.selectedPlayer`/`selectedWorld`
+        // (`UICharacterListItem.cs:246-249` / `UIWorldListItem.cs:350-353`).
+        let mut m = Menu::open_confirm_delete_player("Bob".into());
+        m.confirm_index = 3;
+        assert_eq!(m.confirm_index, 3);
+        // Both rows resolve through the actions (`Main.cs:49431-49439`).
+        let mut m = Menu::open_confirm_delete_player("Bob".into());
+        assert!(matches!(m.activate(1), Action::ConfirmYes));
+        assert!(matches!(m.activate(2), Action::ConfirmNo));
+    }
+
+    #[test]
+    fn confirm_discard_page_names_the_draft() {
+        // `Main.cs:49441-49450`: `UI.PlayerCreateDiscardWarningNoName` while
+        // `Main.PendingPlayer.name` is empty, `…WithName` ("Discard {0}?")
+        // otherwise; rows `…WarningYes` / `…WarningNo`.
+        let m = Menu::open_confirm_discard(None);
+        assert_eq!(m.page, Page::ConfirmDiscard);
+        let items = m.items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["Discard your new player?", "Yes, discard edits!", "No, keep editing..."]);
+        assert!(items[0].header);
+        assert!(!items[1].header && !items[2].header);
+        let m = Menu::open_confirm_discard(Some("Zealot".into()));
+        assert_eq!(m.items()[0].label, "Discard Zealot?");
+    }
+
+    #[test]
+    fn credits_page_has_one_back_row_at_500() {
+        // `Main.cs:49693-49704`: `num5 = 1`, `num2 = 500`,
+        // `array7[0] = 0.9f`, `array9[0] = Lang.menu[5]`; the click (or
+        // `flag5`) returns to menuMode 0 (`:49700-49703`).
+        let m = Menu::open_credits();
+        assert_eq!(m.page, Page::Credits);
+        let items = m.items();
+        assert_eq!(items.len(), 1, "num5 = 1");
+        assert_eq!(items[0].label, "Back");
+        assert_eq!(items[0].scale, 0.9, "array7[0] = 0.9f");
+        assert_eq!(items[0].y, 0.0);
+        let layout = Page::Credits.layout();
+        assert_eq!(layout.y0 + items[0].y, 500.0, "the row draws at num2 = 500");
+        // Back navigates back to the main menu.
+        let mut m = Menu::open_credits();
+        m.activate(0);
+        assert_eq!(m.page, Page::Main);
+    }
+
+    #[test]
+    fn the_confirms_have_no_parent_and_credits_returns_to_main() {
+        // The confirms' nav runs through the actions, Escape included
+        // (`Main.cs:49435-49438`, `:49687-49690`); mode 3000's Back returns
+        // to menuMode 0 (`:49700-49703`).
+        assert_eq!(Menu::parent(Page::ConfirmDeletePlayer), None);
+        assert_eq!(Menu::parent(Page::ConfirmDeleteWorld), None);
+        assert_eq!(Menu::parent(Page::ConfirmDiscard), None);
+        assert_eq!(Menu::parent(Page::Credits), Some(Page::Main));
+    }
+
+    #[test]
+    fn escape_on_the_confirms_clicks_no() {
+        // Vanilla's `flag5` ORs into the No branch (`Main.cs:49435-49438`,
+        // `:49687-49690`, `:49464-49467`) — Escape resolves the No row
+        // instead of walking a parent.
+        for page in [Page::ConfirmDeletePlayer, Page::ConfirmDeleteWorld, Page::ConfirmDiscard] {
+            let mut m = match page {
+                Page::ConfirmDeletePlayer => Menu::open_confirm_delete_player("Bob".into()),
+                Page::ConfirmDeleteWorld => Menu::open_confirm_delete_world("W".into()),
+                _ => Menu::open_confirm_discard(None),
+            };
+            assert!(
+                matches!(m.key(winit::keyboard::KeyCode::Escape), Action::ConfirmNo),
+                "{page:?}"
+            );
+        }
+        // Credits keeps the parent walk: Escape returns to the main menu
+        // (`:49700-49703`).
+        let mut m = Menu::open_credits();
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.page, Page::Main);
+    }
+
+    #[test]
+    fn main_menu_credits_row_opens_mode_3000() {
+        // `Main.cs:48964-48971`: the `UI.Credits` row sets `menuMode = 3000`
+        // (the `SkyManager.Activate("CreditsRoll")` cinematic is the
+        // documented deviation).
+        let mut m = menu(Page::Main);
+        m.activate(5);
+        assert_eq!(m.page, Page::Credits);
+        assert!(m.hint.is_none());
     }
 }
