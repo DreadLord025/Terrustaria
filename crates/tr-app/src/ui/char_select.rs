@@ -58,7 +58,9 @@ pub const PANEL_PADDING: [f32; 4] = [12.0; 4];
 pub const CARD_PADDING: [f32; 4] = [6.0; 4];
 
 /// The card buttons in ctor order (`UICharacterListItem.cs:71-121`); the cloud
-/// button (:89-100) is skipped — `SocialAPI.Cloud == null` (plan §J.2).
+/// button (:89-100) is skipped — `SocialAPI.Cloud == null` (plan §J.2). These
+/// ordinals key only the [`button_label`] table — the `card_buttons` sheet
+/// array is a different order, mapped by [`button_sheet`].
 pub const BUTTON_PLAY: usize = 0;
 /// The favourite toggle (`:80-87`).
 pub const BUTTON_FAVORITE: usize = 1;
@@ -419,6 +421,10 @@ pub fn card_layout(row_rect: [f32; 4], index: usize) -> CardLayout {
 /// favourite desc, then `LastPlayed` (the port has no play times — the list's
 /// insertion order stands in), then Name, then filename. T2 owns the
 /// implementation; the re-export keeps one copy of the chain.
+// Consumed by Task 5 (the App-flow surface); until then this bin crate has no
+// caller for the re-export, so the lint is carried deliberately — remove the
+// attribute in Task 5 (Task 3b review fix 3).
+#[allow(unused_imports)]
 pub use super::save_list::sort_players;
 
 /// Hover colours (`MouseOver` `:294-300` / `MouseOut` `:302-308`): the card
@@ -471,6 +477,24 @@ pub fn button_label(button: usize, is_favorite: bool) -> &'static str {
     }
 }
 
+/// The sheet index into `Lookups::card_buttons` (assets.rs:956-963 —
+/// `[ButtonPlay, ButtonFavoriteActive, ButtonFavoriteInactive, ButtonRename,
+/// ButtonDelete]`). The `BUTTON_*` ordinals above are the ctor's append order
+/// — the key of [`button_label`]'s table — but the sheet array is a different
+/// order: the favourite owns two sheets, so every button after it sits one
+/// later (`BUTTON_RENAME` = 2, sheet 3). Indexing the array with a raw
+/// ordinal drew the wrong sprite (Task 3b review fix 1), so every card button
+/// draw resolves its sheet through here.
+fn button_sheet(button: usize, is_favorite: bool) -> usize {
+    match button {
+        BUTTON_PLAY => 0,                    // `ButtonPlay`
+        BUTTON_FAVORITE if is_favorite => 1, // `ButtonFavoriteActive`
+        BUTTON_FAVORITE => 2,                // `ButtonFavoriteInactive`
+        BUTTON_RENAME => 3,                  // `ButtonRename`
+        _ => 4,                              // `ButtonDelete`
+    }
+}
+
 // --- Hit-testing -----------------------------------------------------------------
 
 /// What a click does (`UICharacterSelect.cs:108-121`, `UICharacterListItem.cs:
@@ -508,7 +532,21 @@ fn in_rect(mouse: Vec2, rect: [f32; 4]) -> bool {
 /// come back without a card. The caller passes a [`resolved_layout`] so the
 /// attached-scrollbar card widths agree with the draw. Double-click play
 /// (`:68-69`) is skipped — single click only (documented in the plan).
+///
+/// Back/New are checked *before* the cards: `GetElementAt` walks the root's
+/// children in reverse append order (`UIElement.cs:324-334`) — New (`:84`),
+/// Back (`:75`), then the container with the list (`:49`) — so wherever the
+/// rects overlap (the last card's rows run under the fat buttons once the
+/// list scrolls, 6+ players) the click is theirs, not the card's (Task 3b
+/// review fix 2). New and Back are disjoint, so their relative order is
+/// cosmetic.
 pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, Option<CardAction>) {
+    if in_rect(mouse, l.new) {
+        return (None, Some(CardAction::New)); // `NewCharacterClick` (`:108-114`)
+    }
+    if in_rect(mouse, l.back) {
+        return (None, Some(CardAction::Back)); // `GoBackClick` (`:116-120`)
+    }
     for i in 0..favorites.len() {
         let c = card_layout(l.list, i);
         if !in_rect(mouse, c.card) {
@@ -532,12 +570,6 @@ pub fn card_hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> (Option<usize>, 
             None
         };
         return (Some(i), action);
-    }
-    if in_rect(mouse, l.back) {
-        return (None, Some(CardAction::Back)); // `GoBackClick` (`:116-120`)
-    }
-    if in_rect(mouse, l.new) {
-        return (None, Some(CardAction::New)); // `NewCharacterClick` (`:108-114`)
     }
     (None, None)
 }
@@ -783,30 +815,49 @@ fn draw_card(
     if let Some(sheet) = lookups.ui_player_background {
         push_whole(r, lookups, &sheet, c.preview, [1.0; 4]);
     }
-    // The buttons (`:71-121`), each `VAlign 1` except delete's `HAlign 1`.
+    // The buttons (`:71-121`), each `VAlign 1` except delete's `HAlign 1` —
+    // sheets resolve through [`button_sheet`], never a raw ordinal.
     let play_hover = hovered && in_rect(mouse, c.play);
     let fav_hover = hovered && in_rect(mouse, c.favorite);
     let rename_hover = hovered && in_rect(mouse, c.rename);
     let delete_hover = hovered && in_rect(mouse, c.delete);
-    draw_card_button(r, lookups, lookups.card_buttons[BUTTON_PLAY], c.play, play_hover, 0.4);
-    // The favourite sheet flips with the flag, idle 0.8 when favourited (`:80`, `:86`).
-    let fav_sheet = if entry.is_favorite {
-        lookups.card_buttons[1]
-    } else {
-        lookups.card_buttons[2]
-    };
     draw_card_button(
         r,
         lookups,
-        fav_sheet,
+        lookups.card_buttons[button_sheet(BUTTON_PLAY, entry.is_favorite)],
+        c.play,
+        play_hover,
+        0.4,
+    );
+    // The favourite sheet flips with the flag, idle 0.8 when favourited (`:80`, `:86`).
+    draw_card_button(
+        r,
+        lookups,
+        lookups.card_buttons[button_sheet(BUTTON_FAVORITE, entry.is_favorite)],
         c.favorite,
         fav_hover,
         if entry.is_favorite { 0.8 } else { 0.4 },
     );
-    draw_card_button(r, lookups, lookups.card_buttons[BUTTON_RENAME], c.rename, rename_hover, 0.4);
+    // Rename is ctor ordinal 2 but sheet 3 — the favourite's second sheet
+    // shifts everything after it ([`button_sheet`], Task 3b review fix 1).
+    draw_card_button(
+        r,
+        lookups,
+        lookups.card_buttons[button_sheet(BUTTON_RENAME, entry.is_favorite)],
+        c.rename,
+        rename_hover,
+        0.4,
+    );
     // The delete button draws (and labels) even while favourited — only its
     // click is dead (`:114-119`, Review Focus 4).
-    draw_card_button(r, lookups, lookups.card_buttons[4], c.delete, delete_hover, 0.4);
+    draw_card_button(
+        r,
+        lookups,
+        lookups.card_buttons[button_sheet(BUTTON_DELETE, entry.is_favorite)],
+        c.delete,
+        delete_hover,
+        0.4,
+    );
 
     // The hover labels (`:140-194`): the left label for play/favorite/rename,
     // the right-aligned one for delete. `UIText.DrawSelf` (`UIText.cs:136-166`)
@@ -1114,6 +1165,26 @@ mod tests {
     }
 
     #[test]
+    fn button_sheets_map_the_ctor_ordinals_to_the_sheet_array() {
+        // The BUTTON_* ordinals are the ctor's append order (`:71-121`) — the
+        // label table's key — while `Lookups::card_buttons` is
+        // `[Play, FavoriteActive, FavoriteInactive, Rename, Delete]`
+        // (assets.rs:956-963): the favourite's second sheet shifts Rename and
+        // Delete one later, so indexing with a raw `BUTTON_RENAME` ordinal
+        // drew the `FavoriteInactive` sprite (Task 3b review fix 1). Only the
+        // favourite's own sheet flips with the flag — the others ignore it.
+        assert_eq!(button_sheet(BUTTON_PLAY, true), 0);
+        assert_eq!(button_sheet(BUTTON_RENAME, true), 3);
+        assert_eq!(button_sheet(BUTTON_DELETE, true), 4);
+        // The primary mapping, sheet names per `assets.rs:956-963`:
+        assert_eq!(button_sheet(BUTTON_PLAY, false), 0); // ButtonPlay
+        assert_eq!(button_sheet(BUTTON_FAVORITE, true), 1); // ButtonFavoriteActive
+        assert_eq!(button_sheet(BUTTON_FAVORITE, false), 2); // ButtonFavoriteInactive
+        assert_eq!(button_sheet(BUTTON_RENAME, false), 3); // ButtonRename — not 2!
+        assert_eq!(button_sheet(BUTTON_DELETE, false), 4); // ButtonDelete
+    }
+
+    #[test]
     fn card_hit_routes_the_button_centres() {
         let l = resolved_layout(SCREEN, 100.0, 2); // 2 cards -> detached, 626 wide
         let center = |rect: [f32; 4]| Vec2::new(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
@@ -1160,6 +1231,37 @@ mod tests {
         // The flat form.
         assert_eq!(hit(&l, &favorites, center(c0.play)), Some(CardAction::Play(0)));
         assert_eq!(hit(&l, &favorites, Vec2::new(10.0, 10.0)), None);
+    }
+
+    #[test]
+    fn back_and_new_beat_the_cards_in_the_overlap_zone() {
+        // `GetElementAt`'s reverse-append priority (`UIElement.cs:324-334`)
+        // is observable: with 6 players the scrollbar attaches and the last
+        // card's rows run under the fat buttons — card 5 spans y 737-833
+        // while Back/New sit at y 805-855 — and a click at y >= 805 in the
+        // overlap is Back's/New's, never the card's (Task 3b review fix 2).
+        let l = resolved_layout(SCREEN, 100.0, 6); // attached
+        let c5 = card_layout(l.list, 5);
+        assert_eq!(c5.card, [487.0, 737.0, 601.0, 96.0]); // y 737-833
+        assert_eq!(l.back, [475.0, 805.0, 315.0, 50.0]); // y 805-855
+        assert_eq!(l.new, [810.0, 805.0, 315.0, 50.0]);
+        let favorites = [false; 6];
+        // Card 5's rename button and Back share (550, 815) — Back wins.
+        let p = Vec2::new(550.0, 815.0);
+        assert!(in_rect(p, c5.rename));
+        assert!(in_rect(p, l.back));
+        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::Back)));
+        // Card 5's delete button and New share (1070, 815) — New wins.
+        let p = Vec2::new(1070.0, 815.0);
+        assert!(in_rect(p, c5.delete));
+        assert!(in_rect(p, l.new));
+        assert_eq!(card_hit(&l, &favorites, p), (None, Some(CardAction::New)));
+        // Just above the fat buttons the card still owns the click (a
+        // hovered body, no button).
+        assert_eq!(
+            card_hit(&l, &favorites, Vec2::new(550.0, 800.0)),
+            (Some(5), None)
+        );
     }
 
     #[test]
