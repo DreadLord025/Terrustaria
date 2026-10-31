@@ -606,6 +606,10 @@ pub struct Lookups {
     pub ui_heart: Option<tr_render::SheetRect>,
     pub ui_bubble: Option<tr_render::SheetRect>,
     pub ui_boss_bar: Option<tr_render::SheetRect>,
+    /// `NPC_Head_Boss_7` — the boss-bar icon (`CommonBossBigProgressBar.cs:34`).
+    /// King Slime (NPC 50) is head index 7 in `BossHeadTextures`
+    /// (`NPCID.cs:10479`: `... 50, 7, ...`), which is the head sheet
+    /// `GetBossHeadTextureIndex` resolves for it (`NPC.cs:7557-7585`).
     pub ui_boss_head: Option<tr_render::SheetRect>,
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).

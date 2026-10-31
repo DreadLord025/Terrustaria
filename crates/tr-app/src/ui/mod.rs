@@ -1,6 +1,7 @@
 //! In-game HUD: hotbar / open inventory, selected-item name, the item carried on the
 //! cursor, hearts and breath, and the boss bar.
 
+pub mod bars;
 pub mod chrome;
 pub mod color;
 pub mod crafting;
@@ -169,60 +170,11 @@ pub fn draw_hud(
         );
     }
 
-    // Boss bar: `BigProgressBarHelper.DrawFancyBar` (456x22 bar at the bottom).
+    // Boss bar: `BigProgressBarHelper.DrawFancyBar` (`BigProgressBarHelper.cs:25-57`,
+    // the 4-arg overload via `CommonBossBigProgressBar`) — the 456x22 bar at the
+    // bottom centre (`ui/bars.rs`).
     if let Some((hp, max_hp)) = boss {
-        let frac = (hp as f32 / max_hp.max(1) as f32).clamp(0.0, 1.0);
-        let center = [screen.x * 0.5 - 228.0, screen.y - 61.0];
-        let top_left = [center[0] - 32.0, center[1] - 24.0];
-        if let (Some(back), Some(fill), Some(cap), Some(overlay)) = (
-            lookups.boss_bar_uv(3, 0, 0, 516, 58),
-            lookups.boss_bar_uv(2, 32, 24, 2, 22),
-            lookups.boss_bar_uv(1, 32, 24, 2, 22),
-            lookups.boss_bar_uv(0, 0, 0, 516, 58),
-        ) {
-            r.push_ui_sprite(top_left, [516.0, 58.0], back, [1.0, 1.0, 1.0, 0.2]);
-            let width = ((456.0 * frac) as i32) & !1;
-            if width > 0 {
-                r.push_ui_sprite(
-                    center,
-                    [width as f32, 22.0],
-                    fill,
-                    [1.0, 1.0, 1.0, 1.0],
-                );
-                r.push_ui_sprite(
-                    [center[0] + width as f32 - 2.0, center[1]],
-                    [2.0, 22.0],
-                    cap,
-                    [1.0; 4],
-                );
-            }
-            r.push_ui_sprite(top_left, [516.0, 58.0], overlay, [1.0; 4]);
-            if let Some(icon) = lookups.hud_uv(lookups.ui_boss_head.as_ref()) {
-                r.push_ui_sprite(
-                    [top_left[0] + 2.0, top_left[1] + 19.0],
-                    [30.0, 30.0],
-                    icon,
-                    [1.0; 4],
-                );
-            }
-            let label = format!("{hp}/{max_hp}");
-            let tw = r.text_width(&label, 1.0);
-            let text_x = center[0] + 228.0 - tw * 0.5;
-            r.push_text(
-                text_x + 1.0,
-                center[1] + 8.0,
-                1.0,
-                [0.0, 0.0, 0.0, 1.0],
-                &label,
-            );
-            r.push_text(
-                text_x,
-                center[1] + 7.0,
-                1.0,
-                [1.0, 1.0, 1.0, 1.0],
-                &label,
-            );
-        }
+        bars::draw_fancy_bar(r, lookups, screen, hp, max_hp);
     }
 
     // `Main.DrawPendingMouseText()` → `Main.MouseText` (`Main.cs:20162`, `20322`):
