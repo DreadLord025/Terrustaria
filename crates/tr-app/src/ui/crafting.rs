@@ -1,11 +1,11 @@
 //! The modern crafting panel: a faithful port of `NewCraftingUI`
 //! (`decompiled/Terraria/GameContent/UI/NewCraftingUI.cs`) drawn as static chrome.
 //!
-//! P3 scope (spec §9.2): the cyan 9-slice frame, the title, the separator, the
-//! (empty) recipe grid + auto-hidden scrollbar, the detail area and the two
-//! toggles with their selected-crafting indicator. Recipes stay empty, so the
-//! filter strip and the search bar are the only chrome still owned by Task 3;
-//! their call sites sit in [`draw`] as comments in the source's z-order.
+//! P3 scope (spec §9.2): the cyan 9-slice frame, the title, the search bar, the
+//! 11-tab filter strip, the separator, the (empty) recipe grid + auto-hidden
+//! scrollbar, the detail area and the two toggles with their selected-crafting
+//! indicator. Recipes stay empty and no filter is active, so the grid draws
+//! nothing and nothing is interactive.
 //!
 //! Geometry: children are laid out against their parent's *inner* dimensions
 //! (`UIElement.cs:287` `Recalculate`), i.e. the outer rect offset by the padding.
@@ -345,8 +345,9 @@ pub fn draw(
         "Crafting",
     );
 
-    // 3. The search bar (`:338-342`) — Task 3 owns `draw_search_bar`:
-    //    draw_search_bar(r, lookups, &l, mouse_pos);
+    // 3. The search bar (`:338-342`): the magnifier button, the box panel, the
+    //    `Name:` placeholder and the cancel button (`UIWrappedSearchBar.cs`).
+    draw_search_bar(r, lookups, &l, mouse_pos);
 
     // 4. The separator (`:359-365`): colour =
     //    `ShiftBlueToCyanTheme(new Color(89, 116, 213, 255) * 0.9f)`.
@@ -367,9 +368,9 @@ pub fn draw(
     //    `AutoHide` hides it when it cannot scroll (`UIScrollbar.cs:105`).
     panel::draw_scrollbar(r, lookups, l.scrollbar, 1.0, 1.0, true);
 
-    // 7. The filter strip (`:387-392`) — Task 3 owns `draw_filter_strip`; it is
-    //    drawn over the panel subtree, matching `totalContainer`'s child order:
-    //    draw_filter_strip(r, lookups, &l, mouse_pos, [false; 11]);
+    // 7. The filter strip (`:387-392`), drawn over the panel subtree, matching
+    //    `totalContainer`'s child order (`:330`, `:392`); no filter is active in P3.
+    draw_filter_strip(r, lookups, &l, mouse_pos, [false; 11]);
 
     // 8. The detail area (`DrawChildren`, `:438-482`), drawn after the base pass so
     //    it sits on top of everything.
@@ -489,6 +490,231 @@ fn draw_toggles(
         let num = hover as usize;
         draw_centered_toggle(r, lookups, lookups.chest_craft[num], nx, ny);
     }
+}
+
+// ---- Task 3: the filter strip and the search bar ----
+
+/// The icon frame of each of the 11 filters, in `NewCraftingUI`'s order —
+/// Weapon, Armor, Vanity, BuildingBlock, Furniture, Accessories,
+/// MiscAccessories, Consumables, Tools, Materials, MiscFallback
+/// (`NewCraftingUI.cs:282-298`) — from `ItemFilters.GetImage`:
+/// Weapon `ItemFilters.cs:206` `Frame(11)`, Armor `:241` `Frame(11, 1, 2)`,
+/// Vanity `:264` 8, BuildingBlock `:98` 4, Furniture `:126` 7, Accessories
+/// `:319` 1, MiscAccessories `:342` 9, Consumables `:375` 3, Tools `:183` 6,
+/// Materials `:458` 10, MiscFallback `:435` 5. Not sequential.
+pub const FILTER_ICON_K: [usize; 11] = [0, 2, 8, 4, 7, 1, 9, 3, 6, 10, 5];
+
+/// The `i`-th filter button (`:57` `Left.Set(num * i, 0f)` with `num = 40`,
+/// `:40`): 40 px pitch, and the 40x46 tab frame (`:55-56`
+/// `Frame(2, 4).OffsetSize(-2, -2)` on the 84x192 `Infinite_Tabs_B_2` sheet) hung
+/// off the strip's top — it overflows the 40 px-tall strip by 6 px.
+pub fn filter_button_rect(strip: [f32; 4], i: usize) -> [f32; 4] {
+    [strip[0] + 40.0 * i as f32, strip[1], 40.0, 46.0]
+}
+
+/// The filter's icon inside button `i`: 28x30 (`ItemFilters.GetImage`
+/// `Frame(11, 1, k).OffsetSize(-2, 0)` on the 330x30 `Infinite_Icons` sheet),
+/// `Left 6` and `HAlign 0` (`UICreativeItemsInfiniteFilteringOptions.cs:65-66`),
+/// `VAlign 0.5` from the `GetImage()` object initializers
+/// (`ItemFilters.cs:101-102` and every other `GetImage`) — hence 8 px below the
+/// button top: `(46 - 30) / 2`.
+pub fn filter_icon_rect(strip: [f32; 4], i: usize) -> [f32; 4] {
+    let b = filter_button_rect(strip, i);
+    [b[0] + 6.0, b[1] + (46.0 - 30.0) * 0.5, 28.0, 30.0]
+}
+
+/// `UpdateVisuals` (`UICreativeItemsInfiniteFilteringOptions.cs:106`):
+/// `SetFrame(2, 4, flag.ToInt(), flag.ToInt() * 2 + isMouseHovering.ToInt(), -2, -2)`
+/// — the frame column is the active flag, the row is `active*2 + hover`.
+pub fn filter_frame_col_row(active: bool, hover: bool) -> (usize, usize) {
+    let flag = active as usize;
+    (flag, flag * 2 + hover as usize)
+}
+
+/// The `Infinite_Tabs_B_2` source rect for frame `(col, row)`:
+/// `SetFrame(2, 4, ...)` cells are 42x48 on the 84x192 sheet (`:28-30`
+/// `barFramesX = 2`, `barFramesY = 4`), and `OffsetSize(-2, -2)` (`:106`,
+/// `UIImageFramed.cs:59`) trims them to 40x46.
+pub fn filter_button_src(col: usize, row: usize) -> [f32; 4] {
+    [42.0 * col as f32, 48.0 * row as f32, 40.0, 46.0]
+}
+
+/// The `Infinite_Icons` source rect for icon `k`: `Frame(11, 1, k)` cells are
+/// 30x30 on the 330x30 sheet, and `OffsetSize(-2, 0)` trims them to 28x30
+/// (`ItemFilters.cs:98` and every other `GetImage`).
+pub fn filter_icon_src(k: usize) -> [f32; 4] {
+    [30.0 * k as f32, 0.0, 28.0, 30.0]
+}
+
+/// The `Name:` placeholder's draw position (`UITextPanel.TextDrawPosition`,
+/// `UITextPanel.cs:92-109`). The inner `UITextBox` fills the 24 px box
+/// (`UIWrappedSearchBar.cs:128-131`) but `SetText` pins
+/// `MinHeight = 16*0.8 + 12 + 12 = 36.8` (`UITextPanel.cs:132-134`), which clamps
+/// the 24 px height up to 36.8; `VAlign 0.5` (`:131`) centres that in the box, the
+/// box's own padding puts the text 12 px in (`UIPanel.cs:32` — the box
+/// `SetPadding(0)`s itself, `UIWrappedSearchBar.cs:124`, but the `UITextBox` keeps
+/// the `UIPanel` default), and the draw shifts `Y -= 2*0.8` (`UITextPanel.cs:105`):
+/// `y = box.y + (24 - 36.8)/2 + 12 - 1.6 = box.y + 4.0`, `x = box.x + 12`.
+pub fn search_text_pos(l: &Layout) -> (f32, f32) {
+    (l.search_box[0] + 12.0, l.search_box[1] + 4.0)
+}
+
+/// `UIElement.ContainsPoint` (`UIElement.cs:354-357`): the dimensions'
+/// `Rectangle.Contains` is inclusive on the left/top edges and exclusive on the
+/// right/bottom.
+fn rect_hover(mouse_pos: Vec2, rect: [f32; 4]) -> bool {
+    mouse_pos.x >= rect[0]
+        && mouse_pos.x < rect[0] + rect[2]
+        && mouse_pos.y >= rect[1]
+        && mouse_pos.y < rect[1] + rect[3]
+}
+
+/// Pushes one sprite cut out of `sheet` by `src` (in the sheet's own pixels) at
+/// the destination `dst` (`[x, y, w, h]`). Draws nothing for a missing sheet, so
+/// `Lookups::default()` renders a blank frame (the `panel.rs` pattern).
+fn push_sheet_rect(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    sheet: Option<&SheetRect>,
+    dst: [f32; 4],
+    src: [f32; 4],
+    color: [f32; 4],
+) {
+    let Some(sheet) = sheet else {
+        return;
+    };
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    let x0 = sheet.x as f32 + src[0];
+    let y0 = sheet.y as f32 + src[1];
+    let uv = [x0 / aw, y0 / ah, (x0 + src[2]) / aw, (y0 + src[3]) / ah];
+    r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, color);
+}
+
+/// A whole sheet at `dst` (source rect = the full sheet).
+fn push_full_sheet(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    sheet: Option<&SheetRect>,
+    dst: [f32; 4],
+    color: [f32; 4],
+) {
+    let Some(s) = sheet else {
+        return;
+    };
+    push_sheet_rect(
+        r,
+        lookups,
+        Some(s),
+        dst,
+        [0.0, 0.0, s.width as f32, s.height as f32],
+        color,
+    );
+}
+
+/// `UICreativeItemsInfiniteFilteringOptions` (`:36-73`): 11 buttons, 40 px each.
+/// `active[i]` is `EntryFilterer.IsFilterActive(i)`; all false by default.
+pub fn draw_filter_strip(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    layout: &Layout,
+    mouse_pos: Vec2,
+    active: [bool; 11],
+) {
+    let strip = layout.filter_strip;
+    for (i, &flag) in active.iter().enumerate() {
+        let button = filter_button_rect(strip, i);
+        // The tab: `UIImageFramed` draws at its default `Color = Color.White`
+        // (`UIImageFramed.cs:21`), unlit or hovered alike (`:63`'s DrawSelf).
+        let (col, row) = filter_frame_col_row(flag, rect_hover(mouse_pos, button));
+        push_sheet_rect(
+            r,
+            lookups,
+            lookups.ui_infinite_tabs_b2.as_ref(),
+            button,
+            filter_button_src(col, row),
+            [1.0; 4],
+        );
+        // The icon: `colorable.Color = (flag ? Color.White : (Color.White * 0.5f))`
+        // (`UICreativeItemsInfiniteFilteringOptions.cs:107-110`).
+        let tint = if flag {
+            [1.0; 4]
+        } else {
+            color::tint(color::mul([255, 255, 255, 255], 0.5))
+        };
+        push_sheet_rect(
+            r,
+            lookups,
+            lookups.ui_infinite_icons.as_ref(),
+            filter_icon_rect(strip, i),
+            filter_icon_src(FILTER_ICON_K[i]),
+            tint,
+        );
+    }
+}
+
+/// `UIWrappedSearchBar` (`UIWrappedSearchBar.cs:76-151`) + its inner `UIPanel`.
+/// `layout` supplies `search` / `search_button` / `search_box` / `search_cancel`.
+///
+/// Deviation (documented): vanilla hides the cancel icon while the search box is
+/// empty (`UIWrappedSearchBar.cs:155-159` only reacts to clicks; the port has no
+/// search state) — the port draws it always so the chrome is legible.
+pub fn draw_search_bar(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    layout: &Layout,
+    mouse_pos: Vec2,
+) {
+    // 1. The magnifier button (`:102-109`): the 22x22 `Button_Search_2` sheet
+    //    (`:100`, `UIImageButton.cs:31-32`). `SetVisibility(1f, 1f)` (`:108`) means
+    //    it draws at full White hovered or not (`UIImageButton.cs:51`); the
+    //    `Button_Search_Border` hover frame is drawn *over* the base image, not
+    //    instead of it (`UIImageButton.cs:52-55`).
+    let button = layout.search_button;
+    push_full_sheet(r, lookups, lookups.ui_search_icon.as_ref(), button, [1.0; 4]);
+    if rect_hover(mouse_pos, button) {
+        push_full_sheet(
+            r,
+            lookups,
+            lookups.ui_search_border.as_ref(),
+            button,
+            [1.0; 4],
+        );
+    }
+
+    // 2. The text-field panel (`:110-124`): the default `PanelBackground` /
+    //    `PanelBorder` sheets with `SetPadding(0)` (`:124`), both colours
+    //    `ShiftBlueToCyanTheme(new Color(35, 40, 83))` (`:117-123`, the Red theme)
+    //    = `(27, 56, 111, 255)`; background, then border (`UIPanel.cs:68-77`).
+    let field = color::tint(color::shift_blue_to_cyan([35, 40, 83, 255]));
+    let box_rect = layout.search_box;
+    panel::draw_panel(r, lookups, lookups.ui_panel_bg, box_rect, field);
+    panel::draw_panel(r, lookups, lookups.ui_panel_border, box_rect, field);
+
+    // 3. The `Name:` placeholder (`:126-134`, `UISearchBar.cs:74-75`): the
+    //    empty-box text `UI.PlayerNameSlot` (`UIWrappedSearchBar.cs:80`) in
+    //    `Color.Gray` (128, 128, 128, 255) at scale 0.8 (`:126`,
+    //    `UISearchBar.cs:52`), drawn through `DrawBorderString`'s 4-way shadow at
+    //    spread 1.5 (`UITextPanel.cs:151-155`, `Utils.cs:2510-2519`).
+    let (tx, ty) = search_text_pos(layout);
+    hud_text_shadowed(r, lookups, tx, ty, 0.8, color::tint([128, 128, 128, 255]), 1.5, "Name:");
+
+    // 4. The cancel button (`:142-150`): the 24x24 `SearchCancel` sheet. Unlike the
+    //    magnifier it never calls `SetVisibility`, so it draws at the
+    //    `_visibilityInactive = 0.4f` dim until hovered (`UIImageButton.cs:13-15`,
+    //    `:51`). Drawn always — see the deviation note above.
+    let cancel = layout.search_cancel;
+    let cancel_tint = if rect_hover(mouse_pos, cancel) {
+        [1.0; 4]
+    } else {
+        color::tint(color::mul([255, 255, 255, 255], 0.4))
+    };
+    push_full_sheet(
+        r,
+        lookups,
+        lookups.ui_search_cancel.as_ref(),
+        cancel,
+        cancel_tint,
+    );
 }
 
 #[cfg(test)]
@@ -622,5 +848,93 @@ mod tests {
         assert!(!toggle_hover(Vec2::new(27.0, 285.0), 42.0, 285.0));
         assert!(!toggle_hover(Vec2::new(42.0, 300.0), 42.0, 285.0));
         assert!(!toggle_hover(Vec2::new(42.0, 270.0), 42.0, 285.0));
+    }
+
+    // ---- Task 3: the filter strip and the search bar ----
+
+    #[test]
+    fn filter_buttons_and_icons_match_the_source_table() {
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        assert_eq!(l.filter_strip, [45.0, 316.0, 440.0, 40.0]);
+        for i in 0..11usize {
+            // `UICreativeItemsInfiniteFilteringOptions.cs:57` + `:55-56`.
+            assert_eq!(
+                filter_button_rect(l.filter_strip, i),
+                [45.0 + 40.0 * i as f32, 316.0, 40.0, 46.0]
+            );
+            // `:65-66` + the `ItemFilters.GetImage()` `VAlign = 0.5f`.
+            assert_eq!(
+                filter_icon_rect(l.filter_strip, i),
+                [45.0 + 40.0 * i as f32 + 6.0, 316.0 + 8.0, 28.0, 30.0]
+            );
+        }
+        // The last button ends at x = 485, inside the 490-wide panel.
+        assert_eq!(filter_button_rect(l.filter_strip, 10), [445.0, 316.0, 40.0, 46.0]);
+        assert_eq!(filter_icon_rect(l.filter_strip, 10), [451.0, 324.0, 28.0, 30.0]);
+    }
+
+    #[test]
+    fn filter_icons_use_the_non_sequential_frame_table() {
+        // `ItemFilters.GetImage`: Weapon `:206` `Frame(11)`, Armor `:241` 2,
+        // Vanity `:264` 8, BuildingBlock `:98` 4, Furniture `:126` 7, Accessories
+        // `:319` 1, MiscAccessories `:342` 9, Consumables `:375` 3, Tools `:183` 6,
+        // Materials `:458` 10, MiscFallback `:435` 5.
+        assert_eq!(FILTER_ICON_K, [0, 2, 8, 4, 7, 1, 9, 3, 6, 10, 5]);
+        // Every filter maps to a distinct cell of the 11-frame sheet.
+        let mut seen = [false; 11];
+        for &k in FILTER_ICON_K.iter() {
+            assert!(!seen[k]);
+            seen[k] = true;
+        }
+        for k in 0..11usize {
+            // `Frame(11, 1, k).OffsetSize(-2, 0)` on the 330x30 sheet.
+            assert_eq!(filter_icon_src(k), [30.0 * k as f32, 0.0, 28.0, 30.0]);
+        }
+    }
+
+    #[test]
+    fn filter_frames_cover_all_active_hover_combinations() {
+        // `:106` `SetFrame(2, 4, flag, flag * 2 + hover, -2, -2)`.
+        assert_eq!(filter_frame_col_row(false, false), (0, 0));
+        assert_eq!(filter_frame_col_row(false, true), (0, 1));
+        assert_eq!(filter_frame_col_row(true, false), (1, 2));
+        assert_eq!(filter_frame_col_row(true, true), (1, 3));
+        // `Frame(2, 4)` cells on the 84x192 sheet are 42x48 (`:28-30`), trimmed to
+        // 40x46 by `OffsetSize(-2, -2)` (`:55-56`).
+        assert_eq!(filter_button_src(0, 0), [0.0, 0.0, 40.0, 46.0]);
+        assert_eq!(filter_button_src(0, 1), [0.0, 48.0, 40.0, 46.0]);
+        assert_eq!(filter_button_src(1, 2), [42.0, 96.0, 40.0, 46.0]);
+        assert_eq!(filter_button_src(1, 3), [42.0, 144.0, 40.0, 46.0]);
+    }
+
+    #[test]
+    fn search_bar_geometry_and_text_pos_match_the_source() {
+        let l = layout(Vec2::new(1600.0, 900.0), W, false);
+        // Already covered by `layout_matches_the_source_table_at_1600x900`; repeated
+        // here so the Task 3 oracle is self-contained.
+        assert_eq!(l.search, [92.0, 358.0, 410.0, 24.0]);
+        assert_eq!(l.search_button, [92.0, 359.0, 22.0, 22.0]);
+        assert_eq!(l.search_box, [117.0, 358.0, 385.0, 24.0]);
+        assert_eq!(l.search_cancel, [476.0, 358.0, 24.0, 24.0]);
+        // `UITextPanel.cs:105` + `:132-134`:
+        // y = box.y + (24 - 36.8)/2 + 12 - 1.6 = box.y + 4.0.
+        assert_eq!(
+            search_text_pos(&l),
+            (l.search_box[0] + 12.0, l.search_box[1] + 4.0)
+        );
+        assert_eq!(search_text_pos(&l), (129.0, 362.0));
+    }
+
+    #[test]
+    fn rect_hover_is_inclusive_exclusive_like_rectangle_contains() {
+        // `UIElement.cs:354-357`: `Rectangle.Contains` includes the left/top edges
+        // and excludes the right/bottom.
+        let r = [10.0, 20.0, 40.0, 46.0];
+        assert!(rect_hover(Vec2::new(10.0, 20.0), r));
+        assert!(rect_hover(Vec2::new(49.9, 65.9), r));
+        assert!(!rect_hover(Vec2::new(50.0, 30.0), r));
+        assert!(!rect_hover(Vec2::new(30.0, 66.0), r));
+        assert!(!rect_hover(Vec2::new(9.9, 30.0), r));
+        assert!(!rect_hover(Vec2::new(30.0, 19.9), r));
     }
 }
