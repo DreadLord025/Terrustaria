@@ -154,11 +154,16 @@ pub fn map_frame_rect(pos: [f32; 2], scale: f32, screen: Vec2, world: &World) ->
     [x, y, fw, fh]
 }
 
-/// Minimap geometry (`Main.cs:55503-55546`): a 240x240 panel at
-/// `(screen_w - 292, 90)` showing `240 / scale` tiles around the view centre.
+/// Minimap geometry (`Main.cs:55503-55546`): a 240x240 panel anchored at
+/// `minimap::minimap_origin` (`Main.cs:55508-55509` — `(screen_w - 292, 90)`
+/// at the reference `MapScale = 1`) showing `240 / scale` tiles around the view
+/// centre.
 pub fn map_minimap_quad(center_tile: [f32; 2], scale: f32, screen: Vec2, world: &World) -> MapQuad {
     let scale = scale.clamp(0.2, 3.0);
-    let panel = [screen.x - 292.0, 90.0];
+    // `Main.cs:55508-55509`, consolidated onto `minimap::minimap_origin`
+    // (identical to the former hardcode `[screen.x - 292.0, 90.0]` at
+    // `MapScale = 1` — pinned by `minimap_quad_matches_the_panel` below).
+    let panel = crate::ui::minimap::minimap_origin(screen);
     let win = 240.0 / scale;
     let a = center_tile[0].floor() - win * 0.5;
     let b = center_tile[1].floor() - win * 0.5;
@@ -977,6 +982,21 @@ mod tests {
             414.2857 / 1200.0,
         ]) {
             assert_close(*got, want, eps);
+        }
+    }
+
+    /// The panel top-left is exactly `minimap::minimap_origin(screen)` at every
+    /// interior view centre — the consolidation of the old hardcode
+    /// `(screen.x - 292, 90)` onto the shared anchor (`Main.cs:55508-55509`).
+    #[test]
+    fn minimap_panel_uses_the_shared_anchor() {
+        let w = map_world();
+        for width in [1280.0f32, 1600.0, 1920.0] {
+            let screen = Vec2::new(width, 900.0);
+            let q = map_minimap_quad([2100.0, 355.0], 1.05, screen, &w);
+            let origin = crate::ui::minimap::minimap_origin(screen);
+            assert_close(q.dest[0], origin[0], 1e-3);
+            assert_close(q.dest[1], origin[1], 1e-3);
         }
     }
 

@@ -37,7 +37,6 @@ const GRID_ROWS: usize = 5;
 /// `Main.cs:41146`: `num20 = 174 + Main.mH`; `Main.mH = 0` here
 /// (`Main.cs:2367`).
 const EQUIP_BASE_Y: f32 = 174.0;
-const M_H: f32 = 0.0;
 /// `Main.cs:41147,41149-41153`: `num21 = 950`; below it a `>= 10`-slot stack is
 /// pulled up by `(int)(56 * inventoryScale * (num19 - 9))`.
 const EQUIP_COLLAPSE_SCREEN_H: f32 = 950.0;
@@ -176,10 +175,12 @@ fn equip_column_x(column: EquipColumn, screen_w: f32) -> f32 {
     }
 }
 
-/// `Main.cs:41145-41153`: `num20`, including the `screenHeight < 950 && n >= 10`
-/// collapse (dead at 1600x900 with `n = 8`, kept for fidelity).
-fn equip_base_y(screen_h: f32, n: i32, scale: f32) -> f32 {
-    let mut y = EQUIP_BASE_Y + M_H;
+/// `Main.cs:41145-41153`: `num20 = 174 + Main.mH`, including the
+/// `screenHeight < 950 && n >= 10` collapse (dead at 1600x900 with `n = 8`,
+/// kept for fidelity). `m_h` is `Main.mH` (`Main.cs:41146`) — `256` while the
+/// minimap HUD is live (`Main.cs:45780`), `0` otherwise.
+fn equip_base_y(screen_h: f32, m_h: f32, n: i32, scale: f32) -> f32 {
+    let mut y = EQUIP_BASE_Y + m_h;
     if screen_h < EQUIP_COLLAPSE_SCREEN_H && n >= 10 {
         // `num20 -= (int)(56f * Main.inventoryScale * (float)(num19 - 9));`
         y -= (GRID_PITCH * scale * (n - 9) as f32) as i32 as f32;
@@ -211,6 +212,8 @@ fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
 
 /// `Main.DrawInventory`: the inventory panels (grid, coins, ammo, equipment,
 /// misc equips, trash) and their labels. `mouse` resolves the hovered slot.
+/// `m_h` is `Main.mH` (`Main.cs:41146`) — the equipment/misc pages sit at
+/// `174 + m_h`.
 #[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
@@ -221,6 +224,7 @@ pub fn draw(
     selected: usize,
     equip_page: i32,
     mouse: Vec2,
+    m_h: f32,
 ) -> InventoryHit {
     // `ItemSlot.cs:2499`: cell = `InventoryBack.Size() * inventoryScale`.
     let cell = lookups
@@ -302,7 +306,12 @@ pub fn draw(
     if equip_page == EQUIP_PAGE_MISC {
         // `Main.cs:41172-41223`: misc equips (x screenWidth-92) and misc dyes
         // (x screenWidth-139), pitch 47, contexts 16-20 / 33.
-        let base_y = equip_base_y(screen.y, BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS, INVENTORY_SCALE);
+        let base_y = equip_base_y(
+            screen.y,
+            m_h,
+            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            INVENTORY_SCALE,
+        );
         let misc_x = screen.x - 92.0; // `Main.cs:41177`
         // `Main.cs:41199-41215`: context per misc-equip row.
         const MISC_CONTEXT: [i32; crate::inv::MISC] = [19, 20, 18, 17, 16];
@@ -350,7 +359,12 @@ pub fn draw(
     } else {
         // `Main.cs:41372-41524`: equipment columns (`EquipPage == 0`, and the
         // page-3 fallthrough).
-        let base_y = equip_base_y(screen.y, BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS, INVENTORY_SCALE);
+        let base_y = equip_base_y(
+            screen.y,
+            m_h,
+            BASE_ACCESSORY_SLOTS + EXTRA_ACCESSORY_SLOTS,
+            INVENTORY_SCALE,
+        );
         let armor_x = equip_column_x(EquipColumn::Armor, screen.x);
         let vanity_x = equip_column_x(EquipColumn::Vanity, screen.x);
         let dye_x = equip_column_x(EquipColumn::Dye, screen.x);
@@ -507,13 +521,21 @@ mod tests {
 
     #[test]
     fn equipment_base_y_and_collapse() {
-        // `Main.cs:41146`: 174 at 1600x900 with n = 8 (no collapse).
-        assert_eq!(equip_base_y(SCREEN_H, 8, SCALE), 174.0);
+        // `Main.cs:41146`: 174 at 1600x900 with n = 8 and `mH = 0` (no collapse).
+        assert_eq!(equip_base_y(SCREEN_H, 0.0, 8, SCALE), 174.0);
         // `Main.cs:41149-41153`: dead at 1600x900 but ported; n = 10 and
         // screenHeight < 950 pulls it up by (int)(56*0.85*1) = 47.
-        assert_eq!(equip_base_y(SCREEN_H, 10, SCALE), 127.0);
+        assert_eq!(equip_base_y(SCREEN_H, 0.0, 10, SCALE), 127.0);
         // `Main.cs:41145`: with all 8 base slots + 2 extras.
-        assert_eq!(equip_base_y(1000.0, 10, SCALE), 174.0);
+        assert_eq!(equip_base_y(1000.0, 0.0, 10, SCALE), 174.0);
+    }
+
+    #[test]
+    fn m_h_pushes_the_equipment_block_down() {
+        // `Main.cs:41146`: `num20 = 174 + Main.mH` — 430 with the minimap HUD
+        // live (`mH = 256`, `Main.cs:45780`) and 174 without it.
+        assert_eq!(equip_base_y(900.0, 256.0, 8, SCALE), 430.0);
+        assert_eq!(equip_base_y(900.0, 0.0, 8, SCALE), 174.0);
     }
 
     #[test]

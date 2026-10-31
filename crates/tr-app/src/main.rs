@@ -753,6 +753,14 @@ fn main() -> Result<()> {
         join_target,
         map: Some(world_map),
         map_grab: None,
+        // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
+        // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
+        // out-of-range value falls back to 1).
+        map_style: std::env::var("TR_MAPSTYLE")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+            .filter(|v| (0..=2).contains(v))
+            .unwrap_or(1),
         audio: audio::Audio::new(assets::content_dir()),
         music: audio::MusicSystem::new(assets::content_dir()),
         last_hp: 100,
@@ -947,6 +955,11 @@ struct App {
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     map_grab: Option<[f32; 2]>,
+    /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
+    /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
+    /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
+    /// env var selects it for screenshots.
+    map_style: i32,
     audio: audio::Audio,
     music: audio::MusicSystem,
     last_hp: i32,
@@ -2726,6 +2739,15 @@ impl App {
             .map(|g| Vec2::new(g.config.width as f32, g.config.height as f32))
             .unwrap_or(Vec2::new(1600.0, 900.0));
 
+        // `Main.DrawInterface_16_MapOrMinimap` (`Main.cs:45771-45783`): `mH =
+        // 256` while the minimap HUD is live — `mapEnabled && !mapFullscreen
+        // && mapStyle == 1` (the fullscreen map draws no HUD at all,
+        // `Main.cs:62147-62181`); the `+ 600` push-up clamp sits in `main_m_h`.
+        let minimap_live = self.settings.map_enabled
+            && self.map.as_ref().is_some_and(|m| !m.open)
+            && self.map_style == 1;
+        let m_h = ui::minimap::main_m_h(minimap_live, screen.y);
+
         // `FocusHelper.cs:160-163`: while the focused window draws the game's own
         // cursor the OS pointer is hidden (`Main.instance.IsMouseVisible = false`).
         // We only draw the vanilla cursor together with the in-world HUD so far, so
@@ -3143,6 +3165,7 @@ impl App {
                             text: self.mouse_text_color as f32 / 255.0,
                             cursor_scale: self.cursor.scale(),
                         },
+                        m_h,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
@@ -3199,8 +3222,32 @@ impl App {
                                     renderer, player_assets, p, icon_pos, 1.0, [1.0; 4],
                                 );
                             }
-                        } else {
+                        } else if self.map_style == 1 {
+                            // `Main.DrawMap`'s `mapStyle == 1` branch
+                            // (`Main.cs:55503-55547`): the three vanilla
+                            // passes in draw order — the `DrawTo` black
+                            // backdrop (`:55546`, via `map_back` so it lands
+                            // under the tiles), the tile pass
+                            // (`MapRenderer.DrawMap`, `:55609`) and the frame
+                            // foreground batch (`:55768-55769`). `mapStyle ==
+                            // 2` (the overlay) draws nothing (out of P4 scope,
+                            // the whole-UI P4 plan's Uncertainty 7).
+                            let pos =
+                                ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
+                            // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
+                            ui::minimap::draw_background(renderer, lookups, pos, 1.0);
                             map.draw_minimap(renderer, world, screen, view_center);
+                            // `MinimapFrame.Update`'s highlight, resolved at
+                            // draw time until Task 3 moves the input side:
+                            // `GetButtonUnderMouse` (`MinimapFrame.cs:194-210`).
+                            let s = ui::minimap::style_index(&settings.minimap_frame);
+                            let hover = ui::minimap::button_under_mouse(
+                                self.mouse_pos,
+                                ui::minimap::frame_position(pos, &ui::minimap::FRAME_STYLES[s]),
+                                &ui::minimap::FRAME_STYLES[s],
+                                ui::minimap::button_sizes(lookups, s),
+                            );
+                            ui::minimap::draw_foreground(renderer, lookups, s, pos, hover);
                         }
                     }
                 }

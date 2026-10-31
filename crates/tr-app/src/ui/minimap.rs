@@ -1,12 +1,16 @@
 //! The minimap frame chrome: the `MinimapFrame` / `MinimapFrameManager` port
 //! (`GameContent/UI/Minimap/`) — the geometry table of the nine vanilla frame
-//! styles, the zoom-button hitboxes and the anchor / `Main.mH` maths around
-//! them. Pure geometry only: the two draw passes and the input side land in the
-//! later whole-UI P4 tasks.
+//! styles, the zoom-button hitboxes, the anchor / `Main.mH` maths around them
+//! and the two draw passes (`DrawBackground` under the tile pass, the frame +
+//! hover-sheet foreground above it).
 //!
 //! Sheet sizes are never hard-coded — the port reads `SheetRect::width/height`
 //! from the decoded sheets exactly like `Button.Size` reads the texture
 //! (`MinimapFrame.cs:24`); the only pixel literals here are C# ones.
+
+use crate::assets;
+use super::color;
+use tr_render::SpriteRenderer;
 
 /// One entry of `MinimapFrameManager.PopulateOptionsAndLoadContent`
 /// (`MinimapFrameManager.cs:23-33`), in dictionary insertion order (= the
@@ -254,6 +258,108 @@ pub fn main_m_h(minimap_live: bool, screen_h: f32) -> f32 {
     m_h
 }
 
+// ---------------------------------------------------------------------------
+// The two draw passes (`MinimapFrameManager.cs:42-52`)
+// ---------------------------------------------------------------------------
+
+/// Per-button sheet sizes for `button_under_mouse`/drawing, indexed by
+/// `BUTTON_*`; `[0, 0]` where the sheet is missing (`Button.Size` reads the
+/// hover texture's `Width()/Height()`, `MinimapFrame.cs:24` — so does this).
+pub fn button_sizes(lookups: &assets::Lookups, style_index: usize) -> [[f32; 2]; 3] {
+    let mut sizes = [[0.0f32; 2]; 3];
+    if let Some(row) = lookups.minimap_buttons.get(style_index) {
+        for (slot, sheet) in sizes.iter_mut().zip(row) {
+            if let Some(rect) = sheet {
+                *slot = [rect.width as f32, rect.height as f32];
+            }
+        }
+    }
+    sizes
+}
+
+/// `MinimapFrameManager.DrawTo` + `MinimapFrame.DrawBackground`
+/// (`MinimapFrameManager.cs:42-47`, `MinimapFrame.cs:179-183`): the black
+/// backdrop `Rectangle((int)MinimapPosition - 6, 244, 244)` tinted
+/// `Color.Black * Main.mapMinimapAlpha`, drawn over `white_uv` (the port's
+/// `TextureAssets.MagicPixel` stand-in) through `push_map_back_sprite` so it
+/// lands **under** the tile pass (`push_map_sprite`): the renderer's fixed
+/// order is `back → world → map_back → map → ui`. A backdrop pushed as a ui
+/// sprite would paint over the tiles.
+///
+/// `lookups` is carried for signature parity with the other passes; the
+/// backdrop itself needs no sheet (`MagicPixel` is built into the renderer).
+pub fn draw_background(
+    r: &mut SpriteRenderer,
+    _lookups: &assets::Lookups,
+    minimap_pos: [f32; 2],
+    map_minimap_alpha: f32, // 1.0 (`Main.cs:66753`); clamp `Main.cs:55523-55530`
+) {
+    let rect = backdrop_rect(minimap_pos); // `MinimapFrame.cs:181-182`
+    // `Color.Black * Main.mapMinimapAlpha` (`:182`); `Color.Black` = (0,0,0,255).
+    let black = color::tint(color::mul([0, 0, 0, 255], map_minimap_alpha));
+    r.push_map_back_sprite([rect[0], rect[1]], [rect[2], rect[3]], r.white_uv(), black);
+}
+
+/// `MinimapFrame.DrawForeground` (`MinimapFrame.cs:185-192`): the frame sheet
+/// whole (no 9-slice) at `FramePosition` = `MinimapPosition + _frameOffset`
+/// (`:81-91`) in `Color.White`, then the one hovered button's hover sheet at
+/// `this._position + parentPosition` (`Button.Draw`, `:38-44`) — at most one
+/// is highlighted (`GetButtonUnderMouse` returns the first hit, `:194-210`).
+/// Missing sheets draw nothing (`Lookups::default()`), like every other UI pass.
+pub fn draw_foreground(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    style_index: usize,
+    minimap_pos: [f32; 2],
+    hover: Option<MinimapButton>,
+) {
+    let Some(style) = FRAME_STYLES.get(style_index) else {
+        return;
+    };
+    let frame_pos = frame_position(minimap_pos, style);
+    // `spriteBatch.Draw(this._frameTexture.Value, this.FramePosition, Color.White)`
+    // (`MinimapFrame.cs:187`).
+    let frame = lookups
+        .minimap_frames
+        .get(style_index)
+        .and_then(|f| f.as_ref());
+    if let Some(rect) = frame {
+        if let Some(uv) = lookups.hud_uv(Some(rect)) {
+            r.push_ui_sprite(
+                frame_pos,
+                [rect.width as f32, rect.height as f32],
+                uv,
+                [1.0; 4],
+            );
+        }
+    }
+    // `Button.Draw` (`MinimapFrame.cs:38-44`): the hover sheet only while
+    // `IsHighlighted`, top-left `_position + parentPosition` (`:40`).
+    let Some(button) = hover else {
+        return;
+    };
+    let (index, raw_pos) = match button {
+        MinimapButton::ZoomIn => (BUTTON_ZOOM_IN, style.zoom_in),
+        MinimapButton::ZoomOut => (BUTTON_ZOOM_OUT, style.zoom_out),
+        MinimapButton::Reset => (BUTTON_RESET, style.reset),
+    };
+    let sheet = lookups
+        .minimap_buttons
+        .get(style_index)
+        .and_then(|row| row.get(index))
+        .and_then(|s| s.as_ref());
+    if let Some(rect) = sheet {
+        if let Some(uv) = lookups.hud_uv(Some(rect)) {
+            r.push_ui_sprite(
+                [raw_pos[0] + frame_pos[0], raw_pos[1] + frame_pos[1]],
+                [rect.width as f32, rect.height as f32],
+                uv,
+                [1.0; 4],
+            );
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -491,5 +597,15 @@ mod tests {
         assert_eq!(main_m_h(false, 900.0), 0.0);
         // 256 + 600 > 800: `Main.mH = 800 - 600`.
         assert_eq!(main_m_h(true, 800.0), 200.0);
+    }
+
+    #[test]
+    fn button_sizes_read_the_sheet_dimensions_or_zero() {
+        // `Button.Size` (`MinimapFrame.cs:24`) reads the hover texture's
+        // `Width()/Height()`; the port reads the same decoded sheets. With
+        // every sheet missing (`Lookups::default()`) the sentinel is `[0, 0]`
+        // — the 22 px hitbox floor still applies there and nothing draws.
+        assert_eq!(button_sizes(&assets::Lookups::default(), 0), [[0.0; 2]; 3]);
+        assert_eq!(button_sizes(&assets::Lookups::default(), 8), [[0.0; 2]; 3]);
     }
 }

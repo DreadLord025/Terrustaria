@@ -45,7 +45,9 @@ impl Default for UiPulse {
 /// Vanilla HUD layout: hotbar top-left (or the open 10x5 inventory grid), hearts
 /// top-right, breath bubbles above the player and the boss bar at the bottom centre
 /// (`GUIHotbarDrawInner`, `Main.DrawInventory`, `ClassicPlayerResourcesDisplaySet`,
-/// `BigProgressBarHelper`).
+/// `BigProgressBarHelper`). `m_h` is `Main.mH`
+/// (`Main.DrawInterface_16_MapOrMinimap`, `Main.cs:45771-45798`) — `256` while
+/// the minimap HUD is live, `0` otherwise; it pushes the equipment block down.
 #[allow(clippy::too_many_arguments)]
 pub fn draw_hud(
     r: &mut SpriteRenderer,
@@ -66,6 +68,7 @@ pub fn draw_hud(
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
     pulse: UiPulse,
+    m_h: f32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -82,11 +85,20 @@ pub fn draw_hud(
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
         // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
         // the trash slot and the "Inventory"/"Coins"/"Ammo" labels.
-        let hit =
-            inventory::draw(r, lookups, screen, inventory, equip, selected, equip_page, mouse_pos);
+        let hit = inventory::draw(
+            r,
+            lookups,
+            screen,
+            inventory,
+            equip,
+            selected,
+            equip_page,
+            mouse_pos,
+            m_h,
+        );
         open_hover = hit.hovered;
-        // `num20 = 174 + Main.mH` with `Main.mH = 0` (`Main.cs:41146`).
-        let num20 = 174.0f32;
+        // `num20 = 174 + Main.mH` (`Main.cs:41146`).
+        let num20 = 174.0 + m_h;
         // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
         chrome::draw_page_icons(r, lookups, screen, equip_page, num20 - 32.0, mouse_pos);
         // `Main.DrawDefenseCounter(num39, num40)` (`Main.cs:41421-41424`): drawn
