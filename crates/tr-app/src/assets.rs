@@ -197,6 +197,31 @@ pub fn load_world_images(
         "UI/DisplaySlots_10",
         "UI/PVP_0",
         "UI/PVP_1",
+        // P3 modern crafting panel (`NewCraftingUI`): the `Inventory_Back18` craft
+        // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
+        // icon/toggles and the filter strip's icons.
+        "Inventory_Back18",
+        "UI/PanelBackground",
+        "UI/PanelBorder",
+        "UI/CharCreation/Separator1",
+        "UI/Scrollbar2",
+        "UI/ScrollbarInner",
+        "UI/Craft",
+        "UI/Craft_Toggle_0",
+        "UI/Craft_Toggle_1",
+        "UI/Craft_Toggle_2",
+        "UI/Craft_Toggle_3",
+        "UI/Craft_Toggle_4",
+        "UI/Craft_Toggle_5",
+        "UI/ChestCraft_0",
+        "UI/ChestCraft_1",
+        "UI/ChestCraft_2",
+        "UI/ChestCraft_3",
+        "UI/Creative/Infinite_Icons",
+        "UI/Creative/Infinite_Tabs_B_2",
+        "UI/Bestiary/Button_Search_2",
+        "UI/Bestiary/Button_Search_Border",
+        "UI/SearchCancel",
         // The wooden scroll frame behind the fullscreen map (`TextureAssets.Map`,
         // 928x248; `Main.cs:55434-55485`).
         "Map",
@@ -565,6 +590,34 @@ pub struct Lookups {
     pub pvp: [Option<tr_render::SheetRect>; 2],
     /// `Extra_58`: the defence shield (`DrawDefenseCounter`, `Main.cs:42148`).
     pub ui_defense_shield: Option<tr_render::SheetRect>,
+    /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
+    pub ui_back18: Option<tr_render::SheetRect>,
+    /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
+    pub ui_panel_bg: Option<tr_render::SheetRect>,
+    /// `UI/PanelBorder`: the panel border 9-slice (`UIPanel.cs:26`).
+    pub ui_panel_border: Option<tr_render::SheetRect>,
+    /// `UI/CharCreation/Separator1`: the horizontal separator (`UIHorizontalSeparator.cs:21`).
+    pub ui_separator: Option<tr_render::SheetRect>,
+    /// `UI/Scrollbar2`: the cyan scrollbar track (`UIScrollbar.cs:64`).
+    pub ui_scrollbar: Option<tr_render::SheetRect>,
+    /// `UI/ScrollbarInner`: the scrollbar handle (`UIScrollbar.cs:67`).
+    pub ui_scrollbar_inner: Option<tr_render::SheetRect>,
+    /// `UI/Craft`: the detail-area craft icon (`NewCraftingUI.cs:460`).
+    pub ui_craft_icon: Option<tr_render::SheetRect>,
+    /// `UI/Craft_Toggle_0..5`: the grid-toggle button (`CraftingUI.cs:290`).
+    pub craft_toggles: [Option<tr_render::SheetRect>; 6],
+    /// `UI/ChestCraft_0..3`: the nearby-chests toggle (`CraftingUI.cs:350`).
+    pub chest_craft: [Option<tr_render::SheetRect>; 4],
+    /// `UI/Creative/Infinite_Icons`: the filter-strip icons (`ItemFilters.cs`).
+    pub ui_infinite_icons: Option<tr_render::SheetRect>,
+    /// `UI/Creative/Infinite_Tabs_B_2`: the filter-strip button frames.
+    pub ui_infinite_tabs_b2: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Button_Search_2`: the search-bar icon button (`UIImageButton.cs:31`).
+    pub ui_search_icon: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Button_Search_Border`: the hovered search-bar border.
+    pub ui_search_border: Option<tr_render::SheetRect>,
+    /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
+    pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// Frames that do not sit on the 18 px grid (furniture and other important
     /// tiles). Populated lazily; bounded by the number of distinct visible frames.
     pub frame_cache: HashMap<(u16, i16, i16), FrameTex>,
@@ -628,6 +681,24 @@ impl Lookups {
             ui_trash: atlas.sheet("Trash").copied(),
             ui_equip_glyph: atlas.sheet("Extra_54").copied(),
             ui_defense_shield: atlas.sheet("Extra_58").copied(),
+            ui_back18: atlas.sheet("Inventory_Back18").copied(),
+            ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
+            ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
+            ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
+            ui_scrollbar: atlas.sheet("UI/Scrollbar2").copied(),
+            ui_scrollbar_inner: atlas.sheet("UI/ScrollbarInner").copied(),
+            ui_craft_icon: atlas.sheet("UI/Craft").copied(),
+            craft_toggles: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/Craft_Toggle_{i}")).copied()
+            }),
+            chest_craft: std::array::from_fn(|i| {
+                atlas.sheet(&format!("UI/ChestCraft_{i}")).copied()
+            }),
+            ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
+            ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
+            ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
+            ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
             page_icons: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/DisplaySlots_{i}")).copied()
             }),

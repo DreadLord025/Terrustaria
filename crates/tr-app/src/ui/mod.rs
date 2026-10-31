@@ -2,8 +2,10 @@
 //! cursor, hearts and breath, and the boss bar.
 
 pub mod chrome;
+pub mod color;
 pub mod cursor;
 pub mod inventory;
+pub mod panel;
 pub mod resources;
 pub mod slot;
 pub mod text;

@@ -15,7 +15,8 @@ use crate::ItemSlot;
 ///
 /// The numbers are indices into this port's sheet set: `0` `Inventory_Back`,
 /// `1` `Inventory_Back9`, `2` `Inventory_Back4`, `3` `Inventory_Back7`,
-/// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`.
+/// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`,
+/// `7` `Inventory_Back18`.
 /// Tests assert on this because `SheetRect` has no `PartialEq`.
 fn context_texture_index(context: i32, index: i32) -> u8 {
     match context {
@@ -34,7 +35,10 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         16..=20 => 5,
         // `ItemSlot.cs:2206-2209`: misc dyes (33) are `Inventory_Back12`.
         33 => 6,
-        // Contexts outside the P2 set keep the default `Inventory_Back`.
+        // `ItemSlot.cs:2264-2277` / `:2298-2302`: crafting contexts 41/42/43 end up
+        // on `Inventory_Back18` (42/43 start on `_4` and are then overridden).
+        41 | 42 | 43 => 7,
+        // Contexts outside the ported set keep the default `Inventory_Back`.
         _ => 0,
     }
 }
@@ -52,8 +56,22 @@ pub(crate) fn background_for(
         4 => lookups.ui_inv_bg13,    // Inventory_Back13
         5 => lookups.ui_back3,       // Inventory_Back3
         6 => lookups.ui_back12,      // Inventory_Back12
+        7 => lookups.ui_back18,      // Inventory_Back18
         _ => lookups.ui_back,        // Inventory_Back
     }
+}
+
+/// `ItemSlot.cs:2270-2271` / `:2299-2300`: the `Inventory_Back18` tint for the
+/// crafting-recipe slots (contexts 41/42/43) =
+/// `ShiftBlueToCyanTheme(new Color(16, 36, 56, 180) * 0.9f)`.
+///
+/// `ItemSlot.cs:2340-2343` then multiplies it by `lightColor`; the crafting panel
+/// passes `Color.White` (`NewCraftingUI.cs:563`), so this is applied as-is.
+pub fn craft_slot_tint() -> [f32; 4] {
+    super::color::tint(super::color::shift_blue_to_cyan(super::color::mul(
+        [16, 36, 56, 180],
+        0.9,
+    )))
 }
 
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
@@ -515,5 +533,42 @@ mod tests {
         // Out-of-range / degenerate sheets yield nothing.
         assert_eq!(glyph_frame(168, 392, -1), None);
         assert_eq!(glyph_frame(2, 392, 0), None);
+    }
+
+    #[test]
+    fn crafting_contexts_use_inventory_back18() {
+        // `ItemSlot.cs:2264-2277`: 42/43 start on `Inventory_Back4` then override to
+        // `Inventory_Back18`; `:2298-2302`: 41 is `Inventory_Back18` outright.
+        for c in [41, 42, 43] {
+            assert_eq!(context_texture_index(c, 0), 7, "context {c}");
+            assert_eq!(context_texture_index(c, 5), 7, "context {c} slot 5");
+        }
+        // Contexts 22/34 are not part of P3 and keep the default.
+        assert_eq!(context_texture_index(22, 0), 0);
+        assert_eq!(context_texture_index(34, 0), 0);
+    }
+
+    #[test]
+    fn crafting_contexts_pick_the_back18_sheet() {
+        let mut lk = assets::Lookups::default();
+        lk.ui_back = Some(rect(10));
+        lk.ui_back4 = Some(rect(12));
+        lk.ui_back18 = Some(rect(18));
+        let pick = |c| background_for(&lk, c, 0).map(|r| r.x);
+        assert_eq!(pick(41), Some(18));
+        assert_eq!(pick(42), Some(18));
+        assert_eq!(pick(43), Some(18));
+    }
+
+    #[test]
+    fn craft_slot_tint_is_the_shifted_recolour() {
+        // `ItemSlot.cs:2270-2271` / `:2299-2300`:
+        // `ShiftBlueToCyanTheme((16,36,56,180) * 0.9f)` = `[10,58,74,162]`.
+        assert_eq!(craft_slot_tint(), [
+            10.0 / 255.0,
+            58.0 / 255.0,
+            74.0 / 255.0,
+            162.0 / 255.0,
+        ]);
     }
 }
