@@ -1099,8 +1099,8 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The page tabs, defence counter, guide text and PVP icons are drawn but not
   interactive (`ItemSlot.Handle` is out of scope for this milestone), and
   `Player.statDefense` is not modelled, so the defence counter always shows `0`.
-* The bestiary/emote/achievement shortcut buttons, the NPC-housing page (`EquipPage 1`)
-  and the map-style icons (`Main.cs:41056-41124`, `Images/Map_0..3`) are not drawn yet.
+* The bestiary/emote/achievement shortcut buttons and the NPC-housing page
+  (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
   `Main.mouseTextColor` (`ui/inventory.rs` `LABEL_COLOR`).
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
@@ -1130,10 +1130,58 @@ z-order (`docs/UI.md` → "Crafting panel"). The deviations:
   parameter but never reached: the guide slot cannot be opened in the port yet, so
   the menu is never entered and `guide_mode` stays false.
 
+### Minimap frame and boss bar (P4) (`ui/minimap.rs`, `ui/bars.rs`, `ui/chrome.rs`)
+
+The minimap frame (`MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate`)
+and the boss bar (`BigProgressBarHelper.DrawFancyBar`) are ported at the source
+geometry (`docs/UI.md` → "Minimap frame" / "Boss bar"). The deviations and
+behaviour notes:
+
+* `Main.MapScale` is `1.0` only. The whole minimap transform chain
+  (`mapScale = Main.MapScale`, the `CreateScale(MapScale)` position/scale
+  fixups, `Main.cs:55308-55329`, and the foreground batch at `:55768`) is
+  evaluated at the reference value, where every `*= num16` fixup is a no-op;
+  the `MapScale` config key still round-trips (load-clamped `0.5..1.0`,
+  `Main.cs:4494`). The `Map Scale` Interface slider is a P5 hand-off, not ported.
+* No UI cue plays: the buttons' hover/click sounds `SoundEngine.PlaySound(12)`
+  (`MinimapFrame.cs:167,174`) and the icon row's `PlaySound(10)/(12)`
+  (`Main.cs:41100,41109-41119`) are not ported — no UI cue is loaded
+  (`audio.rs:22-31`), consistent with the silent menus. `Main.DoStatefulTickSound`
+  (`:41126`) is not ported either.
+* `mapStyle == 2` (the overlay style) draws nothing in the minimap branch —
+  the whole-UI P4 plan's Uncertainty 7: only the style-1 branch
+  (`Main.cs:55503-55547`) is ported, and the style-2 overlay render has no
+  Rust counterpart yet.
+* The minimap **content** icons are not ported: NPC map icons, player heads,
+  revenge/death markers (`TextureAssets.MapDeath`) and map pings
+  (`TextureAssets.MapPing`) — the render entry points of research §F
+  (`geometry-extraction.md`, `Main.cs:55619-55680`, `PingMapLayer.cs:35`).
+  The frame chrome draws around the bare tile pass; a future `MapIcons` task
+  owns them.
+* The shielded 7-arg `DrawFancyBar` overload (`BigProgressBarHelper.cs:72-126`)
+  and `DrawBareBonesBar` (`:11-23`) are not ported — the former has no
+  reachable caller in this port, the latter is dead code.
+* `BigProgressBarSystem.ShowText` is always on (`:259`); the boss-bar-numbers
+  settings toggle does not exist in the port, so the health text always draws.
+* The map-style icon row draws without the `Main.mapEnabled` gate
+  (`:41056`) while its clicks keep the gate (the documented draw/click
+  asymmetry in `chrome.rs`/`main.rs`): the row is visible with the map disabled,
+  but only clicks when the map system is enabled. Visible only with
+  `MapEnabled=false`.
+* The icon-row clicks fire on the press frame; vanilla tests
+  `Main.mouseLeft && Main.mouseLeftRelease` (`:41095`), i.e. on the release
+  frame. One shot either way (the port's pre-existing press convention).
+* Hovering a minimap zoom button suppresses mine/place/attack inputs — the
+  port mirrors `MinimapFrame.Update`'s `mouseInterface = true`
+  (`MinimapFrame.cs:164`) through its `minimap_hover` flag. Listed because it
+  changes input behaviour; it is faithful, not a gap.
+
 ### Determinism hooks
 
 `TR_MOUSE=x,y` (pin the (UI-space) pointer), `TR_INV=1` (open the inventory),
 `TR_CRAFT=1`/`TR_NOCRAFT=1` (force the crafting panel on/off),
-`TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`,
-`TR_SHOT=path`. Screenshots are byte-identical across runs with
-`TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.
+`TR_EQUIPPAGE=n` (select `Main.EquipPage`), `TR_MAPSTYLE=0|1|2` (select
+`Main.mapStyle`; invalid/missing → 1, `Main.cs:66750`), `TR_BOSS` (spawn King
+Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap),
+`TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`, `TR_SHOT=path`. Screenshots are
+byte-identical across runs with `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.

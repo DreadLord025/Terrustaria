@@ -87,7 +87,9 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name |
 | `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph |
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
-| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` | page tabs, defence shield, guide text, PVP icons |
+| `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs, defence shield, guide text, PVP icons, the four map-style icons |
+| `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
+| `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 
 Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
@@ -98,7 +100,9 @@ Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
 * Coins and ammo use `inventoryScale = 0.6` at x `497` / `534`, rows at
   `(int)(85 + k*56*0.6 + 20)`.
 * Equipment columns are right-anchored at `screenWidth − 92 / − 139 / − 186`
-  (armour, vanity, dye) from `num20 = 174`, `+4` on the rows past the third.
+  (armour, vanity, dye) from `num20 = 174 + Main.mH` (`Main.cs:41146`) — `mH` is
+  `256` while the minimap HUD is live (see the minimap section), so the block
+  sits at `num20 = 430` at the reference layout, `+4` on the rows past the third.
 * The misc-equipment page uses pitch `47`; trash is at `(448, 258)`; the page tabs
   sit at `screenWidth − 80 / − 128 / − 176`.
 
@@ -127,6 +131,95 @@ source's child order:
 Deviations: draw-only chrome (no filter/search/scrollbar interaction), the detail
 area renders without a selected recipe, the cancel button never hides — the full
 list is in `docs/ANALYSIS.md` → "Crafting panel".
+
+### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
+
+The frame around the already-ported map tiles is the `MinimapFrame`/
+`MinimapFrameManager` system: nine frame styles (`MinimapFrameManager.cs:23-33`,
+portrayed element-for-element by `FRAME_STYLES`), the active one picked by the
+`MinimapFrame` config key with the `Default` fallback, and the two draw passes
+around `MapRenderer.DrawMap`. The `MapScale`/`MinimapFrame` config keys live in
+`settings.rs` like the vanilla ones (`Main.cs:4202`, `MinimapFrameManager.cs:13-18`).
+Key geometry (1600×900, `MapScale = 1`):
+
+* The top-right anchor is `(52 + (int)(240·MapScale), 90)` = `(292, 90)`
+  (`Main.UpdateMinimapAnchors`, `Main.cs:55275-55276`), so the tile panel origin
+  is `(1308, 90)` and the `DrawTo` position (what `MinimapPosition` is set to)
+  is `(1312, 94)` — origin `− 6 + 10` on both axes (`Main.cs:55546`).
+* The black backdrop is `Rectangle((int)MinimapPosition − 6, 244, 244)` =
+  `(1306, 88)` 244×244 — the 240 tile panel (drawn at `(1308, 90)`) plus a 2 px
+  skirt on each side (`MinimapFrame.cs:181-182`) — tinted
+  `Color.Black · Main.mapMinimapAlpha` (alpha 1). It is pushed into the
+  `map_back` pass so it lands **under** the tiles (the renderer's fixed order
+  is `back → world → map_back → map → ui`).
+* The frame sheet draws whole (no 9-slice) at `FramePosition` = `MinimapPosition
+  + _frameOffset` (`MinimapFrame.cs:81-91`); Default's offset `(-8, -15)` puts
+  the 256×264 frame at `(1304, 79)`. The hovered button's hover sheet is drawn
+  over it at `_position + parentPosition` (`Button.Draw`, `:38-44`).
+* The three zoom buttons sit at frame-relative raw positions — Default: reset
+  `(150, 240)`, zoom-out `(176, 240)`, zoom-in `(202, 240)` (`:23-24` with
+  `num = 2, num2 = 6`), i.e. absolute top-lefts `(1454, 319)`, `(1480, 319)`,
+  `(1506, 319)`. The hitbox is `Max(button size, (22, 22)) · 0.5` around the
+  button centre (`:46-56`) — an 11 px half-extent with a **strict `<`** on both
+  axes, so the centres are `(1463, 328)`, `(1489, 328)`, `(1515, 328)` and the
+  nominal rectangle edges are outside. `GetButtonUnderMouse` tests zoom-in,
+  zoom-out, reset in that order and returns the first hit (`:194-210`).
+* Clicks mirror `MinimapFrame.Update` (`:138-177`): the action re-fires every
+  frame while the button is held (`Main.mouseLeft`, `:169-171`). Reset pins the
+  scale to `1.05`, zoom-in multiplies by `1.025`, zoom-out by `0.975`
+  (`:59-63`, `:107-136`), and the draw side clamps to `0.2..3`
+  (`Main.cs:55515-55522`), so a held zoom-in saturates at exactly `3.0`.
+* `Main.DrawInterface_16_MapOrMinimap` (`Main.cs:45771-45798`) sets
+  `Main.mH = 256` while the minimap HUD is live (`mapEnabled && !mapFullscreen
+  && mapStyle == 1`), clamped so `mH + 600 ≤ screenHeight`
+  (`RecommendedEquipmentAreaPushUp`, `Main.cs:2967-2977`); the equipment block
+  reads `num20 = 174 + mH` (`Main.cs:41146`).
+* The frame draws before the HUD sprites — vanilla renders interface layer 16
+  (the minimap) before layers 25/27/30 (`Main.cs:44796`, `:44831/:44841/:44861`) —
+  so hearts and the inventory paint over the frame where they overlap.
+* Hovering a button sets the vanilla `mouseInterface` behaviour: mine/place
+  inputs are suppressed behind the frame (`MinimapFrame.cs:164`).
+
+Deviations: `MapScale` is `1.0` only (no scale slider — the `CreateScale(MapScale)`
+transforms of `Main.cs:55308-55329,55768` cite the single reference value), the
+map content icons (NPC/player heads, death markers, pings) are not ported, and
+no UI click sounds play — the full list is in `docs/ANALYSIS.md` →
+"Minimap frame and boss bar (P4)".
+
+### Boss bar (`ui/bars.rs`, `BigProgressBarHelper.cs`)
+
+The boss health bar is `BigProgressBarHelper.DrawFancyBar`'s 4-arg overload, fed
+by `CommonBossBigProgressBar` (`CommonBossBigProgressBar.cs:32-36`) — in this
+port King Slime is the only boss, head index 7, drawn from the whole
+`NPC_Head_Boss_7` sheet (`NPC.cs:7557-7585`, `NPCID.cs:10479`). All six 516×58
+rows of the `UI_BossBar` sheet are used through `Utils.Frame(1, 6, …)`.
+Key geometry (1600×900):
+
+* The bar area is `CenteredRectangle(Main.ScreenSize.ToVector2() *
+  (0.5, 1) + (0, −50), (456, 22))` (`BigProgressBarHelper.cs:46`,
+  `Utils.cs:947-950`) = `(572, 839, 456, 22)`, each component `(int)`-truncated.
+* The draw origin is the bar's top-left `− p2 = (32, 24)` = `(540, 815)`
+  (`:47`); the boss head icon is centred on `origin + (4, 20) + (26, 28)/2` =
+  `(557, 849)` — `(26, 28)` is the source's literal centre, **not**
+  `barIconFrame.Size()/2` (`:52`).
+* The fill width is `(int)(456 · current/max)`, then `num2 −= num2 % 2`
+  (`:33-35`) — always an even `0..=456`. The 2 px fill body
+  (`(32, 140, 2, 22)` on the sheet) stretches to that width, the 2 px cap
+  (`(32, 82, 2, 22)`) sits at `bar.x + fill − 2`, the frame row
+  (`(0, 0, 516, 58)`) draws over both, and the backdrop row
+  (`(0, 174, 516, 58)`) is tinted `Color.White · 0.2` — XNA byte truncation
+  makes that `(51, 51, 51, 51)`, not white at 20 % alpha.
+* The `current / max` text is `Fonts/Item_Stack` at scale 1, drawn with
+  `Utils.DrawBorderStringFourWay` (`Utils.cs:2464-2495`): four black passes at
+  `(±2, 0)`/`(0, ±2)` and the white centre pass, around
+  `area.Center + (0, 1)`; `current` is right-aligned at `anchor.x − 5`, the
+  slash centred, `max` left-aligned at `anchor.x + 5` (`:59-70`).
+
+`ShowText` is always on (`BigProgressBarSystem.cs:259`); the port has no
+settings toggle. Deviations: the shielded `DrawFancyBar` overload
+(`:72-126`) and `DrawBareBonesBar` (`:11-23`) are not ported (no reachable
+caller) — the full list is in `docs/ANALYSIS.md` →
+"Minimap frame and boss bar (P4)".
 
 ## Deviations
 
