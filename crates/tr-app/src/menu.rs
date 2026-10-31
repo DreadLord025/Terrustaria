@@ -50,6 +50,113 @@ const LANGUAGES: [&str; 12] = [
     "繁體中文 (Traditional Chinese)",
 ];
 
+/// The `Lang.menu` prefixes of the menuMode 27 rows (`Main.cs:50527-50540`):
+/// the raw `en-US.Legacy.json` values — [74]..[85], [120], [130] — with
+/// vanilla's trailing-space column alignment kept byte for byte.
+const KEYBIND_ROWS: [&str; 14] = [
+    "Up                ",    // `Lang.menu[74]`
+    "Down             ",     // [75]
+    "Left               ",   // [76]
+    "Right             ",    // [77]
+    "Jump             ",     // [78]
+    "Throw            ",     // [79]
+    "Inventory         ",    // [80]
+    "Quick Heal       ",     // [81]
+    "Quick Mana      ",      // [82]
+    "Quick Buff       ",     // [83]
+    "Grapple           ",    // [84]
+    "Auto Select       ",    // [85] (the torch bind)
+    "Smart Cursor    ",      // [120]
+    "Mount             ",    // [130]
+];
+
+/// The `Lang.menu` prefixes of the menuMode 272727 rows
+/// (`Main.cs:50425-50430`): [106]..[111], same trailing-space values.
+const MAP_KEY_ROWS: [&str; 6] = [
+    "Toggle Map Style           ",   // `Lang.menu[106]`
+    "Toggle Fullscreen           ",  // [107]
+    "Zoom In                      ", // [108]
+    "Zoom Out                    ",  // [109]
+    "Decrease Transparency     ",    // [110]
+    "Increase Transparency      ",   // [111]
+];
+
+/// The nine `MinimapFrameManager` option keys in `CreateAndAdd` order
+/// (`MinimapFrameManager.cs:25-33`) — the same order as
+/// `ui::minimap::FRAME_STYLES`, so the stored key stays the live renderer's
+/// input (`main.rs` maps it through `ui::minimap::style_index`).
+pub const MINIMAP_FRAME_KEYS: [&str; 9] = [
+    "Default",
+    "Golden",
+    "Remix",
+    "Sticks",
+    "StoneGold",
+    "TwigLeaf",
+    "Leaf",
+    "Retro",
+    "Valkyrie",
+];
+
+/// The six `PlayerResourceSetsManager` set keys in load order
+/// (`PlayerResourceSetsManager.cs:42-47`).
+pub const RESOURCE_SET_KEYS: [&str; 6] = [
+    "New",
+    "Default",
+    "HorizontalBarsWithFullText",
+    "HorizontalBarsWithText",
+    "HorizontalBars",
+    "NewWithText",
+];
+
+/// The `UI.HealthManaStyle_*` values (`en-US.json`), keyed by the set key —
+/// the menuMode 1112 row composes `UI.SelectHealthStyle` with
+/// `ActiveSetKeyName` (`Main.cs:49948`).
+fn resource_set_label(key: &str) -> &'static str {
+    match key {
+        "New" => "Fancy",
+        "Default" => "Classic",
+        "HorizontalBarsWithFullText" => "Bars 3",
+        "HorizontalBarsWithText" => "Bars 2",
+        "HorizontalBars" => "Bars",
+        "NewWithText" => "Fancy 2",
+        // An unknown key normalizes to the first set
+        // (`PlayerResourceSetsManager.cs:74-83`).
+        _ => "Fancy",
+    }
+}
+
+/// `SelectionHolder.CycleSelection` (`SelectionHolder.cs:44-58`) and its
+/// `CycleResourceSet` twin (`PlayerResourceSetsManager.cs:84-101`): walk the
+/// options, remember the last one *before* the active selection and activate
+/// it — the cycle runs **backwards** through the registration order, and the
+/// first option wraps to the last (`lastFrame == null -> Values.Last()`). An
+/// unknown current key normalizes to the first option first
+/// (`SetActiveFrame(string)`, `SelectionHolder.cs:67-78`), which also wraps to
+/// the last.
+fn cycle_previous(order: &[&str], current: &str) -> String {
+    match order.iter().position(|key| *key == current) {
+        Some(0) | None => order[order.len() - 1].to_string(),
+        Some(i) => order[i - 1].to_string(),
+    }
+}
+
+/// The `Main.cUp..cMount` defaults (`Main.cs:1979-2005`), seeded by the
+/// static initializer (`Main.cs:67163-67176`) and restored by
+/// `ResetKeyBindings` (`Main.cs:52459-52475`).
+fn default_keybinds() -> [String; 14] {
+    [
+        "W", "S", "A", "D", "Space", "T", "Escape", "H", "J", "B", "E", "LeftShift",
+        "LeftControl", "R",
+    ]
+    .map(String::from)
+}
+
+/// The `Main.cMap*` defaults (`Main.cs:67190-67195`), restored inline by the
+/// menuMode 272727 Reset row (`Main.cs:50451-50456`).
+fn default_map_binds() -> [String; 6] {
+    ["Tab", "M", "Add", "Subtract", "PageUp", "PageDown"].map(String::from)
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Page {
     Main,
@@ -208,6 +315,15 @@ enum Toggle {
     WaveQuality,
     UseScreenShake,
     FlashyEffectsWorld,
+    // The menuMode 1127 rows (`Main.cs:50647-50687`).
+    ReversedArmorBonuses,
+    QuickTrash,
+    // The menuMode 1112 selector rows (`Main.cs:49941-49979`).
+    MinimapFrame,
+    ResourceSets,
+    PortraitPreference,
+    BossBarText,
+    FlashyEffectsInterface,
 }
 
 enum Act {
@@ -218,6 +334,14 @@ enum Act {
     PickColor(Page),
     Out(Action),
     Toggle(Toggle),
+    /// The menuMode 27/272727 bind rows (`Main.cs:50565-50568`,
+    /// `:50460-50463`): `Main.setKey = this.selectedMenu` — the row shows
+    /// `"_"` and [`Menu::key`] fills the capture. The map twin is told apart
+    /// by the page the row lives on.
+    BindKey { index: usize },
+    /// The "Reset to Default" rows (`Main.cs:50559-50564` / `:50449-50459`):
+    /// restore the default binds and close the capture.
+    ResetKeys { map: bool },
     /// A vanilla screen that is not ported yet: clicking shows the reason.
     Hint(&'static str),
 }
@@ -232,12 +356,24 @@ struct Item {
     x: f32,
     /// `array[]`: drawn but not clickable (screen titles).
     header: bool,
+    /// `array8[]` (`Main.cs:51773`): drawn left-aligned from
+    /// `num3 + array5` with origin `(0, h/2)` instead of centred — the
+    /// menuMode 27/272727 bind rows (`Main.cs:50543-50545`, `:50433-50435`).
+    left_aligned: bool,
     act: Act,
 }
 
 impl Item {
     fn new(label: impl Into<String>, act: Act) -> Self {
-        Self { label: label.into(), scale: 1.0, y: 0.0, x: 0.0, header: false, act }
+        Self {
+            label: label.into(),
+            scale: 1.0,
+            y: 0.0,
+            x: 0.0,
+            header: false,
+            left_aligned: false,
+            act,
+        }
     }
 
     fn at(mut self, y: f32) -> Self {
@@ -247,6 +383,21 @@ impl Item {
 
     fn scaled(mut self, scale: f32) -> Self {
         self.scale = scale;
+        self
+    }
+
+    /// `array5[i] = n`: the horizontal offset (the bind rows' -80/-140 nudge,
+    /// `Main.cs:50545` / `:50435`).
+    fn offset_x(mut self, x: f32) -> Self {
+        self.x = x;
+        self
+    }
+
+    /// `array8[i] = true` (`Main.cs:50543` / `:50433`): draw and hit-test from
+    /// the left edge `num3 + array5` instead of centred (`Main.cs:51773`,
+    /// `:51797-51806`).
+    fn left(mut self) -> Self {
+        self.left_aligned = true;
         self
     }
 
@@ -324,6 +475,18 @@ pub struct Menu {
     /// edit colour of the 25/252 screens. The struct default is all-zero, like
     /// XNA `Color`'s.
     pub sel_color: [u8; 4],
+    /// `Main.setKey` (`Main.cs:50408-50410` / `:50523-50526`): the bind row
+    /// being rebound on the menuMode 27/272727 lists — the row shows `"_"`
+    /// and the next key press fills it ([`Menu::key`]); `None` when idle.
+    pub set_key: Option<usize>,
+    /// `Main.cUp..cMount` (`Main.cs:1979-2005`): the 14 gameplay binds of the
+    /// menuMode 27 list, defaulted from the static seed (`:67163-67176`).
+    /// Vanilla saves them in the player file, not `config.json`, so the port
+    /// keeps them session-only.
+    pub keybinds: [String; 14],
+    /// `Main.cMapStyle..cMapAlphaDown` (`Main.cs:2051-2061`): the 6 map binds
+    /// of the menuMode 272727 list, seeded at `:67190-67195`. Session-only.
+    pub map_binds: [String; 6],
     /// `Main.screenWidth`/`screenHeight`, refreshed every [`Menu::draw`] — the
     /// menuMode 111 row prints the pending resolution, which vanilla keeps at
     /// the current window size (`Main.cs:66399-66400`). The default is the
@@ -364,6 +527,9 @@ impl Menu {
             color_grab: 0,
             hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
             sel_color: [0, 0, 0, 0],
+            set_key: None,
+            keybinds: default_keybinds(),
+            map_binds: default_map_binds(),
             screen_size: Vec2::new(1600.0, 900.0),
             hint: None,
             persist: true,
@@ -469,7 +635,8 @@ impl Menu {
                 // menuMode 11 row 4 (`Main.cs:49753-49759`): opens 1125
                 // (`Main.cs:50309-50316` is the 1125 Back twin).
                 Item::new("Cursor", Act::Nav(Page::Cursor)).scaled(0.75),
-                Item::new("Controls", Act::Hint("Key rebinding is not ported yet")).scaled(0.75),
+                // Row 5 (`Main.cs:49752-49758`): `Lang.menu[219]` opens 1127.
+                Item::new("Controls", Act::Nav(Page::Controls)).scaled(0.75),
                 // Row 6 (`Main.cs:49759-49763`): `Lang.menu[103]` opens 1213.
                 Item::new("Language", Act::Nav(Page::Language)).scaled(0.75),
                 Item::new("Back", Act::Nav(Page::Main)).scaled(0.75).at(8.0),
@@ -494,11 +661,68 @@ impl Menu {
                 Item::new(on_off(s.highlight_new_items, "Highlight New Items On", "Highlight New Items Off"), Act::Toggle(Toggle::HighlightNew)).scaled(0.6),
                 Item::new(on_off(s.tile_grid, "Tile Grid On", "Tile Grid Off"), Act::Toggle(Toggle::TileGrid)).scaled(0.6),
                 Item::new(on_off(s.gamepad_instructions, "Gamepad Instructions On", "Gamepad Instructions Off"), Act::Toggle(Toggle::GamepadInstructions)).scaled(0.6),
-                Item::new("Minimap Border: Default", Act::Hint("Minimap borders are not ported yet")).scaled(0.6),
-                Item::new("Health and Mana Style: Classic", Act::Hint("Health styles are not ported yet")).scaled(0.6),
-                Item::new("Portraits Style: Detailed", Act::Hint("Portraits are not ported yet")).scaled(0.6),
-                Item::new("Boss Health Bar Numbers: Off", Act::Hint("Boss bar numbers are not ported yet")).scaled(0.6),
-                Item::new("Inventory Effects: On", Act::Hint("Inventory effects are not ported yet")).scaled(0.6),
+                // Row 6 (`Main.cs:49941-49946`): `UI.SelectMapBorder`
+                // ("Minimap Border: {0}") with the active `UI.MinimapFrame_*`
+                // name; the click calls `CycleSelection` with no sound. The
+                // stored key feeds `ui::minimap::style_index` live, so the
+                // minimap frame re-renders as the row cycles.
+                Item::new(
+                    format!(
+                        "Minimap Border: {}",
+                        // An unknown config name normalizes to the first
+                        // option (`SelectionHolder.cs:71-78`).
+                        if MINIMAP_FRAME_KEYS.contains(&s.minimap_frame.as_str()) {
+                            s.minimap_frame.as_str()
+                        } else {
+                            MINIMAP_FRAME_KEYS[0]
+                        }
+                    ),
+                    Act::Toggle(Toggle::MinimapFrame),
+                )
+                .scaled(0.6),
+                // Row 7 (`Main.cs:49947-49952`): `UI.SelectHealthStyle` with
+                // `UI.HealthManaStyle_{ActiveSetKeyName}`; no click sound.
+                Item::new(
+                    format!("Health and Mana Style: {}", resource_set_label(&s.resource_sets)),
+                    Act::Toggle(Toggle::ResourceSets),
+                )
+                .scaled(0.6),
+                // Row 8 (`Main.cs:49953-49965`): the plain `UI.Portraits*`
+                // labels — the `switch`'s `_` arm reads Detailed; the click
+                // runs `CycleNPCPortraitMode` (`Main.cs:40297-40315`).
+                Item::new(
+                    match s.portrait_preference {
+                        1 => "Portraits Style: Profile",
+                        2 => "Portraits Style: Retro",
+                        3 => "Portraits Style: Disabled",
+                        _ => "Portraits Style: Detailed",
+                    },
+                    Act::Toggle(Toggle::PortraitPreference),
+                )
+                .scaled(0.6),
+                // Row 9 (`Main.cs:49966-49971`): `BigProgressBarSystem.
+                // ToggleShowText()` with no sound. The flag is stored only —
+                // P4's boss bar owns the numbers rendering.
+                Item::new(
+                    on_off(
+                        s.boss_bar_text,
+                        "Boss Health Bar Numbers: On",
+                        "Boss Health Bar Numbers: Off",
+                    ),
+                    Act::Toggle(Toggle::BossBarText),
+                )
+                .scaled(0.6),
+                // Row 10 (`Main.cs:49972-49979`): the
+                // `UI.FlashyEffectsInterfaceOn/Off` pair.
+                Item::new(
+                    on_off(
+                        s.flashy_effects_interface,
+                        "Inventory Effects: On",
+                        "Inventory Effects: Reduced",
+                    ),
+                    Act::Toggle(Toggle::FlashyEffectsInterface),
+                )
+                .scaled(0.6),
                 Item::new("Back", Act::Nav(Page::Settings)).scaled(0.6).at(16.0),
             ],
             // `menuMode == 1111`. Note the original leaves `array7` at 1.0 for the Back
@@ -789,13 +1013,113 @@ impl Menu {
                 }
                 rows
             }
-            // The remaining P5 screens land with their own tasks (5-6); Task 1
-            // registers the pages so `TR_PAGE=<menuMode>` resolves and each
-            // screen can be screenshotted as its rows are filled in.
-            Page::Controls
-            | Page::Keybindings
-            | Page::MapKeys
-            | Page::JoinIp
+            // menuMode 1127 (`Main.cs:50638-50698`): `num2 = 250`, `num4 = 52`,
+            // `num5 = 4`, `array4[3] = 18`, every `array7` 0.78
+            // (`:50639-50646`). Draw y = `250 + 52*i + array4[i]`
+            // (`Main.cs:51769`): 250, 302, 354, 424.
+            Page::Controls => vec![
+                // Row 0 (`Main.cs:50647-50656`):
+                // `ReversedUpDownArmorSetBonuses ? [220] : [221]`.
+                Item::new(
+                    on_off(
+                        s.reversed_armor_bonuses,
+                        "Activate Set Bonuses: Up",
+                        "Activate Set Bonuses: Down",
+                    ),
+                    Act::Toggle(Toggle::ReversedArmorBonuses),
+                )
+                .scaled(0.78),
+                // Row 1 (`Main.cs:50656-50687`): the three-state quick-trash
+                // cycle — `DisableQuickTrash ? [253] : (DisableLeftShiftTrashCan
+                // ? [224] : [223])`.
+                Item::new(
+                    if s.quick_trash {
+                        "Quick Trash: Disabled"
+                    } else if s.disable_left_shift_trash {
+                        "Quick Trash: Left Control"
+                    } else {
+                        "Quick Trash: Left Shift"
+                    },
+                    Act::Toggle(Toggle::QuickTrash),
+                )
+                .scaled(0.78),
+                // Row 2 (`Main.cs:50688-50694`): `Lang.menu[222]` opens the
+                // menuMode 888 `ManageControlsMenu` UIState (`:50661-50666`) —
+                // out of scope (spec §9.1), so the row shows the notice.
+                Item::new(
+                    "Keybindings",
+                    Act::Hint("The manage-controls screen is not ported yet"),
+                )
+                .scaled(0.78),
+                // Row 3 (`Main.cs:50695-50698`): Back opens 11.
+                Item::new("Back", Act::Nav(Page::Settings)).scaled(0.78).at(18.0),
+            ],
+            // menuMode 27 (`Main.cs:50501-50637`): `num2 = 176`, `num4 = 22`,
+            // `num5 = 16`. Rows 0-13 are the bind list — the raw `Lang.menu`
+            // value (trailing spaces kept) + the bind name
+            // (`:50527-50540`), left-aligned at `array5 = -80` with scale 0.45
+            // (`:50543-50545`); the row being rebound shows `"_"` instead of
+            // its bind (`:50523-50526`). Unreachable upstream — no
+            // `menuMode = 27` assignment exists under `decompiled/` (the
+            // Settings "Controls" row opens 1127, whose Keybindings row opens
+            // the 888 UIState) — `TR_PAGE=27` only.
+            Page::Keybindings => {
+                let mut rows = Vec::new();
+                for (i, prefix) in KEYBIND_ROWS.iter().enumerate() {
+                    let bind =
+                        if self.set_key == Some(i) { "_" } else { self.keybinds[i].as_str() };
+                    rows.push(
+                        Item::new(format!("{prefix}{bind}"), Act::BindKey { index: i })
+                            .scaled(0.45)
+                            .offset_x(-80.0)
+                            .left(),
+                    );
+                }
+                // Row 14 (`Main.cs:50547-50549`): `array7` 0.8,
+                // `array4 = 6`; resets the binds and closes the capture
+                // (`:50559-50564`).
+                rows.push(
+                    Item::new("Reset to Default", Act::ResetKeys { map: false }).scaled(0.8).at(6.0),
+                );
+                // Row 15 (`Main.cs:50550-50552`): Back opens 11.
+                rows.push(Item::new("Back", Act::Nav(Page::Settings)).scaled(0.8).at(16.0));
+                rows
+            }
+            // menuMode 272727 (`Main.cs:50401-50500`): `num2 = 200`,
+            // `num4 = 30`, `num5 = 14` — but only rows 0-7 get labels and the
+            // item loop skips the nulls (`Main.cs:51654`), so the screen shows
+            // eight rows. The six map binds are left-aligned at
+            // `array5 = -140`, scale 0.55 (`:50433-50435`), labels [106..111]
+            // + bind (`:50425-50430`); the row being rebound shows `"_"`.
+            // Unreachable upstream — `TR_PAGE=272727` only.
+            Page::MapKeys => {
+                let mut rows = Vec::new();
+                for (i, prefix) in MAP_KEY_ROWS.iter().enumerate() {
+                    let bind = if self.set_key == Some(i) { "_" } else { self.map_binds[i].as_str() };
+                    rows.push(
+                        Item::new(format!("{prefix}{bind}"), Act::BindKey { index: i })
+                            .scaled(0.55)
+                            .offset_x(-140.0)
+                            .left(),
+                    );
+                }
+                // Row 6 (`Main.cs:50439-50442`): `array7` 0.8,
+                // `array4 = 6`; restores the `:67190-67195` seeds
+                // (`:50449-50459`).
+                rows.push(
+                    Item::new("Reset to Default", Act::ResetKeys { map: true }).scaled(0.8).at(6.0),
+                );
+                // Row 7 (`Main.cs:50441-50444`): `array4 = 16` but `array7[7]`
+                // is never set here (the branch sets `array7[6]` twice,
+                // `:50439-50440`), so Back keeps the 1.0 default — unlike the
+                // mode-27 twin's 0.8 (`:50550`).
+                rows.push(Item::new("Back", Act::Nav(Page::Settings)).at(16.0));
+                rows
+            }
+            // The remaining P5 screens land with Task 6; Task 1 registers the
+            // pages so `TR_PAGE=<menuMode>` resolves and each screen can be
+            // screenshotted as its rows are filled in.
+            Page::JoinIp
             | Page::JoinPort
             | Page::HostPassword
             | Page::JoinPassword
@@ -864,6 +1188,24 @@ impl Menu {
             },
             Act::Toggle(toggle) => {
                 self.toggle(*toggle);
+                Action::None
+            }
+            // The menuMode 27/272727 bind rows (`Main.cs:50565-50568`,
+            // `:50460-50463`): the clicked row opens the capture.
+            Act::BindKey { index } => {
+                self.set_key = Some(*index);
+                Action::None
+            }
+            // The "Reset to Default" rows: `Main.ResetKeyBindings()` and
+            // `setKey = -1` (`Main.cs:50559-50564`), or the map twin restoring
+            // the `:67190-67195` seeds inline (`:50449-50459`).
+            Act::ResetKeys { map } => {
+                if *map {
+                    self.map_binds = default_map_binds();
+                } else {
+                    self.keybinds = default_keybinds();
+                }
+                self.set_key = None;
                 Action::None
             }
             Act::Hint(message) => {
@@ -957,6 +1299,45 @@ impl Menu {
             Toggle::UseScreenShake => s.use_screen_shake = !s.use_screen_shake,
             // `Main.FlashyEffectsWorld = !...` (`:50161`).
             Toggle::FlashyEffectsWorld => s.flashy_effects_world = !s.flashy_effects_world,
+            // The menuMode 1127 rows (`Main.cs:50647-50687`).
+            // `Main.ReversedUpDownArmorSetBonuses = !...` (`:50652-50654`).
+            Toggle::ReversedArmorBonuses => s.reversed_armor_bonuses = !s.reversed_armor_bonuses,
+            // The three-state quick-trash cycle (`:50665-50684`): Left Control
+            // -> Left Shift -> Disabled -> Left Control.
+            Toggle::QuickTrash => {
+                if s.quick_trash {
+                    s.quick_trash = false;
+                    s.disable_left_shift_trash = true;
+                } else if s.disable_left_shift_trash {
+                    s.disable_left_shift_trash = false;
+                } else {
+                    s.quick_trash = true;
+                    s.disable_left_shift_trash = false;
+                }
+            }
+            // The menuMode 1112 selector rows (`Main.cs:49941-49979`).
+            // `CycleSelection` activates the option *before* the current one,
+            // wrapping the first to the last (`SelectionHolder.cs:44-58`); the
+            // stored key feeds `ui::minimap::style_index` live.
+            Toggle::MinimapFrame => {
+                s.minimap_frame = cycle_previous(&MINIMAP_FRAME_KEYS, &s.minimap_frame)
+            }
+            // `CycleResourceSet` — the same backwards walk
+            // (`PlayerResourceSetsManager.cs:84-101`).
+            Toggle::ResourceSets => {
+                s.resource_sets = cycle_previous(&RESOURCE_SET_KEYS, &s.resource_sets)
+            }
+            // `Main.CycleNPCPortraitMode()` (`Main.cs:40297-40315`): Detailed
+            // -> CloseUp -> FullBodyRetro -> Disabled -> Detailed.
+            Toggle::PortraitPreference => s.portrait_preference = (s.portrait_preference + 1) % 4,
+            // `BigProgressBarSystem.ToggleShowText()`
+            // (`BigProgressBarSystem.cs:239-242`). Stored only — consumed by
+            // the boss bar in P4.
+            Toggle::BossBarText => s.boss_bar_text = !s.boss_bar_text,
+            // `Main.FlashyEffectsInterface = !...` (`:49977-49978`).
+            Toggle::FlashyEffectsInterface => {
+                s.flashy_effects_interface = !s.flashy_effects_interface
+            }
         }
         if self.persist {
             let _ = s.save();
@@ -965,6 +1346,25 @@ impl Menu {
 
     pub fn key(&mut self, code: winit::keyboard::KeyCode) -> Action {
         use winit::keyboard::KeyCode as K;
+        // The menuMode 27/272727 capture (`Main.cs:50569-50576`,
+        // `:50464-50471`): while `setKey` is open, the first pressed key is
+        // stored under its name and the capture closes. Navigation keys are
+        // captured too — vanilla's `GetPressedKeys` sees them first (only
+        // XNA's `Keys.None` is skipped at `:50575`/`:50470`, which has no
+        // winit equivalent).
+        if self.set_key.is_some() && matches!(self.page, Page::Keybindings | Page::MapKeys) {
+            let index = self.set_key.unwrap();
+            let name = format!("{code:?}");
+            if self.page == Page::Keybindings {
+                if let Some(slot) = self.keybinds.get_mut(index) {
+                    *slot = name;
+                }
+            } else if let Some(slot) = self.map_binds.get_mut(index) {
+                *slot = name;
+            }
+            self.set_key = None;
+            return Action::None;
+        }
         let count = self.items().len();
         match code {
             K::ArrowUp | K::KeyW => {
@@ -1165,16 +1565,28 @@ impl Menu {
             let scale_now = self.item_scale[i] * item.scale;
             let row_y = layout.y0 + layout.row * i as f32 + item.y;
             // `origin.Y * array7` keeps the row centred while `menuItemScale` eases.
-            let top = [
-                cx + item.x - origin[0] * scale_now,
-                row_y + origin[1] * item.scale * (1.0 - self.item_scale[i]),
-            ];
-            self.boxes.push([
-                cx - origin[0] * item.scale + item.x,
-                row_y,
-                measured * item.scale,
-                50.0 * item.scale,
-            ]);
+            // The `array8` rows draw from the left edge `num3 + array5` with origin
+            // `(0, h/2)` instead (`Main.cs:51773`).
+            let top = if item.left_aligned {
+                [cx + item.x, row_y + origin[1] * item.scale * (1.0 - self.item_scale[i])]
+            } else {
+                [
+                    cx + item.x - origin[0] * scale_now,
+                    row_y + origin[1] * item.scale * (1.0 - self.item_scale[i]),
+                ]
+            };
+            // The `array8` hit test runs `num3 + array5` ..
+            // `num3 + array5 + measured * array7` (`Main.cs:51797-51806`).
+            self.boxes.push(if item.left_aligned {
+                [cx + item.x, row_y, measured * item.scale, 50.0 * item.scale]
+            } else {
+                [
+                    cx - origin[0] * item.scale + item.x,
+                    row_y,
+                    measured * item.scale,
+                    50.0 * item.scale,
+                ]
+            });
 
             // `num101 = 255 * (menuItemScale * 2 - 1)`.
             let alpha = (255.0 * (self.item_scale[i] * 2.0 - 1.0)).clamp(0.0, 255.0);
@@ -1794,9 +2206,12 @@ mod tests {
 
     #[test]
     fn unported_screens_show_a_notice_instead_of_navigating() {
-        let mut m = menu(Page::Settings);
-        m.activate(5); // Controls
-        assert_eq!(m.page, Page::Settings);
+        // The 1127 "Keybindings" row opens the menuMode 888
+        // `ManageControlsMenu` UIState (`Main.cs:50661-50666`) — the one nav
+        // target the port does not have.
+        let mut m = menu(Page::Controls);
+        m.activate(2);
+        assert_eq!(m.page, Page::Controls);
         assert!(m.hint.is_some());
     }
 
@@ -1862,11 +2277,9 @@ mod tests {
         assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
 
         // Resolution/Effects/Language/LanguageInitial grew their rows with
-        // Task 4; the rest stay row-less until Tasks 5-6 fill `items()` in.
+        // Task 4 and Controls/Keybindings/MapKeys with Task 5; the rest stay
+        // row-less until Task 6 fills `items()` in.
         for page in [
-            Page::Controls,
-            Page::Keybindings,
-            Page::MapKeys,
             Page::JoinIp,
             Page::JoinPort,
             Page::HostPassword,
@@ -2484,5 +2897,369 @@ mod tests {
         m.activate(6);
         assert_eq!(m.page, Page::Language);
         assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn controls_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50638-50698`: `num2 = 250`, `num4 = 52`, `num5 = 4`,
+        // `array4[3] = 18`, every `array7` 0.78 (`:50639-50646`). The defaults
+        // column: `ReversedUpDownArmorSetBonuses` is a plain static
+        // (`Main.cs:273`) and the `ItemSlot.Options` ctor sets
+        // DisableLeftShiftTrashCan = true / DisableQuickTrash = false
+        // (`ItemSlot.cs:36-37`), so row 0 reads Down [221] and row 1 Left
+        // Control [224]. Draw y (`Main.cs:51769`): 250, 302, 354, 424 — the
+        // plan table's 464 for Back drops the `52 * 3` term.
+        let items = menu(Page::Controls).items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Activate Set Bonuses: Down",
+                "Quick Trash: Left Control",
+                "Keybindings",
+                "Back",
+            ]
+        );
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 0.0, 0.0, 18.0]);
+        assert!(items.iter().all(|i| i.scale == 0.78));
+        let layout = Page::Controls.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 250.0);
+        assert_eq!(draw_y(1), 302.0);
+        assert_eq!(draw_y(2), 354.0);
+        assert_eq!(draw_y(3), 424.0, "250 + 52*3 + 18");
+        // Back opens 11 (`Main.cs:50695-50698`).
+        let mut m = menu(Page::Controls);
+        m.activate(3);
+        assert_eq!(m.page, Page::Settings);
+        // The toggled twins (`Main.cs:50649` / `:50656-50662`).
+        let mut m = menu(Page::Controls);
+        m.settings.reversed_armor_bonuses = true;
+        m.settings.disable_left_shift_trash = false;
+        assert_eq!(m.items()[0].label, "Activate Set Bonuses: Up");
+        assert_eq!(m.items()[1].label, "Quick Trash: Left Shift");
+        let mut m = menu(Page::Controls);
+        m.settings.quick_trash = true;
+        assert_eq!(m.items()[1].label, "Quick Trash: Disabled");
+    }
+
+    #[test]
+    fn settings_controls_row_opens_1127() {
+        // `Main.cs:49752-49758`: `Lang.menu[219]` sets `menuMode = 1127`.
+        let mut m = menu(Page::Settings);
+        m.activate(5);
+        assert_eq!(m.page, Page::Controls);
+        assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn quick_trash_cycles_left_control_left_shift_disabled() {
+        // `Main.cs:50665-50684`: Left Control -> Left Shift -> Disabled ->
+        // Left Control, starting from the ctor defaults (`ItemSlot.cs:36-37`).
+        let mut m = menu(Page::Controls);
+        assert_eq!(m.items()[1].label, "Quick Trash: Left Control");
+        m.activate(1);
+        assert_eq!(m.items()[1].label, "Quick Trash: Left Shift");
+        assert!(!m.settings.disable_left_shift_trash);
+        assert!(!m.settings.quick_trash);
+        m.activate(1);
+        assert_eq!(m.items()[1].label, "Quick Trash: Disabled");
+        assert!(m.settings.quick_trash);
+        m.activate(1);
+        assert_eq!(m.items()[1].label, "Quick Trash: Left Control");
+        assert!(!m.settings.quick_trash);
+        assert!(m.settings.disable_left_shift_trash);
+    }
+
+    #[test]
+    fn keybindings_screen_lists_the_fourteen_binds() {
+        // `Main.cs:50501-50637`: `num2 = 176`, `num4 = 22`, `num5 = 16`; the
+        // bind rows are left-aligned at `array5 = -80` with scale 0.45
+        // (`:50543-50545`), the raw `Lang.menu` values ([74]..[85], [120],
+        // [130], trailing spaces kept) + the bind (`:50527-50540`); Reset
+        // (`array7` 0.8, `array4 = 6`, `:50547-50549`) and Back (0.8,
+        // `array4 = 16`, `:50550-50552`) stay centred. Draw y
+        // (`Main.cs:51769`): Reset 176 + 22*14 + 6 = 490, Back 522.
+        let m = menu(Page::Keybindings);
+        let items = m.items();
+        assert_eq!(items.len(), 16);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Up                W",
+                "Down             S",
+                "Left               A",
+                "Right             D",
+                "Jump             Space",
+                "Throw            T",
+                "Inventory         Escape",
+                "Quick Heal       H",
+                "Quick Mana      J",
+                "Quick Buff       B",
+                "Grapple           E",
+                "Auto Select       LeftShift",
+                "Smart Cursor    LeftControl",
+                "Mount             R",
+                "Reset to Default",
+                "Back",
+            ]
+        );
+        for (i, item) in items.iter().enumerate() {
+            if i < 14 {
+                assert_eq!(item.x, -80.0, "array5[{i}] = -80");
+                assert!(item.left_aligned, "array8[{i}] = true");
+                assert_eq!(item.scale, 0.45);
+                assert_eq!(item.y, 0.0);
+            } else {
+                assert_eq!(item.x, 0.0, "Reset/Back stay centred");
+                assert!(!item.left_aligned);
+                assert_eq!(item.scale, 0.8);
+            }
+        }
+        assert_eq!(items[14].y, 6.0);
+        assert_eq!(items[15].y, 16.0);
+        let layout = Page::Keybindings.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 176.0);
+        assert_eq!(draw_y(14), 490.0);
+        assert_eq!(draw_y(15), 522.0);
+        // Reset restores the `:67163-67176` seeds and closes the capture
+        // (`Main.cs:50559-50564`); Back opens 11 (`:50553-50558`).
+        let mut m = menu(Page::Keybindings);
+        m.keybinds[0] = "F3".into();
+        m.set_key = Some(3);
+        m.activate(14);
+        assert_eq!(m.keybinds[0], "W");
+        assert_eq!(m.set_key, None);
+        m.activate(15);
+        assert_eq!(m.page, Page::Settings);
+    }
+
+    #[test]
+    fn set_key_capture_fills_the_clicked_row() {
+        // `Main.cs:50565-50568` opens the capture on the clicked row, the row
+        // shows `_` (`:50523-50526`), and the first pressed key is stored
+        // under its name and closes it (`:50569-50576` — `string.Concat(key)`,
+        // winit's debug name here).
+        let mut m = menu(Page::Keybindings);
+        m.activate(0);
+        assert_eq!(m.set_key, Some(0));
+        assert_eq!(m.items()[0].label, "Up                _");
+        m.key(winit::keyboard::KeyCode::KeyG);
+        assert_eq!(m.set_key, None);
+        assert_eq!(m.keybinds[0], "KeyG");
+        assert_eq!(m.items()[0].label, "Up                KeyG");
+        // Navigation keys are captured too — vanilla's `GetPressedKeys` sees
+        // Escape before anything else, so Escape rebinding to "Escape" (the
+        // Inventory default) beats closing the screen.
+        m.activate(6);
+        assert_eq!(m.set_key, Some(6));
+        m.key(winit::keyboard::KeyCode::Escape);
+        assert_eq!(m.keybinds[6], "Escape");
+        assert_eq!(m.page, Page::Keybindings);
+        // The 272727 twin stores into the map binds
+        // (`Main.cs:50460-50496`).
+        let mut m = menu(Page::MapKeys);
+        m.activate(3);
+        assert_eq!(m.set_key, Some(3));
+        assert_eq!(m.items()[3].label, "Zoom Out                    _");
+        m.key(winit::keyboard::KeyCode::KeyN);
+        assert_eq!(m.map_binds[3], "KeyN");
+        assert_eq!(m.items()[3].label, "Zoom Out                    KeyN");
+    }
+
+    #[test]
+    fn map_keys_screen_lists_the_six_map_binds() {
+        // `Main.cs:50401-50500`: `num2 = 200`, `num4 = 30`, `num5 = 14` — but
+        // rows 8-13 stay null and the item loop skips them (`Main.cs:51654`),
+        // so eight rows show. The bind rows are left-aligned at
+        // `array5 = -140`, scale 0.55 (`:50433-50435`), labels [106..111] +
+        // the `:67190-67195` seeds (`:50425-50430`). Reset: `array7` 0.8,
+        // `array4 = 6` (`:50439-50442`); Back keeps the 1.0 default — the
+        // branch sets `array7[6]` twice (`:50439-50440`) and never touches
+        // `array7[7]`, unlike the mode-27 twin (`:50550`). Draw y
+        // (`Main.cs:51769`): Reset 200 + 30*6 + 6 = 386, Back 426.
+        let m = menu(Page::MapKeys);
+        let items = m.items();
+        assert_eq!(items.len(), 8);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Toggle Map Style           Tab",
+                "Toggle Fullscreen           M",
+                "Zoom In                      Add",
+                "Zoom Out                    Subtract",
+                "Decrease Transparency     PageUp",
+                "Increase Transparency      PageDown",
+                "Reset to Default",
+                "Back",
+            ]
+        );
+        for (i, item) in items.iter().enumerate() {
+            if i < 6 {
+                assert_eq!(item.x, -140.0, "array5[{i}] = -140");
+                assert!(item.left_aligned, "array8[{i}] = true");
+                assert_eq!(item.scale, 0.55);
+                assert_eq!(item.y, 0.0);
+            }
+        }
+        assert_eq!(items[6].scale, 0.8);
+        assert_eq!(items[6].y, 6.0);
+        assert_eq!(items[7].scale, 1.0, "array7[7] is never set on 272727");
+        assert_eq!(items[7].y, 16.0);
+        let layout = Page::MapKeys.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 200.0);
+        assert_eq!(draw_y(6), 386.0);
+        assert_eq!(draw_y(7), 426.0);
+        // Reset restores the `:67190-67195` seeds (`Main.cs:50449-50459`);
+        // Back opens 11 (`:50445-50448`).
+        let mut m = menu(Page::MapKeys);
+        m.map_binds[0] = "F4".into();
+        m.activate(6);
+        assert_eq!(m.map_binds[0], "Tab");
+        assert_eq!(m.map_binds[5], "PageDown");
+        m.activate(7);
+        assert_eq!(m.page, Page::Settings);
+    }
+
+    #[test]
+    fn selector_rows_show_their_default_labels() {
+        // `Main.cs:49941-49979` with the defaults: the minimap key and the
+        // resource-set key default to their first entries here (the port's
+        // resource-set default is "Default" — the recorded deviation), the
+        // portrait enum's 0 is Detailed, `ShowText` is true from the static
+        // ctor (`BigProgressBarSystem.cs:259`) and
+        // `Main.FlashyEffectsInterface = true` (`Main.cs:66578`).
+        let m = menu(Page::Interface);
+        let items = m.items();
+        assert_eq!(items[6].label, "Minimap Border: Default");
+        assert_eq!(items[7].label, "Health and Mana Style: Classic");
+        assert_eq!(items[8].label, "Portraits Style: Detailed");
+        assert_eq!(items[9].label, "Boss Health Bar Numbers: On");
+        assert_eq!(items[10].label, "Inventory Effects: On");
+        // An unknown stored name normalizes to the first option for the label
+        // (`SelectionHolder.cs:71-78` / `PlayerResourceSetsManager.cs:74-83`).
+        let mut m = menu(Page::Interface);
+        m.settings.minimap_frame = "Nope".into();
+        m.settings.resource_sets = "Nope".into();
+        assert_eq!(m.items()[6].label, "Minimap Border: Default");
+        assert_eq!(m.items()[7].label, "Health and Mana Style: Fancy");
+    }
+
+    #[test]
+    fn minimap_frame_cycle_walks_backwards_and_wraps() {
+        // `SelectionHolder.CycleSelection` (`SelectionHolder.cs:44-58`)
+        // activates the option *before* the active one and wraps the first to
+        // the last — cycling from `Valkyrie` lands on `Retro`, and the wrap
+        // is `Default -> Valkyrie` (the plan's "cycling from Valkyrie lands
+        // on Default" drops the wrap direction). The full cycle from the
+        // default key visits all nine and returns.
+        let mut m = menu(Page::Interface);
+        let mut keys = vec![m.settings.minimap_frame.clone()];
+        for _ in 0..8 {
+            m.activate(6);
+            keys.push(m.settings.minimap_frame.clone());
+        }
+        assert_eq!(
+            keys,
+            [
+                "Default",
+                "Valkyrie",
+                "Retro",
+                "Leaf",
+                "TwigLeaf",
+                "StoneGold",
+                "Sticks",
+                "Remix",
+                "Golden",
+            ]
+        );
+        m.activate(6);
+        assert_eq!(m.settings.minimap_frame, "Default", "the ninth hop closes the cycle");
+        // Cycling from the last key lands on its predecessor.
+        let mut m = menu(Page::Interface);
+        m.settings.minimap_frame = "Valkyrie".into();
+        m.activate(6);
+        assert_eq!(m.settings.minimap_frame, "Retro");
+        // An unknown key normalizes to the first option first, so it wraps to
+        // the last (`SelectionHolder.cs:67-78`).
+        let mut m = menu(Page::Interface);
+        m.settings.minimap_frame = "Nope".into();
+        m.activate(6);
+        assert_eq!(m.settings.minimap_frame, "Valkyrie");
+    }
+
+    #[test]
+    fn resource_set_cycle_walks_backwards_and_wraps() {
+        // `PlayerResourceSetsManager.CycleResourceSet`
+        // (`PlayerResourceSetsManager.cs:84-101`) — the same backwards walk
+        // over the `:42-47` load order.
+        let mut m = menu(Page::Interface);
+        let mut keys = vec![m.settings.resource_sets.clone()];
+        for _ in 0..5 {
+            m.activate(7);
+            keys.push(m.settings.resource_sets.clone());
+        }
+        assert_eq!(
+            keys,
+            [
+                "Default",
+                "New",
+                "NewWithText",
+                "HorizontalBars",
+                "HorizontalBarsWithText",
+                "HorizontalBarsWithFullText",
+            ]
+        );
+        m.activate(7);
+        assert_eq!(m.settings.resource_sets, "Default", "the sixth hop closes the cycle");
+        // The label tracks the set (`Main.cs:49948`).
+        assert_eq!(m.items()[7].label, "Health and Mana Style: Classic");
+        m.activate(7);
+        assert_eq!(m.items()[7].label, "Health and Mana Style: Fancy");
+    }
+
+    #[test]
+    fn portrait_preference_cycles_the_four_modes() {
+        // `Main.CycleNPCPortraitMode` (`Main.cs:40297-40315`): Detailed ->
+        // CloseUp -> FullBodyRetro -> Disabled -> Detailed, labelled by the
+        // `UI.Portraits*` values (`Main.cs:49954-49965`).
+        let mut m = menu(Page::Interface);
+        assert_eq!(m.items()[8].label, "Portraits Style: Detailed");
+        m.activate(8);
+        assert_eq!(m.settings.portrait_preference, 1);
+        assert_eq!(m.items()[8].label, "Portraits Style: Profile");
+        m.activate(8);
+        assert_eq!(m.settings.portrait_preference, 2);
+        assert_eq!(m.items()[8].label, "Portraits Style: Retro");
+        m.activate(8);
+        assert_eq!(m.settings.portrait_preference, 3);
+        assert_eq!(m.items()[8].label, "Portraits Style: Disabled");
+        m.activate(8);
+        assert_eq!(m.settings.portrait_preference, 0);
+        assert_eq!(m.items()[8].label, "Portraits Style: Detailed");
+    }
+
+    #[test]
+    fn boss_bar_and_inventory_effects_rows_toggle_their_flags() {
+        // `Main.cs:49966-49979`: `ToggleShowText()` (no sound) and the
+        // `FlashyEffectsInterface` flip. The boss-bar flag is stored only —
+        // P4's bar owns the numbers rendering.
+        let mut m = menu(Page::Interface);
+        assert!(m.settings.boss_bar_text);
+        m.activate(9);
+        assert!(!m.settings.boss_bar_text);
+        assert_eq!(m.items()[9].label, "Boss Health Bar Numbers: Off");
+        m.activate(9);
+        assert_eq!(m.items()[9].label, "Boss Health Bar Numbers: On");
+        m.activate(10);
+        assert!(!m.settings.flashy_effects_interface);
+        assert_eq!(m.items()[10].label, "Inventory Effects: Reduced");
+        m.activate(10);
+        assert_eq!(m.items()[10].label, "Inventory Effects: On");
     }
 }

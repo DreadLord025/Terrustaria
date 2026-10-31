@@ -125,6 +125,46 @@ pub struct Settings {
     /// "Thunder Effects" row (`Main.cs:50157-50162`). Vanilla key
     /// `"FlashyEffectsWorld"` (`Put` `:4215`, `Get` `:4350`).
     pub flashy_effects_world: bool,
+    /// `Main.ReversedUpDownArmorSetBonuses` (`Main.cs:273`, a plain static:
+    /// default false): the "Activate Set Bonuses" row of menuMode 1127
+    /// (`Main.cs:50647-50656`). Vanilla key `"ReverseUpDownForArmorSetBonuses"`
+    /// (`Put` `:4145`, `Get` `:4424`).
+    pub reversed_armor_bonuses: bool,
+    /// `ItemSlot.Options.DisableLeftShiftTrashCan` (`ItemSlot.cs:28`, default
+    /// true in the `static Options()` ctor `:36`): the menuMode 1127
+    /// "Quick Trash" row's Left Control state (`Main.cs:50656-50687`). Vanilla
+    /// key `"DisableLeftShiftTrashCan"` (`Put` `:4141`, `Get` `:4416`).
+    pub disable_left_shift_trash: bool,
+    /// `ItemSlot.Options.DisableQuickTrash` (`ItemSlot.cs:30`, default false at
+    /// `:37`): the same row's Disabled state. Vanilla key
+    /// `"DisableQuickTrash"` (`Put` `:4142`, `Get` `:4420`).
+    pub quick_trash: bool,
+    /// `PlayerResourceSetsManager._activeSetConfigKey`: the health/mana style
+    /// of the menuMode 1112 "Health and Mana Style" row
+    /// (`Main.cs:49948-49952`). Vanilla key `"PlayerResourcesSet"`
+    /// (`Put` `PlayerResourceSetsManager.cs:37`, `Get` `:28` — default
+    /// `"New"`); the port's default is `"Default"` because the port renders
+    /// the Classic set, so the row must show "Classic" like the HUD does
+    /// (the deviation is recorded for Task 7).
+    pub resource_sets: String,
+    /// `Main.DialoguePortraitPreference` (`Main.cs:2331`, a plain static:
+    /// default 0 Detailed): the `DialoguePortraitDrawOption` of the menuMode
+    /// 1112 "Portraits Style" row (`Main.cs:49954-49965`) — 0 Detailed,
+    /// 1 CloseUp, 2 FullBodyRetro, 3 Disabled (`Main.cs:186-189`). Vanilla key
+    /// `"PortraitPreference"` (`Put` `:4220`, `Get` `:4551`).
+    pub portrait_preference: u8,
+    /// `BigProgressBarSystem.ShowText` (`BigProgressBarSystem.cs:42`): the
+    /// menuMode 1112 "Boss Health Bar Numbers" row (`Main.cs:49967-49971`).
+    /// The default is **true** — the static constructor sets it
+    /// (`BigProgressBarSystem.cs:259`), so the field's `false` never shows.
+    /// Vanilla key `"ShowBossBarHealthText"` (`Put` `:231`, `Get` `:236`).
+    /// Stored only: P4's boss bar draws the numbers unconditionally.
+    pub boss_bar_text: bool,
+    /// `Main.FlashyEffectsInterface` (`Main.cs:439`, default true in the
+    /// static block `:66578`): the menuMode 1112 "Inventory Effects" row
+    /// (`Main.cs:49973-49979`). Vanilla key `"FlashyEffectsInterface"`
+    /// (`Put` `:4216`, `Get` `:4351`).
+    pub flashy_effects_interface: bool,
 }
 
 impl Default for Settings {
@@ -167,6 +207,13 @@ impl Default for Settings {
             wave_quality: 3,                      // Main.cs:66571
             use_screen_shake: true,               // Main.cs:66575
             flashy_effects_world: true,           // Main.cs:66576
+            reversed_armor_bonuses: false,        // Main.cs:273
+            disable_left_shift_trash: true,       // ItemSlot.cs:36
+            quick_trash: false,                   // ItemSlot.cs:37
+            resource_sets: "Default".to_string(), // the deviation recorded for Task 7
+            portrait_preference: 0,               // Main.cs:2331 (Detailed)
+            boss_bar_text: true,                  // BigProgressBarSystem.cs:259
+            flashy_effects_interface: true,       // Main.cs:66578
         }
     }
 }
@@ -326,6 +373,49 @@ impl Settings {
                         };
                     }
                 }
+                // `configuration.Put("ReverseUpDownForArmorSetBonuses",
+                // Main.ReversedUpDownArmorSetBonuses)` (`Main.cs:4145`, read
+                // back at `:4424`).
+                "ReverseUpDownForArmorSetBonuses" => me.reversed_armor_bonuses = boolean(value),
+                // `configuration.Put("DisableLeftShiftTrashCan",
+                // ItemSlot.Options.DisableLeftShiftTrashCan)` (`Main.cs:4141`,
+                // read back at `:4416`) and the `"DisableQuickTrash"` twin
+                // (`:4142`, `:4420`).
+                "DisableLeftShiftTrashCan" => me.disable_left_shift_trash = boolean(value),
+                "DisableQuickTrash" => me.quick_trash = boolean(value),
+                // `PlayerResourceSetsManager.Configuration_OnSave` writes
+                // `"PlayerResourcesSet"` (`PlayerResourceSetsManager.cs:37`);
+                // `Configuration_OnLoad` defaults the missing key to `"New"`
+                // (`:28`). The raw string is kept — an unknown name
+                // normalizes to the first set where it is used
+                // (`SetActive`, `:74-83`).
+                "PlayerResourcesSet" => {
+                    // `"PlayerResourcesSet": "Default"` — the string runs
+                    // between the quotes.
+                    let v = value.trim();
+                    me.resource_sets = v
+                        .strip_prefix('"')
+                        .and_then(|rest| rest.split_once('"').map(|(s, _)| s))
+                        .unwrap_or(v)
+                        .to_string();
+                }
+                // `configuration.Put("PortraitPreference",
+                // Main.DialoguePortraitPreference)` (`Main.cs:4220`, read back
+                // at `:4551`); the byte clamps to the four enum values, whose
+                // `_` arms render anything above as Detailed anyway.
+                "PortraitPreference" => {
+                    me.portrait_preference =
+                        value.parse().unwrap_or(me.portrait_preference).min(3)
+                }
+                // `BigProgressBarSystem.Configuration_Save` writes
+                // `"ShowBossBarHealthText"` (`BigProgressBarSystem.cs:231`),
+                // read back at `:236` — a missing key keeps the static-ctor
+                // `true` (`:259`).
+                "ShowBossBarHealthText" => me.boss_bar_text = boolean(value),
+                // `configuration.Put("FlashyEffectsInterface",
+                // Main.FlashyEffectsInterface)` (`Main.cs:4216`, read back at
+                // `:4351`).
+                "FlashyEffectsInterface" => me.flashy_effects_interface = boolean(value),
                 _ => {}
             }
         }
@@ -362,6 +452,10 @@ impl Settings {
              \"MouseBorderColor\": {{\"R\": {}, \"G\": {}, \"B\": {}, \"A\": {}}},\n  \
              \"SmartCursorToggle\": {},\n  \"UseSmartAxeAfterSmartPickaxe\": {},\n  \
              \"UseSmartCursorForCommonBlocks\": {},\n  \"LockOnPriority\": {},\n  \
+             \"ReverseUpDownForArmorSetBonuses\": {},\n  \
+             \"DisableLeftShiftTrashCan\": {},\n  \"DisableQuickTrash\": {},\n  \
+             \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
+             \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
              \"MinimapFrame\": \"{}\"\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -410,6 +504,16 @@ impl Settings {
             self.smart_axe_first,
             self.smart_blocks,
             self.lock_on_priority,
+            // The Task 5 keys, written under the vanilla names (`Main.cs:4145`,
+            // `:4141`, `:4142`, `:4220`; `BigProgressBarSystem.cs:231`;
+            // `Main.cs:4216`; `PlayerResourceSetsManager.cs:37`).
+            self.reversed_armor_bonuses,
+            self.disable_left_shift_trash,
+            self.quick_trash,
+            self.resource_sets,
+            self.portrait_preference,
+            self.boss_bar_text,
+            self.flashy_effects_interface,
             self.minimap_frame,
         )
     }
@@ -480,6 +584,20 @@ mod tests {
         assert_eq!(s.wave_quality, 3);
         assert!(s.use_screen_shake);
         assert!(s.flashy_effects_world);
+        // The Task 5 statics: `Main.ReversedUpDownArmorSetBonuses` is a plain
+        // static (`Main.cs:273`), the `ItemSlot.Options` defaults live in the
+        // `static Options()` ctor (`ItemSlot.cs:36-37`), the resource-set key
+        // deviates from vanilla's `"New"` (recorded for Task 7), the portrait
+        // enum's 0 is Detailed (`Main.cs:186-189`), `ShowText` is set true by
+        // the static ctor (`BigProgressBarSystem.cs:259`) and
+        // `FlashyEffectsInterface` closes the `:66571-66578` block.
+        assert!(!s.reversed_armor_bonuses);
+        assert!(s.disable_left_shift_trash);
+        assert!(!s.quick_trash);
+        assert_eq!(s.resource_sets, "Default");
+        assert_eq!(s.portrait_preference, 0);
+        assert!(s.boss_bar_text, "the static ctor sets ShowText = true");
+        assert!(s.flashy_effects_interface);
     }
 
     #[test]
@@ -515,6 +633,13 @@ mod tests {
         s.wave_quality = 1;
         s.use_screen_shake = false;
         s.flashy_effects_world = false;
+        s.reversed_armor_bonuses = true;
+        s.disable_left_shift_trash = false;
+        s.quick_trash = true;
+        s.resource_sets = "HorizontalBars".to_string();
+        s.portrait_preference = 2;
+        s.boss_bar_text = false;
+        s.flashy_effects_interface = false;
         let back = Settings::parse(&s.to_json());
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
@@ -546,6 +671,13 @@ mod tests {
         assert_eq!(back.wave_quality, 1);
         assert!(!back.use_screen_shake);
         assert!(!back.flashy_effects_world);
+        assert!(back.reversed_armor_bonuses);
+        assert!(!back.disable_left_shift_trash);
+        assert!(back.quick_trash);
+        assert_eq!(back.resource_sets, "HorizontalBars");
+        assert_eq!(back.portrait_preference, 2);
+        assert!(!back.boss_bar_text);
+        assert!(!back.flashy_effects_interface);
     }
 
     #[test]
@@ -629,5 +761,38 @@ mod tests {
         assert_eq!(s.lock_on_priority, 1);
         let s = Settings::parse("{\n \"LockOnPriority\": 9\n}");
         assert_eq!(s.lock_on_priority, 2, "clamped to 0..=2");
+    }
+
+    #[test]
+    fn task_5_keys_read_the_vanilla_names() {
+        // Verified against the savers/loaders: "ReverseUpDownForArmorSetBonuses"
+        // (`Main.cs:4145`/`:4424`), "DisableLeftShiftTrashCan" (`:4141`/
+        // `:4416`), "DisableQuickTrash" (`:4142`/`:4420`),
+        // "PlayerResourcesSet" (`PlayerResourceSetsManager.cs:37`/`:28`),
+        // "PortraitPreference" (`Main.cs:4220`/`:4551`),
+        // "ShowBossBarHealthText" (`BigProgressBarSystem.cs:231`/`:236`),
+        // "FlashyEffectsInterface" (`Main.cs:4216`/`:4351`).
+        let s = Settings::parse(
+            "{\n \"ReverseUpDownForArmorSetBonuses\": true,\n \
+             \"DisableLeftShiftTrashCan\": false,\n \"DisableQuickTrash\": true,\n \
+             \"PlayerResourcesSet\": \"New\",\n \"PortraitPreference\": 3,\n \
+             \"ShowBossBarHealthText\": false,\n \"FlashyEffectsInterface\": false\n}",
+        );
+        assert!(s.reversed_armor_bonuses);
+        assert!(!s.disable_left_shift_trash);
+        assert!(s.quick_trash);
+        assert_eq!(s.resource_sets, "New", "a vanilla config keeps its own set");
+        assert_eq!(s.portrait_preference, 3);
+        assert!(!s.boss_bar_text);
+        assert!(!s.flashy_effects_interface);
+        // The portrait byte clamps to the four enum values
+        // (`DialoguePortraitDrawOption`, `Main.cs:186-189`).
+        let s = Settings::parse("{\n \"PortraitPreference\": 9\n}");
+        assert_eq!(s.portrait_preference, 3);
+        let s = Settings::parse("{\n \"PlayerResourcesSet\": \"Nope\"\n}");
+        assert_eq!(
+            s.resource_sets, "Nope",
+            "the raw key is kept; the label normalizes on use"
+        );
     }
 }
