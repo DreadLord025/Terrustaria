@@ -291,6 +291,15 @@ pub fn load_world_images(
         "MapBG19", // 18 Spider wall (WallID 62/263)
         "MapBG32", // 31 rock layer
         "MapBG33", // 32 space
+        // P5 settings sliders (`AssetInitializer.cs:345-349`): the
+        // `IngameOptions.DrawValueBar` chrome and the `Main.DrawMenu` HSL colour
+        // sliders. `ColorHighlight` is `Images/UI/Slider_Highlight`, NOT
+        // `Images/ColorHighlight` (`AssetInitializer.cs:349`).
+        "Hue",
+        "ColorBar",
+        "ColorBlip",
+        "ColorSlider",
+        "UI/Slider_Highlight",
     ] {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
@@ -669,6 +678,18 @@ pub struct Lookups {
     pub ui_search_border: Option<tr_render::SheetRect>,
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
+    /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
+    pub ui_hue: Option<tr_render::SheetRect>,
+    /// `Images/ColorBar`: the value-bar / sat-lum-alpha track
+    /// (`IngameOptions.cs:1539`), 178x16.
+    pub ui_color_bar: Option<tr_render::SheetRect>,
+    /// `Images/ColorBlip`: the 2x8 gradient segment (`IngameOptions.cs:1552`).
+    pub ui_color_blip: Option<tr_render::SheetRect>,
+    /// `Images/ColorSlider`: the 11x25 slider knob (`IngameOptions.cs:1566`).
+    pub ui_color_slider: Option<tr_render::SheetRect>,
+    /// `Images/UI/Slider_Highlight`: the hover overlay — `TextureAssets.ColorHighlight`
+    /// (`AssetInitializer.cs:349`; NOT `Images/ColorHighlight`), 178x16.
+    pub ui_slider_highlight: Option<tr_render::SheetRect>,
     /// `UI/Minimap/<style>/MinimapFrame` per `ui::minimap::FRAME_STYLES`
     /// (`MinimapFrameTemplate.cs:30`), indexed by style.
     pub minimap_frames: [Option<tr_render::SheetRect>; 9],
@@ -758,6 +779,11 @@ impl Lookups {
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
+            ui_hue: atlas.sheet("Hue").copied(),
+            ui_color_bar: atlas.sheet("ColorBar").copied(),
+            ui_color_blip: atlas.sheet("ColorBlip").copied(),
+            ui_color_slider: atlas.sheet("ColorSlider").copied(),
+            ui_slider_highlight: atlas.sheet("UI/Slider_Highlight").copied(),
             minimap_frames: std::array::from_fn(|i| {
                 atlas
                     .sheet(&format!(

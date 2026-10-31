@@ -10,6 +10,7 @@ pub mod inventory;
 pub mod minimap;
 pub mod panel;
 pub mod resources;
+pub mod sliders;
 pub mod slot;
 pub mod text;
 pub mod tooltip;

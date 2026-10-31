@@ -38,6 +38,43 @@ pub enum Page {
     Multiplayer,
     Host,
     Join,
+    // The P5 settings sub-screens, keyed by their vanilla `menuMode` (the tasks
+    // fill their rows in; Task 1 registers the pages so `TR_PAGE=<menuMode>`
+    // can screenshot each one as it lands):
+    /// menuMode 26 (`Main.cs:50362`).
+    Volume,
+    /// menuMode 28 (`Main.cs:50381`).
+    Parallax,
+    /// menuMode 1125 (`Main.cs:50242`).
+    Cursor,
+    /// menuMode 25 (`Main.cs:50318`).
+    CursorColor,
+    /// menuMode 252 (`Main.cs:50340`).
+    BorderColor,
+    /// menuMode 111 (`Main.cs:50169`).
+    Resolution,
+    /// menuMode 2008 (`Main.cs:50097`).
+    Effects,
+    /// menuMode 1213 (`Main.cs:48493`).
+    Language,
+    /// menuMode 1212 (`Main.cs:48458`).
+    LanguageInitial,
+    /// menuMode 1127 (`Main.cs:50638`).
+    Controls,
+    /// menuMode 27 (`Main.cs:50501`) — unreachable upstream, `TR_PAGE=27` only.
+    Keybindings,
+    /// menuMode 272727 (`Main.cs:50401`) — unreachable upstream, `TR_PAGE=272727` only.
+    MapKeys,
+    /// menuMode 13 (`Main.cs:50744`).
+    JoinIp,
+    /// menuMode 131 (`Main.cs:50884`).
+    JoinPort,
+    /// menuMode 30 (`Main.cs:48660`).
+    HostPassword,
+    /// menuMode 31 (`Main.cs:48536`).
+    JoinPassword,
+    /// menuMode 889 (`Main.cs:48726`).
+    ServerSettings,
 }
 
 /// `num2` / `num4` / `array7` of one screen.
@@ -61,6 +98,41 @@ impl Page {
             Page::Multiplayer | Page::Host | Page::Join => {
                 Layout { y0: 220.0, row: 52.0, scale: 1.0 }
             }
+            // menuMode 26 (`Main.cs:50362-50365`).
+            Page::Volume => Layout { y0: 200.0, row: 10.0, scale: 1.0 },
+            // menuMode 28 (`Main.cs:50381-50384`).
+            Page::Parallax => Layout { y0: 240.0, row: 60.0, scale: 1.0 },
+            // menuMode 1125 (`Main.cs:50242-50246`).
+            Page::Cursor => Layout { y0: 232.0, row: 38.0, scale: 0.73 },
+            // menuMode 25 / 252 (`Main.cs:50318-50361`).
+            Page::CursorColor | Page::BorderColor => {
+                Layout { y0: 200.0, row: 10.0, scale: 1.0 }
+            }
+            // menuMode 111 (`Main.cs:50169-50173`).
+            Page::Resolution => Layout { y0: 210.0, row: 55.0, scale: 0.85 },
+            // menuMode 2008 (`Main.cs:50099-50107`): every `array7` is 0.6, the
+            // header row overrides to 0.7.
+            Page::Effects => Layout { y0: 210.0, row: 28.0, scale: 0.6 },
+            // menuMode 1213 (`Main.cs:48525-48534`): `array7` 0.65, header 0.85,
+            // Back 0.8.
+            Page::Language => Layout { y0: 200.0, row: 26.0, scale: 0.65 },
+            // menuMode 1212 (`Main.cs:48460-48488`): `array7` 0.65, header 1.0.
+            Page::LanguageInitial => Layout { y0: 200.0, row: 30.0, scale: 0.65 },
+            // menuMode 1127 (`Main.cs:50638-50642`).
+            Page::Controls => Layout { y0: 250.0, row: 52.0, scale: 0.78 },
+            // menuMode 27 (`Main.cs:50501-50505`).
+            Page::Keybindings => Layout { y0: 176.0, row: 22.0, scale: 0.45 },
+            // menuMode 272727 (`Main.cs:50401-50405`).
+            Page::MapKeys => Layout { y0: 200.0, row: 30.0, scale: 0.55 },
+            // menuMode 13 (`Main.cs:50737-50742`).
+            Page::JoinIp => Layout { y0: 180.0, row: 30.0, scale: 1.0 },
+            // menuMode 131 / 30 / 31 keep the vanilla `num2`/`num4` defaults of
+            // 250/80 (`Main.cs:48419-48421`; `:50884`, `:48660`, `:48536`).
+            Page::JoinPort | Page::HostPassword | Page::JoinPassword => {
+                Layout { y0: 250.0, row: 80.0, scale: 1.0 }
+            }
+            // menuMode 889 (`Main.cs:48726-48809`).
+            Page::ServerSettings => Layout { y0: 200.0, row: 60.0, scale: 1.0 },
         }
     }
 }
@@ -201,8 +273,9 @@ impl Menu {
             rot_dir: 1.0,
             rot_speed: 0.0,
         };
-        // `TR_PAGE=settings|general|interface|video|multiplayer`: open a screen directly
-        // so the layout can be screenshotted deterministically.
+        // `TR_PAGE=settings|general|interface|video|multiplayer` or the numeric
+        // `menuMode` names: open a screen directly so the layout can be
+        // screenshotted deterministically.
         if let Ok(focus) = std::env::var("TR_FOCUS") {
             if let Ok(index) = focus.parse::<usize>() {
                 me.selected = index;
@@ -210,16 +283,44 @@ impl Menu {
             }
         }
         if let Ok(page) = std::env::var("TR_PAGE") {
-            me.page = match page.to_ascii_lowercase().as_str() {
-                "settings" => Page::Settings,
-                "general" => Page::General,
-                "interface" => Page::Interface,
-                "video" => Page::Video,
-                "multiplayer" => Page::Multiplayer,
-                _ => Page::Main,
-            };
+            if let Some(p) = Self::page_from_name(&page) {
+                me.page = p;
+            }
         }
         me
+    }
+
+    /// The `TR_PAGE` name → page table: the word aliases plus the numeric
+    /// `menuMode` names of every P5 screen, so each one can be screenshotted as
+    /// `TR_PAGE=<menuMode>` while its rows land (plan Task 1). Unknown names
+    /// leave the page untouched (the main menu).
+    fn page_from_name(name: &str) -> Option<Page> {
+        Some(match name.to_ascii_lowercase().as_str() {
+            "settings" => Page::Settings,
+            "general" => Page::General,
+            "interface" => Page::Interface,
+            "video" => Page::Video,
+            "multiplayer" => Page::Multiplayer,
+            "26" => Page::Volume,
+            "28" => Page::Parallax,
+            "1125" => Page::Cursor,
+            "25" => Page::CursorColor,
+            "252" => Page::BorderColor,
+            "111" => Page::Resolution,
+            "2008" => Page::Effects,
+            "1213" => Page::Language,
+            "1212" => Page::LanguageInitial,
+            "1127" => Page::Controls,
+            "27" => Page::Keybindings,
+            "272727" => Page::MapKeys,
+            "12" => Page::Multiplayer,
+            "13" => Page::JoinIp,
+            "131" => Page::JoinPort,
+            "30" => Page::HostPassword,
+            "31" => Page::JoinPassword,
+            "889" => Page::ServerSettings,
+            _ => return None,
+        })
     }
 
     fn open_host(&mut self) {
@@ -340,6 +441,26 @@ impl Menu {
                     Item::new("Back", Act::Nav(Page::Multiplayer)),
                 ]
             }
+            // The P5 screens land with their own tasks (2-6); Task 1 only
+            // registers the pages so `TR_PAGE=<menuMode>` resolves and each
+            // screen can be screenshotted as its rows are filled in.
+            Page::Volume
+            | Page::Parallax
+            | Page::Cursor
+            | Page::CursorColor
+            | Page::BorderColor
+            | Page::Resolution
+            | Page::Effects
+            | Page::Language
+            | Page::LanguageInitial
+            | Page::Controls
+            | Page::Keybindings
+            | Page::MapKeys
+            | Page::JoinIp
+            | Page::JoinPort
+            | Page::HostPassword
+            | Page::JoinPassword
+            | Page::ServerSettings => Vec::new(),
         }
     }
 
@@ -350,6 +471,16 @@ impl Menu {
             Page::General | Page::Interface | Page::Video => Some(Page::Settings),
             Page::Multiplayer => Some(Page::Main),
             Page::Host | Page::Join => Some(Page::Multiplayer),
+            // The Back rows of the Task 2-6 tables; the pages stay row-less
+            // until their tasks fill `items()` in.
+            Page::Volume | Page::Cursor | Page::Language | Page::Controls
+            | Page::Keybindings | Page::MapKeys => Some(Page::Settings),
+            Page::Parallax | Page::Resolution | Page::Effects => Some(Page::Video),
+            Page::CursorColor | Page::BorderColor => Some(Page::Cursor),
+            Page::LanguageInitial => None, // the first-launch picker has no Back
+            Page::JoinIp | Page::HostPassword | Page::ServerSettings => Some(Page::Multiplayer),
+            Page::JoinPort => Some(Page::JoinIp),
+            Page::JoinPassword => Some(Page::JoinPort),
         }
     }
 
@@ -900,5 +1031,107 @@ mod tests {
         m.activate(3); // Volume
         assert_eq!(m.page, Page::Settings);
         assert!(m.hint.is_some());
+    }
+
+    #[test]
+    fn tr_page_numeric_names_resolve_the_p5_screens() {
+        // Every new screen is screenshot-able as `TR_PAGE=<menuMode>` (plan
+        // Task 1); the word aliases keep working and unknown names resolve to
+        // nothing (the page stays on the main menu).
+        assert_eq!(Menu::page_from_name("26"), Some(Page::Volume));
+        assert_eq!(Menu::page_from_name("28"), Some(Page::Parallax));
+        assert_eq!(Menu::page_from_name("1125"), Some(Page::Cursor));
+        assert_eq!(Menu::page_from_name("25"), Some(Page::CursorColor));
+        assert_eq!(Menu::page_from_name("252"), Some(Page::BorderColor));
+        assert_eq!(Menu::page_from_name("111"), Some(Page::Resolution));
+        assert_eq!(Menu::page_from_name("2008"), Some(Page::Effects));
+        assert_eq!(Menu::page_from_name("1213"), Some(Page::Language));
+        assert_eq!(Menu::page_from_name("1212"), Some(Page::LanguageInitial));
+        assert_eq!(Menu::page_from_name("1127"), Some(Page::Controls));
+        assert_eq!(Menu::page_from_name("27"), Some(Page::Keybindings));
+        assert_eq!(Menu::page_from_name("272727"), Some(Page::MapKeys));
+        assert_eq!(Menu::page_from_name("12"), Some(Page::Multiplayer));
+        assert_eq!(Menu::page_from_name("13"), Some(Page::JoinIp));
+        assert_eq!(Menu::page_from_name("131"), Some(Page::JoinPort));
+        assert_eq!(Menu::page_from_name("30"), Some(Page::HostPassword));
+        assert_eq!(Menu::page_from_name("31"), Some(Page::JoinPassword));
+        assert_eq!(Menu::page_from_name("889"), Some(Page::ServerSettings));
+        assert_eq!(Menu::page_from_name("Settings"), Some(Page::Settings));
+        assert_eq!(Menu::page_from_name("VIDEO"), Some(Page::Video));
+        assert_eq!(Menu::page_from_name("nonsense"), None);
+    }
+
+    #[test]
+    fn p5_pages_register_layouts_parents_and_stay_row_less() {
+        // The layout constants come from the Task 2-6 tables; the pages stay
+        // row-less until their tasks fill `items()` in.
+        let volume = Page::Volume.layout();
+        assert_eq!((volume.y0, volume.row, volume.scale), (200.0, 10.0, 1.0));
+        let parallax = Page::Parallax.layout();
+        assert_eq!((parallax.y0, parallax.row, parallax.scale), (240.0, 60.0, 1.0));
+        let cursor = Page::Cursor.layout();
+        assert_eq!((cursor.y0, cursor.row, cursor.scale), (232.0, 38.0, 0.73));
+        let color = Page::CursorColor.layout();
+        assert_eq!((color.y0, color.row, color.scale), (200.0, 10.0, 1.0));
+        let resolution = Page::Resolution.layout();
+        assert_eq!((resolution.y0, resolution.row, resolution.scale), (210.0, 55.0, 0.85));
+        let effects = Page::Effects.layout();
+        assert_eq!((effects.y0, effects.row, effects.scale), (210.0, 28.0, 0.6));
+        let language = Page::Language.layout();
+        assert_eq!((language.y0, language.row, language.scale), (200.0, 26.0, 0.65));
+        let initial = Page::LanguageInitial.layout();
+        assert_eq!((initial.y0, initial.row, initial.scale), (200.0, 30.0, 0.65));
+        let controls = Page::Controls.layout();
+        assert_eq!((controls.y0, controls.row, controls.scale), (250.0, 52.0, 0.78));
+        let keybindings = Page::Keybindings.layout();
+        assert_eq!((keybindings.y0, keybindings.row, keybindings.scale), (176.0, 22.0, 0.45));
+        let map_keys = Page::MapKeys.layout();
+        assert_eq!((map_keys.y0, map_keys.row, map_keys.scale), (200.0, 30.0, 0.55));
+        let join_ip = Page::JoinIp.layout();
+        assert_eq!((join_ip.y0, join_ip.row, join_ip.scale), (180.0, 30.0, 1.0));
+        let join_port = Page::JoinPort.layout();
+        assert_eq!((join_port.y0, join_port.row, join_port.scale), (250.0, 80.0, 1.0));
+        let server = Page::ServerSettings.layout();
+        assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
+
+        for page in [
+            Page::Volume,
+            Page::Parallax,
+            Page::Cursor,
+            Page::CursorColor,
+            Page::BorderColor,
+            Page::Resolution,
+            Page::Effects,
+            Page::Language,
+            Page::LanguageInitial,
+            Page::Controls,
+            Page::Keybindings,
+            Page::MapKeys,
+            Page::JoinIp,
+            Page::JoinPort,
+            Page::HostPassword,
+            Page::JoinPassword,
+            Page::ServerSettings,
+        ] {
+            assert!(menu(page).items().is_empty(), "{page:?} has no rows yet");
+        }
+        // The Back rows of the Task 2-6 tables.
+        assert_eq!(Menu::parent(Page::Volume), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::Parallax), Some(Page::Video));
+        assert_eq!(Menu::parent(Page::Cursor), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::CursorColor), Some(Page::Cursor));
+        assert_eq!(Menu::parent(Page::BorderColor), Some(Page::Cursor));
+        assert_eq!(Menu::parent(Page::Resolution), Some(Page::Video));
+        assert_eq!(Menu::parent(Page::Effects), Some(Page::Video));
+        assert_eq!(Menu::parent(Page::Language), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::LanguageInitial), None);
+        assert_eq!(Menu::parent(Page::Controls), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::Keybindings), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::MapKeys), Some(Page::Settings));
+        assert_eq!(Menu::parent(Page::JoinIp), Some(Page::Multiplayer));
+        assert_eq!(Menu::parent(Page::JoinPort), Some(Page::JoinIp));
+        assert_eq!(Menu::parent(Page::HostPassword), Some(Page::Multiplayer));
+        assert_eq!(Menu::parent(Page::JoinPassword), Some(Page::JoinPort));
+        assert_eq!(Menu::parent(Page::ServerSettings), Some(Page::Multiplayer));
     }
 }
