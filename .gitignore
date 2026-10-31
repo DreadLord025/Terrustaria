@@ -2,14 +2,11 @@
 /target/
 
 # decompiled game sources (derived from a retail copy, not redistributable)
+/assets/Content/
 /decompiled/
 /decompiled-libs/
 
-# local run artifacts
-/*.log
-/run.*.log
-/shot*.png
-/.qoder_tmp/
+/.opencode/
 
 # .NET tooling output
 /tools/**/bin/
@@ -21,7 +18,8 @@
 *.user
 Thumbs.db
 
-/assets/Content/
+/docs/superpowers/
+
 # local graphify knowledge graphs (Rust + merged); the C# graph lives under the
 # gitignored /decompiled/, so neither is committed
 /graphify-out/

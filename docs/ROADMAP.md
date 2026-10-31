@@ -40,14 +40,18 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    follows `GrowTree`'s trunk/branch frame table. Remaining: per-type special branches
    (moss, vines, cactus arms), `TileFrameImportant` multi-tile objects.
    *~2–4 agent-days left of ~15.*
-2. **Lighting** — ✅ *second pass done*: `TileLightScanner` seeds (surface/hell/wall/
+2. **Lighting** — ✅ *third pass done*: `TileLightScanner` seeds (surface/hell/wall/
    emissive/liquid), `LightMap`'s two-pass four-sweep blur with per-mask decay,
    `Main.SetBackColor` → `ApplyColorOfTheSkiesToTiles`, per-column surface seeding,
    `GlobalBrightness = 1.2`, `GetColor9Slice`/`GetColor4Slice` block slicing and all four
    `LightMode`s (Color/White/Retro/Trippy, F2). Verified numerically with `TR_LIGHT_AT`.
-   Remaining: sun/moon/star light, per-type frame-dependent lights, invisible
-   blocks/walls, mouse-light flicker, shader chromatic aberration once instances carry a
-   flag. *~1–2 agent-days of ~8 left.*
+   The whole `ApplyTileLight` switch (147 cases) is ported in `tile_light.rs`, together
+   with `ApplyWallLight`/`ApplySurfaceLight`/`ApplyHellLight`, the `FastRandom` per-tile
+   jitter, paint-coloured lamps, disco/demon/shimmer dynamics and the animated
+   `mouseTextColor` flicker (M1.5-LIGHT-1/2).
+   Remaining: sun/moon/star light, invisible blocks/walls (not stored in the packed tile),
+   the jellyfish-cage animation state, shader chromatic aberration once instances carry a
+   flag. *~1 agent-day of ~8 left.*
 3. **Liquids** — ✅ *fourth pass*: `LiquidRenderer.InternalPrepareDraw` is ported as
    `liquid_draw.rs` (visible levels, edge walls, `FrameOffset`, source rect, waterfall-fade
    opacity, `IsSurfaceLiquid`), `Lighting.GetCornerColors` drives 3x3 bilinear light and the

@@ -113,8 +113,7 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
             };
             let c = &mut cache[index(gx, gy)];
             c.liquid_level = t.liquid as f32 / 255.0;
-            c.is_half_brick =
-                t.half_brick() && above_has_liquid && !td::SET_PLATFORMS.has(t.kind);
+            c.is_half_brick = t.half_brick() && above_has_liquid && !td::SET_PLATFORMS.has(t.kind);
             c.is_solid = solid_or_sloped(&t);
             c.has_liquid = t.liquid != 0;
             c.has_wall = t.wall != 0;
@@ -184,8 +183,9 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
                     if cache[j].is_solid {
                         break;
                     }
-                    cache[j].visible_liquid_level =
-                        cache[j].visible_liquid_level.max(c.visible_liquid_level * fade);
+                    cache[j].visible_liquid_level = cache[j]
+                        .visible_liquid_level
+                        .max(c.visible_liquid_level * fade);
                     cache[j].opacity = fade;
                     cache[j].visible_type = c.liquid_type;
                 }
@@ -267,10 +267,7 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
                 }
             }
             let world_y = ry + gy;
-            if fy == 16
-                && (cache[i].has_left_edge ^ cache[i].has_right_edge)
-                && world_y % 2 == 0
-            {
+            if fy == 16 && (cache[i].has_left_edge ^ cache[i].has_right_edge) && world_y % 2 == 0 {
                 fy += 16;
             }
             cache[i].frame_x = fx;
@@ -310,8 +307,7 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
                 }
                 if cache[i].has_bottom_edge {
                     cache[i].visible_bottom_wall =
-                        (cache[i].bottom_wall * 2.0 + left.bottom_wall + right.bottom_wall)
-                            * 0.25;
+                        (cache[i].bottom_wall * 2.0 + left.bottom_wall + right.bottom_wall) * 0.25;
                 }
             }
         }
@@ -369,16 +365,14 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
             let right = cache[i + hs];
             if left.has_top_edge && above.has_left_edge {
                 cache[i].frame_x = 4.max((16.0 - above.visible_left_wall * 16.0) as i32) - 4;
-                cache[i].frame_y =
-                    48 + 4.max((16.0 - left.visible_top_wall * 16.0) as i32) - 4;
+                cache[i].frame_y = 48 + 4.max((16.0 - left.visible_top_wall * 16.0) as i32) - 4;
                 cache[i].visible_left_wall = 0.0;
                 cache[i].visible_top_wall = 0.0;
                 cache[i].visible_right_wall = 1.0;
                 cache[i].visible_bottom_wall = 1.0;
             } else if right.has_top_edge && above.has_right_edge {
                 cache[i].frame_x = 32 - 16.min((above.visible_right_wall * 16.0) as i32 - 4);
-                cache[i].frame_y =
-                    48 + 4.max((16.0 - right.visible_top_wall * 16.0) as i32) - 4;
+                cache[i].frame_y = 48 + 4.max((16.0 - right.visible_top_wall * 16.0) as i32) - 4;
                 cache[i].visible_left_wall = 0.0;
                 cache[i].visible_top_wall = 0.0;
                 cache[i].visible_right_wall = 1.0;
@@ -408,9 +402,33 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
             let src_h = ((bottom - top) * 16.0).ceil() as i32;
             let world_x = rx + gx;
             let world_y = ry + gy;
-            let is_surface = c.frame_x == 16
-                && c.frame_y == 0
-                && world_y as f64 > world.world_surface - 40.0;
+            if std::env::var_os("TR_DUMP_LIQUID").is_some()
+                && (world_x - 2240).abs() < 6
+                && (world_y - 366).abs() < 6
+            {
+                let above = cache[i - 1];
+                let below = cache[i + 1];
+                let lft = cache[i - hs];
+                let rgt = cache[i + hs];
+                log::info!(
+                    "LQ {:?} hl={} lvl={:.2} vlvl={:.2} top={:.2} bot={:.2} L={:.2} R={:.2} hT={} hB={} hL={} hR={}",
+                    (world_x, world_y),
+                    c.has_liquid as i32,
+                    c.liquid_level,
+                    c.visible_liquid_level,
+                    c.top_wall,
+                    c.bottom_wall,
+                    c.left_wall,
+                    c.right_wall,
+                    c.has_top_edge as i32,
+                    c.has_bottom_edge as i32,
+                    c.has_left_edge as i32,
+                    c.has_right_edge as i32,
+                );
+                let _ = (above, below, lft, rgt);
+            }
+            let is_surface =
+                c.frame_x == 16 && c.frame_y == 0 && world_y as f64 > world.world_surface - 40.0;
             out.push(LiquidDraw {
                 x: world_x,
                 y: world_y,

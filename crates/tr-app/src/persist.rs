@@ -114,9 +114,7 @@ mod tests {
     fn migrates_version_2_kinds_to_item_ids() {
         let path = std::env::temp_dir().join("tr-persist-v2.trwld");
         // Version 2: tile kinds and the wall/weapon/coin ranges.
-        let mut line = String::from("2
-10 20 100
-");
+        let mut line = String::from("210 20 100");
         for kind in [0u16, 1, 10_002, 20_001, 30_002] {
             line.push_str(&format!("{kind} 5 "));
         }

@@ -19,14 +19,12 @@ ship any of it.
 
 | | |
 | --- | --- |
-| ![player](docs/screenshots/player.png) | ![lake](docs/screenshots/lake.png) |
-| The player, walking on the generated surface | A generated forest lake: vanilla draw cache, two-pass water |
-| ![night](docs/screenshots/night.png) | ![storm](docs/screenshots/storm.png) |
-| Night: moon, stars and parallax mountains, world only | Storm: driving rain, dark storm clouds and lightning flashes |
+| ![storm](docs/screenshots/storm.png) | ![lake](docs/screenshots/lake.png) |
+| Storm: driving rain, dark storm clouds and lightning flashes | A generated forest lake: vanilla draw cache, two-pass water |
+| ![night](docs/screenshots/night.png) | ![king_slime](docs/screenshots/king_slime.png) |
+| Night: moon, stars and parallax mountains, world only | King Slime boss: 2000 HP, teleport and slime minions |
 | ![underground](docs/screenshots/underground.png) | ![hell](docs/screenshots/hell.png) |
 | Underground caves with natural Color-mode lighting | Underground hell: ash blocks, lava puddles, emerald light |
-| ![king_slime](docs/screenshots/king_slime.png) | |
-| King Slime boss: 2000 HP, teleport and slime minions | |
 
 ## What you can already do
 
