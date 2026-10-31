@@ -29,6 +29,27 @@ use crate::ui::{color, sliders};
 /// `Main.maxMenuItems` is 20; the largest screen here is the 12-row interface list.
 pub const MAX_ITEMS: usize = 20;
 
+/// The `Language.*` values of `Terraria.Localization.Content.en-US.json` in the
+/// `Main.cs:48466-48477` (1212) / `:48497-48508` (1213) fill order — English,
+/// German, Italian, French, Spanish, Russian, Chinese, Portuguese, Polish,
+/// Japanese, Korean, ChineseTraditional. Note that is *not* the JSON's own key
+/// order; both branches assign the twelve `Language.GetTextValue` rows
+/// explicitly.
+const LANGUAGES: [&str; 12] = [
+    "English",
+    "Deutsch (German)",
+    "Italiano (Italian)",
+    "Français (French)",
+    "Español (Spanish)",
+    "Русский (Russian)",
+    "简体中文 (Simplified Chinese)",
+    "Português brasileiro (Brazilian Portuguese)",
+    "Polski (Polish)",
+    "日本語 (Japanese)",
+    "한국어 (Korean)",
+    "繁體中文 (Traditional Chinese)",
+];
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Page {
     Main,
@@ -180,6 +201,13 @@ enum Toggle {
     SmartAxeFirst,
     SmartBlocks,
     LockOnPriority,
+    // The menuMode 2008 rows (`Main.cs:50113-50162`).
+    UseStormEffects,
+    ForegroundSunlight,
+    UseHeatDistortion,
+    WaveQuality,
+    UseScreenShake,
+    FlashyEffectsWorld,
 }
 
 enum Act {
@@ -296,6 +324,12 @@ pub struct Menu {
     /// edit colour of the 25/252 screens. The struct default is all-zero, like
     /// XNA `Color`'s.
     pub sel_color: [u8; 4],
+    /// `Main.screenWidth`/`screenHeight`, refreshed every [`Menu::draw`] — the
+    /// menuMode 111 row prints the pending resolution, which vanilla keeps at
+    /// the current window size (`Main.cs:66399-66400`). The default is the
+    /// port's 1600×900 reference frame (`Main.cs:67078-67079` seeds vanilla's
+    /// own 800×600 static before `Initialize` overwrites it).
+    pub screen_size: Vec2,
     /// "Not ported yet" notice for the vanilla screens we do not have.
     pub hint: Option<String>,
     /// Write `config.json` on every toggle (off in unit tests).
@@ -330,6 +364,7 @@ impl Menu {
             color_grab: 0,
             hsl_bars: sliders::HslBars { h: -1.0, s: -1.0, l: -1.0, a: -1.0 },
             sel_color: [0, 0, 0, 0],
+            screen_size: Vec2::new(1600.0, 900.0),
             hint: None,
             persist: true,
             time: 0.0,
@@ -435,7 +470,8 @@ impl Menu {
                 // (`Main.cs:50309-50316` is the 1125 Back twin).
                 Item::new("Cursor", Act::Nav(Page::Cursor)).scaled(0.75),
                 Item::new("Controls", Act::Hint("Key rebinding is not ported yet")).scaled(0.75),
-                Item::new("Language", Act::Hint("Only English is bundled")).scaled(0.75),
+                // Row 6 (`Main.cs:49759-49763`): `Lang.menu[103]` opens 1213.
+                Item::new("Language", Act::Nav(Page::Language)).scaled(0.75),
                 Item::new("Back", Act::Nav(Page::Main)).scaled(0.75).at(8.0),
             ],
             // `menuMode == 112`.
@@ -468,7 +504,8 @@ impl Menu {
             // `menuMode == 1111`. Note the original leaves `array7` at 1.0 for the Back
             // row here (only the first ten rows are set to 0.6), so Back is bigger.
             Page::Video => vec![
-                Item::new("Resolution", Act::Hint("Window resolution is not ported yet")).scaled(0.6),
+                // Row 0 (`Main.cs:49992-49996`): `Lang.menu[51]` opens 111.
+                Item::new("Resolution", Act::Nav(Page::Resolution)).scaled(0.6),
                 Item::new(
                     format!("Zoom: {:.0}%", s.zoom * 100.0),
                     Act::Toggle(Toggle::Zoom),
@@ -484,7 +521,8 @@ impl Menu {
                 Item::new(on_off(s.blood, "Blood and Gore On", "Blood and Gore Off"), Act::Toggle(Toggle::Blood)).scaled(0.6),
                 Item::new(on_off(s.miners_wobble, "Miner's Wobble: Enabled", "Miner's Wobble: Disabled"), Act::Toggle(Toggle::MinersWobble)).scaled(0.6),
                 Item::new(on_off(s.tiles_sway, "Windy Environment: Enabled", "Windy Environment: Disabled"), Act::Toggle(Toggle::TilesSway)).scaled(0.6),
-                Item::new("Effects", Act::Hint("The effects screen is not ported yet")).scaled(0.6),
+                // Row 10 (`Main.cs:50072-50077`): `UI.Effects` opens 2008.
+                Item::new("Effects", Act::Nav(Page::Effects)).scaled(0.6),
                 Item::new("Back", Act::Nav(Page::Settings)).at(8.0),
             ],
             Page::Multiplayer => vec![
@@ -602,14 +640,159 @@ impl Menu {
                 Item::new("Border Color", Act::None).at(10.0).heading(),
                 Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
             ],
-            // The remaining P5 screens land with their own tasks (4-6); Task 1
+            // menuMode 111 (`Main.cs:50169-50241`): `num2 = 210`, `num4 = 55`,
+            // every `array7` 0.85 (`:50170-50174`). The window-resolution
+            // system is out of scope (spec §9.1), so rows 0-3 keep their
+            // vanilla labels but show the not-ported notice where the original
+            // cycles display modes (`:50179-50191`), toggles
+            // `PendingBorderlessState` (`:50198-50204`), calls
+            // `ToggleFullScreen` (`:50206-50210`) or `SetResolution`
+            // (`:50212-50227`).
+            Page::Resolution => vec![
+                // Row 0 (`Main.cs:50178`): `Lang.menu[73] + ": " +
+                // PendingResolutionWidth + "x" + PendingResolutionHeight`; the
+                // pending size mirrors the live window (`:66399-66400`).
+                Item::new(
+                    format!(
+                        "Fullscreen Resolution: {}x{}",
+                        self.screen_size.x as u32,
+                        self.screen_size.y as u32
+                    ),
+                    Act::Hint("Window resolution is not ported yet"),
+                )
+                .scaled(0.85),
+                // Row 1 (`Main.cs:50196-50205`): `Lang.menu[246]` while
+                // `PendingBorderlessState` is false (a plain static, default
+                // false, `Main.cs:1905`; `LoadSettings` re-syncs it from
+                // `screenBorderless`, `:4296`); the row always shows —
+                // `IsBorderlessDisplayAvailable` is `Platform.IsWindows`
+                // (`Main.cs:52305-52312`).
+                Item::new(
+                    "Borderless Window: Disabled",
+                    Act::Hint("Borderless windows are not ported yet"),
+                )
+                .scaled(0.85),
+                // Row 2 (`Main.cs:50206-50210`): `Lang.menu[50]` while
+                // windowed; the port always runs windowed.
+                Item::new("Go Fullscreen", Act::Hint("Fullscreen is not ported yet")).scaled(0.85),
+                // Row 3 (`Main.cs:50212-50227`): `array4 = 100`, label
+                // `Lang.menu[134]`.
+                Item::new("Apply", Act::Hint("Resolution switching is not ported yet"))
+                    .scaled(0.85)
+                    .at(100.0),
+                // Row 4 (`Main.cs:50229-50239`): `array4 = 100`; Back resets
+                // the pending state and opens 1111 (`:50237`).
+                Item::new("Back", Act::Nav(Page::Video)).scaled(0.85).at(100.0),
+            ],
+            // menuMode 2008 (`Main.cs:50097-50168`): `num2 = 210`, `num4 = 28`,
+            // `num5 = 9` with `array4[num5 - 1] = 24` (`:50099-50102`) — but
+            // `array9[8]` is never assigned, and the item loop skips null
+            // labels (`:51659-51662`), so the screen has eight visible rows and
+            // Back sits at `210 + 28 * 7` = 406 (Review Focus 3; porting "9
+            // rows" would draw a phantom duplicate).
+            Page::Effects => vec![
+                // Row 0 (`Main.cs:50108-50111`): the `UI.Effects` header,
+                // `array[0] = true`, `array7 = 0.7`, `array4 -= 8`.
+                Item::new("Effects", Act::None).at(-8.0).heading().scaled(0.7),
+                // Row 1 (`Main.cs:50113-50118`):
+                // `GameUI.StormEffects` with `GameUI.Enabled`/`Disabled`.
+                Item::new(
+                    on_off(s.use_storm_effects, "Storm Effects: Enabled", "Storm Effects: Disabled"),
+                    Act::Toggle(Toggle::UseStormEffects),
+                )
+                .scaled(0.6),
+                // Row 2 (`Main.cs:50120-50125`): `GameUI.ForegroundSunlightEffects`.
+                Item::new(
+                    on_off(
+                        s.foreground_sunlight,
+                        "Sunlight Effects: Enabled",
+                        "Sunlight Effects: Disabled",
+                    ),
+                    Act::Toggle(Toggle::ForegroundSunlight),
+                )
+                .scaled(0.6),
+                // Row 3 (`Main.cs:50127-50132`): `GameUI.HeatDistortion`.
+                Item::new(
+                    on_off(
+                        s.use_heat_distortion,
+                        "Heat Distortion: Enabled",
+                        "Heat Distortion: Disabled",
+                    ),
+                    Act::Toggle(Toggle::UseHeatDistortion),
+                )
+                .scaled(0.6),
+                // Row 4 (`Main.cs:50134-50146`): `GameUI.WaveQuality` with
+                // 1 Low, 2 Medium, 3 High, anything else Off (`_` arm).
+                Item::new(
+                    format!(
+                        "Waves Quality: {}",
+                        match s.wave_quality {
+                            1 => "Low",
+                            2 => "Medium",
+                            3 => "High",
+                            _ => "Off",
+                        }
+                    ),
+                    Act::Toggle(Toggle::WaveQuality),
+                )
+                .scaled(0.6),
+                // Row 5 (`Main.cs:50150-50155`): `GameUI.ScreenShake`.
+                Item::new(
+                    on_off(
+                        s.use_screen_shake,
+                        "Screen Shake: Enabled",
+                        "Screen Shake: Disabled",
+                    ),
+                    Act::Toggle(Toggle::UseScreenShake),
+                )
+                .scaled(0.6),
+                // Row 6 (`Main.cs:50157-50162`): `UI.FlashyEffectsWorldOn` /
+                // `UI.FlashyEffectsWorldOff` ("Thunder Effects: On/Reduced").
+                Item::new(
+                    on_off(s.flashy_effects_world, "Thunder Effects: On", "Thunder Effects: Reduced"),
+                    Act::Toggle(Toggle::FlashyEffectsWorld),
+                )
+                .scaled(0.6),
+                // Row 7 (`Main.cs:50164-50169`): Back opens 1111.
+                Item::new("Back", Act::Nav(Page::Video)).scaled(0.6),
+            ],
+            // menuMode 1213 (`Main.cs:48493-48535`): the `Lang.menu[102]`
+            // header at `array4[0] = -20` (`:48527`), the twelve
+            // `Language.*` rows, then `array9[num10] = Lang.menu[5]` Back with
+            // `array4[13] = 9` (`:48510`, `:48528`) — draw y `200 + 26*13 + 9`
+            // = 547. `array7` 0.65, header 0.85, Back 0.8 (`:48529-48534`).
+            // Language switching is out of scope (spec §9.1), so the rows show
+            // the not-ported notice (`Main.cs:48519-48523` would call
+            // `LanguageManager.SetLanguage`).
+            Page::Language => {
+                let mut rows = vec![
+                    Item::new("Select language", Act::None).at(-20.0).heading().scaled(0.85),
+                ];
+                for language in LANGUAGES {
+                    rows.push(Item::new(language, Act::Hint("Only English is bundled")).scaled(0.65));
+                }
+                rows.push(Item::new("Back", Act::Nav(Page::Settings)).scaled(0.8).at(9.0));
+                rows
+            }
+            // menuMode 1212 (`Main.cs:48458-48491`): the first-launch picker —
+            // the same `Lang.menu[102]` header (`array4[0] = -20`, `:48464`)
+            // and twelve `Language.*` rows at `num2 = 200`, `num4 = 30`
+            // (`:48460-48462`), no Back row, `array7[0] = 1f` (`:48483`),
+            // languages 0.65. The original enters it on first launch
+            // (`Main.cs:10655`); here it is reachable only via `TR_PAGE=1212`,
+            // and a language row shows the same notice (the original would
+            // `SetLanguage` and jump to menuMode 0, `:48484-48490`).
+            Page::LanguageInitial => {
+                let mut rows = vec![Item::new("Select language", Act::None).at(-20.0).heading()];
+                for language in LANGUAGES {
+                    rows.push(Item::new(language, Act::Hint("Only English is bundled")).scaled(0.65));
+                }
+                rows
+            }
+            // The remaining P5 screens land with their own tasks (5-6); Task 1
             // registers the pages so `TR_PAGE=<menuMode>` resolves and each
             // screen can be screenshotted as its rows are filled in.
-            Page::Resolution
-            | Page::Effects
-            | Page::Language
-            | Page::LanguageInitial
-            | Page::Controls
+            Page::Controls
             | Page::Keybindings
             | Page::MapKeys
             | Page::JoinIp
@@ -761,6 +944,19 @@ impl Menu {
                     _ => 1, // ThreeDS -> TargetClosest
                 };
             }
+            // The menuMode 2008 rows (`Main.cs:50113-50162`).
+            // `Main.UseStormEffects = !Main.UseStormEffects` (`:50117`).
+            Toggle::UseStormEffects => s.use_storm_effects = !s.use_storm_effects,
+            // `Main.ForegroundSunlightEffects = !...` (`:50124`).
+            Toggle::ForegroundSunlight => s.foreground_sunlight = !s.foreground_sunlight,
+            // `Main.UseHeatDistortion = !...` (`:50131`).
+            Toggle::UseHeatDistortion => s.use_heat_distortion = !s.use_heat_distortion,
+            // `Main.WaveQuality = (Main.WaveQuality + 1) % 4` (`:50144`).
+            Toggle::WaveQuality => s.wave_quality = (s.wave_quality + 1) % 4,
+            // `Main.UseScreenShake = !...` (`:50154`).
+            Toggle::UseScreenShake => s.use_screen_shake = !s.use_screen_shake,
+            // `Main.FlashyEffectsWorld = !...` (`:50161`).
+            Toggle::FlashyEffectsWorld => s.flashy_effects_world = !s.flashy_effects_world,
         }
         if self.persist {
             let _ = s.save();
@@ -904,6 +1100,9 @@ impl Menu {
         dt: f32,
     ) {
         self.step_animation(dt);
+        // `Main.PendingResolutionWidth = Main.screenWidth; ...` (`Main.cs
+        // :66399-66400`): the menuMode 111 row reads the live window size.
+        self.screen_size = screen;
 
         // `if (!flag) { this.grabColorSlider = 0; Main.hBar = -1f; Main.sBar
         // = -1f; Main.lBar = -1f; Main.aBar = -1f; }` (`Main.cs:51104-51109`):
@@ -1662,11 +1861,9 @@ mod tests {
         let server = Page::ServerSettings.layout();
         assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
 
+        // Resolution/Effects/Language/LanguageInitial grew their rows with
+        // Task 4; the rest stay row-less until Tasks 5-6 fill `items()` in.
         for page in [
-            Page::Resolution,
-            Page::Effects,
-            Page::Language,
-            Page::LanguageInitial,
             Page::Controls,
             Page::Keybindings,
             Page::MapKeys,
@@ -2074,5 +2271,218 @@ mod tests {
             assert_eq!(grab, 0, "no hit box at (10, 10)");
             assert_eq!(recompose_sel_color(alpha_bar, &bars), sel);
         }
+    }
+
+    #[test]
+    fn resolution_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50169-50241`: `num2 = 210`, `num4 = 55` (`:50175-50176`),
+        // every `array7` 0.85 (`:50170-50174`); `array4 = 100` on Apply
+        // (`:50212`) and Back (`:50230`). The pending resolution mirrors the
+        // current window (`:66399-66400`), so a fresh `Menu` reads the
+        // 1600x900 reference frame.
+        let items = menu(Page::Resolution).items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Fullscreen Resolution: 1600x900",
+                "Borderless Window: Disabled",
+                "Go Fullscreen",
+                "Apply",
+                "Back",
+            ]
+        );
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 0.0, 0.0, 100.0, 100.0]);
+        assert!(items.iter().all(|i| i.scale == 0.85));
+        assert!(!items.iter().any(|i| i.header));
+        // Draw y = `num2 + num4 * i + array4[i]` (`Main.cs:51769`): Apply at
+        // 210 + 55*3 + 100 = 475, Back at 210 + 55*4 + 100 = 530.
+        let layout = Page::Resolution.layout();
+        let draw_y = |i: usize, items: &[Item]| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(3, &items), 475.0);
+        assert_eq!(draw_y(4, &items), 530.0);
+        // Rows 0-3 show the not-ported notice (the original cycles display
+        // modes, toggles borderless, goes fullscreen and applies — `Main.cs
+        // :50179-50227`); Back opens 1111 (`:50237`).
+        let mut m = menu(Page::Resolution);
+        for row in 0..4 {
+            m.activate(row);
+            assert!(m.hint.is_some(), "row {row} is a hint");
+            assert_eq!(m.page, Page::Resolution);
+        }
+        m.activate(4);
+        assert_eq!(m.page, Page::Video);
+        assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn resolution_row_tracks_the_window_size() {
+        // `Main.cs:50178` concatenates the pending resolution; the port's
+        // `screen_size` refreshes from the draw target (`:66399-66400`).
+        let mut m = menu(Page::Resolution);
+        m.screen_size = Vec2::new(1280.0, 720.0);
+        assert_eq!(m.items()[0].label, "Fullscreen Resolution: 1280x720");
+    }
+
+    #[test]
+    fn effects_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50097-50168`: `num2 = 210`, `num4 = 28`, `num5 = 9` with
+        // `array4[num5 - 1] = 24` (`:50099-50102`) — but `array9[8]` stays
+        // null and the item loop skips it (`Main.cs:51654`), so there are
+        // eight visible rows and Back draws at `210 + 28*7` = 406, not 458
+        // (Review Focus 3: porting "9 rows" draws a phantom duplicate).
+        let m = menu(Page::Effects);
+        let items = m.items();
+        assert_eq!(items.len(), 8, "the phantom ninth row is skipped");
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(
+            labels,
+            [
+                "Effects",
+                "Storm Effects: Enabled",
+                "Sunlight Effects: Enabled",
+                "Heat Distortion: Enabled",
+                "Waves Quality: High",
+                "Screen Shake: Enabled",
+                "Thunder Effects: On",
+                "Back",
+            ]
+        );
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [-8.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        // `array7` 0.6 with the header at 0.7 (`Main.cs:50103-50110`).
+        assert!(items[1..].iter().all(|i| i.scale == 0.6));
+        assert_eq!(items[0].scale, 0.7);
+        assert!(items[0].header, "array[0] = true");
+        assert!(!items[7].header);
+        // Draw y = `num2 + num4 * i + array4[i]` (`Main.cs:51769`).
+        let layout = Page::Effects.layout();
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 202.0, "array4[0] -= 8");
+        assert_eq!(draw_y(1), 238.0);
+        assert_eq!(draw_y(7), 406.0, "Back sits at 406, not 458");
+    }
+
+    #[test]
+    fn effects_rows_toggle_the_six_settings() {
+        // `Main.cs:50117`, `:50124`, `:50131`, `:50154`, `:50161` flip the
+        // flags; `:50144` cycles `WaveQuality = (q + 1) % 4`.
+        let mut m = menu(Page::Effects);
+        m.activate(1);
+        assert!(!m.settings.use_storm_effects);
+        assert_eq!(m.items()[1].label, "Storm Effects: Disabled");
+        m.activate(2);
+        assert!(!m.settings.foreground_sunlight);
+        assert_eq!(m.items()[2].label, "Sunlight Effects: Disabled");
+        m.activate(3);
+        assert!(!m.settings.use_heat_distortion);
+        assert_eq!(m.items()[3].label, "Heat Distortion: Disabled");
+        m.activate(5);
+        assert!(!m.settings.use_screen_shake);
+        assert_eq!(m.items()[5].label, "Screen Shake: Disabled");
+        m.activate(6);
+        assert!(!m.settings.flashy_effects_world);
+        assert_eq!(m.items()[6].label, "Thunder Effects: Reduced");
+        // The wave cycle: 3 High -> 0 Off -> 1 Low -> 2 Medium -> 3 High.
+        assert_eq!(m.settings.wave_quality, 3);
+        m.activate(4);
+        assert_eq!(m.settings.wave_quality, 0);
+        assert_eq!(m.items()[4].label, "Waves Quality: Off");
+        m.activate(4);
+        assert_eq!(m.settings.wave_quality, 1);
+        assert_eq!(m.items()[4].label, "Waves Quality: Low");
+        m.activate(4);
+        assert_eq!(m.settings.wave_quality, 2);
+        assert_eq!(m.items()[4].label, "Waves Quality: Medium");
+        m.activate(4);
+        assert_eq!(m.settings.wave_quality, 3);
+        assert_eq!(m.items()[4].label, "Waves Quality: High");
+        // Back opens 1111 (`Main.cs:50169`).
+        m.activate(7);
+        assert_eq!(m.page, Page::Video);
+    }
+
+    #[test]
+    fn language_screen_lists_the_twelve_vanilla_rows() {
+        // `Main.cs:48493-48535`: the `Lang.menu[102]` header (`array4[0] =
+        // -20`, `array7` 0.85), the twelve `Language.*` rows at 0.65, then
+        // Back (`array4[13] = 9`, `array7` 0.8) — draw y `200 + 26*13 + 9` =
+        // 547 (`:48510`, `:48525-48534`).
+        let m = menu(Page::Language);
+        let items = m.items();
+        assert_eq!(items.len(), 14);
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(&labels[..13], &["Select language", "English", "Deutsch (German)", "Italiano (Italian)", "Français (French)", "Español (Spanish)", "Русский (Russian)", "简体中文 (Simplified Chinese)", "Português brasileiro (Brazilian Portuguese)", "Polski (Polish)", "日本語 (Japanese)", "한국어 (Korean)", "繁體中文 (Traditional Chinese)"]);
+        assert_eq!(labels[13], "Back");
+        assert!(items[0].header);
+        assert_eq!(items[0].scale, 0.85);
+        assert_eq!(items[0].y, -20.0);
+        assert!(items[1..13].iter().all(|i| i.scale == 0.65));
+        assert_eq!(items[13].scale, 0.8);
+        assert_eq!(items[13].y, 9.0);
+        // Draw y (`Main.cs:51769`): header 180, English 226, Back 547.
+        let layout = Page::Language.layout();
+        assert_eq!((layout.y0, layout.row), (200.0, 26.0));
+        let draw_y = |i: usize| layout.y0 + layout.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(0), 180.0);
+        assert_eq!(draw_y(1), 226.0);
+        assert_eq!(draw_y(13), 547.0);
+        // Language rows show the notice (the original calls
+        // `LanguageManager.SetLanguage`, `Main.cs:48519-48523`); Back opens 11
+        // (`:48512-48517`).
+        let mut m = menu(Page::Language);
+        m.activate(1);
+        assert!(m.hint.is_some());
+        assert_eq!(m.page, Page::Language);
+        m.activate(13);
+        assert_eq!(m.page, Page::Settings);
+        assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn language_initial_picker_differs_from_the_language_screen() {
+        // `Main.cs:48458-48491`: the same header and twelve rows but
+        // `num4 = 30` (`:48462`), no Back row, `array7[0] = 1f` (`:48483`) —
+        // versus 1213's `num4 = 26`, header 0.85, Back 0.8 (`:48525-48534`).
+        let items = menu(Page::LanguageInitial).items();
+        assert_eq!(items.len(), 13, "the first-launch picker has no Back");
+        assert!(items[0].header);
+        assert_eq!(items[0].scale, 1.0);
+        assert_eq!(items[0].y, -20.0);
+        assert!(items[1..].iter().all(|i| i.scale == 0.65));
+        assert_eq!(items[1].label, "English");
+        let initial = Page::LanguageInitial.layout();
+        assert_eq!((initial.y0, initial.row), (200.0, 30.0));
+        // Draw y (`Main.cs:51769`): header 180, English 230, last row 560 —
+        // 1213 puts English at 226 and adds Back at 547.
+        let draw_y = |i: usize| initial.y0 + initial.row * i as f32 + items[i].y;
+        assert_eq!(draw_y(1), 230.0);
+        assert_eq!(draw_y(12), 560.0);
+        // A language row still only shows the notice (the original would
+        // `SetLanguage` and jump to menuMode 0, `Main.cs:48484-48490`).
+        let mut m = menu(Page::LanguageInitial);
+        m.activate(1);
+        assert!(m.hint.is_some());
+        assert_eq!(m.page, Page::LanguageInitial);
+    }
+
+    #[test]
+    fn video_and_settings_rows_navigate_to_the_task_4_screens() {
+        // Video row 0 opens 111 (`Main.cs:49992-49996`), row 10 opens 2008
+        // (`:50072-50077`); the Settings "Language" row opens 1213
+        // (`:49759-49763`).
+        let mut m = menu(Page::Video);
+        m.activate(0);
+        assert_eq!(m.page, Page::Resolution);
+        assert!(m.hint.is_none());
+        let mut m = menu(Page::Video);
+        m.activate(10);
+        assert_eq!(m.page, Page::Effects);
+        assert!(m.hint.is_none());
+        let mut m = menu(Page::Settings);
+        m.activate(6);
+        assert_eq!(m.page, Page::Language);
+        assert!(m.hint.is_none());
     }
 }

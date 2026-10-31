@@ -98,6 +98,33 @@ pub struct Settings {
     /// (`Main.cs:4496-4505`), clamps to 0..=2 and remaps FocusTarget to
     /// ThreeDS, so a fresh config boots into ThreeDS.
     pub lock_on_priority: u8,
+    /// `Main.UseStormEffects` (`Main.cs:429`, default true at `:66572`): the
+    /// "Storm Effects" row of menuMode 2008 (`Main.cs:50113-50118`). Vanilla
+    /// persists it under `"UseStormEffect"` — singular (`Put` `:4159`, `Get`
+    /// `:4435`).
+    pub use_storm_effects: bool,
+    /// `Main.ForegroundSunlightEffects` (`Main.cs:433`, default true at
+    /// `:66574`): the "Sunlight Effects" row (`Main.cs:50120-50125`). Vanilla
+    /// key `"ForegroundSunlightEffects"` (`Put` `:4161`, `Get` `:4436`).
+    pub foreground_sunlight: bool,
+    /// `Main.UseHeatDistortion` (`Main.cs:431`, default true at `:66573`): the
+    /// "Heat Distortion" row (`Main.cs:50127-50132`). Vanilla key
+    /// `"UseHeatDistortion"` (`Put` `:4160`, `Get` `:4437`).
+    pub use_heat_distortion: bool,
+    /// `Main.WaveQuality` (`Main.cs:427`, default 3 at `:66571`): the "Waves
+    /// Quality" row cycles `(q + 1) % 4` (`Main.cs:50144`); the label reads
+    /// 1 Low, 2 Medium, 3 High, anything else Off (`Main.cs:50134-50143`).
+    /// Vanilla key `"WaveQuality"` (`Put` `:4162`), load-clamped to 0..=3
+    /// (`:4438-4445`).
+    pub wave_quality: u8,
+    /// `Main.UseScreenShake` (`Main.cs:435`, default true at `:66575`): the
+    /// "Screen Shake" row (`Main.cs:50150-50155`). Vanilla key
+    /// `"UseScreenShake"` (`Put` `:4218`, `Get` `:4552`).
+    pub use_screen_shake: bool,
+    /// `Main.FlashyEffectsWorld` (`Main.cs:437`, default true at `:66576`): the
+    /// "Thunder Effects" row (`Main.cs:50157-50162`). Vanilla key
+    /// `"FlashyEffectsWorld"` (`Put` `:4215`, `Get` `:4350`).
+    pub flashy_effects_world: bool,
 }
 
 impl Default for Settings {
@@ -134,6 +161,12 @@ impl Default for Settings {
             smart_axe_first: false,               // Player.cs:334
             smart_blocks: false,                  // Player.cs:331
             lock_on_priority: 2,                  // Main.cs:4496-4505
+            use_storm_effects: true,              // Main.cs:66572
+            foreground_sunlight: true,            // Main.cs:66574
+            use_heat_distortion: true,            // Main.cs:66573
+            wave_quality: 3,                      // Main.cs:66571
+            use_screen_shake: true,               // Main.cs:66575
+            flashy_effects_world: true,           // Main.cs:66576
         }
     }
 }
@@ -249,6 +282,31 @@ impl Settings {
                 // `configuration.Put("SmartCursorToggle", ...)` (`Main.cs:4094`,
                 // read back at `:4330`).
                 "SmartCursorToggle" => me.smart_cursor_toggle = boolean(value),
+                // The menuMode 2008 effect toggles, in `Main.SaveSettings`'s
+                // `Put` order. `configuration.Put("UseStormEffect",
+                // Main.UseStormEffects)` — singular (`Main.cs:4159`), read back
+                // at `:4435`.
+                "UseStormEffect" => me.use_storm_effects = boolean(value),
+                // `configuration.Put("UseHeatDistortion", ...)` (`Main.cs:4160`,
+                // read back at `:4437`).
+                "UseHeatDistortion" => me.use_heat_distortion = boolean(value),
+                // `configuration.Put("ForegroundSunlightEffects", ...)`
+                // (`Main.cs:4161`, read back at `:4436`).
+                "ForegroundSunlightEffects" => me.foreground_sunlight = boolean(value),
+                // `configuration.Put("WaveQuality", ...)` (`Main.cs:4162`);
+                // `LoadSettings` clamps the stored value to 0..=3 — values
+                // above 3 to 3, negatives to 0 (`:4438-4445`).
+                "WaveQuality" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        me.wave_quality = v.clamp(0, 3) as u8;
+                    }
+                }
+                // `configuration.Put("FlashyEffectsWorld", ...)`
+                // (`Main.cs:4215`, read back at `:4350`).
+                "FlashyEffectsWorld" => me.flashy_effects_world = boolean(value),
+                // `configuration.Put("UseScreenShake", ...)` (`Main.cs:4218`,
+                // read back at `:4552`).
+                "UseScreenShake" => me.use_screen_shake = boolean(value),
                 // `configuration.Put("UseSmartAxeAfterSmartPickaxe",
                 // Player.SmartCursorSettings.SmartAxeAfterPickaxe)`
                 // (`Main.cs:4139`, read back at `:4412`).
@@ -295,6 +353,9 @@ impl Settings {
              \"FrameSkipMode\": {},\n  \
              \"LightingMode\": {},\n  \"Quality\": {},\n  \"BackgroundEnabled\": {},\n  \
              \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
+             \"UseStormEffect\": {},\n  \"UseHeatDistortion\": {},\n  \
+             \"ForegroundSunlightEffects\": {},\n  \"WaveQuality\": {},\n  \
+             \"FlashyEffectsWorld\": {},\n  \"UseScreenShake\": {},\n  \
              \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
              \"AmbientVolume\": {:.3},\n  \"MapScale\": {:.3},\n  \
              \"MouseColor\": {{\"R\": {}, \"G\": {}, \"B\": {}}},\n  \
@@ -321,6 +382,15 @@ impl Settings {
             self.blood,
             self.miners_wobble,
             self.tiles_sway,
+            // The menuMode 2008 toggles, written under the vanilla keys in the
+            // `Main.SaveSettings` `Put` order (`Main.cs:4159-4162`, `:4215`,
+            // `:4218`).
+            self.use_storm_effects,
+            self.use_heat_distortion,
+            self.foreground_sunlight,
+            self.wave_quality,
+            self.flashy_effects_world,
+            self.use_screen_shake,
             self.zoom,
             self.music_volume,
             self.sound_volume,
@@ -402,6 +472,14 @@ mod tests {
         // keyless -1 to 0 and remaps FocusTarget to ThreeDS
         // (`Main.cs:4496-4505`).
         assert_eq!(s.lock_on_priority, 2);
+        // The menuMode 2008 statics (`Main.cs:66571-66576`), not the field
+        // declarations (`Main.cs:427-437`).
+        assert!(s.use_storm_effects);
+        assert!(s.foreground_sunlight);
+        assert!(s.use_heat_distortion);
+        assert_eq!(s.wave_quality, 3);
+        assert!(s.use_screen_shake);
+        assert!(s.flashy_effects_world);
     }
 
     #[test]
@@ -431,6 +509,12 @@ mod tests {
         s.smart_axe_first = true;
         s.smart_blocks = true;
         s.lock_on_priority = 1;
+        s.use_storm_effects = false;
+        s.foreground_sunlight = false;
+        s.use_heat_distortion = false;
+        s.wave_quality = 1;
+        s.use_screen_shake = false;
+        s.flashy_effects_world = false;
         let back = Settings::parse(&s.to_json());
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
@@ -456,6 +540,39 @@ mod tests {
         assert!(back.smart_axe_first);
         assert!(back.smart_blocks);
         assert_eq!(back.lock_on_priority, 1);
+        assert!(!back.use_storm_effects);
+        assert!(!back.foreground_sunlight);
+        assert!(!back.use_heat_distortion);
+        assert_eq!(back.wave_quality, 1);
+        assert!(!back.use_screen_shake);
+        assert!(!back.flashy_effects_world);
+    }
+
+    #[test]
+    fn effect_keys_read_the_vanilla_names() {
+        // The vanilla keys verified against `Main.SaveSettings`/`LoadSettings`:
+        // "UseStormEffect" is singular (`Main.cs:4159`, `:4435`),
+        // "UseHeatDistortion" (`:4160`, `:4437`),
+        // "ForegroundSunlightEffects" (`:4161`, `:4436`), "WaveQuality"
+        // (`:4162`) load-clamped to 0..=3 (`:4438-4445`),
+        // "FlashyEffectsWorld" (`:4215`, `:4350`), "UseScreenShake" (`:4218`,
+        // `:4552`).
+        let s = Settings::parse(
+            "{\n \"UseStormEffect\": false,\n \"UseHeatDistortion\": false,\n \
+             \"ForegroundSunlightEffects\": false,\n \"WaveQuality\": 2,\n \
+             \"FlashyEffectsWorld\": false,\n \"UseScreenShake\": false\n}",
+        );
+        assert!(!s.use_storm_effects);
+        assert!(!s.use_heat_distortion);
+        assert!(!s.foreground_sunlight);
+        assert_eq!(s.wave_quality, 2);
+        assert!(!s.flashy_effects_world);
+        assert!(!s.use_screen_shake);
+        // The load clamp (`Main.cs:4439-4445`).
+        let s = Settings::parse("{\n \"WaveQuality\": 9\n}");
+        assert_eq!(s.wave_quality, 3);
+        let s = Settings::parse("{}");
+        assert_eq!(s.wave_quality, 3, "a missing key keeps the default");
     }
 
     #[test]
