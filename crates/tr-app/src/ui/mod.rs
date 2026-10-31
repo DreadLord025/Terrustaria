@@ -1,7 +1,9 @@
 //! In-game HUD: hotbar / open inventory, selected-item name, the item carried on the
 //! cursor, hearts and breath, and the boss bar.
 
+pub mod chrome;
 pub mod cursor;
+pub mod inventory;
 pub mod resources;
 pub mod slot;
 pub mod text;
@@ -12,6 +14,7 @@ use tr_render::SpriteRenderer;
 
 use crate::ItemSlot;
 use crate::assets;
+use crate::inv;
 use crate::player::Player;
 use crate::{HOTBAR, INV};
 
@@ -47,6 +50,8 @@ pub fn draw_hud(
     screen: Vec2,
     lookups: &assets::Lookups,
     inventory: &[ItemSlot; INV],
+    equip: &inv::EquipSlots,
+    equip_page: i32,
     selected: usize,
     hotbar_scales: &[f32; HOTBAR],
     player: Option<&Player>,
@@ -67,35 +72,30 @@ pub fn draw_hud(
     // (context 0: grey `InventoryBack`, hotbar row `InventoryBack9`); closed, the ten
     // slots animate between 0.75 and 1.0 (context 13: grey back at 200/255, the
     // selected one yellow `InventoryBack14` at full white).
+    let mut open_hover: Option<inventory::HoverRef> = None;
     if inventory_open {
-        let inv_scale = 0.85f32;
-        if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
-            let hot_back = lookups.hud_uv(lookups.ui_back_hotbar.as_ref()).unwrap_or(back);
-            for j in 0..5usize {
-                for i in 0..10usize {
-                    let idx = i + j * 10;
-                    let x = 20.0 + i as f32 * 56.0 * inv_scale;
-                    let y = 20.0 + j as f32 * 56.0 * inv_scale;
-                    let slot = 52.0 * inv_scale;
-                    let uv = if j == 0 { hot_back } else { back };
-                    let c = 220.0 / 255.0;
-                    r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
-                    let item = &inventory[idx];
-                    slot::draw_slot_item(r, lookups, item, x, y, slot, inv_scale);
-                    if j == 0 {
-                        slot::draw_slot_number(
-                            r,
-                            lookups,
-                            x,
-                            y,
-                            i,
-                            inv_scale,
-                            idx == selected.min(HOTBAR - 1),
-                        );
-                    }
-                }
-            }
+        // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
+        // ammo columns, the equipment/vanity/dye columns (or the misc-equip page),
+        // the trash slot and the "Inventory"/"Coins"/"Ammo" labels.
+        let hit =
+            inventory::draw(r, lookups, screen, inventory, equip, selected, equip_page, mouse_pos);
+        open_hover = hit.hovered;
+        // `num20 = 174 + Main.mH` with `Main.mH = 0` (`Main.cs:41146`).
+        let num20 = 174.0f32;
+        // `Main.DrawPageIcons(num20 - 32)` (`Main.cs:41154`).
+        chrome::draw_page_icons(r, lookups, screen, equip_page, num20 - 32.0, mouse_pos);
+        // `Main.DrawDefenseCounter(num39, num40)` (`Main.cs:41421-41424`): drawn
+        // beside the last accessory row, only on the equipment pages. Defence is
+        // `Player.statDefense`, not modelled yet, so a fresh character's 0.
+        if let Some((dx, dy)) = hit.defense_anchor {
+            chrome::draw_defense_counter(r, lookups, dx, dy, 0, 0.85);
         }
+        // `Main.DrawGuideCraftText(73, 331 + num50)` (`Main.cs:41694`); the guide
+        // slot cannot be opened in the port yet, so the empty label is drawn.
+        chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
+        // `Main.DrawPVPIcons` (`Main.cs:41003`).
+        chrome::draw_pvp_icons(r, lookups, screen, equip_page, 0.0);
+        chrome::draw_hotbar_lock(r, lookups, false);
     } else if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
         let sel_back = lookups.hud_uv(lookups.ui_back_sel.as_ref()).unwrap_or(back);
         let mut x = 20.0;
@@ -195,20 +195,38 @@ pub fn draw_hud(
 
     // `Main.DrawPendingMouseText()` → `Main.MouseText` (`Main.cs:20162`, `20322`):
     // the hovered slot's item tooltip, drawn over the interface just before the
-    // cursor.
-    let hovered =
-        tooltip::hovered_slot(mouse_pos, inventory_open, selected, hotbar_scales, inventory);
-    tooltip::draw_item_tooltip(
-        r,
-        lookups,
-        mouse_pos,
-        hovered.map(|i| &inventory[i]),
-        screen,
-        pulse,
-    );
+    // cursor. With the inventory open the hover comes from the panel layout
+    // (`inventory::draw`); closed, only the hotbar row is hoverable.
+    let hover_item: Option<&ItemSlot> = if inventory_open {
+        open_hover.and_then(|h| hover_item_for(equip, inventory, h))
+    } else {
+        tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
+            .map(|i| &inventory[i])
+    };
+    tooltip::draw_item_tooltip(r, lookups, mouse_pos, hover_item, screen, pulse);
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+}
+
+/// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
+/// holds, so the tooltip layer can show its name.
+fn hover_item_for<'a>(
+    equip: &'a inv::EquipSlots,
+    inventory: &'a [ItemSlot; INV],
+    hit: inventory::HoverRef,
+) -> Option<&'a ItemSlot> {
+    use inventory::HoverRef as H;
+    match hit {
+        H::Grid(i) => inventory.get(i),
+        H::Coin(i) => equip.coins.get(i),
+        H::Ammo(i) => equip.ammo.get(i),
+        H::Armor(i) => equip.armor.get(i),
+        H::Dye(i) => equip.dye.get(i),
+        H::MiscEquip(i) => equip.misc_equips.get(i),
+        H::MiscDye(i) => equip.misc_dyes.get(i),
+        H::Trash => Some(&equip.trash),
+    }
 }

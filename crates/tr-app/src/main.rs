@@ -725,7 +725,12 @@ fn main() -> Result<()> {
         attack_cd: 0.0,
         inventory,
         equip: inv::EquipSlots::empty(),
-        equip_page: 0,
+        // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
+        // var selects the page for screenshots (0 = equipment, 2 = misc).
+        equip_page: std::env::var("TR_EQUIPPAGE")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0),
         selected: 0,
         hotbar_scales: {
             let mut s = [0.75; HOTBAR];
@@ -3113,6 +3118,8 @@ impl App {
                         screen,
                         lookups,
                         inventory,
+                        &self.equip,
+                        self.equip_page,
                         *selected,
                         &self.hotbar_scales,
                         player.as_ref(),
