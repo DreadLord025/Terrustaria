@@ -231,6 +231,65 @@ pub fn clamp_minimap_scale(scale: f32) -> f32 {
     scale.clamp(0.2, 3.0)
 }
 
+// ---------------------------------------------------------------------------
+// The input side — `MinimapFrame.Update` (`MinimapFrame.cs:138-177`)
+// ---------------------------------------------------------------------------
+
+/// `MinimapFrame.Update` (`MinimapFrame.cs:138-177`) minus the draw: which
+/// button `mouse` is over (already pure in `button_under_mouse`) and what a
+/// click does. `Hover(b)` mirrors the highlight (`buttonUnderMouse.IsHighlighted
+/// = true`, `:163`); `Click(b)` implies it too (`:163` runs before `:171`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MinimapAction {
+    None,
+    Hover(MinimapButton),
+    Click(MinimapButton),
+}
+
+/// `mouse_down` is the *held* state (`Main.mouseLeft`): `Update` runs every
+/// frame and `if (Main.mouseLeft) buttonUnderMouse.Click()` re-fires while the
+/// button is down (`MinimapFrame.cs:169-171`), so holding zoom-in multiplies the
+/// scale per frame until the `0.2..3` clamp catches it. The source's early-out
+/// `buttonUnderMouse == null || PlayerInput.IgnoreMouseInterface ||
+/// Main.LocalPlayer.controlTorch` (`:158`) has no port counterpart at this call
+/// site — the port passes `false` for it by construction (the fullscreen map,
+/// which does suppress the interface, is the `map.open` branch instead).
+pub fn update(
+    mouse: glam::Vec2,
+    frame_pos: [f32; 2],
+    style: &FrameStyle,
+    sizes: [[f32; 2]; 3],
+    mouse_down: bool,
+) -> MinimapAction {
+    // `GetButtonUnderMouse` (`:157,194-210`); no button -> return (`:158-161`).
+    match button_under_mouse(mouse, frame_pos, style, sizes) {
+        None => MinimapAction::None,
+        // `buttonUnderMouse.IsHighlighted = true` (`:163`); the click fires for
+        // as long as the button is held (`:169-171`).
+        Some(button) if mouse_down => MinimapAction::Click(button),
+        Some(button) => MinimapAction::Hover(button),
+    }
+}
+
+/// The zoom handlers (`MinimapFrame.cs:107-136`) applied to the minimap scale
+/// (`Main.mapMinimapScale`): `ResetZoom` pins `1.05` (`:109`), `ZoomInButton`
+/// multiplies by `1.025` (`:122`), `ZoomOutButton` by `0.975` (`:135`), clamped
+/// to the draw-side range (`Main.cs:55515-55522`). `Hover`/`None` are no-ops.
+pub fn apply(action: MinimapAction, scale: &mut f32) {
+    match action {
+        MinimapAction::None | MinimapAction::Hover(_) => {}
+        MinimapAction::Click(MinimapButton::Reset) => {
+            *scale = clamp_minimap_scale(DEFAULT_ZOOM);
+        }
+        MinimapAction::Click(MinimapButton::ZoomIn) => {
+            *scale = clamp_minimap_scale(*scale * ZOOM_IN_MULTIPLIER);
+        }
+        MinimapAction::Click(MinimapButton::ZoomOut) => {
+            *scale = clamp_minimap_scale(*scale * ZOOM_OUT_MULTIPLIER);
+        }
+    }
+}
+
 /// `Main.RecommendedEquipmentAreaPushUp` (`Main.cs:2967-2977`): `600` without
 /// the Demon Heart / master-mode accessory rows (the port has neither, and
 /// `PushEquipmentAreaUp` stays off).
@@ -607,5 +666,91 @@ mod tests {
         // — the 22 px hitbox floor still applies there and nothing draws.
         assert_eq!(button_sizes(&assets::Lookups::default(), 0), [[0.0; 2]; 3]);
         assert_eq!(button_sizes(&assets::Lookups::default(), 8), [[0.0; 2]; 3]);
+    }
+
+    #[test]
+    fn update_yields_none_outside_the_buttons_even_when_held() {
+        // `MinimapFrame.cs:157-161`: no button under the mouse -> return before
+        // any click, `Main.mouseLeft` notwithstanding.
+        let style = &FRAME_STYLES[0];
+        let frame_pos = frame_position([1312.0, 94.0], style);
+        let sizes = [[18.0, 18.0]; 3];
+        assert_eq!(
+            update(
+                Vec2::new(100.0, 100.0),
+                frame_pos,
+                style,
+                sizes,
+                true, // held
+            ),
+            MinimapAction::None
+        );
+    }
+
+    #[test]
+    fn update_hover_without_a_press_and_click_repeat_while_held() {
+        // The Default geometry: zoom-in's centre is (1515, 328)
+        // (`MinimapFrameManager.cs:25` + FramePosition (1304, 79)).
+        let style = &FRAME_STYLES[0];
+        let frame_pos = frame_position([1312.0, 94.0], style);
+        let sizes = [[18.0, 18.0]; 3];
+        let zoom_in = Vec2::new(1515.0, 328.0);
+        // `buttonUnderMouse.IsHighlighted = true` (`MinimapFrame.cs:163`).
+        assert_eq!(
+            update(zoom_in, frame_pos, style, sizes, false),
+            MinimapAction::Hover(MinimapButton::ZoomIn)
+        );
+        // `if (Main.mouseLeft) buttonUnderMouse.Click()` (`:169-171`) re-fires
+        // every frame while held.
+        assert_eq!(
+            update(zoom_in, frame_pos, style, sizes, true),
+            MinimapAction::Click(MinimapButton::ZoomIn)
+        );
+        assert_eq!(
+            update(zoom_in, frame_pos, style, sizes, true),
+            MinimapAction::Click(MinimapButton::ZoomIn)
+        );
+    }
+
+    #[test]
+    fn apply_matches_the_zoom_handlers_and_clamp() {
+        // `ResetZoom` (`MinimapFrame.cs:107-110`).
+        let mut scale = 2.0;
+        apply(MinimapAction::Click(MinimapButton::Reset), &mut scale);
+        assert_eq!(scale, 1.05);
+        // `ZoomInButton` (`:120-123`) on the clamp's ceiling (`Main.cs:55522`).
+        let mut scale = 3.0;
+        apply(MinimapAction::Click(MinimapButton::ZoomIn), &mut scale);
+        assert_eq!(scale, 3.0);
+        // `ZoomOutButton` (`:133-136`) on the clamp's floor (`Main.cs:55516`).
+        let mut scale = 0.2;
+        apply(MinimapAction::Click(MinimapButton::ZoomOut), &mut scale);
+        assert_eq!(scale, 0.2);
+        // `Hover`/`None` never touch the scale.
+        let mut scale = 1.5;
+        apply(MinimapAction::Hover(MinimapButton::Reset), &mut scale);
+        apply(MinimapAction::None, &mut scale);
+        assert_eq!(scale, 1.5);
+    }
+
+    #[test]
+    fn held_zoom_in_stops_at_the_clamp() {
+        // Holding zoom-in multiplies by 1.025 per frame
+        // (`MinimapFrame.cs:169-171,120-123`) until `Clamp(0.2, 3)`
+        // (`Main.cs:55515-55522`) catches it. 40 frames from 1.05 land at
+        // `1.05 * 1.025^40 = 2.8193` — the saturation point is 45 frames
+        // (`1.05 * 1.025^45 = 3.19`, clamped), so the sequence *stops* at 3.0
+        // and can never exceed it.
+        let mut scale = DEFAULT_ZOOM;
+        for _ in 0..40 {
+            apply(MinimapAction::Click(MinimapButton::ZoomIn), &mut scale);
+        }
+        assert!((scale - 2.8193).abs() < 1e-3);
+        assert!(scale < 3.0);
+        // Holding longer pins it at exactly 3.0 (the clamp's ceiling).
+        for _ in 0..20 {
+            apply(MinimapAction::Click(MinimapButton::ZoomIn), &mut scale);
+        }
+        assert_eq!(scale, 3.0);
     }
 }

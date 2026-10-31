@@ -370,6 +370,108 @@ pub fn draw_hotbar_lock(_r: &mut SpriteRenderer, _lookups: &assets::Lookups, pus
     let _ = hotbar_lock_y(push_side_tools_up);
 }
 
+// ---------------------------------------------------------------------------
+// Map-style icon row — `Main.DrawInventory` (`Main.cs:41055-41126`)
+// ---------------------------------------------------------------------------
+
+/// `Main.cs:41087`: the hover/click test is `32` px wide and `30` px tall (the
+/// C# literals), inclusive on every edge (`mouseX >= num16 && mouseX <= num16
+/// + 32 && mouseY >= num17 && mouseY <= num17 + 30`).
+pub const MAP_ICON_HIT: [f32; 2] = [32.0, 30.0];
+
+/// `Main.cs:41070-41087`: icon `k`'s top-left. At 1600x900 (>= 940 width):
+/// `(screenWidth - 440 + k*32 - num14, 40)` with `num14 = 0` (`:41070`).
+/// The `< 940` branch (`:41061-41068,41076-41080`) stacks vertically at
+/// `(screenWidth - 40, -200 + k*32)`, kept for fidelity.
+pub fn map_icon_rect(k: usize, screen: Vec2) -> [f32; 2] {
+    // `if (Main.screenWidth < 940) flag = true` (`:41061-41064`).
+    map_icon_rect_flag(k, screen, screen.x < 940.0)
+}
+
+/// The branched form, with `flag` the source's local (`:41058,41063`), so the
+/// kept-dead `< 940` geometry stays testable at the 1600x900 reference frame.
+fn map_icon_rect_flag(k: usize, screen: Vec2, flag: bool) -> [f32; 2] {
+    // `int num12 = num3 - 440; int num13 = 40 + num4` (`:41059-41060`, `num3 =
+    // screenWidth`, `num4 = 0`); the flag branch rewrites both
+    // (`num12 = num5 - 40; num13 = num6 - 200`, `:41067-41068`, `num5 =
+    // screenWidth`, `num6 = 0`).
+    let (num12, num13) = if flag {
+        (screen.x - 40.0, -200.0)
+    } else {
+        (screen.x - 440.0, 40.0)
+    };
+    // `int num14 = 0` (`:41070`): never reassigned in the loop (`:41071-41124`).
+    let num14 = 0.0;
+    if flag {
+        // `num16 = num12; num17 = num13 + k * 32 - num14` (`:41078-41079`).
+        [num12, num13 + k as f32 * 32.0 - num14]
+    } else {
+        // `num16 = num12 + k * 32 - num14; num17 = num13` (`:41074-41075`).
+        [num12 + k as f32 * 32.0 - num14, num13]
+    }
+}
+
+/// The `Color(num15, num15, num15, num15)` tint and the `MapIcon[num18]` sheet
+/// index of one icon (`Main.cs:41073-41090,41123`): `120` base, `200` when the
+/// icon is the active style (`k > 0 && Main.mapStyle == k - 1`,
+/// `:41083-41086` — `k = 0` is never "active"), `255` + the `Map_{k+4}` sheet
+/// while hovered (`:41087-41090`). The sheet index indexes `Lookups::map_icons`
+/// (`Images/Map_0..7`, `AssetInitializer.cs:386-389`).
+pub fn map_icon_appearance(k: usize, map_style: i32, hovered: bool) -> ([f32; 4], usize) {
+    // `int num18 = k` (`:41081`); hovered adds 4 (`num18 += 4`, `:41090`).
+    let sheet = if hovered { k + 4 } else { k };
+    // `num15 = 120` (`:41082`), `num15 = 200` (`:41085`), `num15 = 255`
+    // (`:41089`).
+    let byte = if hovered {
+        255
+    } else if k > 0 && map_style == k as i32 - 1 {
+        200
+    } else {
+        120
+    };
+    let c = byte as f32 / 255.0;
+    ([c, c, c, c], sheet)
+}
+
+/// `Main.DrawInventory`'s row (`Main.cs:41055-41126`): the four `MapIcon[k]`
+/// sheets (fullscreen map, map off, the minimap, the overlay) at
+/// `map_icon_rect`, tinted per `map_icon_appearance`, drawn with the full-frame
+/// source rect at scale 1 (`:41123`). `map_style` is `Main.mapStyle`.
+///
+/// Deviations from the C# original: the whole row sits behind
+/// `if (Main.mapEnabled)` (`:41056`), which this signature cannot see — the
+/// port draws it whenever the inventory is open (the clicks, wired in
+/// `main.rs`, are still gated on the map being enabled); the hover's
+/// `Main.DoStatefulTickSound` (`:41126`) and the clicks' `PlaySound(10)/(12)`
+/// (`:41100,41109-41119`) are not ported — no UI cue is loaded
+/// (`audio.rs:22-31`), consistent with the silent menus.
+pub fn draw_map_style_icons(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    map_style: i32,
+    mouse_pos: Vec2,
+) {
+    for k in 0..4usize {
+        let pos = map_icon_rect(k, screen);
+        // `Main.cs:41087`: inclusive on all four edges.
+        let hovered = mouse_pos.x >= pos[0]
+            && mouse_pos.x <= pos[0] + MAP_ICON_HIT[0]
+            && mouse_pos.y >= pos[1]
+            && mouse_pos.y <= pos[1] + MAP_ICON_HIT[1];
+        let (tint, sheet) = map_icon_appearance(k, map_style, hovered);
+        let Some(rect) = lookups.map_icons.get(sheet).and_then(|s| s.as_ref()) else {
+            continue; // missing sheets draw nothing (`Lookups::default()`)
+        };
+        let Some(uv) = lookups.hud_uv(Some(rect)) else {
+            continue;
+        };
+        // `spriteBatch.Draw(..., new Vector2(num16, num17), Rectangle(0, 0,
+        // Width, Height), Color(num15, ...))` (`:41123`): scale 1, whole sheet.
+        r.push_ui_sprite(pos, [rect.width as f32, rect.height as f32], uv, tint);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -435,5 +537,55 @@ mod tests {
         // `num = 21 + pivotTopLeftY` (0), or `pivotTopLeftY` when pushed up.
         assert_eq!(hotbar_lock_y(false), 21.0);
         assert_eq!(hotbar_lock_y(true), 0.0);
+    }
+
+    #[test]
+    fn map_icon_rect_at_1600x900() {
+        // `Main.cs:41059-41075`: `num12 = 1600 - 440`, `num13 = 40`,
+        // `num16 = num12 + k*32 - num14`, `num14 = 0`.
+        assert_eq!(map_icon_rect(0, Vec2::new(1600.0, 900.0)), [1160.0, 40.0]);
+        assert_eq!(map_icon_rect(1, Vec2::new(1600.0, 900.0)), [1192.0, 40.0]);
+        assert_eq!(map_icon_rect(2, Vec2::new(1600.0, 900.0)), [1224.0, 40.0]);
+        assert_eq!(map_icon_rect(3, Vec2::new(1600.0, 900.0)), [1256.0, 40.0]);
+        // The branch selector itself (`Main.cs:41061`): a >= 940 width is the
+        // horizontal row, a narrower one stacks vertically.
+        assert_eq!(
+            map_icon_rect(0, Vec2::new(940.0, 900.0)),
+            [500.0, 40.0]
+        );
+        assert_eq!(
+            map_icon_rect(0, Vec2::new(939.0, 900.0)),
+            [899.0, -200.0]
+        );
+    }
+
+    #[test]
+    fn map_icon_rect_below_940_branch_kept_for_fidelity() {
+        // `Main.cs:41067-41079`: `num12 = num5 - 40`, `num13 = num6 - 200`, then
+        // `num16 = num12; num17 = num13 + k*32 - num14`. Dead at the port's
+        // reference resolutions, tested at 1600x900 through the `flag` form.
+        let screen = Vec2::new(1600.0, 900.0);
+        assert_eq!(map_icon_rect_flag(0, screen, true), [1560.0, -200.0]);
+        assert_eq!(map_icon_rect_flag(1, screen, true), [1560.0, -168.0]);
+        assert_eq!(map_icon_rect_flag(2, screen, true), [1560.0, -136.0]);
+        assert_eq!(map_icon_rect_flag(3, screen, true), [1560.0, -104.0]);
+    }
+
+    #[test]
+    fn map_icon_appearance_matches_the_tint_and_sheet_table() {
+        // The whole-UI P4 plan's Task 3 table, oracles `Main.cs:41073-41090`.
+        let c = |b: f32| [b / 255.0; 4];
+        // Hovered: 255 + the `Map_{k+4}` sheet (`:41087-41090`), any style.
+        assert_eq!(map_icon_appearance(2, 0, true), (c(255.0), 6));
+        // k = 0 is never "active" (`:41083`): 120 (`:41082`).
+        assert_eq!(map_icon_appearance(0, 0, false), (c(120.0), 0));
+        assert_eq!(map_icon_appearance(0, 2, false), (c(120.0), 0));
+        // The active style icon: `k > 0 && mapStyle == k - 1` -> 200
+        // (`:41083-41086`).
+        assert_eq!(map_icon_appearance(1, 0, false), (c(200.0), 1));
+        assert_eq!(map_icon_appearance(2, 1, false), (c(200.0), 2));
+        assert_eq!(map_icon_appearance(3, 2, false), (c(200.0), 3));
+        // An inactive icon stays 120.
+        assert_eq!(map_icon_appearance(1, 1, false), (c(120.0), 1));
     }
 }

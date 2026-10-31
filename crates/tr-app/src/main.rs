@@ -753,6 +753,7 @@ fn main() -> Result<()> {
         join_target,
         map: Some(world_map),
         map_grab: None,
+        minimap_hover: None,
         // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
         // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
         // out-of-range value falls back to 1).
@@ -955,6 +956,11 @@ struct App {
     /// `Main.grabMapX`/`grabMapY`: the cursor anchor of an in-progress
     /// fullscreen-map drag (`Main.cs:55346-55354`).
     map_grab: Option<[f32; 2]>,
+    /// `MinimapFrame.Update`'s hovered button (`MinimapFrame.cs:163`),
+    /// resolved every frame in `handle_minimap_clicks` and consumed by the
+    /// minimap branch's `draw_foreground`; `Some` also mirrors `:164`'s
+    /// `Main.LocalPlayer.mouseInterface = true` (the mine/place suppression).
+    minimap_hover: Option<ui::minimap::MinimapButton>,
     /// `Main.mapStyle` (`Main.cs:66750`, default 1): 0 = off, 1 = the minimap
     /// frame, 2 = the overlay (out of P4 scope — nothing draws, the whole-UI P4
     /// plan's Uncertainty 7). The map-style buttons land in Task 3, so a debug
@@ -1864,6 +1870,18 @@ impl App {
             self.mine_timer = 0.0;
             return;
         }
+        // `MinimapFrame.Update` sets `Main.LocalPlayer.mouseInterface = true`
+        // while a zoom button is hovered (`MinimapFrame.cs:164`), which zeroes
+        // the use-item / use-tile inputs for the frame — so mining, placing and
+        // attacking are suppressed behind the frame the same way the fullscreen
+        // map suppresses them above (`handle_minimap_clicks` keeps this flag
+        // current, having run earlier this frame).
+        if self.minimap_hover.is_some() {
+            self.edit_target = None;
+            self.mine_target = None;
+            self.mine_timer = 0.0;
+            return;
+        }
         let m = self.mouse_pos;
         let hud_top = screen.y - 96.0;
         if m.x < 0.0
@@ -2304,6 +2322,58 @@ impl App {
         }
     }
 
+    /// `MinimapFrameManager.DrawTo` -> `MinimapFrame.Update`
+    /// (`MinimapFrameManager.cs:45`, `MinimapFrame.cs:138-177`): the hover +
+    /// held-click handling of the three zoom buttons, run every frame while the
+    /// minimap HUD is live (the same gate as the draw branch). Clicks repeat
+    /// every frame while the button is held (`:169-171`); `apply` mutates the
+    /// minimap scale (`:107-136`). The resulting hover also feeds the
+    /// `draw_foreground` highlight (the source's `IsHighlighted`, `:163`) and
+    /// the mine/place suppression (`:164`'s `mouseInterface`).
+    ///
+    /// Deviation: `:167,174` play `SoundEngine.PlaySound(12)` on hover changes
+    /// and click releases — the port loads no UI cue (`audio.rs:22-31`), so it
+    /// stays silent, consistent with the menus.
+    fn handle_minimap_clicks(&mut self) {
+        // The buttons exist only while the frame draws (`Main.cs:55546`'s
+        // `DrawTo` gate): `mapEnabled && !mapFullscreen && mapStyle == 1`,
+        // plus the port's screenshot `no_hud` knob that hides the draw too.
+        let live = self.settings.map_enabled
+            && !no_hud()
+            && self.map.as_ref().is_some_and(|m| !m.open)
+            && self.map_style == 1;
+        if !live {
+            self.minimap_hover = None;
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        // The frame position from the same formula as the draw branch
+        // (`Main.cs:55546`'s `DrawTo` position + `_frameOffset`).
+        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
+        let s = ui::minimap::style_index(&self.settings.minimap_frame);
+        let frame_pos = ui::minimap::frame_position(pos, &ui::minimap::FRAME_STYLES[s]);
+        let sizes = ui::minimap::button_sizes(&self.lookups, s);
+        // `Main.mouseLeft` is the held state (`MinimapFrame.cs:169`).
+        let action = ui::minimap::update(
+            self.mouse_pos,
+            frame_pos,
+            &ui::minimap::FRAME_STYLES[s],
+            sizes,
+            self.mine_down,
+        );
+        // `buttonUnderMouse.IsHighlighted = true` (`:163`); a click implies it.
+        self.minimap_hover = match action {
+            ui::minimap::MinimapAction::None => None,
+            ui::minimap::MinimapAction::Hover(b) | ui::minimap::MinimapAction::Click(b) => Some(b),
+        };
+        // `buttonUnderMouse.Click()` -> the zoom handlers (`:171`, `:107-136`);
+        // `apply` is a no-op unless the action is a click.
+        if let Some(m) = self.map.as_mut() {
+            ui::minimap::apply(action, &mut m.minimap_scale);
+        }
+    }
+
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
@@ -2314,6 +2384,44 @@ impl App {
         self.ui_right_press = false;
         if !left && !right {
             return;
+        }
+        // `Main.cs:41087-41120`: the map-style icon row's clicks — one-shot on
+        // the press (`Main.mouseLeft && Main.mouseLeftRelease`), only while the
+        // inventory is open (their home is `DrawInventory`, `:41055`) and the
+        // map system is enabled (`:41056`'s `Main.mapEnabled` wraps the row).
+        // A hit consumes the press and returns before the slot handling.
+        // `PlaySound(10)/(12)` (`:41100,41109-41119`) is not ported — no UI cue
+        // is loaded (`audio.rs:22-31`).
+        if left && self.inventory_open && self.settings.map_enabled {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            for k in 0..4usize {
+                let [x, y] = ui::chrome::map_icon_rect(k, screen);
+                // `Main.cs:41087`: inclusive on all four edges.
+                if self.mouse_pos.x >= x
+                    && self.mouse_pos.x <= x + ui::chrome::MAP_ICON_HIT[0]
+                    && self.mouse_pos.y >= y
+                    && self.mouse_pos.y <= y + ui::chrome::MAP_ICON_HIT[1]
+                {
+                    if k == 0 {
+                        // `Main.cs:41095-41104`: close the inventory, open the
+                        // fullscreen map. `set_open(true)` already resets the
+                        // scale to `2.5` and arms the recentre (`Main.cs:41101,
+                        // 41104`, `crates/tr-app/src/map.rs:451-457`);
+                        // `SetTalkNPC(-1)` / `npcChatCornerItem = 0` have no
+                        // port counterpart.
+                        self.inventory_open = false;
+                        if let Some(m) = self.map.as_mut() {
+                            m.set_open(true);
+                        }
+                    } else {
+                        // `Main.cs:41106-41120`: `k == 1/2/3` ->
+                        // `Main.mapStyle = 0/1/2`.
+                        self.map_style = k as i32 - 1;
+                    }
+                    return;
+                }
+            }
         }
         let Some(slot) = self.slot_at_mouse() else {
             return;
@@ -2772,6 +2880,9 @@ impl App {
         });
 
         if self.menu.is_none() {
+            // `MinimapFrame.Update` runs before the inventory's click handling
+            // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
+            self.handle_minimap_clicks();
             self.handle_inventory_clicks();
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
@@ -3141,6 +3252,48 @@ impl App {
                 // the HUD (hotbar, life, inventory) is not drawn over the map.
                 let fullscreen_map =
                     settings.map_enabled && map.as_ref().is_some_and(|m| m.open);
+                // The minimap branch draws **before** the HUD: the vanilla
+                // interface passes are ordered 16 (map/minimap,
+                // `Main.cs:44796`) < 25/27/30 (resources/inventory/hotbar,
+                // `:44831/:44841/:44861`), so the hearts and the open inventory
+                // paint over the frame. `Main.DrawMap`'s `mapStyle == 1`
+                // branch (`Main.cs:55503-55547`): the three vanilla passes in
+                // draw order — the `DrawTo` black backdrop (`:55546`, via
+                // `map_back` so it lands under the tiles), the tile pass
+                // (`MapRenderer.DrawMap`, `:55609`) and the frame foreground
+                // batch (`:55768-55769`). `mapStyle == 2` (the overlay) draws
+                // nothing (out of P4 scope, the whole-UI P4 plan's
+                // Uncertainty 7).
+                let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
+                if settings.map_enabled
+                    && menu.is_none()
+                    && !no_hud()
+                    && !fullscreen_map
+                    && self.map_style == 1
+                {
+                    if let Some(m) = map.as_ref() {
+                        let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin(
+                            screen,
+                        ));
+                        // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
+                        ui::minimap::draw_background(renderer, lookups, pos, 1.0);
+                        m.draw_minimap(renderer, world, screen, view_center);
+                        // The hover highlight is `MinimapFrame.Update`'s
+                        // `buttonUnderMouse.IsHighlighted`
+                        // (`MinimapFrame.cs:163`), resolved per frame in
+                        // `handle_minimap_clicks` — like the source, where
+                        // `DrawTo` runs `Update` before the foreground batch
+                        // (`MinimapFrameManager.cs:45`, `Main.cs:55769`).
+                        let s = ui::minimap::style_index(&settings.minimap_frame);
+                        ui::minimap::draw_foreground(
+                            renderer,
+                            lookups,
+                            s,
+                            pos,
+                            self.minimap_hover,
+                        );
+                    }
+                }
                 if menu.is_none() && !no_hud() && !fullscreen_map {
                     ui::draw_hud(
                         renderer,
@@ -3166,6 +3319,7 @@ impl App {
                             cursor_scale: self.cursor.scale(),
                         },
                         m_h,
+                        self.map_style,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
@@ -3173,8 +3327,8 @@ impl App {
                 // Task 6b: upload the revealed tiles into the world-sized map texture
                 // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                 // and the minimap on the view centre (`Main.cs:55420-55421`,
-                // `55537-55538`): `(screenPosition + screenSize/2)/16`.
-                let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
+                // `55537-55538`): `(screenPosition + screenSize/2)/16` — `view_center`
+                // is computed above, where the minimap branch consumes it.
                 if settings.map_enabled {
                     if let Some(m) = map.as_mut() {
                         m.prepare(renderer, gpu, world, screen, view_center);
@@ -3182,9 +3336,6 @@ impl App {
                 }
                 if let Some(map) = map.as_ref() {
                     if !no_hud() && menu.is_none() && settings.map_enabled {
-                        // `Main.DrawMap` (`Main.cs:55503`): the minimap
-                        // (`else if (mapStyle == 1)`) and the fullscreen map
-                        // (`if (mapFullscreen)`) branches are exclusive.
                         if map.open {
                             // `Main.cs:55483`: the biome `MapBG` backdrop is
                             // drawn before the wooden frame, so it goes into
@@ -3222,33 +3373,13 @@ impl App {
                                     renderer, player_assets, p, icon_pos, 1.0, [1.0; 4],
                                 );
                             }
-                        } else if self.map_style == 1 {
-                            // `Main.DrawMap`'s `mapStyle == 1` branch
-                            // (`Main.cs:55503-55547`): the three vanilla
-                            // passes in draw order — the `DrawTo` black
-                            // backdrop (`:55546`, via `map_back` so it lands
-                            // under the tiles), the tile pass
-                            // (`MapRenderer.DrawMap`, `:55609`) and the frame
-                            // foreground batch (`:55768-55769`). `mapStyle ==
-                            // 2` (the overlay) draws nothing (out of P4 scope,
-                            // the whole-UI P4 plan's Uncertainty 7).
-                            let pos =
-                                ui::minimap::draw_to_position(ui::minimap::minimap_origin(screen));
-                            // `Main.mapMinimapAlpha = 1` (`Main.cs:66753`).
-                            ui::minimap::draw_background(renderer, lookups, pos, 1.0);
-                            map.draw_minimap(renderer, world, screen, view_center);
-                            // `MinimapFrame.Update`'s highlight, resolved at
-                            // draw time until Task 3 moves the input side:
-                            // `GetButtonUnderMouse` (`MinimapFrame.cs:194-210`).
-                            let s = ui::minimap::style_index(&settings.minimap_frame);
-                            let hover = ui::minimap::button_under_mouse(
-                                self.mouse_pos,
-                                ui::minimap::frame_position(pos, &ui::minimap::FRAME_STYLES[s]),
-                                &ui::minimap::FRAME_STYLES[s],
-                                ui::minimap::button_sizes(lookups, s),
-                            );
-                            ui::minimap::draw_foreground(renderer, lookups, s, pos, hover);
                         }
+                        // The `else if self.map_style == 1` minimap branch
+                        // (`Main.cs:55503-55547`) draws above `ui::draw_hud`
+                        // now — vanilla renders interface layer 16 (the
+                        // minimap, `Main.cs:44796`) before layers 25/27/30
+                        // (`:44831/:44841/:44861`), so the hearts and the
+                        // inventory paint over the frame.
                     }
                 }
 

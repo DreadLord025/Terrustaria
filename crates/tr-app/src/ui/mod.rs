@@ -48,6 +48,8 @@ impl Default for UiPulse {
 /// `BigProgressBarHelper`). `m_h` is `Main.mH`
 /// (`Main.DrawInterface_16_MapOrMinimap`, `Main.cs:45771-45798`) — `256` while
 /// the minimap HUD is live, `0` otherwise; it pushes the equipment block down.
+/// `map_style` is `Main.mapStyle` (`Main.cs:66750`), driving the map-style icon
+/// row's active tint (`Main.cs:41083-41086`).
 #[allow(clippy::too_many_arguments)]
 pub fn draw_hud(
     r: &mut SpriteRenderer,
@@ -69,6 +71,7 @@ pub fn draw_hud(
     cursor_state: &cursor::CursorState,
     pulse: UiPulse,
     m_h: f32,
+    map_style: i32,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -113,6 +116,10 @@ pub fn draw_hud(
         // `Main.DrawPVPIcons` (`Main.cs:41003`).
         chrome::draw_pvp_icons(r, lookups, screen, equip_page, 0.0);
         chrome::draw_hotbar_lock(r, lookups, false);
+        // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
+        // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel
+        // (`:41706`).
+        chrome::draw_map_style_icons(r, lookups, screen, map_style, mouse_pos);
         // `Main.cs:41706-41709`: with `NewCraftingUI.Visible` the crafting panel is
         // drawn after `Main.DrawInventory`'s own passes. The guide slot cannot be
         // opened in the port yet (see `draw_guide_text` above), so `guide_mode`

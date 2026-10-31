@@ -34,8 +34,9 @@ const GRID_PITCH: f32 = 56.0;
 /// `Main.cs:41022-41028`: 10 columns x 5 rows, slot `i + j*10`.
 const GRID_COLS: usize = 10;
 const GRID_ROWS: usize = 5;
-/// `Main.cs:41146`: `num20 = 174 + Main.mH`; `Main.mH = 0` here
-/// (`Main.cs:2367`).
+/// `Main.cs:41146`: `num20 = 174 + Main.mH` — the `174` base; `m_h` threads in
+/// as an `equip_base_y` parameter (`0`, or `256` while the minimap HUD is live,
+/// `Main.cs:45780`).
 const EQUIP_BASE_Y: f32 = 174.0;
 /// `Main.cs:41147,41149-41153`: `num21 = 950`; below it a `>= 10`-slot stack is
 /// pulled up by `(int)(56 * inventoryScale * (num19 - 9))`.
