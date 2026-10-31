@@ -30,8 +30,12 @@ pub struct Settings {
     pub tile_grid: bool,
     /// `Main.GamepadDisableInstructionsDisplay`.
     pub gamepad_instructions: bool,
-    /// `Main.caveParallax` (the "Parallax" slider, on/off in this port).
-    pub parallax: bool,
+    /// `Main.bgScroll` (`Main.cs:2429`, a plain static): the "Parallax" slider
+    /// value, 0..=100 — the bar stores `(int)(value * 100f)` (`Main.cs:51642`)
+    /// and the backdrop scrolls by `caveParallax = 1 - bgScroll / 500`
+    /// (`Main.cs:50383`, `:51643`). Vanilla persists it under "BackgroundParallax"
+    /// (`:4134`, read back at `:4407`); a fresh config keeps the static's 0.
+    pub parallax_scroll: u8,
     /// `Main.FrameSkipMode`: 0 off, 1 on, 2 subtle.
     pub frame_skip: u8,
     /// `Lighting.Mode`: 0 Color, 1 White, 2 Retro, 3 Trippy.
@@ -77,7 +81,7 @@ impl Default for Settings {
             highlight_new_items: true,
             tile_grid: false,
             gamepad_instructions: true,
-            parallax: true,
+            parallax_scroll: 0,
             frame_skip: 0,
             light_mode: 0,
             quality: 0,
@@ -140,7 +144,12 @@ impl Settings {
                 "HighlightNewItems" => me.highlight_new_items = boolean(value),
                 "MouseShowBuildingGrid" => me.tile_grid = boolean(value),
                 "GamepadInstructions" => me.gamepad_instructions = boolean(value),
-                "CaveParallax" => me.parallax = boolean(value),
+                // `configuration.Get("BackgroundParallax", ref Main.bgScroll)`
+                // (`Main.cs:4407`); the slider only writes 0..=100 (`:51642`).
+                "BackgroundParallax" => {
+                    me.parallax_scroll =
+                        value.parse().unwrap_or(me.parallax_scroll).min(100)
+                }
                 "FrameSkipMode" => me.frame_skip = value.parse().unwrap_or(me.frame_skip).min(2),
                 "LightingMode" => me.light_mode = value.parse().unwrap_or(me.light_mode).min(3),
                 "Quality" => me.quality = value.parse().unwrap_or(me.quality).min(3),
@@ -191,7 +200,8 @@ impl Settings {
              \"HidePassword\": {},\n  \"SettingPlayWhenUnfocused\": {},\n  \"PickupText\": {},\n  \
              \"InvasionProgressMode\": {},\n  \"PlacementPreview\": {},\n  \
              \"HighlightNewItems\": {},\n  \"MouseShowBuildingGrid\": {},\n  \
-             \"GamepadInstructions\": {},\n  \"CaveParallax\": {},\n  \"FrameSkipMode\": {},\n  \
+             \"GamepadInstructions\": {},\n  \"BackgroundParallax\": {},\n  \
+             \"FrameSkipMode\": {},\n  \
              \"LightingMode\": {},\n  \"Quality\": {},\n  \"BackgroundEnabled\": {},\n  \
              \"BloodAndGore\": {},\n  \"MinersWobble\": {},\n  \"TilesSwayInWind\": {},\n  \
              \"Zoom\": {:.3},\n  \"MusicVolume\": {:.3},\n  \"SoundVolume\": {:.3},\n  \
@@ -208,7 +218,7 @@ impl Settings {
             self.highlight_new_items,
             self.tile_grid,
             self.gamepad_instructions,
-            self.parallax,
+            self.parallax_scroll,
             self.frame_skip,
             self.light_mode,
             self.quality,
@@ -240,7 +250,9 @@ mod tests {
         assert!(s.play_when_unfocused);
         assert!(s.placement_preview);
         assert!(!s.tile_grid);
-        assert!(s.parallax);
+        // `Main.bgScroll` is a plain static (`Main.cs:2429`): 0 until the slider
+        // (or a stored "BackgroundParallax") touches it.
+        assert_eq!(s.parallax_scroll, 0);
         assert_eq!(s.frame_skip, 0);
         assert_eq!(s.light_mode, 0);
         assert_eq!(s.quality, 0);
@@ -270,6 +282,7 @@ mod tests {
         s.music_volume = 0.4;
         s.sound_volume = 0.2;
         s.ambient_volume = 0.9;
+        s.parallax_scroll = 37;
         s.map_scale = 0.5;
         s.minimap_frame = "Golden".to_string();
         let back = Settings::parse(&s.to_json());
@@ -288,6 +301,7 @@ mod tests {
         assert!((back.music_volume - s.music_volume).abs() < 1e-3);
         assert!((back.sound_volume - s.sound_volume).abs() < 1e-3);
         assert!((back.ambient_volume - s.ambient_volume).abs() < 1e-3);
+        assert_eq!(back.parallax_scroll, 37);
         assert!((back.map_scale - s.map_scale).abs() < 1e-3);
         assert_eq!(back.minimap_frame, s.minimap_frame);
     }
@@ -297,5 +311,18 @@ mod tests {
         let s = Settings::parse("{\n \"Nope\": true,\n \"AutoSave\": false,\n \"LightingMode\": 9\n}");
         assert!(!s.auto_save);
         assert_eq!(s.light_mode, 3, "clamped to the four modes");
+    }
+
+    #[test]
+    fn parallax_scroll_reads_the_vanilla_key() {
+        // `Main.SaveSettings` writes "BackgroundParallax" (`Main.cs:4134`) and
+        // `LoadSettings` reads it back (`:4407`), so a vanilla config.json
+        // round-trips; out-of-range values clamp to the slider's 0..=100.
+        let s = Settings::parse("{\n \"BackgroundParallax\": 50\n}");
+        assert_eq!(s.parallax_scroll, 50);
+        let s = Settings::parse("{\n \"BackgroundParallax\": 500\n}");
+        assert_eq!(s.parallax_scroll, 0, "u8 parse fails, the default stays");
+        let s = Settings::parse("{\n \"BackgroundParallax\": 90\n}");
+        assert_eq!(s.parallax_scroll, 90);
     }
 }

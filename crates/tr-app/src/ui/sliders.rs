@@ -86,8 +86,7 @@ pub fn value_bar_knob(rect: [f32; 4], value: f32) -> [f32; 2] {
 /// blips, not 168 — the `Slider_Highlight` overlay tinted `OurFavoriteColor`
 /// while the mouse is inside the hit box (`IngameOptions.cs:1557-1564`), then
 /// the ColorSlider knob.
-// Consumed by the volume / parallax screens (Task 2).
-#[allow(dead_code)]
+// Drawn by the volume (26) and parallax (28) screens (`menu.rs`).
 pub fn draw_value_bar(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,

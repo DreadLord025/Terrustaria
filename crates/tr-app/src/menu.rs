@@ -24,6 +24,7 @@ use tr_render::SpriteRenderer;
 
 use crate::assets;
 use crate::settings::Settings;
+use crate::ui::{color, sliders};
 
 /// `Main.maxMenuItems` is 20; the largest screen here is the 12-row interface list.
 pub const MAX_ITEMS: usize = 20;
@@ -166,7 +167,6 @@ enum Toggle {
     HighlightNew,
     TileGrid,
     GamepadInstructions,
-    Parallax,
     FrameSkip,
     LightMode,
     Quality,
@@ -213,6 +213,35 @@ impl Item {
         self.scale = scale;
         self
     }
+
+    /// `array[i] = true`: drawn but not clickable (screen titles,
+    /// `Main.cs:51790-51796`).
+    fn heading(mut self) -> Self {
+        self.header = true;
+        self
+    }
+}
+
+/// `Math.Round(volume * 100f) + "%"` (`Main.cs:51501-51510`): the product is
+/// computed in `f32` like the C#, then widened to double for `Math.Round`,
+/// which rounds ties to even — 0.125 prints "12%", not "13%" (Review Focus 2).
+pub fn volume_percent(v: f32) -> String {
+    let product = (v * 100.0f32) as f64;
+    format!("{:.0}%", product.round_ties_even())
+}
+
+/// The volume/parallax label colour (`Main.cs:48253-48254` + `:51515-51525`):
+/// `b = (255 + 2 * tileColor.R) / 3` of the backdrop grey, then the draw-site
+/// chain `R = (255 + b) / 2` feeding `G = B = (255 + R) / 2` — every step reads
+/// the previous channel's result.
+pub fn slider_label_color(backdrop_r: u8) -> [u8; 4] {
+    // `byte b = (byte)((255 + Main.tileColor.R * 2) / 3)` (`Main.cs:48253`).
+    let b = ((255u32 + 2 * backdrop_r as u32) / 3) as u8;
+    // `color10.R = (byte)((255 + color10.R) / 2)` and the G/B twins
+    // (`Main.cs:51516-51518`): the assignments chain, so G and B take the new R.
+    let r = ((255u32 + b as u32) / 2) as u8;
+    let gb = ((255u32 + r as u32) / 2) as u8;
+    [r, gb, gb, 255]
 }
 
 pub struct Menu {
@@ -235,6 +264,17 @@ pub struct Menu {
     pub status: Option<String>,
     /// The settings screens edit this; `App` copies it when the menu closes.
     pub settings: Settings,
+    /// `Main.mouseX/mouseY` at draw time: the pointer (the `TR_MOUSE` pin when
+    /// one is set), kept current by [`Menu::update_hover`] so the value bars
+    /// draw and drag in the same pass as the original.
+    pub mouse: Vec2,
+    /// `Main.mouseLeft` (`Main.cs:51101`): the real left button, set by `App`
+    /// on the mouse-input events while the menu is open.
+    pub mouse_down: bool,
+    /// `IngameOptions.rightLock` (`Main.cs:51527-51572`): the sticky value-bar
+    /// grab — 0 music, 1 sound, 2 ambient, 3 parallax (`rightLock` 3/2/4 and
+    /// the parallax block's 2). Cleared on release and on page changes.
+    pub bar_grab: Option<u8>,
     /// "Not ported yet" notice for the vanilla screens we do not have.
     pub hint: Option<String>,
     /// Write `config.json` on every toggle (off in unit tests).
@@ -263,6 +303,9 @@ impl Menu {
             name,
             status: None,
             settings: Settings::load(),
+            mouse: Vec2::ZERO,
+            mouse_down: false,
+            bar_grab: None,
             hint: None,
             persist: true,
             time: 0.0,
@@ -363,8 +406,7 @@ impl Menu {
                 Item::new("General", Act::Nav(Page::General)).scaled(0.75),
                 Item::new("Interface", Act::Nav(Page::Interface)).scaled(0.75),
                 Item::new("Video", Act::Nav(Page::Video)).scaled(0.75),
-                Item::new("Volume", Act::Hint("The volume sliders are not ported yet"))
-                    .scaled(0.75),
+                Item::new("Volume", Act::Nav(Page::Volume)).scaled(0.75),
                 Item::new("Cursor", Act::Hint("Cursor colour is not ported yet")).scaled(0.75),
                 Item::new("Controls", Act::Hint("Key rebinding is not ported yet")).scaled(0.75),
                 Item::new("Language", Act::Hint("Only English is bundled")).scaled(0.75),
@@ -406,7 +448,9 @@ impl Menu {
                     Act::Toggle(Toggle::Zoom),
                 )
                 .scaled(0.6),
-                Item::new(on_off(s.parallax, "Parallax On", "Parallax Off"), Act::Toggle(Toggle::Parallax)).scaled(0.6),
+                // menuMode 1111 row 1 (`Main.cs:49996-50002`): `Lang.menu[52]`
+                // opens the parallax slider (28).
+                Item::new("Parallax", Act::Nav(Page::Parallax)).scaled(0.6),
                 Item::new(["Frame Skip Off", "Frame Skip On", "Frame Skip Subtle"][s.frame_skip as usize % 3], Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
                 Item::new(["Lighting: Color", "Lighting: White", "Lighting: Retro", "Lighting: Trippy"][s.light_mode as usize % 4], Act::Toggle(Toggle::LightMode)).scaled(0.6),
                 Item::new(["Quality: Auto", "Quality: High", "Quality: Medium", "Quality: Low"][s.quality as usize % 4], Act::Toggle(Toggle::Quality)).scaled(0.6),
@@ -441,12 +485,28 @@ impl Menu {
                     Item::new("Back", Act::Nav(Page::Multiplayer)),
                 ]
             }
+            // menuMode 26 (`Main.cs:50362-50380`): `num5 = 3`, `array9[0] = ""`,
+            // `array9[1] = Lang.menu[65]` with `array4[1] = 10` and
+            // `array[1] = true`, `array9[2] = Lang.menu[5]` with
+            // `array4[2] = 250`; Back opens 11 (`:50375-50379`).
+            Page::Volume => vec![
+                Item::new("", Act::None),
+                Item::new("Volume", Act::None).at(10.0).heading(),
+                Item::new("Back", Act::Nav(Page::Settings)).at(250.0),
+            ],
+            // menuMode 28 (`Main.cs:50381-50400`): the branch refreshes
+            // `Main.caveParallax = 1 - bgScroll / 500` (`:50382`), `num5 = 3`,
+            // `array9[1] = Lang.menu[52]` (header), `array4[2] = 170`; Back
+            // opens 1111 (`:50395-50399`).
+            Page::Parallax => vec![
+                Item::new("", Act::None),
+                Item::new("Parallax", Act::None).at(10.0).heading(),
+                Item::new("Back", Act::Nav(Page::Video)).at(170.0),
+            ],
             // The P5 screens land with their own tasks (2-6); Task 1 only
             // registers the pages so `TR_PAGE=<menuMode>` resolves and each
             // screen can be screenshotted as its rows are filled in.
-            Page::Volume
-            | Page::Parallax
-            | Page::Cursor
+            Page::Cursor
             | Page::CursorColor
             | Page::BorderColor
             | Page::Resolution
@@ -506,6 +566,9 @@ impl Menu {
                     self.selected = 0;
                     self.fields.clear();
                 }
+                // A grab never follows a page change (vanilla resets `rightLock`
+                // in the `!Main.mouseLeft` guard of whichever screen runs next).
+                self.bar_grab = None;
                 self.error = None;
                 Action::None
             }
@@ -550,7 +613,6 @@ impl Menu {
             Toggle::GamepadInstructions => {
                 s.gamepad_instructions = !s.gamepad_instructions
             }
-            Toggle::Parallax => s.parallax = !s.parallax,
             Toggle::FrameSkip => s.frame_skip = (s.frame_skip + 1) % 3,
             Toggle::LightMode => s.light_mode = (s.light_mode + 1) % 4,
             Toggle::Quality => s.quality = (s.quality + 1) % 4,
@@ -611,6 +673,7 @@ impl Menu {
                     self.selected = 0;
                     self.fields.clear();
                     self.hint = None;
+                    self.bar_grab = None;
                 }
                 return Action::None;
             }
@@ -639,8 +702,10 @@ impl Menu {
         }
     }
 
-    /// Hit-tests the boxes recorded by the last [`Menu::draw`].
+    /// Hit-tests the boxes recorded by the last [`Menu::draw`]. The position is
+    /// also what the value bars read at draw time (`Main.mouseX/mouseY`).
     pub fn update_hover(&mut self, pos: Vec2) {
+        self.mouse = pos;
         self.hover = self.boxes.iter().position(|b| {
             pos.x >= b[0] && pos.x < b[0] + b[2] && pos.y >= b[1] && pos.y < b[1] + b[3]
         });
@@ -728,6 +793,15 @@ impl Menu {
             } else if *scale > target {
                 *scale = (*scale - step).max(target);
             }
+        }
+
+        // menuMode 26 (`Main.cs:51478-51577`) / 28 (`Main.cs:51578-51653`): the
+        // value bars draw before the rows, like `DrawMenu`'s `flag2`/`flag3`
+        // blocks, and drag in the same pass (Review Focus 1).
+        if self.page == Page::Volume {
+            self.draw_volume_chrome(r, lookups, font, screen);
+        } else if self.page == Page::Parallax {
+            self.draw_parallax_chrome(r, lookups, font, screen);
         }
 
         self.boxes.clear();
@@ -873,6 +947,270 @@ impl Menu {
             );
         }
     }
+
+    /// The menuMode 26 volume block (`Main.cs:51478-51577`): the six DeathText
+    /// labels and the three value bars, drawn before the rows like `DrawMenu`'s
+    /// `flag2` block. The drag pass runs after the bar draws, mirroring the C#
+    /// order — `DrawValueBar` renders the stored value, then
+    /// `Main.musicVolume = num86` stores (`:51535-51543` and the twins) — so
+    /// the knob follows the pointer exactly one frame behind, like the
+    /// original.
+    fn draw_volume_chrome(
+        &mut self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        font: &assets::UiFont,
+        screen: Vec2,
+    ) {
+        // `float x = Main.screenWidth / 2 - 40 + 37` (`Main.cs:51479`).
+        let bar_x = screen.x / 2.0 - 40.0 + 37.0;
+        // `int num83 = 370 + Main.screenWidth / 2 - 400 + 37` (`Main.cs:51486`).
+        let label_x = 370.0 + screen.x / 2.0 - 400.0 + 37.0;
+        // `color` is the backdrop tint (`Main.cs:48253-48254`): the menu world
+        // is sunlit, so `Main.tileColor.R` tops out at 255 — the same base the
+        // item rows draw their text with.
+        let label = color::tint(slider_label_color(255));
+        // The six labels at scale 0.5 (`Main.cs:51489-51525`): the three names
+        // and their percentages, 90 px right of the names (`:51502`, `:51506`,
+        // `:51511`).
+        border_string_four_way(r, font, label_x, 350.0, label, "Sound:"); // [98] (`:51490`)
+        border_string_four_way(r, font, label_x, 320.0, label, "Music:"); // [99] (`:51494`)
+        border_string_four_way(r, font, label_x, 380.0, label, "Ambient:"); // [119] (`:51497`)
+        border_string_four_way(
+            r,
+            font,
+            label_x + 90.0,
+            320.0,
+            label,
+            &volume_percent(self.settings.music_volume),
+        );
+        border_string_four_way(
+            r,
+            font,
+            label_x + 90.0,
+            350.0,
+            label,
+            &volume_percent(self.settings.sound_volume),
+        );
+        border_string_four_way(
+            r,
+            font,
+            label_x + 90.0,
+            380.0,
+            label,
+            &volume_percent(self.settings.ambient_volume),
+        );
+        // The bars ride `num80 - 18 + {30, 60, 90}` (`Main.cs:51480`, `:51533`,
+        // `:51545`, `:51557`): music, sound, ambient.
+        sliders::draw_value_bar(r, lookups, bar_x, 332.0, self.settings.music_volume, self.mouse);
+        sliders::draw_value_bar(r, lookups, bar_x, 362.0, self.settings.sound_volume, self.mouse);
+        sliders::draw_value_bar(
+            r,
+            lookups,
+            bar_x,
+            392.0,
+            self.settings.ambient_volume,
+            self.mouse,
+        );
+        self.drag_volume_screen(screen.x);
+    }
+
+    /// The menuMode 28 parallax block (`Main.cs:51578-51653`): the five-pass
+    /// label and the value bar, drawn before the rows like `DrawMenu`'s
+    /// `flag3` block.
+    fn draw_parallax_chrome(
+        &mut self,
+        r: &mut SpriteRenderer,
+        lookups: &assets::Lookups,
+        font: &assets::UiFont,
+        screen: Vec2,
+    ) {
+        // `int num92 = 370 + Main.screenWidth / 2 - 400` (`Main.cs:51586`).
+        let label_x = 370.0 + screen.x / 2.0 - 400.0;
+        // `Lang.menu[52].Value + ": " + Main.bgScroll` (`Main.cs:51588`).
+        let text = format!("Parallax: {}", self.settings.parallax_scroll);
+        let label = color::tint(slider_label_color(255));
+        // The manual five-pass shadow (`Main.cs:51589-51631`) is the same
+        // four-black-plus-colour pattern as `DrawBorderStringFourWay`.
+        border_string_four_way(r, font, label_x, 400.0, label, &text);
+        // `IngameOptions.valuePosition = new Vector2(Main.screenWidth / 2 - 40,
+        // num89 + 12)` (`Main.cs:51633`); the bar value is
+        // `(float)Main.bgScroll / 100f` (`:51635`).
+        sliders::draw_value_bar(
+            r,
+            lookups,
+            screen.x / 2.0 - 40.0,
+            412.0,
+            self.settings.parallax_scroll as f32 / 100.0,
+            self.mouse,
+        );
+        self.drag_parallax_screen(screen.x);
+    }
+
+    /// The volume drag (`Main.cs:51527-51572`): `rightLock` sticks while the
+    /// button is held and the value follows the mouse (Review Focus 1). Writes
+    /// `config.json` once per drag, on release — the port's write-per-edit
+    /// rule (`Menu::toggle`), not per frame.
+    fn drag_volume_screen(&mut self, screen_w: f32) {
+        if self.page != Page::Volume {
+            return; // `flag2` (`Main.cs:51478`).
+        }
+        let mut volumes = [
+            self.settings.music_volume,
+            self.settings.sound_volume,
+            self.settings.ambient_volume,
+        ];
+        let had_grab = self.bar_grab.is_some();
+        volume_drag_pass(screen_w, self.mouse, self.mouse_down, &mut self.bar_grab, &mut volumes);
+        self.settings.music_volume = volumes[0];
+        self.settings.sound_volume = volumes[1];
+        self.settings.ambient_volume = volumes[2];
+        if had_grab && !self.mouse_down && self.persist {
+            let _ = self.settings.save();
+        }
+    }
+
+    /// The parallax drag (`Main.cs:51598-51652`): the same sticky `rightLock`
+    /// pattern, storing `bgScroll = (int)(value * 100f)` (`:51642`).
+    fn drag_parallax_screen(&mut self, screen_w: f32) {
+        if self.page != Page::Parallax {
+            return; // `flag3` (`Main.cs:51578`).
+        }
+        // `Main.caveParallax = 1f - (float)Main.bgScroll / 500f` (`:50382`,
+        // `:51643`) is recomputed where the backdrop reads the scroll.
+        let had_grab = self.bar_grab.is_some();
+        parallax_drag_pass(
+            screen_w,
+            self.mouse,
+            self.mouse_down,
+            &mut self.bar_grab,
+            &mut self.settings.parallax_scroll,
+        );
+        if had_grab && !self.mouse_down && self.persist {
+            let _ = self.settings.save();
+        }
+    }
+}
+
+/// XNA `Rectangle.Contains(Point)` (`IngameOptions.cs:1557`): inclusive
+/// left/top, exclusive right/bottom.
+fn rect_contains(rect: [f32; 4], p: Vec2) -> bool {
+    p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
+}
+
+/// One `IngameOptions.DrawValueBar` row (`Main.cs:51533-51543` and the
+/// sound/ambient twins, `:51635-51646` for parallax) as a pure pass: hover is
+/// `inBar || rightLock == id` (`:51536`) and the value follows the mouse while
+/// `flag7 && rightLock == id` (`:51540`), the sticky lock keeping the drag
+/// alive outside the bar while the button is held (Review Focus 1). `grab`
+/// mirrors `rightLock`; the caller clears it when the button is up
+/// (`:51529-51531`) and re-sets it from the last hover (`:51570-51572`).
+/// Returns `(hovered, Some(stored))` — `stored` only when the value moved.
+fn value_bar_drag(
+    right_x: f32,
+    center_y: f32,
+    mouse: Vec2,
+    mouse_down: bool,
+    grab: Option<u8>,
+    id: u8,
+) -> (bool, Option<f32>) {
+    let (rect, hit) = sliders::value_bar_rects(right_x, center_y);
+    // `rectangle.Contains(new Point(Main.mouseX, Main.mouseY))` over the
+    // post-`Inflate(-5, 0)` rect (`IngameOptions.cs:1556-1559`).
+    let in_bar = rect_contains(hit, mouse);
+    let hovered = in_bar || grab == Some(id);
+    // `Main.musicVolume = num86` (`Main.cs:51540-51541` and the twins): the
+    // ratio over the inflated hit geometry.
+    let stored = if hovered && mouse_down && grab == Some(id) {
+        Some(sliders::value_bar_value(rect, mouse.x))
+    } else {
+        None
+    };
+    (hovered, stored)
+}
+
+/// The menuMode 26 drag pass (`Main.cs:51527-51572`): clears the sticky lock on
+/// release, lets the last hovered-or-grabbed bar win `rightHover` (music →
+/// sound → ambient, `:51570-51572`) and stores the dragged volumes.
+fn volume_drag_pass(
+    screen_w: f32,
+    mouse: Vec2,
+    mouse_down: bool,
+    grab: &mut Option<u8>,
+    volumes: &mut [f32; 3],
+) {
+    // `if (!Main.mouseLeft) { IngameOptions.rightLock = -1; }` (`Main.cs:51529-51531`).
+    if !mouse_down {
+        *grab = None;
+    }
+    // `float x = Main.screenWidth / 2 - 40 + 37` (`Main.cs:51479`).
+    let right_x = screen_w / 2.0 - 40.0 + 37.0;
+    let mut right_hover: Option<u8> = None;
+    // `num80 - 18 + {30, 60, 90}` (`Main.cs:51480`, `:51533`, `:51545`,
+    // `:51557`); `rightLock` 3/2/4 are the port's 0/1/2. Later matches
+    // overwrite `rightHover`, like the C# sequence.
+    for (i, dy, id) in [(0usize, 30.0f32, 0u8), (1, 60.0, 1), (2, 90.0, 2)] {
+        let (hovered, stored) =
+            value_bar_drag(right_x, 320.0 - 18.0 + dy, mouse, mouse_down, *grab, id);
+        if let Some(v) = stored {
+            volumes[i] = v;
+        }
+        if hovered {
+            right_hover = Some(id);
+        }
+    }
+    // `if (IngameOptions.rightHover != -1) IngameOptions.rightLock =
+    // IngameOptions.rightHover` (`Main.cs:51570-51572`).
+    if let Some(h) = right_hover {
+        *grab = Some(h);
+    }
+}
+
+/// The menuMode 28 drag pass (`Main.cs:51598-51652`): the parallax bar reuses
+/// the value-bar mechanics, storing `bgScroll = (int)(value * 100f)`
+/// (`Main.cs:51642`) into the 0..=100 slider.
+fn parallax_drag_pass(
+    screen_w: f32,
+    mouse: Vec2,
+    mouse_down: bool,
+    grab: &mut Option<u8>,
+    parallax_scroll: &mut u8,
+) {
+    // `if (!Main.mouseLeft) { IngameOptions.rightLock = -1; }` (`Main.cs:51601-51603`).
+    if !mouse_down {
+        *grab = None;
+    }
+    // `IngameOptions.valuePosition = new Vector2(Main.screenWidth / 2 - 40,
+    // num89 + 12)` (`Main.cs:51633`); the bar value is `bgScroll / 100`
+    // (`:51635`).
+    let (hovered, stored) = value_bar_drag(screen_w / 2.0 - 40.0, 412.0, mouse, mouse_down, *grab, 3);
+    if let Some(v) = stored {
+        // `Main.bgScroll = (int)(num98 * 100f)` (`Main.cs:51642`).
+        *parallax_scroll = (v * 100.0) as u8;
+    }
+    // `if (IngameOptions.rightHover != -1) IngameOptions.rightLock =
+    // IngameOptions.rightHover` (`Main.cs:51650-51652`).
+    if hovered {
+        *grab = Some(3);
+    }
+}
+
+/// `Utils.DrawBorderStringFourWay` (`Utils.cs:2464-2494`) at the volume block's
+/// `scale: 0.5f` (`Main.cs:51525`, `:51628`): four black passes at ±2 px and
+/// the coloured centre pass, origin zero. The parallax label inlines the same
+/// five passes (`Main.cs:51589-51631`).
+fn border_string_four_way(
+    r: &mut SpriteRenderer,
+    font: &assets::UiFont,
+    x: f32,
+    y: f32,
+    tint: [f32; 4],
+    text: &str,
+) {
+    for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
+        crate::push_font_text(r, font, x + dx, y + dy, 0.5, [0.0, 0.0, 0.0, 1.0], text);
+    }
+    crate::push_font_text(r, font, x, y, 0.5, tint, text);
 }
 
 /// `Player.name` style random character names ("Zealot", "Terra", …): two syllables
@@ -1028,7 +1366,7 @@ mod tests {
     #[test]
     fn unported_screens_show_a_notice_instead_of_navigating() {
         let mut m = menu(Page::Settings);
-        m.activate(3); // Volume
+        m.activate(4); // Cursor
         assert_eq!(m.page, Page::Settings);
         assert!(m.hint.is_some());
     }
@@ -1095,8 +1433,6 @@ mod tests {
         assert_eq!((server.y0, server.row, server.scale), (200.0, 60.0, 1.0));
 
         for page in [
-            Page::Volume,
-            Page::Parallax,
             Page::Cursor,
             Page::CursorColor,
             Page::BorderColor,
@@ -1133,5 +1469,137 @@ mod tests {
         assert_eq!(Menu::parent(Page::HostPassword), Some(Page::Multiplayer));
         assert_eq!(Menu::parent(Page::JoinPassword), Some(Page::JoinPort));
         assert_eq!(Menu::parent(Page::ServerSettings), Some(Page::Multiplayer));
+    }
+
+    #[test]
+    fn volume_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50362-50380`: `array9 = ["", Lang.menu[65], Lang.menu[5]]`,
+        // `array4 = [0, 10, 250]`, `array[1] = true`.
+        let items = menu(Page::Volume).items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["", "Volume", "Back"]);
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 10.0, 250.0]);
+        assert!(items[1].header, "array[1] = true");
+        assert!(!items[0].header && !items[2].header);
+        // Back opens 11 (`Main.cs:50375-50379`).
+        let mut m = menu(Page::Volume);
+        m.activate(2);
+        assert_eq!(m.page, Page::Settings);
+    }
+
+    #[test]
+    fn parallax_screen_matches_the_vanilla_rows() {
+        // `Main.cs:50381-50400`: `array9 = ["", Lang.menu[52], Lang.menu[5]]`,
+        // `array4 = [0, 10, 170]`, `array[1] = true`.
+        let items = menu(Page::Parallax).items();
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["", "Parallax", "Back"]);
+        let ys: Vec<f32> = items.iter().map(|i| i.y).collect();
+        assert_eq!(ys, [0.0, 10.0, 170.0]);
+        assert!(items[1].header, "array[1] = true");
+        // Back opens 1111 (`Main.cs:50395-50399`).
+        let mut m = menu(Page::Parallax);
+        m.activate(2);
+        assert_eq!(m.page, Page::Video);
+    }
+
+    #[test]
+    fn volume_and_parallax_rows_navigate_from_their_parents() {
+        // The Settings "Volume" row and the Video "Parallax" row open 26 and 28
+        // (`Main.cs:50375-50379`, `:49996-50002`).
+        let mut m = menu(Page::Settings);
+        m.activate(3);
+        assert_eq!(m.page, Page::Volume);
+        assert!(m.hint.is_none());
+        let mut m = menu(Page::Video);
+        m.activate(2);
+        assert_eq!(m.page, Page::Parallax);
+        assert!(m.hint.is_none());
+    }
+
+    #[test]
+    fn volume_percent_rounds_ties_to_even() {
+        // `Math.Round(0.125f * 100f)` = `Math.Round(12.5)` = 12 — ties to even,
+        // so half-up would wrongly print "13%" (Review Focus 2).
+        assert_eq!(volume_percent(0.125), "12%");
+        assert_eq!(volume_percent(0.75), "75%");
+        assert_eq!(volume_percent(1.0), "100%");
+        assert_eq!(volume_percent(0.0), "0%");
+        // 0.135 is not a tie in f32 (0.135 * 100 = 13.5000005): it rounds up.
+        assert_eq!(volume_percent(0.135), "14%");
+    }
+
+    #[test]
+    fn slider_label_color_feeds_each_channel_the_last() {
+        assert_eq!(slider_label_color(255), [255, 255, 255, 255]);
+        // b = (255 + 2*85)/3 = 141, r = (255 + 141)/2 = 198, then
+        // g = b2 = (255 + 198)/2 = 226 for both G and B (`Main.cs:51516-51518`).
+        assert_eq!(slider_label_color(85), [198, 226, 226, 255]);
+    }
+
+    #[test]
+    fn volume_drag_sticks_and_releases() {
+        let mut m = menu(Page::Volume);
+        // The music bar: right_x = 800 - 40 + 37 = 797 (`Main.cs:51479`), centre
+        // y 332 (`:51533`) — rect [619, 324, 178, 16], hit [624, 324, 168, 16].
+        // Press while hovering: the first frame takes the lock from the hover
+        // (`Main.cs:51536-51539`, `:51570-51572`); the store waits for the lock
+        // it checks (`:51540`).
+        m.mouse_down = true;
+        m.mouse = Vec2::new(708.0, 332.0); // 84 px into the hit box: value 0.5
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_grab, Some(0));
+        assert!((m.settings.music_volume - 0.75).abs() < 1e-6);
+        m.drag_volume_screen(1600.0);
+        assert!((m.settings.music_volume - 0.5).abs() < 1e-6);
+        // Sticky: dragging out past the bar's right edge keeps following — 797
+        // reads 1.0 through the positional clamp (`IngameOptions.cs:1575-1579`).
+        m.mouse = Vec2::new(797.0, 332.0);
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.settings.music_volume, 1.0);
+        // Releasing clears the lock (`Main.cs:51529-51531`) — the pointer sits
+        // outside the hit box here (797 > 624 + 168), so no hover re-takes it.
+        m.mouse_down = false;
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_grab, None);
+        // The next press in the sound bar grabs the second id.
+        m.mouse = Vec2::new(708.0, 362.0);
+        m.mouse_down = true;
+        m.drag_volume_screen(1600.0);
+        assert_eq!(m.bar_grab, Some(1));
+        m.drag_volume_screen(1600.0);
+        assert!((m.settings.sound_volume - 0.5).abs() < 1e-6);
+        // The ambient bar stayed put throughout.
+        assert!((m.settings.ambient_volume - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn parallax_drag_maps_value_to_the_scroll() {
+        // `(int)(num98 * 100f)` (`Main.cs:51642`): a 0.37 bar value stores
+        // bgScroll 37; the backdrop then scrolls by `cave_parallax(37) = 0.926`
+        // (the mapping is pinned against `main.rs`'s own test).
+        assert_eq!((0.37f32 * 100.0) as u8, 37);
+        let mut m = menu(Page::Parallax);
+        // Mid-bar press: right_x = 800 - 40 = 760 (`Main.cs:51633`), centre y
+        // 412 — the hit box starts 5 px in, so x = 587 + 84 reads 0.5.
+        m.mouse_down = true;
+        m.mouse = Vec2::new(671.0, 412.0);
+        m.drag_parallax_screen(1600.0);
+        assert_eq!(m.bar_grab, Some(3));
+        m.drag_parallax_screen(1600.0);
+        assert_eq!(m.settings.parallax_scroll, 50);
+        // The bar shows `bgScroll / 100` back (`Main.cs:51635`).
+        assert!((m.settings.parallax_scroll as f32 / 100.0 - 0.5).abs() < 1e-6);
+        // Releasing the button does not drop the lock while the pointer still
+        // rides the bar — the hover re-takes `rightLock` every frame
+        // (`Main.cs:51650-51652`); it clears once the pointer leaves
+        // (`:51601-51603`).
+        m.mouse_down = false;
+        m.drag_parallax_screen(1600.0);
+        assert_eq!(m.bar_grab, Some(3), "hover keeps the lock");
+        m.mouse = Vec2::new(100.0, 100.0);
+        m.drag_parallax_screen(1600.0);
+        assert_eq!(m.bar_grab, None);
     }
 }

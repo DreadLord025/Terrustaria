@@ -1435,16 +1435,14 @@ impl ApplicationHandler for App {
                 match button {
                     MouseButton::Middle => self.mouse_down = pressed,
                     MouseButton::Left => {
-                        if self.menu.is_some() {
+                        if let Some(m) = self.menu.as_mut() {
+                            // `Main.mouseLeft` (`Main.cs:51101`): the value
+                            // bars drag off this flag (`Main.cs:51533-51576`),
+                            // held between the press and release events.
+                            m.mouse_down = pressed;
                             if pressed {
-                                let action = self
-                                    .menu
-                                    .as_mut()
-                                    .map(|m| {
-                                        m.update_hover(self.mouse_pos);
-                                        m.click()
-                                    })
-                                    .unwrap_or(menu::Action::None);
+                                m.update_hover(self.mouse_pos);
+                                let action = m.click();
                                 self.apply_menu_action(action, event_loop);
                             }
                             return;
@@ -1468,8 +1466,11 @@ impl ApplicationHandler for App {
                 if mouse_pin().is_none() {
                     self.mouse_pos = p;
                 }
+                // The menu reads the pinned pointer when `TR_MOUSE` is set, so
+                // its hover and value-bar drags stay deterministic.
+                let pointer = self.mouse_pos;
                 if let Some(m) = self.menu.as_mut() {
-                    m.update_hover(p);
+                    m.update_hover(pointer);
                 }
                 // The middle-button world-camera drag is suppressed while the map is
                 // fullscreen, like the other world controls (`Player.cs:24798`).
@@ -3192,6 +3193,7 @@ impl App {
                     sky_tint,
                     rain.cloud_bg(),
                     settings.background,
+                    cave_parallax(settings.parallax_scroll),
                     bg_alpha_front,
                     bg_alpha_far,
                     light,
@@ -4029,6 +4031,9 @@ fn draw_sky(
     tint: [f32; 3],
     storm: f32,
     background_enabled: bool,
+    // `Main.caveParallax` (`Main.cs:53059`, `this.bgParallax = caveParallax`):
+    // the "Parallax" slider's scroll factor for the underground backdrop.
+    cave_parallax: f32,
     // `Main.bgAlphaFrontLayer` / `Main.bgAlphaFarBackLayer`: per-layer cross-fade
     // alphas; two biome layers blend while `Main.bgStyle` transitions.
     bg_alpha_front: &[f32; 16],
@@ -4412,8 +4417,15 @@ fn draw_sky(
     // dark "wall" underneath every player-placed row of blocks.)
     static BG: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if !*BG.get_or_init(|| std::env::var_os("TR_NO_BG").is_some()) {
-        draw_underground_background(r, camera, zoom, screen, world, sky, light);
+        draw_underground_background(r, camera, zoom, screen, world, sky, light, cave_parallax);
     }
+}
+
+/// `Main.caveParallax = 1f - (float)Main.bgScroll / 500f` (`Main.cs:50383`,
+/// `:51643`): the "Parallax" slider (`Main.bgScroll`, `Main.cs:2429`) maps to
+/// the underground backdrop's scroll factor.
+fn cave_parallax(bg_scroll: u8) -> f32 {
+    1.0 - bg_scroll as f32 / 500.0
 }
 
 /// `Math.IEEERemainder`: `x - y * Math.Round(x / y)` with banker's rounding.
@@ -4550,12 +4562,13 @@ fn draw_underground_background(
     world: &World,
     sky: &SkyAssets,
     light: &LightMap,
+    // `Main.caveParallax = 1f - (float)Main.bgScroll / 500f` (`Main.cs:50383`,
+    // `:51643`), fed by the "Parallax" slider.
+    cave_parallax: f32,
 ) {
     let Some(dirt) = sky.underground else {
         return;
     };
-    // `Main.caveParallax = 1 - bgScroll / 500`; the options slider defaults to 50.
-    const CAVE_PARALLAX: f32 = 0.9;
     // `Main.DrawBG` runs the backdrop under `Main.BackgroundViewMatrix`, whose zoom is
     // `ForcedMinimumZoom` (1 for any viewport <= 1920x1200), so the matrix is identity
     // and the layout is in *unzoomed* screen coordinates: `Main.screenPosition`
@@ -4577,7 +4590,7 @@ fn draw_underground_background(
         let num = transition.w - 32.0;
         if num >= 16.0 {
             let start_x =
-                (0.0 - ieee_remainder(num + screen_pos.x * CAVE_PARALLAX, num) - num * 0.5) as i32
+                (0.0 - ieee_remainder(num + screen_pos.x * cave_parallax, num) - num * 0.5) as i32
                     as f32;
             let loops = (screen.x / num) as i32 + 2;
             let mut n2 = round_half_even(-ieee_remainder(start_x + screen_pos.x, 16.0));
@@ -4618,7 +4631,7 @@ fn draw_underground_background(
         return;
     }
     let start_x =
-        (0.0 - ieee_remainder(num + screen_pos.x * CAVE_PARALLAX, num) - num * 0.5) as i32 as f32;
+        (0.0 - ieee_remainder(num + screen_pos.x * cave_parallax, num) - num * 0.5) as i32 as f32;
     let loops = (screen.x / num) as i32 + 2;
     let mut n2 = round_half_even(-ieee_remainder(start_x + screen_pos.x, 16.0));
     if n2 as i32 == -8 {
@@ -7100,6 +7113,17 @@ mod underground_bg_tests {
         // The rock clamp *is* scaled: `camera.Y - screenHeight / (2 * zoom)`.
         assert_eq!(a.scaled_bottom, cam.y - 450.0 + 900.0);
         assert_eq!(b.scaled_bottom, cam.y - 225.0 + 900.0);
+    }
+
+    #[test]
+    fn cave_parallax_maps_the_slider_range() {
+        // `Main.caveParallax = 1f - (float)Main.bgScroll / 500f` (`Main.cs:50383`,
+        // `:51643`): a 0.37 bar value stores bgScroll 37 (`:51642`), which the
+        // underground backdrop then scrolls by 0.926.
+        assert_eq!((0.37f32 * 100.0) as u8, 37);
+        assert!((cave_parallax(37) - 0.926).abs() < 1e-6);
+        assert_eq!(cave_parallax(0), 1.0);
+        assert!((cave_parallax(100) - 0.8).abs() < 1e-6);
     }
 
     #[test]
