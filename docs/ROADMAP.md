@@ -78,7 +78,7 @@ milestone section for the full context before starting.
 | --- | --- | --- |
 | M6-MUSIC-finish | `M6-MUSIC-biome-tracks` | remaining biome music branches (need `SceneMetrics`), ambient rain/wind cues |
 | M6-LOCALIZE-wire | `M6-LOCALIZE-wire` | wire the localization core into HUD/item names/menus (core is ported + tested) |
-| M6-NET-protocol | `M6-NET-protocol` | the exact 1.4.5.8 network protocol |
+| M6-NET-protocol | `M6-NET-protocol` | the exact 1.4.5.8 network protocol; includes the multiplayer-flow backlog: net-Disconnect must not open the error menu over a live front screen (`self.front` unchecked in the ClientEvent::Disconnect guard — P6 whole-branch review minor 1), and the parked multiplayer Back targets (Join/Host & Play → character/world selects) |
 | M6-SETTINGS | `M6-SETTINGS` | settings application parity beyond the ported keys |
 
 ### Engineering debt (from the 2026-11-01 architecture refactor)
@@ -88,6 +88,7 @@ milestone section for the full context before starting.
 | REFACTOR-env | `refactor-app-env-flags` | centralize the ~65 `TR_*` env flags into one struct with OnceLock "read once" semantics (`app/env.rs`; skipped during the refactor as risky) |
 | REFACTOR-rng | `refactor-xorshift-unify` | unify the worldgen/wind xorshift cores byte-exactly |
 | REFACTOR-saveheader | `refactor-save-list-reader` | absorb the last duplicate reader (`ui/save_list.rs` `HeaderReader`) into `tr_core::binio` |
+| REFACTOR-cleanup | `refactor-allow-cleanup` | remove the inert `#[allow(dead_code)]` attributes in `ui/uistate.rs` (T1-era; the surface is consumed by the P6 screens) |
 
 ## Why this is a long project
 
