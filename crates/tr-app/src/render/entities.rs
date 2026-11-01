@@ -2,6 +2,7 @@
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
 use super::BgTex;
+use super::player_layers::front_arm_cell;
 use super::sky::sky_tex;
 use crate::assets;
 use crate::item::SWING_TIME;
@@ -82,26 +83,6 @@ fn player_cell_uv(tex: &BgTex, col: u32, row: u32) -> [f32; 4] {
         tex.uv[0] + du * (c + 1.0),
         tex.uv[1] + dv * (r + 1.0),
     ]
-}
-
-/// `PlayerDrawSet.CreateCompositeData`: body frame index -> front-arm cell.
-fn arm_cell(frame: u32) -> (u32, u32) {
-    match frame {
-        0 => (2, 0),
-        1 => (3, 0),
-        2 => (4, 0),
-        3 => (5, 0),
-        4 => (6, 0),
-        5 => (2, 1),
-        6 => (3, 1),
-        7..=10 => (4, 1),
-        11..=13 => (3, 1),
-        14 => (5, 1),
-        15..=16 => (6, 1),
-        17 => (5, 1),
-        18..=19 => (3, 1),
-        _ => (2, 0),
-    }
 }
 
 pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
@@ -260,7 +241,7 @@ pub(crate) fn draw_player(
     let leg = player.leg_frame;
     let body = player.body_frame;
     let mut quads = 0;
-    let (arm_col, arm_row) = arm_cell(body);
+    let (arm_col, arm_row) = front_arm_cell(body);
     let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| flip_uv(player_frame_uv(t, row), flip));
     let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| {
         t.map(|t| flip_uv(player_cell_uv(t, col, row), flip))
@@ -432,7 +413,7 @@ pub(crate) fn draw_player_preview(
     let size = [40.0 * scale, 56.0 * scale];
     let body = frame_row;
     let mut quads = 0;
-    let (arm_col, arm_row) = arm_cell(body);
+    let (arm_col, arm_row) = front_arm_cell(body);
     let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| player_frame_uv(t, row));
     let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| t.map(|t| player_cell_uv(t, col, row));
     let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
