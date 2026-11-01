@@ -20,7 +20,7 @@ milestone section for the full context before starting.
 | M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `Parse`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | 🟡 sun/moon/phases/rotation are done |
 | M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | fixes hard green/dirt seams |
 | TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
-| TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `TextureAssets.Flames`, glow-mask table | brief: `docs/superpowers/sdd/non-ui/brief-TILE-DRAW-2-torch-flames-glowmasks.md` |
+| TILE-DRAW-2 | ✅ merged `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `tr-core/src/flame.rs` (`GetTileFlameData` + `DrawSingleTile_Flames` both tables, 48-bit LCG `TileFrameSeed` jitter deterministic via fixed seed), premultiplied `AlphaBlend` fix in tr-render | deviations in ANALYSIS.md "Torch flames (TILE-DRAW-2)" |
 | TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | 🟡 started |
 | TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
 | TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82192-83395`): groups A-J, the `-2` marker, per-biome dirt ids; current `grass_frame` covers ~25 % | |

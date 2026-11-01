@@ -1459,3 +1459,32 @@ Deviations recorded by the refactor and this sweep:
 - **Risk 7 above is closed**: the generator matches the current
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
+
+## Torch flames (TILE-DRAW-2)
+
+- `tr-core/src/flame.rs` ports `TileDrawing.GetTileFlameData` (`TileDrawing.cs:1847-2677`)
+  and both inline tables of `DrawSingleTile_Flames` (`:2826-3462`); the two C# tables
+  disagree in a few places (colour of styles 13/14, discarded offsets for sheet 7) and
+  are ported literally, kept separate on purpose.
+- The 48-bit LCG behind `Utils.RandomInt` is ported (`tile_frame_seed_for`); C# seeds
+  `Main.TileFrameSeed` from `Guid.NewGuid().GetHashCode()` (`Main.cs:66567`) —
+  unobservable randomness. The port starts from a fixed 32-bit constant with the same
+  advance schedule (`Main.cs:61716-61721`), so flame jitter is deterministic across
+  runs while distribution-identical.
+- Not ported: type 85's graveyard flames (`:2724-2750`, needs
+  `Main.GraveyardVisualIntensity`/`ZoneGraveyard`, not simulated); the separate
+  `Main.tileGlowMask` table (`Main.cs:10024+`, consumed in `DrawSingleTile` at
+  `TileDrawing.cs:1178`) is its own wide task.
+- **Premultiplied alpha fix (tr-render):** the XNB textures are premultiplied by the
+  XNA content pipeline (verified: a=0 texels are rgb=0, semi-alpha texels satisfy
+  rgb <= a across Flames/Moon assets). Vanilla `BlendState.AlphaBlend` therefore uses
+  factors (One, OneMinusSrcAlpha): a tint with alpha 0 (the tile flames'
+  `Color(200,200,200,0)`) is a pure rgb add. The renderer's previous
+  (SrcAlpha, OneMinusSrcAlpha) standard blend double-dimmed every semi-alpha texel and
+  made a=0 tints invisible; the pipeline now uses XNA's factors and the shader no
+  longer multiplies rgb by alpha. Binary-alpha tiles are unchanged; semi-alpha texels
+  (panel fades, font edges) render brighter — the XNA-correct result.
+- XNA nuance kept: `TileBatch` blends premultiplied, but the renderer's single
+  alpha-blend pipeline cannot express rgb-add at a=0 for partial-alpha tints (the
+  furniture/jar colours with a > 0 dim slightly against vanilla's full add). Fully
+  a=0 tints (torches) are exact.
