@@ -20,6 +20,7 @@ mod spawner;
 mod settings;
 mod sound;
 mod ui;
+mod world_sim;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
@@ -30,10 +31,10 @@ use anyhow::{Context, Result};
 use biome::{advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome};
 use glam::Vec2;
 use item::{
-    EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot, MAX_STACK, SWING_TIME, slot_for_pickup,
+    EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot, MAX_STACK, SWING_TIME,
 };
 use npc::{Npc, NpcKind};
-use player::{Player, PlayerInput};
+use player::Player;
 use projectile::Projectile;
 use rain::Rain;
 use tr_core::lighting::{LightMap, LightMode, LightParams, LightStyle};
@@ -42,6 +43,9 @@ use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World, edit, framing, save, wld, worldgen};
 use tr_render::{Atlas, Gpu, SpriteRenderer};
 use ui::text::{font_width, hud_text, hud_text_width};
+use world_sim::clock::{advance_time, time_frozen};
+use world_sim::editing::apply_edit;
+use world_sim::step::FixedStepper;
 
 use render::bg::cave_parallax;
 use render::debug::{capture_frame, draw_debug, DebugCache, StatsAcc};
@@ -684,8 +688,8 @@ fn main() -> Result<()> {
         player_assets,
         player,
         follow_player,
-        player_accum: 0.0,
-        npc_accum: 0.0,
+        player_step: FixedStepper::new(1.0 / 60.0, 8),
+        npc_step: FixedStepper::new(1.0 / 60.0, 8),
         npcs,
         npc_assets,
         npc_timer: 6.0,
@@ -799,18 +803,18 @@ fn main() -> Result<()> {
         anim_time: 0.0,
         has_liquids,
         liquids: liquids_sim,
-        liquid_accum: 0.0,
+        liquid_step: FixedStepper::new(1.0 / 60.0, 8),
         liquid_tick: 0,
         waterfall: tr_core::waterfall::WaterfallManager::new(),
-        waterfall_accum: 0.0,
+        waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
         rain,
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
-        item_accum: 0.0,
+        item_step: FixedStepper::new(1.0 / 60.0, 8),
         swing: 0.0,
         coins,
         projectiles: Vec::new(),
-        projectile_accum: 0.0,
+        projectile_step: FixedStepper::new(1.0 / 60.0, 8),
         dev_throw: std::env::var_os("TR_THROW").is_some(),
         world_key: None,
         hell_black_box_bottom: 0.0,
@@ -1144,8 +1148,8 @@ struct App {
     player_assets: PlayerAssets,
     player: Option<Player>,
     follow_player: bool,
-    player_accum: f32,
-    npc_accum: f32,
+    player_step: FixedStepper,
+    npc_step: FixedStepper,
     npcs: Vec<Npc>,
     npc_assets: NpcAssets,
     npc_timer: f32,
@@ -1291,24 +1295,24 @@ struct App {
     has_liquids: bool,
     /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
     liquids: LiquidSystem,
-    liquid_accum: f32,
+    liquid_step: FixedStepper,
     liquid_tick: u32,
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     waterfall: tr_core::waterfall::WaterfallManager,
-    waterfall_accum: f32,
+    waterfall_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     rain: Rain,
     /// World item drops (`Terraria.Item` first pass).
     items: Vec<ItemDrop>,
     item_rng: u64,
-    item_accum: f32,
+    item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     swing: f32,
     /// Coin purse value in copper coins.
     coins: u64,
     /// Live shuriken/projectile entities.
     projectiles: Vec<Projectile>,
-    projectile_accum: f32,
+    projectile_step: FixedStepper,
     /// `TR_THROW` debug hook: throw one shuriken at startup.
     dev_throw: bool,
     /// G6: identity of the last world instance range; a hit lets the frame reuse it.
@@ -1366,34 +1370,6 @@ fn parse_light_mode(v: &str) -> Option<LightMode> {
 fn parse_xy(v: &str) -> Option<(i32, i32)> {
     let (a, b) = v.split_once(',')?;
     Some((a.trim().parse().ok()?, b.trim().parse().ok()?))
-}
-
-/// `TR_DAY` pins the sky for screenshots; time-of-day advancement pauses.
-fn time_frozen() -> bool {
-    static FROZEN: OnceLock<bool> = OnceLock::new();
-    *FROZEN.get_or_init(|| std::env::var_os("TR_DAY").is_some())
-}
-
-/// `Main.time`: a 15-minute day (`0..54000`) and a 9-minute night (`0..32400`) at 60
-/// ticks per second.
-fn advance_time(world: &mut World, dt: f32) {
-    let mut t = world.time + dt as f64 * 60.0;
-    if world.day_time {
-        if t >= 54000.0 {
-            t -= 54000.0;
-            world.day_time = false;
-        }
-    } else if t >= 32400.0 {
-        t -= 32400.0;
-        world.day_time = true;
-        // `Main.cs:19982`: the moon phase advances when night turns into day.
-        world.moon_phase = if world.moon_phase >= 7 {
-            0
-        } else {
-            world.moon_phase + 1
-        };
-    }
-    world.time = t;
 }
 
 /// `TR_NOCACHE=1` disables D2 and G6, so benchmarks measure the full per-frame
@@ -1749,68 +1725,11 @@ impl App {
     /// The swapchain size in pixels (the deterministic fallback mirrors the
     /// `TR_SHOT`/headless default of 1280x720).
     fn screen_size(&self) -> (f32, f32) {
-        self.gpu
-            .as_ref()
-            .map_or((1280.0, 720.0), |g| (g.config.width as f32, g.config.height as f32))
+        world_sim::camera::screen_size(self)
     }
 
     fn update_player(&mut self, dt: f32) {
-        // Deterministic held input for screenshots (`TR_HOLD=right,jump`).
-        static HOLD: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
-        let (hold_right, hold_jump) = *HOLD.get_or_init(|| {
-            let v = std::env::var("TR_HOLD").unwrap_or_default().to_ascii_lowercase();
-            (v.contains("right"), v.contains("jump"))
-        });
-        // `Player.cs:24772-24803`: while the map is fullscreen every movement control
-        // is zeroed, so the player stands still and the WASD keys pan the map.
-        let map_open = self.map.as_ref().is_some_and(|m| m.open);
-        let input = if map_open {
-            PlayerInput {
-                left: false,
-                right: false,
-                jump: false,
-                down: false,
-            }
-        } else {
-            PlayerInput {
-                left: self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft),
-                right: hold_right
-                    || self.keys.contains(&KeyCode::KeyD)
-                    || self.keys.contains(&KeyCode::ArrowRight),
-                jump: hold_jump
-                    || self.keys.contains(&KeyCode::Space)
-                    || self.keys.contains(&KeyCode::KeyW)
-                    || self.keys.contains(&KeyCode::ArrowUp),
-                down: self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown),
-            }
-        };
-        if let Some(p) = self.player.as_mut() {
-            let step = 1.0 / 60.0;
-            let mut acc = self.player_accum + dt;
-            let mut steps = 0;
-            while acc >= step && steps < 8 {
-                p.update(&self.world, input);
-                acc -= step;
-                steps += 1;
-            }
-            if acc > step * 8.0 {
-                acc = 0.0;
-            }
-            self.player_accum = acc;
-            if self.follow_player {
-                // Follow the interpolated position so the camera is smooth between
-                // the 60 Hz simulation steps.
-                let alpha = (acc / step).clamp(0.0, 1.0);
-                let render = p.interpolated(alpha);
-                let (cx, cy) = render.center();
-                self.camera = self
-                    .camera
-                    .lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
-            }
-        }
-        if map_open {
-            self.update_map_input();
-        }
+        world_sim::player::update_player(self, dt);
     }
 
     /// `Player.cs:24774-24793` + `24898-24908`: the fullscreen-map controls. The pan
@@ -1858,96 +1777,20 @@ impl App {
     }
 
     /// `Main.DoUpdate_AnimateDiscoRGB`: step the shared disco-ball colour cycle.
-    ///
-    /// The original runs its six `if`s sequentially, so a style that completes on
-    /// this tick also advances the next style in the same tick; that cascade is kept.
     fn advance_disco(&mut self) {
-        const NUM: i32 = 7;
-        if self.disco_style == 0 {
-            self.disco[1] = (self.disco[1] as i32 + NUM).min(255) as u8;
-            if self.disco[1] >= 255 {
-                self.disco[1] = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 1 {
-            self.disco[0] = (self.disco[0] as i32 - NUM).max(0) as u8;
-            if self.disco[0] <= 0 {
-                self.disco[0] = 0;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 2 {
-            self.disco[2] = (self.disco[2] as i32 + NUM).min(255) as u8;
-            if self.disco[2] >= 255 {
-                self.disco[2] = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 3 {
-            self.disco[1] = (self.disco[1] as i32 - NUM).max(0) as u8;
-            if self.disco[1] <= 0 {
-                self.disco[1] = 0;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 4 {
-            self.disco[0] = (self.disco[0] as i32 + NUM).min(255) as u8;
-            if self.disco[0] >= 255 {
-                self.disco[0] = 255;
-                self.disco_style += 1;
-            }
-        }
-        if self.disco_style == 5 {
-            self.disco[2] = (self.disco[2] as i32 - NUM).max(0) as u8;
-            if self.disco[2] <= 0 {
-                self.disco[2] = 0;
-                self.disco_style = 0;
-            }
-        }
+        world_sim::clock::advance_disco(self);
     }
 
     /// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
     /// tick, matching the original 30 Hz rate.
     fn update_liquids(&mut self, dt: f32) {
-        let step = 1.0 / 60.0;
-        let mut acc = self.liquid_accum + dt;
-        let mut steps = 0;
-        while acc >= step && steps < 8 {
-            self.liquid_tick = self.liquid_tick.wrapping_add(1);
-            if self.liquid_tick % 2 == 0 {
-                self.liquids.update(&mut self.world);
-            }
-            acc -= step;
-            steps += 1;
-        }
-        self.liquid_accum = acc.min(step * 8.0);
+        world_sim::liquids::update_liquids(self, dt);
     }
 
     /// Fixed 60 Hz `WaterfallManager.UpdateFrame` / `FindWaterfalls`, matching the
     /// original's per-update tick and 30-tick rescan cadence.
     fn update_waterfalls(&mut self, dt: f32, screen: Vec2) {
-        let step = 1.0 / 60.0;
-        let mut acc = self.waterfall_accum + dt.min(0.25);
-        let mut steps = 0;
-        while acc >= step && steps < 8 {
-            self.waterfall.update_tick();
-            acc -= step;
-            steps += 1;
-        }
-        self.waterfall_accum = acc.min(step * 8.0);
-        if steps == 0 {
-            return;
-        }
-        let half = screen * 0.5 / self.zoom;
-        let view = [
-            ((self.camera.x - half.x) / TILE_PX).floor() as i32 - 1,
-            ((self.camera.y - half.y) / TILE_PX).floor() as i32 - 1,
-            ((self.camera.x + half.x) / TILE_PX).ceil() as i32 + 1,
-            ((self.camera.y + half.y) / TILE_PX).ceil() as i32 + 1,
-        ];
-        self.waterfall
-            .find_waterfalls(&self.world, view, false);
+        world_sim::liquids::update_waterfalls(self, dt, screen);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1993,557 +1836,30 @@ impl App {
     /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
     /// per-tick velocity regardless of frame rate.
     fn update_rain(&mut self, dt: f32, screen: Vec2) {
-        let snow = is_snow_biome(&self.world, self.camera);
-        self.rain
-            .update(&self.world, self.camera, screen, self.zoom, dt, snow);
+        world_sim::weather::update_rain(self, dt, screen);
     }
 
     fn update_npcs(&mut self, dt: f32) {
-        self.attack_cd = (self.attack_cd - dt).max(0.0);
-        self.npc_timer -= dt;
-        // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
-        // enemies move faster on high-refresh displays.
-        let step = 1.0 / 60.0;
-        let mut acc = self.npc_accum + dt.min(0.25);
-        let mut steps = 0;
-        while acc >= step && steps < 8 {
-            let world = &self.world;
-            if let Some(player) = self.player.as_mut() {
-                for n in self.npcs.iter_mut() {
-                    n.update(world, player, step);
-                }
-            }
-            acc -= step;
-            steps += 1;
-        }
-        self.npc_accum = acc.min(step * 8.0);
-        let dead: Vec<(NpcKind, f32, f32)> = self
-            .npcs
-            .iter()
-            .filter(|n| n.hp <= 0)
-            .map(|n| {
-                let (cx, cy) = n.center();
-                (n.kind, cx, cy)
-            })
-            .collect();
-        self.npcs.retain(|n| n.hp > 0);
-        for (kind, x, y) in dead {
-            self.spawn_coins(kind, x, y);
-        }
-        // `AI_015_KingSlime`: landing bosses request a blue slime minion.
-        let mut minions = self
-            .npcs
-            .iter()
-            .filter(|n| n.kind == NpcKind::Slime)
-            .count();
-        let mut spawned = Vec::new();
-        for n in self.npcs.iter_mut() {
-            if n.wants_minion {
-                n.wants_minion = false;
-                if minions < 4 {
-                    let xt = ((n.x / TILE_PX) as i32 + n.facing * 2).clamp(2, self.world.width - 3);
-                    if let Some(m) = Npc::spawn_slime(&self.world, xt) {
-                        spawned.push(m);
-                        minions += 1;
-                    }
-                }
-            }
-        }
-        self.npcs.extend(spawned);
-        if let Some(player) = self.player.as_mut() {
-            if player.hp <= 0 {
-                log::info!("player died; respawning at the world spawn");
-                player.respawn();
-                self.npcs.clear();
-                self.npc_timer = 4.0;
-                if self.follow_player {
-                    let (cx, cy) = player.center();
-                    self.camera = Vec2::new(cx, cy);
-                }
-            }
-        }
-        // `Spawner.SpawnNPC()`: one ambient spawn attempt per 60 Hz tick
-        // (NPC.cs:289-306). The rate, caps, area scan and on-screen check are
-        // the ported pipeline in `spawner.rs`.
-        if self.npcs.len() < 200 && self.npc_timer <= 0.0 {
-            let spawned = if let Some(player) = &self.player {
-                let (pcx, pcy) = player.center();
-                // `player.nearbyActiveNPCs` (NPC.cs:77902-77922): enemy NPCs
-                // within the screen-size rect around the player, counted as
-                // one slot each (`npcSlots == 1` for the implemented kinds).
-                let nearby = self
-                    .npcs
-                    .iter()
-                    .filter(|n| {
-                        let (cx, cy) = n.center();
-                        (cx - pcx).abs() < spawner::S_WIDTH as f32 * 0.5
-                            && (cy - pcy).abs() < spawner::S_HEIGHT as f32 * 0.5
-                    })
-                    .count() as f32;
-                let ctx = spawner::SpawnContext {
-                    world: &self.world,
-                    player_center: (pcx, pcy),
-                    player_pos: (player.x, player.y),
-                    nearby_active_npcs: nearby,
-                    town_npcs: 0, // no town NPCs yet (M4-TOWN)
-                    day_time: self.world.day_time,
-                };
-                self.npc_rng = self
-                    .npc_rng
-                    .wrapping_mul(6_364_136_223_846_793_005)
-                    .wrapping_add(1_442_695_040_888_963_407);
-                let mut rng = spawner::FastRandom::new(self.npc_rng);
-                spawner::try_spawn_an_npc(&ctx, &mut rng)
-            } else {
-                None
-            };
-            if let Some(n) = spawned {
-                self.npcs.push(n);
-            }
-            self.npc_timer = 1.0 / 60.0;
-        }
+        world_sim::npcs::update_npcs(self, dt);
     }
 
     fn update_editing(&mut self, dt: f32, screen: Vec2) {
-        self.swing = (self.swing - dt).max(0.0);
-        if let Some((x, y)) = self.dev_break.take() {
-            self.break_tile(x, y);
-        }
-        for (x, y, kind) in std::mem::take(&mut self.dev_place) {
-            if edit::place_tile(&mut self.world, x, y, kind) {
-                self.liquids.wake_around(&self.world, x, y, 3);
-                self.world_key = None;
-            }
-        }
-        self.place_cooldown = (self.place_cooldown - dt).max(0.0);
-        // `Player.cs:24798-24807`: while the map is fullscreen `controlUseItem`/
-        // `controlUseTile` are cleared, so no mining, placing or attacking happens
-        // behind it; the left button drags the map instead (`update_map_input`).
-        if self.map.as_ref().is_some_and(|m| m.open) {
-            self.edit_target = None;
-            self.mine_target = None;
-            self.mine_timer = 0.0;
-            return;
-        }
-        // `MinimapFrame.Update` sets `Main.LocalPlayer.mouseInterface = true`
-        // while a zoom button is hovered (`MinimapFrame.cs:164`), which zeroes
-        // the use-item / use-tile inputs for the frame — so mining, placing and
-        // attacking are suppressed behind the frame the same way the fullscreen
-        // map suppresses them above (`handle_minimap_clicks` keeps this flag
-        // current, having run earlier this frame).
-        if self.minimap_hover.is_some() {
-            self.edit_target = None;
-            self.mine_target = None;
-            self.mine_timer = 0.0;
-            return;
-        }
-        let m = self.mouse_pos;
-        let hud_top = screen.y - 96.0;
-        if m.x < 0.0
-            || m.y < 0.0
-            || m.x > screen.x
-            || m.y > screen.y
-            || (m.y > hud_top && m.x < 300.0)
-            || (self.debug && m.x < 780.0 && m.y < 340.0)
-        {
-            self.edit_target = None;
-            self.mine_target = None;
-            self.mine_timer = 0.0;
-            return;
-        }
-        let world_pos = self.camera + (m - screen * 0.5) / self.zoom;
-        let tx = (world_pos.x / TILE_PX).floor() as i32;
-        let ty = (world_pos.y / TILE_PX).floor() as i32;
-        if !self.world.in_bounds(tx, ty) {
-            self.edit_target = None;
-            return;
-        }
-        let Some(player) = &self.player else {
-            self.edit_target = None;
-            return;
-        };
-        let (pcx, pcy) = player.center();
-        let dx = tx as f32 * TILE_PX + 8.0 - pcx;
-        let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-        let reach = 6.0 * TILE_PX;
-        if dx * dx + dy * dy > reach * reach {
-            self.edit_target = None;
-            self.mine_target = None;
-            self.mine_timer = 0.0;
-            return;
-        }
-        self.edit_target = Some((tx, ty));
-        let held = self.inventory[self.selected];
-        let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
-        if self.mine_down && held_weapon && !self.inventory_open {
-            // Weapons use LMB toward the cursor instead of mining.
-            if self.attack_cd <= 0.0 {
-                let (pcx, pcy) = player.center();
-                let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
-                if dir != Vec2::ZERO {
-                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-                    self.projectiles.push(Projectile::shuriken(
-                        spawn.x - 3.0,
-                        spawn.y - 3.0,
-                        dir.x * 11.0,
-                        dir.y * 11.0,
-                    ));
-                    self.inventory[self.selected].count =
-                        self.inventory[self.selected].count.saturating_sub(1);
-                    self.attack_cd = 0.25;
-                    self.swing = SWING_TIME;
-                }
-            }
-            return;
-        }
-        // Melee: LMB over an NPC within four tiles hits it instead of mining.
-        if self.mine_down && self.attack_cd <= 0.0 && !self.inventory_open {
-            let ax = world_pos.x;
-            let ay = world_pos.y;
-            let reach2 = 4.0 * TILE_PX;
-            if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
-                if let Some(n) = self.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
-                    let dmg = if held_weapon { registry::damage(held.kind) } else { 15 };
-                    // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
-                    // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
-                    let (nx, ny) = (n.x, n.y);
-                    n.hurt(dmg, pcx);
-                    self.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
-                    self.attack_cd = 0.3;
-                    self.mine_target = None;
-                    self.mine_timer = 0.0;
-                    self.swing = SWING_TIME;
-                    return;
-                }
-            }
-        }
-        let Some(tile) = self.world.tile(tx, ty).copied() else {
-            self.edit_target = None;
-            return;
-        };
-        let important = self
-            .world
-            .frame_important
-            .get(tile.kind as usize)
-            .copied()
-            .unwrap_or(false)
-            && tile.kind != 80; // cacti have fixed frames but are mineable
-        let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
-
-        if self.mine_down && tile.active() && !important && !self.inventory_open {
-            if self.swing <= 0.0 {
-                self.swing = SWING_TIME;
-            }
-            if self.mine_target == Some((tx, ty)) {
-                self.mine_timer += dt;
-            } else {
-                self.mine_target = Some((tx, ty));
-                self.mine_timer = 0.0;
-            }
-            let hardness = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-                0.55
-            } else {
-                0.25
-            };
-            if self.mine_timer >= hardness {
-                self.break_tile(tx, ty);
-                self.mine_target = None;
-                self.mine_timer = 0.0;
-            }
-        } else if self.mine_down && !tile.active() && tile.wall != 0 && !self.inventory_open {
-            // No block in the cell: mining it removes the exposed wall.
-            if self.swing <= 0.0 {
-                self.swing = SWING_TIME;
-            }
-            if self.mine_target == Some((tx, ty)) {
-                self.mine_timer += dt;
-            } else {
-                self.mine_target = Some((tx, ty));
-                self.mine_timer = 0.0;
-            }
-            let hardness = if tile.wall == 1 { 0.7 } else { 0.35 };
-            if self.mine_timer >= hardness {
-                self.break_wall(tx, ty);
-                self.mine_target = None;
-                self.mine_timer = 0.0;
-            }
-        } else {
-            self.mine_target = None;
-            self.mine_timer = 0.0;
-        }
-
-        if self.place_down && self.place_cooldown <= 0.0 && !self.inventory_open {
-            if held_wall {
-                if self.can_place_wall(tx, ty) {
-                    self.place_wall_item(tx, ty, registry::place_wall(held.kind).unwrap_or(1));
-                    self.place_cooldown = 0.12;
-                    self.swing = SWING_TIME;
-                }
-            } else if !held_weapon && self.can_place(tx, ty) {
-                let Some(kind) = registry::place_tile(held.kind) else {
-                    return;
-                };
-                self.place_tile(tx, ty, kind);
-                self.place_cooldown = 0.12;
-                self.swing = SWING_TIME;
-            }
-        }
+        world_sim::editing::update_editing(self, dt, screen);
     }
 
-    fn break_wall(&mut self, tx: i32, ty: i32) {
-        let Some(wall) = edit::break_wall(&mut self.world, tx, ty) else {
-            return;
-        };
-        if let Some(id) = registry::by_wall(wall) {
-            self.spawn_item_drop(id, tx, ty);
-        }
-        self.audio
-            .play_at("Dig_2", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-        self.request_edit(tx, ty, 2, 0);
-        self.world_key = None;
-    }
-
-    fn can_place_wall(&self, tx: i32, ty: i32) -> bool {
-        let Some(t) = self.world.tile(tx, ty) else {
-            return false;
-        };
-        if t.wall != 0
-            || self.inventory[self.selected].count == 0
-            || registry::is_weapon(self.inventory[self.selected].kind)
-        {
-            return false;
-        }
-        // A neighbouring wall or block (including one in the cell itself) supports it.
-        if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
-            return true;
-        }
-        [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
-            self.world
-                .tile(tx + dx, ty + dy)
-                .is_some_and(|n| n.wall != 0)
-        })
-    }
-
-    fn place_wall_item(&mut self, tx: i32, ty: i32, wall: u16) {
-        if edit::place_wall(&mut self.world, tx, ty, wall) {
-            self.inventory[self.selected].count =
-                self.inventory[self.selected].count.saturating_sub(1);
-            self.audio
-                .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-            self.request_edit(tx, ty, 3, wall);
-            self.world_key = None;
-        }
-    }
-
-    /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
     fn is_client(&self) -> bool {
         matches!(self.net, NetRole::Client(_))
     }
 
+    /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
     fn update_items(&mut self, dt: f32) {
-        if self.is_client() {
-            // The host owns the drops: ask it to collect whatever lies under our feet
-            // and hide those locally until the next authoritative snapshot.
-            let Some(pc) = self
-                .player
-                .as_ref()
-                .map(|p| Vec2::new(p.center().0, p.center().1))
-            else {
-                return;
-            };
-            let ids: Vec<u32> = self
-                .items
-                .iter()
-                .enumerate()
-                .filter(|(_, it)| (it.center() - pc).length() < 26.0)
-                .map(|(i, _)| i as u32)
-                .collect();
-            if let NetRole::Client(client) = &self.net {
-                for id in ids {
-                    client.send_pickup(id);
-                }
-            }
-            self.items.retain(|it| (it.center() - pc).length() >= 26.0);
-            return;
-        }
-        let step = 1.0 / 60.0;
-        let mut acc = self.item_accum + dt.min(0.25);
-        let mut steps = 0;
-        while acc >= step && steps < 8 {
-            let player_center = self
-                .player
-                .as_ref()
-                .map(|p| Vec2::new(p.center().0, p.center().1));
-            let mut i = 0;
-            while i < self.items.len() {
-                let mut drop = self.items[i].clone();
-                if drop.update(&self.world, player_center, step) {
-                    if registry::is_coin(drop.kind) {
-                        self.coins = self
-                            .coins
-                            .saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
-                        let c = drop.center();
-                        self.audio.play_at("Coin_0", c.x, c.y, 1.0);
-                        self.items.swap_remove(i);
-                        continue;
-                    }
-                    if let Some(slot) = slot_for_pickup(&mut self.inventory, drop.kind) {
-                        self.inventory[slot].count =
-                            self.inventory[slot].count.saturating_add(drop.count);
-                        let c = drop.center();
-                        self.audio.play_at("Item_1", c.x, c.y, 1.0);
-                        self.items.swap_remove(i);
-                        continue;
-                    }
-                }
-                self.items[i] = drop;
-                i += 1;
-            }
-            acc -= step;
-            steps += 1;
-        }
-        self.item_accum = acc.min(step * 8.0);
+        world_sim::items::update_items(self, dt);
     }
 
     /// Fixed 60 Hz projectile stepping. Damage lands through `Npc::hurt`, so the
     /// hit cooldown and knockback are shared with melee.
     fn update_projectiles(&mut self, dt: f32) {
-        if self.dev_throw {
-            if let Some(p) = &self.player {
-                let (cx, cy) = p.center();
-                self.projectiles
-                    .push(Projectile::shuriken(cx - 3.0, cy - 3.0, 11.0, 0.0));
-            }
-            self.dev_throw = false;
-        }
-        let step = 1.0 / 60.0;
-        let mut acc = self.projectile_accum + dt.min(0.25);
-        let mut steps = 0;
-        while acc >= step && steps < 8 {
-            let world = &self.world;
-            let npcs = &mut self.npcs;
-            for p in &mut self.projectiles {
-                p.update(world, npcs, step);
-            }
-            self.projectiles.retain(|p| p.alive);
-            acc -= step;
-            steps += 1;
-        }
-        self.projectile_accum = acc.min(step * 8.0);
-    }
-
-    /// `Item.NewItem` coin drops: a few copper from small enemies, gold from the boss.
-    fn spawn_coins(&mut self, kind: NpcKind, x: f32, y: f32) {
-        let roll = rand01(&mut self.item_rng);
-        let (denom, count) = match kind {
-            NpcKind::KingSlime => (2u16, 3 + (roll * 4.0) as u32),
-            NpcKind::Zombie => {
-                if roll < 0.2 {
-                    (1, 1)
-                } else {
-                    (0, 2 + (roll * 30.0) as u32 % 4)
-                }
-            }
-            NpcKind::Slime => {
-                if roll < 0.05 {
-                    (1, 1)
-                } else {
-                    (0, 1 + (roll * 20.0) as u32 % 3)
-                }
-            }
-            NpcKind::DemonEye => (0, 1 + (roll * 10.0) as u32 % 2),
-        };
-        let vx = (rand01(&mut self.item_rng) * 2.0 - 1.0) * 1.2;
-        let vy = -1.5 - rand01(&mut self.item_rng);
-        let phase = rand01(&mut self.item_rng) * std::f32::consts::TAU;
-        self.items.push(ItemDrop::new(
-            registry::coin_id(denom as usize),
-            count,
-            x - 7.0,
-            y - 7.0,
-            vx,
-            vy,
-            phase,
-        ));
-    }
-
-    /// Spawns the drop left by a broken tile, with a small random pop like `Item.NewItem`.
-    fn spawn_item_drop(&mut self, kind: u16, tx: i32, ty: i32) {
-        let r1 = rand01(&mut self.item_rng);
-        let r2 = rand01(&mut self.item_rng);
-        let r3 = rand01(&mut self.item_rng);
-        let drop = ItemDrop::new(
-            kind,
-            1,
-            tx as f32 * TILE_PX + 1.0,
-            ty as f32 * TILE_PX,
-            (r1 * 2.0 - 1.0) * 1.4,
-            -2.2 - r2 * 1.2,
-            r3 * std::f32::consts::TAU,
-        );
-        self.items.push(drop);
-        if self.items.len() > 300 {
-            self.items.remove(0);
-        }
-    }
-
-    fn break_tile(&mut self, tx: i32, ty: i32) {
-        let Some(kind) = edit::break_tile(&mut self.world, tx, ty) else {
-            return;
-        };
-        let Some(id) = registry::tile_drop(kind) else {
-            self.request_edit(tx, ty, 0, 0);
-            return;
-        };
-        self.spawn_item_drop(id, tx, ty);
-        self.audio
-            .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-        self.request_edit(tx, ty, 0, 0);
-        self.liquids.wake_around(&self.world, tx, ty, 3);
-        self.world_key = None;
-    }
-
-    fn can_place(&self, tx: i32, ty: i32) -> bool {
-        let Some(t) = self.world.tile(tx, ty) else {
-            return false;
-        };
-        if t.active()
-            || self.inventory[self.selected].count == 0
-            || registry::is_weapon(self.inventory[self.selected].kind)
-            || self.inventory[self.selected].kind == 80
-        {
-            return false;
-        }
-        if let Some(p) = &self.player {
-            let (x0, y0) = (tx as f32 * TILE_PX, ty as f32 * TILE_PX);
-            if x0 < p.x + crate::player::WIDTH
-                && x0 + TILE_PX > p.x
-                && y0 < p.y + crate::player::HEIGHT
-                && y0 + TILE_PX > p.y
-            {
-                return false;
-            }
-        }
-        [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
-            self.world.tile(tx + dx, ty + dy).is_some_and(|n| {
-                n.wall != 0
-                    || (n.active()
-                        && (n.kind as usize) < td::TILE_COUNT
-                        && td::TILE_SOLID.has(n.kind))
-            })
-        })
-    }
-
-    fn place_tile(&mut self, tx: i32, ty: i32, kind: u16) {
-        if edit::place_tile(&mut self.world, tx, ty, kind) {
-            self.inventory[self.selected].count =
-                self.inventory[self.selected].count.saturating_sub(1);
-            self.liquids.wake_around(&self.world, tx, ty, 3);
-            self.audio
-                .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-            self.request_edit(tx, ty, 1, kind);
-            self.world_key = None;
-        }
+        world_sim::projectiles::update_projectiles(self, dt);
     }
 
     /// The slot under the cursor, using the same geometry as `draw_hud`.
@@ -4192,7 +3508,7 @@ impl App {
         self.update_bg_visibility();
         // Render between fixed steps so the jump/fall is not a 60 Hz staircase on
         // high-refresh displays.
-        let player_alpha = (self.player_accum / (1.0 / 60.0)).clamp(0.0, 1.0);
+        let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
         let mut render_player = self.player.as_ref().map(|p| p.interpolated(player_alpha));
         // `PlayerFrame` item-use branch: while a swing is active the body shows the use
         // rows instead of the idle/air pose. `swing` counts down from `SWING_TIME`,
@@ -4847,25 +4163,7 @@ impl App {
     }
 
     fn pan_camera(&mut self, dt: f32) {
-        let mut dir = Vec2::ZERO;
-        if self.keys.contains(&KeyCode::KeyA) || self.keys.contains(&KeyCode::ArrowLeft) {
-            dir.x -= 1.0;
-        }
-        if self.keys.contains(&KeyCode::KeyD) || self.keys.contains(&KeyCode::ArrowRight) {
-            dir.x += 1.0;
-        }
-        if self.keys.contains(&KeyCode::KeyW) || self.keys.contains(&KeyCode::ArrowUp) {
-            dir.y -= 1.0;
-        }
-        if self.keys.contains(&KeyCode::KeyS) || self.keys.contains(&KeyCode::ArrowDown) {
-            dir.y += 1.0;
-        }
-        if dir != Vec2::ZERO {
-            self.camera += dir.normalize() * 900.0 * dt / self.zoom;
-        }
-        if let Some(step) = pan_step() {
-            self.camera.x += step * TILE_PX;
-        }
+        world_sim::camera::pan_camera(self, dt);
     }
 
     fn finish_bench(&mut self) {
@@ -4954,26 +4252,6 @@ fn relaunch_into_world(data: &[u8], addr: &str, password: &str, name: &str) {
     }
 }
 
-/// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
-/// 3 place wall.
-fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) {
-    match kind {
-        0 => {
-            edit::break_tile(world, x, y);
-        }
-        1 => {
-            edit::place_tile(world, x, y, tile);
-        }
-        2 => {
-            edit::break_wall(world, x, y);
-        }
-        3 => {
-            edit::place_wall(world, x, y, tile);
-        }
-        _ => {}
-    }
-}
-
 fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
     let kind = crate::npc::NpcKind::from_u16(n.kind)?;
     let tx = (n.x / TILE_PX) as i32;
@@ -5041,25 +4319,6 @@ fn broadcast_left(server: &net::Server, id: u32) {
 fn broadcast_joined(server: &net::Server, id: u32, players: &HashMap<u32, net::PlayerNet>) {
     let name = players.get(&id).map(|p| p.name.clone()).unwrap_or_default();
     server.broadcast(&net::ServerToClient::Joined { id, name });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn day_night_clock_wraps() {
-        let mut w = World::new("t".into(), 8, 8);
-        w.time = 53999.0;
-        w.day_time = true;
-        advance_time(&mut w, 1.0);
-        assert!(!w.day_time);
-        assert!(w.time < 100.0, "time {}", w.time);
-        w.time = 32399.0;
-        advance_time(&mut w, 1.0);
-        assert!(w.day_time);
-        assert!(w.time < 100.0, "time {}", w.time);
-    }
 }
 
 #[cfg(test)]
@@ -5321,8 +4580,8 @@ mod front_flow_tests {
             player_assets: PlayerAssets::default(),
             player: None,
             follow_player: false,
-            player_accum: 0.0,
-            npc_accum: 0.0,
+            player_step: FixedStepper::new(1.0 / 60.0, 8),
+            npc_step: FixedStepper::new(1.0 / 60.0, 8),
             npcs: Vec::new(),
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
@@ -5407,18 +4666,18 @@ mod front_flow_tests {
             anim_time: 0.0,
             has_liquids: false,
             liquids,
-            liquid_accum: 0.0,
+            liquid_step: FixedStepper::new(1.0 / 60.0, 8),
             liquid_tick: 0,
             waterfall: tr_core::waterfall::WaterfallManager::new(),
-            waterfall_accum: 0.0,
+            waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             rain: Rain::new(1),
             items: Vec::new(),
             item_rng: 0,
-            item_accum: 0.0,
+            item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
             coins: 0,
             projectiles: Vec::new(),
-            projectile_accum: 0.0,
+            projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
