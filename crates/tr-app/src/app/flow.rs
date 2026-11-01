@@ -4,8 +4,16 @@
 //! (A5: extracted from `main.rs`; the behaviour trait that routes the
 //! screens lives in this module too.)
 
+use crate::assets;
 use crate::menu;
+use crate::render::entities::PlayerAssets;
 use crate::ui;
+use crate::ui::text::font_width;
+use crate::App;
+use glam::Vec2;
+use tr_render::SpriteRenderer;
+use winit::event::KeyEvent;
+use winit::keyboard::{KeyCode, PhysicalKey};
 
 /// The modern front-end screens (`Main.menuMode == 888`, `Main.cs:51059-
 /// 51069`). `App.front` owns one of these while `App.menu` is `None` — the
@@ -250,6 +258,721 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
 /// (`save_list::list_players`/`list_worlds` prepend `Player n`/`World n`).
 pub(crate) fn tr_fake_count(key: &str) -> usize {
     std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+}
+
+// --- the behaviour trait (the C# `UIState` shape) ---------------------------
+
+/// The frame's shared draw context for the front screens — the pieces of
+/// `frame()`'s destructure the draw pass reads (the `Main.MenuUI` draw
+/// environment; the arm bodies are the `DrawSelf` ports).
+pub(crate) struct FrontDraw<'a> {
+    pub(crate) renderer: &'a mut SpriteRenderer,
+    pub(crate) lookups: &'a assets::Lookups,
+    pub(crate) screen: Vec2,
+    /// `_characterSelectMenu`'s card list (`App.players` — the enum doc's
+    /// note).
+    pub(crate) players: &'a [ui::save_list::PlayerEntry],
+    /// `_worldSelectMenu`'s card list (`App.worlds`).
+    pub(crate) worlds: &'a [ui::save_list::WorldEntry],
+    pub(crate) player_assets: &'a PlayerAssets,
+    /// `Main.GlobalTimeWrappedHourly`'s port — the creation preview's clock.
+    pub(crate) anim_time: f32,
+    pub(crate) mouse: Vec2,
+    /// `Main.mouseLeft`'s port for the front screens — the HSL drags ride
+    /// off it (`Main.cs:51101`'s role).
+    pub(crate) front_mouse_down: bool,
+    /// `TR_VK_GRID=1` — the keyboard's 50-key grid layer (Review Focus 6).
+    pub(crate) vk_grid: bool,
+    /// The caret's `UITextBox._frameCount`.
+    pub(crate) frame_count: u64,
+}
+
+/// The five front screens' behaviour surface — the C# `UIState` shape: the
+/// header, `DrawSelf`, the `Click_*` handler table and the physical-key path
+/// per screen, instead of App-sized match arms. The [`FrontScreen`] enum
+/// stays the state carrier (`App.front` — each variant is one screen), so
+/// the trait is implemented for the enum and every method's match is the
+/// per-screen override, exhaustive over the variants.
+pub(crate) trait FrontScreenBehaviours {
+    /// The screen's static header text — `UITextPanel`'s label ("Select
+    /// Player" / "Select World"). The creation screens and the keyboard draw
+    /// their own title pieces (the keyboard's label is the session's
+    /// [`ui::keyboard::Request::label`]), so they have none.
+    fn header(&self) -> &'static str;
+
+    /// The header's Death-font width (`UITextPanel.cs:126-131`, the
+    /// `App::front_header_w` convention) measured over the draw pass — the
+    /// select screens' draw prologue.
+    fn header_w(&self, d: &FrontDraw<'_>) -> f32 {
+        match &d.lookups.death_font {
+            Some(f) => font_width(f, self.header(), 1.0),
+            None => d.renderer.text_width(self.header(), 1.0),
+        }
+    }
+
+    /// `UIState.DrawSelf` — the draw pass over the world backdrop the frame
+    /// already rendered (`Main.menuMode == 888`'s branch,
+    /// `Main.cs:51059-51064`).
+    fn draw(&mut self, d: &mut FrontDraw<'_>);
+
+    /// The screen's click table (the `Click_*` handlers) — one left click on
+    /// the live screen (`Main.MouseUI`'s click while `MenuUI` is live). The
+    /// screen payload mutates through `app.front` (the live slot), the list
+    /// screens mutate `App`'s lists; a returned click routes through
+    /// [`App::apply_front_flow`].
+    fn click(&self, app: &mut App, screen: Vec2, mouse: Vec2) -> Option<FlowClick>;
+
+    /// The physical-key path while the screen is live (`Main.GetInputText`
+    /// feeding the focused text box). Default: nothing — the keyboard
+    /// session is the one text box; the world controls stay parked.
+    fn key(&self, _app: &mut App, _event: &KeyEvent) {}
+}
+
+impl FrontScreenBehaviours for FrontScreen {
+    fn header(&self) -> &'static str {
+        match self {
+            FrontScreen::CharSelect => ui::char_select::SELECT_PLAYER,
+            FrontScreen::WorldSelect => ui::world_select::SELECT_WORLD,
+            // The creation screens and the keyboard draw their own title
+            // pieces; no static `UITextPanel`.
+            _ => "",
+        }
+    }
+
+    fn draw(&mut self, d: &mut FrontDraw<'_>) {
+        match self {
+            FrontScreen::CharSelect => {
+                let header_w = self.header_w(d);
+                ui::char_select::draw(
+                    d.renderer,
+                    d.lookups,
+                    d.screen,
+                    header_w,
+                    d.players,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorldSelect => {
+                let header_w = self.header_w(d);
+                // The active player's difficulty for the joinable grey-out
+                // (`Main.ActivePlayerFileData.Player.difficulty`,
+                // `UIWorldSelect.cs:179`): the port's active character is the
+                // fresh session player — difficulty 0 (`Player.cs:1654`'s
+                // default).
+                ui::world_select::draw(
+                    d.renderer,
+                    d.lookups,
+                    d.screen,
+                    header_w,
+                    d.worlds,
+                    0,
+                    d.mouse,
+                );
+            }
+            FrontScreen::CharCreation(state) => {
+                // `Main.MenuUI.Draw`'s `UICharacterCreation` state
+                // (`:1876-2022`'s Draw): the panel, the animated preview
+                // (`GlobalTimeWrappedHourly`'s clock — `anim_time`), the
+                // categories, the one middle menu, Back/Create and the hover
+                // tooltip. The HSL drag runs inside (the `CurrentLockedSlider`
+                // latch) off `front_mouse_down`.
+                ui::char_creation::draw(
+                    d.renderer,
+                    d.lookups,
+                    d.player_assets,
+                    state,
+                    d.screen,
+                    d.anim_time,
+                    d.mouse,
+                    d.front_mouse_down,
+                );
+            }
+            FrontScreen::WorldCreation(draft) => {
+                // `Main.MenuUI.Draw`'s `UIWorldCreation` state (`:1024-1033`,
+                // minus the `SetupGamepadPoints` snap points and the
+                // `DrawSeedSystems` special-seed ring — both out of scope):
+                // the panel, the plates + preview, the three option rows, the
+                // description panel and Back/Create.
+                ui::world_creation::draw(d.renderer, d.lookups, draft, d.screen, d.mouse);
+            }
+            FrontScreen::Keyboard(session) => {
+                // `Main.MenuUI.Draw`'s keyboard state
+                // (`UIVirtualKeyboard.DrawSelf`, `:680-746`): the desktop
+                // layer by default (`ShowGamepadHints` is false without a
+                // gamepad), the 50-key grid under `TR_VK_GRID=1` (Review
+                // Focus 6). `frame_count` is the caret's
+                // `UITextBox._frameCount`.
+                let l = ui::keyboard::layout(d.screen, d.vk_grid);
+                ui::keyboard::draw(
+                    d.renderer,
+                    d.lookups,
+                    &session.state,
+                    &session.request,
+                    &l,
+                    d.vk_grid,
+                    d.mouse,
+                    d.frame_count,
+                );
+            }
+        }
+    }
+
+    fn click(&self, app: &mut App, screen: Vec2, mouse: Vec2) -> Option<FlowClick> {
+        match self {
+            FrontScreen::CharSelect => {
+                let l = ui::char_select::resolved_layout(
+                    screen,
+                    app.front_header_w(self.header()),
+                    app.players.len(),
+                );
+                let favorites: Vec<bool> = app.players.iter().map(|p| p.is_favorite).collect();
+                match ui::char_select::hit(&l, &favorites, mouse) {
+                    Some(ui::char_select::CardAction::Back) => Some(FlowClick::CharBack),
+                    // `NewCharacterClick` (`:108-114`): a fresh `PendingPlayer`
+                    // and the creation screen (`FlowClick::CharNew`).
+                    Some(ui::char_select::CardAction::New) => Some(FlowClick::CharNew),
+                    // `PlayGame` (`:256-261`): only a playable entry reaches
+                    // `SelectPlayer` (`loadStatus == Ok`); the rest is a dead
+                    // click, like the source.
+                    Some(ui::char_select::CardAction::Play(i))
+                        if app.players.get(i).is_some_and(|p| p.playable) =>
+                    {
+                        Some(FlowClick::CharPlay)
+                    }
+                    // `FavoriteButtonClick` (`:264-283`): the flag flips and
+                    // the list re-orders (`UpdateOrder`). No `.plr` exists to
+                    // persist it — the toggle is session-only (documented
+                    // deviation).
+                    Some(ui::char_select::CardAction::ToggleFavorite(i)) => {
+                        if let Some(p) = app.players.get_mut(i) {
+                            p.is_favorite = !p.is_favorite;
+                        }
+                        ui::char_select::sort_players(&mut app.players);
+                        None
+                    }
+                    // `RenameButtonClick` (`:196-206`): the virtual keyboard
+                    // opens over the card's name — `Lang.menu[45]` "Enter
+                    // Character Name:", `allowEmpty: true`, the ctor's
+                    // 20-character cap (`:199`, `UIVirtualKeyboard.cs:159`).
+                    // There is no `.plr` writer to rename into (spec §9.4),
+                    // so Submit stays the not-ported notice (Task 6's flow).
+                    Some(ui::char_select::CardAction::Rename(i)) => {
+                        let name =
+                            app.players.get(i).map(|p| p.name.clone()).unwrap_or_default();
+                        app.open_keyboard(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                initial: name,
+                                allow_empty: true,
+                                max_length: 20,
+                            },
+                            FrontScreen::CharSelect,
+                        );
+                        None
+                    }
+                    // `DeleteButtonClick` (`:242-254`): parks the target, then
+                    // `menuMode = 5`. The favourited gate never subscribed the
+                    // handler (`:114-117`), so only `deletable` entries reach
+                    // it — and the implicit session entry has no file. The
+                    // confirm page re-reads the parked name from the list
+                    // (`apply_front_flow`).
+                    Some(ui::char_select::CardAction::Delete(i))
+                        if app.players.get(i).is_some_and(|p| p.deletable) =>
+                    {
+                        Some(FlowClick::CharDelete(i))
+                    }
+                    _ => None,
+                }
+            }
+            FrontScreen::CharCreation(_) => {
+                // The creator's click table (`UICharacterCreation`'s handlers
+                // through the App): the categories, the Back/Create pair, and
+                // the live middle menu's controls. The HSL rows drag in the
+                // draw pass, not here (`UIColoredSlider`'s lock latch).
+                let l = ui::char_creation::layout(screen, 0.0);
+                // The screen-state mutations run under the borrow; the
+                // navigation clicks clone the payload they need and drop it.
+                enum Nav {
+                    None,
+                    Name(ui::char_creation::CreationState),
+                    Create(ui::char_creation::CreationState),
+                    Back(ui::char_creation::CreationState),
+                }
+                let nav = {
+                    let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() else {
+                        return None;
+                    };
+                    match ui::char_creation::click_at(&l, state.category, mouse) {
+                        // `SelectColorPicker`/`Click_*` (`:1810-1833`): the
+                        // picker selects and the middle menu follows
+                        // (`middle_for`), seeding `_currentColorHSL` from the
+                        // live colour — the draw re-derives it.
+                        ui::char_creation::Click::Category(id) => {
+                            state.category = id;
+                            Nav::None
+                        }
+                        // `UIDifficultyButton.LeftMouseDown`
+                        // (`UIDifficultyButton.cs:67-71`).
+                        ui::char_creation::Click::Difficulty(d) => {
+                            state.draft.difficulty = d;
+                            Nav::None
+                        }
+                        // `UIHairStyleButton.LeftMouseDown` (`UIHairStyleButton.
+                        // cs:66-70`) + `RecordThatHairWasSelected` (`:306-309`):
+                        // the auto-assign gate closes.
+                        ui::char_creation::Click::Hair(h) => {
+                            state.draft.hair = h;
+                            state.hair_picked = true;
+                            Nav::None
+                        }
+                        // `Click_CharClothStyle` (`:1277-1291`): the armor
+                        // guard is out of scope (no armor preview); the
+                        // variant lands and the hair auto-assigns while
+                        // untouched (`TryAutoAssigningHair`, `:630-637`).
+                        ui::char_creation::Click::ClothStyle(v) => {
+                            state.draft.skin_variant = v;
+                            if !state.hair_picked {
+                                if let Some(hair) =
+                                    ui::char_creation::default_hairstyle_for_cloth_style(v)
+                                {
+                                    state.draft.hair = hair;
+                                }
+                            }
+                            Nav::None
+                        }
+                        ui::char_creation::Click::Name => Nav::Name(state.clone()),
+                        ui::char_creation::Click::Create => Nav::Create(state.clone()),
+                        ui::char_creation::Click::Back => Nav::Back(state.clone()),
+                        ui::char_creation::Click::None => Nav::None,
+                    }
+                };
+                match nav {
+                    Nav::None => {}
+                    Nav::Name(state) => {
+                        // `Click_Naming` (`:1659-1666`): the name clears
+                        // (`Main.clrInput()`'s effect on the draft), the
+                        // keyboard opens with `allowEmpty: true`.
+                        let back = FrontScreen::CharCreation(state);
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: ui::char_creation::MAX_NAME_LENGTH,
+                            },
+                            back,
+                            KeyboardTail::Name,
+                        );
+                    }
+                    Nav::Create(state) => {
+                        // `Click_NamingAndCreating` (`:1668-1682`): an empty
+                        // name opens the naming keyboard (no `allowEmpty` —
+                        // the ctor default `false`), a filled one finishes.
+                        if state.draft.name.is_empty() {
+                            let back = FrontScreen::CharCreation(state);
+                            app.open_keyboard_with_tail(
+                                ui::keyboard::Request {
+                                    label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
+                                    initial: String::new(),
+                                    allow_empty: false,
+                                    max_length: ui::char_creation::MAX_NAME_LENGTH,
+                                },
+                                back,
+                                KeyboardTail::NameAndCreate,
+                            );
+                        } else {
+                            app.finish_creating_character();
+                        }
+                    }
+                    Nav::Back(state) => {
+                        // `GoBack` (`:1210-1222`): dirty parks the exact
+                        // screen for the mode-40 round trip
+                        // (`BackupConfirmationState`, `:1215`); clean goes
+                        // straight back to the char select
+                        // (`OpenCharacterSelectUI`).
+                        if state.draft.dirty {
+                            let name =
+                                (!state.draft.name.is_empty()).then(|| state.draft.name.clone());
+                            app.front = None;
+                            app.front_backup = Some(FrontScreen::CharCreation(state));
+                            app.park_menu();
+                            app.menu = Some(menu::Menu::open_confirm_discard(name));
+                        } else {
+                            app.front = None;
+                            app.enter_front(FrontScreen::CharSelect);
+                        }
+                    }
+                }
+                None
+            }
+            FrontScreen::WorldCreation(_) => {
+                // The world creator's click table (`UIWorldCreation`'s
+                // handlers through the App): the two plate icons, the two
+                // plates, the three option rows and the Back/Create pair.
+                let l = ui::world_creation::layout(screen, 0.0);
+                // The draft mutations run under the borrow; the keyboard
+                // clicks clone the draft and drop it, and the navigation
+                // clicks ride the flow table like the select arms do.
+                enum Nav {
+                    None,
+                    Name(ui::world_creation::NewWorldDraft),
+                    Seed(ui::world_creation::NewWorldDraft),
+                    NameAndCreate(ui::world_creation::NewWorldDraft),
+                }
+                let world_count = app.worlds.len();
+                let mut nav = Nav::None;
+                let mut flow = None;
+                let mut create_draft: Option<ui::world_creation::NewWorldDraft> = None;
+                {
+                    let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() else {
+                        return None;
+                    };
+                    match ui::world_creation::click_at(&l, mouse) {
+                        // `ClickRandomizeName` (`:497-503`): the port's
+                        // `AssignRandomWorldName` stand-in re-derives the
+                        // name (`:1002-1025`'s composition tables have no
+                        // localization port — documented).
+                        ui::world_creation::Click::RandomName => {
+                            draft.assign_random_world_name(world_count);
+                        }
+                        // `ClickSizeOption`/`ClickDifficultyOption`/
+                        // `ClickEvilOption` (`:541-575`): the pick lands and
+                        // `UpdatePreviewPlate` re-derives draw-side.
+                        ui::world_creation::Click::Size(size) => draft.size = size,
+                        ui::world_creation::Click::Difficulty(difficulty) => {
+                            draft.difficulty = difficulty;
+                        }
+                        ui::world_creation::Click::Evil(evil) => draft.evil = evil,
+                        // `Click_SetName` (`:689-695`): `Lang.menu[48]`,
+                        // `allowEmpty: true`, the 27 cap (`:693`).
+                        ui::world_creation::Click::Name => nav = Nav::Name(draft.clone()),
+                        // `Click_SetSeed` -> `OpenSeedInputMenu` (`:697-708`):
+                        // "UI.EnterSeed", `allowEmpty: true`, no cap (the
+                        // source's `int.MaxValue`); the icon's Advanced-tab
+                        // click degrades to the same keyboard (plan
+                        // Uncertainty 4).
+                        ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // `Click_NamingAndCreating` (`:710-724`): an empty
+                        // name opens the naming keyboard (`allowEmpty: false`,
+                        // 27), a filled one finishes (`:722`).
+                        ui::world_creation::Click::Create => {
+                            if draft.name.is_empty() {
+                                nav = Nav::NameAndCreate(draft.clone());
+                            } else {
+                                // `FinishCreatingWorld` (`:845-863`) saves
+                                // before the table's re-list takes over.
+                                create_draft = Some(draft.clone());
+                                flow = Some(FlowClick::WorldCreate);
+                            }
+                        }
+                        // `Click_GoBack` -> `GoBack` -> `OpenWorldSelectUI`
+                        // (`:665-674`) — no discard confirm on this screen.
+                        ui::world_creation::Click::Back => {
+                            flow = Some(FlowClick::WorldCreateBack);
+                        }
+                        ui::world_creation::Click::None => {}
+                    }
+                }
+                match nav {
+                    Nav::None => {}
+                    Nav::Name(draft) => {
+                        // The ctor's `startingText` is "" — the box opens
+                        // empty even on a renamed draft (`:693`).
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: ui::world_creation::MAX_NAME_LENGTH,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldName,
+                        );
+                    }
+                    Nav::Seed(draft) => {
+                        // `UI.EnterSeed` ("Enter Seed (Leave Blank For
+                        // Random)"), `allowEmpty: true`, `int.MaxValue`
+                        // (`UIWorldCreation.cs:706`); the starting text is ""
+                        // there too (`:706`).
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: "Enter Seed (Leave Blank For Random)".into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: usize::MAX,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldSeed,
+                        );
+                    }
+                    Nav::NameAndCreate(draft) => {
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: false,
+                                max_length: ui::world_creation::MAX_NAME_LENGTH,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldNameAndCreate,
+                        );
+                    }
+                }
+                // The Create save (`:845-863`) runs before the table hop; a
+                // failure shows the not-ported notice (the vanilla flow has
+                // no error UI on this hop) and the re-list still happens.
+                if let Some(draft) = create_draft {
+                    match ui::world_creation::create_world(&draft) {
+                        Ok(path) => {
+                            log::info!("created '{}' -> {}", draft.name.trim(), path.display());
+                        }
+                        Err(e) => {
+                            app.front_hint = Some(format!("world creation failed: {e:#}"));
+                        }
+                    }
+                }
+                flow
+            }
+            FrontScreen::WorldSelect => {
+                // The world screen's ctor is the char select's twin
+                // (`UIWorldSelect.cs:40-87`), so the shared `resolved_layout`
+                // lives on `char_select` and serves both hit-tests.
+                let l = ui::char_select::resolved_layout(
+                    screen,
+                    app.front_header_w(self.header()),
+                    app.worlds.len(),
+                );
+                let favorites: Vec<bool> = app.worlds.iter().map(|w| w.is_favorite).collect();
+                match ui::world_select::hit(&l, &favorites, mouse) {
+                    Some(ui::world_select::CardAction::Back) => Some(FlowClick::WorldBack),
+                    // `NewWorldClick` (`:110-116`): the stand-in name reads
+                    // `Main.WorldList.Count + 1` and the Journey default reads
+                    // the active player's difficulty (`UIWorldCreation.cs:
+                    // 319-322`) — the session entry's.
+                    Some(ui::world_select::CardAction::New) => Some(FlowClick::WorldNew(
+                        app.worlds.len(),
+                        app.session_entry().difficulty,
+                    )),
+                    // `PlayGame` (`:360-374`): `_data.IsValid` gates the
+                    // launch; an invalid world's click is dead, like the
+                    // source's rejection route (out of scope, spec §9.4).
+                    Some(ui::world_select::CardAction::Play(i))
+                        if app.worlds.get(i).is_some_and(|w| w.valid) =>
+                    {
+                        Some(FlowClick::WorldPlay)
+                    }
+                    // `FavoriteButtonClick` (`:439-458`): `ToggleFavorite`
+                    // saves (`FileData.cs:38-40`) and the list re-orders. The
+                    // port's marker is the `.trfav` sidecar
+                    // (`save_list::WorldEntry::is_favorite`'s reader).
+                    Some(ui::world_select::CardAction::ToggleFavorite(i)) => {
+                        if let Some(w) = app.worlds.get_mut(i) {
+                            w.is_favorite = !w.is_favorite;
+                            if let Some(path) = &w.path {
+                                let marker = path.with_extension("trfav");
+                                if w.is_favorite {
+                                    let _ = std::fs::write(&marker, b"");
+                                } else {
+                                    let _ = std::fs::remove_file(&marker);
+                                }
+                            }
+                        }
+                        ui::world_select::sort_worlds(&mut app.worlds, false);
+                        None
+                    }
+                    // `RenameButtonClick` (`UIWorldListItem.cs:415-421`): the
+                    // world twin — `Lang.menu[48]` "Enter World Name:",
+                    // `allowEmpty: true`, the 27-character cap (`:419`).
+                    Some(ui::world_select::CardAction::Rename(i)) => {
+                        let name = app.worlds.get(i).map(|w| w.name.clone()).unwrap_or_default();
+                        app.open_keyboard(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: name,
+                                allow_empty: true,
+                                max_length: 27,
+                            },
+                            FrontScreen::WorldSelect,
+                        );
+                        None
+                    }
+                    // `DeleteButtonClick` (`:346-358`): parks the target, then
+                    // `menuMode = 9`. The confirm page re-reads the parked
+                    // name from the list (`apply_front_flow`).
+                    Some(ui::world_select::CardAction::Delete(i))
+                        if app.worlds.get(i).is_some_and(|w| w.path.is_some()) =>
+                    {
+                        Some(FlowClick::WorldDelete(i))
+                    }
+                    _ => None,
+                }
+            }
+            FrontScreen::Keyboard(_) => {
+                // The keyboard's own click table (`UIVirtualKeyboard`'s
+                // handlers): the on-screen keys type, the toggles cycle the
+                // `KeyState`, Submit re-checks the validation, Cancel runs
+                // the `_cancelAction`.
+                let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
+                    return None;
+                };
+                let l = ui::keyboard::layout(screen, app.vk_grid);
+                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                    ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
+                    // The shift button: `(keyState != Shift) ? Shift : Default`
+                    // (`:250-254`).
+                    ui::keyboard::Click::Shift => {
+                        let next = if session.state.key_state == ui::keyboard::KeyState::Shift {
+                            ui::keyboard::KeyState::Default
+                        } else {
+                            ui::keyboard::KeyState::Shift
+                        };
+                        session.state.set_key_state(next);
+                    }
+                    // The symbol button: `(keyState != Symbol) ? Symbol : Default`
+                    // (`:284-289`).
+                    ui::keyboard::Click::Symbol => {
+                        let next = if session.state.key_state == ui::keyboard::KeyState::Symbol {
+                            ui::keyboard::KeyState::Default
+                        } else {
+                            ui::keyboard::KeyState::Symbol
+                        };
+                        session.state.set_key_state(next);
+                    }
+                    // `PressSpace` writes without the Shift unlatch (`:491-502`).
+                    ui::keyboard::Click::Space => ui::keyboard::write_str(&mut session.state, " "),
+                    // The backspace key pops (`:392-397`).
+                    ui::keyboard::Click::Backspace => session.state.backspace(),
+                    // The desktop pair's handler checks the validation first
+                    // (`:358-365`); the small pair's `InternalSubmit` re-checks
+                    // too (`:970-978`) — the invalid click is dead either way.
+                    ui::keyboard::Click::Submit => {
+                        if ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
+                        {
+                            app.keyboard_submit();
+                        }
+                    }
+                    // `_cancelAction` (`:319-323`, `:385-389`).
+                    ui::keyboard::Click::Cancel => app.keyboard_cancel(),
+                    ui::keyboard::Click::None => {}
+                }
+                None
+            }
+        }
+    }
+
+    fn key(&self, app: &mut App, event: &KeyEvent) {
+        match self {
+            // The keyboard is the one front screen with text input:
+            // `Main.GetInputText` edits its text every frame
+            // (`UIVirtualKeyboard.cs:750-788`), Enter submits through
+            // `CanSubmit` (`:763-766`) and Escape runs the cancel
+            // (`:771-774`'s `TryEscapingMenu`).
+            FrontScreen::Keyboard(_) => {
+                if let Some(text) = event.text.as_ref() {
+                    for ch in text.chars() {
+                        if !ch.is_control() {
+                            app.keyboard_character(ch);
+                        }
+                    }
+                }
+                match event.physical_key {
+                    PhysicalKey::Code(KeyCode::Backspace) => app.keyboard_backspace(),
+                    PhysicalKey::Code(KeyCode::Escape) => app.keyboard_cancel(),
+                    PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
+                        app.keyboard_enter()
+                    }
+                    _ => {}
+                }
+            }
+            // The other screens take no keys: the world controls stay parked
+            // while a front screen is live (the gamepad snap points are out
+            // of scope, §J.3).
+            _ => {}
+        }
+    }
+}
+
+impl App {
+    /// One left click on a live front screen: the card-hit table routed into
+    /// the flow (`UICharacterSelect.cs:108-133` / `UIWorldSelect.cs:110-135`'s
+    /// handlers through the App). The favourite toggles re-order the list like
+    /// `FavoriteButtonClick`'s `UpdateOrder` (`UICharacterListItem.cs:280-282`
+    /// / `UIWorldListItem.cs:455-458`).
+    pub(crate) fn handle_front_click(&mut self) {
+        // `FrontScreen` stopped being `Copy` when the keyboard variant grew a
+        // payload — the snapshot clones instead of moving out of `self`.
+        let Some(front) = self.front.clone() else { return };
+        // A click clears the notice, like `Menu::activate`'s `hint = None`.
+        self.front_hint = None;
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let mouse = self.mouse_pos;
+        // The `UIState` dispatch: the live screen owns its `Click_*` table.
+        let click = front.click(self, screen, mouse);
+        if let Some(click) = click {
+            self.apply_front_flow(front, click);
+        }
+    }
+
+    /// The click tables' shared flow-apply tail: one [`next_flow_state`]
+    /// hop lands on the App state. Review Focus 1: the table result IS the
+    /// App's state — `front` is written on every hop, so the page arms below
+    /// (`menuMode = 5` / `= 0`) clear the 888 side (`Main.cs:51066-51069`'s
+    /// else branch) and the legacy page goes live instead of hiding under the
+    /// front screen.
+    fn apply_front_flow(&mut self, front: FrontScreen, click: FlowClick) {
+        let delete_index = match click {
+            FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
+            _ => None,
+        };
+        let (front, backup, page) =
+            next_flow_state(Some(front), self.front_backup.clone(), None, click);
+        self.front_backup = backup;
+        self.front = front.clone();
+        match page {
+            // Mode 5 opens with the parked name/index (`Main.selectedPlayer`,
+            // `UICharacterListItem.cs:246-249`) — re-read from the list, which
+            // the click gate snapshot identically (`players` is untouched
+            // between the gate and this hop).
+            Some(menu::Page::ConfirmDeletePlayer) => {
+                self.park_menu();
+                let name = self
+                    .players
+                    .get(delete_index.unwrap_or(0))
+                    .map(|p| p.name.clone());
+                let mut m = menu::Menu::open_confirm_delete_player(name.unwrap_or_default());
+                m.confirm_index = delete_index.unwrap_or(0);
+                self.menu = Some(m);
+            }
+            // Mode 9 (`Main.selectedWorld`, `UIWorldListItem.cs:350-353`).
+            Some(menu::Page::ConfirmDeleteWorld) => {
+                self.park_menu();
+                let name = self
+                    .worlds
+                    .get(delete_index.unwrap_or(0))
+                    .map(|w| w.name.clone());
+                let mut m = menu::Menu::open_confirm_delete_world(name.unwrap_or_default());
+                m.confirm_index = delete_index.unwrap_or(0);
+                self.menu = Some(m);
+            }
+            Some(p) => {
+                // A plain legacy page (the Back row's `menuMode = 0`).
+                self.park_menu();
+                let mut m = menu::Menu::new(self.player_name.clone());
+                m.page = p;
+                self.menu = Some(m);
+            }
+            None => match front {
+                Some(f) => self.enter_front(f),
+                None => {
+                    // The launch: everything closes and the settings apply
+                    // (`close_menu`'s tail).
+                    self.front = None;
+                    self.park_menu();
+                }
+            },
+        }
+    }
 }
 
 #[cfg(test)]
