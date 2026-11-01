@@ -8,8 +8,19 @@ record of who is working on what.
 
 **Every task follows this loop:**
 
-1. **Sync.** `git checkout main && git pull` (if a remote is configured) — start from
-   the freshest main.
+1. **Sync + graphify first — always, in every scenario.** Before ANY other action
+   (taking a task, resuming, finishing, merging, after a pull): bring the code and the
+   graph to the same state:
+   ```powershell
+   git checkout main && git pull          # if a remote is configured
+   graphify update .                      # rebuild the Rust graph from crates/
+   graphify merge-graphs decompiled/graphify-out/graph.json `
+           decompiled-libs/graphify-out/graph.json graphify-out/graph.json `
+           --out graphify-out/merged-graph.json
+   ```
+   `graphify-out/` is **gitignored** — the graph never travels with git, so a stale
+   local graph after a pull/merge gives queries answered from pre-refactor locations.
+   When the update reports no changes, it is a no-op and cheap.
 2. **Branch.** `git checkout -b <branch-name>` from main. Branch name = the task, in
    slug form: `M1.4-BG-11-cloud-parallax`, `M2-DRAW-1-player-layers`,
    `refactor-app-env-flags`, `fix-crafting-scrollbar`. One branch = one task; do not
@@ -17,10 +28,13 @@ record of who is working on what.
 3. **Work.** Commit early and often on the branch with imperative messages. Keep the
    rules below (golden rule, tests green, no fmt noise). The rule "never work on the
    same task as another agent" still applies — pick a catalog task nobody's branch
-   covers (check `git branch -a` first).
+   covers (check `git branch -a` first). If your change moves or renames code (a
+   refactor-shaped task), run `graphify update .` again before committing so the
+   branch's last state is graphed.
 4. **Re-sync before merging.** Bring the branch up to date with main
    (`git merge main` inside the branch, or rebase if you prefer linear history) and
-   resolve everything there, not in the final merge.
+   resolve everything there, not in the final merge. Then repeat step 1's graphify
+   update on the synced branch.
 5. **Verify the merge result.** `cargo test --workspace -- --skip
    migrates_version_2_kinds_to_item_ids` must be green **on the branch after the
    sync** (see the exit-code gotcha below). For visual work also re-take the
@@ -32,8 +46,11 @@ record of who is working on what.
    wholesale; never use `git merge -X ours/theirs`. If a conflict is semantic (two
    agents changed the same behaviour differently), stop and reconcile the intent
    first — the merged result must still be 1:1 with the source.
-7. **Clean up.** Delete the branch after the merge (`git branch -d`). The task is
-   recorded by its merge commit, its branch name and its docs updates.
+7. **Merge graphify, then clean up.** Immediately after the merge, on main, re-run
+   step 1's graphify update + merge-graphs so main's graph includes the branch's
+   code — this is the step that "pulls not only the code but the graph". Then delete
+   the branch (`git branch -d`). The task is recorded by its merge commit, its
+   branch name and its docs updates.
 
 **Practical limits:** keep branches short-lived (merge within a day of work) — long-
 lived branches are where painful conflicts come from. Two or three parallel branches
@@ -183,14 +200,18 @@ themselves — update it when you start or finish a system.
 
 ### Keeping the graphs fresh
 
-```powershell
-graphify update .                       # refresh the Rust graph after touching crates/
-# (C# side) /graphify decompiled --update  and  /graphify decompiled-libs --update
-#           — only needed when the decompiled source changes
-graphify merge-graphs decompiled/graphify-out/graph.json `
-        decompiled-libs/graphify-out/graph.json graphify-out/graph.json `
-        --out graphify-out/merged-graph.json   # re-merge after any side changes
-```
+The refresh is **mandatory at every workflow checkpoint** — see step 1 / step 7 of the
+branch-per-task loop above (before taking a task, after a pull, after a merge, when
+pausing or finishing work). The commands live there; this section is the rationale:
+
+- `graphify-out/` is gitignored, so the graph is local-only: after any `pull`/`merge`
+  the code can be new while the graph is old — queries then answer from stale
+  locations (the pre-refactor map, moved functions), which silently misroutes work.
+- `graphify update .` is AST-only and cheap (no API cost); the merge-graphs step only
+  re-stitches the three graphs.
+- **Never run two graphify updates concurrently** (two agents racing on
+  `graphify-out/` corrupt the output); refresh on main after merging a branch, or on
+  your branch before the merge if the change is code-shape relevant.
 
 Run the update/merge **on main after merging a branch** (or on your branch before the
 merge if the change is code-shape relevant); avoid two agents racing on
