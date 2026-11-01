@@ -6,7 +6,7 @@
 //     tileMoss / tileBlendAll / tileMergeDirt / tileLargeFrames
 //   * the directed merge relation from WorldGen.TileFrameCosmetic
 //
-// The output is a generated file: do not edit by hand.
+// The emitted files are generated: do not edit by hand.
 
 using System;
 using System.Collections.Generic;
@@ -19,16 +19,28 @@ const int TileCount = 754;
 
 var root = args.Length > 0 ? args[0] : @"C:\Users\DreadLord\Desktop\Terraria-Rust";
 var decompiled = Path.Combine(root, "decompiled");
-var outFile = Path.Combine(root, "crates", "tr-core", "src", "tiledata.rs");
+// Optional second arg: output path override (used to diff a regeneration
+// against the committed file without touching it).
+var outFile = args.Length > 1 ? args[1] : Path.Combine(root, "crates", "tr-core", "src", "tiledata.rs");
 
-var tileIdSrc = File.ReadAllText(Path.Combine(decompiled, "Terraria.ID", "TileID.cs"));
+// The decompiler writes nested directories (`Terraria/ID/`, `Terraria/Graphics/Light/`).
+var tileIdSrc = File.ReadAllText(Path.Combine(decompiled, "Terraria", "ID", "TileID.cs"));
 var mainSrc = File.ReadAllText(Path.Combine(decompiled, "Terraria", "Main.cs"));
 var worldGenSrc = File.ReadAllText(Path.Combine(decompiled, "Terraria", "WorldGen.cs"));
 
+// Guard against the decompiled game version drifting from TileCount: `TileID.cs`
+// assigns `TileID.Count = <n>;` in its static constructor.
+var declaredCount = Regex.Match(tileIdSrc, @"TileID\.Count\s*=\s*(\d+)\s*;");
+if (!declaredCount.Success || int.Parse(declaredCount.Groups[1].Value) != TileCount)
+    throw new Exception(
+        $"decompiled TileID.Count {(declaredCount.Success ? declaredCount.Groups[1].Value : "?")} != TileCount {TileCount}");
+
 // ---------------------------------------------------------------- int[] fields
+// Declarations (`public static int[] X;`) and initializations are split across
+// static constructors; match the assignment (`RoomNeeds.X = new int[n] { ... }`).
 var intArrays = new Dictionary<string, List<int>>();
 foreach (Match m in Regex.Matches(tileIdSrc,
-             @"public static int\[\]\s+(\w+)\s*=\s*new int\[\d*\]\s*\{(?<body>[^}]*)\}"))
+             @"((?:\w+\.)*\w+)\s*=\s*new int\[\d*\]\s*\{(?<body>[^}]*)\}"))
 {
     var vals = new List<int>();
     foreach (var tok in m.Groups["body"].Value.Split(','))
@@ -37,16 +49,18 @@ foreach (Match m in Regex.Matches(tileIdSrc,
         if (t.Length == 0) continue;
         if (int.TryParse(t, out var v)) vals.Add(v);
     }
-    intArrays[m.Groups[1].Value] = vals;
+    intArrays[LastSegment(m.Groups[1].Value)] = vals;
 }
 
 // ---------------------------------------------------------------- Sets arrays
+// Assigned in static constructors as `<Class.>Name = Sets.Factory.CreateBoolSet(...)`;
+// the key is the last identifier segment of the left side.
 var sets = new Dictionary<string, SortedSet<int>>();
 foreach (Match m in Regex.Matches(tileIdSrc,
-             @"public static bool\[\]\s+(\w+)\s*=\s*Factory\.CreateBoolSet\((?<args>[^;]*?)\);",
+             @"((?:\w+\.)*\w+)\s*=\s*(?:[\w.]+\.)?Factory\.CreateBoolSet\((?<args>[^;]*?)\)\s*;",
              RegexOptions.Singleline))
 {
-    var name = m.Groups[1].Value;
+    var name = LastSegment(m.Groups[1].Value);
     var ids = new SortedSet<int>();
     var tokens = SplitTopLevel(m.Groups["args"].Value).Select(x => x.Trim())
         .Where(x => x.Length > 0).ToList();
@@ -61,12 +75,16 @@ foreach (Match m in Regex.Matches(tileIdSrc,
     }
 
     var flipped = new SortedSet<int>();
-    foreach (var t in tokens)
+    foreach (var t0 in tokens)
     {
+        var t = t0;
         if (t == "default(int)") { flipped.Add(0); continue; }
         if (int.TryParse(t, out var v)) { flipped.Add(v); continue; }
+        // Array references are class-qualified in the static constructors
+        // (`CreateBoolSet(RoomNeeds.CountsAsChairTypes)`).
+        if (t.Contains('.')) t = LastSegment(t);
         if (intArrays.TryGetValue(t, out var arr)) { foreach (var a in arr) flipped.Add(a); continue; }
-        Console.Error.WriteLine($"warn: unknown CreateBoolSet token '{t}' in {name}");
+        Console.Error.WriteLine($"warn: unknown CreateBoolSet token '{t0}' in {name}");
     }
 
     if (defaultState)
@@ -95,7 +113,7 @@ var largeFrames = new byte[TileCount];
 const int WallCount = 367;
 var wallLight = new bool[WallCount];
 foreach (Match m in Regex.Matches(mainSrc,
-             @"^\s*wallLight\[(\d+)\]\s*=\s*true\s*;",
+             @"^\s*(?:Main\.)?wallLight\[(\d+)\]\s*=\s*true\s*;",
              RegexOptions.Multiline))
 {
     var idx = int.Parse(m.Groups[1].Value);
@@ -103,7 +121,7 @@ foreach (Match m in Regex.Matches(mainSrc,
 }
 
 foreach (Match m in Regex.Matches(mainSrc,
-             @"^\s*(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
+             @"^\s*(?:Main\.)?(tileSolid|tileSolidTop|tileBrick|tileStone|tileRope|tilePile|tileMoss|tileBlendAll|tileMergeDirt|tileBlockLight|tileNoSunLight|tileLighted|tileLargeFrames)\[(\d+)\]\s*=\s*(true|false|\d+)\s*;",
              RegexOptions.Multiline))
 {
     var arr = m.Groups[1].Value;
@@ -138,7 +156,7 @@ for (int j = 0; j < TileCount; j++)
 // `TileID.Sets.NeedsGrassFramingDirt` (which dirt a grass variant frames as).
 var intSets = new Dictionary<string, int[]>();
 foreach (Match m in Regex.Matches(tileIdSrc,
-             @"public static int\[\]\s+(\w+)\s*=\s*Factory\.CreateIntSet\((?<args>[^;]*?)\);",
+             @"((?:\w+\.)*\w+)\s*=\s*(?:[\w.]+\.)?Factory\.CreateIntSet\((?<args>[^;]*?)\)\s*;",
              RegexOptions.Singleline))
 {
     var vals = SplitTopLevel(m.Groups["args"].Value)
@@ -146,7 +164,7 @@ foreach (Match m in Regex.Matches(tileIdSrc,
         .Where(x => x.Length > 0)
         .Select(x => int.TryParse(x, out var v)
             ? v
-            : intArrays.TryGetValue(x, out var arr) ? -1 : int.MinValue)
+            : intArrays.TryGetValue(LastSegment(x), out var arr) ? -1 : int.MinValue)
         .ToList();
     if (vals.Count < 1 || vals[0] == int.MinValue) continue;
     var table = Enumerable.Repeat(vals[0], TileCount).ToArray();
@@ -155,7 +173,7 @@ foreach (Match m in Regex.Matches(tileIdSrc,
         var idx = vals[k];
         if (idx >= 0 && idx < TileCount) table[idx] = vals[k + 1];
     }
-    intSets[m.Groups[1].Value] = table;
+    intSets[LastSegment(m.Groups[1].Value)] = table;
 }
 
 // ---------------------------------------------------------------- merge relation
@@ -259,8 +277,8 @@ var stone = mainBools["tileStone"];
 // constant R/G/B triple at the top level of the case; take the first such triple.
 // Frame-dependent / conditional branches (torches, campfires...) are approximated in
 // `crates/tr-core/src/lighting.rs` instead.
-var scannerSrc = File.ReadAllLines(Path.Combine(decompiled, "Terraria.Graphics.Light",
-                                               "TileLightScanner.cs"));
+var scannerSrc = File.ReadAllLines(Path.Combine(decompiled, "Terraria", "Graphics",
+                                               "Light", "TileLightScanner.cs"));
 var emissive = new float[TileCount, 3];
 int atl = FindLine(scannerSrc, "private void ApplyTileLight");
 int atlEnd = atl;
@@ -583,7 +601,12 @@ static List<int> ResolveMy(string token, int line, List<int>?[] caseAt, string[]
 {
     var t = token.Trim();
     if (int.TryParse(t, out var lit)) return lit < 0 ? [] : [lit];
-    if (t == "num" || t == "num11" || t == "type" || t == "tileCache.type")
+    // `type` / `tileCache.type` are the framed tile itself. The `numN` family
+    // covers the `TileID.Sets.NeedsGrassFramingDirt[num]` local that decompilers
+    // keep renaming (num11 in the previous decompilation, num9 in the current
+    // one); it is approximated by the active case ids (the grass id itself),
+    // which is what the framer expects grass variants to merge against.
+    if (t == "type" || t == "tileCache.type" || Regex.IsMatch(t, @"^num\d*$"))
     {
         var cases = caseAt[line];
         if (cases is { Count: > 0 }) return cases;
@@ -605,6 +628,12 @@ static List<int> ResolveLook(string token, Dictionary<string, SortedSet<int>> se
     if (t == "tileLargeFrames")
         return Enumerable.Range(0, TileCount).Where(i => largeFrames[i] != 0).ToList();
     return [];
+}
+
+static string LastSegment(string qualified)
+{
+    var dot = qualified.LastIndexOf('.');
+    return dot >= 0 ? qualified[(dot + 1)..] : qualified;
 }
 
 static string ToRustName(string name) =>
