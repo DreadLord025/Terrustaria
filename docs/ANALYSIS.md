@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), stars, deterministic `Cloud_*` layer, the textured `Background_1/2` underground backdrop anchored to `worldSurface` and the rock/magma/hell passes (`Background_3/4/6/125..127/185..187`, underworld black box) in `DrawBackground` order; cloud density and biome backgrounds/rain still partial |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), the `Cloud.addCloud` cloud field with `GetParallax` and the three `DrawSurfaceBG` passes, `Star.SpawnStars`/`DrawStar` stars, the textured `Background_1/2` underground backdrop anchored to `worldSurface` and the rock/magma/hell passes (`Background_3/4/6/125..127/185..187`, underworld black box) in `DrawBackground` order; biome backgrounds/rain still partial |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -592,7 +592,57 @@ the camera's screen-space arc (`Main.cs:62848`):
 Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), the event
 moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
 interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
-Cloud density (`Cloud.GetParallax`) and the exact star density remain (BG-16).
+
+### Clouds and stars (M1.4-BG-11/16)
+
+`make_clouds`/`make_stars` port the spawn recipes; `draw_sky` ports the draw passes.
+
+Clouds: the field is a deterministic stand-in for the live 200-slot array
+(`Cloud.resetClouds`/`addCloud`/`UpdateClouds`, `Cloud.cs:39-293`) — the original's array
+state (wind-drift integration, the spawn/kill cycle, the spawn-time overlap rejection of
+`Cloud.cs:170-177`) is not simulated. Per-cloud attributes follow `Cloud.addCloud` in its
+RNG order (scale `Next(70,131)·0.01` clamped 0.7..1.3 with the `Cloud.Update` 1/1.15 nudge
+already applied, rotation `Next(-10,11)·0.01` clamped ±0.02, the flip coin, spawn heights
+`-0.25h..0.15h` in the 600 px reference screen, and the clear-weather type branches of
+`Cloud.cs:128-139`); the count is the clear-weather steady state `numClouds = 100` (the
+`numCloudsTemp` clamp of `Main.cs:58980-58982`, which the `weatherCounter` jumps drive it
+into). Anchors spread over a world-span band so every camera cuts about `numClouds` of
+them. The draw runs as the three `DrawSurfaceBG` passes in the original order — distant
+(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) — with the
+`DrawClouds_*` cY formulas (the closer pass reads the `bgTopY` `BackMountainsStep1`
+leaves, `Main.cs:59808`; the closest the near-mountain setup, `Main.cs:59514`), and the
+screen X is the world anchor minus `Cloud.GetParallax(scale)` (`Cloud.cs:318-338`) of the
+camera pan, the world-space form of `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`).
+Colour is `Cloud.cloudColor` (`Cloud.cs:227-235`) with the distant pass's
+`OriginalColorsForCloud` pull (`NextHorizonRenderer.cs:254-263`).
+
+Cloud deviations: the wind drift is a constant light wind scaled by `GetParallax` (the
+original integrates `windSpeedCurrent·9·GetParallax` per tick, `Cloud.cs:391`); the storm
+type branch (`Cloud.cs:116-127`) and `RollRareCloud` (`Cloud.cs:140-147`, needs the boss
+flags) are not applied at generation; `globalCloudAlpha` (= `ProcessCloudAlpha · atmo`) is
+1 because no active skies/`atmo` are modelled; and the `HorizonClouds` shader of
+`NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) is not ported.
+
+Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order — count
+`Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)·0.01`,
+`scale Next(70,130)·0.006`, type `Next(0,4)`, the twinkle/rotation speeds with their sign
+coins and the 1-in-40 giant-star roll. The original seeds it with
+`FastRandom.CreateWithRandomSeed()` (fresh OS entropy per launch, `Star.cs:88`); the port
+pins the stream to the world seed so screenshots stay deterministic. `draw_sky` ports
+`DrawStarsInBackground`/`DrawStar` (`Main.cs:63030-63173`): the sky-colour visibility gate
+`255·(1 − cloudAlpha·atmo) − skyR − 25 > 0` (fades the field out across dawn; the
+graveyard dim is not modelled), the greyscale brightness formula, the
+`position/1920·screenWidth + sceneArea.bgTopY` mapping with the frame wrap, and the
+`tex.Size()·scale·twinkle` draw with `Star.Update`'s rotation/twinkle speeds (the 0.6..1
+twinkle oscillation is sine-approximated around the same centre and range). Two known
+deviations: `DrawStar` builds its colour from `default` and assigns only R/G/B
+(`Main.cs:63083-63086`) — a zero alpha would make every star invisible, so the port draws
+them fully opaque at the computed brightness — and the per-tick twinkle/rotation advance
+is driven by the pinned animation clock instead of integrated state.
+
+Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
+land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer — the vanilla
+cursor follows the real mouse and would otherwise differ between runs.
 
 ## World generation and native saves
 
