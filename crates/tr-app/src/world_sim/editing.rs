@@ -9,7 +9,7 @@ use tr_core::{TILE_PX, World, edit};
 use crate::item::SWING_TIME;
 use crate::projectile::Projectile;
 use crate::registry;
-use crate::App;
+use crate::app::App;
 
 use super::items::spawn_item_drop;
 

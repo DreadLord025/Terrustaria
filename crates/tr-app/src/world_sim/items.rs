@@ -6,7 +6,7 @@ use tr_core::TILE_PX;
 
 use crate::item::{ItemDrop, slot_for_pickup};
 use crate::registry;
-use crate::{NetRole, rand01, App};
+use crate::app::{NetRole, rand01, App};
 
 /// Item physics and pickup on a fixed 60 Hz step (`Item.Update`).
 pub(crate) fn update_items(app: &mut App, dt: f32) {

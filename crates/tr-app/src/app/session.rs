@@ -3,8 +3,8 @@
 //! card entry and the erase handlers. (A6: extracted from `main.rs`.)
 
 use crate::app::flow::FrontScreen;
+use crate::app::App;
 use crate::ui;
-use crate::App;
 
 impl App {
     /// `FinishCreatingCharacter` (`UICharacterCreation.cs:1704-1711`) minus

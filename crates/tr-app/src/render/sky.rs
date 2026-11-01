@@ -5,7 +5,8 @@ use super::BgTex;
 use super::bg::{
     bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, push_screen, push_screen_rot,
 };
-use crate::{assets, next_rand, rand01};
+use crate::app::{next_rand, rand01};
+use crate::assets;
 use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::{TILE_PX, World};

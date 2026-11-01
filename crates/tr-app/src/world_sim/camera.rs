@@ -5,7 +5,7 @@ use glam::Vec2;
 use tr_core::TILE_PX;
 use winit::keyboard::KeyCode;
 
-use crate::{pan_step, App};
+use crate::app::{pan_step, App};
 
 /// The swapchain size in pixels (the deterministic fallback mirrors the
 /// `TR_SHOT`/headless default of 1280x720).

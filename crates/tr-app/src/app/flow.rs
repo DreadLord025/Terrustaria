@@ -4,12 +4,12 @@
 //! (A5: extracted from `main.rs`; the behaviour trait that routes the
 //! screens lives in this module too.)
 
+use crate::app::App;
 use crate::assets;
 use crate::menu;
 use crate::render::entities::PlayerAssets;
 use crate::ui;
 use crate::ui::text::font_width;
-use crate::App;
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 use winit::event::KeyEvent;
@@ -979,6 +979,23 @@ impl App {
 mod front_flow_tests {
     use super::*;
     use crate::*;
+
+    // A7 moved `App`/`NetRole` and their satellite types into `crate::app`
+    // (and the render/rng modules); the crate-root glob no longer carries
+    // them, so the headless-App fixture imports them directly.
+    use crate::app::{App, NetRole};
+    use crate::item::{EMPTY_SLOT, HOTBAR};
+    use crate::rain::Rain;
+    use crate::render::debug::{DebugCache, StatsAcc};
+    use crate::render::entities::NpcAssets;
+    use crate::render::sky::SkyAssets;
+    use crate::render::tiles::{DrawScratch, TileDrawStats};
+    use crate::world_sim::step::FixedStepper;
+    use std::collections::{HashMap, HashSet, VecDeque};
+    use std::time::Instant;
+    use tr_core::lighting::{LightMap, LightMode};
+    use tr_core::liquid::LiquidSystem;
+    use tr_core::World;
 
     use crate::menu::Page as P;
 

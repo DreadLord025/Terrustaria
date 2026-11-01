@@ -1,9 +1,9 @@
 //! The App's save glue — the world/player autosave, the explored-map write
 //! and its load-side twin. (A6: extracted from `main.rs`.)
 
+use crate::app::App;
 use crate::map;
 use crate::persist;
-use crate::App;
 use tr_core::save;
 
 impl App {

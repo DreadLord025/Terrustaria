@@ -5,7 +5,7 @@
 use glam::Vec2;
 use tr_core::TILE_PX;
 
-use crate::App;
+use crate::app::App;
 
 /// Fixed 60 Hz liquid stepping; `Liquid.UpdateLiquid` itself runs every second
 /// tick, matching the original 30 Hz rate.

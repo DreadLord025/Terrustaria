@@ -6,7 +6,7 @@ use glam::Vec2;
 use winit::keyboard::KeyCode;
 
 use crate::player::PlayerInput;
-use crate::App;
+use crate::app::App;
 
 pub(crate) fn update_player(app: &mut App, dt: f32) {
     // Deterministic held input for screenshots (`TR_HOLD=right,jump`).

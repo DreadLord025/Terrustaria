@@ -1394,7 +1394,7 @@ fn draw_hair_button(
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
-    player_assets: &crate::PlayerAssets,
+    player_assets: &crate::render::entities::PlayerAssets,
     state: &mut CreationState,
     screen: Vec2,
     time: f32,
@@ -1427,7 +1427,7 @@ pub fn draw(
     // (`:615-621`).
     let anchor = preview_anchor(l.preview);
     let colors = PreviewColors::from(&state.draft);
-    crate::draw_player_preview(
+    crate::render::entities::draw_player_preview(
         r,
         player_assets,
         anchor,

@@ -3,9 +3,9 @@
 //! from `main.rs`.)
 
 use crate::app::flow::{FrontScreen, TrUiPreset};
+use crate::app::App;
 use crate::menu;
 use crate::ui;
-use crate::App;
 
 impl App {
     /// Applies a `TR_UI` preset (App init): the screens re-list through the

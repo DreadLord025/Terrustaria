@@ -5,15 +5,13 @@
 
 use winit::event_loop::ActiveEventLoop;
 
-use crate::NetRole;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
 use crate::app::netglue::compressed_world;
+use crate::app::{App, NetRole, no_hud};
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
 use crate::menu;
 use crate::net;
-use crate::no_hud;
 use crate::ui;
-use crate::App;
 use glam::Vec2;
 
 impl App {

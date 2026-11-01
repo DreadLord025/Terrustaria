@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use tr_core::World;
 
-use crate::App;
+use crate::app::App;
 
 /// `TR_DAY` pins the sky for screenshots; time-of-day advancement pauses.
 pub(crate) fn time_frozen() -> bool {

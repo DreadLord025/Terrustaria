@@ -3,7 +3,7 @@
 use glam::Vec2;
 
 use crate::biome::is_snow_biome;
-use crate::App;
+use crate::app::App;
 
 /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
 /// per-tick velocity regardless of frame rate.

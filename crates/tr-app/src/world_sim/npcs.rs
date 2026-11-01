@@ -9,7 +9,7 @@ use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind};
 use crate::registry;
 use crate::spawner;
-use crate::{rand01, App};
+use crate::app::{rand01, App};
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);

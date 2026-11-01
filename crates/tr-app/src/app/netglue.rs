@@ -8,13 +8,12 @@ use std::path::PathBuf;
 use glam::Vec2;
 use tr_core::{TILE_PX, World, save};
 
-use crate::NetRole;
+use crate::app::{App, NetRole};
 use crate::item;
 use crate::menu;
 use crate::net;
 use crate::player;
 use crate::world_sim::editing::apply_edit;
-use crate::App;
 
 impl App {
     /// Drains network events without borrowing `self.net` across handlers.
