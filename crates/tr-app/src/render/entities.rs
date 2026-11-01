@@ -56,42 +56,9 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
     }
 }
 
-/// UV of one 40x56 frame in a player part strip.
-fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
-    let rows = (tex.h / 56.0).floor().max(1.0);
-    let r = (row as f32).min(rows - 1.0);
-    let dv = (tex.uv[3] - tex.uv[1]) * (56.0 / tex.h);
-    [
-        tex.uv[0],
-        tex.uv[1] + dv * r,
-        tex.uv[2],
-        tex.uv[1] + dv * (r + 1.0),
-    ]
-}
-
-/// UV of a 40x56 composite cell in a 9x4 player part sheet.
-fn player_cell_uv(tex: &BgTex, col: u32, row: u32) -> [f32; 4] {
-    let cols = (tex.w / 40.0).floor().max(1.0);
-    let rows = (tex.h / 56.0).floor().max(1.0);
-    let du = (tex.uv[2] - tex.uv[0]) / cols;
-    let dv = (tex.uv[3] - tex.uv[1]) / rows;
-    let c = (col as f32).min(cols - 1.0);
-    let r = (row as f32).min(rows - 1.0);
-    [
-        tex.uv[0] + du * c,
-        tex.uv[1] + dv * r,
-        tex.uv[0] + du * (c + 1.0),
-        tex.uv[1] + dv * (r + 1.0),
-    ]
-}
-
-pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
-    if flip {
-        [uv[2], uv[1], uv[0], uv[3]]
-    } else {
-        uv
-    }
-}
+/// UV of one 40x56 frame in a player part strip — tabled in
+/// [`player_layers`] (single source; re-exported for the sibling passes).
+pub(crate) use super::player_layers::{flip_uv, player_cell_uv, player_frame_uv};
 
 /// Default-derivable: every sheet is an `Option` guard (the headless flow
 /// tests construct the empty set).

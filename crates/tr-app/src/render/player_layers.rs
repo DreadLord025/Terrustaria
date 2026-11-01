@@ -1,12 +1,50 @@
 //! Pure composite tables for the player draw: the frame cells, the shoulder
 //! order, the head-gear bob and the weapon slot of `PlayerDrawSet` /
-//! `PlayerDrawLayers`. No render types — the builders (phase 2) turn these
-//! tables into `LayerSprite` lists and the render passes only push them.
+//! `PlayerDrawLayers`. No render types — the builders turn these tables
+//! into `LayerSprite` lists and the render passes only push them.
+
+use super::BgTex;
+use super::entities::PlayerAssets;
+
+/// The starter palette of `Player_0_*` (`colorBodySkin`/`colorShirt`/... from
+/// the default skin; the M3-EQUIP equipment palette will replace these).
+pub(crate) const SKIN: [f32; 3] = [1.0, 125.0 / 255.0, 90.0 / 255.0];
+pub(crate) const SHIRT: [f32; 3] = [175.0 / 255.0, 165.0 / 255.0, 140.0 / 255.0];
+pub(crate) const PANTS: [f32; 3] = [1.0, 230.0 / 255.0, 175.0 / 255.0];
+pub(crate) const SHOES: [f32; 3] = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
+pub(crate) const HAIR: [f32; 3] = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
+pub(crate) const EYE_WHITE: [f32; 3] = [1.0, 1.0, 1.0];
+pub(crate) const EYES: [f32; 3] = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
+
+/// Which player part a sprite belongs to — the test seam for layer order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum PlayerPart {
+    TorsoSkin,
+    LegsSkin,
+    BackArmSkin,
+    BackUnder,
+    BackSleeve,
+    Pants,
+    Shoes,
+    Shirt,
+    Head,
+    EyeWhites,
+    Eyes,
+    Hair,
+    FrontArmSkin,
+    FrontSleeve,
+    FrontShirt,
+    FrontShoulderSkin,
+    FrontShoulderSleeve,
+    FrontShoulderShirt,
+    HeldItem,
+}
 
 /// One drawable sprite produced by a layer builder: position and size in world
 /// pixels, an atlas UV quad, a pre-multiplied tint and a top-left rotation.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct LayerSprite {
+    pub(crate) part: PlayerPart,
     pub(crate) pos: [f32; 2],
     pub(crate) size: [f32; 2],
     pub(crate) uv: [f32; 4],
@@ -15,12 +53,23 @@ pub(crate) struct LayerSprite {
 }
 
 /// The per-frame inputs every layer builder reads (parameter object — the
-/// cc-routine-and-class-design 7±2 cap; fields grow with the builders).
+/// cc-routine-and-class-design 7±2 cap).
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PlayerCompositeState {
+    /// Top-left of the 40x56 sprite box (`player.x - 10, player.y - 10`).
+    pub(crate) origin: [f32; 2],
     pub(crate) leg_frame: u32,
     pub(crate) body_frame: u32,
     pub(crate) facing: f32,
+    /// `Player.itemAnimation` stand-in: the swing timer, 0 = idle.
+    pub(crate) swing: f32,
+    /// Vanilla `useStyle` stand-in: 1 = swing (default), 8 = thrust, 9 = bow.
+    pub(crate) use_style: u8,
+    /// The held item's atlas quad and frame size, `None` = empty hand.
+    pub(crate) item_uv: Option<[f32; 4]>,
+    pub(crate) item_size: [f32; 2],
+    /// The light tint at the player tile (`style.shade(...)` output).
+    pub(crate) light: [f32; 3],
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -108,6 +157,347 @@ pub(crate) fn weapon_draw_order() -> WeaponDrawOrder {
     WeaponDrawOrder::BehindFrontArm
 }
 
+/// UV of one 40x56 frame in a player part strip.
+pub(crate) fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
+    let rows = (tex.h / 56.0).floor().max(1.0);
+    let r = (row as f32).min(rows - 1.0);
+    let dv = (tex.uv[3] - tex.uv[1]) * (56.0 / tex.h);
+    [
+        tex.uv[0],
+        tex.uv[1] + dv * r,
+        tex.uv[2],
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// UV of a 40x56 composite cell in a 9x4 player part sheet.
+pub(crate) fn player_cell_uv(tex: &BgTex, col: u32, row: u32) -> [f32; 4] {
+    let cols = (tex.w / 40.0).floor().max(1.0);
+    let rows = (tex.h / 56.0).floor().max(1.0);
+    let du = (tex.uv[2] - tex.uv[0]) / cols;
+    let dv = (tex.uv[3] - tex.uv[1]) / rows;
+    let c = (col as f32).min(cols - 1.0);
+    let r = (row as f32).min(rows - 1.0);
+    [
+        tex.uv[0] + du * c,
+        tex.uv[1] + dv * r,
+        tex.uv[0] + du * (c + 1.0),
+        tex.uv[1] + dv * (r + 1.0),
+    ]
+}
+
+/// Mirrors a UV quad horizontally (`SpriteEffects.FlipHorizontally`).
+pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
+    if flip {
+        [uv[2], uv[1], uv[0], uv[3]]
+    } else {
+        uv
+    }
+}
+
+fn tint(c: [f32; 3], part: [f32; 3]) -> [f32; 4] {
+    [c[0] * part[0], c[1] * part[1], c[2] * part[2], 1.0]
+}
+
+/// The sprite box: every player part is the 40x56 sheet frame anchored at
+/// `(x - 10, y - 10)` so it straddles the 20x42 hitbox like the original.
+fn part_sprite(
+    part: PlayerPart,
+    uv: [f32; 4],
+    s: &PlayerCompositeState,
+    color: [f32; 4],
+    y_shift: f32,
+) -> LayerSprite {
+    LayerSprite {
+        part,
+        pos: [s.origin[0], s.origin[1] + y_shift],
+        size: [40.0, 56.0],
+        uv,
+        color,
+        rotation: 0.0,
+    }
+}
+
+/// One body part, skipped when its sheet is missing (`Main.spriteBatch.Draw`
+/// ignores null textures — DW-2.5's dirty case).
+fn push_part(
+    out: &mut Vec<LayerSprite>,
+    part: PlayerPart,
+    tex: Option<BgTex>,
+    uv: impl Fn(&BgTex) -> [f32; 4],
+    s: &PlayerCompositeState,
+    color: [f32; 4],
+    shift: f32,
+) {
+    if let Some(tex) = tex {
+        out.push(part_sprite(part, uv(&tex), s, color, shift));
+    }
+}
+
+/// `DrawPlayer_12_Skin_Composite` → `13_Leggings` → `14_Shoes` →
+/// `17_TorsoComposite` → `21_Head` (`LegacyPlayerRenderer.cs:195-215`): the
+/// body parts in original order. The composite torso/arm sprites take the
+/// head-gear shift (`PlayerDrawLayers.cs:1217-1219`); legs and head do not.
+pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    let mut out = Vec::with_capacity(12);
+    let flip = s.facing < 0.0;
+    let shift = headgear_composite_shift(s.body_frame);
+    // 12_Skin_Composite: torso skin, leg skin, back-arm stack.
+    push_part(
+        &mut out,
+        PlayerPart::TorsoSkin,
+        a.torso,
+        |t| flip_uv(player_cell_uv(t, torso_cell(s.body_frame).0, torso_cell(s.body_frame).1), flip),
+        s,
+        tint(s.light, SKIN),
+        shift,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::LegsSkin,
+        a.legs,
+        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+        s,
+        tint(s.light, SKIN),
+        0.0,
+    );
+    let (bc, br) = back_arm_cell(s.body_frame);
+    push_part(
+        &mut out,
+        PlayerPart::BackArmSkin,
+        a.arm,
+        |t| flip_uv(player_cell_uv(t, bc, br), flip),
+        s,
+        tint(s.light, SKIN),
+        shift,
+    );
+    // `DrawPlayer_12_SkinComposite_BackArmShirt`: under-skin arm layer (5) and
+    // shirt sleeve (13); the undershirt-tinted `Players[8]` pass is skipped —
+    // the starter skin has no underShirt colour (M3-EQUIP palette).
+    push_part(
+        &mut out,
+        PlayerPart::BackUnder,
+        a.undershirt,
+        |t| flip_uv(player_cell_uv(t, bc, br), flip),
+        s,
+        tint(s.light, SKIN),
+        shift,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::BackSleeve,
+        a.arm_shirt,
+        |t| flip_uv(player_cell_uv(t, bc, br), flip),
+        s,
+        tint(s.light, SHIRT),
+        shift,
+    );
+    // 13_Leggings / 14_Shoes ride the leg frame without the shift.
+    push_part(
+        &mut out,
+        PlayerPart::Pants,
+        a.pants,
+        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+        s,
+        tint(s.light, PANTS),
+        0.0,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::Shoes,
+        a.shoes,
+        |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
+        s,
+        tint(s.light, SHOES),
+        0.0,
+    );
+    // 17_TorsoComposite: the shirt over the (already drawn) skin torso.
+    push_part(
+        &mut out,
+        PlayerPart::Shirt,
+        a.shirt,
+        |t| flip_uv(player_cell_uv(t, torso_cell(s.body_frame).0, torso_cell(s.body_frame).1), flip),
+        s,
+        tint(s.light, SHIRT),
+        shift,
+    );
+    // 21_Head: head, eye whites, eyes, hair.
+    push_part(
+        &mut out,
+        PlayerPart::Head,
+        a.head,
+        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        s,
+        tint(s.light, SKIN),
+        0.0,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::EyeWhites,
+        a.eye_whites,
+        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        s,
+        tint(s.light, EYE_WHITE),
+        0.0,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::Eyes,
+        a.eyes,
+        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        s,
+        tint(s.light, EYES),
+        0.0,
+    );
+    push_part(
+        &mut out,
+        PlayerPart::Hair,
+        a.hair,
+        |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+        s,
+        tint(s.light, HAIR),
+        0.0,
+    );
+    out
+}
+
+/// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
+/// (`PlayerDrawLayers.cs:3661-3706`, `Players[8]` skipped — no starter colour).
+fn arm_stack(s: &PlayerCompositeState, a: &PlayerAssets, base: PlayerPart, cell: (u32, u32)) -> Vec<LayerSprite> {
+    let flip = s.facing < 0.0;
+    let shift = headgear_composite_shift(s.body_frame);
+    let shoulder = base == PlayerPart::FrontShoulderSkin;
+    let mut out = Vec::with_capacity(3);
+    for (part, tex) in [
+        (base, a.arm),
+        (
+            if shoulder {
+                PlayerPart::FrontShoulderSleeve
+            } else {
+                PlayerPart::FrontSleeve
+            },
+            a.arm_shirt,
+        ),
+        (
+            if shoulder {
+                PlayerPart::FrontShoulderShirt
+            } else {
+                PlayerPart::FrontShirt
+            },
+            a.shirt,
+        ),
+    ] {
+        let Some(tex) = tex else { continue };
+        let color = if part == base {
+            tint(s.light, SKIN)
+        } else {
+            tint(s.light, SHIRT)
+        };
+        out.push(LayerSprite {
+            part,
+            pos: [s.origin[0], s.origin[1] + shift],
+            size: [40.0, 56.0],
+            uv: flip_uv(player_cell_uv(&tex, cell.0, cell.1), flip),
+            color,
+            rotation: 0.0,
+        });
+    }
+    out
+}
+
+/// The front-arm layer of `DrawPlayer_28_ArmOverItemComposite`'s no-armor
+/// branch (`PlayerDrawLayers.cs:3661-3706`): the arm and shoulder stacks, arm
+/// first when `compShoulderOverFrontArm` (default true), shoulder first
+/// otherwise.
+pub(crate) fn front_arm_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    let arm = arm_stack(s, a, PlayerPart::FrontArmSkin, front_arm_cell(s.body_frame));
+    let shoulder = arm_stack(s, a, PlayerPart::FrontShoulderSkin, FRONT_SHOULDER_CELL);
+    let mut out = Vec::with_capacity(6);
+    if shoulder_over_front_arm(s.body_frame) {
+        out.extend(arm);
+        out.extend(shoulder);
+    } else {
+        out.extend(shoulder);
+        out.extend(arm);
+    }
+    out
+}
+
+/// `DrawPlayer_27_HeldItem` (`PlayerDrawLayers.cs:3043-3195`): the held item
+/// rotated around the C# grip origin — bottom corner mirrored by direction
+/// (default, `:3161`), `origin.Y = 2` with a quarter-turn for useStyle 8
+/// (`:3181-3188`), `(0.5, 0.4)` of the frame for useStyle 9 (`:3162-3174`).
+/// The rotation itself comes from the swing arc (the M2-ANIM boundary); the
+/// empty hand returns no sprite.
+pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
+    // Guards of the original (`:3077-3092`), flattened to guard clauses.
+    let Some(uv) = s.item_uv else {
+        return Vec::new();
+    };
+    if s.swing <= 0.0 || s.item_size[0] <= 0.0 {
+        return Vec::new();
+    }
+    let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
+    let (w, h) = (s.item_size[0], s.item_size[1]);
+    // `:3161`: `(width*0.5 - width*0.5*direction, height)`.
+    let mut origin = [w * 0.5 - w * 0.5 * dir, h];
+    let progress = 1.0 - (s.swing / crate::item::SWING_TIME).clamp(0.0, 1.0);
+    let mut rotation = (-1.7 + progress * 2.5) * dir;
+    match s.use_style {
+        // `:3181-3188`: thrust — quarter turn, near-top grip.
+        8 => {
+            rotation -= std::f32::consts::FRAC_PI_2 * dir;
+            origin[1] = 2.0;
+            origin[0] += 2.0 * dir;
+        }
+        // `:3162-3174`: bow — centre-left hold.
+        9 => origin = [w * 0.5, h * 0.4],
+        _ => {}
+    }
+    // The pivot is the grip point: `ItemLocation` stands at the hand, so the
+    // sprite's top-left is `pivot - R * origin`.
+    let hand = [s.origin[0] + 10.0 + 5.0 * dir, s.origin[1] + 37.0];
+    let (sin, cos) = rotation.sin_cos();
+    let top_left = [
+        hand[0] - (origin[0] * cos - origin[1] * sin),
+        hand[1] - (origin[0] * sin + origin[1] * cos),
+    ];
+    vec![LayerSprite {
+        part: PlayerPart::HeldItem,
+        pos: top_left,
+        size: [w, h],
+        uv,
+        color: [s.light[0], s.light[1], s.light[2], 1.0],
+        rotation,
+    }]
+}
+
+/// The full player composition: body, then the held item in its
+/// `weaponDrawOrder` slot, then the front arm — the
+/// `LegacyPlayerRenderer.cs:185-255` sequence for the starter player.
+pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
+    let body = body_layers(s, a);
+    let arms = front_arm_layers(s, a);
+    let item = held_item_layers(s);
+    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len());
+    match weapon_draw_order() {
+        WeaponDrawOrder::BehindBackArm => {
+            out.extend(item.iter().copied());
+            out.extend(body);
+        }
+        WeaponDrawOrder::BehindFrontArm => {
+            out.extend(body);
+            out.extend(item.iter().copied());
+        }
+        WeaponDrawOrder::OverFrontArm => {}
+    }
+    out.extend(arms);
+    if weapon_draw_order() == WeaponDrawOrder::OverFrontArm {
+        out.extend(item.iter().copied());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,5 +573,207 @@ mod tests {
         assert_eq!(torso_cell(19), (0, 0));
         assert_eq!(FRONT_SHOULDER_CELL, (0, 1));
         assert_eq!(BACK_SHOULDER_CELL, (1, 1));
+    }
+
+    fn sheet() -> BgTex {
+        BgTex {
+            uv: [0.0, 0.0, 1.0, 1.0],
+            w: 360.0,
+            h: 224.0,
+        }
+    }
+
+    fn fixture() -> PlayerAssets {
+        PlayerAssets {
+            head: Some(sheet()),
+            eye_whites: Some(sheet()),
+            eyes: Some(sheet()),
+            torso: Some(sheet()),
+            shirt: Some(sheet()),
+            arm: Some(sheet()),
+            undershirt: Some(sheet()),
+            arm_shirt: Some(sheet()),
+            legs: Some(sheet()),
+            pants: Some(sheet()),
+            shoes: Some(sheet()),
+            hair: Some(sheet()),
+        }
+    }
+
+    fn state() -> PlayerCompositeState {
+        PlayerCompositeState {
+            origin: [100.0, 200.0],
+            leg_frame: 0,
+            body_frame: 0,
+            facing: 1.0,
+            swing: 0.0,
+            use_style: 1,
+            item_uv: None,
+            item_size: [16.0, 16.0],
+            light: [1.0, 1.0, 1.0],
+        }
+    }
+
+    fn parts(sprites: &[LayerSprite]) -> Vec<PlayerPart> {
+        sprites.iter().map(|s| s.part).collect()
+    }
+
+    #[test]
+    fn test_dw_2_1_builders_are_render_free() {
+        // The builders are exercised here directly: no `SpriteRenderer` in the
+        // signature, no GPU state — the proof is the call itself.
+        let s = state();
+        let a = fixture();
+        assert!(!body_layers(&s, &a).is_empty());
+        assert!(!front_arm_layers(&s, &a).is_empty());
+        assert!(assemble_layers(&s, &a).len() >= 18);
+    }
+
+    #[test]
+    fn test_dw_2_2_body_layer_order() {
+        let s = state();
+        let a = fixture();
+        assert_eq!(
+            parts(&body_layers(&s, &a)),
+            vec![
+                PlayerPart::TorsoSkin,
+                PlayerPart::LegsSkin,
+                PlayerPart::BackArmSkin,
+                PlayerPart::BackUnder,
+                PlayerPart::BackSleeve,
+                PlayerPart::Pants,
+                PlayerPart::Shoes,
+                PlayerPart::Shirt,
+                PlayerPart::Head,
+                PlayerPart::EyeWhites,
+                PlayerPart::Eyes,
+                PlayerPart::Hair,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_dw_2_3_arm_stacks() {
+        let a = fixture();
+        // Frame 0 keeps the default: arm stack, then shoulder over it.
+        let s0 = state();
+        assert_eq!(
+            parts(&front_arm_layers(&s0, &a)),
+            vec![
+                PlayerPart::FrontArmSkin,
+                PlayerPart::FrontSleeve,
+                PlayerPart::FrontShirt,
+                PlayerPart::FrontShoulderSkin,
+                PlayerPart::FrontShoulderSleeve,
+                PlayerPart::FrontShoulderShirt,
+            ]
+        );
+        // Frames 1/2/5 clear `compShoulderOverFrontArm`: shoulder first.
+        let s1 = PlayerCompositeState {
+            body_frame: 1,
+            ..state()
+        };
+        assert_eq!(
+            parts(&front_arm_layers(&s1, &a))[..3],
+            [
+                PlayerPart::FrontShoulderSkin,
+                PlayerPart::FrontShoulderSleeve,
+                PlayerPart::FrontShoulderShirt,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_dw_2_4_held_item_origins() {
+        use std::f32::consts::FRAC_PI_2;
+        let a = fixture();
+        // Default: origin is the bottom corner mirrored by direction (`:3161`),
+        // rotation from the swing arc (progress 0 at full swing).
+        let mut s = state();
+        s.swing = crate::item::SWING_TIME;
+        s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
+        let dir = 1.0f32;
+        let rotation = -1.7 * dir;
+        let (sin, cos) = rotation.sin_cos();
+        // hand = (115, 237); origin = (0, 16).
+        let expected = [
+            115.0 - (0.0 * cos - 16.0 * sin),
+            237.0 - (0.0 * sin + 16.0 * cos),
+        ];
+        let item = &held_item_layers(&s)[0];
+        assert!((item.pos[0] - expected[0]).abs() < 1e-4, "{:?}", item.pos);
+        assert!((item.pos[1] - expected[1]).abs() < 1e-4, "{:?}", item.pos);
+        assert!((item.rotation - rotation).abs() < 1e-5);
+
+        // useStyle 8: quarter turn, `origin.Y = 2`, `origin.X += 2*dir`.
+        let mut s8 = s;
+        s8.use_style = 8;
+        let rotation8 = -1.7 - FRAC_PI_2 * dir;
+        let (sin8, cos8) = rotation8.sin_cos();
+        let expected8 = [115.0 - (2.0 * cos8 - 2.0 * sin8), 237.0 - (2.0 * sin8 + 2.0 * cos8)];
+        let item8 = &held_item_layers(&s8)[0];
+        assert!((item8.rotation - rotation8).abs() < 1e-5);
+        assert!((item8.pos[0] - expected8[0]).abs() < 1e-4);
+        assert!((item8.pos[1] - expected8[1]).abs() < 1e-4);
+
+        // useStyle 9: the bow hold `(0.5, 0.4)` of the frame.
+        let mut s9 = s;
+        s9.use_style = 9;
+        let item9 = &held_item_layers(&s9)[0];
+        assert!((item9.rotation - -1.7).abs() < 1e-5);
+
+        // The slot: the item sits between the body (last part Hair) and the
+        // front arm (`LegacyPlayerRenderer.cs:237-239`).
+        let all = parts(&assemble_layers(&s, &a));
+        let hair = all.iter().position(|p| *p == PlayerPart::Hair).unwrap();
+        assert_eq!(all[hair + 1], PlayerPart::HeldItem);
+        assert_eq!(all[hair + 2], PlayerPart::FrontArmSkin);
+    }
+
+    #[test]
+    fn test_dw_2_5_dirty_inputs() {
+        let a = fixture();
+        // swing = 0: no item layer anywhere.
+        let s = state();
+        assert!(!parts(&assemble_layers(&s, &a)).contains(&PlayerPart::HeldItem));
+        // Missing textures: empty list instead of a panic.
+        let empty = PlayerAssets::default();
+        assert!(body_layers(&state(), &empty).is_empty());
+        assert!(front_arm_layers(&state(), &empty).is_empty());
+        // Unknown useStyle falls through to the default origin without panic.
+        let mut sx = state();
+        sx.swing = crate::item::SWING_TIME;
+        sx.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
+        sx.use_style = 255;
+        assert_eq!(held_item_layers(&sx).len(), 1);
+        // Facing -1 mirrors the UVs.
+        let mut sf = state();
+        sf.facing = -1.0;
+        let torso = &body_layers(&sf, &a)[0];
+        assert!(torso.uv[0] > torso.uv[2], "mirrored quad {:?}", torso.uv);
+    }
+
+    #[test]
+    fn test_dw_2_6_headgear_bob_scope() {
+        let a = fixture();
+        // Frame 7: the zero row — torso/arms sit 2 px lower, legs do not move.
+        let s7 = PlayerCompositeState {
+            body_frame: 7,
+            ..state()
+        };
+        let body = body_layers(&s7, &a);
+        let by = |p: PlayerPart| {
+            body.iter()
+                .find(|s| s.part == p)
+                .unwrap()
+                .pos[1]
+        };
+        assert_eq!(by(PlayerPart::TorsoSkin), 202.0);
+        assert_eq!(by(PlayerPart::BackArmSkin), 202.0);
+        assert_eq!(by(PlayerPart::LegsSkin), 200.0);
+        assert_eq!(by(PlayerPart::Head), 200.0);
+        // Frame 0: no shift anywhere.
+        let body0 = body_layers(&state(), &a);
+        assert!(body0.iter().all(|s| (s.pos[1] - 200.0).abs() < 1e-6));
     }
 }
