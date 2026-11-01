@@ -7,7 +7,6 @@ use super::player_layers::{
 };
 use super::sky::sky_tex;
 use crate::assets;
-use crate::item::SWING_TIME;
 use crate::npc::{Npc, NpcKind};
 use crate::player::{self, Player};
 use crate::registry;
@@ -103,72 +102,6 @@ fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32;
         camera.x + (sx.round() - screen.x * 0.5) / zoom,
         camera.y + (sy.round() - screen.y * 0.5) / zoom,
     ]
-}
-
-#[allow(clippy::too_many_arguments)]
-/// Draws the starter player from the original 40x56 part strips. The composition
-/// mirrors `PlayerDrawLayers`: legs/pants/shoes, torso/shirt, head/eyes/hair, all at
-/// `(x-10, y-10)` so the 40x56 sprite is centred on the 20x42 hitbox.
-/// `PlayerDrawLayers` first pass: the selected block in the player's hand, with a
-/// `Player.itemAnimation`-style swing when mining, placing or attacking.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_held_item(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    light: &LightMap,
-    style: &LightStyle,
-    player: &Player,
-    kind: u16,
-    swing: f32,
-    anim_time: f32,
-) -> u32 {
-    let uv = if let Some((uv, _, _)) = lookups.item_icon(kind) {
-        Some(uv)
-    } else if registry::is_weapon(kind) {
-        lookups.shuriken_uv()
-    } else if let Some(wall) = registry::place_wall(kind) {
-        lookups.wall_icon_uv(wall)
-    } else {
-        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
-    };
-    let Some(uv) = uv else {
-        return 0;
-    };
-    let (cx, cy) = player.center();
-    let tx = (cx / TILE_PX) as i32;
-    let ty = (cy / TILE_PX) as i32;
-    let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
-    let dir = player.facing as f32;
-    let progress = if swing > 0.0 {
-        1.0 - (swing / SWING_TIME).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    // Arc from raised-behind to forward-down; mirrored for the left hand.
-    let a = if progress > 0.0 {
-        (-1.7 + progress * 2.5) * dir
-    } else {
-        0.0
-    };
-    let hand = [player.x + player::WIDTH * 0.5 + 5.0 * dir, player.y + 27.0];
-    let reach = 10.0;
-    let center = [hand[0] + a.cos() * reach * dir, hand[1] + a.sin() * reach];
-    // `push_sprite_rot` rotates around the top-left, so offset the pivot by the
-    // rotated half-size to spin the block around its centre.
-    let half = 7.0f32;
-    let (s, co) = a.sin_cos();
-    let top_left = [
-        center[0] - (half * co - half * s),
-        center[1] - (half * s + half * co),
-    ];
-    r.push_sprite_rot(
-        top_left,
-        [half * 2.0, half * 2.0],
-        uv,
-        [c[0], c[1], c[2], 1.0],
-        a,
-    );
-    1
 }
 
 /// The held item's atlas quad — the `GetItemDrawFrame` stand-in: the hotbar
