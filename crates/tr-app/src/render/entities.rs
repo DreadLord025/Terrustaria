@@ -25,6 +25,12 @@ pub(crate) struct PlayerAssets {
     pub(crate) shirt: Option<BgTex>,
     /// Back-arm skin frame from `Player_0_7` (composite arm frame 1).
     pub(crate) arm: Option<BgTex>,
+    /// `Player_0_5`: the under-skin torso layer drawn behind the back arm
+    /// (`TextureAssets.Players[skinVar, 5]`, `PlayerDrawLayers.cs:1345`).
+    pub(crate) undershirt: Option<BgTex>,
+    /// `Player_0_13`: the shirt sleeve over the back arm
+    /// (`TextureAssets.Players[skinVar, 13]`, `PlayerDrawLayers.cs:1362`).
+    pub(crate) arm_shirt: Option<BgTex>,
     pub(crate) legs: Option<BgTex>,
     pub(crate) pants: Option<BgTex>,
     pub(crate) shoes: Option<BgTex>,
@@ -40,6 +46,8 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
         shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
         arm: sky_tex(atlas, "Player_0_7", None),
+        undershirt: sky_tex(atlas, "Player_0_5", None),
+        arm_shirt: sky_tex(atlas, "Player_0_13", None),
         legs: sky_tex(atlas, "Player_0_10", None),
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
@@ -265,13 +273,47 @@ pub(crate) fn draw_player(
             }
         }
     };
+    // The layer sequence of `LegacyPlayerRenderer.DrawPlayerInternal` for the
+    // parts the starter player has (no armor/accessories yet). Each step cites
+    // its `PlayerDrawLayers` method.
+    //
+    // `DrawPlayer_12_Skin_Composite` (PlayerDrawLayers.cs:1211): torso skin
+    // (`compTorsoFrame`, always cell (0,0)) and leg skin (`legFrame`).
     // `PlayerFrame`: the legs animate on `legFrame`, the body/arms/head on
     // `bodyFrame` (which copies the leg row while walking).
+    part(
+        assets.torso.as_ref(),
+        cell_uv(assets.torso.as_ref(), 0, 0),
+        mul(skin),
+    );
     part(
         assets.legs.as_ref(),
         frame_uv(assets.legs.as_ref(), leg),
         mul(skin),
     );
+    // `DrawPlayer_12_SkinComposite_BackArmShirt` (PlayerDrawLayers.cs:1260):
+    // the back arm stacks the skin (`Players[7]`), the under-skin arm layer
+    // (`Players[5]`, body-skin colour) and the shirt sleeve (`Players[13]`,
+    // shirt colour). The starter player has no undershirt colour, so the
+    // `Players[8]` pass stays out until the equipment palette lands (M3-EQUIP).
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
+        mul(skin),
+    );
+    part(
+        assets.undershirt.as_ref(),
+        cell_uv(assets.undershirt.as_ref(), arm_col, (arm_row + 2).min(3)),
+        mul(skin),
+    );
+    part(
+        assets.arm_shirt.as_ref(),
+        cell_uv(assets.arm_shirt.as_ref(), arm_col, (arm_row + 2).min(3)),
+        mul(shirt),
+    );
+    // `DrawPlayer_13_Leggings` (1412) and `DrawPlayer_14_Shoes` (1709) overlay
+    // the leg frame; `DrawPlayer_17_TorsoComposite` (1937) draws the shirt over
+    // the skin torso.
     part(
         assets.pants.as_ref(),
         frame_uv(assets.pants.as_ref(), leg),
@@ -282,32 +324,12 @@ pub(crate) fn draw_player(
         frame_uv(assets.shoes.as_ref(), leg),
         mul(shoes),
     );
-    // Back arm behind the torso, front arm in front of the shirt (composite layers).
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
-        mul(skin),
-    );
-    // `PlayerDrawSet`: the torso/undershirt composite is always frame (0,0);
-    // only the arms and head follow the animation frame.
-    part(
-        assets.torso.as_ref(),
-        cell_uv(assets.torso.as_ref(), 0, 0),
-        mul(skin),
-    );
     part(
         assets.shirt.as_ref(),
         cell_uv(assets.shirt.as_ref(), 0, 0),
         mul(shirt),
     );
-    // The frame table's arm sits on the far side of the body; column 8 is the
-    // near (item-holding) arm, which the original places with the composite
-    // shoulder rotation we do not model yet.
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
-        mul(skin),
-    );
+    // `DrawPlayer_21_Head` (2036): head, eye whites, eyes and hair.
     part(
         assets.head.as_ref(),
         frame_uv(assets.head.as_ref(), body),
@@ -327,6 +349,14 @@ pub(crate) fn draw_player(
         assets.hair.as_ref(),
         frame_uv(assets.hair.as_ref(), body),
         mul(hair),
+    );
+    // The composite front arm belongs to the held-item layers
+    // (`DrawPlayer_27_HeldItem`/`28_ArmOverItem`, with the shoulder rotation);
+    // the cell approximation stays until M2-DRAW-2 ports the rotation.
+    part(
+        assets.arm.as_ref(),
+        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        mul(skin),
     );
     quads
 }
