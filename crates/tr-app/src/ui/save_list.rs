@@ -13,6 +13,8 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use tr_core::binio::Reader;
+
 use crate::persist;
 
 /// `PlayerFileData` as the cards need it (`UICharacterListItem` reads: Name,
@@ -174,10 +176,7 @@ fn read_header(path: &Path) -> (Option<String>, i32, bool) {
     if read.is_err() {
         return (None, 1, false);
     }
-    let mut r = HeaderReader {
-        data: &raw,
-        pos: 0,
-    };
+    let mut r = Reader::new(&raw);
     // magic (`save.rs:128-130`)
     if r.take(8) != Some(MAGIC.as_slice()) {
         return (None, 1, false);
@@ -214,33 +213,6 @@ fn read_header(path: &Path) -> (Option<String>, i32, bool) {
         return (name, 1, false);
     }
     (name, width, true)
-}
-
-/// The `tr_core::save` header reader (`save.rs:203-245`'s take/le helpers,
-/// Option-flavoured so a truncated file just reads invalid).
-struct HeaderReader<'a> {
-    data: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> HeaderReader<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
-        let end = self.pos.checked_add(n)?;
-        if end > self.data.len() {
-            return None;
-        }
-        let s = &self.data[self.pos..end];
-        self.pos = end;
-        Some(s)
-    }
-
-    fn u32(&mut self) -> Option<u32> {
-        Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
-
-    fn i32(&mut self) -> Option<i32> {
-        Some(i32::from_le_bytes(self.take(4)?.try_into().ok()?))
-    }
 }
 
 /// `Main.LoadPlayers` (`Main.cs:4001-4030`). The port has no `.plr` format yet

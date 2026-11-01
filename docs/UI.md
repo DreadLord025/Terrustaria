@@ -1,9 +1,12 @@
 # UI — the original menu and settings screens (M7)
 
-The menu is Terraria's immediate-mode menu (`Main.DrawMenu`), not the newer `UIState`
-system: `Main.menuMode` selects a screen, and every screen is a flat list of strings drawn
-with `FontAssets.DeathText` around `Main.screenWidth / 2`. This port follows that code
-path so the layout, text sizes and spacing match the original.
+Terraria has two menu systems: the legacy immediate-mode `Main.DrawMenu` (`Main.menuMode`
+selects a screen; every screen is a flat list of strings drawn with `FontAssets.DeathText`
+around `Main.screenWidth / 2`) and the modern `UIState` screens (`Main.menuMode == 888`).
+The legacy screens live in `crates/tr-app/src/menu/`; the UIState front-end — character
+and world select + create, the virtual keyboard, the flow between them — in
+`crates/tr-app/src/ui/` + `app/flow.rs` (see "Front-end screens (P6)" below). Both follow
+their source code path so the layout, text sizes and spacing match the original.
 
 ## Sources
 
@@ -81,7 +84,7 @@ systems that will consume it (volumes for `audio`, `PlacementPreview` for the ou
 ## Menu sub-screens (P5)
 
 Every `Main.DrawMenu` settings branch below menuMode 11 is ported as one `Page` in
-`menu.rs`, keyed by its original `menuMode` — which is also accepted as a `TR_PAGE`
+`menu/`, keyed by its original `menuMode` — which is also accepted as a `TR_PAGE`
 name so each screen can be opened directly. The shared slider chrome is
 `ui/sliders.rs`: the `IngameOptions.DrawValueBar` port (ColorBar 178×16 track,
 167 ColorBlips 2×8 graded with the truncating `ColorLerp_BlackToWhite`, the 11×25
@@ -140,6 +143,105 @@ row, tops `num9 + 0/26/52/78` from `num9 = 320`, left edge `screenWidth/2 − 89
   press stores it and closes the capture, Reset restores the vanilla defaults;
   the lists are left-aligned at `array5` with the raw `Lang.menu` values,
   trailing spaces included.
+
+## Front-end screens (P6) — the UIState half (`ui/`, `app/flow.rs`, `menu/`)
+
+The character/world select + create flow is the modern half of the same single-mode
+invariant: while `Main.menuMode == 888` is live (`Main.cs:51059-51069`), the screen is a
+`UIState`, not a `Main.DrawMenu` branch. The port keeps the same shape:
+
+* `app/flow.rs` owns the `FrontScreen` enum — `CharSelect`, `WorldSelect`,
+  `CharCreation(CreationState)`, `WorldCreation(NewWorldDraft)`,
+  `Keyboard(Box<KeyboardSession>)` — held in `App.front` while `App.menu` is `None`
+  (exactly one side is live, never both), the pure `next_flow_state` click-routing table,
+  and the `FrontScreenBehaviours` trait: per-screen `header`/`draw`/`click`/`key`
+  overrides — the `UIState` `DrawSelf` + `Click_*` handler-table shape (see
+  `docs/ARCHITECTURE.md` → "C# seams"). The keyboard session carries its `back` target,
+  so Cancel/Submit tails reopen the screen the rename came from.
+* `ui/uistate.rs` is the element kit the screens share: `UIElement.cs:306-322`'s resolve
+  order (offset → clamp → align), `UITextPanel` (the MinWidth-sized header panels),
+  `DrawSplicedPanel` (the 3-piece horizontal splice of `UICharacterListItem.cs:310-315`),
+  the `UIColoredImageButton` pair (border = hovered, highlight = selected) and the gated
+  12-size font pin. `ui/cards.rs` holds the fat-button/card pieces the select screens
+  share.
+
+### Select screens (`ui/char_select.rs`, `ui/world_select.rs`)
+
+`UIWorldSelect` delegates to `UICharacterSelect`'s constructor, and so does the port.
+Geometry at 1600×900 (`UICharacterSelect.cs:38-84`):
+
+* root `(475, 220, 650, 680)` (Width `0.8·screen` → MaxWidth 650, HAlign 0.5; Height
+  `−220`, Top 220), panel `(475, 220, 650, 570)` (Height `−110`);
+* the card list resolves against the panel's 12 px inner padding — `(487, 232, 626, 546)`,
+  detached width `650 − 24`; the 20 px scrollbar attaches at HAlign 1 of the inner
+  `(1093, 232, 20, 546)` only from the seventh card on (`UIScrollbar.cs:49-82`);
+* the header is **MinWidth-sized**, not the 650 hint rect: `100·0.8 + 30` wide,
+  `32·0.8 + 30` high, HAlign 0.5, Top −40 → `(745, 180, 110, 55.6)` at the test's 100 px
+  measure;
+* Back and New are `0.5·650 − 10 = 315` wide, 50 high at the root's bottom − 45:
+  `(475, 805)` and `(810, 805)`;
+* cards (`UICharacterListItem`/`UIWorldListItem`): the 3-piece inner panel, name label,
+  divider at x 557, the five `Button_*` sheets mapped by `button_sheet` (the ctor ordinal
+  is not the sheet index — Rename is 3), the favourite star, and for worlds the
+  difficulty/size/created/played panels (divider row `(557, 259, 556, 4)`, size panel
+  width 668, the played icon centred at ImageScale 0.75) plus the completion/
+  mixed-seed overlay rects.
+* Hit order mirrors `UIElement.GetElementAt`'s reverse-child iteration: New → Back win
+  over the cards. The listing, sorting and erase behaviour underneath is
+  `ui/save_list.rs` (`Main.LoadPlayers`/`LoadWorlds`, `ErasePlayer`/`EraseWorld`, the
+  `UICharacterSelect.UpdatePlayersList`/`UIWorldSelect.UpdateWorldsList` orderings).
+
+### Creation screens (`ui/char_creation.rs`, `ui/world_creation.rs`)
+
+* Character creation (`UICharacterCreation`): 500×384 root at `(550, 220)`, categories
+  bar inner `(550, 274, 500, 46)` (ten `UIColoredImageButton` pickers), the animated
+  80×80 player preview drawn with the real player UV machinery (anchor `(790, 219)`,
+  hitbox half, unscaled), the Info / HSL / Hairstyles / Cloth-styles middle menus (the
+  hue-0.5 blip is cyan, the hair scrollbar `(1025, 345, 20, 127)`, the hex panel
+  `(810, 455, 100, 32)`), Back `(550, 509, 240, 50)` and Create `(810, 509, 240, 50)`.
+  The draft is the `Main.PendingPlayer` port (`NewPlayerDraft`: name, difficulty, hair,
+  cloth style, the six colours, `dirty`); Back's discard confirm (`mode 40`) parks the
+  whole `CreationState` in `App.front_backup` (`BackupConfirmationState`,
+  `UICharacterCreation.cs:1215`).
+* World creation (`UIWorldCreation` + `UIWorldCreationPreview`): 500×452 root at
+  `(550, 152)`, panel `(550, 202, 500, 298)`, the name/seed plates `(604, 210/254, 348, 40)`
+  with their randomize icons, the three `GroupOptionButton` rows (size / difficulty /
+  evil), the 84×84 preview stack (`PreviewDifficulty*` + evil-icon sheets, idle icon tint
+  White), the description panel (y 450) that swaps draw-side from the hover, Back
+  `(550, 509, 240, 50)` / Create `(810, 509, 240, 50)`. The draft (`NewWorldDraft`)
+  carries name/seed/size/difficulty/evil; Create really generates and saves a `.trwld`.
+  A numeric seed parses `int` (i32 + Abs), anything else goes through the
+  `ReLogic.Utilities.Crc32` port of the name — the stand-in for `Main.rand`'s composition
+  (see `docs/ANALYSIS.md` → "Front-end screens (P6)").
+
+### Virtual keyboard (`ui/keyboard.rs`, `UIVirtualKeyboard.cs`)
+
+The rename flow's keyboard draws the **desktop** layer (no gamepad:
+`PlayerInput.SettingsForUI.ShowGamepadHints` is false without one): the label
+`(542, 229, 516, 37)`, the textbox `(542, 260, 516, 48.96)` (`MinHeight = 32·0.78 + 24`),
+Submit/Cancel, and the 50-key `UITextPanel` grid whose origin `(542, 282)` is an exact
+fit — 10·48 + 9·4 = 516 and 5·37 + 4·4 = 201 fill the panel inner exactly. The grid
+layer is kept behind `TR_VK_GRID=1`. Rename caps: 20 characters for players, 27 for
+worlds (`Click_SetName`, `UIWorldCreation.cs:693`); `allowEmpty` differs per caller
+(Create passes `false`).
+
+### Credits and legacy confirms (`menu/`)
+
+The pages the flow parks onto are still legacy `Main.DrawMenu` branches: `menuMode`
+5/9/40 confirms ("Delete {name}?" / "Discard your new player?") at the 250/80 layout
+with Yes/No rows — `Action::{ConfirmYes, ConfirmNo}` run the erase and re-open the
+screen the confirm came from — and `menuMode` 3000 credits, a single Back row at y 500
+(scale 0.9) over the world backdrop; the `SkyManager.Activate("CreditsRoll")` cinematic
+is not ported (documented deviation). Multiplayer "Join"/"Host & Play" still open the
+input screens directly (the P5 shortcut) — the join/host paths through the character
+select stay with a future multiplayer-flow task.
+
+### Front-end dev hooks
+
+`TR_UI=<screen>` opens a front screen directly — `charsel`, `worldsel`, `charnew`,
+`worldnew`, `vk`, `credits`, `delplayer`, `delworld`, `discard` (the legacy pages the
+flow parks onto); `TR_FAKE_CHARS`/`TR_FAKE_WORLDS=<n>` prepend fake list entries so the
+cards are screenshotable; `TR_VK_GRID=1` layers the keyboard's 50-key grid.
 
 ## In-game interface (`crates/tr-app/src/ui/`)
 
@@ -310,6 +412,9 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   `docs/ANALYSIS.md` → "In-game interface (M7-UI)" (breath-bubble offsets, the
   `Main.invAlpha` pulse, `Main.ThickMouse` tooltip offsets, the missing
   bestiary/emote/achievement shortcut buttons, `Player.statDefense` not modelled …).
+* Front-end (P6) deviations are collected in `docs/ANALYSIS.md` →
+  "Front-end screens (P6)" (no `.plr` writer, no cloud buttons, fixed world
+  metadata, no gamepad snap points, no UI click sounds, no credits cinematic …).
 
 ## Dev hooks and verification
 
@@ -324,6 +429,9 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   toggle cycles, Back navigation and the not-ported notices, the P5 sub-screen row tables
   (slider chrome maths and drag locks, the colour-screen floors, the Effects phantom-row
   skip, the language lists, the bind lists and capture machine, the multiplayer row gates
-  and the submit chain), plus the `config.json` round-trip.
+  and the submit chain), plus the `config.json` round-trip. The P6 front-end suites cover
+  the `uistate` resolve/panel maths, the select/creation/keyboard layout tables and hit
+  orders, the save listing/sorting rules, the `next_flow_state` table and the
+  single-mode invariant.
 * Screenshots at 1600×900: `.qoder_tmp/ui_{main,settings,general,interface,video}.png`
   (local; regenerate with the hooks above).

@@ -142,7 +142,7 @@ vines, `TileFrameImportant` multi-tile objects), `TileID.Sets.TruncatesWalls`, p
 coating. Those are listed in the roadmap.
 
 `tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
-`tiledata.rs`; rerun it after touching those tables.
+the `tiledata/` modules; rerun it after touching those tables.
 
 ## Slopes and half bricks
 
@@ -182,7 +182,7 @@ Terraria's light is a **tile light map**, not a per-vertex shader effect:
 directional sweeps. Everything is drawn multiplied by `Lighting.GetColor(x, y)`; in Color
 mode solid blocks are further split into 3×3 (or 2×2) light slices.
 
-Ported in `tr-core/src/lighting.rs`:
+Ported in `tr-core/src/lighting/`:
 
 1. **Region** — `AREA_PADDING = 28` around the visible tile rect, `NON_VISIBLE_PADDING = 18`
    rows/columns that the sweeps stop before, exactly as `LightingEngine` does.
@@ -227,7 +227,7 @@ Verified numerically with `TR_LIGHT_AT`: at midday the stored world reports
 
 ### Per-type tile light (M1.5-LIGHT-2)
 
-`tr-core/src/tile_light.rs` is a case-for-case port of `TileLightScanner.ApplyTileLight`
+`tr-core/src/tile_light/scanner.rs` is a case-for-case port of `TileLightScanner.ApplyTileLight`
 (147 top-level `case` labels in the decompiled source, ~2 800 lines), plus
 `ApplyWallLight`, `ApplySurfaceLight` and `ApplyHellLight`. It replaces the earlier
 `EMISSIVE`-table approximation, which only covered the 43 types whose colour is a plain
@@ -250,7 +250,7 @@ What the port covers:
   `739`, `519` and the 70-72/190/348/349/528/578 family set it when painted.
 - **Per-tile randomness** — `Terraria.Utilities.FastRandom`: the scanner keeps one LCG
   state, re-seeds it every frame and derives a per-tile stream with `WithModifier(x, y)`.
-  `FastRandom` in `tile_light.rs` reproduces the multiplier/mask, `NextBits`,
+  `FastRandom` in `tile_light/palette.rs` reproduces the multiplier/mask, `NextBits`,
   `NextFloat` and both `Next` overloads. Our seed is `world.seed ^ frame * golden` instead
   of `Guid.NewGuid()`, so screenshots at a fixed frame are reproducible.
 - **Tables** — the five largest arms (93, 33, 34, 100/173, 42: 1 535 lines of C#) are
@@ -357,9 +357,9 @@ world; loaded `.wld` files expose their own liquids.
 
 ### Waterfall overlay
 
-`tr-core/src/waterfall.rs` ports `Terraria.WaterfallManager`; `main.rs` runs it on the
-60 Hz clock and emits the quads between the non-solid and solid tile passes
-(`Main.DoDraw_Waterfalls`).
+`tr-core/src/waterfall/` ports `Terraria.WaterfallManager`; `world_sim/liquids.rs`
+runs it on the 60 Hz clock and `render/tiles.rs` emits the quads between the
+non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
 
 - `FindWaterfalls` keeps the 30-tick cadence (`findWaterfallCount < 30 && !forced`), the
   `waterfallDist = (int)(75 * gfxQuality) + 25` scan rectangle around the view, the
@@ -370,7 +370,7 @@ world; loaded `.wld` files expose their own liquids.
   order is `tile2` (above) then `tile4` (right) then `tile3` (left), as in the source.
 - `UpdateFrame` reproduces all five counters (regular 3-tick, slow 7-tick, rain,
   lava-rain and snow) plus `DoUpdate_AnimateDiscoRGB`. The `Main.mouseTextColor` flicker
-  that the lava/shimmer light pulses use is owned by `lighting.rs` (`M1.5-LIGHT-1`) rather
+  that the lava/shimmer light pulses use is owned by `lighting/` (`M1.5-LIGHT-1`) rather
   than duplicated in the manager.
 - `DrawWaterfall` is a line-by-line port of the 640-line geometry walk: `stopAtStep`,
   the `num11..num42` state, the slope/half-brick/liquid neighbour rules, the 1 px
@@ -390,7 +390,7 @@ world; loaded `.wld` files expose their own liquids.
   A/B screenshots; `TR_SPOUT=x,y` stamps a half-brick spout with liquid and a clear drop
   so the overlay can be captured deterministically.
 
-Verification: unit tests in `waterfall.rs` (spout detection, lava kind, tile 196, frame
+Verification: unit tests in `waterfall/` (spout detection, lava kind, tile 196, frame
 counters, emitted geometry, empty `anim_key`); the lake view at `TR_CAM=2240,360`,
 `TR_DAY=1` is pixel-identical with and without the pass when no waterfall is visible
 (`tools/pixel_diff.py`, 1 440 000 pixels); `docs/screenshots/spout_noon.png` shows a
@@ -596,7 +596,7 @@ Cloud density (`Cloud.GetParallax`) and the exact star density remain (BG-16).
 
 ## World generation and native saves
 
-`tr-core/src/worldgen.rs` is a compact model of the shapes the original generator produces,
+`tr-core/src/worldgen/` is a compact model of the shapes the original generator produces,
 not a port of all 45 000 lines. On first launch it builds a 4200×1200 forest world from a
 seed in ~165 ms:
 
@@ -874,14 +874,14 @@ bosses and multiplayer sync.
    compact generator and native save give a stable test world; full parity is M5.
 6. **Networking** must match the exact 1.4.5.8 packet layout to interoperate; not required
    for single-player parity.
-7. **`tools/GenTileData` is stale.** The current decompilation writes `Main.`-prefixed
+7. **`tools/GenTileData` was stale.** The current decompilation writes `Main.`-prefixed
    assignments (`Main.tileSolid[0] = true;`) and lives under `decompiled/Terraria/ID/`
-   and `decompiled/Terraria/Graphics/Light/`, while the generator's regexes expect the bare
-   names and the old flat paths. Running it today emits empty tables (`sets: 0`,
-   `tileSolid=0`) and would destroy `tiledata.rs`; it was reverted. Until the generator is
-   updated, new tables that the generated file does not carry are extracted by hand and
-   documented where they live (e.g. `torch.rs`). Fix the generator before the next
-   data-table port.
+   and `decompiled/Terraria/Graphics/Light/`, while the generator's regexes expected the
+   bare names and the old flat paths. Running it then emitted empty tables (`sets: 0`,
+   `tileSolid=0`) and would have destroyed the generated data; it was reverted. **Closed
+   2026-11-01**: the generator matches the current decompilation again
+   (`Architecture refactor` below) and `tiledata/` is generated from it; the hand-extracted
+   tables in `torch.rs` stay as-is.
 
 Note: tile id **0 is dirt**, not air. The asset usage scan must include it; the active flag
 is the only air test.
@@ -919,7 +919,7 @@ tile frame for ids without one.
 
 ## Main menu and multiplayer (M6)
 
-`menu.rs` draws the original-style title screen (Logo texture, Mouse_Text buttons,
+`menu/mod.rs` draws the original-style title screen (Logo texture, Mouse_Text buttons,
 random character name from the game's name syllables) with Singleplayer, Multiplayer
 (Host on a port with a password, Join by IP + port + password) and Quit. Screenshots and
 debug hooks skip the menu; `TR_MENU=1` forces it for captures.
@@ -975,7 +975,7 @@ frame is smaller than the screen.
 The player head icon is the Rust stand-in for vanilla's 84x84
 `MapHeadRenderer`/`PlayerHeadDrawRenderTargetContent` render target (this engine
 has no render targets): `map.rs::head_icon_pos` ports the icon position
-(`Main.cs:55937-55944`) and `main.rs::draw_player_map_icon` draws the head, eye
+(`Main.cs:55937-55944`) and `render/entities.rs::draw_player_map_icon` draws the head, eye
 whites, eyes and hair (frame row 0, unlit — `MapHeadRenderer.cs:50` blits the
 target with `Color.White`) plus the outline rings (black at Manhattan radius 4,
 `Main.teamColor[0]` = white at radius 2) into the screen-space `ui` range, so it
@@ -988,7 +988,7 @@ matching vanilla's early return in `Main.Draw` (`Main.cs:62147-62181`, before
 is mined, placed or attacked behind it, the middle-button camera drag is inert,
 and the left button drags the map by the cursor delta (`Main.cs:55342-55359`).
 
-Persistence: `tr-core/src/map.rs` owns the `.map` v326 byte layout (header,
+Persistence: `tr-core/src/map/file.rs` owns the `.map` v326 byte layout (header,
 option tables, RLE body) and `tr-app/src/map.rs` the raw-deflate wrapping and
 file IO (`save_map_file`/`load_map_file`). The sidecar is `<world>.map` next to
 the `.trwld` (`persist::map_path`), written whenever the world/player is saved —
@@ -1009,7 +1009,7 @@ byte-level vanilla `LoadMapVersion2` would misread that one case.
 
 ## Localization (M6)
 
-`tr-core/src/localization.rs` ports `Terraria.Localization`'s core:
+`tr-core/src/localization/` ports `Terraria.Localization`'s core:
 `GameCulture` (the twelve shipped cultures, their `en-US`-style names and legacy ids,
 `FromName`/`FromLegacyId`/`FromCultureName` with the original fallbacks), `LocalizedText`
 (`Value`/`UnformattedValue`/`EnglishValue`/`HasValue`/`Format`), the internal `VariableText`
@@ -1199,7 +1199,7 @@ behaviour notes:
   settings toggle does not exist in the port, so the health text always draws.
 * The map-style icon row draws without the `Main.mapEnabled` gate
   (`:41056`) while its clicks keep the gate (the documented draw/click
-  asymmetry in `chrome.rs`/`main.rs`): the row is visible with the map disabled,
+  asymmetry in `chrome.rs`/`app/clicks.rs`): the row is visible with the map disabled,
   but only clicks when the map system is enabled. Visible only with
   `MapEnabled=false`.
 * The icon-row clicks fire on the press frame; vanilla tests
@@ -1224,7 +1224,7 @@ Slime — the boss bar's input), `TR_NOHUD=1` (hide the HUD, hotbar and minimap)
 `TR_NOPLAYER=1`, `TR_NO_BG=1`, `TR_DAY=f`, `TR_SHOT=path`. Screenshots are
 byte-identical across runs with `TR_NOPLAYER=1 TR_NO_BG=1 TR_DAY=0.5`.
 
-## Menu sub-screens (P5) (`menu.rs`, `ui/sliders.rs`)
+## Menu sub-screens (P5) (`menu/`, `ui/sliders.rs`)
 
 The seventeen `Main.DrawMenu` settings branches below menuMode 11 (26, 28, 25,
 252, 1125, 111, 2008, 1212, 1213, 1127, 27, 272727, 13, 131, 30, 31, 889) and the
@@ -1246,7 +1246,7 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
   shows it (`Main.cs:51239-51276`). Each frame the branch copies `selColor` into
   the page's colour (`:50324` / `:50346`) before the sliders seed/drag/recompose
   it, so the stored colour trails the knob by one frame — the original's order.
-  The cursor tint reads the stored colour per frame (`main.rs`, before
+  The cursor tint reads the stored colour per frame (`app/frame.rs`, before
   `cursor.update()`), so dragging re-colours the pointer live (`Main.cs:50324` →
   `:52490`).
 * **Lock-on priority cycles 0 → 1 → 2 → 1**, not back to 0: `CycleUseModes`
@@ -1330,6 +1330,132 @@ HSL colour-slider block live in `ui/sliders.rs`. Deviations and behaviour notes:
   HUD. A vanilla `config.json` value still round-trips unchanged.
 * The Interface "Minimap Border" row is *live* behaviour, not visual-only:
   cycling rewrites `settings.minimap_frame`, which the game loop feeds
-  through `ui::minimap::style_index` (`main.rs:2355`), so the minimap frame
+  through `ui::minimap::style_index` (`app/clicks.rs`), so the minimap frame
   re-renders immediately. Map Scale stays the P4 visual-only ruling
   (reference 1.0).
+
+## Front-end screens (P6) (`ui/`, `app/flow.rs`)
+
+The whole-UI P6 front end (character/world select + create, the virtual
+keyboard, credits — commits `02182dc..043e11c`) is ported at the source
+geometry; the screens, coordinates and flow are in `docs/UI.md` →
+"Front-end screens (P6)". The deviations and stand-ins:
+
+* **No `.plr` reader/writer** (spec §9.4). Characters are the implicit
+  session entry plus optional `TR_FAKE_CHARS` fakes; Create records the
+  session draft instead of writing a character file. The `.plr` directory
+  scan stays so a future reader slots into the same shape (`Main.cs:4007`);
+  a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
+* **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
+  (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
+  there is no GameMode field (every entry reads Classic, so
+  `sort_worlds`' `CanWorldBeJoinedByActivePlayer` Journey gate is vacuous);
+  the world card icon is a fixed `IconCrimson` (no evil data to pick the
+  sprite); the playtime panel is a fixed `00:00:00` (no play-time tracking).
+  Invalid worlds bucket to Small (vanilla shows Unknown — no Unknown
+  bucket); `erase_world` deletes the orphan `.map` (vanilla leaves it,
+  plan-ordered); erases delete outright — no recycle bin
+  (`FileUtilities.Delete`).
+* **No cloud favourite buttons, `Rename` at card Left 52** —
+  `SocialAPI.Cloud == null` in the port, exactly the branch the original
+  takes without a cloud account.
+* **No gamepad snap points** (the `SetSnapPoint` sites, e.g.
+  `UIWorldListItem.cs:205`, have no port) and **no UI click sounds**: the
+  `SoundEngine.PlaySound(10/11/12)` sites — the confirms' Yes/No included —
+  stay silent, consistent with the P5 menus (`audio.rs:22-31`).
+* **Rename caps** 20 (character) / 27 (world); the world-creator's
+  `TrimDisplayIfOverElementDimensions(27)` display trim is not ported.
+* **The keyboard draws the desktop layer only** (`ShowGamepadHints` false
+  without a gamepad); the 50-key grid layer is kept behind `TR_VK_GRID=1`.
+* **The Advanced seed tab is out of scope** (spec §9.4): the seed plate's
+  click degrades to the plain seed keyboard and the special-seed ring effect
+  is not drawn; `UIWorldLoad`/`UIWorldGenDebug`/`UIWorldCreationAdvanced`
+  have no counterpart yet.
+* **Credits** (`menuMode` 3000) is the world backdrop + the single Back row;
+  the `SkyManager.Activate("CreditsRoll")` cinematic is not ported.
+* **The legacy create flows** (menuModes 2/3/7/8/16/17-24/222/−7/−71/5000)
+  and the colour-palette renderer (`Main.cs:51122-51450`) are not ported —
+  dead from the modern menu; `Main.menuMode == 10` is a pass-through.
+* **The confirms are ported as legacy pages** (5/9/40) whose Yes/No rows
+  return `Action::{ConfirmYes, ConfirmNo}` — the App runs the erase and
+  reopens the screen the confirm came from, instead of vanilla's inline
+  `selectedMenu` branches (`Main.cs:49431/:49681/:49454`). Geometry note
+  from review: the confirms are 250/80 (`Main.cs:48419/:48421`), not 220/52
+  (220/52 is the mode-0 override, `:48911-48913`).
+* **`GameTipsDisplay`** (`UICharacterCreation.cs:170`, the rotating hint
+  line under the panel, `:1998-2005`) is not ported.
+* **`assign_random_world_name` is a stand-in**: `AssignRandomWorldName`
+  (`UIWorldCreation.cs:1002-1025`) composes a name from the
+  `RandomWorldName_*` localization tables the port has not loaded; the
+  stand-in is `"World {n+1}"` (`UIWorldSelect.cs:113`'s shape). A
+  non-numeric world seed likewise hashes the name through the
+  `ReLogic.Utilities.Crc32` port (poly 0xEDB88320) instead of `Main.rand` —
+  deterministic per name, so the same draft always creates the same world.
+* **`Color` multiplication wraps, not saturates** (`color.rs`'s pinned
+  convention, re-pinned by the Task 8b review): `DarkGray * 1.2` =
+  `[202, 202, 202, 50]` — the ghosted Master-difficulty bunny preview.
+
+## Architecture refactor (2026-11-01)
+
+The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`,
+commits `9c84351..028daba`) moved code, gave the moved functions readable Rust
+names (overriding the C#-name rule for this pass) and added three C#-shaped
+trait seams. Behaviour and RNG streams were pinned unchanged: the worldgen
+byte-proof's four FNV-1a state hashes and a post-refactor determinism pair
+(SHA256-equal repeat screenshots) both pass; the workspace tests read
+399/10/147. The new tree, the "where to look" map and the frame flow live in
+`docs/ARCHITECTURE.md`; the `PORT_MAP.md` rows are re-pointed. The movements,
+compressed:
+
+- **tr-app.** `main.rs` 10 497 → 86 lines (bootstrap only). The `App` split
+  into `app/` (`mod.rs` struct + startup, `loop.rs` the winit handler,
+  `frame.rs` the `Main.Draw` orchestrator + G6 cache, `flow.rs` the front-end
+  state machine + `FrontScreenBehaviours`, `clicks.rs`, `session.rs`,
+  `settings_ui.rs`, `netglue.rs`, `saveglue.rs`); the world draw passes into
+  `render/` (`sky`, `bg`, `tiles`, `liquids`, `entities`, `foliage`, `debug` —
+  ~4.5 k lines); the fixed-step simulation into `world_sim/` (`step`, `player`,
+  `npcs`, `items`, `projectiles`, `editing`, `clock`, `liquids`, `weather`,
+  `camera`); leaf types out of the bootstrap into `item.rs` and `biome.rs`.
+- **`menu.rs` 4 187 → `menu/`**: `mod.rs` (state, items, slider drag),
+  `pages.rs` (the per-screen row tables), `actions.rs` (the `Action`
+  semantics the App dispatches).
+- **tr-core directories.** `tiledata.rs` regenerated by the fixed
+  `tools/GenTileData` and split (`sets`/`emissive`/`merge` + a hand-written
+  `mod.rs`); `map.rs` → `map/` (`mod`/`colors`/`option`/`file`); `tile_light.rs`
+  → `tile_light/` (`mod`/`palette`/`scanner`); `lighting.rs` → `lighting/`
+  (`mod`/`params`/`blur`) with the `LightEngine` trait; `waterfall.rs` →
+  `waterfall/` (`mod`/`draw`, the `LiquidKindChecks` trait artifact replaced by
+  the free function `any_liquid_kind`); `worldgen.rs` → `worldgen/`
+  (`mod`/`noise`/`terrain`/`caves`/`liquids`/`surface`); `localization.rs` →
+  `localization/` (`mod`/`culture`/`format`/`json`); `binio.rs` is the one
+  little-endian cursor behind `save`/`wld`/`map` (the app-side `.trwld` header
+  probe in `ui/save_list.rs` joined in this docs sweep).
+- **Deduplication.** `ui::in_rect`/`in_rect_strict`/`hover_pair`/`push_whole`
+  and the `text::border_string`/`draw_border_string`/`large_text_width`
+  families replaced their per-screen copies; `ui/cards.rs` shares the select
+  screens' card pieces; `world_sim/step.rs`'s `FixedStepper` replaced six
+  identical 60 Hz accumulators; the `ReLogic.Utilities.Crc32` port lives once
+  in `ui/world_creation.rs`.
+- **C# seams** (the only new abstractions): `FrontScreenBehaviours` ≈
+  `UIState` (`app/flow.rs`), `LightEngine` ≈ `ILightingEngine`
+  (`tr-core/src/lighting/mod.rs`), and `render/bg.rs`'s `PassPrologue` ≈ the
+  `bgStartX`/jitter prologue the `Main.DrawBackground*` passes repeat.
+
+Deviations recorded by the refactor and this sweep:
+
+- **`tools/GenTileData`'s `numN` local is approximated, not modelled.** The
+  `TileID.Sets.NeedsGrassFramingDirt[num]` argument is a decompiler-renamed
+  local (`num11` in the previous decompilation, `num9` in the current one);
+  the fixed generator resolves it to the active `case` ids (the grass id
+  itself) instead of modelling the local's data flow — the approximation the
+  framer expects grass variants to merge against (`Program.cs:613-621`).
+- **`env.rs` is deferred.** The planned consolidation of the ~65 `TR_*` flags
+  into one module did not happen; the flags still live where they are
+  consumed (`app/mod.rs` helpers, `render/debug.rs`, `app/flow.rs`,
+  `rain.rs`, `render/sky.rs`, …).
+- **The P6 stand-ins** this sweep documented (see "Front-end screens (P6)"):
+  `GameTipsDisplay` not ported, the Crc32-instead-of-`Main.rand` world-name/
+  seed composition and the `assign_random_world_name` stand-in.
+- **Risk 7 above is closed**: the generator matches the current
+  decompilation again, and `tiledata.rs` is generated from it (the hand
+  extraction in `torch.rs` stays as-is).

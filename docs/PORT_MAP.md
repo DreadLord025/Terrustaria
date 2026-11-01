@@ -20,37 +20,50 @@ re-implement something that already exists, or to port the wrong file.
 | C# source (under `Terraria/`) | Rust target | State |
 | --- | --- | --- |
 | `Liquid.cs`, `LiquidBuffer.cs` | `crates/tr-core/src/liquid.rs` (sim + buffer), `liquid_draw.rs` (framing/render data) | done |
-| `Lighting.cs` | `crates/tr-core/src/lighting.rs` (LightMap/9-slice), `tile_light.rs` (TileLightScanner) | done |
-| `WorldGen.cs` | `crates/tr-core/src/worldgen.rs` | partial |
-| `WorldBuilding/*` (`WorldGenerator.cs`, `WorldGenSnapshot.cs`, `WorldBuilding/*`) | `crates/tr-core/src/worldgen.rs` | partial |
+| `Graphics/Light/ILightingEngine.cs` | `crates/tr-core/src/lighting/mod.rs` (the `LightEngine` trait seam) | done |
+| `Graphics/Light/Lighting.cs` (LightMap/9-slice) | `crates/tr-core/src/lighting/` (`mod`/`params`/`blur`) | done |
+| `Graphics/Light/TileLightScanner.cs` | `crates/tr-core/src/tile_light/` (`scanner.rs` the 147-case switch, `palette.rs` `FastRandom`/colours, `mod.rs` surface/hell/wall) | done |
+| `WorldGen.cs` (`GenerateWorld`, the passes) | `crates/tr-core/src/worldgen/` (`mod`/`noise`/`terrain`/`caves`/`liquids`/`surface`) | partial |
+| `WorldBuilding/*` (`WorldGenerator.cs`, `WorldGenSnapshot.cs`, `WorldBuilding/*`) | `crates/tr-core/src/worldgen/` | partial |
 | `Framing.cs`, `HitTile.cs`, `TileMergeAttempt*` | `crates/tr-core/src/framing.rs` | done |
-| `Tile.cs` + tile tables/IDs | `crates/tr-core/src/tile.rs`, `tiledata.rs` (generated) | done |
+| `Tile.cs` + tile tables/IDs | `crates/tr-core/src/tile.rs`, `tiledata/` (generated: `sets`/`emissive`/`merge`) | done |
 | `Main.cs` (tile draw path), `SceneMetrics`/`SceneState` (framing inputs) | `crates/tr-core/src/drawdata.rs` | partial |
-| `GameContent/Tiles/*` (waterfall/spouts) | `crates/tr-core/src/waterfall.rs` | partial |
+| `GameContent/Tiles/*` (waterfall/spouts) | `crates/tr-core/src/waterfall/` (`mod`/`draw`) | partial |
 | tree growth/rendering | `crates/tr-core/src/tree.rs` | partial |
 | wind (`windCounter*`, `GameContent/.../Wind*`) | `crates/tr-core/src/wind.rs` | partial |
 | torch/lamp light seeding | `crates/tr-core/src/torch.rs` | partial |
-| `Map/*`, `MapRenderer.cs`, `Main.Map*` | `crates/tr-core/src/map.rs`, `mapdata.rs` (colours/exports) | partial |
-| `IO/WorldFile.cs` (`.wld` save/load), world IO | `crates/tr-core/src/save.rs`, `wld.rs` | partial |
+| `Map/*`, `MapRenderer.cs`, `Main.Map*` | `crates/tr-core/src/map/` (`mod`/`colors`/`option`/`file`), `mapdata.rs` (colour tables) | partial |
+| `IO/WorldFile.cs` (`.wld` save/load), world IO | `crates/tr-core/src/save.rs`, `wld.rs` (over `binio.rs`) | partial |
 | `Main.cs` `DrawSunAndMoon` / `SetBackColor` (sun+moon placement & tint) | `crates/tr-core/src/sky.rs` | partial |
-| `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization.rs` | partial |
+| `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization/` (`mod`/`culture`/`format`/`json`) | partial |
 | block place/break/edit rules (`WorldGen.*`, `HitTile`) | `crates/tr-core/src/edit.rs` | partial |
+| `BinaryReader`/`BinaryWriter` (the LE primitives behind the world/map IO) | `crates/tr-core/src/binio.rs` (`Reader`/`Writer`) | done |
 
 ## Game / presentation (`crates/tr-app`)
 
 | C# source (under `Terraria/`) | Rust target | State |
 | --- | --- | --- |
-| `Main.cs` (loop, update, sky, draw orchestration) | `crates/tr-app/src/main.rs` | wip |
-| `Main.DrawBackground` underground tree (`DrawBackground_*`, `Main.cs:52798-53402`) | `crates/tr-app/src/main.rs` (`draw_background` + passes) | done (classic style set; per-biome cave sets + 9-slice documented deviations) |
-| `Player.cs` | `crates/tr-app/src/player.rs` | partial |
-| `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` | partial |
-| `Projectile.cs` | `crates/tr-app/src/projectile.rs` | partial |
-| `Item.cs`, `GetItemSettings.cs`, `NewItemOwnership.cs` | `crates/tr-app/src/item.rs` | partial |
+| `Main.cs` (loop, update, draw orchestration) | `crates/tr-app/src/app/` (`loop.rs` the winit handler, `frame.rs` the `Main.Draw` orchestrator, `mod.rs` the `Main` state) | wip |
+| `Program.cs` (entry) | `crates/tr-app/src/main.rs` (`fn main`, the bootstrap) | done |
+| `Main.DrawBackground` underground tree (`DrawBackground_*`, `Main.cs:52798-53402`) | `crates/tr-app/src/render/bg.rs` (shared prologue `PassPrologue`) | done (classic style set; per-biome cave sets + 9-slice documented deviations) |
+| `Main.DrawSurfaceBG`/`DrawSunAndMoon` (sky, clouds, parallax stack) | `crates/tr-app/src/render/sky.rs` (+ `biome.rs` for the style/alpha transitions) | partial |
+| `Main.DoDraw_Waterfalls`, tile/liquid draw passes, `DrawTrees` | `crates/tr-app/src/render/{tiles,liquids,foliage}.rs` | partial |
+| `Player.cs` | `crates/tr-app/src/player.rs` (physics), `collision.rs`, the 60 Hz tick in `world_sim/player.rs` | partial |
+| `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` (tick in `world_sim/npcs.rs`) | partial |
+| `Projectile.cs` | `crates/tr-app/src/projectile.rs` (tick in `world_sim/projectiles.rs`) | partial |
+| `Item.cs`, `GetItemSettings.cs`, `NewItemOwnership.cs` | `crates/tr-app/src/item.rs` (tick in `world_sim/items.rs`) | partial |
 | `Collision.cs`, `Physics/*` | `crates/tr-app/src/collision.rs` | partial |
-| `Rain.cs`, `Cloud.cs` | `crates/tr-app/src/rain.rs` | partial |
+| `Rain.cs`, `Cloud.cs` | `crates/tr-app/src/rain.rs` (field + draw), the tick in `world_sim/weather.rs` | partial |
 | `Map/*` (client-side map view) | `crates/tr-app/src/map.rs` | partial |
-| `UI/*`, `IngameOptions.cs`, menus | `crates/tr-app/src/menu.rs` | partial |
-| `Main.DrawMenu` settings/multiplayer branches (`menuMode` 26, 28, 25, 252, 1125, 111, 2008, 1212, 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889 — the P5 sub-screens; 27/272727 reachable via `TR_PAGE` only) | `crates/tr-app/src/menu.rs` (+ `crates/tr-app/src/ui/sliders.rs`) | done (visual only) |
+| `UI/*` (UIState screens) | `crates/tr-app/src/ui/uistate.rs` (the element kit) + `app/flow.rs` (`FrontScreen`/`FrontScreenBehaviours` ≈ `UIState`) | partial |
+| `UICharacterSelect.cs`, `UICharacterListItem.cs`, `UICharacter.cs` | `crates/tr-app/src/ui/char_select.rs` | done (visual; deviations in ANALYSIS.md "Front-end screens (P6)") |
+| `UIWorldSelect.cs`, `UIWorldListItem.cs`, `AWorldListItem.cs` | `crates/tr-app/src/ui/world_select.rs` | done (visual; same deviations) |
+| `UICharacterCreation.cs` | `crates/tr-app/src/ui/char_creation.rs` | done (visual; same deviations) |
+| `UIWorldCreation.cs`, `UIWorldCreationPreview.cs` | `crates/tr-app/src/ui/world_creation.rs` | done (visual; same deviations) |
+| `UIVirtualKeyboard.cs` | `crates/tr-app/src/ui/keyboard.rs` | done (visual; desktop layer only) |
+| `Main.LoadPlayers`/`LoadWorlds`, `ErasePlayer`/`EraseWorld`, `UICharacterSelect.UpdatePlayersList`/`UIWorldSelect.UpdateWorldsList` | `crates/tr-app/src/ui/save_list.rs` | partial (no `.plr` reader; metadata stand-ins) |
+| `Main.DrawMenu` (legacy menu + confirms + credits, modes 5/9/40/3000) | `crates/tr-app/src/menu/` (`mod.rs` + `pages.rs` + `actions.rs`) | partial |
+| `Main.DrawMenu` settings/multiplayer branches (`menuMode` 26, 28, 25, 252, 1125, 111, 2008, 1212, 1213, 1127, 27, 272727, 12, 13, 131, 30, 31, 889 — the P5 sub-screens; 27/272727 reachable via `TR_PAGE` only) | `crates/tr-app/src/menu/` (+ `crates/tr-app/src/ui/sliders.rs`) | done (visual only) |
 | `IngameOptions.DrawValueBar` (+ `Main.DrawMenu`'s HSL colour-slider block, `Main.cs:51102-51284`) | `crates/tr-app/src/ui/sliders.rs` | done |
 | in-game HUD/inventory (`Main.DrawInterface`/`DrawInventory`/`MouseText`, `ItemSlot.cs`, `ClassicPlayerResourcesDisplaySet`) | `crates/tr-app/src/ui/{mod,resources,cursor,tooltip,slot,inventory,chrome,text}.rs` | partial |
 | `GameContent/UI/Minimap/*` (`MinimapFrame.cs`, `MinimapFrameManager.cs`, `MinimapFrameTemplate.cs`) + `DataStructures/SelectionHolder.cs` (`CycleSelection`) | `crates/tr-app/src/ui/minimap.rs` (+ the `MinimapFrame`/`MapScale` config keys in `settings.rs`) | done |
@@ -60,9 +73,8 @@ re-implement something that already exists, or to port the wrong file.
 | settings/config (`Main.*Settings`, `Preferences`) | `crates/tr-app/src/settings.rs` | partial |
 | asset lookup tables (`TextureAssets`, `SoundID`, `ItemID` caches) | `crates/tr-app/src/registry.rs`, `assets.rs` | partial |
 | `Audio/*`, `SoundEngine` | `crates/tr-app/src/audio.rs`, `sound.rs` | partial |
-| `Net/*`, `NetMessage.cs`, `Netplay.cs`, `MessageBuffer.cs` | `crates/tr-app/src/net.rs` | todo |
-| `Main.Save*/Load*` character/persistence glue | `crates/tr-app/src/persist.rs` | partial |
-| `Program.cs` (entry) | `crates/tr-app/src/main.rs` (`fn main`) | done |
+| `Net/*`, `NetMessage.cs`, `Netplay.cs`, `MessageBuffer.cs` | `crates/tr-app/src/net.rs`, `app/netglue.rs` | todo |
+| `Main.Save*/Load*` character/persistence glue | `crates/tr-app/src/persist.rs`, `app/saveglue.rs` | partial |
 
 ## Content decoding (`crates/tr-content`) — ReLogic/XNA container formats
 
