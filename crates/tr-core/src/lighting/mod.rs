@@ -1,17 +1,29 @@
-//! Tile lighting: a port of `Terraria.Graphics.Light.TileLightScanner` (seed light per
-//! tile) and `LightMap` (directional blur that spreads it, attenuated by tile opacity).
+//! Tile lighting: a port of `Terraria.Graphics.Light.TileLightScanner` (seed light
+//! per tile, see [`crate::tile_light`]) and `LightMap` (directional blur that
+//! spreads it, attenuated by tile opacity).
 //!
-//! The original computes lighting for the visible screen area inflated by 28 tiles and
-//! blurs it in two passes of four line sweeps. We do the same on demand for the rect the
-//! renderer is about to draw, so panning never shows unlit tiles.
+//! The original computes lighting for the visible screen area inflated by 28 tiles
+//! and blurs it in two passes of four line sweeps. We do the same on demand for the
+//! rect the renderer is about to draw, so panning never shows unlit tiles.
+//!
+//! [`LightEngine`] is the seam the renderer and simulation code talk through,
+//! mirroring `Terraria.Graphics.Light.ILightingEngine`; [`LightMap`] is the built-in
+//! engine behind it. The mode/style descriptors live in [`params`], the blur sweeps
+//! and the tile-medium classification in [`blur`].
+
+mod blur;
+mod params;
 
 use std::sync::OnceLock;
 
 use crate::tile::*;
-use crate::tile_light::{self, FastRandom, light_blocked};
-use crate::tiledata as td;
+use crate::tile_light::{self, FastRandom};
 use crate::world::World;
 use rayon::prelude::*;
+
+use blur::{mask_of, surface_cutoff, Mask};
+use params::LightKey;
+pub use params::{LightMode, LightParams, LightStyle, GLOBAL_BRIGHTNESS};
 
 /// Extra tiles around the visible rect (`LightingEngine.AREA_PADDING`); the blur pulls
 /// light in from outside the screen, so the border must not be visible.
@@ -20,8 +32,6 @@ pub const AREA_PADDING: i32 = 28;
 /// margin the previous light map is reused without recomputing, and the visible area
 /// always keeps at least `AREA_PADDING` of computed context around it.
 pub const CACHE_MARGIN: i32 = 32;
-/// Edge rows/columns that are not blurred (`LightingEngine.NON_VISIBLE_PADDING`).
-const NON_VISIBLE_PADDING: i32 = 18;
 
 /// Rects with at least this many cells seed and sweep rows on Rayon's persistent
 /// global pool; smaller ones stay sequential. Measured on the reference laptop, task
@@ -30,297 +40,39 @@ const NON_VISIBLE_PADDING: i32 = 18;
 /// zoom-0.25 debug view (~128k cells) goes parallel.
 const PAR_LIGHT_MIN_CELLS: usize = 96 * 1024;
 
-/// Light carried through a tile; matches `LightMaskMode`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum Mask {
-    Air,
-    Solid,
-    CrackedBricks,
-    Water,
-    Honey,
+/// The lighting seam, mirroring `Terraria.Graphics.Light.ILightingEngine`
+/// (`ILightingEngine.cs:5-16`): the renderer only ever talks to this surface, so the
+/// built-in blur engine can be swapped for another implementation the way the C#
+/// constructor accepts any `ILightingEngine`. `Rebuild`/`AddLight`/`Clear` have no
+/// counterpart here — the per-frame light list does not exist in this port.
+pub trait LightEngine {
+    /// The processed area in world tile coordinates as `(x0, y0, w, h)`
+    /// (`LightingEngine._activeProcessedArea`); [`LightEngine::get_color`] is zero
+    /// outside it.
+    fn get_area(&self) -> (i32, i32, i32, i32);
+
+    /// `ILightingEngine.GetColor` (`ILightingEngine.cs:13`) — light at a tile, zero
+    /// outside the processed area.
+    fn get_color(&self, x: i32, y: i32) -> [f32; 3];
+
+    /// `ILightingEngine.ProcessArea` (`ILightingEngine.cs:11`) — make light
+    /// available for the inclusive tile rect, reusing cached results when nothing
+    /// that feeds the computation changed.
+    fn compute(&mut self, world: &World, x0: i32, y0: i32, x1: i32, y1: i32, params: &LightParams);
 }
 
-impl Mask {
-    #[inline]
-    fn decay(self) -> [f32; 3] {
-        match self {
-            Mask::Air => [0.91; 3],
-            Mask::Solid => [0.56; 3],
-            Mask::CrackedBricks => [0.8; 3],
-            // `LightDecayThroughWater` for the default water style.
-            Mask::Water => [0.88 * 0.91, 0.96 * 0.91, 1.015 * 0.91],
-            Mask::Honey => [0.75 * 0.91, 0.7 * 0.91, 0.6 * 0.91],
-        }
-    }
-}
-
-/// `Lighting.GlobalBrightness` in the original.
-pub const GLOBAL_BRIGHTNESS: f32 = 1.2;
-
-/// `Terraria.Graphics.Light.LightMode`.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum LightMode {
-    Color,
-    White,
-    Retro,
-    Trippy,
-}
-
-impl LightMode {
-    pub const ALL: [LightMode; 4] = [
-        LightMode::Color,
-        LightMode::White,
-        LightMode::Retro,
-        LightMode::Trippy,
-    ];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            LightMode::Color => "Color",
-            LightMode::White => "White",
-            LightMode::Retro => "Retro",
-            LightMode::Trippy => "Trippy",
-        }
+impl LightEngine for LightMap {
+    fn get_area(&self) -> (i32, i32, i32, i32) {
+        (self.x0, self.y0, self.w, self.h)
     }
 
-    /// Wraps around; `F2` in the app uses this.
-    pub fn next(self) -> Self {
-        match self {
-            LightMode::Color => LightMode::White,
-            LightMode::White => LightMode::Retro,
-            LightMode::Retro => LightMode::Trippy,
-            LightMode::Trippy => LightMode::Color,
-        }
-    }
-}
-
-/// Rendering behaviour of one light mode. The tile pass reads this description only,
-/// so a new mode (Sepia, Monochrome, Aberration...) is a new style plus, when needed,
-/// a new shader flag — not a new draw path. Mirrors how `Lighting.Mode` switches the
-/// original between its color engine and the legacy renderer.
-#[derive(Clone, Copy, Debug)]
-pub struct LightStyle {
-    pub mode: LightMode,
-    /// `Lighting.NotRetro`: solid blocks are drawn as 3x3 light-sliced quads
-    /// (`DrawSingleTile_SlicedBlock`), which produces the smooth block edges.
-    pub sliced_blocks: bool,
-    /// Collapse the light colour to luminance ("White").
-    pub grayscale: bool,
-    /// Quantise light into this many steps (0/1 = off). Gives "Retro" its banding.
-    pub levels: u8,
-    /// Position/time-dependent channel mixing ("Trippy").
-    pub perturb: f32,
-    /// Screen-space RGB split in pixels ("Trippy"); consumed by the shader.
-    pub aberration_px: f32,
-    /// Applied after the light map, matching `Lighting.GlobalBrightness`.
-    pub brightness: f32,
-}
-
-impl LightStyle {
-    pub fn for_mode(mode: LightMode) -> Self {
-        match mode {
-            LightMode::Color => Self {
-                mode,
-                sliced_blocks: true,
-                grayscale: false,
-                levels: 0,
-                perturb: 0.0,
-                aberration_px: 0.0,
-                brightness: GLOBAL_BRIGHTNESS,
-            },
-            LightMode::White => Self {
-                mode,
-                sliced_blocks: true,
-                grayscale: true,
-                levels: 0,
-                perturb: 0.0,
-                aberration_px: 0.0,
-                brightness: GLOBAL_BRIGHTNESS,
-            },
-            LightMode::Retro => Self {
-                mode,
-                sliced_blocks: false,
-                grayscale: false,
-                levels: 16,
-                perturb: 0.0,
-                aberration_px: 0.0,
-                brightness: GLOBAL_BRIGHTNESS,
-            },
-            LightMode::Trippy => Self {
-                mode,
-                sliced_blocks: false,
-                grayscale: false,
-                levels: 0,
-                perturb: 0.65,
-                // The shader hook exists (`Globals::aberration`), but applying it to
-                // full-screen sky quads would sample past their atlas sheet. Enable
-                // it only once instances carry a per-sprite flag.
-                aberration_px: 0.0,
-                brightness: GLOBAL_BRIGHTNESS,
-            },
-        }
+    fn get_color(&self, x: i32, y: i32) -> [f32; 3] {
+        self.get(x, y)
     }
 
-    /// Transforms one light sample into the tint written to the instance buffer.
-    #[inline]
-    pub fn shade(&self, light: [f32; 3], x: i32, y: i32, time: f32) -> [f32; 3] {
-        let mut c = [light[0], light[1], light[2]];
-        if self.perturb > 0.0 {
-            let a =
-                ((x as f32 * 0.11 + y as f32 * 0.17 + time * 2.3).sin() * 0.5 + 0.5) * self.perturb;
-            let b =
-                ((x as f32 * 0.07 - y as f32 * 0.13 + time * 1.1).sin() * 0.5 + 0.5) * self.perturb;
-            let (r, g, bl) = (c[0], c[1], c[2]);
-            c = [
-                r * (1.0 - a) + bl * a,
-                g * (1.0 - b) + r * b,
-                bl * (1.0 - a) + g * a,
-            ];
-        }
-        for v in c.iter_mut() {
-            *v *= self.brightness;
-        }
-        if self.grayscale {
-            let l = c[0] * 0.299 + c[1] * 0.587 + c[2] * 0.114;
-            c = [l, l, l];
-        }
-        if self.levels > 1 {
-            let n = (self.levels - 1) as f32;
-            for v in c.iter_mut() {
-                *v = (*v * n).round() / n;
-            }
-        }
-        [
-            c[0].clamp(0.0, 1.0),
-            c[1].clamp(0.0, 1.0),
-            c[2].clamp(0.0, 1.0),
-        ]
+    fn compute(&mut self, world: &World, x0: i32, y0: i32, x1: i32, y1: i32, params: &LightParams) {
+        self.compute_into(world, x0, y0, x1, y1, params);
     }
-}
-
-/// Ambient parameters for one computation. Everything here comes from `Main` and
-/// feeds `TileLightScanner`; the per-type light code in `tile_light` reads it.
-#[derive(Clone, Copy, Debug)]
-pub struct LightParams {
-    /// `Main.tileColor`: surface sunlight (derived from the sky colour).
-    pub sky: [f32; 3],
-    /// `0.55 + sin(t * 2) * 0.08`: the underworld glow.
-    pub hell_glow: f32,
-    /// `Main.mouseTextColor` (190..=255): drives the torch/lamp flicker terms.
-    pub mouse_text_color: u8,
-    /// `Main.demonTorch` (0..=1): the demon torch colour ramp.
-    pub demon_torch: f32,
-    /// `Main.DiscoR/G/B`: the rainbow cycle shared with waterfalls and gemspark.
-    pub disco: [u8; 3],
-    /// `Main.GlobalTimeWrappedHourly` (wall-clock seconds mod 3600).
-    pub global_time: f32,
-    /// `Main.timeForVisualEffects` (ticks since start).
-    pub time_for_visuals: f32,
-    /// `Main.time` (0..=54000 within a day).
-    pub time: f32,
-    /// `Main.dayTime`.
-    pub day_time: bool,
-    /// `Main.raining`.
-    pub raining: bool,
-    /// `Main.shimmerDarken` (0..=1).
-    pub shimmer_darken: f32,
-    /// `Main.liquidAlpha[13]`: the shimmer liquid's opacity.
-    pub shimmer_alpha: f32,
-    /// `Main.sundialCooldown`.
-    pub sundial_cooldown: i32,
-    /// `Main.moondialCooldown`.
-    pub moondial_cooldown: i32,
-    /// `Main.jellyfishCageMode` — `[type - 316][frame]`.
-    pub cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
-    /// Seed for the per-tile `FastRandom` (`TileLightScanner._random`).
-    pub rng_seed: u64,
-}
-
-impl Default for LightParams {
-    fn default() -> Self {
-        Self {
-            sky: [1.0, 1.0, 1.0],
-            hell_glow: 0.55,
-            mouse_text_color: 225,
-            demon_torch: 1.0,
-            disco: [255, 0, 0],
-            global_time: 0.0,
-            time_for_visuals: 0.0,
-            time: 54000.0,
-            day_time: true,
-            raining: false,
-            shimmer_darken: 0.0,
-            shimmer_alpha: 0.0,
-            sundial_cooldown: 0,
-            moondial_cooldown: 0,
-            cage_mode: [[0; crate::tile_light::CAGE_FRAMES]; 3],
-            rng_seed: 0,
-        }
-    }
-}
-
-impl LightParams {
-    /// Everything that can change a light sample. The map cache compares this
-    /// bit-exactly, so a new field here cannot silently go stale.
-    fn key(&self, world_revision: u64) -> LightKey {
-        LightKey {
-            sky: [
-                self.sky[0].to_bits(),
-                self.sky[1].to_bits(),
-                self.sky[2].to_bits(),
-            ],
-            hell_glow: self.hell_glow.to_bits(),
-            mouse_text_color: self.mouse_text_color,
-            demon_torch: self.demon_torch.to_bits(),
-            disco: self.disco,
-            global_time: self.global_time.to_bits(),
-            time_for_visuals: self.time_for_visuals.to_bits(),
-            time: self.time.to_bits(),
-            day_time: self.day_time,
-            raining: self.raining,
-            shimmer_darken: self.shimmer_darken.to_bits(),
-            shimmer_alpha: self.shimmer_alpha.to_bits(),
-            sundial_cooldown: self.sundial_cooldown,
-            moondial_cooldown: self.moondial_cooldown,
-            cage_mode: self.cage_mode,
-            rng_seed: self.rng_seed,
-            world_revision,
-        }
-    }
-
-    /// A cheap identity of every parameter that can change a light sample, for the
-    /// app's world-instance cache. The light map keeps its own exact key; this only
-    /// has to change whenever the map's contents would.
-    pub fn identity(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        self.key(0).hash(&mut h);
-        h.finish()
-    }
-}
-
-/// D2: identity of one light computation, compared bit-exactly (no hashing). A hit
-/// means the map's `colors` already hold the correct result. `world_revision` makes
-/// any future tile edit invalidate the cache.
-#[derive(Clone, Copy, PartialEq, Hash)]
-struct LightKey {
-    sky: [u32; 3],
-    hell_glow: u32,
-    mouse_text_color: u8,
-    demon_torch: u32,
-    disco: [u8; 3],
-    global_time: u32,
-    time_for_visuals: u32,
-    time: u32,
-    day_time: bool,
-    raining: bool,
-    shimmer_darken: u32,
-    shimmer_alpha: u32,
-    sundial_cooldown: i32,
-    moondial_cooldown: i32,
-    cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
-    rng_seed: u64,
-    world_revision: u64,
 }
 
 /// A rectangle of per-tile light colours, in world tile coordinates.
@@ -629,49 +381,8 @@ impl LightMap {
                 .sum()
         };
 
-        self.blur(parallel);
-        self.blur(parallel);
-    }
-
-    /// `LightMap.Blur`: two passes over four line sweeps. Columns are swept first
-    /// (sequential: row-major storage makes them strided) and rows afterwards — in
-    /// parallel for the large rects that pass `PAR_LIGHT_MIN_CELLS`.
-    fn blur(&mut self, parallel: bool) {
-        let (w, h, pad) = (
-            self.w,
-            self.h,
-            NON_VISIBLE_PADDING.min(self.w.min(self.h) / 3),
-        );
-        let wu = w as usize;
-
-        for x in 0..w {
-            // top -> bottom, then bottom -> top (stopping at the padding).
-            blur_line_v(&mut self.colors, &self.mask, wu, x, 0, 1, h - pad);
-            blur_line_v(&mut self.colors, &self.mask, wu, x, h - 1, -1, h - pad);
-        }
-        let count = w - pad;
-        if parallel {
-            self.colors
-                .par_chunks_mut(wu)
-                .zip(self.mask.par_chunks(wu))
-                .enumerate()
-                .for_each(|(ly, (colors, mask))| {
-                    let base = ly * wu;
-                    blur_line_h(colors, mask, base, 0, 1, count);
-                    blur_line_h(colors, mask, base, w - 1, -1, count);
-                });
-        } else {
-            for (ly, (colors, mask)) in self
-                .colors
-                .chunks_mut(wu)
-                .zip(self.mask.chunks(wu))
-                .enumerate()
-            {
-                let base = ly * wu;
-                blur_line_h(colors, mask, base, 0, 1, count);
-                blur_line_h(colors, mask, base, w - 1, -1, count);
-            }
-        }
+        blur::blur(self, parallel);
+        blur::blur(self, parallel);
     }
 }
 
@@ -704,134 +415,8 @@ fn seed_row_range(
     lit
 }
 
-/// One vertical sweep through column `x`, carrying the brightest light seen so far
-/// and decaying it by the tile's opacity (`LightMap.BlurLine`).
-fn blur_line_v(
-    colors: &mut [[f32; 3]],
-    mask: &[Mask],
-    w: usize,
-    x: i32,
-    y0: i32,
-    dy: i32,
-    count: i32,
-) {
-    let mut carried = [0.0f32; 3];
-    let mut done = [false; 3];
-    for k in 0..count.max(0) {
-        let y = y0 + dy * k;
-        let i = y as usize * w + x as usize;
-        let m = mask[i];
-        let decay = m.decay();
-        let jitter = if m == Mask::Water {
-            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
-            0.985 + j as f32 * 0.001
-        } else {
-            1.0
-        };
-        let color = &mut colors[i];
-        for c in 0..3 {
-            if carried[c] < color[c] {
-                carried[c] = color[c];
-                done[c] = false;
-            } else if !done[c] {
-                if carried[c] < 0.0185 {
-                    done[c] = true;
-                } else {
-                    color[c] = carried[c];
-                }
-            }
-        }
-        if done[0] && done[1] && done[2] {
-            continue;
-        }
-        for c in 0..3 {
-            if !done[c] {
-                carried[c] *= decay[c] * jitter;
-            }
-        }
-    }
-}
-
-/// One horizontal sweep through a single row slice. `base` is the global index of
-/// `colors[0]` in the full light map, so the water jitter stays bit-identical to the
-/// sequential implementation.
-fn blur_line_h(colors: &mut [[f32; 3]], mask: &[Mask], base: usize, x0: i32, dx: i32, count: i32) {
-    let mut carried = [0.0f32; 3];
-    let mut done = [false; 3];
-    for k in 0..count.max(0) {
-        let lx = (x0 + dx * k).max(0) as usize;
-        let i = base + lx;
-        let m = mask[lx];
-        let decay = m.decay();
-        let jitter = if m == Mask::Water {
-            let j = (i as u32).wrapping_mul(2_654_435_761) % 15;
-            0.985 + j as f32 * 0.001
-        } else {
-            1.0
-        };
-        let color = &mut colors[lx];
-        for c in 0..3 {
-            if carried[c] < color[c] {
-                carried[c] = color[c];
-                done[c] = false;
-            } else if !done[c] {
-                if carried[c] < 0.0185 {
-                    done[c] = true;
-                } else {
-                    color[c] = carried[c];
-                }
-            }
-        }
-        if done[0] && done[1] && done[2] {
-            continue;
-        }
-        for c in 0..3 {
-            if !done[c] {
-                carried[c] *= decay[c] * jitter;
-            }
-        }
-    }
-}
-
-/// Top of the column's medium: the first solid tile or the first liquid cell,
-/// whichever is higher. Seeding stops there, so a lakebed under water is lit by
-/// the attenuated light coming through the water instead of a direct sky seed.
-fn surface_cutoff(world: &World, x: i32) -> i32 {
-    if x < 0 || x >= world.width {
-        return 0;
-    }
-    let first_solid = world
-        .column_surface
-        .get(x as usize)
-        .copied()
-        .unwrap_or(world.world_surface as i32);
-    for y in 0..first_solid.max(0) {
-        if world.tile(x, y).is_some_and(|t| t.liquid > 0) {
-            return y;
-        }
-    }
-    first_solid
-}
-
-/// `TileLightScanner.GetTileMask`.
-fn mask_of(tile: &Tile) -> Mask {
-    if light_blocked(tile) && tile.kind != 131 && tile.slope() == 0 {
-        if td::SET_CRACKED_BRICKS.has(tile.kind) {
-            return Mask::CrackedBricks;
-        }
-        return Mask::Solid;
-    }
-    if tile.liquid > 128 && tile.liquid_kind() != LiquidKind::Lava {
-        return match tile.liquid_kind() {
-            LiquidKind::Honey => Mask::Honey,
-            _ => Mask::Water,
-        };
-    }
-    Mask::Air
-}
-
-/// `TileLightScanner.GetTileLight`: surface/hell ambient, walls, the self-lit tile
-/// types and liquids, each taking the maximum.
+/// `TileLightScanner.GetTileLight` (`TileLightScanner.cs:87`): surface/hell ambient,
+/// walls, the self-lit tile types and liquids, each taking the maximum.
 fn seed(
     world: &World,
     tile: &Tile,
@@ -841,7 +426,8 @@ fn seed(
     local_surface: i32,
 ) -> [f32; 3] {
     let mut c = [0.0f32; 3];
-    // `TileLightScanner._random.WithModifier(x, y)`: one stream per tile.
+    // `TileLightScanner._random.WithModifier(x, y)` (`TileLightScanner.cs:91`): one
+    // stream per tile.
     let mut rng = FastRandom::new(p.rng_seed).with_modifier(x, y);
     // The original seeds surface light up to the global `Main.worldSurface`. That
     // leaves hills above the average bright and valleys below it unlit. Seeding up to
@@ -860,9 +446,10 @@ fn seed(
     c
 }
 
-/// `TileLightScanner.ApplyLiquidLight`: lava and shimmer emit light. The original
-/// compares every channel against the unscaled base and then stores the scaled
-/// value, which is why the green channel can end up brighter than the test.
+/// `TileLightScanner.ApplyLiquidLight` (`TileLightScanner.cs:108`): lava and shimmer
+/// emit light. The original compares every channel against the unscaled base and
+/// then stores the scaled value, which is why the green channel can end up brighter
+/// than the test.
 fn liquid_light(tile: &Tile, c: &mut [f32; 3], p: &LightParams) {
     if tile.liquid == 0 {
         return;
@@ -1060,22 +647,20 @@ mod tests {
     }
 
     #[test]
-    fn light_styles_transform_samples() {
-        let color = LightStyle::for_mode(LightMode::Color);
-        let white = LightStyle::for_mode(LightMode::White);
-        let retro = LightStyle::for_mode(LightMode::Retro);
-        let c = [0.8, 0.4, 0.2];
-        let col = color.shade(c, 0, 0, 0.0);
-        let wht = white.shade(c, 0, 0, 0.0);
-        assert!(wht[0] == wht[1] && wht[1] == wht[2], "white {wht:?}");
-        assert!(col[0] > col[1] && col[1] > col[2], "color {col:?}");
-        let r = retro.shade([0.13, 0.13, 0.13], 0, 0, 0.0);
-        let raw = 0.13 * GLOBAL_BRIGHTNESS;
-        let quant = (raw * 15.0).round() / 15.0;
-        assert!((r[0] - quant).abs() < 1e-5, "retro {r:?} vs {quant}");
-        assert!(
-            (r[0] - raw).abs() > 0.01,
-            "retro should quantise, got {r:?}"
+    fn light_engine_seam_matches_the_map() {
+        let mut w = World::new("t".into(), 64, 400);
+        w.world_surface = 10.0;
+        let params = LightParams::default();
+        let direct = LightMap::compute(&w, 20, 4, 30, 8, &params);
+        let mut engine: Box<dyn LightEngine> = Box::new(LightMap::new());
+        engine.compute(&w, 20, 4, 30, 8, &params);
+        assert_eq!(
+            engine.get_area(),
+            (direct.x0, direct.y0, direct.w, direct.h)
         );
+        assert!(engine.get_color(25, 6)[0] > 0.95, "seam should serve light");
+        assert_eq!(engine.get_color(25, 6), direct.get(25, 6));
+        // Outside the processed area the seam reports darkness, like `GetColor`.
+        assert_eq!(engine.get_color(25, 300), [0.0; 3]);
     }
 }
