@@ -136,10 +136,40 @@ Ported pieces (`tr-core/src/framing.rs`):
    visibility rules minus invisible walls.
 4. **Large frames** — `Main.tileLargeFrames` 1 (4-row pattern) and 2 (2×2 pattern) override
    the variant instead of using the hash.
+5. **Grass family** — the full `TileFrameCosmetic` grass path (`WorldGen.cs:82184-84836`):
+   the merge preparation (dirt normalisation, grass↔ore, the Weird merge of non-solid
+   neighbours into "open"), the base selection (`NeedsGrassFramingDirt`, mud for jungle
+   grass, stone for moss), the five override chains (edges, interior corners, overhangs,
+   base-corner mixes and the `(i + j) % 2` mowed checkerboard), the `-2` base marker
+   (WorldGen.cs:83380), the `-1`/`-2` merge tables (83419-84242) and the generic chain
+   fallback with the base rejoined (84398-84784). Grass no longer merges with its base
+   dirt in the generic pass — the transition frames are what make grass blend into dirt
+   masses and wrap steps. `tools/GenTileData` additionally emits `Sets.Ore`,
+   `Conversion.Grass` and `ChecksForMerge` for the gates.
 
-Not yet ported: the per-type special-case branches (grass edge override, moss, cactus,
-vines, `TileFrameImportant` multi-tile objects), `TileID.Sets.TruncatesWalls`, paint and
-coating. Those are listed in the roadmap.
+   Documented quirks and deviations of the grass port:
+   - `TileMergeCulling` (WorldGen.cs:4065, applied at 82215/83392/84396) culls neighbours
+     whose `invisibleBlock` state differs from the tile's own. The port stores no
+     invisible blocks (coatings are a TILE-DRAW-4 item), so the cull is a no-op and is
+     not ported.
+   - The left-edge override's second branch (WorldGen.cs:82314) repeats the first
+     condition verbatim and is unreachable in the original; the port keeps only the live
+     branch. The right edge's odd `down == num && right == up` condition (82353) is
+     ported verbatim.
+   - `WorldGen.mergeUp/Down/Left/Right` are output flags consumed by
+     `TileMergeAttemptFrametest` (the cross-type merge tests for snow/ice/sand — not the
+     grass family) and by the neighbour re-frame cascade (84795), which the full-world
+     re-frame and `reframe_area` already cover; they are not modelled.
+   - `TileID.Sets.HasSlopeFrames` (84245) has no grass-family member; the slope-frame
+     block is not ported. The large-frame `frameNumber == 3` row shift (84785) cannot
+     trigger either — no grass-family tile sets `tileLargeFrames`.
+   - The ore side of the grass↔ore merge (WorldGen.cs:82147-82150) still falls into the
+     known gap of the merge-relation extractor (top-level `TileMergeAttempt` calls):
+     ore tiles next to grass show edge frames where the original merges them.
+
+Not yet ported: the per-type special-case branches (cactus, vines, `TileFrameImportant`
+multi-tile objects), `TileID.Sets.TruncatesWalls`, paint and coating. Those are listed in
+the roadmap.
 
 `tools/GenTileData` parses `Terraria.ID/TileID.cs`, `Main.cs` and `WorldGen.cs` and emits
 the `tiledata/` modules; rerun it after touching those tables.
