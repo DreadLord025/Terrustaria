@@ -1343,6 +1343,7 @@ mod front_flow_tests {
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             rain: Rain::new(1),
+            liquid_alpha: [0.0; 15],
             items: Vec::new(),
             item_rng: 0,
             item_step: FixedStepper::new(1.0 / 60.0, 8),
