@@ -329,10 +329,8 @@ def main():
     for row in tables["array4"]:
         out.append("    [%s],\n" % ", ".join(rgba(c) for c in row))
     out.append("];\n\n")
-    out.append("/// Number of tile types (`TileID.Count`).\n")
-    out.append("pub const TILE_COUNT: usize = %d;\n\n" % tile_count)
-    out.append("/// Number of wall types (`WallID.Count`).\n")
-    out.append("pub const WALL_COUNT: usize = %d;\n\n" % wall_count)
+    out.append("/// Canonical definitions live in [`crate::tiledata`] (`TileID.Count` / `WallID.Count`).\n")
+    out.append("pub use crate::tiledata::{TILE_COUNT, WALL_COUNT};\n\n")
     out.append(TESTS)
     OUT.write_text("".join(out), encoding="utf-8", newline="\n")
 

@@ -1137,11 +1137,8 @@ pub const WALL_COLORS: [[[u8; 4]; 2]; 367] = [
     [[60, 60, 60, 255], [0, 0, 0, 0]],
 ];
 
-/// Number of tile types (`TileID.Count`).
-pub const TILE_COUNT: usize = 754;
-
-/// Number of wall types (`WallID.Count`).
-pub const WALL_COUNT: usize = 367;
+/// Canonical definitions live in [`crate::tiledata`] (`TileID.Count` / `WallID.Count`).
+pub use crate::tiledata::{TILE_COUNT, WALL_COUNT};
 
 #[cfg(test)]
 mod tests {
