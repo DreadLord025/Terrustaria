@@ -8,7 +8,7 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{anyhow, bail, Context, Result};
 
 use crate::tile::Tile;
 use crate::world::World;
@@ -124,7 +124,7 @@ pub fn load(path: &Path) -> Result<World> {
 }
 
 pub fn parse(data: &[u8]) -> Result<World> {
-    let mut r = Reader { data, pos: 0 };
+    let mut r = Reader::new(data);
     if r.take(8)? != MAGIC {
         bail!("not a TRWLD save");
     }
@@ -200,47 +200,50 @@ fn read_tile(r: &mut Reader) -> Result<Tile> {
     Ok(tile)
 }
 
-struct Reader<'a> {
-    data: &'a [u8],
-    pos: usize,
+/// Thin `anyhow` adapter over `crate::binio::Reader`: a short read becomes the
+/// parser's original `unexpected end of file at offset N` bail. All decoding
+/// lives in `crate::binio`.
+struct Reader<'a>(crate::binio::Reader<'a>);
+
+fn eof(pos: usize) -> anyhow::Error {
+    anyhow!("unexpected end of file at offset {pos}")
 }
 
 impl<'a> Reader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        Self(crate::binio::Reader::new(data))
+    }
+
     fn take(&mut self, n: usize) -> Result<&'a [u8]> {
-        if self.pos + n > self.data.len() {
-            bail!("unexpected end of file at offset {}", self.pos);
-        }
-        let s = &self.data[self.pos..self.pos + n];
-        self.pos += n;
-        Ok(s)
+        self.0.take(n).ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u8(&mut self) -> Result<u8> {
-        Ok(self.take(1)?[0])
+        self.0.u8().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u16(&mut self) -> Result<u16> {
-        Ok(u16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+        self.0.u16().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn i16(&mut self) -> Result<i16> {
-        Ok(i16::from_le_bytes(self.take(2)?.try_into().unwrap()))
+        self.0.i16().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u32(&mut self) -> Result<u32> {
-        Ok(u32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+        self.0.u32().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn i32(&mut self) -> Result<i32> {
-        Ok(i32::from_le_bytes(self.take(4)?.try_into().unwrap()))
+        self.0.i32().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u64(&mut self) -> Result<u64> {
-        Ok(u64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+        self.0.u64().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn f64(&mut self) -> Result<f64> {
-        Ok(f64::from_le_bytes(self.take(8)?.try_into().unwrap()))
+        self.0.f64().ok_or_else(|| eof(self.0.pos()))
     }
 }
 

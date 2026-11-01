@@ -12,6 +12,7 @@
 //! `MapFileMetadata` revision counter — a fresh metadata is written, so the
 //! revision is always `1` and the output is deterministic.
 
+use crate::binio::{Reader, Writer};
 use crate::mapdata::{TILE_COUNT, WALL_COUNT};
 use crate::world::World;
 
@@ -53,31 +54,19 @@ pub struct MapPrefix {
     pub body_offset: usize,    // where the deflate stream starts
 }
 
-/// `BinaryWriter.Write(string)`: 7-bit-encoded byte length, then UTF-8.
-fn write_cs_string(out: &mut Vec<u8>, s: &str) {
-    let bytes = s.as_bytes();
-    let mut len = bytes.len();
-    while len >= 0x80 {
-        out.push(((len & 0x7f) | 0x80) as u8);
-        len >>= 7;
-    }
-    out.push(len as u8);
-    out.extend_from_slice(bytes);
-}
-
 /// `InternalSaveMap` 3050-3061 — version, `FileMetadata`, name, seed, sizes, six i16.
 pub fn write_map_header(world: &World) -> Vec<u8> {
-    let mut out = Vec::with_capacity(64);
-    out.extend_from_slice(&MAP_FORMAT_VERSION.to_le_bytes());
+    let mut w = Writer::new();
+    w.u32(MAP_FORMAT_VERSION);
     // `Main.MapFileMetadata.IncrementAndWrite` from a fresh metadata (revision 1)
     // then `FileMetadata.Write`: magic|type, revision, favourite flag.
-    out.extend_from_slice(&(FILE_METADATA_MAGIC | (FILE_TYPE_MAP << 56)).to_le_bytes());
-    out.extend_from_slice(&1u32.to_le_bytes());
-    out.extend_from_slice(&0u64.to_le_bytes());
-    write_cs_string(&mut out, &world.name);
-    out.extend_from_slice(&(world.seed as i32).to_le_bytes());
-    out.extend_from_slice(&world.height.to_le_bytes());
-    out.extend_from_slice(&world.width.to_le_bytes());
+    w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_MAP << 56));
+    w.u32(1);
+    w.u64(0);
+    w.cs_string(&world.name);
+    w.i32(world.seed as i32);
+    w.i32(world.height);
+    w.i32(world.width);
     for count in [
         TILE_COUNT as i16,
         WALL_COUNT as i16,
@@ -86,9 +75,9 @@ pub fn write_map_header(world: &World) -> Vec<u8> {
         256,
         256,
     ] {
-        out.extend_from_slice(&count.to_le_bytes());
+        w.i16(count);
     }
-    out
+    w.into_inner()
 }
 
 /// `InternalSaveMap` 3062-3109: one LSB-first bitmap, flushed every 8 bits.
@@ -295,67 +284,10 @@ fn eof() -> std::io::Error {
     )
 }
 
-/// A cursor over the uncompressed prefix; returns `None` past the end.
-struct PrefixReader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> PrefixReader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0 }
-    }
-    fn u8(&mut self) -> Option<u8> {
-        let b = *self.bytes.get(self.pos)?;
-        self.pos += 1;
-        Some(b)
-    }
-    fn u16(&mut self) -> Option<u16> {
-        Some(self.u8()? as u16 | ((self.u8()? as u16) << 8))
-    }
-    fn i16(&mut self) -> Option<i16> {
-        self.u16().map(|v| v as i16)
-    }
-    fn u32(&mut self) -> Option<u32> {
-        let mut v = 0u32;
-        for i in 0..4 {
-            v |= (self.u8()? as u32) << (8 * i);
-        }
-        Some(v)
-    }
-    fn i32(&mut self) -> Option<i32> {
-        self.u32().map(|v| v as i32)
-    }
-    fn u64(&mut self) -> Option<u64> {
-        let mut v = 0u64;
-        for i in 0..8 {
-            v |= (self.u8()? as u64) << (8 * i);
-        }
-        Some(v)
-    }
-    fn cs_string(&mut self) -> Option<String> {
-        let mut len = 0usize;
-        let mut shift = 0u32;
-        loop {
-            let b = self.u8()?;
-            len |= ((b & 0x7f) as usize) << shift;
-            if b & 0x80 == 0 {
-                break;
-            }
-            shift += 7;
-            if shift > 28 {
-                return None;
-            }
-        }
-        let end = self.pos.checked_add(len)?;
-        let bytes = self.bytes.get(self.pos..end)?;
-        self.pos = end;
-        String::from_utf8(bytes.to_vec()).ok()
-    }
-}
-
+/// A cursor over the uncompressed prefix ([`Reader`]; `None` past the end).
+///
 /// `LoadMapVersion2` 3773-3810: one `count`-bit LSB-first bitmap.
-fn read_option_bitmap(r: &mut PrefixReader, count: usize) -> Option<Vec<bool>> {
+fn read_option_bitmap(r: &mut Reader<'_>, count: usize) -> Option<Vec<bool>> {
     let mut set = vec![false; count];
     let mut b = 0u8;
     let mut bit = 128u8;
@@ -374,7 +306,7 @@ fn read_option_bitmap(r: &mut PrefixReader, count: usize) -> Option<Vec<bool>> {
 }
 
 /// `LoadMapVersion2` 3811-3838: `array3`/`array4`, one count per set bitmap bit.
-fn read_option_counts(r: &mut PrefixReader, set: &[bool]) -> Option<Vec<u8>> {
+fn read_option_counts(r: &mut Reader<'_>, set: &[bool]) -> Option<Vec<u8>> {
     let mut options = Vec::with_capacity(set.len());
     for &is_set in set {
         options.push(if is_set { r.u8()? } else { 1 });
@@ -385,7 +317,7 @@ fn read_option_counts(r: &mut PrefixReader, set: &[bool]) -> Option<Vec<u8>> {
 /// Reads the header + option tables. `Ok(None)` on a short / foreign / wrong-size
 /// prefix (never panics).
 pub fn read_map_prefix(bytes: &[u8]) -> std::io::Result<Option<MapPrefix>> {
-    let mut r = PrefixReader::new(bytes);
+    let mut r = Reader::new(bytes);
     let Some(version) = r.u32() else {
         return Ok(None);
     };
@@ -465,28 +397,8 @@ pub fn read_map_prefix(bytes: &[u8]) -> std::io::Result<Option<MapPrefix>> {
         world_name,
         tile_options,
         wall_options,
-        body_offset: r.pos,
+        body_offset: r.pos(),
     }))
-}
-
-/// A bounds-checked cursor over the inflated body; short reads become `Err`.
-struct BodyReader<'a> {
-    bytes: &'a [u8],
-    pos: usize,
-}
-
-impl<'a> BodyReader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, pos: 0 }
-    }
-    fn u8(&mut self) -> std::io::Result<u8> {
-        let b = *self.bytes.get(self.pos).ok_or_else(eof)?;
-        self.pos += 1;
-        Ok(b)
-    }
-    fn u16(&mut self) -> std::io::Result<u16> {
-        Ok(self.u8()? as u16 | ((self.u8()? as u16) << 8))
-    }
 }
 
 /// `LoadMapVersion2` 3930-4025 — decodes the already-inflated body.
@@ -586,42 +498,42 @@ pub fn decode_tiles(
     let num24 = num13 as u16; // hell position
     *array5.get_mut(num13).ok_or_else(eof)? = num12;
 
-    let mut reader = BodyReader::new(body);
+    let mut reader = Reader::new(body);
     let mut map = vec![MapTile::default(); width * height];
     for l in 0..height {
         let mut m = 0usize;
         // The C# `for (m = 0; m < maxTilesX; m++)`; run tiles advance `m` inside
         // the body and the loop increment adds the final `+ 1` (kept as a `while`).
         while m < width {
-            let b3 = reader.u8()?;
+            let b3 = reader.u8().ok_or_else(eof)?;
             let mut b4 = 0u8;
             if b3 & 1 == 1 {
-                b4 = reader.u8()?;
+                b4 = reader.u8().ok_or_else(eof)?;
             }
             if b4 & 1 == 1 {
                 // Legacy format carried a third header byte; never written by us.
-                let _ = reader.u8()?;
+                let _ = reader.u8().ok_or_else(eof)?;
             }
             let category = (b3 & 0x0E) >> 1;
             let has_type = matches!(category, 1 | 2 | 7);
             let mut ty: u16 = if has_type {
                 if b3 & 0x10 != 0 {
-                    reader.u16()?
+                    reader.u16().ok_or_else(eof)?
                 } else {
-                    reader.u8()? as u16
+                    reader.u8().ok_or_else(eof)? as u16
                 }
             } else {
                 0
             };
             let light = if b3 & 0x20 != 0 {
-                reader.u8()?
+                reader.u8().ok_or_else(eof)?
             } else {
                 255
             };
             let run = match (b3 & 0xC0) >> 6 {
                 0 => 0usize,
-                1 => reader.u8()? as usize,
-                _ => reader.u16()? as usize,
+                1 => reader.u8().ok_or_else(eof)? as usize,
+                _ => reader.u16().ok_or_else(eof)? as usize,
             };
 
             match category {
@@ -675,7 +587,7 @@ pub fn decode_tiles(
                 let mut remaining = run;
                 while remaining > 0 {
                     m += 1;
-                    let run_tile = tile.with_light(reader.u8()?);
+                    let run_tile = tile.with_light(reader.u8().ok_or_else(eof)?);
                     *map.get_mut(l * width + m).ok_or_else(eof)? = run_tile;
                     remaining -= 1;
                 }

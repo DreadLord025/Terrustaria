@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{anyhow, bail, Context, Result};
 
 use crate::tile::*;
 use crate::world::World;
@@ -253,94 +253,57 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
     Ok(())
 }
 
-struct Reader<'a> {
-    data: &'a [u8],
-    pos: usize,
+/// Thin `anyhow` adapter over `crate::binio::Reader`: a short read becomes the
+/// parser's original `unexpected end of file at offset N` bail. All decoding
+/// lives in `crate::binio`.
+struct Reader<'a>(crate::binio::Reader<'a>);
+
+fn eof(pos: usize) -> anyhow::Error {
+    anyhow!("unexpected end of file at offset {pos}")
 }
 
 impl<'a> Reader<'a> {
     fn new(data: &'a [u8]) -> Self {
-        Self { data, pos: 0 }
-    }
-
-    fn need(&self, n: usize) -> Result<()> {
-        if self.pos + n > self.data.len() {
-            bail!("unexpected end of file at offset {}", self.pos);
-        }
-        Ok(())
+        Self(crate::binio::Reader::new(data))
     }
 
     fn seek(&mut self, pos: usize) -> Result<()> {
-        if pos > self.data.len() {
-            bail!("section pointer {pos} beyond EOF");
-        }
-        self.pos = pos;
-        Ok(())
+        self.0
+            .seek(pos)
+            .ok_or_else(|| anyhow!("section pointer {pos} beyond EOF"))
     }
 
     fn skip(&mut self, n: usize) -> Result<()> {
-        self.need(n)?;
-        self.pos += n;
-        Ok(())
+        self.0.skip(n).ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u8(&mut self) -> Result<u8> {
-        self.need(1)?;
-        let v = self.data[self.pos];
-        self.pos += 1;
-        Ok(v)
+        self.0.u8().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn i16(&mut self) -> Result<i16> {
-        self.need(2)?;
-        let v = i16::from_le_bytes([self.data[self.pos], self.data[self.pos + 1]]);
-        self.pos += 2;
-        Ok(v)
+        self.0.i16().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u16(&mut self) -> Result<u16> {
-        Ok(self.i16()? as u16)
+        self.0.u16().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn i32(&mut self) -> Result<i32> {
-        self.need(4)?;
-        let v = i32::from_le_bytes(self.data[self.pos..self.pos + 4].try_into().unwrap());
-        self.pos += 4;
-        Ok(v)
+        self.0.i32().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn u64(&mut self) -> Result<u64> {
-        self.need(8)?;
-        let v = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
-        self.pos += 8;
-        Ok(v)
+        self.0.u64().ok_or_else(|| eof(self.0.pos()))
     }
 
     fn f64(&mut self) -> Result<f64> {
-        self.need(8)?;
-        let v = f64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
-        self.pos += 8;
-        Ok(v)
+        self.0.f64().ok_or_else(|| eof(self.0.pos()))
     }
 
-    /// .NET `BinaryReader.ReadString`: 7-bit length prefix + UTF-8 payload.
+    /// .NET `BinaryReader.ReadString`: 7-bit length prefix + UTF-8 payload,
+    /// decoded lossily as before.
     fn string(&mut self) -> Result<String> {
-        let mut len = 0usize;
-        let mut shift = 0;
-        loop {
-            let b = self.u8()?;
-            len |= ((b & 0x7F) as usize) << shift;
-            if b & 0x80 == 0 {
-                break;
-            }
-            shift += 7;
-            if shift > 28 {
-                bail!("bad string length prefix");
-            }
-        }
-        self.need(len)?;
-        let s = String::from_utf8_lossy(&self.data[self.pos..self.pos + len]).into_owned();
-        self.pos += len;
-        Ok(s)
+        self.0.cs_string_lossy().ok_or_else(|| eof(self.0.pos()))
     }
 }
