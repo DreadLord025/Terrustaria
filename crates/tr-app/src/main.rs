@@ -927,6 +927,12 @@ enum FrontScreen {
     /// mode-40 round-trip parks in `App.front_backup`
     /// (`UICharacterCreation.BackupConfirmationState`, `:1215`).
     CharCreation(ui::char_creation::CreationState),
+    /// Task 8's `UIWorldCreation` — the draft carries every option the screen
+    /// edits (`_optionwWorldName`/`_optionSeed` and the size/difficulty/evil
+    /// picks, `UIWorldCreation.cs:51-143`); the C# keeps no other screen state
+    /// (the description panel swaps draw-side from the hover), so the payload
+    /// is the plain draft.
+    WorldCreation(ui::world_creation::NewWorldDraft),
     /// Task 6's `UIVirtualKeyboard` — the plan Task 5 enum arm, live now:
     /// the card renames and `TR_UI=vk` open it. Boxed: the session's `back`
     /// target is another `FrontScreen`.
@@ -964,6 +970,17 @@ enum KeyboardTail {
     /// `Click_NamingAndCreating` with an empty name (`:1668-1677`): the name
     /// lands, then `FinishCreatingCharacter` runs (`:1701`).
     NameAndCreate,
+    /// `Click_SetName`'s submit (`UIWorldCreation.cs:689-695` ->
+    /// `OnFinishedSettingName`, `:726-731`): the trimmed name lands in the
+    /// world draft, the creation screen returns.
+    WorldName,
+    /// `OpenSeedInputMenu`'s submit (`:702-708` -> `OnFinishedSettingSeed`,
+    /// `:817-831` minus the secret-seed paths): the trimmed seed lands in the
+    /// draft, the creation screen returns.
+    WorldSeed,
+    /// `Click_NamingAndCreating` with an empty name (`UIWorldCreation.cs:
+    /// 710-719`): the name lands, then `FinishCreatingWorld` runs.
+    WorldNameAndCreate,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -993,6 +1010,21 @@ enum FlowClick {
     WorldPlay,
     /// `DeleteButtonClick` (`UIWorldListItem.cs:346-358`): `menuMode = 9`.
     WorldDelete(usize),
+    /// `NewWorldClick` (`UIWorldSelect.cs:110-116`): the stand-in world name
+    /// reads `Main.WorldList.Count + 1` (`:113`) and the Journey default
+    /// reads the active player's difficulty (`UIWorldCreation.cs:319-322`),
+    /// so the variant carries both. `menuMode = 888` +
+    /// `SetState(new UIWorldCreation())`.
+    WorldNew(usize, u8),
+    /// `Click_GoBack` -> `GoBack` -> `Main.OpenWorldSelectUI()`
+    /// (`UIWorldCreation.cs:665-674`) — straight back to world select.
+    WorldCreateBack,
+    /// `Click_NamingAndCreating` with a filled name ->
+    /// `FinishCreatingWorld` (`UIWorldCreation.cs:710-724`, `:845-863`): the
+    /// App generates + saves the `.trwld` first, then the table's re-list of
+    /// world select takes over (the vanilla tail is the out-of-scope
+    /// `UIWorldLoad` flow, spec §9.4).
+    WorldCreate,
     /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
     /// `:49681`, `:49454`).
     ConfirmYes,
@@ -1033,6 +1065,22 @@ fn next_flow_state(
         // The launch closes both sides (the loading flow is out of scope).
         FlowClick::WorldPlay => (None, None, None),
         FlowClick::WorldDelete(_) => (None, backup, Some(P::ConfirmDeleteWorld)),
+        // `NewWorldClick` (`UIWorldSelect.cs:110-116`): the world creator
+        // opens with the stand-in name and the active player's difficulty
+        // default (`SetDefaultOptions`, `UIWorldCreation.cs:313-326`).
+        FlowClick::WorldNew(worlds, active) => (
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
+                worlds, active,
+            ))),
+            None,
+            None,
+        ),
+        // `GoBack` (`UIWorldCreation.cs:670-674`): `OpenWorldSelectUI` — no
+        // discard confirm on this screen (its draft is choice-only).
+        FlowClick::WorldCreateBack => (Some(FrontScreen::WorldSelect), None, None),
+        // `FinishCreatingWorld` (`:845-863`) runs before the table row; the
+        // reopen re-lists like `OpenWorldSelectUI`'s `OnActivate`.
+        FlowClick::WorldCreate => (Some(FrontScreen::WorldSelect), None, None),
         // Modes 5/9: Yes and No both reopen the screen the confirm came from
         // (`Main.cs:49434-49439`, `:49684-49692`).
         FlowClick::ConfirmYes | FlowClick::ConfirmNo
@@ -2935,6 +2983,10 @@ impl App {
             // and the state. Entering through `enter_front` (the Back/New
             // hops) keeps the single-mode invariant's write pattern.
             FrontScreen::CharCreation(_) => {}
+            // The world creator re-lists nothing either — `NewWorldClick`
+            // (`UIWorldSelect.cs:110-116`) sets `Main.newWorldName` and the
+            // state; the draft rode in from the table row.
+            FrontScreen::WorldCreation(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -3000,6 +3052,38 @@ impl App {
                 self.enter_front(back);
                 self.finish_creating_character();
             }
+            // `OnFinishedSettingName` (`UIWorldCreation.cs:726-731`): the
+            // trimmed name lands (`UpdateInputFields` -> `SetContents`), the
+            // creation screen returns through `GoBackHere` (`:730`).
+            KeyboardTail::WorldName => {
+                let mut back = session.back.clone();
+                if let FrontScreen::WorldCreation(draft) = &mut back {
+                    draft.name = name;
+                }
+                self.enter_front(back);
+            }
+            // `OnFinishedSettingSeed` (`:817-831`): the trimmed seed lands
+            // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
+            // scope Advanced tab, plan Uncertainty 4).
+            KeyboardTail::WorldSeed => {
+                let mut back = session.back.clone();
+                if let FrontScreen::WorldCreation(draft) = &mut back {
+                    draft.seed = name;
+                }
+                self.enter_front(back);
+            }
+            // `OnFinishedNamingAndCreating` (`:838-842`): the name lands,
+            // then `FinishCreatingWorld` (`:845-863`).
+            KeyboardTail::WorldNameAndCreate => {
+                let mut back = session.back.clone();
+                if let FrontScreen::WorldCreation(draft) = &mut back {
+                    draft.name = name;
+                }
+                self.enter_front(back);
+                if let Some(FrontScreen::WorldCreation(draft)) = self.front.clone() {
+                    self.finish_creating_world(draft);
+                }
+            }
         }
     }
 
@@ -3029,6 +3113,27 @@ impl App {
         self.front_backup = None;
         self.front = None;
         self.enter_front(FrontScreen::CharSelect);
+    }
+
+    /// `FinishCreatingWorld` (`UIWorldCreation.cs:845-863`) minus the
+    /// out-of-scope tail: `WorldGen.CreateNewWorld`'s `UIWorldLoad` loading
+    /// screen is not ported (spec §9.4), so the generated world saves and
+    /// world select re-opens (`OpenWorldSelectUI`'s effect, `:52362-52366`).
+    /// The metadata pieces the port's `.trwld` header has no fields for —
+    /// GameMode/evil (`WorldFile.CreateMetadata`, `:848-851`) — are the
+    /// documented deviation the listing reads as Classic.
+    fn finish_creating_world(&mut self, draft: ui::world_creation::NewWorldDraft) {
+        match ui::world_creation::create_world(&draft) {
+            Ok(path) => log::info!("created '{}' -> {}", draft.name.trim(), path.display()),
+            Err(e) => {
+                // `FrontHint`'s not-ported notice carries the failure — the
+                // vanilla flow has no error UI on this hop.
+                self.front_hint = Some(format!("world creation failed: {e:#}"));
+            }
+        }
+        self.front_backup = None;
+        self.front = None;
+        self.enter_front(FrontScreen::WorldSelect);
     }
 
     /// The cancel tail — `_cancelAction` (`UIVirtualKeyboard.cs:86`) is the
@@ -3373,6 +3478,158 @@ impl App {
                     }
                 }
             }
+            FrontScreen::WorldCreation(_) => {
+                // The world creator's click table (`UIWorldCreation`'s
+                // handlers through the App): the two plate icons, the two
+                // plates, the three option rows and the Back/Create pair.
+                let l = ui::world_creation::layout(screen, 0.0);
+                // The draft mutations run under the borrow; the keyboard
+                // clicks clone the draft and drop it, and the navigation
+                // clicks ride the flow table like the select arms do.
+                enum Nav {
+                    None,
+                    Name(ui::world_creation::NewWorldDraft),
+                    Seed(ui::world_creation::NewWorldDraft),
+                    NameAndCreate(ui::world_creation::NewWorldDraft),
+                }
+                let world_count = self.worlds.len();
+                let mut nav = Nav::None;
+                let mut flow = None;
+                let mut create_draft: Option<ui::world_creation::NewWorldDraft> = None;
+                {
+                    let Some(FrontScreen::WorldCreation(draft)) = self.front.as_mut() else {
+                        return;
+                    };
+                    match ui::world_creation::click_at(&l, mouse) {
+                        // `ClickRandomizeName` (`:497-503`): the port's
+                        // `AssignRandomWorldName` stand-in re-derives the
+                        // name (`:1002-1025`'s composition tables have no
+                        // localization port — documented).
+                        ui::world_creation::Click::RandomName => {
+                            draft.assign_random_world_name(world_count);
+                        }
+                        // `ClickSizeOption`/`ClickDifficultyOption`/
+                        // `ClickEvilOption` (`:541-575`): the pick lands and
+                        // `UpdatePreviewPlate` re-derives draw-side.
+                        ui::world_creation::Click::Size(size) => draft.size = size,
+                        ui::world_creation::Click::Difficulty(difficulty) => {
+                            draft.difficulty = difficulty;
+                        }
+                        ui::world_creation::Click::Evil(evil) => draft.evil = evil,
+                        // `Click_SetName` (`:689-695`): `Lang.menu[48]`,
+                        // `allowEmpty: true`, the 27 cap (`:693`).
+                        ui::world_creation::Click::Name => nav = Nav::Name(draft.clone()),
+                        // `Click_SetSeed` -> `OpenSeedInputMenu` (`:697-708`):
+                        // "UI.EnterSeed", `allowEmpty: true`, no cap (the
+                        // source's `int.MaxValue`); the icon's Advanced-tab
+                        // click degrades to the same keyboard (plan
+                        // Uncertainty 4).
+                        ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // `Click_NamingAndCreating` (`:710-724`): an empty
+                        // name opens the naming keyboard (`allowEmpty: false`,
+                        // 27), a filled one finishes (`:722`).
+                        ui::world_creation::Click::Create => {
+                            if draft.name.is_empty() {
+                                nav = Nav::NameAndCreate(draft.clone());
+                            } else {
+                                // `FinishCreatingWorld` (`:845-863`) saves
+                                // before the table's re-list takes over.
+                                create_draft = Some(draft.clone());
+                                flow = Some(FlowClick::WorldCreate);
+                            }
+                        }
+                        // `Click_GoBack` -> `GoBack` -> `OpenWorldSelectUI`
+                        // (`:665-674`) — no discard confirm on this screen.
+                        ui::world_creation::Click::Back => {
+                            flow = Some(FlowClick::WorldCreateBack);
+                        }
+                        ui::world_creation::Click::None => {}
+                    }
+                }
+                match nav {
+                    Nav::None => {}
+                    Nav::Name(draft) => {
+                        // The ctor's `startingText` is "" — the box opens
+                        // empty even on a renamed draft (`:693`).
+                        self.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: ui::world_creation::MAX_NAME_LENGTH,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldName,
+                        );
+                    }
+                    Nav::Seed(draft) => {
+                        // `UI.EnterSeed` ("Enter Seed (Leave Blank For
+                        // Random)"), `allowEmpty: true`, `int.MaxValue`
+                        // (`UIWorldCreation.cs:706`); the starting text is ""
+                        // there too (`:706`).
+                        self.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: "Enter Seed (Leave Blank For Random)".into(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: usize::MAX,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldSeed,
+                        );
+                    }
+                    Nav::NameAndCreate(draft) => {
+                        self.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::ENTER_WORLD_NAME.into(),
+                                initial: String::new(),
+                                allow_empty: false,
+                                max_length: ui::world_creation::MAX_NAME_LENGTH,
+                            },
+                            FrontScreen::WorldCreation(draft),
+                            KeyboardTail::WorldNameAndCreate,
+                        );
+                    }
+                }
+                // The Create save (`:845-863`) runs before the table hop; a
+                // failure shows the not-ported notice (the vanilla flow has
+                // no error UI on this hop) and the re-list still happens.
+                if let Some(draft) = create_draft {
+                    match ui::world_creation::create_world(&draft) {
+                        Ok(path) => {
+                            log::info!("created '{}' -> {}", draft.name.trim(), path.display());
+                        }
+                        Err(e) => {
+                            self.front_hint = Some(format!("world creation failed: {e:#}"));
+                        }
+                    }
+                }
+                if let Some(click) = flow {
+                    let (front, backup, page) =
+                        next_flow_state(Some(front), self.front_backup.clone(), None, click);
+                    self.front_backup = backup;
+                    // Review Focus 1: the table result is the App's state —
+                    // `front` is written on every hop, so the page arms below
+                    // would clear the 888 side; these two clicks always land
+                    // on world select through the openers' re-list.
+                    self.front = front.clone();
+                    match page {
+                        Some(p) => {
+                            self.park_menu();
+                            let mut m = menu::Menu::new(self.player_name.clone());
+                            m.page = p;
+                            self.menu = Some(m);
+                        }
+                        None => match front {
+                            Some(f) => self.enter_front(f),
+                            None => {
+                                self.front = None;
+                                self.park_menu();
+                            }
+                        },
+                    }
+                }
+            }
             FrontScreen::WorldSelect => {
                 // The world screen's ctor is the char select's twin
                 // (`UIWorldSelect.cs:40-87`), so the shared `resolved_layout`
@@ -3387,10 +3644,15 @@ impl App {
                 let mut delete_name = None;
                 match ui::world_select::hit(&l, &favorites, mouse) {
                     Some(ui::world_select::CardAction::Back) => flow = Some(FlowClick::WorldBack),
-                    // `NewWorldClick` (`:110-116`) opens the world creator —
-                    // Task 8's variant.
+                    // `NewWorldClick` (`:110-116`): the stand-in name reads
+                    // `Main.WorldList.Count + 1` and the Journey default reads
+                    // the active player's difficulty (`UIWorldCreation.cs:
+                    // 319-322`) — the session entry's.
                     Some(ui::world_select::CardAction::New) => {
-                        self.front_hint = Some("The world creator is not ported yet".into());
+                        flow = Some(FlowClick::WorldNew(
+                            self.worlds.len(),
+                            self.session_entry().difficulty,
+                        ));
                     }
                     // `PlayGame` (`:360-374`): `_data.IsValid` gates the
                     // launch; an invalid world's click is dead, like the
@@ -3557,9 +3819,17 @@ impl App {
                     ui::char_creation::CreationState::new(),
                 ));
             }
-            // Task 8's screen — the variant lands with its task.
+            // Task 8's screen (`NewWorldClick`, `UIWorldSelect.cs:110-116`):
+            // the stand-in name reads `Main.WorldList.Count + 1`, so the list
+            // populates first; the Journey default reads the session player
+            // (`UIWorldCreation.cs:319-322`).
             TrUiPreset::WorldNew => {
-                log::info!("TR_UI: the screen lands with Task 8");
+                self.enter_front(FrontScreen::WorldSelect);
+                let count = self.worlds.len();
+                let active = self.session_entry().difficulty;
+                self.enter_front(FrontScreen::WorldCreation(
+                    ui::world_creation::NewWorldDraft::new(count, active),
+                ));
             }
             TrUiPreset::Keyboard => {
                 // The keyboard screenshot (`TR_UI=vk`): the naming request the
@@ -4439,6 +4709,21 @@ impl App {
                                 anim_time,
                                 self.mouse_pos,
                                 self.front_mouse_down,
+                            );
+                        }
+                        FrontScreen::WorldCreation(draft) => {
+                            // `Main.MenuUI.Draw`'s `UIWorldCreation` state
+                            // (`:1024-1033`, minus the `SetupGamepadPoints`
+                            // snap points and the `DrawSeedSystems` special-
+                            // seed ring — both out of scope): the panel, the
+                            // plates + preview, the three option rows, the
+                            // description panel and Back/Create.
+                            ui::world_creation::draw(
+                                renderer,
+                                lookups,
+                                draft,
+                                screen,
+                                self.mouse_pos,
                             );
                         }
                         FrontScreen::Keyboard(session) => {
@@ -9314,6 +9599,7 @@ mod front_flow_tests {
             FrontScreen::CharSelect,
             FrontScreen::WorldSelect,
             FrontScreen::CharCreation(creation),
+            FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(1, 0)),
         ] {
             let (front, backup, page) = next_flow_state(
                 None,
@@ -9353,6 +9639,10 @@ mod front_flow_tests {
             Some(FrontScreen::CharSelect),
             Some(FrontScreen::WorldSelect),
             Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            // The world creator joins with Task 8.
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
+                0, 0,
+            ))),
             Some(FrontScreen::Keyboard(session())),
         ];
         let backs = [
@@ -9360,6 +9650,9 @@ mod front_flow_tests {
             Some(FrontScreen::CharSelect),
             Some(FrontScreen::WorldSelect),
             Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
+                0, 0,
+            ))),
             Some(FrontScreen::Keyboard(session())),
         ];
         let pages = [
@@ -9378,6 +9671,9 @@ mod front_flow_tests {
             FlowClick::WorldBack,
             FlowClick::WorldPlay,
             FlowClick::WorldDelete(0),
+            FlowClick::WorldNew(0, 0),
+            FlowClick::WorldCreateBack,
+            FlowClick::WorldCreate,
             FlowClick::ConfirmYes,
             FlowClick::ConfirmNo,
         ];
@@ -9652,6 +9948,199 @@ mod front_flow_tests {
         assert_eq!(m.page, P::ConfirmDeleteWorld);
         assert_eq!(m.confirm_name.as_deref(), Some("World 1"));
         assert_eq!(m.confirm_index, 0);
+    }
+
+    // --- Task 8: the world creator's flow hops --------------------------------
+
+    /// One fake world entry for the creator's flow tests.
+    fn world_entry(name: &str) -> ui::save_list::WorldEntry {
+        ui::save_list::WorldEntry {
+            name: name.into(),
+            difficulty: 0,
+            size_id: 1,
+            is_favorite: false,
+            valid: true,
+            has_been_played: false,
+            path: None,
+        }
+    }
+
+    fn world_creation_app() -> App {
+        flow_app(
+            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
+                1, 0,
+            ))),
+            vec![],
+            vec![world_entry("World 1")],
+        )
+    }
+
+    /// The click handler's layout at the flow tests' deterministic 1280x720.
+    fn world_creation_layout(app: &App) -> ui::world_creation::Layout {
+        let (sw, sh) = app.screen_size();
+        ui::world_creation::layout(Vec2::new(sw, sh), 0.0)
+    }
+
+    #[test]
+    fn world_new_click_opens_the_creator_with_the_stand_in_name() {
+        // `NewWorldClick` (`UIWorldSelect.cs:110-116`): the stand-in name
+        // reads `WorldList.Count + 1` (`:113`) — two listed worlds name the
+        // draft "World 3".
+        let mut app = flow_app(
+            Some(FrontScreen::WorldSelect),
+            vec![],
+            vec![world_entry("Alpha"), world_entry("Beta")],
+        );
+        let l = ui::char_select::resolved_layout(
+            Vec2::new(1280.0, 720.0),
+            app.front_header_w(ui::world_select::SELECT_WORLD),
+            app.worlds.len(),
+        );
+        let new = l.new;
+        app.mouse_pos = Vec2::new(new[0] + new[2] * 0.5, new[1] + new[3] * 0.5);
+        app.handle_front_click();
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the New click opens the world creator");
+        };
+        assert_eq!(draft.name, "World 3");
+        // `SetDefaultOptions` (`UIWorldCreation.cs:313-326`): the Classic
+        // session player seeds Normal/Medium/Random.
+        assert_eq!(draft.size, 1);
+        assert_eq!(draft.difficulty, 0);
+        assert_eq!(draft.evil, 0);
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn world_creation_back_click_reopens_world_select() {
+        // `Click_GoBack` -> `GoBack` -> `OpenWorldSelectUI`
+        // (`UIWorldCreation.cs:665-674`) — no discard confirm on this screen.
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.back[0] + l.back[2] * 0.5,
+            l.back[1] + l.back[3] * 0.5,
+        );
+        app.handle_front_click();
+        assert_eq!(app.front, Some(FrontScreen::WorldSelect));
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn world_creation_option_clicks_update_the_draft() {
+        // `ClickSizeOption`/`ClickDifficultyOption`/`ClickEvilOption`/
+        // `ClickRandomizeName` (`UIWorldCreation.cs:497-575`): the picks land
+        // in the draft; the display order maps Journey/Classic/Expert/Master
+        // to the ids 3/0/1/2.
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        app.mouse_pos = centre(l.difficulty_buttons[2]); // Expert
+        app.handle_front_click();
+        app.mouse_pos = centre(l.size_buttons[2]); // Large
+        app.handle_front_click();
+        app.mouse_pos = centre(l.evil_buttons[1]); // Corruption
+        app.handle_front_click();
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the options clicked on the live creator");
+        };
+        assert_eq!(draft.difficulty, 1);
+        assert_eq!(draft.size, 2);
+        assert_eq!(draft.evil, 1);
+        // The randomize stand-in re-derives the name from the list count.
+        app.mouse_pos = centre(l.random_name_icon);
+        app.handle_front_click();
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the creator stays live");
+        };
+        assert_eq!(draft.name, "World 2"); // `worlds.len() = 1`
+    }
+
+    #[test]
+    fn world_creation_name_click_opens_the_naming_keyboard() {
+        // `Click_SetName` (`UIWorldCreation.cs:689-695`): `Lang.menu[48]`,
+        // empty start, `allowEmpty: true`, the 27 cap; the tail lands the
+        // trimmed name back in the draft (`OnFinishedSettingName`, `:726-731`).
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.name_button[0] + l.name_button[2] * 0.5,
+            l.name_button[1] + l.name_button[3] * 0.5,
+        );
+        app.handle_front_click();
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the name plate opens the keyboard");
+        };
+        assert_eq!(session.request.label, ui::keyboard::ENTER_WORLD_NAME);
+        assert!(session.request.initial.is_empty(), "the box opens empty");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, 27);
+        assert_eq!(session.tail, KeyboardTail::WorldName);
+        // The submit tail: the name lands, the creator returns (`:730`).
+        app.keyboard_character('P');
+        app.keyboard_submit();
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the creator returns");
+        };
+        assert_eq!(draft.name, "P");
+        assert!(app.menu.is_none(), "the invariant holds");
+    }
+
+    #[test]
+    fn world_creation_seed_click_opens_the_seed_keyboard() {
+        // `OpenSeedInputMenu` (`UIWorldCreation.cs:697-708`): "UI.EnterSeed",
+        // `allowEmpty: true`, `int.MaxValue`; the seed plate and the icon
+        // both route here (the Advanced tab is out of scope).
+        let mut app = world_creation_app();
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.seed_plate[0] + l.seed_plate[2] * 0.5,
+            l.seed_plate[1] + l.seed_plate[3] * 0.5,
+        );
+        app.handle_front_click();
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the seed plate opens the keyboard");
+        };
+        assert_eq!(session.request.label, "Enter Seed (Leave Blank For Random)");
+        assert!(session.request.allow_empty);
+        assert_eq!(session.request.max_length, usize::MAX);
+        assert_eq!(session.tail, KeyboardTail::WorldSeed);
+        // The submit tail: the trimmed seed lands (`OnFinishedSettingSeed`,
+        // `:817-819`), the creator returns.
+        app.keyboard_character('5');
+        app.keyboard_character('1');
+        app.keyboard_submit();
+        let Some(FrontScreen::WorldCreation(draft)) = app.front.as_ref() else {
+            panic!("the creator returns");
+        };
+        assert_eq!(draft.seed, "51");
+    }
+
+    #[test]
+    fn world_creation_create_with_an_empty_name_opens_the_naming_keyboard() {
+        // `Click_NamingAndCreating` (`UIWorldCreation.cs:710-719`): the empty
+        // branch opens `Lang.menu[48]` with `allowEmpty: false`; the filled
+        // branch's save is covered by the module-level temp-dir test (the
+        // App click would write the real world directory).
+        let mut app = world_creation_app();
+        if let Some(FrontScreen::WorldCreation(draft)) = app.front.as_mut() {
+            // The stand-in name is non-empty (`SetDefaultOptions`'s
+            // `AssignRandomWorldName`); the empty branch needs the C#'s
+            // `string.IsNullOrEmpty(this._optionwWorldName)` (`:713`).
+            draft.name = String::new();
+        }
+        let l = world_creation_layout(&app);
+        app.mouse_pos = Vec2::new(
+            l.create[0] + l.create[2] * 0.5,
+            l.create[1] + l.create[3] * 0.5,
+        );
+        app.handle_front_click();
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the empty-name Create opens the naming keyboard");
+        };
+        assert!(!session.request.allow_empty);
+        assert_eq!(session.tail, KeyboardTail::WorldNameAndCreate);
+        assert!(app.menu.is_none(), "the invariant holds");
     }
 
     // --- Task 6: the keyboard's flow hops ------------------------------------
