@@ -138,6 +138,9 @@ pub(crate) fn draw_tiles(
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
+    // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the swing
+    // timer (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
+    held: Option<(u16, f32)>,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
     items: &[ItemDrop],
@@ -554,7 +557,9 @@ pub(crate) fn draw_tiles(
         stats.quads += draw_player(
             r,
             player_assets,
+            lookups,
             p,
+            held,
             light,
             style,
             anim_time,
@@ -579,7 +584,9 @@ pub(crate) fn draw_tiles(
         stats.quads += draw_player(
             r,
             player_assets,
+            lookups,
             &p,
+            None,
             light,
             style,
             anim_time,

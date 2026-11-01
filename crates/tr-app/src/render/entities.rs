@@ -2,7 +2,9 @@
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
 use super::BgTex;
-use super::player_layers::front_arm_cell;
+use super::player_layers::{
+    assemble_layers, front_arm_cell, LayerSprite, PlayerCompositeState,
+};
 use super::sky::sky_tex;
 use crate::assets;
 use crate::item::SWING_TIME;
@@ -169,10 +171,58 @@ pub(crate) fn draw_held_item(
     1
 }
 
+/// The held item's atlas quad — the `GetItemDrawFrame` stand-in: the hotbar
+/// icon quad while `Item.cs` textures stay unframed.
+fn held_item_uv(lookups: &assets::Lookups, kind: u16) -> Option<[f32; 4]> {
+    if let Some((uv, _, _)) = lookups.item_icon(kind) {
+        Some(uv)
+    } else if registry::is_weapon(kind) {
+        lookups.shuriken_uv()
+    } else if let Some(wall) = registry::place_wall(kind) {
+        lookups.wall_icon_uv(wall)
+    } else {
+        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
+    }
+}
+
+/// Pushes a builder's sprite list. Unrotated sprites snap their top-left to an
+/// integer screen pixel (the entity-snapping invariant); the rotated held item
+/// keeps its sub-pixel pivot like the old arc pass. Returns the quad count.
+pub(crate) fn push_layers(
+    r: &mut SpriteRenderer,
+    layers: &[LayerSprite],
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) -> u32 {
+    let mut quads = 0;
+    for s in layers {
+        if s.rotation != 0.0 {
+            r.push_sprite_rot(s.pos, s.size, s.uv, s.color, s.rotation);
+        } else {
+            r.push_sprite(
+                snap_to_screen(s.pos, camera, zoom, screen),
+                s.size,
+                s.uv,
+                s.color,
+            );
+        }
+        quads += 1;
+    }
+    quads
+}
+
+/// The starter player through the pure layer builders (`assemble_layers`):
+/// `LegacyPlayerRenderer`'s layer order with the held item in its
+/// `weaponDrawOrder` slot (`PlayerDrawSet.cs:358`). `held` carries the selected
+/// item kind and the swing timer (`None` = empty hand — remote players).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_player(
     r: &mut SpriteRenderer,
     assets: &PlayerAssets,
+    lookups: &assets::Lookups,
     player: &Player,
+    held: Option<(u16, f32)>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -181,132 +231,20 @@ pub(crate) fn draw_player(
     screen: Vec2,
 ) -> u32 {
     let (cx, cy) = player.center();
-    let tile_x = (cx / TILE_PX) as i32;
-    let tile_y = (cy / TILE_PX) as i32;
-    let l = light.get(tile_x, tile_y);
-    let c = style.shade(l, tile_x, tile_y, anim_time);
-    let light_c = [c[0], c[1], c[2]];
-    let mul = |part: [f32; 3]| {
-        [
-            light_c[0] * part[0],
-            light_c[1] * part[1],
-            light_c[2] * part[2],
-            1.0,
-        ]
+    let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+    let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let state = PlayerCompositeState {
+        origin: [player.x - 10.0, player.y - 10.0],
+        leg_frame: player.leg_frame,
+        body_frame: player.body_frame,
+        facing: player.facing as f32,
+        swing: held.map_or(0.0, |(_, s)| s),
+        use_style: 1,
+        item_uv: held.and_then(|(kind, _)| held_item_uv(lookups, kind)),
+        item_size: [14.0, 14.0],
+        light: light_c,
     };
-    let skin = [1.0, 125.0 / 255.0, 90.0 / 255.0];
-    let eye_white = [1.0, 1.0, 1.0];
-    let eye = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
-    let shirt = [175.0 / 255.0, 165.0 / 255.0, 140.0 / 255.0];
-    let pants = [255.0 / 255.0, 230.0 / 255.0, 175.0 / 255.0];
-    let shoes = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
-    let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
-
-    let pos = snap_to_screen([player.x - 10.0, player.y - 10.0], camera, zoom, screen);
-    let size = [40.0, 56.0];
-    let flip = player.facing < 0;
-    let leg = player.leg_frame;
-    let body = player.body_frame;
-    let mut quads = 0;
-    let (arm_col, arm_row) = front_arm_cell(body);
-    let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| flip_uv(player_frame_uv(t, row), flip));
-    let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| {
-        t.map(|t| flip_uv(player_cell_uv(t, col, row), flip))
-    };
-    let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
-        if tex.is_some() {
-            if let Some(uv) = uv {
-                r.push_sprite(pos, size, uv, color);
-                quads += 1;
-            }
-        }
-    };
-    // The layer sequence of `LegacyPlayerRenderer.DrawPlayerInternal` for the
-    // parts the starter player has (no armor/accessories yet). Each step cites
-    // its `PlayerDrawLayers` method.
-    //
-    // `DrawPlayer_12_Skin_Composite` (PlayerDrawLayers.cs:1211): torso skin
-    // (`compTorsoFrame`, always cell (0,0)) and leg skin (`legFrame`).
-    // `PlayerFrame`: the legs animate on `legFrame`, the body/arms/head on
-    // `bodyFrame` (which copies the leg row while walking).
-    part(
-        assets.torso.as_ref(),
-        cell_uv(assets.torso.as_ref(), 0, 0),
-        mul(skin),
-    );
-    part(
-        assets.legs.as_ref(),
-        frame_uv(assets.legs.as_ref(), leg),
-        mul(skin),
-    );
-    // `DrawPlayer_12_SkinComposite_BackArmShirt` (PlayerDrawLayers.cs:1260):
-    // the back arm stacks the skin (`Players[7]`), the under-skin arm layer
-    // (`Players[5]`, body-skin colour) and the shirt sleeve (`Players[13]`,
-    // shirt colour). The starter player has no undershirt colour, so the
-    // `Players[8]` pass stays out until the equipment palette lands (M3-EQUIP).
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
-        mul(skin),
-    );
-    part(
-        assets.undershirt.as_ref(),
-        cell_uv(assets.undershirt.as_ref(), arm_col, (arm_row + 2).min(3)),
-        mul(skin),
-    );
-    part(
-        assets.arm_shirt.as_ref(),
-        cell_uv(assets.arm_shirt.as_ref(), arm_col, (arm_row + 2).min(3)),
-        mul(shirt),
-    );
-    // `DrawPlayer_13_Leggings` (1412) and `DrawPlayer_14_Shoes` (1709) overlay
-    // the leg frame; `DrawPlayer_17_TorsoComposite` (1937) draws the shirt over
-    // the skin torso.
-    part(
-        assets.pants.as_ref(),
-        frame_uv(assets.pants.as_ref(), leg),
-        mul(pants),
-    );
-    part(
-        assets.shoes.as_ref(),
-        frame_uv(assets.shoes.as_ref(), leg),
-        mul(shoes),
-    );
-    part(
-        assets.shirt.as_ref(),
-        cell_uv(assets.shirt.as_ref(), 0, 0),
-        mul(shirt),
-    );
-    // `DrawPlayer_21_Head` (2036): head, eye whites, eyes and hair.
-    part(
-        assets.head.as_ref(),
-        frame_uv(assets.head.as_ref(), body),
-        mul(skin),
-    );
-    part(
-        assets.eye_whites.as_ref(),
-        frame_uv(assets.eye_whites.as_ref(), body),
-        mul(eye_white),
-    );
-    part(
-        assets.eyes.as_ref(),
-        frame_uv(assets.eyes.as_ref(), body),
-        mul(eye),
-    );
-    part(
-        assets.hair.as_ref(),
-        frame_uv(assets.hair.as_ref(), body),
-        mul(hair),
-    );
-    // The composite front arm belongs to the held-item layers
-    // (`DrawPlayer_27_HeldItem`/`28_ArmOverItem`, with the shoulder rotation);
-    // the cell approximation stays until M2-DRAW-2 ports the rotation.
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
-        mul(skin),
-    );
-    quads
+    push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the

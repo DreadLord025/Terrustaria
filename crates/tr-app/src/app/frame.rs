@@ -20,7 +20,7 @@ use crate::map;
 use crate::npc::{self, NpcKind};
 use crate::render::bg::cave_parallax;
 use crate::render::debug::{capture_frame, draw_debug};
-use crate::render::entities::{draw_held_item, draw_player_map_icon};
+use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
 use crate::sound;
@@ -451,28 +451,22 @@ impl App {
                         waterfall,
                         render_player.as_ref(),
                         player_assets,
+                        // `DrawPlayer_27_HeldItem`'s gate (`PlayerDrawLayers.cs:3077`):
+                        // the item rides the player layers only while it is being
+                        // used; hold-style items (torches etc.) are not modelled yet.
+                        match render_player.as_ref() {
+                            Some(_) if *swing > 0.0 => inventory
+                                .get(*selected)
+                                .filter(|slot| slot.count > 0)
+                                .map(|slot| (slot.kind, *swing)),
+                            _ => None,
+                        },
                         npcs,
                         npc_assets,
                         items,
                         &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
                     );
-                    // `PlayerDrawLayers.DrawPlayer_27_HeldItem`: the item is only drawn
-                    // while it is being used (`itemAnimation > 0 && useStyle != 0`), so
-                    // the hand is empty at rest. Hold-style items (torches etc.) are not
-                    // modelled yet.
-                    if *swing > 0.0 {
-                        if let Some(p) = render_player.as_ref() {
-                            if let Some(slot) = inventory.get(*selected) {
-                                if slot.count > 0 {
-                                    tile_stats.quads += draw_held_item(
-                                        renderer, lookups, light, &style, p, slot.kind,
-                                        *swing, anim_time,
-                                    );
-                                }
-                            }
-                        }
-                    }
                     *world_key = Some(key);
                 }
 
