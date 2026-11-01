@@ -145,7 +145,8 @@ graphify merge-graphs decompiled/graphify-out/graph.json `
 
 ## Housekeeping
 
-- Do not run `cargo fmt` on the generated `crates/tr-core/src/tiledata.rs` or `wld.rs`;
+- Do not run `cargo fmt` on the generated `crates/tr-core/src/tiledata/` data files
+  (`sets.rs`, `emissive.rs`, `merge.rs`; the hand-written `mod.rs` is fine) or `wld.rs`;
   use `rustfmt` on the touched files only.
 - `assets/test/`, `target/`, `decompiled/` and `.qoder_tmp/` are local.
 - Prefer extending the existing systems (world model, `framing`, `lighting`, `LiquidSystem`,
