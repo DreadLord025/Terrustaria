@@ -29,7 +29,9 @@ use crate::assets;
 // --- The draft (Main.ActiveWorldFileData's creation options) -------------------
 
 /// `UIWorldCreation.MAX_NAME_LENGTH` (`UIWorldCreation.cs:81`) — the naming
-/// keyboard's cap (`Click_SetName`'s 27, `:693`) and the display trim.
+/// keyboard's cap (`Click_SetName`'s 27, `:693`) and the display trim
+/// (`TrimDisplayIfOverElementDimensions(27)`, `:737` — not ported, see
+/// `draw_plate`).
 pub const MAX_NAME_LENGTH: usize = 27;
 
 /// `Main.ActiveWorldFileData`'s creation defaults (`SetDefaultOptions`,
@@ -151,13 +153,6 @@ pub const EVIL_ROWS: [(&str, [u8; 4]); 3] = [
 /// and nothing else (the panels and icons derive from `_color`).
 pub const OPTION_BUTTON_COLOR: [u8; 4] = uistate::INVENTORY_DEFAULT_COLOR;
 
-/// XNA `Color.op_Multiply`'s per-channel clamp (`Color * 1.2f` saturates at
-/// 255 rather than wrapping; `UIWorldCreationPreview.cs:125`).
-fn mul_clamped(rgb: [u8; 4], m: f32) -> [u8; 4] {
-    let f = |c: u8| ((c as f32 * m).min(255.0)) as u8;
-    [f(rgb[0]), f(rgb[1]), f(rgb[2]), f(rgb[3])]
-}
-
 /// The `GroupOptionButton` layer colours (`GroupOptionButton.cs:210-260`),
 /// returned as `(fill, accent)`:
 ///
@@ -168,8 +163,9 @@ fn mul_clamped(rgb: [u8; 4], m: f32) -> [u8; 4] {
 ///   `CategoryPanelHighlight` inset rim at `Lerp(color, White, _whiteLerp =
 ///   0.7) * 0.7` (`:236`), overridden by the hovered `CategoryPanelBorder`'s
 ///   plain white (`:240` — the border draws last when both states hold); with
-///   neither state the same rim formula comes back, which is also the idle
-///   icon tint (`:247`).
+///   neither state the same rim formula comes back — the 32x32 option-row
+///   icons' idle tint (`:247`). The 40x40 icon buttons are always selected
+///   (`option: true`), so their icons stay White (see `draw_icon_button`).
 pub fn option_button_colors(selected: bool, hovered: bool, color: [u8; 4]) -> ([u8; 4], [u8; 4]) {
     // `Color.Lerp(Color.Black, color, this.FadeFromBlack) * num` (`:233`) —
     // the lerp with 1.0 is `color` itself.
@@ -605,7 +601,9 @@ const DARK_GRAY: [u8; 4] = [169, 169, 169, 255];
 /// `dimensions + (4, 4)` (`:74`), then the 84x84 `PreviewBorder` at the
 /// element origin (`:131`). The bg layer draws White; the size/evil layers
 /// and the bunny draw the difficulty tint (`color`, `:75-91`), the Master
-/// bunny multiplied `* 1.2` (`:125`).
+/// bunny multiplied `* 1.2` (`:125`) through the XNA `(byte)` wrap — e.g.
+/// White → (50, 50, 50, 50), DarkGray → (202, 202, 202, 50): the vanilla
+/// Master bunny draws translucent.
 pub fn draw_preview(r: &mut SpriteRenderer, lookups: &assets::Lookups, l: &Layout, draft: &NewWorldDraft) {
     let (bg, size, evil, bunny) = preview_layers(draft);
     let pos = [l.preview[0] + 4.0, l.preview[1] + 4.0]; // `:74`
@@ -619,9 +617,10 @@ pub fn draw_preview(r: &mut SpriteRenderer, lookups: &assets::Lookups, l: &Layou
     // The size and evil overlays (`:92-115`).
     push_whole(r, lookups, lookups.wc_preview_size[size], pos, frame, color::tint(color));
     push_whole(r, lookups, lookups.wc_preview_evil[evil], pos, frame, color::tint(color));
-    // The bunny (`:116-130`), the Master one `* 1.2` (`:125`).
+    // The bunny (`:116-130`), the Master one `* 1.2` (`:125`) — the XNA
+    // `Color * float` `(byte)` wrap (mod 256, `color::mul`), not a clamp.
     let bunny_tint = if draft.difficulty == 2 {
-        mul_clamped(color, 1.2)
+        color::mul(color, 1.2)
     } else {
         color
     };
@@ -652,32 +651,73 @@ pub fn size_dimensions(size: u8) -> (i32, i32) {
     }
 }
 
+/// `ReLogic.Utilities.Crc32.Calculate(string)` (`Crc32.cs`): the standard
+/// reflected CRC-32 — poly `0xEDB88320`, init `0xFFFFFFFF`, final complement —
+/// returning `(int)(~num)`. The `Tabs` table (`Crc32.cs:9-59`) is derived in
+/// the const block instead of pasted; the loop walks the string's UTF-16
+/// chars like the C# `foreach (char c in value)` (`Crc32.cs:66-71`), each
+/// char contributing its low byte (`(num ^ c) & 0xFF`).
+fn crc32(text: &str) -> i32 {
+    const TABS: [u32; 256] = {
+        let mut t = [0u32; 256];
+        let mut i = 0usize;
+        while i < 256 {
+            let mut n = i as u32;
+            let mut k = 0;
+            while k < 8 {
+                n = if n & 1 != 0 { 0xEDB8_8320 ^ (n >> 1) } else { n >> 1 };
+                k += 1;
+            }
+            t[i] = n;
+            i += 1;
+        }
+        t
+    };
+    let mut num = u32::MAX;
+    for c in text.encode_utf16() {
+        num = TABS[((num ^ c as u32) & 0xFF) as usize] ^ (num >> 8);
+    }
+    (!num) as i32
+}
+
+/// `WorldFileData.TranslateSeed` (`WorldFileData.cs:380-392`): a numeric text
+/// parses i32 and takes `Math.Abs` (`"-5"` -> 5; `int.MinValue` clamps to
+/// `int.MaxValue`); everything else — non-numeric, out-of-i32, or empty —
+/// goes through [`crc32`]. (`int.TryParse`'s `NumberStyles.Integer` also
+/// tolerates surrounding whitespace, mimicked with the trim; the CRC still
+/// hashes the raw text.)
+fn translate_seed(seed_text: &str) -> i32 {
+    match seed_text.trim().parse::<i32>() {
+        Ok(n) if n != i32::MIN => n.abs(),
+        Ok(_) => i32::MAX,
+        Err(_) => crc32(seed_text),
+    }
+}
+
 /// `FinishCreatingWorld`'s seed step (`UIWorldCreation.cs:852-858`): a blank
 /// seed takes `SetSeedToRandomWithCurrentEvents` (`:852-855`), a filled one
-/// `SetSeed(text)` (`:856-858`). The port has no `Main.rand` session, so the
-/// blank case hashes the name through `DefaultHasher` — deterministic per
-/// name, documented as the random-seed stand-in. A non-numeric seed hashes
-/// the text the way vanilla's `SetSeed` falls back for non-numeric strings.
+/// `SetSeed(text)` (`:856-858`) whose translation is `translate_seed`. The
+/// port has no `Main.rand` session, so the blank case hashes the name through
+/// the same `Crc32` — deterministic per name, documented as the random-seed
+/// stand-in. The i32 widens zero-extended to the pipeline's u64 (`as u32 as
+/// u64` — the 32-bit pattern the vanilla seed carries).
 pub fn seed_value(name: &str, seed_text: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    if let Ok(n) = seed_text.parse::<u64>() {
-        return n;
-    }
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
     if seed_text.is_empty() {
-        name.hash(&mut hasher);
-    } else {
-        seed_text.hash(&mut hasher);
+        return crc32(name) as u32 as u64;
     }
-    hasher.finish()
+    translate_seed(seed_text) as u32 as u64
 }
 
 /// `FinishCreatingWorld` (`UIWorldCreation.cs:845-863`) through the port's
 /// pipeline: the trimmed name, the size row's tile counts, the seed, then
 /// `worldgen::generate` + `tr_core::save::save` into `worlds_dir`. The world's
 /// evil/difficulty have no `.trwld` fields in the port's header — documented
-/// deviation (the listing reads GameMode as Classic, `save_list.rs`).
-/// Returns the saved `.trwld` path.
+/// deviation (the listing reads GameMode as Classic, `save_list.rs`). The
+/// seed text: vanilla truncates it first with `Utils.TrimUserString(
+/// this._optionSeed, 40)` (`UIWorldCreation.cs:828`;
+/// `WorldFileData.MAX_USER_SEED_TEXT_LENGTH = 40`, `WorldFileData.cs:481`) —
+/// the port's seed keyboard has no length cap, so the trim is not ported
+/// (documented deviation). Returns the saved `.trwld` path.
 pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Result<PathBuf> {
     let name = draft.name.trim();
     let (width, height) = size_dimensions(draft.size);
@@ -774,6 +814,10 @@ const SEED_EMPTY: &str = "<Leave Blank For Random>"; // UI.WorldCreationSeedEmpt
 /// the title at `Left 10` and the value at `titleWidth +
 /// DistanceFromTitleToOption` (`:98`; 20 default `:32`, 29 for the seed,
 /// `:270`). An empty value shows the empty text in Gray (`:88-91`).
+/// The displayed value: vanilla trims it to fit with
+/// `TrimDisplayIfOverElementDimensions` — 27 for the name, 40 for the seed
+/// (`UIWorldCreation.cs:737, 746`) — which the port does not port; it draws
+/// the raw strings (documented deviation).
 fn draw_plate(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -832,8 +876,10 @@ fn draw_plate(
 /// `PanelGrayscale` fill, the selected `CategoryPanelHighlight` rim inset by
 /// `InnerHighlightRim = 7` (`:32`), the hovered `CategoryPanelBorder` white,
 /// then the 32x32 icon at `+1, +1` (`:249`) — tinted White while
-/// hovered/selected, the rim formula otherwise (`:244-248`). `title` draws
-/// centred at the row tint (`:134-146`'s UIText).
+/// hovered/selected, the rim formula otherwise (`:244-248`). `title` draws at
+/// the row tint, centred 8px right of the button's centre: the rows build the
+/// title UIText with `titleAlignmentX = 1f, titleWidthReduction = 16f`
+/// (`UIWorldCreation.cs:388, 437, 482`) — `Width (-16, 1)`, `HAlign 1`.
 fn draw_option_button(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -904,12 +950,16 @@ fn draw_option_button(
         [32.0, 32.0],
         color::tint(icon_tint),
     );
-    // The title `UIText` (`:136-144`): scale 1, centred both ways.
+    // The title `UIText` (`:136-144`): scale 1, V-centred. The rows build it
+    // `titleAlignmentX = 1f, titleWidthReduction = 16f` (`UIWorldCreation.cs:
+    // 388, 437, 482`) — `Width (-16, 1)`, `HAlign 1` — so the box ends 16px
+    // short of the button's right edge and `UIText` centres the text on it
+    // (`TextOriginX = 0.5`): the centre sits 8px right of the button's.
     let w = mouse_text_width(r, lookups, title);
     hud_text(
         r,
         lookups,
-        rect[0] + (rect[2] - w) * 0.5,
+        rect[0] + (rect[2] - w) * 0.5 + 8.0,
         rect[1] + (rect[3] - 14.0) * 0.5,
         1.0,
         color::tint(title_color),
@@ -919,7 +969,10 @@ fn draw_option_button(
 
 /// The 40x40 `GroupOptionButton<bool>` icon pair (`:223-234`, `:250-263`):
 /// the same `GroupOptionButton` chrome with `ShowHighlightWhenSelected =
-/// false` (no rim even selected, `:229`/`:256`) and a 38x38 icon.
+/// false` (no rim even selected, `:229`/`:256`) and a 38x38 icon. Both
+/// construct `option: true` (`:223`, `:250`) and are never re-optioned, so
+/// `IsSelected` always holds (`GroupOptionButton.cs:68`) and the icon keeps
+/// `IconColor` = White in every state.
 fn draw_icon_button(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -927,7 +980,9 @@ fn draw_icon_button(
     icon: Option<tr_render::SheetRect>,
     hovered: bool,
 ) {
-    let (fill, _) = option_button_colors(false, hovered, OPTION_BUTTON_COLOR);
+    // The fill only ever reads `_color` (`:233` — the same
+    // `Colors.InventoryDefaultColor` as the option rows).
+    let (fill, _) = option_button_colors(false, false, OPTION_BUTTON_COLOR);
     uistate::draw_spliced_panel(
         r,
         lookups,
@@ -952,12 +1007,12 @@ fn draw_icon_button(
             [1.0; 4], // `_borderColor` = White (`GroupOptionButton.cs:120`)
         );
     }
-    // The idle tint is the rim formula (`:247`); hovered reads White (`:245`).
-    let icon_tint = if hovered {
-        [255, 255, 255, 255]
-    } else {
-        option_button_colors(false, false, OPTION_BUTTON_COLOR).1
-    };
+    // The icon keeps `IconColor` = White in every state: constructed
+    // `option: true` (`UIWorldCreation.cs:223, 250`) and never re-optioned,
+    // `IsSelected` always holds (`GroupOptionButton.cs:68`), so the
+    // `!hovered && !isSelected` recolour (`:245-247`) never fires;
+    // `ShowHighlightWhenSelected = false` mutes only the rim.
+    let icon_tint = [255, 255, 255, 255];
     push_whole(
         r,
         lookups,
@@ -1301,7 +1356,8 @@ mod tests {
         // Both states: the border draws last, white wins (`:236` then `:240`).
         let (_, both) = option_button_colors(true, true, inv);
         assert_eq!(both, [255, 255, 255, 255]);
-        // The idle icon tint reads the rim formula (`:247`).
+        // The 32x32 option-row idle icon tint reads the rim formula (`:247`;
+        // the always-selected 40x40 icons stay White — `draw_icon_button`).
         let (_, idle) = option_button_colors(false, false, inv);
         assert_eq!(idle, rim);
         // A row tint through the same formula (Cyan, had a button used it).
@@ -1345,14 +1401,21 @@ mod tests {
     }
 
     #[test]
-    fn seed_value_hashes_the_blank_and_text_forms() {
-        // `FinishCreatingWorld` (`:852-858`): blank -> random (the port's
-        // name hash), numeric -> the number, text -> hashed.
+    fn seed_value_translates_like_vanilla() {
+        // `WorldFileData.TranslateSeed` (`WorldFileData.cs:380-392`): numeric
+        // i32 + `Math.Abs` (`"-5"` -> 5, `int.MinValue` -> `int.MaxValue`),
+        // everything else through `Crc32.Calculate` — the standard CRC-32
+        // (`"123456789"` -> 0xCBF43926). The blank case rides the port's
+        // deterministic name stand-in (`crc32(name)`); the i32 widens
+        // zero-extended.
         assert_eq!(seed_value("World 1", "42"), 42);
-        assert_ne!(seed_value("World 1", ""), 0);
-        assert_eq!(seed_value("World 1", ""), seed_value("World 1", ""));
-        assert_ne!(seed_value("World 1", ""), seed_value("World 2", ""));
-        assert_eq!(seed_value("World 1", "corruption"), seed_value("World 1", "corruption"));
+        assert_eq!(seed_value("World 1", "-5"), 5);
+        assert_eq!(seed_value("World 1", "-2147483648"), 2147483647);
+        // Out-of-i32 and non-numeric texts fall to the CRC (pinned vectors).
+        assert_eq!(crc32("123456789") as u32, 0xCBF4_3926);
+        assert_eq!(seed_value("World 1", "99999999999"), 4059124685);
+        assert_eq!(seed_value("World 1", "corruption"), 2248887921);
+        assert_eq!(seed_value("World 1", ""), 4225370552); // crc32("World 1")
     }
 
     #[test]
@@ -1427,12 +1490,14 @@ mod tests {
     }
 
     #[test]
-    fn master_bunny_tint_clamps_like_xna() {
+    fn master_bunny_tint_wraps_like_xna() {
         // `color * 1.2f` (`UIWorldCreationPreview.cs:125`): XNA's op_Multiply
-        // saturates at 255 — White stays White, alpha included.
-        assert_eq!(mul_clamped([255, 255, 255, 255], 1.2), [255, 255, 255, 255]);
-        // DarkGray * 1.2 = 202.8 -> 202 per colour channel; the alpha
-        // saturates (`:89`'s tint path).
-        assert_eq!(mul_clamped([169, 169, 169, 255], 1.2), [202, 202, 202, 255]);
+        // casts through `(byte)`, which wraps modulo 256 (ECMA-335 conv.u1 —
+        // the repo convention, `color::mul`); nothing clamps.
+        // White * 1.2 = 306 -> 50 on every channel.
+        assert_eq!(color::mul([255, 255, 255, 255], 1.2), [50, 50, 50, 50]);
+        // DarkGray * 1.2 = 202.8 -> 202 per colour channel; the alpha wraps
+        // 306 -> 50 too (`:89`'s tint path — the vanilla ghosted bunny).
+        assert_eq!(color::mul([169, 169, 169, 255], 1.2), [202, 202, 202, 50]);
     }
 }
