@@ -36,8 +36,10 @@ use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
 
 use super::color;
+use super::hover_pair;
+use super::in_rect;
 use super::panel;
-use super::text::{font_width, push_font_text};
+use super::text::{draw_border_string, large_text_width, BorderFont};
 use super::uistate::{self, Style};
 use crate::assets;
 
@@ -446,20 +448,23 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
 /// `_internalBorderColorSelected * 0.85` (`_internalBorderColorSelected` is
 /// `Main.OurFavoriteColor`, `:70`); a latched button's bg is `(93, 114, 191)`
 /// (`:581`) and hover does not repaint it (`:237-240`'s `keyState != Shift`
-/// gate). Returns `(bg, border)` as pre-tint bytes.
+/// gate), though the border still follows the hover. Both colours pick through
+/// `ui::hover_pair`; the latch overrides only the background.
 pub fn key_colors(latched: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
     let bg = if latched {
         [93, 114, 191, 255] // `:581`
-    } else if hovered {
-        color::mul([73, 94, 171, 255], 0.85) // `:639`
     } else {
-        color::mul([63, 82, 151, 255], 0.7) // `:632`
+        hover_pair(
+            color::mul([63, 82, 151, 255], 0.7),  // `:632`
+            color::mul([73, 94, 171, 255], 0.85), // `:639`
+            hovered,
+        )
     };
-    let border = if hovered {
-        color::mul(uistate::OUR_FAVORITE_COLOR, 0.85) // `:642`
-    } else {
-        color::mul(INTERNAL_BORDER_COLOR, 0.7) // `:635`
-    };
+    let border = hover_pair(
+        color::mul(INTERNAL_BORDER_COLOR, 0.7),        // `:635`
+        color::mul(uistate::OUR_FAVORITE_COLOR, 0.85), // `:642`
+        hovered,
+    );
     (bg, border)
 }
 
@@ -470,16 +475,18 @@ pub fn key_colors(latched: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
 fn toggle_colors(latched: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
     let bg = if latched {
         [93, 114, 191, 255] // `:581`
-    } else if hovered {
-        [73, 94, 171, 255] // `:239`, `:273`
     } else {
-        color::mul([63, 82, 151, 255], 0.7) // `:232`, `:266`
+        hover_pair(
+            color::mul([63, 82, 151, 255], 0.7), // `:232`, `:266`
+            [73, 94, 171, 255],                  // `:239`, `:273`
+            hovered,
+        )
     };
-    let border = if hovered {
-        uistate::OUR_FAVORITE_COLOR // `:236`, `:270`
-    } else {
-        color::mul(INTERNAL_BORDER_COLOR, 0.7) // `:233`, `:267`
-    };
+    let border = hover_pair(
+        color::mul(INTERNAL_BORDER_COLOR, 0.7), // `:233`, `:267`
+        uistate::OUR_FAVORITE_COLOR,            // `:236`, `:270`
+        hovered,
+    );
     (bg, border)
 }
 
@@ -491,19 +498,26 @@ fn toggle_colors(latched: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
 /// `FancyUIFatButtonMouseOver` while hovered (both FadedMouseOver calls run
 /// before `ValidateText`'s bg write, `:299-308`) and Black otherwise.
 /// Returns `(bg, border)`; the text colour is White iff `valid` (`:590`,
-/// `:603`).
+/// `:603`). Both colours pick through `ui::hover_pair`, per validity.
 pub fn submit_colors(valid: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
-    let bg = match (valid, hovered) {
-        (true, true) => [73, 94, 171, 255],                     // `:593`
-        (true, false) => color::mul([63, 82, 151, 255], 0.7),   // `:597`
-        (false, true) => color::mul([180, 60, 60, 255], 0.85),  // `:606`
-        (false, false) => color::mul([150, 40, 40, 255], 0.85), // `:610`
-    };
-    let border = if hovered {
-        uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER // `:1073`
-    } else {
-        [0, 0, 0, 255] // `:1079`
-    };
+    let bg = hover_pair(
+        if valid {
+            color::mul([63, 82, 151, 255], 0.7) // `:597`
+        } else {
+            color::mul([150, 40, 40, 255], 0.85) // `:610`
+        },
+        if valid {
+            [73, 94, 171, 255] // `:593`
+        } else {
+            color::mul([180, 60, 60, 255], 0.85) // `:606`
+        },
+        hovered,
+    );
+    let border = hover_pair(
+        [0, 0, 0, 255],                        // `:1079`
+        uistate::FANCY_UI_FAT_BUTTON_MOUSE_OVER, // `:1073`
+        hovered,
+    );
     (bg, border)
 }
 
@@ -537,13 +551,6 @@ pub enum Click {
     Cancel,
     /// Nothing.
     None,
-}
-
-fn in_rect(mouse: Vec2, rect: [f32; 4]) -> bool {
-    mouse.x >= rect[0]
-        && mouse.x < rect[0] + rect[2]
-        && mouse.y >= rect[1]
-        && mouse.y < rect[1] + rect[3]
 }
 
 /// The layer's hit-test — the same [`key_rect`] geometry the draw replays
@@ -596,17 +603,23 @@ pub fn click_at(state: &KeyboardState, l: &Layout, show_gamepad_hints: bool, mou
 
 // --- Draw ---------------------------------------------------------------------------
 
-/// The Death-font width a large `UITextPanel` measures (`UITextPanel.cs:126-131`),
-/// or the bitmap fallback's.
-fn large_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -> f32 {
-    match &lookups.death_font {
-        Some(f) => font_width(f, text, 1.0),
-        None => r.text_width(text, 1.0),
-    }
-}
+/// `Utils.DrawBorderStringBig`'s 3x3 ring (`Utils.cs:2520-2535`), dy-major
+/// like the source's nested loop.
+const BIG_RING: [[f32; 2]; 9] = [
+    [-1.0, -1.0],
+    [0.0, -1.0],
+    [1.0, -1.0],
+    [-1.0, 0.0],
+    [0.0, 0.0],
+    [1.0, 0.0],
+    [-1.0, 1.0],
+    [0.0, 1.0],
+    [1.0, 1.0],
+];
 
 /// `Utils.DrawBorderStringBig` (`Utils.cs:2520-2535`) through the Death font:
-/// the 3x3 black ring, then the colour on top.
+/// the 3x3 black ring, then the colour on top — `ui/text.rs`'s shared pass
+/// loop.
 fn border_string_big(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -616,26 +629,17 @@ fn border_string_big(
     color: [f32; 4],
     text: &str,
 ) {
-    for dy in -1i32..=1 {
-        for dx in -1i32..=1 {
-            match &lookups.death_font {
-                Some(f) => push_font_text(
-                    r,
-                    f,
-                    x + dx as f32,
-                    y + dy as f32,
-                    scale,
-                    [0.0, 0.0, 0.0, 1.0],
-                    text,
-                ),
-                None => r.push_text(x + dx as f32, y + dy as f32, scale, [0.0, 0.0, 0.0, 1.0], text),
-            }
-        }
-    }
-    match &lookups.death_font {
-        Some(f) => push_font_text(r, f, x, y, scale, color, text),
-        None => r.push_text(x, y, scale, color, text),
-    }
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Death,
+        x,
+        y,
+        scale,
+        &BIG_RING,
+        color,
+        text,
+    );
 }
 
 /// `UITextPanel.DrawSelf` (`UITextPanel.cs:139-146`) + `DrawText` (`:161-169`)
@@ -762,24 +766,17 @@ pub fn draw(
     let label_w = large_text_width(r, lookups, &request.label);
     let lx = l.label[0] + (l.label[2] - label_w * LABEL_SCALE) * 0.5;
     let ly = l.label[1] - 10.0 * LABEL_SCALE;
-    for (dx, dy) in [(-1.5f32, 0.0), (1.5, 0.0), (0.0, -1.5), (0.0, 1.5)] {
-        match &lookups.death_font {
-            Some(f) => push_font_text(
-                r,
-                f,
-                lx + dx,
-                ly + dy,
-                LABEL_SCALE,
-                [0.0, 0.0, 0.0, 1.0],
-                &request.label,
-            ),
-            None => r.push_text(lx + dx, ly + dy, LABEL_SCALE, [0.0, 0.0, 0.0, 1.0], &request.label),
-        }
-    }
-    match &lookups.death_font {
-        Some(f) => push_font_text(r, f, lx, ly, LABEL_SCALE, [1.0, 1.0, 1.0, 1.0], &request.label),
-        None => r.push_text(lx, ly, LABEL_SCALE, [1.0, 1.0, 1.0, 1.0], &request.label),
-    }
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Death,
+        lx,
+        ly,
+        LABEL_SCALE,
+        &[[-1.5, 0.0], [1.5, 0.0], [0.0, -1.5], [0.0, 1.5]],
+        [1.0, 1.0, 1.0, 1.0],
+        &request.label,
+    );
 
     if show_gamepad_hints {
         // `outerLayer1` (`:684-704`): the panel, its keys in append order —

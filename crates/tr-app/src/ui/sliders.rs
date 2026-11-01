@@ -13,6 +13,7 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::color;
+use super::{in_rect, in_rect_strict};
 use crate::assets;
 
 /// `TextureAssets.ColorBar` (`IngameOptions.cs:1539-1540`), decoded 178x16 — the
@@ -114,8 +115,8 @@ pub fn draw_value_bar(
         }
     }
     // `TextureAssets.ColorHighlight` over the whole bar while hovered
-    // (`IngameOptions.cs:1557-1564`).
-    if inside(hit, mouse) {
+    // (`IngameOptions.cs:1557-1564`) — the inclusive-`Rectangle.Contains` test.
+    if in_rect(mouse, hit) {
         if let Some(uv) = lookups.hud_uv(lookups.ui_slider_highlight.as_ref()) {
             r.push_ui_sprite(
                 [rect[0], rect[1]],
@@ -179,25 +180,13 @@ pub fn color_slider_knob(left: f32, top: f32, t: f32) -> [f32; 2] {
     ]
 }
 
-/// XNA `Rectangle.Contains(Point)` (`IngameOptions.cs:1557`): inclusive left/top,
-/// exclusive right/bottom. The value-bar hover uses this; the HSL rows compare
-/// strictly, see [`inside_strict`].
-fn inside(rect: [f32; 4], p: Vec2) -> bool {
-    p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
-}
-
-/// The strict four-side comparison of the HSL hit test (`Main.cs:51142` and the
-/// row twins: `mouseX > num53 - 4 && mouseX < num53 + Hue.Width() + 4 && ...`) —
-/// open on every edge, unlike [`inside`].
-fn inside_strict(rect: [f32; 4], p: Vec2) -> bool {
-    p.x > rect[0] && p.x < rect[0] + rect[2] && p.y > rect[1] && p.y < rect[1] + rect[3]
-}
-
 /// Whether one colour-slider row takes the mouse: it strictly hovers the row's
 /// hit box while no grab is held, or it holds the grab ((hover && grab == 0) ||
-/// grab == id — `Main.cs:51142`, `:51177`, `:51212`, `:51253`).
+/// grab == id — `Main.cs:51142`, `:51177`, `:51212`, `:51253`). The strict
+/// four-side comparison is `ui::in_rect_strict` (`Main.cs:51142`'s open-on-
+/// every-edge test), unlike the value bar's inclusive `Rectangle.Contains`.
 fn bar_active(left: f32, top: f32, id: u8, mouse: Vec2, grab: u8) -> bool {
-    (inside_strict(color_slider_hit(left, top), mouse) && grab == 0) || grab == id
+    (in_rect_strict(mouse, color_slider_hit(left, top)) && grab == 0) || grab == id
 }
 
 /// The dragged 0..1 value of a row: `(mouseX - num53) / Hue.Width()`, clamped

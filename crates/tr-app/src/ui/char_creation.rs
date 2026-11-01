@@ -22,10 +22,13 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::cards::fat_button_style;
 use super::color;
+use super::in_rect;
 use super::panel;
+use super::push_whole;
 use super::sliders;
-use super::text::{hud_text, hud_text_width};
+use super::text::{border_string, hud_text, hud_text_width};
 use super::uistate;
 use crate::assets;
 
@@ -1127,12 +1130,6 @@ fn hsl_slider_value(hit: [f32; 4], mouse_x: f32) -> f32 {
     1.0
 }
 
-/// `Rectangle.Contains(Point)` (`UIColoredSlider.cs:110`): inclusive left/top,
-/// exclusive right/bottom.
-fn contains(rect: [f32; 4], p: Vec2) -> bool {
-    p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
-}
-
 /// The draw-time drag half of the HSL menu — `UIColoredSlider.DrawSelf`'s
 /// `CurrentAimedSlider`/`CurrentLockedSlider` latch (`UIColoredSlider.cs:50-90`)
 /// driving `UpdateHSLValue` (`:1102-1124`): while the button is held a row
@@ -1161,7 +1158,7 @@ pub fn hsl_sliders_update(
     for k in 0..3 {
         let [right_x, centre_y] = l.hsl_sliders[k];
         let (_, hit) = hsl_slider_rects(right_x, centre_y);
-        let in_bar = contains(hit, mouse);
+        let in_bar = in_rect(mouse, hit);
         // `(CurrentLockedSlider == this) | wasInBar` aims this row; the lock
         // latches only from an unlocked state (`:87-90`).
         let active = (in_bar && state.hsl_grab == 0) || state.hsl_grab == (k + 1) as u8;
@@ -1214,10 +1211,6 @@ pub enum Click {
     None,
 }
 
-fn in_rect(rect: [f32; 4], p: Vec2) -> bool {
-    p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
-}
-
 /// The click table over the live geometry: the categories bar (always), the
 /// Back/Create pair (always), and the active middle menu's own controls —
 /// the name plate + difficulty column (Info), the hair grid (Hairstyles), the
@@ -1227,38 +1220,38 @@ fn in_rect(rect: [f32; 4], p: Vec2) -> bool {
 pub fn click_at(l: &Layout, category: usize, mouse: Vec2) -> Click {
     // The categories bar (`MakeCategoriesBar`, `:730-768`).
     for id in CATEGORY_IDS {
-        if in_rect(l.categories[id], mouse) {
+        if in_rect(mouse, l.categories[id]) {
             return Click::Category(id);
         }
     }
     // The always-present pair (`:1177-1203`).
-    if in_rect(l.back, mouse) {
+    if in_rect(mouse, l.back) {
         return Click::Back;
     }
-    if in_rect(l.create, mouse) {
+    if in_rect(mouse, l.create) {
         return Click::Create;
     }
     match middle_for(category) {
         MiddleMenu::Info => {
-            if in_rect(l.info_name, mouse) {
+            if in_rect(mouse, l.info_name) {
                 return Click::Name; // `Click_Naming` (`:863`)
             }
             for (k, id) in DIFFICULTY_IDS.iter().enumerate() {
-                if in_rect(l.difficulty_buttons[k], mouse) {
+                if in_rect(mouse, l.difficulty_buttons[k]) {
                     return Click::Difficulty(*id); // `UIDifficultyButton.cs:67-71`
                 }
             }
         }
         MiddleMenu::Hairstyles => {
             for (i, hair) in HAIRSTYLES.iter().enumerate() {
-                if in_rect(hair_button(l.hair_grid, i), mouse) {
+                if in_rect(mouse, hair_button(l.hair_grid, i)) {
                     return Click::Hair(*hair); // `UIHairStyleButton.cs:66-70`
                 }
             }
         }
         MiddleMenu::ClothStyles => {
             for (i, style) in VALID_CLOTH_STYLES.iter().enumerate() {
-                if in_rect(l.cloth_buttons[i], mouse) {
+                if in_rect(mouse, l.cloth_buttons[i]) {
                     return Click::ClothStyle(*style); // `:1284-1287`
                 }
             }
@@ -1328,56 +1321,10 @@ pub fn tooltip_for(hovered: HoverTarget) -> Option<&'static str> {
 
 // --- Draw --------------------------------------------------------------------------
 
-/// One atlas sprite stretched over `dst` from the whole `sheet`.
-fn push_whole(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    sheet: &tr_render::SheetRect,
-    dst: [f32; 4],
-    tint: [f32; 4],
-) {
-    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-    let uv = [
-        sheet.x as f32 / aw,
-        sheet.y as f32 / ah,
-        (sheet.x + sheet.width) as f32 / aw,
-        (sheet.y + sheet.height) as f32 / ah,
-    ];
-    r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, tint);
-}
-
-/// `Utils.DrawBorderString` (`Utils.cs:2510-2518`) through `ui/text.rs`: the
-/// 1 px black shadow pass, then the colour — the same convention as
-/// `ui/char_select.rs`.
-fn border_string(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    x: f32,
-    y: f32,
-    tint: [f32; 4],
-    text: &str,
-) {
-    hud_text(r, lookups, x + 1.0, y + 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], text);
-    hud_text(r, lookups, x, y, 1.0, tint, text);
-}
-
 /// The Mouse-font width of `text` at scale 1 — the `UIText` metric the name
 /// plate and hex readouts centre with.
 fn mouse_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -> f32 {
     hud_text_width(r, lookups, text, 1.0)
-}
-
-/// The 0.7-large fat panel style of Back/Create (`MakeBackAndCreatebuttons`,
-/// `:1177-1197`; a `UITextPanel` without `SetPadding` keeps the 12 px corner,
-/// `UIPanel.cs:30-33`; the idle pair is `FadedMouseOut`'s, `:1231-1235`).
-fn fat_button_style() -> uistate::TextPanelStyle {
-    uistate::TextPanelStyle {
-        text_scale: 0.7,
-        large: true,
-        padding: 12.0,
-        bg: uistate::TEXT_PANEL_BG,
-        border: uistate::TEXT_PANEL_BORDER,
-    }
 }
 
 /// The `Utils.DrawSplicedPanel` base the creation buttons share
@@ -1493,7 +1440,7 @@ pub fn draw(
     // the seven pickers, then Clothing, HairStyle, CharInfo.
     for id in CATEGORY_IDS {
         let rect = l.categories[id];
-        let hovered = in_rect(rect, mouse);
+        let hovered = in_rect(mouse, rect);
         let selected = state.category == id;
         let (icon, icon_color, middle) = match id {
             // The seven colour pickers: the picker's own colour (`:735-741`),
@@ -1599,7 +1546,7 @@ pub fn draw(
         &fat_button_style(),
         "Back",
         mouse_text_width(r, lookups, "Back"),
-        in_rect(l.back, mouse),
+        in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
         r,
@@ -1608,7 +1555,7 @@ pub fn draw(
         &fat_button_style(),
         "Create",
         mouse_text_width(r, lookups, "Create"),
-        in_rect(l.create, mouse),
+        in_rect(mouse, l.create),
     );
 
     // The hover tooltip (`:1980-1993`): the hovered element's string at the
@@ -1631,7 +1578,7 @@ pub fn draw(
 /// port's live elements.
 fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<&'static str> {
     for id in CATEGORY_IDS {
-        if in_rect(l.categories[id], mouse) {
+        if in_rect(mouse, l.categories[id]) {
             return tooltip_for(HoverTarget::Category(id));
         }
     }
@@ -1645,7 +1592,7 @@ fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<&'static st
             .into_iter()
             .enumerate()
             {
-                if in_rect(l.hsl_buttons[k], mouse) {
+                if in_rect(mouse, l.hsl_buttons[k]) {
                     return tooltip_for(target);
                 }
             }
@@ -1659,11 +1606,11 @@ fn hover_tooltip(l: &Layout, category: usize, mouse: Vec2) -> Option<&'static st
             .into_iter()
             .enumerate()
             {
-                if in_rect(l.template_buttons[k], mouse) {
+                if in_rect(mouse, l.template_buttons[k]) {
                     return tooltip_for(target);
                 }
             }
-            if in_rect(l.voice_button, mouse) {
+            if in_rect(mouse, l.voice_button) {
                 return tooltip_for(HoverTarget::VoicePlay); // `:1936-1939`
             }
         }
@@ -1685,7 +1632,7 @@ fn draw_info_menu(
     // cs:49-67`): the spliced `CategoryPanel` at `White * 0.5`, the hovered
     // border, the "Name:" title at `Left 10` and the value at
     // `titleWidth + 20` (`DistanceFromTitleToOption`, `:39`).
-    let name_hover = in_rect(l.info_name, mouse);
+    let name_hover = in_rect(mouse, l.info_name);
     draw_spliced_base(r, lookups, lookups.cc_panel, l.info_name, [0.5; 4]);
     if name_hover {
         draw_spliced_base(r, lookups, lookups.cc_panel_border, l.info_name, [1.0; 4]);
@@ -1715,7 +1662,7 @@ fn draw_info_menu(
         let rect = l.difficulty_buttons[k];
         let color = DIFFICULTY_COLORS[k];
         let selected = state.draft.difficulty == *id;
-        let hovered = in_rect(rect, mouse);
+        let hovered = in_rect(mouse, rect);
         let fill = color::mul(lerp_rgb([0, 0, 0, 255], color, 0.8), 0.5);
         draw_spliced_base(r, lookups, lookups.cc_panel_gray, rect, color::tint(fill));
         if selected {
@@ -1823,7 +1770,7 @@ fn draw_hsl_menu(
         }
         // The `ColorHighlight` overlay while the row aims (`:113-121`).
         let (_, hit) = hsl_slider_rects(right_x, centre_y);
-        if contains(hit, mouse) || state.hsl_grab == (k + 1) as u8 {
+        if in_rect(mouse, hit) || state.hsl_grab == (k + 1) as u8 {
             if let Some(uv) = lookups.hud_uv(lookups.ui_slider_highlight.as_ref()) {
                 r.push_ui_sprite(
                     [bar[0], bar[1]],
@@ -1889,7 +1836,7 @@ fn draw_hsl_menu(
             sheet,
             [255; 4],
             false,
-            in_rect(l.hsl_buttons[k], mouse),
+            in_rect(mouse, l.hsl_buttons[k]),
         );
     }
 }
@@ -1916,7 +1863,7 @@ fn draw_hairstyles_menu(
         if rect[1] >= bottom {
             break;
         }
-        draw_hair_button(r, lookups, rect, state.draft.hair == *hair, in_rect(rect, mouse));
+        draw_hair_button(r, lookups, rect, state.draft.hair == *hair, in_rect(mouse, rect));
     }
     panel::draw_scrollbar(r, lookups, l.hair_scrollbar, l.hair_menu[3], l.hair_grid[3], false);
 }
@@ -1934,7 +1881,7 @@ fn draw_cloth_styles_menu(
 ) {
     for (i, style) in VALID_CLOTH_STYLES.iter().enumerate() {
         let rect = l.cloth_buttons[i];
-        let hovered = in_rect(rect, mouse);
+        let hovered = in_rect(mouse, rect);
         // `UIClothStyleButton.DrawSelf` (`UIClothStyleButton.cs:49-66`): the
         // `CategoryPanel` at `White * 0.5`, the selected
         // `CategoryPanelHighlight` inset 3, the hovered border.
@@ -1973,7 +1920,7 @@ fn draw_cloth_styles_menu(
             None,
             [255; 4],
             false,
-            in_rect(rect, mouse),
+            in_rect(mouse, rect),
         );
     }
     // The template row (`:396-430`): Copy/Paste/Randomize.
@@ -1988,7 +1935,7 @@ fn draw_cloth_styles_menu(
             sheet,
             [255; 4],
             false,
-            in_rect(l.template_buttons[k], mouse),
+            in_rect(mouse, l.template_buttons[k]),
         );
     }
     // The voice play button (`:474-504`): a null-texture `UIColoredImageButton`
@@ -2004,7 +1951,7 @@ fn draw_cloth_styles_menu(
         lookups.cc_voice,
         uistate::OUR_FAVORITE_COLOR,
         false,
-        in_rect(l.voice_button, mouse),
+        in_rect(mouse, l.voice_button),
     );
 }
 

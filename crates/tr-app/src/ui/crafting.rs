@@ -14,9 +14,10 @@ use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
 
 use super::color;
+use super::in_rect;
 use super::panel;
 use super::slot;
-use super::text::{hud_text, hud_text_width};
+use super::text::{draw_border_string, hud_text_width, BorderFont};
 use crate::assets;
 use crate::item::{EMPTY_SLOT, ItemSlot};
 
@@ -257,7 +258,8 @@ fn empty_slot() -> ItemSlot {
 }
 
 /// `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-353`): four
-/// black copies offset by `spread` along ±x/±y, then the coloured text on top.
+/// black copies offset by `spread` along ±x/±y, then the coloured text on top —
+/// `ui/text.rs`'s shared pass loop over the ui font.
 fn hud_text_shadowed(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -268,19 +270,17 @@ fn hud_text_shadowed(
     spread: f32,
     text: &str,
 ) {
-    const SHADOW: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
-    for (dx, dy) in [(-1.0f32, 0.0f32), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
-        hud_text(
-            r,
-            lookups,
-            x + dx * spread,
-            y + dy * spread,
-            scale,
-            SHADOW,
-            text,
-        );
-    }
-    hud_text(r, lookups, x, y, scale, color, text);
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Ui,
+        x,
+        y,
+        scale,
+        &[[-spread, 0.0], [spread, 0.0], [0.0, -spread], [0.0, spread]],
+        color,
+        text,
+    );
 }
 
 /// One centred toggle icon: `spriteBatch.Draw(tex, new Vector2(x, y), null,
@@ -559,16 +559,6 @@ pub fn search_text_pos(l: &Layout) -> (f32, f32) {
     (l.search_box[0] + 12.0, l.search_box[1] + 4.0)
 }
 
-/// `UIElement.ContainsPoint` (`UIElement.cs:354-357`): the dimensions'
-/// `Rectangle.Contains` is inclusive on the left/top edges and exclusive on the
-/// right/bottom.
-fn rect_hover(mouse_pos: Vec2, rect: [f32; 4]) -> bool {
-    mouse_pos.x >= rect[0]
-        && mouse_pos.x < rect[0] + rect[2]
-        && mouse_pos.y >= rect[1]
-        && mouse_pos.y < rect[1] + rect[3]
-}
-
 /// Pushes one sprite cut out of `sheet` by `src` (in the sheet's own pixels) at
 /// the destination `dst` (`[x, y, w, h]`). Draws nothing for a missing sheet, so
 /// `Lookups::default()` renders a blank frame (the `panel.rs` pattern).
@@ -625,7 +615,7 @@ pub fn draw_filter_strip(
         let button = filter_button_rect(strip, i);
         // The tab: `UIImageFramed` draws at its default `Color = Color.White`
         // (`UIImageFramed.cs:21`), unlit or hovered alike (`:63`'s DrawSelf).
-        let (col, row) = filter_frame_col_row(flag, rect_hover(mouse_pos, button));
+        let (col, row) = filter_frame_col_row(flag, in_rect(mouse_pos, button));
         push_sheet_rect(
             r,
             lookups,
@@ -673,7 +663,7 @@ pub fn draw_search_bar(
     //    instead of it (`UIImageButton.cs:52-55`).
     let button = layout.search_button;
     push_full_sheet(r, lookups, lookups.ui_search_icon.as_ref(), button, [1.0; 4]);
-    if rect_hover(mouse_pos, button) {
+    if in_rect(mouse_pos, button) {
         push_full_sheet(
             r,
             lookups,
@@ -705,7 +695,7 @@ pub fn draw_search_bar(
     //    `_visibilityInactive = 0.4f` dim until hovered (`UIImageButton.cs:13-15`,
     //    `:51`). Drawn always — see the deviation note above.
     let cancel = layout.search_cancel;
-    let cancel_tint = if rect_hover(mouse_pos, cancel) {
+    let cancel_tint = if in_rect(mouse_pos, cancel) {
         [1.0; 4]
     } else {
         color::tint(color::mul([255, 255, 255, 255], 0.4))
@@ -925,18 +915,5 @@ mod tests {
             (l.search_box[0] + 12.0, l.search_box[1] + 4.0)
         );
         assert_eq!(search_text_pos(&l), (129.0, 362.0));
-    }
-
-    #[test]
-    fn rect_hover_is_inclusive_exclusive_like_rectangle_contains() {
-        // `UIElement.cs:354-357`: `Rectangle.Contains` includes the left/top edges
-        // and excludes the right/bottom.
-        let r = [10.0, 20.0, 40.0, 46.0];
-        assert!(rect_hover(Vec2::new(10.0, 20.0), r));
-        assert!(rect_hover(Vec2::new(49.9, 65.9), r));
-        assert!(!rect_hover(Vec2::new(50.0, 30.0), r));
-        assert!(!rect_hover(Vec2::new(30.0, 66.0), r));
-        assert!(!rect_hover(Vec2::new(9.9, 30.0), r));
-        assert!(!rect_hover(Vec2::new(30.0, 19.9), r));
     }
 }

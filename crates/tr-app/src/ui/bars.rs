@@ -16,22 +16,19 @@ use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use super::color;
-use super::text::{hud_item_text, hud_item_text_width};
+use super::text::{draw_border_string, hud_item_text_width, BorderFont};
 use crate::assets;
 
-/// The five `Utils.DrawBorderStringFourWay` pass offsets, in order
-/// (`Utils.cs:2472-2492`): left, right, up, down, then the centre pass — each
-/// ±2 px around the draw point.
-const BORDER_PASS_OFFSETS: [[f32; 2]; 5] = [
+/// The four `Utils.DrawBorderStringFourWay` border-pass offsets, in order
+/// (`Utils.cs:2472-2492`): left, right, up, down — each ±2 px around the draw
+/// point. The centre colour pass is the shared `text::draw_border_string`'s
+/// own (`Utils.cs:2490-2492`).
+const FOUR_WAY_RING: [[f32; 2]; 4] = [
     [-2.0, 0.0],
     [2.0, 0.0],
     [0.0, -2.0],
     [0.0, 2.0],
-    [0.0, 0.0],
 ];
-
-/// `Color.Black` — the four border passes (`Utils.cs:2468`).
-const BORDER_COLOR: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
 /// `Color.White` — the centre text pass (`Utils.cs:2490-2492`) and the white
 /// sprite tints (`BigProgressBarHelper.cs:49-52`).
@@ -231,28 +228,26 @@ fn item_line_height(lookups: &assets::Lookups) -> f32 {
 
 /// `Utils.DrawBorderStringFourWay` (`Utils.cs:2464-2495`) with the fixed inputs
 /// the boss bar uses: scale 1, `borderColor` black, `textColor` white
-/// (`:65-69`). `top_left` is the `point - origin` of `health_text_positions`;
-/// the five `hud_item_text` passes sit at `top_left + BORDER_PASS_OFFSETS[..]`.
+/// (`:65-69`), through `ui/text.rs`'s shared pass loop. `top_left` is the
+/// `point - origin` of `health_text_positions`; the four `hud_item_text` border
+/// passes sit at `top_left + FOUR_WAY_RING[..]` and the colour pass on top.
 fn draw_border_string_four_way(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     top_left: [f32; 2],
     text: &str,
 ) {
-    let last = BORDER_PASS_OFFSETS.len() - 1;
-    for (i, offset) in BORDER_PASS_OFFSETS.iter().enumerate() {
-        // `color = textColor` on the last pass (`Utils.cs:2490-2492`).
-        let color = if i == last { TEXT_COLOR } else { BORDER_COLOR };
-        hud_item_text(
-            r,
-            lookups,
-            top_left[0] + offset[0],
-            top_left[1] + offset[1],
-            1.0,
-            color,
-            text,
-        );
-    }
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Item,
+        top_left[0],
+        top_left[1],
+        1.0,
+        &FOUR_WAY_RING,
+        TEXT_COLOR,
+        text,
+    );
 }
 
 #[cfg(test)]
@@ -320,16 +315,16 @@ mod tests {
     }
 
     #[test]
-    fn border_passes_are_the_five_four_way_offsets() {
-        // `Utils.cs:2472-2492`.
+    fn border_passes_are_the_four_four_way_offsets() {
+        // `Utils.cs:2472-2492` — the centre colour pass is the shared
+        // `text::draw_border_string`'s own, so the ring carries the four sides.
         assert_eq!(
-            BORDER_PASS_OFFSETS,
+            FOUR_WAY_RING,
             [
                 [-2.0, 0.0],
                 [2.0, 0.0],
                 [0.0, -2.0],
                 [0.0, 2.0],
-                [0.0, 0.0],
             ]
         );
     }

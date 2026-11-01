@@ -19,10 +19,12 @@ use glam::Vec2;
 use std::path::{Path, PathBuf};
 use tr_render::SpriteRenderer;
 
+use super::cards::fat_button_style;
 use super::char_creation::lerp_rgb;
 use super::color;
+use super::in_rect;
 use super::panel;
-use super::text::{hud_text, hud_text_width};
+use super::text::{border_string, hud_text, hud_text_width};
 use super::uistate;
 use crate::assets;
 
@@ -522,46 +524,42 @@ pub enum Click {
     None,
 }
 
-fn in_rect(rect: [f32; 4], p: Vec2) -> bool {
-    p.x >= rect[0] && p.x < rect[0] + rect[2] && p.y >= rect[1] && p.y < rect[1] + rect[3]
-}
-
 /// The click table over the live geometry, in append order: the two 40x40
 /// icons, the two plates, the three option rows, then Back/Create. Nothing
 /// overlaps (the info rows end 19 px above the description, and the pair sits
 /// 9 px below the panel), so the order only mirrors the C#'s tree.
 pub fn click_at(l: &Layout, mouse: Vec2) -> Click {
-    if in_rect(l.random_name_icon, mouse) {
+    if in_rect(mouse, l.random_name_icon) {
         return Click::RandomName; // `:497-503`
     }
-    if in_rect(l.seed_button, mouse) {
+    if in_rect(mouse, l.seed_button) {
         return Click::Seed; // `:505-511` degraded, see `Click::Seed`
     }
-    if in_rect(l.name_button, mouse) {
+    if in_rect(mouse, l.name_button) {
         return Click::Name; // `:689-695`
     }
-    if in_rect(l.seed_plate, mouse) {
+    if in_rect(mouse, l.seed_plate) {
         return Click::Seed; // `:697-708`
     }
     for (k, id) in SIZE_ROW_IDS.iter().enumerate() {
-        if in_rect(l.size_buttons[k], mouse) {
+        if in_rect(mouse, l.size_buttons[k]) {
             return Click::Size(*id); // `:541-551`
         }
     }
     for (k, id) in DIFFICULTY_ROW_IDS.iter().enumerate() {
-        if in_rect(l.difficulty_buttons[k], mouse) {
+        if in_rect(mouse, l.difficulty_buttons[k]) {
             return Click::Difficulty(*id); // `:553-563`
         }
     }
     for (k, id) in EVIL_ROW_IDS.iter().enumerate() {
-        if in_rect(l.evil_buttons[k], mouse) {
+        if in_rect(mouse, l.evil_buttons[k]) {
             return Click::Evil(*id); // `:565-575`
         }
     }
-    if in_rect(l.back, mouse) {
+    if in_rect(mouse, l.back) {
         return Click::Back; // `:665-668`
     }
-    if in_rect(l.create, mouse) {
+    if in_rect(mouse, l.create) {
         return Click::Create; // `:710-724`
     }
     Click::None
@@ -747,8 +745,10 @@ pub fn create_world(draft: &NewWorldDraft) -> anyhow::Result<PathBuf> {
 
 // --- Draw ----------------------------------------------------------------------------
 
-/// One atlas sprite stretched over `dst` from the whole `sheet`. `None` draws
-/// nothing (`Lookups::default()` stays blank, Review Focus 7).
+/// One atlas sprite stretched over `pos`/`size` from the whole `sheet`. `None`
+/// draws nothing (`Lookups::default()` stays blank, Review Focus 7) — the
+/// Option-guarded adapter over `ui::push_whole`, which carries the shared UV
+/// maths.
 fn push_whole(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -757,30 +757,9 @@ fn push_whole(
     size: [f32; 2],
     tint: [f32; 4],
 ) {
-    let Some(sheet) = sheet else { return };
-    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-    let uv = [
-        sheet.x as f32 / aw,
-        sheet.y as f32 / ah,
-        (sheet.x + sheet.width) as f32 / aw,
-        (sheet.y + sheet.height) as f32 / ah,
-    ];
-    r.push_ui_sprite([pos[0], pos[1]], [size[0], size[1]], uv, tint);
-}
-
-/// `Utils.DrawBorderString` (`Utils.cs:2510-2518`) through `ui/text.rs`: the
-/// 1 px black shadow pass, then the colour — the same convention as the
-/// creation twin.
-fn border_string(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    x: f32,
-    y: f32,
-    tint: [f32; 4],
-    text: &str,
-) {
-    hud_text(r, lookups, x + 1.0, y + 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], text);
-    hud_text(r, lookups, x, y, 1.0, tint, text);
+    if let Some(sheet) = sheet {
+        super::push_whole(r, lookups, &sheet, [pos[0], pos[1], size[0], size[1]], tint);
+    }
 }
 
 /// The Mouse-font width of `text` at scale 1 — the `UIText` metric the plate
@@ -789,18 +768,9 @@ fn mouse_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -
     hud_text_width(r, lookups, text, 1.0)
 }
 
-/// The 0.7-large fat panel style of Back/Create (`MakeBackAndCreatebuttons`,
-/// `:637-662`; a `UITextPanel` without `SetPadding` keeps the 12 px corner,
-/// `UIPanel.cs:30-33`).
-fn fat_button_style() -> uistate::TextPanelStyle {
-    uistate::TextPanelStyle {
-        text_scale: 0.7,
-        large: true,
-        padding: 12.0,
-        bg: uistate::TEXT_PANEL_BG,
-        border: uistate::TEXT_PANEL_BORDER,
-    }
-}
+// The 0.7-large fat panel style of Back/Create (`MakeBackAndCreatebuttons`,
+// `:637-662`) is `ui::cards::fat_button_style` — the `UICharacterSelect`
+// twin's shared copy.
 
 /// The plate strings (`UICharacterNameButton`'s ctor args, `:236` and `:264`).
 const NAME_TITLE: &str = "Name:";             // UI.WorldCreationName
@@ -828,7 +798,7 @@ fn draw_plate(
     distance: f32,
     mouse: Vec2,
 ) {
-    let hovered = in_rect(rect, mouse);
+    let hovered = in_rect(mouse, rect);
     uistate::draw_spliced_panel(
         r,
         lookups,
@@ -1047,32 +1017,32 @@ fn hover_description(l: &Layout, mouse: Vec2) -> &'static str {
         "Macabre, grotesque crimson is guaranteed to be present in your world.",
     ];
     for (k, text) in SIZE_DESCRIPTIONS.into_iter().enumerate() {
-        if in_rect(l.size_buttons[k], mouse) {
+        if in_rect(mouse, l.size_buttons[k]) {
             return text;
         }
     }
     for (k, text) in DIFFICULTY_DESCRIPTIONS.into_iter().enumerate() {
-        if in_rect(l.difficulty_buttons[k], mouse) {
+        if in_rect(mouse, l.difficulty_buttons[k]) {
             return text;
         }
     }
     for (k, text) in EVIL_DESCRIPTIONS.into_iter().enumerate() {
-        if in_rect(l.evil_buttons[k], mouse) {
+        if in_rect(mouse, l.evil_buttons[k]) {
             return text;
         }
     }
     // The plates and icons (`:616-623`'s `UICharacterNameButton`/
     // `GroupOptionButton<bool>` arms).
-    if in_rect(l.name_button, mouse) {
+    if in_rect(mouse, l.name_button) {
         return "Give your world a name! You can always change it later if needed!"; // UI.WorldDescriptionName
     }
-    if in_rect(l.seed_plate, mouse) {
+    if in_rect(mouse, l.seed_plate) {
         return "The DNA marker that defines your world's specific shape and traits."; // UI.WorldDescriptionSeed
     }
-    if in_rect(l.random_name_icon, mouse) {
+    if in_rect(mouse, l.random_name_icon) {
         return "Randomize your world's name."; // UI.WorldCreationRandomizeNameDescription
     }
-    if in_rect(l.seed_button, mouse) {
+    if in_rect(mouse, l.seed_button) {
         // UI.WorldCreationSeedMenuDescription — the Advanced tab's entry
         // point; the tab itself is out of scope (plan Uncertainty 4).
         return "Customize your world's seed, or choose some game-changing ones!";
@@ -1108,7 +1078,7 @@ pub fn draw(
     );
 
     // The info subtree, in `MakeInfoMenu`'s append order (`:223-356`).
-    draw_icon_button(r, lookups, l.random_name_icon, lookups.wc_icons[0], in_rect(l.random_name_icon, mouse));
+    draw_icon_button(r, lookups, l.random_name_icon, lookups.wc_icons[0], in_rect(mouse, l.random_name_icon));
     draw_plate(
         r,
         lookups,
@@ -1119,7 +1089,7 @@ pub fn draw(
         20.0, // `DistanceFromTitleToOption` default (`UICharacterNameButton.cs:32`)
         mouse,
     );
-    draw_icon_button(r, lookups, l.seed_button, lookups.wc_icons[1], in_rect(l.seed_button, mouse));
+    draw_icon_button(r, lookups, l.seed_button, lookups.wc_icons[1], in_rect(mouse, l.seed_button));
     draw_plate(
         r,
         lookups,
@@ -1156,7 +1126,7 @@ pub fn draw(
             *tint,
             lookups.wc_size_icons[k],
             draft.size == SIZE_ROW_IDS[k],
-            in_rect(rect, mouse),
+            in_rect(mouse, rect),
         );
     }
     for (k, (title, tint)) in DIFFICULTY_ROWS.iter().enumerate() {
@@ -1169,7 +1139,7 @@ pub fn draw(
             *tint,
             lookups.wc_difficulty_icons[k],
             draft.difficulty == DIFFICULTY_ROW_IDS[k],
-            in_rect(rect, mouse),
+            in_rect(mouse, rect),
         );
     }
     for (k, (title, tint)) in EVIL_ROWS.iter().enumerate() {
@@ -1182,7 +1152,7 @@ pub fn draw(
             *tint,
             lookups.wc_evil_icons[k],
             draft.evil == EVIL_ROW_IDS[k],
-            in_rect(rect, mouse),
+            in_rect(mouse, rect),
         );
     }
 
@@ -1221,7 +1191,7 @@ pub fn draw(
         &fat_button_style(),
         "Back",
         mouse_text_width(r, lookups, "Back"),
-        in_rect(l.back, mouse),
+        in_rect(mouse, l.back),
     );
     uistate::draw_text_panel(
         r,
@@ -1230,7 +1200,7 @@ pub fn draw(
         &fat_button_style(),
         "Create",
         mouse_text_width(r, lookups, "Create"),
-        in_rect(l.create, mouse),
+        in_rect(mouse, l.create),
     );
 }
 

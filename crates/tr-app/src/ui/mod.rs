@@ -2,6 +2,7 @@
 //! cursor, hearts and breath, and the boss bar.
 
 pub mod bars;
+pub mod cards;
 pub mod char_creation;
 pub mod char_select;
 pub mod chrome;
@@ -23,12 +24,68 @@ pub mod world_creation;
 pub mod world_select;
 
 use glam::Vec2;
-use tr_render::SpriteRenderer;
+use tr_render::{SheetRect, SpriteRenderer};
 
 use crate::assets;
 use crate::inv;
 use crate::item::{HOTBAR, INV, ItemSlot};
 use crate::player::Player;
+
+/// The shared rect hit-test: XNA `Rectangle.Contains(Point)` as the UI reads it
+/// (`UIElement.cs:354-357`'s `ContainsPoint`, `UIColoredSlider.cs:110`,
+/// `IngameOptions.cs:1557`): inclusive left/top edges, exclusive right/bottom.
+/// The one copy behind every screen's click table and hover test — the former
+/// per-screen `in_rect` / `rect_hover` / `contains` / `inside` duplicates.
+///
+/// Two source sites differ and keep their own comparisons: the HSL rows'
+/// open-on-every-edge test is [`in_rect_strict`], and the inventory grid's
+/// `Main.cs:41446` comparison is inclusive on the right/bottom too
+/// (`inventory::hit_test`).
+pub(crate) fn in_rect(mouse: Vec2, rect: [f32; 4]) -> bool {
+    mouse.x >= rect[0]
+        && mouse.x < rect[0] + rect[2]
+        && mouse.y >= rect[1]
+        && mouse.y < rect[1] + rect[3]
+}
+
+/// The strict four-side variant of [`in_rect`] — open on every edge — the HSL
+/// colour rows' hit test (`Main.cs:51142` and the row twins: `mouseX > num53 -
+/// 4 && mouseX < num53 + Hue.Width() + 4 && ...`).
+pub(crate) fn in_rect_strict(mouse: Vec2, rect: [f32; 4]) -> bool {
+    mouse.x > rect[0]
+        && mouse.x < rect[0] + rect[2]
+        && mouse.y > rect[1]
+        && mouse.y < rect[1] + rect[3]
+}
+
+/// One atlas sprite stretched over `dst` from the whole `sheet` — the shared
+/// `push_ui_sprite` over the atlas UVs (the former per-screen `push_whole`
+/// copies of `char_select` / `world_select` / `char_creation`).
+pub(crate) fn push_whole(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    sheet: &SheetRect,
+    dst: [f32; 4],
+    tint: [f32; 4],
+) {
+    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+    let uv = [
+        sheet.x as f32 / aw,
+        sheet.y as f32 / ah,
+        (sheet.x + sheet.width) as f32 / aw,
+        (sheet.y + sheet.height) as f32 / ah,
+    ];
+    r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, tint);
+}
+
+/// The hover/idle colour pick every UI colour table shares (the
+/// `MouseOver`/`MouseOut` pairs): one of the two pre-tint byte colours by the
+/// hover flag. `char_select`/`world_select`'s card pairs and the keyboard's
+/// key / toggle / submit tables select both their background and border
+/// through it.
+pub(crate) fn hover_pair(idle: [u8; 4], hovered: [u8; 4], on: bool) -> [u8; 4] {
+    if on { hovered } else { idle }
+}
 
 /// Per-frame animated UI values shared by the HUD passes: `Main.mouseTextColor`
 /// (which multiplies every interface label/colour) and `Main.cursorScale` (the
@@ -219,5 +276,25 @@ fn hover_item_for<'a>(
         H::MiscEquip(i) => equip.misc_equips.get(i),
         H::MiscDye(i) => equip.misc_dyes.get(i),
         H::Trash => Some(&equip.trash),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn in_rect_is_inclusive_exclusive_like_rectangle_contains() {
+        // `UIElement.cs:354-357`: `Rectangle.Contains` includes the left/top
+        // edges and excludes the right/bottom. (Moved with the code from
+        // `crafting.rs`'s `rect_hover` test — the helper it pinned is now this
+        // shared function.)
+        let r = [10.0, 20.0, 40.0, 46.0];
+        assert!(in_rect(Vec2::new(10.0, 20.0), r));
+        assert!(in_rect(Vec2::new(49.9, 65.9), r));
+        assert!(!in_rect(Vec2::new(50.0, 30.0), r));
+        assert!(!in_rect(Vec2::new(30.0, 66.0), r));
+        assert!(!in_rect(Vec2::new(9.9, 30.0), r));
+        assert!(!in_rect(Vec2::new(30.0, 19.9), r));
     }
 }

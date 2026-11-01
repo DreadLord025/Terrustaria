@@ -28,17 +28,21 @@
 //! `hit` for the clicks, `draw` for the frame, `sort_worlds` for the re-list).
 
 use glam::Vec2;
-use tr_render::{SheetRect, SpriteRenderer};
+use tr_render::SpriteRenderer;
 
+use super::cards::{button_sheet, draw_card_button, draw_inner_panel, fat_button_style, header_style};
 use super::char_select::{
     button_label, list_content_height, resolved_layout, scrollbar_attaches, Layout, BACK,
     BUTTON_DELETE, BUTTON_FAVORITE, BUTTON_PLAY, BUTTON_RENAME, CARD_BG_REST, CARD_BORDER_HOVER,
     CARD_BORDER_REST, CARD_H, CARD_PADDING, CARD_PITCH, CONTAINER_PANEL_BG, GRAY, NEW,
 };
 use super::color;
+use super::hover_pair;
+use super::in_rect;
 use super::panel;
+use super::push_whole;
 use super::save_list;
-use super::text::{hud_text, hud_text_width};
+use super::text::{border_string, hud_text_width, large_text_width};
 use super::uistate::{self, Style};
 use crate::assets;
 
@@ -61,21 +65,12 @@ pub const SIZE_NAMES: [&str; 3] = ["Small", "Medium", "Large"];
 
 // --- Card metrics ---------------------------------------------------------------
 
-/// The card button sheet order (`UIWorldListItem.cs:95-158` maps onto
-/// `Lookups::card_buttons` = `[ButtonPlay, ButtonFavoriteActive,
-/// ButtonFavoriteInactive, ButtonRename, ButtonDelete]`, assets.rs:956-963):
-/// the ctor ordinals key [`button_label`]'s table, this maps them to sheets —
-/// the favourite owns two sheets, so every button after it sits one later
-/// (the Task 3b review fix 1 pattern).
-fn button_sheet(button: usize, is_favorite: bool) -> usize {
-    match button {
-        BUTTON_PLAY => 0,                    // `ButtonPlay` (`:95`)
-        BUTTON_FAVORITE if is_favorite => 1, // `ButtonFavoriteActive` (`:104`)
-        BUTTON_FAVORITE => 2,                // `ButtonFavoriteInactive`
-        BUTTON_RENAME => 3,                  // `ButtonRename` (`:137`)
-        _ => 4,                              // `ButtonDelete` (`:146`)
-    }
-}
+// The card button sheet order (`UIWorldListItem.cs:95-158` maps onto
+// `Lookups::card_buttons` = `[ButtonPlay, ButtonFavoriteActive,
+// ButtonFavoriteInactive, ButtonRename, ButtonDelete]`, assets.rs:956-963):
+// the ctor ordinals key [`button_label`]'s table, `ui::cards::button_sheet`
+// maps them to sheets — the favourite owns two sheets, so every button after
+// it sits one later (the Task 3b review fix 1 pattern).
 
 // --- Colours -------------------------------------------------------------------
 
@@ -100,13 +95,28 @@ pub const CARD_BG_REST_NOT_JOINABLE: [u8; 4] = [49, 56, 80, 178];
 /// `:232-241`, `MouseOut`->`SetColorsToNotHovered` `:243-252`): the card
 /// background/border pair as pre-tint bytes. A non-joinable world greys both
 /// states — border `(150,150,150)`/`(127,127,127)`, the background lerped
-/// toward `(120,120,120)`/`(80,80,80)` before the `*0.7`.
+/// toward `(120,120,120)`/`(80,80,80)` before the `*0.7`. Both colours pick
+/// through `ui::hover_pair`, per joinability.
 pub fn card_colors(hovered: bool, joinable: bool) -> ([u8; 4], [u8; 4]) {
-    match (hovered, joinable) {
-        (true, true) => (uistate::FADED_MOUSE_OVER_BG, CARD_BORDER_HOVER), // `:234-235`
-        (true, false) => (CARD_BG_HOVER_NOT_JOINABLE, CARD_BORDER_HOVER_NOT_JOINABLE),
-        (false, true) => (CARD_BG_REST, CARD_BORDER_REST), // `:245-246`
-        (false, false) => (CARD_BG_REST_NOT_JOINABLE, CARD_BORDER_REST_NOT_JOINABLE),
+    if joinable {
+        (
+            hover_pair(CARD_BG_REST, uistate::FADED_MOUSE_OVER_BG, hovered), // `:245-246` / `:234-235`
+            hover_pair(CARD_BORDER_REST, CARD_BORDER_HOVER, hovered),
+        )
+    } else {
+        (
+            // `:250` / `:239` — the not-joinable grey pair.
+            hover_pair(
+                CARD_BG_REST_NOT_JOINABLE,
+                CARD_BG_HOVER_NOT_JOINABLE,
+                hovered,
+            ),
+            hover_pair(
+                CARD_BORDER_REST_NOT_JOINABLE,
+                CARD_BORDER_HOVER_NOT_JOINABLE,
+                hovered,
+            ),
+        )
     }
 }
 
@@ -463,13 +473,6 @@ pub enum CardAction {
     Back,
 }
 
-fn in_rect(mouse: Vec2, rect: [f32; 4]) -> bool {
-    mouse.x >= rect[0]
-        && mouse.x < rect[0] + rect[2]
-        && mouse.y >= rect[1]
-        && mouse.y < rect[1] + rect[3]
-}
-
 /// The screen's click table. `favorites` carries one flag per card — the
 /// delete gate needs it (Review Focus 4), so it replaces the plan's bare
 /// `cards: usize` (the count is `favorites.len()`). Returns `(hovered card,
@@ -533,135 +536,9 @@ pub fn hit(l: &Layout, favorites: &[bool], mouse: Vec2) -> Option<CardAction> {
 
 // --- Draw ------------------------------------------------------------------------
 
-/// `UITextPanel` styles: the header is the 0.8-large, 15-padded `(73, 94, 171)`
-/// panel of `UIWorldSelect.cs:62-66`; the fat Back/New buttons are the
-/// 0.7-large, default-12-padded panels of `:68-86` (a `UITextPanel` without
-/// `SetPadding` keeps `UIPanel.cs:30-33`'s 12). Idle backgrounds are the
-/// `FadedMouseOut` restore (`:131-135`); the hover swap to `(73,94,171)`/
-/// `FancyUIFatButtonMouseOver` is `uistate::draw_text_panel`'s.
-fn header_style() -> uistate::TextPanelStyle {
-    uistate::TextPanelStyle {
-        text_scale: 0.8,
-        large: true,
-        padding: 15.0,
-        bg: uistate::FADED_MOUSE_OVER_BG,
-        border: uistate::TEXT_PANEL_BORDER,
-    }
-}
-
-fn fat_button_style() -> uistate::TextPanelStyle {
-    uistate::TextPanelStyle {
-        text_scale: 0.7,
-        large: true,
-        padding: 12.0,
-        bg: uistate::TEXT_PANEL_BG,
-        border: uistate::TEXT_PANEL_BORDER,
-    }
-}
-
-/// One atlas sprite stretched over `dst` from the whole `sheet`.
-fn push_whole(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    sheet: &SheetRect,
-    dst: [f32; 4],
-    tint: [f32; 4],
-) {
-    let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-    let uv = [
-        sheet.x as f32 / aw,
-        sheet.y as f32 / ah,
-        (sheet.x + sheet.width) as f32 / aw,
-        (sheet.y + sheet.height) as f32 / ah,
-    ];
-    r.push_ui_sprite([dst[0], dst[1]], [dst[2], dst[3]], uv, tint);
-}
-
-/// `UIWorldListItem.DrawPanel` (`UIWorldListItem.cs:487-492`): the card info
-/// panels are **not** `Utils.DrawSplicedPanel`'s 9 pieces — a 3-piece
-/// horizontal slice of `InnerPanelBackground`: an 8 px left edge, the 8 px
-/// middle stretched to `width - 16`, an 8 px right edge, every source rect the
-/// sheet's **full height** (`this._innerPanelTexture.Height()` = 27). The rect
-/// heights are placeholders filled with the sheet height at draw time, like
-/// `panel::separator_rects`.
-fn inner_panel_rects(x: f32, y: f32, width: f32) -> [[f32; 4]; 3] {
-    [
-        [x, y, 8.0, 0.0],                // `:489` — src `(0, 0, 8, H)`
-        [x + 8.0, y, width - 16.0, 0.0], // `:490` — src `(8, 0, 8, H)`, x-stretched
-        [x + width - 8.0, y, 8.0, 0.0],  // `:491` — src `(16, 0, 8, H)`
-    ]
-}
-
-/// The [`inner_panel_rects`] draw. `None` sheet draws nothing (Review Focus 7).
-fn draw_inner_panel(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    x: f32,
-    y: f32,
-    width: f32,
-) {
-    let Some(sheet) = lookups.ui_inner_panel else {
-        return;
-    };
-    let h = sheet.height as f32; // `:489-491`'s full-height sources
-    let srcs: [[f32; 4]; 3] = [
-        [0.0, 0.0, 8.0, h],
-        [8.0, 0.0, 8.0, h],
-        [16.0, 0.0, 8.0, h],
-    ];
-    for (dst, src) in inner_panel_rects(x, y, width).into_iter().zip(srcs) {
-        if dst[2] <= 0.0 {
-            continue;
-        }
-        let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
-        let x0 = sheet.x as f32 + src[0];
-        let y0 = sheet.y as f32 + src[1];
-        let uv = [x0 / aw, y0 / ah, (x0 + src[2]) / aw, (y0 + src[3]) / ah];
-        r.push_ui_sprite([dst[0], dst[1]], [dst[2], h], uv, [1.0; 4]);
-    }
-}
-
-/// One card button: `UIImageButton.DrawSelf` (`UIImageButton.cs:48-56`) — the
-/// sheet tinted `Color * (hover ? _visibilityActive : _visibilityInactive)`; a
-/// hover just draws the base at full tint (the card buttons have no border
-/// texture).
-fn draw_card_button(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    sheet: Option<SheetRect>,
-    rect: [f32; 4],
-    hover: bool,
-    idle_alpha: f32,
-) {
-    let a = if hover { 1.0 } else { idle_alpha };
-    if let Some(sheet) = sheet {
-        push_whole(r, lookups, &sheet, rect, [a, a, a, a]);
-    }
-}
-
-/// `Utils.DrawBorderString` (`Utils.cs:2510-2518`) through `ui/text.rs`: the
-/// shadow pass, then the colour — the port's 1 px black shadow stand-in, the
-/// same convention as `uistate::draw_text_panel`.
-fn border_string(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    x: f32,
-    y: f32,
-    tint: [f32; 4],
-    text: &str,
-) {
-    hud_text(r, lookups, x + 1.0, y + 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], text);
-    hud_text(r, lookups, x, y, 1.0, tint, text);
-}
-
-/// The Death-font width a large `UITextPanel` measures (`UITextPanel.cs:126-131`),
-/// or the bitmap fallback's.
-fn large_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, text: &str) -> f32 {
-    match &lookups.death_font {
-        Some(f) => super::text::font_width(f, text, 1.0),
-        None => r.text_width(text, 1.0),
-    }
-}
+// The `UITextPanel` styles (`UIWorldSelect.cs:62-66`, `:68-86`), the 3-piece
+// `DrawPanel` info panel (`UIWorldListItem.cs:487-492`) and the image button
+// are the `ui::cards` shared copies — the `UICharacterListItem` twins.
 
 /// One card, in the source's z-order (`UIElement.cs:199-230`): the card's own
 /// `DrawSelf` first (the `UIPanel` slice, then the name/divider/info-panel

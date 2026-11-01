@@ -202,7 +202,10 @@ fn misc_row_y(base_y: f32, m: usize) -> f32 {
 }
 
 /// `Main.cs:41446`: `mouseX >= x && mouseX <= x + W*scale && mouseY >= y &&
-/// mouseY <= y + H*scale`, with `cell = W = H`.
+/// mouseY <= y + H*scale`, with `cell = W = H`. Inclusive on the right/bottom
+/// edges too — unlike `ui::in_rect`'s `Rectangle.Contains` (exclusive
+/// right/bottom), so the inventory keeps its own comparison instead of the
+/// shared helper.
 fn hit_test(mouse: Vec2, x: f32, y: f32, scale: f32, cell: f32) -> bool {
     mouse.x >= x && mouse.x <= x + cell * scale && mouse.y >= y && mouse.y <= y + cell * scale
 }
