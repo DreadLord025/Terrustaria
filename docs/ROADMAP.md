@@ -18,7 +18,7 @@ milestone section for the full context before starting.
 | Task | Branch | Scope | Notes |
 | --- | --- | --- | --- |
 | ✅ M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `addCloud`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | ✅ done 2026-11-01 (there is no `Cloud.Parse` in 1.4.5.8 — the spawn recipe is `Cloud.addCloud`; deviations in `ANALYSIS.md`) |
-| M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | fixes hard green/dirt seams |
+| ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | done 2026-11-01: full `TileFrameCosmetic` grass chain (`WorldGen.cs:82184-84836`) ported; 9-slice light needed no change (tile-light scanner + `GetColor9Slice` already cover the seam); quirks in ANALYSIS |
 | TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
 | TILE-DRAW-2 | ✅ merged `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `tr-core/src/flame.rs` (`GetTileFlameData` + `DrawSingleTile_Flames` both tables, 48-bit LCG `TileFrameSeed` jitter deterministic via fixed seed), premultiplied `AlphaBlend` fix in tr-render | deviations in ANALYSIS.md "Torch flames (TILE-DRAW-2)" |
 | TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | 🟡 started |

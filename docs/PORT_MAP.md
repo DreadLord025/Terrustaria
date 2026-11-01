@@ -25,7 +25,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Graphics/Light/TileLightScanner.cs` | `crates/tr-core/src/tile_light/` (`scanner.rs` the 147-case switch, `palette.rs` `FastRandom`/colours, `mod.rs` surface/hell/wall) | done |
 | `WorldGen.cs` (`GenerateWorld`, the passes) | `crates/tr-core/src/worldgen/` (`mod`/`noise`/`terrain`/`caves`/`liquids`/`surface`) | partial |
 | `WorldBuilding/*` (`WorldGenerator.cs`, `WorldGenSnapshot.cs`, `WorldBuilding/*`) | `crates/tr-core/src/worldgen/` | partial |
-| `Framing.cs`, `HitTile.cs`, `TileMergeAttempt*` | `crates/tr-core/src/framing.rs` | done |
+| `Framing.cs`, `HitTile.cs`, `TileMergeAttempt*`, `TileFrameCosmetic` grass family (82184-84836) | `crates/tr-core/src/framing.rs` | done |
 | `Tile.cs` + tile tables/IDs | `crates/tr-core/src/tile.rs`, `tiledata/` (generated: `sets`/`emissive`/`merge`) | done |
 | `Main.cs` (tile draw path), `SceneMetrics`/`SceneState` (framing inputs) | `crates/tr-core/src/drawdata.rs` | partial |
 | `GameContent/Tiles/*` (waterfall/spouts) | `crates/tr-core/src/waterfall/` (`mod`/`draw`) | partial |

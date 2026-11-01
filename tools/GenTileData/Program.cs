@@ -468,6 +468,9 @@ string[] wantedSets =
     "MergesWithClouds", "ForcedDirtMerging", "NeedsGrassFraming",
     "OreMergesWithMud", "tileMossBrick", "Platforms", "IsVine", "Falling", "Torches",
     "MergesWithDirtInASpecialWay", "CrackedBricks", "AllowLightInWater",
+    // Grass framing (WorldGen.TileFrameCosmetic 82143/82185/83395):
+    // Conversion.Grass, Sets.Ore and ChecksForMerge gate the grass family path.
+    "Grass", "Ore", "ChecksForMerge",
 ];
 foreach (var name in wantedSets)
 {

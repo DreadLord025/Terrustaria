@@ -145,87 +145,656 @@ fn variant(x: i32, y: i32) -> usize {
     (h % 3) as usize
 }
 
-/// The grass-edge rectangle table from `WorldGen.TileFrame`: `(frameX, frameY)` for a
-/// grass tile whose dirt base is adjacent on one side. `None` when the generic chain
-/// should be used (the original leaves the rectangle untouched in those cases).
-fn grass_frame(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
-    const GRASS: i32 = 2;
-    const DIRT: i32 = 0;
-    let ty = |dx: i32, dy: i32| {
-        world
-            .tile(x + dx, y + dy)
-            .filter(|t| t.active())
-            .map_or(-1, |t| t.kind as i32)
-    };
-    let up = ty(0, -1);
-    let down = ty(0, 1);
-    let left = ty(-1, 0);
-    let right = ty(1, 0);
-    let ul = ty(-1, -1);
-    let ur = ty(1, -1);
-    let dl = ty(-1, 1);
-    let dr = ty(1, 1);
+// ---------------------------------------------------------------- grass
+// `WorldGen.TileFrameCosmetic`'s grass family (WorldGen.cs:82184-84836). Grass
+// frames *against* its base dirt instead of merging with it: the base
+// neighbours are marked `-2` (WorldGen.cs:83380) and five override chains
+// translate the resulting type/`-1`/`-2` pattern into the transition
+// rectangles, so the green edge wraps steps and blends into the dirt mass
+// instead of ending in a hard rim.
+
+/// The eight neighbour slots of `TileFrameCosmetic`, mirroring the `ref int`
+/// arguments of the original: the neighbour's framing type, `-1` once a slot
+/// became "open" (`TileMergeAttemptWeird`, WorldGen.cs:82188) and `-2` for the
+/// base material after the dirt marker (WorldGen.cs:83380).
+#[derive(Clone, Copy)]
+struct Nb {
+    up: i32,
+    down: i32,
+    left: i32,
+    right: i32,
+    ul: i32,
+    ur: i32,
+    dl: i32,
+    dr: i32,
+}
+
+impl Nb {
+    fn slots(&mut self) -> [&mut i32; 8] {
+        [
+            &mut self.up,
+            &mut self.down,
+            &mut self.left,
+            &mut self.right,
+            &mut self.ul,
+            &mut self.ur,
+            &mut self.dl,
+            &mut self.dr,
+        ]
+    }
+
+    fn sides(&mut self) -> [&mut i32; 4] {
+        [&mut self.up, &mut self.down, &mut self.left, &mut self.right]
+    }
+}
+
+/// `TileMergeAttempt(myType, lookfor, ref …)` — the eight-slot int overload
+/// (WorldGen.cs:81035): every slot equal to `lookfor` becomes `myType`.
+fn merge_eq(n: &mut Nb, my: i32, lookfor: i32) {
+    for v in n.slots() {
+        if *v == lookfor {
+            *v = my;
+        }
+    }
+}
+
+/// The `bool[] lookfor` overloads (WorldGen.cs:81071): every active slot in
+/// the set becomes `myType`.
+fn merge_set(n: &mut Nb, my: i32, lookfor: impl Fn(u16) -> bool) {
+    for v in n.slots() {
+        if *v > -1 && lookfor(*v as u16) {
+            *v = my;
+        }
+    }
+}
+
+/// The grass-family gate of `TileFrameCosmetic` (WorldGen.cs:82185).
+fn is_grass_family(num: u16) -> bool {
+    matches!(num, 2 | 23 | 661 | 662 | 60 | 477 | 492 | 70 | 109 | 199)
+        || td::TILE_MOSS.has(num)
+        || td::SET_NEEDS_GRASS_FRAMING.has(num)
+        || td::SET_TILE_MOSS_BRICK.has(num)
+}
+
+/// The full grass-family framing: merge preparation, the five override chains,
+/// the `-2` marker, the `-1`/`-2` merge tables and the generic chain fallback.
+/// `n` carries the raw framing types of the eight neighbours (`-1` when
+/// inactive), with the side slots slope-adjusted like the original
+/// (WorldGen.cs:81440-81507).
+fn grass_frame_of(x: i32, y: i32, num: i32, n: &mut Nb) -> (i16, i16) {
+    // `TileMergeAttempt(0, TileID.Sets.Dirt, …)` (WorldGen.cs:81516): every
+    // dirt-family neighbour counts as plain dirt before the type logic.
+    merge_set(n, 0, |v| td::SET_DIRT.has(v));
+    // Per-type pre-merges of the big `switch (num)` (WorldGen.cs:82004-82006):
+    // only jungle grass has a case among the grass ids.
+    if num == 60 {
+        merge_eq(n, 59, 211);
+    }
+    // Moss/brick vs dirt (WorldGen.cs:82131-82142; the dirt/stone arms concern
+    // other tiles and stay in the generic path).
+    if td::TILE_MOSS.has(num as u16) || td::SET_TILE_MOSS_BRICK.has(num as u16) {
+        merge_set(n, num, |v| td::SET_DIRT.has(v));
+    }
+    // Grass spreads over ore and ore over grass (WorldGen.cs:82143-82150).
+    if td::SET_GRASS.has(num as u16) {
+        merge_set(n, num, |v| td::SET_ORE.has(v));
+    }
+    // WorldGen.cs:82188: every non-solid neighbour becomes "open".
+    for v in n.slots() {
+        if *v > -1 && *v != num && !td::TILE_SOLID.has(*v as u16) {
+            *v = -1;
+        }
+    }
+    // The base material: `TileID.Sets.NeedsGrassFramingDirt` (WorldGen.cs:82189),
+    // with the mud/moss/brick overrides and the grass↔corrupt-grass unification.
+    let mut base = td::GRASS_DIRT[num as usize] as i32;
+    if matches!(num, 60 | 70 | 661 | 662) {
+        base = 59;
+    } else if td::TILE_MOSS.has(num as u16) {
+        base = 1;
+    } else if td::SET_TILE_MOSS_BRICK.has(num as u16) {
+        base = 38;
+    } else if matches!(num, 2 | 477) {
+        merge_eq(n, base, 23);
+    } else if num == 23 {
+        merge_eq(n, base, 2);
+    }
+
     let v = variant(x, y) as i16;
     let v18 = v * 18;
-    let is_dirt = |k: i32| k == DIRT;
-    let is_grass = |k: i32| k == GRASS;
-    let rect = if !is_grass(up) && !is_dirt(up) && (is_grass(down) || is_dirt(down)) {
+    let v36 = v * 36;
+    let v54 = v * 54;
+    let (up, down, left, right) = (n.up, n.down, n.left, n.right);
+    let (ul, ur, dl, dr) = (n.ul, n.ur, n.dl, n.dr);
+    let in_base = |v: i32| v == num || v == base;
+
+    // Override chain A (WorldGen.cs:82216-82821).
+    let mut rect = if up != num && up != base && (down == num || down == base) {
         // Top edge: the green line overhangs the exposed side.
-        if is_dirt(left) && is_grass(right) {
-            (v18, 198)
-        } else if is_grass(left) && is_dirt(right) {
-            (54 + v18, 198)
+        if left == base && right == num {
+            Some((v18, 198))
+        } else if left == num && right == base {
+            Some((54 + v18, 198))
         } else {
-            return None;
+            None
         }
-    } else if !is_grass(down) && !is_dirt(down) && (is_grass(up) || is_dirt(up)) {
+    } else if down != num && down != base && (up == num || up == base) {
         // Bottom edge.
-        if is_dirt(left) && is_grass(right) {
-            (v18, 216)
-        } else if is_grass(left) && is_dirt(right) {
-            (54 + v18, 216)
+        if left == base && right == num {
+            Some((v18, 216))
+        } else if left == num && right == base {
+            Some((54 + v18, 216))
         } else {
-            return None;
+            None
         }
-    } else if !is_grass(left) && !is_dirt(left) && (is_grass(right) || is_dirt(right)) {
-        // Left edge.
-        if is_dirt(up) && is_grass(down) {
-            (72, 144 + v18)
-        } else if is_grass(up) && is_dirt(down) {
-            (72, 90 + v18)
+    } else if left != num && left != base && (right == num || right == base) {
+        // Left edge. The original's second branch (WorldGen.cs:82314) repeats
+        // the first condition verbatim and is unreachable; only the
+        // dirt-above/grass-below case ever frames here.
+        if up == base && down == num {
+            Some((72, 144 + v18))
         } else {
-            return None;
+            None
         }
-    } else if !is_grass(right) && !is_dirt(right) && (is_grass(left) || is_dirt(left)) {
-        // Right edge.
-        if is_dirt(up) && is_grass(down) {
-            (90, 144 + v18)
-        } else if is_grass(up) && is_dirt(down) {
-            (90, 90 + v18)
+    } else if right != num && right != base && (left == num || left == base) {
+        // Right edge; the second condition is `down == num && right == up`
+        // verbatim (WorldGen.cs:82353).
+        if up == base && down == num {
+            Some((90, 144 + v18))
+        } else if down == num && right == up {
+            Some((90, 90 + v18))
         } else {
-            return None;
+            None
         }
-    } else if is_grass(up) && is_grass(down) && is_grass(left) && is_grass(right) {
-        // Interior grass with only an inner dirt corner visible.
-        if ul != GRASS && ur != GRASS && dl != GRASS && dr != GRASS {
-            if is_dirt(dr) {
-                (108 + v18, 324)
-            } else if is_dirt(ur) {
-                (108 + v18, 342)
-            } else if is_dirt(dl) {
-                (108 + v18, 360)
-            } else if is_dirt(ul) {
-                (108 + v18, 378)
+    } else if up == num && down == num && left == num && right == num {
+        // Interior grass.
+        if ul != num && ur != num && dl != num && dr != num {
+            if dr == base {
+                Some((108 + v18, 324))
+            } else if ur == base {
+                Some((108 + v18, 342))
+            } else if dl == base {
+                Some((108 + v18, 360))
+            } else if ul == base {
+                Some((108 + v18, 378))
             } else {
-                (144 + v * 54, 234)
+                Some((144 + v54, 234))
+            }
+        } else if ul != num && dr != num {
+            Some((36 + v18, 306))
+        } else if ur != num && dl != num {
+            Some((90 + v18, 306))
+        } else if ul != num && ur == num && dl == num && dr == num {
+            Some((54, 108 + v36))
+        } else if ul == num && ur != num && dl == num && dr == num {
+            Some((36, 108 + v36))
+        } else if ul == num && ur == num && dl != num && dr == num {
+            Some((54, 90 + v36))
+        } else if ul == num && ur == num && dl == num && dr != num {
+            Some((36, 90 + v36))
+        } else {
+            None
+        }
+    } else if up == num && down == base && left == num && right == num && ul == -1 && ur == -1 {
+        Some((108 + v18, 18))
+    } else if up == base && down == num && left == num && right == num && dl == -1 && dr == -1 {
+        Some((108 + v18, 36))
+    } else if up == num && down == num && left == base && right == num && ur == -1 && dr == -1 {
+        Some((198, v18))
+    } else if up == num && down == num && left == num && right == base && ul == -1 && dl == -1 {
+        Some((180, v18))
+    } else if up == num && down == base && left == num && right == num {
+        if ur != -1 {
+            Some((54, 108 + v36))
+        } else if ul != -1 {
+            Some((36, 108 + v36))
+        } else {
+            None
+        }
+    } else if up == base && down == num && left == num && right == num {
+        if dr != -1 {
+            Some((54, 90 + v36))
+        } else if dl != -1 {
+            Some((36, 90 + v36))
+        } else {
+            None
+        }
+    } else if up == num && down == num && left == num && right == base {
+        if ul != -1 {
+            Some((54, 90 + v36))
+        } else if dl != -1 {
+            Some((54, 108 + v36))
+        } else {
+            None
+        }
+    } else if up == num && down == num && left == base && right == num {
+        if ur != -1 {
+            Some((36, 90 + v36))
+        } else if dr != -1 {
+            Some((36, 108 + v36))
+        } else {
+            None
+        }
+    } else if (up == base && down == num && left == num && right == num)
+        || (up == num && down == base && left == num && right == num)
+        || (up == num && down == num && left == base && right == num)
+        || (up == num && down == num && left == num && right == base)
+    {
+        // Exactly one base side, the rest grass (WorldGen.cs:82804).
+        Some((18 + v18, 18))
+    } else {
+        None
+    };
+
+    // Override chain B (WorldGen.cs:82822-82896): an independent `if`; a miss
+    // leaves the previous rectangle untouched.
+    if in_base(up) && in_base(down) && in_base(left) && in_base(right) {
+        let b = if ul != num && ul != base && in_base(ur) && in_base(dl) && in_base(dr) {
+            Some((54, 108 + v36))
+        } else if ur != num && ur != base && in_base(ul) && in_base(dl) && in_base(dr) {
+            Some((36, 108 + v36))
+        } else if dl != num && dl != base && in_base(ul) && in_base(ur) && in_base(dr) {
+            Some((54, 90 + v36))
+        } else if dr != num && dr != base && in_base(ul) && in_base(ur) && in_base(dl) {
+            Some((36, 90 + v36))
+        } else {
+            None
+        };
+        if b.is_some() {
+            rect = b;
+        }
+    }
+
+    // Override chain C (WorldGen.cs:82897-83184): an unconditional `if` in the
+    // original — a match replaces any earlier rectangle.
+    {
+        let c = if up != base && up != num && down == num && left != base && left != num
+            && right == num
+            && dr != base
+            && dr != num
+        {
+            Some((90 + v18, 270))
+        } else if up != base
+            && up != num
+            && down == num
+            && left == num
+            && right != base
+            && right != num
+            && dl != base
+            && dl != num
+        {
+            Some((144 + v18, 270))
+        } else if down != base
+            && down != num
+            && up == num
+            && left != base
+            && left != num
+            && right == num
+            && ur != base
+            && ur != num
+        {
+            Some((90 + v18, 288))
+        } else if down != base
+            && down != num
+            && up == num
+            && left == num
+            && right != base
+            && right != num
+            && ul != base
+            && ul != num
+        {
+            Some((144 + v18, 288))
+        } else if up != num
+            && up != base
+            && down == num
+            && left == num
+            && right == num
+            && dl != num
+            && dl != base
+            && dr != num
+            && dr != base
+        {
+            Some((144 + v54, 216))
+        } else if down != num
+            && down != base
+            && up == num
+            && left == num
+            && right == num
+            && ul != num
+            && ul != base
+            && ur != num
+            && ur != base
+        {
+            Some((144 + v54, 252))
+        } else if left != num
+            && left != base
+            && down == num
+            && up == num
+            && right == num
+            && ur != num
+            && ur != base
+            && dr != num
+            && dr != base
+        {
+            Some((126 + v54, 234))
+        } else if right != num
+            && right != base
+            && down == num
+            && up == num
+            && left == num
+            && ul != num
+            && ul != base
+            && dl != num
+            && dl != base
+        {
+            Some((162 + v54, 234))
+        } else if up != base
+            && up != num
+            && in_base(down)
+            && left == base
+            && right == base
+        {
+            Some((36 + v18, 270))
+        } else if down != base
+            && down != num
+            && in_base(up)
+            && left == base
+            && right == base
+        {
+            Some((36 + v18, 288))
+        } else if left != base
+            && left != num
+            && in_base(right)
+            && up == base
+            && down == base
+        {
+            Some((0, 270 + v18))
+        } else if right != base
+            && right != num
+            && in_base(left)
+            && up == base
+            && down == base
+        {
+            Some((18, 270 + v18))
+        } else if up == num && down == base && left == base && right == base {
+            Some((198 + v18, 288))
+        } else if up == base && down == num && left == base && right == base {
+            Some((198 + v18, 270))
+        } else if up == base && down == base && left == num && right == base {
+            Some((198 + v18, 306))
+        } else if up == base && down == base && left == base && right == num {
+            Some((144 + v18, 306))
+        } else {
+            None
+        };
+        if c.is_some() {
+            rect = c;
+        }
+    }
+
+    // Override chain D (WorldGen.cs:83185-83340): three grass sides, one open,
+    // with a base corner — also an unconditional `if`.
+    {
+        let d = if up != num && up != base && down == num && left == num && right == num {
+            if in_base(dl) && !in_base(dr) {
+                Some((v18, 324))
+            } else if in_base(dr) && !in_base(dl) {
+                Some((54 + v18, 324))
+            } else {
+                None
+            }
+        } else if down != num && down != base && up == num && left == num && right == num {
+            if in_base(ul) && !in_base(ur) {
+                Some((v18, 342))
+            } else if in_base(ur) && !in_base(ul) {
+                Some((54 + v18, 342))
+            } else {
+                None
+            }
+        } else if left != num && left != base && up == num && down == num && right == num {
+            if in_base(ur) && !in_base(dr) {
+                Some((54 + v18, 360))
+            } else if in_base(dr) && !in_base(ur) {
+                Some((v18, 360))
+            } else {
+                None
+            }
+        } else if right != num && right != base && up == num && down == num && left == num {
+            if in_base(ul) && !in_base(dl) {
+                Some((v18, 378))
+            } else if in_base(dl) && !in_base(ul) {
+                Some((54 + v18, 378))
+            } else {
+                None
             }
         } else {
-            return None;
+            None
+        };
+        if d.is_some() {
+            rect = d;
         }
+    }
+
+    // Override chain E (WorldGen.cs:83341-83379): the mowed-grass checkerboard.
+    if in_base(up) && in_base(down) && in_base(left) && in_base(right)
+        && ul != -1 && ur != -1 && dl != -1 && dr != -1
+    {
+        rect = if (x + y) % 2 == 1 {
+            Some((108 + v18, 198))
+        } else {
+            Some((18 + v18, 18))
+        };
+    }
+
+    // WorldGen.cs:83380-83392: mark the base material as `-2` before the
+    // generic merge, so the tables below can tell "base" from "another solid".
+    if base >= 0 && td::SET_DIRT.has(base as u16) {
+        merge_set(n, -2, |v| td::SET_DIRT.has(v));
+    } else if base >= 0 && td::SET_MUD.has(base as u16) {
+        merge_set(n, -2, |v| td::SET_MUD.has(v));
     } else {
-        return None;
-    };
-    Some(rect)
+        merge_eq(n, -2, base);
+    }
+    // `TileMergeAttempt(num, Main.tileMerge[num], …)` (WorldGen.cs:83394).
+    merge_set(n, num, |v| td::merges(num as u16, v));
+
+    if rect.is_none()
+        && (td::TILE_MERGE_DIRT.has(num as u16) || td::SET_CHECKS_FOR_MERGE.has(num as u16))
+    {
+        // WorldGen.cs:83395-83417: `flag7` is already true for the grass
+        // family, so the second Weird merge is skipped; every remaining side
+        // that is not the grass itself becomes "open".
+        for v in n.sides() {
+            if *v > -1 && *v != num {
+                *v = -1;
+            }
+        }
+        let (up, down, left, right) = (n.up, n.down, n.left, n.right);
+        let (ul, ur, dl, dr) = (n.ul, n.ur, n.dl, n.dr);
+        let sides_full = up != -1 && down != -1 && left != -1 && right != -1;
+        let t = if sides_full {
+            // The `-2` side/corner tables (WorldGen.cs:83419-83797).
+            if up == -2 && down == num && left == num && right == num {
+                Some((144 + v18, 108))
+            } else if up == num && down == -2 && left == num && right == num {
+                Some((144 + v18, 90))
+            } else if up == num && down == num && left == -2 && right == num {
+                Some((162, 126 + v36))
+            } else if up == num && down == num && left == num && right == -2 {
+                Some((144, 126 + v36))
+            } else if up == -2 && down == num && left == -2 && right == num {
+                Some((36, 90 + v36))
+            } else if up == -2 && down == num && left == num && right == -2 {
+                Some((54, 90 + v36))
+            } else if up == num && down == -2 && left == -2 && right == num {
+                Some((36, 108 + v36))
+            } else if up == num && down == -2 && left == num && right == -2 {
+                Some((54, 108 + v36))
+            } else if up == num && down == num && left == -2 && right == -2 {
+                Some((180, 126 + v36))
+            } else if up == -2 && down == -2 && left == num && right == num {
+                Some((144 + v18, 180))
+            } else if up == -2 && down == num && left == -2 && right == -2 {
+                Some((198, 90 + v36))
+            } else if up == num && down == -2 && left == -2 && right == -2 {
+                Some((198, 144 + v18))
+            } else if up == -2 && down == -2 && left == num && right == -2 {
+                Some((216, 144 + v18))
+            } else if up == -2 && down == -2 && left == -2 && right == num {
+                Some((216, 90 + v18))
+            } else if up == -2 && down == -2 && left == -2 && right == -2 {
+                Some((108 + v18, 198))
+            } else if up == num && down == num && left == num && right == num {
+                // Base corners (WorldGen.cs:83723-83797): four independent
+                // `if`s, each overwriting the previous rectangle.
+                let mut r = None;
+                if ul == -2 {
+                    r = Some((18, 108 + v36));
+                }
+                if ur == -2 {
+                    r = Some((0, 108 + v36));
+                }
+                if dl == -2 {
+                    r = Some((18, 90 + v36));
+                }
+                if dr == -2 {
+                    r = Some((0, 90 + v36));
+                }
+                r
+            } else {
+                None
+            }
+        } else {
+            // One or more open sides (WorldGen.cs:83799-84241).
+            let open = if up != -1 && down != -1 && left == -1 && right == num {
+                if up == -2 && down == num {
+                    Some((72, 144 + v18))
+                } else if down == -2 && up == num {
+                    Some((72, 90 + v18))
+                } else {
+                    None
+                }
+            } else if up != -1 && down != -1 && left == num && right == -1 {
+                if up == -2 && down == num {
+                    Some((90, 144 + v18))
+                } else if down == -2 && up == num {
+                    Some((90, 90 + v18))
+                } else {
+                    None
+                }
+            } else if up == -1 && down == num && left != -1 && right != -1 {
+                if left == -2 && right == num {
+                    Some((v18, 198))
+                } else if right == -2 && left == num {
+                    Some((54 + v18, 198))
+                } else {
+                    None
+                }
+            } else if up == num && down == -1 && left != -1 && right != -1 {
+                if left == -2 && right == num {
+                    Some((v18, 216))
+                } else if right == -2 && left == num {
+                    Some((54 + v18, 216))
+                } else {
+                    None
+                }
+            } else if up != -1 && down != -1 && left == -1 && right == -1 {
+                if up == -2 && down == -2 {
+                    Some((108, 216 + v36))
+                } else if up == -2 {
+                    Some((126, 144 + v18))
+                } else if down == -2 {
+                    Some((126, 90 + v18))
+                } else {
+                    None
+                }
+            } else if up == -1 && down == -1 && left != -1 && right != -1 {
+                if left == -2 && right == -2 {
+                    Some((162 + v18, 198))
+                } else if left == -2 {
+                    Some((v18, 252))
+                } else if right == -2 {
+                    Some((54 + v18, 252))
+                } else {
+                    None
+                }
+            } else if up == -2 && down == -1 && left == -1 && right == -1 {
+                Some((108, 144 + v18))
+            } else if up == -1 && down == -2 && left == -1 && right == -1 {
+                Some((108, 90 + v18))
+            } else if up == -1 && down == -1 && left == -2 && right == -1 {
+                Some((v18, 234))
+            } else if up == -1 && down == -1 && left == -1 && right == -2 {
+                Some((54 + v18, 234))
+            } else {
+                None
+            };
+            if open.is_some() {
+                open
+            } else if !matches!(num, 2 | 23 | 60 | 70 | 109 | 199 | 477 | 492 | 633 | 661 | 662)
+            {
+                // The non-grass arm (WorldGen.cs:83801-83878) — moss and moss
+                // brick land here.
+                if up == -1 && down == -2 && left == num && right == num {
+                    Some((234 + v18, 0))
+                } else if up == -2 && down == -1 && left == num && right == num {
+                    Some((234 + v18, 18))
+                } else if up == num && down == num && left == -1 && right == -2 {
+                    Some((234 + v18, 36))
+                } else if up == num && down == num && left == -2 && right == -1 {
+                    Some((234 + v18, 54))
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        };
+        if t.is_some() {
+            rect = t;
+        }
+    }
+
+    // WorldGen.cs:84390-84836. `TileID.Sets.HasSlopeFrames` (WorldGen.cs:84245)
+    // has no grass-family member — their slope look comes from the slope draw
+    // path — so the slope-frame block is not ported here.
+    if rect.is_none() {
+        // WorldGen.cs:84398-84402: for the grass family the base `-2` slots
+        // rejoin the mass before the generic chain runs.
+        if matches!(num, 2 | 23 | 60 | 70 | 109 | 199 | 477 | 492 | 633 | 661 | 662)
+            || td::TILE_MOSS.has(num as u16)
+            || td::SET_TILE_MOSS_BRICK.has(num as u16)
+        {
+            merge_eq(n, num, -2);
+        }
+        // The generic chain (WorldGen.cs:84403-84765) with `-1` = open.
+        let mut mask = 0u8;
+        for (i, bit) in [
+            UP, DOWN, LEFT, RIGHT, UP_LEFT, UP_RIGHT, DOWN_LEFT, DOWN_RIGHT,
+        ]
+        .iter()
+        .enumerate()
+        {
+            if *n.slots()[i] == num {
+                mask |= *bit;
+            }
+        }
+        for r in RULES.iter() {
+            if mask & r.need == r.want {
+                rect = Some(r.frames[variant(x, y)]);
+                break;
+            }
+        }
+        // WorldGen.cs:84767-84784: the interior fallback.
+        if rect.is_none() {
+            rect = Some(([18, 36, 54][variant(x, y)], 18));
+        }
+    }
+    let (fx, fy) = rect.expect("grass framing always resolves");
+    // WorldGen.cs:84785-84792 shifts the fourth large-frame row down 90 px;
+    // no grass-family tile uses `tileLargeFrames` and the `frameNumber`
+    // stand-in only yields 0..=2, so the shift cannot trigger.
+    (fx, fy)
 }
 
 /// Computes the frame for one tile. Returns `(frameX, frameY)` in tileset pixels.
@@ -295,7 +864,7 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     }
 
     // Neighbour slots: up, down, left, right, then the four corners.
-    let mut n = [
+    let n = [
         up,
         down,
         left,
@@ -305,6 +874,23 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
         dl.map_or(-1, neighbour),
         dr.map_or(-1, neighbour),
     ];
+    // The grass family branches off here with the raw neighbour types
+    // (WorldGen.cs:82184): its chains compare against the bare base-dirt id,
+    // which the generic merges below would fold away.
+    if is_grass_family(me) {
+        let mut nb = Nb {
+            up: n[0],
+            down: n[1],
+            left: n[2],
+            right: n[3],
+            ul: n[4],
+            ur: n[5],
+            dl: n[6],
+            dr: n[7],
+        };
+        return Some(grass_frame_of(x, y, num, &mut nb));
+    }
+    let mut n = n;
 
     // `WorldGen.TileMergeAttempt`: any slot whose type matches becomes `me`.
     fn merge<F: Fn(u16) -> bool>(n: &mut [i32; 8], me: i32, pred: F) {
@@ -363,11 +949,6 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
             td::TILE_MOSS.has(v) || td::SET_TILE_MOSS_BRICK.has(v)
         });
     }
-    // Grass draws a dirt-coloured border, so it merges with its base dirt.
-    if td::SET_NEEDS_GRASS_FRAMING.has(me) {
-        let base = td::GRASS_DIRT[me as usize];
-        merge(&mut n, num, |v| td::SET_DIRT.has(v) || v == base);
-    }
 
     let mut mask = 0u8;
     for (i, bit) in [
@@ -384,15 +965,6 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     // `frameNumber` is stored per tile in the save file but we approximate it with a
     // position hash. `Main.tileLargeFrames` overrides it with a fixed per-position
     // pattern (used by tiles that must not tile their texture).
-    // `WorldGen.TileFrame`'s grass overrides: grass tiles use a dedicated set of
-    // side/top/corner frames so the green edge wraps around a step instead of ending
-    // in a plain dirt face. Only tile 2 (forest grass) has the matching Tiles_2 layout.
-    if tile.kind == 2 {
-        if let Some(f) = grass_frame(world, x, y) {
-            return Some(f);
-        }
-    }
-
     let mut variant = variant(x, y);
     match td::LARGE_FRAMES[me as usize] {
         1 => {
@@ -747,5 +1319,79 @@ mod tests {
             corner.wall_col()
         );
         assert_eq!(corner.wall_row(), 3);
+    }
+
+    /// A lone grass tile on dirt takes the dirt-blend bottom edge
+    /// (`up == -1 && down == -2 && left == -1 && right == -1`,
+    /// WorldGen.cs:84185-84202) instead of the old green rim.
+    #[test]
+    fn lone_grass_over_dirt_blends() {
+        let mut w = World::new("t".into(), 11, 11);
+        for y in 6..10 {
+            for x in 1..10 {
+                solid(&mut w, x, y, 0);
+            }
+        }
+        solid(&mut w, 5, 5, 2);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = variant(5, 5) as i16;
+        assert_eq!((t.frame_x, t.frame_y), (108, 90 + v * 18),);
+    }
+
+    /// A grass step whose left neighbour is dirt wraps the green edge over it
+    /// (`up != num && up != base && down == base, left == base, right == num`,
+    /// WorldGen.cs:82216-82254).
+    #[test]
+    fn grass_step_wraps_over_dirt() {
+        let mut w = World::new("t".into(), 11, 11);
+        for y in 5..10 {
+            for x in 1..10 {
+                solid(&mut w, x, y, 0);
+            }
+        }
+        solid(&mut w, 4, 4, 0); // dirt shoulder at the step
+        solid(&mut w, 5, 4, 2);
+        solid(&mut w, 6, 4, 2);
+        frame_world(&mut w);
+        let t = *w.tile(5, 4).unwrap();
+        let v = variant(5, 4) as i16;
+        assert_eq!((t.frame_x, t.frame_y), (v * 18, 198));
+    }
+
+    /// Grass fully enclosed by dirt resolves through the mowed checkerboard
+    /// (WorldGen.cs:83341-83379): `(i + j) % 2` picks the pattern frame.
+    #[test]
+    fn enclosed_grass_uses_checkerboard() {
+        let mut w = World::new("t".into(), 11, 11);
+        for y in 1..10 {
+            for x in 1..10 {
+                solid(&mut w, x, y, 0);
+            }
+        }
+        solid(&mut w, 5, 5, 2);
+        solid(&mut w, 5, 6, 2);
+        frame_world(&mut w);
+        let v5 = variant(5, 5) as i16;
+        let v6 = variant(5, 6) as i16;
+        let even = *w.tile(5, 5).unwrap();
+        let odd = *w.tile(5, 6).unwrap();
+        assert_eq!((even.frame_x, even.frame_y), (18 + v5 * 18, 18));
+        assert_eq!((odd.frame_x, odd.frame_y), (108 + v6 * 18, 198));
+    }
+
+    /// Grass sandwiched between dirt above and below with open sides takes the
+    /// double-blend frame (`up == -2 && down == -2 && left == -1 && right == -1`,
+    /// WorldGen.cs:84044-84242).
+    #[test]
+    fn grass_between_dirt_blends_both_ways() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 4, 0);
+        solid(&mut w, 5, 5, 2);
+        solid(&mut w, 5, 6, 0);
+        frame_world(&mut w);
+        let t = *w.tile(5, 5).unwrap();
+        let v = variant(5, 5) as i16;
+        assert_eq!((t.frame_x, t.frame_y), (108, 216 + v * 36));
     }
 }
