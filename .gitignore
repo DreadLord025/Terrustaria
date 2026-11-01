@@ -6,7 +6,7 @@
 /assets/test/
 /decompiled/
 /decompiled-libs/
-
+/.code-foundations/
 /.opencode/
 
 # .NET tooling output
