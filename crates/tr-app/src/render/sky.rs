@@ -158,8 +158,10 @@ pub(crate) fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<Cloud
     }
     let mut state = world.seed ^ 0x2545_F491_4F6C_DD1D;
     // Clear-weather cloud count: the `numCloudsTemp` walk is clamped into
-    // 0..=100 while the sky is clear (`Main.cs:58980-58982`).
-    let num_clouds = next_range(&mut state, 0, 101) as f32;
+    // 0..=100 while the sky is clear (`Main.cs:58980-58982`) and the
+    // `weatherCounter` jumps (`Main.cs:59012-59031`) drive it into that clamp,
+    // so the steady state sits at the clamp itself.
+    let num_clouds = 100.0f32;
     let span = world.width as f32 * TILE_PX * 0.55 + 3000.0;
     // Anchors spread over `span` (plus the spawn margin) so a 1600 px screen —
     // the original's backbuffer — cuts `num_clouds` of them, matching the

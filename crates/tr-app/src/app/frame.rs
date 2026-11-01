@@ -38,10 +38,17 @@ fn no_cache() -> bool {
 impl App {
     pub(crate) fn frame(&mut self) {
         let now = Instant::now();
-        let dt = now
-            .duration_since(self.last_frame)
-            .as_secs_f32()
-            .clamp(0.0, 0.1);
+        // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
+        // `anim_time`, and wall-clock jitter between runs would make two shots of
+        // the same scene differ in a few pixels. A fixed 1/60 step (what vsync
+        // delivers anyway) keeps `anim_time = frames / 60` exact.
+        let dt = if self.shot_path.is_some() {
+            1.0 / 60.0
+        } else {
+            now.duration_since(self.last_frame)
+                .as_secs_f32()
+                .clamp(0.0, 0.1)
+        };
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
