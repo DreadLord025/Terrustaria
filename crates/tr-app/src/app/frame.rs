@@ -228,6 +228,7 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                liquid_alpha,
                 items,
                 swing,
                 projectiles,
@@ -357,6 +358,21 @@ impl App {
                 // keeps the step at one screen pixel even at 1.5x / 2x.
                 let draw_cam = (*camera * *zoom).round() / *zoom;
                 let surface_px = world.world_surface as f32 * TILE_PX;
+                // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
+                // cross-fade ramps per frame while the current water style is a
+                // plain water style — lava (1), honey (11) and shimmer (14) sit
+                // outside the ramp.
+                let water_style_now =
+                    crate::biome::calculate_water_style(world, draw_cam);
+                if crate::render::liquids::is_liquid_style_water(water_style_now) {
+                    for (i, a) in liquid_alpha.iter_mut().enumerate() {
+                        *a = if i == water_style_now {
+                            (*a + 0.2).min(1.0)
+                        } else {
+                            (*a - 0.2).max(0.0)
+                        };
+                    }
+                }
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -463,7 +479,14 @@ impl App {
                         items,
                         &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
+                        liquid_alpha,
+                        // `TrySparkling`'s draw thread: the frame count pins it.
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ world.seed,
                     );
+                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
+                    // into the rain module's dust particles.
+                    rain.spawn_sparkles(waterfall.take_sparkles());
                     // `PlayerDrawLayers.DrawPlayer_27_HeldItem`: the item is only drawn
                     // while it is being used (`itemAnimation > 0 && useStyle != 0`), so
                     // the hand is empty at rest. Hold-style items (torches etc.) are not

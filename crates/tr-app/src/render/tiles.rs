@@ -9,7 +9,7 @@ use crate::npc::Npc;
 use crate::player::{self, Player};
 use crate::render::entities::{NpcAssets, PlayerAssets, draw_npcs, draw_player, flip_uv};
 use crate::render::foliage::draw_tree_foliage;
-use crate::render::liquids::{LiquidPass, draw_liquids, draw_tile_liquid_behind};
+use crate::render::liquids::{LiquidPass, draw_tile_liquid_behind, draw_waters};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
 use std::time::Instant;
@@ -46,6 +46,11 @@ pub(crate) struct DrawScratch {
     next: Vec<[i32; 4]>,
     /// Dark x-runs of the current row.
     cur: Vec<(i32, i32)>,
+    /// The waterfall `AddLight` sources of the previous frame
+    /// (`WaterfallManager.AddLight`): vanilla's light engine consumes the
+    /// previous frame's light list when `LightTiles` runs, so the lights are
+    /// swapped here after each world pass and consumed by the next compute.
+    pub(crate) waterfall_lights: Vec<tr_core::lighting::DynamicLight>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -143,6 +148,11 @@ pub(crate) fn draw_tiles(
     items: &[ItemDrop],
     remote: &[net::PlayerNet],
     edit_target: Option<(i32, i32)>,
+    // `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade alphas
+    // the `DrawWaters` ramp drives; the liquid and waterfall passes consume it.
+    liquid_alpha: &[f32; 15],
+    // The frame's deterministic seed for the `TrySparkling` draws.
+    sparkle_seed: u64,
 ) -> TileDrawStats {
     let t_total = Instant::now();
     let half = screen * 0.5 / zoom;
@@ -155,9 +165,28 @@ pub(crate) fn draw_tiles(
 
     // `Main.waterStyle` is a single biome value for the whole frame, exactly like
     // `Main.CalculateWaterStyle` (the original evaluates it from the player's biome).
-    let water_style = calculate_water_style(world, camera);
+    let mut water_style = calculate_water_style(world, camera);
+    // `TR_WATER_STYLE=<n>`: pin the water style so the per-style passes, the
+    // `liquidAlpha` cross-fade and the biome liquid sheets stay screenshotable.
+    if let Ok(v) = std::env::var("TR_WATER_STYLE") {
+        if let Ok(n) = v.parse::<usize>() {
+            water_style = n.min(14);
+        }
+    }
     let t_light = Instant::now();
-    light.compute_into(world, x0, y0, x1, y1, params);
+    // Vanilla applies the waterfall lights one frame late (the engine keeps the
+    // previous frame's `AddLight` list when `LightTiles` runs); `scratch`
+    // carries exactly that list.
+    light.compute_into_with_lights(
+        world,
+        x0,
+        y0,
+        x1,
+        y1,
+        params,
+        &scratch.waterfall_lights,
+        waterfall.lights_key(),
+    );
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
     if let Ok(v) = std::env::var("TR_LIGHT_AT") {
@@ -242,7 +271,7 @@ pub(crate) fn draw_tiles(
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
     if std::env::var_os("TR_NO_LIQBACK").is_none() {
-        stats.liquids += draw_liquids(
+        stats.liquids += draw_waters(
             r,
             lookups,
             light,
@@ -251,6 +280,7 @@ pub(crate) fn draw_tiles(
             &liquid_draws,
             LiquidPass::Background,
             water_style,
+            liquid_alpha,
         );
     }
 
@@ -260,15 +290,20 @@ pub(crate) fn draw_tiles(
     // wall behind a fall is drawn over it (documented approximation).
     if std::env::var_os("TR_NO_WATERFALL").is_none() {
         let mut falls = Vec::new();
-        waterfall.draw(
+        let lights = waterfall.draw(
             world,
             light,
             style,
             anim_time,
-            water_style as i32,
+            liquid_alpha,
+            params.mouse_text_color,
+            sparkle_seed,
             [x0, y0, x1, y1],
             &mut falls,
         );
+        // The walk's `AddLight` list feeds the next frame's light map (vanilla's
+        // engine consumes the previous frame's lights the same way).
+        scratch.waterfall_lights = lights;
         for d in falls {
             let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
                 continue;
@@ -612,7 +647,7 @@ pub(crate) fn draw_tiles(
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
     if std::env::var_os("TR_NO_LIQFRONT").is_none() {
-        stats.liquids += draw_liquids(
+        stats.liquids += draw_waters(
             r,
             lookups,
             light,
@@ -621,6 +656,7 @@ pub(crate) fn draw_tiles(
             &liquid_draws,
             LiquidPass::Foreground,
             water_style,
+            liquid_alpha,
         );
     }
     if let Some((tx, ty)) = edit_target {

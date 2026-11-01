@@ -256,6 +256,11 @@ pub(crate) struct App {
     pub(crate) waterfall_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
+    /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
+    /// waterfall passes consume it. Zeros, like the original's allocation
+    /// (`Main.cs:66805`), so the liquids fade in over the first frames.
+    pub(crate) liquid_alpha: [f32; 15],
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
     pub(crate) item_rng: u64,
@@ -1057,6 +1062,7 @@ impl App {
         waterfall: tr_core::waterfall::WaterfallManager::new(),
         waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
         rain,
+        liquid_alpha: [0.0; 15],
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -1096,6 +1102,43 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         world.memory_bytes() as f32 / 1e6,
         t0.elapsed().as_secs_f32() * 1000.0
     );
+    // `TR_POOL=tx,ty,w,h,kind`: fill a rectangle with liquid at load (0 water,
+    // 1 lava, 2 honey, 3 shimmer) so the honey/shimmer draw passes and the
+    // waterfall types stay screenshotable without the biomes that produce them.
+    if let Ok(v) = std::env::var("TR_POOL") {
+        let mut it = v.split(',');
+        let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
+        if let Ok(vals) = vals && vals.len() == 5 {
+            let (tx, ty, tw, th, kind) = (
+                vals[0] as i32,
+                vals[1] as i32,
+                vals[2] as i32,
+                vals[3] as i32,
+                vals[4] as i32,
+            );
+            let kind_flag: u8 = match kind {
+                1 => tr_core::tile::FLAG_LIQUID_LAVA,
+                2 => tr_core::tile::FLAG_LIQUID_HONEY,
+                3 => tr_core::tile::FLAG_LIQUID_SHIMMER,
+                _ => 0,
+            };
+            for x in tx..(tx + tw) {
+                for y in ty..(ty + th) {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        // A pure liquid cell: the tile body stays inactive and
+                        // only the liquid byte plus the kind flags are set.
+                        t.kind = 0;
+                        t.flags &= !(tr_core::tile::FLAG_LIQUID_LAVA
+                            | tr_core::tile::FLAG_LIQUID_HONEY
+                            | tr_core::tile::FLAG_LIQUID_SHIMMER);
+                        t.flags |= kind_flag;
+                        t.liquid = 255;
+                    }
+                }
+            }
+            world.revision = world.revision.wrapping_add(1);
+        }
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()
