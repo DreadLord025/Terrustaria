@@ -3,7 +3,7 @@
 //! underground backdrop it tails into lives in [`super::bg`].
 use super::BgTex;
 use super::bg::{
-    bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, push_screen, push_screen_rot,
+    bg_scale_adjust, draw_background, draw_bg_layer, draw_front_trees, push_screen_rot,
 };
 use crate::app::{next_rand, rand01};
 use crate::assets;
@@ -101,41 +101,125 @@ pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
     ]
 }
 
-/// One background cloud. Positions are in a virtual "cloud space": the draw pass
-/// adds `camera.x * 0.5`, giving the clouds a slower parallax than the world.
+/// `[lo, hi)` draw from the splitmix stream — the shape of `Random.Next(lo, hi)`.
+fn next_range(state: &mut u64, lo: i32, hi: i32) -> i32 {
+    lo + (next_rand(state) % (hi - lo) as u64) as i32
+}
+
+/// `Cloud.GetParallax` (`Cloud.cs:318-338`): the per-cloud fraction of the
+/// camera's X movement, from its scale bucket.
+fn cloud_parallax(scale: f32) -> f32 {
+    let (a, b) = if scale < 1.0 {
+        (0.07, (scale + 0.15 + 1.0) / 2.0)
+    } else if scale <= 1.15 {
+        (0.19, scale - 0.075)
+    } else {
+        (0.23, scale - 0.15 - 0.075)
+    };
+    a * (b * b)
+}
+
+/// One background cloud from the `Cloud.addCloud` distribution below. `x` is a
+/// world-space anchor: the pass renders the cloud `parallax * camera.x` screen
+/// pixels to the left of it, the world-space form of `Cloud.UpdateCloudParallax`
+/// (`Cloud.cs:295-316`, `position.X -= cameraDelta * GetParallax()`). `y` is the
+/// vanilla spawn height in the 600 px reference screen the original spawns in;
+/// each pass maps it with its own `DrawClouds_*` formula.
 #[derive(Clone, Copy)]
 pub(crate) struct CloudSprite {
     uv: [f32; 4],
     w: f32,
     h: f32,
     x: f32,
-    /// Fraction of the sky half-height above the camera (0 = center, 1 = top).
-    alt: f32,
+    y: f32,
     scale: f32,
+    /// `Cloud.rotation`, settled into the ±0.02 clamp of `Cloud.Update`
+    /// (`Cloud.cs:430-437`).
+    rotation: f32,
+    /// The `SpriteEffects.FlipHorizontally` coin flip (`Cloud.cs:88-91`).
+    flip: bool,
 }
 
-/// Deterministic cloud layout for a world. The original keeps a live cloud array;
-/// a fixed seeded set is enough for a background layer and keeps the world range
-/// reusable while the camera is static.
+/// Deterministic stand-in for the original's live 200-slot cloud array: the
+/// attributes of every cloud and the total count follow `Cloud.addCloud`
+/// (`Cloud.cs:60-178`) and the clear-weather `numCloudsTemp` equilibrium
+/// (`Main.cs:58980-58982`) from the world seed, spread over the world so every
+/// camera shows about as many clouds as the original's screen-anchored
+/// spawn/kill cycle keeps alive. Deviations (see `docs/ANALYSIS.md`): the wind
+/// drift is a constant light wind scaled by `GetParallax` (the original
+/// integrates `windSpeedCurrent * 9 * GetParallax` per tick, `Cloud.cs:391`),
+/// the spawn-time overlap rejection (`Cloud.cs:170-177`) is not simulated, and
+/// the storm type branch (`Cloud.cs:116-127`) and rare clouds
+/// (`Cloud.RollRareCloud`, `Cloud.cs:140-147`) need weather/boss state that the
+/// static field does not have.
 pub(crate) fn make_clouds(world: &World, lookups: &assets::Lookups) -> Vec<CloudSprite> {
-    let available: Vec<assets::CloudTex> = lookups.clouds.iter().flatten().copied().collect();
-    if available.is_empty() {
+    if lookups.clouds.is_empty() {
         return Vec::new();
     }
     let mut state = world.seed ^ 0x2545_F491_4F6C_DD1D;
+    // Clear-weather cloud count: the `numCloudsTemp` walk is clamped into
+    // 0..=100 while the sky is clear (`Main.cs:58980-58982`).
+    let num_clouds = next_range(&mut state, 0, 101) as f32;
     let span = world.width as f32 * TILE_PX * 0.55 + 3000.0;
-    let count = ((span / 300.0) as usize).clamp(40, 400);
-    (0..count)
-        .map(|_| {
-            let tex = available[(next_rand(&mut state) % available.len() as u64) as usize];
-            CloudSprite {
+    // Anchors spread over `span` (plus the spawn margin) so a 1600 px screen —
+    // the original's backbuffer — cuts `num_clouds` of them, matching the
+    // original's on-screen density for its `numClouds`.
+    let band = span + 1000.0;
+    let pool = (num_clouds * band / (1600.0 + 1200.0)).ceil() as usize;
+    (0..pool)
+        .filter_map(|_| {
+            // `Cloud.addCloud` (`Cloud.cs:82-158`) in its RNG order.
+            let mut scale = next_range(&mut state, 70, 131) as f32 * 0.01;
+            if scale > 1.3 {
+                scale = 1.3;
+            }
+            if scale < 0.7 {
+                scale = 0.7;
+            }
+            // `Cloud.Update` nudges exact 1/1.15 scales out of the bucket edges
+            // (`Cloud.cs:383-390`) on its first tick; generate past that so the
+            // buckets and the type branches see the steady-state value.
+            if scale == 1.0 {
+                scale = 0.9999;
+            }
+            if scale == 1.15 {
+                scale = 1.1499;
+            }
+            let rotation = (next_range(&mut state, -10, 11) as f32 * 0.01).clamp(-0.02, 0.02);
+            let flip = next_range(&mut state, 0, 2) == 0;
+            let x = rand01(&mut state) * band - 1000.0;
+            // Spawn heights in the 600 px reference screen: `-0.25*h .. 0.15*h`,
+            // a third of the clouds lifted by up to `0.1*h` (`Cloud.cs:110-114`).
+            let mut y = next_range(&mut state, -150, 90) as f32;
+            if next_range(&mut state, 0, 3) == 0 {
+                y -= next_range(&mut state, 0, 60) as f32;
+            }
+            let mut kind = next_range(&mut state, 0, 4) as usize;
+            // The clear-weather type branches (`Cloud.cs:128-139`), with the
+            // screen-height terms at h = 600.
+            if scale < 1.0 && y < -90.0 && num_clouds <= 80.0 {
+                kind = next_range(&mut state, 9, 14) as usize;
+            } else if ((scale < 1.15 && y < -180.0) || (scale < 0.85 && y < 90.0))
+                && num_clouds > 70.0
+            {
+                kind = next_range(&mut state, 4, 9) as usize;
+            } else if y > -90.0 && next_range(&mut state, 0, 2) == 0 && num_clouds > 20.0 {
+                kind = next_range(&mut state, 14, 18) as usize;
+            }
+            if scale > 1.2 {
+                y += 100.0;
+            }
+            let tex = lookups.clouds.get(kind).and_then(|t| t.as_ref())?;
+            Some(CloudSprite {
                 uv: tex.uv,
                 w: tex.w,
                 h: tex.h,
-                x: rand01(&mut state) * span,
-                alt: 0.12 + rand01(&mut state) * 0.83,
-                scale: 0.45 + rand01(&mut state) * 0.55,
-            }
+                x,
+                y,
+                scale,
+                rotation,
+                flip,
+            })
         })
         .collect()
 }
@@ -192,13 +276,24 @@ pub(crate) struct SkyAssets {
     pub(crate) stars: Vec<Option<BgTex>>,
 }
 
+/// One star from `Star.SpawnStars` (`Star.cs:86-158`). Positions live in the
+/// original's 1920x1200 design space and are mapped onto the screen by `DrawStar`
+/// (`Main.cs:63112-63137`); `twinkle` and `rotation` oscillate from their spawn
+/// values at the per-star speeds.
 #[derive(Clone, Copy)]
 pub(crate) struct StarSprite {
     x: f32,
     y: f32,
-    size: f32,
+    scale: f32,
     tex: usize,
+    /// `Star.twinkle` at spawn — the phase of the 0.6..1 oscillation.
     phase: f32,
+    /// `Star.twinkleSpeed` (per tick, signed).
+    twinkle_speed: f32,
+    /// `Star.rotation` at spawn (radians).
+    rotation: f32,
+    /// `Star.rotationSpeed` (per tick, signed).
+    rotation_speed: f32,
 }
 
 pub(crate) fn sky_tex(
@@ -255,17 +350,115 @@ pub(crate) fn make_sky_assets(atlas: &Atlas) -> SkyAssets {
 }
 
 pub(crate) fn make_stars(world: &World) -> Vec<StarSprite> {
+    // `Star.SpawnStars` seeds a `FastRandom.CreateWithRandomSeed()` — a fresh
+    // OS-seeded stream per launch (`Star.cs:88`); the port pins it to the world
+    // seed so screenshots stay deterministic.
     let mut state = world.seed ^ 0xA076_1D64_78BD_642F;
-    (0..140)
-        .map(|_| StarSprite {
-            x: rand01(&mut state),
-            // Upper half of the screen; the ground covers the rest.
-            y: rand01(&mut state) * 0.62,
-            size: 3.0 + rand01(&mut state) * 6.0,
-            tex: (next_rand(&mut state) % 4) as usize,
-            phase: rand01(&mut state) * std::f32::consts::TAU,
+    let count = next_range(&mut state, 200, 400);
+    (0..count)
+        .map(|_| {
+            // The spawn recipe in its RNG order (`Star.cs:129-152`).
+            let x = next_range(&mut state, 0, 1921) as f32;
+            let y = next_range(&mut state, 0, 1201) as f32;
+            let rotation = next_range(&mut state, 0, 628) as f32 * 0.01;
+            let mut scale = next_range(&mut state, 70, 130) as f32 * 0.006;
+            let tex = next_range(&mut state, 0, 4) as usize;
+            let phase = next_range(&mut state, 60, 101) as f32 * 0.01;
+            let mut twinkle_speed = next_range(&mut state, 30, 110) as f32 * 0.0001;
+            if next_range(&mut state, 0, 2) == 0 {
+                twinkle_speed = -twinkle_speed;
+            }
+            let mut rotation_speed = next_range(&mut state, 5, 50) as f32 * 0.0001;
+            if next_range(&mut state, 0, 2) == 0 {
+                rotation_speed = -rotation_speed;
+            }
+            if next_range(&mut state, 0, 40) == 0 {
+                scale *= 2.0;
+                twinkle_speed *= 0.5;
+                rotation_speed *= 0.5;
+            }
+            StarSprite {
+                x,
+                y,
+                scale,
+                tex,
+                phase,
+                twinkle_speed,
+                rotation,
+                rotation_speed,
+            }
         })
         .collect()
+}
+
+/// One `DrawClouds_*` pass (`Main.cs:59644-59703`): every cloud of the scale
+/// bucket, at `cY = y * screen_y_scale + top`, drawn the way
+/// `NextHorizonRenderer.DrawCloud` (`NextHorizonRenderer.cs:241-252`) composes
+/// it: `Cloud.cloudColor` (`Cloud.cs:227-235`) scales the sky colour by
+/// `scale * Alpha` on every channel including alpha, the distant pass pulls red
+/// and green down (`OriginalColorsForCloud`, `NextHorizonRenderer.cs:254-263`),
+/// and the sprite rotates about its centre. `bucket` is 1 (scale < 1), 2
+/// (1 ..< 1.15) or 3 (>= 1.15) — the `DrawClouds_Distant/Closer/Closest` split.
+#[allow(clippy::too_many_arguments)]
+fn draw_cloud_pass(
+    r: &mut SpriteRenderer,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    clouds: &[CloudSprite],
+    tint: [f32; 3],
+    bucket: u8,
+    screen_y_scale: f32,
+    top: f32,
+    drift: f32,
+) {
+    for c in clouds {
+        let in_bucket = match bucket {
+            1 => c.scale < 1.0,
+            2 => c.scale >= 1.0 && c.scale < 1.15,
+            _ => c.scale >= 1.15,
+        };
+        if !in_bucket {
+            continue;
+        }
+        let p = cloud_parallax(c.scale);
+        let w = c.w * c.scale;
+        let h = c.h * c.scale;
+        let sx = c.x - p * camera.x + drift * p;
+        let cy = c.y * screen_y_scale + top;
+        // `Cloud.Update` retires clouds 600 px off the sides (`Cloud.cs:417-420`);
+        // the screen-space cull here only saves instances, so a small margin
+        // over the ±0.02 rotation is enough.
+        if sx + w < -100.0 || sx > screen.x + 100.0 || cy + h < -100.0 || cy > screen.y + 100.0 {
+            continue;
+        }
+        // `Cloud.cloudColor` (`Cloud.cs:227-235`).
+        let a = c.scale;
+        let mut color = [tint[0] * a, tint[1] * a, tint[2] * a, a];
+        if bucket == 1 {
+            // `OriginalColorsForCloud` (`NextHorizonRenderer.cs:254-263`).
+            color[0] *= c.scale * 0.8;
+            color[1] *= (c.scale + 1.0) / 2.0 * 0.9;
+        }
+        let uv = if c.flip {
+            [c.uv[2], c.uv[1], c.uv[0], c.uv[3]]
+        } else {
+            c.uv
+        };
+        // `DrawCloud` centres the sprite at the top-left plus half the scaled
+        // size and rotates about it (`NextHorizonRenderer.cs:244-251`).
+        push_screen_rot(
+            r,
+            camera,
+            zoom,
+            screen,
+            [sx + w * 0.5, cy + h * 0.5],
+            [w, h],
+            uv,
+            color,
+            c.rotation,
+        );
+    }
 }
 
 pub(crate) fn draw_sky(
@@ -365,23 +558,80 @@ pub(crate) fn draw_sky(
     // Celestial bodies, stars and the parallax surface background. These are drawn
     // in screen space (compensated for zoom) like `DrawSunAndMoon`/`DrawSurfaceBG`.
 
-    let sky_luma = (tint[0] + tint[1] + tint[2]) / 3.0;
-    let star_alpha = ((1.0 - sky_luma * 2.8).clamp(0.0, 1.0)) * 0.85;
-    if !is_day && star_alpha > 0.02 {
+    // The vertical anchor of the star/sun plane (`Main.cs:62040`): it slides the
+    // whole sky up as the camera descends. `Main.screenPosition` is the
+    // *unzoomed* view top-left: the surface background is laid out in that space
+    // (`DrawSurfaceBG` uses `screenPosition` directly), so changing
+    // `GameZoomTarget` must not move or resize it.
+    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
+    let view_top = camera.y - screen.y * 0.5;
+    let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface) as f32;
+
+    // `DrawStarsInBackground` (`Main.cs:63030-63058`): visibility is driven by
+    // the sky colour alone — `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0`
+    // hides them — so the field fades out across dawn instead of switching off
+    // at a fixed hour. (`Main.atmo` is 1 at the surface; the graveyard dim of
+    // `Main.cs:63037-63045` is not modelled.)
+    let sky_r = (tint[0] * 255.0) as i32;
+    if 255.0 * (1.0 - storm) - sky_r as f32 - 25.0 > 0.0 {
         for s in stars {
             let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
                 continue;
             };
-            let twinkle = 0.65 + 0.35 * s.phase.sin();
-            push_screen(
+            // `Star.Update`'s 0.6..1 twinkle oscillation (`Star.cs:215-225`),
+            // sine-approximated around the same centre and range.
+            let twinkle = 0.8
+                + 0.2
+                    * (s.phase
+                        + anim_time * 60.0 * s.twinkle_speed * (std::f32::consts::TAU / 0.8))
+                        .sin();
+            // `DrawStar`'s greyscale brightness (`Main.cs:63069-63080`): how far
+            // the sky sits below white, averaged over the channels, x1.4.
+            let ch = |c: f32| (255.0 - c * 255.0 - 100.0) * twinkle;
+            let n3 = ch(tint[0]) as i32;
+            let n4 = ch(tint[1]) as i32;
+            let n3 = (n3 + ch(tint[2]) as i32 + n4) / 3;
+            if n3 <= 0 {
+                continue;
+            }
+            let mut v = (n3 as f64 * 1.4) as i32;
+            if v > 255 {
+                v = 255;
+            }
+            // `Main.cs:63112-63137`: the design-space position mapped onto the
+            // screen and shifted by `sceneArea.bgTopY`, wrapped into the frame.
+            let mut px = s.x / 1920.0 * screen.x;
+            let mut py = s.y / 1200.0 * screen.y + bg_top_y;
+            if px < 0.0 {
+                px += screen.x;
+            }
+            if px > screen.x {
+                px -= screen.x;
+            }
+            if py < 0.0 {
+                py += screen.y;
+            }
+            if py > screen.y {
+                py -= screen.y;
+            }
+            // `Main.cs:63172`: `tex.Size() * scale * twinkle`, rotated about the
+            // centre; `Star.Update` advances `rotation` by `rotationSpeed` per
+            // tick (`Star.cs:226`). The decompile builds the colour from
+            // `default` and assigns only R/G/B (`Main.cs:63083-63086`) — a zero
+            // alpha would make every star invisible, so the port draws them
+            // fully opaque at the computed brightness (see ANALYSIS.md).
+            let k = s.scale * twinkle;
+            let rot = s.rotation + anim_time * 60.0 * s.rotation_speed;
+            push_screen_rot(
                 r,
                 camera,
                 zoom,
                 screen,
-                [s.x * screen.x, s.y * screen.y],
-                [s.size, s.size],
+                [px, py],
+                [st.w * k, st.h * k],
                 st.uv,
-                [1.0, 1.0, 1.0, star_alpha * twinkle],
+                [v as f32 / 255.0, v as f32 / 255.0, v as f32 / 255.0, 1.0],
+                rot,
             );
         }
     }
@@ -390,7 +640,6 @@ pub(crate) fn draw_sky(
     // `Main.bgTopY` (`Main.cs:62040`) and drawn only while the camera is near the
     // surface (`Main.cs:62090`). The original computes both bodies every frame but
     // draws only the one matching `Main.dayTime`.
-    let view_top = camera.y - screen.y * 0.5;
     if view_top / TILE_PX < world.world_surface as f32 + 2.0 {
         let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface);
         // `num12`/`num13`: cloud cover fades the second pass; `Main.atmo` is 1 and
@@ -491,19 +740,45 @@ pub(crate) fn draw_sky(
     let far_desert = bg_alpha_far[1];
     let far_snow = bg_alpha_far[4];
     let far_ocean = bg_alpha_far[3];
-    // `Main.screenPosition` is the *unzoomed* view top-left: the surface background
-    // is laid out in that space (`DrawSurfaceBG` uses `screenPosition` directly), so
-    // changing `GameZoomTarget` must not move or resize it.
-    let world_surface_px = (world.world_surface as f32 * TILE_PX).max(1.0);
-    let view_top = camera.y - screen.y * 0.5;
     let magic = (300.0 - view_top) / world_surface_px;
     let sc_adj = bg_scale_adjust(world, view_top, screen.y);
     // `Main.DrawSurfaceBG`: `pushBGTopHack = 30` for the mountain passes, then
     // `-180` after the horizon layer, so the front layers use `30 - 180 = -150`.
     // The `+30`/`-150` are folded into the layer tops below.
+    // The block from `Main.cs:59354` (`screenPosition.Y / 16 <= worldSurface + 10`)
+    // carries the storm banks, the mountain steps and the two closer cloud passes;
+    // the distant clouds gate on the tighter `+16 px` sky check of
+    // `DrawClouds_Distant` (`Main.cs:59647`) and the front layers run on
+    // `Main.BackgroundEnabled` alone (`Main.cs:59527-59531`).
+    let bg_block = view_top <= world_surface_px + 10.0 * TILE_PX;
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
-    let show_bg = background_enabled && view_top < world_surface_px + TILE_PX;
+    let show_bg = background_enabled && bg_block;
+    // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
+    // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
+    // between the mountain steps) and closest (`Main.cs:59520`, before the front
+    // layers). Clouds live in screen space: `Cloud.UpdateCloudParallax`
+    // (`Cloud.cs:295-316`) shifts each cloud against the camera by
+    // `Cloud.GetParallax` of the pan, so the screen X is the world anchor minus
+    // that fraction of `camera.x`, plus the constant light wind of
+    // `make_clouds` scaled the same way (`Cloud.cs:391`).
+    let drift = anim_time * 9.0 * 60.0 * 0.1;
+    if view_top < world_surface_px + TILE_PX {
+        // `DrawClouds_Distant` (`Main.cs:59682-59703`): unscaled cloud Y over
+        // `magic * 750 + 830 + scAdj + pushBGTopHack(0)`.
+        draw_cloud_pass(
+            r,
+            camera,
+            zoom,
+            screen,
+            clouds,
+            tint,
+            1,
+            1.0,
+            magic * 750.0 + 830.0 + sc_adj,
+            drift,
+        );
+    }
     // `DrawSurfaceBG` positions every layer from `screenPosition.Y` alone; anchoring
     // them to the surface of the camera's own column made the whole skyline jump
     // whenever the camera crossed a hill, so the horizon follows the world's average
@@ -604,21 +879,29 @@ pub(crate) fn draw_sky(
         }
     }
 
-    // Parallax clouds. They are world objects: a fixed altitude above the average
-    // surface (so they move with the world, not with the player's height) and a
-    // horizontal drift of half the camera plus the wind, like the original's layers.
-    let right = camera.x + half.x;
-    let cloud_tint = [tint[0] * 0.97, tint[1] * 0.98, tint[2], 1.0];
-    for c in clouds {
-        let w = c.w * c.scale;
-        let h = c.h * c.scale;
-        // Vanilla clouds drift with the wind even when the camera is still.
-        let wx = c.x + camera.x * 0.5 + anim_time * 4.0;
-        let wy = world_surface_px - (60.0 + c.alt * 260.0) - h * 0.5;
-        if wx + w < origin.x || wx > right || wy + h < origin.y || wy > bottom {
-            continue;
-        }
-        r.push_back_sprite([wx, wy], [w, h], c.uv, cloud_tint);
+    // `DrawClouds_Closer` (`Main.cs:59663-59680`): `cY = y * (screenHeight / 600)
+    // + bgTopY + 150`. `bgTopY` here is whichever value the last writer left: the
+    // mountain Step1 when parallax is on (`Main.cs:59808`), else the plain
+    // `bgTopY` of `Main.cs:59328` — the storm banks' own `bgTopY`
+    // (`Main.cs:59433`) is overwritten by Step1 before this pass runs.
+    if bg_block {
+        let closer_top = if background_enabled {
+            magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
+        } else {
+            magic * 1200.0 + 1190.0 + sc_adj + 150.0
+        };
+        draw_cloud_pass(
+            r,
+            camera,
+            zoom,
+            screen,
+            clouds,
+            tint,
+            2,
+            screen.y / 600.0,
+            closer_top,
+            drift,
+        );
     }
 
     // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
@@ -693,6 +976,30 @@ pub(crate) fn draw_sky(
                 );
             }
         }
+    }
+
+    // `DrawClouds_Closest` (`Main.cs:59644-59661`): `cY = y * (screenHeight /
+    // 600) - 100 + bgTopY * 1.01 - 150`, with `bgTopY` from the near-mountain
+    // setup (`Main.cs:59514`; the port always has the forest near layer) or,
+    // with parallax off, the plain `bgTopY` of `Main.cs:59328`.
+    if bg_block {
+        let closest_base = if background_enabled {
+            magic * 1400.0 + 1260.0 + sc_adj + 30.0
+        } else {
+            magic * 1200.0 + 1190.0 + sc_adj
+        };
+        draw_cloud_pass(
+            r,
+            camera,
+            zoom,
+            screen,
+            clouds,
+            tint,
+            3,
+            screen.y / 600.0,
+            closest_base * 1.01 - 150.0,
+            drift,
+        );
     }
 
     // Front layer loop (`Main.DrawSurfaceBG` 59529): forest (0), desert (2), snow (7).
@@ -778,5 +1085,80 @@ pub(crate) fn draw_sky(
             anim_time,
             hell_black_box_bottom,
         );
+    }
+}
+
+#[cfg(test)]
+mod cloud_star_tests {
+    use super::*;
+
+    #[test]
+    fn cloud_parallax_matches_the_three_scale_buckets() {
+        // `Cloud.GetParallax` (`Cloud.cs:318-338`): 0.07/0.19/0.23 over the
+        // squared factor; the nudged bucket edges (`Cloud.cs:383-390`) land in
+        // the low buckets.
+        let small = cloud_parallax(0.9999);
+        let mid = cloud_parallax(1.1499);
+        let big = cloud_parallax(1.3);
+        assert!((small - 0.07 * (1.074_95 * 1.074_95)).abs() < 1e-5);
+        assert!((mid - 0.19 * (1.074_9 * 1.074_9)).abs() < 1e-5);
+        assert!((big - 0.23 * (1.075 * 1.075)).abs() < 1e-5);
+        assert!(small < mid && mid < big);
+    }
+
+    #[test]
+    fn stars_follow_the_spawn_recipe() {
+        // `Star.SpawnStars` (`Star.cs:89`): 200..400 stars, reproducible per
+        // seed.
+        let mut w = World::new("t".into(), 4200, 1200);
+        w.seed = 0xDEAD_BEEF;
+        let a = make_stars(&w);
+        let b = make_stars(&w);
+        assert_eq!(a.len(), b.len());
+        assert!((200..400).contains(&a.len()));
+        for (sa, sb) in a.iter().zip(b.iter()) {
+            assert_eq!(sa.x, sb.x);
+            assert_eq!(sa.tex, sb.tex);
+            assert!(sa.scale > 0.0);
+        }
+    }
+
+    #[test]
+    fn clouds_stay_within_the_vanilla_scale_clamps() {
+        let mut w = World::new("t".into(), 4200, 1200);
+        w.seed = 7;
+        // The vanilla pool types 0..21 (`Cloud_0..21`); a synthetic entry per
+        // type exercises the whole `addCloud` generation path.
+        let mut lookups = assets::Lookups::default();
+        lookups.clouds = (0..22)
+            .map(|_| {
+                Some(assets::CloudTex {
+                    uv: [0.0; 4],
+                    w: 100.0,
+                    h: 50.0,
+                })
+            })
+            .collect();
+        let clouds = make_clouds(&w, &lookups);
+        assert!(!clouds.is_empty());
+        for c in &clouds {
+            assert!((0.7..=1.3).contains(&c.scale));
+            assert!(c.rotation.abs() <= 0.02);
+            // The 600 px reference-screen spawn band plus the >1.2 lift
+            // (`Cloud.cs:110-114`, `Cloud.cs:148-151`).
+            assert!((-360.0..=190.0).contains(&c.y));
+        }
+        // Deterministic per seed.
+        let again = make_clouds(&w, &lookups);
+        assert_eq!(clouds.len(), again.len());
+        assert_eq!(clouds[0].x, again[0].x);
+    }
+
+    #[test]
+    fn empty_cloud_textures_yield_an_empty_field() {
+        let mut w = World::new("t".into(), 4200, 1200);
+        w.seed = 7;
+        let clouds = make_clouds(&w, &assets::Lookups::default());
+        assert!(clouds.is_empty());
     }
 }
