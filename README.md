@@ -3,8 +3,9 @@
 Terrustaria is a fan-made, from-scratch recreation of **Terraria 1.4.5.8** written in the Rust programming language with various optimizations and utilizes the Vulkan graphics engine (which can be switched to DX12 at startup). Think of it as the
 same game with a different engine underneath: the same world, the same blocks, lighting,
 water and physics, the same moment-to-moment feel — but written as a small, modern program
-that runs comfortably on modest hardware. The aim is a faithful 1:1 match: same behaviour,
-same pixels, different code.
+that runs comfortably on modest hardware. 
+
+**Same pixels, same rules, different code.**
 
 It uses the game's own data (the `Content` folder from *your* copy of Terraria) and does not
 ship any of it.
