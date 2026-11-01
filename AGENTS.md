@@ -1,23 +1,23 @@
 # AGENTS.md — working rules for this repository
 
-## ⚠️ READ THIS FIRST — Branch-per-task workflow (replaces TASK_STATUS claiming)
+## ⚠️ READ THIS FIRST — Branch-per-task workflow
 
-`docs/TASK_STATUS.md` is **frozen as an archive** — do not claim tasks there anymore.
-Coordination now lives in **git branches**: the branch list *is* the live record of
-who is working on what.
+**Tasks are taken from `docs/ROADMAP.md` → section "Task catalog"** (or from a direct
+user request). Coordination lives in **git branches**: the branch list *is* the live
+record of who is working on what.
 
 **Every task follows this loop:**
 
 1. **Sync.** `git checkout main && git pull` (if a remote is configured) — start from
    the freshest main.
 2. **Branch.** `git checkout -b <branch-name>` from main. Branch name = the task, in
-   slug form: `M1.4-BG-6-water-styles`, `M2-DRAW-1-player-layers`,
+   slug form: `M1.4-BG-11-cloud-parallax`, `M2-DRAW-1-player-layers`,
    `refactor-app-env-flags`, `fix-crafting-scrollbar`. One branch = one task; do not
    stack unrelated work.
 3. **Work.** Commit early and often on the branch with imperative messages. Keep the
    rules below (golden rule, tests green, no fmt noise). The rule "never work on the
-   same task as another agent" still applies — pick a task nobody's branch covers
-   (check `git branch -a` first).
+   same task as another agent" still applies — pick a catalog task nobody's branch
+   covers (check `git branch -a` first).
 4. **Re-sync before merging.** Bring the branch up to date with main
    (`git merge main` inside the branch, or rebase if you prefer linear history) and
    resolve everything there, not in the final merge.

@@ -1,5 +1,94 @@
 # Roadmap & honest scope
 
+## Where agents take tasks from (branch-per-task)
+
+**This file is the task catalog.** Pick any task from the catalog below (or take a
+direct request from the user), create a branch named after it —
+`git checkout -b <Task-Id>-short-slug` (e.g. `M1.4-BG-11-cloud-parallax`) — and follow
+the workflow in `agents.md`: work on the branch, sync with main, resolve conflicts
+thoughtfully, verify tests + screenshots on the merged state, merge into `main`,
+delete the branch. A catalog row is "taken" when a branch with its id exists — check
+`git branch -a` first. Rows marked 🟡 list what is *still missing*; read the linked
+milestone section for the full context before starting.
+
+## Task catalog
+
+### Milestone 1 — visual fidelity
+
+| Task | Branch | Scope | Notes |
+| --- | --- | --- | --- |
+| M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `Parse`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | 🟡 sun/moon/phases/rotation are done |
+| M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | fixes hard green/dirt seams |
+| TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
+| TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `TextureAssets.Flames`, glow-mask table | brief: `docs/superpowers/sdd/non-ui/brief-TILE-DRAW-2-torch-flames-glowmasks.md` |
+| TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | 🟡 started |
+| TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
+| TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82192-83395`): groups A-J, the `-2` marker, per-biome dirt ids; current `grass_frame` covers ~25 % | |
+| M1.4-BG-18 | `M1.4-BG-18-screen-filters` | per-biome animated screen effects: `SceneState.ApplyVisuals` (desert heat distortion, underworld heat, blizzard/sandstorm/aurora/water distortion, monolith/story filters) | |
+| M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | |
+| M1.4-TO | `M1.4-TO-tile-objects` | `TileObjectData` (multi-tile furniture, doors, chests), gemspark/glow tiles | paint shares TILE-DRAW-4 |
+
+### Milestone 2 — player
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| M2-DRAW-1 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw |
+| M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
+| M2-ANIM | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) |
+| M2-BUFF | `M2-BUFF-buffs-mounts` | buffs/debuffs, hooks, mounts, gravity flips |
+
+### Milestone 3 — items, inventory, crafting
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| M3-CRAFT-finish | `M3-CRAFT-recipes` | `Recipe.cs` crafting menu: recipe data + `ItemSlot` contexts 4/33 interaction (🟡 panel chrome is done — `ui/crafting.rs`) |
+| M3-TOOL | `M3-TOOL-tiers` | tool tiers and durability, proper `Item.cs` use logic |
+| M3-EQUIP | `M3-EQUIP-equipment` | equipment slots and paint |
+| M3-ACTUATOR | `M3-ACTUATOR` | actuators |
+| M3-PREFIX | `M3-PREFIX` | item prefixes system |
+| M3-CHEST-UI | `M3-CHEST-UI` | chest UI (banks/chests were excluded from whole-UI P2) |
+
+### Milestone 4 — NPCs, combat, projectiles
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| M4-NPC-1 | `M4-NPC-1-more-npcs` | remaining `NPC.cs` types (780 total: AI states per family — split into per-family branches, e.g. `M4-NPC-1-fighters`) |
+| M4-PROJ | `M4-PROJ-projectiles` | the rest of the projectile system (~1 100 types) |
+| M4-LOOT | `M4-LOOT-loot` | full loot tables / item drops |
+| M4-DAMAGE | `M4-DAMAGE-damage` | damage types / defense / crits |
+| M4-BOSS | `M4-BOSS-bosses` | the remaining bosses |
+| M4-TOWN | `M4-TOWN-town` | town NPCs and shops |
+
+### Milestone 5 — world generation
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| M5-BIOME | `M5-BIOME-evil-jungle` | corruption/crimson/jungle/hallow biomes (world gen + bg variants M1.4-BG-6) |
+| M5-OCEAN | `M5-OCEAN` | the full ocean biome |
+| M5-DESERT | `M5-DESERT-structures` | desert structures and loot |
+| M5-DUNGEON | `M5-DUNGEON` | dungeons |
+| M5-TEMPLE | `M5-TEMPLE` | jungle temples |
+| M5-LIVING | `M5-LIVING-trees` | living trees |
+| M5-HARDFORCE | `M5-HARDFORCE` | hardmode spread |
+| M5-CHEST | `M5-CHEST-gen` | chest generation and loot |
+
+### Milestone 6 — audio, localization, networking
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| M6-MUSIC-finish | `M6-MUSIC-biome-tracks` | remaining biome music branches (need `SceneMetrics`), ambient rain/wind cues |
+| M6-LOCALIZE-wire | `M6-LOCALIZE-wire` | wire the localization core into HUD/item names/menus (core is ported + tested) |
+| M6-NET-protocol | `M6-NET-protocol` | the exact 1.4.5.8 network protocol |
+| M6-SETTINGS | `M6-SETTINGS` | settings application parity beyond the ported keys |
+
+### Engineering debt (from the 2026-11-01 architecture refactor)
+
+| Task | Branch | Scope |
+| --- | --- | --- |
+| REFACTOR-env | `refactor-app-env-flags` | centralize the ~65 `TR_*` env flags into one struct with OnceLock "read once" semantics (`app/env.rs`; skipped during the refactor as risky) |
+| REFACTOR-rng | `refactor-xorshift-unify` | unify the worldgen/wind xorshift cores byte-exactly |
+| REFACTOR-saveheader | `refactor-save-list-reader` | absorb the last duplicate reader (`ui/save_list.rs` `HeaderReader`) into `tr_core::binio` |
+
 ## Why this is a long project
 
 Terraria 1.4.5.8 is ~755 000 lines of decompiled C#. Most of it is *content behaviour*, not
