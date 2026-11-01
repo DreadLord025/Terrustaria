@@ -4,10 +4,12 @@
 //! port and keeps the original local numbering (`num11`..`num34`).
 
 use super::{WaterfallDraw, WaterfallManager, GFX_QUALITY};
-use crate::lighting::{LightMap, LightStyle};
+use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::Tile;
+use crate::tile_light::FastRandom;
 use crate::tiledata as td;
 use crate::world::World;
+use super::SparkleSpawn;
 
 /// `TileID.Sets.BlocksWaterDrawingBehindSelf`.
 fn blocks_water_drawing_behind_self(kind: u16) -> bool {
@@ -25,8 +27,11 @@ impl WaterfallManager {
         light: &LightMap,
         style: &LightStyle,
         time: f32,
+        mouse_text: u8,
+        sparkle_rng: &mut FastRandom,
         view: [i32; 4],
         out: &mut Vec<WaterfallDraw>,
+        lights: &mut Vec<DynamicLight>,
     ) {
         for index in 0..self.current_max {
             let mut wf = self.waterfalls[index];
@@ -87,6 +92,13 @@ impl WaterfallManager {
                     let mut num26 = 0.3f32;
                     if num12 == 26 {
                         color = [1.0, 1.0, 1.0, 127.0 / 255.0];
+                        // `WaterfallManager.AddLight(num12, num13, num14)` per
+                        // fountain cell (`WaterfallManager.cs:464`).
+                        lights.push(DynamicLight {
+                            x: num13,
+                            y: num14,
+                            rgb: add_light(num12, mouse_text, self.disco_rgb()),
+                        });
                         num25 = 0.9;
                         num26 = 0.4;
                     }
@@ -151,6 +163,17 @@ impl WaterfallManager {
             while k < num22 {
                 if num29 >= 2 {
                     break;
+                }
+                // `WaterfallManager.AddLight(num12, num13, num14)` at the top of
+                // every step (`WaterfallManager.cs:548`) — before the solid-tile
+                // break, so the last cell lights too.
+                let light_rgb = add_light(num12, mouse_text, self.disco_rgb());
+                if light_rgb != [0.0; 3] {
+                    lights.push(DynamicLight {
+                        x: num13,
+                        y: num14,
+                        rgb: light_rgb,
+                    });
                 }
                 let tile3 = world.tile(num13, num14).copied().unwrap_or_default();
                 if tile3.active()
@@ -247,6 +270,20 @@ impl WaterfallManager {
                     _ => {}
                 }
 
+                // `WaterfallManager.TrySparkling(num13, num14, num17, color5)`
+                // (`WaterfallManager.cs:679-682`) — the raw `Lighting.GetColor`
+                // before `StylizeColor`, 50+ steps into the fall.
+                if k > 50 {
+                    let raw = light_tint(light, style, num13, num14, time);
+                    try_sparkling(
+                        sparkle_rng,
+                        num13,
+                        num14,
+                        num17,
+                        raw,
+                        &mut self.pending_sparkles,
+                    );
+                }
                 let alpha = get_alpha(draw_alpha, num22, num12, num14, k, &tile3, world);
                 let color5 = stylize_color(
                     alpha,
@@ -717,6 +754,73 @@ fn get_alpha(
         num *= (max_steps - s) as f32 / 10.0;
     }
     num
+}
+
+/// `WaterfallManager.AddLight` (`WaterfallManager.cs:1067-1116`): the per-cell
+/// glow of a waterfall. Only the lava fall, the disco fall, the gemspark falls
+/// (15-21), the shimmer fall (25) and the fountain (26) emit light; every other
+/// waterfall type returns black.
+fn add_light(kind: i32, mouse_text: u8, disco: [u8; 3]) -> [f32; 3] {
+    let mtc = mouse_text as f32;
+    match kind {
+        1 => {
+            let n = (0.55 + (270.0 - mtc) / 900.0) * 0.4;
+            [n, n * 0.3, n * 0.1]
+        }
+        26 => {
+            let n = (0.55 + (270.0 - mtc) / 900.0) * 0.6;
+            [n, n * 0.3, n * 0.1]
+        }
+        2 => [
+            disco[0] as f32 / 255.0 * 0.2,
+            disco[1] as f32 / 255.0 * 0.2,
+            disco[2] as f32 / 255.0 * 0.2,
+        ],
+        15 | 17 => [0.0, 0.0, 0.2],
+        16 | 18 => [0.0, 0.2, 0.0],
+        19 | 21 => [0.2, 0.0, 0.0],
+        20 => [0.2, 0.2, 0.2],
+        25 => {
+            let n = 0.7 + (270.0 - mtc) / 900.0;
+            let n2 = 0.7 + (270.0 - mtc) / 125.0;
+            [n * 0.6, n2 * 0.25, n * 0.9]
+        }
+        _ => [0.0; 3],
+    }
+}
+
+/// `WaterfallManager.TrySparkling` (`WaterfallManager.cs:1046-1065`): where the
+/// fall is lit, a 1-in-20000 draw scaled by the brightest channel over 30 spawns
+/// a `Dust` 43 sparkle beside the stream. The dust's velocity is zeroed in the
+/// original (`Main.dust[num2].velocity *= 0f`), so only the spawn point matters.
+fn try_sparkling(
+    rng: &mut FastRandom,
+    x: i32,
+    y: i32,
+    direction: i32,
+    color: [f32; 4],
+    out: &mut Vec<SparkleSpawn>,
+) {
+    let (r, g, b) = (
+        color[0] * 255.0,
+        color[1] * 255.0,
+        color[2] * 255.0,
+    );
+    if r > 20.0 || b > 20.0 || g > 20.0 {
+        let mut num = r;
+        if g > num {
+            num = g;
+        }
+        if b > num {
+            num = b;
+        }
+        if (rng.next_range(0, 20000) as f32) < num / 30.0 {
+            out.push(SparkleSpawn {
+                x: (x * 16 - direction * 7) as f32,
+                y: (y * 16 + 6) as f32,
+            });
+        }
+    }
 }
 
 /// `WorldGen.SolidTile`: active, solid, not a solid top, not a half brick or slope.

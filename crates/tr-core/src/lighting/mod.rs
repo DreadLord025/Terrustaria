@@ -258,7 +258,27 @@ impl LightMap {
         y1: i32,
         params: &LightParams,
     ) {
-        self.compute_into_impl(world, x0, y0, x1, y1, params, None);
+        self.compute_into_impl(world, x0, y0, x1, y1, params, None, &[], 0);
+    }
+
+    /// `compute_into` plus `Lighting.AddLight` sources: `lights` are seeded as a
+    /// per-cell maximum before the blur, so their glow spreads exactly like a
+    /// tile seed. `lights_key` must change whenever the light set changes — it
+    /// folds into the D2 cache key. Vanilla applies the waterfall lights one
+    /// frame late (the engine keeps the previous frame's `AddLight` list when
+    /// `LightTiles` runs), and the caller here does the same.
+    pub fn compute_into_with_lights(
+        &mut self,
+        world: &World,
+        x0: i32,
+        y0: i32,
+        x1: i32,
+        y1: i32,
+        params: &LightParams,
+        lights: &[DynamicLight],
+        lights_key: u64,
+    ) {
+        self.compute_into_impl(world, x0, y0, x1, y1, params, None, lights, lights_key);
     }
 
     /// Test hook: forces the sequential or parallel path regardless of rect size.
@@ -273,7 +293,7 @@ impl LightMap {
         params: &LightParams,
         parallel: bool,
     ) {
-        self.compute_into_impl(world, x0, y0, x1, y1, params, Some(parallel));
+        self.compute_into_impl(world, x0, y0, x1, y1, params, Some(parallel), &[], 0);
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -286,8 +306,11 @@ impl LightMap {
         y1: i32,
         params: &LightParams,
         force_parallel: Option<bool>,
+        lights: &[DynamicLight],
+        lights_key: u64,
     ) {
-        let key = params.key(world.revision);
+        let mut key = params.key(world.revision);
+        key.lights = lights_key;
         // `TR_NOCACHE=1` forces the full compute every frame so benchmarks can
         // measure the uncached path (D2 is otherwise almost always a hit).
         static NO_CACHE: OnceLock<bool> = OnceLock::new();
@@ -381,9 +404,35 @@ impl LightMap {
                 .sum()
         };
 
+        // `Lighting.AddLight`: dynamic sources take the maximum against the tile
+        // seeds before the blur spreads them (the engine's per-tile light is the
+        // maximum over every reference that reaches it).
+        for l in lights {
+            let (lx, ly) = (l.x - rx0, l.y - ry0);
+            if lx < 0 || ly < 0 || lx >= w || ly >= h {
+                continue;
+            }
+            let idx = (ly * w + lx) as usize;
+            let c = &mut self.colors[idx];
+            c[0] = c[0].max(l.rgb[0]);
+            c[1] = c[1].max(l.rgb[1]);
+            c[2] = c[2].max(l.rgb[2]);
+        }
+
         blur::blur(self, parallel);
         blur::blur(self, parallel);
     }
+}
+
+/// One `Lighting.AddLight(x, y, r, g, b)` source (`Terraria.Lighting.AddLight`):
+/// a world-tile position and the additive colour it contributes. Seeded as a
+/// per-cell maximum before the blur, the way the original engine takes the
+/// maximum of the seed and every light reference that reaches the tile.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DynamicLight {
+    pub x: i32,
+    pub y: i32,
+    pub rgb: [f32; 3],
 }
 
 /// Seeds one row of the light map (`TileLightScanner` per tile). Returns how many

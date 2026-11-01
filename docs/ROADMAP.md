@@ -25,7 +25,7 @@ milestone section for the full context before starting.
 | TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
 | TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82192-83395`): groups A-J, the `-2` marker, per-biome dirt ids; current `grass_frame` covers ~25 % | |
 | M1.4-BG-18 | `M1.4-BG-18-screen-filters` | per-biome animated screen effects: `SceneState.ApplyVisuals` (desert heat distortion, underworld heat, blizzard/sandstorm/aurora/water distortion, monolith/story filters) | |
-| M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | |
+| ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | ✅ done 2026-11-02 (per-style waterfall + liquid passes, `DrawShimmer`, `AddLight`, `TrySparkling`; deviations in `ANALYSIS.md`) |
 | M1.4-TO | `M1.4-TO-tile-objects` | `TileObjectData` (multi-tile furniture, doors, chests), gemspark/glow tiles | paint shares TILE-DRAW-4 |
 
 ### Milestone 2 — player
@@ -155,9 +155,12 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    counters, the per-row geometry walk with its 1 px wobble, `GetAlpha`/`StylizeColor`
    and the per-tile light tint; the app draws the quads between the non-solid and solid
    tile passes (`Main.DoDraw_Waterfalls`).
-   Remaining: the honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), the
-   shimmer vertex-sparkle pass, `WaterfallManager.TrySparkling` dust, the ambient
-   lava-waterfall light (`AddLight`). *~1–2 agent-days left of ~8.*
+   ✅ *fifth pass*: the per-style `DrawWaterfall` passes behind the `liquidAlpha`
+   cross-fade, the `liquidAlpha` multi-pass liquids, `DrawShimmer` (the wave and
+   rainbow-glitter vertex colours), `TrySparkling` sparkles and the waterfall
+   `AddLight` glow. Remaining: the shimmer vertex-distortion shader
+   (`Main.DrawTileInWater`'s full effect) and the `HorizonClouds` fall tint.
+   *<1 agent-day left of ~8.*
 4. **Backgrounds & sky** — ✅ *fourth pass*: `Background_0` gradient, the
    `Cloud.addCloud`/`GetParallax` cloud field drawn in the three vanilla `DrawSurfaceBG`
    passes, `Star.SpawnStars`/`DrawStar` stars, sun, moon, the 15/9-minute day-night clock,

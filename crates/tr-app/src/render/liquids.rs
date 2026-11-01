@@ -16,7 +16,71 @@ pub(crate) enum LiquidPass {
     Foreground,
 }
 
+/// `Main.IsLiquidStyleWater` (`Main.cs:57456`): styles 1 (lava), 11 (honey) and
+/// 14 (shimmer) are outside the `liquidAlpha` cross-fade ramp.
+pub(crate) fn is_liquid_style_water(style: usize) -> bool {
+    style != 1 && style != 11 && style != 14
+}
+
+/// `Main.DrawWaters`' pass sequence (`Main.cs:57497-57506` plus the `DrawLiquid`
+/// tail at `Main.cs:57529-57532`): every non-current water style with a
+/// non-zero `liquidAlpha` draws its water cells first (`waterOnly: true`, the
+/// background pass at alpha 1), then the current style draws everything, then
+/// the shimmer pass runs because `waterOnly` is false.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_waters(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    draws: &[tr_core::liquid_draw::LiquidDraw],
+    pass: LiquidPass,
+    water_style: usize,
+    liquid_alpha: &[f32; 15],
+) -> u32 {
+    let mut quads = 0;
+    let mut fading = false;
+    for j in 0..15 {
+        if !is_liquid_style_water(j) || liquid_alpha[j] <= 0.0 || j == water_style {
+            continue;
+        }
+        // `isBackground ? 1f : Main.liquidAlpha[j]` (`Main.cs:57502`).
+        let alpha = if pass == LiquidPass::Background {
+            1.0
+        } else {
+            liquid_alpha[j]
+        };
+        quads += draw_liquids(r, lookups, light, style, anim_time, draws, pass, j, alpha, true);
+        fading = true;
+    }
+    // `this.DrawLiquid(isBackground, Main.waterStyle, flag ? liquidAlpha[style] : 1f)`.
+    let alpha = if fading { liquid_alpha[water_style] } else { 1.0 };
+    quads += draw_liquids(
+        r,
+        lookups,
+        light,
+        style,
+        anim_time,
+        draws,
+        pass,
+        water_style,
+        alpha,
+        false,
+    );
+    // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
+    quads += draw_shimmer(r, lookups, anim_time, draws, pass);
+    quads
+}
+
 /// `LiquidRenderer.DrawNormalLiquids`: emit one pass of the prepared liquid records.
+///
+/// `water_style`/`global_alpha` are the pass's biome sheet and its
+/// `liquidAlpha` entry: type-0 (water) cells take the pass's sheet and alpha,
+/// non-water styles are skipped entirely while `water_only` is set (the
+/// non-current passes of `Main.cs:57500-57504`), and shimmer cells never draw
+/// here — `LiquidRenderer` moves them into its shimmer cache and
+/// [`draw_shimmer`] renders them.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_liquids(
     r: &mut SpriteRenderer,
@@ -27,6 +91,8 @@ pub(crate) fn draw_liquids(
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
     water_style: usize,
+    global_alpha: f32,
+    water_only: bool,
 ) -> u32 {
     // `LiquidRenderer.Update`: body/edge frames advance with the (wind-driven)
     // animation clock, interior frames with the slower waterfall clock.
@@ -37,11 +103,15 @@ pub(crate) fn draw_liquids(
         if !d.visible || d.src_w <= 0 || d.src_h <= 0 {
             continue;
         }
-        // `DEFAULT_OPACITY`: water 0.6, lava/honey 0.95, shimmer 0.75.
+        // `if (ptr2->IsVisible && (!waterOnly || ptr2->Type == 0))` — and the
+        // type-3 cells live in the shimmer cache (`LiquidRenderer.cs:588-601`).
+        if d.liquid_type == 3 || (water_only && d.liquid_type != 0) {
+            continue;
+        }
+        // `DEFAULT_OPACITY`: water 0.6, lava/honey 0.95.
         let (tex, default_opacity) = match d.liquid_type {
             1 => (1, 0.95),
             2 => (11, 0.95),
-            3 => (14, 0.75),
             _ => (water_style, 0.60),
         };
         let corners = light.corner4(d.x, d.y);
@@ -58,12 +128,18 @@ pub(crate) fn draw_liquids(
         else {
             continue;
         };
-        let alpha = if pass == LiquidPass::Background {
+        let mut alpha = if pass == LiquidPass::Background {
             d.opacity
         } else {
             d.opacity * default_opacity
+        };
+        // `case 0: num *= globalAlpha` (`LiquidRenderer.cs:649`) — the biome
+        // pass's `liquidAlpha`; lava's `player.lavaOpacity` factor is not
+        // modelled (the player has no submersion state in this port).
+        if d.liquid_type == 0 {
+            alpha *= global_alpha;
         }
-        .min(1.0);
+        let alpha = alpha.min(1.0);
         // `Lighting.GetCornerColors` interpolates between the four corners on the
         // GPU. The instance format carries one tint, so split the visible rect
         // into a 3x3 grid and evaluate the bilinear corner colour per cell.
@@ -102,6 +178,209 @@ pub(crate) fn draw_liquids(
         }
     }
     quads
+}
+
+/// `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid
+/// does not take the normal path at all — every type-3 cell draws here, twice.
+/// The base quad is self-luminous: its corner colours are white × opacity ×
+/// `GetShimmerBaseColor` (the golden↔pale wave), *not* the light map — that is
+/// why shimmer glows in dark caves. The sparkle overlay quad
+/// (`SetShimmerVertexColors_Sparkle`, `LiquidRenderer.cs:725-736`) adds the
+/// rainbow `GetShimmerGlitterColor` per corner.
+///
+/// The original tile batch is premultiplied and the glitter colour carries
+/// alpha 0, i.e. the sparkle is an additive term. This renderer blends
+/// non-premultiplied, so each quad encodes the premultiplied colour as
+/// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
+/// with a slightly dimmed backdrop under the sparkle (documented deviation).
+///
+/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is not ported: the
+/// generator never places tile 518.
+pub(crate) fn draw_shimmer(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    anim_time: f32,
+    draws: &[tr_core::liquid_draw::LiquidDraw],
+    pass: LiquidPass,
+) -> u32 {
+    let anim_frame = ((anim_time * 8.0) as i32) & 15;
+    // `Main.timeForVisualEffects` (`Main.cs:19751`-shaped wrap at 216000).
+    let tve = (anim_time * 60.0) % 216000.0;
+    let mut quads = 0;
+    for d in draws {
+        if !d.visible || d.liquid_type != 3 || d.src_w <= 0 || d.src_h <= 0 {
+            continue;
+        }
+        // `val = Opacity * (isBackgroundDraw ? 1f : 0.75f)`.
+        let val = if pass == LiquidPass::Background {
+            d.opacity
+        } else {
+            d.opacity * 0.75
+        }
+        .min(1.0);
+        let src_y = if d.is_surface { 1280 } else { d.src_y + anim_frame * 80 };
+        let Some(uv) = lookups.liquid_uv(14, d.src_x, src_y, d.src_w as u32, d.src_h as u32)
+        else {
+            continue;
+        };
+        // `SetShimmerVertexColors`: white × opacity, then × `GetShimmerBaseColor`
+        // per corner — TL, TR, BL, BR.
+        let corners: [[f32; 3]; 4] = [
+            [d.x, d.y],
+            [d.x + 1, d.y],
+            [d.x, d.y + 1],
+            [d.x + 1, d.y + 1],
+        ]
+        .map(|[cx, cy]| {
+            let b = tr_core::tile_light::shimmer_base_color(cx, cy, tve);
+            [b[0] * val, b[1] * val, b[2] * val]
+        });
+        quads += push_split(r, uv, d, &corners, val);
+
+        // The sparkle overlay: skipped for surface rows whose base source sits
+        // on the `X == 16, Y % 80 == 48` frame unless the cell passes the
+        // `(x + y) % 2` coin (`LiquidRenderer.cs:709-717`).
+        let flag = d.src_x != 16 || d.src_y % 80 != 48;
+        if !flag && (d.x + d.y) % 2 != 0 {
+            continue;
+        }
+        let frame = shimmer_frame(d.x, d.y, flag, tve);
+        let Some(suv) =
+            lookups.liquid_uv(14, d.src_x + 48, d.src_y + 80 * frame, d.src_w as u32, d.src_h as u32)
+        else {
+            continue;
+        };
+        let glitter: [[f32; 3]; 4] = corners
+            .iter()
+            .zip([[d.x, d.y], [d.x + 1, d.y], [d.x, d.y + 1], [d.x + 1, d.y + 1]])
+            .map(|(_, [cx, cy])| {
+                let o = glitter_opacity(flag, cx, cy, tve);
+                let g = tr_core::tile_light::hsl_to_rgb(
+                    (((cx as f32 + cy as f32 / 6.0) + tve / 30.0) / 6.0) % 1.0,
+                    1.0,
+                    0.5,
+                );
+                [g[0] * o * val, g[1] * o * val, g[2] * o * val]
+            })
+            .collect::<Vec<_>>()
+            .try_into()
+            .expect("four corners");
+        quads += push_split_premultiplied(r, suv, d, &glitter);
+    }
+    quads
+}
+
+/// Pushes one record's quad as the 3x3 bilinear split (the shared light-split
+/// machinery of the normal pass) with the given per-corner colours.
+#[allow(clippy::too_many_arguments)]
+fn push_split(
+    r: &mut SpriteRenderer,
+    uv: [f32; 4],
+    d: &tr_core::liquid_draw::LiquidDraw,
+    corners: &[[f32; 3]; 4],
+    alpha: f32,
+) -> u32 {
+    let xs = [0, d.src_w / 3, d.src_w * 2 / 3, d.src_w];
+    let ys = [0, d.src_h / 3, d.src_h * 2 / 3, d.src_h];
+    let mut quads = 0;
+    for i in 0..3 {
+        for j in 0..3 {
+            let cw = xs[i + 1] - xs[i];
+            let ch = ys[j + 1] - ys[j];
+            if cw <= 0 || ch <= 0 {
+                continue;
+            }
+            let u = (xs[i] + xs[i + 1]) as f32 * 0.5 / d.src_w as f32;
+            let v = (ys[j] + ys[j + 1]) as f32 * 0.5 / d.src_h as f32;
+            let tint = bilerp_corners(*corners, u, v);
+            r.push_sprite(
+                [
+                    d.x as f32 * TILE_PX + d.offset_x + xs[i] as f32,
+                    d.y as f32 * TILE_PX + d.offset_y + ys[j] as f32,
+                ],
+                [cw as f32, ch as f32],
+                sub_uv_frac(
+                    uv,
+                    xs[i] as f32,
+                    ys[j] as f32,
+                    cw as f32,
+                    ch as f32,
+                    d.src_w as f32,
+                    d.src_h as f32,
+                ),
+                [tint[0], tint[1], tint[2], alpha],
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
+/// [`push_split`] for the premultiplied glitter colour: encode each corner as
+/// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` (see [`draw_shimmer`]).
+fn push_split_premultiplied(
+    r: &mut SpriteRenderer,
+    uv: [f32; 4],
+    d: &tr_core::liquid_draw::LiquidDraw,
+    corners: &[[f32; 3]; 4],
+) -> u32 {
+    let max = |c: [f32; 3]| c[0].max(c[1]).max(c[2]);
+    let alpha = corners.iter().map(|c| max(*c)).fold(0.0f32, f32::max);
+    let encoded: [[f32; 3]; 4] = corners
+        .iter()
+        .map(|c| {
+            let m = max(*c);
+            if m <= 0.0 {
+                [0.0; 3]
+            } else {
+                [c[0] / m, c[1] / m, c[2] / m]
+            }
+        })
+        .collect::<Vec<_>>()
+        .try_into()
+        .expect("four corners");
+    push_split(r, uv, d, &encoded, alpha)
+}
+
+/// `LiquidRenderer.GetShimmerFrame` (`LiquidRenderer.cs:782-792`): the sparkle
+/// strip's frame for a cell, a 16-frame cycle along the same diagonal wave.
+fn shimmer_frame(x: i32, y: i32, top: bool, tve: f32) -> i32 {
+    let wx = x as f32 + 0.5;
+    let wy = y as f32 + 0.5;
+    let mut num = (wx + wy / 6.0) / 10.0 - tve / 360.0;
+    if !top {
+        num += wx + wy;
+    }
+    ((num as i32) % 16 + 16) % 16
+}
+
+/// `LiquidRenderer.GetShimmerGlitterOpacity` (`LiquidRenderer.cs:766-773`).
+fn glitter_opacity(top: bool, x: i32, y: i32, tve: f32) -> f32 {
+    if top {
+        return 0.5;
+    }
+    let wave = shimmer_wave(x as f32, y as f32, tve);
+    let noise = simple_white_noise(x as u32, y as u32) as f32;
+    let inner = (noise / 10.0 + tve / 180.0).sin();
+    remap(remap(wave, -0.5, 1.0, 0.0, 0.35) * inner, 0.0, 0.5, 0.0, 1.0)
+}
+
+/// `LiquidRenderer.GetShimmerWave` (`LiquidRenderer.cs:754-757`).
+fn shimmer_wave(x: f32, y: f32, tve: f32) -> f32 {
+    (((x + y / 6.0) / 10.0 - tve / 360.0) * std::f32::consts::TAU).sin()
+}
+
+/// `LiquidRenderer.SimpleWhiteNoise` (`LiquidRenderer.cs:775-780`).
+fn simple_white_noise(x: u32, y: u32) -> u32 {
+    let x = 36469u32.wrapping_mul(x & 0xFFFF).wrapping_add(x >> 16);
+    let y = 18012u32.wrapping_mul(y & 0xFFFF).wrapping_add(y >> 16);
+    x.wrapping_shl(16).wrapping_add(y)
+}
+
+/// `Utils.Remap(value, fromMin, fromMax, toMin, toMax)`.
+fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
 }
 
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the

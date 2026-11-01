@@ -10,8 +10,9 @@
 mod draw;
 
 use self::draw::solid_tile;
-use crate::lighting::{LightMap, LightStyle};
+use crate::lighting::{DynamicLight, LightMap, LightStyle};
 use crate::tile::{LiquidKind, Tile};
+use crate::tile_light::FastRandom;
 use crate::world::World;
 
 /// `WaterfallManager.maxTypes`: `Images/Waterfall_0..27`.
@@ -48,6 +49,15 @@ pub struct WaterfallDraw {
     pub color: [f32; 4],
 }
 
+/// A `WaterfallManager.TrySparkling` spawn: the `Dust.NewDust` position in world
+/// pixels (`x*16 - direction*7, y*16 + 6`, `WaterfallManager.cs:1061`). The dust
+/// has zero velocity and `DustID.Sparkle`'s frame 43.
+#[derive(Clone, Copy, Debug)]
+pub struct SparkleSpawn {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// `WaterfallManager`.
 pub struct WaterfallManager {
     waterfalls: Vec<Waterfall>,
@@ -76,6 +86,14 @@ pub struct WaterfallManager {
     disco_g: i32,
     disco_b: i32,
     disco_style: i32,
+
+    /// `TrySparkling` spawns accumulated by the last `draw` — the caller drains
+    /// them into its dust particles after the frame.
+    pending_sparkles: Vec<SparkleSpawn>,
+    /// The `WaterfallDraw` quads of the last `draw`. The walk runs once per
+    /// frame in the fixed pre-draw phase (deterministically, whether or not the
+    /// G6 world range rebuilds); the tile pass consumes the buffered quads.
+    pending_quads: Vec<WaterfallDraw>,
 }
 
 impl Default for WaterfallManager {
@@ -111,6 +129,8 @@ impl WaterfallManager {
             disco_g: 0,
             disco_b: 0,
             disco_style: 0,
+            pending_sparkles: Vec::new(),
+            pending_quads: Vec::new(),
         }
     }
 
@@ -376,24 +396,93 @@ impl WaterfallManager {
         }
     }
 
-    /// `WaterfallManager.Draw`: resets `stopAtStep` and runs the water-style pass for
-    /// the biome the camera is in (`DrawWaterfall(waterStyle, liquidAlpha[waterStyle])`).
-    /// `Main.liquidAlpha` transitions are not modelled yet, so one pass at alpha 1.0
-    /// covers the current style; honey and shimmer falls are drawn by the same pass.
+    /// `WaterfallManager.Draw` (`WaterfallManager.cs:1118-1174`): resets
+    /// `stopAtStep` and runs one `DrawWaterfall(style, liquidAlpha[i])` pass per
+    /// water style with a non-zero alpha. The water-style index maps to the
+    /// waterfall texture pass (`liquidAlpha[0]→0`, `liquidAlpha[2]→3`,
+    /// `liquidAlpha[3]→4`, `liquidAlpha[4]→5`, `liquidAlpha[5..9]→6..10`,
+    /// `liquidAlpha[10]→13`, `liquidAlpha[12]→23`, `liquidAlpha[13]→24`); lava,
+    /// honey and shimmer falls carry their own type and draw in every active
+    /// pass, exactly like the original. The walk also collects `AddLight`
+    /// sources and `TrySparkling` spawns for the caller to drain.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw(
         &mut self,
         world: &World,
         light: &LightMap,
         style: &LightStyle,
         time: f32,
-        water_style: i32,
+        liquid_alpha: &[f32; 15],
+        mouse_text: u8,
+        sparkle_seed: u64,
         view: [i32; 4],
-        out: &mut Vec<WaterfallDraw>,
-    ) {
+    ) -> Vec<DynamicLight> {
         for w in &mut self.waterfalls[..self.current_max] {
             w.stop_at_step = self.waterfall_dist;
         }
-        self.draw_waterfall(water_style, 1.0, world, light, style, time, view, out);
+        self.pending_sparkles.clear();
+        // Collect into a local first: `draw_waterfall` also mutates the fall
+        // list's `stop_at_step` bookkeeping, so it cannot borrow `self` twice.
+        let mut quads = Vec::new();
+        let mut lights = Vec::new();
+        // The sparkle draws use `Main.rand`; the port pins the stream to a
+        // frame-derived seed so screenshots stay deterministic.
+        let mut sparkle_rng = FastRandom::new(sparkle_seed);
+        for (idx, fall_style) in [
+            (0usize, 0usize),
+            (2, 3),
+            (3, 4),
+            (4, 5),
+            (5, 6),
+            (6, 7),
+            (7, 8),
+            (8, 9),
+            (9, 10),
+            (10, 13),
+            (12, 23),
+            (13, 24),
+        ] {
+            if liquid_alpha[idx] > 0.0 {
+                self.draw_waterfall(
+                    fall_style as i32,
+                    liquid_alpha[idx],
+                    world,
+                    light,
+                    style,
+                    time,
+                    mouse_text,
+                    &mut sparkle_rng,
+                    view,
+                    &mut quads,
+                    &mut lights,
+                );
+            }
+        }
+        self.pending_quads = quads;
+        lights
+    }
+
+    /// The `TrySparkling` spawns accumulated by the last [`Self::draw`].
+    pub fn take_sparkles(&mut self) -> Vec<SparkleSpawn> {
+        std::mem::take(&mut self.pending_sparkles)
+    }
+
+    /// Takes the quads of the last [`Self::draw`], for the tile pass to sprite.
+    pub fn take_quads(&mut self) -> Vec<WaterfallDraw> {
+        std::mem::take(&mut self.pending_quads)
+    }
+
+    /// D2 cache-key contribution of the waterfall `AddLight` list: the lights
+    /// change exactly when the fall list does (their flicker rides the light
+    /// params' `mouse_text_color`). Zero keeps the cache key untouched, so a
+    /// waterfall-free world never invalidates the light map.
+    pub fn lights_key(&self) -> u64 {
+        if self.current_max == 0 {
+            return 0;
+        }
+        self.list_revision
+            .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            ^ (self.current_max as u64) << 32
     }
 
     /// Test helper: current waterfall list `(x, y, type)`.
@@ -535,17 +624,65 @@ mod tests {
         mgr.update_tick();
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let mut out = Vec::new();
-        mgr.draw(&w, &light, &style, 0.0, 0, [0, 0, 40, 40], &mut out);
+        let alpha = {
+            let mut a = [0.0f32; 15];
+            a[0] = 1.0;
+            a
+        };
+        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40]);
+        let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(!out.is_empty());
         assert!(out.iter().any(|d| d.texture == 0));
         assert!(out.iter().any(|d| d.pos[0] == 160.0 && d.pos[1] == 160.0));
         assert!(out.iter().all(|d| d.source[2] > 0 && d.source[3] > 0));
+        // Type-0 water falls emit no `AddLight` glow.
+        assert!(lights.is_empty());
+    }
+
+    #[test]
+    fn lava_falls_collect_lava_light_and_the_style_passes_dispatch() {
+        let mut w = world_with_air();
+        let mut brick = stone(2);
+        brick.flags |= FLAG_HALF_BRICK;
+        put(&mut w, 10, 10, brick);
+        // A lava spout: `put_liquid` writes plain water, so set the kind bits.
+        let mut lava = Tile::default();
+        lava.liquid = 255;
+        lava.flags |= FLAG_LIQUID_LAVA;
+        put(&mut w, 11, 9, lava);
+        put(&mut w, 11, 10, lava);
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        mgr.update_tick();
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let alpha = {
+            let mut a = [0.0f32; 15];
+            a[0] = 1.0;
+            a
+        };
+        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40]);
+        let out: Vec<WaterfallDraw> = mgr.take_quads();
+        assert!(out.iter().any(|d| d.texture == 1));
+        // `AddLight(1, ...)`: `(0.55 + (270 - 255) / 900) * 0.4` red-dominant.
+        let first = lights.first().expect("lava fall lights its cells");
+        assert!((first.rgb[0] - (0.55 + 15.0 / 900.0) * 0.4).abs() < 1e-5);
+        assert!(first.rgb[0] > first.rgb[1] && first.rgb[1] > first.rgb[2]);
+        // A second active water style runs a second pass (vanilla double-draws
+        // the typed falls during a style transition).
+        let mut alpha2 = [0.0f32; 15];
+        alpha2[0] = 0.5;
+        alpha2[2] = 0.5;
+        mgr.draw(&w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40]);
+        let out2: Vec<WaterfallDraw> = mgr.take_quads();
+        let lava_quads = out2.iter().filter(|d| d.texture == 1).count();
+        assert!(lava_quads > 0);
     }
 
     #[test]
     fn anim_key_is_zero_without_waterfalls() {
         let mgr = WaterfallManager::new();
         assert_eq!(mgr.anim_key(), 0);
+        assert_eq!(mgr.lights_key(), 0);
     }
 }

@@ -384,11 +384,48 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
 - Deliberate approximation: `Main.gfxQuality` is fixed at 1.0 (the value a machine holding
   60 FPS converges to), so the scan distance is 100 tiles and the cap 1000 falls — the
   same as the original at full quality.
-- Not ported yet: the honey/shimmer `Draw()` passes (`Main.liquidAlpha[2..4]`), the
-  shimmer vertex-sparkle pass (`SetShimmerVertexColors*`), `TrySparkling` dust and the
-  ambient lava-waterfall light (`AddLight`). `TR_NO_WATERFALL=1` disables the pass for
-  A/B screenshots; `TR_SPOUT=x,y` stamps a half-brick spout with liquid and a clear drop
-  so the overlay can be captured deterministically.
+- `WaterfallManager.Draw` (`WaterfallManager.cs:1118-1174`) runs one
+  `DrawWaterfall(style, liquidAlpha[i])` pass per water style with a non-zero alpha —
+  `liquidAlpha[0]→0`, `[2]→3`, `[3]→4`, `[4]→5`, `[5..9]→6..10`, `[10]→13`, `[12]→23`,
+  `[13]→24` — so a biome water-style transition cross-fades the falls between the two
+  sheets, and the typed falls (lava 1, honey 14, shimmer 25) draw in every active pass
+  with their own textures, exactly like the original. `Main.liquidAlpha` itself is the
+  `DrawWaters` ramp (`Main.cs:57473-57489`, ±0.2 per frame while the current style is a
+  plain water style — lava 1, honey 11 and shimmer 14 sit outside it), held on `App`
+  and consumed by the liquid passes as well: `DrawNormalLiquids` draws every
+  non-current water style at its alpha over water cells only, then the current style
+  over everything (`Main.cs:57497-57506`).
+- The walk collects `WaterfallManager.AddLight` (`WaterfallManager.cs:1067-1116`) per
+  visited cell — the lava fall's warm flicker, the disco fall, the gemspark falls
+  (15-21), the shimmer fall (25) and the fountain (26) — and the light map seeds it as
+  a per-cell maximum before the blur (`LightMap::compute_into_with_lights`). Vanilla
+  applies the lights one frame late (the engine keeps the previous frame's `AddLight`
+  list when `LightTiles` runs); the port does the same, and the walk runs once per
+  frame *before* the light map and outside the G6-cached world pass, so the light feed
+  is a pure function of the frame index (a walk inside the cached pass made the feed
+  depend on the reuse pattern).
+- `WaterfallManager.TrySparkling` (`WaterfallManager.cs:1046-1065`): 50+ steps into a
+  lit fall, a 1-in-20000 draw scaled by the brightest light channel spawns a `Dust` 43
+  sparkle beside the stream (velocity zeroed). The sparkles ride the rain module's dust
+  drawing (`Dust` frame 43, scale 0.5) and fade with the generic dust decay
+  (`alpha -= 25` per tick) — the type's own AI is not ported.
+- `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
+  takes the normal liquid path — every type-3 cell draws twice, the base quad with
+  per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is
+  replaced, which is why shimmer glows in dark caves) and the sparkle overlay with the
+  rainbow `GetShimmerGlitterColor` (`SimpleWhiteNoise` + `GetShimmerFrame`). The tile
+  batch is premultiplied in XNA and the glitter colour carries alpha 0 (additive);
+  this renderer blends non-premultiplied, so the sparkle encodes the premultiplied
+  colour as `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
+  with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
+  tile-518 submerged redraw) is not ported: the generator never places tile 518.
+- Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
+  for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
+  the `player.lavaOpacity` factor and the storm/rare cloud type branches.
+  `TR_NO_WATERFALL=1` skips the walk for A/B screenshots; `TR_SPOUT=x,y` stamps a
+  half-brick spout with liquid and a clear drop (`TR_SPOUT_KIND=<0..3>` sets the
+  liquid kind) and `TR_POOL=tx,ty,w,h,kind` fills a rectangle with liquid at load, so
+  every style, the shimmer pass and the glow are capturable deterministically.
 
 Verification: unit tests in `waterfall/` (spout detection, lava kind, tile 196, frame
 counters, emitted geometry, empty `anim_key`); the lake view at `TR_CAM=2240,360`,
