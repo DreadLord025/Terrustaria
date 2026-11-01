@@ -428,8 +428,15 @@ pub(crate) fn draw_tiles(
                 // 16x16 core, so `frame.opaque` is false; a wall has to count as
                 // covering on its own. A fully dark tile renders identically whether
                 // its sprite is drawn or skipped (both are solid black), so the cell
-                // is folded into one merged rectangle.
-                if light_is_zero(l) && (active || (draw_walls && wall_visible(tile.wall))) {
+                // is folded into one merged rectangle — except flame/glow tiles:
+                // `DrawSingleTile_Flames` draws their self-lit overlay over the
+                // black sprite (`TileDrawing.cs:985-1016` sets `flag` for
+                // `Main.tileFlame`/glow types regardless of light), so their cells
+                // must keep their own quad.
+                let flame_tile = active
+                    && (tr_core::flame::tile_flame(tile.kind)
+                        || tr_core::flame::has_glow_branch(tile.kind));
+                if light_is_zero(l) && !flame_tile && (active || (draw_walls && wall_visible(tile.wall))) {
                     if run_start < 0 {
                         run_start = tx;
                     }
@@ -519,6 +526,21 @@ pub(crate) fn draw_tiles(
                     );
                     stats.quads += 1;
                 }
+                // `TileDrawing.DrawSingleTile` closes with `DrawSingleTile_Flames`
+                // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
+                // after the tile sprite, in the same row-major order, with their
+                // own self-lit colours (the light map does not tint them).
+                stats.quads += draw_tile_flames(
+                    r,
+                    lookups,
+                    world,
+                    tile,
+                    &dd,
+                    tx,
+                    ty,
+                    params,
+                    anim_time,
+                );
             }
         }
         if run_start >= 0 {
@@ -900,6 +922,145 @@ fn push_sliced(
                 [8.0, 8.0],
                 sub_uv(uv, x, y, 8.0, 8.0),
                 [c[0], c[1], c[2], 1.0],
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
+/// XNA's `SpriteBatch` blends premultiplied (`TileBatch.Begin` passes a null
+/// blend state → `BlendState.AlphaBlend`, `TileBatch.cs:217`): with a tint
+/// alpha of 0 the flame colour is added to the destination in full
+/// (`out.rgb = tex.rgb * tint + dst`). The renderer's single alpha blend
+/// cannot express `src = One`, so alpha-zero tints are pushed with alpha 1 —
+/// on the flame art's opaque texels the two blend equations agree exactly,
+/// and the transparent texels are discarded in both. The partial-alpha tints
+/// (the furniture/jar colours with `a > 0`) keep their alpha, which dims the
+/// flame slightly against vanilla's full add.
+#[inline]
+/// `DrawSingleTile_Flames` (`TileDrawing.cs:2684-3491`): the tile-flame
+/// spread (`Main.tileFlame` types — torches, candles, chandeliers...) and the
+/// per-type glow overlays, drawn right after the tile sprite with self-lit
+/// colours. The glow branches precede the flame block in the C# `if` chain,
+/// but no tile type matches both, so the two vecs can push in either order.
+#[allow(clippy::too_many_arguments)]
+fn draw_tile_flames(
+    r: &mut SpriteRenderer,
+    lookups: &mut assets::Lookups,
+    world: &World,
+    tile: &tr_core::Tile,
+    dd: &tr_core::drawdata::TileDrawData,
+    tx: i32,
+    ty: i32,
+    params: &LightParams,
+    anim_time: f32,
+) -> u32 {
+    use tr_core::flame::{self, FlameEnv, GlowSheet};
+    let kind = tile.kind;
+    if !flame::tile_flame(kind) && !flame::has_glow_branch(kind) {
+        return 0;
+    }
+    let env = FlameEnv {
+        tile_frame_seed: flame::tile_frame_seed_at(anim_time),
+        global_time: params.global_time,
+        disco: params.disco,
+        mouse_text_color: params.mouse_text_color,
+        moon_phase: world.moon_phase,
+        sundial_cooldown: params.sundial_cooldown,
+        moondial_cooldown: params.moondial_cooldown,
+    };
+    let anchor = [
+        tx as f32 * TILE_PX - (dd.width as f32 - 16.0) * 0.5,
+        ty as f32 * TILE_PX + dd.top as f32,
+    ];
+    let mut quads = 0u32;
+
+    // The glow branches (`TileDrawing.cs:2684-2825`, `:3463-3491`).
+    for g in flame::glow_quads(kind, tx, ty, tile.frame_x, tile.frame_y, dd, &env) {
+        let (uv, size) = match g.sheet {
+            GlowSheet::Flames(sheet) => (
+                lookups.flame_uv(
+                    sheet,
+                    g.src[0],
+                    g.src[1],
+                    g.src[2].max(1) as u32,
+                    g.src[3].max(1) as u32,
+                ),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+            GlowSheet::GlowMask(id) if g.src[2] == 0 => {
+                // `value3.Frame()`: the whole sheet at its own pixel size.
+                let name = format!("Glow_{id}");
+                match lookups.glow_frame_uv(&name) {
+                    Some((uv, w, h)) => (Some(uv), [w, h]),
+                    None => (None, [0.0; 2]),
+                }
+            }
+            GlowSheet::GlowMask(id) => (
+                lookups.glow_uv(
+                    &format!("Glow_{id}"),
+                    g.src[0],
+                    g.src[1],
+                    g.src[2] as u32,
+                    g.src[3] as u32,
+                ),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+            GlowSheet::Named(name) if g.src[2] == 0 => match lookups.glow_frame_uv(name) {
+                Some((uv, w, h)) => (Some(uv), [w, h]),
+                None => (None, [0.0; 2]),
+            },
+            GlowSheet::Named(name) => (
+                lookups.glow_uv(
+                    name,
+                    g.src[0],
+                    g.src[1],
+                    g.src[2] as u32,
+                    g.src[3] as u32,
+                ),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+        };
+        let Some(uv) = uv else { continue };
+        r.push_sprite(
+            [anchor[0] + g.dx, anchor[1] + g.dy],
+            size,
+            uv,
+            g.color,
+        );
+        quads += 1;
+    }
+
+    // The `Main.tileFlame` spread (`TileDrawing.cs:2826-3462`).
+    if flame::tile_flame(kind) {
+        let sheet = flame::flame_sheet(kind);
+        for q in flame::flame_quads(
+            kind,
+            tx,
+            ty,
+            tile.frame_x,
+            tile.frame_y,
+            dd.add_fr_x,
+            dd.add_fr_y,
+            env.tile_frame_seed,
+            env.global_time,
+            env.disco,
+        ) {
+            let Some(uv) = lookups.flame_uv(
+                sheet,
+                q.src_x as i32,
+                q.src_y as i32,
+                dd.width as u32,
+                dd.height as u32,
+            ) else {
+                continue;
+            };
+            r.push_sprite(
+                [anchor[0] + q.dx, anchor[1] + q.dy],
+                [dd.width as f32, dd.height as f32],
+                uv,
+                q.color,
             );
             quads += 1;
         }

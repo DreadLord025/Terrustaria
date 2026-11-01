@@ -446,6 +446,27 @@ pub fn load_world_images(
         }
     }
 
+    // `TextureAssets.Flames` (`AssetInitializer.cs:382-384`): the tile-flame
+    // overlays `DrawSingleTile_Flames` draws over torches and furniture.
+    for i in 0..18u16 {
+        let name = format!("Flame_{i}");
+        match load_png(dir, &name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing flame sheet {name}"),
+        }
+    }
+
+    // The tile-side glow sheets of `DrawSingleTile_Flames`
+    // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
+    // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the
+    // named single sheets keep their own names.
+    for name in GLOW_SHEET_NAMES {
+        match load_png(dir, name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing glow sheet {name}"),
+        }
+    }
+
     if !missing.is_empty() {
         log::warn!(
             "{} world sheets have no matching texture (first 10: {:?})",
@@ -617,6 +638,18 @@ pub struct FrameTex {
     pub opaque: bool,
 }
 
+/// The named glow sheets `DrawSingleTile_Flames` draws besides
+/// `TextureAssets.GlowMask` (`AssetInitializer.cs:312-331`, `:576-577`).
+const GLOW_SHEET_NAMES: &[&str] = &[
+    // `TextureAssets.GlowMask` ids the flame/glow branches use
+    // (`TileDrawing.cs:2686-2825`, `:3463-3491`).
+    "Glow_131", "Glow_291", "Glow_293", "Glow_295", "Glow_296", "Glow_297", "Glow_298",
+    "Glow_299", "Glow_300", "Glow_325", "Glow_334", "Glow_335",
+    // The named single-sheet textures.
+    "GlowSnail", "FireflyJar", "LightningBugJar", "XmasLight", "Timer", "SunAltar",
+    "jellyfishBowl1", "jellyfishBowl2", "jellyfishBowl3",
+];
+
 /// Texture information for one tile type present in the world.
 #[derive(Clone, Debug)]
 pub struct TypeTex {
@@ -677,6 +710,11 @@ pub struct Lookups {
     pub liquid_parts: Vec<Option<tr_render::SheetRect>>,
     /// `Waterfall_0..27` (`WaterfallManager.waterfallTexture`).
     pub waterfalls: [Option<tr_render::SheetRect>; tr_core::waterfall::MAX_TYPES],
+    /// `TextureAssets.Flames` (`Images/Flame_0..17`, `AssetInitializer.cs:382-384`).
+    pub flames: [Option<tr_render::SheetRect>; 18],
+    /// The tile-side glow sheets of `DrawSingleTile_Flames`, keyed by the C#
+    /// texture name (`Images/Glow_{id}` and the named sheets).
+    pub glow_sheets: HashMap<&'static str, tr_render::SheetRect>,
     /// `Rain.png`: 2x40 drop frames at 4 px strides.
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
@@ -894,6 +932,13 @@ impl Lookups {
             liquid_slopes: vec![None; 15],
             liquid_parts: vec![None; 15],
             waterfalls: [None; tr_core::waterfall::MAX_TYPES],
+            flames: std::array::from_fn(|i| {
+                atlas.sheet(&format!("Flame_{i}")).copied()
+            }),
+            glow_sheets: GLOW_SHEET_NAMES
+                .iter()
+                .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
+                .collect(),
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
@@ -1263,6 +1308,32 @@ impl Lookups {
             source[1],
             source[2] as u32,
             source[3] as u32,
+        ))
+    }
+
+    /// UV of a source rectangle inside `Images/Flame_{sheet}` — the tile-flame
+    /// sheets share the tile's own frame coordinates
+    /// (`TextureAssets.Flames`, `TileDrawing.cs:2722` and peers).
+    pub fn flame_uv(&self, sheet: usize, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.flames.get(sheet)?.as_ref()?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a pixel rect inside a named glow sheet (`Images/Glow_{id}` or one
+    /// of the named single sheets the `DrawSingleTile_Flames` branches use).
+    pub fn glow_uv(&self, name: &str, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.glow_sheets.get(name)?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a whole glow sheet plus its pixel size (the `value.Frame()`
+    /// draws, e.g. the teleporter pulse on `Glow_334`).
+    pub fn glow_frame_uv(&self, name: &str) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.glow_sheets.get(name)?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
         ))
     }
 
