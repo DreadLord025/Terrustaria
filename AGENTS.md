@@ -1,18 +1,43 @@
 # AGENTS.md — working rules for this repository
 
-## ⚠️ READ THIS FIRST — Multi-agent coordination protocol
+## ⚠️ READ THIS FIRST — Branch-per-task workflow (replaces TASK_STATUS claiming)
 
-**Before starting ANY work, you MUST read `docs/TASK_STATUS.md` to check:**
-- What tasks are currently assigned/in progress
-- What tasks are completed (so you don't duplicate work)
-- The current project state and recent changes
+`docs/TASK_STATUS.md` is **frozen as an archive** — do not claim tasks there anymore.
+Coordination now lives in **git branches**: the branch list *is* the live record of
+who is working on what.
 
-**All agents must follow this protocol:**
-1. Read `agents.md`, `docs/TASK_STATUS.md`, and relevant implementation docs
-2. Check `docs/TASK_STATUS.md` for available tasks and current assignments
-3. When taking a task: mark it as "in_progress" in `docs/TASK_STATUS.md` WITH YOUR NAME/ID
-4. Update the task when complete: mark as "done", add commit reference
-5. Never work on the same task as another agent — avoid conflicts
+**Every task follows this loop:**
+
+1. **Sync.** `git checkout main && git pull` (if a remote is configured) — start from
+   the freshest main.
+2. **Branch.** `git checkout -b <branch-name>` from main. Branch name = the task, in
+   slug form: `M1.4-BG-6-water-styles`, `M2-DRAW-1-player-layers`,
+   `refactor-app-env-flags`, `fix-crafting-scrollbar`. One branch = one task; do not
+   stack unrelated work.
+3. **Work.** Commit early and often on the branch with imperative messages. Keep the
+   rules below (golden rule, tests green, no fmt noise). The rule "never work on the
+   same task as another agent" still applies — pick a task nobody's branch covers
+   (check `git branch -a` first).
+4. **Re-sync before merging.** Bring the branch up to date with main
+   (`git merge main` inside the branch, or rebase if you prefer linear history) and
+   resolve everything there, not in the final merge.
+5. **Verify the merge result.** `cargo test --workspace -- --skip
+   migrates_version_2_kinds_to_item_ids` must be green **on the branch after the
+   sync** (see the exit-code gotcha below). For visual work also re-take the
+   deterministic screenshots on the merged state.
+6. **Merge into main.** `git checkout main && git merge <branch-name>`. Conflicts
+   must be resolved **thoughtfully**: a conflict means two tasks touched the same
+   system — re-read the C# source for that system and decide what the *port* needs,
+   rather than picking "mine" or "theirs" blindly. Never take `--ours`/`--theirs`
+   wholesale; never use `git merge -X ours/theirs`. If a conflict is semantic (two
+   agents changed the same behaviour differently), stop and reconcile the intent
+   first — the merged result must still be 1:1 with the source.
+7. **Clean up.** Delete the branch after the merge (`git branch -d`). The task is
+   recorded by its merge commit, its branch name and its docs updates.
+
+**Practical limits:** keep branches short-lived (merge within a day of work) — long-
+lived branches are where painful conflicts come from. Two or three parallel branches
+are comfortable; more invites overlap. Never push to a remote unless the user asked.
 
 ---
 
@@ -29,29 +54,81 @@ Before writing or changing **any** game logic, function or constant:
 2. Read the whole relevant function and its callers. Note constants, update order,
    rounding (`Math.Round` is banker's rounding), RNG order, and special cases.
 3. Port it **faithfully** to Rust first — same structure, same maths, same order.
-   Name it after the original (`Liquid.Update`, `DrawBasicTile`, `AI_003_Fighters`, …)
-   and reference it in a one-line comment when the mapping is not obvious.
-4. Verify the port against the source: unit-test the maths, compare screenshots with the
-   original assets, compare an original `.wld` where possible.
+   **Naming (updated 2026-11-01):** prefer a **readable, descriptive Rust name** over
+   copying the C# identifier (`get_rock_transition_point`, `rain_frames`,
+   `fill_terrain`), **but** keep the mapping discoverable: every ported block carries
+   a one-line citation comment (`// Main.cs:53100-53343`, `// MapHelper.cs:2083-3005`)
+   and non-obvious mappings get an explicit reference. Never drop the citations —
+   they are how we re-verify the port against the source.
+4. Verify the port against the source: unit-test the maths, compare screenshots with
+   the original assets, compare an original `.wld` where possible.
 5. Only after steps 1–4 may you optimise. Optimisations must produce identical output
    (pixel-identical screenshots, identical state) and be measured with `TR_BENCH` /
-   `TR_STATS`.
+   `TR_STATS`. The same applies to refactors: **behaviour is frozen** — RNG streams,
+   frame-cache keys and the fixed-step order must not change (see
+   `docs/ANALYSIS.md` "Architecture refactor").
 
 If you are unsure about a behaviour, **search the C# source again**; never guess, never
 invent a plausible-looking shortcut. If something is deliberately approximate, write it
-down in `docs/ANALYSIS.md` and `docs/ROADMAP.md`.
+down in `docs/ANALYSIS.md` (and `docs/ROADMAP.md` if it is a roadmap item).
+
+## Architecture — where things live (2026-11-01 split)
+
+The god-files are gone. **Extend the matching module; never grow a new god-file.**
+The full map with per-file line counts lives in `docs/ARCHITECTURE.md`; the short version:
+
+```
+crates/tr-app/src/
+  main.rs            bootstrap only (~90 lines: world load, atlas, event loop run)
+  app/               App state (118 fields), event loop (loop.rs), frame orchestration
+                     (frame.rs), front-end flow (flow.rs: FrontScreen enum +
+                     FrontScreenBehaviours trait ≈ C# UIState; next_flow_state table),
+                     menu/inv/net clicks (clicks.rs), session, settings_ui, netglue,
+                     saveglue
+  render/            world rendering: sky, bg passes (dirt/rock/magma/underworld),
+                     tiles, liquids, entities (player/npcs), foliage, debug overlay
+  world_sim/         fixed-step simulation: step.rs (FixedStepper) + player/npcs/items/
+                     projectiles/editing/clock/liquids/weather/camera
+  menu/              legacy immediate-mode menu: mod.rs (machinery), pages.rs (one
+                     rows-builder per Page), actions.rs (Action/Toggle/Act)
+  ui/                HUD panels (slot, inventory, crafting, minimap, bars, tooltip,
+                     chrome) + front-end screens (char_select, char_creation,
+                     world_select, world_creation, keyboard) + shared machinery
+                     (uistate = the UIElement.cs:306-322 layout pass, cards, sliders,
+                     text, panel, color, mod.rs helpers)
+  item.rs  biome.rs  inventory slot type / biome + water-style + bg cross-fade
+  assets.rs player.rs settings.rs map.rs npc.rs …
+crates/tr-core/src/
+  tiledata/          GENERATED by tools/GenTileData — never hand-edit; regenerate
+  map/               world map: mod.rs (MapTile/reveal), colors.rs, option.rs (the
+                     MapHelper port), file.rs (.map IO)
+  tile_light/        scanner.rs (apply_tile_light, split by theme — keep the arm
+                     order), palette.rs (FastRandom — exact C# stream), wall/surface/hell
+  lighting/          mod.rs (LightMap + LightEngine trait ≈ ILightingEngine), params, blur
+  waterfall/ worldgen/ (passes) localization/ binio.rs (unified le-readers)
+  framing.rs liquid.rs liquid_draw.rs wind.rs drawdata.rs torch.rs edit.rs tree.rs
+  sky.rs save.rs wld.rs world.rs tile.rs
+```
+
+**C#-style seams already in place — use them, don't re-invent:**
+`FrontScreenBehaviours` (draw/click/key per screen ≈ `UIState.DrawSelf`/`Click_*`),
+`LightEngine` (≈ `ILightingEngine`), `FixedStepper` (the 60 Hz accumulator), the
+shared `ui` helpers (`in_rect`, `hover_pair`, `push_whole`, `text::border_string`,
+`ui::cards`). When a new system has peers with similar mechanics, extract a trait or
+a shared helper instead of copying — that is the house style since the 2026-11-01
+refactor.
 
 ## Knowledge graph (graphify) — use it before grepping
 
 Three pre-built AST graphs (code-only, zero token cost) exist so you can find the exact
 C# to port and the exact Rust to extend, instead of grepping raw files:
 
-| Graph | File | Scope | Size |
-| --- | --- | --- | --- |
-| **C# game (source of truth)** | `decompiled/graphify-out/graph.json` | `decompiled/` (Terraria; ~40 BCrypt/csproj noise nodes) | 20 871 nodes · 68 495 edges · 447 communities |
-| **C# library** | `decompiled-libs/graphify-out/graph.json` | `decompiled-libs/` (ReLogic: Content, IO, OS, Utilities, RGB, Threading) | 1 992 nodes · 3 659 edges · 102 communities |
-| **Rust (target)** | `graphify-out/graph.json` | `crates/` | 2 101 nodes · 4 518 edges |
-| **Merged (all three)** | `graphify-out/merged-graph.json` | Terraria + ReLogic + Rust | 24 928 nodes · 76 909 edges |
+| Graph | File | Scope |
+| --- | --- | --- |
+| **C# game (source of truth)** | `decompiled/graphify-out/graph.json` | `decompiled/` (Terraria) |
+| **C# library** | `decompiled-libs/graphify-out/graph.json` | `decompiled-libs/` (ReLogic) |
+| **Rust (target)** | `graphify-out/graph.json` | `crates/` (~3 440 nodes) |
+| **Merged (all three)** | `graphify-out/merged-graph.json` | Terraria + ReLogic + Rust |
 
 **Rule:** for a codebase question ("where is X", "what calls Y", "what does Z touch"),
 run a `graphify` query first. It returns a scoped subgraph with **file + line + community**,
@@ -115,6 +192,10 @@ graphify merge-graphs decompiled/graphify-out/graph.json `
         --out graphify-out/merged-graph.json   # re-merge after any side changes
 ```
 
+Run the update/merge **on main after merging a branch** (or on your branch before the
+merge if the change is code-shape relevant); avoid two agents racing on
+`graphify-out/` at the same time.
+
 ## Assets
 
 - `decompiled/`, `decompiled-libs/` and `assets/Content/` (the game's own `.xnb`
@@ -130,24 +211,38 @@ graphify merge-graphs decompiled/graphify-out/graph.json `
   block path (`GetColor9Slice`) is what makes Color/White mode smooth.
 - Optimisation policy (Milestone 1.5): the in-game zoom range stays 1.0–2.0; **no LOD,
   no reduced detail, no skipped frames of world state**. Any cached range must key on
-  every input that affects its pixels.
+  every input that affects its pixels (the G6 `WorldFrameKey` — never widen or narrow
+  what it covers without an A/B).
 
-## Verification before committing
+## Verification before merging
 
-- `cargo test --workspace` must pass.
+- `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids` must pass —
+  **`cargo` may exit 1 on success in this project; judge only by the `test result: ok`
+  lines.** (`persist::tests::migrates_version_2_kinds_to_item_ids` is the one known
+  broken test; the `--skip` is permanent until it is fixed.)
 - For visual work, take deterministic screenshots (`TR_SHOT`, `TR_CAM`, `TR_DAY`,
-  `TR_NOPLAYER`, `TR_DEBUG=0`) and compare with `tools/pixel_diff.py`. Check zoom 1.0,
+  `TR_NOPLAYER`, `TR_NO_BG`, `TR_UI=<screen>`, `TR_DEBUG=0`) and compare with
+  `tools/pixel_diff.py`; two identical runs must be SHA256-equal. Check zoom 1.0,
   1.5 and 2.0 when background/parallax changes.
 - For performance work, A/B against the previous binary with `TR_BENCH=600` and
   `TR_STATS=1`; include before/after numbers.
-- Update `README.md`, `docs/ARCHITECTURE.md`, `docs/ANALYSIS.md` and `docs/ROADMAP.md`
-  when a feature lands. Commit one roadmap item per commit with an imperative message.
+- Update the docs when a feature lands: `docs/ARCHITECTURE.md` (if modules moved),
+  `docs/UI.md`, `docs/ANALYSIS.md` (every deliberate deviation), `docs/PORT_MAP.md`,
+  `docs/ROADMAP.md`. `README.md` is player-facing — update it only for visible
+  features, not internal work. Commit one task per branch; imperative commit messages.
+- Determinism is a hard invariant: RNG streams (`FastRandom`, worldgen xorshift), the
+  G6 `WorldFrameKey` contents and the fixed-step order must not change. If your change
+  touches them, prove byte-equality of the affected outputs (see the worldgen FNV
+  proof and `deterministic_for_seed` for the pattern).
 
 ## Housekeeping
 
 - Do not run `cargo fmt` on the generated `crates/tr-core/src/tiledata/` data files
   (`sets.rs`, `emissive.rs`, `merge.rs`; the hand-written `mod.rs` is fine) or `wld.rs`;
-  use `rustfmt` on the touched files only.
+  use `rustfmt` on the touched files only. Never hand-edit `tiledata/` — fix
+  `tools/GenTileData` and regenerate (it matches the current decompilation since
+  2026-11-01; a regen must produce an empty diff).
 - `assets/test/`, `target/`, `decompiled/` and `.qoder_tmp/` are local.
-- Prefer extending the existing systems (world model, `framing`, `lighting`, `LiquidSystem`,
-  `Rain`, `Projectile`, `Npc`) over adding parallel implementations.
+- Prefer extending the existing modules (see the architecture map) over adding parallel
+  implementations; extract a shared helper or trait when a second copy of a mechanic
+  appears.

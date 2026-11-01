@@ -1,5 +1,11 @@
 # Task Status — Multi-Agent Coordination
 
+> **⚠️ DEPRECATED (2026-11-01) — frozen archive.** Task claiming moved to the
+> **branch-per-task workflow**: take a task → `git checkout -b <task-slug>` → work →
+> merge into `main` resolving conflicts thoughtfully (see `agents.md` "READ THIS
+> FIRST"). The branch list (`git branch -a`) is the live coordination record; this
+> file is kept only as the historical log up to the 2026-11-01 architecture refactor.
+
 **Last updated:** 2026-11-01T18:30Z  
 **Purpose:** Track all porting tasks, assign to agents, avoid duplicate work
 
