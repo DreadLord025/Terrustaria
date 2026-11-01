@@ -90,6 +90,10 @@ pub struct WaterfallManager {
     /// `TrySparkling` spawns accumulated by the last `draw` — the caller drains
     /// them into its dust particles after the frame.
     pending_sparkles: Vec<SparkleSpawn>,
+    /// The `WaterfallDraw` quads of the last `draw`. The walk runs once per
+    /// frame in the fixed pre-draw phase (deterministically, whether or not the
+    /// G6 world range rebuilds); the tile pass consumes the buffered quads.
+    pending_quads: Vec<WaterfallDraw>,
 }
 
 impl Default for WaterfallManager {
@@ -126,6 +130,7 @@ impl WaterfallManager {
             disco_b: 0,
             disco_style: 0,
             pending_sparkles: Vec::new(),
+            pending_quads: Vec::new(),
         }
     }
 
@@ -411,12 +416,14 @@ impl WaterfallManager {
         mouse_text: u8,
         sparkle_seed: u64,
         view: [i32; 4],
-        out: &mut Vec<WaterfallDraw>,
     ) -> Vec<DynamicLight> {
         for w in &mut self.waterfalls[..self.current_max] {
             w.stop_at_step = self.waterfall_dist;
         }
         self.pending_sparkles.clear();
+        // Collect into a local first: `draw_waterfall` also mutates the fall
+        // list's `stop_at_step` bookkeeping, so it cannot borrow `self` twice.
+        let mut quads = Vec::new();
         let mut lights = Vec::new();
         // The sparkle draws use `Main.rand`; the port pins the stream to a
         // frame-derived seed so screenshots stay deterministic.
@@ -446,17 +453,23 @@ impl WaterfallManager {
                     mouse_text,
                     &mut sparkle_rng,
                     view,
-                    out,
+                    &mut quads,
                     &mut lights,
                 );
             }
         }
+        self.pending_quads = quads;
         lights
     }
 
     /// The `TrySparkling` spawns accumulated by the last [`Self::draw`].
     pub fn take_sparkles(&mut self) -> Vec<SparkleSpawn> {
         std::mem::take(&mut self.pending_sparkles)
+    }
+
+    /// Takes the quads of the last [`Self::draw`], for the tile pass to sprite.
+    pub fn take_quads(&mut self) -> Vec<WaterfallDraw> {
+        std::mem::take(&mut self.pending_quads)
     }
 
     /// D2 cache-key contribution of the waterfall `AddLight` list: the lights
@@ -611,13 +624,13 @@ mod tests {
         mgr.update_tick();
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let mut out = Vec::new();
         let alpha = {
             let mut a = [0.0f32; 15];
             a[0] = 1.0;
             a
         };
-        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40], &mut out);
+        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 190, 0, [0, 0, 40, 40]);
+        let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(!out.is_empty());
         assert!(out.iter().any(|d| d.texture == 0));
         assert!(out.iter().any(|d| d.pos[0] == 160.0 && d.pos[1] == 160.0));
@@ -643,13 +656,13 @@ mod tests {
         mgr.update_tick();
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let mut out = Vec::new();
         let alpha = {
             let mut a = [0.0f32; 15];
             a[0] = 1.0;
             a
         };
-        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40], &mut out);
+        let lights = mgr.draw(&w, &light, &style, 0.0, &alpha, 255, 0, [0, 0, 40, 40]);
+        let out: Vec<WaterfallDraw> = mgr.take_quads();
         assert!(out.iter().any(|d| d.texture == 1));
         // `AddLight(1, ...)`: `(0.55 + (270 - 255) / 900) * 0.4` red-dominant.
         let first = lights.first().expect("lava fall lights its cells");
@@ -657,11 +670,11 @@ mod tests {
         assert!(first.rgb[0] > first.rgb[1] && first.rgb[1] > first.rgb[2]);
         // A second active water style runs a second pass (vanilla double-draws
         // the typed falls during a style transition).
-        let mut out2 = Vec::new();
         let mut alpha2 = [0.0f32; 15];
         alpha2[0] = 0.5;
         alpha2[2] = 0.5;
-        mgr.draw(&w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40], &mut out2);
+        mgr.draw(&w, &light, &style, 0.0, &alpha2, 255, 0, [0, 0, 40, 40]);
+        let out2: Vec<WaterfallDraw> = mgr.take_quads();
         let lava_quads = out2.iter().filter(|d| d.texture == 1).count();
         assert!(lava_quads > 0);
     }

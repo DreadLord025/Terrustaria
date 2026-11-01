@@ -51,6 +51,9 @@ pub(crate) struct DrawScratch {
     /// previous frame's light list when `LightTiles` runs, so the lights are
     /// swapped here after each world pass and consumed by the next compute.
     pub(crate) waterfall_lights: Vec<tr_core::lighting::DynamicLight>,
+    /// The waterfall quads walked this frame (`WaterfallManager.draw`), consumed
+    /// by the tile pass below.
+    pub(crate) waterfall_quads: Vec<tr_core::waterfall::WaterfallDraw>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -287,35 +290,21 @@ pub(crate) fn draw_tiles(
     // `Main.DoDraw_Waterfalls`: vanilla draws falls after the non-solid tile pass
     // and before solid tiles. This renderer keeps one row-major tile pass, so the
     // falls are emitted here; tile quads drawn later occlude their base, while a
-    // wall behind a fall is drawn over it (documented approximation).
-    if std::env::var_os("TR_NO_WATERFALL").is_none() {
-        let mut falls = Vec::new();
-        let lights = waterfall.draw(
-            world,
-            light,
-            style,
-            anim_time,
-            liquid_alpha,
-            params.mouse_text_color,
-            sparkle_seed,
-            [x0, y0, x1, y1],
-            &mut falls,
+    // wall behind a fall is drawn over it (documented approximation). The quads
+    // were walked once per frame in the pre-draw phase (`App::frame`), which also
+    // collects their `AddLight` list for the light map — keeping the walk out of
+    // the G6-cached path makes the light feed deterministic per frame index.
+    for d in std::mem::take(&mut scratch.waterfall_quads) {
+        let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+            continue;
+        };
+        r.push_sprite(
+            d.pos,
+            [d.source[2] as f32, d.source[3] as f32],
+            flip_uv(uv, d.flip),
+            d.color,
         );
-        // The walk's `AddLight` list feeds the next frame's light map (vanilla's
-        // engine consumes the previous frame's lights the same way).
-        scratch.waterfall_lights = lights;
-        for d in falls {
-            let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
-                continue;
-            };
-            r.push_sprite(
-                d.pos,
-                [d.source[2] as f32, d.source[3] as f32],
-                flip_uv(uv, d.flip),
-                d.color,
-            );
-            stats.waterfalls += 1;
-        }
+        stats.waterfalls += 1;
     }
 
     // `Main.DrawWalls`: the whole wall layer is drawn before the tile layer. Each

@@ -373,6 +373,42 @@ impl App {
                         };
                     }
                 }
+                // `Main.DoDraw_Waterfalls` + `WaterfallManager.AddLight`: the
+                // waterfall walk runs once per frame, before the light map and
+                // outside the G6-cached world pass — its quads are buffered for
+                // the tile pass and its `AddLight` list feeds the light compute.
+                // Running it unconditionally (not only on world-range rebuilds)
+                // keeps the light feed a pure function of the frame index.
+                if std::env::var_os("TR_NO_WATERFALL").is_none() {
+                    let half_v = screen * 0.5 / *zoom;
+                    let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.width - 1);
+                    let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.width - 1);
+                    let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.height - 1);
+                    let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.height - 1);
+                    let lights = waterfall.draw(
+                        world,
+                        light,
+                        &style,
+                        anim_time,
+                        liquid_alpha,
+                        params.mouse_text_color,
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
+                        [vx0, vy0, vx1, vy1],
+                    );
+                    scratch.waterfall_quads = waterfall.take_quads();
+                    scratch.waterfall_lights = lights;
+                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
+                    // into the rain module's dust particles.
+                    rain.spawn_sparkles(waterfall.take_sparkles());
+                } else {
+                    scratch.waterfall_quads.clear();
+                    scratch.waterfall_lights.clear();
+                }
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -484,9 +520,6 @@ impl App {
                         (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
                             ^ world.seed,
                     );
-                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
-                    // into the rain module's dust particles.
-                    rain.spawn_sparkles(waterfall.take_sparkles());
                     // `PlayerDrawLayers.DrawPlayer_27_HeldItem`: the item is only drawn
                     // while it is being used (`itemAnimation > 0 && useStyle != 0`), so
                     // the hand is empty at rest. Hold-style items (torches etc.) are not

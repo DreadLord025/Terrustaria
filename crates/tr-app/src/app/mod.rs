@@ -849,6 +849,16 @@ impl App {
         for (dx, dy) in [(1, 0), (1, -1)] {
             if let Some(t) = world.tile_mut(x + dx, y + dy) {
                 t.liquid = 255;
+                // `TR_SPOUT_KIND=<0..3>`: the fall's liquid kind (1 = lava) so
+                // the typed waterfall branches and their `AddLight` glow are
+                // screenshotable.
+                let kind_flag = match std::env::var("TR_SPOUT_KIND").as_deref() {
+                    Ok("1") => tr_core::tile::FLAG_LIQUID_LAVA,
+                    Ok("2") => tr_core::tile::FLAG_LIQUID_HONEY,
+                    Ok("3") => tr_core::tile::FLAG_LIQUID_SHIMMER,
+                    _ => 0,
+                };
+                t.flags |= kind_flag;
             }
         }
     }
