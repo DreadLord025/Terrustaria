@@ -37,10 +37,9 @@ use tr_render::{SheetRect, SpriteRenderer};
 
 use super::color;
 use super::panel;
-use super::text::font_width;
+use super::text::{font_width, push_font_text};
 use super::uistate::{self, Style};
 use crate::assets;
-use crate::push_font_text;
 
 // --- Source strings (Localization `UI.*` / `LegacyMenu.*`, English) -----------
 

@@ -7,7 +7,7 @@
 //! saved-player format in `persist.rs` is untouched) and the remaining equipment
 //! slots here.
 
-use crate::{EMPTY_SLOT, ItemSlot};
+use crate::item::{EMPTY_SLOT, ItemSlot};
 
 /// `Player.inventory[50..53]`: the four coin slots (`Main.cs:41753-41764`).
 pub const COINS: usize = 4;

@@ -7,7 +7,8 @@ use tr_render::SpriteRenderer;
 use super::UiPulse;
 use super::text::{hud_text, hud_text_width};
 use crate::assets;
-use crate::{registry, HOTBAR, INV, ItemSlot};
+use crate::item::{HOTBAR, INV, ItemSlot};
+use crate::registry;
 
 /// `toolTipDistance` (`Main.cs:407`, set to 6 at `Main.cs:66563`).
 const TOOL_TIP_DISTANCE: f32 = 6.0;

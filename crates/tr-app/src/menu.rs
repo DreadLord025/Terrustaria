@@ -24,6 +24,7 @@ use tr_render::SpriteRenderer;
 
 use crate::assets;
 use crate::settings::Settings;
+use crate::ui::text::{font_width, hud_text, hud_text_width, push_font_text};
 use crate::ui::{color, sliders};
 
 /// `Main.maxMenuItems` is 20; the largest screen here is the 12-row interface list.
@@ -1994,7 +1995,7 @@ impl Menu {
         self.boxes.clear();
         let cx = screen.x * 0.5;
         for (i, item) in items.iter().enumerate() {
-            let measured = crate::font_width(font, &item.label, 1.0);
+            let measured = font_width(font, &item.label, 1.0);
             let origin = [measured * 0.5, font.line_spacing * 0.5];
             let scale_now = self.item_scale[i] * item.scale;
             let row_y = layout.y0 + layout.row * i as f32 + item.y;
@@ -2041,7 +2042,7 @@ impl Menu {
             // Four black passes at ±2 px, then the coloured pass.
             let shadow = [0.0, 0.0, 0.0, alpha / 255.0];
             for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-                crate::push_font_text(
+                push_font_text(
                     r,
                     font,
                     top[0] + dx,
@@ -2051,14 +2052,14 @@ impl Menu {
                     &item.label,
                 );
             }
-            crate::push_font_text(r, font, top[0], top[1], scale_now, tint, &item.label);
+            push_font_text(r, font, top[0], top[1], scale_now, tint, &item.label);
         }
 
         // `Main.DrawVersionNumber`: bottom-left `Mouse_Text`.
         if let Some(ui) = lookups.ui_font.as_ref() {
             let text = "v1.4.5.8";
             let h = ui.line_spacing;
-            crate::hud_text(
+            hud_text(
                 r,
                 lookups,
                 10.0,
@@ -2072,8 +2073,8 @@ impl Menu {
         // Not-ported notices and connection state (ours, not in the original).
         let mut note_y = screen.y - 64.0;
         if let Some(hint) = &self.hint {
-            let w = crate::hud_text_width(r, lookups, hint, 0.8);
-            crate::hud_text(
+            let w = hud_text_width(r, lookups, hint, 0.8);
+            hud_text(
                 r,
                 lookups,
                 (screen.x - w) * 0.5,
@@ -2085,8 +2086,8 @@ impl Menu {
             note_y -= 24.0;
         }
         if let Some(err) = &self.error {
-            let w = crate::hud_text_width(r, lookups, err, 0.9);
-            crate::hud_text(
+            let w = hud_text_width(r, lookups, err, 0.9);
+            hud_text(
                 r,
                 lookups,
                 (screen.x - w) * 0.5,
@@ -2099,8 +2100,8 @@ impl Menu {
         }
         if self.connecting {
             let msg = "Connecting…";
-            let w = crate::hud_text_width(r, lookups, msg, 1.0);
-            crate::hud_text(
+            let w = hud_text_width(r, lookups, msg, 1.0);
+            hud_text(
                 r,
                 lookups,
                 (screen.x - w) * 0.5,
@@ -2111,8 +2112,8 @@ impl Menu {
             );
         }
         if let Some(status) = &self.status {
-            let w = crate::hud_text_width(r, lookups, status, 0.9);
-            crate::hud_text(
+            let w = hud_text_width(r, lookups, status, 0.9);
+            hud_text(
                 r,
                 lookups,
                 (screen.x - w) * 0.5,
@@ -2476,9 +2477,9 @@ fn border_string_four_way(
     text: &str,
 ) {
     for (dx, dy) in [(-2.0, 0.0), (2.0, 0.0), (0.0, -2.0), (0.0, 2.0)] {
-        crate::push_font_text(r, font, x + dx, y + dy, 0.5, [0.0, 0.0, 0.0, 1.0], text);
+        push_font_text(r, font, x + dx, y + dy, 0.5, [0.0, 0.0, 0.0, 1.0], text);
     }
-    crate::push_font_text(r, font, x, y, 0.5, tint, text);
+    push_font_text(r, font, x, y, 0.5, tint, text);
 }
 
 /// `Player.name` style random character names ("Zealot", "Terra", …): two syllables

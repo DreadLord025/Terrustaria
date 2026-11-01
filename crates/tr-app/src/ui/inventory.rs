@@ -16,7 +16,7 @@ use tr_render::SpriteRenderer;
 use super::{slot, text};
 use crate::assets;
 use crate::inv::EquipSlots;
-use crate::{ItemSlot, INV};
+use crate::item::{ItemSlot, INV};
 
 // ---------------------------------------------------------------------------
 // Constants (every literal carries its `Main.cs` line)

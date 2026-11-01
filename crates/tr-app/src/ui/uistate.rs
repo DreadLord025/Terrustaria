@@ -14,8 +14,8 @@
 use tr_render::{SheetRect, SpriteRenderer};
 
 use super::panel;
+use super::text::push_font_text;
 use crate::assets;
-use crate::push_font_text;
 
 /// `StyleDimension` (`UIElement.cs` `StyleDimension`): `pixels + percent * parent`.
 ///

@@ -231,8 +231,8 @@ pub fn map_bg_index(
     let wall = t.wall;
     // `Main.screenPosition` is the camera top-left.
     let sp = camera - screen * 0.5;
-    let snow = crate::is_snow_biome(world, camera);
-    let desert = crate::is_desert_biome(world, camera);
+    let snow = crate::biome::is_snow_biome(world, camera);
+    let desert = crate::biome::is_desert_biome(world, camera);
     // `SceneMetrics.cs:669`: `TileCenter.Y <= Main.UnderworldLayer &&
     // TileCenter.Y > Main.rockLayer`, `Main.UnderworldLayer = maxTilesY - 200`.
     let rock = ty > world.rock_layer as i32 && ty <= world.height - 200;

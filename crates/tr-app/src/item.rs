@@ -1,4 +1,4 @@
-//! World item drops, the first pass of `Terraria.Item`.
+//! World item drops and the inventory slot record, the first pass of `Terraria.Item`.
 //!
 //! Blocks broken by the player spawn a small physics entity instead of teleporting into
 //! the inventory. Drops fall with gravity, bounce off solid tiles, and are magnetised to
@@ -12,6 +12,57 @@ use tr_core::{TILE_PX, World};
 
 use crate::assets;
 use crate::registry;
+
+// --- Inventory slots (`Main.inventory` entries) -----------------------------
+
+pub(crate) const HOTBAR: usize = 10;
+/// `Player.inventory` length: hotbar plus the four storage rows of the open grid.
+pub(crate) const INV: usize = 50;
+/// Seconds of one item swing; `Player.itemAnimation` is longer for real items.
+pub(crate) const SWING_TIME: f32 = 0.28;
+
+#[derive(Clone, Copy)]
+pub(crate) struct ItemSlot {
+    pub(crate) kind: u16,
+    pub(crate) name: &'static str,
+    pub(crate) count: u32,
+}
+
+/// `Item.MAX_STACK` for the blocks and items we model.
+pub(crate) const MAX_STACK: u32 = 999;
+
+pub(crate) const EMPTY_SLOT: ItemSlot = ItemSlot {
+    kind: 0,
+    name: "",
+    count: 0,
+};
+
+/// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
+/// then the storage rows.
+pub(crate) fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> {
+    for range in [0..HOTBAR, HOTBAR..INV] {
+        if let Some(i) = range.clone().find(|&i| inventory[i].count > 0 && inventory[i].kind == kind)
+        {
+            return Some(i);
+        }
+    }
+    for range in [0..HOTBAR, HOTBAR..INV] {
+        if let Some(i) = range
+            .clone()
+            .find(|&i| inventory[i].count == 0 || (inventory[i].kind == kind && inventory[i].count < registry::max_stack(kind)))
+        {
+            if inventory[i].count == 0 {
+                inventory[i] = ItemSlot {
+                    kind,
+                    name: registry::name(kind),
+                    count: 0,
+                };
+            }
+            return Some(i);
+        }
+    }
+    None
+}
 
 pub const SIZE: f32 = 14.0;
 const MAGNET_RADIUS: f32 = 42.0;
@@ -149,6 +200,33 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    #[test]
+    fn pickup_prefers_stacks_then_empty_slots() {
+        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| ItemSlot {
+            kind: 0,
+            name: "",
+            count: 0,
+        });
+        inv[0] = ItemSlot {
+            kind: 3,
+            name: "Stone Block",
+            count: 4,
+        };
+        assert_eq!(slot_for_pickup(&mut inv, 3), Some(0));
+        assert_eq!(slot_for_pickup(&mut inv, 12), Some(1));
+        assert_eq!(inv[1].kind, 12);
+        assert_eq!(inv[1].name, "Copper Ore");
+        assert_eq!(inv[1].count, 0);
+        for slot in &mut inv {
+            slot.count = 1;
+        }
+        assert_eq!(
+            slot_for_pickup(&mut inv, 53),
+            None,
+            "full hotbar must refuse"
+        );
+    }
 
     fn ground() -> World {
         let mut w = World::new("items".into(), 32, 32);

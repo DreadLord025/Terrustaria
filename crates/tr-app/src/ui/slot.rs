@@ -9,7 +9,7 @@ use tr_render::{SheetRect, SpriteRenderer};
 
 use super::text::{hud_item_text, hud_item_text_width};
 use crate::assets;
-use crate::ItemSlot;
+use crate::item::ItemSlot;
 
 /// `ItemSlot.cs:2148-2304`: which `Inventory_Back*` sheet a slot uses.
 ///

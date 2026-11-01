@@ -1,10 +1,10 @@
 //! HUD text: the original `Mouse_Text`/`ItemStack` fonts when the retail assets are
 //! present, the built-in bitmap font otherwise.
 
+use glam::Vec2;
 use tr_render::SpriteRenderer;
 
 use crate::assets;
-use crate::push_font_text;
 
 /// `DynamicSpriteFont.MeasureString`.
 pub(crate) fn font_width(font: &assets::UiFont, text: &str, scale: f32) -> f32 {
@@ -30,6 +30,49 @@ pub(crate) fn font_width(font: &assets::UiFont, text: &str, scale: f32) -> f32 {
         first = false;
     }
     w + max_z.max(0.0) * scale
+}
+
+/// `DynamicSpriteFont.DrawString`: the pen advances by `spacing + kerning.X`, the
+/// glyph is drawn at `pen + padding`, then the pen advances by `kerning.Y + kerning.Z`.
+pub(crate) fn push_font_text(
+    r: &mut SpriteRenderer,
+    font: &assets::UiFont,
+    x: f32,
+    y: f32,
+    scale: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let mut pen = Vec2::new(x, y);
+    let mut first = true;
+    for c in text.chars() {
+        match c {
+            '\n' => {
+                pen.x = x;
+                pen.y += font.line_spacing * scale;
+                first = true;
+                continue;
+            }
+            '\r' => continue,
+            _ => {}
+        }
+        let Some(g) = font.glyph(c) else { continue };
+        let mut bearing = g.kerning[0];
+        if first {
+            bearing = bearing.max(0.0);
+        } else {
+            pen.x += font.spacing * scale;
+        }
+        pen.x += bearing * scale;
+        r.push_ui_sprite(
+            [pen.x + g.pad[0] * scale, pen.y + g.pad[1] * scale],
+            [g.w * scale, g.h * scale],
+            g.uv,
+            color,
+        );
+        pen.x += (g.kerning[1] + g.kerning[2]) * scale;
+        first = false;
+    }
 }
 
 /// UI label with the original `Mouse_Text` font, or the built-in bitmap font when

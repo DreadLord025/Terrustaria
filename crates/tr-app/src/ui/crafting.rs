@@ -18,7 +18,7 @@ use super::panel;
 use super::slot;
 use super::text::{hud_text, hud_text_width};
 use crate::assets;
-use crate::{EMPTY_SLOT, ItemSlot};
+use crate::item::{EMPTY_SLOT, ItemSlot};
 
 /// Every static rectangle of the panel, derived from `screen` exactly as the
 /// `UIElement` layout pass does (`UIElement.cs:306-322`). Kept pure for tests.

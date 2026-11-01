@@ -25,11 +25,10 @@ pub mod world_select;
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
-use crate::ItemSlot;
 use crate::assets;
 use crate::inv;
+use crate::item::{HOTBAR, INV, ItemSlot};
 use crate::player::Player;
-use crate::{HOTBAR, INV};
 
 /// Per-frame animated UI values shared by the HUD passes: `Main.mouseTextColor`
 /// (which multiplies every interface label/colour) and `Main.cursorScale` (the
