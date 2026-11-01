@@ -3,6 +3,7 @@
 
 # decompiled game sources (derived from a retail copy, not redistributable)
 /assets/Content/
+/assets/test/
 /decompiled/
 /decompiled-libs/
 
@@ -19,6 +20,7 @@
 Thumbs.db
 
 /docs/superpowers/
+/.code-foundations/
 
 # local graphify knowledge graphs (Rust + merged); the C# graph lives under the
 # gitignored /decompiled/, so neither is committed

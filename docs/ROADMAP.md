@@ -17,7 +17,7 @@ milestone section for the full context before starting.
 
 | Task | Branch | Scope | Notes |
 | --- | --- | --- | --- |
-| M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `Parse`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | 🟡 sun/moon/phases/rotation are done |
+| ✅ M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `addCloud`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | ✅ done 2026-11-01 (there is no `Cloud.Parse` in 1.4.5.8 — the spawn recipe is `Cloud.addCloud`; deviations in `ANALYSIS.md`) |
 | M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | fixes hard green/dirt seams |
 | TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
 | TILE-DRAW-2 | ✅ merged `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `tr-core/src/flame.rs` (`GetTileFlameData` + `DrawSingleTile_Flames` both tables, 48-bit LCG `TileFrameSeed` jitter deterministic via fixed seed), premultiplied `AlphaBlend` fix in tr-render | deviations in ANALYSIS.md "Torch flames (TILE-DRAW-2)" |
@@ -158,17 +158,19 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    Remaining: the honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), the
    shimmer vertex-sparkle pass, `WaterfallManager.TrySparkling` dust, the ambient
    lava-waterfall light (`AddLight`). *~1–2 agent-days left of ~8.*
-4. **Backgrounds & sky** — ✅ *third pass*: `Background_0` gradient, deterministic
-   `Cloud_*` clouds, sun, moon, stars, the 15/9-minute day-night clock, the per-column cave
-   fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`, `cloudAlpha` ramp, rotated
-   drops, splashes, overcast `SetBackColor` dimming, snow-biome `Dust` snowfall, storm
-   cloud banks and lightning flashes), and the vanilla `DrawSurfaceBG`
+4. **Backgrounds & sky** — ✅ *fourth pass*: `Background_0` gradient, the
+   `Cloud.addCloud`/`GetParallax` cloud field drawn in the three vanilla `DrawSurfaceBG`
+   passes, `Star.SpawnStars`/`DrawStar` stars, sun, moon, the 15/9-minute day-night clock,
+   the per-column cave fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`,
+   `cloudAlpha` ramp, rotated drops, splashes, overcast `SetBackColor` dimming, snow-biome
+   `Dust` snowfall, storm cloud banks and lightning flashes), the vanilla `DrawSurfaceBG`
    composition for the biomes the world has: forest (`7`/`8` mountains + `50..52` tree
    lines), snow (`35`/`36` + `37..39` pines) and ocean (`28` sea horizon), with
-   `backgroundTopMagicNumber` vertical parallax and measured ground-band anchoring.
-   Remaining: corruption/crimson/jungle/hallow variants (no such biomes yet), wind gusts
-   and weather audio, and the textured `Main.DrawBackground` underground layers.
-   *~2–5 agent-days.* ← next
+   `backgroundTopMagicNumber` vertical parallax and measured ground-band anchoring, and
+   the textured `Main.DrawBackground` underground layers. Remaining: the storm type
+   branch/rare clouds and the `HorizonClouds` cloud shader (weather/boss state),
+   corruption/crimson/jungle/hallow variants (no such biomes yet), wind gusts and
+   weather audio. *~1–2 agent-days.*
 5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
    coatings, gemspark/glow. Trees and slopes are done. *~8–18 agent-days.*
 

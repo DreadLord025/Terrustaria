@@ -54,7 +54,11 @@ record of who is working on what.
 
 **Practical limits:** keep branches short-lived (merge within a day of work) — long-
 lived branches are where painful conflicts come from. Two or three parallel branches
-are comfortable; more invites overlap. Never push to a remote unless the user asked.
+are comfortable; more invites overlap. Two people work from this catalog (2026-11-01
+agreement): a branch with the task's id **is** the claim — push the task branch to
+`origin` as soon as you create it so the other collaborator sees it (run
+`git fetch --prune` before taking a row). Merge into `main` only after verification;
+push `main` by agreement, never force-push.
 
 ---
 
