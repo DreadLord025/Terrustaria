@@ -1,9 +1,9 @@
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
 
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
-use crate::player::{Player, collides_rect};
+use crate::player::{collides_rect, Player};
 
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 8.0;
@@ -94,6 +94,16 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// `NPC.frame`: the rendered frame row, advanced by [`Npc::find_frame`] in
+    /// the fixed step (the original advances animation in the sim too —
+    /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
+    pub frame: u32,
+    /// `NPC.frameCounter`: the per-kind accumulator `FindFrame` checks.
+    frame_counter: f32,
+    /// `NPC.rotation`: the aim tilt. Only the demon eye sets it
+    /// (`NPC.cs:74019-74031`: `atan2(velocity.Y, velocity.X)`, `+ π` when
+    /// `velocity.X < 0`).
+    pub rotation: f32,
     /// Accumulated daylight burn time (zombies only).
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
@@ -192,6 +202,9 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            frame: 0,
+            frame_counter: 0.0,
+            rotation: 0.0,
             burn: 0.0,
             wants_minion: false,
             wet_x: 0.0,
@@ -235,7 +248,124 @@ impl Npc {
             NpcKind::Zombie => self.update_zombie(world, player, dt),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
+        self.find_frame();
         self.contact(player);
+    }
+
+    /// `NPC.FindFrame` (`NPC.cs:66684`) for the four ported kinds. `num` (the
+    /// frame height unit) cancels out because frames are tracked as row indices;
+    /// the per-kind frame counts are `Main.npcFrameCount` (`Main.cs:67082`):
+    /// slime 2, demon eye 2, zombie 3, King Slime 6. `num2` is the motion class
+    /// (`NPC.cs:66698-66703`): 2 jumping up, 3 falling, 1 moving, 0 idle —
+    /// `aiAction == 4` (attacking) never happens for these kinds in the port.
+    fn find_frame(&mut self) {
+        let num2 = if self.vy < 0.0 {
+            2
+        } else if self.vy > 0.0 {
+            3
+        } else if self.vx != 0.0 {
+            1
+        } else {
+            0
+        };
+        match self.kind {
+            // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
+            // per step, again when moving and a third time while attacking; at
+            // 8.0 the frame advances and wraps over the 2-frame strip.
+            NpcKind::Slime => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // Case 50 — King Slime (`NPC.cs:73380-73414`): airborne snaps to
+            // frame 4, holds it 4 steps, then frame 5; landing returns to 4 and
+            // the grounded cycle runs frames 0..=3 (never reaching 4).
+            NpcKind::KingSlime => {
+                if self.vy != 0.0 {
+                    if self.frame < 4 {
+                        self.frame = 4;
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame = 5;
+                    }
+                } else {
+                    if self.frame >= 5 {
+                        self.frame = 4;
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter +=
+                        1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                    if self.frame_counter >= 8.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 4 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // Case 2 — demon eye (`NPC.cs:73994-74057`): a plain 8-step 2-frame
+            // cycle, plus the aim: type 2 is in the first rotation branch
+            // (`NPC.cs:74019-74031`) — `rotation = atan2(vy, vx)`, `+ π` when
+            // moving left, and the sprite mirrors (`spriteDirection`) so its
+            // pupil follows the flight direction. `rotation` freezes while
+            // `velocity.X == 0` exactly like the original (neither `if` fires).
+            NpcKind::DemonEye => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+                if self.vx > 0.0 {
+                    self.rotation = self.vy.atan2(self.vx);
+                } else if self.vx < 0.0 {
+                    self.rotation = self.vy.atan2(self.vx) + std::f32::consts::PI;
+                }
+            }
+            // Case 3 — zombie (`NPC.cs:76324-76389`): falling or moving against
+            // the facing direction holds the lurch frame 2; standing still is
+            // frame 0; walking accumulates `|velocity.X|` through the band
+            // 0 → 1 → 2 → 1 at thresholds 8/16/24/32 and restarts.
+            NpcKind::Zombie => {
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        // The original leaves `frame.Y` on its previous value
+                        // here — the restart tick keeps frame 1.
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+        }
     }
 
     fn update_slime(&mut self, world: &World, player: &mut Player, _dt: f32) {
@@ -479,38 +609,21 @@ impl Npc {
         h ^= (self.hp.max(0) as u32) << 4;
         h ^= (self.facing as u32) << 1;
         h ^= (self.hurt_cd > 0.0) as u32;
-        h ^= ((self.anim * 4.0) as u32 & 1) << 2;
+        // The rendered frame and the eye's aim tilt are the animation state the
+        // world pass bakes in (`frame_counter`/`anim` only matter through them).
+        h ^= self.frame << 2;
+        h ^= self.rotation.to_bits().wrapping_mul(0x27D4_EB2F);
         h ^= match self.kind {
             NpcKind::Slime => 0,
             NpcKind::DemonEye => 1,
             NpcKind::Zombie => 2,
             NpcKind::KingSlime => 3,
         } << 5;
-        h ^= ((self.anim * 6.0) as u32 % 3) << 7;
-        if self.kind == NpcKind::KingSlime {
-            h ^= self.frame() << 10;
-        }
         h
     }
 
     pub fn frame(&self) -> u32 {
-        match self.kind {
-            NpcKind::Zombie => {
-                if self.vx.abs() > 0.05 {
-                    (self.anim * 6.0) as u32 % 3
-                } else {
-                    0
-                }
-            }
-            NpcKind::KingSlime => {
-                if self.on_ground {
-                    (self.anim * 4.0) as u32 % 4
-                } else {
-                    4 + ((self.anim * 8.0) as u32 & 1)
-                }
-            }
-            _ => ((self.anim * 4.0) as u32) & 1,
-        }
+        self.frame
     }
 }
 
@@ -526,7 +639,7 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -637,5 +750,121 @@ mod tests {
             s.hurt_cd = 0.0;
         }
         assert_eq!(s.hp, 0);
+    }
+    fn bare(kind: NpcKind) -> Npc {
+        Npc::new(kind, 100.0, 100.0, 1, 0.0)
+    }
+
+    #[test]
+    fn slime_frames_cycle_every_eight_steps_and_speed_up_while_moving() {
+        // NPC.cs:70801-70826: one counter tick per step, +1 when num2 > 0.
+        let mut s = bare(NpcKind::Slime);
+        for _ in 0..7 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0);
+        s.find_frame();
+        assert_eq!(s.frame, 1, "8 idle steps advance one frame");
+        // Moving (num2 == 1) doubles the tick rate: 4 steps to the next frame.
+        s.vx = 1.0;
+        for _ in 0..3 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 1);
+        s.find_frame();
+        assert_eq!(s.frame, 0, "moving ticks twice per step: 4 steps advance");
+        // The strip wraps over Main.npcFrameCount[1] = 2 frames.
+        for _ in 0..16 {
+            s.find_frame();
+        }
+        assert_eq!(s.frame, 0);
+    }
+
+    #[test]
+    fn zombie_walk_band_is_zero_one_two_one_by_accumulated_speed() {
+        // NPC.cs:76324-76389: the counter accumulates |velocity.X| and the
+        // frame follows the bands <8 -> 0, <16 -> 1, <24 -> 2, <32 -> 1; at 32
+        // the counter restarts WITHOUT touching the frame (it stays 1 until
+        // the next tick re-enters the first band).
+        let mut z = bare(NpcKind::Zombie);
+        z.vx = 0.9; // aligned with facing 1
+        z.frame_counter = 0.0;
+        z.frame = 0;
+        for _ in 0..9 {
+            z.find_frame();
+        }
+        assert_eq!(z.frame, 1, "9 ticks = 8.1 accumulated: second band");
+        for _ in 0..9 {
+            z.find_frame();
+        }
+        assert_eq!(z.frame, 2, "18 ticks = 16.2: third band");
+        for _ in 0..9 {
+            z.find_frame();
+        }
+        assert_eq!(z.frame, 1, "27 ticks = 24.3: fourth band");
+        for _ in 0..9 {
+            z.find_frame();
+        }
+        assert_eq!(z.frame, 1, "36 ticks = 32.4: restart keeps the frame");
+        z.find_frame();
+        assert_eq!(z.frame, 0, "the next tick re-enters the first band");
+    }
+
+    #[test]
+    fn zombie_holds_the_lurch_frame_when_airborne_or_backpedalling() {
+        // NPC.cs:76334-76342.
+        let mut z = bare(NpcKind::Zombie);
+        z.vy = 0.1;
+        z.find_frame();
+        assert_eq!(z.frame, 2);
+        z.vy = 0.0;
+        z.facing = 1;
+        z.vx = -0.5; // moving against the facing
+        z.find_frame();
+        assert_eq!(z.frame, 2);
+        z.vx = 0.0;
+        z.find_frame();
+        assert_eq!(z.frame, 0, "standing still is the idle frame");
+    }
+
+    #[test]
+    fn king_slime_snaps_to_four_five_in_the_air_and_cycles_zero_to_three_on_ground() {
+        // NPC.cs:73380-73414: airborne snaps to frame 4, holds it 4 steps,
+        // then frame 5; landing returns to 4 and the grounded cycle advances
+        // every 8 steps with the wrap `>= 4 -> 0`, so frames 4/5 never show
+        // while grounded.
+        let mut k = bare(NpcKind::KingSlime);
+        k.vy = -0.1; // leaving the ground
+        k.find_frame();
+        assert_eq!(k.frame, 4, "airborne snaps straight to frame 4");
+        for _ in 0..3 {
+            k.find_frame();
+        }
+        assert_eq!(k.frame, 5, "after 4 airborne steps the squash frame shows");
+        k.vy = 0.0; // landed
+        k.find_frame();
+        assert_eq!(k.frame, 4, "landing returns to frame 4, counter reset");
+        // The landing squash (4) is itself displayed while grounded until the
+        // first advance; frames 0..=3 then cycle. Only 5 is airborne-only.
+        for _ in 0..64 {
+            k.find_frame();
+            assert!(
+                k.frame <= 4,
+                "grounded frames never show 5, got {}",
+                k.frame
+            );
+        }
+        // The grounded cycle must actually move through 0..=3.
+        let mut k2 = bare(NpcKind::KingSlime);
+        k2.vy = 0.0;
+        let mut seen = [false; 4];
+        for _ in 0..32 {
+            k2.find_frame();
+            seen[k2.frame as usize] = true;
+        }
+        assert!(
+            seen.iter().all(|&s| s),
+            "one 32-step cycle covers frames 0..=3"
+        );
     }
 }

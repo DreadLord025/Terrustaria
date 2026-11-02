@@ -1,8 +1,8 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
-use super::BgTex;
 use super::sky::sky_tex;
+use super::BgTex;
 use crate::assets;
 use crate::item::SWING_TIME;
 use crate::npc::{Npc, NpcKind};
@@ -10,8 +10,8 @@ use crate::player::{self, Player};
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightMap, LightStyle};
+use tr_core::TILE_PX;
 use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
@@ -155,12 +155,107 @@ fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32;
     ]
 }
 
+/// `Player.ItemCheck` useStyle-1 swing rotation (`Player.cs:50848`):
+/// `itemRotation = (itemAnimation / itemAnimationMax - 0.5) * (-direction) * 3.5
+/// - direction * 0.3`. `itemAnimation` counts down from `itemAnimationMax`, so
+/// `remaining` is 1 at the swing start (arm raised behind, `-2.05·dir`) and 0 at
+/// the end (forward-down, `+1.45·dir`) — a 3.5 rad sweep.
+fn item_rotation(remaining: f32, direction: f32) -> f32 {
+    (remaining - 0.5) * -direction * 3.5 - direction * 0.3
+}
+
+/// `Player.ItemCheck` useStyle-1 `itemLocation` thirds (`Player.cs:50709-50846`):
+/// the anchor the held item pivots around, per animation third, offset from
+/// `position + (width/2, y)`. The `num` tables below are the C# cascades over
+/// the held item's frame size; `zero` is the `UsesBetterMeleeItemLocation`
+/// nudge (`Player.cs:50844`) which no ported item belongs to.
 #[allow(clippy::too_many_arguments)]
-/// Draws the starter player from the original 40x56 part strips. The composition
-/// mirrors `PlayerDrawLayers`: legs/pants/shoes, torso/shirt, head/eyes/hair, all at
-/// `(x-10, y-10)` so the 40x56 sprite is centred on the 20x42 hitbox.
-/// `PlayerDrawLayers` first pass: the selected block in the player's hand, with a
-/// `Player.itemAnimation`-style swing when mining, placing or attacking.
+fn item_location(
+    remaining: f32,
+    direction: f32,
+    pos_x: f32,
+    pos_y: f32,
+    frame_w: f32,
+    frame_h: f32,
+) -> [f32; 2] {
+    let half = frame_w * 0.5;
+    let (num_x, loc_y) = if remaining >= 0.666 {
+        // First third (`Player.cs:50709-50734`): `num` 10 / >32:14 / >=52:24 /
+        // >=64:28 / >=92:38, `itemLocation.Y = position.Y + 24`.
+        let mut num = if frame_w > 32.0 { 14.0 } else { 10.0 };
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        (num, 24.0)
+    } else if remaining >= 0.333 {
+        // Middle third (`:50736-50775`): X `10 / >32:18 / >=52:24 / >=64:28 /
+        // >=92:38`, Y `10 / >32:8 / >52:12 / >64:14`.
+        let mut num = if frame_w > 32.0 { 18.0 } else { 10.0 };
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        let num_y = if frame_h > 64.0 {
+            14.0
+        } else if frame_h > 52.0 {
+            12.0
+        } else if frame_h > 32.0 {
+            8.0
+        } else {
+            10.0
+        };
+        (num, num_y)
+    } else {
+        // Last third (`:50776-50843`): X `6 / >32:14 / >=48:18 / >=52:24 /
+        // >=64:28 / >=92:38` and it *subtracts* `direction`, Y `10 / >52:12 /
+        // >64:14`.
+        let mut num = if frame_w > 32.0 { 14.0 } else { 6.0 };
+        if frame_w >= 48.0 {
+            num = 18.0;
+        }
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        let num_y = if frame_h > 64.0 {
+            14.0
+        } else if frame_h > 52.0 {
+            12.0
+        } else {
+            10.0
+        };
+        (num, num_y)
+    };
+    let x = if remaining < 0.333 {
+        pos_x - (half - num_x) * direction
+    } else {
+        pos_x + (half - num_x) * direction
+    };
+    [x, pos_y + loc_y]
+}
+
+/// `PlayerDrawLayers.DrawPlayer_27_HeldItem` (`PlayerDrawLayers.cs:3043-3215`)
+/// for useStyle 1: the used item pivots on `itemLocation` (plus `gfxOffY`,
+/// `PlayerDrawSet.cs:368`) with rotation `itemRotation`. The C# origin
+/// `(W/2 - W/2·direction, H)` plus the `direction < 0` horizontal flip places
+/// the pivot on the drawn sprite's bottom-left corner in both directions, so
+/// the quad's top-left is `anchor + R(θ)·(0, -H)`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_held_item(
     r: &mut SpriteRenderer,
@@ -171,52 +266,63 @@ pub(crate) fn draw_held_item(
     kind: u16,
     swing: f32,
     anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
 ) -> u32 {
-    let uv = if let Some((uv, _, _)) = lookups.item_icon(kind) {
-        Some(uv)
+    let (uv, frame_w, frame_h) = if let Some((uv, w, h)) = lookups.item_icon(kind) {
+        (uv, w, h)
     } else if registry::is_weapon(kind) {
-        lookups.shuriken_uv()
+        match lookups.shuriken_uv() {
+            Some(uv) => (uv, 16.0, 16.0),
+            None => return 0,
+        }
     } else if let Some(wall) = registry::place_wall(kind) {
-        lookups.wall_icon_uv(wall)
+        match lookups.wall_icon_uv(wall) {
+            Some(uv) => (uv, 16.0, 16.0),
+            None => return 0,
+        }
     } else {
-        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
-    };
-    let Some(uv) = uv else {
-        return 0;
+        match registry::place_tile(kind).and_then(|t| lookups.plain_tex(t)) {
+            Some(f) => (f.uv, 16.0, 16.0),
+            None => return 0,
+        }
     };
     let (cx, cy) = player.center();
     let tx = (cx / TILE_PX) as i32;
     let ty = (cy / TILE_PX) as i32;
     let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
     let dir = player.facing as f32;
-    let progress = if swing > 0.0 {
-        1.0 - (swing / SWING_TIME).clamp(0.0, 1.0)
-    } else {
-        0.0
+    // `itemAnimation / itemAnimationMax` with the countdown running: `swing`
+    // holds the remaining seconds of the use. `SWING_TIME` stands in for the
+    // per-item `useAnimation` (catalogued deviation; real per-item timings are
+    // the M2-ANIM-item-timings catalog row).
+    let remaining = (swing / SWING_TIME).clamp(0.0, 1.0);
+    let rotation = item_rotation(remaining, dir);
+    let (loc_x, loc_y) = {
+        let l = item_location(
+            remaining,
+            dir,
+            player.x + player::WIDTH * 0.5,
+            player.y,
+            frame_w,
+            frame_h,
+        );
+        (l[0], l[1])
     };
-    // Arc from raised-behind to forward-down; mirrored for the left hand.
-    let a = if progress > 0.0 {
-        (-1.7 + progress * 2.5) * dir
-    } else {
-        0.0
-    };
-    let hand = [player.x + player::WIDTH * 0.5 + 5.0 * dir, player.y + 27.0];
-    let reach = 10.0;
-    let center = [hand[0] + a.cos() * reach * dir, hand[1] + a.sin() * reach];
-    // `push_sprite_rot` rotates around the top-left, so offset the pivot by the
-    // rotated half-size to spin the block around its centre.
-    let half = 7.0f32;
-    let (s, co) = a.sin_cos();
-    let top_left = [
-        center[0] - (half * co - half * s),
-        center[1] - (half * s + half * co),
-    ];
+    // `drawinfo.ItemLocation = Position + (itemLocation - position)`
+    // (`PlayerDrawSet.cs:368`) and `Position.Y` carries `gfxOffY`
+    // (`LegacyPlayerRenderer.cs:457`).
+    let anchor = snap_to_screen([loc_x, loc_y + player.gfx_off_y], camera, zoom, screen);
+    let (s, co) = rotation.sin_cos();
+    let top_left = [anchor[0] + frame_h * s, anchor[1] - frame_h * co];
+    let uv = flip_uv(uv, dir < 0.0);
     r.push_sprite_rot(
         top_left,
-        [half * 2.0, half * 2.0],
+        [frame_w, frame_h],
         uv,
         [c[0], c[1], c[2], 1.0],
-        a,
+        rotation,
     );
     1
 }
@@ -254,7 +360,18 @@ pub(crate) fn draw_player(
     let shoes = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
     let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
 
-    let pos = snap_to_screen([player.x - 10.0, player.y - 10.0], camera, zoom, screen);
+    // `LegacyPlayerRenderer.DrawPlayer` is called with
+    // `position + netOffset + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`),
+    // and the layer math (`PlayerDrawLayers.cs:1150-1153`: `- bodyFrame.Width/2 +
+    // width/2`, `+ height - bodyFrame.Height + 4`, origin `+ (W/2, H/2)`)
+    // resolves to the 40x56 frame's top-left at `(x - 10, y - 10 + gfxOffY)`.
+    // Without the gfx term the sprite pops vertically on steps/slopes.
+    let pos = snap_to_screen(
+        [player.x - 10.0, player.y - 10.0 + player.gfx_off_y],
+        camera,
+        zoom,
+        screen,
+    );
     let size = [40.0, 56.0];
     let flip = player.facing < 0;
     let leg = player.leg_frame;
@@ -351,11 +468,14 @@ pub(crate) fn draw_player(
         mul(hair),
     );
     // The composite front arm belongs to the held-item layers
-    // (`DrawPlayer_27_HeldItem`/`28_ArmOverItem`, with the shoulder rotation);
-    // the cell approximation stays until M2-DRAW-2 ports the rotation.
+    // (`DrawPlayer_27_HeldItem`/`28_ArmOverItem`). useStyle 1 never enables the
+    // composite-use columns, so the front arm always rides the bodyFrame row
+    // through the same `CreateCompositeData` table as the back arm
+    // (`PlayerDrawSet.cs:1962-2023`); column 8 is the composite *back*-arm use
+    // column and showed a mismatched pose while walking/using items.
     part(
         assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        cell_uv(assets.arm.as_ref(), arm_col, arm_row),
         mul(skin),
     );
     quads
@@ -482,9 +602,11 @@ pub(crate) fn draw_player_preview(
         cell_uv(assets.shirt.as_ref(), 0, 0),
         shirt,
     );
+    // Same `CreateCompositeData` table for the preview's front arm — column 8
+    // is the composite back-arm use column, not a walking pose.
     part(
         assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        cell_uv(assets.arm.as_ref(), arm_col, arm_row),
         skin,
     );
     part(
@@ -657,7 +779,26 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        if n.kind == NpcKind::DemonEye && n.rotation != 0.0 {
+            // `Main.DrawNPC` draws every NPC at its centre with
+            // `origin = frame size / 2` and `rotation = npc.rotation`
+            // (`NPC.cs` draw pass); the demon eye aims along its flight
+            // (`NPC.cs:74019-74031`). The mirrored quad's corners are
+            // symmetric about the centre, so flipping does not move them —
+            // rotate the quad about its centre, exactly like XNA does.
+            let center = snap_to_screen(
+                [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5],
+                camera,
+                zoom,
+                screen,
+            );
+            let (hw, hh) = (size[0] * 0.5, size[1] * 0.5);
+            let (s, co) = n.rotation.sin_cos();
+            let top_left = [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
+            r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
+        } else {
+            r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
         quads += 1;
         if n.hp < n.max_hp {
             let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);
