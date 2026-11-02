@@ -16,7 +16,9 @@ use crate::tiledata as td;
 use crate::world::World;
 
 /// `Main.tileNoAttach`: tiles that never accept an attachment (trees, platforms, doors…).
-const NO_ATTACH: &[u16] = &[
+/// `pub(crate)`: `tileobject.rs` needs the same table for `TileObject.CanPlace`
+/// (`TileObject.cs:388/453/556/642`); extracted once, shared — see the module doc.
+pub(crate) const NO_ATTACH: &[u16] = &[
     3, 4, 10, 13, 14, 15, 16, 17, 18, 19, 20, 21, 27, 50, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
     96, 97, 98, 99, 101, 102, 110, 114, 134, 387, 388, 390, 427, 441, 467, 468, 469, 486, 487, 488,
     489, 490, 497, 564, 565, 568, 569, 570, 572, 580, 590, 593, 594, 595, 615, 620, 704, 707,
@@ -26,10 +28,10 @@ const NO_ATTACH: &[u16] = &[
 const BEAMS: &[u16] = &[124, 561, 574, 575, 576, 577, 578];
 
 /// `TileID.Sets.IsATreeTrunk` (`WorldGen.IsTreeType`).
-const TREE_TRUNKS: &[u16] = &[5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634];
+pub(crate) const TREE_TRUNKS: &[u16] = &[5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634];
 
 /// `TileObjectData.PlatformFrameWidth()`.
-const PLATFORM_FRAME_WIDTH: i32 = 18;
+pub(crate) const PLATFORM_FRAME_WIDTH: i32 = 18;
 
 fn is_solid(kind: u16) -> bool {
     td::TILE_SOLID.has(kind)
@@ -47,8 +49,9 @@ fn is_tree_type(kind: i32) -> bool {
     kind >= 0 && TREE_TRUNKS.contains(&(kind as u16))
 }
 
-/// `WorldGen.PlatformProperTopFrame`.
-fn platform_proper_top_frame(frame_x: i16) -> bool {
+/// `WorldGen.PlatformProperTopFrame`. `pub(crate)`: reused by `tileobject.rs`
+/// (`TileObject.cs:397`).
+pub(crate) fn platform_proper_top_frame(frame_x: i16) -> bool {
     let n = frame_x as i32 / PLATFORM_FRAME_WIDTH;
     if (n < 0 || n > 7) && (n < 12 || n > 16) {
         return n >= 25 && n <= 26;
