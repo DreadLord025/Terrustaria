@@ -15,6 +15,7 @@ use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
 use crate::app::{no_hud, App, WorldFrameKey};
 use crate::assets;
 use crate::audio;
+use crate::craft;
 use crate::item::{self, SWING_TIME};
 use crate::map;
 use crate::npc::{self, NpcKind};
@@ -624,6 +625,15 @@ impl App {
                         );
                     }
                 } else if menu.is_none() && !no_hud() && !fullscreen_map {
+                    let craft_available = if self.crafting_open {
+                        let adj = player
+                            .as_ref()
+                            .map(|p| craft::adjacent_tiles(world, p))
+                            .unwrap_or_default();
+                        craft::available(inventory, &adj)
+                    } else {
+                        Vec::new()
+                    };
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -642,6 +652,7 @@ impl App {
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
+                        &craft_available,
                         ui::UiPulse {
                             // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                             text: self.mouse_text_color as f32 / 255.0,

@@ -318,3 +318,18 @@ mod craft_actions_tests {
         assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
     }
 }
+
+/// The panel's recipe list: every station adjacent and at least one
+/// ingredient in the inventory (vanilla shows partial recipes; the craftable
+/// subset is what `can_craft` approves).
+pub(crate) fn available(inv: &[ItemSlot; INV], adj: &[u16]) -> Vec<usize> {
+    RECIPES
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| {
+            r.stations.iter().all(|t| adj.contains(t))
+                && r.required.iter().any(|(id, _)| count_kind(inv, *id) > 0)
+        })
+        .map(|(i, _)| i)
+        .collect()
+}

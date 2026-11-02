@@ -19,6 +19,7 @@ use super::panel;
 use super::slot;
 use super::text::{draw_border_string, hud_text_width, BorderFont};
 use crate::assets;
+use crate::craft;
 use crate::item::{EMPTY_SLOT, ItemSlot};
 
 /// Every static rectangle of the panel, derived from `screen` exactly as the
@@ -303,6 +304,39 @@ fn draw_centered_toggle(
     r.push_ui_sprite([x - w * 0.5, y - h * 0.5], [w, h], uv, [1.0; 4]);
 }
 
+/// The measured `UIText("Crafting")` width without a renderer — the click
+/// path's hit-test must agree with the draw pass's layout. The no-font
+/// fallback estimates the 8-px bitmap grid (hit-test tolerance only).
+fn title_width(lookups: &assets::Lookups) -> f32 {
+    match &lookups.ui_font {
+        Some(f) => super::text::font_width(f, "Crafting", 1.0),
+        None => 8.0 * "Crafting".len() as f32,
+    }
+}
+
+/// The recipe grid cell the mouse is over, mapped back to the available
+/// recipe list (`NewCraftingUI`'s clickable recipe slots). Cells are 40x40 on
+/// a 44 px pitch from the grid's top-left.
+pub(crate) fn hit_test(
+    screen: Vec2,
+    lookups: &assets::Lookups,
+    mouse: Vec2,
+    available: &[usize],
+) -> Option<usize> {
+    let l = layout(screen, title_width(lookups), false);
+    let cols = ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
+    for (i, recipe) in available.iter().enumerate() {
+        let col = i as f32 % cols;
+        let row = (i as f32) / cols;
+        let x = l.grid[0] + col * 44.0;
+        let y = l.grid[1] + row * 44.0;
+        if mouse.x >= x && mouse.x <= x + 40.0 && mouse.y >= y && mouse.y <= y + 40.0 {
+            return Some(*recipe);
+        }
+    }
+    None
+}
+
 /// Draws the whole panel in the source's z-order. `mouse_pos` only feeds the hover
 /// frames; `guide_mode` selects the `Main.InGuideCraftMenu` variants.
 pub fn draw(
@@ -310,6 +344,7 @@ pub fn draw(
     lookups: &assets::Lookups,
     screen: Vec2,
     mouse_pos: Vec2,
+    available: &[usize],
     guide_mode: bool,
     difficulty_3_and_creative_unblocked: bool,
 ) {
@@ -360,9 +395,36 @@ pub fn draw(
         color::tint(color::shift_blue_to_cyan(color::mul([89, 116, 213, 255], 0.9))),
     );
 
-    // 5. The grid area: with `Recipe.maxRecipes == 0` the `ItemGrid` has no contents
-    //    and draws nothing (`UIDynamicItemCollection.cs:38-71` iterates zero
-    //    entries) — no placeholder cells.
+    // 5. The grid area (`UIDynamicItemCollection.cs:38-71`): the available
+    //    recipes as 40x40 icon cells on a 44 px pitch — the same cells
+    //    `hit_test` maps clicks back to. The hovered cell takes the cyan
+    //    hover frame (`ItemSlot`'s hover, `ItemSlot.cs:2264+` family).
+    for (i, recipe_idx) in available.iter().enumerate() {
+        let col = i as f32 % ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
+        let row = (i as f32) / ((l.grid[2] - 4.0) / 44.0).floor().max(1.0);
+        let x = l.grid[0] + col * 44.0;
+        let y = l.grid[1] + row * 44.0;
+        let hovered = mouse_pos.x >= x
+            && mouse_pos.x <= x + 40.0
+            && mouse_pos.y >= y
+            && mouse_pos.y <= y + 40.0;
+        if hovered {
+            r.push_ui_sprite([x, y], [40.0, 40.0], r.white_uv(), [0.35, 0.55, 0.85, 0.55]);
+        }
+        let recipe = &craft::RECIPES[*recipe_idx];
+        if let Some((uv, w, h)) = lookups.item_icon(recipe.create.0) {
+            // The icon fits inside the cell, centred (`ItemSlot.Draw`: scale
+            // to the slot with the texture's own aspect kept).
+            let scale = (32.0 / w).min(32.0 / h).min(1.0);
+            let (dw, dh) = (w * scale, h * scale);
+            r.push_ui_sprite(
+                [x + (40.0 - dw) * 0.5, y + (40.0 - dh) * 0.5],
+                [dw, dh],
+                uv,
+                [1.0; 4],
+            );
+        }
+    }
 
     // 6. The scrollbar (`:376-384`): an empty list views 1 of 1, and
     //    `AutoHide` hides it when it cannot scroll (`UIScrollbar.cs:105`).
