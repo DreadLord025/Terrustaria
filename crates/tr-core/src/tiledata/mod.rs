@@ -16,6 +16,13 @@ pub const WALL_COUNT: usize = 367;
 pub struct TileSet(&'static [u64]);
 
 impl TileSet {
+    /// Const constructor for hand-transcribed sets (e.g. `wind.rs`'s
+    /// `SwaysInWindBasic`); the generated tables use the tuple form directly.
+    pub const fn from_words(words: &'static [u64]) -> Self {
+        Self(words)
+    }
+
+
     #[inline]
     pub fn has(&self, id: u16) -> bool {
         let i = id as usize;
