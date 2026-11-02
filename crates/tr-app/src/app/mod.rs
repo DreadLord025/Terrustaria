@@ -79,6 +79,12 @@ pub(crate) struct App {
     pub(crate) window: Option<Arc<Window>>,
     pub(crate) gpu: Option<Gpu>,
     pub(crate) renderer: Option<SpriteRenderer>,
+    /// M1.4-BG-18 phase 2 harness (`TR_POST=1`): the post-pass pipeline routing
+    /// the scene through an offscreen target + filter pass. Phase 3's
+    /// `ApplyVisuals` driver decides per-frame whether a filter runs.
+    pub(crate) post: Option<tr_render::PostPipeline>,
+    /// Noise image (`Images/Misc/noise`) uploaded for the post pass bindings.
+    pub(crate) noise_tex: Option<wgpu::Texture>,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
     pub(crate) lookups: assets::Lookups,
@@ -948,6 +954,8 @@ impl App {
         window: None,
         gpu: None,
         renderer: None,
+        post: None,
+        noise_tex: None,
         world,
         atlas: Some(atlas),
         lookups,

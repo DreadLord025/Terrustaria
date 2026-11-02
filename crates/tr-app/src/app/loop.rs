@@ -83,6 +83,16 @@ impl ApplicationHandler for App {
 
         self.gpu = Some(gpu);
         self.renderer = Some(renderer);
+        // M1.4-BG-18 phase 2 harness: `TR_POST=1` routes frames through the post
+        // pipeline (passthrough until phase 3 ports filter passes). The noise
+        // image rides along so filter bindings hold the real content texture.
+        if std::env::var_os("TR_POST").is_some() {
+            let gpu = self.gpu.as_ref().expect("gpu");
+            let mut post = tr_render::PostPipeline::new(gpu);
+            post.resize(gpu, gpu.config.width, gpu.config.height);
+            self.noise_tex = crate::app::frame::load_noise_texture(gpu);
+            self.post = Some(post);
+        }
         self.window = Some(window);
     }
 

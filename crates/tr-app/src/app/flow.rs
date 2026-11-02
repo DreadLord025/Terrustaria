@@ -1278,6 +1278,8 @@ mod front_flow_tests {
             window: None,
             gpu: None,
             renderer: None,
+            post: None,
+            noise_tex: None,
             atlas: None,
             world,
             lookups: assets::Lookups::default(),

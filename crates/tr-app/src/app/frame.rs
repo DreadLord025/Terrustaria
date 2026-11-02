@@ -10,6 +10,7 @@ use std::time::Instant;
 use glam::Vec2;
 use tr_core::lighting::{LightParams, LightStyle};
 use tr_core::TILE_PX;
+use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
 use crate::app::{no_hud, App, WorldFrameKey};
@@ -207,6 +208,8 @@ impl App {
             let App {
                 gpu,
                 renderer,
+                post,
+                noise_tex,
                 world,
                 atlas,
                 lookups,
@@ -852,19 +855,49 @@ impl App {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 renderer.aberration = style.aberration_px;
-                stats = renderer.render(
-                    gpu,
-                    &view,
-                    draw_cam.to_array(),
-                    *zoom,
-                    now.elapsed().as_secs_f32(),
-                    wgpu::Color {
-                        r: 0.045,
-                        g: 0.055,
-                        b: 0.085,
-                        a: 1.0,
-                    },
-                );
+                // M1.4-BG-18 phase 2 harness (`TR_POST=1`): the scene renders into
+                // the offscreen post target, then the filter pass writes it to the
+                // swapchain. `NEUTRAL` + `PASSTHROUGH` is the pixel-identity pass
+                // (DW-2.1) — phase 3's `ApplyVisuals` driver replaces these with
+                // real params/pass selection.
+                if let Some(post) = post.as_mut() {
+                    let scene = post.scene_view(gpu);
+                    stats = renderer.render(
+                        gpu,
+                        scene,
+                        draw_cam.to_array(),
+                        *zoom,
+                        now.elapsed().as_secs_f32(),
+                        wgpu::Color {
+                            r: 0.045,
+                            g: 0.055,
+                            b: 0.085,
+                            a: 1.0,
+                        },
+                    );
+                    let noise = noise_tex.as_ref();
+                    post.apply_filter(
+                        gpu,
+                        &view,
+                        &tr_render::FilterParams::NEUTRAL,
+                        tr_render::PassId::PASSTHROUGH,
+                        tr_render::FilterImages { noise },
+                    );
+                } else {
+                    stats = renderer.render(
+                        gpu,
+                        &view,
+                        draw_cam.to_array(),
+                        *zoom,
+                        now.elapsed().as_secs_f32(),
+                        wgpu::Color {
+                            r: 0.045,
+                            g: 0.055,
+                            b: 0.085,
+                            a: 1.0,
+                        },
+                    );
+                }
                 if let Some(path) = shot_path.as_ref() {
                     if *frame_count >= *shot_at {
                         log::info!(
@@ -932,6 +965,35 @@ impl App {
         self.bench_frames = None;
         std::process::exit(0);
     }
+}
+
+/// M1.4-BG-18 phase 2 harness: uploads `Images/Misc/noise` — the noise image every
+/// M1 screen filter binds (`ScreenEffectInitializer.cs:30-40`) — for the post pass
+/// bindings. Missing content returns None and `PostPipeline::apply_filter` binds
+/// its checkerboard fallback instead (plan edge case).
+pub(crate) fn load_noise_texture(gpu: &tr_render::Gpu) -> Option<wgpu::Texture> {
+    let path = crate::assets::content_dir()?.join("Images/Misc/noise.xnb");
+    let img = tr_content::load_texture(&path).ok()?;
+    let tex = gpu.device.create_texture_with_data(
+        &gpu.queue,
+        &wgpu::TextureDescriptor {
+            label: Some("post-noise"),
+            size: wgpu::Extent3d {
+                width: img.width,
+                height: img.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        &img.pixels,
+    );
+    Some(tex)
 }
 
 pub(crate) fn next_rand(state: &mut u64) -> u64 {
