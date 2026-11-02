@@ -156,6 +156,11 @@ impl App {
             self.update_liquids(dt);
             self.update_waterfalls(dt, screen);
             self.update_rain(dt, screen);
+            // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
+            // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
+            // `ApplyVisuals` driver; the post branch consumes
+            // `filter_driver.output`.
+            crate::world_sim::scene_scan::update_scene(self, dt, screen);
             self.update_items(dt);
             self.update_projectiles(dt);
             self.update_editing(dt, screen);
@@ -210,6 +215,7 @@ impl App {
                 renderer,
                 post,
                 noise_tex,
+                filter_driver,
                 world,
                 atlas,
                 lookups,
@@ -855,11 +861,12 @@ impl App {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 renderer.aberration = style.aberration_px;
-                // M1.4-BG-18 phase 2 harness (`TR_POST=1`): the scene renders into
-                // the offscreen post target, then the filter pass writes it to the
-                // swapchain. `NEUTRAL` + `PASSTHROUGH` is the pixel-identity pass
-                // (DW-2.1) — phase 3's `ApplyVisuals` driver replaces these with
-                // real params/pass selection.
+                // M1.4-BG-18 phase 3 (`TR_POST=1`): the scene renders into the
+                // offscreen post target, then the `ApplyVisuals` driver's
+                // winner uniform (`filter_driver.output`, computed in
+                // `update_scene`) selects the filter pass. `None` = no filter
+                // — the NEUTRAL/passthrough pair is the pixel-identity pass
+                // (DW-2.1).
                 if let Some(post) = post.as_mut() {
                     let scene = post.scene_view(gpu);
                     stats = renderer.render(
@@ -876,11 +883,14 @@ impl App {
                         },
                     );
                     let noise = noise_tex.as_ref();
+                    let params = filter_driver
+                        .output
+                        .unwrap_or(tr_render::FilterParams::NEUTRAL);
                     post.apply_filter(
                         gpu,
                         &view,
-                        &tr_render::FilterParams::NEUTRAL,
-                        tr_render::PassId::PASSTHROUGH,
+                        &params,
+                        tr_render::PassId(params.pass_index),
                         tr_render::FilterImages { noise },
                     );
                 } else {

@@ -7,10 +7,13 @@
 //! `ScanTiles` `:353-379`, `CalculateZones` `:662-707`), `Main.cs:62541`
 //! (the scan center is the local player's `Center`).
 
-use tr_core::scene::{is_desert_biome_sand, ocean_depths, SceneMetrics, ZONE_SCAN_SIZE};
-use tr_core::scene::{Sandstorm, SceneState};
-use tr_core::World;
+use glam::Vec2;
 
+use tr_core::World;
+use tr_core::scene::{Sandstorm, SceneState};
+use tr_core::scene::{SceneMetrics, ZONE_SCAN_SIZE, is_desert_biome_sand, ocean_depths};
+
+use crate::app::App;
 use crate::player::{self, Player};
 
 /// `Main.SceneMetrics.Scan(new SceneMetricsScanSettings { BiomeScanCenterPositionInWorld =
@@ -32,6 +35,18 @@ pub(crate) fn scan_scene(
         player.x + player::WIDTH * 0.5,
         player.y + player::HEIGHT * 0.5,
     ];
+    scan_scene_at(world, center, raining, sandstorm_happening)
+}
+
+/// The injectable center variant of [`scan_scene`]: the headless TR_NOPLAYER
+/// shots stand in the camera centre for the absent player (vanilla has no
+/// such path — a test hook, not a behaviour).
+pub(crate) fn scan_scene_at(
+    world: &World,
+    center: [f32; 2],
+    raining: bool,
+    sandstorm_happening: bool,
+) -> SceneMetrics {
     // `this.TileCenter = Center.ToTileCoordinates().ClampedInWorld()`
     // (`SceneMetrics.cs:333`); `ToTileCoordinates` is `(int)v >> 4`
     // (`Utils.cs:1807-1810`). `ClampedInWorld` clamps both coordinates to
@@ -130,10 +145,84 @@ fn apply_scene_forces(
     }
 }
 
+/// The per-frame scene update (`Main.Update`'s tail, in the source order):
+/// the TR_ pins, `Sandstorm.UpdateTime` (`Main.cs:64966`), the
+/// `SceneMetrics.Scan` (`Main.cs:62560`), `SceneState.Update`
+/// (`Main.cs:17816`) and the `ApplyVisuals` driver. Runs while a world is
+/// live, regardless of `TR_POST` — the C# update runs unconditionally and the
+/// driver output is simply unconsumed without the post pipeline.
+///
+/// The wind is read one frame behind (`frame.rs` advances it inside the draw
+/// block) — a fixed, deterministic lag on a seconds-scale input.
+pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
+    let App {
+        world,
+        player,
+        rain,
+        wind,
+        camera,
+        zoom,
+        bg_style,
+        bg_delay,
+        anim_time,
+        scene_state,
+        sandstorm,
+        filter_driver,
+        ..
+    } = app;
+    // The TR_ pins re-read per frame (idempotent; the parse glue of phase 1).
+    apply_scene_forces_from_env(scene_state, sandstorm);
+    // `Sandstorm.UpdateTime` (`Main.cs:64966`); while the TR_SANDSTORM pin
+    // holds, the state machine is frozen (the periodic intention roll would
+    // fight the pin — phase 1's glue doc).
+    if scene_state.forced_severity.is_none() {
+        sandstorm.update_time(1, wind.speed_current);
+    }
+    // `Main.UpdateSceneMetrics` (`Main.cs:62560`): the scan center is the
+    // local player's center; headless shots (TR_NOPLAYER) stand in the camera.
+    let center = player
+        .as_ref()
+        .map(|p| [p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5])
+        .unwrap_or([camera.x, camera.y]);
+    let metrics = scan_scene_at(world, center, rain.is_raining(), sandstorm.happening);
+    // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
+    // manage calls read is the pre-update value — vanilla flips it at `:62`,
+    // after `ApplyVisuals` inside `Update`.
+    let skip = scene_state.skip_transitions;
+    scene_state.update(&metrics);
+    // `Main.tileColor` = the sky tint applied to tiles
+    // (`Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`), with the rain dim
+    // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
+    // reads it (no M1 activation path).
+    let quantised = (world.time / 60.0).floor() * 60.0;
+    let c = crate::render::sky::color_of_the_skies(quantised, world.day_time);
+    let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
+    let tile_color =
+        crate::render::sky::tile_color([c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim]);
+    let inputs = crate::app::filters::SceneVisualInputs {
+        storm: &*sandstorm,
+        wind_speed_current: wind.speed_current,
+        cloud_alpha: rain.visual_alpha(),
+        dt,
+        skip_transitions: skip,
+        view_center: [camera.x, camera.y],
+        screen: [screen.x, screen.y],
+        zoom: *zoom,
+        world_surface: world.world_surface,
+        rock_layer: world.rock_layer,
+        max_tiles_y: world.height,
+        tile_color,
+        bg_style: *bg_style,
+        bg_delay: *bg_delay,
+        global_time: *anim_time % 3600.0,
+    };
+    filter_driver.apply_visuals(&metrics, scene_state, &inputs);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::scene::{thresholds, Sandstorm, SceneState};
+    use tr_core::scene::{Sandstorm, SceneState, thresholds};
     use tr_core::tile::FLAG_ACTIVE;
 
     /// A small test world with vanilla-shaped surface lines.

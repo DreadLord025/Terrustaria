@@ -51,17 +51,110 @@ fn vs_main(@builtin(vertex_index) vi: u32) -> VsOut {
     return out;
 }
 
-// Pass 0: pixel-identity passthrough (DW-2.1). Phase 3 adds the ported filter
-// passes below it and re-points `post.rs::PASS_TABLE` rows at their indices.
+// Pass 0: pixel-identity passthrough (DW-2.1). Passes 1-7 are the phase-3
+// tint/noise subset (`post.rs::PassId`); unported passes resolve here.
 fn pass_passthrough(scene: vec4<f32>) -> vec4<f32> {
     return scene;
+}
+
+// The world-pixel coordinate of the fragment: the view uv scaled to the
+// unscaled view size plus the view's top-left corner in world pixels
+// (`uScreenResolution`/`uScreenPosition`, `ScreenShaderData.cs:147-148`).
+// Noise images are sampled at this coordinate divided by `uImageSize` —
+// world-anchored, so the pattern sticks while the camera moves — offset by
+// the pass's scroll/offset vector.
+fn world_px(uv: vec2<f32>) -> vec2<f32> {
+    return uv * params.screen_resolution + params.screen_position;
+}
+
+// Pass 1: FilterGraveyard — the graveyard mist: a luminance desaturation
+// toward uColor weighted by uProgress (= Lerp(0, 0.75, intensity),
+// `SceneState.cs:109`), with a distance falloff from uTargetPosition (the
+// player center, `:111`) so the tint pools around the player. Approximation
+// of the compiled pass (plan A2 — the HLSL bytecode is not translated);
+// visual-match port.
+fn pass_graveyard(scene: vec4<f32>, uv: vec2<f32>) -> vec4<f32> {
+    let radius = max(1.0, 0.5 * params.screen_resolution.y * params.intensity);
+    let falloff = 1.0 - min(1.0, distance(world_px(uv), params.target_pos) / radius);
+    let amount = params.progress * mix(0.5, 1.0, falloff);
+    let lum = dot(scene.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    let mist = lum * params.color.rgb;
+    return vec4<f32>(mix(scene.rgb, mist, amount), scene.a);
+}
+
+// Pass 2: FilterNoir — noise-dithered black-and-white. `Images/NoirNoise`
+// (`ScreenEffectInitializer.cs:29`, PointWrap) is absent from the content set,
+// so the fallback checkerboard binds. uIntensity carries the depth/tileColor
+// formula (`SceneState.cs:117-125`), uImageOffset the per-tenth-second dither
+// jump (`:124`). Approximation (plan A2); no M1 activation path (monolith).
+fn pass_noir(scene: vec4<f32>, noise: f32) -> vec4<f32> {
+    let lum = dot(scene.rgb, vec3<f32>(1.0 / 3.0));
+    let dithered = clamp(lum + (noise - 0.5) * 0.2, 0.0, 1.0);
+    return vec4<f32>(
+        mix(scene.rgb, vec3<f32>(dithered), clamp(params.intensity, 0.0, 1.0)),
+        scene.a,
+    );
+}
+
+// Pass 3: FilterBloodMoon — the UseColor matrix (2, -0.8, -0.6) applied per
+// channel (`ScreenEffectInitializer.cs:27`): red boosted, green/blue crushed,
+// mixed toward the result by uOpacity (the depth fade × 0.75 of
+// `BloodMoonScreenShaderData.Update` times the fade opacity). Approximation
+// (plan A2).
+fn pass_blood_moon(scene: vec4<f32>) -> vec4<f32> {
+    let tinted = clamp(scene.rgb * params.color.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    return vec4<f32>(
+        mix(scene.rgb, tinted, clamp(params.opacity, 0.0, 1.0)),
+        scene.a,
+    );
+}
+
+// Passes 4/5 (FilterSandstormForeground/Background) and 6/7
+// (FilterBlizzardForeground/Background): one storm body. The noise image is
+// sampled at the world-pixel coordinate over uImageSize (dims × scale — the
+// Blizzard's (3, 0.75) stretches it into streaks), scrolled by uTargetPosition
+// (the shader's `_texturePosition`, forced at Apply time by both shader
+// classes), lerping uSecondaryColor → uColor by the noise value and mixing
+// into the scene at noise-weighted uIntensity × uOpacity. The driver picks
+// whichever of the pair carries the larger effective opacity (the foreground
+// Filter in the open, the background overlay behind backwalls — the vanilla
+// pair cross-fades by exactly those terms). Approximation (plan A2).
+fn pass_storm(scene: vec4<f32>, noise: f32) -> vec4<f32> {
+    let sand = mix(params.secondary_color.rgb, params.color.rgb, noise);
+    let cover = clamp(noise * params.intensity, 0.0, 1.0) * clamp(params.opacity, 0.0, 1.0);
+    return vec4<f32>(mix(scene.rgb, sand, cover), scene.a);
 }
 
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     let scene = textureSample(scene_tex, scene_sampler, in.uv);
+    // The storm scroll (uTargetPosition) and the Noir dither (uImageOffset)
+    // sample the same noise image at different offsets; both are uniform-flow
+    // samples so the pass switch can consume either.
+    let storm_noise = textureSample(
+        noise_tex,
+        noise_sampler,
+        world_px(in.uv) / params.image_size + params.target_pos,
+    ).r;
+    let noir_noise = textureSample(
+        noise_tex,
+        noise_sampler,
+        world_px(in.uv) / params.image_size + params.image_offset,
+    ).r;
     var result: vec4<f32>;
     switch params.pass_index {
+        case 1u: {
+            result = pass_graveyard(scene, in.uv);
+        }
+        case 2u: {
+            result = pass_noir(scene, noir_noise);
+        }
+        case 3u: {
+            result = pass_blood_moon(scene);
+        }
+        case 4u, 5u, 6u, 7u: {
+            result = pass_storm(scene, storm_noise);
+        }
         default: {
             result = pass_passthrough(scene);
         }

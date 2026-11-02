@@ -96,21 +96,38 @@ impl FilterParams {
 }
 
 /// Selector for the WGSL pass function, sent in the uniform (`pass_index`).
-/// Pass 0 is the pixel-identity passthrough; phase 3 assigns real indices to the
-/// ported filter passes and re-points [`PASS_TABLE`] rows at them.
+/// Pass 0 is the pixel-identity passthrough; phase 3 wired the tint/noise
+/// passes (indices 1-7, `post.wgsl`'s `fs_main` switch) and re-pointed their
+/// [`PASS_TABLE`] rows.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct PassId(pub u32);
 
 impl PassId {
     pub const PASSTHROUGH: PassId = PassId(0);
+    /// `FilterGraveyard` (`post.wgsl`).
+    pub const GRAVEYARD: PassId = PassId(1);
+    /// `FilterNoir` — the content set lacks `Images/NoirNoise`; the fallback
+    /// noise binds.
+    pub const NOIR: PassId = PassId(2);
+    /// `FilterBloodMoon`.
+    pub const BLOOD_MOON: PassId = PassId(3);
+    /// `FilterSandstormForeground`.
+    pub const SANDSTORM_FOREGROUND: PassId = PassId(4);
+    /// `FilterSandstormBackground` — the `Overlays.Scene["Sandstorm"]` twin.
+    pub const SANDSTORM_BACKGROUND: PassId = PassId(5);
+    /// `FilterBlizzardForeground`.
+    pub const BLIZZARD_FOREGROUND: PassId = PassId(6);
+    /// `FilterBlizzardBackground` — the `Overlays.Scene["Blizzard"]` twin.
+    pub const BLIZZARD_BACKGROUND: PassId = PassId(7);
 }
 
 /// Filter name → vanilla pass name → WGSL pass index. Rows are the
 /// `Filters.Scene["…"]` registrations of `ScreenEffectInitializer.Load`
 /// (`ScreenEffectInitializer.cs:14-48`), pass names verbatim as they appear in
 /// `ScreenShader.xnb` (DW-2.4; the XNB also carries `FilterColor`, which no
-/// initializer row uses). Indices: 0 = passthrough — phase 3 re-points the
-/// tint/noise rows it ports; unported rows stay visually inert.
+/// initializer row uses). Indices: 0 = passthrough; phase 3 wired the
+/// tint/noise subset (Graveyard/Noir/BloodMoon/Sandstorm/Blizzard × fg/bg) —
+/// unported rows stay visually inert.
 pub const PASS_TABLE: &[(&str, &str, u32)] = &[
     // (Filters.Scene key, ScreenShader.fx pass name, WGSL pass index)
     ("Nebula", "FilterTower", 0),
@@ -124,15 +141,15 @@ pub const PASS_TABLE: &[(&str, &str, u32)] = &[
     ("MoonLord", "FilterMoonLord", 0),
     ("MoonLordShake", "FilterMoonLordShake", 0),
     ("MonolithMoonLord", "FilterMoonLord", 0),
-    ("Graveyard", "FilterGraveyard", 0),
+    ("Graveyard", "FilterGraveyard", 1),
     ("testInvert", "FilterInvert", 0),
-    ("BloodMoon", "FilterBloodMoon", 0),
+    ("BloodMoon", "FilterBloodMoon", 3),
     ("Sepia", "FilterSepia", 0),
-    ("Noir", "FilterNoir", 0),
-    ("Sandstorm", "FilterSandstormForeground", 0),
-    ("SandstormOverlay", "FilterSandstormBackground", 0),
-    ("Blizzard", "FilterBlizzardForeground", 0),
-    ("BlizzardOverlay", "FilterBlizzardBackground", 0),
+    ("Noir", "FilterNoir", 2),
+    ("Sandstorm", "FilterSandstormForeground", 4),
+    ("SandstormOverlay", "FilterSandstormBackground", 5),
+    ("Blizzard", "FilterBlizzardForeground", 6),
+    ("BlizzardOverlay", "FilterBlizzardBackground", 7),
     ("HeatDistortion", "FilterHeatDistortion", 0),
     ("WaterDistortion", "FilterWaterDistortion", 0),
     (
@@ -556,12 +573,37 @@ mod tests {
                 (*filter, *pass),
                 "row {i} diverges from ScreenEffectInitializer.cs"
             );
-            assert_eq!(pass_index(filter), PassId(0), "row {i} not wired");
         }
         // The vanilla `Overlays.Scene` keys register the same shader objects under
         // the same names (`ScreenEffectInitializer.cs:32-39`) — our overlay rows are
         // named to stay unambiguous.
         assert_eq!(pass_index("Unknown"), PassId::PASSTHROUGH);
+    }
+
+    /// Phase 3 wired the tint/noise subset: the pass-name → index mapping must
+    /// agree between `PASS_TABLE` and the WGSL `fs_main` switch (a drift would
+    /// run the wrong filter body under a correct name).
+    #[test]
+    fn test_phase3_pass_indices_match_pass_names() {
+        for (filter, pass_name, idx) in PASS_TABLE {
+            let expected = match *pass_name {
+                "FilterGraveyard" => PassId::GRAVEYARD,
+                "FilterNoir" => PassId::NOIR,
+                "FilterBloodMoon" => PassId::BLOOD_MOON,
+                "FilterSandstormForeground" => PassId::SANDSTORM_FOREGROUND,
+                "FilterSandstormBackground" => PassId::SANDSTORM_BACKGROUND,
+                "FilterBlizzardForeground" => PassId::BLIZZARD_FOREGROUND,
+                "FilterBlizzardBackground" => PassId::BLIZZARD_BACKGROUND,
+                // Not ported yet: HeatDistortion/WaterDistortion (phase 4), the
+                // towers/monoliths/MoonLord/CRT/test passes (M4/test content).
+                _ => PassId::PASSTHROUGH,
+            };
+            assert_eq!(
+                PassId(*idx),
+                expected,
+                "{filter}/{pass_name} index disagrees with the WGSL switch"
+            );
+        }
     }
 
     /// `FilterParams::NEUTRAL` mirrors the `ScreenShaderData` field defaults

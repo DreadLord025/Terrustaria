@@ -580,6 +580,437 @@ pub fn get_lerp_value(from: f32, to: f32, t: f32, clamped: bool) -> f32 {
     (t - from) / (to - from)
 }
 
+/// `MathHelper.Lerp` (XNA): the linear interpolation the filter formulas use.
+fn lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// `Utils.Remap` (`Utils.cs:345-348`): `Lerp(toMin, toMax,
+/// GetLerpValue(fromMin, fromMax, value))`, always clamped on this path.
+fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    lerp(
+        to_min,
+        to_max,
+        get_lerp_value(from_min, from_max, value, true),
+    )
+}
+
+/// `Utils.SmoothStep` (`Utils.cs:126-129`): a clamped inverse lerp despite the
+/// name (no cubic easing).
+fn smooth_step(min: f32, max: f32, x: f32) -> f32 {
+    ((x - min) / (max - min)).clamp(0.0, 1.0)
+}
+
+// ---------------------------------------------------------------------------
+// Screen filters (M1.4-BG-18 phase 3): the M1 subset of the vanilla filter
+// registry. Sources: `Graphics/Effects/{Filter,FilterManager,GameEffect,
+// EffectPriority}.cs`, `Initializers/ScreenEffectInitializer.cs:14-48`,
+// `GameContent/Shaders/{Sandstorm,Blizzard}ShaderData.cs`, `SceneState.cs`.
+// The uniform assembly stays in tr-app (`FilterParams` is a render type);
+// this module owns the state machines and the parameter formulas
+// `ApplyVisuals` feeds them.
+
+/// `EffectPriority` (`Graphics/Effects/EffectPriority.cs`): the ordering key
+/// of the active-filter list; the highest-priority entry draws last.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub enum EffectPriority {
+    VeryLow,
+    Low,
+    Medium,
+    High,
+    VeryHigh,
+}
+
+/// The M1 filter set — every `Filters.Scene`/`Overlays.Scene` entry the
+/// phase-3 driver drives. Towers/monoliths/MoonLord/Sepia/CRT/test passes are
+/// M4/test content, HeatDistortion/WaterDistortion land in phase 4, Aurora is
+/// a `SkyManager` visual (`ScreenEffectInitializer.cs:65`) — none has an M1
+/// activation reader.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum FilterId {
+    /// `Filters.Scene["Graveyard"]` (`ScreenEffectInitializer.cs:25`).
+    Graveyard,
+    /// `Filters.Scene["BloodMoon"]` — `BloodMoonScreenShaderData` (`:27`).
+    BloodMoon,
+    /// `Filters.Scene["Noir"]` (`:29`); monolith-gated, no M1 activation path.
+    Noir,
+    /// `Filters.Scene["Sandstorm"]` — the foreground Filter (`:30-31`).
+    Sandstorm,
+    /// `Overlays.Scene["Sandstorm"]` — the background overlay twin (`:32-33`).
+    SandstormOverlay,
+    /// `Filters.Scene["Blizzard"]` — the foreground Filter (`:34-36`).
+    Blizzard,
+    /// `Overlays.Scene["Blizzard"]` — the background overlay twin (`:37-39`).
+    BlizzardOverlay,
+}
+
+impl FilterId {
+    /// The board set, in `ScreenEffectInitializer.Load` order.
+    pub const ALL: [FilterId; 7] = [
+        FilterId::Graveyard,
+        FilterId::BloodMoon,
+        FilterId::Noir,
+        FilterId::Sandstorm,
+        FilterId::SandstormOverlay,
+        FilterId::Blizzard,
+        FilterId::BlizzardOverlay,
+    ];
+    /// The post-pass competitors — the `Filters.Scene` entries only. The
+    /// overlays render inside the scene (vanilla `RenderLayers.Landscape`),
+    /// never in `FilterManager.EndCapture`.
+    pub const FILTERS: [FilterId; 5] = [
+        FilterId::Graveyard,
+        FilterId::BloodMoon,
+        FilterId::Noir,
+        FilterId::Sandstorm,
+        FilterId::Blizzard,
+    ];
+
+    /// The `Filters.Scene`/`Overlays.Scene` key (`post.rs::PASS_TABLE`).
+    pub fn name(self) -> &'static str {
+        match self {
+            FilterId::Graveyard => "Graveyard",
+            FilterId::BloodMoon => "BloodMoon",
+            FilterId::Noir => "Noir",
+            FilterId::Sandstorm => "Sandstorm",
+            FilterId::SandstormOverlay => "SandstormOverlay",
+            FilterId::Blizzard => "Blizzard",
+            FilterId::BlizzardOverlay => "BlizzardOverlay",
+        }
+    }
+
+    /// The `EffectPriority` of the initializer row
+    /// (`ScreenEffectInitializer.cs:25-39`).
+    pub fn priority(self) -> EffectPriority {
+        match self {
+            FilterId::Graveyard | FilterId::BloodMoon | FilterId::Noir => EffectPriority::Medium,
+            FilterId::Sandstorm
+            | FilterId::SandstormOverlay
+            | FilterId::Blizzard
+            | FilterId::BlizzardOverlay => EffectPriority::High,
+        }
+    }
+
+    /// Whether this id is an `Overlays.Scene` twin (not a post-pass candidate).
+    pub fn is_overlay(self) -> bool {
+        matches!(self, FilterId::SandstormOverlay | FilterId::BlizzardOverlay)
+    }
+
+    fn index(self) -> usize {
+        Self::ALL
+            .iter()
+            .position(|&x| x == self)
+            .expect("FilterId in ALL")
+    }
+}
+
+/// One `GameEffect`'s live state (`Graphics/Effects/GameEffect.cs`: the
+/// `Opacity` field; `Filter.cs:8`: the `Active` flag).
+#[derive(Clone, Copy, Debug)]
+pub struct FilterSlot {
+    active: bool,
+    opacity: f32,
+    /// `FilterManager.OnActivate`'s list-insertion sequence — the sorted
+    /// `_activeFilters` list orders by (priority, insertion), and `EndCapture`
+    /// lets the last visible entry win (`FilterManager.cs:154-180`), so a
+    /// same-priority tie resolves to the later activation.
+    activation_seq: u32,
+}
+
+impl Default for FilterSlot {
+    fn default() -> Self {
+        Self {
+            active: false,
+            opacity: 0.0,
+            activation_seq: 0,
+        }
+    }
+}
+
+/// The `Filters.Scene`/`Overlays.Scene` M1 subset — activation edges
+/// (`SceneState.ManageSpecialBiomeVisuals`, `SceneState.cs:311-366`), the
+/// opacity fades (`FilterManager.Update`, `FilterManager.cs:90-127`) and the
+/// winner pick (`FilterManager.EndCapture`, `:154-180`, plan constraint: one
+/// filter per frame — vanilla's stacking collapses to the last entry).
+#[derive(Debug)]
+pub struct FilterBoard {
+    slots: [FilterSlot; 7],
+    seq: u32,
+}
+
+impl FilterBoard {
+    /// Fresh board: nothing active, nothing fading.
+    pub fn new() -> Self {
+        Self {
+            slots: std::array::from_fn(|_| FilterSlot::default()),
+            seq: 0,
+        }
+    }
+
+    /// `SceneState.ManageSpecialBiomeVisuals` (`SceneState.cs:324-343`, the
+    /// Filter/Overlay half): flip `Active` on an in-zone edge (a fresh
+    /// activation records the insertion sequence, `FilterManager.OnActivate`
+    /// `:44-81`), and the `alwaysInstant || skipTransitions` tail (`:355-365`)
+    /// snaps the opacity instead of fading.
+    pub fn manage(&mut self, id: FilterId, in_zone: bool, skip_transitions: bool) {
+        let slot = &mut self.slots[id.index()];
+        if in_zone != slot.active {
+            if in_zone {
+                self.seq += 1;
+                slot.activation_seq = self.seq;
+            }
+            slot.active = in_zone;
+        }
+        if skip_transitions {
+            slot.opacity = if in_zone { 1.0 } else { 0.0 };
+        }
+    }
+
+    /// `FilterManager.Update` (`FilterManager.cs:90-127`): the opacity ramps
+    /// toward `(Active ? 1 : 0)` at `OPACITY_RATE = 1` per second
+    /// (`:111-116`); a drained inactive slot drops out of the list implicitly
+    /// (its opacity is 0 and it stops being visible/in-list).
+    pub fn update(&mut self, dt: f32) {
+        for slot in &mut self.slots {
+            if slot.active {
+                slot.opacity = (slot.opacity + dt).min(1.0);
+            } else {
+                slot.opacity = (slot.opacity - dt).max(0.0);
+            }
+        }
+    }
+
+    /// `Filter.IsActive` (`Filter.cs:58-61`).
+    pub fn is_active(&self, id: FilterId) -> bool {
+        self.slots[id.index()].active
+    }
+
+    /// `GameEffect.Opacity` — the 1/s fade value.
+    pub fn opacity(&self, id: FilterId) -> f32 {
+        self.slots[id.index()].opacity
+    }
+
+    /// Whether the filter still sits in `_activeFilters`: active, or fading
+    /// out (`FilterManager.Update` removes a filter only once it is inactive
+    /// with opacity 0, `:117-124`). The storm shader `Update`s run for exactly
+    /// this set.
+    pub fn in_list(&self, id: FilterId) -> bool {
+        let slot = &self.slots[id.index()];
+        slot.active || slot.opacity > 0.0
+    }
+
+    /// `FilterManager.EndCapture`'s pick (`FilterManager.cs:154-180`, plan
+    /// constraint "one active filter"): the last visible entry of the
+    /// priority-ordered list — i.e. the maximum of (priority, activation_seq)
+    /// among the filters with a visible (`CombinedOpacity > 0`) slot. Overlays
+    /// never compete (they render in the scene, not in `EndCapture`).
+    pub fn winner(&self) -> Option<FilterId> {
+        let mut best: Option<FilterId> = None;
+        for id in FilterId::FILTERS {
+            if self.slots[id.index()].opacity <= 0.0 {
+                continue;
+            }
+            let better = match best {
+                None => true,
+                Some(b) => {
+                    (id.priority(), self.slots[id.index()].activation_seq)
+                        > (b.priority(), self.slots[b.index()].activation_seq)
+                }
+            };
+            if better {
+                best = Some(id);
+            }
+        }
+        best
+    }
+}
+
+/// `SandstormShaderData` / `BlizzardShaderData` live state: the scrolling
+/// `_texturePosition` and (blizzard only) the smoothed `windSpeed`
+/// (`GameContent/Shaders/SandstormShaderData.cs:8`,
+/// `BlizzardShaderData.cs:8-10`).
+#[derive(Clone, Copy, Debug)]
+pub struct StormShader {
+    texture_pos: [f32; 2],
+    direction: [f32; 2],
+    wind_speed: f32,
+}
+
+impl StormShader {
+    /// Field initializers: `_texturePosition = Vector2.Zero`,
+    /// `windSpeed = 0.1f` (`BlizzardShaderData.cs:8-10`).
+    pub const fn new() -> Self {
+        Self {
+            texture_pos: [0.0; 2],
+            direction: [0.0, 1.0],
+            wind_speed: 0.1,
+        }
+    }
+
+    /// The last computed `UseDirection` vector (`SandstormShaderData.cs:21`).
+    pub fn direction(&self) -> [f32; 2] {
+        self.direction
+    }
+
+    /// The last computed `_texturePosition` — the storm shaders' `Apply`
+    /// forces it into `uTargetPosition` (`SandstormShaderData.cs:25-29`,
+    /// `BlizzardShaderData.cs:38-43`).
+    pub fn texture_pos(&self) -> [f32; 2] {
+        self.texture_pos
+    }
+
+    /// `SandstormShaderData.Update` (`:10-23`): direction = `(-wind, -1)`
+    /// componentwise × `(20, 0.1)`, normalized, × `(2, 0.2)`; the texture
+    /// position advances by direction × elapsed, wrapped mod 10
+    /// (`FocusHelper.UpdateVisualEffects` is true in a focused window).
+    pub fn update_sandstorm(&mut self, wind_speed_current: f32, dt: f32) {
+        let mut vector = [-wind_speed_current * 20.0, -0.1];
+        let len = (vector[0] * vector[0] + vector[1] * vector[1]).sqrt();
+        if len > 0.0 {
+            vector[0] /= len;
+            vector[1] /= len;
+        }
+        vector[0] *= 2.0;
+        vector[1] *= 0.2;
+        self.direction = vector;
+        self.texture_pos[0] = (self.texture_pos[0] + vector[0] * dt) % 10.0;
+        self.texture_pos[1] = (self.texture_pos[1] + vector[1] * dt) % 10.0;
+    }
+
+    /// `BlizzardShaderData.Update` (`:12-36`): the wind clamps to ±0.1 at
+    /// rest, smooths at 0.05/0.95, and the direction is `(-windSpeed, -1)` ×
+    /// `(10, 2)` normalized × `(0.8, 0.6)`; the scroll wraps mod 10.
+    pub fn update_blizzard(&mut self, wind_speed_current: f32, dt: f32) {
+        let mut num = wind_speed_current;
+        if (0.0..=0.1).contains(&num) {
+            num = 0.1;
+        } else if (-0.1..=0.0).contains(&num) {
+            num = -0.1;
+        }
+        self.wind_speed = num * 0.05 + self.wind_speed * 0.95;
+        let mut vector = [-self.wind_speed * 10.0, -2.0];
+        let len = (vector[0] * vector[0] + vector[1] * vector[1]).sqrt();
+        if len > 0.0 {
+            vector[0] /= len;
+            vector[1] /= len;
+        }
+        vector[0] *= 0.8;
+        vector[1] *= 0.6;
+        self.direction = vector;
+        self.texture_pos[0] = (self.texture_pos[0] + vector[0] * dt) % 10.0;
+        self.texture_pos[1] = (self.texture_pos[1] + vector[1] * dt) % 10.0;
+    }
+}
+
+// --- ApplyVisuals parameter formulas (`SceneState.cs:107-188`, M1 subset) ---
+
+/// `SceneState.cs:109`: `progress = Lerp(0, 0.75, GraveyardVisualIntensity)`.
+/// (`:113` pins `UseIntensity(1.2)` — a constant, not a formula.)
+pub fn graveyard_progress(graveyard_visual_intensity: f32) -> f32 {
+    lerp(0.0, 0.75, graveyard_visual_intensity)
+}
+
+/// `BloodMoonScreenShaderData.Update` (`:13-25`): the depth fade
+/// `1 - Utils.SmoothStep(worldSurface + 50, rockLayer + 100, viewCenterTileY)`,
+/// scaled by 0.75. The remix branch (`:16-19`) and the shimmer term (`:20-23`)
+/// have no M1 reader.
+pub fn blood_moon_opacity(view_center_tile_y: f32, world_surface: f64, rock_layer: f64) -> f32 {
+    let depth = 1.0
+        - smooth_step(
+            world_surface as f32 + 50.0,
+            rock_layer as f32 + 100.0,
+            view_center_tile_y,
+        );
+    depth * 0.75
+}
+
+/// `SceneState.cs:117` — the Noir intensity: a nested Lerp/Remap over
+/// `Main.tileColor` brightness (`Vector3.Dot(tileColor, 1/3)`), the depth
+/// below the surface (`(int)worldSurface - TileCenter.Y`, remapped over
+/// ±40 tiles) and the depth into the underworld (`TileCenter.Y -
+/// UnderworldLayer`; `Main.UnderworldLayer = maxTilesY - 200`, `Main.cs:2790`).
+/// The tileColor leg's range is inverted (0.5 → 0.1): darker tiles read as
+/// more noir. No M1 activation path (the monolith is M4 content) — the
+/// formula is ported for DW-3.2 and wired to the FilterNoir pass.
+pub fn noir_intensity(
+    tile_color: [f32; 3],
+    world_surface: i32,
+    tile_center_y: i32,
+    underworld_layer: i32,
+) -> f32 {
+    let brightness = (tile_color[0] + tile_color[1] + tile_color[2]) / 3.0;
+    let surface_leg = remap(
+        (world_surface - tile_center_y) as f32,
+        -40.0,
+        40.0,
+        0.0,
+        1.0,
+    );
+    let underworld_leg = remap(
+        (tile_center_y - underworld_layer) as f32,
+        -40.0,
+        40.0,
+        0.0,
+        1.0,
+    );
+    let base = remap(brightness, 0.5, 0.1, 0.0, 0.2);
+    let deep = lerp(0.1, base, surface_leg);
+    lerp(deep, 0.15, underworld_leg)
+}
+
+/// `SceneState.cs:118-124`: the Noir dither offset re-rolls from
+/// `new Random((int)(Main.GlobalTimeWrappedHourly * 10f))` per frame. The
+/// .NET `System.Random` sequence is not ported — the house `FastRandom`
+/// stands in (unobservable in M1: Noir never activates; deviation recorded
+/// for ANALYSIS).
+pub fn noir_image_offset(global_time: f32) -> [f32; 2] {
+    let mut rng = FastRandom::new((global_time * 10.0) as i32 as u32 as u64);
+    [rng.next_float(), rng.next_float()]
+}
+
+/// `SceneState.cs:136-141` — the Sandstorm Filter (foreground) parameters:
+/// intensity `outsideWeatherEffectIntensity * 0.4 * Min(1, Severity)`, opacity
+/// `Min(1, Severity * 1.5) * outsideWeatherEffectIntensity`. Returns
+/// `(intensity, opacity)`.
+pub fn sandstorm_foreground_params(severity: f32, outside_weather: f32) -> (f32, f32) {
+    (
+        outside_weather * 0.4 * severity.min(1.0),
+        (severity * 1.5).min(1.0) * outside_weather,
+    )
+}
+
+/// `SceneState.cs:140` — the Sandstorm overlay (background) opacity, the
+/// complement of the foreground: `Min(1, Severity * 1.5) *
+/// (1 - outsideWeatherEffectIntensity)`. (Its intensity stays at the
+/// initializer's 0.4 — `ApplyVisuals` never re-sets it.)
+pub fn sandstorm_background_opacity(severity: f32, outside_weather: f32) -> f32 {
+    (severity * 1.5).min(1.0) * (1.0 - outside_weather)
+}
+
+/// `SceneState.cs:163-188` — the Blizzard parameters. `cloud_alpha` is
+/// `Main.cloudAlpha`, `deerclops_smoothed` is
+/// `_deerclopsBlizzardSmoothedEffect` (the deerclops-proximity fade — no M1
+/// spawner, so the driver passes 0 and both Lerps are no-ops). Returns
+/// `(intensity num10, foreground opacity num9, background opacity 1 - num9)`.
+pub fn blizzard_foreground_params(
+    cloud_alpha: f32,
+    outside_weather: f32,
+    deerclops_smoothed: f32,
+) -> (f32, f32, f32) {
+    let mut num9 = (cloud_alpha * 2.0).min(1.0) * outside_weather;
+    let mut num10 = outside_weather * 0.4 * (cloud_alpha * 2.0).min(1.0) * 0.9 + 0.1;
+    num10 = lerp(num10, num10 * 0.5, deerclops_smoothed);
+    num9 = lerp(num9, num9 * 0.5, deerclops_smoothed);
+    (num10, num9, 1.0 - num9)
+}
+
+/// `SurfaceBackgroundID.Sets.IsDesertVariant` (`SurfaceBackgroundID.cs:18`):
+/// the bg styles `Sandstorm.ShowSandstormVisuals` accepts
+/// (`Sandstorm.cs:131-138`).
+pub fn is_desert_bg_style(bg_style: i32) -> bool {
+    matches!(bg_style, 2 | 5 | 13 | 14)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1133,5 +1564,272 @@ mod tests {
         assert_eq!(get_lerp_value(16.0, 36.0, 26.0, true), 0.5);
         assert_eq!(get_lerp_value(16.0, 36.0, 0.0, true), 0.0);
         assert_eq!(get_lerp_value(16.0, 36.0, 100.0, true), 1.0);
+    }
+
+    // --- FilterBoard (Filter.cs / FilterManager.cs / SceneState.cs:311-366) ---
+
+    #[test]
+    fn test_DW_3_4_board_activate_fade_in() {
+        // `FilterManager.Update` (`:111-112`): Active → Opacity += 1/sec.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::BloodMoon, true, false);
+        assert!(board.is_active(FilterId::BloodMoon));
+        assert_eq!(board.opacity(FilterId::BloodMoon), 0.0);
+        board.update(1.0 / 60.0);
+        assert!((board.opacity(FilterId::BloodMoon) - 1.0 / 60.0).abs() < 1e-7);
+        for _ in 0..59 {
+            board.update(1.0 / 60.0);
+        }
+        assert!((board.opacity(FilterId::BloodMoon) - 1.0).abs() < 1e-5);
+        // Saturation at 1: more time does not overshoot.
+        board.update(0.5);
+        assert_eq!(board.opacity(FilterId::BloodMoon), 1.0);
+    }
+
+    #[test]
+    fn test_DW_3_4_board_deactivate_fade_out_and_removal() {
+        // `FilterManager.Update` (`:114-115`): inactive → Opacity -= 1/sec,
+        // removal once it drains (`:117-124`).
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::BloodMoon, true, true); // snap to 1
+        assert_eq!(board.opacity(FilterId::BloodMoon), 1.0);
+        board.manage(FilterId::BloodMoon, false, false);
+        assert!(!board.is_active(FilterId::BloodMoon));
+        assert!(board.in_list(FilterId::BloodMoon), "still fading");
+        board.update(0.4);
+        assert!((board.opacity(FilterId::BloodMoon) - 0.6).abs() < 1e-6);
+        board.update(0.6);
+        assert_eq!(board.opacity(FilterId::BloodMoon), 0.0);
+        assert!(
+            !board.in_list(FilterId::BloodMoon),
+            "drained slots leave the list"
+        );
+    }
+
+    #[test]
+    fn test_DW_3_4_winner_priority_tie_activation_order() {
+        // `EndCapture`'s last-visible-wins over the (priority, insertion)-sorted
+        // list (`FilterManager.cs:71-80,154-180`).
+        let mut board = FilterBoard::new();
+        // Blood moon first, graveyard the same frame later (ApplyVisuals order:
+        // `:92` then `:100`) — both Medium, the later activation wins.
+        board.manage(FilterId::BloodMoon, true, true);
+        board.manage(FilterId::Graveyard, true, true);
+        assert_eq!(board.winner(), Some(FilterId::Graveyard));
+
+        // The reverse order flips the winner.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::Graveyard, true, true);
+        board.manage(FilterId::BloodMoon, true, true);
+        assert_eq!(board.winner(), Some(FilterId::BloodMoon));
+
+        // A High storm beats both Medium filters regardless of order.
+        board.manage(FilterId::Sandstorm, true, true);
+        assert_eq!(board.winner(), Some(FilterId::Sandstorm));
+
+        // Overlays never compete (`EndCapture` walks `Filters.Scene` only).
+        board.manage(FilterId::SandstormOverlay, true, true);
+        assert_eq!(board.winner(), Some(FilterId::Sandstorm));
+
+        // During fade-out a filter stays visible and keeps its list position:
+        // deactivating the storm hands the pass back to the graveyard.
+        board.manage(FilterId::Sandstorm, false, false);
+        assert_eq!(board.winner(), Some(FilterId::Sandstorm), "still fading");
+        board.update(1.0);
+        assert_eq!(board.winner(), Some(FilterId::BloodMoon));
+
+        // Nothing visible: no filter runs.
+        let empty = FilterBoard::new();
+        assert_eq!(empty.winner(), None);
+    }
+
+    #[test]
+    fn test_DW_3_4_skip_transitions_snap() {
+        // `ManageSpecialBiomeVisuals`'s instant tail (`SceneState.cs:355-365`).
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::Graveyard, true, true);
+        assert_eq!(board.opacity(FilterId::Graveyard), 1.0);
+        board.manage(FilterId::Graveyard, false, true);
+        assert_eq!(board.opacity(FilterId::Graveyard), 0.0);
+
+        // Without the snap the fade runs; the snap also applies with no edge.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::Graveyard, true, false);
+        board.update(0.25);
+        board.manage(FilterId::Graveyard, true, true); // already active, still snaps
+        assert_eq!(board.opacity(FilterId::Graveyard), 1.0);
+    }
+
+    #[test]
+    fn test_DW_3_4_reactivation_resumes_opacity() {
+        // `FilterManager.OnActivate` resets the opacity only for a filter that
+        // had fully left the list (`:58-61` vs `:46-57`).
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::BloodMoon, true, false);
+        board.update(0.5);
+        board.manage(FilterId::BloodMoon, false, false);
+        board.update(0.25); // opacity 0.25, still fading
+        board.manage(FilterId::BloodMoon, true, false);
+        board.update(0.25);
+        assert!((board.opacity(FilterId::BloodMoon) - 0.5).abs() < 1e-6);
+
+        // After a full drain the fade restarts from 0.
+        board.manage(FilterId::BloodMoon, false, false);
+        board.update(1.0);
+        board.manage(FilterId::BloodMoon, true, false);
+        assert_eq!(board.opacity(FilterId::BloodMoon), 0.0);
+    }
+
+    // --- StormShader (SandstormShaderData.cs / BlizzardShaderData.cs) ---
+
+    #[test]
+    fn test_DW_3_3_storm_sandstorm_direction_animation() {
+        // `SandstormShaderData.Update` (`:10-23`): (-wind*20, -0.1) normalized,
+        // × (2, 0.2); with wind = 0 the direction is (0, -0.2) normalized.
+        let mut fx = StormShader::new();
+        fx.update_sandstorm(0.0, 1.0);
+        let d = fx.direction();
+        let len = (d[0] * d[0] + d[1] * d[1]).sqrt();
+        assert!((len - 0.2).abs() < 1e-6, "normalized × (2, 0.2)");
+        assert!(d[0].abs() < 1e-6 && (d[1] + 0.2).abs() < 1e-6);
+
+        // The scroll advances by direction × dt, wrapped mod 10: two 1-second
+        // steps at (0, -0.2) reach -0.4.
+        fx.update_sandstorm(0.0, 1.0);
+        assert!((fx.texture_pos()[1] + 0.4).abs() < 1e-6);
+        // A strong wind drives the horizontal component.
+        let mut fx = StormShader::new();
+        fx.update_sandstorm(1.0, 1.0);
+        assert!(fx.direction()[0] < -1.0, "wind 1 pushes the noise left");
+    }
+
+    #[test]
+    fn test_DW_3_3_storm_blizzard_wind_smoothing() {
+        // `BlizzardShaderData.Update` (`:12-36`): |wind| < 0.1 clamps to ±0.1,
+        // then windSpeed smooths at 0.05/0.95 from the 0.1 initializer.
+        let mut fx = StormShader::new();
+        fx.update_blizzard(0.0, 1.0);
+        assert!((fx.wind_speed - (0.1 * 0.05 + 0.1 * 0.95)).abs() < 1e-6); // 0.1
+        let mut fx = StormShader::new();
+        fx.update_blizzard(1.0, 1.0);
+        assert!((fx.wind_speed - (1.0 * 0.05 + 0.1 * 0.95)).abs() < 1e-6); // 0.145
+        // Direction: (-windSpeed, -1) × (10, 2) normalized × (0.8, 0.6).
+        let d = fx.direction();
+        assert!(d[0] < 0.0 && d[1] < 0.0);
+        // The scroll wraps into ±10.
+        for _ in 0..6000 {
+            fx.update_blizzard(1.0, 1.0);
+        }
+        assert!(fx.texture_pos()[0].abs() <= 10.0 && fx.texture_pos()[1].abs() <= 10.0);
+    }
+
+    // --- Parameter formulas (SceneState.cs:107-188 / BloodMoonShaderData) ---
+
+    #[test]
+    fn test_DW_3_2_graveyard_progress() {
+        // `SceneState.cs:109`: Lerp(0, 0.75, intensity).
+        assert_eq!(graveyard_progress(0.0), 0.0);
+        assert!((graveyard_progress(0.5) - 0.375).abs() < 1e-6);
+        assert_eq!(graveyard_progress(1.0), 0.75);
+    }
+
+    #[test]
+    fn test_DW_3_1_blood_moon_opacity_depth_fade() {
+        // `BloodMoonScreenShaderData.cs:15,24`: full above worldSurface + 50,
+        // zero below rockLayer + 100, smooth in between, × 0.75.
+        let surface = 100.0f64;
+        let rock = 180.0f64;
+        assert_eq!(blood_moon_opacity(100.0, surface, rock), 0.75);
+        assert_eq!(blood_moon_opacity(150.0, surface, rock), 0.75); // at +50
+        assert_eq!(blood_moon_opacity(280.0, surface, rock), 0.0); // at rock+100
+        // Midpoint: SmoothStep is a plain inverse lerp (`Utils.cs:126-129`).
+        let mid = blood_moon_opacity(215.0, surface, rock); // (215-150)/(280-150) = 0.5
+        assert!((mid - 0.375).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_DW_3_2_noir_intensity_formula() {
+        // `SceneState.cs:117`. Structure: Lerp(Lerp(0.1, tileColorTerm,
+        // surfaceLeg), 0.15, underworldLeg) — the surface leg is 1 when the
+        // TileCenter sits 40+ tiles ABOVE the surface ((int)surface - Y >= 40),
+        // 0 at 40 below; the underworld leg is 1 deep into the underworld.
+        // Bright sky high above the surface: base = Remap(1, 0.5, 0.1, 0, 0.2)
+        // = 0 (inverted range, clamped) → intensity 0.
+        assert!((noir_intensity([1.0, 1.0, 1.0], 100, 60, 200) - 0.0).abs() < 1e-6);
+        // Dark tiles up there read as full noir: base = 0.2.
+        assert!((noir_intensity([0.1, 0.1, 0.1], 100, 60, 200) - 0.2).abs() < 1e-6);
+        // Mid-brightness: GetLerpValue(0.5, 0.1, 0.3) = 0.5 → base 0.1.
+        assert!((noir_intensity([0.3, 0.3, 0.3], 100, 60, 200) - 0.1).abs() < 1e-6);
+        // Underground the surface leg is 0 → the floor is 0.1, rising toward
+        // 0.15 with underworld depth (Y=180 is 20 above the underworld layer:
+        // leg 0.25 → 0.1125).
+        assert!((noir_intensity([1.0, 1.0, 1.0], 100, 180, 200) - 0.1125).abs() < 1e-6);
+        // Deep underworld: the third leg saturates at 0.15.
+        assert!((noir_intensity([1.0, 1.0, 1.0], 100, 240, 200) - 0.15).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_DW_3_3_sandstorm_params() {
+        // `SceneState.cs:138-140`.
+        let (intensity, opacity) = sandstorm_foreground_params(0.8, 1.0);
+        assert!((intensity - 0.4 * 0.8).abs() < 1e-6);
+        let saturate = (0.8f32 * 1.5).min(1.0);
+        assert!((opacity - saturate).abs() < 1e-6);
+        // Severity saturates both terms.
+        let (intensity, opacity) = sandstorm_foreground_params(1.0, 1.0);
+        assert_eq!(intensity, 0.4);
+        assert_eq!(opacity, 1.0);
+        // The overlay is the complement (`:140`).
+        let bg = sandstorm_background_opacity(0.8, 1.0);
+        assert_eq!(bg, 0.0);
+        let bg = sandstorm_background_opacity(0.8, 0.0);
+        let saturate = (0.8f32 * 1.5).min(1.0);
+        assert!((bg - saturate).abs() < 1e-6);
+        // Behind a backwall the intensity zeroes (`ow = 0`).
+        let (intensity, opacity) = sandstorm_foreground_params(0.8, 0.0);
+        assert_eq!(intensity, 0.0);
+        assert_eq!(opacity, 0.0);
+    }
+
+    #[test]
+    fn test_DW_3_3_blizzard_params() {
+        // `SceneState.cs:175-181` with the deerclops term 0.
+        let (intensity, fg, bg) = blizzard_foreground_params(0.5, 1.0, 0.0);
+        assert!((intensity - (1.0 * 0.4 * 1.0 * 0.9 + 0.1)).abs() < 1e-6);
+        assert!((fg - 1.0).abs() < 1e-6);
+        assert!((bg - 0.0).abs() < 1e-6);
+        // Calm clouds halve the terms: min(1, 0.2*2) = 0.4.
+        let (intensity, fg, bg) = blizzard_foreground_params(0.2, 1.0, 0.0);
+        assert!((intensity - (1.0 * 0.4 * 0.4 * 0.9 + 0.1)).abs() < 1e-6);
+        assert!((fg - 0.4).abs() < 1e-6);
+        assert!((bg - 0.6).abs() < 1e-6);
+        // Behind a backwall the foreground fades out, the background fills in.
+        let (_, fg, bg) = blizzard_foreground_params(0.5, 0.0, 0.0);
+        assert_eq!(fg, 0.0);
+        assert_eq!(bg, 1.0);
+    }
+
+    #[test]
+    fn desert_bg_variant_set_matches_surface_background_id() {
+        // `SurfaceBackgroundID.cs:18`: CreateBoolSet(false, 2, 5, 13, 14).
+        for style in [2, 5, 13, 14] {
+            assert!(is_desert_bg_style(style));
+        }
+        for style in [0, 1, 4, 7, 10] {
+            assert!(!is_desert_bg_style(style));
+        }
+    }
+
+    #[test]
+    fn noir_image_offset_is_deterministic_per_tenth_second() {
+        // `SceneState.cs:118`: the seed is (int)(GlobalTime * 10) — stable
+        // within a tenth of a second, changing across tenths.
+        let a = noir_image_offset(1.234);
+        let b = noir_image_offset(1.239);
+        assert_eq!(a, b);
+        let c = noir_image_offset(1.301);
+        assert_ne!(a, c);
+        // Repeats exactly (determinism).
+        assert_eq!(a, noir_image_offset(1.234));
     }
 }
