@@ -3,7 +3,8 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    assemble_layers, front_arm_cell, CompositeArmState, LayerSprite, PlayerCompositeState,
+    assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
+    PlayerCompositeState,
 };
 use super::sky::sky_tex;
 use crate::assets;
@@ -166,17 +167,18 @@ pub(crate) fn draw_player(
     let (cx, cy) = player.center();
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let swing = held.map_or(0.0, |(_, s)| s);
     let state = PlayerCompositeState {
         origin: [player.x - 10.0, player.y - 10.0],
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,
-        swing: held.map_or(0.0, |(_, s)| s),
+        swing,
         use_style: 1,
         item_uv: held.and_then(|(kind, _)| held_item_uv(lookups, kind)),
         item_size: [14.0, 14.0],
         light: light_c,
-        front_arm: CompositeArmState::DISABLED,
+        front_arm: swing_stand_in(swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
