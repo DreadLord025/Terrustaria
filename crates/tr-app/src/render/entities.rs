@@ -3,7 +3,7 @@
 //! head icon and the UI-space character preview.
 use super::BgTex;
 use super::player_layers::{
-    assemble_layers, front_arm_cell, LayerSprite, PlayerCompositeState,
+    assemble_layers, front_arm_cell, CompositeArmState, LayerSprite, PlayerCompositeState,
 };
 use super::sky::sky_tex;
 use crate::assets;
@@ -176,6 +176,8 @@ pub(crate) fn draw_player(
         item_uv: held.and_then(|(kind, _)| held_item_uv(lookups, kind)),
         item_size: [14.0, 14.0],
         light: light_c,
+        front_arm: CompositeArmState::DISABLED,
+        back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }

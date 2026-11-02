@@ -52,6 +52,94 @@ pub(crate) struct LayerSprite {
     pub(crate) rotation: f32,
 }
 
+/// `Player.CompositeArmStretchAmount` (`Player.cs`, рядом с
+/// `CompositeArmData:219`): how far the composite arm stretches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompositeStretch {
+    Full,
+    ThreeQuarters,
+    Quarter,
+    None,
+}
+
+impl CompositeStretch {
+    /// The sheet row of the stretch (`PlayerDrawSet.cs:2254-2268`):
+    /// Full→0, ThreeQuarters→1, Quarter→2, None→3.
+    fn row(self) -> u32 {
+        match self {
+            CompositeStretch::Full => 0,
+            CompositeStretch::ThreeQuarters => 1,
+            CompositeStretch::Quarter => 2,
+            CompositeStretch::None => 3,
+        }
+    }
+}
+
+/// `Player.CompositeArmData` (`Player.cs:219`): the per-arm composite state —
+/// `enabled` switches the arm onto the composite sheet columns
+/// (front 7 / back 8) at the stretch row, with `rotation` applied around the
+/// composite pivot; disabled arms keep the per-body-frame cells.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CompositeArmState {
+    pub(crate) enabled: bool,
+    pub(crate) stretch: CompositeStretch,
+    pub(crate) rotation: f32,
+}
+
+impl CompositeArmState {
+    /// The disabled arm — per-body-frame cells, no rotation.
+    pub(crate) const DISABLED: CompositeArmState = CompositeArmState {
+        enabled: false,
+        stretch: CompositeStretch::None,
+        rotation: 0.0,
+    };
+}
+
+/// `PlayerDrawSet.UpdateCompositeArm` (`PlayerDrawSet.cs:2246-2271`): an
+/// enabled arm frames from the composite column — front `targetX` 7, back 8
+/// (`:2035-2036`) — at the stretch row, rotating by `data.rotation`; a
+/// disabled arm keeps the body-frame cell (`front_arm_cell` / `back_arm_cell`,
+/// the `frameIndex.Y = frameIndex2.Y + 2` of `:2034`) and does not rotate.
+pub(crate) fn update_composite_arm(
+    data: CompositeArmState,
+    frame: u32,
+    is_back: bool,
+) -> ((u32, u32), f32) {
+    match data.enabled {
+        true => {
+            let column = if is_back { 8 } else { 7 };
+            ((column, data.stretch.row()), data.rotation)
+        }
+        false => {
+            let cell = if is_back {
+                back_arm_cell(frame)
+            } else {
+                front_arm_cell(frame)
+            };
+            (cell, 0.0)
+        }
+    }
+}
+
+/// `PlayerDrawLayers.GetCompositeOffset_BackArm` (`PlayerDrawLayers.cs:4082-4085`):
+/// (+6, +2) before the direction mirror.
+pub(crate) const COMPOSITE_PIVOT_BACK: [f32; 2] = [6.0, 2.0];
+
+/// `PlayerDrawLayers.GetCompositeOffset_FrontArm` (`:4087-4090`): (−5, 0)
+/// before the mirror.
+pub(crate) const COMPOSITE_PIVOT_FRONT: [f32; 2] = [-5.0, 0.0];
+
+/// The pivot offset with `GetCompositeOffset_*`'s direction mirror applied
+/// (X flips with `direction`, Y with `gravDir` — gravDir is always 1 here).
+pub(crate) fn composite_pivot(is_back: bool, dir: f32) -> [f32; 2] {
+    let raw = if is_back {
+        COMPOSITE_PIVOT_BACK
+    } else {
+        COMPOSITE_PIVOT_FRONT
+    };
+    [raw[0] * dir, raw[1]]
+}
+
 /// The per-frame inputs every layer builder reads (parameter object — the
 /// cc-routine-and-class-design 7±2 cap).
 #[derive(Clone, Copy, Debug)]
@@ -70,6 +158,10 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) item_size: [f32; 2],
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
+    /// `Player.compositeFrontArm` (`Player.cs:1906`).
+    pub(crate) front_arm: CompositeArmState,
+    /// `Player.compositeBackArm`.
+    pub(crate) back_arm: CompositeArmState,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -575,6 +667,62 @@ mod tests {
         assert_eq!(BACK_SHOULDER_CELL, (1, 1));
     }
 
+    #[test]
+    fn test_dw_1_1_enabled_cells() {
+        // An enabled arm frames from the composite column — front 7, back 8 —
+        // at the stretch row (`PlayerDrawSet.cs:2254-2268`, targetX `:2035-2036`).
+        let data = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.5,
+        };
+        assert_eq!(update_composite_arm(data, 0, false), ((7, 0), 0.5));
+        assert_eq!(update_composite_arm(data, 0, true), ((8, 0), 0.5));
+        let stretches = [
+            (CompositeStretch::Full, 0),
+            (CompositeStretch::ThreeQuarters, 1),
+            (CompositeStretch::Quarter, 2),
+            (CompositeStretch::None, 3),
+        ];
+        for (stretch, row) in stretches {
+            let d = CompositeArmState {
+                enabled: true,
+                stretch,
+                rotation: 0.0,
+            };
+            assert_eq!(update_composite_arm(d, 3, false).0, (7, row));
+        }
+    }
+
+    #[test]
+    fn test_dw_1_2_disabled_frame_cells() {
+        // Disabled arms keep the body-frame cells and do not rotate — the
+        // M2-DRAW-1 behaviour (`PlayerDrawSet.cs:2269-2270`, `:2034`).
+        let disabled = CompositeArmState::DISABLED;
+        assert_eq!(
+            update_composite_arm(disabled, 0, false),
+            (front_arm_cell(0), 0.0)
+        );
+        assert_eq!(
+            update_composite_arm(disabled, 7, true),
+            (back_arm_cell(7), 0.0)
+        );
+        assert_eq!(front_arm_cell(0), (2, 0));
+        assert_eq!(back_arm_cell(7), (4, 3));
+    }
+
+    #[test]
+    fn test_dw_1_3_pivots_and_mirror() {
+        // Raw constants (`PlayerDrawLayers.cs:4082-4090`).
+        assert_eq!(COMPOSITE_PIVOT_BACK, [6.0, 2.0]);
+        assert_eq!(COMPOSITE_PIVOT_FRONT, [-5.0, 0.0]);
+        // `GetCompositeOffset_*` mirror X by direction, Y stays.
+        assert_eq!(composite_pivot(true, 1.0), [6.0, 2.0]);
+        assert_eq!(composite_pivot(true, -1.0), [-6.0, 2.0]);
+        assert_eq!(composite_pivot(false, 1.0), [-5.0, 0.0]);
+        assert_eq!(composite_pivot(false, -1.0), [5.0, 0.0]);
+    }
+
     fn sheet() -> BgTex {
         BgTex {
             uv: [0.0, 0.0, 1.0, 1.0],
@@ -611,6 +759,8 @@ mod tests {
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
+            front_arm: CompositeArmState::DISABLED,
+            back_arm: CompositeArmState::DISABLED,
         }
     }
 
