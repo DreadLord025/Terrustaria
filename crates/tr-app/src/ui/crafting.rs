@@ -412,7 +412,16 @@ pub fn draw(
             r.push_ui_sprite([x, y], [40.0, 40.0], r.white_uv(), [0.35, 0.55, 0.85, 0.55]);
         }
         let recipe = &craft::RECIPES[*recipe_idx];
-        if let Some((uv, w, h)) = lookups.item_icon(recipe.create.0) {
+        // No `Item_*` sheets are extracted yet: placeable items fall back to
+        // the tile's plain 16x16 frame, the same fallback the world drops use
+        // (`item.rs`'s drop draw).
+        let icon = lookups
+            .item_icon(recipe.create.0)
+            .or_else(|| {
+                let t = crate::registry::get(recipe.create.0)?.tile?;
+                Some((lookups.plain_tex(t)?.uv, 16.0, 16.0))
+            });
+        if let Some((uv, w, h)) = icon {
             // The icon fits inside the cell, centred (`ItemSlot.Draw`: scale
             // to the slot with the texture's own aspect kept).
             let scale = (32.0 / w).min(32.0 / h).min(1.0);
@@ -423,6 +432,11 @@ pub fn draw(
                 uv,
                 [1.0; 4],
             );
+        } else {
+            // Items without an extracted sprite (the atlas carries only the
+            // world's used tile frames): a grey placeholder box — documented
+            // in docs/ANALYSIS.md.
+            r.push_ui_sprite([x + 4.0, y + 4.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
         }
     }
 

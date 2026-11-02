@@ -115,7 +115,9 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
-            self.handle_inventory_clicks();
+            if !self.handle_crafting_clicks() {
+                self.handle_inventory_clicks();
+            }
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
                 if *scale < target {

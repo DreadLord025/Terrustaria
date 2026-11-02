@@ -5,6 +5,7 @@
 
 use winit::event_loop::ActiveEventLoop;
 
+use crate::craft;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
 use crate::app::netglue::compressed_world;
 use crate::app::{App, NetRole, no_hud};
@@ -101,6 +102,38 @@ impl App {
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
+    /// `NewCraftingUI`'s recipe clicks: a click on an available recipe cell
+    /// crafts it — `try_craft` consumes the ingredients and the result goes to
+    /// the inventory via `slot_for_pickup` (a full inventory drops on the
+    /// ground in the original; the drop bridge is not wired yet, so a full
+    /// inventory stacks only what fits — see docs/ANALYSIS.md). Consumes the
+    /// press only when a recipe was crafted.
+    pub(crate) fn handle_crafting_clicks(&mut self) -> bool {
+        if !self.crafting_open || !self.ui_left_press {
+            return false;
+        }
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let Some(player) = self.player.as_ref() else { return false; };
+        let adj = craft::adjacent_tiles(&self.world, player);
+        let available = craft::available(&self.inventory, &adj);
+        let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
+        else {
+            return false;
+        };
+        let recipe = &craft::RECIPES[idx];
+        let Some((kind, count)) = craft::try_craft(&mut self.inventory, recipe, &adj) else {
+            // The recipe row shows with a partial ingredient set; a click
+            // without the full set does nothing (`Main.cs:42250` hover only).
+            return false;
+        };
+        if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind) {
+            self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
+        }
+        self.ui_left_press = false;
+        true
+    }
+
     pub(crate) fn handle_inventory_clicks(&mut self) {
         let left = self.ui_left_press;
         let right = self.ui_right_press;
