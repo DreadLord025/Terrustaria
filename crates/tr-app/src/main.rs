@@ -15,6 +15,7 @@ mod persist;
 mod player;
 mod projectile;
 mod rain;
+mod craft;
 mod registry;
 mod render;
 mod spawner;

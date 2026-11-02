@@ -52,6 +52,16 @@ static ITEMS: &[ItemDef] = &[
     ItemDef { id: 174, name: "Hellstone", max_stack: 999, tile: Some(58), wall: None, projectile: None, damage: 0, rare: 0 },
     ItemDef { id: 276, name: "Cactus", max_stack: 999, tile: Some(80), wall: None, projectile: None, damage: 0, rare: 0 },
     ItemDef { id: 593, name: "Snow Block", max_stack: 999, tile: Some(147), wall: None, projectile: None, damage: 0, rare: 0 },
+    // Terraria.ID.ItemID.Gel (`ItemID.cs:1729`) — slime drops, torch ingredient.
+    ItemDef { id: 23, name: "Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
+    // IronBar (`ItemID.cs:1727`).
+    ItemDef { id: 22, name: "Iron Bar", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 0 },
+    // WorkBench (`ItemID.cs:1755`) — places the WorkBench tile 18 (`TileID.cs:665`).
+    ItemDef { id: 36, name: "Work Bench", max_stack: 999, tile: Some(18), wall: None, projectile: None, damage: 0, rare: 0 },
+    // Furnace (`ItemID.cs:1749`) — places the Furnace tile 17.
+    ItemDef { id: 33, name: "Furnace", max_stack: 999, tile: Some(17), wall: None, projectile: None, damage: 0, rare: 0 },
+    // IronAnvil (`ItemID.cs:1753`) — places the Anvils tile 16.
+    ItemDef { id: 35, name: "Iron Anvil", max_stack: 999, tile: Some(16), wall: None, projectile: None, damage: 0, rare: 0 },
 ];
 
 pub fn get(id: u16) -> Option<&'static ItemDef> {
