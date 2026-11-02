@@ -371,7 +371,7 @@ pub(crate) fn draw_tiles(
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
-                    tr_core::drawdata::draw_data(
+                    let mut dd = tr_core::drawdata::draw_data(
                         tile.kind,
                         tx,
                         ty,
@@ -379,7 +379,20 @@ pub(crate) fn draw_tiles(
                         tile.frame_y,
                         0,
                         solid_above,
-                    )
+                    );
+                    // The world-probing frame corrections C# applies in
+                    // `GetTileDrawData` (palm biome row 323, dye plants 227)
+                    // and `DrawSingleTile` (cactus 80, cog 272).
+                    dd.apply_world_corrections(
+                        world,
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                    );
+                    dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };

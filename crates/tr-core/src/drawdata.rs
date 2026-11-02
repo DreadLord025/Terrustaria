@@ -10,6 +10,14 @@
 //! state the port does not have yet (wind, liquids, biome probes, cage-frame
 //! tables, ...) keep only their unconditional static part and carry a
 //! deviation comment; cases without any static part fall to the 16x16 default.
+//!
+//! The world-probing parts C# keeps in `GetTileDrawData` / `DrawSingleTile`
+//! live here too: the palm biome row, the dye-plant frame rewrite, the cactus
+//! ground shift and the cog parity shift, applied by
+//! [`TileDrawData::apply_world_corrections`] (the caller owns the `World`).
+
+use crate::tiledata::TILE_SOLID;
+use crate::world::World;
 
 /// `GetTileDrawData` metrics needed by the tile pass.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -178,9 +186,8 @@ pub fn draw_data(
             data.height = 18;
         }
         // `case 323` — palm tree: 20x20; C# replaces the frame row with
-        // `tileFrameY = 22 * GetPalmTreeBiome(x, y)` (4670) — the biome probe
-        // is ported in the next phase.
-        // TODO(next): frame_y_override = 22 * palm_tree_biome(x, y).
+        // `tileFrameY = 22 * GetPalmTreeBiome(x, y)` (4670) — applied by
+        // `apply_world_corrections` (the probe needs the world).
         323 => {
             data.width = 20;
             data.height = 20;
@@ -356,9 +363,11 @@ pub fn draw_data(
             data.top = -2;
             data.flip = flip_x;
         }
-        // `case 80 / 142 / 143` — cacti: top 2 (TileDrawing.cs:5014-5018).
-        // `DrawSingleTile` adds 54/108/162 to the source Y for the corrupt /
-        // hallowed / crimson variants (TileDrawing.cs:1132-1147) — next phase.
+        // `case 80 / 142 / 143` — cacti and pumps: top 2
+        // (TileDrawing.cs:5014-5018). `DrawSingleTile` adds 54/108/162 to the
+        // source Y for the corrupt / hallowed / crimson grounds — `case 80:`
+        // only (TileDrawing.cs:1132-1147), applied by
+        // `apply_world_corrections`.
         80 | 142 | 143 => {
             data.top = 2;
         }
@@ -391,8 +400,9 @@ pub fn draw_data(
         }
         // `case 227` — dye plants: 32x38; top -6 on the planted column
         // (`tileFrameX == 238`) else -20 (5052-5062); `tileFrameX == 204`
-        // rewrites the frame per `WorldGen.GetCactusType` (5063-5078) — next
-        // phase; flip on even columns (5079-5082).
+        // rewrites the frame per `WorldGen.GetCactusType` (5063-5078) —
+        // applied by `apply_world_corrections`; flip on even columns
+        // (5079-5082).
         227 => {
             data.width = 32;
             data.height = 38;
@@ -532,7 +542,7 @@ pub fn draw_data(
         }
         // `case 272` — Cog: clears the animation row; `DrawSingleTile` adds
         // the parity shift `*90` on top (TileDrawing.cs:5295-5297 and
-        // 1125-1131) — next phase.
+        // 1125-1131) — applied by `apply_world_corrections`.
         272 => {
             data.add_fr_y = 0;
         }
@@ -960,6 +970,206 @@ pub fn draw_data(
     // / TILE-DRAW-2 respectively.
 
     data
+}
+
+/// `WorldGen.beachDistance` (WorldGen.cs:86914) — set once in the static
+/// constructor, constant for every world size.
+const BEACH_DISTANCE: i32 = 380;
+
+/// `TileDrawing.GetPalmTreeBiome` (TileDrawing.cs:1725-1733): walks down the
+/// palm trunk (kind 323) to the first non-palm tile, then classifies it. The
+/// C# loop has no bounds check; a tile outside the world behaves like an empty
+/// (inactive) one, which stops the walk (`Framing.GetTileSafely` semantics).
+pub fn palm_tree_biome(world: &World, x: i32, y: i32) -> i32 {
+    let mut i = y;
+    while let Some(t) = world.tile(x, i) {
+        if !(t.active() && t.kind == 323) {
+            break;
+        }
+        i += 1;
+    }
+    palm_tree_variant(world, x, i)
+}
+
+/// `TileDrawing.GetPalmTreeVariant` (TileDrawing.cs:3491-3515): the ground
+/// under the palm picks the style — 0 sand, 1 crimsand, 2 pearlsand,
+/// 3 ebonsand, -1 anything else (the C# frame row then becomes -22).
+/// `WorldGen.IsPalmOasisTree` (WorldGen.cs:27205-27210) adds 4 inside the
+/// beach band.
+fn palm_tree_variant(world: &World, x: i32, y: i32) -> i32 {
+    let mut variant = -1;
+    if let Some(t) = world.tile(x, y) {
+        if t.active() {
+            if t.kind == 53 {
+                variant = 0;
+            }
+            if t.kind == 234 {
+                variant = 1;
+            }
+            if t.kind == 116 {
+                variant = 2;
+            }
+            if t.kind == 112 {
+                variant = 3;
+            }
+        }
+    }
+    if x >= BEACH_DISTANCE && x <= world.width - BEACH_DISTANCE {
+        variant += 4;
+    }
+    variant
+}
+
+/// The palm frame row: `tileFrameY = 22 * GetPalmTreeBiome(x, y)`
+/// (TileDrawing.cs:4670).
+pub fn palm_frame_y(biome: i32) -> i32 {
+    22 * biome
+}
+
+/// `WorldGen.GetCactusType` (WorldGen.cs:47687-47737): walks down the cactus
+/// column to the ground and reports which sand family it grows from —
+/// (evil, good, crimson) for ebonsand 112 / pearlsand 116 / crimsand 234.
+/// `frame_x`/`frame_y` select the probe column for the cactus sprite's side
+/// arms. Tiles outside the world behave like empties; the 20-row walk limit
+/// and the `InWorld` fluff of 2 are transcribed exactly.
+pub fn cactus_type(
+    world: &World,
+    x: i32,
+    y: i32,
+    frame_x: i16,
+    frame_y: i16,
+) -> (bool, bool, bool) {
+    let mut evil = false;
+    let mut good = false;
+    let mut crimson = false;
+    // Side arms of the cactus sprite shift the probe column
+    // (WorldGen.cs:47694-47701).
+    let mut px = x;
+    if frame_x == 36 {
+        px -= 1;
+    }
+    if frame_x == 54 {
+        px += 1;
+    }
+    if frame_x == 108 {
+        px = if frame_y != 18 { px + 1 } else { px - 1 };
+    }
+    // `WorldGen.InWorld(x, y, fluff: 2)` (WorldGen.cs:9688-9695).
+    let in_world =
+        |px: i32, py: i32| px >= 2 && px < world.width - 2 && py >= 2 && py < world.height - 2;
+    let mut py = y;
+    if !in_world(px, py) {
+        return (evil, good, crimson);
+    }
+    let mut seen_cactus = false;
+    // C# reads the start tile after the InWorld check and bails on null
+    // (WorldGen.cs:47706-47712); `world.tile` is `None` only out of bounds.
+    let mut tile = match world.tile(px, py) {
+        Some(t) => *t,
+        None => return (evil, good, crimson),
+    };
+    if tile.kind == 80 && tile.active() {
+        seen_cactus = true;
+    }
+    // The walk continues while the tile is not (active AND solid AND a cactus
+    // was seen). `Main.tileSolid[80]` is false, so cactus segments never stop
+    // it. The flag update, the increment and the break check keep the C#
+    // order — the final check below sees exactly the tile the walk stopped
+    // on.
+    while !tile.active() || !TILE_SOLID.has(tile.kind) || !seen_cactus {
+        if tile.kind == 80 && tile.active() {
+            seen_cactus = true;
+        }
+        py += 1;
+        if py > y + 20 || !in_world(px, py) {
+            break;
+        }
+        match world.tile(px, py) {
+            Some(t) => tile = *t,
+            // C# `tile == null` exits the loop with no classification.
+            None => break,
+        }
+    }
+    if tile.active() {
+        if tile.kind == 112 {
+            evil = true;
+        }
+        if tile.kind == 116 {
+            good = true;
+        }
+        if tile.kind == 234 {
+            crimson = true;
+        }
+    }
+    (evil, good, crimson)
+}
+
+/// Dye-plant frame rewrite: `tileFrameX += 238 (good) / +204 (evil) / +272
+/// (crimson)` (TileDrawing.cs:5066-5077). Three independent `if`s — the flags
+/// are mutually exclusive by construction, the sum is the literal form.
+pub fn dye_frame_x_offset(evil: bool, good: bool, crimson: bool) -> i32 {
+    204 * evil as i32 + 238 * good as i32 + 272 * crimson as i32
+}
+
+/// `DrawSingleTile` cactus shift: `rectangle.Y += 54 (evil) / +108 (good) /
+/// +162 (crimson)` (TileDrawing.cs:1132-1147). The switch case is `80:` only —
+/// 142/143 are pumps sharing just the `tileTop = 2` arm.
+pub fn cactus_source_y_offset(evil: bool, good: bool, crimson: bool) -> i32 {
+    54 * evil as i32 + 108 * good as i32 + 162 * crimson as i32
+}
+
+/// `DrawSingleTile` cog parity: `(Main.tileFrame[type] + x%2 + y%2 + x%3 +
+/// y%3) % 2 * 90` (TileDrawing.cs:1125-1131).
+pub fn cog_source_y_offset(x: i32, y: i32, tile_frame: i32) -> i32 {
+    (tile_frame + x % 2 + y % 2 + x % 3 + y % 3) % 2 * 90
+}
+
+impl TileDrawData {
+    /// Applies the world-probing corrections C# makes for the palm biome row
+    /// (323), the dye-plant frame rewrite (227, `tileFrameX == 204`), the
+    /// cactus ground shift (80) and the cog parity shift (272). Must run right
+    /// after [`draw_data`] — the caller builds the source rectangle from the
+    /// resulting overrides and `add_fr_*` fields.
+    pub fn apply_world_corrections(
+        &mut self,
+        world: &World,
+        kind: u16,
+        x: i32,
+        y: i32,
+        frame_x: i16,
+        frame_y: i16,
+        tile_frame: i32,
+    ) {
+        match kind {
+            // `case 323`: `tileFrameY = 22 * GetPalmTreeBiome(x, y)` — a
+            // replacement of the stored frame row (TileDrawing.cs:4670).
+            323 => {
+                self.frame_y_override = Some(palm_frame_y(palm_tree_biome(world, x, y)) as i16);
+            }
+            // `case 227`: only the `tileFrameX == 204` column is rewritten per
+            // `GetCactusType`; every other column keeps the stored frame
+            // (TileDrawing.cs:5063-5078).
+            227 if frame_x == 204 => {
+                let (evil, good, crimson) = cactus_type(world, x, y, frame_x, frame_y);
+                self.frame_x_override =
+                    Some((frame_x as i32 + dye_frame_x_offset(evil, good, crimson)) as i16);
+            }
+            // `DrawSingleTile` `case 80`: source-Y shift by the ground sand
+            // (TileDrawing.cs:1132-1147). Only kind 80 — 142/143 are pumps.
+            80 => {
+                let (evil, good, crimson) = cactus_type(world, x, y, frame_x, frame_y);
+                self.add_fr_y += cactus_source_y_offset(evil, good, crimson) as i16;
+            }
+            // `DrawSingleTile` `case 272`: parity shift; C# adds it to both
+            // `addFrY` and the built rectangle, the port's source rectangle is
+            // `frameY + add_fr_y`, so one addition lands the same pixels
+            // (TileDrawing.cs:1125-1131).
+            272 => {
+                self.add_fr_y += cog_source_y_offset(x, y, tile_frame) as i16;
+            }
+            _ => {}
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1699,5 +1909,343 @@ mod tests {
             let d = dd(kind, 0, 0, 0, 0, 0);
             assert_eq!((d.add_fr_x, d.add_fr_y), (0, 0), "kind {kind}");
         }
+    }
+
+    // ---- Phase 2: biome helpers and world corrections ----
+
+    use crate::tile::FLAG_ACTIVE;
+
+    /// Places an active tile of `kind` (the `torch.rs` test pattern).
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        let mut t = crate::tile::Tile::default();
+        t.kind = kind;
+        t.flags |= FLAG_ACTIVE;
+        w.tiles[i] = t;
+    }
+
+    #[test]
+    fn test_DW_2_1_palm_biome() {
+        // `GetPalmTreeVariant` (TileDrawing.cs:3491-3515): the ground under the
+        // trunk picks the style — 53 sand → 0, 234 crimsand → 1, 116 pearlsand
+        // → 2, 112 ebonsand → 3.
+        for (ground, expect) in [(53u16, 0i32), (234, 1), (116, 2), (112, 3)] {
+            let mut w = World::new("t".into(), 64, 64);
+            for y in 30..34 {
+                put(&mut w, 20, y, 323);
+            }
+            put(&mut w, 20, 34, ground);
+            // The walk starts on any trunk cell and stops on the first
+            // non-palm tile (TileDrawing.cs:1725-1733).
+            assert_eq!(palm_tree_biome(&w, 20, 30), expect, "ground {ground} top");
+            assert_eq!(palm_tree_biome(&w, 20, 33), expect, "ground {ground} base");
+        }
+        // Non-sand ground: variant -1 (the C# frame row would be -22).
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 30..34 {
+            put(&mut w, 20, y, 323);
+        }
+        put(&mut w, 20, 34, 2);
+        assert_eq!(palm_tree_biome(&w, 20, 30), -1);
+        // Regular sand far from the beaches: biome 0 (no oasis bonus).
+        put(&mut w, 20, 34, 53);
+        assert_eq!(palm_tree_biome(&w, 20, 30), 0);
+        // An inactive tile stops the walk like a non-palm tile would.
+        w.tile_mut(20, 32).unwrap().flags &= !FLAG_ACTIVE;
+        assert_eq!(palm_tree_biome(&w, 20, 30), -1);
+    }
+
+    #[test]
+    fn test_DW_2_1_palm_oasis_offset() {
+        // `WorldGen.IsPalmOasisTree` (WorldGen.cs:27205-27210) adds 4 inside
+        // `x >= 380 && x <= width - 380` (`beachDistance = 380`,
+        // WorldGen.cs:86914).
+        let mut w = World::new("t".into(), 1000, 40);
+        for y in 10..14 {
+            put(&mut w, 500, y, 323);
+        }
+        put(&mut w, 500, 14, 53);
+        assert_eq!(palm_tree_biome(&w, 500, 10), 4, "oasis center");
+        // Exact band edges are inside.
+        for x in [380i32, 620i32] {
+            for y in 10..14 {
+                put(&mut w, x, y, 323);
+            }
+            put(&mut w, x, 14, 53);
+            assert_eq!(palm_tree_biome(&w, x, 10), 4, "x {x}");
+        }
+        // Left of the band and one past the right edge: no bonus.
+        for x in [200i32, 621i32] {
+            for y in 10..14 {
+                put(&mut w, x, y, 323);
+            }
+            put(&mut w, x, 14, 53);
+            assert_eq!(palm_tree_biome(&w, x, 10), 0, "x {x}");
+        }
+        // The bonus also applies to the -1 ground variant (faithful C# `num += 4`).
+        let mut w2 = World::new("t".into(), 1000, 40);
+        for y in 10..14 {
+            put(&mut w2, 500, y, 323);
+        }
+        put(&mut w2, 500, 14, 2);
+        assert_eq!(palm_tree_biome(&w2, 500, 10), 3);
+    }
+
+    #[test]
+    fn test_DW_2_2_cactus_type() {
+        // The walk goes through the non-solid cactus (Main.tileSolid[80] is
+        // false) to the ground; the sand family sets exactly one flag
+        // (WorldGen.cs:47730-47736).
+        for (ground, expect) in [
+            (53u16, (false, false, false)),
+            (112, (true, false, false)),
+            (116, (false, true, false)),
+            (234, (false, false, true)),
+        ] {
+            let mut w = World::new("t".into(), 64, 64);
+            for y in 30..33 {
+                put(&mut w, 30, y, 80);
+            }
+            put(&mut w, 30, 33, ground);
+            assert_eq!(
+                cactus_type(&w, 30, 32, 0, 0),
+                expect,
+                "ground {ground} base"
+            );
+            assert_eq!(cactus_type(&w, 30, 30, 0, 0), expect, "ground {ground} top");
+        }
+        // A dye plant (227) probing through the cactus below it: the flag is
+        // only set once the walk reaches the cactus segment.
+        let mut w = World::new("t".into(), 64, 64);
+        put(&mut w, 30, 30, 227);
+        put(&mut w, 30, 31, 80);
+        put(&mut w, 30, 32, 234);
+        assert_eq!(cactus_type(&w, 30, 30, 204, 0), (false, false, true));
+    }
+
+    #[test]
+    fn test_DW_2_2_cactus_frame_columns() {
+        // Side arms shift the probe column (WorldGen.cs:47694-47701):
+        // frameX 36 → x-1, 54 → x+1, 108 → x+1 (frameY != 18) / x-1 (18).
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            put(&mut w, x, 40, 53);
+        }
+        put(&mut w, 30, 40, 112); // the only corrupt column
+        put(&mut w, 30, 39, 80);
+        assert_eq!(cactus_type(&w, 30, 39, 0, 0), (true, false, false));
+        assert_eq!(
+            cactus_type(&w, 31, 39, 36, 0),
+            (true, false, false),
+            "36 → x-1"
+        );
+        assert_eq!(
+            cactus_type(&w, 29, 39, 54, 0),
+            (true, false, false),
+            "54 → x+1"
+        );
+        assert_eq!(
+            cactus_type(&w, 29, 39, 108, 0),
+            (true, false, false),
+            "108, frameY != 18 → x+1"
+        );
+        assert_eq!(
+            cactus_type(&w, 31, 39, 108, 18),
+            (true, false, false),
+            "108, frameY == 18 → x-1"
+        );
+        // Dirty: columns that do not resolve to 30 stay on plain sand.
+        assert_eq!(cactus_type(&w, 28, 39, 0, 0), (false, false, false));
+        assert_eq!(cactus_type(&w, 32, 39, 54, 0), (false, false, false));
+        assert_eq!(cactus_type(&w, 29, 39, 108, 18), (false, false, false));
+    }
+
+    #[test]
+    fn test_DW_2_2_cactus_walk_limit() {
+        // The walk gives up 20 rows below the start (WorldGen.cs:47724).
+        let mut w = World::new("t".into(), 64, 80);
+        put(&mut w, 30, 10, 80);
+        put(&mut w, 30, 30, 112); // exactly y + 20: still reached
+        assert_eq!(cactus_type(&w, 30, 10, 0, 0), (true, false, false));
+        let mut w2 = World::new("t".into(), 64, 80);
+        put(&mut w2, 30, 10, 80);
+        put(&mut w2, 30, 31, 112); // y + 21: the walk broke earlier
+        assert_eq!(cactus_type(&w2, 30, 10, 0, 0), (false, false, false));
+        // Vanilla quirk: the final check runs on the tile where the walk
+        // broke, even when no cactus was ever seen — the corrupt sand at
+        // y + 20 still reports evil.
+        let mut w3 = World::new("t".into(), 64, 80);
+        put(&mut w3, 30, 30, 112);
+        assert_eq!(cactus_type(&w3, 30, 10, 0, 0), (true, false, false));
+    }
+
+    #[test]
+    fn test_DW_2_3_wiring_arithmetic() {
+        // Palm rows (TileDrawing.cs:4670): frame_y = 22 * biome.
+        assert_eq!(palm_frame_y(0), 0);
+        assert_eq!(palm_frame_y(1), 22);
+        assert_eq!(palm_frame_y(2), 44);
+        assert_eq!(palm_frame_y(3), 66);
+        // Dye plants (TileDrawing.cs:5066-5077).
+        assert_eq!(dye_frame_x_offset(false, true, false), 238);
+        assert_eq!(dye_frame_x_offset(true, false, false), 204);
+        assert_eq!(dye_frame_x_offset(false, false, true), 272);
+        assert_eq!(dye_frame_x_offset(false, false, false), 0);
+        // Cactus source-Y (TileDrawing.cs:1133-1146).
+        assert_eq!(cactus_source_y_offset(true, false, false), 54);
+        assert_eq!(cactus_source_y_offset(false, true, false), 108);
+        assert_eq!(cactus_source_y_offset(false, false, true), 162);
+        assert_eq!(cactus_source_y_offset(false, false, false), 0);
+        // Cog parity (TileDrawing.cs:1126-1129) at t=0:
+        // (x%2 + y%2 + x%3 + y%3) % 2 * 90.
+        assert_eq!(cog_source_y_offset(0, 0, 0), 0);
+        assert_eq!(cog_source_y_offset(1, 1, 0), 0); // 1+1+1+1
+        assert_eq!(cog_source_y_offset(2, 2, 0), 0); // 0+0+2+2
+        assert_eq!(cog_source_y_offset(3, 0, 0), 90); // 1+0+0+0
+        assert_eq!(cog_source_y_offset(0, 3, 0), 90);
+        assert_eq!(cog_source_y_offset(5, 0, 0), 90); // 1+0+2+0
+                                                      // The animation row participates when the animator runs.
+        assert_eq!(cog_source_y_offset(0, 0, 1), 90);
+        assert_eq!(cog_source_y_offset(1, 1, 2), 0);
+    }
+
+    #[test]
+    fn test_DW_2_3_apply_world_corrections() {
+        // 323: the stored frame row is replaced by 22 * biome
+        // (TileDrawing.cs:4670).
+        let mut w = World::new("t".into(), 64, 64);
+        for y in 30..34 {
+            put(&mut w, 20, y, 323);
+        }
+        put(&mut w, 20, 34, 112);
+        let mut palm = dd(323, 20, 30, 18, 0, 0);
+        palm.apply_world_corrections(&w, 323, 20, 30, 18, 0, 0);
+        assert_eq!(palm.frame_y_override, Some(66), "ebonsand → row 66");
+        assert_eq!(palm.frame_x_override, None);
+        // 227 with frameX 204: rewritten by the ground sand (5063-5078).
+        let mut w2 = World::new("t".into(), 64, 64);
+        put(&mut w2, 30, 30, 227);
+        put(&mut w2, 30, 31, 80);
+        put(&mut w2, 30, 32, 234);
+        let mut dye = dd(227, 30, 30, 204, 0, 0);
+        dye.apply_world_corrections(&w2, 227, 30, 30, 204, 0, 0);
+        assert_eq!(dye.frame_x_override, Some(204 + 272), "crimson → +272");
+        // 227 with frameX != 204: no frame mutation (plan edge case).
+        for fx in [0i16, 238] {
+            let mut dye = dd(227, 30, 30, fx, 0, 0);
+            dye.apply_world_corrections(&w2, 227, 30, 30, fx, 0, 0);
+            assert_eq!(dye.frame_x_override, None, "frameX {fx}");
+        }
+        // 80: source-Y shift on top of the cleared animation row; other
+        // fields untouched (TileDrawing.cs:1132-1147).
+        let mut w3 = World::new("t".into(), 64, 64);
+        put(&mut w3, 30, 30, 80);
+        put(&mut w3, 30, 31, 116);
+        let mut cac = dd(80, 30, 30, 0, 0, 0);
+        cac.apply_world_corrections(&w3, 80, 30, 30, 0, 0, 0);
+        assert_eq!(cac.add_fr_y, 108, "pearlsand → +108");
+        assert_eq!(cac.top, 2);
+        // Dirty: 142/143 are pumps sharing only the top-2 arm — the
+        // `DrawSingleTile` correction is `case 80:` only.
+        for kind in [142u16, 143] {
+            let mut pump = dd(kind, 30, 30, 0, 0, 0);
+            pump.apply_world_corrections(&w3, kind, 30, 30, 0, 0, 0);
+            assert_eq!(pump.add_fr_y, 0, "kind {kind}");
+            assert_eq!(pump.top, 2, "kind {kind}");
+        }
+        // 272: the parity shift lands on add_fr_y (the arm cleared it).
+        let mut cog = dd(272, 3, 0, 0, 0, 0);
+        cog.apply_world_corrections(&w3, 272, 3, 0, 0, 0, 0);
+        assert_eq!(cog.add_fr_y, 90);
+        // Kinds outside the correction set are untouched.
+        let mut sand = dd(53, 30, 30, 0, 0, 0);
+        let before = sand;
+        sand.apply_world_corrections(&w3, 53, 30, 30, 0, 0, 0);
+        assert_eq!(sand, before);
+    }
+
+    #[test]
+    fn test_DW_2_4_world_boundaries() {
+        // `InWorld` fluff of 2 (WorldGen.cs:9688-9695): probes in the 2-tile
+        // rim are rejected up front — neutral (false, false, false), no panic.
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            put(&mut w, x, 40, 112);
+        }
+        for x in [0i32, 1, 62, 63] {
+            put(&mut w, x, 39, 80);
+            assert_eq!(cactus_type(&w, x, 39, 0, 0), (false, false, false), "x {x}");
+        }
+        // Probes at the world bottom rim (y >= height-2): same neutral exit.
+        put(&mut w, 30, 61, 80);
+        assert_eq!(cactus_type(&w, 30, 61, 0, 0), (false, false, false));
+        put(&mut w, 30, 63, 80);
+        assert_eq!(cactus_type(&w, 30, 63, 0, 0), (false, false, false));
+        // x = 0 / x = W-1 probes that stay inside the rim check still work
+        // through `world.tile`'s None (palm walk off the world bottom).
+        let mut w2 = World::new("t".into(), 64, 64);
+        for y in 60..64 {
+            put(&mut w2, 20, y, 323);
+        }
+        assert_eq!(palm_tree_biome(&w2, 20, 60), -1, "walk past the bottom");
+        let mut w3 = World::new("t".into(), 64, 64);
+        for y in 60..63 {
+            put(&mut w3, 0, y, 323);
+        }
+        put(&mut w3, 0, 63, 53);
+        assert_eq!(palm_tree_biome(&w3, 0, 60), 0, "palm at x = 0");
+        let mut w4 = World::new("t".into(), 64, 64);
+        for y in 60..63 {
+            put(&mut w4, 63, y, 323);
+        }
+        put(&mut w4, 63, 63, 53);
+        assert_eq!(palm_tree_biome(&w4, 63, 60), 0, "palm at x = W-1");
+        // Palm walk stopping on the last in-world row (ground at y = H-1).
+        let mut w5 = World::new("t".into(), 64, 64);
+        for y in 60..63 {
+            put(&mut w5, 30, y, 323);
+        }
+        put(&mut w5, 30, 63, 234);
+        assert_eq!(palm_tree_biome(&w5, 30, 60), 1, "crimsand at the last row");
+    }
+
+    #[test]
+    fn test_DW_2_4_cactus_no_ground() {
+        // No solid tile within 20 rows: (false, false, false) → no shift.
+        let mut w = World::new("t".into(), 64, 80);
+        put(&mut w, 30, 10, 80);
+        assert_eq!(cactus_type(&w, 30, 10, 0, 0), (false, false, false));
+        // An entirely empty column too (the walk runs out of rows).
+        assert_eq!(cactus_type(&w, 40, 10, 0, 0), (false, false, false));
+        // Only inactive (actuated-off style) tiles below: same.
+        let i = w.index(50, 30);
+        w.tiles[i].kind = 112;
+        assert_eq!(cactus_type(&w, 50, 10, 0, 0), (false, false, false));
+    }
+
+    #[test]
+    fn corrections_i16_extremes_do_not_panic() {
+        // Frame extremes flow through the corrections in the i32 domain.
+        let mut w = World::new("t".into(), 64, 64);
+        put(&mut w, 30, 39, 80);
+        put(&mut w, 30, 40, 53);
+        for fx in [0i16, 36, 54, 108, 204, 32767, -32768] {
+            let mut cac = dd(80, 30, 39, fx, 32767, 0);
+            cac.apply_world_corrections(&w, 80, 30, 39, fx, 32767, 0);
+            let mut dye = dd(227, 30, 39, fx, 32767, 0);
+            dye.apply_world_corrections(&w, 227, 30, 39, fx, 32767, 0);
+        }
+        // A palm trunk over corrupt sand: the biome row stays inside i16.
+        for y in 20..24 {
+            put(&mut w, 40, y, 323);
+        }
+        put(&mut w, 40, 24, 112);
+        let mut palm = dd(323, 40, 20, 32767, 32767, 0);
+        palm.apply_world_corrections(&w, 323, 40, 20, 32767, 32767, 0);
+        assert_eq!(palm.frame_y_override, Some(66));
+        // A probe column outside the world is neutral (variant -1 → row -22).
+        let mut palm2 = dd(323, 9999, 20, 0, 0, 0);
+        palm2.apply_world_corrections(&w, 323, 9999, 20, 0, 0, 0);
+        assert_eq!(palm2.frame_y_override, Some(-22));
     }
 }
