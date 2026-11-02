@@ -466,6 +466,71 @@ spout at `TR_SPOUT=100,25`, `TR_CAM=100,32`, zoom 2 — the column samples the r
 tint, as `GetAlpha` requires above `worldSurface`.
 
 
+## Wind sway and tree leaves (TILE-DRAW-3)
+
+`tr-core/src/wind.rs` already carried `Main.windSpeedCurrent`'s walk and
+`TileDrawing.GetWindCycle` (`TileDrawing.cs:7676-7700`); the app now owns a
+`Wind` instance (seeded from the world seed, `world_surface` set at load) and
+advances the `TileDrawing.Update` counters per frame — `_treeWindCounter`
+(1/240 + num·2/240), `_grassWindCounter` (1/180 + num·4/180),
+`_sunflowerWindCounter` (1/420 + num·5/420) and `_vineWindCounter`
+(1/120 + num·0.4/120), with `num = GetLerpValue(0.08, 1.2, |wind|)`
+(`TileDrawing.cs:367-375`).
+
+- `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the `TileID.Sets
+  .SwaysInWindBasic` tiles (hand-transcribed into `wind.rs` as
+  `SWAYS_IN_WIND_BASIC` — `TileID.cs:549`; the tiledata generator is due its
+  own regeneration pass and was not extended here) draw with the grass cycle:
+  position `+= (cycle, |cycle|)`, rotation `cycle * 0.1` about
+  `(tileWidth / 2, 16 - tileTop)`, zeroed when the tile's wall does not
+  `WallID.Sets.AllowsWind` (hand-transcribed in `wind.rs`, `WallID.cs:95`) or
+  `!WorldGen.InAPlaceWithWind(x, y, 1, 1)` (`WorldGen.cs:86858-86879`). The
+  row-major tile loop draws them inline instead of deferring them to the
+  `WindyGrass` special pass (a documented z-order approximation, like the
+  waterfalls); the `WindGrid` gust push (`GetWindGridPush`) is not ported.
+  The type-227 frame exceptions of `ShouldSwayInWind` apply.
+- `DrawTrees` (`TileDrawing.cs:8137-8245`): every canopy top leans
+  `pos += (cycle·2, |cycle|·2)` and rotates `cycle * 0.08` about its trunk
+  anchor (the sprite's bottom centre); the frameX-44/66 branches shift
+  directionally and rotate `cycle * 0.06` about `(40, 24)` / `(0, 30)`. The
+  sway is skipped when the marker tile sits in front of a wall
+  (`flag = tile.wall > 0`, line 8073). The renderer gained
+  `push_sprite_origin_rot` (a `SpriteBatch.Draw` origin emulation).
+- `TileDrawing.EmitTreeLeaves` (`TileDrawing.cs:7779-7891`): every visible
+  top/branch rolls `1/leafFrequency` per frame for a leaf
+  (`UpdateLeafFrequency`'s |wind| table × 7, halved for hallowed trees, ×3
+  for branches, 10000 underground); `WorldGen.GetTreeLeaf`
+  (`WorldGen.cs:29384-29598`) resolves the gore id per ground tile (fully
+  transcribed, including the gem/vanity/ash overrides and the hallowed
+  tables — unreachable in the generated worlds but data-complete), and the
+  spawn offsets follow the branch side and `frameY` variants. The roll uses
+  `TileDrawing._rand`'s port — a per-frame pinned `FastRandom` — and the
+  offsets' `Main.rand` draws fold into the same stream (the original keeps
+  two separate streams; the visible distribution is unchanged).
+- `Gore_UpdateLeaf` (`Gore.cs:1085-1209`): the leaf falls along a growing
+  angle (`velocity.Y += PI/180`; the movement `(−sin, |cos|)` plus
+  `wind * 4` above `worldSurface·16`), collides through the port's
+  `tile_collision`/`slope_collision` on the 4×4 probe (leading the position
+  by 4 px, re-anchored by `vector2 = (−4, 0)` exactly as the source), rests
+  on the ground and drifts `×0.94` per tick until the ground frees up or the
+  fade completes (`goreTime` 600, then 255 of alpha). The leaves draw from
+  the `Gore_910/911` sheets (32 paint columns × 8 variant rows; the port
+  draws column 0) in the UI range like the rain, keeping the G6 world range
+  out of it. The liquid rest behaviour (honey freeze, lava burn-up) is not
+  ported. The G6 `anim` folds the sway counters only while
+  `|wind| > 0.08` — the cycle is zero below that (`GetLerpValue(0.08, 0.18)`),
+  so a calm world keeps its cache.
+- Not ported: the `WindGrid` push system (`TileDrawing.cs:8540-8600`), the
+  multi-tile grass/vine/sunflower wind draws (`DrawMultiTileGrassInWind`,
+  `DrawVineStrip`, `DrawRisingVineStrip`, `DrawMultiTileVinesInWind` — they
+  need the special-point deferral machinery), and the leaf liquid rest
+  behaviour. `TR_WIND_FORCE=<speed>` pins `windSpeedCurrent` for screenshots;
+  `TR_NO_WIND=1` disables the whole feature for A/B.
+
+Verification: the leaf-frequency/set unit tests; the gust screenshots at
+`TR_WIND_FORCE=1.0` (`TR_CAM=2100,375`) diff 6944 px against `TR_NO_WIND=1`
+(leaning canopies, flying leaves); two identical runs are SHA256-equal.
+
 ## Rain and weather
 
 `rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
