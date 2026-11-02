@@ -1733,6 +1733,163 @@ Deviations recorded by the refactor and this sweep:
   decompilation again, and `tiledata.rs` is generated from it (the hand
   extraction in `torch.rs` stays as-is).
 
+## GetTileDrawData deviations (TILE-DRAW-1, 2026-11-02)
+
+`TileDrawing.GetTileDrawData` (`TileDrawing.cs:4527`, the type switch at
+`:4540-6032`) is ported in full as the static layer of
+`crates/tr-core/src/drawdata.rs`: a pure table
+`draw_data(kind, x, y, frame_x, frame_y, tile_frame, solid_above) -> TileDrawData`
+plus `TileDrawData::apply_world_corrections` for the four world-probing
+corrections (below). Every case of the switch has an explicit status — an arm
+carrying its unconditional static part, or a documented deviation — nothing
+falls through silently. `C# ref tileFrameX/Y` rewrites are expressed as
+`frame_x_override`/`frame_y_override`; the caller (`render/tiles.rs`) builds
+the source rectangle from the final frame (`TileDrawing.cs:1007`).
+
+**Animation state.** `tile_frame` is `Main.tileFrame[kind]`; the animator is
+not ported, so the production call passes 0 — exactly the vanilla t=0 state.
+All `tile_frame * N` formulas are ported verbatim and activate unchanged when
+the animator lands. The default `addFrY = Main.tileFrame[type] * 38`
+(`TileDrawing.cs:4533`) is ported as the same formula. `tile_frame = 0` was
+verified against the C# per formula (transcription tests in `drawdata.rs`).
+
+### Status of every switch case (`TileDrawing.cs:4540-6032`)
+
+**Ported in full** (the case is only its static part):
+
+- `752` (`:4542`), `751` (`:4547`), `739|748` (`:4552`), `726` (`:4556`),
+  `443` (`:4571`), `571` (`:4581`), `698` (`:4588`), `136` (`:4593`),
+  `561` (`:4599`), `330-333` (`:4631`), `129` (`:4637`), `476` (`:4663`),
+  `323` (20×20 static `:4667-4670`; the biome frame row is a world
+  correction, below), `4` torch with the solid-above probe
+  (`:4672-4679`), `78`-group
+  (`:4680`), `100` (`:4697`), `705` (`:4724`), `33`-group (`:4819`),
+  `3`-group (`:4850`), `20|590|595|615` (`:4864`), the 18 px group
+  (`:4880`), `79` (`:4909`), `90` (`:4917`), `18` (`:4924`), `654`
+  (`:4940`), `14|21|411|467|469` (`:4943`), `15|497` (`:4953`),
+  `172|376` (`:4960`), `27` (`:4967`), `132|135` (`:4973`), `82-84`
+  (`:4978`), `324` (`:4988`), `494` (`:4997`), vine family (`:5000`),
+  `80|142|143` top 2 (`:5014`), `139` (`:5019`), `73|74|113` (`:5027`),
+  `388|389` (`:5037`), `227` (static `:5052-5062` + `:5079-5082`; the
+  `frameX == 204` biome rewrite is a world correction, below),
+  `624|700` (`:5084`),
+  `656|701` (`:5094`), `567` (`:5131`), `650` (`:5184`), `649` (`:5187`),
+  `647|706` (`:5195`), `648` (`:5199`), `178` (`:5207`), `184` (`:5213`),
+  `519` (`:5224`), `28`-group (`:5258`), `617` (`:5276`), `614` (`:5281`),
+  `81` (`:5286`), `272` (`:5295`), `106` (`:5298`),
+  `300-308|354|355|499` (`:5301`), `377` (`:5316`), `463|464` (`:5320`),
+  `491` (`:5325`), `379` (`:5329`), `390` (`:5357`), `412` (`:5360`),
+  `36` (`:5364`), `406` (`:5367`), `452` (`:5387`), `454` (`:5409`),
+  `405` (`:5418`), `12|31|96|639|665|696` (`:5433`), `238` (`:5441`),
+  `592` (`:5488`), `228|231|243|247` (`:5491`), `244` (`:5498`),
+  `565` (`:5509`), `235` (`:5520`), `217|218` (`:5523`),
+  `219|220|642` (`:5529`), `270|271|581` (`:5535`), `660` (`:5564`),
+  `572` (`:5591`), `442` (`:5612`), `207` (`:5908`), `410` (`:5930`),
+  `480|509|657|720|721|725` (`:5945`), `658` (`:5962`), `733` (`:5982`),
+  `326`-group (`:5991`), `336`-group (`:6014`), `89|102|753` (`:6023`).
+- The `583-589|596|616|634` tree-variant arm (`:4650-4662`) is complete but
+  dead in the app: `tree::is_tree` routes these kinds through the dedicated
+  tree path before `draw_data` (same for case `5`, below).
+
+**Static part ported, engine-driven part a documented deviation:**
+
+- `711` (`:4931`): the glow out-params are TILE-DRAW-2.
+- `185|186|187` (`:5143-5183`): the strides/top are ported; the
+  `Main.tileShine2` writes are not (shine system not ported).
+- `349` (`:5332`): the `tileFrameX` rewrite needs `Animation.GetTemporaryFrame`.
+- `441|468` (`:5342`): the `tileFrameY` rewrite needs
+  `Animation.GetTemporaryFrame` (the `tileFrameY == 18` height is ported).
+- `493` (`:5232`), `489` (`:4731`): the addFrY animation needs
+  `Main.tileFrameCounter` (+ `InAPlaceWithWind` for 489); top 2 ported.
+- `490` (`:4742`): the bob needs `InAPlaceWithWind` + `Main.WindForVisuals` +
+  `Main.weatherVaneBobframe`; outside wind C# yields addFrY 0 — the same 0
+  the port produces at t=0. Top 2 ported.
+- `529` (`:4827-4849`): the `addFrY += 34 * <biome/beach pick> - tileFrameY`
+  rewrite needs `WorldGen.GetBiomeInfluence` + the `beachDistance` band;
+  32 px tall / top −14 / flip are ported.
+- `530` (`:4705-4722`): the `addFrY += 36 * <biome pick>` rewrite needs
+  `WorldGen.GetBiomeInfluence` (WorldGen.cs:47750); top 2 ported.
+- `485` (`:4727-4730`): the `tileFrameCounter`-driven addFrY is not ported;
+  top 2 is.
+- `428` (`:5605`): a pressed `PressurePlateHelper` plate adds addFrX 18; the
+  port treats plates as never pressed. `455` (`:5397`): the extra row applies
+  while `BirthdayParty.PartyIsUp`; the port treats it as always false.
+- `593` (`:5445`) / `594` (`:5466`): the static fallbacks
+  (`tileFrame * 18/36` below the frame band, addFrX −18/−36 on later columns,
+  top 2) are ported; the animated addFrY needs `Animation.GetTemporaryFrame`.
+- Cage groups (`:5629-5755` big, `:5756-5832` small, `:5833-5897` water,
+  `:5898-5907` jellyfish): top 2 ported; the per-animal `Main.*CageFrame`
+  animation tables and the `Main.critterCage` side effect are not ported
+  (the jellyfish-cage state machine was already recorded under "Trees").
+- `564` (`:5523-5528`): shares the `217|218` arm in C#, but the glow switch
+  then unconditionally clears addFrY (`:6105-6113`); the port folds that into
+  the arm — top 2, addFrY always 0.
+
+**No arm — default 16×16** (the case has no unconditional static part):
+
+- `5` (`:4645-4649`): the frame rewrite needs `GetTreeBiome`, and the case is
+  unreachable in the port (`tree::is_tree` intercepts kind 5).
+- `518` (`:4604-4630`): needs `tile.liquid` + the block type below.
+- `719` (`:4562-4570`): `Main.GlobalTimeWrappedHourly`.
+- `579` (`:5104-5130`): `Main.LocalPlayer.Center.X`.
+- `453|456` (`:5412-5417`), `507|508` (`:6007-6013`): `Main.tileFrameCounter`
+  hard cycles.
+- `541` (`:6004-6006`): `_shouldShowInvisibleBlocks` (invisible blocks are not
+  stored by the port at all).
+
+### Epilogues and cross-cutting
+
+- Campfires epilogue (`:6033-6044`; `TileID.Sets.Campfires = {215}`,
+  TileID.cs:616 — a local constant in `drawdata.rs`, `tiledata/` is
+  generated and untouched): `addFrY = tileFrame*36` below frameY 36, else
+  252; top 2.
+- The halfBrick epilogue (`:6045-6048`) is the tile pass's separate
+  half-brick draw path, not `draw_data`. The glow switch (`:6049-`) is
+  TILE-DRAW-2, except 564's addFrY reset (`:6105-6113`) noted above.
+- The caller-side source-rect corrections of `DrawSingleTile` (`:1125-1150`)
+  are ported as `TileDrawData::apply_world_corrections`: palm 323
+  `frameY = 22 * GetPalmTreeBiome` (`:1726`, `:4670`), dye plants 227 with
+  `frameX == 204` rewritten per `WorldGen.GetCactusType`
+  (`:5063-5078`, WorldGen.cs:47687), cactus 80 source-Y +54/108/162 for
+  corrupt/hallowed/crimson ground (`:1132-1147`, kind 80 only — 142/143 are
+  pumps), cog 272 parity shift ×90 (`:1125-1131`).
+- `solid_above` on the Rust call site is `active && TILE_SOLID &&
+  !TILE_SOLID_TOP` at `(x, y-1)` (`render/tiles.rs`); the C# analogue probed
+  by case 4 is `WorldGen.SolidTile(x, y-1)` (`:4672-4679`). The predicate
+  delta is a follow-up, documented on `draw_data` (Phase 4).
+- `DoNotAdjustDrawPositionBasedOnTileWidth = {711}` and the positional switch
+  of `DrawSingleTile` (`:1020-1159`) remain follow-ups (out of TILE-DRAW-1).
+
+### Verification (Phase 3, branch `TILE-DRAW-1-drawdata-finish` @ 40fcf82)
+
+- Workspace suite: 399 + 10 + 174, 0 failed (`--skip
+  migrates_version_2_kinds_to_item_ids`).
+- A/B against the pre-edit baseline (commit 35dce1b, master world
+  `assets/test/master.trwld`, seed 0, 4200×1200): all three shots
+  (forest spawn / forest-low / desert) pixel-identical — 0 of 1 440 000
+  pixels differ — and **SHA256-equal to the baseline files**
+  (forest `e9aedf24…`, forest-low `8f480cd0…`, desert `86d04b6e…`);
+  a repeat run of each shot reproduces the same SHA256 (determinism pair).
+- Why the diff is empty: the shot windows contain only kinds
+  {0, 1, 2, 3, 5} (forest — dirt/stone/grass/plants/trees) and
+  {53, 80, 396, 397} (desert — sand, 11 cacti, sandstone/hardened sand).
+  None of
+  these changed draw-data at t=0: 0/1/2/53/396/397/5 have no case in either
+  build (5 goes through the tree path), the `3`-group and `80` arms are
+  metric-identical to the pre-existing subport, and the cactus ground shift
+  is 0 on plain sand 53. Globally the world has no palms (323) and no dye
+  plants (227), so that wiring is covered by the Phase 2 unit tests only.
+- Zooms 1.0/1.5/2.0 (TR_ZOOM): 1.0 is the A/B pair above; 1.5 and 2.0 each
+  reproduce SHA256-equal pairs (`67b08fad…`, `f7c4cf0b…`), and all three
+  zooms differ from each other (the pin takes effect).
+- Scope of the evidence: the runs above verify the branch @ `40fcf82`
+  against the pinned pre-edit baseline. `main` has since absorbed
+  TILE-DRAW-2 (torch flames/glow), M1.5-LIQUID-2 (water styles) and the
+  M2-DRAW-1 player layers (none of them touch `drawdata.rs`); after this
+  branch syncs with `main`, the final A/B is repeated on the synced state —
+  flame/glow pixels will then differ from this pre-TILE-DRAW-2 baseline by
+  that work's own account.
+
 ## Torch flames (TILE-DRAW-2)
 
 - `tr-core/src/flame.rs` ports `TileDrawing.GetTileFlameData` (`TileDrawing.cs:1847-2677`)

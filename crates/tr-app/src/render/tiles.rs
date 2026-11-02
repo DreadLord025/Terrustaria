@@ -401,13 +401,37 @@ pub(crate) fn draw_tiles(
                     None
                 };
 
-                // `GetTileDrawData`: per-type sprite size/top/flip (torches 20x20 with
-                // `tileTop 4`, plants 20 px, herbs, candles, palms...).
+                // `GetTileDrawData`: per-type sprite size/top/flip/frame data
+                // (torches 20x20 with `tileTop 4`, plants 20 px, herbs,
+                // candles, palms, frame strides...). `tile_frame` is
+                // `Main.tileFrame[kind]`; the animator is not ported, so the
+                // vanilla t=0 state is passed.
                 let dd = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
-                    tr_core::drawdata::draw_data(tile.kind, tx, solid_above)
+                    let mut dd = tr_core::drawdata::draw_data(
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                        solid_above,
+                    );
+                    // The world-probing frame corrections C# applies in
+                    // `GetTileDrawData` (palm biome row 323, dye plants 227)
+                    // and `DrawSingleTile` (cactus 80, cog 272).
+                    dd.apply_world_corrections(
+                        world,
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                    );
+                    dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
@@ -431,6 +455,11 @@ pub(crate) fn draw_tiles(
                             });
                         }
                     } else if tile.frame_x >= 0 && tile.frame_y >= 0 {
+                        // Cases that rewrite C#'s `ref tileFrameX/Y` hand the
+                        // final frame to us; the source rectangle is built from
+                        // it (`TileDrawing.cs:1007`).
+                        let fx = dd.frame_x_override.unwrap_or(tile.frame_x);
+                        let fy = dd.frame_y_override.unwrap_or(tile.frame_y);
                         tile_frame = atlas.and_then(|a| {
                             if dd.width != 16
                                 || dd.height != 16
@@ -440,13 +469,13 @@ pub(crate) fn draw_tiles(
                                 lookups.rect_uv(
                                     a,
                                     tile.kind,
-                                    tile.frame_x + dd.add_fr_x,
-                                    tile.frame_y + dd.add_fr_y,
+                                    fx + dd.add_fr_x,
+                                    fy + dd.add_fr_y,
                                     dd.width as u32,
                                     dd.height as u32,
                                 )
                             } else {
-                                lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                                lookups.frame_tex(a, tile.kind, fx, fy)
                             }
                         });
                     }
