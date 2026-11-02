@@ -1,12 +1,12 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
-use super::BgTex;
 use super::player_layers::{
     assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
     PlayerCompositeState,
 };
 use super::sky::sky_tex;
+use super::BgTex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
@@ -114,9 +114,7 @@ fn held_item_quad(lookups: &assets::Lookups, kind: u16) -> Option<([f32; 4], [f3
         return Some((uv, [w, h]));
     }
     if registry::is_weapon(kind) {
-        return lookups
-            .shuriken_uv()
-            .map(|uv| (uv, [16.0, 16.0]));
+        return lookups.shuriken_uv().map(|uv| (uv, [16.0, 16.0]));
     }
     if let Some(wall) = registry::place_wall(kind) {
         return lookups.wall_icon_uv(wall).map(|uv| (uv, [16.0, 16.0]));
@@ -184,14 +182,17 @@ pub(crate) fn draw_player(
         // `position + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`).
         gfx_off_y: player.gfx_off_y,
         swing,
+        hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
         use_style: 1,
-        item_uv: held.and_then(|(kind, _)| held_item_quad(lookups, kind)).map(|(uv, _)| uv),
+        item_uv: held
+            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .map(|(uv, _)| uv),
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
             .unwrap_or([0.0, 0.0]),
         light: light_c,
-        front_arm: swing_stand_in(swing, player.facing as f32),
+        front_arm: swing_stand_in(1, swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)

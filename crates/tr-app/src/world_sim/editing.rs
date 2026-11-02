@@ -4,12 +4,11 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, edit};
+use tr_core::{edit, World, TILE_PX};
 
-use crate::item::SWING_TIME;
+use crate::app::App;
 use crate::projectile::Projectile;
 use crate::registry;
-use crate::app::App;
 
 use super::items::spawn_item_drop;
 
@@ -99,8 +98,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 ));
                 app.inventory[app.selected].count =
                     app.inventory[app.selected].count.saturating_sub(1);
-                app.attack_cd = 0.25;
-                app.swing = SWING_TIME;
+                // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the swing
+                // lasts the item's `useAnimation` ticks; `attack_cd` matches so
+                // the throw repeats only when the swing is over.
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
             }
         }
         return;
@@ -112,16 +115,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
-                let dmg = if held_weapon { registry::damage(held.kind) } else { 15 };
+                let dmg = if held_weapon {
+                    registry::damage(held.kind)
+                } else {
+                    15
+                };
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
                 n.hurt(dmg, pcx);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
-                app.attack_cd = 0.3;
+                // One swing per `useAnimation` (`Player.cs:4449-4451`).
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max.max(0.3);
                 app.mine_target = None;
                 app.mine_timer = 0.0;
-                app.swing = SWING_TIME;
                 return;
             }
         }
@@ -141,7 +150,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
 
     if app.mine_down && tile.active() && !important && !app.inventory_open {
         if app.swing <= 0.0 {
-            app.swing = SWING_TIME;
+            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing = app.swing_max;
         }
         if app.mine_target == Some((tx, ty)) {
             app.mine_timer += dt;
@@ -162,7 +172,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
         // No block in the cell: mining it removes the exposed wall.
         if app.swing <= 0.0 {
-            app.swing = SWING_TIME;
+            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing = app.swing_max;
         }
         if app.mine_target == Some((tx, ty)) {
             app.mine_timer += dt;
@@ -181,22 +192,41 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
     }
 
-    if app.place_down && app.place_cooldown <= 0.0 && !app.inventory_open {
-        if held_wall {
+    // `Player.ItemCheck` (`Player.cs:42814-42822`): while the use button is
+    // held, an `autoReuse` item re-fires the moment `itemAnimation` reaches 0;
+    // a non-autoReuse kind waits for a release (`releaseUseItem`). The swing
+    // duration itself is the item's `useAnimation`.
+    let auto_reuse = registry::get(held.kind).is_some_and(|d| d.auto_reuse);
+    let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
+    if app.place_down && app.swing <= 0.0 && reuse_ready && !app.inventory_open {
+        let used = if held_wall {
             if can_place_wall(app, tx, ty) {
                 place_wall_item(app, tx, ty, registry::place_wall(held.kind).unwrap_or(1));
-                app.place_cooldown = 0.12;
-                app.swing = SWING_TIME;
+                true
+            } else {
+                false
             }
         } else if !held_weapon && can_place(app, tx, ty) {
-            let Some(kind) = registry::place_tile(held.kind) else {
-                return;
-            };
-            place_tile(app, tx, ty, kind);
-            app.place_cooldown = 0.12;
-            app.swing = SWING_TIME;
+            match registry::place_tile(held.kind) {
+                Some(kind) => {
+                    place_tile(app, tx, ty, kind);
+                    true
+                }
+                None => false,
+            }
+        } else {
+            false
+        };
+        if used {
+            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing = app.swing_max;
         }
     }
+    app.place_prev_down = app.place_down;
+    app.place_released = !app.place_down;
+    // The legacy per-second cooldown retires: the swing gate above carries the
+    // cadence (`place_cooldown` stays for the net/save fixtures).
+    app.place_cooldown = 0.0;
 }
 
 pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {
@@ -283,9 +313,7 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     [(0, -1), (0, 1), (-1, 0), (1, 0)].iter().any(|&(dx, dy)| {
         app.world.tile(tx + dx, ty + dy).is_some_and(|n| {
             n.wall != 0
-                || (n.active()
-                    && (n.kind as usize) < td::TILE_COUNT
-                    && td::TILE_SOLID.has(n.kind))
+                || (n.active() && (n.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(n.kind))
         })
     })
 }

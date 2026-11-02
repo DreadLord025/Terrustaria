@@ -35,9 +35,7 @@ use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
-use crate::app::flow::{
-    FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset,
-};
+use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
 use crate::audio;
@@ -45,7 +43,7 @@ use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
 use crate::inv;
-use crate::item::{ItemDrop, EMPTY_SLOT, HOTBAR, INV, ItemSlot};
+use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
 use crate::menu;
 use crate::net;
@@ -56,9 +54,9 @@ use crate::projectile::Projectile;
 use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
-use crate::render::entities::{make_npc_assets, make_player_assets, NpcAssets, PlayerAssets};
+use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
 use crate::render::sky::{
-    make_clouds, make_sky_assets, make_stars, CloudSprite, SkyAssets, StarSprite,
+    CloudSprite, SkyAssets, StarSprite, make_clouds, make_sky_assets, make_stars,
 };
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
@@ -204,6 +202,11 @@ pub(crate) struct App {
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
     pub(crate) place_cooldown: f32,
+    /// Use-button edge tracking for non-`autoReuse` kinds: the item may fire
+    /// again only after a release (`Player.releaseUseItem`,
+    /// `Player.cs:42819-42822`).
+    pub(crate) place_prev_down: bool,
+    pub(crate) place_released: bool,
     pub(crate) edit_target: Option<(i32, i32)>,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
@@ -265,8 +268,12 @@ pub(crate) struct App {
     pub(crate) items: Vec<ItemDrop>,
     pub(crate) item_rng: u64,
     pub(crate) item_step: FixedStepper,
-    /// Remaining seconds of the current held-item swing.
+    /// Remaining seconds of the current held-item swing
+    /// (`Player.itemAnimation` ticks / 60).
     pub(crate) swing: f32,
+    /// The swing's full duration — `Player.itemAnimationMax` in seconds; the
+    /// body-row thirds and the hand key read `swing / swing_max`.
+    pub(crate) swing_max: f32,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
     /// Live shuriken/projectile entities.
@@ -515,8 +522,7 @@ impl App {
         match front {
             FrontScreen::CharSelect => {
                 let fakes = tr_fake_count("TR_FAKE_CHARS");
-                self.players =
-                    ui::save_list::list_players(None, Some(self.session_entry()), fakes);
+                self.players = ui::save_list::list_players(None, Some(self.session_entry()), fakes);
                 ui::char_select::sort_players(&mut self.players);
             }
             FrontScreen::WorldSelect => {
@@ -647,7 +653,9 @@ impl App {
     /// `UIWorldListItem.cs:428-430`): reopen the screen the keyboard came
     /// from, no rename, no notice.
     pub(crate) fn keyboard_cancel(&mut self) {
-        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else { return };
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
+            return;
+        };
         let back = session.back.clone();
         self.enter_front(back);
     }
@@ -714,381 +722,380 @@ impl App {
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
         let mut world = world;
-    let clouds = make_clouds(&world, &lookups);
-    let sky = make_sky_assets(&atlas);
-    let stars = make_stars(&world);
-    let player_assets = make_player_assets(&atlas);
-    let npc_assets = make_npc_assets(&atlas);
-    let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
-    let mut player = player_enabled.then(|| Player::spawn(&world));
-    let mut npcs = Vec::new();
-    if let Some(p) = &player {
-        let xt = (p.x / TILE_PX) as i32;
-        for (i, dx) in [-20, 16, 26].iter().enumerate() {
-            let spawned = if world.day_time {
-                Npc::spawn_slime(&world, xt + dx)
-            } else {
-                match i {
-                    0 => Npc::spawn_zombie(&world, xt + dx),
-                    1 => Npc::spawn_eye(&world, xt + dx),
-                    _ => Npc::spawn_slime(&world, xt + dx),
-                }
-            };
-            if let Some(n) = spawned {
-                npcs.push(n);
-            }
-        }
-    }
-    let follow_player = player.is_some()
-        && std::env::var_os("TR_CAM").is_none()
-        && std::env::var_os("TR_PAN").is_none();
-    let mut coins = 0u64;
-    let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
-        0 => ItemSlot {
-            kind: 2, // ItemID.DirtBlock
-            name: registry::name(2),
-            count: 50,
-        },
-        1 => ItemSlot {
-            kind: 3, // ItemID.StoneBlock
-            name: registry::name(3),
-            count: 50,
-        },
-        2 => ItemSlot {
-            kind: 8, // ItemID.Torch
-            name: registry::name(8),
-            count: 99,
-        },
-        3 => ItemSlot {
-            kind: 42, // ItemID.Shuriken
-            name: registry::name(42),
-            count: 99,
-        },
-        _ => ItemSlot {
-            kind: 0,
-            name: "",
-            count: 0,
-        },
-    });
-    if world_path.extension().is_some_and(|e| e == "trwld") {
-        if let Some(saved) = persist::load(&world_path) {
-            if let Some(p) = player.as_mut() {
-                if !player::collides_player(&world, saved.x, saved.y) {
-                    p.x = saved.x;
-                    p.y = saved.y;
-                }
-                p.hp = saved.hp.clamp(1, p.max_hp);
-                coins = saved.coins;
-                for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
-                    inventory[i] = ItemSlot {
-                        kind: *kind,
-                        name: registry::name(*kind),
-                        count: *count,
-                    };
-                }
-            }
-        }
-    }
-    if let Ok(v) = std::env::var("TR_COINS") {
-        if let Ok(n) = v.parse::<u64>() {
-            coins = n;
-        }
-    }
-    // Debug spawn override: place the player at a tile coordinate (the camera follows).
-    if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
-        if let Some(p) = player.as_mut() {
-            p.teleport(
-                tx as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5,
-                ty as f32 * TILE_PX,
-            );
-        }
-    }
-    if std::env::var_os("TR_BOSS").is_some() {
+        let clouds = make_clouds(&world, &lookups);
+        let sky = make_sky_assets(&atlas);
+        let stars = make_stars(&world);
+        let player_assets = make_player_assets(&atlas);
+        let npc_assets = make_npc_assets(&atlas);
+        let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
+        let mut player = player_enabled.then(|| Player::spawn(&world));
+        let mut npcs = Vec::new();
         if let Some(p) = &player {
-            if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
-                npcs.push(n);
-            }
-        }
-    }
-    if let Ok(v) = std::env::var("TR_SLIME_AT") {
-        for x in v.split(',').filter_map(|s| s.trim().parse::<i32>().ok()) {
-            if let Some(n) = Npc::spawn_slime(&world, x) {
-                npcs.push(n);
-            }
-        }
-    }
-    let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
-    // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
-    let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
-        .ok()
-        .map(|v| {
-            v.split(';')
-                .filter_map(|entry| {
-                    let mut it = entry.split(',');
-                    let x = it.next()?.trim().parse::<i32>().ok()?;
-                    let y = it.next()?.trim().parse::<i32>().ok()?;
-                    let k = it.next()?.trim().parse::<u16>().ok()?;
-                    Some((x, y, k))
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    // `TR_SPOUT=x,y`: build the `FindWaterfalls` half-brick case at a fixed tile (a half
-    // brick with full liquid on its right and a clear drop below) so the waterfall
-    // overlay can be screenshotted deterministically.
-    if let Some((x, y)) = std::env::var("TR_SPOUT").ok().and_then(|v| parse_xy(&v)) {
-        for j in 1..=14 {
-            edit::break_tile(&mut world, x, y + j);
-        }
-        edit::break_tile(&mut world, x, y);
-        if edit::place_tile(&mut world, x, y, 1) {
-            if let Some(t) = world.tile_mut(x, y) {
-                t.flags |= tr_core::tile::FLAG_HALF_BRICK;
-            }
-        }
-        for (dx, dy) in [(1, 0), (1, -1)] {
-            if let Some(t) = world.tile_mut(x + dx, y + dy) {
-                t.liquid = 255;
-                // `TR_SPOUT_KIND=<0..3>`: the fall's liquid kind (1 = lava) so
-                // the typed waterfall branches and their `AddLight` glow are
-                // screenshotable.
-                let kind_flag = match std::env::var("TR_SPOUT_KIND").as_deref() {
-                    Ok("1") => tr_core::tile::FLAG_LIQUID_LAVA,
-                    Ok("2") => tr_core::tile::FLAG_LIQUID_HONEY,
-                    Ok("3") => tr_core::tile::FLAG_LIQUID_SHIMMER,
-                    _ => 0,
+            let xt = (p.x / TILE_PX) as i32;
+            for (i, dx) in [-20, 16, 26].iter().enumerate() {
+                let spawned = if world.day_time {
+                    Npc::spawn_slime(&world, xt + dx)
+                } else {
+                    match i {
+                        0 => Npc::spawn_zombie(&world, xt + dx),
+                        1 => Npc::spawn_eye(&world, xt + dx),
+                        _ => Npc::spawn_slime(&world, xt + dx),
+                    }
                 };
-                t.flags |= kind_flag;
+                if let Some(n) = spawned {
+                    npcs.push(n);
+                }
             }
         }
-    }
-    let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
-    let world_seed = world.seed;
-    let liquids_sim = LiquidSystem::new(&world);
-    let rain = Rain::new(world_seed);
+        let follow_player = player.is_some()
+            && std::env::var_os("TR_CAM").is_none()
+            && std::env::var_os("TR_PAN").is_none();
+        let mut coins = 0u64;
+        let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
+            0 => ItemSlot {
+                kind: 2, // ItemID.DirtBlock
+                name: registry::name(2),
+                count: 50,
+            },
+            1 => ItemSlot {
+                kind: 3, // ItemID.StoneBlock
+                name: registry::name(3),
+                count: 50,
+            },
+            2 => ItemSlot {
+                kind: 8, // ItemID.Torch
+                name: registry::name(8),
+                count: 99,
+            },
+            3 => ItemSlot {
+                kind: 42, // ItemID.Shuriken
+                name: registry::name(42),
+                count: 99,
+            },
+            _ => ItemSlot {
+                kind: 0,
+                name: "",
+                count: 0,
+            },
+        });
+        if world_path.extension().is_some_and(|e| e == "trwld") {
+            if let Some(saved) = persist::load(&world_path) {
+                if let Some(p) = player.as_mut() {
+                    if !player::collides_player(&world, saved.x, saved.y) {
+                        p.x = saved.x;
+                        p.y = saved.y;
+                    }
+                    p.hp = saved.hp.clamp(1, p.max_hp);
+                    coins = saved.coins;
+                    for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
+                        inventory[i] = ItemSlot {
+                            kind: *kind,
+                            name: registry::name(*kind),
+                            count: *count,
+                        };
+                    }
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("TR_COINS") {
+            if let Ok(n) = v.parse::<u64>() {
+                coins = n;
+            }
+        }
+        // Debug spawn override: place the player at a tile coordinate (the camera follows).
+        if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
+            if let Some(p) = player.as_mut() {
+                p.teleport(
+                    tx as f32 * TILE_PX + 8.0 - player::WIDTH * 0.5,
+                    ty as f32 * TILE_PX,
+                );
+            }
+        }
+        if std::env::var_os("TR_BOSS").is_some() {
+            if let Some(p) = &player {
+                if let Some(n) = Npc::spawn_king_slime(&world, (p.x / TILE_PX) as i32 + 12) {
+                    npcs.push(n);
+                }
+            }
+        }
+        if let Ok(v) = std::env::var("TR_SLIME_AT") {
+            for x in v.split(',').filter_map(|s| s.trim().parse::<i32>().ok()) {
+                if let Some(n) = Npc::spawn_slime(&world, x) {
+                    npcs.push(n);
+                }
+            }
+        }
+        let dev_break = std::env::var("TR_BREAK").ok().and_then(|v| parse_xy(&v));
+        // `TR_PLACE=x,y,kind[;x,y,kind…]`: place tiles on the first update, in order.
+        let dev_place: Vec<(i32, i32, u16)> = std::env::var("TR_PLACE")
+            .ok()
+            .map(|v| {
+                v.split(';')
+                    .filter_map(|entry| {
+                        let mut it = entry.split(',');
+                        let x = it.next()?.trim().parse::<i32>().ok()?;
+                        let y = it.next()?.trim().parse::<i32>().ok()?;
+                        let k = it.next()?.trim().parse::<u16>().ok()?;
+                        Some((x, y, k))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        // `TR_SPOUT=x,y`: build the `FindWaterfalls` half-brick case at a fixed tile (a half
+        // brick with full liquid on its right and a clear drop below) so the waterfall
+        // overlay can be screenshotted deterministically.
+        if let Some((x, y)) = std::env::var("TR_SPOUT").ok().and_then(|v| parse_xy(&v)) {
+            for j in 1..=14 {
+                edit::break_tile(&mut world, x, y + j);
+            }
+            edit::break_tile(&mut world, x, y);
+            if edit::place_tile(&mut world, x, y, 1) {
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.flags |= tr_core::tile::FLAG_HALF_BRICK;
+                }
+            }
+            for (dx, dy) in [(1, 0), (1, -1)] {
+                if let Some(t) = world.tile_mut(x + dx, y + dy) {
+                    t.liquid = 255;
+                    // `TR_SPOUT_KIND=<0..3>`: the fall's liquid kind (1 = lava) so
+                    // the typed waterfall branches and their `AddLight` glow are
+                    // screenshotable.
+                    let kind_flag = match std::env::var("TR_SPOUT_KIND").as_deref() {
+                        Ok("1") => tr_core::tile::FLAG_LIQUID_LAVA,
+                        Ok("2") => tr_core::tile::FLAG_LIQUID_HONEY,
+                        Ok("3") => tr_core::tile::FLAG_LIQUID_SHIMMER,
+                        _ => 0,
+                    };
+                    t.flags |= kind_flag;
+                }
+            }
+        }
+        let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
+        let world_seed = world.seed;
+        let liquids_sim = LiquidSystem::new(&world);
+        let rain = Rain::new(world_seed);
 
-    // Character name and the session menu (`M6`): screenshots and debug hooks skip
-    // the menu so the deterministic output stays unchanged.
-    let player_name =
-        std::env::var("TR_NAME").unwrap_or_else(|_| menu::random_name());
-    let join_target = std::env::var("TR_JOIN").ok().map(|addr| {
-        (
-            addr,
-            std::env::var("TR_JOIN_PW").unwrap_or_default(),
-        )
-    });
-    let auto_host = std::env::var("TR_HOST")
-        .ok()
-        .and_then(|p| p.parse::<u16>().ok());
-    let joined_before = std::env::var_os("TR_JOINED").is_some();
-    let force_menu = std::env::var_os("TR_MENU").is_some();
-    // `TR_UI=<screen>` presets the front-end flow state after construction
-    // (the `TR_PAGE` pattern; the plan Task 5 hook table).
-    let tr_ui = std::env::var("TR_UI").ok();
-    let skip_menu = (!force_menu && std::env::var_os("TR_SHOT").is_some())
-        || std::env::var_os("TR_CAM").is_some()
-        || std::env::var_os("TR_HOLD").is_some()
-        || std::env::var_os("TR_NOMENU").is_some()
-        || std::env::var_os("TR_MAP").is_some()
-        || joined_before
-        || auto_host.is_some()
-        || tr_ui.is_some();
-    let menu_state = if skip_menu {
-        None
-    } else {
-        let mut m = menu::Menu::new(player_name.clone());
-        m.connecting = join_target.is_some();
-        Some(m)
-    };
-    let mut net_role = NetRole::Off;
-    if let Some((addr, pw)) = join_target.as_ref() {
-        match net::Client::connect(addr, player_name.clone(), pw.clone()) {
-            Ok(c) => {
-                log::info!("joining {addr}");
-                net_role = NetRole::Client(c);
+        // Character name and the session menu (`M6`): screenshots and debug hooks skip
+        // the menu so the deterministic output stays unchanged.
+        let player_name = std::env::var("TR_NAME").unwrap_or_else(|_| menu::random_name());
+        let join_target = std::env::var("TR_JOIN")
+            .ok()
+            .map(|addr| (addr, std::env::var("TR_JOIN_PW").unwrap_or_default()));
+        let auto_host = std::env::var("TR_HOST")
+            .ok()
+            .and_then(|p| p.parse::<u16>().ok());
+        let joined_before = std::env::var_os("TR_JOINED").is_some();
+        let force_menu = std::env::var_os("TR_MENU").is_some();
+        // `TR_UI=<screen>` presets the front-end flow state after construction
+        // (the `TR_PAGE` pattern; the plan Task 5 hook table).
+        let tr_ui = std::env::var("TR_UI").ok();
+        let skip_menu = (!force_menu && std::env::var_os("TR_SHOT").is_some())
+            || std::env::var_os("TR_CAM").is_some()
+            || std::env::var_os("TR_HOLD").is_some()
+            || std::env::var_os("TR_NOMENU").is_some()
+            || std::env::var_os("TR_MAP").is_some()
+            || joined_before
+            || auto_host.is_some()
+            || tr_ui.is_some();
+        let menu_state = if skip_menu {
+            None
+        } else {
+            let mut m = menu::Menu::new(player_name.clone());
+            m.connecting = join_target.is_some();
+            Some(m)
+        };
+        let mut net_role = NetRole::Off;
+        if let Some((addr, pw)) = join_target.as_ref() {
+            match net::Client::connect(addr, player_name.clone(), pw.clone()) {
+                Ok(c) => {
+                    log::info!("joining {addr}");
+                    net_role = NetRole::Client(c);
+                }
+                Err(e) => log::warn!("connect to {addr} failed: {e:#}"),
             }
-            Err(e) => log::warn!("connect to {addr} failed: {e:#}"),
         }
-    }
-    if let Some(port) = auto_host {
-        match net::Server::start(port, String::new(), compressed_world(&world)) {
-            Ok(server) => {
-                log::info!("hosting on {}", server.addr());
-                net_role = NetRole::Host(server);
+        if let Some(port) = auto_host {
+            match net::Server::start(port, String::new(), compressed_world(&world)) {
+                Ok(server) => {
+                    log::info!("hosting on {}", server.addr());
+                    net_role = NetRole::Host(server);
+                }
+                Err(e) => log::warn!("host on {port} failed: {e:#}"),
             }
-            Err(e) => log::warn!("host on {port} failed: {e:#}"),
         }
-    }
-    let mut world_map = map::WorldMap::new(&world);
-    if std::env::var_os("TR_MAP").is_some() {
-        world_map.set_open(true);
-    }
-    let mut app = App {
-        window: None,
-        gpu: None,
-        renderer: None,
-        world,
-        atlas: Some(atlas),
-        lookups,
-        clouds,
-        sky,
-        // `Main` statics initialise `bgAlphaFrontLayer[0] = bgAlphaFarBackLayer[0] = 1`
-        // (forest visible from the start).
-        bg_style: 0,
-        bg_delay: 0,
-        // `Main.instantBGTransitionCounter = 2` on world load.
-        bg_instant: 2,
-        bg_alpha_front: {
-            let mut a = [0.0; 16];
-            a[0] = 1.0;
-            a
-        },
-        bg_alpha_far: {
-            let mut a = [0.0; 16];
-            a[0] = 1.0;
-            a
-        },
-        stars,
-        player_assets,
-        player,
-        follow_player,
-        player_step: FixedStepper::new(1.0 / 60.0, 8),
-        npc_step: FixedStepper::new(1.0 / 60.0, 8),
-        npcs,
-        npc_assets,
-        npc_timer: 6.0,
-        npc_rng: world_seed,
-        attack_cd: 0.0,
-        inventory,
-        equip: inv::EquipSlots::empty(),
-        // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
-        // var selects the page for screenshots (0 = equipment, 2 = misc).
-        equip_page: std::env::var("TR_EQUIPPAGE")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0),
-        selected: 0,
-        hotbar_scales: {
-            let mut s = [0.75; HOTBAR];
-            s[0] = 1.0;
-            s
-        },
-        inventory_open: std::env::var_os("TR_INV").is_some(),
-        // The panel ships open with the inventory (`Main.cs:41706-41709`);
-        // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
-        // (the `TR_INV` presence pattern).
-        crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
-            || std::env::var_os("TR_CRAFT").is_some(),
-        menu: menu_state,
-        front: None,
-        front_backup: None,
-        players: Vec::new(),
-        worlds: Vec::new(),
-        front_hint: None,
-        front_mouse_down: false,
-        session_draft: None,
-        vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
-        settings: settings::Settings::load(),
-        player_name,
-        net: net_role,
-        remote_players: HashMap::new(),
-        local_id: 0,
-        net_timer: 0.0,
-        join_target,
-        map: Some(world_map),
-        map_grab: None,
-        minimap_hover: None,
-        // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
-        // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
-        // out-of-range value falls back to 1).
-        map_style: std::env::var("TR_MAPSTYLE")
-            .ok()
-            .and_then(|v| v.parse::<i32>().ok())
-            .filter(|v| (0..=2).contains(v))
-            .unwrap_or(1),
-        audio: audio::Audio::new(assets::content_dir()),
-        music: audio::MusicSystem::new(assets::content_dir()),
-        last_hp: 100,
-        autosave: 0.0,
-        mouse_item: EMPTY_SLOT,
-        ui_left_press: false,
-        ui_right_press: false,
-        mouse_pos: mouse_pin().unwrap_or(Vec2::ZERO),
-        cursor: ui::cursor::CursorState::default(),
-        os_cursor_hidden: None,
-        mine_down: false,
-        place_down: false,
-        mine_target: None,
-        mine_timer: 0.0,
-        place_cooldown: 0.0,
-        edit_target: None,
-        world_path: world_path.clone(),
-        dev_break,
-        dev_place,
-        camera: Vec2::ZERO,
-        zoom: 1.0,
-        zoom_pinned: std::env::var_os("TR_ZOOM").is_some(),
-        debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(false),
-        keys: HashSet::new(),
-        mouse_down: false,
-        last_mouse: Vec2::ZERO,
-        last_frame: Instant::now(),
-        frame_history: VecDeque::with_capacity(256),
-        last_stats: tr_render::sprite::RenderStats::default(),
-        bench_frames: std::env::var("TR_BENCH").ok().and_then(|v| v.parse().ok()),
-        bench_samples: Vec::new(),
-        frame_count: 0,
-        shot_path: std::env::var("TR_SHOT").ok().map(PathBuf::from),
-        shot_at: std::env::var("TR_SHOT_FRAME")
-            .ok()
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(20),
-        atlas_stats,
-        light: LightMap::new(),
-        scratch: DrawScratch::default(),
-        tile_stats: TileDrawStats::default(),
-        stats_on: std::env::var("TR_STATS").is_ok(),
-        stats_acc: StatsAcc::default(),
-        debug_cache: DebugCache::default(),
-        light_mode: std::env::var("TR_LIGHT_MODE")
-            .ok()
-            .and_then(|v| parse_light_mode(&v))
-            .unwrap_or(LightMode::Color),
-        // `Main.mouseTextColor` starts at 225 and drifts toward 255.
-        mouse_text_color: 225,
-        mouse_text_color_dir: 1,
-        // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
-        demon_torch: 1.0,
-        demon_torch_dir: 1.0,
-        // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
-        disco: [255, 0, 0],
-        disco_style: 0,
-        light_rng_seed: world_seed | 1,
-        anim_time: 0.0,
-        has_liquids,
-        liquids: liquids_sim,
-        liquid_step: FixedStepper::new(1.0 / 60.0, 8),
-        liquid_tick: 0,
-        waterfall: tr_core::waterfall::WaterfallManager::new(),
-        waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
-        rain,
-        liquid_alpha: [0.0; 15],
-        items: Vec::new(),
-        item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
-        item_step: FixedStepper::new(1.0 / 60.0, 8),
-        swing: 0.0,
-        coins,
-        projectiles: Vec::new(),
-        projectile_step: FixedStepper::new(1.0 / 60.0, 8),
-        dev_throw: std::env::var_os("TR_THROW").is_some(),
-        world_key: None,
-        hell_black_box_bottom: 0.0,
-    };
-    // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
-    // `TR_PAGE` pattern — the plan Task 5 hook table).
-    if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
-        app.preset_ui(preset);
-    }
+        let mut world_map = map::WorldMap::new(&world);
+        if std::env::var_os("TR_MAP").is_some() {
+            world_map.set_open(true);
+        }
+        let mut app = App {
+            window: None,
+            gpu: None,
+            renderer: None,
+            world,
+            atlas: Some(atlas),
+            lookups,
+            clouds,
+            sky,
+            // `Main` statics initialise `bgAlphaFrontLayer[0] = bgAlphaFarBackLayer[0] = 1`
+            // (forest visible from the start).
+            bg_style: 0,
+            bg_delay: 0,
+            // `Main.instantBGTransitionCounter = 2` on world load.
+            bg_instant: 2,
+            bg_alpha_front: {
+                let mut a = [0.0; 16];
+                a[0] = 1.0;
+                a
+            },
+            bg_alpha_far: {
+                let mut a = [0.0; 16];
+                a[0] = 1.0;
+                a
+            },
+            stars,
+            player_assets,
+            player,
+            follow_player,
+            player_step: FixedStepper::new(1.0 / 60.0, 8),
+            npc_step: FixedStepper::new(1.0 / 60.0, 8),
+            npcs,
+            npc_assets,
+            npc_timer: 6.0,
+            npc_rng: world_seed,
+            attack_cd: 0.0,
+            inventory,
+            equip: inv::EquipSlots::empty(),
+            // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
+            // var selects the page for screenshots (0 = equipment, 2 = misc).
+            equip_page: std::env::var("TR_EQUIPPAGE")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0),
+            selected: 0,
+            hotbar_scales: {
+                let mut s = [0.75; HOTBAR];
+                s[0] = 1.0;
+                s
+            },
+            inventory_open: std::env::var_os("TR_INV").is_some(),
+            // The panel ships open with the inventory (`Main.cs:41706-41709`);
+            // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
+            // (the `TR_INV` presence pattern).
+            crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
+                || std::env::var_os("TR_CRAFT").is_some(),
+            menu: menu_state,
+            front: None,
+            front_backup: None,
+            players: Vec::new(),
+            worlds: Vec::new(),
+            front_hint: None,
+            front_mouse_down: false,
+            session_draft: None,
+            vk_grid: std::env::var_os("TR_VK_GRID").is_some(),
+            settings: settings::Settings::load(),
+            player_name,
+            net: net_role,
+            remote_players: HashMap::new(),
+            local_id: 0,
+            net_timer: 0.0,
+            join_target,
+            map: Some(world_map),
+            map_grab: None,
+            minimap_hover: None,
+            // `Main.mapStyle = 1` (`Main.cs:66750`); `TR_MAPSTYLE=<0|1|2>` selects
+            // it for screenshots (the `TR_EQUIPPAGE` pattern; an invalid or
+            // out-of-range value falls back to 1).
+            map_style: std::env::var("TR_MAPSTYLE")
+                .ok()
+                .and_then(|v| v.parse::<i32>().ok())
+                .filter(|v| (0..=2).contains(v))
+                .unwrap_or(1),
+            audio: audio::Audio::new(assets::content_dir()),
+            music: audio::MusicSystem::new(assets::content_dir()),
+            last_hp: 100,
+            autosave: 0.0,
+            mouse_item: EMPTY_SLOT,
+            ui_left_press: false,
+            ui_right_press: false,
+            mouse_pos: mouse_pin().unwrap_or(Vec2::ZERO),
+            cursor: ui::cursor::CursorState::default(),
+            os_cursor_hidden: None,
+            mine_down: false,
+            place_down: false,
+            mine_target: None,
+            mine_timer: 0.0,
+            place_cooldown: 0.0,
+            place_prev_down: false,
+            place_released: false,
+            edit_target: None,
+            world_path: world_path.clone(),
+            dev_break,
+            dev_place,
+            camera: Vec2::ZERO,
+            zoom: 1.0,
+            zoom_pinned: std::env::var_os("TR_ZOOM").is_some(),
+            debug: std::env::var("TR_DEBUG").map(|v| v != "0").unwrap_or(false),
+            keys: HashSet::new(),
+            mouse_down: false,
+            last_mouse: Vec2::ZERO,
+            last_frame: Instant::now(),
+            frame_history: VecDeque::with_capacity(256),
+            last_stats: tr_render::sprite::RenderStats::default(),
+            bench_frames: std::env::var("TR_BENCH").ok().and_then(|v| v.parse().ok()),
+            bench_samples: Vec::new(),
+            frame_count: 0,
+            shot_path: std::env::var("TR_SHOT").ok().map(PathBuf::from),
+            shot_at: std::env::var("TR_SHOT_FRAME")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(20),
+            atlas_stats,
+            light: LightMap::new(),
+            scratch: DrawScratch::default(),
+            tile_stats: TileDrawStats::default(),
+            stats_on: std::env::var("TR_STATS").is_ok(),
+            stats_acc: StatsAcc::default(),
+            debug_cache: DebugCache::default(),
+            light_mode: std::env::var("TR_LIGHT_MODE")
+                .ok()
+                .and_then(|v| parse_light_mode(&v))
+                .unwrap_or(LightMode::Color),
+            // `Main.mouseTextColor` starts at 225 and drifts toward 255.
+            mouse_text_color: 225,
+            mouse_text_color_dir: 1,
+            // `Main.demonTorch = 1f; Main.demonTorchDir = 1` (Main.Initialize).
+            demon_torch: 1.0,
+            demon_torch_dir: 1.0,
+            // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
+            disco: [255, 0, 0],
+            disco_style: 0,
+            light_rng_seed: world_seed | 1,
+            anim_time: 0.0,
+            has_liquids,
+            liquids: liquids_sim,
+            liquid_step: FixedStepper::new(1.0 / 60.0, 8),
+            liquid_tick: 0,
+            waterfall: tr_core::waterfall::WaterfallManager::new(),
+            waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
+            rain,
+            liquid_alpha: [0.0; 15],
+            items: Vec::new(),
+            item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
+            item_step: FixedStepper::new(1.0 / 60.0, 8),
+            swing: 0.0,
+            swing_max: 0.0,
+            coins,
+            projectiles: Vec::new(),
+            projectile_step: FixedStepper::new(1.0 / 60.0, 8),
+            dev_throw: std::env::var_os("TR_THROW").is_some(),
+            world_key: None,
+            hell_black_box_bottom: 0.0,
+        };
+        // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
+        // `TR_PAGE` pattern — the plan Task 5 hook table).
+        if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
+            app.preset_ui(preset);
+        }
         app
     }
 }
@@ -1118,7 +1125,9 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     if let Ok(v) = std::env::var("TR_POOL") {
         let mut it = v.split(',');
         let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
-        if let Ok(vals) = vals && vals.len() == 5 {
+        if let Ok(vals) = vals
+            && vals.len() == 5
+        {
             let (tx, ty, tw, th, kind) = (
                 vals[0] as i32,
                 vals[1] as i32,

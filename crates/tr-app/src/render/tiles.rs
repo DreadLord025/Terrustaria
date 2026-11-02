@@ -7,15 +7,15 @@ use crate::item::ItemDrop;
 use crate::net;
 use crate::npc::Npc;
 use crate::player::{self, Player};
-use crate::render::entities::{NpcAssets, PlayerAssets, draw_npcs, draw_player, flip_uv};
+use crate::render::entities::{draw_npcs, draw_player, flip_uv, NpcAssets, PlayerAssets};
 use crate::render::foliage::draw_tree_foliage;
-use crate::render::liquids::{LiquidPass, draw_tile_liquid_behind, draw_waters};
+use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
 use std::time::Instant;
 use tr_core::lighting::{LightMap, LightParams, LightStyle};
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, tree};
+use tr_core::{tree, World, TILE_PX};
 use tr_render::{Atlas, SpriteRenderer};
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -146,8 +146,8 @@ pub(crate) fn draw_tiles(
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
-    // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the swing
-    // timer (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
+    // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the
+    // remaining use fraction (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
     held: Option<(u16, f32)>,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
@@ -463,7 +463,10 @@ pub(crate) fn draw_tiles(
                 let flame_tile = active
                     && (tr_core::flame::tile_flame(tile.kind)
                         || tr_core::flame::has_glow_branch(tile.kind));
-                if light_is_zero(l) && !flame_tile && (active || (draw_walls && wall_visible(tile.wall))) {
+                if light_is_zero(l)
+                    && !flame_tile
+                    && (active || (draw_walls && wall_visible(tile.wall)))
+                {
                     if run_start < 0 {
                         run_start = tx;
                     }
@@ -557,17 +560,8 @@ pub(crate) fn draw_tiles(
                 // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
                 // after the tile sprite, in the same row-major order, with their
                 // own self-lit colours (the light map does not tint them).
-                stats.quads += draw_tile_flames(
-                    r,
-                    lookups,
-                    world,
-                    tile,
-                    &dd,
-                    tx,
-                    ty,
-                    params,
-                    anim_time,
-                );
+                stats.quads +=
+                    draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
             }
         }
         if run_start >= 0 {
@@ -1044,23 +1038,12 @@ fn draw_tile_flames(
                 None => (None, [0.0; 2]),
             },
             GlowSheet::Named(name) => (
-                lookups.glow_uv(
-                    name,
-                    g.src[0],
-                    g.src[1],
-                    g.src[2] as u32,
-                    g.src[3] as u32,
-                ),
+                lookups.glow_uv(name, g.src[0], g.src[1], g.src[2] as u32, g.src[3] as u32),
                 [g.src[2] as f32, g.src[3] as f32],
             ),
         };
         let Some(uv) = uv else { continue };
-        r.push_sprite(
-            [anchor[0] + g.dx, anchor[1] + g.dy],
-            size,
-            uv,
-            g.color,
-        );
+        r.push_sprite([anchor[0] + g.dx, anchor[1] + g.dy], size, uv, g.color);
         quads += 1;
     }
 
