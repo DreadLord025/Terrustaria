@@ -32,7 +32,7 @@ milestone section for the full context before starting.
 
 | Task | Branch | Scope |
 | --- | --- | --- |
-| M2-DRAW-1 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw |
+| M2-DRAW-1 🟡 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw | layering done 2026-11-02: order + weapon slot + composite front arm + bob (`player_layers.rs` builders, tests); armor/accessories go live with M3-EQUIP; composite shoulder rotation is M2-DRAW-2 |
 | M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
 | M2-ANIM | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) |
 | M2-BUFF | `M2-BUFF-buffs-mounts` | buffs/debuffs, hooks, mounts, gravity flips |

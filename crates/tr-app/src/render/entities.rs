@@ -8,7 +8,7 @@ use super::player_layers::{
 use super::sky::sky_tex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
-use crate::player::{self, Player};
+use crate::player::Player;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;

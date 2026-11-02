@@ -652,6 +652,33 @@ biome and hardmode spread are not generated; the original generator remains an M
 
 ## Player (M2 first pass)
 
+### Layer builders (M2-DRAW-1)
+
+The player composition is pure data: `render/player_layers.rs` builds a
+`Vec<LayerSprite>` (`assemble_layers`) and `draw_player` only pushes it — the
+`LegacyPlayerRenderer.cs:185-255` sequence with the held item in its
+`weaponDrawOrder` slot (`PlayerDrawSet.cs:358`: the starter can only reach
+`BehindFrontArm`). Deviations from the C#, all deliberate:
+
+- The swing arc stays the rotation input — vanilla `itemRotation`/`itemAnimation`
+  come from `ItemCheck_*` and belong to M2-ANIM. The item's grip origin is
+  already the C# rule (`PlayerDrawLayers.cs:3161-3188`: bottom corner mirrored by
+  direction; useStyle 8/9 handled), so the old centre-pivot arc pass is gone.
+- The `Players[8]` undershirt passes (back arm, front arm/shoulder) are skipped:
+  the starter skin has no underShirt colour; the palette lands with M3-EQUIP.
+- Shoulder cells are constants ((0,1)/(1,1), `PlayerDrawSet.cs:1938-1939`) and
+  the shoulder offset is assumed zero without body armour
+  (`DetermineShoulderOffsets` is armour-driven); the composite is male-only
+  (`Player_0_*`, the `!Male` Y+2 shift of `:2036-2040` not modelled).
+- The UI character preview (`UICharacter`) keeps its own inline composition —
+  it draws in screen space at fixed frames and does not need the builder yet.
+- Harness note: TR_SHOT twin-run equality is timing-sensitive
+  (`anim_time += dt` on real time, `frame.rs:47`, plus the 60 Hz stepper's
+  accumulated ticks); a same-run A/B against the pre-builder binary shows the
+  delta confined to the player region (858 px), while old-vs-old twin pairs
+  drift by themselves (312k px). A tick-pinned screenshot mode is a separate
+  harness task.
+
 `tr-app/src/player.rs` implements a fixed 60 Hz step with the original movement constants:
 gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump speed
 `5.01` with `jumpHeight = 15`: pressing jump sets the upward speed and holding it keeps
