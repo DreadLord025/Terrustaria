@@ -737,6 +737,25 @@ every field; framing/lighting run afterwards exactly as for a `.wld`. `TR_REGEN=
 regenerates, `TR_SEED=<n>` selects a seed. The other biomes, structures, the full ocean
 biome and hardmode spread are not generated; the original generator remains an M5 milestone.
 
+## Crafting (M3-CRAFT, subset-first)
+
+`craft.rs` carries the subset recipe table (7 recipes over the registry's items,
+each citing its `Recipe.cs` registration) and the pure craft actions:
+`can_craft`/`try_craft` over `[ItemSlot; 50]` and `adjacent_tiles` — the
+`Player.AdjTiles` port with `TileReachCheckSettings.Simple` reach (X 5 / Y 3).
+Deviations: `RequireGroup(RecipeGroups.Wood)` recipes are expanded to concrete
+ids (Wood → 9); consumption is a single index-ordered pass matching
+`ConsumeItemsFrom` (`CraftingRequests.cs:244-290`) over **50 slots** (the C#
+consumes over 58 incl. coin/ammo — no subset ingredient lives there); a full
+inventory still crafts (the drop-on-full bridge is not wired — vanilla drops).
+The panel (`ui/crafting.rs`) draws available recipes with a 44 px cell grid;
+items without extracted sprites (the atlas carries only the world's used tile
+frames) draw a grey placeholder. The roadmap's "contexts 4/33" is stale — the
+crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
+`handle_crafting_clicks` (`clicks.rs`) runs before inventory clicks and crafts
+on the press (`Main.cs:42250` hover family); the rotation source for item use
+stays with M2-ANIM.
+
 ## Player (M2 first pass)
 
 ### Composite arm rotation (M2-DRAW-2)
