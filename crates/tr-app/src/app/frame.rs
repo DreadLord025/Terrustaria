@@ -422,6 +422,13 @@ impl App {
                 // faster with stronger wind.
                 wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
                 wind.update(rain.is_raining());
+                // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
+                // the leaf frequency are screenshotable at a chosen strength.
+                if let Ok(v) = std::env::var("TR_WIND_FORCE") {
+                    if let Ok(f) = v.parse::<f32>() {
+                        wind.speed_current = f.clamp(-1.24, 1.24);
+                    }
+                }
                 tr_core::wind::advance_tree_counter(
                     tree_wind_counter,
                     wind.speed_current,
