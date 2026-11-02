@@ -1174,7 +1174,7 @@ section in brackets before starting a row.
 | ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass framing [2] |
 | ✅ TILE-DRAW-1 | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog corrections; animator/glow/wind remain TILE-DRAW-2/3 [2] |
 | ✅ TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames |
-| ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves — ⚠ leaf emission broke the pure-world screenshot determinism (`TR_NO_FOLIAGE=1` restores SHA256 equality; bisected 2026-11-02 on 84f08e3) — follow-up `TILE-DRAW-3-det-fix` |
+| ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves — determinism verified 2026-11-02: the earlier leaf-gore divergence (84f08e3-era binaries) does not reproduce on 3470372 (6+ SHA256-equal pairs across wind on/off, frames 120/240; per-frame leaf/wind logs identical); standing rule — every screenshot verification is a SHA256 double-run |
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | 🔄 M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
