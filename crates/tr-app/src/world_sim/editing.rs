@@ -233,14 +233,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             } else {
                 false
             }
-        } else if !held_weapon && can_place(app, tx, ty) {
-            match registry::place_tile(held.kind) {
-                Some(kind) => {
-                    place_tile(app, tx, ty, kind);
-                    true
-                }
-                None => false,
-            }
+        } else if !held_weapon {
+            use_tile_item(app, tx, ty)
         } else {
             false
         };
@@ -343,15 +337,49 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     })
 }
 
-pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) {
-    if edit::place_tile(&mut app.world, tx, ty, kind) {
-        app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
-        app.liquids.wake_around(&app.world, tx, ty, 3);
-        app.audio
-            .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
-        app.request_edit(tx, ty, 1, kind);
-        app.world_key = None;
+/// The tile-placement route of `Player.PlaceThing_Tiles` (`Player.cs:39721`):
+/// the shared item gates, then `tr_core::edit::place_item_tile` dispatches
+/// registry kinds through `TileObject.CanPlace`/`Place`
+/// (`PlaceThing_Tiles_TryPlacing`, `Player.cs:39771-39778`) and everything else
+/// through the legacy `WorldGen.PlaceTile` path with the app's
+/// neighbour/overlap pre-checks (`can_place`).
+fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
+    let held = app.inventory[app.selected];
+    // The `can_place` head, shared by both routes: an empty slot, a weapon or
+    // the legacy cactus kind never places.
+    if held.count == 0 || registry::is_weapon(held.kind) || held.kind == 80 {
+        return false;
     }
+    let Some(kind) = registry::place_tile(held.kind) else {
+        return false;
+    };
+    // Registry kinds are judged by `TileObject.CanPlace` inside the dispatcher:
+    // the legacy neighbour/overlap pre-checks must not gate them (the anchors
+    // decide — vanilla furniture can sit on platforms or over the player, and
+    // `BlockPlacementIfOverPlayers`, `Player.cs:41427`, covers none of the
+    // wooden set).
+    if tr_core::tileobject::def_for_tile(kind).is_none() && !can_place(app, tx, ty) {
+        return false;
+    }
+    place_tile(app, tx, ty, kind)
+}
+
+pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
+    // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
+    // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
+    // alternates and click points from them.
+    let style = registry::place_style(app.inventory[app.selected].kind);
+    let dir = app.player.as_ref().map_or(1, |p| p.facing);
+    if !edit::place_item_tile(&mut app.world, tx, ty, kind, style, dir) {
+        return false;
+    }
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    app.liquids.wake_around(&app.world, tx, ty, 3);
+    app.audio
+        .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    app.request_edit(tx, ty, 1, kind);
+    app.world_key = None;
+    true
 }
 
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
@@ -362,7 +390,12 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             edit::break_tile(world, x, y);
         }
         1 => {
-            edit::place_tile(world, x, y, tile);
+            // Replicated placements take the same route as the local player.
+            // Vanilla replicates object placements with a dedicated message
+            // (`NetMessage.SendObjectPlacement`) carrying style/alternate/
+            // random/direction; the generic edit message cannot, so the
+            // registry route converges with style 0 / facing right.
+            edit::place_item_tile(world, x, y, tile, 0, 1);
         }
         2 => {
             edit::break_wall(world, x, y);
