@@ -1257,6 +1257,29 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
   their menus are not opened, so they show as empty frames.
 
+### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
+
+Both draw through the same `slot::draw_slot` (the `ItemSlot.Draw` port) as the open
+grid: the closed hotbar at context 13 (`GUIHotbarDrawInner`, `Main.cs:43600-43639`) and
+the cursor stack at context 21 (`DrawInterface_38_MouseCarriedObject`,
+`Main.cs:45173-45195`). Remaining deliberate gaps:
+
+* The context-13 **ammo/wand/bait count** (`num22`, `ItemSlot.cs:2577-2691` — the
+  counter that replaces the stack text on bows, wands and fishing poles) is not
+  ported; it needs the `useAmmo`/`bait`/`tileWand` inventory scans the item model
+  does not have yet. Such items show their plain stack instead.
+* `Inventory_Back20` (`ItemSlot.cs:2234-2237`, the white variant for
+  `slot == player.selectedItemState.Hotbar`) and the context-36 override slot
+  (`Main.cs:43641-43649`) are unreachable without `Player.SelectedItemState`
+  overrides, which the port does not model; the selected slot always merges into the
+  `Inventory_Back14` branch.
+* The `Main.DoGlowingMouseItemDraw` shader pass over the cursor item
+  (`Main.cs:45196-45220`) is not ported.
+* `hotbarScale` keeps lerping while the inventory is open; vanilla freezes it because
+  `GUIHotbarDrawInner` early-returns on `Main.playerInventory`
+  (`Main.cs:43588-43591`) and the update lives in that draw pass. The targets
+  (1.0 selected / 0.75 rest) and the `±0.05` rate match (`Main.cs:43604-43611`).
+
 ### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
 
 The modern crafting panel is ported as draw-only chrome at the source's geometry and
