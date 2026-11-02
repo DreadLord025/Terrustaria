@@ -31,6 +31,9 @@ pub struct SpriteInstance {
     pub color: [f32; 4],
     /// Clockwise rotation in radians around the sprite's top-left corner.
     pub rot: f32,
+    /// `PaintID` for the fragment-shader recolor (0 = unpainted). Matches
+    /// `Main.ConvertPaintIdToTileShaderIndex`'s input ids.
+    pub paint: f32,
 }
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -189,6 +192,7 @@ impl SpriteRenderer {
                         3 => Float32x2,
                         4 => Float32x4,
                         5 => Float32,
+                        6 => Float32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -416,6 +420,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -435,6 +440,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -455,6 +461,29 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
+        paint: 0.0,
+        });
+    }
+
+    /// `push_sprite_rot` with a `PaintID`: the fragment shader recolors the
+    /// texel through the paint table before the light tint multiplies it.
+    pub fn push_sprite_paint(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        paint: u8,
+    ) {
+        self.world.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+            paint: paint as f32,
         });
     }
 
@@ -475,6 +504,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
+        paint: 0.0,
         });
     }
 
@@ -517,6 +547,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
+        paint: 0.0,
         });
     }
 
@@ -529,6 +560,7 @@ impl SpriteRenderer {
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -541,6 +573,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -560,6 +593,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -572,6 +606,7 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
+        paint: 0.0,
         });
     }
 
@@ -593,6 +628,7 @@ impl SpriteRenderer {
                     uv1: [u1, self.font_uv1[1]],
                     color,
                     rot: 0.0,
+        paint: 0.0,
                 });
             }
             cx += gw * scale;

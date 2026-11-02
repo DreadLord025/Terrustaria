@@ -531,6 +531,51 @@ Verification: the leaf-frequency/set unit tests; the gust screenshots at
 `TR_WIND_FORCE=1.0` (`TR_CAM=2100,375`) diff 6944 px against `TR_NO_WIND=1`
 (leaning canopies, flying leaves); two identical runs are SHA256-equal.
 
+## Paint and coatings (TILE-DRAW-4)
+
+`Tile.paint()` (5 bits in `Tile.meta`, E1) already loaded from `.wld` and fed the
+map colours and the painted-lamp light; this port adds the RENDER side, the wall
+paint and the coatings.
+
+- Storage: `World.extras` — a sparse `HashMap<u32, u8>` keyed by the tile index —
+  holds the states that do not fit the packed 12-byte `Tile`: `wallColor()`
+  (5 bits, `Tile.cs:335-343`) and the Echo/Glow wall coatings
+  (`invisibleBlock`/`invisibleWall`/`fullbrightWall`, one bit each;
+  `Tile.cs:528-548`, `:718-721`). Tile-side paint stays in `Tile.meta`; the tile
+  Glow bit is the existing `FLAG_FULLBRIGHT`. `.wld` reads the wall paint
+  (`WorldFile.cs:2589-2592`) and the coating chain (`:2664-2682`) into the map;
+  the native `.trwld` persists it as a sorted sparse section (v3; v2 loads with
+  no extras).
+- Render: the sprite instance gained a `paint` id and the WGSL fragment recolors
+  the texel through a `WorldGen.paintColor` table (`WorldGen.cs:43921-44034`)
+  before the light tint multiplies it — the architectural twin of
+  `TilePaintSystemV2`'s per-(type, style, paint) baked render targets
+  (`TilePaintSystemV2.cs:43-51`), collapsed into a per-instance shader branch.
+  Deviation: the vanilla recolor runs as compiled HLSL passes whose source is
+  not part of the decompile; this port washes the texel with the paint hue while
+  its sRGB luminance carries the texture detail. The basic/deep paint pairs
+  (1-12/13-24) therefore shade identically (vanilla deepens saturation), and the
+  grass "special group" hue bands are not modelled. Negative paint (30) inverts
+  the pixel; illuminant (31) draws unpainted (the vanilla pass 0) and glows
+  through the light path.
+- Coatings: Echo blocks/walls are hidden (`TileDrawing.IsVisible`,
+  `TileDrawing.cs:1411-1432`; `WallDrawing.cs:91`) — the port has neither the
+  Echo Monolith nor the Echo sight item, so `CanSeeInvisibleBlocks` is always
+  false and the coated state stays hidden. Glow walls sample white light
+  (`WallDrawing.cs:96-99`); the tile-side Glow bit (`FLAG_FULLBRIGHT`) was
+  already read from `.wld`.
+- Light: a painted glowing wall takes the paint colour at the /765 scaling of
+  `TileLightScanner.cs:318-324` (3x dimmer than the painted-tile override —
+  the wall paint rides `World.extras` now, retiring the "not stored" note in
+  `tile_light/mod.rs`).
+- Paint tooling: `TR_PAINT=tx,ty,w,h,paint[,wall]` paints a rectangle at load
+  for the A/B screenshots.
+
+Verification: the painted-rect screenshots at `TR_PAINT=2080,352,40,6,<1|5|30>`
+diff exactly inside the rectangle against the unpainted frame (3756 px each);
+the unpainted branch is pixel-identical to main; the extras round-trip test
+covers the sparse save.
+
 ## Rain and weather
 
 `rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and

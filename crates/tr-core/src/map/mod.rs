@@ -256,6 +256,13 @@ pub fn create_map_tile(
             &mut base_type,
             &mut base_option,
         );
+        // `tile.wallColor()` (`MapHelper.cs:1990`): the wall paint lives in the
+        // sparse `World.extras` byte (`World::wall_paint`), not in the packed
+        // `Tile` — `option.rs`'s `tile.paint()` stand-in only saw the tile
+        // paint. Ruling 6 stays: the id flows into `MapColor`'s paint path.
+        if new_color == tile.paint() as i32 {
+            new_color = world.wall_paint(i, j) as i32;
+        }
     }
     if base_type == 0 {
         new_color = 0;
