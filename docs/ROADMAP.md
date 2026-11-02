@@ -35,7 +35,7 @@ milestone section for the full context before starting.
 | M2-DRAW-1 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw |
 | M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
 | M2-ANIM | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) |
-| M2-ANIM-foundation 🟡 | `M2-ANIM-foundation` | animation foundation + fixes (in progress 2026-11-02): `tr-core/src/anim.rs` primitives (`FrameCounter`, band wrap, useStyle-1 thirds), faithful player draw origin (`PlayerDrawSet` + gfxOffY — the "pixels shift" bug), held-item swing (`ItemCheck` `itemRotation`), `NPC.FindFrame` for the four ported kinds, HUD hotbar through the faithful `ItemSlot.Draw` path (one stack-text size/position, 32 px icon clamp) |
+| ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | animation foundation + fixes: `tr-core/src/anim.rs` primitives (`FrameCounter`, band wrap, useStyle-1 thirds), faithful player draw origin (`PlayerDrawSet` + gfxOffY — the "pixels shift" bug), held-item swing (`ItemCheck` `itemRotation`), `NPC.FindFrame` for the four ported kinds, HUD hotbar through the faithful `ItemSlot.Draw` path (one stack-text size/position, 32 px icon clamp) | done 2026-11-02; deviations in ANALYSIS "Animations (M2-ANIM-foundation)" + "Closed hotbar and mouse item"; per-item `useAnimation` timings stay with M2-ANIM-item-timings |
 | M2-BUFF | `M2-BUFF-buffs-mounts` | buffs/debuffs, hooks, mounts, gravity flips |
 
 ### Milestone 3 — items, inventory, crafting
