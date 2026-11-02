@@ -6,7 +6,10 @@
 //! Item ids reference [`crate::registry`]; station ids are `TileID` values
 //! the player must stand near (`Player.AdjTiles`, `Player.cs:35661`).
 
+use crate::item::{ItemSlot, INV};
+use crate::player::{self, Player};
 use crate::registry;
+use tr_core::World;
 
 /// One crafting recipe: `Recipe.createItem` + `requiredItem[]` +
 /// `requiredTile` (`Recipe.cs:13`). Const-constructible (slice fields) so the
@@ -117,5 +120,201 @@ mod tests {
         assert_eq!(torch.create, (8, 3));
         assert_eq!(torch.required, &[(23, 1), (9, 1)]);
         assert!(torch.stations.is_empty());
+    }
+}
+
+/// `Player.AdjTiles` (`Player.cs:35661`) with `TileReachCheckSettings.Simple`
+/// (`TileReachCheckSettings.cs:81-86`: reach X 5 / Y 3, `GetRanges` clamped by
+/// `TileReachLimit = 20`; region math `:45-54`): the active tile kinds around
+/// the player hitbox. Liquids/water-source flags are not modelled.
+pub(crate) fn adjacent_tiles(world: &World, player: &Player) -> Vec<u16> {
+    const REACH_X: i32 = 5;
+    const REACH_Y: i32 = 3;
+    let lx = (player.x / 16.0).floor() as i32 - REACH_X;
+    let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + REACH_X;
+    let ly = (player.y / 16.0).floor() as i32 - REACH_Y;
+    let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + REACH_Y;
+    let mut out = Vec::new();
+    for i in lx.max(0)..=hx.min(world.width as i32 - 1) {
+        for j in ly.max(0)..=hy.min(world.height as i32 - 1) {
+            if let Some(t) = world.tile(i, j) {
+                if t.active() && !out.contains(&t.kind) {
+                    out.push(t.kind);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Total count of one item kind across the whole inventory.
+fn count_kind(inv: &[ItemSlot; INV], kind: u16) -> u32 {
+    inv.iter()
+        .filter(|s| s.kind == kind)
+        .map(|s| s.count)
+        .sum()
+}
+
+/// `CraftingRequests.ConsumeItemsFrom` (`CraftingRequests.cs:244-290`): one
+/// pass in slot-index order — partial decrement when `stack > toConsume`,
+/// otherwise the slot is cleared entirely.
+fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, mut to_consume: u32) {
+    if to_consume == 0 {
+        return;
+    }
+    for slot in inv.iter_mut() {
+        if to_consume == 0 {
+            break;
+        }
+        if slot.kind == kind && slot.count > 0 {
+            if slot.count > to_consume {
+                slot.count -= to_consume;
+                to_consume = 0;
+            } else {
+                to_consume -= slot.count;
+                *slot = crate::item::EMPTY_SLOT;
+            }
+        }
+    }
+}
+
+/// All requirements met: every ingredient counted across the inventory and
+/// every station tile adjacent to the player.
+pub(crate) fn can_craft(inv: &[ItemSlot; INV], recipe: &Recipe, adj: &[u16]) -> bool {
+    recipe
+        .required
+        .iter()
+        .all(|(id, count)| count_kind(inv, *id) >= *count)
+        && recipe.stations.iter().all(|t| adj.contains(t))
+}
+
+/// Consume the ingredients (single pass, `ConsumeItemsFrom` semantics) and
+/// return the created `(item id, stack)`. Giving the result to the inventory
+/// (or dropping it when full — vanilla drops, `Item.giveItem`) is the
+/// caller's duty; the full-inventory case still crafts, like the original.
+pub(crate) fn try_craft(
+    inv: &mut [ItemSlot; INV],
+    recipe: &Recipe,
+    adj: &[u16],
+) -> Option<(u16, u32)> {
+    if !can_craft(inv, recipe, adj) {
+        return None;
+    }
+    for (id, count) in recipe.required {
+        consume_kind(inv, *id, *count);
+    }
+    Some(recipe.create)
+}
+
+#[cfg(test)]
+mod craft_actions_tests {
+    use super::*;
+    use crate::item::{slot_for_pickup, ItemSlot, INV};
+    use crate::player::Player;
+    use tr_core::tile::FLAG_ACTIVE;
+    use tr_core::World;
+
+    fn inv_with(entries: &[(u16, u32)]) -> [ItemSlot; INV] {
+        let mut inv = [crate::item::EMPTY_SLOT; INV];
+        for (id, count) in entries {
+            let mut left = *count;
+            while left > 0 {
+                let i = slot_for_pickup(&mut inv, *id).expect("fixture overflow");
+                let add = left.min(999 - inv[i].count);
+                inv[i].count += add;
+                left -= add;
+            }
+        }
+        inv
+    }
+
+    fn recipe_by_create(create: u16) -> &'static Recipe {
+        RECIPES.iter().find(|r| r.create.0 == create).unwrap()
+    }
+
+    fn world_with_station(x: i32, y: i32) -> World {
+        let mut w = World::new("t".into(), 40, 40);
+        let i = w.index(x, y);
+        w.tiles[i].kind = 18; // WorkBench tile
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w
+    }
+
+    #[test]
+    fn test_dw_2_1_can_craft_cases() {
+        // Work Bench (10x Wood, by hand): enough wood -> true.
+        let inv = inv_with(&[(9, 10)]);
+        let wb = recipe_by_create(36);
+        assert!(can_craft(&inv, wb, &[]));
+        // Not enough wood -> false.
+        let inv = inv_with(&[(9, 9)]);
+        assert!(!can_craft(&inv, wb, &[]));
+        // Torch needs Gel + Wood: only wood -> false; both -> true (by hand).
+        let torch = recipe_by_create(8);
+        let inv = inv_with(&[(9, 1)]);
+        assert!(!can_craft(&inv, torch, &[]));
+        let inv = inv_with(&[(9, 1), (23, 1)]);
+        assert!(can_craft(&inv, torch, &[]));
+    }
+
+    #[test]
+    fn test_dw_2_2_try_craft_consumes_and_returns() {
+        // Wood spread across three slots (4 + 4 + 2): a 10x-wood recipe
+        // consumes all three, exact amounts.
+        let mut inv = inv_with(&[(9, 4)]);
+        inv[1] = ItemSlot { kind: 9, name: "Wood", count: 4 };
+        inv[2] = ItemSlot { kind: 9, name: "Wood", count: 2 };
+        let wb = recipe_by_create(36);
+        assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
+        assert_eq!(count_kind(&inv, 9), 0);
+        // The created stack is the caller's to give.
+        assert_eq!(wb.create, (36, 1));
+    }
+
+    #[test]
+    fn test_dw_2_3_adjacent_tiles_semantics() {
+        let w = world_with_station(18, 18);
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0; // tile 20: region x 15..=26, y 17..=18+
+        p.y = 20.0 * 16.0;
+        let adj = adjacent_tiles(&w, &p);
+        assert!(adj.contains(&18), "work bench adjacent: {:?}", adj);
+        // Far away: the station is out of the region.
+        let w2 = world_with_station(35, 30);
+        let adj2 = adjacent_tiles(&w2, &p);
+        assert!(!adj2.contains(&18), "{:?}", adj2);
+    }
+
+    #[test]
+    fn test_dw_2_4_station_gate_and_dirty_inputs() {
+        // Iron Bar requires a furnace adjacent: without one, no craft even
+        // with the ingredient present.
+        let inv = inv_with(&[(11, 3)]);
+        let bar = recipe_by_create(22);
+        assert!(!can_craft(&inv, bar, &[]));
+        assert!(can_craft(&inv, bar, &[17]));
+        // Empty inventory: cannot craft anything.
+        let inv = [crate::item::EMPTY_SLOT; INV];
+        assert!(!can_craft(&inv, recipe_by_create(36), &[]));
+        // Two different ingredients at once (torch: gel + wood).
+        let mut inv = inv_with(&[(23, 1)]);
+        let torch = recipe_by_create(8);
+        assert!(!can_craft(&inv, torch, &[]));
+        slot_for_pickup(&mut inv, 9);
+        inv.iter_mut().find(|s| s.kind == 9).unwrap().count = 1;
+        assert!(can_craft(&inv, torch, &[]));
+    }
+
+    #[test]
+    fn test_dw_2_5_full_inventory_still_crafts() {
+        // Fill every slot with stone, keep 10 wood in the first slot: the
+        // work bench still crafts (the result-drop duty is the caller's, like
+        // vanilla `Item.giveItem` dropping on the ground).
+        let mut inv = inv_with(&[(9, 10)]);
+        for slot in inv.iter_mut().skip(1) {
+            *slot = ItemSlot { kind: 3, name: "Stone Block", count: 999 };
+        }
+        let wb = recipe_by_create(36);
+        assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
     }
 }
