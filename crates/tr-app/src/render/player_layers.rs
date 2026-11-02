@@ -52,6 +52,94 @@ pub(crate) struct LayerSprite {
     pub(crate) rotation: f32,
 }
 
+/// `Player.CompositeArmStretchAmount` (`Player.cs`, рядом с
+/// `CompositeArmData:219`): how far the composite arm stretches.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CompositeStretch {
+    Full,
+    ThreeQuarters,
+    Quarter,
+    None,
+}
+
+impl CompositeStretch {
+    /// The sheet row of the stretch (`PlayerDrawSet.cs:2254-2268`):
+    /// Full→0, ThreeQuarters→1, Quarter→2, None→3.
+    fn row(self) -> u32 {
+        match self {
+            CompositeStretch::Full => 0,
+            CompositeStretch::ThreeQuarters => 1,
+            CompositeStretch::Quarter => 2,
+            CompositeStretch::None => 3,
+        }
+    }
+}
+
+/// `Player.CompositeArmData` (`Player.cs:219`): the per-arm composite state —
+/// `enabled` switches the arm onto the composite sheet columns
+/// (front 7 / back 8) at the stretch row, with `rotation` applied around the
+/// composite pivot; disabled arms keep the per-body-frame cells.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct CompositeArmState {
+    pub(crate) enabled: bool,
+    pub(crate) stretch: CompositeStretch,
+    pub(crate) rotation: f32,
+}
+
+impl CompositeArmState {
+    /// The disabled arm — per-body-frame cells, no rotation.
+    pub(crate) const DISABLED: CompositeArmState = CompositeArmState {
+        enabled: false,
+        stretch: CompositeStretch::None,
+        rotation: 0.0,
+    };
+}
+
+/// `PlayerDrawSet.UpdateCompositeArm` (`PlayerDrawSet.cs:2246-2271`): an
+/// enabled arm frames from the composite column — front `targetX` 7, back 8
+/// (`:2035-2036`) — at the stretch row, rotating by `data.rotation`; a
+/// disabled arm keeps the body-frame cell (`front_arm_cell` / `back_arm_cell`,
+/// the `frameIndex.Y = frameIndex2.Y + 2` of `:2034`) and does not rotate.
+pub(crate) fn update_composite_arm(
+    data: CompositeArmState,
+    frame: u32,
+    is_back: bool,
+) -> ((u32, u32), f32) {
+    match data.enabled {
+        true => {
+            let column = if is_back { 8 } else { 7 };
+            ((column, data.stretch.row()), data.rotation)
+        }
+        false => {
+            let cell = if is_back {
+                back_arm_cell(frame)
+            } else {
+                front_arm_cell(frame)
+            };
+            (cell, 0.0)
+        }
+    }
+}
+
+/// `PlayerDrawLayers.GetCompositeOffset_BackArm` (`PlayerDrawLayers.cs:4082-4085`):
+/// (+6, +2) before the direction mirror.
+pub(crate) const COMPOSITE_PIVOT_BACK: [f32; 2] = [6.0, 2.0];
+
+/// `PlayerDrawLayers.GetCompositeOffset_FrontArm` (`:4087-4090`): (−5, 0)
+/// before the mirror.
+pub(crate) const COMPOSITE_PIVOT_FRONT: [f32; 2] = [-5.0, 0.0];
+
+/// The pivot offset with `GetCompositeOffset_*`'s direction mirror applied
+/// (X flips with `direction`, Y with `gravDir` — gravDir is always 1 here).
+pub(crate) fn composite_pivot(is_back: bool, dir: f32) -> [f32; 2] {
+    let raw = if is_back {
+        COMPOSITE_PIVOT_BACK
+    } else {
+        COMPOSITE_PIVOT_FRONT
+    };
+    [raw[0] * dir, raw[1]]
+}
+
 /// The per-frame inputs every layer builder reads (parameter object — the
 /// cc-routine-and-class-design 7±2 cap).
 #[derive(Clone, Copy, Debug)]
@@ -75,6 +163,10 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) item_size: [f32; 2],
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
+    /// `Player.compositeFrontArm` (`Player.cs:1906`).
+    pub(crate) front_arm: CompositeArmState,
+    /// `Player.compositeBackArm`.
+    pub(crate) back_arm: CompositeArmState,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -206,36 +298,43 @@ fn tint(c: [f32; 3], part: [f32; 3]) -> [f32; 4] {
 
 /// The sprite box: every player part is the 40x56 sheet frame anchored at
 /// `(x - 10, y - 10)` so it straddles the 20x42 hitbox like the original.
-fn part_sprite(
-    part: PlayerPart,
-    uv: [f32; 4],
-    s: &PlayerCompositeState,
-    color: [f32; 4],
-    y_shift: f32,
-) -> LayerSprite {
-    LayerSprite {
-        part,
-        pos: [s.origin[0], s.origin[1] + s.gfx_off_y + y_shift],
-        size: [40.0, 56.0],
-        uv,
-        color,
-        rotation: 0.0,
-    }
-}
-
 /// One body part, skipped when its sheet is missing (`Main.spriteBatch.Draw`
 /// ignores null textures — DW-2.5's dirty case).
+/// The sprite top-left for one part: the 40x56 box at `origin + shift`, or —
+/// when a composite pivot offset and rotation are given — rotated around
+/// `center + offset` (XNA rotates around the draw origin; at rotation 0 this
+/// collapses to the plain top-left).
+fn part_pos(s: &PlayerCompositeState, shift: f32, pivot_offset: [f32; 2], rotation: f32) -> [f32; 2] {
+    // `LegacyPlayerRenderer` receives the player at
+    // `position + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`).
+    let base_pos = [s.origin[0], s.origin[1] + s.gfx_off_y + shift];
+    let origin_c = [20.0 + pivot_offset[0], 28.0 + pivot_offset[1]];
+    let pivot_pos = [base_pos[0] + origin_c[0], base_pos[1] + origin_c[1]];
+    let (sin, cos) = rotation.sin_cos();
+    [
+        pivot_pos[0] - (origin_c[0] * cos - origin_c[1] * sin),
+        pivot_pos[1] - (origin_c[0] * sin + origin_c[1] * cos),
+    ]
+}
+
 fn push_part(
     out: &mut Vec<LayerSprite>,
     part: PlayerPart,
     tex: Option<BgTex>,
     uv: impl Fn(&BgTex) -> [f32; 4],
-    s: &PlayerCompositeState,
+    pos: [f32; 2],
+    rotation: f32,
     color: [f32; 4],
-    shift: f32,
 ) {
     if let Some(tex) = tex {
-        out.push(part_sprite(part, uv(&tex), s, color, shift));
+        out.push(LayerSprite {
+            part,
+            pos,
+            size: [40.0, 56.0],
+            uv: uv(&tex),
+            color,
+            rotation,
+        });
     }
 }
 
@@ -253,28 +352,36 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::TorsoSkin,
         a.torso,
         |t| flip_uv(player_cell_uv(t, torso_cell(s.body_frame).0, torso_cell(s.body_frame).1), flip),
-        s,
+        part_pos(s, shift, [0.0, 0.0], 0.0),
+        0.0,
         tint(s.light, SKIN),
-        shift,
     );
     push_part(
         &mut out,
         PlayerPart::LegsSkin,
         a.legs,
         |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        s,
-        tint(s.light, SKIN),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, SKIN),
     );
-    let (bc, br) = back_arm_cell(s.body_frame);
+    // `UpdateCompositeArm` (`PlayerDrawSet.cs:2246`): the back arm switches to
+    // the composite column (8, stretch row) and rotation when enabled.
+    let (back_cell, back_rotation) = update_composite_arm(s.back_arm, s.body_frame, true);
+    let back_pos = part_pos(
+        s,
+        shift,
+        composite_pivot(true, s.facing),
+        back_rotation,
+    );
     push_part(
         &mut out,
         PlayerPart::BackArmSkin,
         a.arm,
-        |t| flip_uv(player_cell_uv(t, bc, br), flip),
-        s,
+        |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
+        back_pos,
+        back_rotation,
         tint(s.light, SKIN),
-        shift,
     );
     // `DrawPlayer_12_SkinComposite_BackArmShirt`: under-skin arm layer (5) and
     // shirt sleeve (13); the undershirt-tinted `Players[8]` pass is skipped —
@@ -283,19 +390,19 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         &mut out,
         PlayerPart::BackUnder,
         a.undershirt,
-        |t| flip_uv(player_cell_uv(t, bc, br), flip),
-        s,
+        |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
+        back_pos,
+        back_rotation,
         tint(s.light, SKIN),
-        shift,
     );
     push_part(
         &mut out,
         PlayerPart::BackSleeve,
         a.arm_shirt,
-        |t| flip_uv(player_cell_uv(t, bc, br), flip),
-        s,
+        |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
+        back_pos,
+        back_rotation,
         tint(s.light, SHIRT),
-        shift,
     );
     // 13_Leggings / 14_Shoes ride the leg frame without the shift.
     push_part(
@@ -303,18 +410,18 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Pants,
         a.pants,
         |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        s,
-        tint(s.light, PANTS),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, PANTS),
     );
     push_part(
         &mut out,
         PlayerPart::Shoes,
         a.shoes,
         |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
-        s,
-        tint(s.light, SHOES),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, SHOES),
     );
     // 17_TorsoComposite: the shirt over the (already drawn) skin torso.
     push_part(
@@ -322,9 +429,9 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Shirt,
         a.shirt,
         |t| flip_uv(player_cell_uv(t, torso_cell(s.body_frame).0, torso_cell(s.body_frame).1), flip),
-        s,
+        part_pos(s, shift, [0.0, 0.0], 0.0),
+        0.0,
         tint(s.light, SHIRT),
-        shift,
     );
     // 21_Head: head, eye whites, eyes, hair.
     push_part(
@@ -332,43 +439,77 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         PlayerPart::Head,
         a.head,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        s,
-        tint(s.light, SKIN),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, SKIN),
     );
     push_part(
         &mut out,
         PlayerPart::EyeWhites,
         a.eye_whites,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        s,
-        tint(s.light, EYE_WHITE),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, EYE_WHITE),
     );
     push_part(
         &mut out,
         PlayerPart::Eyes,
         a.eyes,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        s,
-        tint(s.light, EYES),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, EYES),
     );
     push_part(
         &mut out,
         PlayerPart::Hair,
         a.hair,
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
-        s,
-        tint(s.light, HAIR),
+        part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
+        tint(s.light, HAIR),
     );
     out
 }
 
 /// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
 /// (`PlayerDrawLayers.cs:3661-3706`, `Players[8]` skipped — no starter colour).
-fn arm_stack(s: &PlayerCompositeState, a: &PlayerAssets, base: PlayerPart, cell: (u32, u32)) -> Vec<LayerSprite> {
+/// The stand-in for `ItemCheck_ApplyUseStyle`'s composite-arm rule
+/// (`Player.cs:50679`, M2-ANIM's territory): while the swing timer runs, the
+/// front arm is enabled — `Full` stretch mid-swing, `ThreeQuarters` at the
+/// edges — rotating along the swing arc. Idle returns the disabled arm.
+pub(crate) fn swing_stand_in(swing: f32, facing: f32) -> CompositeArmState {
+    if swing <= 0.0 {
+        return CompositeArmState::DISABLED;
+    }
+    let progress = 1.0 - (swing / crate::item::SWING_TIME).clamp(0.0, 1.0);
+    let stretch = if (0.25..=0.75).contains(&progress) {
+        CompositeStretch::Full
+    } else {
+        CompositeStretch::ThreeQuarters
+    };
+    CompositeArmState {
+        enabled: true,
+        stretch,
+        rotation: (-1.7 + progress * 2.5) * facing,
+    }
+}
+
+/// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
+/// (`PlayerDrawLayers.cs:3661-3706`, `Players[8]` skipped — no starter colour).
+/// `cell`/`rotation` come from `update_composite_arm`; a rotation pivots the
+/// sprite around `center + composite_pivot` (XNA rotates around the draw
+/// origin — `pos = pivot − R·(size/2 + offset)`; at rotation 0 this collapses
+/// to the plain top-left, so disabled arms render exactly as before).
+fn arm_stack(
+    s: &PlayerCompositeState,
+    a: &PlayerAssets,
+    base: PlayerPart,
+    cell: (u32, u32),
+    rotation: f32,
+    pivot_offset: [f32; 2],
+) -> Vec<LayerSprite> {
     let flip = s.facing < 0.0;
     let shift = headgear_composite_shift(s.body_frame);
     let shoulder = base == PlayerPart::FrontShoulderSkin;
@@ -400,11 +541,11 @@ fn arm_stack(s: &PlayerCompositeState, a: &PlayerAssets, base: PlayerPart, cell:
         };
         out.push(LayerSprite {
             part,
-            pos: [s.origin[0], s.origin[1] + shift],
+            pos: part_pos(s, shift, pivot_offset, rotation),
             size: [40.0, 56.0],
             uv: flip_uv(player_cell_uv(&tex, cell.0, cell.1), flip),
             color,
-            rotation: 0.0,
+            rotation,
         });
     }
     out
@@ -415,8 +556,26 @@ fn arm_stack(s: &PlayerCompositeState, a: &PlayerAssets, base: PlayerPart, cell:
 /// first when `compShoulderOverFrontArm` (default true), shoulder first
 /// otherwise.
 pub(crate) fn front_arm_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
-    let arm = arm_stack(s, a, PlayerPart::FrontArmSkin, front_arm_cell(s.body_frame));
-    let shoulder = arm_stack(s, a, PlayerPart::FrontShoulderSkin, FRONT_SHOULDER_CELL);
+    // `28_ArmOverItemComposite`: the arm stack rotates by
+    // `compositeFrontArm.rotation` around the front pivot; the shoulder stack
+    // keeps the plain body rotation.
+    let (cell, rotation) = update_composite_arm(s.front_arm, s.body_frame, false);
+    let arm = arm_stack(
+        s,
+        a,
+        PlayerPart::FrontArmSkin,
+        cell,
+        rotation,
+        composite_pivot(false, s.facing),
+    );
+    let shoulder = arm_stack(
+        s,
+        a,
+        PlayerPart::FrontShoulderSkin,
+        FRONT_SHOULDER_CELL,
+        0.0,
+        composite_pivot(false, s.facing),
+    );
     let mut out = Vec::with_capacity(6);
     if shoulder_over_front_arm(s.body_frame) {
         out.extend(arm);
@@ -699,6 +858,185 @@ mod tests {
         assert_eq!(BACK_SHOULDER_CELL, (1, 1));
     }
 
+    #[test]
+    fn test_dw_1_1_enabled_cells() {
+        // An enabled arm frames from the composite column — front 7, back 8 —
+        // at the stretch row (`PlayerDrawSet.cs:2254-2268`, targetX `:2035-2036`).
+        let data = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.5,
+        };
+        assert_eq!(update_composite_arm(data, 0, false), ((7, 0), 0.5));
+        assert_eq!(update_composite_arm(data, 0, true), ((8, 0), 0.5));
+        let stretches = [
+            (CompositeStretch::Full, 0),
+            (CompositeStretch::ThreeQuarters, 1),
+            (CompositeStretch::Quarter, 2),
+            (CompositeStretch::None, 3),
+        ];
+        for (stretch, row) in stretches {
+            let d = CompositeArmState {
+                enabled: true,
+                stretch,
+                rotation: 0.0,
+            };
+            assert_eq!(update_composite_arm(d, 3, false).0, (7, row));
+        }
+    }
+
+    #[test]
+    fn test_dw_1_2_disabled_frame_cells() {
+        // Disabled arms keep the body-frame cells and do not rotate — the
+        // M2-DRAW-1 behaviour (`PlayerDrawSet.cs:2269-2270`, `:2034`).
+        let disabled = CompositeArmState::DISABLED;
+        assert_eq!(
+            update_composite_arm(disabled, 0, false),
+            (front_arm_cell(0), 0.0)
+        );
+        assert_eq!(
+            update_composite_arm(disabled, 7, true),
+            (back_arm_cell(7), 0.0)
+        );
+        assert_eq!(front_arm_cell(0), (2, 0));
+        assert_eq!(back_arm_cell(7), (4, 3));
+    }
+
+    #[test]
+    fn test_dw_1_3_pivots_and_mirror() {
+        // Raw constants (`PlayerDrawLayers.cs:4082-4090`).
+        assert_eq!(COMPOSITE_PIVOT_BACK, [6.0, 2.0]);
+        assert_eq!(COMPOSITE_PIVOT_FRONT, [-5.0, 0.0]);
+        // `GetCompositeOffset_*` mirror X by direction, Y stays.
+        assert_eq!(composite_pivot(true, 1.0), [6.0, 2.0]);
+        assert_eq!(composite_pivot(true, -1.0), [-6.0, 2.0]);
+        assert_eq!(composite_pivot(false, 1.0), [-5.0, 0.0]);
+        assert_eq!(composite_pivot(false, -1.0), [5.0, 0.0]);
+    }
+
+    #[test]
+    fn test_dw_2_1_enabled_arm_cells_and_rotation() {
+        let a = fixture();
+        let mut s = state();
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.75,
+        };
+        s.back_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Quarter,
+            rotation: -0.4,
+        };
+        // Front arm: composite column 7 of the 9-column sheet.
+        let layers = front_arm_layers(&s, &a);
+        let arm = layers
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        assert!((arm.rotation - 0.75).abs() < 1e-6);
+        assert!((arm.uv[0] - 7.0 / 9.0).abs() < 1e-4, "{:?}", arm.uv);
+        assert!((arm.uv[2] - 8.0 / 9.0).abs() < 1e-4);
+        // Back arm: composite column 8.
+        let body = body_layers(&s, &a);
+        let back = body
+            .iter()
+            .find(|l| l.part == PlayerPart::BackArmSkin)
+            .unwrap();
+        assert!((back.rotation - -0.4).abs() < 1e-6);
+        assert!((back.uv[0] - 8.0 / 9.0).abs() < 1e-4, "{:?}", back.uv);
+    }
+
+    #[test]
+    fn test_dw_2_2_pivot_math() {
+        let a = fixture();
+        let mut s = state();
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.75,
+        };
+        let layers = front_arm_layers(&s, &a);
+        let arm = layers
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        // pivot = center + front offset = (100+20-5, 200+28+0);
+        // origin_c = (20-5, 28); pos = pivot - R*origin_c.
+        let (sin, cos) = 0.75f32.sin_cos();
+        let expected = [
+            115.0 - (15.0 * cos - 28.0 * sin),
+            228.0 - (15.0 * sin + 28.0 * cos),
+        ];
+        assert!((arm.pos[0] - expected[0]).abs() < 1e-4, "{:?}", arm.pos);
+        assert!((arm.pos[1] - expected[1]).abs() < 1e-4);
+        // rotation = 0 collapses to the plain top-left.
+        s.front_arm.rotation = 0.0;
+        let layers0 = front_arm_layers(&s, &a);
+        let arm0 = layers0
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        assert_eq!(arm0.pos, [100.0, 200.0]);
+    }
+
+    #[test]
+    fn test_dw_2_3_idle_parity() {
+        let a = fixture();
+        let s = state();
+        // Disabled arms: every sprite sits at the plain top-left with no
+        // rotation — the M2-DRAW-1 geometry, untouched.
+        for l in body_layers(&s, &a)
+            .iter()
+            .chain(front_arm_layers(&s, &a).iter())
+        {
+            assert_eq!(l.rotation, 0.0, "{:?}", l.part);
+            assert_eq!(l.pos, [100.0, 200.0], "{:?}", l.part);
+        }
+    }
+
+    #[test]
+    fn test_dw_2_4_swing_stand_in() {
+        // Mid-swing: Full stretch; the edges: ThreeQuarters; idle: disabled.
+        let mid = swing_stand_in(crate::item::SWING_TIME * 0.5, 1.0);
+        assert!(mid.enabled);
+        assert_eq!(mid.stretch, CompositeStretch::Full);
+        assert!((mid.rotation - (-1.7 + 0.5 * 2.5)).abs() < 1e-5);
+        let edge = swing_stand_in(crate::item::SWING_TIME, 1.0);
+        assert_eq!(edge.stretch, CompositeStretch::ThreeQuarters);
+        assert_eq!(swing_stand_in(0.0, 1.0), CompositeArmState::DISABLED);
+    }
+
+    #[test]
+    fn test_dw_2_5_enabled_dirty_inputs() {
+        let a = fixture();
+        // Enabled arm with missing textures: nothing is pushed.
+        let mut s = state();
+        s.front_arm = CompositeArmState {
+            enabled: true,
+            stretch: CompositeStretch::Full,
+            rotation: 0.75,
+        };
+        let empty = PlayerAssets::default();
+        assert!(front_arm_layers(&s, &empty).is_empty());
+        // facing -1 mirrors the pivot: pivot x = origin + 20 + 5.
+        let mut sm = state();
+        sm.facing = -1.0;
+        sm.front_arm = s.front_arm;
+        let layersm = front_arm_layers(&sm, &a);
+        let arm = layersm
+            .iter()
+            .find(|l| l.part == PlayerPart::FrontArmSkin)
+            .unwrap();
+        let (sin, cos) = 0.75f32.sin_cos();
+        let expected = [
+            125.0 - (25.0 * cos - 28.0 * sin),
+            228.0 - (25.0 * sin + 28.0 * cos),
+        ];
+        assert!((arm.pos[0] - expected[0]).abs() < 1e-4, "{:?}", arm.pos);
+        assert!((arm.pos[1] - expected[1]).abs() < 1e-4);
+    }
+
     fn sheet() -> BgTex {
         BgTex {
             uv: [0.0, 0.0, 1.0, 1.0],
@@ -736,6 +1074,8 @@ mod tests {
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
+            front_arm: CompositeArmState::DISABLED,
+            back_arm: CompositeArmState::DISABLED,
         }
     }
 

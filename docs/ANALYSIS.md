@@ -739,6 +739,28 @@ biome and hardmode spread are not generated; the original generator remains an M
 
 ## Player (M2 first pass)
 
+### Composite arm rotation (M2-DRAW-2)
+
+The layer builders consume `Player.CompositeArmData` (`Player.cs:219`): an enabled
+arm frames from the composite columns — front 7 / back 8 — at the stretch row
+(Full/ThreeQuarters/Quarter/None → 0-3, `PlayerDrawSet.cs:2246-2271`) and rotates
+around `center + GetCompositeOffset_*` (front (−5, 0), back (+6, +2),
+`PlayerDrawLayers.cs:4082-4090`). Deviations:
+
+- The rotation **source** is a stand-in: `swing_stand_in` enables the front arm
+  during the swing arc (`Full` mid-swing, `ThreeQuarters` at the edges). The
+  vanilla angles live in `ItemCheck_ApplyUseStyle` (`Player.cs:50679`) and
+  `AnimatePlayerAndGetItemFrame` (`:43372`) — M2-ANIM's territory; the builders
+  consume whatever the state carries, so M2-ANIM only replaces the source.
+- The XNA draw-origin semantics map to our top-left rotation pipeline as
+  `pos = pivot − R·(size/2 + offset)`; at rotation 0 this collapses to the plain
+  top-left, so disabled arms render exactly as M2-DRAW-1 did (pinned by
+  `test_dw_2_3_idle_parity`).
+- The back-arm composite activates only from state (`back_arm.enabled`); the
+  starter never enables it (the vanilla back-arm composites are hold-style/pet
+  poses — M2-ANIM/M3-EQUIP).
+- `missingArm`/`missingHand` skin passes and `gravDir = -1` are not modelled.
+
 ### Layer builders (M2-DRAW-1)
 
 The player composition is pure data: `render/player_layers.rs` builds a
