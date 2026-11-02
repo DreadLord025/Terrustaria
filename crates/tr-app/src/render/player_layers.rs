@@ -58,6 +58,11 @@ pub(crate) struct LayerSprite {
 pub(crate) struct PlayerCompositeState {
     /// Top-left of the 40x56 sprite box (`player.x - 10, player.y - 10`).
     pub(crate) origin: [f32; 2],
+    /// `Player.gfxOffY`: the step/slope visual ease. `LegacyPlayerRenderer`
+    /// receives the player at `position + (0, gfxOffY)`
+    /// (`LegacyPlayerRenderer.cs:457,468`), so every body part and the held
+    /// item anchor ride it — without it the sprite pops vertically on steps.
+    pub(crate) gfx_off_y: f32,
     pub(crate) leg_frame: u32,
     pub(crate) body_frame: u32,
     pub(crate) facing: f32,
@@ -210,7 +215,7 @@ fn part_sprite(
 ) -> LayerSprite {
     LayerSprite {
         part,
-        pos: [s.origin[0], s.origin[1] + y_shift],
+        pos: [s.origin[0], s.origin[1] + s.gfx_off_y + y_shift],
         size: [40.0, 56.0],
         uv,
         color,
@@ -423,12 +428,110 @@ pub(crate) fn front_arm_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Ve
     out
 }
 
+/// `Player.ItemCheck` useStyle-1 swing rotation (`Player.cs:50848`):
+/// `itemRotation = (itemAnimation / itemAnimationMax - 0.5) * (-direction) * 3.5
+/// - direction * 0.3`. `itemAnimation` counts down from `itemAnimationMax`, so
+/// `remaining` is 1 at the swing start (arm raised behind, `-2.05·dir`) and 0
+/// at the end (forward-down, `+1.45·dir`) — a 3.5 rad sweep.
+fn item_rotation(remaining: f32, direction: f32) -> f32 {
+    (remaining - 0.5) * -direction * 3.5 - direction * 0.3
+}
+
+/// `Player.ItemCheck` useStyle-1 `itemLocation` thirds
+/// (`Player.cs:50709-50846`): the anchor the held item pivots around, per
+/// animation third, offset from `position + (width/2, y)`. The `num` tables
+/// are the C# cascades over the held item's frame size. The
+/// `UsesBetterMeleeItemLocation` nudge (`Player.cs:50844`) is not applied —
+/// no ported item belongs to that set.
+fn item_location(
+    remaining: f32,
+    direction: f32,
+    pos_x: f32,
+    pos_y: f32,
+    frame_w: f32,
+    frame_h: f32,
+) -> [f32; 2] {
+    let half = frame_w * 0.5;
+    let (num_x, loc_y) = if remaining >= 0.666 {
+        // First third (`Player.cs:50709-50734`): X `10 / >32:14 / >=52:24 /
+        // >=64:28 / >=92:38`, Y `position.Y + 24`.
+        let mut num = if frame_w > 32.0 { 14.0 } else { 10.0 };
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        (num, 24.0)
+    } else if remaining >= 0.333 {
+        // Middle third (`:50736-50775`): X `10 / >32:18 / >=52:24 / >=64:28 /
+        // >=92:38`, Y `10 / >32:8 / >52:12 / >64:14`.
+        let mut num = if frame_w > 32.0 { 18.0 } else { 10.0 };
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        let num_y = if frame_h > 64.0 {
+            14.0
+        } else if frame_h > 52.0 {
+            12.0
+        } else if frame_h > 32.0 {
+            8.0
+        } else {
+            10.0
+        };
+        (num, num_y)
+    } else {
+        // Last third (`:50776-50843`): X `6 / >32:14 / >=48:18 / >=52:24 /
+        // >=64:28 / >=92:38` and it *subtracts* `direction`, Y `10 / >52:12 /
+        // >64:14`.
+        let mut num = if frame_w > 32.0 { 14.0 } else { 6.0 };
+        if frame_w >= 48.0 {
+            num = 18.0;
+        }
+        if frame_w >= 52.0 {
+            num = 24.0;
+        }
+        if frame_w >= 64.0 {
+            num = 28.0;
+        }
+        if frame_w >= 92.0 {
+            num = 38.0;
+        }
+        let num_y = if frame_h > 64.0 {
+            14.0
+        } else if frame_h > 52.0 {
+            12.0
+        } else {
+            10.0
+        };
+        (num, num_y)
+    };
+    let x = if remaining < 0.333 {
+        pos_x - (half - num_x) * direction
+    } else {
+        pos_x + (half - num_x) * direction
+    };
+    [x, pos_y + loc_y]
+}
+
 /// `DrawPlayer_27_HeldItem` (`PlayerDrawLayers.cs:3043-3195`): the held item
-/// rotated around the C# grip origin — bottom corner mirrored by direction
-/// (default, `:3161`), `origin.Y = 2` with a quarter-turn for useStyle 8
-/// (`:3181-3188`), `(0.5, 0.4)` of the frame for useStyle 9 (`:3162-3174`).
-/// The rotation itself comes from the swing arc (the M2-ANIM boundary); the
-/// empty hand returns no sprite.
+/// pivots on `itemLocation` — the useStyle-1 thirds from `Player.ItemCheck`
+/// (`Player.cs:50709-50846`) — with rotation `itemRotation`
+/// (`Player.cs:50848`), plus `gfxOffY` (`PlayerDrawSet.cs:368`). The C# draw
+/// origin `(width*0.5 - width*0.5*direction, height)` (`:3161`) plus the
+/// `direction < 0` horizontal flip puts the pivot on the *drawn* sprite's
+/// bottom-left corner in both directions; useStyle 8 thrusts with a
+/// quarter-turn near-top grip (`:3181-3188`) and useStyle 9 holds a bow at
+/// `(0.5, 0.4)` of the frame (`:3162-3174`). The empty hand returns no sprite.
 pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     // Guards of the original (`:3077-3092`), flattened to guard clauses.
     let Some(uv) = s.item_uv else {
@@ -439,10 +542,14 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     }
     let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
     let (w, h) = (s.item_size[0], s.item_size[1]);
+    // `itemAnimation / itemAnimationMax` with the countdown running: `swing`
+    // holds the remaining seconds of the use. `SWING_TIME` stands in for the
+    // per-item `useAnimation` (catalogued deviation; real per-item timings are
+    // the M2-ANIM-item-timings catalog row).
+    let remaining = (s.swing / crate::item::SWING_TIME).clamp(0.0, 1.0);
+    let mut rotation = item_rotation(remaining, dir);
     // `:3161`: `(width*0.5 - width*0.5*direction, height)`.
     let mut origin = [w * 0.5 - w * 0.5 * dir, h];
-    let progress = 1.0 - (s.swing / crate::item::SWING_TIME).clamp(0.0, 1.0);
-    let mut rotation = (-1.7 + progress * 2.5) * dir;
     match s.use_style {
         // `:3181-3188`: thrust — quarter turn, near-top grip.
         8 => {
@@ -454,19 +561,36 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
         9 => origin = [w * 0.5, h * 0.4],
         _ => {}
     }
-    // The pivot is the grip point: `ItemLocation` stands at the hand, so the
-    // sprite's top-left is `pivot - R * origin`.
-    let hand = [s.origin[0] + 10.0 + 5.0 * dir, s.origin[1] + 37.0];
+    // The flip mirrors the texture about the source-rect centre, so the pivot
+    // offset maps into drawn space as `(width - origin.x, origin.y)` — for the
+    // default origin that is the bottom-left corner either way.
+    let mut origin_drawn = origin;
+    if dir < 0.0 {
+        origin_drawn[0] = w - origin[0];
+    }
+    // `drawinfo.ItemLocation = Position + (itemLocation - position)`
+    // (`PlayerDrawSet.cs:368`) and `Position` carries `gfxOffY`
+    // (`LegacyPlayerRenderer.cs:457,468`); `position.X + width/2` is
+    // `origin.x + 20`, `position.Y` is `origin.y + 10`.
+    let loc = item_location(
+        remaining,
+        dir,
+        s.origin[0] + 20.0,
+        s.origin[1] + 10.0,
+        w,
+        h,
+    );
+    let anchor = [loc[0], loc[1] + s.gfx_off_y];
     let (sin, cos) = rotation.sin_cos();
     let top_left = [
-        hand[0] - (origin[0] * cos - origin[1] * sin),
-        hand[1] - (origin[0] * sin + origin[1] * cos),
+        anchor[0] - (origin_drawn[0] * cos - origin_drawn[1] * sin),
+        anchor[1] - (origin_drawn[0] * sin + origin_drawn[1] * cos),
     ];
     vec![LayerSprite {
         part: PlayerPart::HeldItem,
         pos: top_left,
         size: [w, h],
-        uv,
+        uv: flip_uv(uv, dir < 0.0),
         color: [s.light[0], s.light[1], s.light[2], 1.0],
         rotation,
     }]
@@ -603,6 +727,7 @@ mod tests {
     fn state() -> PlayerCompositeState {
         PlayerCompositeState {
             origin: [100.0, 200.0],
+            gfx_off_y: 0.0,
             leg_frame: 0,
             body_frame: 0,
             facing: 1.0,
@@ -687,40 +812,54 @@ mod tests {
     fn test_dw_2_4_held_item_origins() {
         use std::f32::consts::FRAC_PI_2;
         let a = fixture();
-        // Default: origin is the bottom corner mirrored by direction (`:3161`),
-        // rotation from the swing arc (progress 0 at full swing).
+        // Default useStyle 1 at the swing start (`swing = SWING_TIME`,
+        // `remaining = 1`): `itemRotation = (1 - 0.5) * (-1) * 3.5 - 0.3 =
+        // -2.05` (`Player.cs:50848`); `itemLocation` first third for a 16x16
+        // frame = `position + (8 - 10, 24)` = (100+20-2, 200+10+24) =
+        // (118, 234) (`Player.cs:50709-50734`); grip origin `(0, 16)`
+        // (`PlayerDrawLayers.cs:3161`).
         let mut s = state();
         s.swing = crate::item::SWING_TIME;
         s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
-        let dir = 1.0f32;
-        let rotation = -1.7 * dir;
+        let rotation = -2.05f32;
         let (sin, cos) = rotation.sin_cos();
-        // hand = (115, 237); origin = (0, 16).
-        let expected = [
-            115.0 - (0.0 * cos - 16.0 * sin),
-            237.0 - (0.0 * sin + 16.0 * cos),
-        ];
+        let expected = [118.0 + 16.0 * sin, 234.0 - 16.0 * cos];
         let item = &held_item_layers(&s)[0];
         assert!((item.pos[0] - expected[0]).abs() < 1e-4, "{:?}", item.pos);
         assert!((item.pos[1] - expected[1]).abs() < 1e-4, "{:?}", item.pos);
         assert!((item.rotation - rotation).abs() < 1e-5);
 
-        // useStyle 8: quarter turn, `origin.Y = 2`, `origin.X += 2*dir`.
+        // The gfxOffY ease rides the anchor (`PlayerDrawSet.cs:368`).
+        let mut sg = s;
+        sg.gfx_off_y = 5.0;
+        let itemg = &held_item_layers(&sg)[0];
+        assert!((itemg.pos[1] - (expected[1] + 5.0)).abs() < 1e-4);
+
+        // useStyle 8: quarter turn, `origin.Y = 2`, `origin.X += 2*dir`
+        // (`PlayerDrawLayers.cs:3181-3188`).
         let mut s8 = s;
         s8.use_style = 8;
-        let rotation8 = -1.7 - FRAC_PI_2 * dir;
+        let rotation8 = -2.05 - FRAC_PI_2;
         let (sin8, cos8) = rotation8.sin_cos();
-        let expected8 = [115.0 - (2.0 * cos8 - 2.0 * sin8), 237.0 - (2.0 * sin8 + 2.0 * cos8)];
+        let expected8 = [118.0 - (2.0 * cos8 - 2.0 * sin8), 234.0 - (2.0 * sin8 + 2.0 * cos8)];
         let item8 = &held_item_layers(&s8)[0];
         assert!((item8.rotation - rotation8).abs() < 1e-5);
         assert!((item8.pos[0] - expected8[0]).abs() < 1e-4);
         assert!((item8.pos[1] - expected8[1]).abs() < 1e-4);
 
-        // useStyle 9: the bow hold `(0.5, 0.4)` of the frame.
+        // useStyle 9: the bow hold `(0.5, 0.4)` of the frame
+        // (`:3162-3174`); the rotation stays the swing sweep.
         let mut s9 = s;
         s9.use_style = 9;
         let item9 = &held_item_layers(&s9)[0];
-        assert!((item9.rotation - -1.7).abs() < 1e-5);
+        assert!((item9.rotation - -2.05).abs() < 1e-5);
+
+        // Facing left mirrors the item UVs and puts the pivot on the drawn
+        // sprite's bottom-left (`origin.x -> width - origin.x`).
+        let mut sl = s;
+        sl.facing = -1.0;
+        let iteml = &held_item_layers(&sl)[0];
+        assert!(iteml.uv[0] > iteml.uv[2], "mirrored item quad {:?}", iteml.uv);
 
         // The slot: the item sits between the body (last part Hair) and the
         // front arm (`LegacyPlayerRenderer.cs:237-239`).

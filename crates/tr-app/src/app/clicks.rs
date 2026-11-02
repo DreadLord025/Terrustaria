@@ -32,15 +32,18 @@ impl App {
             }
             Some((i + j * 10) as usize)
         } else {
+            // `GUIHotbarDrawInner` (`Main.cs:43614-43639`): same per-slot geometry
+            // as the draw pass — row `y` `(int)(20 + 22 * (1 - scale))`, x advance
+            // `(int)(Width * scale) + 4`, hover size the untruncated `Width * scale`
+            // (`ui::slot::closed_hotbar_metrics`).
             let mut x = 20.0;
             for i in 0..HOTBAR {
                 let sc = self.hotbar_scales[i].clamp(0.75, 1.0);
-                let slot = 52.0 * sc;
-                let y = 20.0 + 22.0 * (1.0 - sc);
-                if m.x >= x && m.x <= x + slot && m.y >= y && m.y <= y + slot {
+                let (y, advance, size) = ui::slot::closed_hotbar_metrics(sc);
+                if m.x >= x && m.x <= x + size && m.y >= y && m.y <= y + size {
                     return Some(i);
                 }
-                x += slot + 4.0;
+                x += advance;
             }
             None
         }

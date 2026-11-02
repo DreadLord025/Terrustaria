@@ -1284,6 +1284,29 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
   their menus are not opened, so they show as empty frames.
 
+### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
+
+Both draw through the same `slot::draw_slot` (the `ItemSlot.Draw` port) as the open
+grid: the closed hotbar at context 13 (`GUIHotbarDrawInner`, `Main.cs:43600-43639`) and
+the cursor stack at context 21 (`DrawInterface_38_MouseCarriedObject`,
+`Main.cs:45173-45195`). Remaining deliberate gaps:
+
+* The context-13 **ammo/wand/bait count** (`num22`, `ItemSlot.cs:2577-2691` — the
+  counter that replaces the stack text on bows, wands and fishing poles) is not
+  ported; it needs the `useAmmo`/`bait`/`tileWand` inventory scans the item model
+  does not have yet. Such items show their plain stack instead.
+* `Inventory_Back20` (`ItemSlot.cs:2234-2237`, the white variant for
+  `slot == player.selectedItemState.Hotbar`) and the context-36 override slot
+  (`Main.cs:43641-43649`) are unreachable without `Player.SelectedItemState`
+  overrides, which the port does not model; the selected slot always merges into the
+  `Inventory_Back14` branch.
+* The `Main.DoGlowingMouseItemDraw` shader pass over the cursor item
+  (`Main.cs:45196-45220`) is not ported.
+* `hotbarScale` keeps lerping while the inventory is open; vanilla freezes it because
+  `GUIHotbarDrawInner` early-returns on `Main.playerInventory`
+  (`Main.cs:43588-43591`) and the update lives in that draw pass. The targets
+  (1.0 selected / 0.75 rest) and the `±0.05` rate match (`Main.cs:43604-43611`).
+
 ### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
 
 The modern crafting panel is ported as draw-only chrome at the source's geometry and
@@ -1632,3 +1655,44 @@ Deviations recorded by the refactor and this sweep:
   alpha-blend pipeline cannot express rgb-add at a=0 for partial-alpha tints (the
   furniture/jar colours with a > 0 dim slightly against vanilla's full add). Fully
   a=0 tints (torches) are exact.
+
+## Animations (M2-ANIM-foundation)
+
+The shared primitives live in `crates/tr-core/src/anim.rs` (`FrameCounter` —
+the `frameCounter += speed; while (>= threshold)` idiom of
+`Player.cs:36259-36264` and `NPC.FindFrame`, `wrap_row_band`, the useStyle-1
+thirds, the UI sine pulse). Deviations and ports:
+
+- **Player draw origin** (`render/entities.rs`): the 40x56 frame rides the
+  20x42 hitbox at `(x - 10, y - 10 + gfxOffY)` — the resolution of
+  `PlayerDrawLayers.cs:1150-1153` plus the `LegacyPlayerRenderer.cs:457,468`
+  `position + (0, gfxOffY)` call. `gfxOffY` was previously ignored (the step
+  ease popped vertically) and is now also part of the G6 player render key.
+- **Composite arm cells** follow `PlayerDrawSet.CreateCompositeData`
+  (`PlayerDrawSet.cs:1962-2023`): front arm `(X, Y)` per bodyFrame row, back
+  arm the same column two rows down. The old front-arm cell hardcoded column
+  8 (the composite *back*-arm use column), which mismatched the pose while
+  walking and during useStyle-1 swings.
+- **Item swing** (`Player.cs:50686-50852` + `PlayerDrawLayers.cs:3043-3215`):
+  `itemRotation = (itemAnimation/itemAnimationMax - 0.5) * (-direction) * 3.5
+  - direction * 0.3`, `itemLocation` thirds over the held frame's size, pivot
+  at the drawn sprite's bottom-left. `SWING_TIME` (0.28 s) still stands in for
+  the per-item `useAnimation` — the real timings remain the M2-ANIM-item-timings
+  catalog row. The `UsesBetterMeleeItemLocation` nudge is not applied (no
+  ported item belongs to that set).
+- **NPC.FindFrame** for the four ported kinds now runs in the fixed 60 Hz sim
+  (`world_sim/npcs.rs` state, `npc.rs::find_frame`): slime `NPC.cs:70801-70826`
+  (2 frames, counter doubles while moving), King Slime `:73380-73414`
+  (grounded 0..=3 with the landing squash 4 shown until the first advance;
+  airborne 4 then 5), demon eye `:73994-74057` (2 frames + `rotation =
+  atan2(vy, vx)`, `+ 3.14f` when moving left, frozen while `velocity.X == 0`),
+  zombie `:76324-76389` (walk band 0,1,2,1 at 8/16/24/32 accumulated px;
+  lurch frame 2 while airborne or backpedalling). The old wall-clock
+  `anim * N` frame derivation is gone; `render_key` now hashes the rendered
+  frame and the eye rotation instead of raw `anim` bits, so the G6 cache
+  invalidates exactly when the baked pixels change.
+- `aiAction == 4` (attacking) never fires for these kinds — the third counter
+  tick of the slime/King Slime cases stays out until combat AI lands.
+- The demon-eye draw rotates the quad about its centre (`Main.DrawNPC`
+  origin = frame centre); the mirrored quad's corners are centre-symmetric,
+  so the flip does not move them.
