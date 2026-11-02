@@ -331,7 +331,8 @@ impl Npc {
                 if self.vx > 0.0 {
                     self.rotation = self.vy.atan2(self.vx);
                 } else if self.vx < 0.0 {
-                    self.rotation = self.vy.atan2(self.vx) + std::f32::consts::PI;
+                    // The original adds the literal `3.14f`, not PI.
+                    self.rotation = self.vy.atan2(self.vx) + 3.14;
                 }
             }
             // Case 3 — zombie (`NPC.cs:76324-76389`): falling or moving against
