@@ -95,4 +95,80 @@ mod tests {
             assert_eq!((img.width, img.height), (*w, *h), "{name}");
         }
     }
+
+    /// Pins the tile-flame and tile-glow sheet sizes decoded from the retail
+    /// `.xnb`s (`TILE-DRAW-2`): `TextureAssets.Flames` (`Images/Flame_0..17`,
+    /// `AssetInitializer.cs:382-384`) and the glow sheets
+    /// `DrawSingleTile_Flames` draws (`Images/Glow_{id}` per
+    /// `AssetInitializer.cs:352-354`, plus the named jar/timer sheets). The
+    /// flame pass reads frame coordinates straight off the tile into these
+    /// sheets (`TileDrawing.cs:2722`, `:2832`), so the decoded sizes are the
+    /// pin that keeps the port's frame math and the shipped assets from
+    /// drifting apart — e.g. the torch sheet 132x528 holds the 22 px frame
+    /// grid six columns wide, and the moondial `Glow_335` 36x432 holds eight
+    /// 54 px moon-phase rows.
+    #[test]
+    fn decodes_flame_and_glow_sheets_at_the_pinned_sizes() {
+        let Some(dir) = std::env::var_os("TR_CONTENT") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        let cases: &[(&str, u32, u32)] = &[
+            ("Flame_0", 132, 528),
+            ("Flame_1", 36, 1412),
+            ("Flame_2", 142, 2016),
+            ("Flame_3", 214, 2000),
+            ("Flame_4", 70, 2048),
+            ("Flame_5", 18, 22),
+            ("Flame_6", 34, 34),
+            ("Flame_7", 72, 324),
+            ("Flame_8", 86, 248),
+            ("Flame_9", 54, 378),
+            ("Flame_10", 54, 216),
+            ("Flame_11", 54, 270),
+            ("Flame_12", 54, 648),
+            ("Flame_13", 70, 2014),
+            ("Flame_14", 106, 72),
+            ("Flame_15", 864, 324),
+            ("Flame_16", 18, 22),
+            ("Flame_17", 18, 22),
+            ("Glow_131", 54, 684),
+            ("Glow_291", 108, 36),
+            ("Glow_293", 54, 756),
+            ("Glow_295", 18, 234),
+            ("Glow_296", 36, 468),
+            ("Glow_297", 486, 108),
+            ("Glow_298", 108, 90),
+            ("Glow_299", 324, 108),
+            ("Glow_300", 54, 684),
+            ("Glow_325", 36, 54),
+            ("Glow_334", 48, 58),
+            ("Glow_335", 36, 432),
+            ("FireflyJar", 108, 36),
+            ("LightningBugJar", 108, 36),
+            ("XmasLight", 108, 72),
+            ("Timer", 90, 36),
+            ("SunAltar", 54, 36),
+            ("jellyfishBowl1", 36, 360),
+            ("jellyfishBowl2", 36, 360),
+            ("jellyfishBowl3", 36, 360),
+        ];
+        for (name, w, h) in cases {
+            let img = crate::load_texture(dir.join(format!("Images/{name}.xnb")))
+                .unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!((img.width, img.height), (*w, *h), "{name}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tmp_dump {
+    #[test]
+    fn dump_flame0_tiles4_rgba() {
+        let Some(dir) = std::env::var_os("TR_CONTENT") else { return };
+        let dir = std::path::PathBuf::from(dir);
+        for (name, out) in [("Flame_0", "flame0.rgba"), ("Tiles_4", "tiles4.rgba")] {
+            let img = crate::load_texture(dir.join(format!("Images/{name}.xnb"))).unwrap();
+            std::fs::write(std::path::Path::new(r"C:\Users\DreadLord\Desktop\TR-tile2-tmp").join(out), &img.pixels).unwrap();
+            println!("{name} {}x{}", img.width, img.height);
+        }
+    }
 }

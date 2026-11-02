@@ -203,7 +203,6 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
-    pub(crate) place_cooldown: f32,
     pub(crate) edit_target: Option<(i32, i32)>,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
@@ -256,12 +255,36 @@ pub(crate) struct App {
     pub(crate) waterfall_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
+    /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
+    pub(crate) wind: tr_core::wind::Wind,
+    pub(crate) tree_wind_counter: f32,
+    pub(crate) grass_wind_counter: f32,
+    /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
+    pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
+    /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
+    /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
+    /// waterfall passes consume it. Zeros, like the original's allocation
+    /// (`Main.cs:66805`), so the liquids fade in over the first frames.
+    pub(crate) liquid_alpha: [f32; 15],
     /// World item drops (`Terraria.Item` first pass).
     pub(crate) items: Vec<ItemDrop>,
     pub(crate) item_rng: u64,
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
+    /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
+    /// body-row thirds and the hand key read `swing / swing_max`.
+    pub(crate) swing_max: f32,
+    /// Use-button edges for the non-`autoReuse` gates; refreshed every frame
+    /// like `Player.releaseUseItem` (`Player.cs:42822`).
+    pub(crate) place_prev_down: bool,
+    pub(crate) place_released: bool,
+    pub(crate) mine_prev_down: bool,
+    pub(crate) mine_released: bool,
+    /// `Player.itemTime` in seconds: the action accumulator inside a swing
+    /// (`Player.cs:4416-4418`); placement re-fires whenever it hits zero.
+    pub(crate) item_time: f32,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
     /// Live shuriken/projectile entities.
@@ -844,11 +867,24 @@ impl App {
         for (dx, dy) in [(1, 0), (1, -1)] {
             if let Some(t) = world.tile_mut(x + dx, y + dy) {
                 t.liquid = 255;
+                // `TR_SPOUT_KIND=<0..3>`: the fall's liquid kind (1 = lava) so
+                // the typed waterfall branches and their `AddLight` glow are
+                // screenshotable.
+                let kind_flag = match std::env::var("TR_SPOUT_KIND").as_deref() {
+                    Ok("1") => tr_core::tile::FLAG_LIQUID_LAVA,
+                    Ok("2") => tr_core::tile::FLAG_LIQUID_HONEY,
+                    Ok("3") => tr_core::tile::FLAG_LIQUID_SHIMMER,
+                    _ => 0,
+                };
+                t.flags |= kind_flag;
             }
         }
     }
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
+    let mut wind = tr_core::wind::Wind::new(world_seed as u32);
+    wind.world_surface = world.world_surface;
+    wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
     let liquids_sim = LiquidSystem::new(&world);
     let rain = Rain::new(world_seed);
 
@@ -1005,7 +1041,6 @@ impl App {
         place_down: false,
         mine_target: None,
         mine_timer: 0.0,
-        place_cooldown: 0.0,
         edit_target: None,
         world_path: world_path.clone(),
         dev_break,
@@ -1057,10 +1092,21 @@ impl App {
         waterfall: tr_core::waterfall::WaterfallManager::new(),
         waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
         rain,
+        wind,
+        tree_wind_counter: 0.0,
+        grass_wind_counter: 0.0,
+        leaves: Vec::new(),
+        liquid_alpha: [0.0; 15],
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_step: FixedStepper::new(1.0 / 60.0, 8),
         swing: 0.0,
+        swing_max: 0.0,
+        place_prev_down: false,
+        place_released: false,
+        mine_prev_down: false,
+        mine_released: false,
+        item_time: 0.0,
         coins,
         projectiles: Vec::new(),
         projectile_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -1096,6 +1142,43 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         world.memory_bytes() as f32 / 1e6,
         t0.elapsed().as_secs_f32() * 1000.0
     );
+    // `TR_POOL=tx,ty,w,h,kind`: fill a rectangle with liquid at load (0 water,
+    // 1 lava, 2 honey, 3 shimmer) so the honey/shimmer draw passes and the
+    // waterfall types stay screenshotable without the biomes that produce them.
+    if let Ok(v) = std::env::var("TR_POOL") {
+        let mut it = v.split(',');
+        let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
+        if let Ok(vals) = vals && vals.len() == 5 {
+            let (tx, ty, tw, th, kind) = (
+                vals[0] as i32,
+                vals[1] as i32,
+                vals[2] as i32,
+                vals[3] as i32,
+                vals[4] as i32,
+            );
+            let kind_flag: u8 = match kind {
+                1 => tr_core::tile::FLAG_LIQUID_LAVA,
+                2 => tr_core::tile::FLAG_LIQUID_HONEY,
+                3 => tr_core::tile::FLAG_LIQUID_SHIMMER,
+                _ => 0,
+            };
+            for x in tx..(tx + tw) {
+                for y in ty..(ty + th) {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        // A pure liquid cell: the tile body stays inactive and
+                        // only the liquid byte plus the kind flags are set.
+                        t.kind = 0;
+                        t.flags &= !(tr_core::tile::FLAG_LIQUID_LAVA
+                            | tr_core::tile::FLAG_LIQUID_HONEY
+                            | tr_core::tile::FLAG_LIQUID_SHIMMER);
+                        t.flags |= kind_flag;
+                        t.liquid = 255;
+                    }
+                }
+            }
+            world.revision = world.revision.wrapping_add(1);
+        }
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()

@@ -9,7 +9,7 @@
 //! cells.
 
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 use crate::collision;
 
@@ -488,6 +488,10 @@ impl Player {
         h ^= self.on_ground as u32;
         h ^= self.leg_frame << 8;
         h ^= self.body_frame << 16;
+        // The draw bakes `gfxOffY` into the sprite's screen position
+        // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
+        // invalidate the cached range or the offset animation freezes.
+        h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
         h
     }
 }
@@ -564,7 +568,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
@@ -711,7 +715,10 @@ mod tests {
             let top = if x < 20 { 60 } else { 61 };
             for y in top..100 {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -720,11 +727,19 @@ mod tests {
         w.spawn_x = 10;
         w.spawn_y = 58;
         let mut p = Player::spawn(&w);
-        for _ in 0..120 { p.update(&w, PlayerInput::default()); }
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
         let mut last = p.y + p.gfx_off_y;
         let mut max_step: f32 = 0.0;
         for _ in 0..180 {
-            p.update(&w, PlayerInput { right: true, ..Default::default() });
+            p.update(
+                &w,
+                PlayerInput {
+                    right: true,
+                    ..Default::default()
+                },
+            );
             let vis = p.y + p.gfx_off_y;
             max_step = max_step.max((vis - last).abs());
             last = vis;
@@ -740,7 +755,10 @@ mod tests {
         // `gfxOffY` keeps the sprite at the old height, so the climb is smooth.
         for x in 20..30 {
             let i = w.index(x, 59);
-            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
         let mut p = Player::spawn(&w);
@@ -751,7 +769,13 @@ mod tests {
         let mut max_step: f32 = 0.0;
         let mut stood_on_step = false;
         for _ in 0..240 {
-            p.update(&w, PlayerInput { right: true, ..Default::default() });
+            p.update(
+                &w,
+                PlayerInput {
+                    right: true,
+                    ..Default::default()
+                },
+            );
             let vis = p.y + p.gfx_off_y;
             max_step = max_step.max((vis - last).abs());
             last = vis;

@@ -140,6 +140,10 @@ pub fn load_world_images(
         "Star_1",
         "Star_2",
         "Star_3",
+        // The ambient leaf gores the generated world's trees can shed
+        // (`WorldGen.GetTreeLeaf`: forest grass 910, palm sand 911).
+        "Gore_910",
+        "Gore_911",
         "Player_0_0",
         "Player_0_1",
         "Player_0_2",
@@ -446,6 +450,27 @@ pub fn load_world_images(
         }
     }
 
+    // `TextureAssets.Flames` (`AssetInitializer.cs:382-384`): the tile-flame
+    // overlays `DrawSingleTile_Flames` draws over torches and furniture.
+    for i in 0..18u16 {
+        let name = format!("Flame_{i}");
+        match load_png(dir, &name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing flame sheet {name}"),
+        }
+    }
+
+    // The tile-side glow sheets of `DrawSingleTile_Flames`
+    // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
+    // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the
+    // named single sheets keep their own names.
+    for name in GLOW_SHEET_NAMES {
+        match load_png(dir, name, SheetLayout::Raw) {
+            Ok(img) => images.push(img),
+            Err(_) => log::warn!("missing glow sheet {name}"),
+        }
+    }
+
     if !missing.is_empty() {
         log::warn!(
             "{} world sheets have no matching texture (first 10: {:?})",
@@ -617,6 +642,18 @@ pub struct FrameTex {
     pub opaque: bool,
 }
 
+/// The named glow sheets `DrawSingleTile_Flames` draws besides
+/// `TextureAssets.GlowMask` (`AssetInitializer.cs:312-331`, `:576-577`).
+const GLOW_SHEET_NAMES: &[&str] = &[
+    // `TextureAssets.GlowMask` ids the flame/glow branches use
+    // (`TileDrawing.cs:2686-2825`, `:3463-3491`).
+    "Glow_131", "Glow_291", "Glow_293", "Glow_295", "Glow_296", "Glow_297", "Glow_298",
+    "Glow_299", "Glow_300", "Glow_325", "Glow_334", "Glow_335",
+    // The named single-sheet textures.
+    "GlowSnail", "FireflyJar", "LightningBugJar", "XmasLight", "Timer", "SunAltar",
+    "jellyfishBowl1", "jellyfishBowl2", "jellyfishBowl3",
+];
+
 /// Texture information for one tile type present in the world.
 #[derive(Clone, Debug)]
 pub struct TypeTex {
@@ -677,12 +714,21 @@ pub struct Lookups {
     pub liquid_parts: Vec<Option<tr_render::SheetRect>>,
     /// `Waterfall_0..27` (`WaterfallManager.waterfallTexture`).
     pub waterfalls: [Option<tr_render::SheetRect>; tr_core::waterfall::MAX_TYPES],
+    /// `TextureAssets.Flames` (`Images/Flame_0..17`, `AssetInitializer.cs:382-384`).
+    pub flames: [Option<tr_render::SheetRect>; 18],
+    /// The tile-side glow sheets of `DrawSingleTile_Flames`, keyed by the C#
+    /// texture name (`Images/Glow_{id}` and the named sheets).
+    pub glow_sheets: HashMap<&'static str, tr_render::SheetRect>,
     /// `Rain.png`: 2x40 drop frames at 4 px strides.
     pub rain: Option<tr_render::SheetRect>,
     /// `Dust.png`: 10 px cells, 8 px frames.
     pub dust: Option<tr_render::SheetRect>,
     /// `Projectile_3.png`: the 22x22 shuriken frame.
     pub shuriken: Option<tr_render::SheetRect>,
+    /// The ambient leaf gores the world's trees can shed: `Gore_910`
+    /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
+    /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
+    pub leaf_gores: [Option<tr_render::SheetRect>; 2],
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
@@ -894,10 +940,18 @@ impl Lookups {
             liquid_slopes: vec![None; 15],
             liquid_parts: vec![None; 15],
             waterfalls: [None; tr_core::waterfall::MAX_TYPES],
+            flames: std::array::from_fn(|i| {
+                atlas.sheet(&format!("Flame_{i}")).copied()
+            }),
+            glow_sheets: GLOW_SHEET_NAMES
+                .iter()
+                .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
+                .collect(),
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
@@ -1212,6 +1266,43 @@ impl Lookups {
         ))
     }
 
+    /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
+    /// `Gore_910` (forest) at index 0, `Gore_911` (palm) at index 1; the other
+    /// biome styles load with their biomes.
+    pub fn leaf_sheet(&self, style: u32) -> Option<&tr_render::SheetRect> {
+        let idx = match style {
+            910 => 0,
+            911 => 1,
+            _ => return None,
+        };
+        self.leaf_gores.get(idx).and_then(|s| s.as_ref())
+    }
+
+    /// One leaf frame: the 32-column (paint) x 8-row (variant) strip
+    /// (`Gore.cs:1390-1401`); the port draws column 0 (no paint).
+    pub fn leaf_uv(&self, style: u32, row: u8) -> Option<[f32; 4]> {
+        let sheet = self.leaf_sheet(style)?;
+        let fw = sheet.width / 32;
+        let fh = sheet.height / 8;
+        if fw == 0 || fh == 0 || row as u32 >= 8 {
+            return None;
+        }
+        Some(uv_rect(
+            sheet,
+            self.atlas_size,
+            0,
+            row as i32 * fh as i32,
+            fw,
+            fh,
+        ))
+    }
+
+    /// The pixel frame size of one leaf cell.
+    pub fn leaf_frame(&self, style: u32) -> Option<(f32, f32)> {
+        let sheet = self.leaf_sheet(style)?;
+        Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
+    }
+
     /// UV of the shuriken projectile/item sprite.
     pub fn shuriken_uv(&self) -> Option<[f32; 4]> {
         let rect = self.shuriken.as_ref()?;
@@ -1263,6 +1354,32 @@ impl Lookups {
             source[1],
             source[2] as u32,
             source[3] as u32,
+        ))
+    }
+
+    /// UV of a source rectangle inside `Images/Flame_{sheet}` — the tile-flame
+    /// sheets share the tile's own frame coordinates
+    /// (`TextureAssets.Flames`, `TileDrawing.cs:2722` and peers).
+    pub fn flame_uv(&self, sheet: usize, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.flames.get(sheet)?.as_ref()?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a pixel rect inside a named glow sheet (`Images/Glow_{id}` or one
+    /// of the named single sheets the `DrawSingleTile_Flames` branches use).
+    pub fn glow_uv(&self, name: &str, sx: i32, sy: i32, w: u32, h: u32) -> Option<[f32; 4]> {
+        let rect = self.glow_sheets.get(name)?;
+        Some(uv_rect(rect, self.atlas_size, sx, sy, w, h))
+    }
+
+    /// UV of a whole glow sheet plus its pixel size (the `value.Frame()`
+    /// draws, e.g. the teleporter pulse on `Glow_334`).
+    pub fn glow_frame_uv(&self, name: &str) -> Option<([f32; 4], f32, f32)> {
+        let rect = self.glow_sheets.get(name)?;
+        Some((
+            uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height),
+            rect.width as f32,
+            rect.height as f32,
         ))
     }
 

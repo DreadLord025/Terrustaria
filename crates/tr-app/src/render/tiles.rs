@@ -9,7 +9,7 @@ use crate::npc::Npc;
 use crate::player::{self, Player};
 use crate::render::entities::{draw_npcs, draw_player, flip_uv, NpcAssets, PlayerAssets};
 use crate::render::foliage::draw_tree_foliage;
-use crate::render::liquids::{draw_liquids, draw_tile_liquid_behind, LiquidPass};
+use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
 use std::time::Instant;
@@ -46,6 +46,14 @@ pub(crate) struct DrawScratch {
     next: Vec<[i32; 4]>,
     /// Dark x-runs of the current row.
     cur: Vec<(i32, i32)>,
+    /// The waterfall `AddLight` sources of the previous frame
+    /// (`WaterfallManager.AddLight`): vanilla's light engine consumes the
+    /// previous frame's light list when `LightTiles` runs, so the lights are
+    /// swapped here after each world pass and consumed by the next compute.
+    pub(crate) waterfall_lights: Vec<tr_core::lighting::DynamicLight>,
+    /// The waterfall quads walked this frame (`WaterfallManager.draw`), consumed
+    /// by the tile pass below.
+    pub(crate) waterfall_quads: Vec<tr_core::waterfall::WaterfallDraw>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -138,13 +146,33 @@ pub(crate) fn draw_tiles(
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
+    // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the
+    // remaining use fraction (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
+    held: Option<(u16, f32)>,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
     items: &[ItemDrop],
     remote: &[net::PlayerNet],
     edit_target: Option<(i32, i32)>,
+    // `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade alphas
+    // the `DrawWaters` ramp drives; the liquid and waterfall passes consume it.
+    liquid_alpha: &[f32; 15],
+    // The frame's deterministic seed for the `TrySparkling` draws.
+    sparkle_seed: u64,
+    // The wind state and the sway counters (`TileDrawing.DrawGrass`/`DrawTrees`).
+    wind: &tr_core::wind::Wind,
+    grass_wind_counter: f32,
+    tree_wind_counter: f32,
+    // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
+    // caller into the leaf particle list.
+    leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
+    // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
+    // per frame like the sparkle draws.
+    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
+        sparkle_seed ^ 0x9E37_79B9_7F4A_7C15,
+    );
     let half = screen * 0.5 / zoom;
     let min = camera - half;
     let max = camera + half;
@@ -155,9 +183,28 @@ pub(crate) fn draw_tiles(
 
     // `Main.waterStyle` is a single biome value for the whole frame, exactly like
     // `Main.CalculateWaterStyle` (the original evaluates it from the player's biome).
-    let water_style = calculate_water_style(world, camera);
+    let mut water_style = calculate_water_style(world, camera);
+    // `TR_WATER_STYLE=<n>`: pin the water style so the per-style passes, the
+    // `liquidAlpha` cross-fade and the biome liquid sheets stay screenshotable.
+    if let Ok(v) = std::env::var("TR_WATER_STYLE") {
+        if let Ok(n) = v.parse::<usize>() {
+            water_style = n.min(14);
+        }
+    }
     let t_light = Instant::now();
-    light.compute_into(world, x0, y0, x1, y1, params);
+    // Vanilla applies the waterfall lights one frame late (the engine keeps the
+    // previous frame's `AddLight` list when `LightTiles` runs); `scratch`
+    // carries exactly that list.
+    light.compute_into_with_lights(
+        world,
+        x0,
+        y0,
+        x1,
+        y1,
+        params,
+        &scratch.waterfall_lights,
+        waterfall.lights_key(),
+    );
     let light_ms = t_light.elapsed().as_secs_f32() * 1000.0;
 
     if let Ok(v) = std::env::var("TR_LIGHT_AT") {
@@ -242,7 +289,7 @@ pub(crate) fn draw_tiles(
     // `Main.DrawLiquid(bg: true, ...)`: water is drawn before walls and tiles at
     // `Opacity` (usually 1.0), so the parallax background never shows through it.
     if std::env::var_os("TR_NO_LIQBACK").is_none() {
-        stats.liquids += draw_liquids(
+        stats.liquids += draw_waters(
             r,
             lookups,
             light,
@@ -251,36 +298,28 @@ pub(crate) fn draw_tiles(
             &liquid_draws,
             LiquidPass::Background,
             water_style,
+            liquid_alpha,
         );
     }
 
     // `Main.DoDraw_Waterfalls`: vanilla draws falls after the non-solid tile pass
     // and before solid tiles. This renderer keeps one row-major tile pass, so the
     // falls are emitted here; tile quads drawn later occlude their base, while a
-    // wall behind a fall is drawn over it (documented approximation).
-    if std::env::var_os("TR_NO_WATERFALL").is_none() {
-        let mut falls = Vec::new();
-        waterfall.draw(
-            world,
-            light,
-            style,
-            anim_time,
-            water_style as i32,
-            [x0, y0, x1, y1],
-            &mut falls,
+    // wall behind a fall is drawn over it (documented approximation). The quads
+    // were walked once per frame in the pre-draw phase (`App::frame`), which also
+    // collects their `AddLight` list for the light map — keeping the walk out of
+    // the G6-cached path makes the light feed deterministic per frame index.
+    for d in std::mem::take(&mut scratch.waterfall_quads) {
+        let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
+            continue;
+        };
+        r.push_sprite(
+            d.pos,
+            [d.source[2] as f32, d.source[3] as f32],
+            flip_uv(uv, d.flip),
+            d.color,
         );
-        for d in falls {
-            let Some(uv) = lookups.waterfall_uv(d.texture as usize, d.source) else {
-                continue;
-            };
-            r.push_sprite(
-                d.pos,
-                [d.source[2] as f32, d.source[3] as f32],
-                flip_uv(uv, d.flip),
-                d.color,
-            );
-            stats.waterfalls += 1;
-        }
+        stats.waterfalls += 1;
     }
 
     // `Main.DrawWalls`: the whole wall layer is drawn before the tile layer. Each
@@ -457,8 +496,18 @@ pub(crate) fn draw_tiles(
                 // 16x16 core, so `frame.opaque` is false; a wall has to count as
                 // covering on its own. A fully dark tile renders identically whether
                 // its sprite is drawn or skipped (both are solid black), so the cell
-                // is folded into one merged rectangle.
-                if light_is_zero(l) && (active || (draw_walls && wall_visible(tile.wall))) {
+                // is folded into one merged rectangle — except flame/glow tiles:
+                // `DrawSingleTile_Flames` draws their self-lit overlay over the
+                // black sprite (`TileDrawing.cs:985-1016` sets `flag` for
+                // `Main.tileFlame`/glow types regardless of light), so their cells
+                // must keep their own quad.
+                let flame_tile = active
+                    && (tr_core::flame::tile_flame(tile.kind)
+                        || tr_core::flame::has_glow_branch(tile.kind));
+                if light_is_zero(l)
+                    && !flame_tile
+                    && (active || (draw_walls && wall_visible(tile.wall)))
+                {
                     if run_start < 0 {
                         run_start = tx;
                     }
@@ -493,6 +542,37 @@ pub(crate) fn draw_tiles(
                     continue;
                 };
                 stats.visible += 1;
+                // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
+                // `SwaysInWindBasic` tiles draw with the grass wind counter —
+                // position shifted by `(cycle, |cycle|)` and rotated
+                // `cycle * 0.1` about `(tileWidth / 2, 16 - tileTop)`. The
+                // row-major loop draws them inline instead of deferring them to
+                // a special pass (documented z-order approximation); the
+                // `WindGrid` gust push is not ported. Vanilla's type-227 frame
+                // exceptions apply (`ShouldSwayInWind`, `TileDrawing.cs:7712`).
+                // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
+                // `SwaysInWindBasic` tiles draw with the grass wind counter —
+                // position shifted by `(cycle, |cycle|)` and rotated
+                // `cycle * 0.1` about `(tileWidth / 2, 16 - tileTop)`. The
+                // row-major loop draws them inline instead of deferring them to
+                // a special pass (documented z-order approximation); the
+                // `WindGrid` gust push is not ported. Vanilla's type-227 frame
+                // exceptions apply (`ShouldSwayInWind`, `TileDrawing.cs:7712`).
+                let sway = if tr_core::wind::SWAYS_IN_WIND_BASIC.has(tile.kind)
+                    && !matches!(tile.frame_x, 204 | 238 | 408 | 442 | 476)
+                    && wind.sway_enabled
+                {
+                    let mut num3 = wind.cycle(tx, ty, grass_wind_counter);
+                    if !tr_core::wind::wall_allows_wind(tile.wall) {
+                        num3 = 0.0;
+                    }
+                    if !wind.in_a_place_with_wind(world, tx, ty, 1, 1) {
+                        num3 = 0.0;
+                    }
+                    num3
+                } else {
+                    0.0
+                };
                 if is_tree {
                     // 20x20 trunk sprite, drawn like `TileDrawing` does: the 20 px
                     // sprite is centred on the 16 px cell (position shifted by -2),
@@ -507,6 +587,23 @@ pub(crate) fn draw_tiles(
                         tx,
                         ty,
                         anim_time,
+                    );
+                    stats.quads += 1;
+                } else if sway != 0.0 {
+                    // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
+                    // and rotated `cycle * 0.1` about
+                    // `(tileWidth / 2, 16 - tileTop)` (`TileDrawing.cs:8369-8374`).
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    let sprite_pos = [pos[0] - (dw - 16.0) * 0.5, pos[1] + dd.top as f32];
+                    let origin = [dw * 0.5, 16.0 - dd.top as f32];
+                    let tint = style.shade(l, tx, ty, anim_time);
+                    r.push_sprite_origin_rot(
+                        [sprite_pos[0] + sway, sprite_pos[1] + sway.abs()],
+                        [dw, dh],
+                        flip_uv(tf.uv, dd.flip),
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sway * 0.1,
+                        origin,
                     );
                     stats.quads += 1;
                 } else if dd.top != 0 || dd.width != 16 || dd.height != 16 || dd.flip {
@@ -534,6 +631,20 @@ pub(crate) fn draw_tiles(
                 } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
                     stats.quads +=
                         push_sliced(r, pos, tf.uv, light, style, tx, ty, anim_time, HIGH_LIGHT);
+                } else if sway != 0.0 {
+                    // The plain-size sway members (e.g. the sunflower 113, whose
+                    // `TileDrawData` is the default): the same `DrawGrass`
+                    // transform with the 16x16 origin `(8, 16)`.
+                    let tint = style.shade(l, tx, ty, anim_time);
+                    r.push_sprite_origin_rot(
+                        [pos[0] + sway, pos[1] + sway.abs()],
+                        [TILE_PX, TILE_PX],
+                        tf.uv,
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sway * 0.1,
+                        [8.0, 16.0],
+                    );
+                    stats.quads += 1;
                 } else {
                     push_lit(
                         r,
@@ -548,6 +659,12 @@ pub(crate) fn draw_tiles(
                     );
                     stats.quads += 1;
                 }
+                // `TileDrawing.DrawSingleTile` closes with `DrawSingleTile_Flames`
+                // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
+                // after the tile sprite, in the same row-major order, with their
+                // own self-lit colours (the light map does not tint them).
+                stats.quads +=
+                    draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
             }
         }
         if run_start >= 0 {
@@ -570,8 +687,22 @@ pub(crate) fn draw_tiles(
     }
 
     if std::env::var_os("TR_NO_FOLIAGE").is_none() {
-        stats.foliage =
-            draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+        stats.foliage = draw_tree_foliage(
+            r,
+            world,
+            lookups,
+            light,
+            style,
+            anim_time,
+            wind,
+            tree_wind_counter,
+            &mut leaf_rng,
+            leaf_spawns,
+            x0,
+            y0,
+            x1,
+            y1,
+        );
     }
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);
@@ -583,7 +714,9 @@ pub(crate) fn draw_tiles(
         stats.quads += draw_player(
             r,
             player_assets,
+            lookups,
             p,
+            held,
             light,
             style,
             anim_time,
@@ -608,7 +741,9 @@ pub(crate) fn draw_tiles(
         stats.quads += draw_player(
             r,
             player_assets,
+            lookups,
             &p,
+            None,
             light,
             style,
             anim_time,
@@ -641,7 +776,7 @@ pub(crate) fn draw_tiles(
     // `Main.DrawLiquid(bg: false, ...)` runs after entities: the foreground water
     // layer tints everything that stands in it.
     if std::env::var_os("TR_NO_LIQFRONT").is_none() {
-        stats.liquids += draw_liquids(
+        stats.liquids += draw_waters(
             r,
             lookups,
             light,
@@ -650,6 +785,7 @@ pub(crate) fn draw_tiles(
             &liquid_draws,
             LiquidPass::Foreground,
             water_style,
+            liquid_alpha,
         );
     }
     if let Some((tx, ty)) = edit_target {
@@ -929,6 +1065,134 @@ fn push_sliced(
                 [8.0, 8.0],
                 sub_uv(uv, x, y, 8.0, 8.0),
                 [c[0], c[1], c[2], 1.0],
+            );
+            quads += 1;
+        }
+    }
+    quads
+}
+
+/// XNA's `SpriteBatch` blends premultiplied (`TileBatch.Begin` passes a null
+/// blend state → `BlendState.AlphaBlend`, `TileBatch.cs:217`): with a tint
+/// alpha of 0 the flame colour is added to the destination in full
+/// (`out.rgb = tex.rgb * tint + dst`). The renderer's single alpha blend
+/// cannot express `src = One`, so alpha-zero tints are pushed with alpha 1 —
+/// on the flame art's opaque texels the two blend equations agree exactly,
+/// and the transparent texels are discarded in both. The partial-alpha tints
+/// (the furniture/jar colours with `a > 0`) keep their alpha, which dims the
+/// flame slightly against vanilla's full add.
+#[inline]
+/// `DrawSingleTile_Flames` (`TileDrawing.cs:2684-3491`): the tile-flame
+/// spread (`Main.tileFlame` types — torches, candles, chandeliers...) and the
+/// per-type glow overlays, drawn right after the tile sprite with self-lit
+/// colours. The glow branches precede the flame block in the C# `if` chain,
+/// but no tile type matches both, so the two vecs can push in either order.
+#[allow(clippy::too_many_arguments)]
+fn draw_tile_flames(
+    r: &mut SpriteRenderer,
+    lookups: &mut assets::Lookups,
+    world: &World,
+    tile: &tr_core::Tile,
+    dd: &tr_core::drawdata::TileDrawData,
+    tx: i32,
+    ty: i32,
+    params: &LightParams,
+    anim_time: f32,
+) -> u32 {
+    use tr_core::flame::{self, FlameEnv, GlowSheet};
+    let kind = tile.kind;
+    if !flame::tile_flame(kind) && !flame::has_glow_branch(kind) {
+        return 0;
+    }
+    let env = FlameEnv {
+        tile_frame_seed: flame::tile_frame_seed_at(anim_time),
+        global_time: params.global_time,
+        disco: params.disco,
+        mouse_text_color: params.mouse_text_color,
+        moon_phase: world.moon_phase,
+        sundial_cooldown: params.sundial_cooldown,
+        moondial_cooldown: params.moondial_cooldown,
+    };
+    let anchor = [
+        tx as f32 * TILE_PX - (dd.width as f32 - 16.0) * 0.5,
+        ty as f32 * TILE_PX + dd.top as f32,
+    ];
+    let mut quads = 0u32;
+
+    // The glow branches (`TileDrawing.cs:2684-2825`, `:3463-3491`).
+    for g in flame::glow_quads(kind, tx, ty, tile.frame_x, tile.frame_y, dd, &env) {
+        let (uv, size) = match g.sheet {
+            GlowSheet::Flames(sheet) => (
+                lookups.flame_uv(
+                    sheet,
+                    g.src[0],
+                    g.src[1],
+                    g.src[2].max(1) as u32,
+                    g.src[3].max(1) as u32,
+                ),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+            GlowSheet::GlowMask(id) if g.src[2] == 0 => {
+                // `value3.Frame()`: the whole sheet at its own pixel size.
+                let name = format!("Glow_{id}");
+                match lookups.glow_frame_uv(&name) {
+                    Some((uv, w, h)) => (Some(uv), [w, h]),
+                    None => (None, [0.0; 2]),
+                }
+            }
+            GlowSheet::GlowMask(id) => (
+                lookups.glow_uv(
+                    &format!("Glow_{id}"),
+                    g.src[0],
+                    g.src[1],
+                    g.src[2] as u32,
+                    g.src[3] as u32,
+                ),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+            GlowSheet::Named(name) if g.src[2] == 0 => match lookups.glow_frame_uv(name) {
+                Some((uv, w, h)) => (Some(uv), [w, h]),
+                None => (None, [0.0; 2]),
+            },
+            GlowSheet::Named(name) => (
+                lookups.glow_uv(name, g.src[0], g.src[1], g.src[2] as u32, g.src[3] as u32),
+                [g.src[2] as f32, g.src[3] as f32],
+            ),
+        };
+        let Some(uv) = uv else { continue };
+        r.push_sprite([anchor[0] + g.dx, anchor[1] + g.dy], size, uv, g.color);
+        quads += 1;
+    }
+
+    // The `Main.tileFlame` spread (`TileDrawing.cs:2826-3462`).
+    if flame::tile_flame(kind) {
+        let sheet = flame::flame_sheet(kind);
+        for q in flame::flame_quads(
+            kind,
+            tx,
+            ty,
+            tile.frame_x,
+            tile.frame_y,
+            dd.add_fr_x,
+            dd.add_fr_y,
+            env.tile_frame_seed,
+            env.global_time,
+            env.disco,
+        ) {
+            let Some(uv) = lookups.flame_uv(
+                sheet,
+                q.src_x as i32,
+                q.src_y as i32,
+                dd.width as u32,
+                dd.height as u32,
+            ) else {
+                continue;
+            };
+            r.push_sprite(
+                [anchor[0] + q.dx, anchor[1] + q.dy],
+                [dd.width as f32, dd.height as f32],
+                uv,
+                q.color,
             );
             quads += 1;
         }

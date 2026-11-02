@@ -1,17 +1,20 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
-use super::BgTex;
+use super::player_layers::{
+    assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
+    PlayerCompositeState,
+};
 use super::sky::sky_tex;
+use super::BgTex;
 use crate::assets;
-use crate::item::SWING_TIME;
 use crate::npc::{Npc, NpcKind};
-use crate::player::{self, Player};
+use crate::player::Player;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightMap, LightStyle};
+use tr_core::TILE_PX;
 use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
@@ -25,6 +28,12 @@ pub(crate) struct PlayerAssets {
     pub(crate) shirt: Option<BgTex>,
     /// Back-arm skin frame from `Player_0_7` (composite arm frame 1).
     pub(crate) arm: Option<BgTex>,
+    /// `Player_0_5`: the under-skin torso layer drawn behind the back arm
+    /// (`TextureAssets.Players[skinVar, 5]`, `PlayerDrawLayers.cs:1345`).
+    pub(crate) undershirt: Option<BgTex>,
+    /// `Player_0_13`: the shirt sleeve over the back arm
+    /// (`TextureAssets.Players[skinVar, 13]`, `PlayerDrawLayers.cs:1362`).
+    pub(crate) arm_shirt: Option<BgTex>,
     pub(crate) legs: Option<BgTex>,
     pub(crate) pants: Option<BgTex>,
     pub(crate) shoes: Option<BgTex>,
@@ -40,6 +49,8 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         torso: sky_tex(atlas, "Player_0_3", Some((0, 0, 40, 224))),
         shirt: sky_tex(atlas, "Player_0_6", Some((0, 0, 40, 224))),
         arm: sky_tex(atlas, "Player_0_7", None),
+        undershirt: sky_tex(atlas, "Player_0_5", None),
+        arm_shirt: sky_tex(atlas, "Player_0_13", None),
         legs: sky_tex(atlas, "Player_0_10", None),
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
@@ -47,62 +58,9 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
     }
 }
 
-/// UV of one 40x56 frame in a player part strip.
-fn player_frame_uv(tex: &BgTex, row: u32) -> [f32; 4] {
-    let rows = (tex.h / 56.0).floor().max(1.0);
-    let r = (row as f32).min(rows - 1.0);
-    let dv = (tex.uv[3] - tex.uv[1]) * (56.0 / tex.h);
-    [
-        tex.uv[0],
-        tex.uv[1] + dv * r,
-        tex.uv[2],
-        tex.uv[1] + dv * (r + 1.0),
-    ]
-}
-
-/// UV of a 40x56 composite cell in a 9x4 player part sheet.
-fn player_cell_uv(tex: &BgTex, col: u32, row: u32) -> [f32; 4] {
-    let cols = (tex.w / 40.0).floor().max(1.0);
-    let rows = (tex.h / 56.0).floor().max(1.0);
-    let du = (tex.uv[2] - tex.uv[0]) / cols;
-    let dv = (tex.uv[3] - tex.uv[1]) / rows;
-    let c = (col as f32).min(cols - 1.0);
-    let r = (row as f32).min(rows - 1.0);
-    [
-        tex.uv[0] + du * c,
-        tex.uv[1] + dv * r,
-        tex.uv[0] + du * (c + 1.0),
-        tex.uv[1] + dv * (r + 1.0),
-    ]
-}
-
-/// `PlayerDrawSet.CreateCompositeData`: body frame index -> front-arm cell.
-fn arm_cell(frame: u32) -> (u32, u32) {
-    match frame {
-        0 => (2, 0),
-        1 => (3, 0),
-        2 => (4, 0),
-        3 => (5, 0),
-        4 => (6, 0),
-        5 => (2, 1),
-        6 => (3, 1),
-        7..=10 => (4, 1),
-        11..=13 => (3, 1),
-        14 => (5, 1),
-        15..=16 => (6, 1),
-        17 => (5, 1),
-        18..=19 => (3, 1),
-        _ => (2, 0),
-    }
-}
-
-pub(crate) fn flip_uv(uv: [f32; 4], flip: bool) -> [f32; 4] {
-    if flip {
-        [uv[2], uv[1], uv[0], uv[3]]
-    } else {
-        uv
-    }
-}
+/// UV of one 40x56 frame in a player part strip — tabled in
+/// [`player_layers`] (single source; re-exported for the sibling passes).
+pub(crate) use super::player_layers::{flip_uv, player_cell_uv, player_frame_uv};
 
 /// Default-derivable: every sheet is an `Option` guard (the headless flow
 /// tests construct the empty set).
@@ -147,76 +105,63 @@ fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32;
     ]
 }
 
-#[allow(clippy::too_many_arguments)]
-/// Draws the starter player from the original 40x56 part strips. The composition
-/// mirrors `PlayerDrawLayers`: legs/pants/shoes, torso/shirt, head/eyes/hair, all at
-/// `(x-10, y-10)` so the 40x56 sprite is centred on the 20x42 hitbox.
-/// `PlayerDrawLayers` first pass: the selected block in the player's hand, with a
-/// `Player.itemAnimation`-style swing when mining, placing or attacking.
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_held_item(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    light: &LightMap,
-    style: &LightStyle,
-    player: &Player,
-    kind: u16,
-    swing: f32,
-    anim_time: f32,
-) -> u32 {
-    let uv = if let Some((uv, _, _)) = lookups.item_icon(kind) {
-        Some(uv)
-    } else if registry::is_weapon(kind) {
-        lookups.shuriken_uv()
-    } else if let Some(wall) = registry::place_wall(kind) {
-        lookups.wall_icon_uv(wall)
-    } else {
-        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
-    };
-    let Some(uv) = uv else {
-        return 0;
-    };
-    let (cx, cy) = player.center();
-    let tx = (cx / TILE_PX) as i32;
-    let ty = (cy / TILE_PX) as i32;
-    let c = style.shade(light.get(tx, ty), tx, ty, anim_time);
-    let dir = player.facing as f32;
-    let progress = if swing > 0.0 {
-        1.0 - (swing / SWING_TIME).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-    // Arc from raised-behind to forward-down; mirrored for the left hand.
-    let a = if progress > 0.0 {
-        (-1.7 + progress * 2.5) * dir
-    } else {
-        0.0
-    };
-    let hand = [player.x + player::WIDTH * 0.5 + 5.0 * dir, player.y + 27.0];
-    let reach = 10.0;
-    let center = [hand[0] + a.cos() * reach * dir, hand[1] + a.sin() * reach];
-    // `push_sprite_rot` rotates around the top-left, so offset the pivot by the
-    // rotated half-size to spin the block around its centre.
-    let half = 7.0f32;
-    let (s, co) = a.sin_cos();
-    let top_left = [
-        center[0] - (half * co - half * s),
-        center[1] - (half * s + half * co),
-    ];
-    r.push_sprite_rot(
-        top_left,
-        [half * 2.0, half * 2.0],
-        uv,
-        [c[0], c[1], c[2], 1.0],
-        a,
-    );
-    1
+/// The held item's atlas quad and frame size — the `GetItemDrawFrame` stand-in:
+/// the hotbar icon quad and its atlas dimensions while `Item.cs` textures stay
+/// unframed (`ItemSlot.DrawItemIcon`'s clamp applies to the HUD slot, not the
+/// world sprite).
+fn held_item_quad(lookups: &assets::Lookups, kind: u16) -> Option<([f32; 4], [f32; 2])> {
+    if let Some((uv, w, h)) = lookups.item_icon(kind) {
+        return Some((uv, [w, h]));
+    }
+    if registry::is_weapon(kind) {
+        return lookups.shuriken_uv().map(|uv| (uv, [16.0, 16.0]));
+    }
+    if let Some(wall) = registry::place_wall(kind) {
+        return lookups.wall_icon_uv(wall).map(|uv| (uv, [16.0, 16.0]));
+    }
+    registry::place_tile(kind)
+        .and_then(|t| lookups.plain_tex(t))
+        .map(|f| (f.uv, [16.0, 16.0]))
 }
 
+/// Pushes a builder's sprite list. Unrotated sprites snap their top-left to an
+/// integer screen pixel (the entity-snapping invariant); the rotated held item
+/// keeps its sub-pixel pivot like the old arc pass. Returns the quad count.
+pub(crate) fn push_layers(
+    r: &mut SpriteRenderer,
+    layers: &[LayerSprite],
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+) -> u32 {
+    let mut quads = 0;
+    for s in layers {
+        if s.rotation != 0.0 {
+            r.push_sprite_rot(s.pos, s.size, s.uv, s.color, s.rotation);
+        } else {
+            r.push_sprite(
+                snap_to_screen(s.pos, camera, zoom, screen),
+                s.size,
+                s.uv,
+                s.color,
+            );
+        }
+        quads += 1;
+    }
+    quads
+}
+
+/// The starter player through the pure layer builders (`assemble_layers`):
+/// `LegacyPlayerRenderer`'s layer order with the held item in its
+/// `weaponDrawOrder` slot (`PlayerDrawSet.cs:358`). `held` carries the selected
+/// item kind and the swing timer (`None` = empty hand — remote players).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_player(
     r: &mut SpriteRenderer,
     assets: &PlayerAssets,
+    lookups: &assets::Lookups,
     player: &Player,
+    held: Option<(u16, f32)>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -225,110 +170,32 @@ pub(crate) fn draw_player(
     screen: Vec2,
 ) -> u32 {
     let (cx, cy) = player.center();
-    let tile_x = (cx / TILE_PX) as i32;
-    let tile_y = (cy / TILE_PX) as i32;
-    let l = light.get(tile_x, tile_y);
-    let c = style.shade(l, tile_x, tile_y, anim_time);
-    let light_c = [c[0], c[1], c[2]];
-    let mul = |part: [f32; 3]| {
-        [
-            light_c[0] * part[0],
-            light_c[1] * part[1],
-            light_c[2] * part[2],
-            1.0,
-        ]
+    let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+    let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let swing = held.map_or(0.0, |(_, s)| s);
+    let state = PlayerCompositeState {
+        origin: [player.x - 10.0, player.y - 10.0],
+        leg_frame: player.leg_frame,
+        body_frame: player.body_frame,
+        facing: player.facing as f32,
+        // `LegacyPlayerRenderer` receives the player at
+        // `position + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`).
+        gfx_off_y: player.gfx_off_y,
+        swing,
+        hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
+        use_style: 1,
+        item_uv: held
+            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .map(|(uv, _)| uv),
+        item_size: held
+            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .map(|(_, size)| size)
+            .unwrap_or([0.0, 0.0]),
+        light: light_c,
+        front_arm: swing_stand_in(1, swing, player.facing as f32),
+        back_arm: CompositeArmState::DISABLED,
     };
-    let skin = [1.0, 125.0 / 255.0, 90.0 / 255.0];
-    let eye_white = [1.0, 1.0, 1.0];
-    let eye = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
-    let shirt = [175.0 / 255.0, 165.0 / 255.0, 140.0 / 255.0];
-    let pants = [255.0 / 255.0, 230.0 / 255.0, 175.0 / 255.0];
-    let shoes = [160.0 / 255.0, 105.0 / 255.0, 60.0 / 255.0];
-    let hair = [215.0 / 255.0, 90.0 / 255.0, 55.0 / 255.0];
-
-    let pos = snap_to_screen([player.x - 10.0, player.y - 10.0], camera, zoom, screen);
-    let size = [40.0, 56.0];
-    let flip = player.facing < 0;
-    let leg = player.leg_frame;
-    let body = player.body_frame;
-    let mut quads = 0;
-    let (arm_col, arm_row) = arm_cell(body);
-    let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| flip_uv(player_frame_uv(t, row), flip));
-    let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| {
-        t.map(|t| flip_uv(player_cell_uv(t, col, row), flip))
-    };
-    let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
-        if tex.is_some() {
-            if let Some(uv) = uv {
-                r.push_sprite(pos, size, uv, color);
-                quads += 1;
-            }
-        }
-    };
-    // `PlayerFrame`: the legs animate on `legFrame`, the body/arms/head on
-    // `bodyFrame` (which copies the leg row while walking).
-    part(
-        assets.legs.as_ref(),
-        frame_uv(assets.legs.as_ref(), leg),
-        mul(skin),
-    );
-    part(
-        assets.pants.as_ref(),
-        frame_uv(assets.pants.as_ref(), leg),
-        mul(pants),
-    );
-    part(
-        assets.shoes.as_ref(),
-        frame_uv(assets.shoes.as_ref(), leg),
-        mul(shoes),
-    );
-    // Back arm behind the torso, front arm in front of the shirt (composite layers).
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), arm_col, (arm_row + 2).min(3)),
-        mul(skin),
-    );
-    // `PlayerDrawSet`: the torso/undershirt composite is always frame (0,0);
-    // only the arms and head follow the animation frame.
-    part(
-        assets.torso.as_ref(),
-        cell_uv(assets.torso.as_ref(), 0, 0),
-        mul(skin),
-    );
-    part(
-        assets.shirt.as_ref(),
-        cell_uv(assets.shirt.as_ref(), 0, 0),
-        mul(shirt),
-    );
-    // The frame table's arm sits on the far side of the body; column 8 is the
-    // near (item-holding) arm, which the original places with the composite
-    // shoulder rotation we do not model yet.
-    part(
-        assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
-        mul(skin),
-    );
-    part(
-        assets.head.as_ref(),
-        frame_uv(assets.head.as_ref(), body),
-        mul(skin),
-    );
-    part(
-        assets.eye_whites.as_ref(),
-        frame_uv(assets.eye_whites.as_ref(), body),
-        mul(eye_white),
-    );
-    part(
-        assets.eyes.as_ref(),
-        frame_uv(assets.eyes.as_ref(), body),
-        mul(eye),
-    );
-    part(
-        assets.hair.as_ref(),
-        frame_uv(assets.hair.as_ref(), body),
-        mul(hair),
-    );
-    quads
+    push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
@@ -402,7 +269,7 @@ pub(crate) fn draw_player_preview(
     let size = [40.0 * scale, 56.0 * scale];
     let body = frame_row;
     let mut quads = 0;
-    let (arm_col, arm_row) = arm_cell(body);
+    let (arm_col, arm_row) = front_arm_cell(body);
     let frame_uv = |t: Option<&BgTex>, row: u32| t.map(|t| player_frame_uv(t, row));
     let cell_uv = |t: Option<&BgTex>, col: u32, row: u32| t.map(|t| player_cell_uv(t, col, row));
     let mut part = |tex: Option<&BgTex>, uv: Option<[f32; 4]>, color: [f32; 4]| {
@@ -452,9 +319,11 @@ pub(crate) fn draw_player_preview(
         cell_uv(assets.shirt.as_ref(), 0, 0),
         shirt,
     );
+    // Same `CreateCompositeData` table for the preview's front arm — column 8
+    // is the composite back-arm use column, not a walking pose.
     part(
         assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        cell_uv(assets.arm.as_ref(), arm_col, arm_row),
         skin,
     );
     part(
@@ -627,7 +496,26 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        if n.kind == NpcKind::DemonEye && n.rotation != 0.0 {
+            // `Main.DrawNPC` draws every NPC at its centre with
+            // `origin = frame size / 2` and `rotation = npc.rotation`
+            // (`NPC.cs` draw pass); the demon eye aims along its flight
+            // (`NPC.cs:74019-74031`). The mirrored quad's corners are
+            // symmetric about the centre, so flipping does not move them —
+            // rotate the quad about its centre, exactly like XNA does.
+            let center = snap_to_screen(
+                [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5],
+                camera,
+                zoom,
+                screen,
+            );
+            let (hw, hh) = (size[0] * 0.5, size[1] * 0.5);
+            let (s, co) = n.rotation.sin_cos();
+            let top_left = [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
+            r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
+        } else {
+            r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
         quads += 1;
         if n.hp < n.max_hp {
             let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);

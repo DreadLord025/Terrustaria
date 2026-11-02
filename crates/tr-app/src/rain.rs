@@ -51,6 +51,16 @@ struct Splash {
     frame: u8,
 }
 
+/// A `WaterfallManager.TrySparkling` particle: `Dust.NewDust(..., 43, ...)` with
+/// the velocity zeroed (`WaterfallManager.cs:1061-1062`), drawn from the `Dust`
+/// sheet's frame 43 at scale 0.5. The generic dust fade (`alpha -= 25` per
+/// tick) stands in for the type's own AI.
+#[derive(Clone, Copy, Debug)]
+struct Sparkle {
+    pos: Vec2,
+    alpha: f32,
+}
+
 /// One `DustID.Snowflake` (type 76) particle.
 #[derive(Clone, Copy, Debug)]
 struct Snowflake {
@@ -80,6 +90,7 @@ pub struct Rain {
     lightning_timer: f32,
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
+    sparkles: Vec<Sparkle>,
     snow: Vec<Snowflake>,
     /// The camera is in a snow biome: rain is replaced by snowfall.
     snow_mode: bool,
@@ -118,6 +129,7 @@ impl Rain {
             lightning_timer: 0.0,
             drops: Vec::with_capacity(MAX_DROPS),
             splashes: Vec::with_capacity(128),
+            sparkles: Vec::with_capacity(64),
             snow: Vec::with_capacity(MAX_SNOW),
             snow_mode: false,
             rng,
@@ -254,6 +266,24 @@ impl Rain {
             s.life -= 1.0 / TICKS_PER_SEC;
         }
         self.splashes.retain(|s| s.life > 0.0);
+        // The generic `Dust.Update` fade (`alpha -= 25` per tick from 254).
+        for s in &mut self.sparkles {
+            s.alpha -= 25.0 / 255.0;
+        }
+        self.sparkles.retain(|s| s.alpha > 0.0);
+    }
+
+    /// Takes a batch of `WaterfallManager.TrySparkling` spawns (world pixels).
+    pub fn spawn_sparkles(&mut self, spawns: impl IntoIterator<Item = tr_core::waterfall::SparkleSpawn>) {
+        for s in spawns {
+            if self.sparkles.len() >= 256 {
+                break;
+            }
+            self.sparkles.push(Sparkle {
+                pos: Vec2::new(s.x, s.y),
+                alpha: 254.0 / 255.0,
+            });
+        }
     }
 
     fn update_drops(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
@@ -472,6 +502,21 @@ impl Rain {
                 [8.0 * 0.6 * zoom, 8.0 * 0.6 * zoom],
                 uv,
                 [c[0], c[1], c[2], a],
+                0.0,
+            );
+        }
+        // `WaterfallManager.TrySparkling`'s `Dust` 43 sparkles: scale 0.5, the
+        // spawn light colour, the generic dust fade.
+        for s in &self.sparkles {
+            let Some(uv) = lookups.dust_uv(430, 0, 8, 8) else {
+                continue;
+            };
+            let c = light_at(light, s.pos);
+            r.push_ui_sprite_rot(
+                to_screen(s.pos),
+                [8.0 * 0.5 * zoom, 8.0 * 0.5 * zoom],
+                uv,
+                [c[0], c[1], c[2], s.alpha],
                 0.0,
             );
         }

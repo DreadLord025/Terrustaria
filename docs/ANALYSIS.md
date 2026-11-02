@@ -68,7 +68,7 @@ Status legend: ✅ implemented in some form, 🟡 stub/partial, ⬜ not started.
 | Wall framing | `Framing.WallFrame` (line 326) | 120 | 🟡 | Full `wallFrameLookup` + `centerWallFrameLookup` port; variant is a position hash, `TruncatesWalls`/invisible-wall neighbour rules and persisted `wallFrameNumber` are not modelled |
 | Tile drawing | `GameContent.Drawing/TileDrawing.cs`, `WallDrawing.cs` | 9 700 + 1 300 | 🟡 | Quads, 9-sliced light, slopes, half bricks, tree canopies/branches, tile-3 plants; walls are 32x32 sprites at `-8` with corner lighting, drawn in their own pass; no paint, wind, glow, tile entities |
 | Lighting | `Graphics/Light/LightingEngine.cs`, `LightMap`, `TileLightScanner` | ~5 300 | ✅ | Scanner + blur + sunlight; 4 modes, `GlobalBrightness`, 9/4-slice block smoothing; sun/moon/flicker still missing |
-| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), stars, deterministic `Cloud_*` layer, the textured `Background_1/2` underground backdrop anchored to `worldSurface` and the rock/magma/hell passes (`Background_3/4/6/125..127/185..187`, underworld black box) in `DrawBackground` order; cloud density and biome backgrounds/rain still partial |
+| Sky / backgrounds | `Main.cs` sky code, `Backgrounds/*` | ~3 000 | 🟡 | `Background_0` gradient + two parallax mountain layers (`Background_7`), sun/moon on `DrawSunAndMoon`'s arc (scale/phase/rotation), the `Cloud.addCloud` cloud field with `GetParallax` and the three `DrawSurfaceBG` passes, `Star.SpawnStars`/`DrawStar` stars, the textured `Background_1/2` underground backdrop anchored to `worldSurface` and the rock/magma/hell passes (`Background_3/4/6/125..127/185..187`, underworld black box) in `DrawBackground` order; biome backgrounds/rain still partial |
 | Liquids | `Liquid.cs`, `LiquidRenderer.cs` | ~3 000 | 🟡 | Water/lava/honey/shimmer drawn from `Misc/water_*` with animation, waves, opacity, depth tint and lighting; `Liquid.Update` flow simulation ported (active cells, 30 Hz, leveling); no `Waterfall_*` overlay or corner-height shoreline mesh |
 | Player physics | `Player.cs` | 55 600 | 🟡 | Gravity, acceleration/friction, hold jump, AABB collision, ground-slope support, water buoyancy, composite arms, HP/hurt/respawn, classic HUD; no half-brick/ceiling slopes, item use timings or buffs |
 | Player rendering | `PlayerDrawLayers.cs` (+ 40 layer files) | ~12 000 | 🟡 | Starter head/eyes/torso/shirt/arm/legs/pants/shoes/hair from the original strips; no armor/items/equipment layers |
@@ -414,11 +414,48 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
 - Deliberate approximation: `Main.gfxQuality` is fixed at 1.0 (the value a machine holding
   60 FPS converges to), so the scan distance is 100 tiles and the cap 1000 falls — the
   same as the original at full quality.
-- Not ported yet: the honey/shimmer `Draw()` passes (`Main.liquidAlpha[2..4]`), the
-  shimmer vertex-sparkle pass (`SetShimmerVertexColors*`), `TrySparkling` dust and the
-  ambient lava-waterfall light (`AddLight`). `TR_NO_WATERFALL=1` disables the pass for
-  A/B screenshots; `TR_SPOUT=x,y` stamps a half-brick spout with liquid and a clear drop
-  so the overlay can be captured deterministically.
+- `WaterfallManager.Draw` (`WaterfallManager.cs:1118-1174`) runs one
+  `DrawWaterfall(style, liquidAlpha[i])` pass per water style with a non-zero alpha —
+  `liquidAlpha[0]→0`, `[2]→3`, `[3]→4`, `[4]→5`, `[5..9]→6..10`, `[10]→13`, `[12]→23`,
+  `[13]→24` — so a biome water-style transition cross-fades the falls between the two
+  sheets, and the typed falls (lava 1, honey 14, shimmer 25) draw in every active pass
+  with their own textures, exactly like the original. `Main.liquidAlpha` itself is the
+  `DrawWaters` ramp (`Main.cs:57473-57489`, ±0.2 per frame while the current style is a
+  plain water style — lava 1, honey 11 and shimmer 14 sit outside it), held on `App`
+  and consumed by the liquid passes as well: `DrawNormalLiquids` draws every
+  non-current water style at its alpha over water cells only, then the current style
+  over everything (`Main.cs:57497-57506`).
+- The walk collects `WaterfallManager.AddLight` (`WaterfallManager.cs:1067-1116`) per
+  visited cell — the lava fall's warm flicker, the disco fall, the gemspark falls
+  (15-21), the shimmer fall (25) and the fountain (26) — and the light map seeds it as
+  a per-cell maximum before the blur (`LightMap::compute_into_with_lights`). Vanilla
+  applies the lights one frame late (the engine keeps the previous frame's `AddLight`
+  list when `LightTiles` runs); the port does the same, and the walk runs once per
+  frame *before* the light map and outside the G6-cached world pass, so the light feed
+  is a pure function of the frame index (a walk inside the cached pass made the feed
+  depend on the reuse pattern).
+- `WaterfallManager.TrySparkling` (`WaterfallManager.cs:1046-1065`): 50+ steps into a
+  lit fall, a 1-in-20000 draw scaled by the brightest light channel spawns a `Dust` 43
+  sparkle beside the stream (velocity zeroed). The sparkles ride the rain module's dust
+  drawing (`Dust` frame 43, scale 0.5) and fade with the generic dust decay
+  (`alpha -= 25` per tick) — the type's own AI is not ported.
+- `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
+  takes the normal liquid path — every type-3 cell draws twice, the base quad with
+  per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is
+  replaced, which is why shimmer glows in dark caves) and the sparkle overlay with the
+  rainbow `GetShimmerGlitterColor` (`SimpleWhiteNoise` + `GetShimmerFrame`). The tile
+  batch is premultiplied in XNA and the glitter colour carries alpha 0 (additive);
+  this renderer blends non-premultiplied, so the sparkle encodes the premultiplied
+  colour as `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
+  with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
+  tile-518 submerged redraw) is not ported: the generator never places tile 518.
+- Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
+  for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
+  the `player.lavaOpacity` factor and the storm/rare cloud type branches.
+  `TR_NO_WATERFALL=1` skips the walk for A/B screenshots; `TR_SPOUT=x,y` stamps a
+  half-brick spout with liquid and a clear drop (`TR_SPOUT_KIND=<0..3>` sets the
+  liquid kind) and `TR_POOL=tx,ty,w,h,kind` fills a rectangle with liquid at load, so
+  every style, the shimmer pass and the glow are capturable deterministically.
 
 Verification: unit tests in `waterfall/` (spout detection, lava kind, tile 196, frame
 counters, emitted geometry, empty `anim_key`); the lake view at `TR_CAM=2240,360`,
@@ -428,6 +465,71 @@ spout at `TR_SPOUT=100,25`, `TR_CAM=100,32`, zoom 2 — the column samples the r
 `Waterfall_0` colours (`147,177,253` / `50,107,197` / `9,61,191`), i.e. a full-brightness
 tint, as `GetAlpha` requires above `worldSurface`.
 
+
+## Wind sway and tree leaves (TILE-DRAW-3)
+
+`tr-core/src/wind.rs` already carried `Main.windSpeedCurrent`'s walk and
+`TileDrawing.GetWindCycle` (`TileDrawing.cs:7676-7700`); the app now owns a
+`Wind` instance (seeded from the world seed, `world_surface` set at load) and
+advances the `TileDrawing.Update` counters per frame — `_treeWindCounter`
+(1/240 + num·2/240), `_grassWindCounter` (1/180 + num·4/180),
+`_sunflowerWindCounter` (1/420 + num·5/420) and `_vineWindCounter`
+(1/120 + num·0.4/120), with `num = GetLerpValue(0.08, 1.2, |wind|)`
+(`TileDrawing.cs:367-375`).
+
+- `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the `TileID.Sets
+  .SwaysInWindBasic` tiles (hand-transcribed into `wind.rs` as
+  `SWAYS_IN_WIND_BASIC` — `TileID.cs:549`; the tiledata generator is due its
+  own regeneration pass and was not extended here) draw with the grass cycle:
+  position `+= (cycle, |cycle|)`, rotation `cycle * 0.1` about
+  `(tileWidth / 2, 16 - tileTop)`, zeroed when the tile's wall does not
+  `WallID.Sets.AllowsWind` (hand-transcribed in `wind.rs`, `WallID.cs:95`) or
+  `!WorldGen.InAPlaceWithWind(x, y, 1, 1)` (`WorldGen.cs:86858-86879`). The
+  row-major tile loop draws them inline instead of deferring them to the
+  `WindyGrass` special pass (a documented z-order approximation, like the
+  waterfalls); the `WindGrid` gust push (`GetWindGridPush`) is not ported.
+  The type-227 frame exceptions of `ShouldSwayInWind` apply.
+- `DrawTrees` (`TileDrawing.cs:8137-8245`): every canopy top leans
+  `pos += (cycle·2, |cycle|·2)` and rotates `cycle * 0.08` about its trunk
+  anchor (the sprite's bottom centre); the frameX-44/66 branches shift
+  directionally and rotate `cycle * 0.06` about `(40, 24)` / `(0, 30)`. The
+  sway is skipped when the marker tile sits in front of a wall
+  (`flag = tile.wall > 0`, line 8073). The renderer gained
+  `push_sprite_origin_rot` (a `SpriteBatch.Draw` origin emulation).
+- `TileDrawing.EmitTreeLeaves` (`TileDrawing.cs:7779-7891`): every visible
+  top/branch rolls `1/leafFrequency` per frame for a leaf
+  (`UpdateLeafFrequency`'s |wind| table × 7, halved for hallowed trees, ×3
+  for branches, 10000 underground); `WorldGen.GetTreeLeaf`
+  (`WorldGen.cs:29384-29598`) resolves the gore id per ground tile (fully
+  transcribed, including the gem/vanity/ash overrides and the hallowed
+  tables — unreachable in the generated worlds but data-complete), and the
+  spawn offsets follow the branch side and `frameY` variants. The roll uses
+  `TileDrawing._rand`'s port — a per-frame pinned `FastRandom` — and the
+  offsets' `Main.rand` draws fold into the same stream (the original keeps
+  two separate streams; the visible distribution is unchanged).
+- `Gore_UpdateLeaf` (`Gore.cs:1085-1209`): the leaf falls along a growing
+  angle (`velocity.Y += PI/180`; the movement `(−sin, |cos|)` plus
+  `wind * 4` above `worldSurface·16`), collides through the port's
+  `tile_collision`/`slope_collision` on the 4×4 probe (leading the position
+  by 4 px, re-anchored by `vector2 = (−4, 0)` exactly as the source), rests
+  on the ground and drifts `×0.94` per tick until the ground frees up or the
+  fade completes (`goreTime` 600, then 255 of alpha). The leaves draw from
+  the `Gore_910/911` sheets (32 paint columns × 8 variant rows; the port
+  draws column 0) in the UI range like the rain, keeping the G6 world range
+  out of it. The liquid rest behaviour (honey freeze, lava burn-up) is not
+  ported. The G6 `anim` folds the sway counters only while
+  `|wind| > 0.08` — the cycle is zero below that (`GetLerpValue(0.08, 0.18)`),
+  so a calm world keeps its cache.
+- Not ported: the `WindGrid` push system (`TileDrawing.cs:8540-8600`), the
+  multi-tile grass/vine/sunflower wind draws (`DrawMultiTileGrassInWind`,
+  `DrawVineStrip`, `DrawRisingVineStrip`, `DrawMultiTileVinesInWind` — they
+  need the special-point deferral machinery), and the leaf liquid rest
+  behaviour. `TR_WIND_FORCE=<speed>` pins `windSpeedCurrent` for screenshots;
+  `TR_NO_WIND=1` disables the whole feature for A/B.
+
+Verification: the leaf-frequency/set unit tests; the gust screenshots at
+`TR_WIND_FORCE=1.0` (`TR_CAM=2100,375`) diff 6944 px against `TR_NO_WIND=1`
+(leaning canopies, flying leaves); two identical runs are SHA256-equal.
 
 ## Rain and weather
 
@@ -622,7 +724,57 @@ the camera's screen-space arc (`Main.cs:62848`):
 Not ported: the eclipse (`Sun3`), the `head == 12` sun (`Sun2` + `Extra_280`), the event
 moons (`Moon_Pumpkin`/`Moon_Snow`/`Moon_Smile`) and the title-screen grab-the-sun
 interaction. The first sun pass is always `Color.White` because no eclipse is modelled.
-Cloud density (`Cloud.GetParallax`) and the exact star density remain (BG-16).
+
+### Clouds and stars (M1.4-BG-11/16)
+
+`make_clouds`/`make_stars` port the spawn recipes; `draw_sky` ports the draw passes.
+
+Clouds: the field is a deterministic stand-in for the live 200-slot array
+(`Cloud.resetClouds`/`addCloud`/`UpdateClouds`, `Cloud.cs:39-293`) — the original's array
+state (wind-drift integration, the spawn/kill cycle, the spawn-time overlap rejection of
+`Cloud.cs:170-177`) is not simulated. Per-cloud attributes follow `Cloud.addCloud` in its
+RNG order (scale `Next(70,131)·0.01` clamped 0.7..1.3 with the `Cloud.Update` 1/1.15 nudge
+already applied, rotation `Next(-10,11)·0.01` clamped ±0.02, the flip coin, spawn heights
+`-0.25h..0.15h` in the 600 px reference screen, and the clear-weather type branches of
+`Cloud.cs:128-139`); the count is the clear-weather steady state `numClouds = 100` (the
+`numCloudsTemp` clamp of `Main.cs:58980-58982`, which the `weatherCounter` jumps drive it
+into). Anchors spread over a world-span band so every camera cuts about `numClouds` of
+them. The draw runs as the three `DrawSurfaceBG` passes in the original order — distant
+(`Main.cs:59334`), closer (`Main.cs:59449`), closest (`Main.cs:59520`) — with the
+`DrawClouds_*` cY formulas (the closer pass reads the `bgTopY` `BackMountainsStep1`
+leaves, `Main.cs:59808`; the closest the near-mountain setup, `Main.cs:59514`), and the
+screen X is the world anchor minus `Cloud.GetParallax(scale)` (`Cloud.cs:318-338`) of the
+camera pan, the world-space form of `Cloud.UpdateCloudParallax` (`Cloud.cs:295-316`).
+Colour is `Cloud.cloudColor` (`Cloud.cs:227-235`) with the distant pass's
+`OriginalColorsForCloud` pull (`NextHorizonRenderer.cs:254-263`).
+
+Cloud deviations: the wind drift is a constant light wind scaled by `GetParallax` (the
+original integrates `windSpeedCurrent·9·GetParallax` per tick, `Cloud.cs:391`); the storm
+type branch (`Cloud.cs:116-127`) and `RollRareCloud` (`Cloud.cs:140-147`, needs the boss
+flags) are not applied at generation; `globalCloudAlpha` (= `ProcessCloudAlpha · atmo`) is
+1 because no active skies/`atmo` are modelled; and the `HorizonClouds` shader of
+`NextHorizonRenderer.CloudsEnd` (sun-tinted cloud shading) is not ported.
+
+Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order — count
+`Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)·0.01`,
+`scale Next(70,130)·0.006`, type `Next(0,4)`, the twinkle/rotation speeds with their sign
+coins and the 1-in-40 giant-star roll. The original seeds it with
+`FastRandom.CreateWithRandomSeed()` (fresh OS entropy per launch, `Star.cs:88`); the port
+pins the stream to the world seed so screenshots stay deterministic. `draw_sky` ports
+`DrawStarsInBackground`/`DrawStar` (`Main.cs:63030-63173`): the sky-colour visibility gate
+`255·(1 − cloudAlpha·atmo) − skyR − 25 > 0` (fades the field out across dawn; the
+graveyard dim is not modelled), the greyscale brightness formula, the
+`position/1920·screenWidth + sceneArea.bgTopY` mapping with the frame wrap, and the
+`tex.Size()·scale·twinkle` draw with `Star.Update`'s rotation/twinkle speeds (the 0.6..1
+twinkle oscillation is sine-approximated around the same centre and range). Two known
+deviations: `DrawStar` builds its colour from `default` and assigns only R/G/B
+(`Main.cs:63083-63086`) — a zero alpha would make every star invisible, so the port draws
+them fully opaque at the computed brightness — and the per-tick twinkle/rotation advance
+is driven by the pinned animation clock instead of integrated state.
+
+Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
+land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer — the vanilla
+cursor follows the real mouse and would otherwise differ between runs.
 
 ## World generation and native saves
 
@@ -650,7 +802,75 @@ every field; framing/lighting run afterwards exactly as for a `.wld`. `TR_REGEN=
 regenerates, `TR_SEED=<n>` selects a seed. The other biomes, structures, the full ocean
 biome and hardmode spread are not generated; the original generator remains an M5 milestone.
 
+## Crafting (M3-CRAFT, subset-first)
+
+`craft.rs` carries the subset recipe table (7 recipes over the registry's items,
+each citing its `Recipe.cs` registration) and the pure craft actions:
+`can_craft`/`try_craft` over `[ItemSlot; 50]` and `adjacent_tiles` — the
+`Player.AdjTiles` port with `TileReachCheckSettings.Simple` reach (X 5 / Y 3).
+Deviations: `RequireGroup(RecipeGroups.Wood)` recipes are expanded to concrete
+ids (Wood → 9); consumption is a single index-ordered pass matching
+`ConsumeItemsFrom` (`CraftingRequests.cs:244-290`) over **50 slots** (the C#
+consumes over 58 incl. coin/ammo — no subset ingredient lives there); a full
+inventory still crafts (the drop-on-full bridge is not wired — vanilla drops).
+The panel (`ui/crafting.rs`) draws available recipes with a 44 px cell grid;
+items without extracted sprites (the atlas carries only the world's used tile
+frames) draw a grey placeholder. The roadmap's "contexts 4/33" is stale — the
+crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
+`handle_crafting_clicks` (`clicks.rs`) runs before inventory clicks and crafts
+on the press (`Main.cs:42250` hover family); the rotation source for item use
+stays with M2-ANIM.
+
 ## Player (M2 first pass)
+
+### Composite arm rotation (M2-DRAW-2)
+
+The layer builders consume `Player.CompositeArmData` (`Player.cs:219`): an enabled
+arm frames from the composite columns — front 7 / back 8 — at the stretch row
+(Full/ThreeQuarters/Quarter/None → 0-3, `PlayerDrawSet.cs:2246-2271`) and rotates
+around `center + GetCompositeOffset_*` (front (−5, 0), back (+6, +2),
+`PlayerDrawLayers.cs:4082-4090`). Deviations:
+
+- The rotation **source** is a stand-in: `swing_stand_in` enables the front arm
+  during the swing arc (`Full` mid-swing, `ThreeQuarters` at the edges). The
+  vanilla angles live in `ItemCheck_ApplyUseStyle` (`Player.cs:50679`) and
+  `AnimatePlayerAndGetItemFrame` (`:43372`) — M2-ANIM's territory; the builders
+  consume whatever the state carries, so M2-ANIM only replaces the source.
+- The XNA draw-origin semantics map to our top-left rotation pipeline as
+  `pos = pivot − R·(size/2 + offset)`; at rotation 0 this collapses to the plain
+  top-left, so disabled arms render exactly as M2-DRAW-1 did (pinned by
+  `test_dw_2_3_idle_parity`).
+- The back-arm composite activates only from state (`back_arm.enabled`); the
+  starter never enables it (the vanilla back-arm composites are hold-style/pet
+  poses — M2-ANIM/M3-EQUIP).
+- `missingArm`/`missingHand` skin passes and `gravDir = -1` are not modelled.
+
+### Layer builders (M2-DRAW-1)
+
+The player composition is pure data: `render/player_layers.rs` builds a
+`Vec<LayerSprite>` (`assemble_layers`) and `draw_player` only pushes it — the
+`LegacyPlayerRenderer.cs:185-255` sequence with the held item in its
+`weaponDrawOrder` slot (`PlayerDrawSet.cs:358`: the starter can only reach
+`BehindFrontArm`). Deviations from the C#, all deliberate:
+
+- The swing arc stays the rotation input — vanilla `itemRotation`/`itemAnimation`
+  come from `ItemCheck_*` and belong to M2-ANIM. The item's grip origin is
+  already the C# rule (`PlayerDrawLayers.cs:3161-3188`: bottom corner mirrored by
+  direction; useStyle 8/9 handled), so the old centre-pivot arc pass is gone.
+- The `Players[8]` undershirt passes (back arm, front arm/shoulder) are skipped:
+  the starter skin has no underShirt colour; the palette lands with M3-EQUIP.
+- Shoulder cells are constants ((0,1)/(1,1), `PlayerDrawSet.cs:1938-1939`) and
+  the shoulder offset is assumed zero without body armour
+  (`DetermineShoulderOffsets` is armour-driven); the composite is male-only
+  (`Player_0_*`, the `!Male` Y+2 shift of `:2036-2040` not modelled).
+- The UI character preview (`UICharacter`) keeps its own inline composition —
+  it draws in screen space at fixed frames and does not need the builder yet.
+- Harness note: TR_SHOT twin-run equality is timing-sensitive
+  (`anim_time += dt` on real time, `frame.rs:47`, plus the 60 Hz stepper's
+  accumulated ticks); a same-run A/B against the pre-builder binary shows the
+  delta confined to the player region (858 px), while old-vs-old twin pairs
+  drift by themselves (312k px). A tick-pinned screenshot mode is a separate
+  harness task.
 
 `tr-app/src/player.rs` implements a fixed 60 Hz step with the original movement constants:
 gravity `0.4`, max fall `10`, run `3`, ground/air acceleration `0.2/0.1`, jump speed
@@ -1170,6 +1390,29 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
   their menus are not opened, so they show as empty frames.
 
+### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
+
+Both draw through the same `slot::draw_slot` (the `ItemSlot.Draw` port) as the open
+grid: the closed hotbar at context 13 (`GUIHotbarDrawInner`, `Main.cs:43600-43639`) and
+the cursor stack at context 21 (`DrawInterface_38_MouseCarriedObject`,
+`Main.cs:45173-45195`). Remaining deliberate gaps:
+
+* The context-13 **ammo/wand/bait count** (`num22`, `ItemSlot.cs:2577-2691` — the
+  counter that replaces the stack text on bows, wands and fishing poles) is not
+  ported; it needs the `useAmmo`/`bait`/`tileWand` inventory scans the item model
+  does not have yet. Such items show their plain stack instead.
+* `Inventory_Back20` (`ItemSlot.cs:2234-2237`, the white variant for
+  `slot == player.selectedItemState.Hotbar`) and the context-36 override slot
+  (`Main.cs:43641-43649`) are unreachable without `Player.SelectedItemState`
+  overrides, which the port does not model; the selected slot always merges into the
+  `Inventory_Back14` branch.
+* The `Main.DoGlowingMouseItemDraw` shader pass over the cursor item
+  (`Main.cs:45196-45220`) is not ported.
+* `hotbarScale` keeps lerping while the inventory is open; vanilla freezes it because
+  `GUIHotbarDrawInner` early-returns on `Main.playerInventory`
+  (`Main.cs:43588-43591`) and the update lives in that draw pass. The targets
+  (1.0 selected / 0.75 rest) and the `±0.05` rate match (`Main.cs:43604-43611`).
+
 ### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
 
 The modern crafting panel is ported as draw-only chrome at the source's geometry and
@@ -1646,3 +1889,125 @@ verified against the C# per formula (transcription tests in `drawdata.rs`).
   branch syncs with `main`, the final A/B is repeated on the synced state —
   flame/glow pixels will then differ from this pre-TILE-DRAW-2 baseline by
   that work's own account.
+
+## Torch flames (TILE-DRAW-2)
+
+- `tr-core/src/flame.rs` ports `TileDrawing.GetTileFlameData` (`TileDrawing.cs:1847-2677`)
+  and both inline tables of `DrawSingleTile_Flames` (`:2826-3462`); the two C# tables
+  disagree in a few places (colour of styles 13/14, discarded offsets for sheet 7) and
+  are ported literally, kept separate on purpose.
+- The 48-bit LCG behind `Utils.RandomInt` is ported (`tile_frame_seed_for`); C# seeds
+  `Main.TileFrameSeed` from `Guid.NewGuid().GetHashCode()` (`Main.cs:66567`) —
+  unobservable randomness. The port starts from a fixed 32-bit constant with the same
+  advance schedule (`Main.cs:61716-61721`), so flame jitter is deterministic across
+  runs while distribution-identical.
+- Not ported: type 85's graveyard flames (`:2724-2750`, needs
+  `Main.GraveyardVisualIntensity`/`ZoneGraveyard`, not simulated); the separate
+  `Main.tileGlowMask` table (`Main.cs:10024+`, consumed in `DrawSingleTile` at
+  `TileDrawing.cs:1178`) is its own wide task.
+- **Premultiplied alpha fix (tr-render):** the XNB textures are premultiplied by the
+  XNA content pipeline (verified: a=0 texels are rgb=0, semi-alpha texels satisfy
+  rgb <= a across Flames/Moon assets). Vanilla `BlendState.AlphaBlend` therefore uses
+  factors (One, OneMinusSrcAlpha): a tint with alpha 0 (the tile flames'
+  `Color(200,200,200,0)`) is a pure rgb add. The renderer's previous
+  (SrcAlpha, OneMinusSrcAlpha) standard blend double-dimmed every semi-alpha texel and
+  made a=0 tints invisible; the pipeline now uses XNA's factors and the shader no
+  longer multiplies rgb by alpha. Binary-alpha tiles are unchanged; semi-alpha texels
+  (panel fades, font edges) render brighter — the XNA-correct result.
+- XNA nuance kept: `TileBatch` blends premultiplied, but the renderer's single
+  alpha-blend pipeline cannot express rgb-add at a=0 for partial-alpha tints (the
+  furniture/jar colours with a > 0 dim slightly against vanilla's full add). Fully
+  a=0 tints (torches) are exact.
+
+## Animations (M2-ANIM-foundation)
+
+The shared primitives live in `crates/tr-core/src/anim.rs` (`FrameCounter` —
+the `frameCounter += speed; while (>= threshold)` idiom of
+`Player.cs:36259-36264` and `NPC.FindFrame`, `wrap_row_band`, the useStyle-1
+thirds, the UI sine pulse). Deviations and ports:
+
+- **Player draw origin** (`render/player_layers.rs` `gfx_off_y` state field):
+  the 40x56 frame rides the
+  20x42 hitbox at `(x - 10, y - 10 + gfxOffY)` — the resolution of
+  `PlayerDrawLayers.cs:1150-1153` plus the `LegacyPlayerRenderer.cs:457,468`
+  `position + (0, gfxOffY)` call. `gfxOffY` was previously ignored (the step
+  ease popped vertically) and is now also part of the G6 player render key.
+- **Composite arm cells** follow `PlayerDrawSet.CreateCompositeData`
+  (`PlayerDrawSet.cs:1962-2023`): front arm `(X, Y)` per bodyFrame row, back
+  arm the same column two rows down. The old front-arm cell hardcoded column
+  8 (the composite *back*-arm use column), which mismatched the pose while
+  walking and during useStyle-1 swings.
+- **Item swing** (`Player.cs:50686-50852` + `PlayerDrawLayers.cs:3043-3215`,
+  implemented inside the `render/player_layers.rs` builders that M2-DRAW-1
+  introduced — `held_item_layers` consumes the vanilla `itemRotation` /
+  `itemLocation` and the real atlas frame size):
+  `itemRotation = (itemAnimation/itemAnimationMax - 0.5) * (-direction) * 3.5
+  - direction * 0.3`, `itemLocation` thirds over the held frame's size, pivot
+  at the drawn sprite's bottom-left. `SWING_TIME` (0.28 s) still stands in for
+  the per-item `useAnimation` — the real timings remain the M2-ANIM-item-timings
+  catalog row. The `UsesBetterMeleeItemLocation` nudge is not applied (no
+  ported item belongs to that set).
+- **NPC.FindFrame** for the four ported kinds now runs in the fixed 60 Hz sim
+  (`world_sim/npcs.rs` state, `npc.rs::find_frame`): slime `NPC.cs:70801-70826`
+  (2 frames, counter doubles while moving), King Slime `:73380-73414`
+  (grounded 0..=3 with the landing squash 4 shown until the first advance;
+  airborne 4 then 5), demon eye `:73994-74057` (2 frames + `rotation =
+  atan2(vy, vx)`, `+ 3.14f` when moving left, frozen while `velocity.X == 0`),
+  zombie `:76324-76389` (walk band 0,1,2,1 at 8/16/24/32 accumulated px;
+  lurch frame 2 while airborne or backpedalling). The old wall-clock
+  `anim * N` frame derivation is gone; `render_key` now hashes the rendered
+  frame and the eye rotation instead of raw `anim` bits, so the G6 cache
+  invalidates exactly when the baked pixels change.
+- `aiAction == 4` (attacking) never fires for these kinds — the third counter
+  tick of the slime/King Slime cases stays out until combat AI lands.
+- The demon-eye draw rotates the quad about its centre (`Main.DrawNPC`
+  origin = frame centre); the mirrored quad's corners are centre-symmetric,
+  so the flip does not move them.
+
+## Item use timings (M2-ANIM-item-timings)
+
+The per-item `useTime` / `useAnimation` / `useStyle` / `holdStyle` /
+`autoReuse` now live on `registry::ItemDef`, extracted from
+`Item.cs SetDefaults1` for all 20 ported kinds (blocks and ores 10/15,
+grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
+`noMelee`-style zero damage, torch `holdStyle = 1`). Deviations and notes:
+
+- The swing duration is `useAnimation` ticks at the 60 Hz rate
+  (`Player.ApplyItemAnimation`, `Player.cs:4449-4451`); the fixed `SWING_TIME`
+  stand-in is gone and the render builders consume the remaining *fraction*
+  (`itemAnimation / itemAnimationMax`).
+- The cadence follows `ItemCheck`: an `autoReuse` kind re-fires while the
+  button is held; a non-autoReuse kind waits for a release
+  (`Player.cs:42733`, `42819-42822`) — the shuriken throw is press-edge gated,
+  and the release edges refresh every frame like `Player.releaseUseItem`.
+  Placement (the RMB path) fires whenever `itemTime` hits zero inside a
+  running swing (`Player.cs:39743` + `ApplyItemTime = useTime`,
+  `Player.cs:4416-4418`) — dirt every 10 ticks inside the 15-tick swing,
+  walls every 7; the legacy `place_cooldown = 0.12` retired. The LMB mining
+  path keeps the port's own `mine_timer`/hardness model paced by the swing
+  (`M3-TOOL` owns pick power), a documented deviation.
+- A resting `holdStyle == 1` item (the torch) is drawn in the hand —
+  anchor `position.X + width/2 + (frame.W/2 + 2)·direction`,
+  `position.Y + 24`, `itemRotation = 0` (`Player.cs:50275-50460`) — and pins
+  the body to row 3 (`Player.cs:36455-36459`).
+- The M2-DRAW-2 `swing_stand_in` (rotated composite front arm during a swing)
+  retired for useStyle 1: the original never calls `SetCompositeArmFront` in
+  the useStyle-1 branch (`Player.cs:50686-50953` sets only
+  `itemRotation`/`itemLocation`), so the arm pose rides the bodyFrame thirds
+  and the item swings alone. The stand-in returns for styles 5/9/11 with the
+  bow/thrown tasks.
+- XNA pivot semantics (`PlayerDrawLayers.cs:3161`): the draw origin
+  `(W/2 - W/2·direction, H)` positions the quad; the `direction < 0` flip
+  swaps the UVs inside the quad, not the quad geometry (MonoGame
+  `SpriteBatch.DrawInternal`). This also fixed the held-item mirror that
+  main's `origin_drawn = width - origin` adjustment got backwards.
+- The `itemLocation` thirds run on the DECREASING `itemAnimation`: the
+  C# chain's first branch (`itemAnimation < max * 0.333`,
+  `Player.cs:50709-50734`, Y+24 / X+10) is the swing END and the last
+  (`:50776-50843`, X subtracted) the start — the port had them swapped since
+  the M2-ANIM-foundation pass; corrected here (pre-existing, byte-identical
+  visually at rest).
+- The shuriken damage now matches `Item.cs:1876` (10, was 15) — a registry
+  data fix spotted during the review; the remaining pre-existing registry
+  mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
+  item-data catalog work.

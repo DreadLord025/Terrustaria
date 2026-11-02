@@ -17,24 +17,25 @@ milestone section for the full context before starting.
 
 | Task | Branch | Scope | Notes |
 | --- | --- | --- | --- |
-| M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `Parse`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | 🟡 sun/moon/phases/rotation are done |
-| M1.4-BG-13 ✅ | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | done 2026-11-01: full `TileFrameCosmetic` grass chain (`WorldGen.cs:82184-84836`) ported; 9-slice light needed no change (tile-light scanner + `GetColor9Slice` already cover the seam); quirks in ANALYSIS |
-| TILE-DRAW-1-finish ✅ | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog world corrections in `tr-core/src/drawdata.rs` | done 2026-11-02: every case ported or a documented deviation (ANALYSIS "GetTileDrawData deviations"); animator/glow/wind remain TILE-DRAW-2/3 |
-| TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `TextureAssets.Flames`, glow-mask table | brief: `docs/superpowers/sdd/non-ui/brief-TILE-DRAW-2-torch-flames-glowmasks.md` |
-| TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | 🟡 started |
-| TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
-| TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82192-83395`): groups A-J, the `-2` marker, per-biome dirt ids; current `grass_frame` covers ~25 % | |
+| ✅ M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `addCloud`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | ✅ done 2026-11-01 (there is no `Cloud.Parse` in 1.4.5.8 — the spawn recipe is `Cloud.addCloud`; deviations in `ANALYSIS.md`) |
+| ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | done 2026-11-01: full `TileFrameCosmetic` grass chain (`WorldGen.cs:82184-84836`) ported; 9-slice light needed no change (tile-light scanner + `GetColor9Slice` already cover the seam); quirks in ANALYSIS |
+| ✅ TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog world corrections in `tr-core/src/drawdata.rs` | done 2026-11-02: every case ported or a documented deviation (ANALYSIS "GetTileDrawData deviations"); animator/glow/wind remain TILE-DRAW-2/3 |
+| ✅ TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `tr-core/src/flame.rs` (`GetTileFlameData` + `DrawSingleTile_Flames` both tables, 48-bit LCG `TileFrameSeed` jitter deterministic via fixed seed), premultiplied `AlphaBlend` fix in tr-render | deviations in ANALYSIS.md "Torch flames (TILE-DRAW-2)" |
+| ✅ TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | ✅ done 2026-11-02 (sway + leaves; the WindGrid push and the multi-tile/vine wind draws remain, see `ANALYSIS.md`) |
+| TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | 🟡 the paint byte exists on `Tile` (E1, `paint()`/`set_paint()`); the paint/coating render system is not ported |
+| TILE-DRAW-5 ✅ | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82184-84836`): groups A-J, the `-2` marker, per-biome dirt ids | done 2026-11-01 by the M1.4-BG-13 port (full override chains + the `-1`/`-2` tables) |
 | M1.4-BG-18 | `M1.4-BG-18-screen-filters` | per-biome animated screen effects: `SceneState.ApplyVisuals` (desert heat distortion, underworld heat, blizzard/sandstorm/aurora/water distortion, monolith/story filters) | |
-| M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | |
+| ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | ✅ done 2026-11-02 (per-style waterfall + liquid passes, `DrawShimmer`, `AddLight`, `TrySparkling`; deviations in `ANALYSIS.md`) |
 | M1.4-TO | `M1.4-TO-tile-objects` | `TileObjectData` (multi-tile furniture, doors, chests), gemspark/glow tiles | paint shares TILE-DRAW-4 |
 
 ### Milestone 2 — player
 
 | Task | Branch | Scope |
 | --- | --- | --- |
-| M2-DRAW-1 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw |
-| M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
-| M2-ANIM | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) |
+| M2-DRAW-1 🟡 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw | layering done 2026-11-02: order + weapon slot + composite front arm + bob (`player_layers.rs` builders, tests); armor/accessories go live with M3-EQUIP; composite shoulder rotation landed in M2-DRAW-2 |
+| M2-DRAW-2 ✅ | `M2-DRAW-2-arm-rotation` | composite arm rotation | done 2026-11-02: `CompositeArmData` draw-side in the layer builders (columns 7/8 × stretch rows, pivot rotation, `PlayerDrawSet.cs:2246-2271`); the rotation source now consumes M2-ANIM use fractions (the swing-arc stand-in was replaced in the M3-CRAFT merge) |
+| ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) | done 2026-11-02: per-item `useTime`/`useAnimation`/`useStyle`/`holdStyle`/`autoReuse` from `Item.cs SetDefaults1`, `SWING_TIME` retired for the remaining-fraction plumbing, autoReuse/release cadence, torch rest-hold (`Player.cs:50275-50460`) + body row 3 (`:36455`); deviations in ANALYSIS "Item use timings (M2-ANIM-item-timings)" |
+| ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | animation foundation + fixes: `tr-core/src/anim.rs` primitives (`FrameCounter`, band wrap, useStyle-1 thirds), faithful player draw origin (`PlayerDrawSet` + gfxOffY — the "pixels shift" bug), held-item swing (`ItemCheck` `itemRotation`), `NPC.FindFrame` for the four ported kinds, HUD hotbar through the faithful `ItemSlot.Draw` path (one stack-text size/position, 32 px icon clamp) | done 2026-11-02; deviations in ANALYSIS "Animations (M2-ANIM-foundation)" + "Closed hotbar and mouse item"; per-item `useAnimation` timings stay with M2-ANIM-item-timings |
 | M2-BUFF | `M2-BUFF-buffs-mounts` | buffs/debuffs, hooks, mounts, gravity flips |
 
 ### Milestone 3 — items, inventory, crafting
@@ -78,7 +79,7 @@ milestone section for the full context before starting.
 | --- | --- | --- |
 | M6-MUSIC-finish | `M6-MUSIC-biome-tracks` | remaining biome music branches (need `SceneMetrics`), ambient rain/wind cues |
 | M6-LOCALIZE-wire | `M6-LOCALIZE-wire` | wire the localization core into HUD/item names/menus (core is ported + tested) |
-| M6-NET-protocol | `M6-NET-protocol` | the exact 1.4.5.8 network protocol |
+| M6-NET-protocol | `M6-NET-protocol` | the exact 1.4.5.8 network protocol; includes the multiplayer-flow backlog: net-Disconnect must not open the error menu over a live front screen (`self.front` unchecked in the ClientEvent::Disconnect guard — P6 whole-branch review minor 1), and the parked multiplayer Back targets (Join/Host & Play → character/world selects) |
 | M6-SETTINGS | `M6-SETTINGS` | settings application parity beyond the ported keys |
 
 ### Engineering debt (from the 2026-11-01 architecture refactor)
@@ -88,6 +89,7 @@ milestone section for the full context before starting.
 | REFACTOR-env | `refactor-app-env-flags` | centralize the ~65 `TR_*` env flags into one struct with OnceLock "read once" semantics (`app/env.rs`; skipped during the refactor as risky) |
 | REFACTOR-rng | `refactor-xorshift-unify` | unify the worldgen/wind xorshift cores byte-exactly |
 | REFACTOR-saveheader | `refactor-save-list-reader` | absorb the last duplicate reader (`ui/save_list.rs` `HeaderReader`) into `tr_core::binio` |
+| REFACTOR-cleanup | `refactor-allow-cleanup` | remove the inert `#[allow(dead_code)]` attributes in `ui/uistate.rs` (T1-era; the surface is consumed by the P6 screens) |
 
 ## Why this is a long project
 
@@ -154,20 +156,25 @@ Goal: a still frame that is hard to distinguish from the original at the same ca
    counters, the per-row geometry walk with its 1 px wobble, `GetAlpha`/`StylizeColor`
    and the per-tile light tint; the app draws the quads between the non-solid and solid
    tile passes (`Main.DoDraw_Waterfalls`).
-   Remaining: the honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), the
-   shimmer vertex-sparkle pass, `WaterfallManager.TrySparkling` dust, the ambient
-   lava-waterfall light (`AddLight`). *~1–2 agent-days left of ~8.*
-4. **Backgrounds & sky** — ✅ *third pass*: `Background_0` gradient, deterministic
-   `Cloud_*` clouds, sun, moon, stars, the 15/9-minute day-night clock, the per-column cave
-   fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`, `cloudAlpha` ramp, rotated
-   drops, splashes, overcast `SetBackColor` dimming, snow-biome `Dust` snowfall, storm
-   cloud banks and lightning flashes), and the vanilla `DrawSurfaceBG`
+   ✅ *fifth pass*: the per-style `DrawWaterfall` passes behind the `liquidAlpha`
+   cross-fade, the `liquidAlpha` multi-pass liquids, `DrawShimmer` (the wave and
+   rainbow-glitter vertex colours), `TrySparkling` sparkles and the waterfall
+   `AddLight` glow. Remaining: the shimmer vertex-distortion shader
+   (`Main.DrawTileInWater`'s full effect) and the `HorizonClouds` fall tint.
+   *<1 agent-day left of ~8.*
+4. **Backgrounds & sky** — ✅ *fourth pass*: `Background_0` gradient, the
+   `Cloud.addCloud`/`GetParallax` cloud field drawn in the three vanilla `DrawSurfaceBG`
+   passes, `Star.SpawnStars`/`DrawStar` stars, sun, moon, the 15/9-minute day-night clock,
+   the per-column cave fade, rain (`Rain.MakeRain`/`Rain.Update`/`Main.DrawRain`,
+   `cloudAlpha` ramp, rotated drops, splashes, overcast `SetBackColor` dimming, snow-biome
+   `Dust` snowfall, storm cloud banks and lightning flashes), the vanilla `DrawSurfaceBG`
    composition for the biomes the world has: forest (`7`/`8` mountains + `50..52` tree
    lines), snow (`35`/`36` + `37..39` pines) and ocean (`28` sea horizon), with
-   `backgroundTopMagicNumber` vertical parallax and measured ground-band anchoring.
-   Remaining: corruption/crimson/jungle/hallow variants (no such biomes yet), wind gusts
-   and weather audio, and the textured `Main.DrawBackground` underground layers.
-   *~2–5 agent-days.* ← next
+   `backgroundTopMagicNumber` vertical parallax and measured ground-band anchoring, and
+   the textured `Main.DrawBackground` underground layers. Remaining: the storm type
+   branch/rare clouds and the `HorizonClouds` cloud shader (weather/boss state),
+   corruption/crimson/jungle/hallow variants (no such biomes yet), wind gusts and
+   weather audio. *~1–2 agent-days.*
 5. **Tile objects** — `TileObjectData` (multi-tile furniture, doors, chests), paint,
    coatings, gemspark/glow. Trees and slopes are done. *~8–18 agent-days.*
 

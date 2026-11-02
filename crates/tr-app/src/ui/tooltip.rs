@@ -4,6 +4,7 @@
 use glam::Vec2;
 use tr_render::SpriteRenderer;
 
+use super::slot;
 use super::UiPulse;
 use super::text::{hud_text, hud_text_width};
 use crate::assets;
@@ -259,15 +260,18 @@ pub fn hovered_slot(
             }
         }
     } else {
+        // `GUIHotbarDrawInner` (`Main.cs:43614-43639`): the closed hotbar shares
+        // the draw pass's per-slot geometry — `slot::closed_hotbar_metrics` gives
+        // the row `y`, the truncated x advance and the untruncated hover size the
+        // C# hit test compares against (`Main.mouseX <= num + Width * scale`).
         let mut x = 20.0;
         for i in 0..HOTBAR {
             let scale = hotbar_scales[i].clamp(0.75, 1.0);
-            let slot = 52.0 * scale;
-            let y = 20.0 + 22.0 * (1.0 - scale);
-            if hit(x, y, slot) {
+            let (y, advance, size) = slot::closed_hotbar_metrics(scale);
+            if hit(x, y, size) {
                 return (inventory[i].count > 0).then_some(i);
             }
-            x += slot + 4.0;
+            x += advance;
         }
     }
     None

@@ -15,12 +15,13 @@ use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
 use crate::app::{no_hud, App, WorldFrameKey};
 use crate::assets;
 use crate::audio;
-use crate::item::{self, SWING_TIME};
+use crate::craft;
+use crate::item::{self};
 use crate::map;
 use crate::npc::{self, NpcKind};
 use crate::render::bg::cave_parallax;
 use crate::render::debug::{capture_frame, draw_debug};
-use crate::render::entities::{draw_held_item, draw_player_map_icon};
+use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
 use crate::sound;
@@ -38,10 +39,17 @@ fn no_cache() -> bool {
 impl App {
     pub(crate) fn frame(&mut self) {
         let now = Instant::now();
-        let dt = now
-            .duration_since(self.last_frame)
-            .as_secs_f32()
-            .clamp(0.0, 0.1);
+        // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
+        // `anim_time`, and wall-clock jitter between runs would make two shots of
+        // the same scene differ in a few pixels. A fixed 1/60 step (what vsync
+        // delivers anyway) keeps `anim_time = frames / 60` exact.
+        let dt = if self.shot_path.is_some() {
+            1.0 / 60.0
+        } else {
+            now.duration_since(self.last_frame)
+                .as_secs_f32()
+                .clamp(0.0, 0.1)
+        };
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
@@ -107,7 +115,9 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
-            self.handle_inventory_clicks();
+            if !self.handle_crafting_clicks() {
+                self.handle_inventory_clicks();
+            }
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
                 if *scale < target {
@@ -173,11 +183,19 @@ impl App {
         let player_alpha = (self.player_step.residual() / (1.0 / 60.0)).clamp(0.0, 1.0);
         let mut render_player = self.player.as_ref().map(|p| p.interpolated(player_alpha));
         // `PlayerFrame` item-use branch: while a swing is active the body shows the use
-        // rows instead of the idle/air pose. `swing` counts down from `SWING_TIME`,
-        // which is `itemAnimation / itemAnimationMax` in the original.
+        // rows instead of the idle/air pose; `swing / swing_max` is
+        // `itemAnimation / itemAnimationMax`. At rest a `holdStyle == 1` item
+        // (the torch) pins the body to row 3 (`Player.cs:36455-36459`).
+        let held_hold_style = self
+            .inventory
+            .get(self.selected)
+            .filter(|s| s.count > 0)
+            .map_or(0, |s| item::hold_style(s.kind));
         if let Some(p) = render_player.as_mut() {
             if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                p.apply_item_use_frame(self.swing / SWING_TIME);
+                p.apply_item_use_frame(self.swing / self.swing_max.max(f32::EPSILON));
+            } else if held_hold_style == 1 {
+                p.body_frame = 3;
             }
         }
         let player_key = render_player.as_ref().map_or(0, |p| p.render_key());
@@ -221,6 +239,11 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                liquid_alpha,
+                wind,
+                tree_wind_counter,
+                grass_wind_counter,
+                leaves,
                 items,
                 swing,
                 projectiles,
@@ -350,6 +373,79 @@ impl App {
                 // keeps the step at one screen pixel even at 1.5x / 2x.
                 let draw_cam = (*camera * *zoom).round() / *zoom;
                 let surface_px = world.world_surface as f32 * TILE_PX;
+                // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
+                // cross-fade ramps per frame while the current water style is a
+                // plain water style — lava (1), honey (11) and shimmer (14) sit
+                // outside the ramp.
+                let water_style_now =
+                    crate::biome::calculate_water_style(world, draw_cam);
+                if crate::render::liquids::is_liquid_style_water(water_style_now) {
+                    for (i, a) in liquid_alpha.iter_mut().enumerate() {
+                        *a = if i == water_style_now {
+                            (*a + 0.2).min(1.0)
+                        } else {
+                            (*a - 0.2).max(0.0)
+                        };
+                    }
+                }
+                // `Main.DoDraw_Waterfalls` + `WaterfallManager.AddLight`: the
+                // waterfall walk runs once per frame, before the light map and
+                // outside the G6-cached world pass — its quads are buffered for
+                // the tile pass and its `AddLight` list feeds the light compute.
+                // Running it unconditionally (not only on world-range rebuilds)
+                // keeps the light feed a pure function of the frame index.
+                let mut leaf_spawns = Vec::new();
+                let mut leaf_rng = tr_core::tile_light::FastRandom::new(
+                    (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
+                );
+                if std::env::var_os("TR_NO_WATERFALL").is_none() {
+                    let half_v = screen * 0.5 / *zoom;
+                    let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.width - 1);
+                    let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.width - 1);
+                    let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.height - 1);
+                    let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.height - 1);
+                    let lights = waterfall.draw(
+                        world,
+                        light,
+                        &style,
+                        anim_time,
+                        liquid_alpha,
+                        params.mouse_text_color,
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
+                        [vx0, vy0, vx1, vy1],
+                    );
+                    scratch.waterfall_quads = waterfall.take_quads();
+                    scratch.waterfall_lights = lights;
+                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
+                    // into the rain module's dust particles.
+                    rain.spawn_sparkles(waterfall.take_sparkles());
+                } else {
+                    scratch.waterfall_quads.clear();
+                    scratch.waterfall_lights.clear();
+                }
+
+                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind walk
+                // runs in `UpdateWeather`; the sway counters advance per frame,
+                // faster with stronger wind.
+                wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
+                wind.update(rain.is_raining());
+                // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
+                // the leaf frequency are screenshotable at a chosen strength.
+                if let Ok(v) = std::env::var("TR_WIND_FORCE") {
+                    if let Ok(f) = v.parse::<f32>() {
+                        wind.speed_current = f.clamp(-1.24, 1.24);
+                    }
+                }
+                tr_core::wind::advance_tree_counter(
+                    tree_wind_counter,
+                    wind.speed_current,
+                );
+                tr_core::wind::advance_counter(grass_wind_counter, wind.speed_current);
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -379,7 +475,17 @@ impl App {
                     anim: if style.perturb > 0.0 {
                         anim_time.to_bits()
                     } else {
+                        // `TileDrawing.GetWindCycle`: the sway is zero below
+                        // |wind| 0.08 (`Utils.GetLerpValue(0.08, 0.18, ...)`),
+                        // so a calm world keeps the world range cacheable; a
+                        // windy one animates the sway tiles every frame.
                         liquid_anim
+                            ^ (if wind.sway_enabled && wind.speed_current.abs() > 0.08 {
+                                (grass_wind_counter.to_bits() as u32)
+                                    ^ (tree_wind_counter.to_bits() as u32)
+                            } else {
+                                0
+                            })
                     },
                     player_key,
                     npc_key,
@@ -390,7 +496,7 @@ impl App {
                             .filter(|s| s.count > 0)
                             .map_or(0, |s| s.kind as u32);
                         let phase = if *swing > 0.0 {
-                            (((1.0 - *swing / SWING_TIME) * 40.0) as u32).min(40)
+                            (((1.0 - *swing / self.swing_max.max(f32::EPSILON)) * 40.0) as u32).min(40)
                         } else {
                             0
                         };
@@ -451,32 +557,75 @@ impl App {
                         waterfall,
                         render_player.as_ref(),
                         player_assets,
+                        // `DrawPlayer_27_HeldItem`'s gate
+                        // (`PlayerDrawLayers.cs:3084-3086`): the item rides the
+                        // player layers while it is being used (`flag =
+                        // itemAnimation > 0 && useStyle != 0`) OR when its
+                        // `holdStyle` keeps it in the hand at rest (`flag2 =
+                        // holdStyle != 0`) — torches.
+                        match render_player.as_ref() {
+                            Some(_)
+                                if *swing > 0.0
+                                    || inventory
+                                        .get(*selected)
+                                        .is_some_and(|s| s.count > 0 && item::hold_style(s.kind) != 0) =>
+                            {
+                                inventory
+                                    .get(*selected)
+                                    .filter(|slot| slot.count > 0)
+                                    .map(|slot| {
+                                        // The builders consume the remaining
+                                        // use fraction (`itemAnimation /
+                                        // itemAnimationMax`).
+                                        (slot.kind, *swing / self.swing_max.max(f32::EPSILON))
+                                    })
+                            }
+                            _ => None,
+                        },
                         npcs,
                         npc_assets,
                         items,
                         &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
+                        liquid_alpha,
+                        // `TrySparkling`'s draw thread: the frame count pins it.
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ world.seed,
+                        wind,
+                        *grass_wind_counter,
+                        *tree_wind_counter,
+                        &mut leaf_spawns,
                     );
-                    // `PlayerDrawLayers.DrawPlayer_27_HeldItem`: the item is only drawn
-                    // while it is being used (`itemAnimation > 0 && useStyle != 0`), so
-                    // the hand is empty at rest. Hold-style items (torches etc.) are not
-                    // modelled yet.
-                    if *swing > 0.0 {
-                        if let Some(p) = render_player.as_ref() {
-                            if let Some(slot) = inventory.get(*selected) {
-                                if slot.count > 0 {
-                                    tile_stats.quads += draw_held_item(
-                                        renderer, lookups, light, &style, p, slot.kind,
-                                        *swing, anim_time,
-                                    );
-                                }
-                            }
-                        }
-                    }
                     *world_key = Some(key);
                 }
 
+                // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
+                // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
+                // UI range like the rain. `TR_NO_WIND` is the A/B switch for the
+                // whole wind feature, spawns included.
+                let wind_ab_on = std::env::var_os("TR_NO_WIND").is_none();
+                let drained: Vec<_> = leaf_spawns.drain(..).collect();
+                for s in drained.into_iter().take_while(|_| wind_ab_on) {
+                    if leaves.len() >= 400 {
+                        break;
+                    }
+                    leaves.push(crate::render::foliage::LeafGore::from_spawn(
+                        s,
+                        &mut leaf_rng,
+                    ));
+                }
+                crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
+
                 rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                crate::render::foliage::draw_leaves(
+                    renderer,
+                    lookups,
+                    light,
+                    draw_cam,
+                    *zoom,
+                    screen,
+                    leaves,
+                );
                 for p in projectiles.iter() {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 }
@@ -567,6 +716,15 @@ impl App {
                         );
                     }
                 } else if menu.is_none() && !no_hud() && !fullscreen_map {
+                    let craft_available = if self.crafting_open {
+                        let adj = player
+                            .as_ref()
+                            .map(|p| craft::adjacent_tiles(world, p))
+                            .unwrap_or_default();
+                        craft::available(inventory, &adj)
+                    } else {
+                        Vec::new()
+                    };
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -585,6 +743,7 @@ impl App {
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
+                        &craft_available,
                         ui::UiPulse {
                             // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                             text: self.mouse_text_color as f32 / 255.0,
