@@ -64,9 +64,13 @@ impl Default for TileDrawData {
 /// `x % 2 == 0` sprite flip, both feed case 751/207 arithmetic), `frame_x`/
 /// `frame_y` the tile's framing, `tile_frame` the animation row
 /// `Main.tileFrame[kind]` (0 until the animator is ported — the vanilla t=0
-/// state), and `solid_above` is `WorldGen.SolidTile(x, y - 1)` (used by
-/// torches). World/engine-dependent sub-branches keep their unconditional
-/// static part; everything else is a documented deviation.
+/// state), and `solid_above` is the caller's "solid tile above" probe — the
+/// tile at `(x, y - 1)` is active, in `TILE_SOLID` and not in
+/// `TILE_SOLID_TOP` (`render/tiles.rs:371-373`; the C# analogue is the
+/// `WorldGen.SolidTile(x, y - 1)` probe of case 4,
+/// TileDrawing.cs:4672-4679). World/engine-dependent
+/// sub-branches keep their unconditional static part; everything else is a
+/// documented deviation.
 pub fn draw_data(
     kind: u16,
     x: i32,
@@ -216,12 +220,33 @@ pub fn draw_data(
             data.add_fr_y = (tile_frame * 38 - 2016 * n41) as i16;
             data.add_fr_x = (72 * n41) as i16;
         }
-        // `case 530 / 485 / 489 / 490` (OasisPlants / AntlionLarva / PinWheel /
-        // WeatherVane) need GetBiomeInfluence, Main.tileFrameCounter and the
-        // wind system (4705-4817): no static part beyond the default —
-        // documented deviations.
+        // `case 530` — OasisPlants: top 2; the `addFrY += 36 * <biome pick>`
+        // rewrite needs `WorldGen.GetBiomeInfluence` (TileDrawing.cs:4705-4722)
+        // — documented deviation.
+        530 => {
+            data.top = 2;
+        }
         // `case 705` — OasisPlantsEcho: top 2 (TileDrawing.cs:4724-4726).
         705 => {
+            data.top = 2;
+        }
+        // `case 485` — AntlionLarva: top 2; the addFrY animation
+        // `(Main.tileFrameCounter / 5 + ...) % 4 * 36` is a documented
+        // deviation (TileDrawing.cs:4727-4730).
+        485 => {
+            data.top = 2;
+        }
+        // `case 489` — PinWheel: top 2; the addFrY animation runs only inside
+        // `InAPlaceWithWind` and needs `Main.tileFrameCounter`
+        // (TileDrawing.cs:4731-4741) — documented deviation.
+        489 => {
+            data.top = 2;
+        }
+        // `case 490` — WeatherVane: top 2; the addFrY bob needs
+        // `InAPlaceWithWind` + `Main.WindForVisuals` +
+        // `Main.weatherVaneBobframe` (TileDrawing.cs:4742-4818) — documented
+        // deviation (C# yields addFrY 0 outside wind, the same 0 at t=0).
+        490 => {
             data.top = 2;
         }
         // `case 33`-group — candles: 20 px tall, raised 4 px
@@ -230,8 +255,15 @@ pub fn draw_data(
             data.height = 20;
             data.top = -4;
         }
-        // `case 529` (SeaOats) needs GetBiomeInfluence (4827-4849): documented
-        // deviation.
+        // `case 529` — SeaOats: 32 px tall, raised 14 px, flip on even
+        // columns; the `addFrY += 34 * <biome/beach pick> - tileFrameY`
+        // rewrite needs `WorldGen.GetBiomeInfluence` and the beach band
+        // (TileDrawing.cs:4827-4849) — documented deviation.
+        529 => {
+            data.height = 32;
+            data.top = -14;
+            data.flip = flip_x;
+        }
         // `case 3`-group — plants: 20 px tall, flip on even columns
         // (TileDrawing.cs:4850-4863).
         3 | 24 | 61 | 71 | 110 | 201 | 637 | 703 => {
@@ -1877,10 +1909,9 @@ mod tests {
     fn test_DW_1_1_deviation_kinds_stay_default() {
         // §3B kinds without an unconditional static part keep the 16x16
         // default at t=0 (documented deviations; every one cites its C#
-        // branch in drawdata.rs).
-        for kind in [
-            453, 456, 485, 507, 508, 518, 529, 530, 489, 490, 719, 541, 579, 5,
-        ] {
+        // branch in drawdata.rs). 529/530/485/489/490 moved to static-part
+        // arms in Phase 4 — covered by test_DW_4_1_s3b_static_parts.
+        for kind in [453, 456, 507, 508, 518, 719, 541, 579, 5] {
             assert_eq!(dd(kind, 3, 7, 90, 144, 0), DEFAULT, "kind {kind}");
         }
     }
@@ -2247,5 +2278,134 @@ mod tests {
         let mut palm2 = dd(323, 9999, 20, 0, 0, 0);
         palm2.apply_world_corrections(&w, 323, 9999, 20, 0, 0, 0);
         assert_eq!(palm2.frame_y_override, Some(-22));
+    }
+
+    // ---- Phase 4: static parts of the §3B cases and doc fixes ----
+
+    #[test]
+    fn test_DW_4_1_s3b_static_parts() {
+        // 529 SeaOats: 32 px tall, raised 14 px, flip on even columns
+        // (TileDrawing.cs:4842-4848); the addFrY biome/beach rewrite is a
+        // documented deviation.
+        let even = dd(529, 4, 7, 0, 0, 0);
+        assert_eq!(
+            (even.width, even.height, even.top, even.flip),
+            (16, 32, -14, true)
+        );
+        assert_eq!(dd(529, 5, 7, 0, 0, 0).flip, false);
+        // The addFrY rewrite (`+= 34 * <pick> - tileFrameY`) is not ported:
+        // the global default row passes through, overrides stay unset.
+        assert_eq!(dd(529, 4, 7, 90, 144, 0).add_fr_y, 0);
+        assert_eq!(dd(529, 4, 7, 0, 0, 2).add_fr_y, 76);
+        let oats = dd(529, 4, 7, 90, 144, 0);
+        assert_eq!((oats.frame_x_override, oats.frame_y_override), (None, None));
+        // 530 OasisPlants: top 2 (TileDrawing.cs:4721); the
+        // `addFrY += 36 * <biome pick>` rewrite is a deviation, the default
+        // row passes through.
+        let oasis = dd(530, 3, 7, 18, 36, 0);
+        assert_eq!(oasis, TileDrawData { top: 2, ..DEFAULT });
+        assert_eq!(dd(530, 0, 0, 0, 0, 2).add_fr_y, 76);
+        assert_eq!(dd(530, 4, 7, 0, 0, 0).flip, false);
+        // 485 AntlionLarva / 489 PinWheel / 490 WeatherVane: top 2; the
+        // tileFrameCounter / wind animations are deviations
+        // (TileDrawing.cs:4728 / 4733 / 4744).
+        for kind in [485u16, 489, 490] {
+            let d = dd(kind, 3, 7, 18, 36, 0);
+            assert_eq!(d, TileDrawData { top: 2, ..DEFAULT }, "kind {kind}");
+            assert_eq!(dd(kind, 0, 0, 0, 0, 2).add_fr_y, 76, "kind {kind}");
+        }
+    }
+
+    #[test]
+    fn test_DW_4_2_solid_above_scope() {
+        // The doc on `draw_data` must describe the caller's actual predicate
+        // (render/tiles.rs:371-373: active && TILE_SOLID && !TILE_SOLID_TOP),
+        // not claim solid_above *is* WorldGen.SolidTile.
+        let src = include_str!("drawdata.rs");
+        let doc = &src
+            [src.find("/// `kind` is `Tile.type`").unwrap()..src.find("pub fn draw_data").unwrap()];
+        assert!(doc.contains("active"), "doc must state the active flag");
+        assert!(doc.contains("TILE_SOLID"), "doc must state the solid set");
+        assert!(
+            doc.contains("TILE_SOLID_TOP"),
+            "doc must state the solid-top exclusion"
+        );
+        // And the parameter is consumed only by the torch arm: flipping
+        // solid_above changes nothing anywhere else
+        // (TileDrawing.cs:4672-4679).
+        for kind in 0..=u16::MAX {
+            let plain = draw_data(kind, 3, 7, 90, 144, 0, false);
+            let under = draw_data(kind, 3, 7, 90, 144, 0, true);
+            if kind == 4 {
+                assert_eq!(under.top, 4, "torch under a solid tile");
+                assert_eq!(plain.top, 0, "torch with air above");
+            } else {
+                assert_eq!(plain, under, "kind {kind}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_DW_4_3_direct_asserts() {
+        // Saplings / GemSaplings / vanity saplings: 18 px tall, flip on even
+        // columns (TileDrawing.cs:4864-4878).
+        for kind in [20u16, 590, 595, 615] {
+            let even = dd(kind, 6, 0, 0, 0, 0);
+            assert_eq!(
+                (even.width, even.height, even.top, even.flip),
+                (16, 18, 0, true),
+                "kind {kind}"
+            );
+            let odd = dd(kind, 7, 0, 0, 0, 0);
+            assert_eq!((odd.width, odd.height, odd.flip), (16, 18, false));
+        }
+        // BeachPiles: 20x20, raised 2 px, flip on even columns
+        // (TileDrawing.cs:4988-4996).
+        let piles = dd(324, 8, 0, 0, 0, 0);
+        assert_eq!(
+            (piles.width, piles.height, piles.top, piles.flip),
+            (20, 20, -2, true)
+        );
+        assert_eq!(dd(324, 9, 0, 0, 0, 0).flip, false);
+        // TNTBarrel: top 2 (TileDrawing.cs:4940-4942).
+        let barrel = dd(654, 0, 0, 0, 0, 0);
+        assert_eq!(barrel, TileDrawData { top: 2, ..DEFAULT });
+        // Dirty: neighbouring ids keep their own arms or the default — none
+        // pick up the tested metrics.
+        assert_eq!(dd(19, 6, 0, 0, 0, 0), DEFAULT); // platforms: no case
+        let chest = dd(21, 6, 0, 0, 0, 0); // 14-group: no flip, 18 only on fy == 18
+        assert_eq!((chest.height, chest.flip), (16, false));
+        assert_eq!(dd(21, 6, 0, 0, 18, 0).height, 18);
+        assert_eq!(dd(484, 0, 0, 0, 0, 0), DEFAULT); // RollingCactus: no case
+        assert_eq!(dd(486, 0, 0, 0, 0, 0), DEFAULT); // DrumSet: no case
+        assert_eq!(dd(487, 0, 0, 0, 0, 0).height, 18); // 18 px group
+        assert_eq!(dd(488, 0, 0, 0, 0, 0).top, 0); // 18 px group, not top 2
+        let vault = dd(491, 0, 0, 0, 0, 0); // VoidVault, not the 490 arm
+        assert_eq!((vault.top, vault.add_fr_x), (2, 54));
+        assert_eq!(dd(528, 0, 0, 0, 0, 0).top, -2); // vine, not 529
+        assert_eq!(dd(531, 0, 0, 0, 0, 0), DEFAULT); // no case
+        assert_eq!(
+            (dd(589, 0, 0, 0, 0, 0).width, dd(589, 0, 0, 0, 0, 0).height),
+            (20, 20) // tree variant, not the 590 sapling
+        );
+        assert_eq!(dd(591, 0, 0, 0, 0, 0), DEFAULT); // no case
+        assert_eq!(dd(594, 0, 0, 0, 0, 0).top, 2); // VolcanoLarge, not 595
+        assert_eq!(
+            (dd(596, 0, 0, 0, 0, 0).width, dd(596, 0, 0, 0, 0, 0).height),
+            (20, 20) // tree variant, not the 615 sapling
+        );
+        let tendril = dd(614, 0, 0, 0, 0, 0); // not the 615 sapling
+        assert_eq!((tendril.top, tendril.height), (2, 16));
+        assert_eq!(
+            (dd(616, 0, 0, 0, 0, 0).width, dd(616, 0, 0, 0, 0, 0).height),
+            (20, 20) // tree variant, not the 615 sapling
+        );
+        let palm = dd(323, 8, 0, 0, 0, 0); // not the 324 arm: top 0, no flip
+        assert_eq!(
+            (palm.width, palm.height, palm.top, palm.flip),
+            (20, 20, 0, false)
+        );
+        assert_eq!(dd(325, 0, 0, 0, 0, 0), DEFAULT); // no case
+        assert_eq!(dd(655, 0, 0, 0, 0, 0), DEFAULT); // no case, not the 654 arm
     }
 }
