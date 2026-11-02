@@ -14,6 +14,17 @@ use super::items::spawn_item_drop;
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.swing = (app.swing - dt).max(0.0);
+    // `Player.releaseUseItem = !controlUseItem` runs every tick
+    // (`Player.cs:42822`), so the press/release edges stay current even on
+    // frames where the cursor is over the HUD or a panel.
+    app.place_prev_down = app.place_down;
+    app.mine_prev_down = app.mine_down;
+    app.place_released = !app.place_down;
+    app.mine_released = !app.mine_down;
+    // The `itemTime` accumulator (`Player.ApplyItemTime`, `Player.cs:4416`):
+    // the *action* cadence inside a swing — placement fires whenever it hits
+    // zero while the swing animation is still running.
+    app.item_time = (app.item_time - dt).max(0.0);
     if let Some((x, y)) = app.dev_break.take() {
         break_tile(app, x, y);
     }
@@ -23,7 +34,6 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.world_key = None;
         }
     }
-    app.place_cooldown = (app.place_cooldown - dt).max(0.0);
     // `Player.cs:24798-24807`: while the map is fullscreen `controlUseItem`/
     // `controlUseTile` are cleared, so no mining, placing or attacking happens
     // behind it; the left button drags the map instead (`update_map_input`).
@@ -84,8 +94,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     if app.mine_down && held_weapon && !app.inventory_open {
-        // Weapons use LMB toward the cursor instead of mining.
-        if app.attack_cd <= 0.0 {
+        // Weapons use LMB toward the cursor instead of mining. The shuriken
+        // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
+        // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
+        let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
+            || (app.mine_released && !app.mine_prev_down);
+        if app.attack_cd <= 0.0 && throw_ready {
             let (pcx, pcy) = player.center();
             let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
             if dir != Vec2::ZERO {
@@ -128,7 +142,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
-                app.attack_cd = app.swing_max.max(0.3);
+                app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
                 return;
@@ -192,13 +206,26 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
     }
 
-    // `Player.ItemCheck` (`Player.cs:42814-42822`): while the use button is
-    // held, an `autoReuse` item re-fires the moment `itemAnimation` reaches 0;
-    // a non-autoReuse kind waits for a release (`releaseUseItem`). The swing
-    // duration itself is the item's `useAnimation`.
+    // `Player.ItemCheck` pacing: the swing animation lasts `useAnimation`
+    // (`Player.cs:4443-4451`); the *action* re-fires whenever `itemTime`
+    // reaches zero while the animation still runs and the button is held
+    // (`Player.cs:39743` `ItemTimeIsZero && itemAnimation > 0 &&
+    // controlUseItem`, `ApplyItemTime = useTime`, `Player.cs:4416-4418`) —
+    // dirt places every 10 ticks inside the 15-tick swing, walls every 7.
+    // An `autoReuse` kind restarts the swing the moment it ends
+    // (`Player.cs:42819-42822`); a non-autoReuse kind waits for a release.
     let auto_reuse = registry::get(held.kind).is_some_and(|d| d.auto_reuse);
+    let timings = registry::get(held.kind);
+    let swing_secs = crate::item::use_animation_secs(held.kind);
+    let action_secs = timings
+        .map(|d| d.use_time as f32 / 60.0)
+        .filter(|t| *t > 0.0)
+        .unwrap_or(swing_secs);
+    let swing_over = app.swing <= 0.0;
     let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
-    if app.place_down && app.swing <= 0.0 && reuse_ready && !app.inventory_open {
+    let starting = swing_over && reuse_ready;
+    let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
+    if app.place_down && !app.inventory_open && (starting || inside_swing) {
         let used = if held_wall {
             if can_place_wall(app, tx, ty) {
                 place_wall_item(app, tx, ty, registry::place_wall(held.kind).unwrap_or(1));
@@ -218,15 +245,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             false
         };
         if used {
-            app.swing_max = crate::item::use_animation_secs(held.kind);
-            app.swing = app.swing_max;
+            if starting {
+                app.swing_max = swing_secs;
+                app.swing = app.swing_max;
+            }
+            app.item_time = action_secs;
         }
     }
-    app.place_prev_down = app.place_down;
-    app.place_released = !app.place_down;
-    // The legacy per-second cooldown retires: the swing gate above carries the
-    // cadence (`place_cooldown` stays for the net/save fixtures).
-    app.place_cooldown = 0.0;
 }
 
 pub(crate) fn break_wall(app: &mut App, tx: i32, ty: i32) {

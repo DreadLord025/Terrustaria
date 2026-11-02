@@ -201,12 +201,16 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
-    pub(crate) place_cooldown: f32,
     /// Use-button edge tracking for non-`autoReuse` kinds: the item may fire
     /// again only after a release (`Player.releaseUseItem`,
     /// `Player.cs:42819-42822`).
     pub(crate) place_prev_down: bool,
     pub(crate) place_released: bool,
+    pub(crate) mine_prev_down: bool,
+    pub(crate) mine_released: bool,
+    /// `Player.itemTime` in seconds: the action accumulator inside a swing
+    /// (`Player.cs:4416-4418`); placement re-fires whenever it hits zero.
+    pub(crate) item_time: f32,
     pub(crate) edit_target: Option<(i32, i32)>,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
@@ -1024,9 +1028,11 @@ impl App {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
-            place_cooldown: 0.0,
             place_prev_down: false,
             place_released: false,
+            mine_prev_down: false,
+            mine_released: false,
+            item_time: 0.0,
             edit_target: None,
             world_path: world_path.clone(),
             dev_break,

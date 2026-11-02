@@ -1735,12 +1735,16 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   (`Player.ApplyItemAnimation`, `Player.cs:4449-4451`); the fixed `SWING_TIME`
   stand-in is gone and the render builders consume the remaining *fraction*
   (`itemAnimation / itemAnimationMax`).
-- The use cadence follows `ItemCheck` (`Player.cs:42814-42822`): an
-  `autoReuse` kind re-fires while the button is held; a non-autoReuse kind
-  waits for a release. The legacy `place_cooldown = 0.12` pacing retired —
-  placement is paced by the swing itself, like the original.
-- The mining re-swing keeps the port's own `mine_timer`/hardness model
-  (M3-TOOL owns pick power); only the visible swing cadence is per-item.
+- The cadence follows `ItemCheck`: an `autoReuse` kind re-fires while the
+  button is held; a non-autoReuse kind waits for a release
+  (`Player.cs:42733`, `42819-42822`) — the shuriken throw is press-edge gated,
+  and the release edges refresh every frame like `Player.releaseUseItem`.
+  Placement (the RMB path) fires whenever `itemTime` hits zero inside a
+  running swing (`Player.cs:39743` + `ApplyItemTime = useTime`,
+  `Player.cs:4416-4418`) — dirt every 10 ticks inside the 15-tick swing,
+  walls every 7; the legacy `place_cooldown = 0.12` retired. The LMB mining
+  path keeps the port's own `mine_timer`/hardness model paced by the swing
+  (`M3-TOOL` owns pick power), a documented deviation.
 - A resting `holdStyle == 1` item (the torch) is drawn in the hand —
   anchor `position.X + width/2 + (frame.W/2 + 2)·direction`,
   `position.Y + 24`, `itemRotation = 0` (`Player.cs:50275-50460`) — and pins
@@ -1753,4 +1757,16 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   bow/thrown tasks.
 - XNA pivot semantics (`PlayerDrawLayers.cs:3161`): the draw origin
   `(W/2 - W/2·direction, H)` positions the quad; the `direction < 0` flip
-  swaps the UVs inside the quad, not the quad geometry.
+  swaps the UVs inside the quad, not the quad geometry (MonoGame
+  `SpriteBatch.DrawInternal`). This also fixed the held-item mirror that
+  main's `origin_drawn = width - origin` adjustment got backwards.
+- The `itemLocation` thirds run on the DECREASING `itemAnimation`: the
+  C# chain's first branch (`itemAnimation < max * 0.333`,
+  `Player.cs:50709-50734`, Y+24 / X+10) is the swing END and the last
+  (`:50776-50843`, X subtracted) the start — the port had them swapped since
+  the M2-ANIM-foundation pass; corrected here (pre-existing, byte-identical
+  visually at rest).
+- The shuriken damage now matches `Item.cs:1876` (10, was 15) — a registry
+  data fix spotted during the review; the remaining pre-existing registry
+  mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
+  item-data catalog work.

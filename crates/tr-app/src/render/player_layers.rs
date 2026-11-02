@@ -613,9 +613,12 @@ fn item_location(
     frame_h: f32,
 ) -> [f32; 2] {
     let half = frame_w * 0.5;
-    let (num_x, loc_y) = if remaining >= 0.666 {
-        // First third (`Player.cs:50709-50734`): X `10 / >32:14 / >=52:24 /
-        // >=64:28 / >=92:38`, Y `position.Y + 24`.
+    // `itemAnimation` counts DOWN, so the C# chain's first branch —
+    // `itemAnimation < itemAnimationMax * 0.333` (`Player.cs:50709-50734`) —
+    // is the swing END: X `10 / >32:14 / >=52:24 / >=64:28 / >=92:38` added,
+    // Y `position.Y + 24`. The last branch (`>= 0.666`, `:50776-50843`)
+    // *subtracts* the X offset near the swing start.
+    let (num_x, loc_y) = if remaining < 0.333 {
         let mut num = if frame_w > 32.0 { 14.0 } else { 10.0 };
         if frame_w >= 52.0 {
             num = 24.0;
@@ -627,7 +630,7 @@ fn item_location(
             num = 38.0;
         }
         (num, 24.0)
-    } else if remaining >= 0.333 {
+    } else if remaining < 0.666 {
         // Middle third (`:50736-50775`): X `10 / >32:18 / >=52:24 / >=64:28 /
         // >=92:38`, Y `10 / >32:8 / >52:12 / >64:14`.
         let mut num = if frame_w > 32.0 { 18.0 } else { 10.0 };
@@ -651,7 +654,7 @@ fn item_location(
         };
         (num, num_y)
     } else {
-        // Last third (`:50776-50843`): X `6 / >32:14 / >=48:18 / >=52:24 /
+        // Swing start (`:50776-50843`): X `6 / >32:14 / >=48:18 / >=52:24 /
         // >=64:28 / >=92:38` and it *subtracts* `direction`, Y `10 / >52:12 /
         // >64:14`.
         let mut num = if frame_w > 32.0 { 14.0 } else { 6.0 };
@@ -677,9 +680,9 @@ fn item_location(
         (num, num_y)
     };
     let x = if remaining < 0.333 {
-        pos_x - (half - num_x) * direction
-    } else {
         pos_x + (half - num_x) * direction
+    } else {
+        pos_x - (half - num_x) * direction
     };
     [x, pos_y + loc_y]
 }
@@ -1149,18 +1152,18 @@ mod tests {
     fn test_dw_2_4_held_item_origins() {
         use std::f32::consts::FRAC_PI_2;
         let a = fixture();
-        // Default useStyle 1 at the swing start (`swing = SWING_TIME`,
+        // Default useStyle 1 at the swing start (`swing = 1.0`,
         // `remaining = 1`): `itemRotation = (1 - 0.5) * (-1) * 3.5 - 0.3 =
-        // -2.05` (`Player.cs:50848`); `itemLocation` first third for a 16x16
-        // frame = `position + (8 - 10, 24)` = (100+20-2, 200+10+24) =
-        // (118, 234) (`Player.cs:50709-50734`); grip origin `(0, 16)`
+        // -2.05` (`Player.cs:50858`); `itemLocation` start third for a 16x16
+        // frame = `position - (8 - 6, -10)` = (100+20-2, 200+10+10) =
+        // (118, 220) (`Player.cs:50776-50843`); grip origin `(0, 16)`
         // (`PlayerDrawLayers.cs:3161`).
         let mut s = state();
         s.swing = 1.0; // itemAnimation == itemAnimationMax: the swing start
         s.item_uv = Some([0.0, 0.0, 1.0, 1.0]);
         let rotation = -2.05f32;
         let (sin, cos) = rotation.sin_cos();
-        let expected = [118.0 + 16.0 * sin, 234.0 - 16.0 * cos];
+        let expected = [118.0 + 16.0 * sin, 220.0 - 16.0 * cos];
         let item = &held_item_layers(&s)[0];
         assert!((item.pos[0] - expected[0]).abs() < 1e-4, "{:?}", item.pos);
         assert!((item.pos[1] - expected[1]).abs() < 1e-4, "{:?}", item.pos);
@@ -1180,7 +1183,7 @@ mod tests {
         let (sin8, cos8) = rotation8.sin_cos();
         let expected8 = [
             118.0 - (2.0 * cos8 - 2.0 * sin8),
-            234.0 - (2.0 * sin8 + 2.0 * cos8),
+            220.0 - (2.0 * sin8 + 2.0 * cos8),
         ];
         let item8 = &held_item_layers(&s8)[0];
         assert!((item8.rotation - rotation8).abs() < 1e-5);

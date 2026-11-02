@@ -19,8 +19,9 @@ pub(crate) const HOTBAR: usize = 10;
 /// `Player.inventory` length: hotbar plus the four storage rows of the open grid.
 pub(crate) const INV: usize = 50;
 /// `Player.SetItemAnimation` fallback for kinds outside [`registry::ITEMS`]:
-/// the vanilla default of `useAnimation = 15` ticks at 60 Hz
-/// (`Item.cs` block/wood defaults, `Item.cs` SetDefaults1).
+/// 15 ticks — the `SetDefaults1` block default (`Item.cs:1405-1415`; the raw
+/// `ResetStats` default is 100, `Item.cs:49020-49022`, which no live kind
+/// reaches).
 pub(crate) const DEFAULT_USE_ANIMATION_TICKS: u16 = 15;
 
 /// The held item's swing duration in seconds — `useAnimation` ticks at the
