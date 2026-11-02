@@ -19,7 +19,7 @@ milestone section for the full context before starting.
 | --- | --- | --- | --- |
 | M1.4-BG-11/16-finish | `M1.4-BG-11-cloud-parallax` | cloud `Parse`/`GetParallax` density, `DrawStarsInBackground` star density, horizon layer order | 🟡 sun/moon/phases/rotation are done |
 | M1.4-BG-13 ✅ | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | done 2026-11-01: full `TileFrameCosmetic` grass chain (`WorldGen.cs:82184-84836`) ported; 9-slice light needed no change (tile-light scanner + `GetColor9Slice` already cover the seam); quirks in ANALYSIS |
-| TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
+| TILE-DRAW-1-finish ✅ | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog world corrections in `tr-core/src/drawdata.rs` | done 2026-11-02: every case ported or a documented deviation (ANALYSIS "GetTileDrawData deviations"); animator/glow/wind remain TILE-DRAW-2/3 |
 | TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `TextureAssets.Flames`, glow-mask table | brief: `docs/superpowers/sdd/non-ui/brief-TILE-DRAW-2-torch-flames-glowmasks.md` |
 | TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | 🟡 started |
 | TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
