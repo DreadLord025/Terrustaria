@@ -1663,7 +1663,8 @@ the `frameCounter += speed; while (>= threshold)` idiom of
 `Player.cs:36259-36264` and `NPC.FindFrame`, `wrap_row_band`, the useStyle-1
 thirds, the UI sine pulse). Deviations and ports:
 
-- **Player draw origin** (`render/entities.rs`): the 40x56 frame rides the
+- **Player draw origin** (`render/player_layers.rs` `gfx_off_y` state field):
+  the 40x56 frame rides the
   20x42 hitbox at `(x - 10, y - 10 + gfxOffY)` — the resolution of
   `PlayerDrawLayers.cs:1150-1153` plus the `LegacyPlayerRenderer.cs:457,468`
   `position + (0, gfxOffY)` call. `gfxOffY` was previously ignored (the step
@@ -1673,7 +1674,10 @@ thirds, the UI sine pulse). Deviations and ports:
   arm the same column two rows down. The old front-arm cell hardcoded column
   8 (the composite *back*-arm use column), which mismatched the pose while
   walking and during useStyle-1 swings.
-- **Item swing** (`Player.cs:50686-50852` + `PlayerDrawLayers.cs:3043-3215`):
+- **Item swing** (`Player.cs:50686-50852` + `PlayerDrawLayers.cs:3043-3215`,
+  implemented inside the `render/player_layers.rs` builders that M2-DRAW-1
+  introduced — `held_item_layers` consumes the vanilla `itemRotation` /
+  `itemLocation` and the real atlas frame size):
   `itemRotation = (itemAnimation/itemAnimationMax - 0.5) * (-direction) * 3.5
   - direction * 0.3`, `itemLocation` thirds over the held frame's size, pivot
   at the drawn sprite's bottom-left. `SWING_TIME` (0.28 s) still stands in for
