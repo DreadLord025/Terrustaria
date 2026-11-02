@@ -3,11 +3,12 @@
 //!
 //! Covered contexts (the ones the P2 inventory panels use): 0 (main grid/hotbar),
 //! 1 (coins), 2 (ammo), 5 (reforge), 6 (trash), 7 (guide), 8-12 (armour/vanity/dye),
-//! 16-20 (misc equips) and 33 (misc dyes).
+//! 13 (the closed hotbar, `GUIHotbarDrawInner`), 21 (the mouse-carried item, no
+//! background — `Main.cs:45194`), 16-20 (misc equips) and 33 (misc dyes).
 
 use tr_render::{SheetRect, SpriteRenderer};
 
-use super::text::{hud_item_text, hud_item_text_width};
+use super::text::hud_item_text;
 use crate::assets;
 use crate::item::ItemSlot;
 
@@ -153,6 +154,50 @@ fn hotbar_digit_offset(x: f32, y: f32, selected: bool, scale: f32) -> (f32, f32)
     (x + 6.0 * scale, y + (4.0 + num29) * scale)
 }
 
+/// `ItemSlot.cs:2693-2701`: the closed-hotbar (context 13) digit sits at
+/// `position + (8, 4) * inventoryScale` — unlike the context-0 row it never
+/// lifts 2 px and is tinted by the caller's `lightColor`, not `Main.inventoryBack`.
+fn closed_hotbar_digit_offset(x: f32, y: f32, scale: f32) -> (f32, f32) {
+    (x + 8.0 * scale, y + 4.0 * scale)
+}
+
+/// `GUIHotbarDrawInner` (`Main.cs:43615`): the `lightColor` every context-13
+/// element is tinted by — `new Color(255, 255, 255, (int)(75f + 150f * scale))`,
+/// so the item, its stack text and the digit fade with the slot's animation scale.
+fn closed_hotbar_light_color(scale: f32) -> [f32; 4] {
+    [1.0, 1.0, 1.0, (75.0 + 150.0 * scale) / 255.0]
+}
+
+/// `GUIHotbarDrawInner` (`Main.cs:43614,43639`): the closed hotbar's per-slot
+/// metrics at `scale` — the draw row `y` `(int)(20 + 22 * (1 - scale))`, the x
+/// advance `(int)(InventoryBack.Width() * scale) + 4` (the retail sheet is 52 px
+/// wide) and the untruncated `Width * scale` hover size the C# hit test uses
+/// (`Main.cs:43616`). Returns `(y, x_advance, hover_size)`.
+pub(crate) fn closed_hotbar_metrics(scale: f32) -> (f32, f32, f32) {
+    let y = (20.0 + 22.0 * (1.0 - scale)) as i32 as f32;
+    let advance = (52.0 * scale) as i32 as f32 + 4.0;
+    (y, advance, 52.0 * scale)
+}
+
+/// `ItemSlot.cs:2232-2242`: the closed-hotbar (context 13) background — the
+/// selected slot is the yellow `Inventory_Back14` at full white and every other
+/// slot stays on the default `Inventory_Back` at `new Color(200, 200, 200, 200)`.
+/// (`Inventory_Back20`, the white variant for
+/// `slot == player.selectedItemState.Hotbar`, is only reachable while a
+/// `SelectedItemState` override is active (`ItemSlot.cs:2234-2237`); the port has
+/// no override system, so `Hotbar` is always the selected slot and that branch
+/// merges into the `flag` one.)
+pub(crate) fn closed_hotbar_background(
+    lookups: &assets::Lookups,
+    selected: bool,
+) -> (Option<SheetRect>, [f32; 4]) {
+    if selected {
+        (lookups.ui_back_sel, [1.0; 4])
+    } else {
+        (lookups.ui_back, [200.0 / 255.0; 4])
+    }
+}
+
 /// `ItemSlot.cs:2699-2706`: the stack text is positioned at
 /// `position + (10, 26 + LineSpacing) * inventoryScale` with origin
 /// `(0, LineSpacing) * inventoryScale`, so its net top-left is `(10, 26) * scale`.
@@ -162,8 +207,10 @@ fn stack_number_pos(x: f32, y: f32, scale: f32, line_spacing: f32) -> (f32, f32)
 }
 
 /// `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-353`): four
-/// black copies offset by `spread` along `±x`/`±y` (`ShadowDirections`,
-/// `ChatManager.cs:376-382`), then the coloured text on top.
+/// copies offset by `spread` along `±x`/`±y` (`ShadowDirections`,
+/// `ChatManager.cs:376-382`), then the coloured text on top. The shadow colour is
+/// `baseColor.MultiplyRGBA(Color.Black)` — black with the base colour's own alpha
+/// (`ChatManager.cs:334`), so a slot faded by `lightColor` fades its shadow too.
 fn hud_item_text_shadowed(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -174,7 +221,7 @@ fn hud_item_text_shadowed(
     spread: f32,
     text: &str,
 ) {
-    const SHADOW: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
+    let shadow = [0.0, 0.0, 0.0, color[3]];
     for (dx, dy) in [(-1.0f32, 0.0f32), (1.0, 0.0), (0.0, -1.0), (0.0, 1.0)] {
         hud_item_text(
             r,
@@ -182,7 +229,7 @@ fn hud_item_text_shadowed(
             x + dx * spread,
             y + dy * spread,
             scale,
-            SHADOW,
+            shadow,
             text,
         );
     }
@@ -192,13 +239,15 @@ fn hud_item_text_shadowed(
 /// `ItemSlot.DrawItemIcon` (`ItemSlot.cs:2848-2881`) with `sizeLimit = 32`
 /// (`ItemSlot.cs:2515`): the item's own texture centred on `center`, its longest
 /// side clamped to 32 px before the inventory scale
-/// (`DrawItem_GetColorAndScale`, `ItemSlot.cs:2966-2975`).
+/// (`DrawItem_GetColorAndScale`, `ItemSlot.cs:2966-2975`), tinted by
+/// `item.GetAlpha(environmentColor)` (`ItemSlot.cs:2876`).
 fn draw_item_icon(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     item: &ItemSlot,
     center: (f32, f32),
     scale: f32,
+    tint: [f32; 4],
 ) {
     let (uv, iw, ih) = match lookups.item_icon(item.kind) {
         Some(v) => v,
@@ -211,12 +260,7 @@ fn draw_item_icon(
     let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
     let s = scale * limit;
     let (w, h) = (iw * s, ih * s);
-    r.push_ui_sprite(
-        [center.0 - w * 0.5, center.1 - h * 0.5],
-        [w, h],
-        uv,
-        [1.0; 4],
-    );
+    r.push_ui_sprite([center.0 - w * 0.5, center.1 - h * 0.5], [w, h], uv, tint);
 }
 
 /// `ItemSlot.cs:2490-2498`: the empty-equipment glyph — `Extra_54`,
@@ -260,7 +304,15 @@ fn draw_equip_glyph(
 }
 
 /// `ItemSlot.Draw`: one inventory/equipment slot — background, empty glyph or the
-/// item icon, the stack count and (for the hotbar) the index digit.
+/// item icon, the stack count and (for the hotbar) the index digit. `tint` is the
+/// C# `color2` (`Main.inventoryBack` and its per-context overrides). The C#
+/// `lightColor` parameter is derived here: every caller omits it (`Color.White`,
+/// `ItemSlot.cs:2109-2112`) except `GUIHotbarDrawInner`, whose context-13
+/// `lightColor` is `Color(255, 255, 255, (int)(75 + 150 * inventoryScale))`
+/// (`Main.cs:43615,43637`) — a pure function of the `inventoryScale` this port
+/// already receives, with no other context-13 call site (`Main.cs:43648` is the
+/// override slot, not ported). The item, its stack text and the closed-hotbar
+/// digit are tinted by it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_slot(
     r: &mut SpriteRenderer,
@@ -274,14 +326,30 @@ pub(crate) fn draw_slot(
     scale: f32,
     tint: [f32; 4],
 ) {
-    // `ItemSlot.cs:2355`: `spriteBatch.Draw(value, position, ..., inventoryScale)`.
-    // The cell is the chosen sheet's native size (`value.Size()`, `ItemSlot.cs:2499`);
-    // the retail `Inventory_Back*` sheets are 52x52 (the 56 px is the layout pitch,
-    // `Main.cs:41026`), so the fallback matches them.
-    let back = background_for(lookups, context, index);
+    // `ItemSlot.cs:2109-2112` + `Main.cs:43615`: the derived `lightColor`.
+    let light_color = if context == 13 {
+        closed_hotbar_light_color(scale)
+    } else {
+        [1.0; 4]
+    };
+    // `ItemSlot.cs:2232-2242`: the closed hotbar (context 13) picks its own
+    // background and hardcodes the tint, ignoring `Main.inventoryBack`.
+    let (back, tint) = if context == 13 {
+        closed_hotbar_background(lookups, selected)
+    } else {
+        (background_for(lookups, context, index), tint)
+    };
+    // `ItemSlot.cs:2499`: cell = `value.Size()`, the chosen sheet's native size
+    // (the retail `Inventory_Back*` sheets are 52x52; the 56 px is the layout
+    // pitch, `Main.cs:41026`). Contexts 14/21/37 (`flag3`, `ItemSlot.cs:2236-2240`)
+    // draw no background at all — the mouse item rides on them — but still centre
+    // on `InventoryBack.Size()`.
     let cell = back.map(|b| b.width as f32).unwrap_or(52.0);
-    if let Some(uv) = lookups.hud_uv(back.as_ref()) {
-        r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, tint);
+    let no_background = matches!(context, 14 | 21 | 37);
+    if !no_background {
+        if let Some(uv) = lookups.hud_uv(back.as_ref()) {
+            r.push_ui_sprite([x, y], [cell * scale, cell * scale], uv, tint);
+        }
     }
 
     // `ItemSlot.cs:2499`: `vector = value.Size() * inventoryScale`; both the icon
@@ -292,9 +360,12 @@ pub(crate) fn draw_slot(
         // `ItemSlot.cs:2490-2498`: glyphs are only drawn on an empty slot.
         draw_equip_glyph(r, lookups, context, index, center, scale);
     } else {
-        // `ItemSlot.cs:2513-2515`: the item icon (coins/ammo too).
-        draw_item_icon(r, lookups, item, center, scale);
-        // `ItemSlot.cs:2697-2706`: the stack count, context != 37.
+        // `ItemSlot.cs:2513-2515`: the item icon (coins/ammo too), tinted by
+        // `item.GetAlpha(lightColor)` (`ItemSlot.cs:2876,2970`).
+        draw_item_icon(r, lookups, item, center, scale, light_color);
+        // `ItemSlot.cs:2703-2712`: the stack count, context != 37, tinted by
+        // `color` (= `lightColor`; `drawState.stackTextScale` is 1 outside the
+        // coin-jump animation, `CoinSlot.cs:316-322`).
         if item.count > 1 {
             let line_spacing = lookups
                 .item_font
@@ -303,12 +374,20 @@ pub(crate) fn draw_slot(
                 .unwrap_or(0.0);
             let (tx, ty) = stack_number_pos(x, y, scale, line_spacing);
             let text = item.count.to_string();
-            // `baseColor` is `Color.White` (`ItemSlot.cs:2110`).
-            hud_item_text_shadowed(r, lookups, tx, ty, scale, [1.0; 4], scale, &text);
+            hud_item_text_shadowed(r, lookups, tx, ty, scale, light_color, scale, &text);
         }
     }
 
-    // `ItemSlot.cs:2753-2771`: the hotbar digits (context 0, slot < 10 only).
+    // `ItemSlot.cs:2693-2701`: the closed-hotbar digits are drawn inside the
+    // item block (`flag4`), so an empty slot shows no number.
+    if context == 13 && item.count > 0 {
+        let (dx, dy) = closed_hotbar_digit_offset(x, y, scale);
+        let text = hotbar_digit(index);
+        hud_item_text_shadowed(r, lookups, dx, dy, scale, light_color, scale, &text);
+    }
+
+    // `ItemSlot.cs:2753-2771`: the open-inventory hotbar digits (context 0,
+    // slot < 10 only) — always drawn, empty slot or not.
     if context == 0 && (0..10).contains(&index) {
         // `Color baseColor = Main.inventoryBack;` unless selected (`Color.White`,
         // `A = 200`). `tint` mirrors `Main.inventoryBack`.
@@ -324,72 +403,6 @@ pub(crate) fn draw_slot(
         // so the digit is not actually enlarged.
         hud_item_text_shadowed(r, lookups, dx, dy, scale, color, scale, &text);
     }
-}
-
-/// The first-pass hotbar item icon (pre-P2 `ui::mod` caller); kept for the
-/// integration step and slated for deletion. Draws the item's own texture at
-/// inventory scale, centred in the slot, with the stack size in the bottom-right.
-pub(super) fn draw_slot_item(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    item: &ItemSlot,
-    x: f32,
-    y: f32,
-    slot: f32,
-    scale: f32,
-) {
-    if item.count == 0 {
-        return;
-    }
-    let (icon_uv, iw, ih) = match lookups.item_icon(item.kind) {
-        Some(v) => v,
-        None => match lookups.plain_tex(item.kind) {
-            Some(t) => (t.uv, 16.0, 16.0),
-            None => return,
-        },
-    };
-    let w = iw * scale;
-    let h = ih * scale;
-    r.push_ui_sprite(
-        [x + (slot - w) * 0.5, y + (slot - h) * 0.5],
-        [w, h],
-        icon_uv,
-        [1.0; 4],
-    );
-    let count = format!("{}", item.count);
-    let fs = 0.75 * scale;
-    let tw = hud_item_text_width(r, lookups, &count, fs);
-    let tx = x + slot - tw - 4.0 * scale;
-    let ty = y + slot - 11.0 * scale;
-    hud_item_text(r, lookups, tx + 1.0, ty + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &count);
-    hud_item_text(r, lookups, tx, ty, fs, [1.0, 1.0, 1.0, 1.0], &count);
-}
-
-/// The hotbar digits (`FontAssets.ItemStack` in the original): grey by default,
-/// white at 1.4x on the selected slot, and slot 10 is drawn as "0". Kept for the
-/// integration step and slated for deletion.
-pub(super) fn draw_slot_number(
-    r: &mut SpriteRenderer,
-    lookups: &assets::Lookups,
-    x: f32,
-    y: f32,
-    i: usize,
-    scale: f32,
-    selected: bool,
-) {
-    let mut num = format!("{}", i + 1);
-    if num == "10" {
-        num = "0".into();
-    }
-    let (fs, dy, col) = if selected {
-        (scale * 1.4, -2.0 * scale, [1.0, 1.0, 1.0, 200.0 / 255.0])
-    } else {
-        (scale, 0.0, [0.86, 0.86, 0.86, 1.0])
-    };
-    let px = x + 6.0 * scale;
-    let py = y + 4.0 * scale + dy;
-    hud_item_text(r, lookups, px + 1.0, py + 1.0, fs, [0.0, 0.0, 0.0, 1.0], &num);
-    hud_item_text(r, lookups, px, py, fs, col, &num);
 }
 
 #[cfg(test)]
@@ -494,6 +507,52 @@ mod tests {
     fn hotbar_digit_offset_moves_up_when_selected() {
         approx(hotbar_digit_offset(0.0, 0.0, false, 0.85), (5.1, 3.4));
         approx(hotbar_digit_offset(0.0, 0.0, true, 0.85), (5.1, 1.7));
+    }
+
+    #[test]
+    fn closed_hotbar_digit_offset_is_eight_four() {
+        // `ItemSlot.cs:2693-2701`: context 13 digits sit at `(8, 4) * scale` and
+        // never lift on the selected slot (that is the context-0 row's rule).
+        approx(closed_hotbar_digit_offset(0.0, 0.0, 0.85), (6.8, 3.4));
+        approx(closed_hotbar_digit_offset(100.0, 200.0, 1.0), (108.0, 204.0));
+    }
+
+    #[test]
+    fn closed_hotbar_light_color_fades_with_the_scale() {
+        // `Main.cs:43615`: `new Color(255, 255, 255, (int)(75f + 150f * num2))` —
+        // alpha 187.5 at the 0.75 idle scale, 225 when selected.
+        let idle = closed_hotbar_light_color(0.75);
+        assert!((idle[3] - 187.5 / 255.0).abs() < 1e-6);
+        assert_eq!(idle[0], 1.0);
+        assert_eq!(closed_hotbar_light_color(1.0)[3], 225.0 / 255.0);
+    }
+
+    #[test]
+    fn closed_hotbar_metrics_match_guihotbardrawinner() {
+        // `Main.cs:43614,43639`: y `(int)(20 + 22 * (1 - scale))`, advance
+        // `(int)(52 * scale) + 4`, hover size the untruncated `52 * scale`.
+        // Steady states: the selected slot at 1.0 and the rest at 0.75.
+        assert_eq!(closed_hotbar_metrics(1.0), (20.0, 56.0, 52.0));
+        assert_eq!(closed_hotbar_metrics(0.75), (25.0, 43.0, 39.0));
+        // Mid-lerp the ints truncate: 52 * 0.8 = 41.6 -> 41.
+        let (y, advance, size) = closed_hotbar_metrics(0.8);
+        assert_eq!((y, advance), (24.0, 45.0));
+        assert!((size - 41.6).abs() < 1e-4);
+    }
+
+    #[test]
+    fn closed_hotbar_background_is_back14_when_selected_back_at_200_otherwise() {
+        // `ItemSlot.cs:2232-2242`: `b = 200`; selected swaps to `Inventory_Back14`
+        // and `b = 255`.
+        let mut lk = assets::Lookups::default();
+        lk.ui_back = Some(rect(10));
+        lk.ui_back_sel = Some(rect(14));
+        let (sheet, tint) = closed_hotbar_background(&lk, true);
+        assert_eq!(sheet.map(|s| s.x), Some(14));
+        assert_eq!(tint, [1.0; 4]);
+        let (sheet, tint) = closed_hotbar_background(&lk, false);
+        assert_eq!(sheet.map(|s| s.x), Some(10));
+        assert_eq!(tint, [200.0 / 255.0; 4]);
     }
 
     #[test]

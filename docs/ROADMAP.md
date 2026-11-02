@@ -33,8 +33,9 @@ milestone section for the full context before starting.
 | Task | Branch | Scope |
 | --- | --- | --- |
 | M2-DRAW-1 🟡 | `M2-DRAW-1-player-layers` | full `PlayerDrawLayers`: armor/accessories draw | layering done 2026-11-02: order + weapon slot + composite front arm + bob (`player_layers.rs` builders, tests); armor/accessories go live with M3-EQUIP; composite shoulder rotation is M2-DRAW-2 |
-| M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
+| M2-DRAW-2 ✅ | `M2-DRAW-2-arm-rotation` | composite arm rotation | done 2026-11-02: `CompositeArmData` draw-side in the layer builders (columns 7/8 × stretch rows, pivot rotation, `PlayerDrawSet.cs:2246-2271`); the rotation source is a swing-arc stand-in until M2-ANIM |
 | M2-ANIM | `M2-ANIM-item-timings` | full `itemAnimation`/use timings (hold-style items) |
+| ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | animation foundation + fixes: `tr-core/src/anim.rs` primitives (`FrameCounter`, band wrap, useStyle-1 thirds), faithful player draw origin (`PlayerDrawSet` + gfxOffY — the "pixels shift" bug), held-item swing (`ItemCheck` `itemRotation`), `NPC.FindFrame` for the four ported kinds, HUD hotbar through the faithful `ItemSlot.Draw` path (one stack-text size/position, 32 px icon clamp) | done 2026-11-02; deviations in ANALYSIS "Animations (M2-ANIM-foundation)" + "Closed hotbar and mouse item"; per-item `useAnimation` timings stay with M2-ANIM-item-timings |
 | M2-BUFF | `M2-BUFF-buffs-mounts` | buffs/debuffs, hooks, mounts, gravity flips |
 
 ### Milestone 3 — items, inventory, crafting
