@@ -21,7 +21,7 @@ milestone section for the full context before starting.
 | ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass/dirt transition fidelity: `WorldGen.TileFrame` grass branches vs `framing.rs`, 9-slice light | done 2026-11-01: full `TileFrameCosmetic` grass chain (`WorldGen.cs:82184-84836`) ported; 9-slice light needed no change (tile-light scanner + `GetColor9Slice` already cover the seam); quirks in ANALYSIS |
 | TILE-DRAW-1-finish | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics in `tr-core/src/drawdata.rs`: finish torch 20×20/top 4, plants 20+flip, herbs, tables, candles, palm, cactus | 🟡 partially populated |
 | TILE-DRAW-2 | ✅ merged `TILE-DRAW-2-torch-flames` | torch flames + glow masks: `tr-core/src/flame.rs` (`GetTileFlameData` + `DrawSingleTile_Flames` both tables, 48-bit LCG `TileFrameSeed` jitter deterministic via fixed seed), premultiplied `AlphaBlend` fix in tr-render | deviations in ANALYSIS.md "Torch flames (TILE-DRAW-2)" |
-| ✅ TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | ✅ done 2026-11-02 (sway + leaves; the WindGrid push and the multi-tile/vine wind draws remain, see `ANALYSIS.md`) |
+| ✅ TILE-DRAW-3-finish | `TILE-DRAW-3-wind-finish` | wind: finish swaying plants, tree wind, leaves (`tr-core/src/wind.rs`, `DrawGrass`, `EmitTreeLeaves`) | ✅ done 2026-11-02 (sway + leaves; the WindGrid push and the multi-tile/vine wind draws remain, see `ANALYSIS.md`) — ⚠ follow-up `TILE-DRAW-3-det-fix`: the leaf emission broke the pure-world screenshot determinism (two identical runs differ by a leaf gore; `TR_NO_FOLIAGE=1` restores SHA256 equality — bisected 2026-11-02 on 84f08e3, before M4-NPC-1) |
 | TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | `TilePaintSystemV2`, wall paint, coatings, echo/invisible flags | needs a paint byte on `Tile` (see E1) |
 | TILE-DRAW-5 ✅ | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82184-84836`): groups A-J, the `-2` marker, per-biome dirt ids | done 2026-11-01 by the M1.4-BG-13 port (full override chains + the `-1`/`-2` tables) |
 | M1.4-BG-18 | `M1.4-BG-18-screen-filters` | per-biome animated screen effects: `SceneState.ApplyVisuals` (desert heat distortion, underworld heat, blizzard/sandstorm/aurora/water distortion, monolith/story filters) | |
@@ -53,7 +53,8 @@ milestone section for the full context before starting.
 
 | Task | Branch | Scope |
 | --- | --- | --- |
-| M4-NPC-1 | `M4-NPC-1-more-npcs` | remaining `NPC.cs` types (780 total: AI states per family — split into per-family branches, e.g. `M4-NPC-1-fighters`) |
+| ✅ M4-NPC-1-slimes-eyes | `M4-NPC-1-slimes-eyes` | the slime colour family + demon-eye family: blue/green/pinky/baby/black/purple/red/yellow variants (`SetDefaultsFromNetId`, `NPC.cs:7653-8000`), Wandering Eye (133), vanilla stats (blue 24x18/25 HP/7 dmg — the hand-tuned values fixed), `NPC.color` tints, `GetBasicSlimeToSpawn` surface/underground rolls + the 1/180 Pinky roll, gel drops (`ItemDropDatabase.cs:1074-1082`; Gel 23 + Pink Gel 3111 added to the registry) | done 2026-11-02: first family branch of M4-NPC-1; jungle/snow slime tiles and hardmode night eyes stay out (Wandering Eye is hardmode-gated, black/baby slimes have no ambient roll) |
+| M4-NPC-1 | `M4-NPC-1-more-npcs` | remaining `NPC.cs` types (780 total: AI states per family — split into per-family branches, e.g. `M4-NPC-1-fighters`, `M4-NPC-1-cave`) | 🟡 slimes+eyes done (see above) |
 | M4-PROJ | `M4-PROJ-projectiles` | the rest of the projectile system (~1 100 types) |
 | M4-LOOT | `M4-LOOT-loot` | full loot tables / item drops |
 | M4-DAMAGE | `M4-DAMAGE-damage` | damage types / defense / crits |

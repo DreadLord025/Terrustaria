@@ -1835,3 +1835,36 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   data fix spotted during the review; the remaining pre-existing registry
   mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
   item-data catalog work.
+
+## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
+
+- The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
+  24x18 / 25 HP / 7 damage / defense 2 (`NPC.cs:8567-8580`; was 30x24/30/12),
+  demon eye 30x32 / 60 / 18 / defense 2 / knockBackResist 0.8 (case 2; was
+  30x26/25/14). Wandering Eye (133) joins the `aiStyle 2` machine with 4
+  frames (`Main.cs:67082`) and 300/40/20; it is hardmode-gated in the night
+  spawn roll (`NPC.cs:4555-4558`), so the pre-hardmode ambient pass never
+  spawns it — the kind exists for the future M5-HARDFORCE.
+- The slime variants are the negative net ids (`Lang.cs:520-533` names,
+  `NPC.SetDefaultsFromNetId` stats): green -3, pinky -4, baby -5, black -6,
+  purple -7, red -8, yellow -9. The hitbox rides the per-variant size scale,
+  the sprite is the 32x26 frame scaled and anchored at the frame centre over
+  the hitbox centre (`Main.DrawNPC`'s `origin = frame.Size() / 2`), tinted by
+  the per-variant `NPC.color` through the premultiplied pipeline (the alpha
+  channel renders the vanilla translucency).
+- The ambient selection ports `Spawner.GetBasicSlimeToSpawn`
+  (`NPC.cs:5625-5654`): underground 1/5 yellow, else 1/2 blue / red; forest
+  surface 1/3 green (or within 200 tiles of spawn), 1/10 purple beyond 400
+  tiles, else blue; then `Spawner.SpawnNPC`'s `RollLuck(180)` swap of any blue
+  slime for Pinky (`NPC.cs:5238-5246`; the port rolls it un-lucked). Jungle
+  tile 60 (-10) and snow 147/161 stay out until those biomes exist; black and
+  baby slimes have no ambient roll in the forest branch.
+- The loot follows `ItemDropDatabase.cs:1074-1082`: standard slimes (blue
+  family) always drop 1-2 Gel, red/purple/black 2-5, green/baby/pinky none
+  (Pinky drops 25-50 Pink Gel instead, `:1072`). Gel (23) and Pink Gel (3111)
+  are registered as materials (empty `SetDefaults` cases -> `ResetStats`
+  defaults: no use timings).
+- The death check keeps the vanilla semantics: `life` is not clamped, death
+  is `life <= 0` (`NPC.checkDead`).
+- The coin drops keep the port's pre-existing denominations (the `value`
+  copper amounts are a separate M4-LOOT row).
