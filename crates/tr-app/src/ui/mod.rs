@@ -134,6 +134,7 @@ pub fn draw_hud(
     mouse_item: &ItemSlot,
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
+    craft: &[usize],
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -191,7 +192,18 @@ pub fn draw_hud(
         // stays off, and a fresh character has neither expert mode nor the
         // creative inventory unblocked.
         if crafting_open {
-            crafting::draw(r, lookups, screen, mouse_pos, false, false);
+            crafting::draw(r, lookups, screen, mouse_pos, craft, false, false);
+            // Hovering a recipe shows the crafted item's tooltip
+            // (`Main.HoverOverCraftingItemButton`, `Main.cs:42250`).
+            if let Some(idx) = crafting::hit_test(screen, lookups, mouse_pos, craft) {
+                let (kind, count) = crate::craft::RECIPES[idx].create;
+                let hover = crate::item::ItemSlot {
+                    kind,
+                    name: crate::registry::name(kind),
+                    count,
+                };
+                tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
+            }
         }
     } else {
         // `GUIHotbarDrawInner` (`Main.cs:43600-43639`): the closed hotbar is a row

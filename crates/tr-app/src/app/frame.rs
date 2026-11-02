@@ -15,6 +15,7 @@ use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
 use crate::app::{no_hud, App, WorldFrameKey};
 use crate::assets;
 use crate::audio;
+use crate::craft;
 use crate::item::{self};
 use crate::map;
 use crate::npc::{self, NpcKind};
@@ -114,7 +115,9 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
-            self.handle_inventory_clicks();
+            if !self.handle_crafting_clicks() {
+                self.handle_inventory_clicks();
+            }
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
                 if *scale < target {
@@ -713,6 +716,15 @@ impl App {
                         );
                     }
                 } else if menu.is_none() && !no_hud() && !fullscreen_map {
+                    let craft_available = if self.crafting_open {
+                        let adj = player
+                            .as_ref()
+                            .map(|p| craft::adjacent_tiles(world, p))
+                            .unwrap_or_default();
+                        craft::available(inventory, &adj)
+                    } else {
+                        Vec::new()
+                    };
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -731,6 +743,7 @@ impl App {
                         &self.mouse_item,
                         self.mouse_pos,
                         &self.cursor,
+                        &craft_available,
                         ui::UiPulse {
                             // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                             text: self.mouse_text_color as f32 / 255.0,

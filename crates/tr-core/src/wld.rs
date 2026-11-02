@@ -184,7 +184,13 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
             if b4 & 4 != 0 {
                 tile.wall = r.u8()? as u16;
                 if b2 & 0x10 != 0 {
-                    r.u8()?; // wall paint
+                    // `WorldFile.cs:2589-2592`: `tile.wallColor(reader.ReadByte())`
+                    // — the wall paint lives in the sparse `World.extras` byte
+                    // (`Tile` keeps 12 bytes; see `World::set_wall_paint`).
+                    let wall_paint = r.u8()?;
+                    if wall_paint != 0 {
+                        world.set_wall_paint(x, y, wall_paint);
+                    }
                 }
             }
 
@@ -223,8 +229,20 @@ fn load_tiles(r: &mut Reader, world: &mut World, importance: &[bool], version: i
                 }
             }
 
-            if b3 > 1 && b3 & 8 != 0 {
-                tile.flags |= FLAG_FULLBRIGHT;
+            if b3 > 1 {
+                if b3 & 8 != 0 {
+                    tile.flags |= FLAG_FULLBRIGHT;
+                }
+                // `WorldFile.cs:2664-2682`: the Echo/Glow wall coatings.
+                if b3 & 2 != 0 {
+                    world.set_invisible_block(x, y, true);
+                }
+                if b3 & 4 != 0 {
+                    world.set_invisible_wall(x, y, true);
+                }
+                if b3 & 0x10 != 0 {
+                    world.set_fullbright_wall(x, y, true);
+                }
             }
 
             if version >= 105 {

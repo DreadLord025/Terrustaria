@@ -25,3 +25,4 @@ Thumbs.db
 # local graphify knowledge graphs (Rust + merged); the C# graph lives under the
 # gitignored /decompiled/, so neither is committed
 /graphify-out/
+target-m2d2/

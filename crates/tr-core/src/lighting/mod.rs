@@ -487,7 +487,7 @@ fn seed(
     } else if y > world.height - 200 {
         tile_light::apply_hell_light(world, tile, x, y, p, &mut c);
     }
-    tile_light::apply_wall_light(tile, &mut rng, p, &mut c);
+    tile_light::apply_wall_light(tile, world.wall_paint(x, y), &mut rng, p, &mut c);
     if tile.active() {
         tile_light::apply_tile_light(world, tile, x, y, &mut rng, p, &mut c);
     }

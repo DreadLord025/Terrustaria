@@ -350,6 +350,12 @@ pub(crate) fn draw_tiles(
                     stats.walls_culled += 1;
                     continue;
                 }
+                // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
+                // Echo Monolith or an Echo item grants sight (the port has
+                // neither yet, so they stay hidden; wall 318 is handled above).
+                if world.invisible_wall(tx, ty) {
+                    continue;
+                }
                 // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
                 // fully covered ones into black rectangles.
                 if light_is_zero(light.get(tx, ty)) {
@@ -366,6 +372,8 @@ pub(crate) fn draw_tiles(
                     tx,
                     ty,
                     anim_time,
+                    world.wall_paint(tx, ty),
+                    world.fullbright_wall(tx, ty),
                 );
                 stats.walls += 1;
             }
@@ -401,13 +409,37 @@ pub(crate) fn draw_tiles(
                     None
                 };
 
-                // `GetTileDrawData`: per-type sprite size/top/flip (torches 20x20 with
-                // `tileTop 4`, plants 20 px, herbs, candles, palms...).
+                // `GetTileDrawData`: per-type sprite size/top/flip/frame data
+                // (torches 20x20 with `tileTop 4`, plants 20 px, herbs,
+                // candles, palms, frame strides...). `tile_frame` is
+                // `Main.tileFrame[kind]`; the animator is not ported, so the
+                // vanilla t=0 state is passed.
                 let dd = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
-                    tr_core::drawdata::draw_data(tile.kind, tx, solid_above)
+                    let mut dd = tr_core::drawdata::draw_data(
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                        solid_above,
+                    );
+                    // The world-probing frame corrections C# applies in
+                    // `GetTileDrawData` (palm biome row 323, dye plants 227)
+                    // and `DrawSingleTile` (cactus 80, cog 272).
+                    dd.apply_world_corrections(
+                        world,
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                    );
+                    dd
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
@@ -431,6 +463,11 @@ pub(crate) fn draw_tiles(
                             });
                         }
                     } else if tile.frame_x >= 0 && tile.frame_y >= 0 {
+                        // Cases that rewrite C#'s `ref tileFrameX/Y` hand the
+                        // final frame to us; the source rectangle is built from
+                        // it (`TileDrawing.cs:1007`).
+                        let fx = dd.frame_x_override.unwrap_or(tile.frame_x);
+                        let fy = dd.frame_y_override.unwrap_or(tile.frame_y);
                         tile_frame = atlas.and_then(|a| {
                             if dd.width != 16
                                 || dd.height != 16
@@ -440,13 +477,13 @@ pub(crate) fn draw_tiles(
                                 lookups.rect_uv(
                                     a,
                                     tile.kind,
-                                    tile.frame_x + dd.add_fr_x,
-                                    tile.frame_y + dd.add_fr_y,
+                                    fx + dd.add_fr_x,
+                                    fy + dd.add_fr_y,
                                     dd.width as u32,
                                     dd.height as u32,
                                 )
                             } else {
-                                lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                                lookups.frame_tex(a, tile.kind, fx, fy)
                             }
                         });
                     }
@@ -512,6 +549,13 @@ pub(crate) fn draw_tiles(
                 let Some(tf) = tile_frame else {
                     continue;
                 };
+                // `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an
+                // Echo-coated block is hidden unless the Echo Monolith or an
+                // Echo item grants sight (the port has neither yet, so the
+                // blocks stay hidden).
+                if world.invisible_block(tx, ty) {
+                    continue;
+                }
                 stats.visible += 1;
                 // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
                 // `SwaysInWindBasic` tiles draw with the grass wind counter —
@@ -558,6 +602,7 @@ pub(crate) fn draw_tiles(
                         tx,
                         ty,
                         anim_time,
+                        tile.paint(),
                     );
                     stats.quads += 1;
                 } else if sway != 0.0 {
@@ -591,6 +636,7 @@ pub(crate) fn draw_tiles(
                         tx,
                         ty,
                         anim_time,
+                        tile.paint(),
                     );
                     stats.quads += 1;
                 } else if tile.slope() != 0 {
@@ -627,6 +673,7 @@ pub(crate) fn draw_tiles(
                         tx,
                         ty,
                         anim_time,
+                        tile.paint(),
                     );
                     stats.quads += 1;
                 }
@@ -795,8 +842,15 @@ fn push_wall_lit(
     tx: i32,
     ty: i32,
     time: f32,
+    paint: u8,
+    fullbright: bool,
 ) -> u32 {
-    let corners = light.corner4(tx, ty);
+    let mut corners = light.corner4(tx, ty);
+    if fullbright {
+        // `WallDrawing.cs:96-99`: a Glow-coated wall samples white light
+        // (`vertices = WallDrawing._glowPaintColors`).
+        corners = [[1.0; 3]; 4];
+    }
     let mut lo = f32::MAX;
     let mut hi = f32::MIN;
     for c in &corners {
@@ -810,7 +864,7 @@ fn push_wall_lit(
         [c[0].min(1.0), c[1].min(1.0), c[2].min(1.0), 1.0]
     };
     if hi - lo < 1.5 / 255.0 {
-        r.push_sprite(pos, [32.0, 32.0], uv, tint(corners[0]));
+        r.push_sprite_paint(pos, [32.0, 32.0], uv, tint(corners[0]), 0.0, paint);
         return 1;
     }
     let mut quads = 0;
@@ -818,11 +872,13 @@ fn push_wall_lit(
         for (j, v) in [0.25f32, 0.75].iter().enumerate() {
             let x = 16.0 * i as f32;
             let y = 16.0 * j as f32;
-            r.push_sprite(
+            r.push_sprite_paint(
                 [pos[0] + x, pos[1] + y],
                 [16.0, 16.0],
                 sub_uv_frac(uv, x, y, 16.0, 16.0, 32.0, 32.0),
                 tint(bilerp_corners(corners, *u, *v)),
+                0.0,
+                paint,
             );
             quads += 1;
         }
@@ -889,9 +945,10 @@ fn push_lit(
     tx: i32,
     ty: i32,
     time: f32,
+    paint: u8,
 ) {
     let c = style.shade(light, tx, ty, time);
-    r.push_sprite(pos, size, uv, [c[0], c[1], c[2], 1.0]);
+    r.push_sprite_paint(pos, size, uv, [c[0], c[1], c[2], 1.0], 0.0, paint);
 }
 
 /// Sub-rectangle of a 16x16 frame's UV rect, in tile pixels.
