@@ -1,20 +1,20 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
-use super::BgTex;
 use super::player_layers::{
     assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
     PlayerCompositeState,
 };
 use super::sky::sky_tex;
+use super::BgTex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
-use tr_core::TILE_PX;
 use tr_core::lighting::{LightMap, LightStyle};
+use tr_core::TILE_PX;
 use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
@@ -105,18 +105,23 @@ fn snap_to_screen(pos: [f32; 2], camera: Vec2, zoom: f32, screen: Vec2) -> [f32;
     ]
 }
 
-/// The held item's atlas quad — the `GetItemDrawFrame` stand-in: the hotbar
-/// icon quad while `Item.cs` textures stay unframed.
-fn held_item_uv(lookups: &assets::Lookups, kind: u16) -> Option<[f32; 4]> {
-    if let Some((uv, _, _)) = lookups.item_icon(kind) {
-        Some(uv)
-    } else if registry::is_weapon(kind) {
-        lookups.shuriken_uv()
-    } else if let Some(wall) = registry::place_wall(kind) {
-        lookups.wall_icon_uv(wall)
-    } else {
-        registry::place_tile(kind).and_then(|t| lookups.plain_tex(t).map(|f| f.uv))
+/// The held item's atlas quad and frame size — the `GetItemDrawFrame` stand-in:
+/// the hotbar icon quad and its atlas dimensions while `Item.cs` textures stay
+/// unframed (`ItemSlot.DrawItemIcon`'s clamp applies to the HUD slot, not the
+/// world sprite).
+fn held_item_quad(lookups: &assets::Lookups, kind: u16) -> Option<([f32; 4], [f32; 2])> {
+    if let Some((uv, w, h)) = lookups.item_icon(kind) {
+        return Some((uv, [w, h]));
     }
+    if registry::is_weapon(kind) {
+        return lookups.shuriken_uv().map(|uv| (uv, [16.0, 16.0]));
+    }
+    if let Some(wall) = registry::place_wall(kind) {
+        return lookups.wall_icon_uv(wall).map(|uv| (uv, [16.0, 16.0]));
+    }
+    registry::place_tile(kind)
+        .and_then(|t| lookups.plain_tex(t))
+        .map(|f| (f.uv, [16.0, 16.0]))
 }
 
 /// Pushes a builder's sprite list. Unrotated sprites snap their top-left to an
@@ -173,12 +178,21 @@ pub(crate) fn draw_player(
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,
+        // `LegacyPlayerRenderer` receives the player at
+        // `position + (0, gfxOffY)` (`LegacyPlayerRenderer.cs:457,468`).
+        gfx_off_y: player.gfx_off_y,
         swing,
+        hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
         use_style: 1,
-        item_uv: held.and_then(|(kind, _)| held_item_uv(lookups, kind)),
-        item_size: [14.0, 14.0],
+        item_uv: held
+            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .map(|(uv, _)| uv),
+        item_size: held
+            .and_then(|(kind, _)| held_item_quad(lookups, kind))
+            .map(|(_, size)| size)
+            .unwrap_or([0.0, 0.0]),
         light: light_c,
-        front_arm: swing_stand_in(swing, player.facing as f32),
+        front_arm: swing_stand_in(1, swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
@@ -305,9 +319,11 @@ pub(crate) fn draw_player_preview(
         cell_uv(assets.shirt.as_ref(), 0, 0),
         shirt,
     );
+    // Same `CreateCompositeData` table for the preview's front arm — column 8
+    // is the composite back-arm use column, not a walking pose.
     part(
         assets.arm.as_ref(),
-        cell_uv(assets.arm.as_ref(), 8, arm_row),
+        cell_uv(assets.arm.as_ref(), arm_col, arm_row),
         skin,
     );
     part(
@@ -480,7 +496,26 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        if n.kind == NpcKind::DemonEye && n.rotation != 0.0 {
+            // `Main.DrawNPC` draws every NPC at its centre with
+            // `origin = frame size / 2` and `rotation = npc.rotation`
+            // (`NPC.cs` draw pass); the demon eye aims along its flight
+            // (`NPC.cs:74019-74031`). The mirrored quad's corners are
+            // symmetric about the centre, so flipping does not move them —
+            // rotate the quad about its centre, exactly like XNA does.
+            let center = snap_to_screen(
+                [pos[0] + size[0] * 0.5, pos[1] + size[1] * 0.5],
+                camera,
+                zoom,
+                screen,
+            );
+            let (hw, hh) = (size[0] * 0.5, size[1] * 0.5);
+            let (s, co) = n.rotation.sin_cos();
+            let top_left = [center[0] - hw * co + hh * s, center[1] - hw * s - hh * co];
+            r.push_sprite_rot(top_left, size, uv, tint, n.rotation);
+        } else {
+            r.push_sprite(snap_to_screen(pos, camera, zoom, screen), size, uv, tint);
+        }
         quads += 1;
         if n.hp < n.max_hp {
             let frac = (n.hp as f32 / n.max_hp as f32).clamp(0.0, 1.0);

@@ -257,7 +257,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/resources.rs` | `ClassicPlayerResourcesDisplaySet.DrawLife/DrawMana` | hearts, mana stars, "Life x/y" / "Mana" text, breath bubbles |
 | `ui/cursor.rs` | `Main.DrawCursor` | the vanilla `Cursor_0` at its pulse scale |
 | `ui/tooltip.rs` | `Main.MouseText` + `Utils.DrawInvBG` | the 9-slice tooltip box, rarity-coloured name |
-| `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph |
+| `ui/slot.rs` | `ItemSlot.Draw` | per-context background, icon, stack text, hotbar digit, empty-equip glyph — one port shared by the open grid (context 0), the closed hotbar (context 13, `GUIHotbarDrawInner`, `Main.cs:43600-43639`) and the cursor stack (context 21, `Main.cs:45173-45195`) |
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
 | `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs, defence shield, guide text, PVP icons, the four map-style icons |
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
@@ -277,6 +277,14 @@ Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
   sits at `num20 = 430` at the reference layout, `+4` on the rows past the third.
 * The misc-equipment page uses pitch `47`; trash is at `(448, 258)`; the page tabs
   sit at `screenWidth − 80 / − 128 / − 176`.
+* Closed hotbar: x starts at 20 and advances `(int)(52*scale) + 4` per slot, row
+  `y = (int)(20 + 22*(1 − scale))` with `hotbarScale` lerping `0.75 ↔ 1.0` at
+  `±0.05`/frame (`Main.cs:43604-43614,43639`); every element is tinted
+  `Color(255, 255, 255, (int)(75 + 150*scale))` (`Main.cs:43615`). Digits —
+  `(8, 4)*scale` on non-empty slots only (`ItemSlot.cs:2693-2701`) — versus the open
+  grid's always-drawn `(6, 4+num29)*scale` digits (`ItemSlot.cs:2753-2771`). The
+  cursor stack rides context 21 at `inventoryScale = Main.cursorScale`
+  (`Main.cs:45190-45194`).
 
 ### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
 

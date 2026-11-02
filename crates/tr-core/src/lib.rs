@@ -3,6 +3,7 @@
 //! The layout deliberately follows the original `Terraria.Tile` bit flags so that
 //! world files can be mapped 1:1 without lossy conversion.
 
+pub mod anim;
 pub mod binio;
 pub mod drawdata;
 pub mod edit;

@@ -203,7 +203,6 @@ pub(crate) struct App {
     pub(crate) place_down: bool,
     pub(crate) mine_target: Option<(i32, i32)>,
     pub(crate) mine_timer: f32,
-    pub(crate) place_cooldown: f32,
     pub(crate) edit_target: Option<(i32, i32)>,
     pub(crate) world_path: PathBuf,
     pub(crate) dev_break: Option<(i32, i32)>,
@@ -256,6 +255,13 @@ pub(crate) struct App {
     pub(crate) waterfall_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
+    /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
+    pub(crate) wind: tr_core::wind::Wind,
+    pub(crate) tree_wind_counter: f32,
+    pub(crate) grass_wind_counter: f32,
+    /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
+    pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -267,6 +273,18 @@ pub(crate) struct App {
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
+    /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
+    /// body-row thirds and the hand key read `swing / swing_max`.
+    pub(crate) swing_max: f32,
+    /// Use-button edges for the non-`autoReuse` gates; refreshed every frame
+    /// like `Player.releaseUseItem` (`Player.cs:42822`).
+    pub(crate) place_prev_down: bool,
+    pub(crate) place_released: bool,
+    pub(crate) mine_prev_down: bool,
+    pub(crate) mine_released: bool,
+    /// `Player.itemTime` in seconds: the action accumulator inside a swing
+    /// (`Player.cs:4416-4418`); placement re-fires whenever it hits zero.
+    pub(crate) item_time: f32,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
     /// Live shuriken/projectile entities.
@@ -864,6 +882,9 @@ impl App {
     }
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
+    let mut wind = tr_core::wind::Wind::new(world_seed as u32);
+    wind.world_surface = world.world_surface;
+    wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
     let liquids_sim = LiquidSystem::new(&world);
     let rain = Rain::new(world_seed);
 
@@ -1020,7 +1041,6 @@ impl App {
         place_down: false,
         mine_target: None,
         mine_timer: 0.0,
-        place_cooldown: 0.0,
         edit_target: None,
         world_path: world_path.clone(),
         dev_break,
@@ -1072,11 +1092,21 @@ impl App {
         waterfall: tr_core::waterfall::WaterfallManager::new(),
         waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
         rain,
+        wind,
+        tree_wind_counter: 0.0,
+        grass_wind_counter: 0.0,
+        leaves: Vec::new(),
         liquid_alpha: [0.0; 15],
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
         item_step: FixedStepper::new(1.0 / 60.0, 8),
         swing: 0.0,
+        swing_max: 0.0,
+        place_prev_down: false,
+        place_released: false,
+        mine_prev_down: false,
+        mine_released: false,
+        item_time: 0.0,
         coins,
         projectiles: Vec::new(),
         projectile_step: FixedStepper::new(1.0 / 60.0, 8),

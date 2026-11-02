@@ -466,6 +466,71 @@ spout at `TR_SPOUT=100,25`, `TR_CAM=100,32`, zoom 2 — the column samples the r
 tint, as `GetAlpha` requires above `worldSurface`.
 
 
+## Wind sway and tree leaves (TILE-DRAW-3)
+
+`tr-core/src/wind.rs` already carried `Main.windSpeedCurrent`'s walk and
+`TileDrawing.GetWindCycle` (`TileDrawing.cs:7676-7700`); the app now owns a
+`Wind` instance (seeded from the world seed, `world_surface` set at load) and
+advances the `TileDrawing.Update` counters per frame — `_treeWindCounter`
+(1/240 + num·2/240), `_grassWindCounter` (1/180 + num·4/180),
+`_sunflowerWindCounter` (1/420 + num·5/420) and `_vineWindCounter`
+(1/120 + num·0.4/120), with `num = GetLerpValue(0.08, 1.2, |wind|)`
+(`TileDrawing.cs:367-375`).
+
+- `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the `TileID.Sets
+  .SwaysInWindBasic` tiles (hand-transcribed into `wind.rs` as
+  `SWAYS_IN_WIND_BASIC` — `TileID.cs:549`; the tiledata generator is due its
+  own regeneration pass and was not extended here) draw with the grass cycle:
+  position `+= (cycle, |cycle|)`, rotation `cycle * 0.1` about
+  `(tileWidth / 2, 16 - tileTop)`, zeroed when the tile's wall does not
+  `WallID.Sets.AllowsWind` (hand-transcribed in `wind.rs`, `WallID.cs:95`) or
+  `!WorldGen.InAPlaceWithWind(x, y, 1, 1)` (`WorldGen.cs:86858-86879`). The
+  row-major tile loop draws them inline instead of deferring them to the
+  `WindyGrass` special pass (a documented z-order approximation, like the
+  waterfalls); the `WindGrid` gust push (`GetWindGridPush`) is not ported.
+  The type-227 frame exceptions of `ShouldSwayInWind` apply.
+- `DrawTrees` (`TileDrawing.cs:8137-8245`): every canopy top leans
+  `pos += (cycle·2, |cycle|·2)` and rotates `cycle * 0.08` about its trunk
+  anchor (the sprite's bottom centre); the frameX-44/66 branches shift
+  directionally and rotate `cycle * 0.06` about `(40, 24)` / `(0, 30)`. The
+  sway is skipped when the marker tile sits in front of a wall
+  (`flag = tile.wall > 0`, line 8073). The renderer gained
+  `push_sprite_origin_rot` (a `SpriteBatch.Draw` origin emulation).
+- `TileDrawing.EmitTreeLeaves` (`TileDrawing.cs:7779-7891`): every visible
+  top/branch rolls `1/leafFrequency` per frame for a leaf
+  (`UpdateLeafFrequency`'s |wind| table × 7, halved for hallowed trees, ×3
+  for branches, 10000 underground); `WorldGen.GetTreeLeaf`
+  (`WorldGen.cs:29384-29598`) resolves the gore id per ground tile (fully
+  transcribed, including the gem/vanity/ash overrides and the hallowed
+  tables — unreachable in the generated worlds but data-complete), and the
+  spawn offsets follow the branch side and `frameY` variants. The roll uses
+  `TileDrawing._rand`'s port — a per-frame pinned `FastRandom` — and the
+  offsets' `Main.rand` draws fold into the same stream (the original keeps
+  two separate streams; the visible distribution is unchanged).
+- `Gore_UpdateLeaf` (`Gore.cs:1085-1209`): the leaf falls along a growing
+  angle (`velocity.Y += PI/180`; the movement `(−sin, |cos|)` plus
+  `wind * 4` above `worldSurface·16`), collides through the port's
+  `tile_collision`/`slope_collision` on the 4×4 probe (leading the position
+  by 4 px, re-anchored by `vector2 = (−4, 0)` exactly as the source), rests
+  on the ground and drifts `×0.94` per tick until the ground frees up or the
+  fade completes (`goreTime` 600, then 255 of alpha). The leaves draw from
+  the `Gore_910/911` sheets (32 paint columns × 8 variant rows; the port
+  draws column 0) in the UI range like the rain, keeping the G6 world range
+  out of it. The liquid rest behaviour (honey freeze, lava burn-up) is not
+  ported. The G6 `anim` folds the sway counters only while
+  `|wind| > 0.08` — the cycle is zero below that (`GetLerpValue(0.08, 0.18)`),
+  so a calm world keeps its cache.
+- Not ported: the `WindGrid` push system (`TileDrawing.cs:8540-8600`), the
+  multi-tile grass/vine/sunflower wind draws (`DrawMultiTileGrassInWind`,
+  `DrawVineStrip`, `DrawRisingVineStrip`, `DrawMultiTileVinesInWind` — they
+  need the special-point deferral machinery), and the leaf liquid rest
+  behaviour. `TR_WIND_FORCE=<speed>` pins `windSpeedCurrent` for screenshots;
+  `TR_NO_WIND=1` disables the whole feature for A/B.
+
+Verification: the leaf-frequency/set unit tests; the gust screenshots at
+`TR_WIND_FORCE=1.0` (`TR_CAM=2100,375`) diff 6944 px against `TR_NO_WIND=1`
+(leaning canopies, flying leaves); two identical runs are SHA256-equal.
+
 ## Rain and weather
 
 `rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
@@ -1325,6 +1390,29 @@ The deviations below are deliberate and are the places the port is **not** pixel
 * The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
   their menus are not opened, so they show as empty frames.
 
+### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
+
+Both draw through the same `slot::draw_slot` (the `ItemSlot.Draw` port) as the open
+grid: the closed hotbar at context 13 (`GUIHotbarDrawInner`, `Main.cs:43600-43639`) and
+the cursor stack at context 21 (`DrawInterface_38_MouseCarriedObject`,
+`Main.cs:45173-45195`). Remaining deliberate gaps:
+
+* The context-13 **ammo/wand/bait count** (`num22`, `ItemSlot.cs:2577-2691` — the
+  counter that replaces the stack text on bows, wands and fishing poles) is not
+  ported; it needs the `useAmmo`/`bait`/`tileWand` inventory scans the item model
+  does not have yet. Such items show their plain stack instead.
+* `Inventory_Back20` (`ItemSlot.cs:2234-2237`, the white variant for
+  `slot == player.selectedItemState.Hotbar`) and the context-36 override slot
+  (`Main.cs:43641-43649`) are unreachable without `Player.SelectedItemState`
+  overrides, which the port does not model; the selected slot always merges into the
+  `Inventory_Back14` branch.
+* The `Main.DoGlowingMouseItemDraw` shader pass over the cursor item
+  (`Main.cs:45196-45220`) is not ported.
+* `hotbarScale` keeps lerping while the inventory is open; vanilla freezes it because
+  `GUIHotbarDrawInner` early-returns on `Main.playerInventory`
+  (`Main.cs:43588-43591`) and the update lives in that draw pass. The targets
+  (1.0 selected / 0.75 rest) and the `±0.05` rate match (`Main.cs:43604-43611`).
+
 ### Crafting panel (`ui/crafting.rs`, `NewCraftingUI.cs`)
 
 The modern crafting panel is ported as draw-only chrome at the source's geometry and
@@ -1673,3 +1761,96 @@ Deviations recorded by the refactor and this sweep:
   alpha-blend pipeline cannot express rgb-add at a=0 for partial-alpha tints (the
   furniture/jar colours with a > 0 dim slightly against vanilla's full add). Fully
   a=0 tints (torches) are exact.
+
+## Animations (M2-ANIM-foundation)
+
+The shared primitives live in `crates/tr-core/src/anim.rs` (`FrameCounter` —
+the `frameCounter += speed; while (>= threshold)` idiom of
+`Player.cs:36259-36264` and `NPC.FindFrame`, `wrap_row_band`, the useStyle-1
+thirds, the UI sine pulse). Deviations and ports:
+
+- **Player draw origin** (`render/player_layers.rs` `gfx_off_y` state field):
+  the 40x56 frame rides the
+  20x42 hitbox at `(x - 10, y - 10 + gfxOffY)` — the resolution of
+  `PlayerDrawLayers.cs:1150-1153` plus the `LegacyPlayerRenderer.cs:457,468`
+  `position + (0, gfxOffY)` call. `gfxOffY` was previously ignored (the step
+  ease popped vertically) and is now also part of the G6 player render key.
+- **Composite arm cells** follow `PlayerDrawSet.CreateCompositeData`
+  (`PlayerDrawSet.cs:1962-2023`): front arm `(X, Y)` per bodyFrame row, back
+  arm the same column two rows down. The old front-arm cell hardcoded column
+  8 (the composite *back*-arm use column), which mismatched the pose while
+  walking and during useStyle-1 swings.
+- **Item swing** (`Player.cs:50686-50852` + `PlayerDrawLayers.cs:3043-3215`,
+  implemented inside the `render/player_layers.rs` builders that M2-DRAW-1
+  introduced — `held_item_layers` consumes the vanilla `itemRotation` /
+  `itemLocation` and the real atlas frame size):
+  `itemRotation = (itemAnimation/itemAnimationMax - 0.5) * (-direction) * 3.5
+  - direction * 0.3`, `itemLocation` thirds over the held frame's size, pivot
+  at the drawn sprite's bottom-left. `SWING_TIME` (0.28 s) still stands in for
+  the per-item `useAnimation` — the real timings remain the M2-ANIM-item-timings
+  catalog row. The `UsesBetterMeleeItemLocation` nudge is not applied (no
+  ported item belongs to that set).
+- **NPC.FindFrame** for the four ported kinds now runs in the fixed 60 Hz sim
+  (`world_sim/npcs.rs` state, `npc.rs::find_frame`): slime `NPC.cs:70801-70826`
+  (2 frames, counter doubles while moving), King Slime `:73380-73414`
+  (grounded 0..=3 with the landing squash 4 shown until the first advance;
+  airborne 4 then 5), demon eye `:73994-74057` (2 frames + `rotation =
+  atan2(vy, vx)`, `+ 3.14f` when moving left, frozen while `velocity.X == 0`),
+  zombie `:76324-76389` (walk band 0,1,2,1 at 8/16/24/32 accumulated px;
+  lurch frame 2 while airborne or backpedalling). The old wall-clock
+  `anim * N` frame derivation is gone; `render_key` now hashes the rendered
+  frame and the eye rotation instead of raw `anim` bits, so the G6 cache
+  invalidates exactly when the baked pixels change.
+- `aiAction == 4` (attacking) never fires for these kinds — the third counter
+  tick of the slime/King Slime cases stays out until combat AI lands.
+- The demon-eye draw rotates the quad about its centre (`Main.DrawNPC`
+  origin = frame centre); the mirrored quad's corners are centre-symmetric,
+  so the flip does not move them.
+
+## Item use timings (M2-ANIM-item-timings)
+
+The per-item `useTime` / `useAnimation` / `useStyle` / `holdStyle` /
+`autoReuse` now live on `registry::ItemDef`, extracted from
+`Item.cs SetDefaults1` for all 20 ported kinds (blocks and ores 10/15,
+grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
+`noMelee`-style zero damage, torch `holdStyle = 1`). Deviations and notes:
+
+- The swing duration is `useAnimation` ticks at the 60 Hz rate
+  (`Player.ApplyItemAnimation`, `Player.cs:4449-4451`); the fixed `SWING_TIME`
+  stand-in is gone and the render builders consume the remaining *fraction*
+  (`itemAnimation / itemAnimationMax`).
+- The cadence follows `ItemCheck`: an `autoReuse` kind re-fires while the
+  button is held; a non-autoReuse kind waits for a release
+  (`Player.cs:42733`, `42819-42822`) — the shuriken throw is press-edge gated,
+  and the release edges refresh every frame like `Player.releaseUseItem`.
+  Placement (the RMB path) fires whenever `itemTime` hits zero inside a
+  running swing (`Player.cs:39743` + `ApplyItemTime = useTime`,
+  `Player.cs:4416-4418`) — dirt every 10 ticks inside the 15-tick swing,
+  walls every 7; the legacy `place_cooldown = 0.12` retired. The LMB mining
+  path keeps the port's own `mine_timer`/hardness model paced by the swing
+  (`M3-TOOL` owns pick power), a documented deviation.
+- A resting `holdStyle == 1` item (the torch) is drawn in the hand —
+  anchor `position.X + width/2 + (frame.W/2 + 2)·direction`,
+  `position.Y + 24`, `itemRotation = 0` (`Player.cs:50275-50460`) — and pins
+  the body to row 3 (`Player.cs:36455-36459`).
+- The M2-DRAW-2 `swing_stand_in` (rotated composite front arm during a swing)
+  retired for useStyle 1: the original never calls `SetCompositeArmFront` in
+  the useStyle-1 branch (`Player.cs:50686-50953` sets only
+  `itemRotation`/`itemLocation`), so the arm pose rides the bodyFrame thirds
+  and the item swings alone. The stand-in returns for styles 5/9/11 with the
+  bow/thrown tasks.
+- XNA pivot semantics (`PlayerDrawLayers.cs:3161`): the draw origin
+  `(W/2 - W/2·direction, H)` positions the quad; the `direction < 0` flip
+  swaps the UVs inside the quad, not the quad geometry (MonoGame
+  `SpriteBatch.DrawInternal`). This also fixed the held-item mirror that
+  main's `origin_drawn = width - origin` adjustment got backwards.
+- The `itemLocation` thirds run on the DECREASING `itemAnimation`: the
+  C# chain's first branch (`itemAnimation < max * 0.333`,
+  `Player.cs:50709-50734`, Y+24 / X+10) is the swing END and the last
+  (`:50776-50843`, X subtracted) the start — the port had them swapped since
+  the M2-ANIM-foundation pass; corrected here (pre-existing, byte-identical
+  visually at rest).
+- The shuriken damage now matches `Item.cs:1876` (10, was 15) — a registry
+  data fix spotted during the review; the remaining pre-existing registry
+  mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
+  item-data catalog work.

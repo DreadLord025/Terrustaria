@@ -205,44 +205,62 @@ pub fn draw_hud(
                 tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
             }
         }
-    } else if let Some(back) = lookups.hud_uv(lookups.ui_back.as_ref()) {
-        let sel_back = lookups.hud_uv(lookups.ui_back_sel.as_ref()).unwrap_or(back);
+    } else {
+        // `GUIHotbarDrawInner` (`Main.cs:43600-43639`): the closed hotbar is a row
+        // of context-13 `ItemSlot.Draw` calls at the per-slot `hotbarScale`, the x
+        // advancing by `(int)(InventoryBack.Width() * scale) + 4` from x=20 and the
+        // row `y` compensating with `(int)(20 + 22 * (1 - scale))`. The scale lerp
+        // itself runs in `app::frame` (`Main.cs:43604-43611`); `draw_slot` derives
+        // the `(255,255,255,(int)(75+150*scale))` tint (`Main.cs:43615`) and the
+        // context-13 background (`ItemSlot.cs:2232-2242`).
         let mut x = 20.0;
         for i in 0..HOTBAR {
             let scale = hotbar_scales[i].clamp(0.75, 1.0);
-            let slot = 52.0 * scale;
-            let y = 20.0 + 22.0 * (1.0 - scale);
-            let (uv, c) = if i == selected {
-                (sel_back, 255.0 / 255.0)
-            } else {
-                (back, 200.0 / 255.0)
-            };
-            r.push_ui_sprite([x, y], [slot, slot], uv, [c, c, c, c]);
-            slot::draw_slot_item(r, lookups, &inventory[i], x, y, slot, scale);
-            slot::draw_slot_number(r, lookups, x, y, i, scale, i == selected);
-            x += slot + 4.0;
+            let (y, advance, _) = slot::closed_hotbar_metrics(scale);
+            slot::draw_slot(
+                r,
+                lookups,
+                &inventory[i],
+                x,
+                y,
+                13,
+                i as i32,
+                i == selected,
+                scale,
+                [1.0; 4],
+            );
+            x += advance;
         }
     }
-    // Selected item name, centred above the bar like the original.
+    // Selected item name, centred on x=236 at y=0 like the original
+    // (`GUIHotbarDrawInner`, `Main.cs:43593-43595`): `FontAssets.MouseText` at
+    // scale 1, tinted `Color(Main.mouseTextColor x4)` — no shadow pass.
     let item = &inventory[selected.min(HOTBAR - 1)];
     if item.count > 0 && !inventory_open {
         let label = item.name;
         let tw = text::hud_text_width(r, lookups, label, 1.0);
-        let tx = 236.0 - tw * 0.5;
-        text::hud_text(r, lookups, tx + 1.0, 1.0, 1.0, [0.0, 0.0, 0.0, 1.0], label);
-        text::hud_text(r, lookups, tx, 0.0, 1.0, [1.0, 0.95, 0.85, 1.0], label);
+        let t = pulse.text;
+        text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], label);
     }
 
-    // `Main.mouseItem`: the stack carried on the cursor, centred on it.
+    // `Main.mouseItem`: `DrawInterface_38_MouseCarriedObject` (`Main.cs:45173-45195`)
+    // draws it through `ItemSlot.Draw` at context 21 — no background
+    // (`ItemSlot.cs:2236-2240`) — at `(Main.mouseX, Main.mouseY)` with
+    // `inventoryScale = Main.cursorScale`, so the icon centres on
+    // `position + InventoryBack.Size() / 2 * cursorScale` and keeps the 32 px clamp.
+    // (The vanilla `DoGlowingMouseItemDraw` shader pass is not ported.)
     if mouse_item.count > 0 {
-        slot::draw_slot_item(
+        slot::draw_slot(
             r,
             lookups,
             mouse_item,
-            mouse_pos.x - 26.0,
-            mouse_pos.y - 26.0,
-            52.0,
-            1.0,
+            mouse_pos.x,
+            mouse_pos.y,
+            21,
+            0,
+            false,
+            pulse.cursor_scale,
+            [1.0; 4],
         );
     }
 

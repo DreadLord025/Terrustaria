@@ -160,7 +160,9 @@ pub(crate) fn next_flow_state(
         // `NewCharacterClick` (`UICharacterSelect.cs:108-114`): a fresh
         // `PendingPlayer`, the creation screen opens in 888.
         FlowClick::CharNew => (
-            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Some(FrontScreen::CharCreation(
+                ui::char_creation::CreationState::new(),
+            )),
             None,
             None,
         ),
@@ -176,9 +178,9 @@ pub(crate) fn next_flow_state(
         // opens with the stand-in name and the active player's difficulty
         // default (`SetDefaultOptions`, `UIWorldCreation.cs:313-326`).
         FlowClick::WorldNew(worlds, active) => (
-            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
-                worlds, active,
-            ))),
+            Some(FrontScreen::WorldCreation(
+                ui::world_creation::NewWorldDraft::new(worlds, active),
+            )),
             None,
             None,
         ),
@@ -190,14 +192,10 @@ pub(crate) fn next_flow_state(
         FlowClick::WorldCreate => (Some(FrontScreen::WorldSelect), None, None),
         // Modes 5/9: Yes and No both reopen the screen the confirm came from
         // (`Main.cs:49434-49439`, `:49684-49692`).
-        FlowClick::ConfirmYes | FlowClick::ConfirmNo
-            if page == Some(P::ConfirmDeletePlayer) =>
-        {
+        FlowClick::ConfirmYes | FlowClick::ConfirmNo if page == Some(P::ConfirmDeletePlayer) => {
             (Some(FrontScreen::CharSelect), None, None)
         }
-        FlowClick::ConfirmYes | FlowClick::ConfirmNo
-            if page == Some(P::ConfirmDeleteWorld) =>
-        {
+        FlowClick::ConfirmYes | FlowClick::ConfirmNo if page == Some(P::ConfirmDeleteWorld) => {
             (Some(FrontScreen::WorldSelect), None, None)
         }
         // Mode 40 Yes: `BackupConfirmationState = null` +
@@ -257,7 +255,10 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
 /// `TR_FAKE_CHARS`/`TR_FAKE_WORLDS=<n>`: the screenshot lists' fake counts
 /// (`save_list::list_players`/`list_worlds` prepend `Player n`/`World n`).
 pub(crate) fn tr_fake_count(key: &str) -> usize {
-    std::env::var(key).ok().and_then(|v| v.parse().ok()).unwrap_or(0)
+    std::env::var(key)
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0)
 }
 
 // --- the behaviour trait (the C# `UIState` shape) ---------------------------
@@ -344,12 +345,7 @@ impl FrontScreenBehaviours for FrontScreen {
             FrontScreen::CharSelect => {
                 let header_w = self.header_w(d);
                 ui::char_select::draw(
-                    d.renderer,
-                    d.lookups,
-                    d.screen,
-                    header_w,
-                    d.players,
-                    d.mouse,
+                    d.renderer, d.lookups, d.screen, header_w, d.players, d.mouse,
                 );
             }
             FrontScreen::WorldSelect => {
@@ -360,13 +356,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // fresh session player — difficulty 0 (`Player.cs:1654`'s
                 // default).
                 ui::world_select::draw(
-                    d.renderer,
-                    d.lookups,
-                    d.screen,
-                    header_w,
-                    d.worlds,
-                    0,
-                    d.mouse,
+                    d.renderer, d.lookups, d.screen, header_w, d.worlds, 0, d.mouse,
                 );
             }
             FrontScreen::CharCreation(state) => {
@@ -457,8 +447,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     // There is no `.plr` writer to rename into (spec §9.4),
                     // so Submit stays the not-ported notice (Task 6's flow).
                     Some(ui::char_select::CardAction::Rename(i)) => {
-                        let name =
-                            app.players.get(i).map(|p| p.name.clone()).unwrap_or_default();
+                        let name = app
+                            .players
+                            .get(i)
+                            .map(|p| p.name.clone())
+                            .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
                                 label: ui::keyboard::ENTER_CHARACTER_NAME.into(),
@@ -784,7 +777,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     // world twin — `Lang.menu[48]` "Enter World Name:",
                     // `allowEmpty: true`, the 27-character cap (`:419`).
                     Some(ui::world_select::CardAction::Rename(i)) => {
-                        let name = app.worlds.get(i).map(|w| w.name.clone()).unwrap_or_default();
+                        let name = app
+                            .worlds
+                            .get(i)
+                            .map(|w| w.name.clone())
+                            .unwrap_or_default();
                         app.open_keyboard(
                             ui::keyboard::Request {
                                 label: ui::keyboard::ENTER_WORLD_NAME.into(),
@@ -846,8 +843,10 @@ impl FrontScreenBehaviours for FrontScreen {
                     // (`:358-365`); the small pair's `InternalSubmit` re-checks
                     // too (`:970-978`) — the invalid click is dead either way.
                     ui::keyboard::Click::Submit => {
-                        if ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
-                        {
+                        if ui::keyboard::text_valid(
+                            &session.state.text,
+                            session.request.allow_empty,
+                        ) {
                             app.keyboard_submit();
                         }
                     }
@@ -901,7 +900,9 @@ impl App {
     pub(crate) fn handle_front_click(&mut self) {
         // `FrontScreen` stopped being `Copy` when the keyboard variant grew a
         // payload — the snapshot clones instead of moving out of `self`.
-        let Some(front) = self.front.clone() else { return };
+        let Some(front) = self.front.clone() else {
+            return;
+        };
         // A click clears the notice, like `Menu::activate`'s `hint = None`.
         self.front_hint = None;
         let (sw, sh) = self.screen_size();
@@ -993,43 +994,79 @@ mod front_flow_tests {
     use crate::world_sim::step::FixedStepper;
     use std::collections::{HashMap, HashSet, VecDeque};
     use std::time::Instant;
+    use tr_core::World;
     use tr_core::lighting::{LightMap, LightMode};
     use tr_core::liquid::LiquidSystem;
-    use tr_core::World;
 
     use crate::menu::Page as P;
 
     #[test]
     fn the_flow_table_routes_every_front_hop() {
         // Char select Back -> menuMode 0 (`UICharacterSelect.cs:116-120`).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharBack);
-        assert_eq!((front.is_some(), backup.is_some(), page), (false, false, Some(P::Main)));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::CharSelect),
+            None,
+            None,
+            FlowClick::CharBack,
+        );
+        assert_eq!(
+            (front.is_some(), backup.is_some(), page),
+            (false, false, Some(P::Main))
+        );
         // Play -> the world select (`Main.cs:66245-66249` + `:49468-49472`).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharPlay);
-        assert_eq!((front, backup.is_some(), page.is_some()), (Some(FrontScreen::WorldSelect), false, false));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::CharSelect),
+            None,
+            None,
+            FlowClick::CharPlay,
+        );
+        assert_eq!(
+            (front, backup.is_some(), page.is_some()),
+            (Some(FrontScreen::WorldSelect), false, false)
+        );
         // Delete -> mode 5 clears the 888 state (`UICharacterListItem.cs:
         // 242-254`, `Main.cs:51066-51069`'s else branch).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::CharSelect), None, None, FlowClick::CharDelete(2));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::CharSelect),
+            None,
+            None,
+            FlowClick::CharDelete(2),
+        );
         assert_eq!(
             (front.is_some(), backup.is_some(), page),
             (false, false, Some(P::ConfirmDeletePlayer))
         );
         // World Back -> the char select (`UIWorldSelect.cs:118-122`, the
         // single-player arm of `menuMode = (!menuMultiplayer) ? 1 : 12`).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldBack);
-        assert_eq!((front, backup.is_some(), page.is_some()), (Some(FrontScreen::CharSelect), false, false));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::WorldSelect),
+            None,
+            None,
+            FlowClick::WorldBack,
+        );
+        assert_eq!(
+            (front, backup.is_some(), page.is_some()),
+            (Some(FrontScreen::CharSelect), false, false)
+        );
         // World Play launches: both sides close (the loading flow is out of
         // scope, spec §9.4).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldPlay);
-        assert_eq!((front.is_some(), backup.is_some(), page.is_some()), (false, false, false));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::WorldSelect),
+            None,
+            None,
+            FlowClick::WorldPlay,
+        );
+        assert_eq!(
+            (front.is_some(), backup.is_some(), page.is_some()),
+            (false, false, false)
+        );
         // World Delete -> mode 9 (`UIWorldListItem.cs:346-358`).
-        let (front, backup, page) =
-            next_flow_state(Some(FrontScreen::WorldSelect), None, None, FlowClick::WorldDelete(1));
+        let (front, backup, page) = next_flow_state(
+            Some(FrontScreen::WorldSelect),
+            None,
+            None,
+            FlowClick::WorldDelete(1),
+        );
         assert_eq!(
             (front.is_some(), backup.is_some(), page),
             (false, false, Some(P::ConfirmDeleteWorld))
@@ -1061,7 +1098,10 @@ mod front_flow_tests {
             Some(P::ConfirmDiscard),
             FlowClick::ConfirmYes,
         );
-        assert_eq!((front.is_some(), backup.is_some(), page.is_some()), (true, false, false));
+        assert_eq!(
+            (front.is_some(), backup.is_some(), page.is_some()),
+            (true, false, false)
+        );
     }
 
     #[test]
@@ -1119,21 +1159,25 @@ mod front_flow_tests {
             None,
             Some(FrontScreen::CharSelect),
             Some(FrontScreen::WorldSelect),
-            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Some(FrontScreen::CharCreation(
+                ui::char_creation::CreationState::new(),
+            )),
             // The world creator joins with Task 8.
-            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
-                0, 0,
-            ))),
+            Some(FrontScreen::WorldCreation(
+                ui::world_creation::NewWorldDraft::new(0, 0),
+            )),
             Some(FrontScreen::Keyboard(session())),
         ];
         let backs = [
             None,
             Some(FrontScreen::CharSelect),
             Some(FrontScreen::WorldSelect),
-            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
-            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
-                0, 0,
-            ))),
+            Some(FrontScreen::CharCreation(
+                ui::char_creation::CreationState::new(),
+            )),
+            Some(FrontScreen::WorldCreation(
+                ui::world_creation::NewWorldDraft::new(0, 0),
+            )),
             Some(FrontScreen::Keyboard(session())),
         ];
         let pages = [
@@ -1167,12 +1211,8 @@ mod front_flow_tests {
                         continue;
                     }
                     for click in &clicks {
-                        let (front, backup, menu) = next_flow_state(
-                            front.clone(),
-                            backup.clone(),
-                            *page,
-                            click.clone(),
-                        );
+                        let (front, backup, menu) =
+                            next_flow_state(front.clone(), backup.clone(), *page, click.clone());
                         assert!(
                             !(front.is_some() && menu.is_some()),
                             "{click:?} from front {front:?}/page {page:?} left both sides live"
@@ -1300,7 +1340,11 @@ mod front_flow_tests {
             place_down: false,
             mine_target: None,
             mine_timer: 0.0,
-            place_cooldown: 0.0,
+            place_prev_down: false,
+            place_released: false,
+            mine_prev_down: false,
+            mine_released: false,
+            item_time: 0.0,
             edit_target: None,
             world_path: PathBuf::new(),
             dev_break: None,
@@ -1343,11 +1387,16 @@ mod front_flow_tests {
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             rain: Rain::new(1),
+            wind: tr_core::wind::Wind::new(1),
+            tree_wind_counter: 0.0,
+            grass_wind_counter: 0.0,
+            leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
             item_rng: 0,
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
+            swing_max: 0.0,
             coins: 0,
             projectiles: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
@@ -1363,8 +1412,11 @@ mod front_flow_tests {
         // through the table) must clear the 888 side (`Main.cs:51066-51069`'s
         // else branch): the port used to leave `front` live, so the Main page
         // was invisible under the screen and the invariant broke.
-        let mut app =
-            flow_app(Some(FrontScreen::CharSelect), vec![entry("flow", false)], vec![]);
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("flow", false)],
+            vec![],
+        );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
             app.front_header_w(ui::char_select::SELECT_PLAYER),
@@ -1384,7 +1436,11 @@ mod front_flow_tests {
         // `DeleteButtonClick` (`UICharacterListItem.cs:242-254`) -> `menuMode
         // = 5`: the confirm opens alone, parking the target name/index
         // (`Main.selectedPlayer`).
-        let mut app = flow_app(Some(FrontScreen::CharSelect), vec![entry("Bob", true)], vec![]);
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Bob", true)],
+            vec![],
+        );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
             app.front_header_w(ui::char_select::SELECT_PLAYER),
@@ -1449,9 +1505,9 @@ mod front_flow_tests {
 
     fn world_creation_app() -> App {
         flow_app(
-            Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(
-                1, 0,
-            ))),
+            Some(FrontScreen::WorldCreation(
+                ui::world_creation::NewWorldDraft::new(1, 0),
+            )),
             vec![],
             vec![world_entry("World 1")],
         )
@@ -1499,10 +1555,7 @@ mod front_flow_tests {
         // (`UIWorldCreation.cs:665-674`) — no discard confirm on this screen.
         let mut app = world_creation_app();
         let l = world_creation_layout(&app);
-        app.mouse_pos = Vec2::new(
-            l.back[0] + l.back[2] * 0.5,
-            l.back[1] + l.back[3] * 0.5,
-        );
+        app.mouse_pos = Vec2::new(l.back[0] + l.back[2] * 0.5, l.back[1] + l.back[3] * 0.5);
         app.handle_front_click();
         assert_eq!(app.front, Some(FrontScreen::WorldSelect));
         assert!(app.menu.is_none(), "the invariant holds");
@@ -1654,7 +1707,11 @@ mod front_flow_tests {
         // `RenameButtonClick` (`:196-206`): `Lang.menu[45]`, the card's name,
         // `allowEmpty: true`, the ctor's 20-character cap; the cancel target
         // is the screen the keyboard came from.
-        let mut app = flow_app(Some(FrontScreen::CharSelect), vec![entry("Bob", false)], vec![]);
+        let mut app = flow_app(
+            Some(FrontScreen::CharSelect),
+            vec![entry("Bob", false)],
+            vec![],
+        );
         let l = ui::char_select::resolved_layout(
             Vec2::new(1280.0, 720.0),
             app.front_header_w(ui::char_select::SELECT_PLAYER),
@@ -1685,7 +1742,10 @@ mod front_flow_tests {
         let mut app = keyboard_app();
         let (sw, sh) = app.screen_size();
         let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
-        app.mouse_pos = Vec2::new(l.cancel[0] + l.cancel[2] * 0.5, l.cancel[1] + l.cancel[3] * 0.5);
+        app.mouse_pos = Vec2::new(
+            l.cancel[0] + l.cancel[2] * 0.5,
+            l.cancel[1] + l.cancel[3] * 0.5,
+        );
         app.handle_front_click();
         assert_eq!(app.front, Some(FrontScreen::CharSelect));
         assert!(app.front_hint.is_none(), "cancel notices nothing");
@@ -1741,7 +1801,11 @@ mod front_flow_tests {
         assert_eq!(session.state.text, "N");
         assert_eq!(session.state.key_state, ui::keyboard::KeyState::Shift);
         app.keyboard_enter();
-        assert_eq!(app.front, Some(FrontScreen::CharSelect), "the valid Enter submits");
+        assert_eq!(
+            app.front,
+            Some(FrontScreen::CharSelect),
+            "the valid Enter submits"
+        );
     }
 
     #[test]
@@ -1753,7 +1817,10 @@ mod front_flow_tests {
             panic!("TR_UI=vk presets the keyboard");
         };
         assert_eq!(session.request.label, ui::keyboard::ENTER_CHARACTER_NAME);
-        assert!(session.state.text.is_empty(), "the fresh name is empty (`Player.cs:826`)");
+        assert!(
+            session.state.text.is_empty(),
+            "the fresh name is empty (`Player.cs:826`)"
+        );
         assert_eq!(
             session.state.key_state,
             ui::keyboard::KeyState::Shift,
@@ -1908,7 +1975,10 @@ mod front_flow_tests {
             panic!("the name plate opens the keyboard");
         };
         assert!(session.request.allow_empty);
-        assert_eq!(session.request.max_length, ui::char_creation::MAX_NAME_LENGTH);
+        assert_eq!(
+            session.request.max_length,
+            ui::char_creation::MAX_NAME_LENGTH
+        );
         assert!(matches!(session.back, FrontScreen::CharCreation(_)));
         assert_eq!(session.tail, KeyboardTail::Name);
         // The empty name also cleared the draft's own (`:1662`).
@@ -1945,7 +2015,11 @@ mod front_flow_tests {
             ui::keyboard::write_str(&mut session.state, "Zealot");
         }
         app.keyboard_submit();
-        assert_eq!(app.front, Some(FrontScreen::CharSelect), "`menuMode = 1` (`:1710`)");
+        assert_eq!(
+            app.front,
+            Some(FrontScreen::CharSelect),
+            "`menuMode = 1` (`:1710`)"
+        );
         assert!(app.menu.is_none());
     }
 

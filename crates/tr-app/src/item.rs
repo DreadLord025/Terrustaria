@@ -8,7 +8,7 @@
 
 use glam::Vec2;
 use tr_core::lighting::{LightMap, LightStyle};
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 use crate::assets;
 use crate::registry;
@@ -18,8 +18,27 @@ use crate::registry;
 pub(crate) const HOTBAR: usize = 10;
 /// `Player.inventory` length: hotbar plus the four storage rows of the open grid.
 pub(crate) const INV: usize = 50;
-/// Seconds of one item swing; `Player.itemAnimation` is longer for real items.
-pub(crate) const SWING_TIME: f32 = 0.28;
+/// `Player.SetItemAnimation` fallback for kinds outside [`registry::ITEMS`]:
+/// 15 ticks — the `SetDefaults1` block default (`Item.cs:1405-1415`; the raw
+/// `ResetStats` default is 100, `Item.cs:49020-49022`, which no live kind
+/// reaches).
+pub(crate) const DEFAULT_USE_ANIMATION_TICKS: u16 = 15;
+
+/// The held item's swing duration in seconds — `useAnimation` ticks at the
+/// 60 Hz simulation rate (`Player.ApplyItemAnimation`, `Player.cs:4449-4451`:
+/// `itemAnimation = itemAnimationMax = useAnimation`, one tick per frame).
+pub(crate) fn use_animation_secs(kind: u16) -> f32 {
+    let ticks = registry::get(kind)
+        .map(|d| d.use_animation as u16)
+        .filter(|t| *t > 0)
+        .unwrap_or(DEFAULT_USE_ANIMATION_TICKS);
+    ticks as f32 / 60.0
+}
+
+/// `Item.holdStyle` of the kind (`Item.SetDefaults`), 0 when unregistered.
+pub(crate) fn hold_style(kind: u16) -> u8 {
+    registry::get(kind).map_or(0, |d| d.hold_style)
+}
 
 #[derive(Clone, Copy)]
 pub(crate) struct ItemSlot {
@@ -41,16 +60,18 @@ pub(crate) const EMPTY_SLOT: ItemSlot = ItemSlot {
 /// then the storage rows.
 pub(crate) fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> {
     for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range.clone().find(|&i| inventory[i].count > 0 && inventory[i].kind == kind)
+        if let Some(i) = range
+            .clone()
+            .find(|&i| inventory[i].count > 0 && inventory[i].kind == kind)
         {
             return Some(i);
         }
     }
     for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range
-            .clone()
-            .find(|&i| inventory[i].count == 0 || (inventory[i].kind == kind && inventory[i].count < registry::max_stack(kind)))
-        {
+        if let Some(i) = range.clone().find(|&i| {
+            inventory[i].count == 0
+                || (inventory[i].kind == kind && inventory[i].count < registry::max_stack(kind))
+        }) {
             if inventory[i].count == 0 {
                 inventory[i] = ItemSlot {
                     kind,
@@ -199,7 +220,7 @@ pub fn render_key(items: &[ItemDrop], anim_step: u32) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     #[test]
     fn pickup_prefers_stacks_then_empty_slots() {
