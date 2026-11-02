@@ -6,7 +6,7 @@ use glam::Vec2;
 use tr_core::TILE_PX;
 
 use crate::item::ItemDrop;
-use crate::npc::{Npc, NpcKind};
+use crate::npc::{Npc, NpcKind, SlimeVariant};
 use crate::registry;
 use crate::spawner;
 use crate::app::{rand01, App};
@@ -27,18 +27,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
-    let dead: Vec<(NpcKind, f32, f32)> = app
+    let dead: Vec<(NpcKind, SlimeVariant, f32, f32)> = app
         .npcs
         .iter()
         .filter(|n| n.hp <= 0)
         .map(|n| {
             let (cx, cy) = n.center();
-            (n.kind, cx, cy)
+            (n.kind, n.slime, cx, cy)
         })
         .collect();
     app.npcs.retain(|n| n.hp > 0);
-    for (kind, x, y) in dead {
+    for (kind, slime, x, y) in dead {
         spawn_coins(app, kind, x, y);
+        spawn_gel(app, kind, slime, x, y);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
     let mut minions = app
@@ -114,10 +115,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
 }
 
+/// The slime gel loot: `ItemDropDatabase.cs:1074-1082` — the standard slimes
+/// drop `ItemDropRule.Gel(1, 1, 2)` (always 1-2), the red/purple/black
+/// variants `Gel(1, 2, 5)`; green, Baby Slime and Pinky drop no gel (Pinky
+/// drops pink gel instead, `:1072`). Gel is `ItemID 23`.
+fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) {
+    if kind != NpcKind::Slime {
+        return;
+    }
+    let (min, max) = slime.stats().gel;
+    if max == 0 {
+        return;
+    }
+    let roll = rand01(&mut app.item_rng);
+    let count = min + (roll * (max - min + 1) as f32) as u32;
+    let item = if slime == SlimeVariant::Pinky {
+        3111 // ItemID.PinkGel (Pinky never reaches the gel rule anyway)
+    } else {
+        23 // ItemID.Gel
+    };
+    let vx = (rand01(&mut app.item_rng) * 2.0 - 1.0) * 1.2;
+    let vy = -1.5 - rand01(&mut app.item_rng);
+    let phase = rand01(&mut app.item_rng) * std::f32::consts::TAU;
+    app.items.push(ItemDrop::new(item, count, x, y, vx, vy, phase));
+}
+
 /// `Item.NewItem` coin drops: a few copper from small enemies, gold from the boss.
 pub(crate) fn spawn_coins(app: &mut App, kind: NpcKind, x: f32, y: f32) {
     let roll = rand01(&mut app.item_rng);
     let (denom, count) = match kind {
+        // The eyes share the coin roll (the Wandering Eye's `value = 500f`
+        // denominates the same way).
+        NpcKind::WanderingEye => (0u16, 2 + (roll * 4.0) as u32 % 3),
         NpcKind::KingSlime => (2u16, 3 + (roll * 4.0) as u32),
         NpcKind::Zombie => {
             if roll < 0.2 {
