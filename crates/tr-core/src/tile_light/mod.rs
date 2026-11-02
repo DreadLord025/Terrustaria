@@ -22,11 +22,16 @@ use crate::tile::*;
 use crate::world::World;
 
 /// `TileLightScanner.ApplyWallLight` (`TileLightScanner.cs:164`) — glowing walls
-/// (crystal, gem, living fire...).
-///
-/// `tile.wallColor()` is not stored in the packed tile, so a painted wall is treated
-/// as unpainted (the `flag` paint override therefore never fires for walls).
-pub fn apply_wall_light(tile: &Tile, rng: &mut FastRandom, p: &LightParams, c: &mut [f32; 3]) {
+/// (crystal, gem, living fire...). `wall_paint` is the sparse
+/// `Tile.wallColor()` stand-in (`World::wall_paint`); a painted glowing wall
+/// takes the paint colour at the /765 scaling of `TileLightScanner.cs:318-324`.
+pub fn apply_wall_light(
+    tile: &Tile,
+    wall_paint: u8,
+    rng: &mut FastRandom,
+    p: &LightParams,
+    c: &mut [f32; 3],
+) {
     let blocked = light_blocked(tile);
     let mut l = [0.0f32; 3];
     match tile.wall {
@@ -70,6 +75,13 @@ pub fn apply_wall_light(tile: &Tile, rng: &mut FastRandom, p: &LightParams, c: &
             ]
         }
         _ => {}
+    }
+    // `TileLightScanner.cs:318-324`: `if (flag && tile.wallColor() != 0)` —
+    // the `flag` arms are the `!blocked` glow walls; the paint colour lands at
+    // the /765 scaling (3x dimmer than the painted-tile override).
+    if wall_paint != 0 && blocked == false && l != [0.0f32; 3] {
+        let pc = crate::tile_light::paint_color(wall_paint);
+        l = [pc[0] / 3.0, pc[1] / 3.0, pc[2] / 3.0];
     }
     for i in 0..3 {
         if c[i] < l[i] {
@@ -259,13 +271,13 @@ mod tests {
         let mut c = [0.0f32; 3];
         let mut rng = FastRandom::new(0).with_modifier(1, 1);
         let t = tile(0, 0, 0);
-        apply_wall_light(&t, &mut rng, &p, &mut c);
+        apply_wall_light(&t, 0, &mut rng, &p, &mut c);
         assert_eq!(c, [0.0; 3]);
 
         let mut wall = Tile::default();
         wall.wall = 137;
         let mut c = [0.0f32; 3];
-        apply_wall_light(&wall, &mut rng, &p, &mut c);
+        apply_wall_light(&wall, 0, &mut rng, &p, &mut c);
         // `0.4 + delta * 0.6 + random * 0.0005`, times (1, 0.5, 0.1).
         assert!((c[0] - 0.46).abs() < 0.03, "crystal wall {c:?}");
         assert!((c[1] - c[0] * 0.5).abs() < 1e-4, "crystal wall {c:?}");
