@@ -138,8 +138,9 @@ referenced here exist in the catalog.
   (1141), alternates as cloned modules; `TileObject.Place` (`TileObject.cs:26-140`)
   computes style → pre-kills cut tiles → writes per-column frames → `FlattenAnchors`
   slope-flattening. **This is the M1.4-TO foundation** (doors, chests, furniture).
-- Paint/coatings: `TilePaintSystemV2.cs`, paint byte on `Tile` (see E1 debt), echo
-  coats — TILE-DRAW-4 in flight.
+- Paint/coatings: `TilePaintSystemV2.cs` — done (TILE-DRAW-4): shader-side recolor, wall
+  paint + coatings stored in `World.extras` on top of the E1 paint byte; echo/invisible
+  coats remain.
 - **Hidden:** `StopMergingByInvisibility` breaks merge chains across invisibility state
   (86023); slope masking kills specific neighbours (`WorldGen.cs:81390` chain); open-top
   tiles 477/492 block spawn 10% unless event (`NPC.cs:1022`); `SlowlyDiesInWater` tiles
@@ -1171,12 +1172,12 @@ section in brackets before starting a row.
 | --- | --- | --- |
 | ✅ M1.4-BG-11/16 | `M1.4-BG-11-cloud-parallax` | clouds/stars/horizon [5] |
 | ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass framing [2] |
-| 🔄 TILE-DRAW-1 | `TILE-DRAW-1-drawdata-finish` | per-type draw metrics [2] |
+| ✅ TILE-DRAW-1 | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog corrections; animator/glow/wind remain TILE-DRAW-2/3 [2] |
 | ✅ TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames |
 | ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves |
-| 🔄 TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | paint/coatings (needs E1 paint byte) [2] |
+| ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
-| M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
+| 🔄 M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
 | M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
 | M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
@@ -1185,7 +1186,7 @@ section in brackets before starting a row.
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
 | M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
 | M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon/star light, invisible blocks [4] |
-| M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella [2] |
+| 🔄 M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella (branch claimed) [2] |
 | M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor [2] |
 | M1.4-TO-2 | `M1.4-TO-2-chests` | chest tiles + CheckChest + locking [2][13] |
 | M1.4-TO-3 | `M1.4-TO-3-furniture` | Check3x2/3x3/6x3 family + anchors [2] |
@@ -1195,8 +1196,8 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| 🟡 M2-DRAW-1 | `M2-DRAW-1-player-layers` | armor/accessories with M3-EQUIP |
-| ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation |
+| 🟡 M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor/accessories go live with M3-EQUIP |
+| ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation; the rotation source consumes M2-ANIM use fractions (swing-arc stand-in replaced in the M3-CRAFT merge) |
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
 | M2-PHYS-1 | `M2-PHYS-1-movement-constants` | boots/ice/sand/wet multipliers [7] |
@@ -1250,7 +1251,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M4-NPC-1 | `M4-NPC-1-fighters` … per-family | AI families [14] |
+| 🔄 M4-NPC-1 | `M4-NPC-1-slimes-eyes` (slime variants + Wandering Eye landed; more per-family branches to come) | AI families [14] |
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
 | M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain + RNG streams [15] |
 | M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | spawn tables + special rules [15] |
@@ -1279,7 +1280,7 @@ section in brackets before starting a row.
 | M5-DESERT-structures | `M5-DESERT-structures` | desert + underground desert |
 | M5-DUNGEON | `M5-DUNGEON` | dungeon crawler |
 | M5-TEMPLE | `M5-TEMPLE` | jungle temple |
-| M5-LIVING-trees | `M5-LIVING-trees` | living trees |
+| 🔄 M5-LIVING-trees | `M5-LIVING-trees` | living trees (branch claimed) |
 | M5-STRUCT-1..5 | `M5-STRUCT-1-shrines-cabins` … | structures [6] |
 | M5-ORES-1 | `M5-ORES-1-tilerunner` | ore fidelity + alt tiers [6] |
 | M5-HARDFORCE | `M5-HARDFORCE` | initializeHardMode + altars [6] |
@@ -1335,11 +1336,11 @@ section in brackets before starting a row.
 | REFACTOR-rng | `refactor-xorshift-unify` | unify worldgen/wind xorshift cores byte-exactly |
 | REFACTOR-saveheader | `refactor-save-list-reader` | absorb HeaderReader into binio |
 | REFACTOR-cleanup | `refactor-allow-cleanup` | remove inert #[allow(dead_code)] in ui/uistate.rs |
-| E1 (paint byte) | — | part of TILE-DRAW-4; Tile 12 B stays until then |
+| E1 (paint byte) | — | paint byte landed with TILE-DRAW-4; further Tile packing (12→8-10 B) stays deferred |
 
 ## Recommended order of attack (updated)
 
-1. **Finish M1**: TILE-DRAW-1/4 → M1.4-TO-1/2 (doors/chests unlock M3-CHEST-UI) →
+1. **Finish M1**: M1.4-TO-1/2 (doors/chests unlock M3-CHEST-UI) →
    M1.4-BG-18/19 (filters/ambient skies) → M1.5 leftovers.
 2. **M2 combat floor**: M2-BUFF-1/2 (buff+regen engines) → M4-DAMAGE (pipeline) →
    M2-BUFF-3/4 (debuffs) → M2-COMBAT-1/2. These unblock every NPC/weapon task.

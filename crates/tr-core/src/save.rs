@@ -15,7 +15,7 @@ use crate::world::World;
 
 const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// v2 added `moon_type`/`moon_phase`; v1 files still load with 0/0.
-const VERSION: u32 = 2;
+const VERSION: u32 = 3;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -99,6 +99,16 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
             w.write_all(&n.to_le_bytes())?;
         }
     }
+
+    // v3: the sparse paint/coating extras (`World.extras`) — wall paint,
+    // invisible block/wall, fullbright wall. Sorted by index for determinism.
+    let mut extras: Vec<(u32, u8)> = world.extras.iter().map(|(k, v)| (*k, *v)).collect();
+    extras.sort_unstable();
+    w.write_all(&(extras.len() as u32).to_le_bytes())?;
+    for (idx, byte) in extras {
+        w.write_all(&idx.to_le_bytes())?;
+        w.write_all(&[byte])?;
+    }
     Ok(())
 }
 
@@ -174,6 +184,17 @@ pub fn parse(data: &[u8]) -> Result<World> {
         }
         if x != w {
             bail!("row {y} has {x} of {w} tiles");
+        }
+    }
+    if version >= 3 {
+        let count = r.u32()? as usize;
+        for _ in 0..count {
+            let idx = r.u32()? as usize;
+            let byte = r.u8()?;
+            if idx >= world.tiles.len() {
+                bail!("extras index {idx} out of range");
+            }
+            world.set_extras_at(idx, byte);
         }
     }
     world.revision = 0;
@@ -286,6 +307,11 @@ mod tests {
         w.tiles[i].set_slope(2);
         w.tiles[i].set_paint(3);
         w.tiles[i].set_wall_frame(4, 2);
+        // v3 extras: wall paint + the Echo bit on (3, 0); the zero byte at
+        // (7, 7) collapses back to absent.
+        w.set_wall_paint(3, 0, 4);
+        w.set_invisible_block(3, 0, true);
+        w.set_extras_at(w.index(7, 7), 0);
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
         let back = parse(&buf).unwrap();
@@ -301,5 +327,13 @@ mod tests {
         assert_eq!((back.moon_type, back.moon_phase), (5, 3));
         assert!(back.frame_important[5]);
         assert_eq!(back.tiles, w.tiles);
+        // v3: the sparse paint/coating extras round-trip (the zero byte
+        // collapses back to absent).
+        assert_eq!(back.extras.len(), 1);
+        assert_eq!(back.extras_at(back.index(3, 0)), 0x24);
+        assert_eq!(back.wall_paint(3, 0), 4, "wall paint rides the low 5 bits");
+        assert!(back.invisible_block(3, 0), "the Echo bit rides bit 5");
+        assert!(!back.invisible_wall(3, 0));
+        assert!(!back.invisible_block(7, 7), "the zero byte collapses");
     }
 }
