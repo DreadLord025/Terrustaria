@@ -1163,6 +1163,30 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
             world.revision = world.revision.wrapping_add(1);
         }
     }
+    // `TR_PAINT=tx,ty,w,h,paint[,wall]`: paint a rectangle of tiles (and walls
+    // with the optional 6th value) at load, so the paint recolor and the wall
+    // paint path stay screenshotable without a paint item. paint 29 = shadow,
+    // 30 = negative, 31 = illuminant.
+    if let Ok(v) = std::env::var("TR_PAINT") {
+        let mut it = v.split(',');
+        let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
+        if let Ok(vals) = vals && (vals.len() == 5 || vals.len() == 6) {
+            let (tx, ty, tw, th, paint) =
+                (vals[0] as i32, vals[1] as i32, vals[2] as i32, vals[3] as i32, vals[4] as u8);
+            let wall_paint = if vals.len() == 6 { vals[5] as u8 } else { 0 };
+            for x in tx..(tx + tw) {
+                for y in ty..(ty + th) {
+                    if let Some(t) = world.tile_mut(x, y) {
+                        t.set_paint(paint);
+                    }
+                    if wall_paint != 0 {
+                        world.set_wall_paint(x, y, wall_paint);
+                    }
+                }
+            }
+            world.revision = world.revision.wrapping_add(1);
+        }
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()

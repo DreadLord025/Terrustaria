@@ -71,6 +71,65 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     return out;
 }
 
+fn paint_rgb(pid: u32) -> vec3<f32> {
+    var table = array<vec3<f32>, 32>(
+        vec3<f32>(1.0),
+        vec3<f32>(1.0, 0.0, 0.0),
+        vec3<f32>(1.0, 0.498, 0.0),
+        vec3<f32>(1.0, 1.0, 0.0),
+        vec3<f32>(0.498, 1.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.498),
+        vec3<f32>(0.0, 1.0, 1.0),
+        vec3<f32>(0.0, 0.498, 1.0),
+        vec3<f32>(0.0, 0.0, 1.0),
+        vec3<f32>(0.498, 0.0, 1.0),
+        vec3<f32>(1.0, 0.0, 1.0),
+        vec3<f32>(1.0, 0.0, 0.498),
+        vec3<f32>(1.0, 0.0, 0.0),
+        vec3<f32>(1.0, 0.498, 0.0),
+        vec3<f32>(1.0, 1.0, 0.0),
+        vec3<f32>(0.498, 1.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.0),
+        vec3<f32>(0.0, 1.0, 0.498),
+        vec3<f32>(0.0, 1.0, 1.0),
+        vec3<f32>(0.0, 0.498, 1.0),
+        vec3<f32>(0.0, 0.0, 1.0),
+        vec3<f32>(0.498, 0.0, 1.0),
+        vec3<f32>(1.0, 0.0, 1.0),
+        vec3<f32>(1.0, 0.0, 0.498),
+        vec3<f32>(0.294, 0.294, 0.294),
+        vec3<f32>(1.0),
+        vec3<f32>(0.686, 0.686, 0.686),
+        vec3<f32>(1.0, 0.698, 0.490),
+        vec3<f32>(0.098, 0.098, 0.098),
+        vec3<f32>(0.784, 0.784, 0.784),
+        vec3<f32>(1.0),
+    );
+    return table[pid];
+}
+
+// `TilePaintSystemV2`'s baked recolor (`TilePaintSystemV2.cs:43-51`): a
+// per-(type, style, paint) recolored copy of the same texture frame. The
+// vanilla recolor runs as compiled HLSL passes (the .fx source is not part
+// of the decompile); this port shades in the sRGB domain — the paint hue
+// washes the texel while its luminance carries the texture detail.
+// Negative paint inverts the pixel; illuminant (31) draws unpainted (the
+// vanilla pass 0) and glows through the light path.
+fn paint_recolor(tex: vec4<f32>, pid: u32) -> vec4<f32> {
+    if (pid == 0u) {
+        return tex;
+    }
+    if (pid == 30u) {
+        return vec4<f32>(1.0 - tex.rgb, tex.a);
+    }
+    if (pid == 31u) {
+        return tex;
+    }
+    let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    return vec4<f32>(paint_rgb(pid) * lum, tex.a);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var tex = textureSample(atlas, atlas_sampler, in.uv);
@@ -91,65 +150,6 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // compiled HLSL is not in the decompile), 25 black, 26 white, 27 gray,
     // 28 brown, 29 shadow, 30 negative, 31 illuminant (drawn unpainted, like
     // the vanilla pass 0; the glow is light-side).
-    fn paint_rgb(pid: u32) -> vec3<f32> {
-        var table = array<vec3<f32>, 32>(
-            vec3<f32>(1.0),
-            vec3<f32>(1.0, 0.0, 0.0),
-            vec3<f32>(1.0, 0.498, 0.0),
-            vec3<f32>(1.0, 1.0, 0.0),
-            vec3<f32>(0.498, 1.0, 0.0),
-            vec3<f32>(0.0, 1.0, 0.0),
-            vec3<f32>(0.0, 1.0, 0.498),
-            vec3<f32>(0.0, 1.0, 1.0),
-            vec3<f32>(0.0, 0.498, 1.0),
-            vec3<f32>(0.0, 0.0, 1.0),
-            vec3<f32>(0.498, 0.0, 1.0),
-            vec3<f32>(1.0, 0.0, 1.0),
-            vec3<f32>(1.0, 0.0, 0.498),
-            vec3<f32>(1.0, 0.0, 0.0),
-            vec3<f32>(1.0, 0.498, 0.0),
-            vec3<f32>(1.0, 1.0, 0.0),
-            vec3<f32>(0.498, 1.0, 0.0),
-            vec3<f32>(0.0, 1.0, 0.0),
-            vec3<f32>(0.0, 1.0, 0.498),
-            vec3<f32>(0.0, 1.0, 1.0),
-            vec3<f32>(0.0, 0.498, 1.0),
-            vec3<f32>(0.0, 0.0, 1.0),
-            vec3<f32>(0.498, 0.0, 1.0),
-            vec3<f32>(1.0, 0.0, 1.0),
-            vec3<f32>(1.0, 0.0, 0.498),
-            vec3<f32>(0.294, 0.294, 0.294),
-            vec3<f32>(1.0),
-            vec3<f32>(0.686, 0.686, 0.686),
-            vec3<f32>(1.0, 0.698, 0.490),
-            vec3<f32>(0.098, 0.098, 0.098),
-            vec3<f32>(0.784, 0.784, 0.784),
-            vec3<f32>(1.0),
-        );
-        return table[pid];
-    }
-
-    // `TilePaintSystemV2`'s baked recolor (`TilePaintSystemV2.cs:43-51`): a
-    // per-(type, style, paint) recolored copy of the same texture frame. The
-    // vanilla recolor runs as compiled HLSL passes (the .fx source is not part
-    // of the decompile); this port shades in the sRGB domain — the paint hue
-    // washes the texel while its luminance carries the texture detail.
-    // Negative paint inverts the pixel; illuminant (31) draws unpainted (the
-    // vanilla pass 0) and glows through the light path.
-    fn paint_recolor(tex: vec4<f32>, pid: u32) -> vec4<f32> {
-        if (pid == 0u) {
-            return tex;
-        }
-        if (pid == 30u) {
-            return vec4<f32>(1.0 - tex.rgb, tex.a);
-        }
-        if (pid == 31u) {
-            return tex;
-        }
-        let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
-        return vec4<f32>(paint_rgb(pid) * lum, tex.a);
-    }
-
     // Terraria multiplies sprite tints in gamma space: XNA's `Color * Color` is a
     // plain byte multiply on sRGB values. The atlas is sRGB-decoded and the swapchain
     // encodes on write, so pre-linearise the tint to get the same result on screen.
