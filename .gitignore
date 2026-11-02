@@ -3,9 +3,10 @@
 
 # decompiled game sources (derived from a retail copy, not redistributable)
 /assets/Content/
+/assets/test/
 /decompiled/
 /decompiled-libs/
-
+/.code-foundations/
 /.opencode/
 
 # .NET tooling output

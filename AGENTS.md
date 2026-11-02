@@ -60,6 +60,35 @@ agreement): a branch with the task's id **is** the claim — push the task branc
 `git fetch --prune` before taking a row). Merge into `main` only after verification;
 push `main` by agreement, never force-push.
 
+### Branch & worktree lifecycle — after a merge, clean up (2026-11-02 rules)
+
+A merged branch and its worktree are garbage. Leaving them behind makes the branch
+list lie about who is working on what. After step 7 of the loop, always:
+
+1. **Verify before deleting a branch.** The tip must be fully in main:
+   `git log main..<branch> --oneline` shows 0 commits (or `git branch --merged main`
+   lists the branch). Never delete a branch with unique commits — merge it first.
+2. **Delete the branch both locally and on the remote:**
+   `git branch -d <branch>` + `git push origin --delete <branch>`, then
+   `git fetch --prune` (delete one branch per command — a batch fails whole if any
+   ref is already gone).
+3. **Worktrees are temporary, never permanent.** Each worktree is created for one
+   task (`git worktree add <path> <branch>`) and removed as soon as its branch is
+   merged: `git worktree remove <path>` (add `--force` only after inspecting it),
+   then `git worktree prune`. Before removing, run `git -C <path> status --porcelain`
+   — if there are uncommitted or untracked files, resolve them first: commit what is
+   real, and for an untracked file that duplicates a committed one (compare
+   `sha256sum` with the tracked copy) discard it. A `crash.log`/log file is junk.
+4. **One checkout = one agent = one branch.** Never `git checkout`/switch branches in
+   a checkout another agent is working in, never stage or commit from someone else's
+   worktree — a stray `git add`/`git commit` in a shared index can silently stage a
+   revert of merged work (this bit us 2026-11-01). When two agents must work at the
+   same time, each gets its own worktree; the primary checkout belongs to whoever
+   holds `main`.
+5. **End state after a cleanup pass:** `git branch -a` shows only `main` (local +
+   `origin/main`) plus branches that are genuinely in flight, `git worktree list`
+   shows only the primary checkout, and local `main` is pushed.
+
 ---
 
 Terraria-Rust is a **1:1 reimplementation of Terraria 1.4.5.8** in Rust: same behaviour,

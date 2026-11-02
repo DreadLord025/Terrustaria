@@ -38,10 +38,17 @@ fn no_cache() -> bool {
 impl App {
     pub(crate) fn frame(&mut self) {
         let now = Instant::now();
-        let dt = now
-            .duration_since(self.last_frame)
-            .as_secs_f32()
-            .clamp(0.0, 0.1);
+        // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
+        // `anim_time`, and wall-clock jitter between runs would make two shots of
+        // the same scene differ in a few pixels. A fixed 1/60 step (what vsync
+        // delivers anyway) keeps `anim_time = frames / 60` exact.
+        let dt = if self.shot_path.is_some() {
+            1.0 / 60.0
+        } else {
+            now.duration_since(self.last_frame)
+                .as_secs_f32()
+                .clamp(0.0, 0.1)
+        };
         self.last_frame = now;
         self.frame_count += 1;
         self.anim_time += dt;
@@ -221,6 +228,7 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                liquid_alpha,
                 items,
                 swing,
                 projectiles,
@@ -350,6 +358,57 @@ impl App {
                 // keeps the step at one screen pixel even at 1.5x / 2x.
                 let draw_cam = (*camera * *zoom).round() / *zoom;
                 let surface_px = world.world_surface as f32 * TILE_PX;
+                // `Main.DrawWaters` (`Main.cs:57473-57489`): the `liquidAlpha`
+                // cross-fade ramps per frame while the current water style is a
+                // plain water style — lava (1), honey (11) and shimmer (14) sit
+                // outside the ramp.
+                let water_style_now =
+                    crate::biome::calculate_water_style(world, draw_cam);
+                if crate::render::liquids::is_liquid_style_water(water_style_now) {
+                    for (i, a) in liquid_alpha.iter_mut().enumerate() {
+                        *a = if i == water_style_now {
+                            (*a + 0.2).min(1.0)
+                        } else {
+                            (*a - 0.2).max(0.0)
+                        };
+                    }
+                }
+                // `Main.DoDraw_Waterfalls` + `WaterfallManager.AddLight`: the
+                // waterfall walk runs once per frame, before the light map and
+                // outside the G6-cached world pass — its quads are buffered for
+                // the tile pass and its `AddLight` list feeds the light compute.
+                // Running it unconditionally (not only on world-range rebuilds)
+                // keeps the light feed a pure function of the frame index.
+                if std::env::var_os("TR_NO_WATERFALL").is_none() {
+                    let half_v = screen * 0.5 / *zoom;
+                    let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.width - 1);
+                    let vx1 = (((camera.x + half_v.x) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.width - 1);
+                    let vy0 = (((camera.y - half_v.y) / TILE_PX).floor() as i32 - 1)
+                        .clamp(0, world.height - 1);
+                    let vy1 = (((camera.y + half_v.y) / TILE_PX).ceil() as i32 + 1)
+                        .clamp(0, world.height - 1);
+                    let lights = waterfall.draw(
+                        world,
+                        light,
+                        &style,
+                        anim_time,
+                        liquid_alpha,
+                        params.mouse_text_color,
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ world.seed,
+                        [vx0, vy0, vx1, vy1],
+                    );
+                    scratch.waterfall_quads = waterfall.take_quads();
+                    scratch.waterfall_lights = lights;
+                    // `WaterfallManager.TrySparkling`: drain the walk's spawns
+                    // into the rain module's dust particles.
+                    rain.spawn_sparkles(waterfall.take_sparkles());
+                } else {
+                    scratch.waterfall_quads.clear();
+                    scratch.waterfall_lights.clear();
+                }
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -466,6 +525,10 @@ impl App {
                         items,
                         &remote_players.values().cloned().collect::<Vec<_>>(),
                         *edit_target,
+                        liquid_alpha,
+                        // `TrySparkling`'s draw thread: the frame count pins it.
+                        (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                            ^ world.seed,
                     );
                     *world_key = Some(key);
                 }

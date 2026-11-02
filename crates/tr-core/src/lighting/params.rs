@@ -214,6 +214,7 @@ impl LightParams {
     /// bit-exactly, so a new field here cannot silently go stale.
     pub(super) fn key(&self, world_revision: u64) -> LightKey {
         LightKey {
+            lights: 0,
             sky: [
                 self.sky[0].to_bits(),
                 self.sky[1].to_bits(),
@@ -255,6 +256,8 @@ impl LightParams {
 #[derive(Clone, Copy, PartialEq, Hash)]
 pub(super) struct LightKey {
     sky: [u32; 3],
+    /// The `AddLight` source-set hash (`LightMap::compute_into_with_lights`).
+    pub(super) lights: u64,
     hell_glow: u32,
     mouse_text_color: u8,
     demon_torch: u32,

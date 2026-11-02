@@ -83,5 +83,13 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // plain byte multiply on sRGB values. The atlas is sRGB-decoded and the swapchain
     // encodes on write, so pre-linearise the tint to get the same result on screen.
     let tint = pow(max(in.color.rgb, vec3<f32>(0.0)), vec3<f32>(2.2));
-    return vec4<f32>(tex.rgb * tint, tex.a * in.color.a);
+    // XNA's `BlendState.AlphaBlend` is premultiplied: the rgb source factor is
+    // `One`, so a tint with alpha 0 (the tile flames' `Color(200,200,200,0)`)
+    // ADDS the texture rgb to the destination instead of fading out. The atlas
+    // textures are premultiplied by the XNA content pipeline (a=0 texels are
+    // rgb=0, semi-alpha texels satisfy rgb <= a — verified across the asset
+    // set), so the fragment must NOT multiply rgb by the alpha here; the
+    // pipeline's (One, OneMinusSrcAlpha) factors finish the equation.
+    let alpha = tex.a * in.color.a;
+    return vec4<f32>(tex.rgb * tint, alpha);
 }

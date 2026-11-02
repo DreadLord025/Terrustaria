@@ -198,7 +198,23 @@ impl SpriteRenderer {
                 entry_point: Some("fs_main"),
                 targets: &[Some(wgpu::ColorTargetState {
                     format: gpu.config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    // XNA `BlendState.AlphaBlend` (premultiplied): the rgb source
+                    // factor is One, so a tint with alpha 0 (the tile flames'
+                    // `Color(200,200,200,0)`) is a pure rgb add; the shader
+                    // outputs straight-alpha texels without pre-multiplying rgb
+                    // by alpha, and these factors finish the equation.
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                    }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
                 compilation_options: Default::default(),

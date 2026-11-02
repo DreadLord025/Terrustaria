@@ -6,6 +6,7 @@
 pub mod binio;
 pub mod drawdata;
 pub mod edit;
+pub mod flame;
 pub mod framing;
 pub mod lighting;
 pub mod liquid;
