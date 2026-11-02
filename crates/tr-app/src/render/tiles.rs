@@ -7,15 +7,15 @@ use crate::item::ItemDrop;
 use crate::net;
 use crate::npc::Npc;
 use crate::player::{self, Player};
-use crate::render::entities::{NpcAssets, PlayerAssets, draw_npcs, draw_player, flip_uv};
+use crate::render::entities::{draw_npcs, draw_player, flip_uv, NpcAssets, PlayerAssets};
 use crate::render::foliage::draw_tree_foliage;
-use crate::render::liquids::{LiquidPass, draw_liquids, draw_tile_liquid_behind};
+use crate::render::liquids::{draw_liquids, draw_tile_liquid_behind, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
 use std::time::Instant;
 use tr_core::lighting::{LightMap, LightParams, LightStyle};
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, tree};
+use tr_core::{tree, World, TILE_PX};
 use tr_render::{Atlas, SpriteRenderer};
 
 #[derive(Default, Clone, Copy, Debug)]
@@ -362,13 +362,24 @@ pub(crate) fn draw_tiles(
                     None
                 };
 
-                // `GetTileDrawData`: per-type sprite size/top/flip (torches 20x20 with
-                // `tileTop 4`, plants 20 px, herbs, candles, palms...).
+                // `GetTileDrawData`: per-type sprite size/top/flip/frame data
+                // (torches 20x20 with `tileTop 4`, plants 20 px, herbs,
+                // candles, palms, frame strides...). `tile_frame` is
+                // `Main.tileFrame[kind]`; the animator is not ported, so the
+                // vanilla t=0 state is passed.
                 let dd = if active && marker.is_none() && !is_tree {
                     let solid_above = world.tile(tx, ty - 1).is_some_and(|t| {
                         t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
                     });
-                    tr_core::drawdata::draw_data(tile.kind, tx, solid_above)
+                    tr_core::drawdata::draw_data(
+                        tile.kind,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        0,
+                        solid_above,
+                    )
                 } else {
                     tr_core::drawdata::TileDrawData::default()
                 };
@@ -392,6 +403,11 @@ pub(crate) fn draw_tiles(
                             });
                         }
                     } else if tile.frame_x >= 0 && tile.frame_y >= 0 {
+                        // Cases that rewrite C#'s `ref tileFrameX/Y` hand the
+                        // final frame to us; the source rectangle is built from
+                        // it (`TileDrawing.cs:1007`).
+                        let fx = dd.frame_x_override.unwrap_or(tile.frame_x);
+                        let fy = dd.frame_y_override.unwrap_or(tile.frame_y);
                         tile_frame = atlas.and_then(|a| {
                             if dd.width != 16
                                 || dd.height != 16
@@ -401,13 +417,13 @@ pub(crate) fn draw_tiles(
                                 lookups.rect_uv(
                                     a,
                                     tile.kind,
-                                    tile.frame_x + dd.add_fr_x,
-                                    tile.frame_y + dd.add_fr_y,
+                                    fx + dd.add_fr_x,
+                                    fy + dd.add_fr_y,
                                     dd.width as u32,
                                     dd.height as u32,
                                 )
                             } else {
-                                lookups.frame_tex(a, tile.kind, tile.frame_x, tile.frame_y)
+                                lookups.frame_tex(a, tile.kind, fx, fy)
                             }
                         });
                     }
