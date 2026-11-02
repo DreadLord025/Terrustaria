@@ -1722,3 +1722,35 @@ thirds, the UI sine pulse). Deviations and ports:
 - The demon-eye draw rotates the quad about its centre (`Main.DrawNPC`
   origin = frame centre); the mirrored quad's corners are centre-symmetric,
   so the flip does not move them.
+
+## Item use timings (M2-ANIM-item-timings)
+
+The per-item `useTime` / `useAnimation` / `useStyle` / `holdStyle` /
+`autoReuse` now live on `registry::ItemDef`, extracted from
+`Item.cs SetDefaults1` for all 20 ported kinds (blocks and ores 10/15,
+grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
+`noMelee`-style zero damage, torch `holdStyle = 1`). Deviations and notes:
+
+- The swing duration is `useAnimation` ticks at the 60 Hz rate
+  (`Player.ApplyItemAnimation`, `Player.cs:4449-4451`); the fixed `SWING_TIME`
+  stand-in is gone and the render builders consume the remaining *fraction*
+  (`itemAnimation / itemAnimationMax`).
+- The use cadence follows `ItemCheck` (`Player.cs:42814-42822`): an
+  `autoReuse` kind re-fires while the button is held; a non-autoReuse kind
+  waits for a release. The legacy `place_cooldown = 0.12` pacing retired —
+  placement is paced by the swing itself, like the original.
+- The mining re-swing keeps the port's own `mine_timer`/hardness model
+  (M3-TOOL owns pick power); only the visible swing cadence is per-item.
+- A resting `holdStyle == 1` item (the torch) is drawn in the hand —
+  anchor `position.X + width/2 + (frame.W/2 + 2)·direction`,
+  `position.Y + 24`, `itemRotation = 0` (`Player.cs:50275-50460`) — and pins
+  the body to row 3 (`Player.cs:36455-36459`).
+- The M2-DRAW-2 `swing_stand_in` (rotated composite front arm during a swing)
+  retired for useStyle 1: the original never calls `SetCompositeArmFront` in
+  the useStyle-1 branch (`Player.cs:50686-50953` sets only
+  `itemRotation`/`itemLocation`), so the arm pose rides the bodyFrame thirds
+  and the item swings alone. The stand-in returns for styles 5/9/11 with the
+  bow/thrown tasks.
+- XNA pivot semantics (`PlayerDrawLayers.cs:3161`): the draw origin
+  `(W/2 - W/2·direction, H)` positions the quad; the `direction < 0` flip
+  swaps the UVs inside the quad, not the quad geometry.
