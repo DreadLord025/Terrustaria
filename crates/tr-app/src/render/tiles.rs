@@ -159,8 +159,20 @@ pub(crate) fn draw_tiles(
     liquid_alpha: &[f32; 15],
     // The frame's deterministic seed for the `TrySparkling` draws.
     sparkle_seed: u64,
+    // The wind state and the sway counters (`TileDrawing.DrawGrass`/`DrawTrees`).
+    wind: &tr_core::wind::Wind,
+    grass_wind_counter: f32,
+    tree_wind_counter: f32,
+    // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
+    // caller into the leaf particle list.
+    leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
 ) -> TileDrawStats {
     let t_total = Instant::now();
+    // `TileDrawing._rand` (`TileDrawing.cs:191`): the leaf-roll stream, pinned
+    // per frame like the sparkle draws.
+    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
+        sparkle_seed ^ 0x9E37_79B9_7F4A_7C15,
+    );
     let half = screen * 0.5 / zoom;
     let min = camera - half;
     let max = camera + half;
@@ -498,6 +510,37 @@ pub(crate) fn draw_tiles(
                     continue;
                 };
                 stats.visible += 1;
+                // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
+                // `SwaysInWindBasic` tiles draw with the grass wind counter —
+                // position shifted by `(cycle, |cycle|)` and rotated
+                // `cycle * 0.1` about `(tileWidth / 2, 16 - tileTop)`. The
+                // row-major loop draws them inline instead of deferring them to
+                // a special pass (documented z-order approximation); the
+                // `WindGrid` gust push is not ported. Vanilla's type-227 frame
+                // exceptions apply (`ShouldSwayInWind`, `TileDrawing.cs:7712`).
+                // `TileDrawing.DrawGrass` (`TileDrawing.cs:8326-8375`): the
+                // `SwaysInWindBasic` tiles draw with the grass wind counter —
+                // position shifted by `(cycle, |cycle|)` and rotated
+                // `cycle * 0.1` about `(tileWidth / 2, 16 - tileTop)`. The
+                // row-major loop draws them inline instead of deferring them to
+                // a special pass (documented z-order approximation); the
+                // `WindGrid` gust push is not ported. Vanilla's type-227 frame
+                // exceptions apply (`ShouldSwayInWind`, `TileDrawing.cs:7712`).
+                let sway = if tr_core::wind::SWAYS_IN_WIND_BASIC.has(tile.kind)
+                    && !matches!(tile.frame_x, 204 | 238 | 408 | 442 | 476)
+                    && wind.sway_enabled
+                {
+                    let mut num3 = wind.cycle(tx, ty, grass_wind_counter);
+                    if !tr_core::wind::wall_allows_wind(tile.wall) {
+                        num3 = 0.0;
+                    }
+                    if !wind.in_a_place_with_wind(world, tx, ty, 1, 1) {
+                        num3 = 0.0;
+                    }
+                    num3
+                } else {
+                    0.0
+                };
                 if is_tree {
                     // 20x20 trunk sprite, drawn like `TileDrawing` does: the 20 px
                     // sprite is centred on the 16 px cell (position shifted by -2),
@@ -512,6 +555,23 @@ pub(crate) fn draw_tiles(
                         tx,
                         ty,
                         anim_time,
+                    );
+                    stats.quads += 1;
+                } else if sway != 0.0 {
+                    // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
+                    // and rotated `cycle * 0.1` about
+                    // `(tileWidth / 2, 16 - tileTop)` (`TileDrawing.cs:8369-8374`).
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    let sprite_pos = [pos[0] - (dw - 16.0) * 0.5, pos[1] + dd.top as f32];
+                    let origin = [dw * 0.5, 16.0 - dd.top as f32];
+                    let tint = style.shade(l, tx, ty, anim_time);
+                    r.push_sprite_origin_rot(
+                        [sprite_pos[0] + sway, sprite_pos[1] + sway.abs()],
+                        [dw, dh],
+                        flip_uv(tf.uv, dd.flip),
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sway * 0.1,
+                        origin,
                     );
                     stats.quads += 1;
                 } else if dd.top != 0 || dd.width != 16 || dd.height != 16 || dd.flip {
@@ -539,6 +599,20 @@ pub(crate) fn draw_tiles(
                 } else if style.sliced_blocks && solid && l[0].max(l[1]).max(l[2]) > MEDIUM_LIGHT {
                     stats.quads +=
                         push_sliced(r, pos, tf.uv, light, style, tx, ty, anim_time, HIGH_LIGHT);
+                } else if sway != 0.0 {
+                    // The plain-size sway members (e.g. the sunflower 113, whose
+                    // `TileDrawData` is the default): the same `DrawGrass`
+                    // transform with the 16x16 origin `(8, 16)`.
+                    let tint = style.shade(l, tx, ty, anim_time);
+                    r.push_sprite_origin_rot(
+                        [pos[0] + sway, pos[1] + sway.abs()],
+                        [TILE_PX, TILE_PX],
+                        tf.uv,
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sway * 0.1,
+                        [8.0, 16.0],
+                    );
+                    stats.quads += 1;
                 } else {
                     push_lit(
                         r,
@@ -590,8 +664,22 @@ pub(crate) fn draw_tiles(
     }
 
     if std::env::var_os("TR_NO_FOLIAGE").is_none() {
-        stats.foliage =
-            draw_tree_foliage(r, world, lookups, light, style, anim_time, x0, y0, x1, y1);
+        stats.foliage = draw_tree_foliage(
+            r,
+            world,
+            lookups,
+            light,
+            style,
+            anim_time,
+            wind,
+            tree_wind_counter,
+            &mut leaf_rng,
+            leaf_spawns,
+            x0,
+            y0,
+            x1,
+            y1,
+        );
     }
     for it in items {
         stats.items += it.draw(r, lookups, light, style, anim_time);

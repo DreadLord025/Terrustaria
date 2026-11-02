@@ -480,6 +480,27 @@ impl SpriteRenderer {
 
     /// Rotated screen-space sprite. Used by rain, which the original draws rotated by
     /// `atan2(velocity.x, -velocity.y)` around the top-left origin. Rain lives in the
+/// `SpriteBatch.Draw` with an arbitrary origin: `pos` is the unrotated
+    /// top-left and `origin` the sprite-local anchor the rotation keeps in
+    /// place. The instance pipeline rotates about the top-left, so the
+    /// top-left is shifted by `origin − R(rot)·origin`.
+    pub fn push_sprite_origin_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        origin: [f32; 2],
+    ) {
+        let (s, c) = rot.sin_cos();
+        let tl = [
+            pos[0] + origin[0] - (origin[0] * c - origin[1] * s),
+            pos[1] + origin[1] - (origin[0] * s + origin[1] * c),
+        ];
+        self.push_sprite_rot(tl, size, uv, color, rot);
+    }
+
     /// always-rebuilt UI range so the cached world range (G6) stays reusable.
     pub fn push_ui_sprite_rot(
         &mut self,

@@ -229,6 +229,10 @@ impl App {
                 waterfall,
                 rain,
                 liquid_alpha,
+                wind,
+                tree_wind_counter,
+                grass_wind_counter,
+                leaves,
                 items,
                 swing,
                 projectiles,
@@ -379,6 +383,10 @@ impl App {
                 // the tile pass and its `AddLight` list feeds the light compute.
                 // Running it unconditionally (not only on world-range rebuilds)
                 // keeps the light feed a pure function of the frame index.
+                let mut leaf_spawns = Vec::new();
+                let mut leaf_rng = tr_core::tile_light::FastRandom::new(
+                    (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
+                );
                 if std::env::var_os("TR_NO_WATERFALL").is_none() {
                     let half_v = screen * 0.5 / *zoom;
                     let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
@@ -409,6 +417,17 @@ impl App {
                     scratch.waterfall_lights.clear();
                 }
 
+                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind walk
+                // runs in `UpdateWeather`; the sway counters advance per frame,
+                // faster with stronger wind.
+                wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
+                wind.update(rain.is_raining());
+                tr_core::wind::advance_tree_counter(
+                    tree_wind_counter,
+                    wind.speed_current,
+                );
+                tr_core::wind::advance_counter(grass_wind_counter, wind.speed_current);
+
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
                 let liquid_anim = if *has_liquids {
@@ -438,7 +457,17 @@ impl App {
                     anim: if style.perturb > 0.0 {
                         anim_time.to_bits()
                     } else {
+                        // `TileDrawing.GetWindCycle`: the sway is zero below
+                        // |wind| 0.08 (`Utils.GetLerpValue(0.08, 0.18, ...)`),
+                        // so a calm world keeps the world range cacheable; a
+                        // windy one animates the sway tiles every frame.
                         liquid_anim
+                            ^ (if wind.sway_enabled && wind.speed_current.abs() > 0.08 {
+                                (grass_wind_counter.to_bits() as u32)
+                                    ^ (tree_wind_counter.to_bits() as u32)
+                            } else {
+                                0
+                            })
                     },
                     player_key,
                     npc_key,
@@ -529,11 +558,41 @@ impl App {
                         // `TrySparkling`'s draw thread: the frame count pins it.
                         (*frame_count as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
                             ^ world.seed,
+                        wind,
+                        *grass_wind_counter,
+                        *tree_wind_counter,
+                        &mut leaf_spawns,
                     );
                     *world_key = Some(key);
                 }
 
+                // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
+                // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
+                // UI range like the rain. `TR_NO_WIND` is the A/B switch for the
+                // whole wind feature, spawns included.
+                let wind_ab_on = std::env::var_os("TR_NO_WIND").is_none();
+                let drained: Vec<_> = leaf_spawns.drain(..).collect();
+                for s in drained.into_iter().take_while(|_| wind_ab_on) {
+                    if leaves.len() >= 400 {
+                        break;
+                    }
+                    leaves.push(crate::render::foliage::LeafGore::from_spawn(
+                        s,
+                        &mut leaf_rng,
+                    ));
+                }
+                crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
+
                 rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                crate::render::foliage::draw_leaves(
+                    renderer,
+                    lookups,
+                    light,
+                    draw_cam,
+                    *zoom,
+                    screen,
+                    leaves,
+                );
                 for p in projectiles.iter() {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 }

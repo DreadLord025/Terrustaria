@@ -140,6 +140,10 @@ pub fn load_world_images(
         "Star_1",
         "Star_2",
         "Star_3",
+        // The ambient leaf gores the generated world's trees can shed
+        // (`WorldGen.GetTreeLeaf`: forest grass 910, palm sand 911).
+        "Gore_910",
+        "Gore_911",
         "Player_0_0",
         "Player_0_1",
         "Player_0_2",
@@ -721,6 +725,10 @@ pub struct Lookups {
     pub dust: Option<tr_render::SheetRect>,
     /// `Projectile_3.png`: the 22x22 shuriken frame.
     pub shuriken: Option<tr_render::SheetRect>,
+    /// The ambient leaf gores the world's trees can shed: `Gore_910`
+    /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
+    /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
+    pub leaf_gores: [Option<tr_render::SheetRect>; 2],
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
     /// Vanilla HUD textures (`Images/Inventory_Back`, `Heart`, ...).
@@ -943,6 +951,7 @@ impl Lookups {
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
             shuriken: atlas.sheet("Projectile_3").copied(),
+            leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             coins: [71, 72, 73, 74].map(|i| atlas.sheet(&format!("Item_{i}")).copied()),
             ui_back: atlas.sheet("Inventory_Back").copied(),
             ui_back_sel: atlas.sheet("Inventory_Back14").copied(),
@@ -1255,6 +1264,43 @@ impl Lookups {
             rect.width,
             rect.height,
         ))
+    }
+
+    /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
+    /// `Gore_910` (forest) at index 0, `Gore_911` (palm) at index 1; the other
+    /// biome styles load with their biomes.
+    pub fn leaf_sheet(&self, style: u32) -> Option<&tr_render::SheetRect> {
+        let idx = match style {
+            910 => 0,
+            911 => 1,
+            _ => return None,
+        };
+        self.leaf_gores.get(idx).and_then(|s| s.as_ref())
+    }
+
+    /// One leaf frame: the 32-column (paint) x 8-row (variant) strip
+    /// (`Gore.cs:1390-1401`); the port draws column 0 (no paint).
+    pub fn leaf_uv(&self, style: u32, row: u8) -> Option<[f32; 4]> {
+        let sheet = self.leaf_sheet(style)?;
+        let fw = sheet.width / 32;
+        let fh = sheet.height / 8;
+        if fw == 0 || fh == 0 || row as u32 >= 8 {
+            return None;
+        }
+        Some(uv_rect(
+            sheet,
+            self.atlas_size,
+            0,
+            row as i32 * fh as i32,
+            fw,
+            fh,
+        ))
+    }
+
+    /// The pixel frame size of one leaf cell.
+    pub fn leaf_frame(&self, style: u32) -> Option<(f32, f32)> {
+        let sheet = self.leaf_sheet(style)?;
+        Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
     }
 
     /// UV of the shuriken projectile/item sprite.

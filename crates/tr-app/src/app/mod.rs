@@ -256,6 +256,13 @@ pub(crate) struct App {
     pub(crate) waterfall_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
+    /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
+    pub(crate) wind: tr_core::wind::Wind,
+    pub(crate) tree_wind_counter: f32,
+    pub(crate) grass_wind_counter: f32,
+    /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
+    pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
     /// `DrawWaters` ramp drives (`Main.cs:57476-57489`); the liquid and
     /// waterfall passes consume it. Zeros, like the original's allocation
@@ -864,6 +871,9 @@ impl App {
     }
     let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
     let world_seed = world.seed;
+    let mut wind = tr_core::wind::Wind::new(world_seed as u32);
+    wind.world_surface = world.world_surface;
+    wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
     let liquids_sim = LiquidSystem::new(&world);
     let rain = Rain::new(world_seed);
 
@@ -1072,6 +1082,10 @@ impl App {
         waterfall: tr_core::waterfall::WaterfallManager::new(),
         waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
         rain,
+        wind,
+        tree_wind_counter: 0.0,
+        grass_wind_counter: 0.0,
+        leaves: Vec::new(),
         liquid_alpha: [0.0; 15],
         items: Vec::new(),
         item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,

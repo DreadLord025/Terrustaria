@@ -77,6 +77,9 @@ impl Rng {
 
 /// `Main.WindSpeedCurrent` / `Main.WindSpeedTarget` / `Main.windCounter` /
 /// `Main.extremeWindCounter` plus the state `GetWindCycle` needs from the world.
+use crate::tiledata::TileSet;
+use crate::world::World;
+
 #[derive(Clone, Debug)]
 pub struct Wind {
     /// `Main.windSpeedCurrent` (also `Main.WindForVisuals`, `Main.cs:2823`).
@@ -293,6 +296,37 @@ impl Wind {
     /// `Main.extremeWindCounter` (ticks until the next full re-roll).
     pub fn extreme_wind_counter(&self) -> i32 {
         self.extreme_counter
+    }
+
+    /// `WorldGen.DoesWindBlowAtThisHeight` (`WorldGen.cs:86848-86856`).
+    pub fn blows_at_height(&self, y: i32) -> bool {
+        let mut blows = (y as f64) < self.world_surface;
+        if self.remix_world {
+            blows = !blows;
+        }
+        blows
+    }
+
+    /// `WorldGen.InAPlaceWithWind` (`WorldGen.cs:86858-86879`): the region is
+    /// at a wind-blown height and none of its cells holds liquid or a
+    /// wind-blocking wall.
+    pub fn in_a_place_with_wind(&self, world: &World, x: i32, y: i32, w: i32, h: i32) -> bool {
+        if !self.blows_at_height(y) {
+            return false;
+        }
+        for i in 0..w {
+            for j in 0..h {
+                let Some(tile) = world.tile(x + i, y + j) else {
+                    return false;
+                };
+                if tile.liquid > 0
+                    || (tile.wall > 0 && !wall_allows_wind(tile.wall))
+                {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 
@@ -530,5 +564,111 @@ mod tests {
             assert_eq!(a.wind_counter(), b.wind_counter());
             assert_eq!(a.extreme_wind_counter(), b.extreme_wind_counter());
         }
+    }
+}
+
+/// `TileID.Sets.SwaysInWindBasic` (`TileID.cs:549`): the 1x1 tiles drawn by
+/// `TileDrawing.DrawGrass` with the grass wind counter
+/// (`{ 3, 20, 24, 61, 703, 71, 73, 74, 83, 84, 110, 113, 201, 227, 529, 590,
+/// 595, 615, 624, 700, 656, 701, 637 }`). Hand-transcribed — the tiledata
+/// generator is due its own regeneration pass; the test below asserts every
+/// listed id.
+pub static SWAYS_IN_WIND_BASIC: TileSet = TileSet::from_words(&[
+    0x2000_0000_0110_0008,
+    0x0002_4000_0018_0680,
+    0x0000_0000_0000_0000,
+    0x0000_0008_0000_0200,
+    0x0000_0000_0000_0000,
+    0x0000_0000_0000_0000,
+    0x0000_0000_0000_0000,
+    0x0000_0000_0000_0000,
+    0x0000_0000_0002_0000,
+    0x2001_0080_0008_4000,
+    0xb000_0000_0001_0000,
+    0x0000_0000_0000_0000,
+]);
+
+/// `WallID.Sets.AllowsWind` (`WallID.cs:95`): walls that do not block the wind
+/// (`{ 0, 150, 138, 145, 107, 152, 140, 139, 141, 106, 245, 315, 317 }`).
+pub fn wall_allows_wind(wall: u16) -> bool {
+    matches!(
+        wall,
+        0 | 150 | 138 | 145 | 107 | 152 | 140 | 139 | 141 | 106 | 245 | 315 | 317
+    )
+}
+
+/// `TileDrawing.UpdateLeafFrequency` (`TileDrawing.cs:7719-7771`): how often a
+/// visible tree part rolls for a leaf, as `1/Next()` ticks, times 7 (line 7770).
+pub fn leaf_frequency(wind_speed: f32) -> i32 {
+    let num = wind_speed.abs();
+    let base: i32 = if num <= 0.1 {
+        2000
+    } else if num <= 0.2 {
+        1000
+    } else if num <= 0.3 {
+        450
+    } else if num <= 0.4 {
+        300
+    } else if num <= 0.5 {
+        200
+    } else if num <= 0.6 {
+        130
+    } else if num <= 0.7 {
+        75
+    } else if num <= 0.8 {
+        50
+    } else if num <= 0.9 {
+        40
+    } else if num <= 1.0 {
+        30
+    } else if num <= 1.1 {
+        20
+    } else {
+        10
+    };
+    base * 7
+}
+
+/// `TileDrawing.Update`'s sunflower counter (`TileDrawing.cs:374`):
+/// `counter += 1/420 + 1/420 * num * 5`.
+pub fn advance_sunflower_counter(counter: &mut f32, wind_speed: f32) {
+    let num = visual_wind_amount(wind_speed);
+    *counter += 1.0 / 420.0 + 1.0 / 420.0 * num * 5.0;
+}
+
+/// `TileDrawing.Update`'s vine counter (`TileDrawing.cs:375`):
+/// `counter += 1/120 + 1/120 * num * 0.4000000059604645`.
+pub fn advance_vine_counter(counter: &mut f32, wind_speed: f32) {
+    let num = visual_wind_amount(wind_speed);
+    *counter += 1.0 / 120.0 + 1.0 / 120.0 * num * 0.400_000_005_960_464_5;
+}
+
+#[cfg(test)]
+mod set_tests {
+    use super::SWAYS_IN_WIND_BASIC;
+    use crate::wind::leaf_frequency;
+
+    #[test]
+    fn sways_in_wind_basic_matches_the_csharp_list() {
+        const IDS: [u16; 23] = [
+            3, 20, 24, 61, 703, 71, 73, 74, 83, 84, 110, 113, 201, 227, 529, 590, 595, 615, 624,
+            700, 656, 701, 637,
+        ];
+        for id in IDS {
+            assert!(SWAYS_IN_WIND_BASIC.has(id), "id {id} missing");
+        }
+        for id in [0u16, 1, 2, 4, 5, 10, 50, 100, 200, 300, 500, 600, 750] {
+            assert!(!SWAYS_IN_WIND_BASIC.has(id), "id {id} unexpectedly set");
+        }
+    }
+
+    #[test]
+    fn leaf_frequency_table_matches_the_source() {
+        assert_eq!(leaf_frequency(0.0), 2000 * 7);
+        assert_eq!(leaf_frequency(0.1), 2000 * 7);
+        assert_eq!(leaf_frequency(0.15), 1000 * 7);
+        assert_eq!(leaf_frequency(0.5), 200 * 7);
+        assert_eq!(leaf_frequency(1.05), 20 * 7);
+        assert_eq!(leaf_frequency(1.5), 10 * 7);
     }
 }
