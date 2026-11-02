@@ -521,6 +521,12 @@ const CHAIR: TileObjectDef = TileObjectDef {
 /// (`:3469` — a chest will not hang off a table edge). The C# hooks
 /// `Chest.FindEmptyChest` (:3464) / `Chest.AfterPlacement_Hook` (:3465) are the
 /// M3-CHEST-UI seam: the chest stays a pure tile object here.
+///
+/// `LavaDeath = false` (:3468) never touches placement: `SetupBaseObject`
+/// defaults `LavaPlacement = NotAllowed` (:1768) and `Calculate` (:1821-1831)
+/// folds death -> placement only when the death flag is *true*, so the chest
+/// keeps the base default — vanilla refuses to place a chest in lava
+/// (`TileObject.CanPlace` → `LiquidPlace`, TileObject.cs:342).
 const CHEST: TileObjectDef = TileObjectDef {
     kind: 21,
     width: 2,
@@ -531,7 +537,6 @@ const CHEST: TileObjectDef = TileObjectDef {
     coordinate_width: 16,
     coordinate_padding: 2,
     style_horizontal: true,
-    lava_placement: LiquidPlacement::Allowed,
     anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
     frame_important: true, // `Main.cs:7656`
     ..base_def()
@@ -1576,7 +1581,10 @@ mod tests {
             )
         );
         assert_eq!(chest.anchor_invalid_tiles.len(), 11); // :3466, list :2112-2116
-        assert_eq!(chest.lava_placement, LiquidPlacement::Allowed); // :3468 (LavaDeath=false)
+        // :3468 sets only `LavaDeath = false`; the base default is
+        // `LavaPlacement = NotAllowed` (SetupBaseObject :1768) and `Calculate`
+        // (:1821-1831) folds death -> placement only when the flag is true.
+        assert_eq!(chest.lava_placement, LiquidPlacement::NotAllowed);
         assert!(
             chest.hook_check_if_can_place.hook.is_none(),
             "M3-CHEST-UI seam"
@@ -1711,6 +1719,34 @@ mod tests {
         set_liquid(&mut w2, 10, 19, 200, true);
         set_liquid(&mut w2, 11, 19, 200, true);
         assert!(can_place(&w2, 10, 19, bench, 0, 1, None).is_none());
+    }
+
+    #[test]
+    fn test_DW_1_1_chest_cannot_be_placed_in_lava() {
+        // The chest chain (:3461-3470) sets only `LavaDeath = false` (:3468);
+        // `SetupBaseObject` defaults `LavaPlacement = NotAllowed` (:1768) and
+        // `Calculate` (:1821-1831) folds death -> placement only when the death
+        // flag is true — so the chest resolves to `NotAllowed` and
+        // `TileObject.CanPlace` (TileObject.cs:342 → `LiquidPlace`) refuses
+        // every lava-covered cell.
+        let chest = def_for_tile(21).unwrap();
+        // Water stays allowed (base `WaterPlacement.Allowed`, :1767).
+        let mut w = world();
+        for (x, y) in [(10, 18), (11, 18), (10, 19), (11, 19)] {
+            set_liquid(&mut w, x, y, 200, false);
+        }
+        assert!(can_place(&w, 10, 19, chest, 0, 1, None).is_some());
+        // Lava in any footprint cell is refused (2x2, origin (0,1)).
+        let mut w2 = world();
+        for (x, y) in [(10, 18), (11, 18), (10, 19), (11, 19)] {
+            set_liquid(&mut w2, x, y, 200, true);
+        }
+        assert!(can_place(&w2, 10, 19, chest, 0, 1, None).is_none());
+        // A single lava cell in the footprint blocks the whole object —
+        // `flag5 | flag3 | flag4` marks that cell occupied (TileObject.cs:360).
+        let mut w3 = world();
+        set_liquid(&mut w3, 11, 19, 200, true);
+        assert!(can_place(&w3, 10, 19, chest, 0, 1, None).is_none());
     }
 
     #[test]
