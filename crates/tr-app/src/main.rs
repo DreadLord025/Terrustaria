@@ -4,6 +4,7 @@ mod app;
 mod assets;
 mod audio;
 mod biome;
+mod buffs;
 mod collision;
 mod inv;
 mod item;
