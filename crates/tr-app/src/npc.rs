@@ -235,6 +235,10 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
+    /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
+    /// (`NPC.cs:90454-90459`).
+    pub immune: [i32; 256],
     /// `NPC.frame`: the rendered frame row, advanced by [`Npc::find_frame`] in
     /// the fixed step (the original advances animation in the sim too —
     /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
@@ -359,6 +363,7 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            immune: [0; 256],
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
@@ -480,8 +485,48 @@ impl Npc {
         true
     }
 
+    /// The projectile-hit path: identical to [`Npc::hurt`] but without the
+    /// shared `hurt_cd` gate — a projectile's right to hit is decided by the
+    /// three C# immunity systems (`Projectile.cs:12577-12624`), not by the
+    /// melee cooldown stand-in. The hit still arms `hurt_cd`, so melee is
+    /// gated afterward, matching `StrikeNPC`'s 10-tick `NPC.immune` window.
+    pub fn hurt_from_projectile(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        if self.hp <= 0 {
+            return false;
+        }
+        self.hp -= amount;
+        self.hurt_cd = 0.18;
+        let (w, _) = self.size();
+        let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            self.knock_back_resist(),
+            crit,
+            amount,
+            self.max_hp,
+            (self.vx, self.vy),
+            dir,
+            false,
+            false,
+        );
+        self.vx = vx;
+        self.vy = vy;
+        self.on_ground = false;
+        true
+    }
+
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
+        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
+        for v in self.immune.iter_mut() {
+            *v = v.saturating_sub(1);
+        }
         self.anim += dt;
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),

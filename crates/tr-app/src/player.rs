@@ -14,7 +14,7 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::BuffSlots;
 use crate::collision;
-use crate::regen::{update_life_regen, update_mana_regen, RegenInputs, RegenState};
+use crate::regen::{RegenInputs, RegenState, update_life_regen, update_mana_regen};
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -39,6 +39,31 @@ pub struct PlayerInput {
     pub down: bool,
 }
 
+/// The `WetCollision` movement speed per liquid (`Player.cs:28168-28171`):
+/// water 0.5, lava 0.5, honey 0.25, shimmer 0.375, dry 1.0.
+pub fn movement_speed_for(wet: bool, lava_wet: bool, honey_wet: bool, shimmer_wet: bool) -> f32 {
+    if honey_wet {
+        0.25
+    } else if shimmer_wet {
+        0.375
+    } else if wet || lava_wet {
+        0.5
+    } else {
+        1.0
+    }
+}
+
+/// The in-liquid gravity (`Player.cs:27008`): `gravity / 3`.
+pub fn liquid_gravity() -> f32 {
+    GRAVITY / 3.0
+}
+
+/// The in-liquid fall cap, both ways (`Player.cs:27011-27017`):
+/// `maxFallSpeed / 3`.
+pub fn liquid_fall_cap() -> f32 {
+    MAX_FALL / 3.0
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -50,6 +75,16 @@ pub struct Player {
     pub melee_damage: f32,
     pub ranged_damage: f32,
     pub magic_damage: f32,
+    /// `Player.dead`: the player is dead and waiting for the respawn timer
+    /// (`Player.cs:38908`).
+    pub dead: bool,
+    /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
+    /// respawn-skip (90-tick lockout, `Player.cs:57111`).
+    pub dead_time: i32,
+    /// `Player.respawnTimer`: the ticks left until the respawn.
+    pub respawn_timer: i32,
+    /// The jump-input edge state for the dead-skip roll.
+    prev_jump_input: bool,
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
@@ -71,6 +106,18 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.wet` — the head/body in WATER (`Player.cs:27728`).
+    pub wet: bool,
+    /// `Player.lavaWet` — in LAVA.
+    pub lava_wet: bool,
+    /// `Player.honeyWet` — in HONEY.
+    pub honey_wet: bool,
+    /// `Player.shimmerWet` — in SHIMMER.
+    pub shimmer_wet: bool,
+    /// The `WetCollision` movement-speed scale for this tick's position delta
+    /// (`Player.cs:28168-28171`): water/lava 0.5, honey 0.25, shimmer 0.375,
+    /// dry 1.0.
+    pub liquid_step: f32,
     pub in_water: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
@@ -152,6 +199,10 @@ impl Player {
         let sx = world.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5;
         let sy = world.spawn_y as f32 * TILE_PX;
         Self {
+            dead: false,
+            dead_time: 0,
+            respawn_timer: 0,
+            prev_jump_input: false,
             melee_crit: 4,
             ranged_crit: 4,
             magic_crit: 4,
@@ -169,6 +220,11 @@ impl Player {
             leg_frame: 0,
             body_frame: 0,
             leg_frame_counter: 0.0,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            liquid_step: 1.0,
             in_water: false,
             jump: 0,
             jump_held: false,
@@ -245,9 +301,85 @@ impl Player {
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.fall_start = (self.y / TILE_PX) as i32;
+        self.wet = false;
+        self.lava_wet = false;
+        self.honey_wet = false;
+        self.shimmer_wet = false;
         self.in_lava = false;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
+    }
+
+    /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
+    /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
+    pub fn start_death(&mut self, boss_near: bool, expert: bool) {
+        self.dead = true;
+        self.dead_time = 0;
+        self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+    }
+
+    /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
+    /// a boss hinders the respawn, x1.5 in expert. The FTW-multiplier x2 and
+    /// the master-mode path stay with M5-SEED-1 / the master difficulty.
+    pub fn get_respawn_time(boss_near: bool, expert: bool) -> i32 {
+        let mut time = 600;
+        if boss_near {
+            time += 600;
+        }
+        if expert {
+            time = (time as f64 * 1.5) as i32;
+        }
+        time
+    }
+
+    /// `NPC.AnyBossHindersRespawnTime` shape (`NPC.cs`): a boss within the
+    /// 4000 px Manhattan range of the death spot. The King Slime is the
+    /// ported boss.
+    pub fn boss_hinders(&self, npcs: &[crate::npc::Npc]) -> bool {
+        let (cx, cy) = self.center();
+        npcs.iter().any(|n| {
+            n.kind == crate::npc::NpcKind::KingSlime && {
+                let (nx, ny) = n.center();
+                (cx - nx).abs() + (cy - ny).abs() < 4000.0
+            }
+        })
+    }
+
+    /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
+    /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
+    /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
+    pub fn allows_respawn_timer_skip(&self, boss_near: bool, danger_near: bool) -> bool {
+        !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near)
+    }
+
+    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    fn ghost_like(&self) -> bool {
+        false
+    }
+
+    /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
+    /// respawn decrement clamped to `respawnTimerMax` (3600), and the
+    /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
+    /// player should respawn now.
+    pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
+        self.dead_time += 1;
+        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        let jump_edge = jump && !self.prev_jump_input;
+        self.prev_jump_input = jump;
+        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
+        if can_skip && jump_edge && self.respawn_timer > 0 {
+            return true;
+        }
+        self.respawn_timer <= 0
+    }
+
+    /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
+    /// standard spawn-point respawn.
+    pub fn revive(&mut self) {
+        self.dead = false;
+        self.dead_time = 0;
+        self.respawn_timer = 0;
+        self.respawn();
     }
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
@@ -343,24 +475,15 @@ impl Player {
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
-        self.in_water = mid.is_some_and(|t| {
-            t.liquid > 0
-                && matches!(
-                    t.liquid_kind(),
-                    tr_core::tile::LiquidKind::Water | tr_core::tile::LiquidKind::Honey
-                )
-        });
-        self.in_lava =
-            mid.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
-        // `Player.cs:28168-28195`: the liquid displacement fraction of
-        // `WetCollision` — water/lava 0.5, honey 0.25 (shimmer 0.375 has no
-        // liquid yet). The sample point is the hitbox center (the sweep is the
-        // M2-PHYS-3 fidelity pass).
-        self.liquid_move_speed = match mid.filter(|t| t.liquid > 0).map(|t| t.liquid_kind()) {
-            Some(tr_core::tile::LiquidKind::Honey) => 0.25,
-            Some(tr_core::tile::LiquidKind::Water) | Some(tr_core::tile::LiquidKind::Lava) => 0.5,
-            _ => 1.0,
-        };
+        // `Collision.WetCollision` / `LavaCollision` set the four wet flags
+        // (`Player.cs:27728-27910`); the mid-tile liquid kind picks them.
+        let liquid = mid.filter(|t| t.liquid > 0).map(|t| t.liquid_kind());
+        self.wet = liquid == Some(tr_core::tile::LiquidKind::Water);
+        self.lava_wet = liquid == Some(tr_core::tile::LiquidKind::Lava);
+        self.honey_wet = liquid == Some(tr_core::tile::LiquidKind::Honey);
+        self.shimmer_wet = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
+        self.in_water = self.wet || self.honey_wet;
+        self.in_lava = self.lava_wet;
 
         // The fall origin is only reset post-movement now: the landing/rest
         // block (`velocity.Y == 0`, `Player.cs:25383`) and the continuous
@@ -420,8 +543,28 @@ impl Player {
         }
         self.horizontal_movement(dir);
 
-        let gravity = if self.in_water { 0.12 } else { GRAVITY };
-        self.vy = (self.vy + gravity).min(if self.in_water { 2.0 } else { MAX_FALL });
+        let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        // `Player.cs:27008-27017`: in a liquid the gravity is `gravity / 3`
+        // and the fall cap is `maxFallSpeed / 3`, applied both ways (the
+        // upward cap keeps the swim under the surface).
+        let gravity = if in_liquid { liquid_gravity() } else { GRAVITY };
+        let fall_cap = if in_liquid {
+            liquid_fall_cap()
+        } else {
+            MAX_FALL
+        };
+        self.vy = (self.vy + gravity).min(fall_cap);
+        self.vy = self.vy.max(if in_liquid {
+            -(MAX_FALL / 3.0)
+        } else {
+            -MAX_FALL
+        });
+        // `WetCollision`'s `movementSpeed` (`Player.cs:28168-28171` + :23436):
+        // the position delta scales by the liquid speed — water/lava 0.5,
+        // honey 0.25, shimmer 0.375. The scaled step feeds the collision; the
+        // velocity itself keeps integrating (the exit speed is preserved).
+        self.liquid_step =
+            movement_speed_for(self.wet, self.lava_wet, self.honey_wet, self.shimmer_wet);
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
@@ -731,7 +874,7 @@ impl Player {
         // still carries this tick's gravity), then resolves the AABB. The wet
         // path never steps — `WetCollision` goes straight to `TileCollision`
         // (`Player.cs:23443`), the step helpers are `DryCollision` internals.
-        let dry = self.liquid_move_speed == 1.0;
+        let dry = self.liquid_step == 1.0;
         if dry && vel[1] == gravity {
             collision::step_down(
                 world,
@@ -759,12 +902,14 @@ impl Player {
         if tc.up {
             self.jump = 0;
         }
-        // `Player.WetCollision` (`Player.cs:23436-23451`): the free axes
-        // integrate at the liquid fraction; an axis the collision overrode
-        // keeps its full velocity — momentum survives the water.
+        // `Player.WetCollision` (`Player.cs:23436-23451`): the collision sees
+        // the unscaled velocity; the free axes then integrate at the liquid
+        // fraction (`liquid_step` — water/lava 0.5, honey 0.25, shimmer 0.375)
+        // while an axis the collision overrode keeps its full velocity, so
+        // momentum survives the water.
         let pre = vel;
         vel = tc.vel;
-        let ms = self.liquid_move_speed;
+        let ms = self.liquid_step;
         pos[0] += if vel[0] != pre[0] { vel[0] } else { vel[0] * ms };
         pos[1] += if vel[1] != pre[1] { vel[1] } else { vel[1] * ms };
         if down {
@@ -887,7 +1032,113 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 }
 
 #[cfg(test)]
+
 mod tests {
+    #[test]
+    fn movement_speed_per_liquid() {
+        // Player.cs:28168-28171: water/lava 0.5, honey 0.25, shimmer 0.375,
+        // dry 1.0.
+        assert_eq!(movement_speed_for(true, false, false, false), 0.5);
+        assert_eq!(movement_speed_for(false, true, false, false), 0.5);
+        assert_eq!(movement_speed_for(false, false, true, false), 0.25);
+        assert_eq!(movement_speed_for(false, false, false, true), 0.375);
+        assert_eq!(movement_speed_for(false, false, false, false), 1.0);
+    }
+
+    #[test]
+    fn in_liquid_gravity_and_cap_are_thirds() {
+        // Player.cs:27008-27017: gravity / 3 (0.4 -> 0.1333) and the
+        // both-ways cap at maxFallSpeed / 3 (10 -> 3.333).
+        assert!((liquid_gravity() - 0.4 / 3.0).abs() < 1e-6);
+        assert!((liquid_fall_cap() - 10.0 / 3.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn respawn_time_base_boss_and_expert() {
+        // Player.cs:39060-39082: 600 base, +600 boss-near, x1.5 expert.
+        assert_eq!(Player::get_respawn_time(false, false), 600);
+        assert_eq!(Player::get_respawn_time(true, false), 1200);
+        assert_eq!(Player::get_respawn_time(false, true), 900);
+        assert_eq!(Player::get_respawn_time(true, true), 1800);
+    }
+
+    #[test]
+    fn update_dead_counts_down_and_revives_at_zero() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        assert!(p.dead);
+        assert_eq!(p.respawn_timer, 600);
+        // 600 ticks of the dead state (no jump) -> the timer drains to 0 and
+        // the last tick reports the respawn.
+        let mut revived_at = None;
+        for tick in 0..700 {
+            if p.update_dead(false, false, false) {
+                revived_at = Some(tick);
+                break;
+            }
+        }
+        assert_eq!(revived_at, Some(599));
+        p.revive();
+        assert!(!p.dead);
+        assert_eq!(p.respawn_timer, 0);
+    }
+
+    #[test]
+    fn respawn_timer_clamps_at_3600() {
+        // Player.respawnTimerMax = 3600 (Player.cs:57109): a boss-near expert
+        // death (1800) halved by nothing still clamps; the clamp matters for
+        // the >3600 totals (the FTW x2 stays out). A forced high timer holds.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(true, true);
+        p.respawn_timer = 4000; // the save-load can exceed the cap
+        p.update_dead(false, false, false);
+        // The clamp catches the decrement result (Player.cs:17049).
+        assert_eq!(p.respawn_timer, 3600);
+    }
+
+    #[test]
+    fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        // Inside the 90-tick lockout: no skip even on the jump edge (the
+        // held jump's edge is consumed while the lockout runs).
+        for _ in 0..89 {
+            assert!(!p.update_dead(true, false, false));
+        }
+        // The lockout expired but the held jump has no fresh edge; a release
+        // and a new press do.
+        assert!(!p.update_dead(true, false, false));
+        assert!(!p.update_dead(false, false, false));
+        assert!(p.update_dead(true, false, false));
+    }
+
+    #[test]
+    fn the_skip_is_blocked_while_a_boss_hinders() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        for _ in 0..95 {
+            p.update_dead(false, false, false);
+        }
+        assert!(!p.allows_respawn_timer_skip(true, false));
+        assert!(p.allows_respawn_timer_skip(false, false));
+    }
+
+    #[test]
+    fn the_jump_edge_is_required_for_the_skip() {
+        // Holding jump through the lockout does not skip on expiry; a fresh
+        // press does (the JustBecameTrue semantics of PlayerInput.Triggers).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        for _ in 0..95 {
+            p.update_dead(true, false, false);
+        }
+        // The held jump consumed its edge at the lockout expiry...
+        assert!(!p.update_dead(true, false, false));
+        // ...release and press again: the edge fires.
+        p.update_dead(false, false, false);
+        assert!(p.update_dead(true, false, false));
+    }
+
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 

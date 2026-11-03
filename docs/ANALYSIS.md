@@ -2378,3 +2378,71 @@ Deviations:
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
   20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
+
+## Projectile pool (M4-PROJ-1)
+
+`crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
+`NewProjectileSetup`'s first-free-slot spawn with the `FindOldestProjectile`
+recycle (`Projectile.cs:10811-10880`), the per-tick `timeLeft--`/`penetrate == 0`
+kill bookkeeping (`:17199-17208`), the `1 + extraUpdates` AI sub-step loop
+(`:16668`), `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`) and
+the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner gate `:12620-12624`)
+with the on-hit immunity application (`:14087-14119`). All three C# immunity
+systems are live: the per-owner `NPC.immune[owner] = 10` (stored on `Npc`,
+decremented per NPC update, `NPC.cs:90454-90459`), the per-projectile
+`localNPCImmunity` cooldowns (a flattened pool table) and the ID-static
+`perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps against
+`Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into the pool
+as its first AI family; its placeholder lifetime (`age > 2 s || bounces > 6`)
+was replaced by the faithful `timeLeft = 3600` / `penetrate` rules.
+
+Deviations:
+
+- **The projectile path bypasses the melee `hurt_cd` gate** —
+  `Npc::hurt_from_projectile` shares `hurt`'s body without the shared-cooldown
+  check, because a projectile's right to hit is decided by the three C#
+  immunity systems the pool now implements; the hit still arms `hurt_cd`, so
+  melee stays gated afterward (in the C# every `StrikeNPC` writes the same
+  `NPC.immune[owner] = 10` window).
+- **NPC immunity is indexed by the NPC's `Vec` position**, which is stable
+  between death compactions; the C# indexes stable NPC slots and clears them in
+  `ResetNPCSlotData` (`:609-618`). After a compaction a live local-immunity
+  entry may point one slot off for at most its remaining cooldown — revisit
+  with the data-oriented NPC slots (M4 plan).
+- **Multiplayer bookkeeping is not ported**: `ProjectileKey`/
+  `slotGenerations`, `netSpam`/`netImportant` (the recycle treats every slot as
+  recyclable) and the owner-sync asserts — single-player.
+- **`DebugOptions` branches** (`Shared_RandomizeProjectileSlots`, `ManaV2`
+  equivalents) are debug cheats and are not ported.
+- The shuriken's damage/knockback stay the first pass's stand-ins (registry
+  data lands with M3-ITEM-1); the pool itself is content-agnostic.
+
+## Spawn call discipline (M4-SPAWN-1 completion)
+
+The spawn-rate multiplier chain and the caps landed earlier (2026-11-03); this
+completion ports the **call discipline** of `NPC.SpawnNPC`
+(`NPC.cs:80170-80176`) and its named RNG stream:
+
+- **The stream** — `Main.SwapRandom("SpawnNPC")` (`Main.cs:17886`) swaps in a
+  persistent per-stage stream for every world update. The port keeps
+  `App.npc_rng` as that stream's state and advances it (the xorshift LCG step)
+  once per update, **before** the latch/caps, so a suppressed or capped tick
+  still consumes stream state exactly like the C#'s swap; each call draws from
+  `FastRandom::new(state)`. Deterministic per world seed; verified by
+  `the_named_stream_is_deterministic_per_seed` (two identical runs agree
+  tick-for-tick over 900 moon-event night calls, and a different seed
+  diverges). The LCG step is the port's own xorshift core (agents.md's
+  "deterministic stand-in" pattern) — the C#'s exact `UnifiedRandom` sequence
+  is not reproduced, as everywhere else in the port.
+- **The `noSpawnCycle` latch** (`NPC.cs:6179`, consumed at `:80171-80174`) —
+  `App.spawn_no_cycle`; while set, one whole `SpawnNPC` call is suppressed and
+  the flag clears. No setter exists yet (the C# sets it from NPC
+  release/catch and the revenge spawn at `:77993/78137/91553`) — those systems
+  flip the flag when they land.
+- **The dead-player gate** — `CanSpawnEnemiesNear`'s `player.dead` branch
+  (`NPC.cs:349-351`); the journey spawn-rate-disable and Moon-Lord-distance
+  branches have no sources yet.
+- **Pacing quirk preserved**: the port's `npc_timer` (a 4 s spawn hold after
+  respawn, `world_sim/player.rs`) freezes the stream advance while held — the
+  C# has no such hold, so during it the port's stream lags the C#'s tick
+  count; deterministic either way, and the hold clears.
