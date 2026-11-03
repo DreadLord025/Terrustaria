@@ -660,7 +660,7 @@ fn liquid_place(def: &TileObjectDef, tile: &Tile) -> bool {
     }
 }
 
-fn tile_cut(kind: u16) -> bool {
+pub(crate) fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
 }
 
@@ -1598,8 +1598,8 @@ mod tests {
         assert_eq!(open.direction, TileObjectDirection::PlaceRight); // :2261
         assert_eq!(open.style_line_skip, 2); // :2260
         assert_eq!(open.alternates.len(), 5); // :2262-2285
-                                              // Right-open click points (`addAlternate(0)`), then left-open
-                                              // (`addAlternate(1)` -> Style 1, PlaceLeft, hinge-column anchors).
+        // Right-open click points (`addAlternate(0)`), then left-open
+        // (`addAlternate(1)` -> Style 1, PlaceLeft, hinge-column anchors).
         assert_eq!(open.alternates[0].origin, Point16::new(0, 1));
         assert_eq!(open.alternates[1].origin, Point16::new(0, 2));
         for (i, alt) in open.alternates.iter().enumerate() {
@@ -1621,7 +1621,7 @@ mod tests {
         let chest = def_for_tile(21).unwrap();
         assert_eq!((chest.width, chest.height), (2, 2)); // :3451-3452
         assert_eq!(chest.origin, Point16::new(0, 1)); // :3462
-                                                      // :3469 — bottom anchors WITHOUT AnchorType.Table.
+        // :3469 — bottom anchors WITHOUT AnchorType.Table.
         assert_eq!(
             chest.anchor_bottom,
             AnchorData::new(
@@ -2160,8 +2160,8 @@ mod tests {
         let mut w = world();
         let door = def_for_tile(10).unwrap();
         set_active(&mut w, 20, 16, 1); // door top anchor
-                                       // Gap at x = 20, y = 17..19: top anchor (20,16) = dirt, bottom (20,20) =
-                                       // floor. Clicking any of the three tiles resolves to the same origin.
+        // Gap at x = 20, y = 17..19: top anchor (20,16) = dirt, bottom (20,20) =
+        // floor. Clicking any of the three tiles resolves to the same origin.
         let top = must_place(&w, 20, 17, door, 1);
         let mid = must_place(&w, 20, 18, door, 1);
         let bot = must_place(&w, 20, 19, door, 1);

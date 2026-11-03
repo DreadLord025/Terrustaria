@@ -577,6 +577,404 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     place_tile(world, x, y, kind)
 }
 
+/// The result of the right-click interaction dispatcher: what the click did,
+/// and every object destruction its cleanup kills performed (the port of
+/// vanilla's `Item.NewItem` side effects — `WorldGen.cs:86508` and peers).
+/// `None` = the tile has no interaction; the caller falls through to the
+/// place path.
+#[derive(Debug)]
+pub enum TileInteraction {
+    None,
+    /// `WorldGen.OpenDoor` succeeded (`SoundEngine.PlaySound(8)`, `:37732`).
+    DoorOpened {
+        object_drops: Vec<ObjectDrop>,
+    },
+    /// `WorldGen.CloseDoor` succeeded (`SoundEngine.PlaySound(9)`, `:31906`).
+    DoorClosed {
+        object_drops: Vec<ObjectDrop>,
+    },
+    /// The door branch ran but the toggle was refused (blocked, partial
+    /// door). Vanilla still consumes the click (`Player.cs:32836` sets
+    /// `flag2` before attempting) and the validate-cleanup kills may have
+    /// dropped objects; no sound plays on this path (`:37732`/`:31906` sit
+    /// behind every failure return).
+    DoorBlocked {
+        object_drops: Vec<ObjectDrop>,
+    },
+}
+
+/// The world-interaction dispatcher — the port of the right-click tile hook:
+/// `Player.LookForTileInteractions` (`Player.cs:31937`) →
+/// `TileInteractionsCheck` (`:32031`, active tiles only) →
+/// `TileInteractionsUse` (`:32118`), whose type chain routes tile 10/11
+/// through the door branch (`:32835-32865`). The port dispatches on the
+/// registry def's `interaction` tag instead of a type chain (Decision #3) so
+/// chests/signs can join as data later. `direction` is `Player.direction`
+/// (`:32841`), `cell_blocked` the entity half of `Collision.EmptyTile`
+/// (`Collision.cs:1359`, called with `ignoreTiles: true` — the door ops port
+/// the tile half themselves and delegate entities to the caller).
+pub fn interact_at(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    direction: i32,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+) -> TileInteraction {
+    // `TileInteractionsCheck` (`Player.cs:32031-32041`): active tiles only.
+    let Some(t) = world.tile(i, j) else {
+        return TileInteraction::None;
+    };
+    if !t.active() {
+        return TileInteraction::None;
+    }
+    // The port routes on the registry def's `interaction` tag (Decision #3)
+    // where the C# chain tests `Main.tile[myX, myY].type` literals
+    // (`Player.cs:32835`/:32857 for 10/11).
+    let Some(def) = crate::tileobject::def_for_tile(t.kind) else {
+        return TileInteraction::None;
+    };
+    match def.interaction {
+        crate::tileobject::Interaction::None => TileInteraction::None,
+        crate::tileobject::Interaction::Door => {
+            let mut drops = Vec::new();
+            if t.kind == 10 {
+                // The closed-door branch (`Player.cs:32835-32856`): open with
+                // the player's facing; while the tile is still a closed door,
+                // retry with the opposite direction. After a validate-kill
+                // the cell no longer has kind 10 (`KillTile` resets `type`,
+                // `WorldGen.cs:63915`), so the cleanup path skips the retry.
+                if open_door(world, i, j, direction, &mut drops) {
+                    return TileInteraction::DoorOpened {
+                        object_drops: drops,
+                    };
+                }
+                if world.tile(i, j).is_some_and(|t| t.kind == 10)
+                    && open_door(world, i, j, -direction, &mut drops)
+                {
+                    return TileInteraction::DoorOpened {
+                        object_drops: drops,
+                    };
+                }
+                TileInteraction::DoorBlocked {
+                    object_drops: drops,
+                }
+            } else if close_door(world, i, j, false, cell_blocked, &mut drops) {
+                // The open-door branch (`Player.cs:32857-32864`).
+                TileInteraction::DoorClosed {
+                    object_drops: drops,
+                }
+            } else {
+                TileInteraction::DoorBlocked {
+                    object_drops: drops,
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): turns the closed door
+/// (tile 10) covering `(i, j)` into the open door (tile 11) leaning to
+/// `direction` (+1 right, -1 left). No `KillTile` on the door cells — the
+/// six open-door cells are written directly; `KillTile` appears only in the
+/// validate-cleanup helper and the cut/drip sweep in the opening column.
+/// `drops` collects the object destructions of those kills (vanilla's
+/// `Item.NewItem` side effects). `false` = refused, door cells untouched.
+pub fn open_door(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    direction: i32,
+    drops: &mut Vec<ObjectDrop>,
+) -> bool {
+    // The per-cell null-init guards (:37634-37644) are managed-Tile engine
+    // noise; the port reads through `World::tile`'s `Option` instead.
+    let Some(tile) = world.tile(i, j) else {
+        return false;
+    };
+    if tile.kind != 10 {
+        return false; // :37645-37647
+    }
+    if is_locked_door(tile) {
+        return false; // :37649-37652 → IsLockedDoor :69191
+    }
+    // Frame decode (:37653-37668): `frameY` splits into a 54 px style row
+    // (`num4`) and an 18 px in-door row (`num3`); `frameX >= 54` carries
+    // horizontal door styles that shift the open door's sheet cell.
+    let mut num3 = i32::from(tile.frame_y);
+    let mut num4 = 0i32;
+    let mut num2 = 0i32;
+    while num3 >= 54 {
+        num3 -= 54;
+        num4 += 1;
+    }
+    if tile.frame_x >= 54 {
+        let num5 = i32::from(tile.frame_x) / 54;
+        num4 += 36 * num5;
+        num2 += 72 * num5;
+    }
+    let num = j - num3 / 18; // :37669 — the door's top row
+    let mut num6 = i;
+    // :37672-37675 — the 1x3 closed door must be intact, or whatever matches
+    // is killed and the open refused.
+    if !validate_tile_square(world, num6, num, 1, 3, 10, drops) {
+        return false;
+    }
+    // Paint caches (:37676-37690), read before any write — always at column
+    // `i` (`num6` is reassigned only afterwards), one per door row, so the
+    // closed door's paint carries onto both written columns in either
+    // direction.
+    let cache: [u8; 3] = [
+        world.tile(i, num).map_or(0, |t| t.paint()),
+        world.tile(i, num + 1).map_or(0, |t| t.paint()),
+        world.tile(i, num + 2).map_or(0, |t| t.paint()),
+    ];
+    let num7;
+    if direction == -1 {
+        num6 = i - 1; // :37698-37702
+        num2 += 36;
+        num7 = i - 1;
+    } else {
+        num6 = i; // :37703-37706
+        num7 = i + 1;
+    }
+    // The opening column must hold no real blocker (:37702-37710): active
+    // tiles that are not cut / 165 / drip refuse the open.
+    for k in num..num + 3 {
+        if let Some(t) = world.tile(num7, k) {
+            if t.active()
+                && !crate::tileobject::tile_cut(t.kind)
+                && t.kind != 165
+                && !is_drip_tile(t.kind)
+            {
+                return false;
+            }
+        }
+    }
+    // Cut / 165 / drip tiles in the way die with a full `KillTile`
+    // (:37711-37718; default flags — no suppression exists in the C# body).
+    for l in num..num + 3 {
+        if let Some(t) = world.tile(num7, l) {
+            if t.active()
+                && (crate::tileobject::tile_cut(t.kind) || t.kind == 165 || is_drip_tile(t.kind))
+            {
+                if let Some(kill) = kill_tile(world, num7, l, false) {
+                    drops.extend(kill.object_drops);
+                }
+            }
+        }
+    }
+    // `Wiring.SkipWire` ×6 (:37721-37729) — no wiring in the port.
+    let num8 = num4 % 36 * 54; // :37731 — the open door's style row
+    // `SoundEngine.PlaySound(8, i*16, j*16)` (:37732) — app-side, via
+    // `TileInteraction::DoorOpened`.
+    // Fail-neutral world-edge guard (the C# `Main.tile[...]` writes would
+    // throw; `CanPlace`'s 5-tile margin makes the case unreachable in play).
+    if !world.in_bounds(num6, num) || !world.in_bounds(num6 + 1, num + 2) {
+        return false;
+    }
+    // The 2x3 open door (:37733-37776): `frameX = num2 + dx*18`, `frameY =
+    // num8 + dy*18`, `UseBlockColors(cache)` row by row.
+    for dy in 0..3i32 {
+        for dx in 0..2i32 {
+            let t = world.tile_mut(num6 + dx, num + dy).unwrap();
+            t.flags |= crate::tile::FLAG_ACTIVE;
+            t.kind = 11;
+            t.frame_y = (num8 + dy * 18) as i16;
+            t.frame_x = (num2 + dx * 18) as i16;
+            t.set_paint(cache[dy as usize]);
+            touch(world, num6 + dx, num + dy);
+        }
+    }
+    // The trailing `WorldGen.TileFrame` 4x4 loop (:37778-37784): door cells
+    // keep their frames (frame-important), neighbours re-derive theirs.
+    ensure_frame_important(world, 11);
+    framing::reframe_area(world, num6, num, 2);
+    true
+}
+
+/// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31907`): turns the open door
+/// (tile 11) covering `(i, j)` back into the closed door (tile 10) at the
+/// hinge column the open frames encode. `forced` skips the `Collision.
+/// EmptyTile` occupancy gate (the wired caller, `Wiring.cs:1463`); the port
+/// has no wiring so the interaction path always sends `false`. `cell_blocked`
+/// is the player/NPC overlap check of `EmptyTile` (`Collision.cs:1359` —
+/// with `ignoreTiles: true` the tile check is skipped, entities are not).
+pub fn close_door(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    forced: bool,
+    cell_blocked: &dyn Fn(i32, i32) -> bool,
+    drops: &mut Vec<ObjectDrop>,
+) -> bool {
+    let Some(tile) = world.tile(i, j) else {
+        return false;
+    };
+    let frame_x = i32::from(tile.frame_x); // :31816
+    if tile.kind != 11 {
+        return false; // :31818-31820
+    }
+    // Frame decode (:31821-31833). `num5` is written but never read in the
+    // decompile — kept out; `num6` is the closed-door style offset the hinge
+    // cell receives.
+    let mut num4 = i32::from(tile.frame_y);
+    while num4 >= 54 {
+        num4 -= 54;
+    }
+    let mut num6 = 0i32;
+    if frame_x >= 72 {
+        num6 += 54 * (frame_x / 72);
+    }
+    let num3 = j - num4 / 18; // :31833 — the door's top row
+    // `switch (frameX % 72)` (:31834-31851): which column of the open pair is
+    // the hinge (`num2`) and which way the door swung (`num`, only -1 is
+    // tested). The C# default case leaves `num = 0`, `num2 = i`.
+    let mut num2 = i;
+    let mut num = 0i32;
+    match frame_x % 72 {
+        0 => {
+            num2 = i;
+            num = 1;
+        }
+        18 => {
+            num2 = i - 1;
+            num = 1;
+        }
+        36 => {
+            num2 = i + 1;
+            num = -1;
+        }
+        54 => {
+            num2 = i;
+            num = -1;
+        }
+        _ => {}
+    }
+    let mut num7 = num2; // :31852-31854 — the pair's left column
+    if num == -1 {
+        num7 = num2 - 1;
+    }
+    // `Collision.EmptyTile(num2, k, ignoreTiles: true)` (:31856-31864): with
+    // `ignoreTiles` the tile check is skipped — only player/NPC overlap can
+    // refuse the close (:1359-1378). `forced` (the wired caller,
+    // `Wiring.cs:1463`) skips the gate.
+    if !forced {
+        for k in num3..num3 + 3 {
+            if cell_blocked(num2, k) {
+                return false;
+            }
+        }
+    }
+    // :31866-31869 — the 2x3 open door must be intact, or whatever matches is
+    // killed and the close refused.
+    if !validate_tile_square(world, num7, num3, 2, 3, 11, drops) {
+        return false;
+    }
+    // The write (:31871-31891): the hinge column becomes the closed door —
+    // `frameX = genRand.Next(3) * 18 + num6`, `frameY` deliberately NOT
+    // rewritten (vanilla quirk) — and the other column deactivates. The port
+    // has no runtime `WorldGen.genRand` stream to draw from (and introducing
+    // one would touch the determinism invariant), so the frame variant is
+    // always 0 — the same value a fresh style-0 placement writes.
+    for l in num7..num7 + 2 {
+        for m in num3..num3 + 3 {
+            let Some(t) = world.tile_mut(l, m) else {
+                continue;
+            };
+            if t.active() && t.kind == 11 {
+                if l == num2 {
+                    t.kind = 10;
+                    t.frame_x = num6 as i16;
+                } else {
+                    t.flags &= !crate::tile::FLAG_ACTIVE;
+                }
+                touch(world, l, m);
+            }
+        }
+    }
+    // `Wiring.SkipWire` ×3 (:31893-31898) — no wiring in the port.
+    // The trailing `WorldGen.TileFrame` 3x4 loop (:31900-31905).
+    ensure_frame_important(world, 10);
+    framing::reframe_area(world, num2, num3, 2);
+    // `SoundEngine.PlaySound(9, i*16, j*16)` (:31906) — app-side, via
+    // `TileInteraction::DoorClosed`.
+    true
+}
+
+/// `WorldGen.ValidateTileSquareIsActiveAndOfType` (`WorldGen.cs:37869-37917`):
+/// `true` when every cell of the `width`×`height` square at `(x, y)` is
+/// active and of `kind`. Otherwise every matching cell is `KillTile`d (full
+/// cascade — drops collected) and `false` returned; an out-of-world square
+/// returns `false` without killing (`WorldGen.InWorld`, `:9688`).
+fn validate_tile_square(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32,
+    kind: u16,
+    drops: &mut Vec<ObjectDrop>,
+) -> bool {
+    // :37874-37890 — an out-of-world square refuses without killing
+    // (`WorldGen.InWorld` fluff 0, `:9688`); a mismatched cell marks the
+    // square dirty.
+    let mut mismatch = false;
+    'check: for i in 0..width {
+        for jj in 0..height {
+            let (cx, cy) = (x + i, y + jj);
+            if !world.in_bounds(cx, cy) {
+                return false;
+            }
+            if !world.is_active(cx, cy) || world.tile(cx, cy).is_some_and(|t| t.kind != kind) {
+                mismatch = true;
+                break 'check;
+            }
+        }
+    }
+    if mismatch {
+        // :37891-37914 — every active matching cell dies with a full
+        // `KillTile` (default flags — the cascade runs, drops are collected).
+        for i in 0..width {
+            for jj in 0..height {
+                let (cx, cy) = (x + i, y + jj);
+                if world.is_active(cx, cy) && world.tile(cx, cy).is_some_and(|t| t.kind == kind) {
+                    if let Some(kill) = kill_tile(world, cx, cy, false) {
+                        drops.extend(kill.object_drops);
+                    }
+                }
+            }
+        }
+        return false;
+    }
+    true
+}
+
+/// Mirrors `Main.tileFrameImportant[type]` for the door kind a toggle writes
+/// (`Main.cs:7637-7638` — a boot-time static both door tiles carry; `place`
+/// mirrors the same flag for its own def, `tileobject.rs` DW-1.3, and the
+/// toggle switches kinds under the same guarantee).
+fn ensure_frame_important(world: &mut World, kind: u16) {
+    if world.frame_important.len() <= kind as usize {
+        world
+            .frame_important
+            .resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[kind as usize] = true;
+}
+
+/// `WorldGen.IsLockedDoor` (`WorldGen.cs:69191-69197`): the golden-door
+/// frames (tile 10, `frameY` 594-646, `frameX` < 54). The wooden door never
+/// matches; the guard is ported because `OpenDoor` calls it.
+fn is_locked_door(tile: &Tile) -> bool {
+    tile.kind == 10 && (594..=646).contains(&tile.frame_y) && tile.frame_x < 54
+}
+
+/// `TileID.Sets.IsADripTile` (`TileID.cs:485`): the vine/drip set `OpenDoor`'s
+/// destination sweep kills like cut tiles (`WorldGen.cs:37704-37717`).
+fn is_drip_tile(kind: u16) -> bool {
+    matches!(kind, 373 | 374 | 375 | 461 | 709)
+}
+
 fn liquid_flags(flags: u8) -> u8 {
     use crate::tile::{FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
     flags & (FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER)
@@ -869,8 +1267,7 @@ mod tests {
         // DW-1.3) and a loaded save carries it — so synthetic states must set
         // it too, or `reframe_area` mangles the frames the cascade reads.
         if w.frame_important.len() <= kind as usize {
-            w.frame_important
-                .resize(crate::tiledata::TILE_COUNT, false);
+            w.frame_important.resize(crate::tiledata::TILE_COUNT, false);
         }
         w.frame_important[kind as usize] = true;
     }
@@ -1338,7 +1735,10 @@ mod tests {
         }
         // And the platform's death under a table column pops the table.
         let kill = kill_tile(&mut w, 15, 19, false).unwrap();
-        assert_all_gone(&w, &[(14, 17), (15, 17), (16, 17), (14, 18), (15, 18), (16, 18)]);
+        assert_all_gone(
+            &w,
+            &[(14, 17), (15, 17), (16, 17), (14, 18), (15, 18), (16, 18)],
+        );
         assert_eq!(kill.object_drops.len(), 1);
         assert_eq!(kill.object_drops[0].tile_kind, 14);
     }
@@ -1349,6 +1749,372 @@ mod tests {
             21 => 2,
             14 => 3,
             _ => 1,
+        }
+    }
+
+    /// A fresh closed door at column 10 (rows 17-19) through the placement
+    /// route — the frames `open_door` decodes: `frameX` 0, `frameY`
+    /// 0/18/36.
+    fn closed_door_world() -> World {
+        let mut w = doorway_world();
+        assert!(place_item_tile(&mut w, 10, 18, 10, 0, 1));
+        w
+    }
+
+    fn cells_of(w: &World, cells: &[(i32, i32)]) -> Vec<(bool, u16, i16, i16)> {
+        cells
+            .iter()
+            .map(|&(x, y)| {
+                let t = w.tile(x, y).unwrap();
+                (t.active(), t.kind, t.frame_x, t.frame_y)
+            })
+            .collect()
+    }
+
+    fn no_blocker(_: i32, _: i32) -> bool {
+        false
+    }
+
+    #[test]
+    fn test_DW_4_2_open_door_right_leaf_frames() {
+        // `WorldGen.OpenDoor` direction +1 (`WorldGen.cs:37733-37776`): the
+        // hinge column stays at i with `frameX = num2` (0) and the leaf opens
+        // into i+1 with `frameX = num2 + 18`; `frameY` rows 0/18/36.
+        let mut w = closed_door_world();
+        w.tile_mut(10, 17).unwrap().set_paint(3);
+        w.tile_mut(10, 18).unwrap().set_paint(5);
+        let mut drops = Vec::new();
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(drops.is_empty());
+        let row_paint = [3u8, 5, 0]; // cache rows (:37676-37690)
+        for (k, y, fy) in [(0usize, 17i32, 0i16), (1, 18, 18), (2, 19, 36)] {
+            let hinge = w.tile(10, y).unwrap();
+            assert!(hinge.active() && hinge.kind == 11, "hinge row {y}");
+            assert_eq!((hinge.frame_x, hinge.frame_y), (0, fy), "hinge row {y}");
+            // `UseBlockColors(cache)`: each written row takes its own closed
+            // door row's paint.
+            assert_eq!(hinge.paint(), row_paint[k], "hinge paint row {y}");
+            let leaf = w.tile(11, y).unwrap();
+            assert!(leaf.active() && leaf.kind == 11, "leaf row {y}");
+            assert_eq!((leaf.frame_x, leaf.frame_y), (18, fy), "leaf row {y}");
+            assert_eq!(leaf.paint(), row_paint[k], "leaf paint row {y}");
+        }
+        // Nothing else changed: the closed-door cells were overwritten, not
+        // killed (no KillTile on the door body in 1.4.5.8).
+        assert!(!w.tile(12, 18).unwrap().active());
+    }
+
+    #[test]
+    fn test_DW_4_2_open_door_left_leaf_frames() {
+        // Direction -1 (:37698-37702): the door leans left — hinge column
+        // i-1 gets `frameX = 36`, column i `frameX = 54`.
+        let mut w = closed_door_world();
+        w.tile_mut(10, 17).unwrap().set_paint(3);
+        let mut drops = Vec::new();
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+        for (y, fy) in [(17i32, 0i16), (18, 18), (19, 36)] {
+            let hinge = w.tile(9, y).unwrap();
+            assert!(hinge.active() && hinge.kind == 11, "hinge row {y}");
+            assert_eq!((hinge.frame_x, hinge.frame_y), (36, fy), "hinge row {y}");
+            let leaf = w.tile(10, y).unwrap();
+            assert!(leaf.active() && leaf.kind == 11, "leaf row {y}");
+            assert_eq!((leaf.frame_x, leaf.frame_y), (54, fy), "leaf row {y}");
+        }
+        // The paint caches are read at column `i` before `num6` is
+        // reassigned (:37676-37690), so direction -1 carries the closed
+        // door's paint onto the new hinge column too.
+        assert_eq!(w.tile(10, 17).unwrap().paint(), 3);
+        assert_eq!(w.tile(9, 17).unwrap().paint(), 3);
+    }
+
+    #[test]
+    fn test_DW_4_2_close_door_hinge_from_both_leaves() {
+        // Right leaf (`frameX % 72 == 0`/`18`, `:31834-31851`): the hinge is
+        // the pair's left column and becomes the closed door; the other
+        // column deactivates. `frameY` is deliberately not rewritten — the
+        // style-0 open rows equal the closed rows, so the frames come out as
+        // a fresh placement's.
+        for click in [(10i32, 18i32), (11, 18)] {
+            let mut w = doorway_world();
+            let cells = open_the_door(&mut w, false);
+            let mut drops = Vec::new();
+            assert!(close_door(
+                &mut w,
+                click.0,
+                click.1,
+                false,
+                &no_blocker,
+                &mut drops
+            ));
+            assert!(drops.is_empty());
+            let written: Vec<_> = (0..3)
+                .flat_map(|dy| [(10, 17 + dy), (11, 17 + dy)])
+                .collect();
+            let got = cells_of(&w, &written);
+            for (k, (active, kind, fx, fy)) in got.iter().enumerate() {
+                if k % 2 == 0 {
+                    assert!(*active && *kind == 10, "hinge cell {k}");
+                    assert_eq!(*fx, 0, "hinge cell {k}"); // genRand variant 0 (see the port note)
+                    // `frameY` is not rewritten (:31880-31886): the style-0
+                    // open rows 0/18/36 stay.
+                    assert_eq!(*fy, (k / 2) as i16 * 18, "hinge cell {k}");
+                } else {
+                    assert!(!*active, "leaf cell {k}");
+                }
+            }
+            assert_eq!(cells.len(), 6); // the state the close consumed
+        }
+        // Left leaf (`frameX % 72 == 36`/`54`): hinge is the pair's RIGHT
+        // column (`num2 = i` for 54, `i + 1` for 36).
+        let mut w = doorway_world();
+        open_the_door(&mut w, true);
+        let mut drops = Vec::new();
+        assert!(close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        for dy in 0..3i32 {
+            let hinge = w.tile(10, 17 + dy).unwrap();
+            assert!(hinge.active() && hinge.kind == 10, "left hinge row {dy}");
+            assert_eq!(hinge.frame_x, 0);
+            assert!(!w.tile(9, 17 + dy).unwrap().active(), "left leaf row {dy}");
+        }
+    }
+
+    #[test]
+    fn test_DW_4_2_door_toggle_round_trip() {
+        // Closed → open → close → open, all through the dispatcher — the
+        // repeated-click (toggle) edge case; frames identical each open.
+        let mut w = closed_door_world();
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        let expected = [(0i16, 0i16), (18, 0), (0, 18), (18, 18), (0, 36), (18, 36)];
+        for round in 0..2 {
+            match interact_at(&mut w, 10, 18, 1, &blocked) {
+                TileInteraction::DoorOpened { object_drops } => {
+                    assert!(object_drops.is_empty());
+                }
+                other => panic!("round {round}: expected DoorOpened, got {other:?}"),
+            }
+            let mut got = Vec::new();
+            for dy in 0..3i32 {
+                for dx in 0..2i32 {
+                    let t = w.tile(10 + dx, 17 + dy).unwrap();
+                    got.push((t.frame_x, t.frame_y));
+                }
+            }
+            assert_eq!(got, expected, "round {round}");
+            if round == 0 {
+                match interact_at(&mut w, 11, 18, 1, &blocked) {
+                    TileInteraction::DoorClosed { object_drops } => {
+                        assert!(object_drops.is_empty());
+                    }
+                    other => panic!("expected DoorClosed, got {other:?}"),
+                }
+                assert!(w.tile(10, 18).unwrap().active() && w.tile(10, 18).unwrap().kind == 10);
+            }
+        }
+    }
+
+    #[test]
+    fn test_DW_4_2_open_door_blocked_by_solid() {
+        // A real blocker in the opening column refuses the open and leaves
+        // the door untouched (:37702-37710).
+        let mut w = closed_door_world();
+        for y in 17..=19 {
+            set_active(&mut w, 11, y, 1);
+        }
+        let mut drops = Vec::new();
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(drops.is_empty());
+        for y in 17..=19 {
+            let t = w.tile(10, y).unwrap();
+            assert!(t.active() && t.kind == 10, "door row {y}");
+            assert_eq!(
+                (t.frame_x, t.frame_y),
+                (0, (y - 17) as i16 * 18),
+                "door row {y}"
+            );
+        }
+        // The opposite direction's column is free — the open succeeds there
+        // (the dispatcher-level retry is DW-4.1's test).
+        assert!(open_door(&mut w, 10, 18, -1, &mut drops));
+    }
+
+    #[test]
+    fn test_DW_4_2_open_door_kills_cut_tiles_in_the_way() {
+        // Cut tiles in the opening column die with a full `KillTile`
+        // (:37711-37718) and the open proceeds.
+        let mut w = closed_door_world();
+        set_active(&mut w, 11, 18, 3); // kind 3 ∈ Main.tileCut
+        let mut drops = Vec::new();
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(drops.is_empty()); // a cut plant carries no object drop
+        let t = w.tile(11, 18).unwrap();
+        assert!(t.active() && t.kind == 11);
+    }
+
+    #[test]
+    fn test_DW_4_2_close_door_blocked_by_entity() {
+        // `Collision.EmptyTile(ignoreTiles: true)` (`Collision.cs:1359`):
+        // entities refuse the close, `forced` (the wired caller's flag)
+        // ignores them.
+        let mut w = doorway_world();
+        open_the_door(&mut w, false);
+        let blocked = |x: i32, y: i32| x == 10 && y == 18;
+        let mut drops = Vec::new();
+        assert!(!close_door(&mut w, 10, 18, false, &blocked, &mut drops));
+        assert!(w.tile(10, 18).unwrap().kind == 11, "door stays open");
+        assert!(close_door(&mut w, 10, 18, true, &blocked, &mut drops));
+        assert!(w.tile(10, 18).unwrap().kind == 10, "forced closes");
+    }
+
+    #[test]
+    fn test_DW_4_2_wrong_kind_returns_false() {
+        // Cross-kind calls refuse without touching the world (:37645/:31818).
+        let mut w = closed_door_world();
+        let mut drops = Vec::new();
+        assert!(!open_door(&mut w, 40, 40, 1, &mut drops)); // out of bounds
+        assert!(!close_door(&mut w, 10, 18, false, &no_blocker, &mut drops));
+        let mut w2 = doorway_world();
+        open_the_door(&mut w2, false);
+        assert!(!open_door(&mut w2, 10, 18, 1, &mut drops));
+    }
+
+    #[test]
+    fn test_DW_4_2_style_offset_frames() {
+        // A style-1 closed door (`frameY` 54/72/90, the C# `num4`/`num8`
+        // decode, :37657-37731): the open door lands in sheet row 54.
+        let mut w = doorway_world();
+        for (dy, fy) in [(0i32, 54i16), (1, 72), (2, 90)] {
+            set_object_cell(&mut w, 10, 17 + dy, 10, 0, fy);
+        }
+        let mut drops = Vec::new();
+        assert!(open_door(&mut w, 10, 17, 1, &mut drops));
+        for dy in 0..3i32 {
+            let t = w.tile(10, 17 + dy).unwrap();
+            assert_eq!(t.frame_y, 54 + dy as i16 * 18, "style row {dy}");
+            assert_eq!(t.frame_x, 0);
+            let leaf = w.tile(11, 17 + dy).unwrap();
+            assert_eq!(leaf.frame_x, 18);
+        }
+    }
+
+    #[test]
+    fn test_DW_4_2_partial_door_validate_cleanup() {
+        // `ValidateTileSquareIsActiveAndOfType` (:37869-37917): a door with a
+        // broken cell has its remaining door cells killed (full `KillTile` —
+        // the cascade records the object destruction) and the open refused.
+        let mut w = closed_door_world();
+        let broken = w.index(10, 19);
+        w.tiles[broken] = crate::tile::Tile::default();
+        let mut drops = Vec::new();
+        assert!(!open_door(&mut w, 10, 18, 1, &mut drops));
+        for y in 17..=19 {
+            assert!(!w.tile(10, y).unwrap().active(), "row {y} cleaned up");
+        }
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].tile_kind, 10);
+        // The drop record sits at the `Check*` visit cell the cascade ran
+        // from (Phase 3's `square_tile_frame` order).
+        assert_eq!((drops[0].x, drops[0].y), (10, 18));
+    }
+
+    #[test]
+    fn test_DW_4_1_interact_at_ignores_non_interaction_tiles() {
+        // The fall-through contract: a stone tile, an air cell and a chest
+        // (registry kind with `Interaction::None`) all return `None`.
+        let mut w = closed_door_world();
+        assert!(place_item_tile(&mut w, 14, 19, 21, 0, 1));
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        for (x, y) in [(10i32, 20i32), (12, 18), (14, 19)] {
+            assert!(matches!(
+                interact_at(&mut w, x, y, 1, &blocked),
+                TileInteraction::None
+            ));
+        }
+    }
+
+    #[test]
+    fn test_DW_4_1_interact_at_dispatches_door_kinds() {
+        let mut w = closed_door_world();
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 10, 18, 1, &blocked),
+            TileInteraction::DoorOpened { .. }
+        ));
+        assert!(w.tile(10, 17).unwrap().kind == 11, "opened");
+        assert!(matches!(
+            interact_at(&mut w, 10, 18, 1, &blocked),
+            TileInteraction::DoorClosed { .. }
+        ));
+        assert!(w.tile(10, 17).unwrap().kind == 10, "closed");
+    }
+
+    #[test]
+    fn test_DW_4_1_interact_at_retries_opposite_direction() {
+        // `Player.cs:32841-32852`: open with the facing; while the tile is
+        // still a closed door, retry with the opposite direction.
+        let mut w = closed_door_world();
+        for y in 17..=19 {
+            set_active(&mut w, 11, y, 1);
+        }
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 18, 1, &blocked) {
+            TileInteraction::DoorOpened { object_drops } => assert!(object_drops.is_empty()),
+            other => panic!("expected DoorOpened via retry, got {other:?}"),
+        }
+        for dy in 0..3i32 {
+            let hinge = w.tile(9, 17 + dy).unwrap();
+            assert!(hinge.active() && hinge.kind == 11);
+            assert_eq!(hinge.frame_x, 36);
+        }
+    }
+
+    #[test]
+    fn test_DW_4_1_interact_at_blocked_door_consumes_without_drops() {
+        // Both directions blocked: the click is still consumed (vanilla sets
+        // `flag2` before attempting, `Player.cs:32836`) — `DoorBlocked` with
+        // no drops and no world change.
+        let mut w = closed_door_world();
+        for y in 17..=19 {
+            set_active(&mut w, 9, y, 1);
+            set_active(&mut w, 11, y, 1);
+        }
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 18, 1, &blocked) {
+            TileInteraction::DoorBlocked { object_drops } => assert!(object_drops.is_empty()),
+            other => panic!("expected DoorBlocked, got {other:?}"),
+        }
+        assert!(w.tile(10, 17).unwrap().kind == 10, "door intact");
+    }
+
+    #[test]
+    fn test_DW_4_3_open_door_survives_missing_wall() {
+        // Vanilla's `OpenDoor` has no wall/support check — a door whose wall
+        // was mined away still opens (the closed-door square check is
+        // type-only, `WorldGen.cs:37672-37675`).
+        let mut w = closed_door_world();
+        for y in 17..=19 {
+            let t = w.tile_mut(10, y).unwrap();
+            t.wall = 0; // no wall behind the door anywhere
+        }
+        let mut drops = Vec::new();
+        assert!(open_door(&mut w, 10, 18, 1, &mut drops));
+        assert!(w.tile(10, 17).unwrap().kind == 11);
+    }
+
+    #[test]
+    fn test_DW_4_3_broken_door_interaction_cleans_up_and_blocks() {
+        // Right-clicking a partially-broken door through the dispatcher: the
+        // validate cleanup kills the rest (drop recorded) and the click is
+        // consumed without a cue (`DoorBlocked`).
+        let mut w = closed_door_world();
+        let broken = w.index(10, 19);
+        w.tiles[broken] = crate::tile::Tile::default();
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 18, 1, &blocked) {
+            TileInteraction::DoorBlocked { object_drops } => {
+                assert_eq!(object_drops.len(), 1);
+                assert_eq!(object_drops[0].tile_kind, 10);
+            }
+            other => panic!("expected DoorBlocked, got {other:?}"),
         }
     }
 }

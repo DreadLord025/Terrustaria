@@ -8,6 +8,8 @@ use tr_core::{edit, World, TILE_PX};
 
 use crate::app::App;
 use crate::item::ItemSlot;
+use crate::npc::Npc;
+use crate::player::Player;
 use crate::projectile::Projectile;
 use crate::registry;
 
@@ -226,6 +228,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
     let starting = swing_over && reuse_ready;
     let inside_swing = app.swing > 0.0 && app.item_time <= 0.0;
+    // Tile interactions (`Player.Update` order: LookForTileInteractions
+    // (`Player.cs:27430`) runs before ItemCheck (`:31827`)): one action per
+    // right-click press — `UpdateReleaseUseTile` (`:29224`) clears
+    // `releaseUseTile` right after the attempt, so the door branch fires on
+    // the press edge. A handled interaction consumes the click; anything else
+    // falls through to the place path unchanged.
+    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+        return;
+    }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
         let used = if held_wall {
             if can_place_wall(app, tx, ty) {
@@ -459,6 +470,79 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     true
 }
 
+/// The right-click interaction hook (the port's `TileInteractionsUse`):
+/// dispatches the world interaction at `(tx, ty)` through
+/// [`tr_core::edit::interact_at`] and applies its effects — the door cue
+/// (`SoundEngine.PlaySound(8/:9)`, `WorldGen.cs:37732/:31906`), the drop
+/// spawns of any cleanup kills, the frame-cache invalidation. Returns whether
+/// the click was consumed; `false` lets the caller fall through to the place
+/// path.
+fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
+    let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
+    // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
+    // closing column must be free of the player and NPCs. Disjoint field
+    // borrows — the world write happens inside `interact_at`.
+    let (player, npcs) = (&app.player, &app.npcs);
+    let cell_blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
+    let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
+    let Some((cue, drops)) = interaction_events(result) else {
+        return false;
+    };
+    if let Some(cue) = cue {
+        app.audio
+            .play_at(cue, tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    }
+    for (id, x, y) in drops {
+        spawn_item_drop(app, id, x, y);
+    }
+    app.world_key = None;
+    true
+}
+
+/// The App-free half of [`interact_tile`]: maps the dispatcher result to the
+/// door cue and the drop spawns. `None` = no interaction (fall-through to the
+/// place path); a blocked door yields drops without a cue (vanilla plays
+/// `PlaySound(8/:9)` only on the success paths).
+fn interaction_events(
+    result: edit::TileInteraction,
+) -> Option<(Option<&'static str>, Vec<(u16, i32, i32)>)> {
+    let (cue, object_drops) = match result {
+        edit::TileInteraction::None => return None,
+        edit::TileInteraction::DoorOpened { object_drops } => (Some("Door_Opened"), object_drops),
+        edit::TileInteraction::DoorClosed { object_drops } => (Some("Door_Closed"), object_drops),
+        edit::TileInteraction::DoorBlocked { object_drops } => (None, object_drops),
+    };
+    let events = object_drops
+        .iter()
+        .filter_map(|d| registry::tile_drop(d.tile_kind).map(|id| (id, d.x, d.y)))
+        .collect();
+    Some((cue, events))
+}
+
+/// The entity half of `Collision.EmptyTile(i, j, ignoreTiles: true)`
+/// (`Collision.cs:1359-1378`): the cell rectangle must not intersect any
+/// player or NPC rectangle (XNA `Rectangle.Intersects` semantics — strict
+/// overlap, touching edges are free). The port keeps no dead/ghost flags for
+/// the single local player. Free of `App` so the gate is unit-testable
+/// without the app harness.
+fn cell_blocked_by_entity(player: Option<&Player>, npcs: &[Npc], x: i32, y: i32) -> bool {
+    let (x0, y0) = (x as f32 * TILE_PX, y as f32 * TILE_PX);
+    let (x1, y1) = (x0 + TILE_PX, y0 + TILE_PX);
+    if let Some(p) = player {
+        if x0 < p.x + crate::player::WIDTH
+            && x1 > p.x
+            && y0 < p.y + crate::player::HEIGHT
+            && y1 > p.y
+        {
+            return true;
+        }
+    }
+    npcs.iter().any(|n| {
+        let (w, h) = n.kind.size();
+        x0 < n.x + w && x1 > n.x && y0 < n.y + h && y1 > n.y
+    })
+}
+
 /// Applies a replicated edit. `kind`: 0 break tile, 1 place tile, 2 break wall,
 /// 3 place wall.
 pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) {
@@ -490,7 +574,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
     /// shape, deep enough inside the world for `CanPlace`'s 5-tile edge margin
@@ -668,5 +752,76 @@ mod tests {
             vec![(3, 9, 17), (25, 9, 18)],
             "legacy hit drop plus the chained open-door object drop"
         );
+    }
+
+    // ---- Phase 4 (DW-4.1/DW-4.3): the interaction hook ---------------------
+
+    #[test]
+    fn test_DW_4_1_interaction_events_map_results_to_cues_and_drops() {
+        use edit::TileInteraction;
+        // `None` = no interaction: the caller falls through to the place path
+        // with no cue and no drops.
+        assert!(interaction_events(TileInteraction::None).is_none());
+
+        let (cue, events) = interaction_events(TileInteraction::DoorOpened {
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 10,
+                x: 10,
+                y: 18,
+            }],
+        })
+        .unwrap();
+        assert_eq!(cue, Some("Door_Opened")); // PlaySound(8), WorldGen.cs:37732
+        assert_eq!(events, vec![(25, 10, 18)]); // GetDoorItem(0) = 25
+
+        let (cue, events) = interaction_events(TileInteraction::DoorClosed {
+            object_drops: vec![],
+        })
+        .unwrap();
+        assert_eq!(cue, Some("Door_Closed")); // PlaySound(9), WorldGen.cs:31906
+        assert!(events.is_empty());
+
+        // The blocked path carries cleanup drops with no cue — `PlaySound`
+        // sits behind every failure return in the C# bodies.
+        let (cue, events) = interaction_events(TileInteraction::DoorBlocked {
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 14,
+                x: 10,
+                y: 17,
+            }],
+        })
+        .unwrap();
+        assert_eq!(cue, None);
+        assert_eq!(events, vec![(32, 10, 17)]);
+    }
+
+    #[test]
+    fn test_DW_4_3_cell_blocked_by_entity() {
+        // The entity half of `Collision.EmptyTile(ignoreTiles: true)`
+        // (`Collision.cs:1359-1378`): strict rectangle overlap against the
+        // player and NPCs.
+        let w = object_world();
+        let mut player = Player::spawn(&w);
+        player.x = 160.0;
+        player.y = 304.0; // the 20x42 hitbox covers cell (10, 19)
+        assert!(cell_blocked_by_entity(Some(&player), &[], 10, 19));
+        assert!(!cell_blocked_by_entity(Some(&player), &[], 15, 19));
+        assert!(!cell_blocked_by_entity(None, &[], 10, 19));
+
+        // A slime spawned on the surface covers the cells its 30x24 body
+        // intersects.
+        let slime = Npc::spawn_slime(&w, 20).unwrap();
+        assert!(cell_blocked_by_entity(
+            None,
+            std::slice::from_ref(&slime),
+            20,
+            19
+        ));
+        assert!(!cell_blocked_by_entity(
+            None,
+            std::slice::from_ref(&slime),
+            5,
+            19
+        ));
     }
 }
