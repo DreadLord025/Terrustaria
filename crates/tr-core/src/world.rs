@@ -97,7 +97,13 @@ impl World {
             let mut top = self.height;
             for y in 0..self.height {
                 let t = &self.tiles[self.index(x, y)];
-                if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
+                // `WorldGen.cs:15715`: leaf blocks (192) go non-solid after the
+                // Living Trees pass — they never cut the column surface.
+                if t.active()
+                    && (t.kind as usize) < td::TILE_COUNT
+                    && td::TILE_SOLID.has(t.kind)
+                    && t.kind != 192
+                {
                     top = y;
                     break;
                 }
@@ -136,7 +142,11 @@ impl World {
         let mut top = self.height;
         for y in 0..self.height {
             let t = &self.tiles[self.index(x, y)];
-            if t.active() && (t.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(t.kind) {
+            if t.active()
+                && (t.kind as usize) < td::TILE_COUNT
+                && td::TILE_SOLID.has(t.kind)
+                && t.kind != 192
+            {
                 top = y;
                 break;
             }

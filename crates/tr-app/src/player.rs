@@ -9,8 +9,9 @@
 //! cells.
 
 use tr_core::tiledata as td;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
+use crate::buffs::BuffSlots;
 use crate::collision;
 
 pub const WIDTH: f32 = 20.0;
@@ -83,6 +84,9 @@ pub struct Player {
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
     pub mana: i32,
     pub mana_max: i32,
+    /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
+    /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
+    pub buffs: BuffSlots,
     pub hurt_cd: f32,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
@@ -128,6 +132,7 @@ impl Player {
             max_hp: 100,
             mana: 20,
             mana_max: 20,
+            buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
@@ -189,7 +194,10 @@ impl Player {
             return false;
         }
         self.hp = (self.hp - amount).max(0);
-        self.hurt_cd = 0.8;
+        // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
+        // for normal damage (no long-invincibility source yet), 20 when
+        // the damage is exactly 1; PVP 8 is unreachable in single-player.
+        self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         self.regen_time = 0.0;
         self.regen_acc = 0.0;
         let dir = if self.x + WIDTH * 0.5 >= from_x {
@@ -197,8 +205,10 @@ impl Player {
         } else {
             -1.0
         };
-        self.vx = dir * 4.0;
-        self.vy = -3.0;
+        // The fixed contact knockback (`Player.cs` Hurt: `4.5 * dir` with
+        // `-3.5` vertical unless noKnockback).
+        self.vx = dir * 4.5;
+        self.vy = -3.5;
         self.on_ground = false;
         true
     }
@@ -221,6 +231,9 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
+        // early in the tick. Nothing grants buffs yet, so this only decrements.
+        self.buffs.update_buffs_tick();
         self.prev_x = self.x;
         self.prev_y = self.y;
         self.prev_gfx_off_y = self.gfx_off_y;
@@ -310,6 +323,10 @@ impl Player {
         if self.y > world.height as f32 * TILE_PX + 300.0 {
             self.respawn();
         }
+
+        // The immune purge runs near the end of the original update, after movement
+        // and effects (`Player.cs:26012-26018`).
+        self.buffs.purge_immune_buffs();
 
         self.update_frames();
     }
@@ -568,7 +585,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);

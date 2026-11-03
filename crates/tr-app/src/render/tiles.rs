@@ -7,7 +7,9 @@ use crate::item::ItemDrop;
 use crate::net;
 use crate::npc::Npc;
 use crate::player::{self, Player};
-use crate::render::entities::{draw_npcs, draw_player, flip_uv, NpcAssets, PlayerAssets};
+use crate::render::entities::{
+    draw_npcs, draw_player, flip_uv, ArmorKinds, NpcAssets, PlayerAssets,
+};
 use crate::render::foliage::draw_tree_foliage;
 use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
@@ -54,6 +56,11 @@ pub(crate) struct DrawScratch {
     /// The waterfall quads walked this frame (`WaterfallManager.draw`), consumed
     /// by the tile pass below.
     pub(crate) waterfall_quads: Vec<tr_core::waterfall::WaterfallDraw>,
+    /// The liquid rects of the last world-pass build (world pixels) — the
+    /// WaterDistortion mask input. It is refreshed exactly when the G6-cached
+    /// world range is rebuilt, so it always matches the liquid sprites the
+    /// cached range still holds.
+    pub(crate) water_rects: Vec<[f32; 4]>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -149,6 +156,8 @@ pub(crate) fn draw_tiles(
     // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the
     // remaining use fraction (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
     held: Option<(u16, f32)>,
+    // `Player.armor[0..3]` item kinds (head/body/legs) — the armor layers.
+    armor: ArmorKinds,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
     items: &[ItemDrop],
@@ -248,6 +257,8 @@ pub(crate) fn draw_tiles(
     // `LiquidRenderer.InternalPrepareDraw` runs once per frame; both the opaque
     // background pass and the translucent foreground pass consume this record.
     let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
+    // M1.4-BG-18 phase 4: the same records feed the WaterDistortion mask.
+    scratch.water_rects = crate::render::liquids::water_mask_rects(&liquid_draws);
     if std::env::var_os("TR_DUMP_LIQUID").is_some() {
         let cam_x = camera.x as i32 / 16;
         let cam_y = camera.y as i32 / 16;
@@ -676,6 +687,51 @@ pub(crate) fn draw_tiles(
                         tile.paint(),
                     );
                     stats.quads += 1;
+                    // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
+                    // (`TileDrawing.cs:7549-7590`): leaf blocks shed leaf gores
+                    // below and downwind at `leafFrequency / 4`.
+                    if tile.kind == 192
+                        && wind.sway_enabled
+                        && leaf_rng.next_range(0, tr_core::wind::leaf_frequency(wind.speed_current) / 4)
+                            == 0
+                    {
+                        let wind_v = wind.speed_current;
+                        // Below: the tile's bottom edge, if open.
+                        let below_open = !world
+                            .tile(tx, ty + 1)
+                            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
+                            && world.tile(tx, ty + 1).is_none_or(|t| t.liquid == 0);
+                        if below_open {
+                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
+                                pos: glam::Vec2::new(tx as f32 * 16.0, ty as f32 * 16.0 + 16.0),
+                                style: 910,
+                            });
+                        }
+                        // Sideways downwind (|wind| > 0.2), 1/2 of the rolls.
+                        let sideways = if wind_v > 0.2 {
+                            1
+                        } else if wind_v < -0.2 {
+                            -1
+                        } else {
+                            0
+                        };
+                        if sideways != 0
+                            && leaf_rng.next_range(0, 2) == 0
+                            && !world
+                                .tile(tx + sideways, ty)
+                                .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
+                            && world.tile(tx + sideways, ty).is_none_or(|t| t.liquid == 0)
+                        {
+                            let shift = if sideways < 0 { -10 } else { 0 };
+                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
+                                pos: glam::Vec2::new(
+                                    tx as f32 * 16.0 + 8.0 + 4.0 * sideways as f32 + shift as f32,
+                                    ty as f32 * 16.0 + 8.0,
+                                ),
+                                style: 910,
+                            });
+                        }
+                    }
                 }
                 // `TileDrawing.DrawSingleTile` closes with `DrawSingleTile_Flames`
                 // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
@@ -735,6 +791,7 @@ pub(crate) fn draw_tiles(
             lookups,
             p,
             held,
+            armor,
             light,
             style,
             anim_time,
@@ -762,6 +819,7 @@ pub(crate) fn draw_tiles(
             lookups,
             &p,
             None,
+            [0, 0, 0],
             light,
             style,
             anim_time,
@@ -896,7 +954,10 @@ fn tile_hides_wall(
     slope: u8,
     half_brick: bool,
 ) -> bool {
-    if tree::is_tree(kind) || slope != 0 || half_brick || frame_x < 0 || frame_y < 0 {
+    // `WorldGen.cs:15715`: leaf blocks are non-solid after generation, so they
+    // never `FullTile` — the wall draws behind them.
+    if tree::is_tree(kind) || kind == 192 || slope != 0 || half_brick || frame_x < 0 || frame_y < 0
+    {
         return false;
     }
     let Some(atlas) = atlas else {

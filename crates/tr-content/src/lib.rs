@@ -4,6 +4,7 @@
 
 pub mod adpcm;
 pub mod dxt;
+pub mod effect;
 pub mod font;
 pub mod lzx;
 pub mod sound;
@@ -13,6 +14,7 @@ pub mod xnb;
 
 pub use adpcm::decode_msadpcm;
 pub use adpcm::AdpcmBlockInfo;
+pub use effect::load_effect_pass_names;
 pub use font::{load_font, DynamicSpriteFont, FontPage, Glyph};
 pub use sound::{load_sound, Sound};
 pub use texture::{load_texture, RgbaImage};
@@ -42,6 +44,10 @@ mod tests {
     }
 
     const HASH: u64 = 0xdb76_2213_37e7_e205;
+
+    /// FNV of the decoded `Images/Misc/noise` RGBA (pinned by
+    /// `test_DW_2_3_noise_xnb_decodes` against the retail `.xnb`).
+    const NOISE_HASH: u64 = 0xf3ed_720d_4478_1edd;
 
     /// Pins the P4 minimap/boss-bar sheet sizes decoded from the retail
     /// `.xnb`s (the whole-UI P4 research §C/§H): the Default frame 256x264,
@@ -107,6 +113,33 @@ mod tests {
     /// drifting apart — e.g. the torch sheet 132x528 holds the 22 px frame
     /// grid six columns wide, and the moondial `Glow_335` 36x432 holds eight
     /// 54 px moon-phase rows.
+    /// DW-2.3: `Images/Misc/noise` — the noise image every M1 screen filter binds
+    /// (`ScreenEffectInitializer.cs:30-40`) — decodes at its retail size with the
+    /// pixels pinned by FNV (the `decodes_tiles_deterministically` pattern).
+    /// `ScreenShaderData.cs:175-177` gives it LinearWrap because 256x256 is POT.
+    #[test]
+    fn test_DW_2_3_noise_xnb_decodes() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../assets/Content/Images/Misc/noise.xnb"
+        );
+        let img = match crate::load_texture(std::path::PathBuf::from(path)) {
+            Ok(img) => img,
+            Err(_) => {
+                eprintln!("noise.xnb not present; skipping");
+                return;
+            }
+        };
+        assert_eq!((img.width, img.height), (256, 256));
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in &img.pixels {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x100_0000_01b3);
+        }
+        println!("noise fnv {h:016x}");
+        assert_eq!(h, NOISE_HASH);
+    }
+
     #[test]
     fn decodes_flame_and_glow_sheets_at_the_pinned_sizes() {
         let Some(dir) = std::env::var_os("TR_CONTENT") else { return };

@@ -10,7 +10,7 @@
 
 use tr_core::{TILE_PX, World};
 
-use crate::npc::{Npc, NpcKind};
+use crate::npc::{Npc, NpcKind, SlimeVariant};
 
 /// `NPC.defaultSpawnRate` (set in `NPC.cs:95187`).
 pub const DEFAULT_SPAWN_RATE: i32 = 600;
@@ -52,6 +52,38 @@ impl FastRandom {
 
 /// Inputs to one spawn attempt, mirroring what `Spawner` reads off `Main` and
 /// the `Player` in `SetSpawnFlags`.
+/// The world/scene state `GetSpawnRate` reads (`NPC.cs:473-810`). Everything
+/// the ported simulation cannot supply yet stays `false`/`0` — the chain
+/// branches still run in the vanilla order so future systems only flip flags.
+#[derive(Clone, Copy, Default)]
+pub struct SpawnFlags {
+    pub hard_mode: bool,
+    pub blood_moon: bool,
+    pub eclipse: bool,
+    /// `Main.pumpkinMoon || Main.snowMoon`.
+    pub moon_event: bool,
+    pub zone_dungeon: bool,
+    /// `NPC.downedBoss3` (Skeletron defeated).
+    pub downed_boss3: bool,
+    pub zone_sandstorm: bool,
+    pub zone_underground_desert: bool,
+    pub zone_jungle: bool,
+    pub zone_evil: bool,
+    pub zone_meteor: bool,
+    pub zone_temple: bool,
+    pub zone_hallow_deep: bool,
+    pub zone_water_candle: bool,
+    pub zone_peace_candle: bool,
+    pub invis: bool,
+    pub calmed: bool,
+    pub sunflower: bool,
+    pub angler_set: bool,
+    /// `Player.enemySpawns` (the battle potion).
+    pub enemy_spawns: bool,
+    /// `Main.wofNPCIndex >= 0` (the Wall of Flesh is alive).
+    pub wof_active: bool,
+}
+
 pub struct SpawnContext<'a> {
     pub world: &'a World,
     /// Player centre in pixels (`player.Center`).
@@ -64,6 +96,7 @@ pub struct SpawnContext<'a> {
     pub town_npcs: i32,
     /// `Main.dayTime`.
     pub day_time: bool,
+    pub flags: SpawnFlags,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap.
@@ -119,61 +152,176 @@ impl SpawnArea {
 /// apply to this app: hardmode/depth/night/blood-moon/town-NPC/nearby-NPC and
 /// the final clamps. Random town-NPC sub-branches (`Main.rand` inside) are
 /// kept with the spawner's own RNG.
+/// `Spawner.GetSpawnRate` (`NPC.cs:473-810`): the sequential multiplier
+/// chain, in the vanilla order with the vanilla cast widths (`spawn_rate`
+/// steps are `(double)`-then-`(int)`, `max_spawns` steps `(float)`-then-
+/// `(int)`). The seed/FTW/remix/journey/skyblock branches are constants-off
+/// until those seed systems land (M5-SEED-1, M6-CREATIVE-1).
 pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut FastRandom) -> SpawnRate {
     let _ = rng;
+    let f = &ctx.flags;
     let mut rate = SpawnRate {
         spawn_rate: DEFAULT_SPAWN_RATE,
         max_spawns: DEFAULT_MAX_SPAWNS,
     };
-    let underworld = UNDERWORLD_LAYER(ctx.world.height);
-    let pos_y = ctx.player_pos.1;
-    let tile_y = pos_y / TILE_PX;
+    let underworld = UNDERWORLD_LAYER(ctx.world.height) as f64 * 16.0;
+    let rock_px = ctx.world.rock_layer * 16.0 + S_HEIGHT as f64;
+    let surface_px = ctx.world.world_surface * 16.0 + S_HEIGHT as f64;
+    let pos_y = ctx.player_pos.1 as f64;
+    let tile_y = pos_y / TILE_PX as f64;
 
-    if pos_y > underworld as f32 * TILE_PX {
+    // `Main.hardMode` (`:478-483`).
+    if f.hard_mode {
+        rate.spawn_rate = (DEFAULT_SPAWN_RATE as f64 * 0.9) as i32;
+        rate.max_spawns = DEFAULT_MAX_SPAWNS + 1;
+    }
+    // The depth ladder — underworld / deep / below-surface / night / eclipse,
+    // each an else-if of the previous (`:484-558`).
+    if pos_y > underworld {
         rate.max_spawns = (rate.max_spawns as f32 * 2.0) as i32;
-    } else if ctx.world.rock_layer * 16.0 + (S_HEIGHT as f64) < (pos_y as f64) {
-        // Below the rock layer.
+    } else if pos_y > rock_px {
         rate.spawn_rate = (rate.spawn_rate as f64 * 0.4) as i32;
         rate.max_spawns = (rate.max_spawns as f32 * 1.9) as i32;
-    } else if ctx.world.world_surface * 16.0 + (S_HEIGHT as f64) < (pos_y as f64) {
-        // Below the surface.
+    } else if pos_y > surface_px {
         rate.spawn_rate = (rate.spawn_rate as f64 * 0.5) as i32;
         rate.max_spawns = (rate.max_spawns as f32 * 1.7) as i32;
     } else if !ctx.day_time {
         rate.spawn_rate = (rate.spawn_rate as f64 * 0.6) as i32;
         rate.max_spawns = (rate.max_spawns as f32 * 1.3) as i32;
+        if f.blood_moon {
+            rate.spawn_rate = (rate.spawn_rate as f64 * 0.3) as i32;
+            rate.max_spawns = (rate.max_spawns as f32 * 1.8) as i32;
+        }
+        if f.moon_event && (pos_y / 16.0) < ctx.world.world_surface {
+            rate.spawn_rate = (rate.spawn_rate as f64 * 0.2) as i32;
+            rate.max_spawns *= 2;
+        }
+    } else if ctx.day_time && f.eclipse {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.2) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 1.9) as i32;
     }
-
-    // Town-NPC pressure (the underworld branch of NPC.cs:799-929; the surface
-    // branch's graveyard/spawnFriendly rolls need critters the app lacks).
-    if ctx.town_npcs >= 3 {
-        rate.spawn_rate = (rate.spawn_rate as f32 * 2.0) as i32;
-    } else if ctx.town_npcs == 2 {
-        rate.spawn_rate = (rate.spawn_rate as f64 * 1.5) as i32;
-    } else if ctx.town_npcs == 1 {
-        rate.spawn_rate = (rate.spawn_rate as f64 * 1.25) as i32;
+    // The biome/zone branches — the dungeon group is an if, the desert family
+    // an else-if ladder, jungle by the town count, then the rest
+    // (`:573-657`).
+    if f.zone_dungeon {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.3) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 1.8) as i32;
+    } else if f.zone_sandstorm {
+        rate.spawn_rate = (rate.spawn_rate as f32 * if f.hard_mode { 0.4 } else { 0.9 }) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * if f.hard_mode { 1.5 } else { 1.2 }) as i32;
+    } else if f.zone_underground_desert {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 0.2) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 3.0) as i32;
+    } else if f.zone_jungle {
+        // The town-pressure tiers (`:604-621`).
+        match ctx.town_npcs {
+            0 => {
+                rate.spawn_rate = (rate.spawn_rate as f64 * 0.4) as i32;
+                rate.max_spawns = (rate.max_spawns as f32 * 1.5) as i32;
+            }
+            1 => {
+                rate.spawn_rate = (rate.spawn_rate as f64 * 0.55) as i32;
+                rate.max_spawns = (rate.max_spawns as f64 * 1.4) as i32;
+            }
+            2 => {
+                rate.spawn_rate = (rate.spawn_rate as f64 * 0.7) as i32;
+                rate.max_spawns = (rate.max_spawns as f32 * 1.3) as i32;
+            }
+            _ => {
+                rate.spawn_rate = (rate.spawn_rate as f64 * 0.85) as i32;
+                rate.max_spawns = (rate.max_spawns as f32 * 1.2) as i32;
+            }
+        }
+    } else if f.zone_evil {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.65) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 1.3) as i32;
+    } else if f.zone_meteor {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.4) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 1.1) as i32;
     }
-
-    // Nearby-NPC scaling (NPC.cs:670-696).
-    let nearby = ctx.nearby_active_npcs as f64;
-    if nearby < rate.max_spawns as f64 * 0.2 {
-        rate.spawn_rate = (rate.spawn_rate as f32 * 0.6) as i32;
-    } else if nearby < rate.max_spawns as f64 * 0.4 {
-        rate.spawn_rate = (rate.spawn_rate as f32 * 0.7) as i32;
-    } else if nearby < rate.max_spawns as f64 * 0.6 {
+    if f.zone_temple {
         rate.spawn_rate = (rate.spawn_rate as f32 * 0.8) as i32;
-    } else if nearby < rate.max_spawns as f64 * 0.8 {
+        rate.max_spawns = (rate.max_spawns as f32 * 1.2) as i32;
+    }
+    if f.zone_hallow_deep && pos_y > rock_px {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.65) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 1.3) as i32;
+    }
+    // The Wall of Flesh underworld override (`:667-672`).
+    if f.wof_active && pos_y > underworld {
+        rate.max_spawns = (rate.max_spawns as f32 * 0.3) as i32;
+        rate.spawn_rate *= 3;
+    }
+    // The nearby-NPC ramps — the always pass (`:673-690`), then the extra
+    // deep/evil pass (`:691-701`).
+    let nearby = ctx.nearby_active_npcs as f64;
+    let max_f = rate.max_spawns as f64;
+    if nearby < max_f * 0.2 {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 0.6) as i32;
+    } else if nearby < max_f * 0.4 {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 0.7) as i32;
+    } else if nearby < max_f * 0.6 {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 0.8) as i32;
+    } else if nearby < max_f * 0.8 {
         rate.spawn_rate = (rate.spawn_rate as f32 * 0.9) as i32;
     }
-
-    // Final clamps (NPC.cs:749-756).
+    if tile_y > (ctx.world.world_surface + ctx.world.rock_layer) / 2.0 || f.zone_evil {
+        if nearby < max_f * 0.2 {
+            rate.spawn_rate = (rate.spawn_rate as f32 * 0.7) as i32;
+        } else if nearby < max_f * 0.4 {
+            rate.spawn_rate = (rate.spawn_rate as f32 * 0.9) as i32;
+        }
+    }
+    // The player-state and candle modifiers (`:702-740`).
+    if f.invis {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 1.2) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 0.8) as i32;
+    }
+    if f.calmed {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 1.65) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 0.6) as i32;
+    }
+    if f.sunflower {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 1.2) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 0.8) as i32;
+    }
+    if f.angler_set {
+        rate.spawn_rate = (rate.spawn_rate as f32 * 1.3) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 0.7) as i32;
+    }
+    if f.enemy_spawns {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.5) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 2.0) as i32;
+    }
+    if f.zone_water_candle {
+        if !f.zone_peace_candle {
+            rate.spawn_rate = (rate.spawn_rate as f64 * 0.75) as i32;
+            rate.max_spawns = (rate.max_spawns as f32 * 1.5) as i32;
+        }
+    } else if f.zone_peace_candle {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 1.3) as i32;
+        rate.max_spawns = (rate.max_spawns as f32 * 0.7) as i32;
+    }
+    if f.zone_water_candle && tile_y < ctx.world.world_surface * 0.349_999_994 {
+        rate.spawn_rate = (rate.spawn_rate as f64 * 0.5) as i32;
+    }
+    // The caps (`:741-751`): the rate floors at 10 % of the default, the cap
+    // at 3x the default.
     if (rate.spawn_rate as f64) < DEFAULT_SPAWN_RATE as f64 * 0.1 {
         rate.spawn_rate = (DEFAULT_SPAWN_RATE as f64 * 0.1) as i32;
     }
     if rate.max_spawns > DEFAULT_MAX_SPAWNS * 3 {
         rate.max_spawns = DEFAULT_MAX_SPAWNS * 3;
     }
-    let _ = tile_y;
+    // The invasion overrides (`:792-801`) — the moon events force the raid
+    // pacing; the pre-Skeletron dungeon crawls at rate 10 (`:806-809`).
+    if f.moon_event {
+        rate.max_spawns = (DEFAULT_MAX_SPAWNS as f64 * (2.0 + 0.3 * 1.0)) as i32;
+        rate.spawn_rate = 20;
+    }
+    if f.zone_dungeon && !f.downed_boss3 {
+        rate.spawn_rate = 10;
+    }
     rate
 }
 
@@ -203,12 +351,7 @@ fn has_tile_spawn_space(world: &World, x: i32, y: i32) -> bool {
 
 /// `Spawner.CheckNotSpawningOnScreen` (NPC.cs:5436-5450): the tile must lie
 /// outside every player's spawn-screen rect.
-fn check_not_spawning_on_screen(
-    ctx: &SpawnContext,
-    safe: &SpawnArea,
-    x: i32,
-    y: i32,
-) -> bool {
+fn check_not_spawning_on_screen(ctx: &SpawnContext, safe: &SpawnArea, x: i32, y: i32) -> bool {
     let num = S_WIDTH / 2;
     let num2 = S_HEIGHT / 2;
     let safe_range_x = (S_WIDTH / 16 * 52) / 100;
@@ -340,8 +483,9 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     let surface = (y as f64) <= ctx.world.world_surface;
     let kind = if surface {
         if ctx.day_time {
-            // `GetBasicSlimeToSpawn(surface: true, ...)`: -3 / 1 / -7 all become
-            // the app's blue slime; jungle/snow tile variants are not modelled.
+            // `GetBasicSlimeToSpawn(surface: true, tileType, dist)` — the
+            // forest default (jungle tile 60 -> -10 and snow 147/161 stay out
+            // until those biomes exist).
             NpcKind::Slime
         } else if rng.next(6) == 0 {
             // NPC.cs:4549-4572: `Next(6) == 0` (or full-moon `Next(2) == 0`,
@@ -358,20 +502,176 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         // Underground default: `GetBasicSlimeToSpawn(surface: false)`.
         NpcKind::Slime
     };
+    if kind == NpcKind::Slime {
+        // `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) picks the
+        // variant, then `Spawner.SpawnNPC`'s blue-slime roll can still swap
+        // Pinky in (`NPC.cs:5238-5246`: `RollLuck(180) == 0`).
+        let dist = (x - ctx.world.spawn_x).abs();
+        let variant = if surface {
+            if rng.next(3) == 0 || dist < 200 {
+                SlimeVariant::Green
+            } else if rng.next(10) == 0 && dist > 400 {
+                SlimeVariant::Purple
+            } else {
+                SlimeVariant::Blue
+            }
+        } else if rng.next(5) == 0 {
+            SlimeVariant::Yellow
+        } else if rng.next(2) == 0 {
+            SlimeVariant::Blue
+        } else {
+            SlimeVariant::Red
+        };
+        let variant = if variant == SlimeVariant::Blue && rng.next(180) == 0 {
+            SlimeVariant::Pinky
+        } else {
+            variant
+        };
+        return Npc::spawn_slime_variant(ctx.world, x, variant);
+    }
     match kind {
-        NpcKind::Slime => Npc::spawn_slime(ctx.world, x),
         NpcKind::DemonEye => Npc::spawn_eye(ctx.world, x),
+        // `NPCID.WanderingEye` (133) spawns only on the night hardmode roll
+        // (`NPC.cs:4555-4558`); the port is pre-hardmode, so it stays out of
+        // the ambient pass (it rides the eye machine when debug-spawned).
+        NpcKind::WanderingEye => Npc::spawn_eye(ctx.world, x),
         NpcKind::Zombie => Npc::spawn_zombie(ctx.world, x),
-        NpcKind::KingSlime => None, // bosses never spawn from the ambient pass
+        NpcKind::Slime | NpcKind::KingSlime => None, // handled above / boss only
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ctx(world: &World, y_px: f32, day: bool) -> SpawnContext<'_> {
+        SpawnContext {
+            world,
+            player_center: (0.0, y_px),
+            player_pos: (0.0, y_px),
+            // 100 nearby NPCs clears every nearby-ramp threshold
+            // (NPC.cs:673-690), isolating these tests from the ramp.
+            nearby_active_npcs: 100.0,
+            town_npcs: 0,
+            day_time: day,
+            flags: SpawnFlags::default(),
+        }
+    }
 
     fn ground() -> World {
+        // 800 tiles tall so `UnderworldLayer` (= height - 200) sits below the
+        // tested depth bands.
+        let mut w = World::new("t".into(), 64, 800);
+        w.world_surface = 30.0;
+        w.rock_layer = 40.0;
+        w
+    }
+
+    #[test]
+    fn surface_day_is_the_plain_default() {
+        // No branch applies on the surface at day: 600/5 verbatim.
+        let w = ground();
+        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, true), &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (600, 5));
+    }
+
+    #[test]
+    fn night_surface_multiplies() {
+        // NPC.cs:540-544: rate x0.6 -> 360, max x1.3 -> (float)6.5 -> 6.
+        let w = ground();
+        let r = get_spawn_rate(&ctx(&w, 25.0 * 16.0, false), &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (360, 6));
+    }
+
+    #[test]
+    fn deep_rock_layer_multiplies() {
+        // NPC.cs:487-491: rate x0.4 -> 240, max x1.9 -> 9.5 -> 9. The position
+        // must clear rock_layer*16 + sHeight (640 + 1200 = 1840 px = tile 115).
+        let w = ground();
+        let r = get_spawn_rate(&ctx(&w, 120.0 * 16.0, true), &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (240, 9));
+    }
+
+    #[test]
+    fn the_nearby_ramp_speeds_up_empty_areas() {
+        // NPC.cs:673-677: nearby < max x 0.2 multiplies the rate by 0.6 —
+        // smaller = more frequent spawns. Day surface: 600 x 0.6 = 360.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.nearby_active_npcs = 0.0;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!(r.spawn_rate, 360);
+    }
+
+    #[test]
+    fn blood_moon_night_compounds() {
+        // NPC.cs:545-548: night x0.6/x1.3 then blood x0.3/x1.8:
+        // 600 -> 360 -> 108; 6.5 -> 11.7 -> 11.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.flags.blood_moon = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (108, 10));
+    }
+
+    #[test]
+    fn jungle_town_tiers() {
+        // NPC.cs:604-621: town 0 x0.4/x1.5, town 1 x0.55/x1.4, town 2 x0.7/x1.3.
+        let w = ground();
+        for (town, rate, max) in [(0, 96, 13), (1, 132, 12), (2, 168, 11)] {
+            let mut c = ctx(&w, 120.0 * 16.0, true);
+            c.flags.zone_jungle = true;
+            c.town_npcs = town;
+            let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+            assert_eq!(r.spawn_rate, rate, "jungle town {town} rate");
+            assert_eq!(r.max_spawns, max, "jungle town {town} max");
+        }
+    }
+
+    #[test]
+    fn dungeon_pre_skeletron_is_rate_ten() {
+        // NPC.cs:806-809: ZoneDungeon && !downedBoss3 -> spawnRate = 10 (the
+        // chain multipliers run first; the override is last).
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.flags.zone_dungeon = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!(r.spawn_rate, 10);
+        // Post-Skeletron the override stops and the x0.3 branch stands.
+        let mut c = ctx(&w, 25.0 * 16.0, true);
+        c.flags.zone_dungeon = true;
+        c.flags.downed_boss3 = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!(r.spawn_rate, 180);
+    }
+
+    #[test]
+    fn the_rate_floor_and_cap_hold() {
+        // NPC.cs:741-751: rate >= 60 (600x0.1), max <= 15 (5x3). The deepest
+        // vanilla-compoundable stack here: underground desert x0.2/x3 capped.
+        let w = ground();
+        let mut c = ctx(&w, 120.0 * 16.0, true);
+        c.flags.zone_underground_desert = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        // 600 x0.4 (deep) x0.2 (UD) = 48 -> floored at 60 (NPC.cs:741-744).
+        assert_eq!(r.spawn_rate, 60);
+        assert_eq!(r.max_spawns, 15, "x3 of 5 capped at 15");
+    }
+
+    #[test]
+    fn moon_event_forces_the_raid_pacing() {
+        // NPC.cs:792-796: maxSpawns = 5 x (2 + 0.3x1) = 11, spawnRate = 20.
+        let w = ground();
+        let mut c = ctx(&w, 25.0 * 16.0, false);
+        c.flags.moon_event = true;
+        let r = get_spawn_rate(&c, &mut FastRandom::new(1));
+        assert_eq!((r.spawn_rate, r.max_spawns), (20, 11));
+    }
+
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn ground_tall() -> World {
         // Tall enough that `UnderworldLayer = height - 200` sits well below the
         // play area, and with `world_surface` above the filled ground so that
         // spawns on it count as surface spawns.
@@ -395,7 +695,7 @@ mod tests {
         w
     }
 
-    fn ctx<'a>(w: &'a World, day: bool) -> SpawnContext<'a> {
+    fn ctx_at<'a>(w: &'a World, day: bool) -> SpawnContext<'a> {
         SpawnContext {
             world: w,
             player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
@@ -403,47 +703,51 @@ mod tests {
             nearby_active_npcs: 0.0,
             town_npcs: 0,
             day_time: day,
+            flags: SpawnFlags::default(),
         }
     }
 
     #[test]
     fn spawn_rate_matches_the_c_modifiers() {
-        let w = ground();
+        let w = ground_tall();
         // With no NPCs nearby the <20% scaling (NPC.cs:670-673) always applies,
         // so the base 600 rate is ×0.6 = 360.
         // Day surface: 600 × 0.6.
-        let r = get_spawn_rate(&ctx(&w, true), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx_at(&w, true), &mut FastRandom::new(1));
         assert_eq!(r.spawn_rate, 360);
         assert_eq!(r.max_spawns, 5);
 
         // Night: ×0.6 / ×1.3, then ×0.6 again.
-        let r = get_spawn_rate(&ctx(&w, false), &mut FastRandom::new(1));
+        let r = get_spawn_rate(&ctx_at(&w, false), &mut FastRandom::new(1));
         assert_eq!(r.spawn_rate, 216);
         assert_eq!(r.max_spawns, 6);
 
-        // Below the rock layer: ×0.4 / ×1.9, then ×0.6. Tile y 420 px 6720 is
-        // past `rock_layer*16 + sHeight` (6320) but above the underworld (8000).
-        let mut c = ctx(&w, true);
+        // Below the rock layer: ×0.4 / ×1.9, then both nearby ramps (the
+        // x0.6 pass and the deep x0.7 extra pass; tile y 420 px 6720 is past
+        // `rock_layer*16 + sHeight` (6320) and past the mid-depth line 315):
+        // 600 -> 240 -> 144 -> 100.8 -> 100.
+        let mut c = ctx_at(&w, true);
         c.player_pos = (200.0 * TILE_PX, 420.0 * TILE_PX);
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
-        assert_eq!(r.spawn_rate, 144);
+        assert_eq!(r.spawn_rate, 100);
         assert_eq!(r.max_spawns, 9);
 
         // Underworld doubles the cap (tile y 505 > height - 200 = 500).
-        let mut c = ctx(&w, true);
+        let mut c = ctx_at(&w, true);
         c.player_pos = (200.0 * TILE_PX, 505.0 * TILE_PX);
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
         assert_eq!(r.max_spawns, 10);
 
-        // Town NPCs slow surface spawns (×2 with ≥3).
-        let mut c = ctx(&w, true);
+        // The 1.4.5 GetSpawnRate has no town-NPC multiplier of its own
+        // (the pressure rides the nearby ramp; NPC.cs:673-690).
+        let mut c = ctx_at(&w, true);
         c.town_npcs = 3;
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
-        assert_eq!(r.spawn_rate, 720);
+        assert_eq!(r.spawn_rate, 360);
 
         // The nearby scaling stops at ≥80% of the cap (4.0 ≥ 0.8·5): no
         // multiplier applies, the base 600 survives.
-        let mut c = ctx(&w, true);
+        let mut c = ctx_at(&w, true);
         c.nearby_active_npcs = 4.0;
         let r = get_spawn_rate(&c, &mut FastRandom::new(1));
         assert_eq!(r.spawn_rate, 600);
@@ -451,11 +755,11 @@ mod tests {
 
     #[test]
     fn spawns_land_outside_the_safe_area() {
-        let w = ground();
+        let w = ground_tall();
         let mut rng = FastRandom::new(0xDEAD_BEEF);
         let mut spawned_near = 0;
         for _ in 0..4000 {
-            let mut c = ctx(&w, false);
+            let mut c = ctx_at(&w, false);
             c.nearby_active_npcs = 0.0;
             let safe_area = get_spawn_area(&c).1;
             if let Some(n) = try_spawn_an_npc(&c, &mut rng) {
@@ -471,12 +775,12 @@ mod tests {
 
     #[test]
     fn night_spawns_zombies_and_eyes_day_spawns_slimes() {
-        let w = ground();
+        let w = ground_tall();
         let mut rng = FastRandom::new(42);
         let mut saw_zombie = false;
         let mut saw_eye = false;
         for _ in 0..4000 {
-            let c = ctx(&w, false);
+            let c = ctx_at(&w, false);
             if let Some(n) = try_spawn_an_npc(&c, &mut rng) {
                 match n.kind {
                     NpcKind::Zombie => saw_zombie = true,
@@ -489,7 +793,7 @@ mod tests {
 
         let mut saw_slime = false;
         for _ in 0..4000 {
-            let c = ctx(&w, true);
+            let c = ctx_at(&w, true);
             if let Some(n) = try_spawn_an_npc(&c, &mut rng) {
                 if n.kind == NpcKind::Slime {
                     saw_slime = true;
@@ -501,9 +805,9 @@ mod tests {
 
     #[test]
     fn nearby_cap_blocks_spawns() {
-        let w = ground();
+        let w = ground_tall();
         let mut rng = FastRandom::new(7);
-        let mut c = ctx(&w, false);
+        let mut c = ctx_at(&w, false);
         c.nearby_active_npcs = 100.0; // far above every max-spawns cap
         for _ in 0..2000 {
             assert!(try_spawn_an_npc(&c, &mut rng).is_none());
@@ -512,10 +816,11 @@ mod tests {
 
     #[test]
     fn spawn_space_requires_clear_tiles() {
-        let mut w = ground();
-        // Wall in the spawn rect (2 wide, 3 tall above the ground tile).
+        let mut w = ground_tall();
+        // Wall in the spawn rect (2 wide, 3 tall above the ground tile):
+        // rows 297..=299.
         for dy in 1..=3 {
-            let i = w.index(200, 299 - dy);
+            let i = w.index(200, 300 - dy);
             w.tiles[i].kind = 1;
             w.tiles[i].flags |= FLAG_ACTIVE;
         }

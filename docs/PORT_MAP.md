@@ -51,6 +51,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Main.DrawSurfaceBG`/`DrawSunAndMoon` (sky, clouds, parallax stack) | `crates/tr-app/src/render/sky.rs` (+ `biome.rs` for the style/alpha transitions) | partial |
 | `Main.DoDraw_Waterfalls`, tile/liquid draw passes, `DrawTrees` | `crates/tr-app/src/render/{tiles,liquids,foliage}.rs` | partial |
 | `Player.cs` | `crates/tr-app/src/player.rs` (physics), `collision.rs`, the 60 Hz tick in `world_sim/player.rs` | partial |
+| `Player.cs` buff slots (`AddBuff` family `:5263-5480`, `UpdateBuffs` head `:9855-9876`, immune purge `:26012-26018`) | `crates/tr-app/src/buffs.rs` (`BuffSlots`, verbatim `Main.debuff`/pet/melee set tables) | done (slot engine; per-buff effects = M2-BUFF-3/4) |
 | `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` (tick in `world_sim/npcs.rs`) | partial |
 | `Projectile.cs` | `crates/tr-app/src/projectile.rs` (tick in `world_sim/projectiles.rs`) | partial |
 | `Item.cs`, `GetItemSettings.cs`, `NewItemOwnership.cs` | `crates/tr-app/src/item.rs` (tick in `world_sim/items.rs`) | partial |

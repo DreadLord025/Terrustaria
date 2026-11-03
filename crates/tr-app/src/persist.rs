@@ -14,6 +14,9 @@ pub struct SavedPlayer {
     pub hp: i32,
     pub inventory: [(u16, u32); 50],
     pub coins: u64,
+    /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
+    /// of the sidecar; older files load with all three empty.
+    pub armor: [u16; 3],
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -32,12 +35,15 @@ pub fn save(
     player: &Player,
     inventory: [(u16, u32); 50],
     coins: u64,
+    armor: [u16; 3],
 ) -> std::io::Result<()> {
-    let mut s = format!("3\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("4\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
     s.push_str(&format!("\n{coins}\n"));
+    // The equipped armor kinds (head/body/legs) on their own line.
+    s.push_str(&format!("{} {} {}\n", armor[0], armor[1], armor[2]));
     std::fs::write(player_path(world), s)
 }
 
@@ -46,9 +52,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let mut lines = s.lines();
     let version = lines.next()?.trim();
     let migrate = match version {
-        // Version 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
-        // tile/wall/weapon/coin ranges and are converted on load.
-        "3" => false,
+        // Version 4 adds the equipped armor line; 3 stores vanilla `ItemID`s;
+        // 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges and are
+        // converted on load.
+        "3" | "4" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -73,12 +80,21 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .next()
         .and_then(|l| l.trim().parse::<u64>().ok())
         .unwrap_or(0);
+    // The armor line is version 4+; older files load with every slot empty.
+    let mut armor = [0u16; 3];
+    if version == "4" {
+        let mut armor_line = lines.next()?.split_whitespace();
+        for slot in &mut armor {
+            *slot = armor_line.next()?.parse().ok()?;
+        }
+    }
     Some(SavedPlayer {
         x,
         y,
         hp,
         inventory,
         coins,
+        armor,
     })
 }
 
@@ -101,20 +117,37 @@ mod tests {
         inv[2] = (8, 9);
         inv[3] = (12, 1);
         inv[4] = (71, 40);
-        save(&path, &p, inv, 123_456).unwrap();
+        save(&path, &p, inv, 123_456, [89, 80, 76]).unwrap();
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
+        assert_eq!(s.armor, [89, 80, 76]);
+        let _ = std::fs::remove_file(player_path(&path));
+    }
+
+    #[test]
+    fn version_3_loads_with_empty_armor() {
+        let path = std::env::temp_dir().join("tr-persist-v3.trwld");
+        let mut line = String::from("3\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v3 sidecar");
+        assert_eq!(s.armor, [0, 0, 0]);
         let _ = std::fs::remove_file(player_path(&path));
     }
 
     #[test]
     fn migrates_version_2_kinds_to_item_ids() {
         let path = std::env::temp_dir().join("tr-persist-v2.trwld");
-        // Version 2: tile kinds and the wall/weapon/coin ranges.
-        let mut line = String::from("210 20 100");
+        // Version 2: tile kinds and the wall/weapon/coin ranges. (The fixture
+        // previously glued the version and position into one line — "210 20
+        // 100" — so the version match failed and the test could never load.)
+        let mut line = String::from("2\n10 20 100\n");
         for kind in [0u16, 1, 10_002, 20_001, 30_002] {
             line.push_str(&format!("{kind} 5 "));
         }
@@ -128,6 +161,7 @@ mod tests {
         assert_eq!(s.inventory[2], (30, 5));
         assert_eq!(s.inventory[3], (42, 5));
         assert_eq!(s.inventory[4], (73, 5));
+        assert_eq!(s.armor, [0, 0, 0]);
         let _ = std::fs::remove_file(player_path(&path));
     }
 

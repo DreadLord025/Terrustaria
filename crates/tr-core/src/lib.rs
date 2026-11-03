@@ -5,6 +5,7 @@
 
 pub mod anim;
 pub mod binio;
+pub mod damage;
 pub mod drawdata;
 pub mod edit;
 pub mod flame;
@@ -13,9 +14,11 @@ pub mod lighting;
 pub mod liquid;
 pub mod liquid_draw;
 pub mod localization;
+pub mod loot;
 pub mod map;
 pub mod mapdata;
 pub mod save;
+pub mod scene;
 pub mod sky;
 pub mod tile;
 pub mod tile_light;

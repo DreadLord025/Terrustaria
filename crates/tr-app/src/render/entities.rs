@@ -38,9 +38,30 @@ pub(crate) struct PlayerAssets {
     pub(crate) pants: Option<BgTex>,
     pub(crate) shoes: Option<BgTex>,
     pub(crate) hair: Option<BgTex>,
+    /// Armor sheets by vanilla armor slot (`TextureAssets.ArmorHead[n]` etc.,
+    /// `AssetInitializer.cs:165-185`): index 0 is the empty slot, 1..4 the
+    /// copper/iron/silver/gold sets. The body entry is the 9x4 composite
+    /// `Armor/Armor_{n}` (torso + shoulders + arms, `PlayerDrawSet.cs:2241`).
+    pub(crate) armor_head: [Option<BgTex>; 5],
+    pub(crate) armor_body: [Option<BgTex>; 5],
+    pub(crate) armor_legs: [Option<BgTex>; 5],
 }
 
+/// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
+/// input the layer builders resolve into armor slots via the registry.
+pub(crate) type ArmorKinds = [u16; 3];
+
 pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
+    // `AssetInitializer.cs:165-185`: the slot number is the file number.
+    let armor_sheets = |prefix: &str| {
+        std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("{prefix}_{slot}"), None)
+            }
+        })
+    };
     PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
@@ -55,6 +76,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
+        armor_head: armor_sheets("Armor_Head"),
+        armor_body: {
+            let mut body: [Option<BgTex>; 5] = [None; 5];
+            for (slot, tex) in body.iter_mut().enumerate().skip(1) {
+                *tex = sky_tex(atlas, &format!("Armor/Armor_{slot}"), None);
+            }
+            body
+        },
+        armor_legs: armor_sheets("Armor_Legs"),
     }
 }
 
@@ -68,6 +98,7 @@ pub(crate) use super::player_layers::{flip_uv, player_cell_uv, player_frame_uv};
 pub(crate) struct NpcAssets {
     pub(crate) slime: Option<BgTex>,
     pub(crate) eye: Option<BgTex>,
+    pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
@@ -76,6 +107,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: sky_tex(atlas, "NPC_1", None),
         eye: sky_tex(atlas, "NPC_2", None),
+        wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
@@ -162,6 +194,9 @@ pub(crate) fn draw_player(
     lookups: &assets::Lookups,
     player: &Player,
     held: Option<(u16, f32)>,
+    // `Player.armor[0..3]` item kinds (head/body/legs, 0 = empty); the layer
+    // builders swap the shirt/pants/hair pieces for the armor sheets.
+    armor: ArmorKinds,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -173,6 +208,13 @@ pub(crate) fn draw_player(
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
     let swing = held.map_or(0.0, |(_, s)| s);
+    // `Player.armor[0..3]`'s slot ids (`head`/`body`/`legs`, `Player.cs`): the
+    // registry item → slot resolution the C# `Item.equipSlot` fields do at
+    // `SetDefaults`. 0 = the empty slot.
+    let [head_kind, body_kind, legs_kind] = armor;
+    let head_armor = registry::get(head_kind).map_or(0, |d| d.head_slot);
+    let body_armor = registry::get(body_kind).map_or(0, |d| d.body_slot);
+    let leg_armor = registry::get(legs_kind).map_or(0, |d| d.leg_slot);
     let state = PlayerCompositeState {
         origin: [player.x - 10.0, player.y - 10.0],
         leg_frame: player.leg_frame,
@@ -192,6 +234,9 @@ pub(crate) fn draw_player(
             .map(|(_, size)| size)
             .unwrap_or([0.0, 0.0]),
         light: light_c,
+        head_armor,
+        body_armor,
+        leg_armor,
         front_arm: swing_stand_in(1, swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
     };
@@ -445,7 +490,6 @@ pub(crate) fn draw_npcs(
     screen: Vec2,
 ) -> u32 {
     let white = r.white_uv();
-    let blue = [0.52, 0.72, 1.0];
     let mut quads = 0;
     for n in npcs {
         let (cx, cy) = n.center();
@@ -453,21 +497,33 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
-        let (w, _) = n.kind.size();
+        let (w, _) = n.size();
         let (tex, frame_h, size, pos) = match n.kind {
             NpcKind::Slime => (
                 assets.slime.as_ref(),
                 26.0,
-                [32.0, 26.0],
-                // The 26 px frame has 2 transparent rows below the feet; align the
-                // art bottom (row 23) with the hitbox bottom.
-                [n.x - 1.0, n.y + 1.0],
+                // The 32x26 frame scales with the variant
+                // (`SetDefaults_ForNetId`'s size scale) and is anchored at the
+                // frame centre over the hitbox centre (`Main.DrawNPC`'s
+                // `origin = frame.Size() / 2`).
+                [32.0 * n.slime.stats().scale, 26.0 * n.slime.stats().scale],
+                [cx - 16.0 * n.slime.stats().scale, cy - 13.0 * n.slime.stats().scale],
             ),
             NpcKind::DemonEye => (
                 assets.eye.as_ref(),
                 24.0,
                 [38.0, 24.0],
                 [n.x - 4.0, n.y + 2.0],
+            ),
+            NpcKind::WanderingEye => (
+                assets.wandering_eye.as_ref(),
+                // `Main.npcFrameCount[133] = 4` (Main.cs:67082).
+                assets.wandering_eye.as_ref().map_or(24.0, |t| t.h / 4.0),
+                assets
+                    .wandering_eye
+                    .as_ref()
+                    .map_or([38.0, 24.0], |t| [38.0, t.h / 4.0]),
+                [cx - 19.0, cy - 12.0],
             ),
             NpcKind::Zombie => (
                 assets.zombie.as_ref(),
@@ -485,8 +541,17 @@ pub(crate) fn draw_npcs(
         let Some(tex) = tex else {
             continue;
         };
+        // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
+        // variants carry their `SetDefaults` colours (alpha included — the
+        // premultiplied pipeline renders the translucency directly).
         let base = if n.kind == NpcKind::Slime {
-            [c[0] * blue[0], c[1] * blue[1], c[2] * blue[2], 1.0]
+            let k = n.slime.stats().color;
+            [
+                c[0] * k[0] as f32 / 255.0,
+                c[1] * k[1] as f32 / 255.0,
+                c[2] * k[2] as f32 / 255.0,
+                k[3] as f32 / 255.0,
+            ]
         } else {
             [c[0], c[1], c[2], 1.0]
         };
@@ -496,7 +561,8 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        if n.kind == NpcKind::DemonEye && n.rotation != 0.0 {
+        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0
+            {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight

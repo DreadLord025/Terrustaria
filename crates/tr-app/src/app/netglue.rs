@@ -283,7 +283,9 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
     let tx = (n.x / TILE_PX) as i32;
     let mut npc = match kind {
         crate::npc::NpcKind::Slime => crate::npc::Npc::spawn_slime(world, tx)?,
-        crate::npc::NpcKind::DemonEye => crate::npc::Npc::spawn_eye(world, tx)?,
+        crate::npc::NpcKind::DemonEye | crate::npc::NpcKind::WanderingEye => {
+            crate::npc::Npc::spawn_eye(world, tx)?
+        }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
     };

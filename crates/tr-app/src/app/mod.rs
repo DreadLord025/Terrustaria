@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
@@ -79,6 +80,26 @@ pub(crate) struct App {
     pub(crate) window: Option<Arc<Window>>,
     pub(crate) gpu: Option<Gpu>,
     pub(crate) renderer: Option<SpriteRenderer>,
+    /// M1.4-BG-18 phase 2 harness (`TR_POST=1`): the post-pass pipeline routing
+    /// the scene through an offscreen target + filter pass. Phase 3's
+    /// `ApplyVisuals` driver decides per-frame whether a filter runs.
+    pub(crate) post: Option<tr_render::PostPipeline>,
+    /// Noise image (`Images/Misc/noise`) uploaded for the post pass bindings.
+    pub(crate) noise_tex: Option<wgpu::Texture>,
+    /// M1.4-BG-18 phase 4: the water coverage mask target (created with `post`;
+    /// its texture only exists while WaterDistortion is wanted and water is in
+    /// view).
+    pub(crate) water_mask: Option<tr_render::WaterMask>,
+    /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
+    /// fades and the filter driver reads its intensities.
+    pub(crate) scene_state: tr_core::scene::SceneState,
+    /// `Sandstorm` — the event state machine; the storm machine ticks in
+    /// `update_scene` and the storm filters read its severity.
+    pub(crate) sandstorm: tr_core::scene::Sandstorm,
+    /// M1.4-BG-18 phase 3: the `ApplyVisuals` driver (`app::filters`) — filter
+    /// board, storm shader state and the winner uniform the post branch
+    /// applies.
+    pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
     pub(crate) lookups: assets::Lookups,
@@ -761,6 +782,8 @@ impl App {
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
     let mut coins = 0u64;
+    // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
+    let mut armor_kinds = [0u16; 3];
     let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
         0 => ItemSlot {
             kind: 2, // ItemID.DirtBlock
@@ -797,6 +820,7 @@ impl App {
                 }
                 p.hp = saved.hp.clamp(1, p.max_hp);
                 coins = saved.coins;
+                armor_kinds = saved.armor;
                 for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
@@ -948,6 +972,12 @@ impl App {
         window: None,
         gpu: None,
         renderer: None,
+        post: None,
+        noise_tex: None,
+        water_mask: None,
+        scene_state: tr_core::scene::SceneState::new(),
+        sandstorm: tr_core::scene::Sandstorm::new(world_seed),
+        filter_driver: crate::app::filters::FilterDriver::new(),
         world,
         atlas: Some(atlas),
         lookups,
@@ -981,7 +1011,36 @@ impl App {
         npc_rng: world_seed,
         attack_cd: 0.0,
         inventory,
-        equip: inv::EquipSlots::empty(),
+        equip: {
+            let mut equip = inv::EquipSlots::empty();
+            // The saved character's armor first (`Player.LoadPlayer`); the
+            // `TR_ARMOR` env below overrides it so the armor layers stay
+            // screenshotable without a drag-and-drop flow (vanilla equips
+            // through `Player.EquipArmor`).
+            for (slot, kind) in equip.armor.iter_mut().zip(armor_kinds) {
+                if kind != 0 {
+                    *slot = ItemSlot { kind, name: registry::name(kind), count: 1 };
+                }
+            }
+            // `TR_ARMOR=copper|iron|silver|gold`: equip a full early-metal set
+            // at load so the armor layers stay screenshotable without a
+            // drag-and-drop flow (vanilla equips through `Player.EquipArmor`).
+            if let Ok(set) = std::env::var("TR_ARMOR") {
+                let ids: [u16; 3] = match set.trim() {
+                    "copper" => [89, 80, 76],
+                    "iron" => [90, 81, 77],
+                    "silver" => [91, 82, 78],
+                    "gold" => [92, 83, 79],
+                    _ => [0; 3],
+                };
+                for (slot, kind) in equip.armor.iter_mut().zip(ids) {
+                    if kind != 0 {
+                        *slot = ItemSlot { kind, name: registry::name(kind), count: 1 };
+                    }
+                }
+            }
+            equip
+        },
         // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
         // var selects the page for screenshots (0 = equipment, 2 = misc).
         equip_page: std::env::var("TR_EQUIPPAGE")

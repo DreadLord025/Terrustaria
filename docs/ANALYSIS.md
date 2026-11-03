@@ -576,6 +576,56 @@ diff exactly inside the rectangle against the unpainted frame (3756 px each);
 the unpainted branch is pixel-identical to main; the extras round-trip test
 covers the sparse save.
 
+## Living trees (M5-LIVING-trees)
+
+`crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
+generation pass (`WorldGen.cs:15476-15715`) and `GrowLivingTree`
+(`WorldGen.cs:27973-28627`): the anchor/patch placement (outside the spawn
+plateau, `Next(4)` patches per side stepping `Next(13, 31)`), the tapering
+trunk (`Next(2, 3)` per side, 1/5 single-side widen, patch narrowing, the
+`Next(5, 15)` branch cadence and the `1/2` taper until the edges meet), the
+side branches (`width * (1 + Next(20, 30) * 0.1)` long with the 2-tile
+thickenings as leaf centres), the upper trunk (`Next(width*3, width*5)` rows,
+branches `Next(width, width*3)` flagged for round canopies), the roots
+(`Next(1, 6)` down-rows then `Next(2, width+1)` diagonal arms of
+`Next(width*3.5, width*6)`), the elliptical/round canopy blobs
+(`Next(5, 8) * (1 + width*0.05)`, round `Next(6, 12) + width`, the vertical
+squash `2.0 - Next(5)*0.1`) with `GrowLivingTree_CanPlaceLeaves`
+(`WorldGen.cs:28607-28627`), and the hollow passage (`MakePassage`,
+`WorldGen.cs:28865-29133`: 3-wide air, wall 244 lining, the drift every 6 rows,
+the shell, the patch tunnels).
+
+- Ground/anchor gates: the ground must be dirt/grass/stone or ore
+  (`WorldGen.cs:28004-28010` — sand is excluded, so beaches reject), the
+  anchor cell must be inactive, `j >= 150`, and — replacing the vanilla's
+  `j >= worldSurface → continue` scan gate (`WorldGen.cs:15549`), which does
+  not translate to this port's terrain-vs-`world_surface` offset — the anchor
+  cell and its ground must be free of liquid.
+- Living wood/leaf rendering is plain-tile: `Tiles_191`'s transparent gaps +
+  `tile_hides_wall`'s opacity check let wall 244 show through the bark (the
+  `TileID.Sets.DrawsWalls[191]` effect), and the hollow is real geometry (air
+  + wall 244). No special draw path exists in the vanilla either
+  (`TileDrawing` has no 191/192 case).
+- Framing: the generic merge dispatch gains the `WorldGen.cs:82070-82082`
+  pairs — 192's Frametest merge against 191 (the port merges unconditionally;
+  the vanilla re-frames the wood neighbour and reads `mergeDown/Up/...`, which
+  needs the generic -2 openness tables — documented) and 191's
+  `TileMergeAttempt(-2, 192)` leaf marker + the dirt fold.
+- Leaves (192) are walk-through: `WorldGen.cs:15715` sets
+  `tileSolid[192] = false` after the pass; the port adds the `kind != 192`
+  exception to the collision helpers, the wall-hide check and the column-
+  surface scans (the leaves never cut the sun), while
+  `TILE_BLOCK_LIGHT[192]` stays true (the canopies self-shadow, matching the
+  vanilla dark interiors).
+- Not ported: the hollow room's furniture (door style 7, chair style 5, the
+  Living Loom, the buried Living Wood Chest — `TileObjectData`, M1.4-TO), the
+  leaf-pile decorations (tiles 187/185 with `PlaceTile` frame tables), the
+  passage floor platforms (tile 19 style 23), the horizontal-tunnel doors, the
+  secret-seed/remix variants and `PaintTheLivingTrees`.
+- Determinism: the pass draws from the worldgen xorshift in the vanilla draw
+  order; the unit test `living_trees_generate_for_seed` asserts the 191/192/
+  wall-244 counts for seed 1.
+
 ## Rain and weather
 
 `rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
@@ -865,6 +915,36 @@ crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
 `handle_crafting_clicks` (`clicks.rs`) runs before inventory clicks and crafts
 on the press (`Main.cs:42250` hover family); the rotation source for item use
 stays with M2-ANIM.
+
+## Screen filters (M1.4-BG-18)
+
+`M1.4-BG-18` ports the `ScreenShaderData` post-process subsystem: a
+`PostPipeline` in tr-render (`post.rs`/`post.wgsl`) renders the sprite pass
+into an offscreen sRGB target and applies the active filter as a fullscreen
+pass — one WGSL module mirroring `ScreenShader.fx`'s named techniques
+(`PASS_TABLE` extracted from `ScreenShader.xnb` by the new tr-content Effect
+reader; 22 passes ⊇ the initializer's table). The driver
+(`app/filters.rs::FilterDriver::apply_visuals`) ports `SceneState.ApplyVisuals`
+(`SceneState.cs:64-253`) over the Phase-1 sensors (`scene.rs`: SceneMetrics
+window counts per `SceneMetrics.cs:373/595-616` with the
+`GraveyardTileCount = _tileCounts[85] − _tileCounts[27]/2` rule, the Sandstorm
+state machine from `Events/Sandstorm.cs:32-138`, SceneState fades/
+MoveTowards `:472-491`). Deviations:
+
+- WGSL filter bodies are documented approximations of the compiled HLSL
+  (`ScreenShaderData.cs` semantics per pass; no bytecode translation).
+- One winner at a time by `EffectPriority` then activation, visibility =
+  fade × shader opacity > 0 (`Filter.IsVisible`/`CombinedOpacity`).
+- Storm fg/bg pair: the dominant-opacity side runs (post cannot draw behind
+  the scene); both WGSL passes exist.
+- The filter wash covers the HUD (our single sprite pass renders UI into the
+  same target; vanilla draws the HUD after the filter).
+- Aurora is a SkyManager visual (`ScreenEffectInitializer.cs:65`), not a
+  filter — not ported. Towers/monoliths/MoonLord are M4 content.
+- Items without extracted sprites draw a grey placeholder in the crafting
+  grid (M3-CRAFT, same atlas limitation).
+- Harness: `TR_POST=1`, `TR_SANDSTORM`/`TR_GRAVEYARD`/`TR_BLOODMOON`/
+  `TR_STORM`/`TR_XY` pins for deterministic per-filter shots.
 
 ## Player (M2 first pass)
 
@@ -2125,3 +2205,101 @@ byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
 differs exactly inside the door column (pixel_diff 1664 px, bbox
 (1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
 geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
+
+## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
+
+- The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
+  24x18 / 25 HP / 7 damage / defense 2 (`NPC.cs:8567-8580`; was 30x24/30/12),
+  demon eye 30x32 / 60 / 18 / defense 2 / knockBackResist 0.8 (case 2; was
+  30x26/25/14). Wandering Eye (133) joins the `aiStyle 2` machine with 4
+  frames (`Main.cs:67082`) and 300/40/20; it is hardmode-gated in the night
+  spawn roll (`NPC.cs:4555-4558`), so the pre-hardmode ambient pass never
+  spawns it — the kind exists for the future M5-HARDFORCE.
+- The slime variants are the negative net ids (`Lang.cs:520-533` names,
+  `NPC.SetDefaultsFromNetId` stats): green -3, pinky -4, baby -5, black -6,
+  purple -7, red -8, yellow -9. The hitbox rides the per-variant size scale,
+  the sprite is the 32x26 frame scaled and anchored at the frame centre over
+  the hitbox centre (`Main.DrawNPC`'s `origin = frame.Size() / 2`), tinted by
+  the per-variant `NPC.color` through the premultiplied pipeline (the alpha
+  channel renders the vanilla translucency).
+- The ambient selection ports `Spawner.GetBasicSlimeToSpawn`
+  (`NPC.cs:5625-5654`): underground 1/5 yellow, else 1/2 blue / red; forest
+  surface 1/3 green (or within 200 tiles of spawn), 1/10 purple beyond 400
+  tiles, else blue; then `Spawner.SpawnNPC`'s `RollLuck(180)` swap of any blue
+  slime for Pinky (`NPC.cs:5238-5246`; the port rolls it un-lucked). Jungle
+  tile 60 (-10) and snow 147/161 stay out until those biomes exist; black and
+  baby slimes have no ambient roll in the forest branch.
+- The loot follows `ItemDropDatabase.cs:1074-1082`: standard slimes (blue
+  family) always drop 1-2 Gel, red/purple/black 2-5, green/baby/pinky none
+  (Pinky drops 25-50 Pink Gel instead, `:1072`). Gel (23) and Pink Gel (3111)
+  are registered as materials (empty `SetDefaults` cases -> `ResetStats`
+  defaults: no use timings).
+- The death check keeps the vanilla semantics: `life` is not clamped, death
+  is `life <= 0` (`NPC.checkDead`).
+- The coin drops keep the port's pre-existing denominations (the `value`
+  copper amounts are a separate M4-LOOT row).
+
+## The item drop rule engine (M4-LOOT-1)
+
+- `tr-core/src/loot.rs` ports the `ItemDropRules` machinery: the
+  `IItemDropRule` trait (+ `INestedItemDropRule` as `try_nested`), the three
+  chain attempts (`Chains.cs` OnSuccess/OnFailedRoll/OnFailedConditions),
+  `ItemDropResolver.ResolveRule`/`TryDropping`/`ResolveRuleChains`
+  (`ItemDropResolver.cs:14-62`), `ItemDropDatabase`
+  (register/register-multiple/remove-multiple), and the factories:
+  `CommonDrop`, `CommonDropWithRerolls`, `OneFromOptionsDropRule`,
+  `ItemDropWithConditionRule`, `DropBasedOnExpertMode`/`MasterMode`,
+  `DropLocalPerClientAndResetsNPCMoneyTo0` (the `npc.value = 0` side effect
+  becomes a `resets_money` flag on the [`DropRequest`]),
+  `DropOneByOne`, `DropBasedOnExtraGel`, `DropNothing`.
+- `Luck.cs`'s five rolls (`RollLuck`/`RollBadLuck`/`RollOnlyBadLuck`/
+  `RollBadLuckExtreme`/`RollOnlyBadLuckExtreme`) port verbatim — the shrink /
+  widen branches consume the stream exactly when the gate float passes.
+- The engine is RNG-generic (`DropRng` = `Next(min, max)` exclusive +
+  `NextFloat`); the app drives it from the same deterministic item stream as
+  the coin rolls. `ReportDroprates` (the bestiary rate report) is not ported —
+  M4-BEST-1 territory.
+- The slime family's loot moved from the hand-rolled `spawn_gel` rolls to a
+  real database slice (`crates/tr-app/src/loot_db.rs`): blue 1-2 gel always,
+  red/purple/black 2-5, pinky 25-50 Pink Gel + `NormalvsExpert(1309, 100, 70)`
+  (the Bladed Glove request is produced and then skipped until its item data
+  registers), green/baby nothing. The executor drops only registry-known
+  items.
+
+## Buff slots (M2-BUFF-1)
+
+`crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
+engine: the full `AddBuff` chain (`Player.cs:5263-5447`), `DelBuff`/`ClearBuff`/
+`FindBuffIndex` (`:5250-5480`), the `UpdateBuffs` timer head (`:9855-9876`) and
+the end-of-update immune purge (`:26012-26018`), hooked into the 60 Hz player
+step (tick at the top of `Player::update`, purge at the end — the C# calls
+`UpdateBuffs` at `:24535` and purges at `:26012`, so the interleave becomes
+meaningful only once per-buff effects land with M2-BUFF-3/4). The verbatim
+`Main.debuff`/`lightPet`/`vanityPet`/`meleeBuff`/`pvpBuff` tables are extracted
+from `Main.cs:8867-9316`.
+
+Deviations:
+
+- **Multiplayer branch skipped** — `AddBuff`'s `Main.netMode == 1` remote path
+  (`Player.cs:5269-5275`, msg 55 + `Main.pvpBuff`) is unreachable in the
+  single-player port; the `pvpBuff` table is kept as data for M6-NET.
+- **Difficulty multiplier is expert-only** — `AddBuff_DetermineBuffTimeToAdd`
+  samples `GameDifficultyData.DebuffTimeMultiplier` (Classic 1 → Expert 2 →
+  Master 2.5, `GameDifficultyData.cs:96-100`); the port has no difficulty modes
+  yet, so `expert_mode` applies ×2 and master waits for M6-CREATIVE/difficulty.
+  `resist_cold` and `dead_cells_potion_station` are `BuffSlots` fields defaulted
+  `false` — the rules are ported and unit-tested but have no sources yet.
+- **Timer-head effect branches deferred** — the mount refresh
+  (`buffTime = 10`, `:9881-9884`) and the per-buff effect chain (`:9875-12000`)
+  land with M2-MOUNT and M2-BUFF-3/4; the tick only decrements today.
+- **Quirks preserved verbatim**: `DelBuff`'s compaction runs to `maxBuffs - 1`
+  (deleting from a full bar leaves a hole at 42 while slot 43 keeps its buff —
+  `Player.cs:5457`); the pet-removal loops have **no** `i--` rescan while the
+  melee loop does (`:5377-5397` vs `:5347-5360`); a bar of 44 debuffs rejects
+  new buffs of any kind (the first non-debuff scan finds nothing, `:5331-5334`);
+  a debuff added to a mixed bar evicts the first *positive* buff; the immune
+  purge does not rescan after `DelBuff`. Each is covered by a unit test naming
+  the line.
+- **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
+  valid only below 401; the C# would throw on higher ids and the port panics the
+  same way (tests synthesise bars from real ids via a `safe_ids()` helper).
