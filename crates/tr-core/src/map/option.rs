@@ -658,7 +658,10 @@ pub(super) fn get_wall_type(
     base_type: &mut i32,
     base_option: &mut i32,
 ) {
-    let invisible = false; // tile.invisibleWall() — ruling 1.
+    // `tile.invisibleWall()` (`MapHelper.cs:1990`, ruling 1): the Echo bit
+    // lives in `World.extras`; the caller can pass it via `world` when the
+    // map grows Echo awareness. Unreachable gating stays as ruling 1.
+    let invisible = false;
     if tile.liquid > 32 {
         // Tile.liquidType() -> LIQUID_COLORS slot (MapHelper.cs:1996-1998).
         *base_type = color_table().liquid_position as i32 + liquid_index(tile.liquid_kind()) as i32;

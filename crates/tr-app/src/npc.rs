@@ -28,8 +28,74 @@ fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
 pub enum NpcKind {
     Slime,
     DemonEye,
+    /// `NPCID.WanderingEye` (133) — the same `aiStyle 2` machine, night
+    /// hardmode spawn (`NPC.cs:4555-4558`).
+    WanderingEye,
     Zombie,
     KingSlime,
+}
+
+/// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
+/// negative net ids sharing its `aiStyle 1` machine
+/// (`Lang.cs:520-533`, `NPC.SetDefaultsFromNetId`, `NPC.cs:7653-8000`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub enum SlimeVariant {
+    #[default]
+    Blue,
+    Green,
+    Pinky,
+    Baby,
+    Black,
+    Purple,
+    Red,
+    Yellow,
+}
+
+/// One slime variant's `SetDefaults` line (`NPC.cs:7653-8000` for the net ids,
+/// the `if (this.type == 1)` chain at `NPC.cs:8567` for blue): `life`, melee
+/// `damage`, `defense`, the `SetDefaults_ForNetId` size scale, the sprite
+/// tint `NPC.color` and the gel drop `min..=max` (0 = none;
+/// `ItemDropDatabase.cs:1074-1082`).
+#[derive(Clone, Copy)]
+pub struct SlimeStats {
+    pub life: i32,
+    pub damage: i32,
+    pub defense: i32,
+    pub scale: f32,
+    pub color: [u8; 4],
+    pub gel: (u32, u32),
+}
+
+impl SlimeVariant {
+    /// The per-variant `SetDefaults` values. Base 24x18 hitbox, `aiStyle 1`
+    /// (blue: `NPC.cs:8567-8580`).
+    pub fn stats(self) -> SlimeStats {
+        match self {
+            SlimeVariant::Blue => SlimeStats { life: 25, damage: 7, defense: 2, scale: 1.0, color: [0, 80, 255, 100], gel: (1, 2) },
+            SlimeVariant::Green => SlimeStats { life: 14, damage: 6, defense: 0, scale: 0.9, color: [0, 220, 40, 100], gel: (0, 0) },
+            SlimeVariant::Pinky => SlimeStats { life: 150, damage: 5, defense: 5, scale: 0.6, color: [250, 30, 90, 90], gel: (0, 0) },
+            SlimeVariant::Baby => SlimeStats { life: 30, damage: 13, defense: 4, scale: 0.9, color: [0, 0, 0, 50], gel: (0, 0) },
+            SlimeVariant::Black => SlimeStats { life: 45, damage: 15, defense: 4, scale: 1.05, color: [0, 0, 0, 50], gel: (2, 5) },
+            SlimeVariant::Purple => SlimeStats { life: 40, damage: 12, defense: 6, scale: 1.2, color: [200, 0, 255, 150], gel: (2, 5) },
+            SlimeVariant::Red => SlimeStats { life: 35, damage: 12, defense: 4, scale: 1.025, color: [255, 30, 0, 100], gel: (2, 5) },
+            SlimeVariant::Yellow => SlimeStats { life: 45, damage: 15, defense: 7, scale: 1.2, color: [255, 255, 0, 100], gel: (2, 5) },
+        }
+    }
+
+    /// The `Lang._negativeNpcNameCache` names (localization keys are the C#
+    /// strings; the port keeps the English base names).
+    pub fn name(self) -> &'static str {
+        match self {
+            SlimeVariant::Blue => "Blue Slime",
+            SlimeVariant::Green => "Green Slime",
+            SlimeVariant::Pinky => "Pinky",
+            SlimeVariant::Baby => "Baby Slime",
+            SlimeVariant::Black => "Black Slime",
+            SlimeVariant::Purple => "Purple Slime",
+            SlimeVariant::Red => "Red Slime",
+            SlimeVariant::Yellow => "Yellow Slime",
+        }
+    }
 }
 
 impl NpcKind {
@@ -37,8 +103,9 @@ impl NpcKind {
         match self {
             NpcKind::Slime => 0,
             NpcKind::DemonEye => 1,
-            NpcKind::Zombie => 2,
-            NpcKind::KingSlime => 3,
+            NpcKind::WanderingEye => 2,
+            NpcKind::Zombie => 3,
+            NpcKind::KingSlime => 4,
         }
     }
 
@@ -46,16 +113,19 @@ impl NpcKind {
         Some(match v {
             0 => NpcKind::Slime,
             1 => NpcKind::DemonEye,
-            2 => NpcKind::Zombie,
-            3 => NpcKind::KingSlime,
+            2 => NpcKind::WanderingEye,
+            3 => NpcKind::Zombie,
+            4 => NpcKind::KingSlime,
             _ => return None,
         })
     }
 
+    /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
+    /// and Wandering Eye 30x32 (`NPC.cs` cases 2/133), zombie 18x40.
     pub fn size(self) -> (f32, f32) {
         match self {
-            NpcKind::Slime => (30.0, 24.0),
-            NpcKind::DemonEye => (30.0, 26.0),
+            NpcKind::Slime => (24.0, 18.0),
+            NpcKind::DemonEye | NpcKind::WanderingEye => (30.0, 32.0),
             NpcKind::Zombie => (18.0, 40.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -63,8 +133,9 @@ impl NpcKind {
 
     fn max_hp(self) -> i32 {
         match self {
-            NpcKind::Slime => 30,
-            NpcKind::DemonEye => 25,
+            NpcKind::Slime => 25,          // NPC.cs:8572
+            NpcKind::DemonEye => 60,       // case 2
+            NpcKind::WanderingEye => 300,  // case 133
             NpcKind::Zombie => 45,
             NpcKind::KingSlime => 2000,
         }
@@ -72,8 +143,9 @@ impl NpcKind {
 
     fn contact_damage(self) -> i32 {
         match self {
-            NpcKind::Slime => 12,
-            NpcKind::DemonEye => 14,
+            NpcKind::Slime => 7,          // NPC.cs:8571
+            NpcKind::DemonEye => 18,      // case 2
+            NpcKind::WanderingEye => 40,  // case 133
             NpcKind::Zombie => 14,
             NpcKind::KingSlime => 40,
         }
@@ -83,6 +155,9 @@ impl NpcKind {
 #[derive(Clone, Debug)]
 pub struct Npc {
     pub kind: NpcKind,
+    /// The slime colour variant (`SlimeVariant`); only meaningful while
+    /// `kind == NpcKind::Slime`.
+    pub slime: SlimeVariant,
     pub x: f32,
     pub y: f32,
     pub vx: f32,
@@ -114,11 +189,22 @@ pub struct Npc {
 
 impl Npc {
     pub fn spawn_slime(world: &World, x_tile: i32) -> Option<Self> {
+        Self::spawn_slime_variant(world, x_tile, SlimeVariant::Blue)
+    }
+
+    /// Spawns one slime variant: the hitbox is the base 24x18 scaled by the
+    /// variant's `SetDefaults_ForNetId` size scale, at the surface.
+    pub fn spawn_slime_variant(world: &World, x_tile: i32, variant: SlimeVariant) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
             return None;
         }
-        let (w, h) = NpcKind::Slime.size();
+        let stats = variant.stats();
+        let scale = stats.scale;
+        let (w, h) = (
+            NpcKind::Slime.size().0 * scale,
+            NpcKind::Slime.size().1 * scale,
+        );
         let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
         let y = top as f32 * TILE_PX - h;
         if collides_rect(world, x, y, w, h) {
@@ -129,13 +215,17 @@ impl Npc {
         }
         let mut seed = (x_tile as u32).wrapping_mul(2_654_435_761);
         seed ^= seed >> 15;
-        Some(Self::new(
+        let mut npc = Self::new(
             NpcKind::Slime,
             x,
             y,
             if seed & 1 == 0 { 1 } else { -1 },
             0.4 + (seed % 80) as f32 * 0.01,
-        ))
+        );
+        npc.slime = variant;
+        npc.max_hp = stats.life;
+        npc.hp = stats.life;
+        Some(npc)
     }
 
     /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
@@ -191,6 +281,7 @@ impl Npc {
     fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            slime: SlimeVariant::Blue,
             x,
             y,
             vx: 0.0,
@@ -212,12 +303,24 @@ impl Npc {
     }
 
     pub fn center(&self) -> (f32, f32) {
-        let (w, h) = self.kind.size();
+        let (w, h) = self.size();
         (self.x + w * 0.5, self.y + h * 0.5)
     }
 
-    pub fn contains(&self, wx: f32, wy: f32) -> bool {
+    /// The scaled size for slime variants (the hitbox rides
+    /// `SetDefaults_ForNetId`'s size scale).
+    pub fn size(&self) -> (f32, f32) {
         let (w, h) = self.kind.size();
+        if self.kind == NpcKind::Slime {
+            let s = self.slime.stats().scale;
+            (w * s, h * s)
+        } else {
+            (w, h)
+        }
+    }
+
+    pub fn contains(&self, wx: f32, wy: f32) -> bool {
+        let (w, h) = self.size();
         wx >= self.x - 4.0 && wx <= self.x + w + 4.0 && wy >= self.y - 4.0 && wy <= self.y + h + 4.0
     }
 
@@ -227,7 +330,7 @@ impl Npc {
         }
         self.hp -= amount;
         self.hurt_cd = 0.18;
-        let (w, _) = self.kind.size();
+        let (w, _) = self.size();
         let dir = if self.x + w * 0.5 >= from_x {
             1.0
         } else {
@@ -244,7 +347,7 @@ impl Npc {
         self.anim += dt;
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),
-            NpcKind::DemonEye => self.update_eye(world, player, dt),
+            NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
@@ -312,17 +415,25 @@ impl Npc {
                     }
                 }
             }
-            // Case 2 — demon eye (`NPC.cs:73994-74057`): a plain 8-step 2-frame
-            // cycle, plus the aim: type 2 is in the first rotation branch
-            // (`NPC.cs:74019-74031`) — `rotation = atan2(vy, vx)`, `+ π` when
-            // moving left, and the sprite mirrors (`spriteDirection`) so its
-            // pupil follows the flight direction. `rotation` freezes while
-            // `velocity.X == 0` exactly like the original (neither `if` fires).
-            NpcKind::DemonEye => {
+            // Case 2 — demon eye and Wandering Eye (`NPC.cs:73994-74057`): a
+            // plain 8-step frame cycle (2 frames for the eye, 4 for the
+            // Wandering Eye, `Main.cs:67082`), plus the aim: type 2 is in the
+            // first rotation branch (`NPC.cs:74019-74031`) —
+            // `rotation = atan2(vy, vx)`, `+ 3.14f` when moving left, and the
+            // sprite mirrors (`spriteDirection`) so its pupil follows the
+            // flight direction. `rotation` freezes while `velocity.X == 0`
+            // exactly like the original (neither `if` fires).
+            NpcKind::DemonEye | NpcKind::WanderingEye => {
+                // Wandering Eye wraps over Main.npcFrameCount[133] = 4 frames
+                // (Main.cs:67082); the demon eye over its 2.
+                let frame_count = match self.kind {
+                    NpcKind::WanderingEye => 4,
+                    _ => 2,
+                };
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 {
+                    self.frame = if self.frame + 1 >= frame_count {
                         0
                     } else {
                         self.frame + 1
@@ -593,14 +704,19 @@ impl Npc {
     }
 
     fn contact(&self, player: &mut Player) {
-        let (w, h) = self.kind.size();
+        let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
             && self.y < player.y + crate::player::HEIGHT
             && self.y + h > player.y
         {
             let (cx, _) = self.center();
-            player.hurt(self.kind.contact_damage(), cx);
+            let dmg = if self.kind == NpcKind::Slime {
+                self.slime.stats().damage
+            } else {
+                self.kind.contact_damage()
+            };
+            player.hurt(dmg, cx);
         }
     }
 
@@ -617,9 +733,13 @@ impl Npc {
         h ^= match self.kind {
             NpcKind::Slime => 0,
             NpcKind::DemonEye => 1,
-            NpcKind::Zombie => 2,
-            NpcKind::KingSlime => 3,
+            NpcKind::WanderingEye => 2,
+            NpcKind::Zombie => 3,
+            NpcKind::KingSlime => 4,
         } << 5;
+        if self.kind == NpcKind::Slime {
+            h ^= (self.slime as u32) << 9;
+        }
         h
     }
 
@@ -750,8 +870,76 @@ mod tests {
             assert!(s.hurt(10, 0.0));
             s.hurt_cd = 0.0;
         }
-        assert_eq!(s.hp, 0);
+        // Vanilla keeps `life` as the raw remainder and dies on
+        // `life <= 0` (`NPC.checkDead`); the blue slime now carries the
+        // vanilla 25 HP
+        // (NPC.cs:8572), so three 10-damage hits leave -5.
+        assert!(s.hp <= 0);
     }
+    #[test]
+    fn slime_variants_match_the_setdefaults_lines() {
+        // NPC.cs:8567-8580 (blue) and the SetDefaultsFromNetId cases
+        // (-3 green, -4 pinky, -5 baby, -6 black, -7 purple, -8 red,
+        // -9 yellow).
+        let cases: [(SlimeVariant, i32, i32, i32, f32, [u8; 4]); 8] = [
+            (SlimeVariant::Blue, 25, 7, 2, 1.0, [0, 80, 255, 100]),
+            (SlimeVariant::Green, 14, 6, 0, 0.9, [0, 220, 40, 100]),
+            (SlimeVariant::Pinky, 150, 5, 5, 0.6, [250, 30, 90, 90]),
+            (SlimeVariant::Baby, 30, 13, 4, 0.9, [0, 0, 0, 50]),
+            (SlimeVariant::Black, 45, 15, 4, 1.05, [0, 0, 0, 50]),
+            (SlimeVariant::Purple, 40, 12, 6, 1.2, [200, 0, 255, 150]),
+            (SlimeVariant::Red, 35, 12, 4, 1.025, [255, 30, 0, 100]),
+            (SlimeVariant::Yellow, 45, 15, 7, 1.2, [255, 255, 0, 100]),
+        ];
+        for (v, life, damage, defense, scale, color) in cases {
+            let st = v.stats();
+            assert_eq!(
+                (st.life, st.damage, st.defense, st.scale, st.color),
+                (life, damage, defense, scale, color),
+                "variant {:?}",
+                v
+            );
+        }
+        // ItemDropDatabase.cs:1074-1082: the standard slimes drop 1-2 gel,
+        // the red/purple/black family 2-5, green/baby/pinky none.
+        assert_eq!(SlimeVariant::Blue.stats().gel, (1, 2));
+        assert_eq!(SlimeVariant::Red.stats().gel, (2, 5));
+        assert_eq!(SlimeVariant::Green.stats().gel, (0, 0));
+        assert_eq!(SlimeVariant::Pinky.stats().gel, (0, 0));
+    }
+
+    #[test]
+    fn slime_hitboxes_scale_with_the_variant() {
+        // SetDefaults_ForNetId multiplies the base 24x18 by the variant scale.
+        let mut p = Npc::spawn_slime(&ground(), 20).unwrap();
+        p.slime = SlimeVariant::Purple;
+        let (w, h) = p.size();
+        assert!((w - 24.0 * 1.2).abs() < 1e-4 && (h - 18.0 * 1.2).abs() < 1e-4);
+        p.slime = SlimeVariant::Pinky;
+        let (w, h) = p.size();
+        assert!((w - 24.0 * 0.6).abs() < 1e-4 && (h - 18.0 * 0.6).abs() < 1e-4);
+    }
+
+    #[test]
+    fn wandering_eye_rides_the_eye_machine_with_four_frames() {
+        // aiStyle 2 (`NPC.cs` case 133) with Main.npcFrameCount[133] = 4
+        // (Main.cs:67082); stats: 300 life, 40 damage, 30x32.
+        let mut e = bare(NpcKind::WanderingEye);
+        assert_eq!(e.max_hp, 300);
+        for _ in 0..9 {
+            e.find_frame();
+        }
+        assert_eq!(e.frame, 1, "8 steps advance one of the 4 frames");
+        // Each further batch of 8 steps advances one frame: 2, 3, then the
+        // wrap 4 -> 0 (the strip never shows a fifth frame).
+        for expect in [2u32, 3, 0] {
+            for _ in 0..8 {
+                e.find_frame();
+            }
+            assert_eq!(e.frame, expect);
+        }
+    }
+
     fn bare(kind: NpcKind) -> Npc {
         Npc::new(kind, 100.0, 100.0, 1, 0.0)
     }

@@ -10,7 +10,7 @@
 
 use tr_core::{TILE_PX, World};
 
-use crate::npc::{Npc, NpcKind};
+use crate::npc::{Npc, NpcKind, SlimeVariant};
 
 /// `NPC.defaultSpawnRate` (set in `NPC.cs:95187`).
 pub const DEFAULT_SPAWN_RATE: i32 = 600;
@@ -340,8 +340,9 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     let surface = (y as f64) <= ctx.world.world_surface;
     let kind = if surface {
         if ctx.day_time {
-            // `GetBasicSlimeToSpawn(surface: true, ...)`: -3 / 1 / -7 all become
-            // the app's blue slime; jungle/snow tile variants are not modelled.
+            // `GetBasicSlimeToSpawn(surface: true, tileType, dist)` — the
+            // forest default (jungle tile 60 -> -10 and snow 147/161 stay out
+            // until those biomes exist).
             NpcKind::Slime
         } else if rng.next(6) == 0 {
             // NPC.cs:4549-4572: `Next(6) == 0` (or full-moon `Next(2) == 0`,
@@ -358,11 +359,41 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         // Underground default: `GetBasicSlimeToSpawn(surface: false)`.
         NpcKind::Slime
     };
+    if kind == NpcKind::Slime {
+        // `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) picks the
+        // variant, then `Spawner.SpawnNPC`'s blue-slime roll can still swap
+        // Pinky in (`NPC.cs:5238-5246`: `RollLuck(180) == 0`).
+        let dist = (x - ctx.world.spawn_x).abs();
+        let variant = if surface {
+            if rng.next(3) == 0 || dist < 200 {
+                SlimeVariant::Green
+            } else if rng.next(10) == 0 && dist > 400 {
+                SlimeVariant::Purple
+            } else {
+                SlimeVariant::Blue
+            }
+        } else if rng.next(5) == 0 {
+            SlimeVariant::Yellow
+        } else if rng.next(2) == 0 {
+            SlimeVariant::Blue
+        } else {
+            SlimeVariant::Red
+        };
+        let variant = if variant == SlimeVariant::Blue && rng.next(180) == 0 {
+            SlimeVariant::Pinky
+        } else {
+            variant
+        };
+        return Npc::spawn_slime_variant(ctx.world, x, variant);
+    }
     match kind {
-        NpcKind::Slime => Npc::spawn_slime(ctx.world, x),
         NpcKind::DemonEye => Npc::spawn_eye(ctx.world, x),
+        // `NPCID.WanderingEye` (133) spawns only on the night hardmode roll
+        // (`NPC.cs:4555-4558`); the port is pre-hardmode, so it stays out of
+        // the ambient pass (it rides the eye machine when debug-spawned).
+        NpcKind::WanderingEye => Npc::spawn_eye(ctx.world, x),
         NpcKind::Zombie => Npc::spawn_zombie(ctx.world, x),
-        NpcKind::KingSlime => None, // bosses never spawn from the ambient pass
+        NpcKind::Slime | NpcKind::KingSlime => None, // handled above / boss only
     }
 }
 

@@ -187,7 +187,7 @@ fn read_header(path: &Path) -> (Option<String>, i32, bool) {
     let Some(version) = r.u32() else {
         return (None, 1, false);
     };
-    if version == 0 || version > 2 {
+    if version == 0 || version > 3 {
         return (None, 1, false);
     }
     // seed (`save.rs:135`) — not needed for the listing.

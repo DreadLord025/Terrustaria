@@ -9,6 +9,15 @@ pub const CHUNK: i32 = 64;
 #[derive(Clone, Debug)]
 pub struct World {
     pub name: String,
+    /// Sparse per-tile extras for the rare paint/coating states that do not fit
+    /// the packed 12-byte `Tile` (`WorldGen.paintWall`/`paintCoatWall`,
+    /// `WorldGen.cs:44189-44253`): wall paint (5 bits),
+    /// `invisibleBlock`/`invisibleWall`/`fullbrightWall` (one bit each) —
+    /// `C# Tile.bTileHeader&0x1F` (wall color) and the `bTileHeader3`/
+    /// `sTileHeader` coating bits. Keyed by `index(x, y)`; absent = zero.
+    /// Tile-side paint lives in `Tile.meta`, tile fullbright in `Tile.flags`
+    /// (`FLAG_FULLBRIGHT`).
+    pub extras: std::collections::HashMap<u32, u8>,
     pub width: i32,
     pub height: i32,
     /// Row-major tile storage: `tiles[y * width + x]`.
@@ -75,6 +84,7 @@ impl World {
             chunk_has: Vec::new(),
             seed: 0,
             revision: 0,
+            extras: std::collections::HashMap::new(),
         }
     }
 
@@ -171,6 +181,73 @@ impl World {
     #[inline]
     pub fn index(&self, x: i32, y: i32) -> usize {
         (y as usize) * (self.width as usize) + (x as usize)
+    }
+
+    /// Raw extras byte for a tile index (0 when absent).
+    #[inline]
+    pub fn extras_at(&self, idx: usize) -> u8 {
+        self.extras.get(&(idx as u32)).copied().unwrap_or(0)
+    }
+
+    #[inline]
+    pub fn set_extras_at(&mut self, idx: usize, byte: u8) {
+        if byte == 0 {
+            self.extras.remove(&(idx as u32));
+        } else {
+            self.extras.insert(idx as u32, byte);
+        }
+    }
+
+    /// `Tile.wallColor()` (`Tile.cs:335-343`, `bTileHeader & 0x1F`).
+    #[inline]
+    pub fn wall_paint(&self, x: i32, y: i32) -> u8 {
+        self.extras_at(self.index(x, y)) & 0x1f
+    }
+
+    #[inline]
+    pub fn set_wall_paint(&mut self, x: i32, y: i32, paint: u8) {
+        let idx = self.index(x, y);
+        let b = self.extras_at(idx);
+        self.set_extras_at(idx, (b & !0x1f) | (paint & 0x1f));
+    }
+
+    /// `Tile.invisibleBlock()` (`Tile.cs:528-531`, Echo coating).
+    #[inline]
+    pub fn invisible_block(&self, x: i32, y: i32) -> bool {
+        self.extras_at(self.index(x, y)) & 0x20 != 0
+    }
+
+    #[inline]
+    pub fn set_invisible_block(&mut self, x: i32, y: i32, on: bool) {
+        let idx = self.index(x, y);
+        let b = self.extras_at(idx);
+        self.set_extras_at(idx, if on { b | 0x20 } else { b & !0x20 });
+    }
+
+    /// `Tile.invisibleWall()` (`Tile.cs:545-548`, Echo coating).
+    #[inline]
+    pub fn invisible_wall(&self, x: i32, y: i32) -> bool {
+        self.extras_at(self.index(x, y)) & 0x40 != 0
+    }
+
+    #[inline]
+    pub fn set_invisible_wall(&mut self, x: i32, y: i32, on: bool) {
+        let idx = self.index(x, y);
+        let b = self.extras_at(idx);
+        self.set_extras_at(idx, if on { b | 0x40 } else { b & !0x40 });
+    }
+
+    /// `Tile.fullbrightWall()` (`Tile.cs:718-721`, Glow coating).
+    #[inline]
+    pub fn fullbright_wall(&self, x: i32, y: i32) -> bool {
+        self.extras_at(self.index(x, y)) & 0x80 != 0
+    }
+
+    #[inline]
+    pub fn set_fullbright_wall(&mut self, x: i32, y: i32, on: bool) {
+        let idx = self.index(x, y);
+        let b = self.extras_at(idx);
+        self.set_extras_at(idx, if on { b | 0x80 } else { b & !0x80 });
     }
 
     #[inline]

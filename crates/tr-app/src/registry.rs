@@ -36,6 +36,12 @@ pub struct ItemDef {
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
 
 static ITEMS: &[ItemDef] = &[
+    // Terraria.ID.ItemID.Gel (23): a crafting material — `SetDefaults1`'s
+    // case 23 sets nothing, so the `ResetStats` defaults apply (useStyle 0,
+    // no use timings; `Item.cs:49020-49022`).
+    ItemDef { id: 23, name: "Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false },
+    // Terraria.ID.ItemID.PinkGel (3111, Pinky's drop).
+    ItemDef { id: 3111, name: "Pink Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false },
     // Terraria.ID.ItemID.DirtBlock
     ItemDef {
         id: 2,

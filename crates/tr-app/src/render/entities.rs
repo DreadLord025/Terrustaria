@@ -68,6 +68,7 @@ pub(crate) use super::player_layers::{flip_uv, player_cell_uv, player_frame_uv};
 pub(crate) struct NpcAssets {
     pub(crate) slime: Option<BgTex>,
     pub(crate) eye: Option<BgTex>,
+    pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
@@ -76,6 +77,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: sky_tex(atlas, "NPC_1", None),
         eye: sky_tex(atlas, "NPC_2", None),
+        wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
@@ -445,7 +447,6 @@ pub(crate) fn draw_npcs(
     screen: Vec2,
 ) -> u32 {
     let white = r.white_uv();
-    let blue = [0.52, 0.72, 1.0];
     let mut quads = 0;
     for n in npcs {
         let (cx, cy) = n.center();
@@ -453,21 +454,33 @@ pub(crate) fn draw_npcs(
         let ty = (cy / TILE_PX) as i32;
         let l = light.get(tx, ty);
         let c = style.shade(l, tx, ty, anim_time);
-        let (w, _) = n.kind.size();
+        let (w, _) = n.size();
         let (tex, frame_h, size, pos) = match n.kind {
             NpcKind::Slime => (
                 assets.slime.as_ref(),
                 26.0,
-                [32.0, 26.0],
-                // The 26 px frame has 2 transparent rows below the feet; align the
-                // art bottom (row 23) with the hitbox bottom.
-                [n.x - 1.0, n.y + 1.0],
+                // The 32x26 frame scales with the variant
+                // (`SetDefaults_ForNetId`'s size scale) and is anchored at the
+                // frame centre over the hitbox centre (`Main.DrawNPC`'s
+                // `origin = frame.Size() / 2`).
+                [32.0 * n.slime.stats().scale, 26.0 * n.slime.stats().scale],
+                [cx - 16.0 * n.slime.stats().scale, cy - 13.0 * n.slime.stats().scale],
             ),
             NpcKind::DemonEye => (
                 assets.eye.as_ref(),
                 24.0,
                 [38.0, 24.0],
                 [n.x - 4.0, n.y + 2.0],
+            ),
+            NpcKind::WanderingEye => (
+                assets.wandering_eye.as_ref(),
+                // `Main.npcFrameCount[133] = 4` (Main.cs:67082).
+                assets.wandering_eye.as_ref().map_or(24.0, |t| t.h / 4.0),
+                assets
+                    .wandering_eye
+                    .as_ref()
+                    .map_or([38.0, 24.0], |t| [38.0, t.h / 4.0]),
+                [cx - 19.0, cy - 12.0],
             ),
             NpcKind::Zombie => (
                 assets.zombie.as_ref(),
@@ -485,8 +498,17 @@ pub(crate) fn draw_npcs(
         let Some(tex) = tex else {
             continue;
         };
+        // `Main.DrawNPC` multiplies the light by `npc.color`; the slime
+        // variants carry their `SetDefaults` colours (alpha included — the
+        // premultiplied pipeline renders the translucency directly).
         let base = if n.kind == NpcKind::Slime {
-            [c[0] * blue[0], c[1] * blue[1], c[2] * blue[2], 1.0]
+            let k = n.slime.stats().color;
+            [
+                c[0] * k[0] as f32 / 255.0,
+                c[1] * k[1] as f32 / 255.0,
+                c[2] * k[2] as f32 / 255.0,
+                k[3] as f32 / 255.0,
+            ]
         } else {
             [c[0], c[1], c[2], 1.0]
         };
@@ -496,7 +518,8 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        if n.kind == NpcKind::DemonEye && n.rotation != 0.0 {
+        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0
+            {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight
