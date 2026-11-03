@@ -992,8 +992,18 @@ Back-targets (from P6 review).
 `persist.rs` · 🟡 (header+tiles of .wld; .trwld full).
 
 **Tasks:** M6-SAVE-1 remaining `.wld` sections (chests/signs/NPCs/TEs/TownManager/
-Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`), M6-SAVE-2 `.plr` reader
-(replaces save_list stand-ins).
+Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`). ~~M6-SAVE-2 `.plr` reader~~
+✅ done 2026-11-04: `player_file.rs` reads AND writes real vanilla `.plr` files —
+AES-128-CBC (`"h3y_gUyZ"` UTF-16-LE key = IV, `PaddingMode.None`,
+`Player.cs:796-798`), `FileMetadata` magic/type/revision/favorites, the
+release-279 section walk (name → difficulty → playTime → hair/dye → hide →
+skinVariant → stats with the 500/400/200 caps → unlock bools → tax/deaths →
+7 colors → armor 20× → dye 10× → inventory 58×), writer mirrors `SavePlayer`
+including `GetPlayerPathFromName`'s filename sanitization (`Main.cs:4820`) and
+the ctor starter items (`Player.cs:54356-54360`); `list_players` scans the real
+`Terrustaria/Players/*.plr` (the `GetFileData` null-skip kept), `PlayerEntry`
+carries the erase path, a same-named session stand-in yields to its saved file;
+4 round-trip tests + the scan test.
 
 ## 30. Secret seeds & special worlds
 
@@ -1316,7 +1326,7 @@ section in brackets before starting a row.
 | M6-NET-1..5 | `M6-NET-1-handshake` … | protocol parts [27] |
 | M6-SETTINGS | `M6-SETTINGS` | settings parity |
 | M6-SAVE-1 | `M6-SAVE-1-wld-sections` | remaining .wld sections [29] |
-| M6-SAVE-2 | `M6-SAVE-2-plr-reader` | .plr reader [29] |
+| ✅ M6-SAVE-2 | `M6-SAVE-2-plr-reader` | vanilla `.plr` reader+writer: AES-128-CBC (`Player.cs:796-798`), `FileMetadata`, the release-279 section walk with the stat caps, `SavePlayer` mirror (sanitized name, starter items), `list_players` scans real files + the session stand-in dedup + the erase path [29] | done 2026-11-04: 4 round-trip tests (crypto+sections, magic/type, caps, key) + the scan test |
 | M6-CHAT-1 | `M6-CHAT-1-chat` | chat system [24] |
 | M6-EMOTE-1 | `M6-EMOTE-1-emotes` | emote bubbles [24] |
 | M6-ACH-1 | `M6-ACH-1-achievements` | achievements framework [24] |

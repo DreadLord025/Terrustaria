@@ -2,18 +2,19 @@
 //! Character`/`FinishCreatingWorld`), the implicit session character as a
 //! card entry and the erase handlers. (A6: extracted from `main.rs`.)
 
-use crate::app::flow::FrontScreen;
 use crate::app::App;
+use crate::app::flow::FrontScreen;
 use crate::ui;
 
 impl App {
     /// `FinishCreatingCharacter` (`UICharacterCreation.cs:1704-1711`) minus
     /// the out-of-scope pieces: `TryAutoAssigningHair` (the cloth-style
     /// default, `:631-637`), then the stat/inventory setup is the fresh
-    /// player the port already runs, `PlayerFileData.CreateAndSave` has no
-    /// `.plr` writer (the draft records into `App.session_draft` — the
-    /// documented deviation), and `Main.LoadPlayers` + `menuMode = 1` reopen
-    /// the character select through the real opener.
+    /// player the port already runs, and `Main.LoadPlayers` + `menuMode = 1`
+    /// reopen the character select through the real opener. The draft also
+    /// saves through `PlayerFileData.CreateAndSave` (`PlayerFileData.cs:50-63`)
+    /// as a real `.plr`: the file carries the fresh-player defaults (life 100,
+    /// mana 20) and the ctor's starter items (`Player.cs:54356-54360`).
     pub(crate) fn finish_creating_character(&mut self) {
         let Some(FrontScreen::CharCreation(state)) = self.front.as_ref() else {
             return;
@@ -29,6 +30,7 @@ impl App {
         }
         draft.name = draft.name.trim().to_string();
         self.player_name = draft.name.clone();
+        save_created_character(&draft);
         self.session_draft = Some(draft);
         self.front_backup = None;
         self.front = None;
@@ -60,8 +62,9 @@ impl App {
     /// defaults — difficulty 0 (`Player.cs:1654`), life 100 (`:1924`), mana 20
     /// (`:56075`) — named by the port's seeded `player_name`, overridden by
     /// the recorded creation draft once one is created
-    /// (`FinishCreatingCharacter`'s port). No `.plr` exists, so it is not
-    /// deletable (`Main.ErasePlayer` needs a file) and always playable.
+    /// (`FinishCreatingCharacter`'s port). No `.plr` backs it directly, so it
+    /// is not deletable (`Main.ErasePlayer` needs a file) and always
+    /// playable; a same-named saved file replaces it in the list.
     pub(crate) fn session_entry(&self) -> ui::save_list::PlayerEntry {
         ui::save_list::PlayerEntry {
             name: self
@@ -74,15 +77,18 @@ impl App {
             is_favorite: false,
             playable: true,
             deletable: false,
+            path: None,
         }
     }
 
-    /// `Main.ErasePlayer` (`Main.cs:4772-4791`) for the port: no `.plr`
-    /// exists (plan §9.4), so `erase_player(None)` drops the entry in memory
-    /// only — the reopen's re-list rebuilds from the (unchanged) disk state,
-    /// which is what the vanilla call's file deletion achieves.
+    /// `Main.ErasePlayer` (`Main.cs:4772-4791`): a disk-backed card deletes
+    /// its `.plr` (the `.bak` and the folder side ride along in
+    /// `save_list::erase_player`); a disk-less entry (the session stand-in or
+    /// a fake) drops in memory only — the reopen's re-list rebuilds from the
+    /// (unchanged) disk state.
     pub(crate) fn erase_player_entry(&mut self, index: usize) {
-        let _ = ui::save_list::erase_player(None);
+        let path = self.players.get(index).and_then(|e| e.path.clone());
+        let _ = ui::save_list::erase_player(path.as_deref());
         if index < self.players.len() {
             self.players.remove(index);
         }
@@ -98,4 +104,46 @@ impl App {
             }
         }
     }
+}
+
+/// `PlayerFileData.CreateAndSave` (`PlayerFileData.cs:50-63`) — the finished
+/// draft saves under `Main.PlayerPath` via `Main.GetPlayerPathFromName`
+/// (`Main.cs:4820`). The session inventory stays as the port runs it; the
+/// file records the vanilla fresh defaults.
+fn save_created_character(draft: &ui::char_creation::NewPlayerDraft) {
+    let mut inventory = [(0i32, 0i32, 0u8); 58];
+    inventory[0] = (3507, 1, 0); // Copper Shortsword (`Player.cs:54356`)
+    inventory[1] = (3509, 1, 0); // Copper Axe (`:54358`)
+    inventory[2] = (3506, 1, 0); // Copper Pickaxe (`:54360`)
+    let file = crate::player_file::PlayerFileWrite {
+        name: draft.name.clone(),
+        difficulty: draft.difficulty,
+        skin_variant: draft.skin_variant as u8,
+        hair: draft.hair,
+        life: 100,     // `Player.cs:1924`
+        life_max: 100, // `:1924`
+        mana: 20,      // `Player.cs:56075`
+        mana_max: 20,  // `:56075`
+        hair_color: rgb(draft.hair_color),
+        skin_color: rgb(draft.skin_color),
+        eye_color: rgb(draft.eye_color),
+        shirt_color: rgb(draft.shirt_color),
+        undershirt_color: rgb(draft.undershirt_color),
+        pants_color: rgb(draft.pants_color),
+        shoe_color: rgb(draft.shoe_color),
+        inventory,
+    };
+    match tr_core::save::default_player_path(&draft.name) {
+        Some(path) => {
+            if let Err(e) = crate::player_file::write_player_file(&path, &file) {
+                log::warn!("character save failed: {e}");
+            }
+        }
+        None => log::warn!("no players dir; '{}' not saved", draft.name),
+    }
+}
+
+/// `Color.R/G/B` — the writer stores the three bytes, the draft carries RGBA.
+fn rgb(c: [u8; 4]) -> [u8; 3] {
+    [c[0], c[1], c[2]]
 }

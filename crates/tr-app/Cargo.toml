@@ -13,6 +13,7 @@ tr-content = { path = "../tr-content" }
 tr-core = { path = "../tr-core" }
 tr-render = { path = "../tr-render" }
 
+aes.workspace = true
 anyhow.workspace = true
 bytemuck.workspace = true
 env_logger.workspace = true
