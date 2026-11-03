@@ -856,9 +856,9 @@ impl App {
     // overlay can be screenshotted deterministically.
     if let Some((x, y)) = std::env::var("TR_SPOUT").ok().and_then(|v| parse_xy(&v)) {
         for j in 1..=14 {
-            edit::break_tile(&mut world, x, y + j);
+            edit::kill_tile(&mut world, x, y + j, true);
         }
-        edit::break_tile(&mut world, x, y);
+        edit::kill_tile(&mut world, x, y, true);
         if edit::place_tile(&mut world, x, y, 1) {
             if let Some(t) = world.tile_mut(x, y) {
                 t.flags |= tr_core::tile::FLAG_HALF_BRICK;

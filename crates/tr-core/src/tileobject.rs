@@ -1441,6 +1441,56 @@ pub fn place_with_def(
     true
 }
 
+/// One multi-tile object instance located in the world: its registry def and
+/// the top-left cell of its bounding box.
+#[derive(Clone, Copy, Debug)]
+pub struct ObjectTiles {
+    pub def: &'static TileObjectDef,
+    /// Top-left of the object in world tiles.
+    pub origin: Point16,
+}
+
+impl ObjectTiles {
+    /// Every cell of the object, row-major origin-relative. May yield
+    /// out-of-world coordinates for an object anchored at the border —
+    /// callers bounds-check.
+    pub fn cells(&self) -> impl Iterator<Item = (i32, i32)> {
+        let (ox, oy) = (self.origin.x, self.origin.y);
+        let (w, h) = (self.def.width, self.def.height);
+        (0..h).flat_map(move |j| (0..w).map(move |i| (ox + i, oy + j)))
+    }
+}
+
+/// Anchor lookup for the kill cascade: resolves the object instance a cell
+/// belongs to. The origin is reconstructed from the anchor cell's frames —
+/// the same derivation the `WorldGen.Check*` routines perform
+/// (`WorldGen.cs:57929-57937` chest, `:86439` closed door, `:86350-86368`
+/// open door, `:43343-43349` chair, `:46981-46988` bench, `:49199-49209`
+/// table) — generalized through the registry: for every def
+/// `coordinate_full_width()/18 % width == 0` and
+/// `coordinate_full_height()/18 % height == 0`, so
+/// `dx = frameX/18 % width`, `dy = frameY/18 % height` reproduce each C# loop
+/// for the wooden slice.
+pub fn object_tiles_at(world: &World, x: i32, y: i32) -> Option<ObjectTiles> {
+    let t = world.tile(x, y)?;
+    if !t.active() {
+        return None;
+    }
+    let def = def_for_tile(t.kind)?;
+    // The C# per-type loops read `frameX / 18` and `frameY / 18` with plain
+    // truncating integer division (positive frames in practice); a corrupt
+    // frame degrades exactly like the C# arithmetic does. Each def satisfies
+    // `full_width/18 % width == 0` and `full_height/18 % height == 0`
+    // (18/18=1, 20/18=1, 36/18=2, 38/18=2, 40/18=2, 54/18=3), so one formula
+    // reproduces all six C# loops for the wooden slice.
+    let dx = (t.frame_x as i32 / 18) % def.width;
+    let dy = (t.frame_y as i32 / 18) % def.height;
+    Some(ObjectTiles {
+        def,
+        origin: Point16::new(x - dx, y - dy),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)

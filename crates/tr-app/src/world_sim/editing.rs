@@ -294,19 +294,45 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 }
 
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
-    let Some(kind) = edit::break_tile(&mut app.world, tx, ty) else {
+    let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
-    let Some(id) = registry::tile_drop(kind) else {
+    let drops = break_drop_events(&kill, tx, ty);
+    if drops.is_empty() {
         app.request_edit(tx, ty, 0, 0);
         return;
-    };
-    spawn_item_drop(app, id, tx, ty);
-    app.audio
-        .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+    }
+    for (id, x, y) in drops {
+        spawn_item_drop(app, id, x, y);
+        app.audio
+            .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
+    }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
     app.world_key = None;
+}
+
+/// The item drops of one `kill_tile` result, resolved through
+/// `registry::tile_drop` (`KillTile_DropItems` → `KillTile_GetItemDrops` for
+/// the hit cell at `(tx, ty)`, the `Check*` `Item.NewItem` records for
+/// destroyed objects — `WorldGen.cs:63860-63864`,
+/// :86508/:49424/:43494/:47121/:57972). Registry kinds drop nothing per-cell
+/// (`KillTile_GetItemDrops`'s empty case group, `WorldGen.cs:65748-66091`):
+/// their item comes from the cascade record only. Free of `App` so the
+/// mapping is unit-testable without the app harness.
+fn break_drop_events(kill: &edit::TileKill, tx: i32, ty: i32) -> Vec<(u16, i32, i32)> {
+    let mut events = Vec::new();
+    if tr_core::tileobject::def_for_tile(kill.kind).is_none() {
+        if let Some(id) = registry::tile_drop(kill.kind) {
+            events.push((id, tx, ty));
+        }
+    }
+    for drop in &kill.object_drops {
+        if let Some(id) = registry::tile_drop(drop.tile_kind) {
+            events.push((id, drop.x, drop.y));
+        }
+    }
+    events
 }
 
 pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
@@ -438,7 +464,10 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16) {
     match kind {
         0 => {
-            edit::break_tile(world, x, y);
+            // Vanilla suppresses item drops on the replication side
+            // (`Main.netMode != 1` gate, `WorldGen.cs:63860`); the cascade
+            // itself must run so every client converges on the same world.
+            edit::kill_tile(world, x, y, true);
         }
         1 => {
             // Replicated placements take the same route as the local player.
@@ -592,5 +621,52 @@ mod tests {
             &mut w3, &mut held, 10, 19, 15, 0, -1
         ));
         assert_eq!(w3.tile(10, 18).unwrap().frame_x, 0);
+    }
+
+    // ---- Phase 3 (DW-3.2): the break drop events ---------------------------
+
+    #[test]
+    fn test_DW_3_2_break_drop_events_legacy_tile_drops_at_the_hit_cell() {
+        // Stone (tile 1) has no registry def: the per-cell drop table
+        // (`KillTile_GetItemDrops`) maps it to the stone item at the hit
+        // cell (`WorldGen.cs:63860-63864`).
+        let kill = edit::TileKill {
+            kind: 1,
+            object_drops: vec![],
+        };
+        assert_eq!(break_drop_events(&kill, 7, 12), vec![(3, 7, 12)]);
+    }
+
+    #[test]
+    fn test_DW_3_2_break_drop_events_object_cascades_resolve_items() {
+        // Registry kinds drop nothing per-cell (`KillTile_GetItemDrops`'s
+        // empty case group, `WorldGen.cs:65748-66091`): the item comes from
+        // the cascade record only, mapped through `tile_drop`'s style-0
+        // slice. The bench record carries the C# drop position
+        // (origin x, trigger y); the open-door record maps to the
+        // closed-door item (`GetDoorItem(0)` = 25).
+        let kill = edit::TileKill {
+            kind: 18,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 18,
+                x: 10,
+                y: 19,
+            }],
+        };
+        assert_eq!(break_drop_events(&kill, 11, 19), vec![(36, 10, 19)]);
+
+        let kill = edit::TileKill {
+            kind: 1,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 11,
+                x: 9,
+                y: 18,
+            }],
+        };
+        assert_eq!(
+            break_drop_events(&kill, 9, 17),
+            vec![(3, 9, 17), (25, 9, 18)],
+            "legacy hit drop plus the chained open-door object drop"
+        );
     }
 }

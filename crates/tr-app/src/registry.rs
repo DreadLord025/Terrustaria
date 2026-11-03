@@ -537,9 +537,16 @@ pub fn max_stack(id: u16) -> u32 {
 }
 
 /// Item dropped by breaking `tile` (`WorldGen.KillTile` drops dirt for grass).
+/// Multi-tile objects drop through the kill cascade's object record; the
+/// per-kind mapping below is the style-0 slice of the vanilla drop tables
+/// (`GetDoorItem`/`GetItemDrop_Tables`/`GetItemDrop_Chair`/
+/// `GetItemDrop_Workbenches`/`GetItemDrop_Chests`) — for 10/14/15/18/21 it
+/// equals `by_tile` (the placing item), and the open door (11, which no item
+/// places) drops the closed-door item (`GetDoorItem(0)` = 25).
 pub fn tile_drop(tile: u16) -> Option<u16> {
     match tile {
         2 => Some(2),
+        11 => Some(25),
         _ => by_tile(tile),
     }
 }
@@ -688,5 +695,25 @@ mod tests {
         assert_eq!(by_tile(15), Some(34));
         assert_eq!(by_tile(21), Some(48));
         assert_eq!(place_style(9999), 0, "unknown items default to style 0");
+    }
+
+    #[test]
+    fn test_DW_3_2_tile_drop_wooden_set() {
+        // The kill-cascade drop mapping — the style-0 slice of the vanilla
+        // drop tables: `GetDoorItem(0)` = 25 (`WorldGen.cs:69200-69204`),
+        // `GetItemDrop_Tables(0)` = 32 (:42194), `GetItemDrop_Chair(0)` = 34
+        // (:42635), `GetItemDrop_Workbenches(0)` = 36 (:42447),
+        // `GetItemDrop_Chests(0, false)` = 48 (:41677-41681). The open door
+        // (11) has no placing item and needs the explicit row — it drops the
+        // closed-door item (`CheckDoorOpen` → `DropDoorItem` :86415).
+        assert_eq!(tile_drop(10), Some(25));
+        assert_eq!(tile_drop(11), Some(25));
+        assert_eq!(tile_drop(14), Some(32));
+        assert_eq!(tile_drop(15), Some(34));
+        assert_eq!(tile_drop(18), Some(36));
+        assert_eq!(tile_drop(21), Some(48));
+        // Non-object kinds keep their existing rows.
+        assert_eq!(tile_drop(2), Some(2), "grass drops dirt");
+        assert_eq!(tile_drop(1), Some(3), "stone drops via its item");
     }
 }
