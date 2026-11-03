@@ -11,6 +11,7 @@
 use tr_core::tiledata as td;
 use tr_core::{World, TILE_PX};
 
+use crate::buffs::BuffSlots;
 use crate::collision;
 
 pub const WIDTH: f32 = 20.0;
@@ -83,6 +84,9 @@ pub struct Player {
     /// is also 20 in `Player.Initialize`, `Player.cs:56075`).
     pub mana: i32,
     pub mana_max: i32,
+    /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
+    /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
+    pub buffs: BuffSlots,
     pub hurt_cd: f32,
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
@@ -128,6 +132,7 @@ impl Player {
             max_hp: 100,
             mana: 20,
             mana_max: 20,
+            buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
@@ -221,6 +226,9 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
+        // early in the tick. Nothing grants buffs yet, so this only decrements.
+        self.buffs.update_buffs_tick();
         self.prev_x = self.x;
         self.prev_y = self.y;
         self.prev_gfx_off_y = self.gfx_off_y;
@@ -310,6 +318,10 @@ impl Player {
         if self.y > world.height as f32 * TILE_PX + 300.0 {
             self.respawn();
         }
+
+        // The immune purge runs near the end of the original update, after movement
+        // and effects (`Player.cs:26012-26018`).
+        self.buffs.purge_immune_buffs();
 
         self.update_frames();
     }

@@ -22,7 +22,6 @@ here are transcribed from those audits — re-verify against the source when por
   starting. In-flight rows name the live branch.
 
 ## Legend
-<<<<<<< HEAD
 
 - ✅ done · 🟡 partial (missing items listed) · ⬜ not started · 🔄 in flight (branch exists).
 - **Scale** = measured size in the decompile (lines / ID counts).
@@ -482,7 +481,7 @@ M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
 ## 11. Crafting, prefixes, dyes, reforge
 
 **C#** `Recipe.cs` (16 784), `GameContent/Prefixes/*`, `GameContent/Dyes/*` ·
-**Rust** `ui/crafting.rs` (chrome), `registry.rs` · 🟡 chrome only · 🔄 M3-CRAFT-recipes.
+**Rust** `ui/crafting.rs` (chrome), `registry.rs`, `craft.rs` · ✅ subset-first done 2026-11-03: 7-recipe table + can_craft/try_craft/adjacent_tiles + panel interaction (contexts **41/42/43**, `ItemSlot.cs:126-130` — the catalog's 4/33 was stale); full SetupRecipes generator is a follow-up.
 
 - Recipe structure (`Recipe.cs:58-112`): 15-ingredient cap, `requiredTile`, groups
   (`RecipeGroup`, fake IDs ≥ `FakeItemIdOffset`), flags needHoney/Water/Lava/
@@ -509,7 +508,7 @@ M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
   quest rarity −11 is preserved by the clamp; decraftItemId = lowest-value group member
   (`RecipeGroup.cs:53-56`).
 
-**Tasks:** M3-CRAFT-recipes 🔄 (recipe data + contexts 4/33), M3-CRAFT-2 recipe groups &
+**Tasks:** ✅ M3-CRAFT-recipes (subset-first, see above; contexts 41/42/43 — the old 4/33 numbering was stale), M3-CRAFT-2 recipe groups &
 environment flags, M3-CRAFT-3 alchemy table, M3-PREFIX (roll engine + tables), M3-REFORGE-1
 goblin reforge UI + cost, M3-DYES-1 dye slot plumbing (shader-pass architecture).
 
@@ -1179,7 +1178,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves — determinism verified 2026-11-02: the earlier leaf-gore divergence (84f08e3-era binaries) does not reproduce on 3470372 (6+ SHA256-equal pairs across wind on/off, frames 120/240; per-frame leaf/wind logs identical); standing rule — every screenshot verification is a SHA256 double-run |
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
-| 🔄 M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
+| ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
 | M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
 | M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
@@ -1210,7 +1209,7 @@ section in brackets before starting a row.
 | M2-PHYS-6 | `M2-PHYS-6-grapple-movement` | GrappleMovement + per-hook overrides [7] |
 | M2-PHYS-7 | `M2-PHYS-7-minecart` | rails/boost/ramp/sparks [7][22] |
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
-| M2-BUFF-1 | `M2-BUFF-1-buff-slots` | 44-slot engine + add/evict rules [8] |
+| ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | M2-BUFF-2 | `M2-BUFF-2-regen` | life/mana regen engines [8] |
 | M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
@@ -1262,7 +1261,7 @@ section in brackets before starting a row.
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
 | ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
-| M4-LOOT-3 | `M4-LOOT-3-money` | coin roll chain [16] |
+| ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ separate find: the waterfall sparkle pass breaks pure-world screenshot determinism (`TR_NO_WATERFALL=1` restores SHA256 equality; bisected 2026-11-03 on f07f96d1+loot, desert-with-water pair) — follow-up `M1.5-LIQUID-2-det-fix` |
 | M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline [9] |
 | M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
@@ -1360,6 +1359,3 @@ section in brackets before starting a row.
 - Exact network compatibility *until* M6-NET — single-player first.
 - RGB peripheral lighting (`GameContent/RGB/*`) — platform-specific, excluded like
   `Social/*`.
-=======
->>>>>>> origin/main
->>>>>>> origin/main
