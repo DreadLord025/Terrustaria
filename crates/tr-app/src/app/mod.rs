@@ -568,7 +568,14 @@ impl App {
         match front {
             FrontScreen::CharSelect => {
                 let fakes = tr_fake_count("TR_FAKE_CHARS");
-                self.players = ui::save_list::list_players(None, Some(self.session_entry()), fakes);
+                // The listing root is `Main.PlayerPath` (`Main.cs:67065-67075`)
+                // — the port's `Terrustaria/Players` (`save.rs`'s mirror).
+                let dir = save::default_players_dir();
+                self.players = ui::save_list::list_players(
+                    dir.as_deref(),
+                    Some(self.session_entry()),
+                    fakes,
+                );
                 ui::char_select::sort_players(&mut self.players);
             }
             FrontScreen::WorldSelect => {

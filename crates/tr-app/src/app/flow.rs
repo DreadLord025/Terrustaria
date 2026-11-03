@@ -1259,6 +1259,7 @@ pub(crate) mod front_flow_tests {
             is_favorite: false,
             playable: true,
             deletable,
+            path: None,
         }
     }
 

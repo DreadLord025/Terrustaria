@@ -16,6 +16,7 @@ mod net;
 mod npc;
 mod persist;
 mod player;
+mod player_file;
 mod projectile;
 mod rain;
 mod regen;
