@@ -54,6 +54,11 @@ pub(crate) struct DrawScratch {
     /// The waterfall quads walked this frame (`WaterfallManager.draw`), consumed
     /// by the tile pass below.
     pub(crate) waterfall_quads: Vec<tr_core::waterfall::WaterfallDraw>,
+    /// The liquid rects of the last world-pass build (world pixels) — the
+    /// WaterDistortion mask input. It is refreshed exactly when the G6-cached
+    /// world range is rebuilt, so it always matches the liquid sprites the
+    /// cached range still holds.
+    pub(crate) water_rects: Vec<[f32; 4]>,
 }
 
 /// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
@@ -248,6 +253,8 @@ pub(crate) fn draw_tiles(
     // `LiquidRenderer.InternalPrepareDraw` runs once per frame; both the opaque
     // background pass and the translucent foreground pass consume this record.
     let liquid_draws = tr_core::liquid_draw::build(world, x0, y0, x1, y1);
+    // M1.4-BG-18 phase 4: the same records feed the WaterDistortion mask.
+    scratch.water_rects = crate::render::liquids::water_mask_rects(&liquid_draws);
     if std::env::var_os("TR_DUMP_LIQUID").is_some() {
         let cam_x = camera.x as i32 / 16;
         let cam_y = camera.y as i32 / 16;

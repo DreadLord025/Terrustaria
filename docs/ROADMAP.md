@@ -22,6 +22,7 @@ here are transcribed from those audits — re-verify against the source when por
   starting. In-flight rows name the live branch.
 
 ## Legend
+<<<<<<< HEAD
 
 - ✅ done · 🟡 partial (missing items listed) · ⬜ not started · 🔄 in flight (branch exists).
 - **Scale** = measured size in the decompile (lines / ID counts).
@@ -63,7 +64,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Player | 🟡 | physics + survival + draw layers + item timings; no buffs/combat stats/dash/wings/hooks/mounts |
 | Items | 🟡 | hotbar/mining/placing/drops + per-item use timings; no ammo/mana/equipment/recipes mechanics |
 | Combat | 🟡 | contact damage, melee, hurt/respawn, King Slime; no defense/crit/damage-variance/banner rules |
-| NPCs | 🟡 | slime/demon-eye/zombie + King Slime; ~700 types, spawn algorithm, town system missing |
+| NPCs | 🟡 | slime colour family (8 variants + vanilla stats/tints/gel drops) + demon eye/Wandering Eye/zombie + King Slime; ~700 types, town system missing |
 | Projectiles | ⬜ | shuriken first pass only; no engine (immunity/penetrate/minions) |
 | Wiring / tile entities / shimmer / fishing / pylons | ⬜ | — |
 | UI framework & screens | 🟡 | front-end char/world screens done; HUD partial; inventory UX partial; chest/creative/bestiary/emotes missing |
@@ -1174,7 +1175,7 @@ section in brackets before starting a row.
 | ✅ M1.4-BG-13 | `M1.4-BG-13-grass-transition` | grass framing [2] |
 | ✅ TILE-DRAW-1 | `TILE-DRAW-1-drawdata-finish` | full static `GetTileDrawData` switch (`TileDrawing.cs:4540-6032`, ~60 cases) + Campfires/564 epilogues + palm/cactus/dye/cog corrections; animator/glow/wind remain TILE-DRAW-2/3 [2] |
 | ✅ TILE-DRAW-2 | `TILE-DRAW-2-torch-flames` | torch flames |
-| ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves |
+| ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves — determinism verified 2026-11-02: the earlier leaf-gore divergence (84f08e3-era binaries) does not reproduce on 3470372 (6+ SHA256-equal pairs across wind on/off, frames 120/240; per-frame leaf/wind logs identical); standing rule — every screenshot verification is a SHA256 double-run |
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | 🔄 M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
@@ -1251,14 +1252,14 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| 🔄 M4-NPC-1 | `M4-NPC-1-slimes-eyes` (slime variants + Wandering Eye landed; more per-family branches to come) | AI families [14] |
+| 🔄 M4-NPC-1 | `M4-NPC-1-slimes-eyes` ✅ (the slime colour family -3..-9 + vanilla stats/tints/gel drops, Wandering Eye 133, `GetBasicSlimeToSpawn` + the Pinky roll; done 2026-11-02) — fighters/cave/etc. to come | AI families [14] |
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
 | M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain + RNG streams [15] |
 | M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | spawn tables + special rules [15] |
 | M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
-| M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine [16] |
+| ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | M4-LOOT-3 | `M4-LOOT-3-money` | coin roll chain [16] |
 | M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline [9] |
@@ -1358,3 +1359,6 @@ section in brackets before starting a row.
 - Exact network compatibility *until* M6-NET — single-player first.
 - RGB peripheral lighting (`GameContent/RGB/*`) — platform-specific, excluded like
   `Social/*`.
+=======
+>>>>>>> origin/main
+>>>>>>> origin/main

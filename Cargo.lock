@@ -2556,6 +2556,7 @@ dependencies = [
  "bytemuck",
  "font8x8",
  "log",
+ "pollster",
  "wgpu",
  "winit",
 ]

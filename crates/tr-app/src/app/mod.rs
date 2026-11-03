@@ -7,6 +7,7 @@
 //! `main.rs`.)
 
 pub(crate) mod clicks;
+pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
 mod r#loop;
@@ -79,6 +80,26 @@ pub(crate) struct App {
     pub(crate) window: Option<Arc<Window>>,
     pub(crate) gpu: Option<Gpu>,
     pub(crate) renderer: Option<SpriteRenderer>,
+    /// M1.4-BG-18 phase 2 harness (`TR_POST=1`): the post-pass pipeline routing
+    /// the scene through an offscreen target + filter pass. Phase 3's
+    /// `ApplyVisuals` driver decides per-frame whether a filter runs.
+    pub(crate) post: Option<tr_render::PostPipeline>,
+    /// Noise image (`Images/Misc/noise`) uploaded for the post pass bindings.
+    pub(crate) noise_tex: Option<wgpu::Texture>,
+    /// M1.4-BG-18 phase 4: the water coverage mask target (created with `post`;
+    /// its texture only exists while WaterDistortion is wanted and water is in
+    /// view).
+    pub(crate) water_mask: Option<tr_render::WaterMask>,
+    /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
+    /// fades and the filter driver reads its intensities.
+    pub(crate) scene_state: tr_core::scene::SceneState,
+    /// `Sandstorm` — the event state machine; the storm machine ticks in
+    /// `update_scene` and the storm filters read its severity.
+    pub(crate) sandstorm: tr_core::scene::Sandstorm,
+    /// M1.4-BG-18 phase 3: the `ApplyVisuals` driver (`app::filters`) — filter
+    /// board, storm shader state and the winner uniform the post branch
+    /// applies.
+    pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
     pub(crate) lookups: assets::Lookups,
@@ -948,6 +969,12 @@ impl App {
         window: None,
         gpu: None,
         renderer: None,
+        post: None,
+        noise_tex: None,
+        water_mask: None,
+        scene_state: tr_core::scene::SceneState::new(),
+        sandstorm: tr_core::scene::Sandstorm::new(world_seed),
+        filter_driver: crate::app::filters::FilterDriver::new(),
         world,
         atlas: Some(atlas),
         lookups,

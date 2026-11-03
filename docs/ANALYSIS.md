@@ -916,6 +916,36 @@ crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
 on the press (`Main.cs:42250` hover family); the rotation source for item use
 stays with M2-ANIM.
 
+## Screen filters (M1.4-BG-18)
+
+`M1.4-BG-18` ports the `ScreenShaderData` post-process subsystem: a
+`PostPipeline` in tr-render (`post.rs`/`post.wgsl`) renders the sprite pass
+into an offscreen sRGB target and applies the active filter as a fullscreen
+pass — one WGSL module mirroring `ScreenShader.fx`'s named techniques
+(`PASS_TABLE` extracted from `ScreenShader.xnb` by the new tr-content Effect
+reader; 22 passes ⊇ the initializer's table). The driver
+(`app/filters.rs::FilterDriver::apply_visuals`) ports `SceneState.ApplyVisuals`
+(`SceneState.cs:64-253`) over the Phase-1 sensors (`scene.rs`: SceneMetrics
+window counts per `SceneMetrics.cs:373/595-616` with the
+`GraveyardTileCount = _tileCounts[85] − _tileCounts[27]/2` rule, the Sandstorm
+state machine from `Events/Sandstorm.cs:32-138`, SceneState fades/
+MoveTowards `:472-491`). Deviations:
+
+- WGSL filter bodies are documented approximations of the compiled HLSL
+  (`ScreenShaderData.cs` semantics per pass; no bytecode translation).
+- One winner at a time by `EffectPriority` then activation, visibility =
+  fade × shader opacity > 0 (`Filter.IsVisible`/`CombinedOpacity`).
+- Storm fg/bg pair: the dominant-opacity side runs (post cannot draw behind
+  the scene); both WGSL passes exist.
+- The filter wash covers the HUD (our single sprite pass renders UI into the
+  same target; vanilla draws the HUD after the filter).
+- Aurora is a SkyManager visual (`ScreenEffectInitializer.cs:65`), not a
+  filter — not ported. Towers/monoliths/MoonLord are M4 content.
+- Items without extracted sprites draw a grey placeholder in the crafting
+  grid (M3-CRAFT, same atlas limitation).
+- Harness: `TR_POST=1`, `TR_SANDSTORM`/`TR_GRAVEYARD`/`TR_BLOODMOON`/
+  `TR_STORM`/`TR_XY` pins for deterministic per-filter shots.
+
 ## Player (M2 first pass)
 
 ### Composite arm rotation (M2-DRAW-2)
@@ -2106,3 +2136,63 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   data fix spotted during the review; the remaining pre-existing registry
   mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
   item-data catalog work.
+
+## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
+
+- The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
+  24x18 / 25 HP / 7 damage / defense 2 (`NPC.cs:8567-8580`; was 30x24/30/12),
+  demon eye 30x32 / 60 / 18 / defense 2 / knockBackResist 0.8 (case 2; was
+  30x26/25/14). Wandering Eye (133) joins the `aiStyle 2` machine with 4
+  frames (`Main.cs:67082`) and 300/40/20; it is hardmode-gated in the night
+  spawn roll (`NPC.cs:4555-4558`), so the pre-hardmode ambient pass never
+  spawns it — the kind exists for the future M5-HARDFORCE.
+- The slime variants are the negative net ids (`Lang.cs:520-533` names,
+  `NPC.SetDefaultsFromNetId` stats): green -3, pinky -4, baby -5, black -6,
+  purple -7, red -8, yellow -9. The hitbox rides the per-variant size scale,
+  the sprite is the 32x26 frame scaled and anchored at the frame centre over
+  the hitbox centre (`Main.DrawNPC`'s `origin = frame.Size() / 2`), tinted by
+  the per-variant `NPC.color` through the premultiplied pipeline (the alpha
+  channel renders the vanilla translucency).
+- The ambient selection ports `Spawner.GetBasicSlimeToSpawn`
+  (`NPC.cs:5625-5654`): underground 1/5 yellow, else 1/2 blue / red; forest
+  surface 1/3 green (or within 200 tiles of spawn), 1/10 purple beyond 400
+  tiles, else blue; then `Spawner.SpawnNPC`'s `RollLuck(180)` swap of any blue
+  slime for Pinky (`NPC.cs:5238-5246`; the port rolls it un-lucked). Jungle
+  tile 60 (-10) and snow 147/161 stay out until those biomes exist; black and
+  baby slimes have no ambient roll in the forest branch.
+- The loot follows `ItemDropDatabase.cs:1074-1082`: standard slimes (blue
+  family) always drop 1-2 Gel, red/purple/black 2-5, green/baby/pinky none
+  (Pinky drops 25-50 Pink Gel instead, `:1072`). Gel (23) and Pink Gel (3111)
+  are registered as materials (empty `SetDefaults` cases -> `ResetStats`
+  defaults: no use timings).
+- The death check keeps the vanilla semantics: `life` is not clamped, death
+  is `life <= 0` (`NPC.checkDead`).
+- The coin drops keep the port's pre-existing denominations (the `value`
+  copper amounts are a separate M4-LOOT row).
+
+## The item drop rule engine (M4-LOOT-1)
+
+- `tr-core/src/loot.rs` ports the `ItemDropRules` machinery: the
+  `IItemDropRule` trait (+ `INestedItemDropRule` as `try_nested`), the three
+  chain attempts (`Chains.cs` OnSuccess/OnFailedRoll/OnFailedConditions),
+  `ItemDropResolver.ResolveRule`/`TryDropping`/`ResolveRuleChains`
+  (`ItemDropResolver.cs:14-62`), `ItemDropDatabase`
+  (register/register-multiple/remove-multiple), and the factories:
+  `CommonDrop`, `CommonDropWithRerolls`, `OneFromOptionsDropRule`,
+  `ItemDropWithConditionRule`, `DropBasedOnExpertMode`/`MasterMode`,
+  `DropLocalPerClientAndResetsNPCMoneyTo0` (the `npc.value = 0` side effect
+  becomes a `resets_money` flag on the [`DropRequest`]),
+  `DropOneByOne`, `DropBasedOnExtraGel`, `DropNothing`.
+- `Luck.cs`'s five rolls (`RollLuck`/`RollBadLuck`/`RollOnlyBadLuck`/
+  `RollBadLuckExtreme`/`RollOnlyBadLuckExtreme`) port verbatim — the shrink /
+  widen branches consume the stream exactly when the gate float passes.
+- The engine is RNG-generic (`DropRng` = `Next(min, max)` exclusive +
+  `NextFloat`); the app drives it from the same deterministic item stream as
+  the coin rolls. `ReportDroprates` (the bestiary rate report) is not ported —
+  M4-BEST-1 territory.
+- The slime family's loot moved from the hand-rolled `spawn_gel` rolls to a
+  real database slice (`crates/tr-app/src/loot_db.rs`): blue 1-2 gel always,
+  red/purple/black 2-5, pinky 25-50 Pink Gel + `NormalvsExpert(1309, 100, 70)`
+  (the Bladed Glove request is produced and then skipped until its item data
+  registers), green/baby nothing. The executor drops only registry-known
+  items.

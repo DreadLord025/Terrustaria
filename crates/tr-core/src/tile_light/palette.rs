@@ -77,7 +77,11 @@ impl FastRandom {
         loop {
             let num = self.next_bits(31);
             let num2 = num % range;
-            if num - num2 + (range - 1) >= 0 {
+            // C#'s unchecked arithmetic: the sum wraps past `int.MaxValue` to
+            // negative exactly for the rejected draws, so the `>= 0` check
+            // must wrap too (FastRandom.cs:80) — otherwise large ranges
+            // (e.g. `Sandstorm.UpdateTime`'s `Next(64800)`) panic in debug.
+            if num.wrapping_sub(num2).wrapping_add(range - 1) >= 0 {
                 return num2 + min;
             }
         }

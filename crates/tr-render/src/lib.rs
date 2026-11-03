@@ -2,8 +2,18 @@
 
 pub mod atlas;
 pub mod gpu;
+pub mod post;
 pub mod sprite;
+pub mod water_mask;
+
+#[cfg(test)]
+mod test_gpu;
 
 pub use atlas::{Atlas, AtlasImage, SheetLayout, SheetRect};
 pub use gpu::Gpu;
+pub use post::{
+    pass_index, FilterImages, FilterPass, FilterParams, PassId, PostPipeline, MAX_CHAIN,
+    PASS_TABLE,
+};
 pub use sprite::{Globals, SpriteInstance, SpriteRenderer};
+pub use water_mask::{MaskRect, WaterMask};
