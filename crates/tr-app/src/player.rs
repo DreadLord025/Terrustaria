@@ -21,10 +21,6 @@ pub const HEIGHT: f32 = 42.0;
 
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 10.0;
-const MAX_RUN: f32 = 3.0;
-const GROUND_ACCEL: f32 = 0.2;
-const AIR_ACCEL: f32 = 0.1;
-const GROUND_FRICTION: f32 = 0.2;
 /// `Player.jumpSpeed` / `Player.jumpHeight`: holding the jump key keeps the
 /// upward velocity at `JUMP_SPEED` for `JUMP_HEIGHT` ticks, so tap and hold jumps
 /// reach different heights.
@@ -160,6 +156,33 @@ pub struct Player {
     has_wings: bool,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
+    /// `Player.maxRunSpeed` / `runAcceleration` / `runSlowdown` /
+    /// `accRunSpeed` (`Player.cs:24364-24371`): the per-tick horizontal
+    /// defaults the `HorizontalMovement` branches and the floor modifiers ride.
+    max_run_speed: f32,
+    run_acceleration: f32,
+    run_slowdown: f32,
+    acc_run_speed: f32,
+    /// `Player.moveSpeed` / `strongestMoveSpeedDebuff` (`Player.cs:2464,2462`):
+    /// 1.0 until accessories/debuffs land (M3-EQUIP-3, M2-BUFF-4).
+    move_speed: f32,
+    strongest_move_speed_debuff: f32,
+    /// `Player.iceSkate` / `desertBoots` (`Player.cs:1088,2256`): Ice Skates /
+    /// Dunerider Boots (M3-EQUIP-3 — no accessory system yet).
+    ice_skate: bool,
+    desert_boots: bool,
+    /// The `FloorVisuals` flags (`Player.cs:23708-23743`), sampled after the
+    /// tick's movement — one tick stale relative to the movement block,
+    /// exactly like the original's call order (`:26500` vs `:28271`).
+    sticky: bool,
+    slippy: bool,
+    slippy2: bool,
+    powerrun: bool,
+    running_on_sand: bool,
+    /// The liquid displacement fraction `Player.WetCollision` integrates free
+    /// axes with (`Player.cs:23436-23451`): water/lava 0.5, honey 0.25
+    /// (`Player.cs:28168-28195`), dry 1.0.
+    liquid_move_speed: f32,
     pub in_lava: bool,
     /// `Player.gfxOffY`: visual offset that hides the instant lift of `StepUp` /
     /// `StepDown`; eases back to zero so steps and slopes look smooth.
@@ -221,6 +244,20 @@ impl Player {
             no_fall_dmg: false,
             has_wings: false,
             last_stoned: false,
+            max_run_speed: 3.0,
+            run_acceleration: 0.08,
+            run_slowdown: 0.2,
+            acc_run_speed: 3.0,
+            move_speed: 1.0,
+            strongest_move_speed_debuff: 1.0,
+            ice_skate: false,
+            desert_boots: false,
+            sticky: false,
+            slippy: false,
+            slippy2: false,
+            powerrun: false,
+            running_on_sand: false,
+            liquid_move_speed: 1.0,
             in_lava: false,
             gfx_off_y: 0.0,
             prev_gfx_off_y: 0.0,
@@ -453,20 +490,58 @@ impl Player {
         // condition (`Player.cs:25379`). The old pre-movement `vy <= 0` reset
         // measured falls from every upward apex — the vanilla code never does.
 
-        let dir = (input.right as i32 - input.left as i32) as f32;
-        let accel = if self.on_ground {
-            GROUND_ACCEL
-        } else {
-            AIR_ACCEL
-        };
-        if dir != 0.0 {
-            self.vx += dir * accel;
-            self.facing = dir as i32;
-        } else if self.on_ground {
-            let f = GROUND_FRICTION.min(self.vx.abs());
-            self.vx -= self.vx.signum() * f;
+        // `Player.cs:24364-24371`: the per-tick movement defaults;
+        // `moveSpeed` multiplies acceleration and the primary gate while
+        // `accRunSpeed` takes only the debuff (`Player.cs:26004-26010`).
+        self.max_run_speed = 3.0;
+        self.run_acceleration = 0.08;
+        self.run_slowdown = 0.2;
+        self.acc_run_speed = self.max_run_speed;
+        self.move_speed = 1.0;
+        self.strongest_move_speed_debuff = 1.0;
+        self.move_speed *= self.strongest_move_speed_debuff;
+        self.run_acceleration *= self.move_speed;
+        self.max_run_speed *= self.move_speed;
+        self.acc_run_speed *= self.strongest_move_speed_debuff;
+        // `Player.cs:26522-26579`: the floor-tile modifiers, one else-if chain.
+        // The flags come from the previous tick's `FloorVisuals` sample — one
+        // tick stale, like the original's call order. The empress-brooch /
+        // Magiluminescence / shadow-armor boosts land with M3-EQUIP-3.
+        if self.sticky {
+            self.max_run_speed *= 0.25;
+            self.run_acceleration *= 0.25;
+            self.run_slowdown *= 2.0;
+            self.vx = self.vx.clamp(-self.max_run_speed, self.max_run_speed);
+        } else if self.powerrun {
+            self.max_run_speed *= 3.5;
+            self.run_slowdown *= 2.0;
+        } else if self.running_on_sand && self.desert_boots {
+            let n = 1.75;
+            self.max_run_speed *= n;
+            self.acc_run_speed *= n;
+            self.run_acceleration *= n;
+            self.run_slowdown *= n;
+        } else if self.slippy2 {
+            self.run_acceleration *= 0.6;
+            self.run_slowdown = 0.0;
+            if self.ice_skate {
+                self.run_acceleration *= 3.5;
+                self.max_run_speed *= 1.25;
+            }
+        } else if self.slippy {
+            self.run_acceleration *= 0.7;
+            if self.ice_skate {
+                self.run_acceleration *= 3.5;
+                self.max_run_speed *= 1.25;
+            } else {
+                self.run_slowdown *= 0.1;
+            }
         }
-        self.vx = self.vx.clamp(-MAX_RUN, MAX_RUN);
+        let dir = (input.right as i32 - input.left as i32) as f32;
+        if dir != 0.0 {
+            self.facing = dir as i32;
+        }
+        self.horizontal_movement(dir);
 
         let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
         // `Player.cs:27008-27017`: in a liquid the gravity is `gravity / 3`
@@ -575,6 +650,12 @@ impl Player {
             self.fall_start = (self.y / TILE_PX) as i32;
         }
 
+        // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
+        // the movement block reads the flags next tick (one tick stale).
+        if self.vy == 0.0 {
+            self.floor_visuals(world);
+        }
+
         self.update_survival();
 
         if self.x < 0.0 {
@@ -650,6 +731,91 @@ impl Player {
         };
     }
 
+    /// `Player.HorizontalMovement` (`Player.cs:19772-20088`): the primary
+    /// acceleration gates on `maxRunSpeed`; between `maxRunSpeed` and
+    /// `accRunSpeed` (the boot top speeds) acceleration continues at 0.2x —
+    /// ground-only here, the wings/flying-mount terms land with PHYS-5/M2-
+    /// MOUNT-1, and `dashDelay >= 0` always holds until M2-PHYS-4. No input
+    /// decays by `runSlowdown` on the ground and half of it in the air. There
+    /// is no hard clamp — the decay bounds the speed (knockback rides out).
+    fn horizontal_movement(&mut self, dir: f32) {
+        if dir < 0.0 {
+            if self.vx > -self.max_run_speed {
+                if self.vx > self.run_slowdown {
+                    self.vx -= self.run_slowdown;
+                }
+                self.vx -= self.run_acceleration;
+            } else if self.vx > -self.acc_run_speed && self.vy == 0.0 {
+                if self.vx > self.run_slowdown {
+                    self.vx -= self.run_slowdown;
+                }
+                self.vx -= self.run_acceleration * 0.2;
+            }
+        } else if dir > 0.0 {
+            if self.vx < self.max_run_speed {
+                if self.vx < -self.run_slowdown {
+                    self.vx += self.run_slowdown;
+                }
+                self.vx += self.run_acceleration;
+            } else if self.vx < self.acc_run_speed && self.vy == 0.0 {
+                if self.vx < -self.run_slowdown {
+                    self.vx += self.run_slowdown;
+                }
+                self.vx += self.run_acceleration * 0.2;
+            }
+        } else if self.vy == 0.0 {
+            if self.vx > self.run_slowdown {
+                self.vx -= self.run_slowdown;
+            } else if self.vx < -self.run_slowdown {
+                self.vx += self.run_slowdown;
+            } else {
+                self.vx = 0.0;
+            }
+        } else if self.vx > self.run_slowdown * 0.5 {
+            self.vx -= self.run_slowdown * 0.5;
+        } else if self.vx < -self.run_slowdown * 0.5 {
+            self.vx += self.run_slowdown * 0.5;
+        } else {
+            self.vx = 0.0;
+        }
+    }
+
+    /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
+    /// (`:23755-23783`): the tile row at the feet, center column first, then
+    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
+    /// the slope dust carve-out stay with the particle tasks.
+    fn floor_visuals(&mut self, world: &World) {
+        let x = ((self.x + WIDTH * 0.5) / TILE_PX) as i32;
+        let y = ((self.y + HEIGHT) / TILE_PX) as i32;
+        let mut kind = None;
+        for tx in [x, x - 1, x + 1] {
+            if let Some(t) = world.tile(tx, y) {
+                if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
+                    kind = Some(t.kind);
+                    break;
+                }
+            }
+        }
+        let Some(kind) = kind else {
+            self.sticky = false;
+            self.slippy = false;
+            self.slippy2 = false;
+            self.powerrun = false;
+            self.running_on_sand = false;
+            return;
+        };
+        // `Player.cs:23727-23731`: cobweb 229, the IceSkateSlippery set
+        // (`TileID.cs:481`), FrozenSlimeBlock 197, Asphalt 198, and the sand
+        // conversions (`TileID.cs:92-94`).
+        self.sticky = kind == 229;
+        self.slippy = tr_core::tiledata::SET_ICE_SKATE_SLIPPERY.has(kind);
+        self.slippy2 = kind == 197;
+        self.powerrun = kind == 198;
+        self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
+            || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
+            || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+    }
+
     fn update_survival(&mut self) {
         if self.in_water {
             self.breath_cd += 1;
@@ -704,16 +870,12 @@ impl Player {
 
         let mut pos = [self.x, self.y];
         let mut vel = [self.vx, self.vy];
-        // `WetCollision`'s movement speed (`Player.cs:28180-28192` +
-        // :23436-23449): in a liquid the position advances by
-        // `velocity * movementSpeed` per axis while the velocity itself keeps
-        // integrating — the exit speed is preserved.
-        let step_scale = self.liquid_step;
-        vel[0] *= step_scale;
-        vel[1] *= step_scale;
         // `Player.cs` runs the step helpers on the pre-collision velocity (which
-        // still carries this tick's gravity), then resolves the AABB.
-        if vel[1] == gravity * self.liquid_step {
+        // still carries this tick's gravity), then resolves the AABB. The wet
+        // path never steps — `WetCollision` goes straight to `TileCollision`
+        // (`Player.cs:23443`), the step helpers are `DryCollision` internals.
+        let dry = self.liquid_step == 1.0;
+        if dry && vel[1] == gravity {
             collision::step_down(
                 world,
                 &mut pos,
@@ -724,7 +886,7 @@ impl Player {
                 &mut self.gfx_off_y,
             );
         }
-        if vel[1] >= gravity && !down {
+        if dry && vel[1] >= gravity && !down {
             collision::step_up(
                 world,
                 &mut pos,
@@ -740,9 +902,16 @@ impl Player {
         if tc.up {
             self.jump = 0;
         }
+        // `Player.WetCollision` (`Player.cs:23436-23451`): the collision sees
+        // the unscaled velocity; the free axes then integrate at the liquid
+        // fraction (`liquid_step` — water/lava 0.5, honey 0.25, shimmer 0.375)
+        // while an axis the collision overrode keeps its full velocity, so
+        // momentum survives the water.
+        let pre = vel;
         vel = tc.vel;
-        pos[0] += vel[0];
-        pos[1] += vel[1];
+        let ms = self.liquid_step;
+        pos[0] += if vel[0] != pre[0] { vel[0] } else { vel[0] * ms };
+        pos[1] += if vel[1] != pre[1] { vel[1] } else { vel[1] * ms };
         if down {
             self.stair_fall = true;
         }
@@ -1015,6 +1184,207 @@ mod tests {
             }
         }
         (hp0 - p.hp, (p.y / TILE_PX) as i32)
+    }
+
+    /// A `ground_world` whose surface top row is `kind` (ice 161, cobweb 229,
+    /// asphalt 198 — all solid in `TILE_SOLID`).
+    fn floor_world(kind: u16) -> World {
+        let mut w = ground_world();
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i].kind = kind;
+        }
+        w
+    }
+
+    /// Walks right for `ticks` with the input held, returning the final vx.
+    fn walk(w: &World, ticks: u32) -> f32 {
+        let mut p = Player::spawn(w);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        for _ in 0..ticks {
+            p.update(w, input);
+        }
+        p.vx
+    }
+
+    /// `Player.cs:26560-26570`: plain ice multiplies `runSlowdown` by 0.1 when
+    /// nobody skates — releasing the key, the player slides ten times further
+    /// than on dirt.
+    #[test]
+    fn ice_slides_without_skates() {
+        let ice = floor_world(161);
+        let mut p = Player::spawn(&ice);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        for _ in 0..60 {
+            p.update(&ice, input);
+        }
+        let vx0 = p.vx;
+        for _ in 0..30 {
+            p.update(&ice, PlayerInput::default());
+        }
+        let on_ice = p.vx;
+        let mut q = Player::spawn(&ground_world());
+        q.vx = vx0;
+        for _ in 0..30 {
+            q.update(&ground_world(), PlayerInput::default());
+        }
+        let on_dirt = q.vx;
+        assert!(vx0 > 2.5, "should have accelerated, vx={vx0}");
+        assert!(on_ice > 1.5, "ice keeps sliding: {on_ice}");
+        assert!(
+            on_dirt < 0.05,
+            "dirt friction stops the player: {on_dirt}"
+        );
+    }
+
+    /// `Player.cs:26562-26565`: with `iceSkate` the ice multiplies
+    /// `runAcceleration` by 3.5 and `maxRunSpeed` by 1.25 — the top speed on
+    /// ice exceeds the dirt one (3.0).
+    #[test]
+    fn ice_skates_raise_the_top_speed() {
+        let ice = floor_world(161);
+        let mut p = Player::spawn(&ice);
+        p.ice_skate = true;
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        for _ in 0..120 {
+            p.update(&ice, input);
+        }
+        assert!(
+            p.vx > 3.7 && p.vx < 4.0,
+            "skate top speed ≈ 3.75, vx={}",
+            p.vx
+        );
+        let dirt_top = walk(&ground_world(), 120);
+        assert!(
+            dirt_top > 2.9 && dirt_top < 3.2,
+            "dirt top speed = 3, vx={dirt_top}"
+        );
+    }
+
+    /// `Player.cs:26522-26534`: the cobweb multiplies speed 0.25x, slowdown
+    /// 2x, and hard-clamps the current velocity to the reduced max.
+    #[test]
+    fn cobweb_slow_and_clamps() {
+        let web = floor_world(229);
+        let mut p = Player::spawn(&web);
+        for _ in 0..300 {
+            p.update(&web, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        // Standing on the web, the flags are live: an entry speed at
+        // knockback strength clamps to the reduced max on the next tick.
+        p.vx = 4.5;
+        p.update(&web, PlayerInput::default());
+        assert!(p.vx < 1.0, "web clamps and drags: vx={}", p.vx);
+    }
+
+    /// `Player.cs:23436-23451`: in water the free axes integrate at 0.5, in
+    /// honey at 0.25 — momentum (vx) is untouched, the stride halves.
+    #[test]
+    fn water_halves_the_stride() {
+        let mut w = ground_world();
+        for y in 58..60 {
+            for x in 0..64 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 200;
+            }
+        }
+        let mut p = Player::spawn(&w);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        for _ in 0..90 {
+            p.update(&w, input);
+        }
+        // Both runners are settled into their gait; measure the stride over
+        // the next 30 ticks only.
+        let x0 = p.x;
+        let mut q = Player::spawn(&ground_world());
+        for _ in 0..90 {
+            q.update(&ground_world(), input);
+        }
+        let q0 = q.x;
+        for _ in 0..30 {
+            p.update(&w, input);
+            q.update(&ground_world(), input);
+        }
+        let ratio = (p.x - x0) / (q.x - q0);
+        assert!(
+            (0.4..0.65).contains(&ratio),
+            "wet stride ≈ half the dry one: {ratio}"
+        );
+        // Momentum survives: the velocity is not scaled, only the stride.
+        assert!(p.vx > 2.0, "vx preserved in water: {}", p.vx);
+    }
+
+    /// `Player.cs:20059-20087`: no input decays by `runSlowdown` on the ground
+    /// and half of it in the air (0.2 vs 0.1 per tick).
+    #[test]
+    fn air_friction_is_half_the_ground_friction() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vx = 2.0;
+        p.on_ground = false;
+        p.vy = -3.0; // airborne
+        p.update(&w, PlayerInput::default());
+        let air = 2.0 - p.vx;
+        let mut q = Player::spawn(&w);
+        q.vx = 2.0;
+        q.on_ground = true;
+        q.vy = 0.0;
+        q.update(&w, PlayerInput::default());
+        let ground = 2.0 - q.vx;
+        assert!(
+            (air - ground * 0.5).abs() < 1e-4,
+            "air {air} vs ground {ground}"
+        );
+    }
+
+    /// The port used to hard-clamp vx to ±3 every tick — the vanilla has no
+    /// clamp: a knockback-speed vx (4.5) decays by friction instead.
+    #[test]
+    fn overspeed_rides_out() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.vx = 4.5;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.vx > 4.0 && p.vx < 4.5,
+            "no clamp, friction only: vx={}",
+            p.vx
+        );
+    }
+
+    /// `Player.cs:23755-23783`: `GetFloorTile` samples the center column
+    /// first, then the neighbors — the flags come from the tile under the
+    /// feet (one tick stale, so a settled player has live flags).
+    #[test]
+    fn floor_flags_sample_the_feet_row() {
+        let w = floor_world(161);
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "must settle first");
+        assert!(p.slippy, "ice floor flags the slippery set");
+        let mut q = Player::spawn(&ground_world());
+        for _ in 0..120 {
+            q.update(&ground_world(), PlayerInput::default());
+        }
+        q.update(&ground_world(), PlayerInput::default());
+        assert!(!q.slippy, "dirt is not slippery");
     }
 
     /// `Player.cs:25363`: `(fell - (25 + extraFall)) * 10`, `fell` truncated on
