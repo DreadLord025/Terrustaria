@@ -622,10 +622,12 @@ pub enum EffectPriority {
 }
 
 /// The M1 filter set — every `Filters.Scene`/`Overlays.Scene` entry the
-/// phase-3 driver drives. Towers/monoliths/MoonLord/Sepia/CRT/test passes are
-/// M4/test content, HeatDistortion/WaterDistortion land in phase 4, Aurora is
-/// a `SkyManager` visual (`ScreenEffectInitializer.cs:65`) — none has an M1
-/// activation reader.
+/// driver drives. Towers/monoliths/MoonLord/Sepia/CRT/test passes are
+/// M4/test content, Aurora is a `SkyManager` visual
+/// (`ScreenEffectInitializer.cs:65`) — none has an M1 activation reader.
+/// HeatDistortion/WaterDistortion (phase 4) are board slots too but never
+/// compete for the tint winner: vanilla stacks every visible filter
+/// (`FilterManager.EndCapture`, `:154-180`) and the distortions chain on top.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum FilterId {
     /// `Filters.Scene["Graveyard"]` (`ScreenEffectInitializer.cs:25`).
@@ -642,11 +644,15 @@ pub enum FilterId {
     Blizzard,
     /// `Overlays.Scene["Blizzard"]` — the background overlay twin (`:37-39`).
     BlizzardOverlay,
+    /// `Filters.Scene["HeatDistortion"]` (`:41`), `EffectPriority.Low`.
+    HeatDistortion,
+    /// `Filters.Scene["WaterDistortion"]` (`:42`), `EffectPriority.VeryHigh`.
+    WaterDistortion,
 }
 
 impl FilterId {
     /// The board set, in `ScreenEffectInitializer.Load` order.
-    pub const ALL: [FilterId; 7] = [
+    pub const ALL: [FilterId; 9] = [
         FilterId::Graveyard,
         FilterId::BloodMoon,
         FilterId::Noir,
@@ -654,7 +660,13 @@ impl FilterId {
         FilterId::SandstormOverlay,
         FilterId::Blizzard,
         FilterId::BlizzardOverlay,
+        FilterId::HeatDistortion,
+        FilterId::WaterDistortion,
     ];
+    /// The UV-distortion filters (phase 4): they run as extra chained passes
+    /// around the tint winner, in `priority` order (Low heat first, VeryHigh
+    /// water last) — the vanilla stack order.
+    pub const DISTORTIONS: [FilterId; 2] = [FilterId::HeatDistortion, FilterId::WaterDistortion];
     /// The post-pass competitors — the `Filters.Scene` entries only. The
     /// overlays render inside the scene (vanilla `RenderLayers.Landscape`),
     /// never in `FilterManager.EndCapture`.
@@ -676,6 +688,8 @@ impl FilterId {
             FilterId::SandstormOverlay => "SandstormOverlay",
             FilterId::Blizzard => "Blizzard",
             FilterId::BlizzardOverlay => "BlizzardOverlay",
+            FilterId::HeatDistortion => "HeatDistortion",
+            FilterId::WaterDistortion => "WaterDistortion",
         }
     }
 
@@ -688,6 +702,9 @@ impl FilterId {
             | FilterId::SandstormOverlay
             | FilterId::Blizzard
             | FilterId::BlizzardOverlay => EffectPriority::High,
+            // `ScreenEffectInitializer.cs:41-42`.
+            FilterId::HeatDistortion => EffectPriority::Low,
+            FilterId::WaterDistortion => EffectPriority::VeryHigh,
         }
     }
 
@@ -715,6 +732,9 @@ pub struct FilterSlot {
     /// lets the last visible entry win (`FilterManager.cs:154-180`), so a
     /// same-priority tie resolves to the later activation.
     activation_seq: u32,
+    /// `Filter.IsHidden` (`Filter.cs:12`): `HeatDistortion` sets it while its
+    /// intensity is 0 (`SceneState.cs:161`); a hidden filter is not visible.
+    hidden: bool,
 }
 
 impl Default for FilterSlot {
@@ -723,6 +743,7 @@ impl Default for FilterSlot {
             active: false,
             opacity: 0.0,
             activation_seq: 0,
+            hidden: false,
         }
     }
 }
@@ -734,7 +755,7 @@ impl Default for FilterSlot {
 /// filter per frame — vanilla's stacking collapses to the last entry).
 #[derive(Debug)]
 pub struct FilterBoard {
-    slots: [FilterSlot; 7],
+    slots: [FilterSlot; 9],
     seq: u32,
 }
 
@@ -785,6 +806,19 @@ impl FilterBoard {
         self.slots[id.index()].active
     }
 
+    /// `Filter.IsHidden = hidden` (`Filter.cs:12`; `SceneState.cs:161`).
+    pub fn set_hidden(&mut self, id: FilterId, hidden: bool) {
+        self.slots[id.index()].hidden = hidden;
+    }
+
+    /// `Filter.IsVisible` (`Filter.cs:63-70`): `CombinedOpacity > 0 && !IsHidden`
+    /// (the shader's own `UseOpacity` is folded in by the driver; the board
+    /// sees the fade opacity).
+    pub fn is_visible(&self, id: FilterId) -> bool {
+        let slot = &self.slots[id.index()];
+        slot.opacity > 0.0 && !slot.hidden
+    }
+
     /// `GameEffect.Opacity` — the 1/s fade value.
     pub fn opacity(&self, id: FilterId) -> f32 {
         self.slots[id.index()].opacity
@@ -807,7 +841,7 @@ impl FilterBoard {
     pub fn winner(&self) -> Option<FilterId> {
         let mut best: Option<FilterId> = None;
         for id in FilterId::FILTERS {
-            if self.slots[id.index()].opacity <= 0.0 {
+            if !self.is_visible(id) {
                 continue;
             }
             let better = match best {
@@ -1002,6 +1036,133 @@ pub fn blizzard_foreground_params(
     num10 = lerp(num10, num10 * 0.5, deerclops_smoothed);
     num9 = lerp(num9, num9 * 0.5, deerclops_smoothed);
     (num10, num9, 1.0 - num9)
+}
+
+// --- Distortion filters (M1.4-BG-18 phase 4) ---
+
+/// `WaterShaderData.cs:126-127`: the per-frame progress clock
+/// (`_progress += dt * Intensity * 0.75; _progress %= 86400`). `Intensity` is
+/// the shader's last `UseIntensity` (the initializer's 1 until `ApplyVisuals`
+/// sets it, `ScreenEffectInitializer.cs:42`). `Update` runs only while the
+/// filter sits in the active list (`FilterManager.Update`, `:90-127`).
+#[derive(Clone, Copy, Debug)]
+pub struct WaterShader {
+    /// `WaterShaderData._progress` (`WaterShaderData.cs:72`) — `uProgress`.
+    pub progress: f32,
+    /// `ScreenShaderData.Intensity` (`UseIntensity`).
+    pub intensity: f32,
+}
+
+impl WaterShader {
+    /// `_progress` starts at 0, `UseIntensity(1f)` (`ScreenEffectInitializer.cs:42`).
+    pub const fn new() -> Self {
+        Self {
+            progress: 0.0,
+            intensity: 1.0,
+        }
+    }
+
+    /// `WaterShaderData.Update` (`WaterShaderData.cs:117-134`, progress part;
+    /// the wave-quality toggles and the ripple `_queuedSteps` belong to the
+    /// unported entity-wave buffer).
+    pub fn update(&mut self, dt: f32) {
+        self.progress += dt * self.intensity * 0.75;
+        self.progress %= 86400.0;
+    }
+}
+
+/// `SceneState.cs:105`: `ManageSpecialBiomeVisuals("WaterDistortion",
+/// Main.WaveQuality > 0)`. `Main.WaveQuality` defaults to 3
+/// (`Main.cs:66571`) and clamps to 0..=3 on load (`:4439-4446`).
+pub fn water_distortion_active(wave_quality: i32) -> bool {
+    wave_quality > 0
+}
+
+/// `SceneState.cs:128-132` — the WaterDistortion `UseIntensity` value:
+/// wind + rain + world-edge terms, faded to 0.75 flat with depth below the
+/// surface (`num5`) and ramped up again near the underworld, clamped to
+/// 0..=2.5.
+pub fn water_distortion_intensity(
+    tile_center: (i32, i32),
+    max_tiles_x: i32,
+    max_tiles_y: i32,
+    wind_speed_current: f32,
+    max_raining: f32,
+    world_surface: f64,
+    rock_layer: f64,
+) -> f32 {
+    let half_x = max_tiles_x as f32 * 0.5;
+    // `:128` — distance from the nearest world edge.
+    let edge_dist = half_x - (tile_center.0 as f32 - half_x).abs();
+    // `:129`
+    let num4 = 1.0
+        + wind_speed_current.abs() * 1.25
+        + max_raining.clamp(0.0, 1.0) * 1.25
+        + -((((edge_dist - 380.0) / 100.0).clamp(0.0, 1.0)) * 0.5 - 0.25);
+    // `:130` — `(float)((double)Y - worldSurface) / (float)(rockLayer - worldSurface)`.
+    let depth =
+        ((tile_center.1 as f64 - world_surface) as f32) / ((rock_layer - world_surface) as f32);
+    let num5 = 1.0 - (3.0 * depth).clamp(0.0, 1.0);
+    // `:131`
+    let underworld = ((max_tiles_y - tile_center.1 - 200) as f32 / 300.0).clamp(0.0, 1.0);
+    (num4 * num5 + (0.9 - underworld * 0.9) + (1.0 - num5) * 0.75).clamp(0.0, 2.5)
+}
+
+/// `SceneState.cs:79-80`: the two zone flags that gate HeatDistortion —
+/// `flag2` (the underworld band, `Y > maxTilesY - 320`) and `flag3` (surface
+/// desert without rain or sandstorm). Returns `(flag2, flag3)`.
+pub fn heat_zone_flags(
+    tile_center_y: i32,
+    max_tiles_y: i32,
+    world_surface: f64,
+    zone_desert: bool,
+    zone_rain: bool,
+    zone_sandstorm: bool,
+) -> (bool, bool) {
+    (
+        tile_center_y > max_tiles_y - 320,
+        (tile_center_y as f64) < world_surface && zone_desert && !zone_rain && !zone_sandstorm,
+    )
+}
+
+/// `SceneState.cs:98-99`: `UseHeatDistortion & ((flag2 | flag3) ||
+/// sunScorchCounter > 0)`. `Main.UseHeatDistortion` defaults true
+/// (`Main.cs:66573`).
+pub fn heat_distortion_active(
+    use_heat_distortion: bool,
+    flag2: bool,
+    flag3: bool,
+    sun_scorch_counter: i32,
+) -> bool {
+    use_heat_distortion && (flag2 || flag3 || sun_scorch_counter > 0)
+}
+
+/// `SceneState.cs:145-160` — the HeatDistortion `UseIntensity` value (the
+/// caller also sets `IsHidden = intensity <= 0`, `:161`): the sun-scorch
+/// ramp, the underworld ramp, or the desert surface term scaled by the
+/// outside-weather fade, clear sky and tile brightness.
+#[allow(clippy::too_many_arguments)]
+pub fn heat_distortion_intensity(
+    sun_scorch_counter: i32,
+    underworld: bool,
+    desert: bool,
+    tile_center_y: i32,
+    max_tiles_y: i32,
+    outside_weather: f32,
+    cloud_alpha: f32,
+    tile_color: [f32; 3],
+) -> f32 {
+    let mut num6 = 0.0f32;
+    if sun_scorch_counter > 0 {
+        num6 = num6.max(get_lerp_value(0.0, 300.0, sun_scorch_counter as f32, true) * 4.0);
+    }
+    if underworld {
+        num6 = num6.max(((tile_center_y - (max_tiles_y - 320)) as f32 / 120.0).min(1.0) * 2.0);
+    } else if desert {
+        let brightness = (tile_color[0] + tile_color[1] + tile_color[2]) / 3.0;
+        num6 = num6.max(outside_weather * 4.0 * (0.5 - cloud_alpha).max(0.0) * brightness);
+    }
+    num6
 }
 
 /// `SurfaceBackgroundID.Sets.IsDesertVariant` (`SurfaceBackgroundID.cs:18`):
@@ -1831,5 +1992,174 @@ mod tests {
         assert_ne!(a, c);
         // Repeats exactly (determinism).
         assert_eq!(a, noir_image_offset(1.234));
+    }
+
+    // --- Distortion filters (phase 4) ---
+
+    /// Shared fixture: 4200x1200 world, surface 300, rock 450.
+    fn water_i(x: i32, y: i32, wind: f32, rain: f32) -> f32 {
+        water_distortion_intensity((x, y), 4200, 1200, wind, rain, 300.0, 450.0)
+    }
+
+    #[test]
+    fn test_DW_4_3_water_intensity_world_centre_and_edge() {
+        // `SceneState.cs:128-129`: mid-world the edge term is -0.25 (clamp = 1),
+        // at the world edge it is +0.25 (clamp = 0).
+        assert!((water_i(2100, 300, 0.0, 0.0) - 0.75).abs() < 1e-6);
+        assert!((water_i(100, 300, 0.0, 0.0) - 1.25).abs() < 1e-6);
+        // Edge ramp: dist 430 -> (430-380)/100 = 0.5 -> 0.25 - 0.25 -> num4 = 1.0.
+        assert!((water_i(430, 300, 0.0, 0.0) - 1.0).abs() < 1e-6);
+        // The east edge mirrors the west one.
+        assert!((water_i(4200 - 100, 300, 0.0, 0.0) - 1.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_DW_4_3_water_intensity_wind_and_rain_terms() {
+        // `:129`: |wind| * 1.25 + clamp(maxRaining, 0, 1) * 1.25.
+        assert!((water_i(2100, 300, -0.4, 0.5) - 1.875).abs() < 1e-6);
+        // maxRaining clamps at 1 (`MathHelper.Clamp(maxRaining, 0, 1)`).
+        assert!((water_i(2100, 300, 0.0, 3.0) - water_i(2100, 300, 0.0, 1.0)).abs() < 1e-6);
+        // The final clamp caps at 2.5.
+        assert_eq!(water_i(100, 300, 1.2, 1.0), 2.5);
+    }
+
+    #[test]
+    fn test_DW_4_3_water_intensity_depth_and_underworld_layers() {
+        // `:130-131`: num5 fades the wind/rain/edge terms out over the first
+        // third of surface..rock, leaving the flat 0.75 term.
+        assert!((water_i(100, 325, 0.0, 0.0) - 1.0).abs() < 1e-5);
+        assert!((water_i(100, 350, 0.0, 0.0) - 0.75).abs() < 1e-5);
+        // Above the surface num5 stays 1 (clamp of a negative depth).
+        assert!((water_i(100, 100, 0.0, 0.0) - 1.25).abs() < 1e-6);
+        // Underworld ramp: +0.9 at maxTilesY - 200 and below.
+        assert!((water_i(2100, 900, 0.0, 0.0) - 1.35).abs() < 1e-5);
+        assert!((water_i(2100, 1000, 0.0, 0.0) - 1.65).abs() < 1e-5);
+        assert!((water_i(2100, 1150, 0.0, 0.0) - 1.65).abs() < 1e-5);
+    }
+
+    #[test]
+    fn test_DW_4_3_water_distortion_gate_and_progress_clock() {
+        // `SceneState.cs:105`: WaveQuality > 0.
+        assert!(!water_distortion_active(0));
+        assert!(water_distortion_active(1));
+        assert!(water_distortion_active(3));
+        // `WaterShaderData.cs:126-127`.
+        let mut shader = WaterShader::new();
+        assert_eq!((shader.progress, shader.intensity), (0.0, 1.0));
+        shader.update(1.0);
+        assert!((shader.progress - 0.75).abs() < 1e-6);
+        shader.intensity = 2.0;
+        shader.update(0.5);
+        assert!((shader.progress - 1.5).abs() < 1e-6);
+        shader.progress = 86399.9;
+        shader.update(1.0);
+        assert!(shader.progress < 2.0, "wraps at 86400");
+    }
+
+    #[test]
+    fn test_DW_4_1_heat_zone_flags_and_activation() {
+        // `SceneState.cs:79-80`: flag2 = Y > maxTilesY - 320; flag3 = above the
+        // surface desert without rain/sandstorm.
+        assert_eq!(
+            heat_zone_flags(881, 1200, 300.0, false, false, false),
+            (true, false)
+        );
+        assert_eq!(
+            heat_zone_flags(880, 1200, 300.0, false, false, false),
+            (false, false),
+            "strictly greater"
+        );
+        assert_eq!(
+            heat_zone_flags(299, 1200, 300.0, true, false, false),
+            (false, true)
+        );
+        assert_eq!(
+            heat_zone_flags(300, 1200, 300.0, true, false, false),
+            (false, false),
+            "Y < worldSurface is strict"
+        );
+        assert_eq!(
+            heat_zone_flags(299, 1200, 300.0, true, true, false),
+            (false, false),
+            "rain cancels the desert flag"
+        );
+        assert_eq!(
+            heat_zone_flags(299, 1200, 300.0, true, false, true),
+            (false, false),
+            "sandstorm cancels the desert flag"
+        );
+        // `:98-99`: the user toggle gates everything.
+        assert!(heat_distortion_active(true, true, false, 0));
+        assert!(heat_distortion_active(true, false, true, 0));
+        assert!(heat_distortion_active(true, false, false, 1), "sun scorch");
+        assert!(!heat_distortion_active(true, false, false, 0));
+        assert!(!heat_distortion_active(false, true, true, 99));
+    }
+
+    #[test]
+    fn test_DW_4_1_heat_intensity_branches() {
+        let white = [1.0; 3];
+        let h = 1200;
+        let heat =
+            |sc, uw, de, y, ow, ca, tc| heat_distortion_intensity(sc, uw, de, y, h, ow, ca, tc);
+        // Underworld: min(1, (Y - (H-320)) / 120) * 2.
+        assert!((heat(0, true, false, 880 + 60, 1.0, 0.0, white) - 1.0).abs() < 1e-6);
+        assert!((heat(0, true, false, 880 + 120, 1.0, 0.0, white) - 2.0).abs() < 1e-6);
+        assert!((heat(0, true, false, 1190, 1.0, 0.0, white) - 2.0).abs() < 1e-6);
+        // Desert surface: weather fade * 4 * max(0, 0.5 - cloudAlpha) * brightness.
+        assert!((heat(0, false, true, 250, 1.0, 0.0, [0.8; 3]) - 1.6).abs() < 1e-6);
+        assert_eq!(heat(0, false, true, 250, 1.0, 0.5, white), 0.0);
+        assert_eq!(heat(0, false, true, 250, 0.0, 0.0, white), 0.0);
+        // The underworld branch wins over the desert branch (`else if`).
+        assert!((heat(0, true, true, 880 + 60, 1.0, 0.0, white) - 1.0).abs() < 1e-6);
+        // Sun scorch: lerp(0, 300, counter) * 4, max-merged with the zone term.
+        assert!((heat(150, false, false, 250, 1.0, 0.0, white) - 2.0).abs() < 1e-6);
+        assert!((heat(600, false, false, 250, 1.0, 0.0, white) - 4.0).abs() < 1e-6);
+        assert!((heat(75, true, false, 880 + 120, 1.0, 0.0, white) - 2.0).abs() < 1e-6);
+        assert_eq!(heat(0, false, false, 250, 1.0, 0.0, white), 0.0);
+    }
+
+    #[test]
+    fn test_DW_4_1_distortion_ids_stay_out_of_the_winner_pool() {
+        // Priorities `ScreenEffectInitializer.cs:41-42`.
+        assert_eq!(FilterId::HeatDistortion.priority(), EffectPriority::Low);
+        assert_eq!(
+            FilterId::WaterDistortion.priority(),
+            EffectPriority::VeryHigh
+        );
+        assert_eq!(FilterId::HeatDistortion.name(), "HeatDistortion");
+        assert_eq!(FilterId::WaterDistortion.name(), "WaterDistortion");
+        for id in FilterId::DISTORTIONS {
+            assert!(!FilterId::FILTERS.contains(&id));
+            assert!(FilterId::ALL.contains(&id));
+            assert!(!id.is_overlay());
+        }
+        // A VeryHigh water slot never steals the tint winner.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::WaterDistortion, true, true);
+        assert_eq!(board.winner(), None);
+        board.manage(FilterId::BloodMoon, true, true);
+        assert_eq!(board.winner(), Some(FilterId::BloodMoon));
+        assert!(board.is_visible(FilterId::WaterDistortion));
+    }
+
+    #[test]
+    fn test_DW_4_1_hidden_filter_is_not_visible() {
+        // `Filter.IsVisible` (`Filter.cs:63-70`); HeatDistortion hides itself at 0.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::HeatDistortion, true, true);
+        assert!(board.is_visible(FilterId::HeatDistortion));
+        board.set_hidden(FilterId::HeatDistortion, true);
+        assert!(!board.is_visible(FilterId::HeatDistortion));
+        assert!(
+            board.is_active(FilterId::HeatDistortion),
+            "hidden != inactive"
+        );
+        board.set_hidden(FilterId::HeatDistortion, false);
+        assert!(board.is_visible(FilterId::HeatDistortion));
+        // A hidden tint filter drops out of the winner pick too.
+        board.manage(FilterId::BloodMoon, true, true);
+        board.set_hidden(FilterId::BloodMoon, true);
+        assert_eq!(board.winner(), None);
     }
 }

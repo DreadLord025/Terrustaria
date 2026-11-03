@@ -32,6 +32,11 @@ struct FilterParams {
 @group(0) @binding(2) var scene_sampler: sampler;
 @group(0) @binding(3) var noise_tex: texture_2d<f32>;
 @group(0) @binding(4) var noise_sampler: sampler;
+// Water coverage mask (phase 4): R = 1 where a liquid cell covers the screen
+// pixel, same view mapping as the scene (water_mask.wgsl renders it). A 1x1
+// zero texture binds when no water is in view. Sampled with `scene_sampler`
+// (nearest/clamp).
+@group(0) @binding(5) var mask_tex: texture_2d<f32>;
 
 struct VsOut {
     @builtin(position) position: vec4<f32>,
@@ -125,9 +130,62 @@ fn pass_storm(scene: vec4<f32>, noise: f32) -> vec4<f32> {
     return vec4<f32>(mix(scene.rgb, sand, cover), scene.a);
 }
 
+// Distortion passes (phase 4) displace the scene lookup instead of tinting the
+// result: they return the uv the scene is sampled at. Offsets are in world
+// pixels (zoom-invariant, like the world-anchored noise) divided by the view
+// size. The compiled `FilterHeatDistortion`/`FilterWaterDistortion` HLSL is not
+// translated — amplitudes and scroll rates are visual approximations (plan A2).
+const HEAT_AMPLITUDE_PX: f32 = 1.5;
+const WATER_AMPLITUDE_PX: f32 = 2.0;
+
+// Pass 8: FilterHeatDistortion — the whole view shimmers. Two decorrelated
+// reads of the noise image (scrolling upward with uTime) give a 2-D offset
+// scaled by uIntensity (`SceneState.cs:145-160`, 0..4) and the fade uOpacity.
+fn heat_uv(uv: vec2<f32>) -> vec2<f32> {
+    let p = world_px(uv) / params.image_size;
+    let scroll = vec2<f32>(0.0, -params.time * 0.15);
+    let nx = textureSampleLevel(noise_tex, noise_sampler, p + scroll, 0.0).r;
+    let ny = textureSampleLevel(
+        noise_tex, noise_sampler, p.yx * 1.37 + vec2<f32>(0.31, 0.0) + scroll, 0.0,
+    ).r;
+    let off_px = (vec2<f32>(nx, ny) - 0.5) * 2.0 * HEAT_AMPLITUDE_PX
+        * params.intensity * clamp(params.opacity, 0.0, 1.0);
+    return uv + off_px / params.screen_resolution;
+}
+
+// Pass 9: FilterWaterDistortion — only pixels the water mask covers wobble.
+// uProgress is the `WaterShaderData._progress` clock (`WaterShaderData.cs:126`)
+// that scrolls the noise; uIntensity is the wind/rain/depth value of
+// `SceneState.cs:128-132` (0..2.5). Branch-free so the sample stays in uniform
+// control flow: the offset is multiplied by the 0/1 mask.
+fn water_uv(uv: vec2<f32>) -> vec2<f32> {
+    let m = textureSampleLevel(mask_tex, scene_sampler, uv, 0.0).r;
+    let p = world_px(uv) / params.image_size * 4.0;
+    let t = params.progress * 0.1;
+    let nx = textureSampleLevel(noise_tex, noise_sampler, p + vec2<f32>(t, 0.0), 0.0).r;
+    let ny = textureSampleLevel(
+        noise_tex, noise_sampler, p.yx + vec2<f32>(0.5, t * 0.7), 0.0,
+    ).r;
+    let off_px = (vec2<f32>(nx, ny) - 0.5) * 2.0 * WATER_AMPLITUDE_PX
+        * params.intensity * clamp(params.opacity, 0.0, 1.0);
+    return uv + off_px / params.screen_resolution * ceil(m);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    let scene = textureSample(scene_tex, scene_sampler, in.uv);
+    // Passes 0-7 sample the scene at `in.uv` exactly (byte-identical to the
+    // phase-2/3 shader); only the distortion passes move the lookup.
+    var scene_uv = in.uv;
+    switch params.pass_index {
+        case 8u: {
+            scene_uv = heat_uv(in.uv);
+        }
+        case 9u: {
+            scene_uv = water_uv(in.uv);
+        }
+        default: {}
+    }
+    let scene = textureSample(scene_tex, scene_sampler, scene_uv);
     // The storm scroll (uTargetPosition) and the Noir dither (uImageOffset)
     // sample the same noise image at different offsets; both are uniform-flow
     // samples so the pass switch can consume either.

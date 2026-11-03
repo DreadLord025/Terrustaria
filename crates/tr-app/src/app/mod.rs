@@ -86,6 +86,10 @@ pub(crate) struct App {
     pub(crate) post: Option<tr_render::PostPipeline>,
     /// Noise image (`Images/Misc/noise`) uploaded for the post pass bindings.
     pub(crate) noise_tex: Option<wgpu::Texture>,
+    /// M1.4-BG-18 phase 4: the water coverage mask target (created with `post`;
+    /// its texture only exists while WaterDistortion is wanted and water is in
+    /// view).
+    pub(crate) water_mask: Option<tr_render::WaterMask>,
     /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
     /// fades and the filter driver reads its intensities.
     pub(crate) scene_state: tr_core::scene::SceneState,
@@ -967,6 +971,7 @@ impl App {
         renderer: None,
         post: None,
         noise_tex: None,
+        water_mask: None,
         scene_state: tr_core::scene::SceneState::new(),
         sandstorm: tr_core::scene::Sandstorm::new(world_seed),
         filter_driver: crate::app::filters::FilterDriver::new(),

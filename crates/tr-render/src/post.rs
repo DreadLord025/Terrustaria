@@ -27,7 +27,7 @@
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::gpu::Gpu;
+use crate::gpu::{Gpu, offscreen_target_on};
 
 /// Uniform mirror of the `ScreenShaderData.Apply` parameters
 /// (`ScreenShaderData.cs:139-187`), plus the WGSL pass selector. Field order is the
@@ -119,6 +119,11 @@ impl PassId {
     pub const BLIZZARD_FOREGROUND: PassId = PassId(6);
     /// `FilterBlizzardBackground` — the `Overlays.Scene["Blizzard"]` twin.
     pub const BLIZZARD_BACKGROUND: PassId = PassId(7);
+    /// `FilterHeatDistortion` (phase 4): noise-driven uv offset over the view.
+    pub const HEAT_DISTORTION: PassId = PassId(8);
+    /// `FilterWaterDistortion` (phase 4): uv offset where the water mask
+    /// ([`FilterImages::water_mask`]) covers the pixel.
+    pub const WATER_DISTORTION: PassId = PassId(9);
 }
 
 /// Filter name → vanilla pass name → WGSL pass index. Rows are the
@@ -150,8 +155,8 @@ pub const PASS_TABLE: &[(&str, &str, u32)] = &[
     ("SandstormOverlay", "FilterSandstormBackground", 5),
     ("Blizzard", "FilterBlizzardForeground", 6),
     ("BlizzardOverlay", "FilterBlizzardBackground", 7),
-    ("HeatDistortion", "FilterHeatDistortion", 0),
-    ("WaterDistortion", "FilterWaterDistortion", 0),
+    ("HeatDistortion", "FilterHeatDistortion", 8),
+    ("WaterDistortion", "FilterWaterDistortion", 9),
     (
         "CrystalDestructionColor",
         "FilterCrystalDestructionColor",
@@ -183,16 +188,30 @@ pub fn pass_index(filter_name: &str) -> PassId {
     )
 }
 
-/// Auxiliary images for [`PostPipeline::apply_filter`]. Phase 4 extends this struct
-/// with the `water_mask` slot additively (plan: "заложить enum-параметр ресурсов" —
-/// an extensible resource struct cannot break the phase-4 signature an enum arm
-/// would).
+/// Auxiliary images for [`PostPipeline::apply_filter`] (an extensible resource
+/// struct — phase 4 added `water_mask` without touching the signature).
 #[derive(Clone, Copy, Default)]
 pub struct FilterImages<'a> {
     /// Noise image bound to slot 3 (`ScreenShaderData.cs:159-185` binds up to
     /// three; every M1 filter uses only the first).
     pub noise: Option<&'a wgpu::Texture>,
+    /// The water coverage mask (`WaterShaderData.Apply` binds
+    /// `Main.waterTarget` as image 2, `WaterShaderData.cs:371`): R8, screen-
+    /// sized, view-aligned. `None` binds a 1x1 zero texture (no water).
+    pub water_mask: Option<&'a wgpu::Texture>,
 }
+
+/// One pass of a filter chain: the uniform and the WGSL pass it selects.
+#[derive(Clone, Copy, Debug)]
+pub struct FilterPass {
+    pub params: FilterParams,
+    pub pass: PassId,
+}
+
+/// Longest chain [`PostPipeline::apply_filters`] runs (heat + tint + water =
+/// 3 in M1; one spare). Each slot owns a uniform buffer because a single
+/// submit sees only the last `write_buffer` per buffer.
+pub const MAX_CHAIN: usize = 4;
 
 /// True when the offscreen target must be (re)created: no target yet, or the
 /// surface was resized away from it (DW-2.2 — `WindowEvent::Resized` reconfigures
@@ -238,8 +257,17 @@ pub struct PostPipeline {
     target: Option<wgpu::Texture>,
     target_view: Option<wgpu::TextureView>,
     target_size: Option<(u32, u32)>,
+    /// Second ping-pong target for chains of 2+ passes (phase 4: the
+    /// `FilterManager.EndCapture` `Utils.Swap(t, t2)` pair). Created lazily on
+    /// the first chain that needs it, recreated with the main target.
+    swap: Option<(wgpu::Texture, wgpu::TextureView)>,
+    /// Surface format the targets and the pipeline were built for.
+    format: wgpu::TextureFormat,
     pipeline: wgpu::RenderPipeline,
-    params_buf: wgpu::Buffer,
+    /// One uniform buffer per chain slot ([`MAX_CHAIN`]).
+    params_bufs: Vec<wgpu::Buffer>,
+    /// Bound when no water mask is supplied: 1x1, R = 0 (nothing is water).
+    mask_fallback: (wgpu::Texture, wgpu::TextureView),
     /// Nearest/clamp — pixel-exact scene read (identity precondition, DW-2.1).
     scene_sampler: wgpu::Sampler,
     /// Vanilla noise sampler rule (`ScreenShaderData.cs:175-182`); the content set
@@ -252,7 +280,12 @@ pub struct PostPipeline {
 
 impl PostPipeline {
     pub fn new(gpu: &Gpu) -> Self {
-        let device = &gpu.device;
+        Self::new_on(&gpu.device, &gpu.queue, gpu.config.format)
+    }
+
+    /// [`PostPipeline::new`] without a surface — the headless entry the pixel
+    /// tests use (`format` is the swapchain/offscreen format).
+    pub fn new_on(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("post"),
             source: wgpu::ShaderSource::Wgsl(include_str!("post.wgsl").into()),
@@ -303,6 +336,16 @@ impl PostPipeline {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 5,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -327,7 +370,7 @@ impl PostPipeline {
                 targets: &[Some(wgpu::ColorTargetState {
                     // Same format as the swapchain: the filter writes sRGB-encoded
                     // values straight through (identity precondition, DW-2.1).
-                    format: gpu.config.format,
+                    format,
                     // Opaque replace: the fullscreen triangle writes every pixel.
                     blend: None,
                     write_mask: wgpu::ColorWrites::ALL,
@@ -345,12 +388,16 @@ impl PostPipeline {
             cache: None,
         });
 
-        let params_buf = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("post-params"),
-            size: std::mem::size_of::<FilterParams>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let params_bufs = (0..MAX_CHAIN)
+            .map(|_| {
+                device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("post-params"),
+                    size: std::mem::size_of::<FilterParams>() as u64,
+                    usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                })
+            })
+            .collect();
 
         let scene_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("post-scene-sampler"),
@@ -374,7 +421,7 @@ impl PostPipeline {
 
         let pattern = fallback_checkerboard();
         let fallback_tex = device.create_texture_with_data(
-            &gpu.queue,
+            queue,
             &wgpu::TextureDescriptor {
                 label: Some("post-noise-fallback"),
                 size: wgpu::Extent3d {
@@ -394,12 +441,36 @@ impl PostPipeline {
         );
         let fallback_view = fallback_tex.create_view(&wgpu::TextureViewDescriptor::default());
 
+        let mask_tex = device.create_texture_with_data(
+            queue,
+            &wgpu::TextureDescriptor {
+                label: Some("post-mask-fallback"),
+                size: wgpu::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::R8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &[0u8],
+        );
+        let mask_view = mask_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
         Self {
             target: None,
             target_view: None,
             target_size: None,
+            swap: None,
+            format,
             pipeline,
-            params_buf,
+            params_bufs,
+            mask_fallback: (mask_tex, mask_view),
             scene_sampler,
             noise_sampler,
             fallback_noise: (fallback_tex, fallback_view),
@@ -409,15 +480,22 @@ impl PostPipeline {
     /// Recreates the offscreen target for `width`x`height` (DW-2.2; no-op when the
     /// target already matches).
     pub fn resize(&mut self, gpu: &Gpu, width: u32, height: u32) {
+        self.resize_on(&gpu.device, width, height);
+    }
+
+    /// [`PostPipeline::resize`] on a bare device (headless tests).
+    pub fn resize_on(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if !target_needs_recreate(self.target_size, (width, height)) {
             return;
         }
         let size = (width.max(1), height.max(1));
-        let tex = gpu.offscreen_target(size.0, size.1, "post-scene");
+        let tex = offscreen_target_on(device, self.format, size.0, size.1, "post-scene");
         let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
         self.target = Some(tex);
         self.target_view = Some(view);
         self.target_size = Some(size);
+        // The swap target is the same size: drop it so the next chain rebuilds it.
+        self.swap = None;
     }
 
     /// Whether the post pipeline is usable this frame (a target exists). False
@@ -433,16 +511,17 @@ impl PostPipeline {
     /// `SpriteRenderer::render` with this view).
     pub fn scene_view(&mut self, gpu: &Gpu) -> &wgpu::TextureView {
         let (w, h) = (gpu.config.width, gpu.config.height);
-        if target_needs_recreate(self.target_size, (w, h)) {
-            self.resize(gpu, w, h);
-        }
+        self.resize(gpu, w, h);
         self.target_view.as_ref().expect("post target after resize")
     }
 
+    /// The offscreen scene texture (headless tests read it back / draw into it).
+    pub fn scene_texture(&self) -> Option<&wgpu::Texture> {
+        self.target.as_ref()
+    }
+
     /// Draws the offscreen scene through `pass` into `target` (normally the
-    /// swapchain view). The bind group is rebuilt per call — the scene view and
-    /// noise view both change across frames, and vanilla rebinds per `Apply`
-    /// (`ScreenShaderData.cs:139-187`) as well.
+    /// swapchain view) — a chain of one ([`PostPipeline::apply_filters`]).
     pub fn apply_filter(
         &mut self,
         gpu: &Gpu,
@@ -451,57 +530,121 @@ impl PostPipeline {
         pass: PassId,
         images: FilterImages<'_>,
     ) {
-        let scene_view = self
-            .target_view
-            .as_ref()
-            .expect("post target (render the scene first)");
+        self.apply_filters(
+            gpu,
+            target,
+            &[FilterPass {
+                params: *params,
+                pass,
+            }],
+            images,
+        );
+    }
 
-        let mut frame_params = *params;
-        frame_params.pass_index = pass.0;
-        gpu.queue
-            .write_buffer(&self.params_buf, 0, bytemuck::bytes_of(&frame_params));
+    /// Runs `passes` in order over the offscreen scene, the last one into
+    /// `target`. Vanilla's `FilterManager.EndCapture` (`FilterManager.cs:154-
+    /// 200`) does the same with the `t`/`t2` render-target swap: every visible
+    /// filter reads the previous result. The scene target and a lazily-created
+    /// swap target ping-pong; a chain of one reads the scene straight into
+    /// `target` (the phase-2/3 behaviour, no extra target or pass).
+    ///
+    /// The bind group is rebuilt per pass — the scene views and noise/mask
+    /// views change across frames, and vanilla rebinds per `Apply`
+    /// (`ScreenShaderData.cs:139-187`) as well.
+    pub fn apply_filters(
+        &mut self,
+        gpu: &Gpu,
+        target: &wgpu::TextureView,
+        passes: &[FilterPass],
+        images: FilterImages<'_>,
+    ) {
+        self.apply_filters_on(&gpu.device, &gpu.queue, target, passes, images);
+    }
+
+    /// [`PostPipeline::apply_filters`] on a bare device/queue (headless tests).
+    pub fn apply_filters_on(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        target: &wgpu::TextureView,
+        passes: &[FilterPass],
+        images: FilterImages<'_>,
+    ) {
+        assert!(
+            !passes.is_empty() && passes.len() <= MAX_CHAIN,
+            "post chain length {} outside 1..={MAX_CHAIN}",
+            passes.len()
+        );
+        let (w, h) = self
+            .target_size
+            .expect("post target (render the scene first)");
+        if passes.len() > 1 && self.swap.is_none() {
+            let tex = offscreen_target_on(device, self.format, w, h, "post-swap");
+            let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
+            self.swap = Some((tex, view));
+        }
+        let main_view = self.target_view.as_ref().expect("post target");
+        let swap_view = self.swap.as_ref().map(|(_, v)| v);
 
         let noise_view = match images.noise {
             Some(tex) => tex.create_view(&wgpu::TextureViewDescriptor::default()),
             None => self.fallback_noise.1.clone(),
         };
-        let bind = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("post-bind"),
-            layout: &self.pipeline.get_bind_group_layout(0),
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.params_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(scene_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.scene_sampler),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: wgpu::BindingResource::TextureView(&noise_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: wgpu::BindingResource::Sampler(&self.noise_sampler),
-                },
-            ],
+        let mask_view = match images.water_mask {
+            Some(tex) => tex.create_view(&wgpu::TextureViewDescriptor::default()),
+            None => self.mask_fallback.1.clone(),
+        };
+        let layout = self.pipeline.get_bind_group_layout(0);
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("post-filter"),
         });
-
-        let mut encoder = gpu
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("post-filter"),
+        let last = passes.len() - 1;
+        for (i, fp) in passes.iter().enumerate() {
+            // Even steps read the scene target, odd ones the swap target;
+            // every step but the last writes the other one.
+            let (src, dst) = match (i % 2 == 0, i == last) {
+                (true, true) => (main_view, target),
+                (true, false) => (main_view, swap_view.expect("swap target")),
+                (false, true) => (swap_view.expect("swap target"), target),
+                (false, false) => (swap_view.expect("swap target"), main_view),
+            };
+            let mut frame_params = fp.params;
+            frame_params.pass_index = fp.pass.0;
+            queue.write_buffer(&self.params_bufs[i], 0, bytemuck::bytes_of(&frame_params));
+            let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("post-bind"),
+                layout: &layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: self.params_bufs[i].as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::TextureView(src),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: wgpu::BindingResource::Sampler(&self.scene_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::TextureView(&noise_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 4,
+                        resource: wgpu::BindingResource::Sampler(&self.noise_sampler),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 5,
+                        resource: wgpu::BindingResource::TextureView(&mask_view),
+                    },
+                ],
             });
-        {
             let mut render = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("post-filter-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: target,
+                    view: dst,
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
@@ -518,7 +661,7 @@ impl PostPipeline {
             render.set_bind_group(0, &bind, &[]);
             render.draw(0..3, 0..1);
         }
-        gpu.queue.submit(Some(encoder.finish()));
+        queue.submit(Some(encoder.finish()));
     }
 }
 
@@ -594,8 +737,11 @@ mod tests {
                 "FilterSandstormBackground" => PassId::SANDSTORM_BACKGROUND,
                 "FilterBlizzardForeground" => PassId::BLIZZARD_FOREGROUND,
                 "FilterBlizzardBackground" => PassId::BLIZZARD_BACKGROUND,
-                // Not ported yet: HeatDistortion/WaterDistortion (phase 4), the
-                // towers/monoliths/MoonLord/CRT/test passes (M4/test content).
+                // Phase 4: the two distortion passes.
+                "FilterHeatDistortion" => PassId::HEAT_DISTORTION,
+                "FilterWaterDistortion" => PassId::WATER_DISTORTION,
+                // Not ported: the towers/monoliths/MoonLord/CRT/test passes
+                // (M4/test content).
                 _ => PassId::PASSTHROUGH,
             };
             assert_eq!(
@@ -672,5 +818,324 @@ mod tests {
         assert_eq!(cell(0, 0), cell(1, 1), "2x2 blocks");
         assert_ne!(cell(0, 0), cell(2, 0), "blocks alternate");
         assert_ne!(cell(0, 0), cell(0, 2), "blocks alternate vertically");
+    }
+
+    // --- Phase 4: headless pixel tests (skip when no adapter) ---
+
+    use crate::gpu::offscreen_target_on;
+    use crate::test_gpu::{headless, read_texture};
+    use crate::water_mask::WaterMask;
+
+    const FMT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
+    const W: u32 = 48;
+    const H: u32 = 48;
+
+    /// A pipeline with a deterministic gradient scene in its offscreen target
+    /// plus a 64x64 pseudo-random noise image.
+    struct Fixture {
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        post: PostPipeline,
+        noise: wgpu::Texture,
+        scene_bytes: Vec<u8>,
+    }
+
+    fn fixture() -> Option<Fixture> {
+        let (device, queue) = headless()?;
+        let mut post = PostPipeline::new_on(&device, &queue, FMT);
+        post.resize_on(&device, W, H);
+        // Gradient scene: every pixel distinct so any displacement shows.
+        let mut scene_bytes = Vec::new();
+        for y in 0..H {
+            for x in 0..W {
+                scene_bytes.extend_from_slice(&[
+                    (x * 5 % 256) as u8,
+                    (y * 5 % 256) as u8,
+                    ((x + y) * 3 % 256) as u8,
+                    255,
+                ]);
+            }
+        }
+        queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: post.scene_texture().expect("scene"),
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &scene_bytes,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(W * 4),
+                rows_per_image: Some(H),
+            },
+            wgpu::Extent3d {
+                width: W,
+                height: H,
+                depth_or_array_layers: 1,
+            },
+        );
+        // LCG noise, wrapped — a stand-in for `Images/Misc/noise`.
+        let mut seed = 0x1234_5678u32;
+        let noise_px: Vec<u8> = (0..64 * 64 * 4)
+            .map(|_| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                (seed >> 24) as u8
+            })
+            .collect();
+        let noise = device.create_texture_with_data(
+            &queue,
+            &wgpu::TextureDescriptor {
+                label: Some("test-noise"),
+                size: wgpu::Extent3d {
+                    width: 64,
+                    height: 64,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            wgpu::util::TextureDataOrder::LayerMajor,
+            &noise_px,
+        );
+        Some(Fixture {
+            device,
+            queue,
+            post,
+            noise,
+            scene_bytes,
+        })
+    }
+
+    /// Uniform for a distortion pass over the whole 48x48 view.
+    fn distortion_params(intensity: f32, opacity: f32) -> FilterParams {
+        FilterParams {
+            screen_resolution: [W as f32, H as f32],
+            screen_position: [100.0, 200.0],
+            image_size: [64.0, 64.0],
+            intensity,
+            opacity,
+            progress: 3.0,
+            time: 1.25,
+            ..FilterParams::NEUTRAL
+        }
+    }
+
+    impl Fixture {
+        /// Runs `chain` into a fresh output target and reads it back.
+        fn run(&mut self, chain: &[FilterPass], mask: Option<&wgpu::Texture>) -> Vec<u8> {
+            let out = offscreen_target_on(&self.device, FMT, W, H, "test-out");
+            let view = out.create_view(&wgpu::TextureViewDescriptor::default());
+            self.post.apply_filters_on(
+                &self.device,
+                &self.queue,
+                &view,
+                chain,
+                FilterImages {
+                    noise: Some(&self.noise),
+                    water_mask: mask,
+                },
+            );
+            read_texture(&self.device, &self.queue, &out, (W, H), 4)
+        }
+
+        fn mask(&self, rects: &[crate::MaskRect]) -> WaterMask {
+            let mut mask = WaterMask::new(&self.device);
+            // View centre (24, 24) at zoom 1: world == screen.
+            mask.render(&self.device, &self.queue, (W, H), [24.0, 24.0], 1.0, rects);
+            mask
+        }
+    }
+
+    fn pass(pass: PassId, params: FilterParams) -> FilterPass {
+        FilterPass { params, pass }
+    }
+
+    fn differing_pixels(a: &[u8], b: &[u8], keep: impl Fn(usize, usize) -> bool) -> usize {
+        (0..(W * H) as usize)
+            .filter(|&i| {
+                keep(i % W as usize, i / W as usize) && a[i * 4..i * 4 + 4] != b[i * 4..i * 4 + 4]
+            })
+            .count()
+    }
+
+    /// DW-4.4 / DW-2.1 at unit level: the passthrough reproduces the scene
+    /// byte for byte, for chains of 1, 2 and 3 (the swap target round trip).
+    #[test]
+    fn test_DW_4_4_passthrough_chains_are_identity() {
+        let Some(mut fx) = fixture() else {
+            eprintln!("no GPU adapter: skipping");
+            return;
+        };
+        let neutral = pass(PassId::PASSTHROUGH, FilterParams::NEUTRAL);
+        for n in 1..=3 {
+            let chain = vec![neutral; n];
+            let out = fx.run(&chain, None);
+            assert_eq!(out, fx.scene_bytes, "chain of {n} passthroughs");
+        }
+    }
+
+    /// DW-4.4: with the water mask empty (no water in view) — or absent — the
+    /// WaterDistortion pass leaves every pixel untouched, even at full
+    /// intensity.
+    #[test]
+    fn test_DW_4_4_water_pass_without_water_is_identity() {
+        let Some(mut fx) = fixture() else {
+            return;
+        };
+        let water = pass(PassId::WATER_DISTORTION, distortion_params(2.5, 1.0));
+        assert_eq!(fx.run(&[water], None), fx.scene_bytes, "no mask bound");
+        let empty = fx.mask(&[]);
+        assert_eq!(
+            fx.run(&[water], empty.texture()),
+            fx.scene_bytes,
+            "all-zero mask"
+        );
+    }
+
+    /// DW-4.2: the distortion shows on water and only on water — pixels the
+    /// mask covers move, the rest are byte-identical.
+    #[test]
+    fn test_DW_4_2_water_pass_distorts_only_inside_mask() {
+        let Some(mut fx) = fixture() else {
+            return;
+        };
+        // Two regions ("several water regions"): left strip and a bottom box.
+        let mask = fx.mask(&[[0.0, 0.0, 16.0, 48.0], [30.0, 36.0, 12.0, 12.0]]);
+        let inside = |x: usize, y: usize| x < 16 || (30..42).contains(&x) && y >= 36;
+        let water = pass(PassId::WATER_DISTORTION, distortion_params(2.5, 1.0));
+        let out = fx.run(&[water], mask.texture());
+        let outside = differing_pixels(&out, &fx.scene_bytes, |x, y| !inside(x, y));
+        assert_eq!(outside, 0, "pixels outside the mask must not move");
+        let covered = (0..W as usize * H as usize)
+            .filter(|i| inside(i % W as usize, i / W as usize))
+            .count();
+        let moved = differing_pixels(&out, &fx.scene_bytes, inside);
+        assert!(
+            moved * 4 > covered,
+            "distortion visible on water: {moved} of {covered} covered pixels moved"
+        );
+        // Intensity 0 or opacity 0 (a fully faded filter) distort nothing.
+        for p in [distortion_params(0.0, 1.0), distortion_params(2.5, 0.0)] {
+            let out = fx.run(&[pass(PassId::WATER_DISTORTION, p)], mask.texture());
+            assert_eq!(out, fx.scene_bytes);
+        }
+    }
+
+    /// The distortion is deterministic and animates with `uProgress`.
+    #[test]
+    fn test_water_pass_is_deterministic_and_progress_driven() {
+        let Some(mut fx) = fixture() else {
+            return;
+        };
+        let mask = fx.mask(&[[0.0, 0.0, 48.0, 48.0]]);
+        let a = fx.run(
+            &[pass(PassId::WATER_DISTORTION, distortion_params(2.0, 1.0))],
+            mask.texture(),
+        );
+        let b = fx.run(
+            &[pass(PassId::WATER_DISTORTION, distortion_params(2.0, 1.0))],
+            mask.texture(),
+        );
+        assert_eq!(a, b, "same uniform, same pixels");
+        let mut later = distortion_params(2.0, 1.0);
+        later.progress = 9.0;
+        let c = fx.run(&[pass(PassId::WATER_DISTORTION, later)], mask.texture());
+        assert_ne!(a, c, "progress scrolls the waves");
+    }
+
+    /// DW-4.1: the heat pass shimmers the whole view, scales with intensity
+    /// and is the identity at intensity 0.
+    #[test]
+    fn test_DW_4_1_heat_pass_displaces_pixels() {
+        let Some(mut fx) = fixture() else {
+            return;
+        };
+        let heat = |i: f32, o: f32| pass(PassId::HEAT_DISTORTION, distortion_params(i, o));
+        let strong = fx.run(&[heat(4.0, 1.0)], None);
+        let weak = fx.run(&[heat(1.0, 1.0)], None);
+        let moved_strong = differing_pixels(&strong, &fx.scene_bytes, |_, _| true);
+        let moved_weak = differing_pixels(&weak, &fx.scene_bytes, |_, _| true);
+        assert!(
+            moved_strong > (W * H) as usize / 4,
+            "visible shimmer: {moved_strong}"
+        );
+        assert!(
+            moved_strong > moved_weak,
+            "stronger intensity moves more pixels"
+        );
+        assert_eq!(
+            fx.run(&[heat(0.0, 1.0)], None),
+            fx.scene_bytes,
+            "intensity 0"
+        );
+        assert_eq!(fx.run(&[heat(4.0, 0.0)], None), fx.scene_bytes, "faded out");
+        // Heat is mask-independent: a bound mask changes nothing.
+        let mask = fx.mask(&[[0.0, 0.0, 10.0, 10.0]]);
+        assert_eq!(fx.run(&[heat(4.0, 1.0)], mask.texture()), strong);
+    }
+
+    /// The chain reads the previous pass's output (the vanilla `EndCapture`
+    /// swap): `[passthrough, heat]` equals heat alone, and `[heat,
+    /// passthrough]` too — a pass that read the original scene instead of the
+    /// swap target would still match here, so also compare a heat-then-water
+    /// stack against the water pass run over the heat output.
+    #[test]
+    fn test_chain_feeds_each_pass_the_previous_result() {
+        let Some(mut fx) = fixture() else {
+            return;
+        };
+        let neutral = pass(PassId::PASSTHROUGH, FilterParams::NEUTRAL);
+        let heat = pass(PassId::HEAT_DISTORTION, distortion_params(4.0, 1.0));
+        let water = pass(PassId::WATER_DISTORTION, distortion_params(2.5, 1.0));
+        let mask = fx.mask(&[[0.0, 0.0, 48.0, 48.0]]);
+        let heat_only = fx.run(&[heat], None);
+        assert_eq!(fx.run(&[neutral, heat], None), heat_only);
+        assert_eq!(fx.run(&[heat, neutral], None), heat_only);
+        let stacked = fx.run(&[heat, water], mask.texture());
+        assert_ne!(
+            stacked, heat_only,
+            "the water pass acted on the heat result"
+        );
+        // Reference: feed the heat output back in as the scene and run water.
+        let wrote = fx.post.scene_texture().expect("scene").clone();
+        fx.queue.write_texture(
+            wgpu::TexelCopyTextureInfo {
+                texture: &wrote,
+                mip_level: 0,
+                origin: wgpu::Origin3d::ZERO,
+                aspect: wgpu::TextureAspect::All,
+            },
+            &heat_only,
+            wgpu::TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(W * 4),
+                rows_per_image: Some(H),
+            },
+            wgpu::Extent3d {
+                width: W,
+                height: H,
+                depth_or_array_layers: 1,
+            },
+        );
+        let reference = fx.run(&[water], mask.texture());
+        assert_eq!(
+            stacked, reference,
+            "[heat, water] == water over heat's output"
+        );
+    }
+
+    /// Chains beyond [`MAX_CHAIN`] and empty chains are programmer errors.
+    #[test]
+    #[should_panic(expected = "post chain length")]
+    fn test_empty_chain_is_rejected() {
+        let Some(mut fx) = fixture() else {
+            panic!("post chain length (no adapter: satisfy the expectation)");
+        };
+        fx.run(&[], None);
     }
 }

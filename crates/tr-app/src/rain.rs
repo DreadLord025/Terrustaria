@@ -139,6 +139,12 @@ impl Rain {
         }
     }
 
+    /// `Main.maxRaining`: the intensity the event ramps toward (the
+    /// WaterDistortion rain term reads it, `SceneState.cs:129`).
+    pub fn max_raining(&self) -> f32 {
+        self.target
+    }
+
     /// `Main.cloudAlpha` clamped to the range the sky tint uses.
     pub fn visual_alpha(&self) -> f32 {
         self.intensity.clamp(0.0, 1.0)

@@ -128,19 +128,34 @@ impl Gpu {
     /// (`post.rs` module docs, DW-2.1). RENDER_ATTACHMENT for the scene pass,
     /// TEXTURE_BINDING for the filter pass to sample it.
     pub fn offscreen_target(&self, width: u32, height: u32, label: &str) -> wgpu::Texture {
-        self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(label),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: self.config.format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        })
+        offscreen_target_on(&self.device, self.config.format, width, height, label)
     }
+}
+
+/// [`Gpu::offscreen_target`] without a surface (the headless post tests build
+/// their own device). `COPY_SRC` lets tests and the screenshot path read it back.
+pub fn offscreen_target_on(
+    device: &wgpu::Device,
+    format: wgpu::TextureFormat,
+    width: u32,
+    height: u32,
+    label: &str,
+) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some(label),
+        size: wgpu::Extent3d {
+            width,
+            height,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+            | wgpu::TextureUsages::TEXTURE_BINDING
+            | wgpu::TextureUsages::COPY_SRC
+            | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
 }

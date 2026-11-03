@@ -91,6 +91,7 @@ impl ApplicationHandler for App {
             let mut post = tr_render::PostPipeline::new(gpu);
             post.resize(gpu, gpu.config.width, gpu.config.height);
             self.noise_tex = crate::app::frame::load_noise_texture(gpu);
+            self.water_mask = Some(tr_render::WaterMask::new(&gpu.device));
             self.post = Some(post);
         }
         self.window = Some(window);

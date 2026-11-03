@@ -215,6 +215,7 @@ impl App {
                 renderer,
                 post,
                 noise_tex,
+                water_mask,
                 filter_driver,
                 world,
                 atlas,
@@ -883,15 +884,43 @@ impl App {
                         },
                     );
                     let noise = noise_tex.as_ref();
-                    let params = filter_driver
-                        .output
-                        .unwrap_or(tr_render::FilterParams::NEUTRAL);
-                    post.apply_filter(
+                    // Phase 4: the water mask exists only while the
+                    // WaterDistortion filter is visible AND the liquid pass
+                    // drew water this frame (plan: "the second target only
+                    // while WaterDistortion is active"; with no water the pass
+                    // is the identity, so it and the target are skipped).
+                    let water_in_view =
+                        filter_driver.water_wanted() && !scratch.water_rects.is_empty();
+                    if let Some(mask) = water_mask.as_mut() {
+                        if water_in_view {
+                            mask.render(
+                                &gpu.device,
+                                &gpu.queue,
+                                (gpu.config.width, gpu.config.height),
+                                draw_cam.to_array(),
+                                *zoom,
+                                &scratch.water_rects,
+                            );
+                        } else {
+                            mask.release();
+                        }
+                    }
+                    let mut chain = filter_driver.chain(water_in_view);
+                    if chain.is_empty() {
+                        // No filter: the NEUTRAL passthrough (DW-2.1 identity).
+                        chain.push(tr_render::FilterPass {
+                            params: tr_render::FilterParams::NEUTRAL,
+                            pass: tr_render::PassId::PASSTHROUGH,
+                        });
+                    }
+                    post.apply_filters(
                         gpu,
                         &view,
-                        &params,
-                        tr_render::PassId(params.pass_index),
-                        tr_render::FilterImages { noise },
+                        &chain,
+                        tr_render::FilterImages {
+                            noise,
+                            water_mask: water_mask.as_ref().and_then(|m| m.texture()),
+                        },
                     );
                 } else {
                     stats = renderer.render(

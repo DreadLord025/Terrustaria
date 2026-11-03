@@ -1280,6 +1280,7 @@ mod front_flow_tests {
             renderer: None,
             post: None,
             noise_tex: None,
+            water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),
