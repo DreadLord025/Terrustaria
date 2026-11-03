@@ -67,7 +67,9 @@ impl Projectile {
         let center = self.pos + Vec2::splat(SIZE * 0.5);
         for n in npcs.iter_mut() {
             if n.hp > 0 && n.contains(center.x, center.y) {
-                n.hurt(self.damage, center.x);
+                // Projectile 43's `Item.shoot` knockBack is 12
+                // (`Projectile.cs` case 43) — `StrikeNPC`'s chain caps it.
+                n.hurt(self.damage, center.x, 12.0, false);
                 self.alive = false;
                 break;
             }

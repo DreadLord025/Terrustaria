@@ -9,7 +9,7 @@
 //! cells.
 
 use tr_core::tiledata as td;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
 use crate::buffs::BuffSlots;
 use crate::collision;
@@ -194,7 +194,10 @@ impl Player {
             return false;
         }
         self.hp = (self.hp - amount).max(0);
-        self.hurt_cd = 0.8;
+        // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
+        // for normal damage (no long-invincibility source yet), 20 when
+        // the damage is exactly 1; PVP 8 is unreachable in single-player.
+        self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         self.regen_time = 0.0;
         self.regen_acc = 0.0;
         let dir = if self.x + WIDTH * 0.5 >= from_x {
@@ -202,8 +205,10 @@ impl Player {
         } else {
             -1.0
         };
-        self.vx = dir * 4.0;
-        self.vy = -3.0;
+        // The fixed contact knockback (`Player.cs` Hurt: `4.5 * dir` with
+        // `-3.5` vertical unless noKnockback).
+        self.vx = dir * 4.5;
+        self.vy = -3.5;
         self.on_ground = false;
         true
     }
@@ -580,7 +585,7 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);

@@ -144,7 +144,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
-                n.hurt(dmg, pcx);
+                // The melee stand-in's knockback: a mid-sword 5.5
+                // (`Item.knockBack` for the copper shortsword class); the
+                // per-item values land with M3-ITEM.
+                n.hurt(dmg, pcx, 5.5, false);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs(held.kind);

@@ -1217,7 +1217,7 @@ section in brackets before starting a row.
 | M2-BUFF-6 | `M2-BUFF-6-luck` | full Luck.cs (ladybug/torch/coin/kite/potions) [8] |
 | M2-BUFF-7 | `M2-BUFF-7-food` | WellFed tiers + foods [8] |
 | M2-BUFF-8 | `M2-BUFF-8-banners` | kills + tile scan + BannerStrength [8] |
-| M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps [9] |
+| ✅ M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps: `tr_core::damage::knock_back_npc` (`NPC.cs:81389-81458` — the soft caps 8/10/12/14/16, crit ×1.4, the damage gate `damage·10 > lifeMax` (expert ·15) gating the X push-away with its anti-drift shape, the Y pop −kb·0.75 / ×0.5 no-gravity) + `iframes_for` (`Player.cs:38385` — 40 ticks normal, 80 long-invincible, 20 exactly-1-damage, PVP 8) [9] | done 2026-11-03: `Npc::knock_back_resist()` per kind/variant (blue 0.8, eye 0.8, wandering 0.8, zombie 0.5, king 0, variants ×1.2/1.4/0.95/0.9); `Npc::hurt` runs the chain (kb 5.5 melee stand-in, 12 shuriken projectile); `Player::hurt` iframe 40 ticks (0.667 s) + the fixed 4.5/−3.5 contact push; the cooldown-counter IDs land with M2-BUFF (only General is modelled) |
 | M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes [9] |
 | M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones [9] |
 | M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules + bed spawn [9] |
