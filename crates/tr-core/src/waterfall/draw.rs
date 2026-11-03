@@ -866,3 +866,62 @@ fn push(
         color,
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `TrySparkling` is the only randomness in the waterfall walk: one
+    /// 1-in-20000 roll per lit fall per frame, keyed on the frame-derived
+    /// seed (`WaterfallManager.cs:1046-1065`). The grant must be a pure
+    /// function of (seed, position, direction, light colour) — two managers
+    /// on the same frame must grant the exact same spawn point or none.
+    #[test]
+    fn try_sparkling_grants_deterministically_for_a_seed() {
+        // Find a seed the roll grants. The search itself is deterministic:
+        // the same seed always produces the same roll, so this finds the same
+        // seed on every machine and every run.
+        let seed = (0u64..)
+            .map(|s| {
+                let mut r = FastRandom::new(s);
+                (s, r.next_range(0, 20000))
+            })
+            .find(|(_, roll)| *roll < 8)
+            .expect("the 1-in-20000 roll must grant within the sweep")
+            .0;
+        let mut first = Vec::new();
+        try_sparkling(
+            &mut FastRandom::new(seed),
+            100,
+            40,
+            1,
+            [1.0, 1.0, 1.0, 1.0],
+            &mut first,
+        );
+        assert_eq!(first.len(), 1);
+        assert_eq!(first[0].x, (100 * 16 - 7) as f32);
+        assert_eq!(first[0].y, (40 * 16 + 6) as f32);
+        // A fresh RNG on the same seed grants the identical spawn.
+        let mut second = Vec::new();
+        try_sparkling(
+            &mut FastRandom::new(seed),
+            100,
+            40,
+            1,
+            [1.0, 1.0, 1.0, 1.0],
+            &mut second,
+        );
+        assert_eq!(first, second);
+        // A dark fall never rolls (`r/g/b` gate, `WaterfallManager.cs:1052`).
+        let mut dark = Vec::new();
+        try_sparkling(
+            &mut FastRandom::new(seed),
+            100,
+            40,
+            1,
+            [0.05, 0.05, 0.05, 1.0],
+            &mut dark,
+        );
+        assert!(dark.is_empty());
+    }
+}

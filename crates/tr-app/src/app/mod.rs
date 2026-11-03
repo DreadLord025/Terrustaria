@@ -377,6 +377,16 @@ pub(crate) fn no_hud() -> bool {
     *NO_HUD.get_or_init(|| std::env::var_os("TR_NOHUD").is_some())
 }
 
+/// True when a `TR_SHOT` capture runs without an explicit `TR_MOUSE` pin: the
+/// OS pointer is then parked offscreen and `CursorMoved` is ignored, so two runs
+/// of the same command produce SHA256-equal screenshots no matter where the
+/// desktop mouse happens to be. The pointer is harness input, not scene content;
+/// an explicit `TR_MOUSE` still wins (the cursor/tooltip shots).
+pub(crate) fn deterministic_pointer_park() -> bool {
+    static V: OnceLock<bool> = OnceLock::new();
+    *V.get_or_init(|| std::env::var_os("TR_SHOT").is_some() && mouse_pin().is_none())
+}
+
 /// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
 /// motion, so screenshots can deterministically show the cursor and a hovered
 /// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).
@@ -1061,7 +1071,11 @@ impl App {
         mouse_item: EMPTY_SLOT,
         ui_left_press: false,
         ui_right_press: false,
-        mouse_pos: mouse_pin().unwrap_or(Vec2::ZERO),
+        mouse_pos: if deterministic_pointer_park() {
+            Vec2::new(-64.0, -64.0)
+        } else {
+            mouse_pin().unwrap_or(Vec2::ZERO)
+        },
         cursor: ui::cursor::CursorState::default(),
         os_cursor_hidden: None,
         mine_down: false,

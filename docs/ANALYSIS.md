@@ -2234,3 +2234,43 @@ Deviations:
 - **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
+
+## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
+
+The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks
+pure-world screenshot determinism, `TR_NO_WATERFALL=1` restores SHA256
+equality") did **not** reproduce as a waterfall bug. The investigation:
+
+- Two `TR_SHOT` runs of the same command differed by exactly 290 px at the
+  forest lake — and *both* the `TR_NO_WATERFALL=1` and `TR_NO_WEATHER=1` pairs
+  differed the same way. The diff was a small blue arrow (the in-game
+  `Main.DrawCursor` sprite) at a different screen position per run: the **OS
+  mouse pointer**. `App.mouse_pos` starts at `Vec2::ZERO` and follows real
+  `CursorMoved` events, so the desktop pointer's position at capture time is
+  run-to-run harness noise.
+- An important false lead on the way: without a pristine world copy each run,
+  the default `Terrustaria.trwld` is **rewritten by the autosave**, so run N+1
+  loads run N's settled liquids and the comparison is meaningless. Deterministic
+  pairs must `cp` a pristine `.trwld` per run (or use `TR_SPOUT`, which builds
+  its fall by edits after load).
+- The waterfall walk itself was audited and is deterministic: all state runs on
+  fixed steppers (`waterfall_step`, `liquid_step`), `find_waterfalls` rescans on
+  a 30-tick gate, and `TrySparkling`'s single randomness (`WaterfallManager.cs:
+  1046-1065`) is pinned to a frame-derived `FastRandom` seed
+  (`frame_count * 0x9E3779B97F4A7C15 ^ world.seed`). New unit tests pin this:
+  `the_draw_walk_is_deterministic_for_the_same_seed_chain` (two managers, 600
+  seeded frames, equal quads/lights/sparkles every frame) and
+  `try_sparkling_grants_deterministically_for_a_seed` in `draw.rs` (the grant is
+  a pure function of the seed; dark falls never roll).
+
+Fix (harness semantics, a deliberate deviation from the C#): during a `TR_SHOT`
+capture without an explicit `TR_MOUSE`, the logical pointer is parked offscreen
+(`-64,-64`) and `CursorMoved` is ignored — `deterministic_pointer_park()`
+(`app/mod.rs`). The pointer is harness *input*, not scene content; the original's
+`Main.DrawCursor` still draws wherever the player's pointer is when `TR_MOUSE`
+pins it (cursor/tooltip screenshots keep working).
+
+Verified byte-identical SHA256 pairs (pristine world copy per run):
+- forest lake, waterfalls on, no `TR_MOUSE` — before the fix this pair differed;
+- `TR_SPOUT=2240,160` with the fall live in view for 1200 frames, no `TR_MOUSE`;
+- the same `TR_SPOUT` scene with `TR_MOUSE=200,200` (explicit pin still wins).
