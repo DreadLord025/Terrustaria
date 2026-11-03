@@ -1332,7 +1332,8 @@ section in brackets before starting a row.
 | M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
 | M7-WIRE-4 | `M7-WIRE-4-logic-gates` | logic gates & sensors [19] |
 | M7-WIRE-5 | `M7-WIRE-5-teleporters` | teleporters & pumps [19] |
-| M7-TE-1 | `M7-TE-1-tile-entities` | TE framework + 11 TEs [19] |
+| ✅ M7-TE-1 | `M7-TE-1-tile-entities` | done 2026-11-04: `tr-core/src/tile_entities.rs` — the framework (the registration-order ids `TileEntitiesManager.cs:27-40`, the `ByID`/`ByPosition` books on `World.tile_entities`, `place`/`remove_at`) and the item-holding halves — ItemFrame 395 / WeaponsRack 471 / FoodPlatter 520 / HatRack 475 with the `ValidTile` frame checks and the `(type, prefix, stack)` + presence-bitsByte wire/save shapes (`TEItemFrame.cs:37-56`, `TEHatRack.cs:59-80`) — 6 tests; the behaviour halves (dummy/sensor/doll/pylon/anchors) and the food gate = M7-TE-2, persistence = M6-SAVE-1 |
+| M7-TE-2 | `M7-TE-2-behaviour-halves` | dummy hit tracking, logic sensors, display doll, pylons, anchors [19] |
 | M7-SHIMMER-1 | `M7-SHIMMER-1-transforms` | shimmer [20] |
 | M7-GROWTH-1 | `M7-GROWTH-1-ticks` | growth [20] |
 | M7-EXTRACT-1 | `M7-EXTRACT-1-extractinator` | extractinator [20] |

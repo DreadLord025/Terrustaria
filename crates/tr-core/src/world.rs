@@ -23,6 +23,9 @@ pub struct World {
     /// — and the packed 12-byte `Tile` carries no header). Written by the
     /// wire-placing items, read by the wiring engine (`crate::wiring`).
     pub wires: crate::wiring::WireState,
+    /// `TileEntity.ByID`/`ByPosition` (`TileEntity.cs:15-16`) — the placed
+    /// tile entities and their position book (`crate::tile_entities`).
+    pub tile_entities: crate::tile_entities::TileEntities,
     pub width: i32,
     pub height: i32,
     /// Row-major tile storage: `tiles[y * width + x]`.
@@ -74,6 +77,7 @@ impl World {
             height,
             tiles: vec![Tile::default(); (width as usize) * (height as usize)],
             wires: crate::wiring::WireState::default(),
+            tile_entities: crate::tile_entities::TileEntities::default(),
             frame_important: Vec::new(),
             spawn_y: height / 4,
             spawn_x: width / 2,
