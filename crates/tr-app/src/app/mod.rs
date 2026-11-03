@@ -282,6 +282,16 @@ pub(crate) struct App {
     /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
     /// multiply their colour by it (`AmbientSky.cs:63`).
     pub(crate) atmo: f32,
+    /// `Main.SceneMetrics` (`Main.cs:1789`): the per-frame sensor state
+    /// `update_scene` derives; the ambience gates read its zone flags
+    /// (`AmbienceServer.cs:77-84`).
+    pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
+    /// The `AmbientSky` manager + `AmbienceServer` scheduler
+    /// (`crates/tr-app/src/ambience.rs`).
+    pub(crate) ambience: crate::ambience::Ambience,
+    /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
+    /// `NetAmbienceModule` loopback hands to `FastRandom`).
+    pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
@@ -1183,6 +1193,9 @@ impl App {
             rain,
             wind,
             atmo,
+            scene_metrics: tr_core::scene::SceneMetrics::new(),
+            ambience: crate::ambience::Ambience::new(),
+            ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             leaves: Vec::new(),

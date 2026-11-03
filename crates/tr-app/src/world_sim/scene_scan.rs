@@ -234,6 +234,9 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);
     filter_driver.apply_visuals(&metrics, scene_state, &inputs);
+    // `Main.SceneMetrics` persists per frame (`Main.cs:1789`); the ambience
+    // gates read its zone flags from the stored copy.
+    app.scene_metrics = metrics;
 }
 
 #[cfg(test)]
