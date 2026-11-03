@@ -7,6 +7,7 @@ mod biome;
 mod collision;
 mod inv;
 mod item;
+mod loot_db;
 mod map;
 mod menu;
 mod net;

@@ -2089,3 +2089,30 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   is `life <= 0` (`NPC.checkDead`).
 - The coin drops keep the port's pre-existing denominations (the `value`
   copper amounts are a separate M4-LOOT row).
+
+## The item drop rule engine (M4-LOOT-1)
+
+- `tr-core/src/loot.rs` ports the `ItemDropRules` machinery: the
+  `IItemDropRule` trait (+ `INestedItemDropRule` as `try_nested`), the three
+  chain attempts (`Chains.cs` OnSuccess/OnFailedRoll/OnFailedConditions),
+  `ItemDropResolver.ResolveRule`/`TryDropping`/`ResolveRuleChains`
+  (`ItemDropResolver.cs:14-62`), `ItemDropDatabase`
+  (register/register-multiple/remove-multiple), and the factories:
+  `CommonDrop`, `CommonDropWithRerolls`, `OneFromOptionsDropRule`,
+  `ItemDropWithConditionRule`, `DropBasedOnExpertMode`/`MasterMode`,
+  `DropLocalPerClientAndResetsNPCMoneyTo0` (the `npc.value = 0` side effect
+  becomes a `resets_money` flag on the [`DropRequest`]),
+  `DropOneByOne`, `DropBasedOnExtraGel`, `DropNothing`.
+- `Luck.cs`'s five rolls (`RollLuck`/`RollBadLuck`/`RollOnlyBadLuck`/
+  `RollBadLuckExtreme`/`RollOnlyBadLuckExtreme`) port verbatim — the shrink /
+  widen branches consume the stream exactly when the gate float passes.
+- The engine is RNG-generic (`DropRng` = `Next(min, max)` exclusive +
+  `NextFloat`); the app drives it from the same deterministic item stream as
+  the coin rolls. `ReportDroprates` (the bestiary rate report) is not ported —
+  M4-BEST-1 territory.
+- The slime family's loot moved from the hand-rolled `spawn_gel` rolls to a
+  real database slice (`crates/tr-app/src/loot_db.rs`): blue 1-2 gel always,
+  red/purple/black 2-5, pinky 25-50 Pink Gel + `NormalvsExpert(1309, 100, 70)`
+  (the Bladed Glove request is produced and then skipped until its item data
+  registers), green/baby nothing. The executor drops only registry-known
+  items.

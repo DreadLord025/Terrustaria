@@ -5,11 +5,11 @@
 use glam::Vec2;
 use tr_core::TILE_PX;
 
+use crate::app::{App, rand01};
 use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind, SlimeVariant};
 use crate::registry;
 use crate::spawner;
-use crate::app::{rand01, App};
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
@@ -42,11 +42,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         spawn_gel(app, kind, slime, x, y);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
-    let mut minions = app
-        .npcs
-        .iter()
-        .filter(|n| n.kind == NpcKind::Slime)
-        .count();
+    let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {
         if n.wants_minion {
@@ -115,29 +111,76 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
 }
 
-/// The slime gel loot: `ItemDropDatabase.cs:1074-1082` — the standard slimes
-/// drop `ItemDropRule.Gel(1, 1, 2)` (always 1-2), the red/purple/black
-/// variants `Gel(1, 2, 5)`; green, Baby Slime and Pinky drop no gel (Pinky
-/// drops pink gel instead, `:1072`). Gel is `ItemID 23`.
+/// The slime gel loot through the rule engine
+/// (`ItemDropResolver.TryDropping` + the `ItemDropDatabase.cs:1072-1082`
+/// registrations): the dead slime's vanilla net id resolves its registered
+/// rules; the executor skips requests for items the registry does not model
+/// (the Bladed Glove until its item data lands).
 fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) {
     if kind != NpcKind::Slime {
         return;
     }
-    let (min, max) = slime.stats().gel;
-    if max == 0 {
-        return;
-    }
-    let roll = rand01(&mut app.item_rng);
-    let count = min + (roll * (max - min + 1) as f32) as u32;
-    let item = if slime == SlimeVariant::Pinky {
-        3111 // ItemID.PinkGel (Pinky never reaches the gel rule anyway)
-    } else {
-        23 // ItemID.Gel
+    let net_id = match slime {
+        SlimeVariant::Blue => crate::loot_db::BLUE_SLIME,
+        SlimeVariant::Green => crate::loot_db::GREEN_SLIME,
+        SlimeVariant::Pinky => crate::loot_db::PINKY,
+        SlimeVariant::Baby => crate::loot_db::BABY_SLIME,
+        SlimeVariant::Black => crate::loot_db::BLACK_SLIME,
+        SlimeVariant::Purple => crate::loot_db::PURPLE_SLIME,
+        SlimeVariant::Red => crate::loot_db::RED_SLIME,
+        SlimeVariant::Yellow => crate::loot_db::YELLOW_SLIME,
     };
-    let vx = (rand01(&mut app.item_rng) * 2.0 - 1.0) * 1.2;
-    let vy = -1.5 - rand01(&mut app.item_rng);
-    let phase = rand01(&mut app.item_rng) * std::f32::consts::TAU;
-    app.items.push(ItemDrop::new(item, count, x, y, vx, vy, phase));
+    // The drop rolls ride the app's item stream (`rand01`), so the gel keeps
+    // its slot in the deterministic order.
+    let mut rng_state = app.item_rng;
+    let mut loot_rng = LootRng(&mut rng_state);
+    let mut info = tr_core::loot::DropAttemptInfo {
+        rng: &mut loot_rng,
+        luck: 0.0,
+        is_expert: false,
+        is_master: false,
+        active_players: 1,
+        extra_gel: false,
+    };
+    let mut out = Vec::new();
+    tr_core::loot::try_dropping(
+        crate::loot_db::slime_database(),
+        net_id,
+        &mut info,
+        &mut out,
+    );
+    app.item_rng = rng_state;
+    for req in out {
+        if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
+            let vx = (rand01(&mut app.item_rng) * 2.0 - 1.0) * 1.2;
+            let vy = -1.5 - rand01(&mut app.item_rng);
+            let phase = rand01(&mut app.item_rng) * std::f32::consts::TAU;
+            app.items.push(ItemDrop::new(
+                req.item as u16,
+                req.stack as u32,
+                x,
+                y,
+                vx,
+                vy,
+                phase,
+            ));
+        }
+    }
+}
+
+/// The engine's RNG adapter over the app's deterministic item stream.
+struct LootRng<'a>(&'a mut u64);
+
+impl tr_core::loot::DropRng for LootRng<'_> {
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        if max <= min {
+            return min;
+        }
+        min + (crate::app::rand01(self.0) * (max - min) as f32) as i32
+    }
+    fn next_float(&mut self) -> f32 {
+        crate::app::rand01(self.0)
+    }
 }
 
 /// `Item.NewItem` coin drops: a few copper from small enemies, gold from the boss.

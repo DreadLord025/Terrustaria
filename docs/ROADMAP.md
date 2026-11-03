@@ -1258,7 +1258,7 @@ section in brackets before starting a row.
 | M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
-| M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine [16] |
+| ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | M4-LOOT-3 | `M4-LOOT-3-money` | coin roll chain [16] |
 | M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline [9] |
