@@ -37,6 +37,8 @@ re-implement something that already exists, or to port the wrong file.
 | `Main.cs` `DrawSunAndMoon` / `SetBackColor` (sun+moon placement & tint) | `crates/tr-core/src/sky.rs` | partial |
 | `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization/` (`mod`/`culture`/`format`/`json`) | partial |
 | block place/break/edit rules (`WorldGen.*`, `HitTile`) | `crates/tr-core/src/edit.rs` | partial |
+| `ObjectData/TileObjectData.cs` + `TileObject.cs` (`CanPlace`/`Place`), KillTile `Check*` cascade (`WorldGen.cs`) | `crates/tr-core/src/tileobject.rs` (registry, `can_place`/`place`, `object_tiles_at`), `crates/tr-core/src/edit.rs` (`place_item_tile`, `kill_tile` cascade) | partial (wooden slice 10/11/14/15/18/21; full-registry generator is the follow-up — ANALYSIS "Tile objects (M1.4-TO)") |
+| `WorldGen.OpenDoor`/`CloseDoor` + the `Player.LookForTileInteractions` right-click chain | `crates/tr-core/src/edit.rs` (`interact_at`/`open_door`/`close_door`), hook in `crates/tr-app/src/world_sim/editing.rs` (`update_editing`) | done for doors (door net message not wired — ANALYSIS "Tile objects (M1.4-TO)") |
 | `BinaryReader`/`BinaryWriter` (the LE primitives behind the world/map IO) | `crates/tr-core/src/binio.rs` (`Reader`/`Writer`) | done |
 
 ## Game / presentation (`crates/tr-app`)

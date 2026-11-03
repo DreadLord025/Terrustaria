@@ -28,6 +28,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Player_Hit_0", 1),
     ("NPC_Hit_1", 3),
     ("Double_Jump", 16),
+    // `SoundEngine.PlaySound(8/:9)` — `WorldGen.OpenDoor` (`WorldGen.cs:37732`)
+    // and `CloseDoor` (`:31906`).
+    ("Door_Opened", 8),
+    ("Door_Closed", 9),
 ];
 
 fn sound_type(cue: &str) -> u32 {

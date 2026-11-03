@@ -55,7 +55,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Renderer (atlas, instancing, zoom, frame cache) | ✅ | 2 draw calls; G6 cache; zoom 1.0–2.0 |
-| Autotiling / framing | ✅ (core) | generic chain + merge pairs + grass chain; TileFrameImportant multi-tile missing (M1.4-TO) |
+| Autotiling / framing | ✅ (core) | generic chain + merge pairs + grass chain; multi-tile objects landed (M1.4-TO: registry, placement, KillTile cascade, door interaction; gemspark/glow remain) |
 | Lighting | ✅ (core) | scanner 147 cases + blur + 4 modes; sun/moon/star light missing |
 | Liquids & waterfalls | ✅ (core) | sim + both draw passes + per-style waterfalls + shimmer draw; vertex distortion missing |
 | Sky / weather visuals | 🟡 | clouds/stars/sun/rain/storm banks done; ambient creature skies, `HorizonClouds` tint, storm branch missing |
@@ -148,6 +148,10 @@ referenced here exist in the catalog.
 
 **Tasks:** M1.4-TO (umbrella) → M1.4-TO-1 doors, -2 chests, -3 furniture/Check3x2 family,
 -4 herbs/alch/pots; TILE-DRAW-1/2/3/4/5 as before; TILE-DRAW-6 vines/moss/cactus arms.
+  **Landed (2026-11-03, `M1.4-TO-tile-objects`):** the TileObjectData registry + wooden-set
+  placement (10/11/14/15/18/21), the KillTile per-type cascade (Check1x2/2x1/3x2/Door/Chest),
+  the world interaction hook and OpenDoor/CloseDoor; remaining: -4 herbs/alch/pots,
+  gemspark/glow, the full-registry generator.
 
 ## 3. Liquids & waterfalls
 
