@@ -8,6 +8,7 @@
 //! out-of-combat health regeneration. Half bricks and ceiling slopes still count as full
 //! cells.
 
+use crate::registry;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
 
@@ -49,6 +50,15 @@ pub struct PlayerInput {
 
 #[derive(Clone, Debug)]
 pub struct Player {
+    // The class combat stats (`Player.cs:2430-2437`): every class starts at
+    // crit 4 and a 1.0 damage multiplier; the equipment modifies them
+    // (M3-EQUIP).
+    pub melee_crit: i32,
+    pub ranged_crit: i32,
+    pub magic_crit: i32,
+    pub melee_damage: f32,
+    pub ranged_damage: f32,
+    pub magic_damage: f32,
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
@@ -112,6 +122,12 @@ impl Player {
         let sx = world.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5;
         let sy = world.spawn_y as f32 * TILE_PX;
         Self {
+            melee_crit: 4,
+            ranged_crit: 4,
+            magic_crit: 4,
+            melee_damage: 1.0,
+            ranged_damage: 1.0,
+            magic_damage: 1.0,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -215,6 +231,28 @@ impl Player {
 
     pub fn center(&self) -> (f32, f32) {
         (self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5)
+    }
+
+    /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
+    /// the ported classes: the classless items pass the 1f default.
+    pub fn weapon_damage_multiplier(&self, class: registry::DamageClass) -> f32 {
+        match class {
+            registry::DamageClass::Melee => self.melee_damage,
+            registry::DamageClass::Ranged => self.ranged_damage,
+            registry::DamageClass::Magic => self.magic_damage,
+            _ => 1.0,
+        }
+    }
+
+    /// The class crit source (`Player.meleeCrit`/`rangedCrit`/`magicCrit`,
+    /// `Player.cs:2430-2432`; base 4 per class).
+    pub fn class_crit(&self, class: registry::DamageClass) -> i32 {
+        match class {
+            registry::DamageClass::Melee => self.melee_crit,
+            registry::DamageClass::Ranged => self.ranged_crit,
+            registry::DamageClass::Magic => self.magic_crit,
+            _ => 0,
+        }
     }
 
     /// Direct health loss with no knockback or i-frames, used by drowning and fall

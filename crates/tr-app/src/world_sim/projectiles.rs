@@ -1,7 +1,7 @@
 //! Projectile simulation (plan stage A4): the fixed 60 Hz shuriken step.
 
-use crate::projectile::Projectile;
 use crate::app::App;
+use crate::projectile::Projectile;
 
 /// Fixed 60 Hz projectile stepping. Damage lands through `Npc::hurt`, so the
 /// hit cooldown and knockback are shared with melee.
@@ -10,7 +10,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         if let Some(p) = &app.player {
             let (cx, cy) = p.center();
             app.projectiles
-                .push(Projectile::shuriken(cx - 3.0, cy - 3.0, 11.0, 0.0));
+                .push(Projectile::shuriken(cx - 3.0, cy - 3.0, 11.0, 0.0, false));
         }
         app.dev_throw = false;
     }
