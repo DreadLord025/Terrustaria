@@ -23,18 +23,22 @@ pub struct Projectile {
     pub rot: f32,
     pub age: f32,
     pub damage: i32,
+    /// The crit decision rolled at throw time from the thrower's ranged crit
+    /// (the item stream lives in the app, not in the projectile step).
+    pub crit: bool,
     bounces: u8,
     pub alive: bool,
 }
 
 impl Projectile {
-    pub fn shuriken(x: f32, y: f32, vx: f32, vy: f32) -> Self {
+    pub fn shuriken(x: f32, y: f32, vx: f32, vy: f32, crit: bool) -> Self {
         Self {
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
             rot: 0.0,
             age: 0.0,
             damage: 10,
+            crit,
             bounces: 0,
             alive: true,
         }
@@ -69,7 +73,9 @@ impl Projectile {
             if n.hp > 0 && n.contains(center.x, center.y) {
                 // Projectile 43's `Item.shoot` knockBack is 12
                 // (`Projectile.cs` case 43) — `StrikeNPC`'s chain caps it.
-                n.hurt(self.damage, center.x, 12.0, false);
+                // The crit was rolled at throw time (`Projectile.Damage` ->
+                // `StrikeNPC`; the stream lives in the app).
+                n.hurt(self.damage, center.x, 12.0, self.crit);
                 self.alive = false;
                 break;
             }
@@ -152,7 +158,7 @@ mod tests {
         let w = ground();
         let mut slime = Npc::spawn_slime(&w, 14).unwrap();
         let hp = slime.hp;
-        let mut p = Projectile::shuriken(10.0 * TILE_PX, 29.0 * TILE_PX, 10.0, 0.0);
+        let mut p = Projectile::shuriken(10.0 * TILE_PX, 29.0 * TILE_PX, 10.0, 0.0, false);
         for _ in 0..120 {
             p.update(&w, std::slice::from_mut(&mut slime), 1.0 / 60.0);
             if !p.alive {
@@ -174,7 +180,7 @@ mod tests {
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        let mut p = Projectile::shuriken(16.0 * TILE_PX, 28.0 * TILE_PX, 10.0, 0.0);
+        let mut p = Projectile::shuriken(16.0 * TILE_PX, 28.0 * TILE_PX, 10.0, 0.0, false);
         for _ in 0..240 {
             p.update(&w, &mut [], 1.0 / 60.0);
         }
@@ -187,7 +193,7 @@ mod tests {
         let w = ground();
         let mut slime = Npc::spawn_slime(&w, 20).unwrap();
         let hp = slime.hp;
-        let mut p = Projectile::shuriken(10.0 * TILE_PX, 28.0 * TILE_PX, 0.0, -6.0);
+        let mut p = Projectile::shuriken(10.0 * TILE_PX, 28.0 * TILE_PX, 0.0, -6.0, false);
         for _ in 0..90 {
             p.update(&w, std::slice::from_mut(&mut slime), 1.0 / 60.0);
         }

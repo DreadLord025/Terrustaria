@@ -60,9 +60,9 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Liquids & waterfalls | ✅ (core) | sim + both draw passes + per-style waterfalls + shimmer draw; vertex distortion missing |
 | Sky / weather visuals | 🟡 | clouds/stars/sun/rain/storm banks done; ambient creature skies, `HorizonClouds` tint, storm branch missing |
 | World generation | 🟡 | compact native model (forest/snow/desert); vanilla pass pipeline not ported |
-| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot engine (M2-BUFF-1); no regen/debuff effects/combat stats/dash/wings/hooks/mounts |
+| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot & regen engines (M2-BUFF-1/2); no debuff effects/combat stats/dash/wings/hooks/mounts |
 | Items | 🟡 | hotbar/mining/placing/drops + per-item use timings + a 7-recipe crafting subset (M3-CRAFT); no ammo/mana/equipment, the recipe table is a subset |
-| Combat | 🟡 | contact damage, melee, hurt/respawn, King Slime + the damage pipeline (DamageVar/armor-pen/crit gate) + iframes/KB caps; no damage classes, no banners |
+| Combat | 🟡 | contact damage, melee, hurt/respawn, King Slime + the damage pipeline (DamageVar/armor-pen/crit gate + damage classes) + iframes/KB caps; no banners |
 | NPCs | 🟡 | slime colour family (8 variants + vanilla stats/tints/gel drops) + demon eye/Wandering Eye/zombie + King Slime + the drop-rule/money-roll engine; ~700 types, town system missing |
 | Projectiles | ⬜ | shuriken first pass only; no engine (immunity/penetrate/minions) |
 | Wiring / tile entities / shimmer / fishing / pylons | ⬜ | — |
@@ -403,7 +403,7 @@ jumps.
   has a duplicated unreachable branch (`>24900 → 0.175` twice, `Player.cs:18125`); buff
   383 cap 43200 = exactly one day; mana sickness −25 % magic at 300 ticks fading.
 
-**Tasks:** M2-BUFF-1 buff slot engine, M2-BUFF-2 regen engines (life/mana), M2-BUFF-3
+**Tasks:** ✅ M2-BUFF-1 buff slot engine, ✅ M2-BUFF-2 regen engines (life/mana), M2-BUFF-3
 DoT debuffs, M2-BUFF-4 stat/movement debuffs, M2-BUFF-5 environmental auras (SceneMetrics
 scan), M2-BUFF-6 luck system, M2-BUFF-7 food/WellFed, M2-BUFF-8 banners.
 
@@ -445,7 +445,7 @@ scan), M2-BUFF-6 luck system, M2-BUFF-7 food/WellFed, M2-BUFF-8 banners.
   damage taken); expert defense formula reads `Damage − defense*0.5` after a ×0.75
   multiplier — verify order when porting; death drops gems even in softcore.
 
-**Tasks:** ✅ M4-DAMAGE (damage pipeline), ✅ M2-COMBAT-1 iframes & knockback, 🔄
+**Tasks:** ✅ M4-DAMAGE (damage pipeline), ✅ M2-COMBAT-1 iframes & knockback, ✅
 M2-COMBAT-2 crit/damage classes, M2-DEATH-1 death drops & tombstones, M2-DEATH-2
 respawn rules, M4-REVENGE-1 coin-loss revenge.
 
@@ -1189,6 +1189,7 @@ section in brackets before starting a row.
 | M1.4-WEATHER-1 | `M1.4-WEATHER-1-wind-gusts` | wind gust events + extreme wind [5] |
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
+| ✅ M1.5-LIQUID-2-det-fix | `M1.5-LIQUID-2-det-fix` | done 2026-11-03: the `TR_SHOT` SHA256 mismatch blamed on the sparkle pass was the **OS pointer** leaking into captures — `deterministic_pointer_park()` parks it offscreen and ignores `CursorMoved` during a capture without `TR_MOUSE`; the sparkle walk itself proven seed-deterministic (2 unit tests, byte-equal `TR_SPOUT` pairs). Caveat for future pairs: the autosave rewrites the loaded world — copy a pristine `.trwld` per run (ANALYSIS "Deterministic screenshots") |
 | M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
 | 🔄 M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon/star light, invisible blocks [4] |
 | ✅ M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella — done 2026-11-03: the registry as a flat const slice (the wooden set 10/11/14/15/18/21), `TileObject.CanPlace`/`Place`, the KillTile cascade (CheckDoorClosed/Open, CheckChest, Check1x2/2x1/3x2), the world-interaction hook `interact_at` + OpenDoor/CloseDoor + door sounds; remaining: the full-registry generator, gemspark/glow (excluded — wall/light render work), the LMB frame_important gate (→ M1.4-TO-5); deviations in ANALYSIS "Tile objects (M1.4-TO)" [2] |
@@ -1197,7 +1198,6 @@ section in brackets before starting a row.
 | 🟡 M1.4-TO-3 | `M1.4-TO-3-furniture` | Check3x2/3x3/6x3 family + anchors — Check1x2/2x1/3x2 + table/chair/workbench placement landed; the 3x3/6x3 furniture and the table sub-tile styles 13/25 wait for the full-registry generator [2] |
 | M1.4-TO-4 | `M1.4-TO-4-herbs-pots` | herbs/pots/alch/sunflower/piles [2][20] |
 | M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles (`world_sim/editing.rs:158-165` — the cascade runs from every other break source; requested by the M1.4-TO report) [2] |
-| M1.5-LIQUID-2-det-fix | (no branch) | the waterfall sparkle pass breaks pure-world screenshot determinism — `TR_NO_WATERFALL=1` restores SHA256 equality (bisected 2026-11-03 on the M4-LOOT-3 branch, desert-with-water pair); found during M4-LOOT-3 [3] |
 
 ## Milestone 2 — player
 
@@ -1216,7 +1216,7 @@ section in brackets before starting a row.
 | M2-PHYS-7 | `M2-PHYS-7-minecart` | rails/boost/ramp/sparks [7][22] |
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
 | ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
-| M2-BUFF-2 | `M2-BUFF-2-regen` | life/mana regen engines [8] |
+| ✅ M2-BUFF-2 | `M2-BUFF-2-regen` | done 2026-11-03: `regen.rs` — the full `UpdateLifeRegen` accumulator (`Player.cs:18942-19391`: ramp tiers 300..3000, the 3600 cap, moving ×0.5 / still ×1.25, the banker's-rounded `statLifeMax2` add, the ±120/−600 counters) and `UpdateManaRegen`/`ApplyManaRegenerationDelay` (`:19380-19562`: the delay curve, the still/grapple double-add, the `num9 = 0.5` fill curve, floor 2, +1 per 120); DoT/aura/item/grapple inputs are neutral defaults for M2-BUFF-3/5 + M3-EQUIP; wired into `update_survival` |
 | M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
 | M2-BUFF-5 | `M2-BUFF-5-auras` | SceneMetrics auras (campfire/lantern/star/sunflower/candles) [8] |
@@ -1224,7 +1224,7 @@ section in brackets before starting a row.
 | M2-BUFF-7 | `M2-BUFF-7-food` | WellFed tiers + foods [8] |
 | M2-BUFF-8 | `M2-BUFF-8-banners` | kills + tile scan + BannerStrength [8] |
 | ✅ M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps: `tr_core::damage::knock_back_npc` (`NPC.cs:81389-81458` — the soft caps 8/10/12/14/16, crit ×1.4, the damage gate `damage·10 > lifeMax` (expert ·15) gating the X push-away with its anti-drift shape, the Y pop −kb·0.75 / ×0.5 no-gravity) + `iframes_for` (`Player.cs:38385` — 40 ticks normal, 80 long-invincible, 20 exactly-1-damage, PVP 8) [9] | done 2026-11-03: `Npc::knock_back_resist()` per kind/variant (blue 0.8, eye 0.8, wandering 0.8, zombie 0.5, king 0, variants ×1.2/1.4/0.95/0.9); `Npc::hurt` runs the chain (kb 5.5 melee stand-in, 12 shuriken projectile); `Player::hurt` iframe 40 ticks (0.667 s) + the fixed 4.5/−3.5 contact push; the cooldown-counter IDs land with M2-BUFF (only General is modelled) |
-| 🔄 M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes [9] |
+| ✅ M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes: `registry::DamageClass` (None/Melee/Ranged/Magic/Summon/Thrown; the shuriken is Ranged, blocks/torches classless), `ItemDef.crit` + `Player` class stats (`meleeCrit`/`rangedCrit`/`magicCrit` = 4, the ×1.0 damage multipliers — `Player.cs:2430-2437`), `weapon_damage_multiplier`/`class_crit` accessors (`GetWeaponDamageMultiplier` `Player.cs:53386`), the melee hit rolls `crit_roll(meleeCrit + item.crit)` and applies the multiplier; the shuriken’s ranged crit bakes at throw time from the item stream | done 2026-11-03: the crit gate itself landed with M4-DAMAGE; ammo/bow-gun specialist splits stay out until the ammo system (M3-ITEM-3) |
 | M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones [9] |
 | M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules + bed spawn [9] |
 | M2-MOUNT-1..4 | `M2-MOUNT-1-framework` … | mounts per category [22] |
@@ -1267,7 +1267,7 @@ section in brackets before starting a row.
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
 | ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
-| ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ separate find: the waterfall sparkle pass breaks pure-world screenshot determinism (`TR_NO_WATERFALL=1` restores SHA256 equality; bisected 2026-11-03 on f07f96d1+loot, desert-with-water pair) — follow-up `M1.5-LIQUID-2-det-fix` (catalog row in Milestone 1) |
+| ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ the SHA256 pair mismatch originally blamed on the sparkle pass was the OS pointer leaking into `TR_SHOT` captures; fixed by `M1.5-LIQUID-2-det-fix` (the sparkle walk itself is seed-pinned and byte-stable — ANALYSIS "Deterministic screenshots") |
 | ✅ M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline: `tr-core/src/damage.rs` — `DamageVar` (±15 % + the luck reroll, banker’s rounding via `round_bankers`), `CalculateDamageNPCsTake` (defense x0.5, floor 1), `checkArmorPenetration` (ichor/broken/Betsy + the percent, capped at defense/2), the `StrikeNPC_Inner` line (crit x2 after defense), the crit gate (`Next(1,101) <= crit`, base 4) [9] | done 2026-11-03: 8 seeded tests; wired into the melee hit (`DamageVar` -> defense -> floor via the item stream); the contact hit passes flat damage until the combat rng reaches `Npc::contact` (deviation in ANALYSIS); the player-side defense/Hurt formulas land with M3-EQUIP |
 | M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
@@ -1349,9 +1349,9 @@ section in brackets before starting a row.
 
 1. **Finish M1**: M1.5-LIGHT-3 (🔄 in flight) → M1.4-BG-19/20 (ambient skies /
    ambience) → the M1.4-TO leftovers (TO-5 gate, TO-3 generator, TO-4) →
-   M1.5-LIQUID-3 + M1.5-LIQUID-2-det-fix.
-2. **M2 combat floor**: M2-BUFF-2 (regen) → M2-BUFF-3/4 (debuffs). M4-DAMAGE,
-   M2-BUFF-1 and M2-COMBAT-1 landed; M2-COMBAT-2 is in flight.
+   M1.5-LIQUID-3.
+2. **M2 combat floor**: M2-BUFF-3/4 (debuffs). The engines all landed (M4-DAMAGE,
+   M2-BUFF-1/2, M2-COMBAT-1/2).
 3. **M3 next**: M3-CHEST-UI (the chest tile seam landed with M1.4-TO) and
    M3-CRAFT-2 (recipe groups → the SetupRecipes generator).
 4. **M4 in parallel**: M4-NPC-1 families → M4-PROJ-1 (projectile engine) →
@@ -1359,7 +1359,8 @@ section in brackets before starting a row.
 5. **M5**: M5-GEN-1 pipeline scaffold first — everything else slots into it.
 6. **M7**: M7-WIRE-1 + M7-TE-1 (wiring/TEs unlock builds and bosses' arenas).
 7. Everything else per capacity; the two-agent rule (agents.md) applies — check
-   `git branch -a` first (in flight 2026-11-03: M1.5-LIGHT-3, M2-COMBAT-2).
+   `git branch -a` first (in flight 2026-11-03: M1.5-LIGHT-3; the M2-COMBAT-2
+   branch on origin awaits the usual post-merge cleanup).
 
 ## Non-goals (unchanged)
 

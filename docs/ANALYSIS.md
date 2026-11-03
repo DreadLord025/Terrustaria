@@ -2303,3 +2303,78 @@ Deviations:
 - **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
+
+## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
+
+The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks
+pure-world screenshot determinism, `TR_NO_WATERFALL=1` restores SHA256
+equality") did **not** reproduce as a waterfall bug. The investigation:
+
+- Two `TR_SHOT` runs of the same command differed by exactly 290 px at the
+  forest lake — and *both* the `TR_NO_WATERFALL=1` and `TR_NO_WEATHER=1` pairs
+  differed the same way. The diff was a small blue arrow (the in-game
+  `Main.DrawCursor` sprite) at a different screen position per run: the **OS
+  mouse pointer**. `App.mouse_pos` starts at `Vec2::ZERO` and follows real
+  `CursorMoved` events, so the desktop pointer's position at capture time is
+  run-to-run harness noise.
+- An important false lead on the way: without a pristine world copy each run,
+  the default `Terrustaria.trwld` is **rewritten by the autosave**, so run N+1
+  loads run N's settled liquids and the comparison is meaningless. Deterministic
+  pairs must `cp` a pristine `.trwld` per run (or use `TR_SPOUT`, which builds
+  its fall by edits after load).
+- The waterfall walk itself was audited and is deterministic: all state runs on
+  fixed steppers (`waterfall_step`, `liquid_step`), `find_waterfalls` rescans on
+  a 30-tick gate, and `TrySparkling`'s single randomness (`WaterfallManager.cs:
+  1046-1065`) is pinned to a frame-derived `FastRandom` seed
+  (`frame_count * 0x9E3779B97F4A7C15 ^ world.seed`). New unit tests pin this:
+  `the_draw_walk_is_deterministic_for_the_same_seed_chain` (two managers, 600
+  seeded frames, equal quads/lights/sparkles every frame) and
+  `try_sparkling_grants_deterministically_for_a_seed` in `draw.rs` (the grant is
+  a pure function of the seed; dark falls never roll).
+
+Fix (harness semantics, a deliberate deviation from the C#): during a `TR_SHOT`
+capture without an explicit `TR_MOUSE`, the logical pointer is parked offscreen
+(`-64,-64`) and `CursorMoved` is ignored — `deterministic_pointer_park()`
+(`app/mod.rs`). The pointer is harness *input*, not scene content; the original's
+`Main.DrawCursor` still draws wherever the player's pointer is when `TR_MOUSE`
+pins it (cursor/tooltip screenshots keep working).
+
+Verified byte-identical SHA256 pairs (pristine world copy per run):
+- forest lake, waterfalls on, no `TR_MOUSE` — before the fix this pair differed;
+- `TR_SPOUT=2240,160` with the fall live in view for 1200 frames, no `TR_MOUSE`;
+- the same `TR_SPOUT` scene with `TR_MOUSE=200,200` (explicit pin still wins).
+
+## Regeneration engines (M2-BUFF-2)
+
+`crates/tr-app/src/regen.rs` ports the life and mana regen accumulators:
+`UpdateLifeRegen` (`Player.cs:18942-19391`) — the DoT clamps, the ramp tiers at
+300/600/900/1200/1500/1800/2400/3000, the 3600 cap, moving ×0.5 vs standing
+×1.25, the final `(int)Math.Round(num3 * (statLifeMax2/400·0.85 + 0.15))` add
+(banker's, via the shared `tr_core::damage::round_bankers`, now `pub`), the
+±120 chunk counters and the generic −120 drain (≤4 hp per examined chunk) —
+and `UpdateManaRegen` / `ApplyManaRegenerationDelay` (`:19380-19562`) — the
+delay curve `((1−mana/max)·240+45)·0.7`, the standing/grappling/buff double
+decrement, the `maxMana/3 + 1` base with the still/grapple double-add, the
+`num9 = 0.5` fill curve and the floor of 2. Wired into `update_survival`
+behind an `hp > 0` gate; `Hurt` resets `lifeRegenTime` (`:38395`) while the
+direct `statLife -=` paths (drowning, fall) do not — the old placeholder reset
+in both and was corrected.
+
+Deviations:
+
+- **Inputs for systems that do not exist yet.** The DoT branches (M2-BUFF-3),
+  campfire/heart-lantern auras (M2-BUFF-5), item multipliers and
+  `manaRegenDelayBonus`/arcane crystal (M3-EQUIP), sitting/sleeping
+  (M7-INTERACT) and the grapple flag (M2-PHYS-6) are neutral-default
+  `RegenInputs` fields the engine already applies in the original order.
+  The shinyStone standing-still package (`:19104-19108`, `:19126-19134`) folds
+  into `extra_time`/`extra_regen`/`extra_ramp_scale` when M3-EQUIP lands.
+- **Death from a DoT drain clamps at 0 hp** — the C# `KillMe` reasons per
+  debuff (`:19367-19390`) land with M2-DEATH.
+- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
+  deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
+- **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
+- **Integration-test pace corrected** — `health_regenerates_after_a_delay`
+  bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
+  `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
+  20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.

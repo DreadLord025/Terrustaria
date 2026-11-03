@@ -96,6 +96,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
@@ -107,11 +108,20 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
             if dir != Vec2::ZERO {
                 let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                // The ranged crit rolls at throw time (`rangedCrit` + the
+                // item's crit; `Projectile.Damage` consumes it on hit) — the
+                // item stream lives here, not in the projectile step.
+                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                let crit = tr_core::damage::crit_roll(
+                    &mut loot_rng,
+                    player.class_crit(registry::DamageClass::Ranged) + item_crit,
+                );
                 app.projectiles.push(Projectile::shuriken(
                     spawn.x - 3.0,
                     spawn.y - 3.0,
                     dir.x * 11.0,
                     dir.y * 11.0,
+                    crit,
                 ));
                 app.inventory[app.selected].count =
                     app.inventory[app.selected].count.saturating_sub(1);
@@ -132,25 +142,36 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
-                // `Player.ItemCheck_MeleeHitNPCs` -> `NPC.StrikeNPC`:
-                // `DamageVar` -> `CalculateDamageNPCsTake` with the NPC's
-                // defense (`NPC.cs:81226`; armor pen joins when the item
-                // data carries it — M3-TOOL).
+                // `Player.ItemCheck_MeleeHitNPCs`: the class multiplier, the
+                // crit roll (`meleeCrit` + the item's crit), `DamageVar`, then
+                // `CalculateDamageNPCsTake` with the NPC's defense
+                // (`NPC.cs:81226`; armor pen joins when the item data carries
+                // it — M3-TOOL).
+                let class = if held_weapon {
+                    registry::get(held.kind)
+                        .map(|d| d.class)
+                        .unwrap_or_default()
+                } else {
+                    registry::DamageClass::Melee
+                };
+                let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
                 let raw = if held_weapon {
-                    registry::damage(held.kind) as f32
+                    registry::damage(held.kind) as f32 * player.weapon_damage_multiplier(class)
                 } else {
                     15.0
                 };
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                let crit =
+                    tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
                 let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, 0.0);
-                let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), false);
+                let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);
                 // The melee stand-in's knockback: a mid-sword 5.5
                 // (`Item.knockBack` for the copper shortsword class); the
                 // per-item values land with M3-ITEM.
-                n.hurt(dmg, pcx, 5.5, false);
+                n.hurt(dmg, pcx, 5.5, crit);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs(held.kind);
