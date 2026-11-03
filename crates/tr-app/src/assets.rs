@@ -154,6 +154,24 @@ pub fn load_world_images(
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
+        // 165-185` indexes the texture arrays by the armor slot itself, so the file
+        // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
+        // 1.4.4+ body composite `Armor/Armor_{n}` (the torso + shoulders + arms
+        // grid: torso (0,0)/(1,0), shoulders (0,1)/(1,1), arms cols 2-6, front
+        // arm col 7, back arm col 8 — `PlayerDrawSet.cs:2241`).
+        "Armor_Head_1",
+        "Armor_Head_2",
+        "Armor_Head_3",
+        "Armor_Head_4",
+        "Armor_Legs_1",
+        "Armor_Legs_2",
+        "Armor_Legs_3",
+        "Armor_Legs_4",
+        "Armor/Armor_1",
+        "Armor/Armor_2",
+        "Armor/Armor_3",
+        "Armor/Armor_4",
         "NPC_1",
         "NPC_2",
         "NPC_3",

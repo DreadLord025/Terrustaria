@@ -515,7 +515,8 @@ goblin reforge UI + cost, M3-DYES-1 dye slot plumbing (shader-pass architecture)
 
 ## 12. Equipment & armor sets
 
-**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** ⬜ · ⬜.
+**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** `inv.rs`,
+`render/player_layers.rs` (armor sheets) · 🟡 slots + armor draw + persistence done.
 
 - Slots: `armor[20]`, `dye[10]`, `inventory[59]` (50-57 = 4 coins + 4 ammo) — functional
   accessories are slots 3-9 (5 base + Demon Heart + master slot) gated by
@@ -1197,7 +1198,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| 🟡 M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor/accessories go live with M3-EQUIP |
+| ✅ M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor renders with M3-EQUIP (accessories render with M3-EQUIP-3) |
 | ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation; the rotation source consumes M2-ANIM use fractions (swing-arc stand-in replaced in the M3-CRAFT merge) |
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
@@ -1237,7 +1238,7 @@ section in brackets before starting a row.
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
 | M3-ITEM-5 | `M3-ITEM-5-channel-reuse` | channel + reuseDelay [10] |
 | M3-TOOL | `M3-TOOL-tiers` | pick/axe/hammer tiers + use logic |
-| M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12] |
+| ✅ M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12]; armor renders on the player (Cu/Fe/Ag/Au via the 1.4.4+ body composite), armor kinds persist in the `.trplayer` v4 sidecar, `TR_ARMOR=<metal>` equip hook; drag-and-drop equipping stays with the inventory interaction task |
 | M3-EQUIP-2 | `M3-EQUIP-2-set-bonuses` | ArmorSetBonuses engine [12] |
 | M3-EQUIP-3 | `M3-EQUIP-3-accessory-flags` | accessory effect flags [12] |
 | M3-EQUIP-4 | `M3-EQUIP-4-dye-slots` | dye plumbing [11][12] |

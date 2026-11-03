@@ -782,6 +782,8 @@ impl App {
         && std::env::var_os("TR_CAM").is_none()
         && std::env::var_os("TR_PAN").is_none();
     let mut coins = 0u64;
+    // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
+    let mut armor_kinds = [0u16; 3];
     let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
         0 => ItemSlot {
             kind: 2, // ItemID.DirtBlock
@@ -818,6 +820,7 @@ impl App {
                 }
                 p.hp = saved.hp.clamp(1, p.max_hp);
                 coins = saved.coins;
+                armor_kinds = saved.armor;
                 for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                     inventory[i] = ItemSlot {
                         kind: *kind,
@@ -1008,7 +1011,36 @@ impl App {
         npc_rng: world_seed,
         attack_cd: 0.0,
         inventory,
-        equip: inv::EquipSlots::empty(),
+        equip: {
+            let mut equip = inv::EquipSlots::empty();
+            // The saved character's armor first (`Player.LoadPlayer`); the
+            // `TR_ARMOR` env below overrides it so the armor layers stay
+            // screenshotable without a drag-and-drop flow (vanilla equips
+            // through `Player.EquipArmor`).
+            for (slot, kind) in equip.armor.iter_mut().zip(armor_kinds) {
+                if kind != 0 {
+                    *slot = ItemSlot { kind, name: registry::name(kind), count: 1 };
+                }
+            }
+            // `TR_ARMOR=copper|iron|silver|gold`: equip a full early-metal set
+            // at load so the armor layers stay screenshotable without a
+            // drag-and-drop flow (vanilla equips through `Player.EquipArmor`).
+            if let Ok(set) = std::env::var("TR_ARMOR") {
+                let ids: [u16; 3] = match set.trim() {
+                    "copper" => [89, 80, 76],
+                    "iron" => [90, 81, 77],
+                    "silver" => [91, 82, 78],
+                    "gold" => [92, 83, 79],
+                    _ => [0; 3],
+                };
+                for (slot, kind) in equip.armor.iter_mut().zip(ids) {
+                    if kind != 0 {
+                        *slot = ItemSlot { kind, name: registry::name(kind), count: 1 };
+                    }
+                }
+            }
+            equip
+        },
         // `Main.EquipPage`; the page tabs are not clickable yet, so a debug env
         // var selects the page for screenshots (0 = equipment, 2 = misc).
         equip_page: std::env::var("TR_EQUIPPAGE")
