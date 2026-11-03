@@ -377,7 +377,12 @@ impl FilterDriver {
         // rebuilds it fresh each frame. The one observable freeze — storm
         // `Use*` persisting after their condition dies — reproduces
         // implicitly: the inputs move slowly relative to the 1 s fade (ANALYSIS).
-        self.winner = self.board.winner();
+        // `Filter.IsVisible` folds the shader's own opacity in (`Filter.cs:65`),
+        // so the pick sees each filter's `CombinedOpacity` for this frame.
+        let weather = state.outside_weather_effect_intensity;
+        self.winner = self
+            .board
+            .winner_by(|id| self.combined_opacity(id, weather, inputs));
         self.output = self
             .winner
             .map(|id| self.build_params(id, metrics, state, inputs));
@@ -432,6 +437,31 @@ impl FilterDriver {
         // is 256x256.
         params.image_size = [256.0, 256.0];
         params
+    }
+
+    /// `ScreenShaderData.CombinedOpacity` (`:84`) of a tint filter this frame:
+    /// the board fade times the shader's `UseOpacity` value
+    /// (`SceneState.cs:136-188`). A storm reports the stronger of its
+    /// foreground/background sides — the side `build_params` would render.
+    fn combined_opacity(&self, id: FilterId, weather: f32, inputs: &SceneVisualInputs<'_>) -> f32 {
+        let fade = |f: FilterId| self.board.opacity(f);
+        match id {
+            FilterId::BloodMoon => {
+                let depth = inputs.view_center[1] / 16.0;
+                fade(id) * blood_moon_opacity(depth, inputs.world_surface, inputs.rock_layer)
+            }
+            FilterId::Sandstorm | FilterId::SandstormOverlay => {
+                let severity = inputs.storm.severity;
+                let (_, fg) = sandstorm_foreground_params(severity, weather);
+                let bg = sandstorm_background_opacity(severity, weather);
+                (fg * fade(FilterId::Sandstorm)).max(bg * fade(FilterId::SandstormOverlay))
+            }
+            FilterId::Blizzard | FilterId::BlizzardOverlay => {
+                let (_, fg, bg) = blizzard_foreground_params(inputs.cloud_alpha, weather, 0.0);
+                (fg * fade(FilterId::Blizzard)).max(bg * fade(FilterId::BlizzardOverlay))
+            }
+            _ => fade(id),
+        }
     }
 
     /// Assembles the winner's uniform: the shared `Apply` parameters
@@ -631,12 +661,21 @@ mod tests {
         assert_eq!(params.color, [2.0, -0.8, -0.6, 0.0], "initializer :27");
         assert!((params.opacity - 0.75).abs() < 1e-6);
 
-        // Descend past rockLayer + 100: the depth term drains the opacity.
-        inputs.view_center[1] = 300.0 * 16.0;
+        // Descend to just above rockLayer + 100: the depth term drains the
+        // opacity but the filter is still visible (`CombinedOpacity > 0`).
+        inputs.view_center[1] = 279.5 * 16.0;
         let params = driver
             .apply_visuals(&metrics, &mut state, &inputs)
-            .expect("still the winner while fading");
+            .expect("still the winner while barely visible");
         assert!(params.opacity < 0.01, "deep underground the tint fades");
+
+        // At rockLayer + 100 the opacity is 0: `IsVisible` is false, no tint.
+        inputs.view_center[1] = 300.0 * 16.0;
+        assert!(
+            driver
+                .apply_visuals(&metrics, &mut state, &inputs)
+                .is_none()
+        );
     }
 
     #[test]
@@ -729,6 +768,82 @@ mod tests {
             .expect("blizzard still active");
         assert_eq!(params.pass_index, tr_render::PassId::BLIZZARD_BACKGROUND.0);
         assert!((params.opacity - 1.0).abs() < 1e-6, "1 - num9 at ow=0");
+    }
+
+    /// A driver whose graveyard has been live since a snapped first frame.
+    fn graveyard_driver(
+        metrics: &SceneMetrics,
+        state: &mut SceneState,
+        inputs: &mut SceneVisualInputs<'_>,
+    ) -> FilterDriver {
+        let mut driver = FilterDriver::new();
+        driver.use_storm_effects = true;
+        state.graveyard_visual_intensity = 1.0;
+        inputs.skip_transitions = true;
+        let p = driver
+            .apply_visuals(metrics, state, inputs)
+            .expect("graveyard active");
+        assert_eq!(p.pass_index, tr_render::PassId::GRAVEYARD.0);
+        inputs.skip_transitions = false;
+        driver
+    }
+
+    #[test]
+    fn invisible_blood_moon_does_not_shadow_graveyard() {
+        // `Filter.IsVisible` folds the shader opacity in (`Filter.cs:65`): a
+        // later blood moon below rockLayer + 100 has opacity 0 and is skipped.
+        let metrics = SceneMetrics::new();
+        let mut state = SceneState::new();
+        let storm = Sandstorm::new(1);
+        let mut inputs = inputs_with(&storm);
+        inputs.view_center[1] = 300.0 * 16.0; // below rock (180) + 100
+        let mut driver = graveyard_driver(&metrics, &mut state, &mut inputs);
+        state.blood_moon = true;
+        for _ in 0..5 {
+            let p = driver
+                .apply_visuals(&metrics, &mut state, &inputs)
+                .expect("graveyard stays visible");
+            assert_eq!(p.pass_index, tr_render::PassId::GRAVEYARD.0);
+            assert_eq!(p.opacity, 1.0);
+        }
+    }
+
+    #[test]
+    fn visible_later_blood_moon_still_wins() {
+        let metrics = SceneMetrics::new();
+        let mut state = SceneState::new();
+        let storm = Sandstorm::new(1);
+        let mut inputs = inputs_with(&storm); // tile y 25: full 0.75 opacity
+        let mut driver = graveyard_driver(&metrics, &mut state, &mut inputs);
+        state.blood_moon = true;
+        // The activation frame fades from 0 (`FilterManager.Update` runs
+        // before the manage call), so the moon is visible from the next frame.
+        driver.apply_visuals(&metrics, &mut state, &inputs);
+        let p = driver
+            .apply_visuals(&metrics, &mut state, &inputs)
+            .expect("blood moon visible");
+        assert_eq!(p.pass_index, tr_render::PassId::BLOOD_MOON.0);
+    }
+
+    #[test]
+    fn zero_opacity_storm_does_not_shadow_graveyard() {
+        let mut metrics = SceneMetrics::new();
+        metrics.zone_desert = true;
+        metrics.zone_sandstorm = true;
+        metrics.surface_atmospherics = true;
+        let mut state = SceneState::new();
+        state.outside_weather_effect_intensity = 1.0;
+        let mut storm = Sandstorm::new(1);
+        storm.force_severity(0.5);
+        storm.severity = 0.0; // happening, but both fg and bg opacity are 0
+        let mut inputs = inputs_with(&storm);
+        inputs.bg_style = 2;
+        let mut driver = graveyard_driver(&metrics, &mut state, &mut inputs);
+        let p = driver
+            .apply_visuals(&metrics, &mut state, &inputs)
+            .expect("graveyard stays visible");
+        assert!(driver.board.is_active(FilterId::Sandstorm), "storm active");
+        assert_eq!(p.pass_index, tr_render::PassId::GRAVEYARD.0);
     }
 
     #[test]
@@ -1017,11 +1132,19 @@ mod tests {
         let mut inputs = inputs_with(&storm);
         inputs.bg_style = 2;
         inputs.skip_transitions = true;
-        assert!(driver.apply_visuals(&metrics, &mut state, &inputs).is_none());
+        assert!(
+            driver
+                .apply_visuals(&metrics, &mut state, &inputs)
+                .is_none()
+        );
         settings.use_storm_effects = true;
         driver.sync_settings(&settings);
         assert!(driver.use_storm_effects, "toggling back re-enables");
-        assert!(driver.apply_visuals(&metrics, &mut state, &inputs).is_some());
+        assert!(
+            driver
+                .apply_visuals(&metrics, &mut state, &inputs)
+                .is_some()
+        );
     }
 
     #[test]
@@ -1036,7 +1159,10 @@ mod tests {
             ("TR_WAVES", "1"),
         ]));
         driver.sync_settings(&settings);
-        assert!(driver.use_storm_effects, "TR_STORM pins on over the setting");
+        assert!(
+            driver.use_storm_effects,
+            "TR_STORM pins on over the setting"
+        );
         assert!(!driver.use_heat_distortion, "TR_HEAT=0 pins off");
         assert_eq!(driver.wave_quality, 1, "TR_WAVES pins the quality");
         // The pin survives every later sync.

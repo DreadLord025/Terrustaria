@@ -833,15 +833,25 @@ impl FilterBoard {
         slot.active || slot.opacity > 0.0
     }
 
-    /// `FilterManager.EndCapture`'s pick (`FilterManager.cs:154-180`, plan
-    /// constraint "one active filter"): the last visible entry of the
-    /// priority-ordered list — i.e. the maximum of (priority, activation_seq)
-    /// among the filters with a visible (`CombinedOpacity > 0`) slot. Overlays
-    /// never compete (they render in the scene, not in `EndCapture`).
+    /// [`FilterBoard::winner_by`] with every shader opacity at 1 (the board's
+    /// fade alone decides visibility).
     pub fn winner(&self) -> Option<FilterId> {
+        self.winner_by(|id| self.opacity(id))
+    }
+
+    /// `FilterManager.EndCapture`'s pick (`FilterManager.cs:154-180`, plan
+    /// constraint "one active filter"): the last *visible* entry of the
+    /// priority-ordered list — the maximum of (priority, activation_seq) among
+    /// the filters whose `Filter.IsVisible` (`Filter.cs:63-70`:
+    /// `CombinedOpacity > 0 && !IsHidden`) holds. `combined_opacity` supplies
+    /// each filter's `ScreenShaderData.CombinedOpacity` (`:84`, the board fade
+    /// times the shader's own `UseOpacity` value, computed by the driver for
+    /// this frame). Overlays never compete (they render in the scene, not in
+    /// `EndCapture`).
+    pub fn winner_by(&self, combined_opacity: impl Fn(FilterId) -> f32) -> Option<FilterId> {
         let mut best: Option<FilterId> = None;
         for id in FilterId::FILTERS {
-            if !self.is_visible(id) {
+            if self.slots[id.index()].hidden || combined_opacity(id) <= 0.0 {
                 continue;
             }
             let better = match best {
@@ -1802,6 +1812,26 @@ mod tests {
         // Nothing visible: no filter runs.
         let empty = FilterBoard::new();
         assert_eq!(empty.winner(), None);
+    }
+
+    #[test]
+    fn winner_by_skips_zero_combined_opacity() {
+        // `Filter.IsVisible` (`Filter.cs:63-70`): a later same-priority filter
+        // with CombinedOpacity 0 does not shadow the earlier visible one.
+        let mut board = FilterBoard::new();
+        board.manage(FilterId::Graveyard, true, true);
+        board.manage(FilterId::BloodMoon, true, true);
+        // Inactive filters have a drained fade (0), as the driver reports.
+        let combined = |moon: f32| {
+            let board = &board;
+            move |id| match id {
+                FilterId::BloodMoon => moon,
+                _ => board.opacity(id),
+            }
+        };
+        assert_eq!(board.winner_by(combined(0.0)), Some(FilterId::Graveyard));
+        assert_eq!(board.winner_by(combined(0.5)), Some(FilterId::BloodMoon));
+        assert_eq!(board.winner_by(|_| 0.0), None);
     }
 
     #[test]
