@@ -2446,3 +2446,39 @@ completion ports the **call discipline** of `NPC.SpawnNPC`
   respawn, `world_sim/player.rs`) freezes the stream advance while held — the
   C# has no such hold, so during it the port's stream lags the C#'s tick
   count; deterministic either way, and the hold clears.
+
+## Wiring engine (M7-WIRE-1)
+
+`tr-core/src/wiring.rs` ports the wiring core: the four colour passes of
+`TripWire` (`Wiring.cs:525-620`), the `HitWire` flood fill with its `SkipWire`
+set, the `_toProcess` multi-trigger counter — 4 on the seed cells, 3 on
+enqueue, `b = 0` through junction boxes (424/445), removed at zero so a
+5+-path convergence re-fires — and the `[2, max-2]` bounds (`:837-995`),
+`HitWireSingle`'s device subset and `HitSwitch`'s rect table
+(`:259-330`), plus `CheckMech`/`UpdateMech` (`:455-471`, `:145-258`) with the
+tile-144 timer periods 60/180/300/30/15 (by `frameX / 18`) and the 411
+lamp-pair frame flip.
+
+Deviations:
+
+- **Wire colours live in a sparse side table** (`World.wires: WireState`) —
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
+  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
+  pending (M6-SAVE-1); synthetic test worlds set wires through
+  `World.wires.set`.
+- **Device entity effects are passthroughs** — the mine (210), geyser (443),
+  statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
+  belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
+  nothing beyond the signal walk.
+- **The multi-tile actuation walk** (`ActuateForced` over `TileObjectData`
+  regions) is M7-WIRE-3; the engine toggles the single tile's
+  `FLAG_INACTIVE` (`Tile.flags` already carries the actuator/inactive bits).
+- **The wire pulse animation** (case 419's `frameX` shift in
+  `HitWireSingle`) is render-side state on a side-table colour, not a tile
+  frame — deferred with the wire renderer (M7-WIRE-3).
+- **Timers pulse indefinitely** while armed: the re-trip's own tile is
+  SkipWire'd for its own pass (the seeds pre-enter `_wireSkip`), so
+  `HitSwitch`'s frameY toggle does not disarm the armed timer — verified by
+  `the_timer_pulses_on_its_period_then_pops` (two pulses 60 ticks apart).
+- **Sounds** (`SoundEngine.PlaySound(28, …)`) are not wired to the audio
+  system yet (M6-AUDIO polish).

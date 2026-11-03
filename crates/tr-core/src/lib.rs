@@ -27,6 +27,7 @@ pub mod tileobject;
 pub mod torch;
 pub mod tree;
 pub mod waterfall;
+pub mod wiring;
 pub mod wind;
 pub mod wld;
 pub mod world;

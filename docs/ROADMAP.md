@@ -1327,7 +1327,11 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M7-WIRE-1..5 | `M7-WIRE-1-engine` … | wiring [19] |
+| ✅ M7-WIRE-1 | `M7-WIRE-1-engine` | done 2026-11-04: `tr-core/src/wiring.rs` — the four wire colours as a sparse `WireState` side table on `World` (the C# `sTileHeader` bits, `Tile.cs:623-657`; the packed `Tile` has no header), `TripWire`'s four colour passes (`Wiring.cs:525-620`), the `HitWire` BFS with `SkipWire`, the `_toProcess` multi-trigger counter (4 on seeds, 3 on enqueue, 0 through junction boxes 424/445) and the `[2, max-2]` bounds (`:837-995`), `HitWireSingle`'s device subset (the actuator toggle, tile-144 re-trigger, the 421/422 lamp swap), `HitSwitch`'s switch/lever/timer/wide-switch/gem-lock rect table (`:259-330`), `CheckMech`/`UpdateMech` (the 999 queue, the 60/180/300/30/15 timer periods, the 411 lamp-pair flip) — 9 tests; device entity effects (statues/traps/pumps/teleporters/cannons) = M7-WIRE-2, the multi-tile actuation = M7-WIRE-3 |
+| M7-WIRE-2 | `M7-WIRE-2-traps-statues` | traps & statues [19] |
+| M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
+| M7-WIRE-4 | `M7-WIRE-4-logic-gates` | logic gates & sensors [19] |
+| M7-WIRE-5 | `M7-WIRE-5-teleporters` | teleporters & pumps [19] |
 | M7-TE-1 | `M7-TE-1-tile-entities` | TE framework + 11 TEs [19] |
 | M7-SHIMMER-1 | `M7-SHIMMER-1-transforms` | shimmer [20] |
 | M7-GROWTH-1 | `M7-GROWTH-1-ticks` | growth [20] |
