@@ -34,8 +34,6 @@ const JUMP_HEIGHT: i32 = 15;
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
 const BREATH_CD: i32 = 7;
-/// Fall distance (tiles) before damage kicks in (`Player.cs` `num10 = 25`).
-const SAFE_FALL_TILES: f32 = 25.0;
 
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
@@ -101,8 +99,20 @@ pub struct Player {
     /// The life/mana regen accumulators (`Player.lifeRegen`/`lifeRegenTime`/
     /// `lifeRegenCount`/`manaRegen*`, `Player.cs:1930-1946`) — `regen.rs`.
     pub regen: RegenState,
-    /// Y (px) where the current fall started, for fall damage.
-    fall_start: f32,
+    /// `Player.fallStart` (`Player.cs:2882`): the tile row the fall started on,
+    /// int-truncated like the original's `(int)(position.Y / 16f)`.
+    fall_start: i32,
+    /// `Player.extraFall` (`Player.cs:2726`): tiles added to the 25-tile safe
+    /// fall. Nothing grants it yet (frog-gear sources = M3-EQUIP-3), but the
+    /// reset-each-tick shape is the vanilla one.
+    extra_fall: i32,
+    /// `Player.noFallDmg` (`Player.cs:2766`): the horseshoe/balloon family
+    /// (M3-EQUIP-3). Always false until the accessory system lands.
+    no_fall_dmg: bool,
+    /// `Player.hasWings` (`Player.cs:1336`): any wing equipped (M3-EQUIP-3).
+    has_wings: bool,
+    /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
+    last_stoned: bool,
     pub in_lava: bool,
     /// `Player.gfxOffY`: visual offset that hides the instant lift of `StepUp` /
     /// `StepDown`; eases back to zero so steps and slopes look smooth.
@@ -150,7 +160,11 @@ impl Player {
             breath: BREATH_MAX,
             breath_cd: 0,
             regen: RegenState::default(),
-            fall_start: sy / TILE_PX,
+            fall_start: (sy / TILE_PX) as i32,
+            extra_fall: 0,
+            no_fall_dmg: false,
+            has_wings: false,
+            last_stoned: false,
             in_lava: false,
             gfx_off_y: 0.0,
             prev_gfx_off_y: 0.0,
@@ -170,7 +184,7 @@ impl Player {
         self.vy = 0.0;
         self.on_ground = false;
         self.jump = 0;
-        self.fall_start = y / TILE_PX;
+        self.fall_start = (y / TILE_PX) as i32;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
     }
@@ -193,7 +207,7 @@ impl Player {
         self.breath = BREATH_MAX;
         self.breath_cd = 0;
         self.regen = RegenState::default();
-        self.fall_start = self.y / TILE_PX;
+        self.fall_start = (self.y / TILE_PX) as i32;
         self.in_lava = false;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
@@ -201,6 +215,14 @@ impl Player {
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
     pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
+        self.hurt_inner(amount, from_x, true)
+    }
+
+    /// The shared hurt body. `knock_back` mirrors the original's
+    /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
+    /// petrify calls pass hitDirection 0 and skip the knock entirely (the
+    /// fallStart reset inside that branch rides with it).
+    fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -211,17 +233,28 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
-        let dir = if self.x + WIDTH * 0.5 >= from_x {
-            1.0
-        } else {
-            -1.0
-        };
-        // The fixed contact knockback (`Player.cs` Hurt: `4.5 * dir` with
-        // `-3.5` vertical unless noKnockback).
-        self.vx = dir * 4.5;
-        self.vy = -3.5;
-        self.on_ground = false;
+        if knock_back {
+            let dir = if self.x + WIDTH * 0.5 >= from_x {
+                1.0
+            } else {
+                -1.0
+            };
+            // The fixed contact knockback (`Player.cs` Hurt: `4.5 * dir` with
+            // `-3.5` vertical unless noKnockback).
+            self.vx = dir * 4.5;
+            self.vy = -3.5;
+            self.on_ground = false;
+        }
         true
+    }
+
+    /// The fall-damage landing hit (`Player.cs:25361-25370`): the normal branch
+    /// forces `immune = false` BEFORE the Hurt — the hit lands through any
+    /// iframes — and hitDirection 0 means no knockback and no fallStart reset.
+    fn hurt_fall(&mut self, amount: i32) -> bool {
+        self.hurt_cd = 0.0;
+        let cx = self.x + WIDTH * 0.5;
+        self.hurt_inner(amount, cx, false)
     }
 
     pub fn center(&self) -> (f32, f32) {
@@ -283,11 +316,10 @@ impl Player {
         self.in_lava =
             mid.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
 
-        // Vanilla resets the fall origin whenever the player is not falling, is wet,
-        // or has just jumped.
-        if self.vy <= 0.0 || self.in_water || input.jump {
-            self.fall_start = self.y / TILE_PX;
-        }
+        // The fall origin is only reset post-movement now: the landing/rest
+        // block (`velocity.Y == 0`, `Player.cs:25383`) and the continuous
+        // condition (`Player.cs:25379`). The old pre-movement `vy <= 0` reset
+        // measured falls from every upward apex — the vanilla code never does.
 
         let dir = (input.right as i32 - input.left as i32) as f32;
         let accel = if self.on_ground {
@@ -328,18 +360,67 @@ impl Player {
             self.jump = 0;
         }
 
-        let was_airborne = !self.on_ground;
-        let fall_vy = self.vy;
         self.move_vanilla(world, input.down, gravity);
 
-        // `Player.cs`: landing after more than 25 tiles deals 10 damage per extra tile.
-        if was_airborne && fall_vy > 0.0 && self.on_ground && !self.in_water {
-            let fell = self.y / TILE_PX - self.fall_start;
-            if fell > SAFE_FALL_TILES {
-                let dmg = ((fell - SAFE_FALL_TILES) * 10.0) as i32;
-                self.lose_health(dmg);
+        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        let stoned = self.buffs.find_buff_index(156).is_some();
+        if stoned && !self.last_stoned {
+            let cx = self.x + WIDTH * 0.5;
+            self.hurt_inner(20, cx, false);
+        }
+        self.last_stoned = stoned;
+
+        // `Player.cs:25293-25385`: the fall-damage block — the whole thing runs
+        // whenever the player has come to rest this tick (`velocity.Y == 0`).
+        if self.vy == 0.0 {
+            // `num10 = 25 + extraFall` (`Player.cs:25301`); the mount addendum
+            // (`Player.cs:25304`) waits for M2-MOUNT-1.
+            let threshold = 25 + self.extra_fall;
+            // `num11` is int-truncated on both ends (`Player.cs:25306`).
+            let mut fell = (self.y / TILE_PX) as i32 - self.fall_start;
+            // The flying-minecart/bunny/dash zeroes (`Player.cs:25307-25323`)
+            // have no systems here yet; the cloud/soft-tile scan does
+            // (`Player.cs:25325-25345`): the tile row under the feet across
+            // the hitbox's x-extent.
+            let tx0 = (self.x / TILE_PX) as i32;
+            let tx1 = ((self.x + WIDTH) / TILE_PX) as i32;
+            let ty = ((self.y + HEIGHT + 1.0) / TILE_PX) as i32;
+            for tx in tx0..=tx1 {
+                if let Some(t) = world.tile(tx, ty) {
+                    if t.active()
+                        && (tr_core::tiledata::SET_CLOUDS.has(t.kind)
+                            || t.kind == 666
+                            || (t.kind == 19 && (t.frame_y / 18) == 49))
+                    {
+                        fell = 0;
+                        break;
+                    }
+                }
             }
-            self.fall_start = self.y / TILE_PX;
+            if stoned {
+                // `Player.cs:25347-25359`: petrified — a fixed 2-tile grace and
+                // 20 damage per tile; extraFall and the mount multiplier are
+                // ignored, and the immunity clears AFTER the hit.
+                let dmg = (fell - 2) * 20;
+                if dmg > 0 {
+                    let cx = self.x + WIDTH * 0.5;
+                    self.hurt_inner(dmg, cx, false);
+                    self.hurt_cd = 0.0;
+                }
+            } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
+                // `Player.cs:25360-25374`: `(fell - threshold) * 10` damage with
+                // hitDirection 0 — no knockback — and `immune = false` forced
+                // BEFORE the Hurt so the hit lands through any iframes.
+                self.hurt_fall((fell - threshold) * 10);
+            }
+            self.fall_start = (self.y / TILE_PX) as i32;
+        }
+        // `Player.cs:25379-25382`: the continuous reset — jumping, liquid, the
+        // slow-fall/rocket/sky-gravity/tongued terms (the four systems are not
+        // ported yet) keep the fall origin at the current row.
+        if self.jump > 0 || self.in_water {
+            self.fall_start = (self.y / TILE_PX) as i32;
         }
 
         self.update_survival();
@@ -653,6 +734,130 @@ mod tests {
         }
         assert!(p.on_ground, "player should land, y={}", p.y);
         assert!((p.y - (60.0 * TILE_PX - HEIGHT)).abs() < 1.0, "y={}", p.y);
+    }
+
+    /// Drops the player from `from_tile` onto the ground_world surface (top
+    /// row 60) and simulates until rest. Returns (hp lost, landed tile row).
+    fn drop_and_settle(w: &World, from_tile: i32) -> (i32, i32) {
+        let mut p = Player::spawn(w);
+        let hp0 = p.hp;
+        p.y = (from_tile * 16) as f32;
+        p.fall_start = from_tile;
+        for _ in 0..600 {
+            p.update(w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        (hp0 - p.hp, (p.y / TILE_PX) as i32)
+    }
+
+    /// `Player.cs:25363`: `(fell - (25 + extraFall)) * 10`, `fell` truncated on
+    /// both ends. Dropping from tile 25 lands at row 57 → fell = 32 → 70.
+    #[test]
+    fn fall_damage_matches_the_vanilla_formula() {
+        let w = ground_world();
+        let (lost, landed) = drop_and_settle(&w, 25);
+        assert_eq!(landed, 57, "feet rest on row 57");
+        assert_eq!(lost, (landed - 25 - 25) * 10, "fell = 57 - 25 = 32 tiles");
+    }
+
+    /// `Player.cs:25360`: `num11 > num10` is strict — a 25-tile fall hurts for
+    /// nothing; the first damaging tile is 26.
+    #[test]
+    fn the_safe_fall_threshold_is_strict() {
+        let w = ground_world();
+        // From tile 32 the feet land at row 57 → fell 25 → no damage.
+        let (lost, _) = drop_and_settle(&w, 32);
+        assert_eq!(lost, 0, "25-tile fall is free");
+    }
+
+    /// `Player.cs:25361`: the normal branch forces `immune = false` BEFORE the
+    /// Hurt — a fall lands through any iframes the contact damage granted.
+    #[test]
+    fn fall_damage_ignores_iframes() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.hurt_cd = 5.0; // mid-iframes
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert!(p.hp < 100, "fall must land through iframes");
+    }
+
+    /// The liquid reset (`Player.cs:25379`): while `wet` the fall origin rides
+    /// the player, so a fall through water lands for nothing.
+    #[test]
+    fn water_forgives_the_fall() {
+        let mut w = ground_world();
+        for y in 50..58 {
+            for x in 0..64 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 200;
+            }
+        }
+        let (lost, _) = drop_and_settle(&w, 20);
+        assert_eq!(lost, 0, "a fall through water is free");
+    }
+
+    /// `Player.cs:25338-25345`: a landing on the cloud set (tile 189 here)
+    /// zeroes the fall distance.
+    #[test]
+    fn clouds_forgive_the_fall() {
+        let mut w = ground_world();
+        for x in 0..64 {
+            let i = w.index(x, 60);
+            w.tiles[i].kind = 189;
+        }
+        let (lost, _) = drop_and_settle(&w, 25);
+        assert_eq!(lost, 0, "a landing on clouds is free");
+    }
+
+    /// `Player.cs:25347-25359`: petrified replaces the whole formula — a fixed
+    /// 2-tile grace at 20 damage per tile, ignoring extraFall.
+    #[test]
+    fn stoned_landing_uses_the_petrified_formula() {
+        let mut w = ground_world();
+        // Clouds out of the picture: the plain dirt surface again.
+        let mut p = Player::spawn(&w);
+        p.max_hp = 1000;
+        p.hp = 1000;
+        p.buffs.add_buff(156, 600); // Petrified
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        let landed = (p.y / TILE_PX) as i32;
+        // (fell - 2) * 20 = (32 - 2) * 20 = 600, minus the flat petrify hit of
+        // 20 taken the moment the buff appeared.
+        assert_eq!(p.hp, 1000 - (landed - 25 - 2) * 20 - 20, "petrified hp");
+    }
+
+    /// `Player.cs:25370`: fall damage calls Hurt with hitDirection 0 — no
+    /// knockback, the player stays planted where they landed.
+    #[test]
+    fn fall_landing_has_no_knockback() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert!(p.on_ground, "must rest after landing");
+        assert_eq!(p.vy, 0.0, "no upward knock");
     }
 
     #[test]

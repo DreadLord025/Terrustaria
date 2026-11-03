@@ -1215,7 +1215,7 @@ section in brackets before starting a row.
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
 | M2-PHYS-1 | `M2-PHYS-1-movement-constants` | boots/ice/sand/wet multipliers [7] |
-| M2-PHYS-2 | `M2-PHYS-2-fall-damage` | thresholds/extraFall/stoned [7] |
+| ✅ M2-PHYS-2 | `M2-PHYS-2-fall-damage` | thresholds/extraFall/stoned — done 2026-11-04: the landing block rides the vanilla `velocity.Y == 0` structure (`Player.cs:25293-25385`): int-truncated tile distance, strict threshold `25 + extraFall`, `(fell - threshold) * 10` with hitDirection 0 (no knockback, `immune = false` forced before the Hurt), the petrified branch (fixed 2-tile grace, ×20, immune cleared after), the flat 20 petrify-transition hit (buff 156 via `BuffSlots`), the cloud/soft-tile zeroing (`SET_CLOUDS` 189/196/460/717-719 + tile 666 + platform-19 variant 49), the continuous reset `jump > 0 \|\| wet` (rocket/slowFall/sky-gravity/tongued terms land with PHYS-1/5; the old `vy <= 0` pre-movement reset removed — falls now measure from the apex/rest); `extra_fall`/`no_fall_dmg`/`has_wings` fields wait for M3-EQUIP-3 [7] |
 | M2-PHYS-3 | `M2-PHYS-3-fluids-breath` | wet multipliers, drowning fidelity [7] |
 | M2-PHYS-4 | `M2-PHYS-4-dash` | dashTypes 1/2/3/6 [7] |
 | M2-PHYS-5 | `M2-PHYS-5-wings-rocket-boots` | flight/hover/rocket merge [7] |
