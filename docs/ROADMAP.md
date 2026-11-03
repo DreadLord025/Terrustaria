@@ -481,7 +481,7 @@ M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
 ## 11. Crafting, prefixes, dyes, reforge
 
 **C#** `Recipe.cs` (16 784), `GameContent/Prefixes/*`, `GameContent/Dyes/*` ·
-**Rust** `ui/crafting.rs` (chrome), `registry.rs` · 🟡 chrome only · 🔄 M3-CRAFT-recipes.
+**Rust** `ui/crafting.rs` (chrome), `registry.rs`, `craft.rs` · ✅ subset-first done 2026-11-03: 7-recipe table + can_craft/try_craft/adjacent_tiles + panel interaction (contexts **41/42/43**, `ItemSlot.cs:126-130` — the catalog's 4/33 was stale); full SetupRecipes generator is a follow-up.
 
 - Recipe structure (`Recipe.cs:58-112`): 15-ingredient cap, `requiredTile`, groups
   (`RecipeGroup`, fake IDs ≥ `FakeItemIdOffset`), flags needHoney/Water/Lava/
@@ -508,7 +508,7 @@ M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
   quest rarity −11 is preserved by the clamp; decraftItemId = lowest-value group member
   (`RecipeGroup.cs:53-56`).
 
-**Tasks:** M3-CRAFT-recipes 🔄 (recipe data + contexts 4/33), M3-CRAFT-2 recipe groups &
+**Tasks:** ✅ M3-CRAFT-recipes (subset-first, see above; contexts 41/42/43 — the old 4/33 numbering was stale), M3-CRAFT-2 recipe groups &
 environment flags, M3-CRAFT-3 alchemy table, M3-PREFIX (roll engine + tables), M3-REFORGE-1
 goblin reforge UI + cost, M3-DYES-1 dye slot plumbing (shader-pass architecture).
 
@@ -1177,7 +1177,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-3 | `TILE-DRAW-3-wind-finish` | wind sway + leaves — determinism verified 2026-11-02: the earlier leaf-gore divergence (84f08e3-era binaries) does not reproduce on 3470372 (6+ SHA256-equal pairs across wind on/off, frames 120/240; per-frame leaf/wind logs identical); standing rule — every screenshot verification is a SHA256 double-run |
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
-| 🔄 M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] |
+| ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
 | M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
 | M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
