@@ -13,6 +13,7 @@ use tr_core::{World, TILE_PX};
 
 use crate::buffs::BuffSlots;
 use crate::collision;
+use crate::regen::{update_life_regen, update_mana_regen, RegenInputs, RegenState};
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -34,10 +35,6 @@ pub const BREATH_MAX: i32 = 200;
 const BREATH_CD: i32 = 7;
 /// Fall distance (tiles) before damage kicks in (`Player.cs` `num10 = 25`).
 const SAFE_FALL_TILES: f32 = 25.0;
-/// Seconds without damage before regeneration starts.
-const REGEN_DELAY: f32 = 5.0;
-/// Seconds per regenerated hit point once regeneration is active.
-const REGEN_INTERVAL: f32 = 0.5;
 
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
@@ -91,9 +88,9 @@ pub struct Player {
     /// Remaining breath in ticks (`Player.breath`).
     pub breath: i32,
     breath_cd: i32,
-    /// Seconds since the last damage; drives health regeneration.
-    pub regen_time: f32,
-    regen_acc: f32,
+    /// The life/mana regen accumulators (`Player.lifeRegen`/`lifeRegenTime`/
+    /// `lifeRegenCount`/`manaRegen*`, `Player.cs:1930-1946`) — `regen.rs`.
+    pub regen: RegenState,
     /// Y (px) where the current fall started, for fall damage.
     fall_start: f32,
     pub in_lava: bool,
@@ -136,8 +133,7 @@ impl Player {
             hurt_cd: 0.0,
             breath: BREATH_MAX,
             breath_cd: 0,
-            regen_time: REGEN_DELAY,
-            regen_acc: 0.0,
+            regen: RegenState::default(),
             fall_start: sy / TILE_PX,
             in_lava: false,
             gfx_off_y: 0.0,
@@ -180,8 +176,7 @@ impl Player {
         self.hurt_cd = 0.0;
         self.breath = BREATH_MAX;
         self.breath_cd = 0;
-        self.regen_time = REGEN_DELAY;
-        self.regen_acc = 0.0;
+        self.regen = RegenState::default();
         self.fall_start = self.y / TILE_PX;
         self.in_lava = false;
         self.gfx_off_y = 0.0;
@@ -195,8 +190,8 @@ impl Player {
         }
         self.hp = (self.hp - amount).max(0);
         self.hurt_cd = 0.8;
-        self.regen_time = 0.0;
-        self.regen_acc = 0.0;
+        // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
+        self.regen.life_regen_time = 0.0;
         let dir = if self.x + WIDTH * 0.5 >= from_x {
             1.0
         } else {
@@ -220,8 +215,8 @@ impl Player {
         }
         self.hp = (self.hp - amount).max(0);
         self.hurt_cd = self.hurt_cd.max(0.8);
-        self.regen_time = 0.0;
-        self.regen_acc = 0.0;
+        // No ramp reset here: the C# direct `statLife -=` paths (drowning, fall
+        // damage) leave `lifeRegenTime` untouched.
     }
 
     /// One fixed 60 Hz step.
@@ -400,13 +395,20 @@ impl Player {
             self.hurt(30, cx);
         }
 
-        self.regen_time += 1.0 / 60.0;
-        if self.regen_time > REGEN_DELAY && self.hp > 0 {
-            self.regen_acc += 1.0 / 60.0;
-            while self.regen_acc >= REGEN_INTERVAL {
-                self.regen_acc -= REGEN_INTERVAL;
-                self.hp = (self.hp + 1).min(self.max_hp);
-            }
+        // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
+        // (`Player.cs:25977,25995`). The DoT/aura/item/grapple inputs stay at
+        // their defaults until those systems land (`regen.rs`); the hp gate
+        // stands in for the original's dead-player check (M2-DEATH).
+        if self.hp > 0 {
+            let in_ = RegenInputs {
+                max_life: self.max_hp,
+                max_mana: self.mana_max,
+                moving_x: self.vx != 0.0,
+                standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
+                ..RegenInputs::default()
+            };
+            update_life_regen(&mut self.regen, &in_, &mut self.hp);
+            update_mana_regen(&mut self.regen, &in_, &mut self.mana);
         }
     }
 
@@ -903,11 +905,17 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         p.hp = 50;
-        p.regen_time = 0.0;
+        p.regen.life_regen_time = 0.0;
         for _ in 0..1200 {
             p.update(&w, PlayerInput::default());
         }
-        assert!(p.hp > 60, "regen only reached {} (sit still, 20 s)", p.hp);
+        // The faithful engine at `statLifeMax2 = 100` is slow: the ramp scale is
+        // `100/400·0.85 + 0.15 = 0.3625`, so tiers 1-2 round banker's-style to
+        // 0 and the first points arrive from tick ~600 on (≈ +4 hp over 20 s
+        // standing). The old placeholder granted 1 hp per half-second — the
+        // `> 60` bar belonged to it.
+        assert!(p.hp > 50, "regen only reached {} (sit still, 20 s)", p.hp);
+        assert!(p.hp <= 56, "regen overshot the faithful pace: {}", p.hp);
     }
 
     #[test]

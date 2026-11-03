@@ -1211,7 +1211,7 @@ section in brackets before starting a row.
 | M2-PHYS-7 | `M2-PHYS-7-minecart` | rails/boost/ramp/sparks [7][22] |
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
 | ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
-| M2-BUFF-2 | `M2-BUFF-2-regen` | life/mana regen engines [8] |
+| ✅ M2-BUFF-2 | `M2-BUFF-2-regen` | done 2026-11-03: `regen.rs` — the full `UpdateLifeRegen` accumulator (`Player.cs:18942-19391`: ramp tiers 300..3000, the 3600 cap, moving ×0.5 / still ×1.25, the banker's-rounded `statLifeMax2` add, the ±120/−600 counters) and `UpdateManaRegen`/`ApplyManaRegenerationDelay` (`:19380-19562`: the delay curve, the still/grapple double-add, the `num9 = 0.5` fill curve, floor 2, +1 per 120); DoT/aura/item/grapple inputs are neutral defaults for M2-BUFF-3/5 + M3-EQUIP; wired into `update_survival` |
 | M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
 | M2-BUFF-5 | `M2-BUFF-5-auras` | SceneMetrics auras (campfire/lantern/star/sunflower/candles) [8] |

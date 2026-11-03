@@ -2274,3 +2274,38 @@ Verified byte-identical SHA256 pairs (pristine world copy per run):
 - forest lake, waterfalls on, no `TR_MOUSE` — before the fix this pair differed;
 - `TR_SPOUT=2240,160` with the fall live in view for 1200 frames, no `TR_MOUSE`;
 - the same `TR_SPOUT` scene with `TR_MOUSE=200,200` (explicit pin still wins).
+
+## Regeneration engines (M2-BUFF-2)
+
+`crates/tr-app/src/regen.rs` ports the life and mana regen accumulators:
+`UpdateLifeRegen` (`Player.cs:18942-19391`) — the DoT clamps, the ramp tiers at
+300/600/900/1200/1500/1800/2400/3000, the 3600 cap, moving ×0.5 vs standing
+×1.25, the final `(int)Math.Round(num3 * (statLifeMax2/400·0.85 + 0.15))` add
+(banker's, via the shared `tr_core::damage::round_bankers`, now `pub`), the
+±120 chunk counters and the generic −120 drain (≤4 hp per examined chunk) —
+and `UpdateManaRegen` / `ApplyManaRegenerationDelay` (`:19380-19562`) — the
+delay curve `((1−mana/max)·240+45)·0.7`, the standing/grappling/buff double
+decrement, the `maxMana/3 + 1` base with the still/grapple double-add, the
+`num9 = 0.5` fill curve and the floor of 2. Wired into `update_survival`
+behind an `hp > 0` gate; `Hurt` resets `lifeRegenTime` (`:38395`) while the
+direct `statLife -=` paths (drowning, fall) do not — the old placeholder reset
+in both and was corrected.
+
+Deviations:
+
+- **Inputs for systems that do not exist yet.** The DoT branches (M2-BUFF-3),
+  campfire/heart-lantern auras (M2-BUFF-5), item multipliers and
+  `manaRegenDelayBonus`/arcane crystal (M3-EQUIP), sitting/sleeping
+  (M7-INTERACT) and the grapple flag (M2-PHYS-6) are neutral-default
+  `RegenInputs` fields the engine already applies in the original order.
+  The shinyStone standing-still package (`:19104-19108`, `:19126-19134`) folds
+  into `extra_time`/`extra_regen`/`extra_ramp_scale` when M3-EQUIP lands.
+- **Death from a DoT drain clamps at 0 hp** — the C# `KillMe` reasons per
+  debuff (`:19367-19390`) land with M2-DEATH.
+- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
+  deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
+- **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
+- **Integration-test pace corrected** — `health_regenerates_after_a_delay`
+  bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
+  `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
+  20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.

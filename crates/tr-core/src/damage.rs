@@ -8,8 +8,9 @@ use crate::loot::DropRng;
 
 /// C# `Math.Round` — banker's rounding (midpoints to even). Rust's `f64::
 /// round` is half-away-from-zero, which differs on exactly `.5` remainders —
-/// `DamageVar`'s final `(int)Math.Round(num)` must match.
-fn round_bankers(x: f64) -> i64 {
+/// `DamageVar`'s final `(int)Math.Round(num)` must match. Shared: the regen
+/// engine's final life add rounds the same way (`Player.cs:19262`).
+pub fn round_bankers(x: f64) -> i64 {
     let floor = x.floor();
     let diff = x - floor;
     if diff > 0.5 {
