@@ -25,9 +25,9 @@ pub(crate) struct Recipe {
 }
 
 /// The subset recipe table. Every entry cites its `Recipe.cs` registration;
-/// wood-group recipes (`RequireGroup(RecipeGroups.Wood)`, `Recipe.cs:610-616`)
-/// are expanded to concrete ids (Wood → 9) — the deviation is recorded in
-/// `docs/ANALYSIS.md`.
+/// group recipes (`RequireGroup(RecipeGroups.Wood)` / `(IronBar)`,
+/// `Recipe.cs:610-616` / `:4738`) are expanded to concrete ids (Wood → 9,
+/// Iron Bar → 22) — the deviation is recorded in `docs/ANALYSIS.md`.
 pub(crate) static RECIPES: &[Recipe] = &[
     // Recipe.cs:610-615 — Torch x3: 1 Gel + 1 Wood, by hand.
     Recipe {
@@ -40,6 +40,31 @@ pub(crate) static RECIPES: &[Recipe] = &[
         create: (36, 1),
         required: &[(9, 10)],
         stations: &[],
+    },
+    // Recipe.cs:4722-4726 — Wooden Door: 6 Wood, at a work bench.
+    Recipe {
+        create: (25, 1),
+        required: &[(9, 6)],
+        stations: &[18],
+    },
+    // Recipe.cs:4727-4731 — Wooden Chair: 4 Wood, at a work bench.
+    Recipe {
+        create: (34, 1),
+        required: &[(9, 4)],
+        stations: &[18],
+    },
+    // Recipe.cs:4732-4739 — Chest: 8 Wood + 2 Iron Bar, at a work bench
+    // (`RequireGroup(RecipeGroups.IronBar)` expanded to Iron Bar 22).
+    Recipe {
+        create: (48, 1),
+        required: &[(9, 8), (22, 2)],
+        stations: &[18],
+    },
+    // Recipe.cs:4746-4750 — Wooden Table: 8 Wood, at a work bench.
+    Recipe {
+        create: (32, 1),
+        required: &[(9, 8)],
+        stations: &[18],
     },
     // Recipe.cs:4568-4572 — Stone Wall: 1 Stone, at a work bench.
     Recipe {
@@ -120,6 +145,25 @@ mod tests {
         assert_eq!(torch.create, (8, 3));
         assert_eq!(torch.required, &[(23, 1), (9, 1)]);
         assert!(torch.stations.is_empty());
+    }
+
+    #[test]
+    fn test_dw_2_3_furniture_recipes_match_recipe_cs() {
+        // Door :4722-4726, chair :4727-4731, chest :4732-4739, table
+        // :4746-4750 — all at a work bench (18). The chest's
+        // `RequireGroup(RecipeGroups.IronBar)` expands to Iron Bar (22).
+        let door = RECIPES.iter().find(|r| r.create.0 == 25).unwrap();
+        assert_eq!(door.required, &[(9, 6)]);
+        assert_eq!(door.stations, &[18]);
+        let chair = RECIPES.iter().find(|r| r.create.0 == 34).unwrap();
+        assert_eq!(chair.required, &[(9, 4)]);
+        assert_eq!(chair.stations, &[18]);
+        let chest = RECIPES.iter().find(|r| r.create.0 == 48).unwrap();
+        assert_eq!(chest.required, &[(9, 8), (22, 2)]);
+        assert_eq!(chest.stations, &[18]);
+        let table = RECIPES.iter().find(|r| r.create.0 == 32).unwrap();
+        assert_eq!(table.required, &[(9, 8)]);
+        assert_eq!(table.stations, &[18]);
     }
 }
 
@@ -316,6 +360,27 @@ mod craft_actions_tests {
         }
         let wb = recipe_by_create(36);
         assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
+    }
+
+    #[test]
+    fn furniture_recipe_crafts_and_consumes() {
+        // 16 wood -> work bench (by hand) leaves 6, exactly a door — which
+        // then needs the bench standing next to the player.
+        let mut inv = inv_with(&[(9, 16)]);
+        assert_eq!(
+            try_craft(&mut inv, recipe_by_create(36), &[]),
+            Some((36, 1))
+        );
+        assert_eq!(count_kind(&inv, 9), 6);
+        let door = recipe_by_create(25);
+        assert!(!can_craft(&inv, door, &[]), "no station adjacent yet");
+        assert_eq!(try_craft(&mut inv, door, &[18]), Some((25, 1)));
+        assert_eq!(count_kind(&inv, 9), 0);
+        // The chest needs the iron bar too: wood alone is refused.
+        let mut inv = inv_with(&[(9, 8)]);
+        assert!(!can_craft(&inv, recipe_by_create(48), &[18]));
+        let mut inv = inv_with(&[(9, 8), (22, 2)]);
+        assert!(can_craft(&inv, recipe_by_create(48), &[18]));
     }
 }
 
