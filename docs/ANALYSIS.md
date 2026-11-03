@@ -821,6 +821,36 @@ crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
 on the press (`Main.cs:42250` hover family); the rotation source for item use
 stays with M2-ANIM.
 
+## Screen filters (M1.4-BG-18)
+
+`M1.4-BG-18` ports the `ScreenShaderData` post-process subsystem: a
+`PostPipeline` in tr-render (`post.rs`/`post.wgsl`) renders the sprite pass
+into an offscreen sRGB target and applies the active filter as a fullscreen
+pass — one WGSL module mirroring `ScreenShader.fx`'s named techniques
+(`PASS_TABLE` extracted from `ScreenShader.xnb` by the new tr-content Effect
+reader; 22 passes ⊇ the initializer's table). The driver
+(`app/filters.rs::FilterDriver::apply_visuals`) ports `SceneState.ApplyVisuals`
+(`SceneState.cs:64-253`) over the Phase-1 sensors (`scene.rs`: SceneMetrics
+window counts per `SceneMetrics.cs:373/595-616` with the
+`GraveyardTileCount = _tileCounts[85] − _tileCounts[27]/2` rule, the Sandstorm
+state machine from `Events/Sandstorm.cs:32-138`, SceneState fades/
+MoveTowards `:472-491`). Deviations:
+
+- WGSL filter bodies are documented approximations of the compiled HLSL
+  (`ScreenShaderData.cs` semantics per pass; no bytecode translation).
+- One winner at a time by `EffectPriority` then activation, visibility =
+  fade × shader opacity > 0 (`Filter.IsVisible`/`CombinedOpacity`).
+- Storm fg/bg pair: the dominant-opacity side runs (post cannot draw behind
+  the scene); both WGSL passes exist.
+- The filter wash covers the HUD (our single sprite pass renders UI into the
+  same target; vanilla draws the HUD after the filter).
+- Aurora is a SkyManager visual (`ScreenEffectInitializer.cs:65`), not a
+  filter — not ported. Towers/monoliths/MoonLord are M4 content.
+- Items without extracted sprites draw a grey placeholder in the crafting
+  grid (M3-CRAFT, same atlas limitation).
+- Harness: `TR_POST=1`, `TR_SANDSTORM`/`TR_GRAVEYARD`/`TR_BLOODMOON`/
+  `TR_STORM`/`TR_XY` pins for deterministic per-filter shots.
+
 ## Player (M2 first pass)
 
 ### Composite arm rotation (M2-DRAW-2)
