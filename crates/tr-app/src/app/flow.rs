@@ -1304,6 +1304,7 @@ pub(crate) mod front_flow_tests {
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             npc_rng: 0,
+            spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory: std::array::from_fn(|_| EMPTY_SLOT),
             equip: inv::EquipSlots::empty(),

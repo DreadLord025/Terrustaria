@@ -2416,3 +2416,33 @@ Deviations:
   equivalents) are debug cheats and are not ported.
 - The shuriken's damage/knockback stay the first pass's stand-ins (registry
   data lands with M3-ITEM-1); the pool itself is content-agnostic.
+
+## Spawn call discipline (M4-SPAWN-1 completion)
+
+The spawn-rate multiplier chain and the caps landed earlier (2026-11-03); this
+completion ports the **call discipline** of `NPC.SpawnNPC`
+(`NPC.cs:80170-80176`) and its named RNG stream:
+
+- **The stream** — `Main.SwapRandom("SpawnNPC")` (`Main.cs:17886`) swaps in a
+  persistent per-stage stream for every world update. The port keeps
+  `App.npc_rng` as that stream's state and advances it (the xorshift LCG step)
+  once per update, **before** the latch/caps, so a suppressed or capped tick
+  still consumes stream state exactly like the C#'s swap; each call draws from
+  `FastRandom::new(state)`. Deterministic per world seed; verified by
+  `the_named_stream_is_deterministic_per_seed` (two identical runs agree
+  tick-for-tick over 900 moon-event night calls, and a different seed
+  diverges). The LCG step is the port's own xorshift core (agents.md's
+  "deterministic stand-in" pattern) — the C#'s exact `UnifiedRandom` sequence
+  is not reproduced, as everywhere else in the port.
+- **The `noSpawnCycle` latch** (`NPC.cs:6179`, consumed at `:80171-80174`) —
+  `App.spawn_no_cycle`; while set, one whole `SpawnNPC` call is suppressed and
+  the flag clears. No setter exists yet (the C# sets it from NPC
+  release/catch and the revenge spawn at `:77993/78137/91553`) — those systems
+  flip the flag when they land.
+- **The dead-player gate** — `CanSpawnEnemiesNear`'s `player.dead` branch
+  (`NPC.cs:349-351`); the journey spawn-rate-disable and Moon-Lord-distance
+  branches have no sources yet.
+- **Pacing quirk preserved**: the port's `npc_timer` (a 4 s spawn hold after
+  respawn, `world_sim/player.rs`) freezes the stream advance while held — the
+  C# has no such hold, so during it the port's stream lags the C#'s tick
+  count; deterministic either way, and the hold clears.
