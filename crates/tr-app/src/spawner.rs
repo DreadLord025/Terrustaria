@@ -411,6 +411,28 @@ fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) ->
 
 /// One `Spawner.TrySpawnAnNPC` attempt (NPC.cs:308-342). Returns the spawned
 /// NPC, or `None` when any gate rejects the attempt.
+/// One `NPC.SpawnNPC` call (`NPC.cs:80170-80176`): the `noSpawnCycle` latch
+/// consumes the whole call (one suppressed attempt, then the flag clears) and
+/// the `CanSpawnEnemiesNear` gates (`NPC.cs:349-360` — a dead player blocks
+/// the attempt; the journey and Moon Lord gates have no sources yet) run
+/// before the pipeline. `ctx` is `None` when there is no eligible player.
+/// Returns the spawn (if any) and whether the latch consumed the call. The
+/// caller owns the named `Main.SwapRandom("SpawnNPC")` stream state
+/// (`Main.cs:17886`) and advances it once per call regardless of the outcome.
+pub fn spawn_npc_call(
+    ctx: Option<SpawnContext<'_>>,
+    rng: &mut FastRandom,
+    no_cycle: bool,
+) -> (Option<Npc>, bool) {
+    if no_cycle {
+        return (None, true);
+    }
+    match ctx {
+        Some(ctx) => (try_spawn_an_npc(&ctx, rng), false),
+        None => (None, false),
+    }
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
@@ -826,5 +848,75 @@ mod tests {
         }
         assert!(!has_tile_spawn_space(&w, 200, 300));
         assert!(has_tile_spawn_space(&w, 205, 300));
+    }
+    #[test]
+    fn the_latch_consumes_one_call_and_clears() {
+        let w = ground();
+        let mut rng = FastRandom::new(0xDEAD_BEEF);
+        // A latched call is fully suppressed — no rate roll, no spawn — and
+        // reports that it was consumed (`NPC.cs:80171-80174`).
+        let (spawned, suppressed) = spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, true);
+        assert!(suppressed);
+        assert!(spawned.is_none());
+        // The next call runs the normal pipeline (the default rate 600 makes
+        // a spawn vanishingly unlikely here, but the latch must be clear).
+        let (spawned, suppressed) = spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, false);
+        assert!(!suppressed);
+        assert!(spawned.is_none());
+    }
+
+    #[test]
+    fn a_missing_eligible_player_is_not_a_latched_call() {
+        let w = ground();
+        let mut rng = FastRandom::new(7);
+        // `ctx = None` (no living player) skips the pipeline without
+        // consuming the latch — `CanSpawnEnemiesNear`, `NPC.cs:349-351`.
+        let (spawned, suppressed) = spawn_npc_call(None, &mut rng, false);
+        assert!(spawned.is_none());
+        assert!(!suppressed);
+    }
+
+    #[test]
+    fn the_named_stream_is_deterministic_per_seed() {
+        // `Main.SwapRandom("SpawnNPC")` (`Main.cs:17886`): the same stream
+        // state must produce the same spawn/no-spawn decisions, tick for
+        // tick. A moon-event night (spawnRate 20) with a clear area makes the
+        // rolls actually land, so the sequences carry spawns.
+        let w = ground_tall();
+        let run = |seed: u64| {
+            let mut rng = FastRandom::new(seed);
+            let mut decisions = Vec::new();
+            let mut state = seed;
+            for _ in 0..900 {
+                let ctx = SpawnContext {
+                    world: &w,
+                    player_center: (200.0 * TILE_PX, 295.0 * TILE_PX),
+                    player_pos: (200.0 * TILE_PX, 295.0 * TILE_PX),
+                    nearby_active_npcs: 0.0,
+                    town_npcs: 0,
+                    day_time: false,
+                    flags: SpawnFlags {
+                        moon_event: true,
+                        ..SpawnFlags::default()
+                    },
+                };
+                let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
+                decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                rng = FastRandom::new(state);
+            }
+            decisions
+        };
+        let a = run(0x1234_5678_9ABC_DEF0);
+        let b = run(0x1234_5678_9ABC_DEF0);
+        assert_eq!(a, b, "same seed → identical decision sequences");
+        assert!(
+            a.iter().any(|d| d.is_some()),
+            "the moon-event pacing must land spawns in 900 ticks"
+        );
+        // And the seed changes the sequence (the stream is not constant).
+        assert_ne!(a, run(0x0FED_CBA9_8765_4321));
     }
 }

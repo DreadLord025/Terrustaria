@@ -65,11 +65,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             log::info!("player died; the respawn timer is running");
         }
     }
-    // `Spawner.SpawnNPC()`: one ambient spawn attempt per 60 Hz tick
-    // (NPC.cs:289-306). The rate, caps, area scan and on-screen check are
-    // the ported pipeline in `spawner.rs`.
+    // `NPC.SpawnNPC` (`NPC.cs:80170-80176`): one ambient spawn call per 60 Hz
+    // world update. The named `Main.SwapRandom("SpawnNPC")` stream
+    // (`Main.cs:17886`) advances once per call regardless of the outcome, the
+    // `noSpawnCycle` latch (`:80171-80174`) consumes a whole call, and the
+    // `Spawner` pipeline (rate, caps, area scan, on-screen check) lives in
+    // `spawner.rs`.
+    app.npc_rng = app
+        .npc_rng
+        .wrapping_mul(6_364_136_223_846_793_005)
+        .wrapping_add(1_442_695_040_888_963_407);
+    let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
-        let spawned = if let Some(player) = &app.player {
+        // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
+        // blocks the attempt (the journey and Moon Lord gates have no
+        // sources yet).
+        let ctx = app.player.as_ref().and_then(|player| {
+            if player.dead {
+                return None;
+            }
             let (pcx, pcy) = player.center();
             // `player.nearbyActiveNPCs` (NPC.cs:77902-77922): enemy NPCs
             // within the screen-size rect around the player, counted as
@@ -83,7 +97,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         && (cy - pcy).abs() < spawner::S_HEIGHT as f32 * 0.5
                 })
                 .count() as f32;
-            let ctx = spawner::SpawnContext {
+            Some(spawner::SpawnContext {
                 // The scene flags arrive as the systems land (hardmode
                 // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
                 // chain runs with them false today.
@@ -94,21 +108,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 nearby_active_npcs: nearby,
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 day_time: app.world.day_time,
-            };
-            app.npc_rng = app
-                .npc_rng
-                .wrapping_mul(6_364_136_223_846_793_005)
-                .wrapping_add(1_442_695_040_888_963_407);
-            let mut rng = spawner::FastRandom::new(app.npc_rng);
-            spawner::try_spawn_an_npc(&ctx, &mut rng)
-        } else {
-            None
-        };
-        if let Some(n) = spawned {
-            app.npcs.push(n);
-        }
-        app.npc_timer = 1.0 / 60.0;
+            })
+        });
+        let mut rng = spawner::FastRandom::new(app.npc_rng);
+        let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
+        app.spawn_no_cycle = false; // the latch is consumed by one call
+        spawned = spawn;
+        let _ = suppressed;
     }
+    if let Some(n) = spawned {
+        app.npcs.push(n);
+    }
+    app.npc_timer = 1.0 / 60.0;
 }
 
 /// The slime gel loot through the rule engine

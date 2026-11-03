@@ -127,6 +127,9 @@ pub(crate) struct App {
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
     pub(crate) npc_rng: u64,
+    /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
+    /// set, then the flag clears (`:80171-80174`).
+    pub(crate) spawn_no_cycle: bool,
     pub(crate) attack_cd: f32,
     pub(crate) inventory: [ItemSlot; INV],
     /// The non-grid inventory slots (`EquipSlots`): coins, ammo, equipment,
@@ -1027,6 +1030,7 @@ impl App {
             npc_assets,
             npc_timer: 6.0,
             npc_rng: world_seed,
+            spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory,
             equip: {
