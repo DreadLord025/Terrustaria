@@ -69,7 +69,7 @@ milestone section for the full context before starting.
 | M5-DESERT | `M5-DESERT-structures` | desert structures and loot |
 | M5-DUNGEON | `M5-DUNGEON` | dungeons |
 | M5-TEMPLE | `M5-TEMPLE` | jungle temples |
-| M5-LIVING | `M5-LIVING-trees` | living trees |
+| ✅ M5-LIVING | `M5-LIVING-trees` | living trees | ✅ done 2026-11-03 (generation pass + hollow passage + wall 244; the room furniture needs M1.4-TO; deviations in `ANALYSIS.md`) |
 | M5-HARDFORCE | `M5-HARDFORCE` | hardmode spread |
 | M5-CHEST | `M5-CHEST-gen` | chest generation and loot |
 
