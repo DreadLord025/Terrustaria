@@ -1190,7 +1190,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
-| M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
+| 🔄 M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
 | M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
 | M1.4-WEATHER-1 | `M1.4-WEATHER-1-wind-gusts` | wind gust events + extreme wind [5] |
@@ -1224,7 +1224,7 @@ section in brackets before starting a row.
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
 | ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | ✅ M2-BUFF-2 | `M2-BUFF-2-regen` | done 2026-11-03: `regen.rs` — the full `UpdateLifeRegen` accumulator (`Player.cs:18942-19391`: ramp tiers 300..3000, the 3600 cap, moving ×0.5 / still ×1.25, the banker's-rounded `statLifeMax2` add, the ±120/−600 counters) and `UpdateManaRegen`/`ApplyManaRegenerationDelay` (`:19380-19562`: the delay curve, the still/grapple double-add, the `num9 = 0.5` fill curve, floor 2, +1 per 120); DoT/aura/item/grapple inputs are neutral defaults for M2-BUFF-3/5 + M3-EQUIP; wired into `update_survival` |
-| M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
+| 🔄 M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
 | M2-BUFF-5 | `M2-BUFF-5-auras` | SceneMetrics auras (campfire/lantern/star/sunflower/candles) [8] |
 | M2-BUFF-6 | `M2-BUFF-6-luck` | full Luck.cs (ladybug/torch/coin/kite/potions) [8] |
@@ -1232,7 +1232,7 @@ section in brackets before starting a row.
 | M2-BUFF-8 | `M2-BUFF-8-banners` | kills + tile scan + BannerStrength [8] |
 | ✅ M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps: `tr_core::damage::knock_back_npc` (`NPC.cs:81389-81458` — the soft caps 8/10/12/14/16, crit ×1.4, the damage gate `damage·10 > lifeMax` (expert ·15) gating the X push-away with its anti-drift shape, the Y pop −kb·0.75 / ×0.5 no-gravity) + `iframes_for` (`Player.cs:38385` — 40 ticks normal, 80 long-invincible, 20 exactly-1-damage, PVP 8) [9] | done 2026-11-03: `Npc::knock_back_resist()` per kind/variant (blue 0.8, eye 0.8, wandering 0.8, zombie 0.5, king 0, variants ×1.2/1.4/0.95/0.9); `Npc::hurt` runs the chain (kb 5.5 melee stand-in, 12 shuriken projectile); `Player::hurt` iframe 40 ticks (0.667 s) + the fixed 4.5/−3.5 contact push; the cooldown-counter IDs land with M2-BUFF (only General is modelled) |
 | ✅ M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes: `registry::DamageClass` (None/Melee/Ranged/Magic/Summon/Thrown; the shuriken is Ranged, blocks/torches classless), `ItemDef.crit` + `Player` class stats (`meleeCrit`/`rangedCrit`/`magicCrit` = 4, the ×1.0 damage multipliers — `Player.cs:2430-2437`), `weapon_damage_multiplier`/`class_crit` accessors (`GetWeaponDamageMultiplier` `Player.cs:53386`), the melee hit rolls `crit_roll(meleeCrit + item.crit)` and applies the multiplier; the shuriken’s ranged crit bakes at throw time from the item stream | done 2026-11-03: the crit gate itself landed with M4-DAMAGE; ammo/bow-gun specialist splits stay out until the ammo system (M3-ITEM-3) |
-| M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones [9] |
+| ✅ M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones: `crates/tr-app/src/death.rs` — `DropItems(gemsOnly)` (softcore drops only the large gems 1522-1527 + 3643 the player carries, `Player.cs:54302-54315`), `DropCoins` (stack/2 keeps the rest; the greedy platinum/gold/silver/copper split of the dropped half), `DropTombstone` (the rich-grave roll `coinsOwned > 100000 -> Next(5)+527`, else `Next(6)`: 0 → the Tombstone projectile 43, else a marker 201-205; the X scatter `Next(−35,36)·0.1` until |vx| > 2) [9] | done 2026-11-03: the falling tombstones place tile 85 through `TileObjectData` on landing; the epitaph text lives in `App.tomb_texts` (the text render over the tombstone is M7-UI); the respawn TIMER is M2-DEATH-2 |
 | M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules + bed spawn [9] |
 | M2-MOUNT-1..4 | `M2-MOUNT-1-framework` … | mounts per category [22] |
 | M2-BUFF | (umbrella retired into M2-BUFF-1..8) | — |
@@ -1244,7 +1244,7 @@ section in brackets before starting a row.
 | ✅ M3-CRAFT-recipes | `M3-CRAFT-recipes` | done 2026-11-03: a 7-recipe subset + can_craft/try_craft/adjacent_tiles (`craft.rs`) + the crafting panel on contexts 41/42/43 (the old 4/33 numbering was stale); follow-ups: the SetupRecipes generator, the dropped-item bridge, craft sound [11] |
 | M3-CRAFT-2 | `M3-CRAFT-2-groups-environment` | recipe groups + env flags + nearby chests [11] |
 | M3-CRAFT-3 | `M3-CRAFT-3-alchemy` | alchemy table 1/3 rule [11] |
-| M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
+| 🔄 M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
 | M3-ITEM-2 | `M3-ITEM-2-use-styles` | 16 use styles + body dispatch [10] |
 | M3-ITEM-3 | `M3-ITEM-3-ammo` | ammo system + not-consume rolls [10] |
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |

@@ -51,14 +51,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npcs.extend(spawned);
     if let Some(player) = app.player.as_mut() {
         if player.hp <= 0 {
+            // `Player.KillMe`'s drop half (`Player.cs:38863`): the gems/coins
+            // drops and the falling tombstone spawn at the death spot, then
+            // the respawn (the respawn TIMER is M2-DEATH-2).
+            let (dx, dy) = player.center();
+            let death_text = "was slain...".to_string();
+            drop(player);
+            crate::death::on_player_death(app, dx, dy, &death_text);
             log::info!("player died; respawning at the world spawn");
-            player.respawn();
+            if let Some(player) = app.player.as_mut() {
+                player.respawn();
+                if app.follow_player {
+                    let (cx, cy) = player.center();
+                    app.camera = Vec2::new(cx, cy);
+                }
+            }
             app.npcs.clear();
             app.npc_timer = 4.0;
-            if app.follow_player {
-                let (cx, cy) = player.center();
-                app.camera = Vec2::new(cx, cy);
-            }
         }
     }
     // `Spawner.SpawnNPC()`: one ambient spawn attempt per 60 Hz tick

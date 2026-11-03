@@ -6,6 +6,7 @@ mod audio;
 mod biome;
 mod buffs;
 mod collision;
+mod death;
 mod inv;
 mod item;
 mod loot_db;
