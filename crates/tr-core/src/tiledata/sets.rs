@@ -335,6 +335,24 @@ pub static SET_MERGES_WITH_CLOUDS: TileSet = TileSet(&[
     0x000000000000e000,
 ]);
 
+/// `TileID.Sets.Clouds` (`TileID.cs:505`): 189, 196, 460, 717, 718, 719. A
+/// landing on any of these (or tile 666, or the cloud platform variant)
+/// forgives the fall (`Player.cs:25338-25343`).
+pub static SET_CLOUDS: TileSet = TileSet(&[
+    0x0000000000000000,
+    0x0000000000000000,
+    0x2000000000000000,
+    0x0000000000000010,
+    0x0000000000000000,
+    0x0000000000000000,
+    0x0000000000000000,
+    0x0000000000001000,
+    0x0000000000000000,
+    0x0000000000000000,
+    0x0000000000000000,
+    0x000000000000e000,
+]);
+
 pub static SET_FORCED_DIRT_MERGING: TileSet = TileSet(&[
     0x0040000000000000,
     0x0000000000001800,
