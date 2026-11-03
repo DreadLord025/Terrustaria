@@ -172,6 +172,20 @@ pub fn load_world_images(
         "Armor/Armor_2",
         "Armor/Armor_3",
         "Armor/Armor_4",
+        // The armor items' inventory icons (`Item_89` copper helmet .. `Item_79`
+        // gold greaves) so the equipment slots and tooltips render them.
+        "Item_89",
+        "Item_80",
+        "Item_76",
+        "Item_90",
+        "Item_81",
+        "Item_77",
+        "Item_91",
+        "Item_82",
+        "Item_78",
+        "Item_92",
+        "Item_83",
+        "Item_79",
         "NPC_1",
         "NPC_2",
         "NPC_3",
@@ -986,6 +1000,8 @@ impl Lookups {
             }),
             item_icons: [
                 2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
+                // The early-metal armor sets (M3-EQUIP).
+                89, 80, 76, 90, 81, 77, 91, 82, 78, 92, 83, 79,
             ]
             .into_iter()
             .filter_map(|i| atlas.sheet(&format!("Item_{i}")).map(|r| (i, *r)))
