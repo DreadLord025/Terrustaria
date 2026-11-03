@@ -13,11 +13,15 @@ fn solid(t: &Tile) -> bool {
     if !t.active() || (t.kind as usize) >= td::TILE_COUNT {
         return false;
     }
-    td::TILE_SOLID.has(t.kind) || (td::TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0)
+    // `WorldGen.cs:15715`: `tileSolid[192] = false` at the end of the Living
+    // Trees pass — leaf blocks are walk-through for the whole session.
+    (td::TILE_SOLID.has(t.kind) && t.kind != 192)
+        || (td::TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0)
 }
 
 fn solid_kind(kind: u16) -> bool {
-    (kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(kind)
+    // `WorldGen.cs:15715`: leaf blocks (192) go non-solid after generation.
+    (kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(kind) && kind != 192
 }
 
 /// `Tile.slope() > 0 && slope() < 3`: the two ground ramps (`topSlope()`).

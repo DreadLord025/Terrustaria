@@ -942,6 +942,25 @@ pub fn frame_of(world: &World, x: i32, y: i32) -> Option<(i16, i16)> {
     } else if td::SET_ORE_MERGES_WITH_MUD.has(me) {
         merge(&mut n, num, |v| td::SET_MUD.has(v));
     }
+    // `WorldGen.cs:82070-82082`: the living-wood/leaf merge pairs.
+    // * 192: `TileMergeAttemptFrametest(i, j, 192, 191)` — the leaf re-frames
+    //   the living-wood neighbour and merges when its frame is open toward the
+    //   leaf. The port merges unconditionally (the wood's edge toward a leaf is
+    //   open in the common case; the compiled openness probe needs the generic
+    //   -2 table, documented in ANALYSIS.md).
+    // * 191: `TileMergeAttempt(-2, 192)` — leaf slots become the `-2` marker
+    //   ("the neighbour is a leaf", read by the generic -2 tables) — and
+    //   `TileMergeAttempt(num, Dirt)` — dirt folds into the wood.
+    if me == 192 {
+        merge(&mut n, num, |v| v == 191);
+    } else if me == 191 {
+        for v in n.iter_mut() {
+            if *v == 192 {
+                *v = -2;
+            }
+        }
+        merge(&mut n, num, |v| td::SET_DIRT.has(v));
+    }
     if td::TILE_MOSS.has(me) || td::SET_TILE_MOSS_BRICK.has(me) {
         merge(&mut n, num, |v| td::SET_DIRT.has(v));
     } else if td::SET_DIRT.has(me) {
