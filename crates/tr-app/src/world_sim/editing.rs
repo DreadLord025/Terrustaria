@@ -4,7 +4,7 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{edit, World, TILE_PX};
+use tr_core::{TILE_PX, World, edit};
 
 use crate::app::App;
 use crate::projectile::Projectile;
@@ -129,11 +129,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
-                let dmg = if held_weapon {
-                    registry::damage(held.kind)
+                // `Player.ItemCheck_MeleeHitNPCs` -> `NPC.StrikeNPC`:
+                // `DamageVar` -> `CalculateDamageNPCsTake` with the NPC's
+                // defense (`NPC.cs:81226`; armor pen joins when the item
+                // data carries it — M3-TOOL).
+                let raw = if held_weapon {
+                    registry::damage(held.kind) as f32
                 } else {
-                    15
+                    15.0
                 };
+                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, 0.0);
+                let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), false);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
                 let (nx, ny) = (n.x, n.y);

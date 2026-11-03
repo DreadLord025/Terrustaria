@@ -373,6 +373,23 @@ impl Npc {
         (self.x + w * 0.5, self.y + h * 0.5)
     }
 
+    /// `NPC.defense` — `Main.CalculateDamageNPCsTake`'s input
+    /// (blue `NPC.cs:8573` 2, demon eye 2, Wandering Eye 20, zombie 6,
+    /// King Slime 10; the slime variants ride their `SetDefaultsFromNetId`
+    /// lines).
+    pub fn defense(&self) -> i32 {
+        if self.kind == NpcKind::Slime {
+            return self.slime.stats().defense;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 20,
+            NpcKind::Zombie => 6,
+            NpcKind::KingSlime => 10,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
     /// `NPC.value` in copper — `NPCLoot_DropMoney`'s base
     /// (blue `NPC.cs:8576` 25, demon eye 75, Wandering Eye 500, zombie 60,
     /// King Slime 10000).

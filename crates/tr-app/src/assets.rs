@@ -154,6 +154,38 @@ pub fn load_world_images(
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
+        // 165-185` indexes the texture arrays by the armor slot itself, so the file
+        // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
+        // 1.4.4+ body composite `Armor/Armor_{n}` (the torso + shoulders + arms
+        // grid: torso (0,0)/(1,0), shoulders (0,1)/(1,1), arms cols 2-6, front
+        // arm col 7, back arm col 8 — `PlayerDrawSet.cs:2241`).
+        "Armor_Head_1",
+        "Armor_Head_2",
+        "Armor_Head_3",
+        "Armor_Head_4",
+        "Armor_Legs_1",
+        "Armor_Legs_2",
+        "Armor_Legs_3",
+        "Armor_Legs_4",
+        "Armor/Armor_1",
+        "Armor/Armor_2",
+        "Armor/Armor_3",
+        "Armor/Armor_4",
+        // The armor items' inventory icons (`Item_89` copper helmet .. `Item_79`
+        // gold greaves) so the equipment slots and tooltips render them.
+        "Item_89",
+        "Item_80",
+        "Item_76",
+        "Item_90",
+        "Item_81",
+        "Item_77",
+        "Item_91",
+        "Item_82",
+        "Item_78",
+        "Item_92",
+        "Item_83",
+        "Item_79",
         "NPC_1",
         "NPC_2",
         "NPC_3",
@@ -968,6 +1000,8 @@ impl Lookups {
             }),
             item_icons: [
                 2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
+                // The early-metal armor sets (M3-EQUIP).
+                89, 80, 76, 90, 81, 77, 91, 82, 78, 92, 83, 79,
             ]
             .into_iter()
             .filter_map(|i| atlas.sheet(&format!("Item_{i}")).map(|r| (i, *r)))

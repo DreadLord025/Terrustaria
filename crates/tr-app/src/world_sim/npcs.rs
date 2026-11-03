@@ -27,23 +27,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
-    let dead: Vec<(NpcKind, SlimeVariant, f32, f32)> = app
-        .npcs
-        .iter()
-        .filter(|n| n.hp <= 0)
-        .map(|n| {
-            let (cx, cy) = n.center();
-            (n.kind, n.slime, cx, cy)
-        })
-        .collect();
+    let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
-    for npc in app
-        .npcs
-        .iter()
-        .filter(|n| n.hp <= 0)
-        .cloned()
-        .collect::<Vec<_>>()
-    {
+    for npc in &dead {
         spawn_coins(app, &npc);
         spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
     }
@@ -94,6 +80,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as f32;
             let ctx = spawner::SpawnContext {
+                // The scene flags arrive as the systems land (hardmode
+                // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
+                // chain runs with them false today.
+                flags: spawner::SpawnFlags::default(),
                 world: &app.world,
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),
@@ -175,7 +165,7 @@ fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) 
 }
 
 /// The engine's RNG adapter over the app's deterministic item stream.
-struct LootRng<'a>(&'a mut u64);
+pub(crate) struct LootRng<'a>(pub(crate) &'a mut u64);
 
 impl tr_core::loot::DropRng for LootRng<'_> {
     fn next_range(&mut self, min: i32, max: i32) -> i32 {
