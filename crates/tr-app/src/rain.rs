@@ -645,6 +645,36 @@ mod tests {
     }
 
     #[test]
+    fn max_raining_is_the_ramp_target_not_the_visible_intensity() {
+        // `Main.maxRaining` (`Main.cs:64735`, set by `ChangeRain`) is the target
+        // the visible `cloudAlpha` ramps toward (`Main.cs:61913-61926`); the
+        // WaterDistortion rain term reads the target (`SceneState.cs:129`).
+        let w = ground();
+        let mut calm = Rain::with_forced(9, None, true);
+        run(&mut calm, &w, 10);
+        assert_eq!(calm.max_raining(), 0.0, "no event: maxRaining 0");
+
+        let mut ramping = Rain::with_forced(11, None, false);
+        ramping.raining = true;
+        ramping.target = 0.8;
+        run(&mut ramping, &w, 10);
+        assert_eq!(ramping.max_raining(), 0.8);
+        assert!(ramping.visual_alpha() < 0.8, "intensity still ramping");
+
+        // A forced storm pins both (`TR_RAIN`), and the event end resets it to 0
+        // (`Main.cs:64650`).
+        let mut forced = Rain::with_forced(13, Some(1.5), false);
+        run(&mut forced, &w, 2);
+        assert_eq!(forced.max_raining(), 1.5);
+        let mut ending = Rain::with_forced(15, None, false);
+        ending.raining = true;
+        ending.target = 0.8;
+        ending.timer = 1.0;
+        run(&mut ending, &w, 2);
+        assert_eq!(ending.max_raining(), 0.0);
+    }
+
+    #[test]
     fn intensity_ramps_toward_the_target() {
         let w = ground();
         let mut rain = Rain::with_forced(11, None, false);
