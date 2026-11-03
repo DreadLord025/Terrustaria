@@ -1203,6 +1203,24 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
             world.revision = world.revision.wrapping_add(1);
         }
     }
+    // `TR_FILL=tx,ty,w,h,kind[;...]`: fill rectangles with a tile kind at
+    // load (the `TR_POOL` shape for tiles) — builds the floor/ceiling rows
+    // the wooden set's anchors need; `TR_PAINT` writes paint colours, not
+    // tile kinds.
+    if let Ok(v) = std::env::var("TR_FILL") {
+        apply_tr_fill(&mut world, &v);
+    }
+    // `TR_PLACE=x,y,kind[,style[,dir]][;...]`: place tile objects through the
+    // Phase-2 route (`edit::place_item_tile`, the player's own RMB call) for
+    // the object screenshots.
+    if let Ok(v) = std::env::var("TR_PLACE") {
+        apply_tr_places(&mut world, &parse_tr_place(&v));
+    }
+    // `TR_TOGGLE=x,y[,n][;...]`: n presses of the Phase-4 interaction
+    // dispatcher (`edit::interact_at`) — the door closed→open→closed scenario.
+    if let Ok(v) = std::env::var("TR_TOGGLE") {
+        apply_tr_toggles(&mut world, &parse_tr_toggle(&v));
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()
@@ -1248,6 +1266,185 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         if world.day_time { "day" } else { "night" }
     );
     Ok(world)
+}
+
+// --- Deterministic load hooks for the object screenshots --------------------
+//
+// `TR_FILL=tx,ty,w,h,kind[;...]` fills rectangles with a tile kind at load
+// (the `TR_POOL` shape for tiles): it builds the floor/ceiling rows the
+// wooden set's anchors need — `TR_PAINT` writes paint colours, not tile kinds.
+//
+// `TR_PLACE=x,y,kind[,style[,dir]][;...]` places tile objects through the
+// Phase-2 route (`edit::place_item_tile`, the same call the player's RMB
+// takes), semicolon-separated so one screenshot can hold several objects.
+//
+// `TR_TOGGLE=x,y[,n][;...]` presses the Phase-4 interaction dispatcher
+// (`edit::interact_at`) n times at one tile — the closed→open→closed door
+// scenario.
+
+/// One `TR_PLACE` group: place this tile kind through the registry route.
+struct TrPlace {
+    x: i32,
+    y: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+}
+
+/// One `TR_TOGGLE` group: `n` interaction presses at one tile.
+struct TrToggle {
+    x: i32,
+    y: i32,
+    n: u32,
+}
+
+/// Comma-separated `i64`s (`None` when any token is not a number) — the
+/// shared tail of every `TR_` hook parser.
+fn tr_nums(s: &str) -> Option<Vec<i64>> {
+    s.split(',').map(|v| v.trim().parse::<i64>().ok()).collect()
+}
+
+fn parse_tr_place(v: &str) -> Vec<TrPlace> {
+    v.split(';')
+        .filter_map(|group| {
+            // `[x, y, kind]` with the defaults of `Item.place_style` and the
+            // wired direction (Decisions #6/#7); longer groups override them.
+            let nums = tr_nums(group)?;
+            match nums[..] {
+                [x, y, kind] => Some(TrPlace {
+                    x: x as i32,
+                    y: y as i32,
+                    kind: kind as u16,
+                    style: 0,
+                    dir: 1,
+                }),
+                [x, y, kind, style] => Some(TrPlace {
+                    x: x as i32,
+                    y: y as i32,
+                    kind: kind as u16,
+                    style: style as i32,
+                    dir: 1,
+                }),
+                [x, y, kind, style, dir] => Some(TrPlace {
+                    x: x as i32,
+                    y: y as i32,
+                    kind: kind as u16,
+                    style: style as i32,
+                    dir: dir as i32,
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn parse_tr_toggle(v: &str) -> Vec<TrToggle> {
+    v.split(';')
+        .filter_map(|group| {
+            match tr_nums(group)?[..] {
+                [x, y] => Some(TrToggle {
+                    x: x as i32,
+                    y: y as i32,
+                    n: 1,
+                }),
+                [x, y, n] => Some(TrToggle {
+                    x: x as i32,
+                    y: y as i32,
+                    n: n.max(0) as u32,
+                }),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+fn apply_tr_fill(world: &mut World, v: &str) {
+    let mut touched = false;
+    for group in v.split(';') {
+        let Some(nums) = tr_nums(group) else {
+            continue;
+        };
+        if nums.len() != 5 {
+            continue;
+        }
+        let (tx, ty, tw, th, kind) = (
+            nums[0] as i32,
+            nums[1] as i32,
+            nums[2] as i32,
+            nums[3] as i32,
+            nums[4] as u16,
+        );
+        for x in tx..(tx + tw) {
+            for y in ty..(ty + th) {
+                if let Some(t) = world.tile_mut(x, y) {
+                    // A fresh solid cell, the way worldgen writes one.
+                    *t = tr_core::tile::Tile {
+                        kind,
+                        ..Default::default()
+                    };
+                    t.flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        touched = true;
+    }
+    if touched {
+        world.revision = world.revision.wrapping_add(1);
+    }
+}
+
+fn apply_tr_places(world: &mut World, ops: &[TrPlace]) {
+    for op in ops {
+        let ok = edit::place_item_tile(world, op.x, op.y, op.kind, op.style, op.dir);
+        log::info!(
+            "TR_PLACE {},{} kind {} (style {}, dir {}) -> {}",
+            op.x,
+            op.y,
+            op.kind,
+            op.style,
+            op.dir,
+            if ok { "placed" } else { "refused" }
+        );
+    }
+    if !ops.is_empty() {
+        world.revision = world.revision.wrapping_add(1);
+    }
+}
+
+fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
+    for op in ops {
+        for _ in 0..op.n {
+            // No player exists at load: `direction` is 1 (right-facing) and
+            // no entity can block the door cells.
+            let hit = edit::interact_at(world, op.x, op.y, 1, &|_, _| false);
+            match hit {
+                edit::TileInteraction::None => {
+                    log::info!("TR_TOGGLE {},{} -> none", op.x, op.y)
+                }
+                edit::TileInteraction::DoorOpened { object_drops } => log::info!(
+                    "TR_TOGGLE {},{} -> opened ({} drops)",
+                    op.x,
+                    op.y,
+                    object_drops.len()
+                ),
+                edit::TileInteraction::DoorClosed { object_drops } => log::info!(
+                    "TR_TOGGLE {},{} -> closed ({} drops)",
+                    op.x,
+                    op.y,
+                    object_drops.len()
+                ),
+                edit::TileInteraction::DoorBlocked { object_drops } => log::info!(
+                    "TR_TOGGLE {},{} -> blocked ({} drops)",
+                    op.x,
+                    op.y,
+                    object_drops.len()
+                ),
+            }
+        }
+    }
+    if !ops.is_empty() {
+        world.revision = world.revision.wrapping_add(1);
+    }
 }
 
 /// Builds the sprite atlas and the sheet lookups from the world's used tile
@@ -1595,4 +1792,89 @@ pub(crate) fn find_content_dir() -> Option<PathBuf> {
     candidates.push(PathBuf::from("assets/Content"));
     candidates.push(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets/Content"));
     candidates.into_iter().find(|p| p.join("Images").is_dir())
+}
+
+#[cfg(test)]
+mod tr_hooks {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16
+    /// (a 3-tall opening at rows 17..=19), deep enough inside the world for
+    /// `CanPlace`'s 5-tile edge margin (`TileObject.cs:215`).
+    fn doorway_world() -> World {
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..40 {
+            for y in [16, 20] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    #[test]
+    fn tr_place_parsing_defaults_and_groups() {
+        // `[x, y, kind]` groups default to style 0 / dir 1 (Decisions #6/#7);
+        // 4- and 5-number groups override style and style+dir.
+        let ops = parse_tr_place("10,19,18;14,19,21,0,-1");
+        assert_eq!(ops.len(), 2);
+        assert_eq!(
+            (ops[0].x, ops[0].y, ops[0].kind, ops[0].style, ops[0].dir),
+            (10, 19, 18, 0, 1)
+        );
+        assert_eq!(
+            (ops[1].x, ops[1].y, ops[1].kind, ops[1].style, ops[1].dir),
+            (14, 19, 21, 0, -1)
+        );
+        // Malformed groups are dropped; well-formed ones survive.
+        assert_eq!(parse_tr_place("x,y,18;5,19,4").len(), 1);
+        assert!(parse_tr_place("").is_empty());
+    }
+
+    #[test]
+    fn tr_toggle_parsing_default_count() {
+        let ops = parse_tr_toggle("2026,198;7,9,3");
+        assert_eq!(ops.len(), 2);
+        assert_eq!((ops[0].x, ops[0].y, ops[0].n), (2026, 198, 1));
+        assert_eq!((ops[1].x, ops[1].y, ops[1].n), (7, 9, 3));
+        // Wrong arity is dropped; a negative count clamps to 0 presses.
+        assert!(parse_tr_toggle("1,2,3,4").is_empty());
+        assert_eq!(parse_tr_toggle("1,2,-5")[0].n, 0);
+    }
+
+    #[test]
+    fn tr_hook_chain_places_and_toggles_a_door() {
+        // TR_FILL floor+ceiling -> TR_PLACE door -> TR_TOGGLE x2: the whole
+        // hook chain on a synthetic world, ending closed with the closed
+        // frames restored — the screenshot scenario in miniature.
+        let mut w = World::new("t".into(), 40, 40);
+        apply_tr_fill(&mut w, "0,20,40,1,1");
+        apply_tr_fill(&mut w, "0,16,40,1,1");
+        assert!(w.tile(10, 20).unwrap().active(), "fill wrote the floor");
+        apply_tr_places(&mut w, &parse_tr_place("10,19,10"));
+        assert!(w.tile(10, 19).unwrap().active() && w.tile(10, 17).unwrap().active());
+        // `place` guarantees the frame_important bit (Decision #4).
+        assert!(w.frame_important[10]);
+        let closed_frame = w.tile(10, 18).unwrap().frame_y;
+        apply_tr_toggles(&mut w, &parse_tr_toggle("10,18,1"));
+        assert!(
+            w.tile(10, 18).unwrap().active() && w.tile(10, 18).unwrap().kind == 11,
+            "one press opens the door"
+        );
+        assert!(w.frame_important[11], "open_door keeps the tile-11 bit");
+        apply_tr_toggles(&mut w, &parse_tr_toggle("10,18,1"));
+        assert_eq!(
+            w.tile(10, 18).unwrap().kind, 10,
+            "the second press closes it again"
+        );
+        assert_eq!(w.tile(10, 18).unwrap().frame_y, closed_frame);
+    }
 }

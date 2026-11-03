@@ -26,7 +26,7 @@ milestone section for the full context before starting.
 | TILE-DRAW-5 ✅ | `TILE-DRAW-5-grass-framing` | full grass framing (`WorldGen.cs:82184-84836`): groups A-J, the `-2` marker, per-biome dirt ids | done 2026-11-01 by the M1.4-BG-13 port (full override chains + the `-1`/`-2` tables) |
 | M1.4-BG-18 | `M1.4-BG-18-screen-filters` | per-biome animated screen effects: `SceneState.ApplyVisuals` (desert heat distortion, underworld heat, blizzard/sandstorm/aurora/water distortion, monolith/story filters) | |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles and shimmer: honey/shimmer `DrawWaterfall` passes (`Main.liquidAlpha[2..4]`), shimmer vertex-sparkle, `TrySparkling` dust, ambient lava-waterfall light | ✅ done 2026-11-02 (per-style waterfall + liquid passes, `DrawShimmer`, `AddLight`, `TrySparkling`; deviations in `ANALYSIS.md`) |
-| M1.4-TO | `M1.4-TO-tile-objects` | `TileObjectData` (multi-tile furniture, doors, chests), gemspark/glow tiles | paint shares TILE-DRAW-4 |
+| M1.4-TO 🟡 | `M1.4-TO-tile-objects` | `TileObjectData` (multi-tile furniture, doors, chests), gemspark/glow tiles | tile objects done 2026-11-03: registry slice (wooden set 10/11/14/15/18/21), item placement, KillTile cascade, door interaction (deviations in `ANALYSIS.md` "Tile objects (M1.4-TO)"); gemspark/glow tiles remain |
 
 ### Milestone 2 — player
 

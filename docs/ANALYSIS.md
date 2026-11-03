@@ -2056,3 +2056,72 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   data fix spotted during the review; the remaining pre-existing registry
   mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
   item-data catalog work.
+
+## Tile objects (M1.4-TO)
+
+`tr-core/src/tileobject.rs` ports the `TileObjectData` registry as flat const
+data (approach A — a full-registry generator is the follow-up) and
+`tr-core/src/edit.rs` the logic on top of it: `TileObject.CanPlace`/`Place`
+(`TileObject.cs:174-853` / `:29-172`), the KillTile destruction cascade through
+the six per-type `Check*` routines (`CheckDoorClosed` `WorldGen.cs:86432`,
+`CheckDoorOpen` `:86339`, `Check3x2` `:49187`, `Check1x2` `:43335`, `Check2x1`
+`:46973`, `CheckChest` `:57923`; the origin reconstruction is generalized
+through the registry: `dx = frameX/18 % width`, `dy = frameY/18 % height`, the
+open-door hinge via the C# `frameX % 72` switch), and `WorldGen.OpenDoor`/
+`CloseDoor` (`:37630-37784` / `:31805-31907`) behind `interact_at` — the
+port's first world-tile interaction hook, embedded in the fixed-step editing
+pass at the vanilla `Update` order point (interactions `Player.cs:27430` →
+`ItemCheck` `:31827`). The registry slice is the wooden set — closed/open door
+(10/11), table (14), chair (15), work bench (18), chest (21); every entry
+cites its builder chain. Deviations and seams:
+
+- The registry is a deliberate slice: sub-tiles are not ported (the table's
+  styles 13/25, `TileObjectData.cs:3182-3190`) and the gemspark/glow tiles
+  stay excluded (research decision — they are wall/light render work, not
+  placement); adding objects is data-only until the generator lands.
+- The chest is a pure tile object: the `Chest.FindEmptyChest`/`Chest.
+  AfterPlacement_Hook` hooks (`TileObjectData.cs:3464-3465`), chest indices
+  and item storage are NOT ported — the M3-CHEST-UI seam.
+- Net placement replication (`apply_edit` kind 1, `world_sim/editing.rs:548`)
+  sends style 0 / dir 1: the generic replication path carries no
+  style/alternate/direction (vanilla's `NetMessage.SendObjectPlacement`
+  does), so a left-facing chair replicates mirrored.
+- `CloseDoor`'s `genRand.Next(3)` closed-frame variant is pinned to 0
+  (`edit.rs`, `close_door`): the port has no runtime RNG stream to draw from
+  and the determinism invariant forbids introducing one; the two skipped
+  variants are a closed-frame cosmetic only.
+- The interaction hook consumes the click with no same-time fall-through to
+  placement — the research contract is stronger than vanilla's nuance where a
+  refused door toggle and a placement can land in one `Update`.
+- Door sounds are wired (Door_Opened/Door_Closed cues); the door net message
+  (vanilla 19) is NOT wired — there is no `apply_edit` kind for a toggle yet;
+  multiplayer seam.
+- The left-facing open door's frames come from the generic `TileObject.Place`
+  math (style-row shift → frameY 54) while vanilla's hand-written `OpenDoor`
+  uses a different hardcoded left-leaf layout (frameX +36,
+  `WorldGen.cs:37695-37698`); both are ported as-is — a vanilla quirk, not a
+  port bug.
+- The wooden recipes expand the `RecipeGroups.Wood`/`IronBar` requirement
+  groups to concrete ids (Wood → 9, Iron Bar → 22; `Recipe.cs:610-616` /
+  `:4738`) — the subset recipe table carries no group machinery (`craft.rs`).
+- LMB breaking of `frame_important` tiles (doors included) is still gated off
+  in `world_sim/editing.rs:158-165` (`!important`, cacti exempted) — the
+  cascade runs from every other break source; separate catalog line.
+- Placement does not run the KillTile cascade: `reframe_area` (and
+  `frame_world`) leave `frame_important` tiles alone, so a floating object at
+  placement does not pop although vanilla's `PlaceTile` → `SquareTileFrame`
+  would kill it; it resolves at the next neighbouring break.
+- The object route bypasses the app's legacy single-tile pre-checks
+  (neighbour/overlap) — `TileObject.CanPlace` owns the verdict;
+  `BlockPlacementIfOverPlayers` (`Player.cs:41427`) is not ported for the
+  wooden set.
+
+Verification: the workspace suite is green (457+12+276, `--skip
+migrates_version_2_kinds_to_item_ids`); deterministic `TR_FILL`/`TR_PLACE`/
+`TR_TOGGLE` load hooks (the `TR_PAINT` precedent) stage the wooden set on a
+painted strip; twin runs are SHA256-equal at zooms 1.0/1.5/2.0 (`49c07431…`,
+`f9b4d310…`, `c1bacbc2…`); the door scenario closed→open→closed returns to the
+byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
+differs exactly inside the door column (pixel_diff 1664 px, bbox
+(1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
+geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
