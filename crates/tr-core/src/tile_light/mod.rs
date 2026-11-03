@@ -28,11 +28,12 @@ use crate::world::World;
 pub fn apply_wall_light(
     tile: &Tile,
     wall_paint: u8,
+    inv: InvisibleBits,
     rng: &mut FastRandom,
     p: &LightParams,
     c: &mut [f32; 3],
 ) {
-    let blocked = light_blocked(tile);
+    let blocked = light_blocked(tile, inv.block, p.draw_invisible_walls);
     let mut l = [0.0f32; 3];
     match tile.wall {
         357 if !blocked => l = [0.15, 0.27, 0.3],
@@ -90,13 +91,28 @@ pub fn apply_wall_light(
     }
 }
 
-/// `TileLightScanner.LightIsBlocked` (`TileLightScanner.cs:151`).
-pub fn light_blocked(tile: &Tile) -> bool {
-    tile.active() && crate::tiledata::TILE_BLOCK_LIGHT.has(tile.kind)
+/// The Echo-coating bits the light pass consumes (`Tile.invisibleBlock()` /
+/// `Tile.invisibleWall()`, `Tile.cs:528/545`). Vanilla reads them off the tile
+/// headers; the port stores them sparsely in `World.extras`, so the per-tile
+/// scan threads them down as one value.
+#[derive(Clone, Copy, Default)]
+pub struct InvisibleBits {
+    pub block: bool,
+    pub wall: bool,
+}
+
+/// `TileLightScanner.LightIsBlocked` (`TileLightScanner.cs:151-162`): a
+/// light-blocking tile blocks, except an `invisibleBlock` one — that blocks
+/// only while invisible blocks are being shown (`DrawInvisibleWalls`); hidden,
+/// light passes through it like air.
+pub fn light_blocked(tile: &Tile, invisible_block: bool, draw_invisible: bool) -> bool {
+    tile.active()
+        && crate::tiledata::TILE_BLOCK_LIGHT.has(tile.kind)
+        && (!invisible_block || draw_invisible)
 }
 
 /// `TileLightScanner.ApplySurfaceLight` (`TileLightScanner.cs:3131`) — daylight
-/// through walls and gem walls.
+/// through walls and gem walls. `inv` carries the tile's Echo bits.
 pub fn apply_surface_light(
     world: &World,
     tile: &Tile,
@@ -104,11 +120,16 @@ pub fn apply_surface_light(
     y: i32,
     rng: &mut FastRandom,
     p: &LightParams,
+    inv: InvisibleBits,
     c: &mut [f32; 3],
 ) {
     let mut l = [0.0f32; 3];
     let avg = (p.sky[0] + p.sky[1] + p.sky[2]) / 3.0;
-    let wall_light = wall_is_light(tile.wall);
+    // `TileLightScanner.cs:3142/3149`: the wall gate also accepts a hidden
+    // invisibleWall, and the sun exemption also covers a hidden invisibleBlock.
+    let wall_light =
+        wall_is_light(tile.wall) || (inv.wall && !p.draw_invisible_walls);
+    let hidden_block = inv.block && !p.draw_invisible_walls;
 
     if tile.active() && crate::tiledata::SET_ALLOW_LIGHT_IN_WATER.has(tile.kind) {
         if c[0] < avg && wall_light {
@@ -116,7 +137,7 @@ pub fn apply_surface_light(
         }
     } else if (!tile.active()
         || !crate::tiledata::TILE_NO_SUN_LIGHT.has(tile.kind)
-        || ((tile.slope() != 0 || tile.half_brick())
+        || ((tile.slope() != 0 || tile.half_brick() || hidden_block)
             && world.tile(x, y - 1).map_or(true, |t| t.liquid == 0)
             && world.tile(x, y + 1).map_or(true, |t| t.liquid == 0)
             && world.tile(x - 1, y).map_or(true, |t| t.liquid == 0)
@@ -177,18 +198,22 @@ pub fn apply_surface_light(
     }
 }
 
-/// `TileLightScanner.ApplyHellLight` (`TileLightScanner.cs:3240`).
+/// `TileLightScanner.ApplyHellLight` (`TileLightScanner.cs:3240`): the wall
+/// gate accepts a hidden invisibleWall (`:3246`); unlike the surface pass there
+/// is no invisibleBlock transmit exemption here.
 pub fn apply_hell_light(
     world: &World,
     tile: &Tile,
     x: i32,
     y: i32,
     p: &LightParams,
+    inv: InvisibleBits,
     c: &mut [f32; 3],
 ) {
     let glow = p.hell_glow;
     let mut l = [0.0f32; 3];
-    let wall_light = wall_is_light(tile.wall);
+    let wall_light =
+        wall_is_light(tile.wall) || (inv.wall && !p.draw_invisible_walls);
     let open_sides = |dx: i32, dy: i32| world.tile(x + dx, y + dy).map_or(true, |t| t.liquid == 0);
     let transmits = !tile.active()
         || !crate::tiledata::TILE_NO_SUN_LIGHT.has(tile.kind)
@@ -271,13 +296,13 @@ mod tests {
         let mut c = [0.0f32; 3];
         let mut rng = FastRandom::new(0).with_modifier(1, 1);
         let t = tile(0, 0, 0);
-        apply_wall_light(&t, 0, &mut rng, &p, &mut c);
+        apply_wall_light(&t, 0, InvisibleBits::default(), &mut rng, &p, &mut c);
         assert_eq!(c, [0.0; 3]);
 
         let mut wall = Tile::default();
         wall.wall = 137;
         let mut c = [0.0f32; 3];
-        apply_wall_light(&wall, 0, &mut rng, &p, &mut c);
+        apply_wall_light(&wall, 0, InvisibleBits::default(), &mut rng, &p, &mut c);
         // `0.4 + delta * 0.6 + random * 0.0005`, times (1, 0.5, 0.1).
         assert!((c[0] - 0.46).abs() < 0.03, "crystal wall {c:?}");
         assert!((c[1] - c[0] * 0.5).abs() < 1e-4, "crystal wall {c:?}");

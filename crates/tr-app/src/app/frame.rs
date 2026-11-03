@@ -271,37 +271,38 @@ impl App {
             if let (Some(gpu), Some(renderer)) = (gpu.as_ref(), renderer.as_mut()) {
                 // `TR_DAY` overrides the time of day (0 = midnight, 1 = noon) so a
                 // screenshot can be compared against the original at a fixed time.
+                // The override only sets the clock — the sky/tile colour comes from
+                // the same `SetBackColor` path as the natural clock (the old
+                // night→day lerp bypassed the ramps and the moon-phase floor).
                 let override_day = std::env::var("TR_DAY")
                     .ok()
                     .and_then(|v| v.parse::<f32>().ok())
                     .map(|v| v.clamp(0.0, 1.0));
-                let (sky_tint, _sky_light, is_day, clock_time) = match override_day {
+                let (is_day, natural_time) = match override_day {
                     Some(d) => {
-                        let night = [0.075f32, 0.08, 0.10];
-                        let day = [1.0f32, 1.0, 1.0];
-                        let tint = [
-                            night[0] + (day[0] - night[0]) * d,
-                            night[1] + (day[1] - night[1]) * d,
-                            night[2] + (day[2] - night[2]) * d,
-                        ];
                         let is_day = d >= 0.5;
+                        // Pin safely INSIDE the half: the old endpoints sat on the
+                        // day/night boundaries (54000/32400), and one tick of the
+                        // live clock flipped the freshly-ported `SetBackColor`
+                        // ramps into the other half mid-shot.
                         let clock = if is_day {
-                            d as f64 * 54000.0
+                            // [13500 dawn .. 27000 noon] — `TR_DAY=1.0` = noon.
+                            13500.0 + d as f64 * 13500.0
                         } else {
-                            (1.0 - d as f64) * 32400.0
+                            // [16215 midnight .. 30800 late night].
+                            16200.0 + (0.5 - d) as f64 * 29200.0
                         };
-                        (tint, tile_color(tint), is_day, clock)
+                        (is_day, clock)
                     }
-                    // `Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`.
-                    None => {
-                        // Quantise the daylight/sky colour to one-second steps: the sun
-                        // still moves smoothly on the draw pass, but the light map and
-                        // world range can be reused for a second.
-                        let quantised = (world.time / 60.0).floor() * 60.0;
-                        let c = color_of_the_skies(quantised, world.day_time);
-                        (c, tile_color(c), world.day_time, world.time)
-                    }
+                    None => (world.day_time, world.time),
                 };
+                // `Main.SetBackColor` + `ApplyColorOfTheSkiesToTiles`. Quantise the
+                // daylight/sky colour to one-second steps: the sun still moves
+                // smoothly on the draw pass, but the light map and world range can
+                // be reused for a second.
+                let quantised = (natural_time / 60.0).floor() * 60.0;
+                let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
+                let clock_time = natural_time;
                 // `SetBackColor`: rain multiplies the sky (and therefore the surface
                 // sunlight) by `1 - cloudAlpha * 0.9`.
                 let rain_alpha = rain.visual_alpha();
@@ -370,6 +371,10 @@ impl App {
                     // every cage stays in mode 0.
                     cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
                     rng_seed: self.light_rng_seed,
+                    // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
+                    // false until the EchoMonolith / 4409-accessory systems land;
+                    // `TR_SHOW_INVISIBLE=1` pins it on for A/B shots.
+                    draw_invisible_walls: std::env::var_os("TR_SHOW_INVISIBLE").is_some(),
                 };
                 let sky_uv = atlas
                     .as_ref()

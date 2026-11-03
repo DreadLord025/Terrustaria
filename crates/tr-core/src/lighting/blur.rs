@@ -182,9 +182,18 @@ pub(super) fn surface_cutoff(world: &World, x: i32) -> i32 {
     first_solid
 }
 
-/// `TileLightScanner.GetTileMask`.
-pub(super) fn mask_of(tile: &Tile) -> Mask {
-    if light_blocked(tile) && tile.kind != 131 && tile.slope() == 0 {
+/// `TileLightScanner.GetTileMask` — `LightIsBlocked` inside it consumes the
+/// tile's `invisibleBlock` bit (`TileLightScanner.cs:66-75,151-162`).
+pub(super) fn mask_of(
+    tile: &Tile,
+    x: i32,
+    y: i32,
+    draw_invisible: bool,
+    world: &World,
+) -> Mask {
+    let invisible_block = world.invisible_block(x, y);
+    if light_blocked(tile, invisible_block, draw_invisible) && tile.kind != 131 && tile.slope() == 0
+    {
         if td::SET_CRACKED_BRICKS.has(tile.kind) {
             return Mask::CrackedBricks;
         }

@@ -49,7 +49,7 @@ pub(crate) fn display_name(name: &str) -> String {
 /// Day runs `0..54000` (0 = sunrise, 27000 = noon), night runs `0..32400`
 /// (16200 = midnight). Between 13500 and 37800 the colour is pure white, which is why
 /// vanilla daytime tiles are lit at 100 %.
-pub(crate) fn color_of_the_skies(time: f64, day: bool) -> [f32; 3] {
+pub(crate) fn color_of_the_skies(time: f64, day: bool, moon_phase: u8) -> [f32; 3] {
     let byte = |v: f64| (v.clamp(0.0, 255.0) / 255.0) as f32;
     if day {
         if time < 13500.0 {
@@ -76,16 +76,26 @@ pub(crate) fn color_of_the_skies(time: f64, day: bool) -> [f32; 3] {
         } else {
             [1.0, 1.0, 1.0]
         }
-    } else if time < 16200.0 {
-        let t = 1.0 - time / 16200.0;
-        let g = byte(t * 30.0 + 5.0).max(15.0 / 255.0);
-        [g, g, g]
     } else {
-        let t = (time / 32400.0 - 0.5) * 2.0;
+        // `Main.cs:63493-63540`: the two night ramps, then the moon-phase light
+        // floor — `Main.cs:63792-63813` grades `minimalLight` 11 (new moon) up
+        // to 19 (full moon), applied per channel at `:63818-63829`. The
+        // blood-moon floor of 25 (`:63830-63844`) lands with the blood-moon
+        // system (M4 events); its night ramp is not ported either.
+        let (r, g, b) = if time < 16200.0 {
+            let t = 1.0 - time / 16200.0;
+            (t * 30.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
+        } else {
+            let t = (time / 32400.0 - 0.5) * 2.0;
+            (t * 20.0 + 5.0, t * 30.0 + 5.0, t * 30.0 + 5.0)
+        };
+        // `Enums/MoonPhase.cs`: Full=0, Empty=4, the right-half mirror behind.
+        const FLOORS: [f64; 8] = [19.0, 17.0, 15.0, 13.0, 11.0, 13.0, 15.0, 17.0];
+        let floor = (FLOORS[(moon_phase & 7) as usize] / 255.0) as f32;
         [
-            byte(t * 20.0 + 5.0).max(15.0 / 255.0),
-            byte(t * 30.0 + 5.0).max(15.0 / 255.0),
-            byte(t * 30.0 + 5.0).max(15.0 / 255.0),
+            byte(r).max(floor),
+            byte(g).max(floor),
+            byte(b).max(floor),
         ]
     }
 }
@@ -1106,6 +1116,24 @@ mod cloud_star_tests {
         assert!((mid - 0.19 * (1.074_9 * 1.074_9)).abs() < 1e-5);
         assert!((big - 0.23 * (1.075 * 1.075)).abs() < 1e-5);
         assert!(small < mid && mid < big);
+    }
+
+    #[test]
+    fn night_light_floor_follows_the_moon_phase() {
+        // `Main.cs:63792-63829`: midnight (t = 16200) with the ramp floor of 5
+        // lifted to the phase minimum — 19 at the full moon, 11 at the new one.
+        let full = color_of_the_skies(16200.0, false, 0);
+        let empty = color_of_the_skies(16200.0, false, 4);
+        let full_byte = full[0] * 255.0;
+        let empty_byte = empty[0] * 255.0;
+        assert!((full_byte - 19.0).abs() < 1e-4, "full moon {full:?}");
+        assert!((empty_byte - 11.0).abs() < 1e-4, "new moon {empty:?}");
+        // The right-half mirror: phase 5 quarter floors at 13.
+        let quarter = color_of_the_skies(16200.0, false, 5)[0] * 255.0;
+        assert!((quarter - 13.0).abs() < 1e-4, "quarter {quarter}");
+        // Daylight ignores the floor.
+        let day = color_of_the_skies(13500.0, true, 4);
+        assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
     }
 
     #[test]

@@ -1275,6 +1275,32 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
             (1.0 - d as f64) * 32400.0
         };
     }
+    // `TR_MOON=<0..7>` pins `Main.moonPhase` — the night light floor follows it
+    // (`Main.cs:63792-63829`), so the full/new-moon A/B stays screenshotable.
+    if let Some(p) = std::env::var("TR_MOON")
+        .ok()
+        .and_then(|v| v.parse::<u8>().ok())
+    {
+        world.moon_phase = p & 7;
+    }
+    // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
+    // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,
+    // `WorldGen.cs:44134-44217`) — so the light pass's invisible handling stays
+    // screenshotable without a coating item.
+    if let Ok(v) = std::env::var("TR_ECHO") {
+        let mut it = v.split(',');
+        let vals: Result<Vec<i64>, _> = it.map(|x| x.trim().parse::<i64>()).collect();
+        if let Ok(vals) = vals && vals.len() == 4 {
+            let (tx, ty, tw, th) = (vals[0] as i32, vals[1] as i32, vals[2] as i32, vals[3] as i32);
+            for x in tx..(tx + tw) {
+                for y in ty..(ty + th) {
+                    world.set_invisible_block(x, y, true);
+                    world.set_invisible_wall(x, y, true);
+                }
+            }
+            world.revision = world.revision.wrapping_add(1);
+        }
+    }
 
     let t_frame = Instant::now();
     let framed = framing::frame_world(&mut world);

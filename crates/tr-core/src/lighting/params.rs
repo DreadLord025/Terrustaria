@@ -184,6 +184,13 @@ pub struct LightParams {
     pub cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
     /// Seed for the per-tile `FastRandom` (`TileLightScanner._random`).
     pub rng_seed: u64,
+    /// `TileLightScannerOptions.DrawInvisibleWalls` — `Main.
+    /// ShouldShowInvisibleBlocksAndWalls()` (`Main.cs:58023`): echo-coated
+    /// (invisible) blocks and walls keep blocking/qualifying for light only
+    /// while the player can see them; hidden, light passes through. The seeing
+    /// systems (EchoMonolith, the 4409 accessory) are not ported, so this stays
+    /// `false` — `TR_SHOW_INVISIBLE=1` pins it for A/B shots.
+    pub draw_invisible_walls: bool,
 }
 
 impl Default for LightParams {
@@ -205,6 +212,7 @@ impl Default for LightParams {
             moondial_cooldown: 0,
             cage_mode: [[0; crate::tile_light::CAGE_FRAMES]; 3],
             rng_seed: 0,
+            draw_invisible_walls: false,
         }
     }
 }
@@ -235,6 +243,7 @@ impl LightParams {
             moondial_cooldown: self.moondial_cooldown,
             cage_mode: self.cage_mode,
             rng_seed: self.rng_seed,
+            draw_invisible_walls: self.draw_invisible_walls,
             world_revision,
         }
     }
@@ -273,6 +282,7 @@ pub(super) struct LightKey {
     moondial_cooldown: i32,
     cage_mode: [[u8; crate::tile_light::CAGE_FRAMES]; 3],
     rng_seed: u64,
+    draw_invisible_walls: bool,
     world_revision: u64,
 }
 

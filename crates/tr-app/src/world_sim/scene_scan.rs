@@ -197,7 +197,8 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // the frame applies (`frame.rs`'s `rain_dim`). Only the Noir formula
     // reads it (no M1 activation path).
     let quantised = (world.time / 60.0).floor() * 60.0;
-    let c = crate::render::sky::color_of_the_skies(quantised, world.day_time);
+    let c =
+        crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
     let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
     let tile_color =
         crate::render::sky::tile_color([c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim]);

@@ -165,9 +165,16 @@ referenced here exist in the catalog.
 **C#** `Graphics/Light/*`, `TileLightScanner.cs` (3 318) · **Rust** `lighting/`,
 `tile_light/` · ✅ core (147-case scanner ported).
 
-- Remaining: sun/moon/star light contribution, invisible blocks/walls (not stored in the
-  packed tile), jellyfish-cage animation state, shader chromatic aberration (instances
-  need a flag).
+- Remaining: jellyfish-cage animation state (the `cage_mode` plumbing exists, the
+  `Main.AnimateTiles` driver does not), shader chromatic aberration (instances need a
+  flag), the blood-moon night ramp + floor 25 (M4 events), eclipse darkening (M4).
+  ✅ 2026-11-03 (M1.5-LIGHT-3): sun/moon light — the night ramps + the moon-phase
+  floor 11..19 (`Main.cs:63792-63829`) now feed `color_of_the_skies` (stars contribute
+  nothing, verified); invisible blocks/walls — `LightIsBlocked` passes hidden echo
+  tiles, the sun/hell wall gates accept a hidden `invisibleWall`, a hidden
+  `invisibleBlock` keeps its sun seed, torch 658 stops emitting (`World.extras` bits;
+  `TR_ECHO` + `TR_SHOW_INVISIBLE` hooks). `TR_DAY` now pins the clock inside the half
+  and the sky/tile colour rides the real `SetBackColor` ramps.
 - **Hidden:** darkness debuff multiplies light ×0.95 / blackout ×0.85 in neg-light mode
   (`LegacyLighting.cs:944-958`); lightning flash relights tiles twice (`Main.cs:58761`);
   disco/shimmer dynamics and `mouseTextColor` flicker already ported (M1.5-LIGHT-1/2).
@@ -1186,7 +1193,7 @@ section in brackets before starting a row.
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
 | M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
-| M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon/star light, invisible blocks [4] |
+| ✅ M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon light (night ramps + moon-phase floor), invisible blocks/walls light handling; stars = no light contribution (verified) [4] |
 | 🔄 M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella (branch claimed) [2] |
 | M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor [2] |
 | M1.4-TO-2 | `M1.4-TO-2-chests` | chest tiles + CheckChest + locking [2][13] |

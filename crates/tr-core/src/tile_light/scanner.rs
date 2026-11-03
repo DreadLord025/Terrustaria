@@ -52,9 +52,9 @@ pub fn apply_tile_light(
     let kind = tile.kind as i32;
     let mut l = [0.0f32; 3];
     let mut paint = false;
-    // `tile.invisibleBlock()` is not stored in the packed tile; an invisible block
-    // is treated as visible (the original's default when the option is off).
-    let invisible = false;
+    // `tile.invisibleBlock()` (`TileLightScanner.cs:350`): an invisible
+    // self-lit tile does not emit (torch 658). The bit lives in `World.extras`.
+    let invisible = world.invisible_block(x, y);
 
     // The dispatch chain over the partitioned cases; see the module doc.
     torch_lights(kind, invisible, fx, fy, rng, p, &mut l);

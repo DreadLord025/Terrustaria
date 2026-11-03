@@ -454,7 +454,7 @@ fn seed_row_range(
     for lx in 0..wu {
         let x = rx0 + lx as i32;
         let tile = &world.tiles[row + x as usize];
-        mask_row[lx] = mask_of(tile);
+        mask_row[lx] = mask_of(tile, x, y, params.draw_invisible_walls, world);
         let c = seed(world, tile, x, y, params, cutoffs[lx]);
         if c[0] > 0.0 || c[1] > 0.0 || c[2] > 0.0 {
             lit += 1;
@@ -475,6 +475,11 @@ fn seed(
     local_surface: i32,
 ) -> [f32; 3] {
     let mut c = [0.0f32; 3];
+    // The Echo bits off `World.extras` (vanilla: the `Tile` header flags).
+    let inv = tile_light::InvisibleBits {
+        block: world.invisible_block(x, y),
+        wall: world.invisible_wall(x, y),
+    };
     // `TileLightScanner._random.WithModifier(x, y)` (`TileLightScanner.cs:91`): one
     // stream per tile.
     let mut rng = FastRandom::new(p.rng_seed).with_modifier(x, y);
@@ -483,11 +488,11 @@ fn seed(
     // each column's own surface keeps every slope in sunlight; the light map still
     // stops at solid blocks, so caves stay dark.
     if y <= local_surface {
-        tile_light::apply_surface_light(world, tile, x, y, &mut rng, p, &mut c);
+        tile_light::apply_surface_light(world, tile, x, y, &mut rng, p, inv, &mut c);
     } else if y > world.height - 200 {
-        tile_light::apply_hell_light(world, tile, x, y, p, &mut c);
+        tile_light::apply_hell_light(world, tile, x, y, p, inv, &mut c);
     }
-    tile_light::apply_wall_light(tile, world.wall_paint(x, y), &mut rng, p, &mut c);
+    tile_light::apply_wall_light(tile, world.wall_paint(x, y), inv, &mut rng, p, &mut c);
     if tile.active() {
         tile_light::apply_tile_light(world, tile, x, y, &mut rng, p, &mut c);
     }
@@ -631,6 +636,128 @@ mod tests {
         let lm = LightMap::compute(&w, 24, 24, 38, 38, &LightParams::default());
         let c = lm.get(30, 31);
         assert!(c[0] > 0.3 && c[0] > c[2], "lava light {c:?}");
+    }
+
+    /// The M1.5-LIGHT-3 wall: `LightIsBlocked` (`TileLightScanner.cs:151-162`)
+    /// treats an `invisibleBlock` tile as blocking only while invisible blocks
+    /// are shown; hidden, light passes through — pinned at the mask level, the
+    /// exact spot the vanilla branch lives in (`GetTileMask` → `Solid`).
+    #[test]
+    fn invisible_block_is_transparent_when_hidden() {
+        let mut w = World::new("t".into(), 8, 8);
+        let i = w.index(4, 4);
+        w.tiles[i].kind = 1; // dirt: in TILE_BLOCK_LIGHT
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.set_invisible_block(4, 4, true);
+        assert!(
+            blur::mask_of(&w.tiles[i], 4, 4, false, &w) != blur::Mask::Solid,
+            "hidden invisible block must not form the Solid mask"
+        );
+        assert_eq!(
+            blur::mask_of(&w.tiles[i], 4, 4, true, &w),
+            blur::Mask::Solid,
+            "shown invisible block keeps blocking"
+        );
+        // The visible twin keeps blocking regardless of the flag.
+        let j = w.index(5, 4);
+        w.tiles[j].kind = 1;
+        w.tiles[j].flags |= FLAG_ACTIVE;
+        assert_eq!(
+            blur::mask_of(&w.tiles[j], 5, 4, false, &w),
+            blur::Mask::Solid
+        );
+    }
+
+    /// `TileLightScanner.cs:3149`: a hidden invisible sun-blocking tile still
+    /// receives the sun seed when the exemption's four neighbours are dry.
+    /// Pinned at the seed level (`apply_surface_light`) — the blur would flood
+    /// the probe from its neighbours and hide the gate.
+    #[test]
+    fn hidden_invisible_block_still_receives_sun() {
+        let mut w = World::new("t".into(), 8, 64);
+        w.world_surface = 30.0;
+        // Kind 11 is in `TILE_NO_SUN_LIGHT`; no wall, dry neighbours.
+        let i = w.index(4, 20);
+        w.tiles[i].kind = 11;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.set_invisible_block(4, 20, true);
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(0).with_modifier(4, 20);
+        tile_light::apply_surface_light(
+            &w,
+            &w.tiles[i],
+            4,
+            20,
+            &mut rng,
+            &LightParams::default(),
+            tile_light::InvisibleBits {
+                block: true,
+                wall: false,
+            },
+            &mut c,
+        );
+        assert!(c[0] > 0.5, "hidden invisible block receives sun: {c:?}");
+
+        // The visible twin gets no direct sun (the type is in the no-sun set).
+        let mut c2 = [0.0f32; 3];
+        let mut rng2 = FastRandom::new(0).with_modifier(4, 20);
+        tile_light::apply_surface_light(
+            &w,
+            &w.tiles[i],
+            4,
+            20,
+            &mut rng2,
+            &LightParams::default(),
+            tile_light::InvisibleBits::default(),
+            &mut c2,
+        );
+        assert_eq!(c2, [0.0; 3], "visible no-sun tile gets no seed");
+    }
+
+    /// `TileLightScanner.cs:3149`: a hidden invisibleWall qualifies for the sun
+    /// seed like a light-passing wall; shown, it behaves like a normal wall.
+    #[test]
+    fn hidden_invisible_wall_admits_sun() {
+        let mut w = World::new("t".into(), 8, 64);
+        w.world_surface = 30.0;
+        let i = w.index(4, 20);
+        w.tiles[i].wall = 1; // dirt wall: not in WALL_LIGHT
+        let inv_hidden = tile_light::InvisibleBits {
+            block: false,
+            wall: true,
+        };
+        let mut c = [0.0f32; 3];
+        let mut rng = FastRandom::new(0).with_modifier(4, 20);
+        tile_light::apply_surface_light(
+            &w,
+            &w.tiles[i],
+            4,
+            20,
+            &mut rng,
+            &LightParams::default(),
+            inv_hidden,
+            &mut c,
+        );
+        assert!(c[0] > 0.5, "hidden invisible wall admits sun: {c:?}");
+
+        // Shown (or not invisible at all), the non-light wall blocks the seed.
+        let mut c2 = [0.0f32; 3];
+        let mut rng2 = FastRandom::new(0).with_modifier(4, 20);
+        let shown_params = LightParams {
+            draw_invisible_walls: true,
+            ..LightParams::default()
+        };
+        tile_light::apply_surface_light(
+            &w,
+            &w.tiles[i],
+            4,
+            20,
+            &mut rng2,
+            &shown_params,
+            inv_hidden,
+            &mut c2,
+        );
+        assert_eq!(c2, [0.0; 3], "shown invisible wall blocks the seed");
     }
 
     #[test]
