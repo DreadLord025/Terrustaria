@@ -2196,3 +2196,41 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   (the Bladed Glove request is produced and then skipped until its item data
   registers), green/baby nothing. The executor drops only registry-known
   items.
+
+## Buff slots (M2-BUFF-1)
+
+`crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
+engine: the full `AddBuff` chain (`Player.cs:5263-5447`), `DelBuff`/`ClearBuff`/
+`FindBuffIndex` (`:5250-5480`), the `UpdateBuffs` timer head (`:9855-9876`) and
+the end-of-update immune purge (`:26012-26018`), hooked into the 60 Hz player
+step (tick at the top of `Player::update`, purge at the end — the C# calls
+`UpdateBuffs` at `:24535` and purges at `:26012`, so the interleave becomes
+meaningful only once per-buff effects land with M2-BUFF-3/4). The verbatim
+`Main.debuff`/`lightPet`/`vanityPet`/`meleeBuff`/`pvpBuff` tables are extracted
+from `Main.cs:8867-9316`.
+
+Deviations:
+
+- **Multiplayer branch skipped** — `AddBuff`'s `Main.netMode == 1` remote path
+  (`Player.cs:5269-5275`, msg 55 + `Main.pvpBuff`) is unreachable in the
+  single-player port; the `pvpBuff` table is kept as data for M6-NET.
+- **Difficulty multiplier is expert-only** — `AddBuff_DetermineBuffTimeToAdd`
+  samples `GameDifficultyData.DebuffTimeMultiplier` (Classic 1 → Expert 2 →
+  Master 2.5, `GameDifficultyData.cs:96-100`); the port has no difficulty modes
+  yet, so `expert_mode` applies ×2 and master waits for M6-CREATIVE/difficulty.
+  `resist_cold` and `dead_cells_potion_station` are `BuffSlots` fields defaulted
+  `false` — the rules are ported and unit-tested but have no sources yet.
+- **Timer-head effect branches deferred** — the mount refresh
+  (`buffTime = 10`, `:9881-9884`) and the per-buff effect chain (`:9875-12000`)
+  land with M2-MOUNT and M2-BUFF-3/4; the tick only decrements today.
+- **Quirks preserved verbatim**: `DelBuff`'s compaction runs to `maxBuffs - 1`
+  (deleting from a full bar leaves a hole at 42 while slot 43 keeps its buff —
+  `Player.cs:5457`); the pet-removal loops have **no** `i--` rescan while the
+  melee loop does (`:5377-5397` vs `:5347-5360`); a bar of 44 debuffs rejects
+  new buffs of any kind (the first non-debuff scan finds nothing, `:5331-5334`);
+  a debuff added to a mixed bar evicts the first *positive* buff; the immune
+  purge does not rescan after `DelBuff`. Each is covered by a unit test naming
+  the line.
+- **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
+  valid only below 401; the C# would throw on higher ids and the port panics the
+  same way (tests synthesise bars from real ids via a `safe_ids()` helper).

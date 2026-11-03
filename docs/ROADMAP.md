@@ -514,7 +514,8 @@ goblin reforge UI + cost, M3-DYES-1 dye slot plumbing (shader-pass architecture)
 
 ## 12. Equipment & armor sets
 
-**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** ⬜ · ⬜.
+**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** `inv.rs`,
+`render/player_layers.rs` (armor sheets) · 🟡 slots + armor draw + persistence done.
 
 - Slots: `armor[20]`, `dye[10]`, `inventory[59]` (50-57 = 4 coins + 4 ammo) — functional
   accessories are slots 3-9 (5 base + Demon Heart + master slot) gated by
@@ -1196,7 +1197,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| 🟡 M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor/accessories go live with M3-EQUIP |
+| ✅ M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor renders with M3-EQUIP (accessories render with M3-EQUIP-3) |
 | ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation; the rotation source consumes M2-ANIM use fractions (swing-arc stand-in replaced in the M3-CRAFT merge) |
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
@@ -1208,7 +1209,7 @@ section in brackets before starting a row.
 | M2-PHYS-6 | `M2-PHYS-6-grapple-movement` | GrappleMovement + per-hook overrides [7] |
 | M2-PHYS-7 | `M2-PHYS-7-minecart` | rails/boost/ramp/sparks [7][22] |
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
-| M2-BUFF-1 | `M2-BUFF-1-buff-slots` | 44-slot engine + add/evict rules [8] |
+| ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | M2-BUFF-2 | `M2-BUFF-2-regen` | life/mana regen engines [8] |
 | M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
@@ -1236,7 +1237,7 @@ section in brackets before starting a row.
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
 | M3-ITEM-5 | `M3-ITEM-5-channel-reuse` | channel + reuseDelay [10] |
 | M3-TOOL | `M3-TOOL-tiers` | pick/axe/hammer tiers + use logic |
-| M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12] |
+| ✅ M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12]; armor renders on the player (Cu/Fe/Ag/Au via the 1.4.4+ body composite), armor kinds persist in the `.trplayer` v4 sidecar, `TR_ARMOR=<metal>` equip hook; drag-and-drop equipping stays with the inventory interaction task |
 | M3-EQUIP-2 | `M3-EQUIP-2-set-bonuses` | ArmorSetBonuses engine [12] |
 | M3-EQUIP-3 | `M3-EQUIP-3-accessory-flags` | accessory effect flags [12] |
 | M3-EQUIP-4 | `M3-EQUIP-4-dye-slots` | dye plumbing [11][12] |
@@ -1260,10 +1261,10 @@ section in brackets before starting a row.
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
 | ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
 
+| M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ separate find: the waterfall sparkle pass breaks pure-world screenshot determinism (`TR_NO_WATERFALL=1` restores SHA256 equality; bisected 2026-11-03 on f07f96d1+loot, desert-with-water pair) — follow-up `M1.5-LIQUID-2-det-fix` || M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | M4-LOOT-3 | `M4-LOOT-3-money` | coin roll chain [16] |
-| ✅ M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline: `tr-core/src/damage.rs` — `DamageVar` (±15 % + the luck reroll, banker’s rounding via `round_bankers`), `CalculateDamageNPCsTake` (defense x0.5, floor 1), `checkArmorPenetration` (ichor/broken/Betsy + the percent, capped at defense/2), the `StrikeNPC_Inner` line (crit x2 after defense), the crit gate (`Next(1,101) <= crit`, base 4) [9] | done 2026-11-03: 8 seeded tests; wired into the melee hit (`DamageVar` -> defense -> floor via the item stream); the contact hit passes flat damage until the combat rng reaches `Npc::contact` (deviation in ANALYSIS); the player-side defense/Hurt formulas land with M3-EQUIP |
-| M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
+| ✅ M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline: `tr-core/src/damage.rs` — `DamageVar` (±15 % + the luck reroll, banker’s rounding via `round_bankers`), `CalculateDamageNPCsTake` (defense x0.5, floor 1), `checkArmorPenetration` (ichor/broken/Betsy + the percent, capped at defense/2), the `StrikeNPC_Inner` line (crit x2 after defense), the crit gate (`Next(1,101) <= crit`, base 4) [9] | done 2026-11-03: 8 seeded tests; wired into the melee hit (`DamageVar` -> defense -> floor via the item stream); the contact hit passes flat damage until the combat rng reaches `Npc::contact` (deviation in ANALYSIS); the player-side defense/Hurt formulas land with M3-EQUIP || M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
 | M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |
