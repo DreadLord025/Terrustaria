@@ -43,6 +43,31 @@ pub struct PlayerInput {
     pub down: bool,
 }
 
+/// The `WetCollision` movement speed per liquid (`Player.cs:28168-28171`):
+/// water 0.5, lava 0.5, honey 0.25, shimmer 0.375, dry 1.0.
+pub fn movement_speed_for(wet: bool, lava_wet: bool, honey_wet: bool, shimmer_wet: bool) -> f32 {
+    if honey_wet {
+        0.25
+    } else if shimmer_wet {
+        0.375
+    } else if wet || lava_wet {
+        0.5
+    } else {
+        1.0
+    }
+}
+
+/// The in-liquid gravity (`Player.cs:27008`): `gravity / 3`.
+pub fn liquid_gravity() -> f32 {
+    GRAVITY / 3.0
+}
+
+/// The in-liquid fall cap, both ways (`Player.cs:27011-27017`):
+/// `maxFallSpeed / 3`.
+pub fn liquid_fall_cap() -> f32 {
+    MAX_FALL / 3.0
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -85,6 +110,18 @@ pub struct Player {
     /// `Player.legFrameCounter`: accumulates `|velocity.X| * 1.3` while walking and
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
+    /// `Player.wet` — the head/body in WATER (`Player.cs:27728`).
+    pub wet: bool,
+    /// `Player.lavaWet` — in LAVA.
+    pub lava_wet: bool,
+    /// `Player.honeyWet` — in HONEY.
+    pub honey_wet: bool,
+    /// `Player.shimmerWet` — in SHIMMER.
+    pub shimmer_wet: bool,
+    /// The `WetCollision` movement-speed scale for this tick's position delta
+    /// (`Player.cs:28168-28171`): water/lava 0.5, honey 0.25, shimmer 0.375,
+    /// dry 1.0.
+    pub liquid_step: f32,
     pub in_water: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
@@ -160,6 +197,11 @@ impl Player {
             leg_frame: 0,
             body_frame: 0,
             leg_frame_counter: 0.0,
+            wet: false,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
+            liquid_step: 1.0,
             in_water: false,
             jump: 0,
             jump_held: false,
@@ -222,6 +264,10 @@ impl Player {
         self.breath_cd = 0;
         self.regen = RegenState::default();
         self.fall_start = (self.y / TILE_PX) as i32;
+        self.wet = false;
+        self.lava_wet = false;
+        self.honey_wet = false;
+        self.shimmer_wet = false;
         self.in_lava = false;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
@@ -392,15 +438,15 @@ impl Player {
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
-        self.in_water = mid.is_some_and(|t| {
-            t.liquid > 0
-                && matches!(
-                    t.liquid_kind(),
-                    tr_core::tile::LiquidKind::Water | tr_core::tile::LiquidKind::Honey
-                )
-        });
-        self.in_lava =
-            mid.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
+        // `Collision.WetCollision` / `LavaCollision` set the four wet flags
+        // (`Player.cs:27728-27910`); the mid-tile liquid kind picks them.
+        let liquid = mid.filter(|t| t.liquid > 0).map(|t| t.liquid_kind());
+        self.wet = liquid == Some(tr_core::tile::LiquidKind::Water);
+        self.lava_wet = liquid == Some(tr_core::tile::LiquidKind::Lava);
+        self.honey_wet = liquid == Some(tr_core::tile::LiquidKind::Honey);
+        self.shimmer_wet = liquid == Some(tr_core::tile::LiquidKind::Shimmer);
+        self.in_water = self.wet || self.honey_wet;
+        self.in_lava = self.lava_wet;
 
         // The fall origin is only reset post-movement now: the landing/rest
         // block (`velocity.Y == 0`, `Player.cs:25383`) and the continuous
@@ -422,8 +468,28 @@ impl Player {
         }
         self.vx = self.vx.clamp(-MAX_RUN, MAX_RUN);
 
-        let gravity = if self.in_water { 0.12 } else { GRAVITY };
-        self.vy = (self.vy + gravity).min(if self.in_water { 2.0 } else { MAX_FALL });
+        let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        // `Player.cs:27008-27017`: in a liquid the gravity is `gravity / 3`
+        // and the fall cap is `maxFallSpeed / 3`, applied both ways (the
+        // upward cap keeps the swim under the surface).
+        let gravity = if in_liquid { liquid_gravity() } else { GRAVITY };
+        let fall_cap = if in_liquid {
+            liquid_fall_cap()
+        } else {
+            MAX_FALL
+        };
+        self.vy = (self.vy + gravity).min(fall_cap);
+        self.vy = self.vy.max(if in_liquid {
+            -(MAX_FALL / 3.0)
+        } else {
+            -MAX_FALL
+        });
+        // `WetCollision`'s `movementSpeed` (`Player.cs:28168-28171` + :23436):
+        // the position delta scales by the liquid speed — water/lava 0.5,
+        // honey 0.25, shimmer 0.375. The scaled step feeds the collision; the
+        // velocity itself keeps integrating (the exit speed is preserved).
+        self.liquid_step =
+            movement_speed_for(self.wet, self.lava_wet, self.honey_wet, self.shimmer_wet);
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
@@ -638,9 +704,16 @@ impl Player {
 
         let mut pos = [self.x, self.y];
         let mut vel = [self.vx, self.vy];
+        // `WetCollision`'s movement speed (`Player.cs:28180-28192` +
+        // :23436-23449): in a liquid the position advances by
+        // `velocity * movementSpeed` per axis while the velocity itself keeps
+        // integrating — the exit speed is preserved.
+        let step_scale = self.liquid_step;
+        vel[0] *= step_scale;
+        vel[1] *= step_scale;
         // `Player.cs` runs the step helpers on the pre-collision velocity (which
         // still carries this tick's gravity), then resolves the AABB.
-        if vel[1] == gravity {
+        if vel[1] == gravity * self.liquid_step {
             collision::step_down(
                 world,
                 &mut pos,
@@ -790,7 +863,27 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 }
 
 #[cfg(test)]
+
 mod tests {
+    #[test]
+    fn movement_speed_per_liquid() {
+        // Player.cs:28168-28171: water/lava 0.5, honey 0.25, shimmer 0.375,
+        // dry 1.0.
+        assert_eq!(movement_speed_for(true, false, false, false), 0.5);
+        assert_eq!(movement_speed_for(false, true, false, false), 0.5);
+        assert_eq!(movement_speed_for(false, false, true, false), 0.25);
+        assert_eq!(movement_speed_for(false, false, false, true), 0.375);
+        assert_eq!(movement_speed_for(false, false, false, false), 1.0);
+    }
+
+    #[test]
+    fn in_liquid_gravity_and_cap_are_thirds() {
+        // Player.cs:27008-27017: gravity / 3 (0.4 -> 0.1333) and the
+        // both-ways cap at maxFallSpeed / 3 (10 -> 3.333).
+        assert!((liquid_gravity() - 0.4 / 3.0).abs() < 1e-6);
+        assert!((liquid_fall_cap() - 10.0 / 3.0).abs() < 1e-6);
+    }
+
     #[test]
     fn respawn_time_base_boss_and_expert() {
         // Player.cs:39060-39082: 600 base, +600 boss-near, x1.5 expert.
