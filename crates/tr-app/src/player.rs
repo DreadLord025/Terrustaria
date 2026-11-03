@@ -14,7 +14,7 @@ use tr_core::{TILE_PX, World};
 
 use crate::buffs::BuffSlots;
 use crate::collision;
-use crate::regen::{update_life_regen, update_mana_regen, RegenInputs, RegenState};
+use crate::regen::{RegenInputs, RegenState, update_life_regen, update_mana_regen};
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -56,6 +56,16 @@ pub struct Player {
     pub melee_damage: f32,
     pub ranged_damage: f32,
     pub magic_damage: f32,
+    /// `Player.dead`: the player is dead and waiting for the respawn timer
+    /// (`Player.cs:38908`).
+    pub dead: bool,
+    /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
+    /// respawn-skip (90-tick lockout, `Player.cs:57111`).
+    pub dead_time: i32,
+    /// `Player.respawnTimer`: the ticks left until the respawn.
+    pub respawn_timer: i32,
+    /// The jump-input edge state for the dead-skip roll.
+    prev_jump_input: bool,
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
@@ -119,6 +129,10 @@ impl Player {
         let sx = world.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5;
         let sy = world.spawn_y as f32 * TILE_PX;
         Self {
+            dead: false,
+            dead_time: 0,
+            respawn_timer: 0,
+            prev_jump_input: false,
             melee_crit: 4,
             ranged_crit: 4,
             magic_crit: 4,
@@ -197,6 +211,78 @@ impl Player {
         self.in_lava = false;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
+    }
+
+    /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
+    /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
+    pub fn start_death(&mut self, boss_near: bool, expert: bool) {
+        self.dead = true;
+        self.dead_time = 0;
+        self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+    }
+
+    /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
+    /// a boss hinders the respawn, x1.5 in expert. The FTW-multiplier x2 and
+    /// the master-mode path stay with M5-SEED-1 / the master difficulty.
+    pub fn get_respawn_time(boss_near: bool, expert: bool) -> i32 {
+        let mut time = 600;
+        if boss_near {
+            time += 600;
+        }
+        if expert {
+            time = (time as f64 * 1.5) as i32;
+        }
+        time
+    }
+
+    /// `NPC.AnyBossHindersRespawnTime` shape (`NPC.cs`): a boss within the
+    /// 4000 px Manhattan range of the death spot. The King Slime is the
+    /// ported boss.
+    pub fn boss_hinders(&self, npcs: &[crate::npc::Npc]) -> bool {
+        let (cx, cy) = self.center();
+        npcs.iter().any(|n| {
+            n.kind == crate::npc::NpcKind::KingSlime && {
+                let (nx, ny) = n.center();
+                (cx - nx).abs() + (cy - ny).abs() < 4000.0
+            }
+        })
+    }
+
+    /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
+    /// 90-tick lockout, with no boss hindering and no danger NPCs nearby.
+    /// `ghost`/`pvpDeath`/event branches are unreachable in the port.
+    pub fn allows_respawn_timer_skip(&self, boss_near: bool, danger_near: bool) -> bool {
+        !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near)
+    }
+
+    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    fn ghost_like(&self) -> bool {
+        false
+    }
+
+    /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
+    /// respawn decrement clamped to `respawnTimerMax` (3600), and the
+    /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
+    /// player should respawn now.
+    pub fn update_dead(&mut self, jump: bool, boss_near: bool, danger_near: bool) -> bool {
+        self.dead_time += 1;
+        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        let jump_edge = jump && !self.prev_jump_input;
+        self.prev_jump_input = jump;
+        let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near);
+        if can_skip && jump_edge && self.respawn_timer > 0 {
+            return true;
+        }
+        self.respawn_timer <= 0
+    }
+
+    /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
+    /// standard spawn-point respawn.
+    pub fn revive(&mut self) {
+        self.dead = false;
+        self.dead_time = 0;
+        self.respawn_timer = 0;
+        self.respawn();
     }
 
     /// Contact damage / future combat. Returns true when the hit was accepted.
@@ -624,6 +710,92 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn respawn_time_base_boss_and_expert() {
+        // Player.cs:39060-39082: 600 base, +600 boss-near, x1.5 expert.
+        assert_eq!(Player::get_respawn_time(false, false), 600);
+        assert_eq!(Player::get_respawn_time(true, false), 1200);
+        assert_eq!(Player::get_respawn_time(false, true), 900);
+        assert_eq!(Player::get_respawn_time(true, true), 1800);
+    }
+
+    #[test]
+    fn update_dead_counts_down_and_revives_at_zero() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        assert!(p.dead);
+        assert_eq!(p.respawn_timer, 600);
+        // 600 ticks of the dead state (no jump) -> the timer drains to 0 and
+        // the last tick reports the respawn.
+        let mut revived_at = None;
+        for tick in 0..700 {
+            if p.update_dead(false, false, false) {
+                revived_at = Some(tick);
+                break;
+            }
+        }
+        assert_eq!(revived_at, Some(599));
+        p.revive();
+        assert!(!p.dead);
+        assert_eq!(p.respawn_timer, 0);
+    }
+
+    #[test]
+    fn respawn_timer_clamps_at_3600() {
+        // Player.respawnTimerMax = 3600 (Player.cs:57109): a boss-near expert
+        // death (1800) halved by nothing still clamps; the clamp matters for
+        // the >3600 totals (the FTW x2 stays out). A forced high timer holds.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(true, true);
+        p.respawn_timer = 4000; // the save-load can exceed the cap
+        p.update_dead(false, false, false);
+        // The clamp catches the decrement result (Player.cs:17049).
+        assert_eq!(p.respawn_timer, 3600);
+    }
+
+    #[test]
+    fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        // Inside the 90-tick lockout: no skip even on the jump edge (the
+        // held jump's edge is consumed while the lockout runs).
+        for _ in 0..89 {
+            assert!(!p.update_dead(true, false, false));
+        }
+        // The lockout expired but the held jump has no fresh edge; a release
+        // and a new press do.
+        assert!(!p.update_dead(true, false, false));
+        assert!(!p.update_dead(false, false, false));
+        assert!(p.update_dead(true, false, false));
+    }
+
+    #[test]
+    fn the_skip_is_blocked_while_a_boss_hinders() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        for _ in 0..95 {
+            p.update_dead(false, false, false);
+        }
+        assert!(!p.allows_respawn_timer_skip(true, false));
+        assert!(p.allows_respawn_timer_skip(false, false));
+    }
+
+    #[test]
+    fn the_jump_edge_is_required_for_the_skip() {
+        // Holding jump through the lockout does not skip on expiry; a fresh
+        // press does (the JustBecameTrue semantics of PlayerInput.Triggers).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.start_death(false, false);
+        for _ in 0..95 {
+            p.update_dead(true, false, false);
+        }
+        // The held jump consumed its edge at the lockout expiry...
+        assert!(!p.update_dead(true, false, false));
+        // ...release and press again: the edge fires.
+        p.update_dead(false, false, false);
+        assert!(p.update_dead(true, false, false));
+    }
+
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
