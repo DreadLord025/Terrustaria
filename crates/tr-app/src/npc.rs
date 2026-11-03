@@ -1,9 +1,9 @@
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
 
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
-use crate::player::{collides_rect, Player};
+use crate::player::{Player, collides_rect};
 
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 8.0;
@@ -64,6 +64,8 @@ pub struct SlimeStats {
     pub scale: f32,
     pub color: [u8; 4],
     pub gel: (u32, u32),
+    /// `NPC.value` in copper (`NPCLoot_DropMoney`'s base).
+    pub value: f32,
 }
 
 impl SlimeVariant {
@@ -71,14 +73,78 @@ impl SlimeVariant {
     /// (blue: `NPC.cs:8567-8580`).
     pub fn stats(self) -> SlimeStats {
         match self {
-            SlimeVariant::Blue => SlimeStats { life: 25, damage: 7, defense: 2, scale: 1.0, color: [0, 80, 255, 100], gel: (1, 2) },
-            SlimeVariant::Green => SlimeStats { life: 14, damage: 6, defense: 0, scale: 0.9, color: [0, 220, 40, 100], gel: (0, 0) },
-            SlimeVariant::Pinky => SlimeStats { life: 150, damage: 5, defense: 5, scale: 0.6, color: [250, 30, 90, 90], gel: (0, 0) },
-            SlimeVariant::Baby => SlimeStats { life: 30, damage: 13, defense: 4, scale: 0.9, color: [0, 0, 0, 50], gel: (0, 0) },
-            SlimeVariant::Black => SlimeStats { life: 45, damage: 15, defense: 4, scale: 1.05, color: [0, 0, 0, 50], gel: (2, 5) },
-            SlimeVariant::Purple => SlimeStats { life: 40, damage: 12, defense: 6, scale: 1.2, color: [200, 0, 255, 150], gel: (2, 5) },
-            SlimeVariant::Red => SlimeStats { life: 35, damage: 12, defense: 4, scale: 1.025, color: [255, 30, 0, 100], gel: (2, 5) },
-            SlimeVariant::Yellow => SlimeStats { life: 45, damage: 15, defense: 7, scale: 1.2, color: [255, 255, 0, 100], gel: (2, 5) },
+            SlimeVariant::Blue => SlimeStats {
+                life: 25,
+                damage: 7,
+                defense: 2,
+                scale: 1.0,
+                color: [0, 80, 255, 100],
+                gel: (1, 2),
+                value: 25.0,
+            },
+            SlimeVariant::Green => SlimeStats {
+                life: 14,
+                damage: 6,
+                defense: 0,
+                scale: 0.9,
+                color: [0, 220, 40, 100],
+                gel: (0, 0),
+                value: 3.0,
+            },
+            SlimeVariant::Pinky => SlimeStats {
+                life: 150,
+                damage: 5,
+                defense: 5,
+                scale: 0.6,
+                color: [250, 30, 90, 90],
+                gel: (0, 0),
+                value: 10000.0,
+            },
+            SlimeVariant::Baby => SlimeStats {
+                life: 30,
+                damage: 13,
+                defense: 4,
+                scale: 0.9,
+                color: [0, 0, 0, 50],
+                gel: (0, 0),
+                value: 10.0,
+            },
+            SlimeVariant::Black => SlimeStats {
+                life: 45,
+                damage: 15,
+                defense: 4,
+                scale: 1.05,
+                color: [0, 0, 0, 50],
+                gel: (2, 5),
+                value: 20.0,
+            },
+            SlimeVariant::Purple => SlimeStats {
+                life: 40,
+                damage: 12,
+                defense: 6,
+                scale: 1.2,
+                color: [200, 0, 255, 150],
+                gel: (2, 5),
+                value: 10.0,
+            },
+            SlimeVariant::Red => SlimeStats {
+                life: 35,
+                damage: 12,
+                defense: 4,
+                scale: 1.025,
+                color: [255, 30, 0, 100],
+                gel: (2, 5),
+                value: 8.0,
+            },
+            SlimeVariant::Yellow => SlimeStats {
+                life: 45,
+                damage: 15,
+                defense: 7,
+                scale: 1.2,
+                color: [255, 255, 0, 100],
+                gel: (2, 5),
+                value: 10.0,
+            },
         }
     }
 
@@ -133,9 +199,9 @@ impl NpcKind {
 
     fn max_hp(self) -> i32 {
         match self {
-            NpcKind::Slime => 25,          // NPC.cs:8572
-            NpcKind::DemonEye => 60,       // case 2
-            NpcKind::WanderingEye => 300,  // case 133
+            NpcKind::Slime => 25,         // NPC.cs:8572
+            NpcKind::DemonEye => 60,      // case 2
+            NpcKind::WanderingEye => 300, // case 133
             NpcKind::Zombie => 45,
             NpcKind::KingSlime => 2000,
         }
@@ -143,9 +209,9 @@ impl NpcKind {
 
     fn contact_damage(self) -> i32 {
         match self {
-            NpcKind::Slime => 7,          // NPC.cs:8571
-            NpcKind::DemonEye => 18,      // case 2
-            NpcKind::WanderingEye => 40,  // case 133
+            NpcKind::Slime => 7,         // NPC.cs:8571
+            NpcKind::DemonEye => 18,     // case 2
+            NpcKind::WanderingEye => 40, // case 133
             NpcKind::Zombie => 14,
             NpcKind::KingSlime => 40,
         }
@@ -305,6 +371,22 @@ impl Npc {
     pub fn center(&self) -> (f32, f32) {
         let (w, h) = self.size();
         (self.x + w * 0.5, self.y + h * 0.5)
+    }
+
+    /// `NPC.value` in copper — `NPCLoot_DropMoney`'s base
+    /// (blue `NPC.cs:8576` 25, demon eye 75, Wandering Eye 500, zombie 60,
+    /// King Slime 10000).
+    pub fn value(&self) -> f32 {
+        if self.kind == NpcKind::Slime {
+            return self.slime.stats().value;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 75.0,
+            NpcKind::WanderingEye => 500.0,
+            NpcKind::Zombie => 60.0,
+            NpcKind::KingSlime => 10_000.0,
+            NpcKind::Slime => unreachable!(),
+        }
     }
 
     /// The scaled size for slime variants (the hitbox rides
@@ -760,7 +842,7 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
