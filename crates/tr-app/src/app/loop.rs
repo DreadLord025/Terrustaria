@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{mouse_pin, App};
+use crate::app::{deterministic_pointer_park, mouse_pin, App};
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -300,7 +300,9 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
-                if mouse_pin().is_none() {
+                // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
+                // offscreen and ignores real motion (`deterministic_pointer_park`).
+                if mouse_pin().is_none() && !deterministic_pointer_park() {
                     self.mouse_pos = p;
                 }
                 // The menu reads the pinned pointer when `TR_MOUSE` is set, so

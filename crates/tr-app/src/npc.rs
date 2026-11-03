@@ -373,6 +373,51 @@ impl Npc {
         (self.x + w * 0.5, self.y + h * 0.5)
     }
 
+    /// `NPC.knockBackResist` — `StrikeNPC_Inner`'s soft-cap chain input
+    /// (blue `NPC.cs:8595` 0.8; demon eye 0.8, Wandering Eye 0.8,
+    /// zombie 0.5, King Slime 0; the slime variants multiply the blue
+    /// base per `SetDefaultsFromNetId`: green x1.2, pinky x1.4, baby
+    /// x0.95, purple x0.9, black/red/yellow x1).
+    pub fn knock_back_resist(&self) -> f32 {
+        if self.kind == NpcKind::Slime {
+            let mult = match self.slime {
+                SlimeVariant::Blue
+                | SlimeVariant::Black
+                | SlimeVariant::Red
+                | SlimeVariant::Yellow => 1.0,
+                SlimeVariant::Green => 1.2,
+                SlimeVariant::Pinky => 1.4,
+                SlimeVariant::Baby => 0.95,
+                SlimeVariant::Purple => 0.9,
+            };
+            return 0.8 * mult;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 0.8,
+            NpcKind::WanderingEye => 0.8,
+            NpcKind::Zombie => 0.5,
+            NpcKind::KingSlime => 0.0,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
+    /// `NPC.defense` — `Main.CalculateDamageNPCsTake`'s input
+    /// (blue `NPC.cs:8573` 2, demon eye 2, Wandering Eye 20, zombie 6,
+    /// King Slime 10; the slime variants ride their `SetDefaultsFromNetId`
+    /// lines).
+    pub fn defense(&self) -> i32 {
+        if self.kind == NpcKind::Slime {
+            return self.slime.stats().defense;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 20,
+            NpcKind::Zombie => 6,
+            NpcKind::KingSlime => 10,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
     /// `NPC.value` in copper — `NPCLoot_DropMoney`'s base
     /// (blue `NPC.cs:8576` 25, demon eye 75, Wandering Eye 500, zombie 60,
     /// King Slime 10000).
@@ -406,20 +451,31 @@ impl Npc {
         wx >= self.x - 4.0 && wx <= self.x + w + 4.0 && wy >= self.y - 4.0 && wy <= self.y + h + 4.0
     }
 
-    pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
+    /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
+    /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
+    /// `hit_direction` is the knockback side (+1 = pushed right) and
+    /// `knock_back` the weapon's `Item.knockBack`.
+    pub fn hurt(&mut self, amount: i32, from_x: f32, knock_back: f32, crit: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
         self.hp -= amount;
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
-        let dir = if self.x + w * 0.5 >= from_x {
-            1.0
-        } else {
-            -1.0
-        };
-        self.vx = dir * 1.6;
-        self.vy = -2.0;
+        let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            self.knock_back_resist(),
+            crit,
+            amount,
+            self.max_hp,
+            (self.vx, self.vy),
+            dir,
+            false,
+            false,
+        );
+        self.vx = vx;
+        self.vy = vy;
         self.on_ground = false;
         true
     }
@@ -949,7 +1005,7 @@ mod tests {
         let w = ground();
         let mut s = Npc::spawn_slime(&w, 20).unwrap();
         for _ in 0..3 {
-            assert!(s.hurt(10, 0.0));
+            assert!(s.hurt(10, 0.0, 5.5, false));
             s.hurt_cd = 0.0;
         }
         // Vanilla keeps `life` as the raw remainder and dies on

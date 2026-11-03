@@ -165,7 +165,7 @@ fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) 
 }
 
 /// The engine's RNG adapter over the app's deterministic item stream.
-struct LootRng<'a>(&'a mut u64);
+pub(crate) struct LootRng<'a>(pub(crate) &'a mut u64);
 
 impl tr_core::loot::DropRng for LootRng<'_> {
     fn next_range(&mut self, min: i32, max: i32) -> i32 {

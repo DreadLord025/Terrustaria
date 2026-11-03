@@ -5,6 +5,7 @@
 
 pub mod anim;
 pub mod binio;
+pub mod damage;
 pub mod drawdata;
 pub mod edit;
 pub mod flame;
@@ -22,6 +23,7 @@ pub mod sky;
 pub mod tile;
 pub mod tile_light;
 pub mod tiledata;
+pub mod tileobject;
 pub mod torch;
 pub mod tree;
 pub mod waterfall;

@@ -35,7 +35,7 @@ struct Waterfall {
 }
 
 /// One textured waterfall quad, in world pixels.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WaterfallDraw {
     /// `Images/Waterfall_{texture}` index.
     pub texture: u8,
@@ -52,7 +52,7 @@ pub struct WaterfallDraw {
 /// A `WaterfallManager.TrySparkling` spawn: the `Dust.NewDust` position in world
 /// pixels (`x*16 - direction*7, y*16 + 6`, `WaterfallManager.cs:1061`). The dust
 /// has zero velocity and `DustID.Sparkle`'s frame 43.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SparkleSpawn {
     pub x: f32,
     pub y: f32,
@@ -637,6 +637,55 @@ mod tests {
         assert!(out.iter().all(|d| d.source[2] > 0 && d.source[3] > 0));
         // Type-0 water falls emit no `AddLight` glow.
         assert!(lights.is_empty());
+    }
+
+    #[test]
+    fn the_draw_walk_is_deterministic_for_the_same_seed_chain() {
+        // Two identical managers fed the same per-frame seed chain must stay
+        // equal frame by frame: quads, `AddLight` rows and the `TrySparkling`
+        // grants. This is the contract the app's `TR_SHOT` harness relies on —
+        // the waterfall walk runs every frame, outside the G6 world cache, and
+        // its `AddLight` list feeds the light map (frame.rs).
+        let build = || {
+            let mut w = world_with_air();
+            let mut brick = stone(2);
+            brick.flags |= FLAG_HALF_BRICK;
+            put(&mut w, 10, 10, brick);
+            put_liquid(&mut w, 11, 9, 255);
+            put_liquid(&mut w, 11, 10, 255);
+            w
+        };
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let alpha = {
+            let mut a = [0.0f32; 15];
+            a[0] = 1.0;
+            a
+        };
+        let (wa, wb) = (build(), build());
+        let mut a = WaterfallManager::new();
+        let mut b = WaterfallManager::new();
+        a.find_waterfalls(&wa, [5, 5, 20, 20], true);
+        b.find_waterfalls(&wb, [5, 5, 20, 20], true);
+        for frame in 0..600u64 {
+            a.update_tick();
+            b.update_tick();
+            // The rescan gate (`find_waterfall_count < 30`) runs inside.
+            a.find_waterfalls(&wa, [5, 5, 20, 20], false);
+            b.find_waterfalls(&wb, [5, 5, 20, 20], false);
+            let seed = frame
+                .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+                ^ 0x0123_4567_89AB_CDEF;
+            let la = LightMap::new();
+            let lb = LightMap::new();
+            let lights_a =
+                a.draw(&wa, &la, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40]);
+            let lights_b =
+                b.draw(&wb, &lb, &style, frame as f32 / 60.0, &alpha, 190, seed, [0, 0, 40, 40]);
+            assert_eq!(lights_a, lights_b);
+            assert_eq!(a.take_quads(), b.take_quads());
+            assert_eq!(a.pending_sparkles, b.pending_sparkles);
+        }
+        assert_eq!(a.pending_sparkles, b.pending_sparkles);
     }
 
     #[test]

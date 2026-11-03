@@ -37,6 +37,8 @@ re-implement something that already exists, or to port the wrong file.
 | `Main.cs` `DrawSunAndMoon` / `SetBackColor` (sun+moon placement & tint) | `crates/tr-core/src/sky.rs` | partial |
 | `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization/` (`mod`/`culture`/`format`/`json`) | partial |
 | block place/break/edit rules (`WorldGen.*`, `HitTile`) | `crates/tr-core/src/edit.rs` | partial |
+| `ObjectData/TileObjectData.cs` + `TileObject.cs` (`CanPlace`/`Place`), KillTile `Check*` cascade (`WorldGen.cs`) | `crates/tr-core/src/tileobject.rs` (registry, `can_place`/`place`, `object_tiles_at`), `crates/tr-core/src/edit.rs` (`place_item_tile`, `kill_tile` cascade) | partial (wooden slice 10/11/14/15/18/21; full-registry generator is the follow-up — ANALYSIS "Tile objects (M1.4-TO)") |
+| `WorldGen.OpenDoor`/`CloseDoor` + the `Player.LookForTileInteractions` right-click chain | `crates/tr-core/src/edit.rs` (`interact_at`/`open_door`/`close_door`), hook in `crates/tr-app/src/world_sim/editing.rs` (`update_editing`) | done for doors (door net message not wired — ANALYSIS "Tile objects (M1.4-TO)") |
 | `BinaryReader`/`BinaryWriter` (the LE primitives behind the world/map IO) | `crates/tr-core/src/binio.rs` (`Reader`/`Writer`) | done |
 
 ## Game / presentation (`crates/tr-app`)
@@ -50,6 +52,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Main.DoDraw_Waterfalls`, tile/liquid draw passes, `DrawTrees` | `crates/tr-app/src/render/{tiles,liquids,foliage}.rs` | partial |
 | `Player.cs` | `crates/tr-app/src/player.rs` (physics), `collision.rs`, the 60 Hz tick in `world_sim/player.rs` | partial |
 | `Player.cs` buff slots (`AddBuff` family `:5263-5480`, `UpdateBuffs` head `:9855-9876`, immune purge `:26012-26018`) | `crates/tr-app/src/buffs.rs` (`BuffSlots`, verbatim `Main.debuff`/pet/melee set tables) | done (slot engine; per-buff effects = M2-BUFF-3/4) |
+| `Player.cs` regen engines (`UpdateLifeRegen` `:18942-19391`, `UpdateManaRegen`/`ApplyManaRegenerationDelay` `:19380-19562`) | `crates/tr-app/src/regen.rs` (`RegenState`/`RegenInputs`, wired in `update_survival`) | done (engine; DoT/aura/item inputs = M2-BUFF-3/5, M3-EQUIP) |
 | `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` (tick in `world_sim/npcs.rs`) | partial |
 | `Projectile.cs` | `crates/tr-app/src/projectile.rs` (tick in `world_sim/projectiles.rs`) | partial |
 | `Item.cs`, `GetItemSettings.cs`, `NewItemOwnership.cs` | `crates/tr-app/src/item.rs` (tick in `world_sim/items.rs`) | partial |

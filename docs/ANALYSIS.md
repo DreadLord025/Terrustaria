@@ -2137,6 +2137,75 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
   item-data catalog work.
 
+## Tile objects (M1.4-TO)
+
+`tr-core/src/tileobject.rs` ports the `TileObjectData` registry as flat const
+data (approach A — a full-registry generator is the follow-up) and
+`tr-core/src/edit.rs` the logic on top of it: `TileObject.CanPlace`/`Place`
+(`TileObject.cs:174-853` / `:29-172`), the KillTile destruction cascade through
+the six per-type `Check*` routines (`CheckDoorClosed` `WorldGen.cs:86432`,
+`CheckDoorOpen` `:86339`, `Check3x2` `:49187`, `Check1x2` `:43335`, `Check2x1`
+`:46973`, `CheckChest` `:57923`; the origin reconstruction is generalized
+through the registry: `dx = frameX/18 % width`, `dy = frameY/18 % height`, the
+open-door hinge via the C# `frameX % 72` switch), and `WorldGen.OpenDoor`/
+`CloseDoor` (`:37630-37784` / `:31805-31907`) behind `interact_at` — the
+port's first world-tile interaction hook, embedded in the fixed-step editing
+pass at the vanilla `Update` order point (interactions `Player.cs:27430` →
+`ItemCheck` `:31827`). The registry slice is the wooden set — closed/open door
+(10/11), table (14), chair (15), work bench (18), chest (21); every entry
+cites its builder chain. Deviations and seams:
+
+- The registry is a deliberate slice: sub-tiles are not ported (the table's
+  styles 13/25, `TileObjectData.cs:3182-3190`) and the gemspark/glow tiles
+  stay excluded (research decision — they are wall/light render work, not
+  placement); adding objects is data-only until the generator lands.
+- The chest is a pure tile object: the `Chest.FindEmptyChest`/`Chest.
+  AfterPlacement_Hook` hooks (`TileObjectData.cs:3464-3465`), chest indices
+  and item storage are NOT ported — the M3-CHEST-UI seam.
+- Net placement replication (`apply_edit` kind 1, `world_sim/editing.rs:548`)
+  sends style 0 / dir 1: the generic replication path carries no
+  style/alternate/direction (vanilla's `NetMessage.SendObjectPlacement`
+  does), so a left-facing chair replicates mirrored.
+- `CloseDoor`'s `genRand.Next(3)` closed-frame variant is pinned to 0
+  (`edit.rs`, `close_door`): the port has no runtime RNG stream to draw from
+  and the determinism invariant forbids introducing one; the two skipped
+  variants are a closed-frame cosmetic only.
+- The interaction hook consumes the click with no same-time fall-through to
+  placement — the research contract is stronger than vanilla's nuance where a
+  refused door toggle and a placement can land in one `Update`.
+- Door sounds are wired (Door_Opened/Door_Closed cues); the door net message
+  (vanilla 19) is NOT wired — there is no `apply_edit` kind for a toggle yet;
+  multiplayer seam.
+- The left-facing open door's frames come from the generic `TileObject.Place`
+  math (style-row shift → frameY 54) while vanilla's hand-written `OpenDoor`
+  uses a different hardcoded left-leaf layout (frameX +36,
+  `WorldGen.cs:37695-37698`); both are ported as-is — a vanilla quirk, not a
+  port bug.
+- The wooden recipes expand the `RecipeGroups.Wood`/`IronBar` requirement
+  groups to concrete ids (Wood → 9, Iron Bar → 22; `Recipe.cs:610-616` /
+  `:4738`) — the subset recipe table carries no group machinery (`craft.rs`).
+- LMB breaking of `frame_important` tiles (doors included) is still gated off
+  in `world_sim/editing.rs:158-165` (`!important`, cacti exempted) — the
+  cascade runs from every other break source; separate catalog line.
+- Placement does not run the KillTile cascade: `reframe_area` (and
+  `frame_world`) leave `frame_important` tiles alone, so a floating object at
+  placement does not pop although vanilla's `PlaceTile` → `SquareTileFrame`
+  would kill it; it resolves at the next neighbouring break.
+- The object route bypasses the app's legacy single-tile pre-checks
+  (neighbour/overlap) — `TileObject.CanPlace` owns the verdict;
+  `BlockPlacementIfOverPlayers` (`Player.cs:41427`) is not ported for the
+  wooden set.
+
+Verification: the workspace suite is green (457+12+276, `--skip
+migrates_version_2_kinds_to_item_ids`); deterministic `TR_FILL`/`TR_PLACE`/
+`TR_TOGGLE` load hooks (the `TR_PAINT` precedent) stage the wooden set on a
+painted strip; twin runs are SHA256-equal at zooms 1.0/1.5/2.0 (`49c07431…`,
+`f9b4d310…`, `c1bacbc2…`); the door scenario closed→open→closed returns to the
+byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
+differs exactly inside the door column (pixel_diff 1664 px, bbox
+(1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
+geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
@@ -2234,3 +2303,78 @@ Deviations:
 - **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
   valid only below 401; the C# would throw on higher ids and the port panics the
   same way (tests synthesise bars from real ids via a `safe_ids()` helper).
+
+## Deterministic screenshots: the OS pointer (M1.5-LIQUID-2-det-fix)
+
+The follow-up flagged by the M4-LOOT-3 work ("the waterfall sparkle pass breaks
+pure-world screenshot determinism, `TR_NO_WATERFALL=1` restores SHA256
+equality") did **not** reproduce as a waterfall bug. The investigation:
+
+- Two `TR_SHOT` runs of the same command differed by exactly 290 px at the
+  forest lake — and *both* the `TR_NO_WATERFALL=1` and `TR_NO_WEATHER=1` pairs
+  differed the same way. The diff was a small blue arrow (the in-game
+  `Main.DrawCursor` sprite) at a different screen position per run: the **OS
+  mouse pointer**. `App.mouse_pos` starts at `Vec2::ZERO` and follows real
+  `CursorMoved` events, so the desktop pointer's position at capture time is
+  run-to-run harness noise.
+- An important false lead on the way: without a pristine world copy each run,
+  the default `Terrustaria.trwld` is **rewritten by the autosave**, so run N+1
+  loads run N's settled liquids and the comparison is meaningless. Deterministic
+  pairs must `cp` a pristine `.trwld` per run (or use `TR_SPOUT`, which builds
+  its fall by edits after load).
+- The waterfall walk itself was audited and is deterministic: all state runs on
+  fixed steppers (`waterfall_step`, `liquid_step`), `find_waterfalls` rescans on
+  a 30-tick gate, and `TrySparkling`'s single randomness (`WaterfallManager.cs:
+  1046-1065`) is pinned to a frame-derived `FastRandom` seed
+  (`frame_count * 0x9E3779B97F4A7C15 ^ world.seed`). New unit tests pin this:
+  `the_draw_walk_is_deterministic_for_the_same_seed_chain` (two managers, 600
+  seeded frames, equal quads/lights/sparkles every frame) and
+  `try_sparkling_grants_deterministically_for_a_seed` in `draw.rs` (the grant is
+  a pure function of the seed; dark falls never roll).
+
+Fix (harness semantics, a deliberate deviation from the C#): during a `TR_SHOT`
+capture without an explicit `TR_MOUSE`, the logical pointer is parked offscreen
+(`-64,-64`) and `CursorMoved` is ignored — `deterministic_pointer_park()`
+(`app/mod.rs`). The pointer is harness *input*, not scene content; the original's
+`Main.DrawCursor` still draws wherever the player's pointer is when `TR_MOUSE`
+pins it (cursor/tooltip screenshots keep working).
+
+Verified byte-identical SHA256 pairs (pristine world copy per run):
+- forest lake, waterfalls on, no `TR_MOUSE` — before the fix this pair differed;
+- `TR_SPOUT=2240,160` with the fall live in view for 1200 frames, no `TR_MOUSE`;
+- the same `TR_SPOUT` scene with `TR_MOUSE=200,200` (explicit pin still wins).
+
+## Regeneration engines (M2-BUFF-2)
+
+`crates/tr-app/src/regen.rs` ports the life and mana regen accumulators:
+`UpdateLifeRegen` (`Player.cs:18942-19391`) — the DoT clamps, the ramp tiers at
+300/600/900/1200/1500/1800/2400/3000, the 3600 cap, moving ×0.5 vs standing
+×1.25, the final `(int)Math.Round(num3 * (statLifeMax2/400·0.85 + 0.15))` add
+(banker's, via the shared `tr_core::damage::round_bankers`, now `pub`), the
+±120 chunk counters and the generic −120 drain (≤4 hp per examined chunk) —
+and `UpdateManaRegen` / `ApplyManaRegenerationDelay` (`:19380-19562`) — the
+delay curve `((1−mana/max)·240+45)·0.7`, the standing/grappling/buff double
+decrement, the `maxMana/3 + 1` base with the still/grapple double-add, the
+`num9 = 0.5` fill curve and the floor of 2. Wired into `update_survival`
+behind an `hp > 0` gate; `Hurt` resets `lifeRegenTime` (`:38395`) while the
+direct `statLife -=` paths (drowning, fall) do not — the old placeholder reset
+in both and was corrected.
+
+Deviations:
+
+- **Inputs for systems that do not exist yet.** The DoT branches (M2-BUFF-3),
+  campfire/heart-lantern auras (M2-BUFF-5), item multipliers and
+  `manaRegenDelayBonus`/arcane crystal (M3-EQUIP), sitting/sleeping
+  (M7-INTERACT) and the grapple flag (M2-PHYS-6) are neutral-default
+  `RegenInputs` fields the engine already applies in the original order.
+  The shinyStone standing-still package (`:19104-19108`, `:19126-19134`) folds
+  into `extra_time`/`extra_regen`/`extra_ramp_scale` when M3-EQUIP lands.
+- **Death from a DoT drain clamps at 0 hp** — the C# `KillMe` reasons per
+  debuff (`:19367-19390`) land with M2-DEATH.
+- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
+  deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
+- **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
+- **Integration-test pace corrected** — `health_regenerates_after_a_delay`
+  bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
+  `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
+  20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
