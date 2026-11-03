@@ -53,7 +53,7 @@ use crate::net;
 use crate::npc::Npc;
 use crate::persist;
 use crate::player::{self, Player};
-use crate::projectile::Projectile;
+use crate::projectile::ProjectilePool;
 use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
@@ -308,8 +308,8 @@ pub(crate) struct App {
     pub(crate) item_time: f32,
     /// Coin purse value in copper coins.
     pub(crate) coins: u64,
-    /// Live shuriken/projectile entities.
-    pub(crate) projectiles: Vec<Projectile>,
+    /// The 1000-slot projectile pool (`Main.projectile`, `projectile.rs`).
+    pub(crate) projectiles: ProjectilePool,
     pub(crate) projectile_step: FixedStepper,
     /// `TR_THROW` debug hook: throw one shuriken at startup.
     pub(crate) dev_throw: bool,
@@ -1181,7 +1181,7 @@ impl App {
         mine_released: false,
         item_time: 0.0,
         coins,
-        projectiles: Vec::new(),
+        projectiles: ProjectilePool::new(),
         projectile_step: FixedStepper::new(1.0 / 60.0, 8),
         dev_throw: std::env::var_os("TR_THROW").is_some(),
         world_key: None,

@@ -648,7 +648,7 @@ impl App {
                     screen,
                     leaves,
                 );
-                for p in projectiles.iter() {
+                for p in projectiles.slots().iter().filter(|p| p.active) {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 }
 
