@@ -1405,6 +1405,8 @@ pub(crate) mod front_flow_tests {
             swing_max: 0.0,
             coins: 0,
             projectiles: crate::projectile::ProjectilePool::new(),
+            tomb_falls: Vec::new(),
+            tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: false,
             world_key: None,
