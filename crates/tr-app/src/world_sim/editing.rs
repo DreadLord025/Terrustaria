@@ -7,6 +7,7 @@ use tr_core::tiledata as td;
 use tr_core::{edit, World, TILE_PX};
 
 use crate::app::App;
+use crate::item::ItemSlot;
 use crate::projectile::Projectile;
 use crate::registry;
 
@@ -313,9 +314,10 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
         return false;
     };
     if t.active()
-        || app.inventory[app.selected].count == 0
-        || registry::is_weapon(app.inventory[app.selected].kind)
-        || app.inventory[app.selected].kind == 80
+        || item_gate_blocks(
+            app.inventory[app.selected].kind,
+            app.inventory[app.selected].count,
+        )
     {
         return false;
     }
@@ -337,6 +339,53 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
     })
 }
 
+/// The item gate shared by both placement routes (the head of `can_place` and
+/// of `use_tile_item`): an empty slot, a weapon or the legacy cactus kind
+/// (80, `ItemID.Cactus`) never places. Free of `App` so the decision is
+/// unit-testable without the app harness.
+fn item_gate_blocks(kind: u16, count: u32) -> bool {
+    count == 0 || registry::is_weapon(kind) || kind == 80
+}
+
+/// The routing decision of `use_tile_item`: the legacy neighbour/overlap
+/// pre-checks (`can_place`) gate only kinds without a `TileObjectData`
+/// registry entry — registry kinds are judged by `TileObject.CanPlace`
+/// inside the dispatcher (the anchors decide — vanilla furniture can sit on
+/// platforms or over the player, and `BlockPlacementIfOverPlayers`,
+/// `Player.cs:41427`, covers none of the wooden set).
+fn legacy_precheck_applies(kind: u16) -> bool {
+    tr_core::tileobject::def_for_tile(kind).is_none()
+}
+
+/// What `TileObject.CanPlace` receives in vanilla (`Player.cs:39772`):
+/// `Item.placeStyle` of the held item and `Player.direction`, the facing
+/// defaulting to right (+1) with no player — the same default the replicated
+/// `apply_edit` route sends (Decision #7).
+fn style_and_facing(held_kind: u16, facing: Option<i32>) -> (i32, i32) {
+    (registry::place_style(held_kind), facing.unwrap_or(1))
+}
+
+/// The world-write half of `place_tile`: the dispatcher write
+/// (`edit::place_item_tile`) followed by the item consumption vanilla ties to
+/// a successful `Place` (`Player.cs:40118-40126`) — a refused placement
+/// keeps the item. Free of `App` so the consumption condition is
+/// unit-testable without the app harness.
+fn place_item_and_consume(
+    world: &mut World,
+    held: &mut ItemSlot,
+    tx: i32,
+    ty: i32,
+    kind: u16,
+    style: i32,
+    dir: i32,
+) -> bool {
+    if !edit::place_item_tile(world, tx, ty, kind, style, dir) {
+        return false;
+    }
+    held.count = held.count.saturating_sub(1);
+    true
+}
+
 /// The tile-placement route of `Player.PlaceThing_Tiles` (`Player.cs:39721`):
 /// the shared item gates, then `tr_core::edit::place_item_tile` dispatches
 /// registry kinds through `TileObject.CanPlace`/`Place`
@@ -345,20 +394,13 @@ pub(crate) fn can_place(app: &App, tx: i32, ty: i32) -> bool {
 /// neighbour/overlap pre-checks (`can_place`).
 fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let held = app.inventory[app.selected];
-    // The `can_place` head, shared by both routes: an empty slot, a weapon or
-    // the legacy cactus kind never places.
-    if held.count == 0 || registry::is_weapon(held.kind) || held.kind == 80 {
+    if item_gate_blocks(held.kind, held.count) {
         return false;
     }
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
-    // Registry kinds are judged by `TileObject.CanPlace` inside the dispatcher:
-    // the legacy neighbour/overlap pre-checks must not gate them (the anchors
-    // decide — vanilla furniture can sit on platforms or over the player, and
-    // `BlockPlacementIfOverPlayers`, `Player.cs:41427`, covers none of the
-    // wooden set).
-    if tr_core::tileobject::def_for_tile(kind).is_none() && !can_place(app, tx, ty) {
+    if legacy_precheck_applies(kind) && !can_place(app, tx, ty) {
         return false;
     }
     place_tile(app, tx, ty, kind)
@@ -368,12 +410,21 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // `Item.placeStyle` + `Player.direction` are what `TileObject.CanPlace`
     // receives in vanilla (`Player.cs:39772`); the dispatcher resolves style
     // alternates and click points from them.
-    let style = registry::place_style(app.inventory[app.selected].kind);
-    let dir = app.player.as_ref().map_or(1, |p| p.facing);
-    if !edit::place_item_tile(&mut app.world, tx, ty, kind, style, dir) {
+    let (style, dir) = style_and_facing(
+        app.inventory[app.selected].kind,
+        app.player.as_ref().map(|p| p.facing),
+    );
+    if !place_item_and_consume(
+        &mut app.world,
+        &mut app.inventory[app.selected],
+        tx,
+        ty,
+        kind,
+        style,
+        dir,
+    ) {
         return false;
     }
-    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     app.liquids.wake_around(&app.world, tx, ty, 3);
     app.audio
         .play_at("Dig_0", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
@@ -404,5 +455,142 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             edit::place_wall(world, x, y, tile);
         }
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
+    /// shape, deep enough inside the world for `CanPlace`'s 5-tile edge margin
+    /// (`TileObject.cs:215`).
+    fn object_world() -> World {
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: "",
+            count,
+        }
+    }
+
+    // (a) the empty-slot/weapon gate shared by `use_tile_item` and `can_place`.
+    #[test]
+    fn item_gate_blocks_empty_slot_weapon_and_cactus() {
+        // An empty slot never places, whatever the kind.
+        assert!(item_gate_blocks(2, 0));
+        // A weapon (shuriken, `ItemID.Shuriken` 42) never places.
+        assert!(item_gate_blocks(42, 99));
+        // The legacy cactus kind never places (`ItemID.Cactus` 80).
+        assert!(item_gate_blocks(80, 99));
+        // A stackable block item passes (dirt, `ItemID.DirtBlock` 2).
+        assert!(!item_gate_blocks(2, 50));
+        // The work bench item passes (`ItemID.WorkBench` 36).
+        assert!(!item_gate_blocks(36, 1));
+    }
+
+    // (b) the registry-bypass condition of `use_tile_item`.
+    #[test]
+    fn registry_kinds_bypass_the_legacy_prechecks() {
+        // The wooden set is registered (`def_for_tile`): the legacy
+        // neighbour/overlap pre-checks must not gate it — the verdict belongs
+        // to `TileObject.CanPlace` inside the dispatcher (`Player.cs:39772`).
+        for tile in [10, 11, 14, 15, 18, 21] {
+            assert!(!legacy_precheck_applies(tile), "tile {tile} registered");
+        }
+        // Unregistered kinds keep the legacy pre-checks.
+        for tile in [0, 1, 4] {
+            assert!(legacy_precheck_applies(tile), "tile {tile} legacy");
+        }
+        // The bypass keys on the *tile* kind the held item maps to: the work
+        // bench item (36) places tile 18 and bypasses; dirt (2) places tile 0
+        // and does not.
+        assert_eq!(registry::place_tile(36), Some(18));
+        assert!(!legacy_precheck_applies(registry::place_tile(36).unwrap()));
+        assert_eq!(registry::place_tile(2), Some(0));
+        assert!(legacy_precheck_applies(registry::place_tile(2).unwrap()));
+    }
+
+    // (c) the style/facing resolution `place_tile` feeds the dispatcher.
+    #[test]
+    fn style_and_facing_resolve_the_can_place_inputs() {
+        // `Item.placeStyle` (0 for the whole wooden set, `Item.cs:173`) and
+        // `Player.direction`; no player defaults to right (+1) — the same
+        // default the replicated `apply_edit` route sends (Decision #7).
+        assert_eq!(style_and_facing(36, Some(1)), (0, 1));
+        assert_eq!(style_and_facing(36, Some(-1)), (0, -1));
+        assert_eq!(style_and_facing(36, None), (0, 1));
+        // An unregistered item id resolves like the registry accessor: style 0.
+        assert_eq!(style_and_facing(9999, None), (0, 1));
+    }
+
+    // (d) item consumption is tied to a successful place (`Player.cs:40118-40126`).
+    #[test]
+    fn successful_place_consumes_one_item() {
+        let mut w = object_world();
+        let mut held = slot(36, 10);
+        assert!(place_item_and_consume(&mut w, &mut held, 10, 19, 18, 0, 1));
+        assert_eq!(held.count, 9);
+        // The object is in the world: the 2x1 bench fills both cells.
+        for x in [10, 11] {
+            let t = w.tile(x, 19).unwrap();
+            assert!(t.active() && t.kind == 18, "bench cell ({x}, 19)");
+        }
+    }
+
+    #[test]
+    fn refused_place_keeps_the_item_and_the_world() {
+        let mut w = object_world();
+        // A stone block occupies the bench's second cell: partial overlap.
+        let i = w.index(11, 19);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut held = slot(36, 10);
+        let before = w.revision;
+        assert!(!place_item_and_consume(&mut w, &mut held, 10, 19, 18, 0, 1));
+        assert_eq!(held.count, 10, "a refused placement keeps the item");
+        assert_eq!(w.revision, before, "a refused placement writes nothing");
+        assert!(!w.tile(10, 19).unwrap().active(), "origin cell untouched");
+    }
+
+    #[test]
+    fn style_and_facing_flow_through_to_the_dispatcher_frames() {
+        // The wrapper passes `style`/`dir` straight to `place_item_tile`:
+        // placeStyle 1 shifts the bench one style column (36 px full width,
+        // `TileObjectData.cs:2818-2825`), facing right picks the chair's
+        // `PlaceRight` alternate (`TileObject.cs:209`).
+        let mut w = object_world();
+        let mut held = slot(36, 1);
+        assert!(place_item_and_consume(&mut w, &mut held, 10, 19, 18, 1, 1));
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 36);
+        assert_eq!(w.tile(11, 19).unwrap().frame_x, 54);
+
+        let mut w2 = object_world();
+        assert!(place_item_and_consume(&mut w2, &mut held, 10, 19, 15, 0, 1));
+        assert_eq!(w2.tile(10, 18).unwrap().frame_x, 18);
+        let mut w3 = object_world();
+        assert!(place_item_and_consume(
+            &mut w3, &mut held, 10, 19, 15, 0, -1
+        ));
+        assert_eq!(w3.tile(10, 18).unwrap().frame_x, 0);
     }
 }
