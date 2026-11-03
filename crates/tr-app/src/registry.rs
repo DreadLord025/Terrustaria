@@ -31,6 +31,15 @@ pub struct ItemDef {
     /// `Item.autoReuse` (`Item.SetDefaults`): holding the use button restarts
     /// the use once `itemAnimation` runs out.
     pub auto_reuse: bool,
+    /// `Item.headSlot` (`Item.SetDefaults`): the `ArmorHead` texture slot; 0 =
+    /// not a helmet.
+    pub head_slot: u8,
+    /// `Item.bodySlot`: the `ArmorBodyComposite` slot; 0 = not chest armor.
+    pub body_slot: u8,
+    /// `Item.legSlot`: the `ArmorLeg` slot; 0 = not leg armor.
+    pub leg_slot: u8,
+    /// `Item.defense` (`Item.SetDefaults`).
+    pub defense: u8,
 }
 
 pub const COIN_VALUES: [u64; 4] = [1, 100, 10_000, 1_000_000];
@@ -39,9 +48,9 @@ static ITEMS: &[ItemDef] = &[
     // Terraria.ID.ItemID.Gel (23): a crafting material — `SetDefaults1`'s
     // case 23 sets nothing, so the `ResetStats` defaults apply (useStyle 0,
     // no use timings; `Item.cs:49020-49022`).
-    ItemDef { id: 23, name: "Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false },
+    ItemDef { id: 23, name: "Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 0, defense: 0 },
     // Terraria.ID.ItemID.PinkGel (3111, Pinky's drop).
-    ItemDef { id: 3111, name: "Pink Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false },
+    ItemDef { id: 3111, name: "Pink Gel", max_stack: 999, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 0, defense: 0 },
     // Terraria.ID.ItemID.DirtBlock
     ItemDef {
         id: 2,
@@ -57,6 +66,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // StoneBlock
     ItemDef {
@@ -73,6 +86,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Torch
     ItemDef {
@@ -89,6 +106,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 1,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Wood
     ItemDef {
@@ -105,6 +126,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 11,
@@ -120,6 +145,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 12,
@@ -135,6 +164,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 13,
@@ -150,6 +183,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 14,
@@ -165,6 +202,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 26,
@@ -180,6 +221,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 30,
@@ -195,6 +240,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Shuriken: vanilla `Item.shoot = 3`; our projectile table has a single id.
     ItemDef {
@@ -211,6 +260,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: false,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Coins (`Item.maxStack = 100`)
     ItemDef {
@@ -227,6 +280,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 72,
@@ -242,6 +299,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 73,
@@ -257,6 +318,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 74,
@@ -272,6 +337,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 169,
@@ -287,6 +356,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 172,
@@ -302,6 +375,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 174,
@@ -317,6 +394,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 276,
@@ -332,6 +413,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     ItemDef {
         id: 593,
@@ -347,6 +432,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Terraria.ID.ItemID.Gel (`ItemID.cs:1729`) — slime drops, torch ingredient.
     ItemDef {
@@ -363,6 +452,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: false,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // IronBar (`ItemID.cs:1727`).
     ItemDef {
@@ -379,6 +472,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: false,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // WorkBench (`ItemID.cs:1755`) — places the WorkBench tile 18 (`TileID.cs:665`).
     ItemDef {
@@ -395,6 +492,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // Furnace (`ItemID.cs:1749`) — places the Furnace tile 17.
     ItemDef {
@@ -411,6 +512,10 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: true,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
     // IronAnvil (`ItemID.cs:1753`) — places the Anvils tile 16.
     ItemDef {
@@ -427,7 +532,27 @@ static ITEMS: &[ItemDef] = &[
         use_style: 1,
         hold_style: 0,
         auto_reuse: false,
+        head_slot: 0,
+        body_slot: 0,
+        leg_slot: 0,
+        defense: 0,
     },
+    // The early-metal armor sets (`Item.SetDefaults`): equipSlot ids 1..4 index
+    // the `Armor_Head_{n}` / `Armor/Armor_{n}` / `Armor_Legs_{n}` sheets and
+    // `Item.defense` feeds `Player.statDefense`. Copper helmet/chainmail/
+    // greaves = 89/80/76, iron = 90/81/77, silver = 91/82/78, gold = 92/83/79.
+    ItemDef { id: 89, name: "Copper Helmet", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 1, body_slot: 0, leg_slot: 0, defense: 1 },
+    ItemDef { id: 80, name: "Copper Chainmail", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 1, leg_slot: 0, defense: 2 },
+    ItemDef { id: 76, name: "Copper Greaves", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 1, defense: 1 },
+    ItemDef { id: 90, name: "Iron Helmet", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 2, body_slot: 0, leg_slot: 0, defense: 2 },
+    ItemDef { id: 81, name: "Iron Chainmail", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 2, leg_slot: 0, defense: 3 },
+    ItemDef { id: 77, name: "Iron Greaves", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 0, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 2, defense: 2 },
+    ItemDef { id: 91, name: "Silver Helmet", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 3, body_slot: 0, leg_slot: 0, defense: 3 },
+    ItemDef { id: 82, name: "Silver Chainmail", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 3, leg_slot: 0, defense: 4 },
+    ItemDef { id: 78, name: "Silver Greaves", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 3, defense: 3 },
+    ItemDef { id: 92, name: "Gold Helmet", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 4, body_slot: 0, leg_slot: 0, defense: 4 },
+    ItemDef { id: 83, name: "Gold Chainmail", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 4, leg_slot: 0, defense: 5 },
+    ItemDef { id: 79, name: "Gold Greaves", max_stack: 1, tile: None, wall: None, projectile: None, damage: 0, rare: 1, use_time: 0, use_animation: 0, use_style: 0, hold_style: 0, auto_reuse: false, head_slot: 0, body_slot: 0, leg_slot: 4, defense: 4 },
 ];
 
 pub fn get(id: u16) -> Option<&'static ItemDef> {

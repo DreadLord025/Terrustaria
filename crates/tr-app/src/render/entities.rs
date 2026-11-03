@@ -38,9 +38,30 @@ pub(crate) struct PlayerAssets {
     pub(crate) pants: Option<BgTex>,
     pub(crate) shoes: Option<BgTex>,
     pub(crate) hair: Option<BgTex>,
+    /// Armor sheets by vanilla armor slot (`TextureAssets.ArmorHead[n]` etc.,
+    /// `AssetInitializer.cs:165-185`): index 0 is the empty slot, 1..4 the
+    /// copper/iron/silver/gold sets. The body entry is the 9x4 composite
+    /// `Armor/Armor_{n}` (torso + shoulders + arms, `PlayerDrawSet.cs:2241`).
+    pub(crate) armor_head: [Option<BgTex>; 5],
+    pub(crate) armor_body: [Option<BgTex>; 5],
+    pub(crate) armor_legs: [Option<BgTex>; 5],
 }
 
+/// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
+/// input the layer builders resolve into armor slots via the registry.
+pub(crate) type ArmorKinds = [u16; 3];
+
 pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
+    // `AssetInitializer.cs:165-185`: the slot number is the file number.
+    let armor_sheets = |prefix: &str| {
+        std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("{prefix}_{slot}"), None)
+            }
+        })
+    };
     PlayerAssets {
         head: sky_tex(atlas, "Player_0_0", None),
         eye_whites: sky_tex(atlas, "Player_0_1", None),
@@ -55,6 +76,15 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         pants: sky_tex(atlas, "Player_0_11", None),
         shoes: sky_tex(atlas, "Player_0_12", None),
         hair: sky_tex(atlas, "Player_Hair_1", None),
+        armor_head: armor_sheets("Armor_Head"),
+        armor_body: {
+            let mut body: [Option<BgTex>; 5] = [None; 5];
+            for (slot, tex) in body.iter_mut().enumerate().skip(1) {
+                *tex = sky_tex(atlas, &format!("Armor/Armor_{slot}"), None);
+            }
+            body
+        },
+        armor_legs: armor_sheets("Armor_Legs"),
     }
 }
 
@@ -164,6 +194,9 @@ pub(crate) fn draw_player(
     lookups: &assets::Lookups,
     player: &Player,
     held: Option<(u16, f32)>,
+    // `Player.armor[0..3]` item kinds (head/body/legs, 0 = empty); the layer
+    // builders swap the shirt/pants/hair pieces for the armor sheets.
+    armor: ArmorKinds,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -175,6 +208,13 @@ pub(crate) fn draw_player(
     let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
     let light_c = style.shade(light.get(tx, ty), tx, ty, anim_time);
     let swing = held.map_or(0.0, |(_, s)| s);
+    // `Player.armor[0..3]`'s slot ids (`head`/`body`/`legs`, `Player.cs`): the
+    // registry item → slot resolution the C# `Item.equipSlot` fields do at
+    // `SetDefaults`. 0 = the empty slot.
+    let [head_kind, body_kind, legs_kind] = armor;
+    let head_armor = registry::get(head_kind).map_or(0, |d| d.head_slot);
+    let body_armor = registry::get(body_kind).map_or(0, |d| d.body_slot);
+    let leg_armor = registry::get(legs_kind).map_or(0, |d| d.leg_slot);
     let state = PlayerCompositeState {
         origin: [player.x - 10.0, player.y - 10.0],
         leg_frame: player.leg_frame,
@@ -194,6 +234,9 @@ pub(crate) fn draw_player(
             .map(|(_, size)| size)
             .unwrap_or([0.0, 0.0]),
         light: light_c,
+        head_armor,
+        body_armor,
+        leg_armor,
         front_arm: swing_stand_in(1, swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
     };

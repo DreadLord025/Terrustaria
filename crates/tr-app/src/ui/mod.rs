@@ -179,8 +179,10 @@ pub fn draw_hud(
         // `Main.DrawGuideCraftText(73, 331 + num50)` (`Main.cs:41694`); the guide
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
-        // `Main.DrawPVPIcons` (`Main.cs:41003`).
-        chrome::draw_pvp_icons(r, lookups, screen, equip_page, 0.0);
+        // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
+        // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
+        // glued to the top while the minimap HUD pushed the panel down.
+        chrome::draw_pvp_icons(r, lookups, screen, equip_page, m_h);
         chrome::draw_hotbar_lock(r, lookups, false);
         // `Main.DrawInventory`'s map-style icon row (`Main.cs:41055-41126`),
         // after `DrawHotbarLockIcon` (`:41046`) and before the crafting panel

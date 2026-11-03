@@ -7,7 +7,9 @@ use crate::item::ItemDrop;
 use crate::net;
 use crate::npc::Npc;
 use crate::player::{self, Player};
-use crate::render::entities::{draw_npcs, draw_player, flip_uv, NpcAssets, PlayerAssets};
+use crate::render::entities::{
+    draw_npcs, draw_player, flip_uv, ArmorKinds, NpcAssets, PlayerAssets,
+};
 use crate::render::foliage::draw_tree_foliage;
 use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
@@ -154,6 +156,8 @@ pub(crate) fn draw_tiles(
     // `DrawPlayer_27_HeldItem`'s input: the selected item kind plus the
     // remaining use fraction (`PlayerDrawLayers.cs:3077`); `None` = empty hand.
     held: Option<(u16, f32)>,
+    // `Player.armor[0..3]` item kinds (head/body/legs) — the armor layers.
+    armor: ArmorKinds,
     npcs: &[Npc],
     npc_assets: &NpcAssets,
     items: &[ItemDrop],
@@ -787,6 +791,7 @@ pub(crate) fn draw_tiles(
             lookups,
             p,
             held,
+            armor,
             light,
             style,
             anim_time,
@@ -814,6 +819,7 @@ pub(crate) fn draw_tiles(
             lookups,
             &p,
             None,
+            [0, 0, 0],
             light,
             style,
             anim_time,
