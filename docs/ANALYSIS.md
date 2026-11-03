@@ -2137,6 +2137,75 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   mismatches (coins' damage/noMelee, Wood's `createTile`) stay with the
   item-data catalog work.
 
+## Tile objects (M1.4-TO)
+
+`tr-core/src/tileobject.rs` ports the `TileObjectData` registry as flat const
+data (approach A — a full-registry generator is the follow-up) and
+`tr-core/src/edit.rs` the logic on top of it: `TileObject.CanPlace`/`Place`
+(`TileObject.cs:174-853` / `:29-172`), the KillTile destruction cascade through
+the six per-type `Check*` routines (`CheckDoorClosed` `WorldGen.cs:86432`,
+`CheckDoorOpen` `:86339`, `Check3x2` `:49187`, `Check1x2` `:43335`, `Check2x1`
+`:46973`, `CheckChest` `:57923`; the origin reconstruction is generalized
+through the registry: `dx = frameX/18 % width`, `dy = frameY/18 % height`, the
+open-door hinge via the C# `frameX % 72` switch), and `WorldGen.OpenDoor`/
+`CloseDoor` (`:37630-37784` / `:31805-31907`) behind `interact_at` — the
+port's first world-tile interaction hook, embedded in the fixed-step editing
+pass at the vanilla `Update` order point (interactions `Player.cs:27430` →
+`ItemCheck` `:31827`). The registry slice is the wooden set — closed/open door
+(10/11), table (14), chair (15), work bench (18), chest (21); every entry
+cites its builder chain. Deviations and seams:
+
+- The registry is a deliberate slice: sub-tiles are not ported (the table's
+  styles 13/25, `TileObjectData.cs:3182-3190`) and the gemspark/glow tiles
+  stay excluded (research decision — they are wall/light render work, not
+  placement); adding objects is data-only until the generator lands.
+- The chest is a pure tile object: the `Chest.FindEmptyChest`/`Chest.
+  AfterPlacement_Hook` hooks (`TileObjectData.cs:3464-3465`), chest indices
+  and item storage are NOT ported — the M3-CHEST-UI seam.
+- Net placement replication (`apply_edit` kind 1, `world_sim/editing.rs:548`)
+  sends style 0 / dir 1: the generic replication path carries no
+  style/alternate/direction (vanilla's `NetMessage.SendObjectPlacement`
+  does), so a left-facing chair replicates mirrored.
+- `CloseDoor`'s `genRand.Next(3)` closed-frame variant is pinned to 0
+  (`edit.rs`, `close_door`): the port has no runtime RNG stream to draw from
+  and the determinism invariant forbids introducing one; the two skipped
+  variants are a closed-frame cosmetic only.
+- The interaction hook consumes the click with no same-time fall-through to
+  placement — the research contract is stronger than vanilla's nuance where a
+  refused door toggle and a placement can land in one `Update`.
+- Door sounds are wired (Door_Opened/Door_Closed cues); the door net message
+  (vanilla 19) is NOT wired — there is no `apply_edit` kind for a toggle yet;
+  multiplayer seam.
+- The left-facing open door's frames come from the generic `TileObject.Place`
+  math (style-row shift → frameY 54) while vanilla's hand-written `OpenDoor`
+  uses a different hardcoded left-leaf layout (frameX +36,
+  `WorldGen.cs:37695-37698`); both are ported as-is — a vanilla quirk, not a
+  port bug.
+- The wooden recipes expand the `RecipeGroups.Wood`/`IronBar` requirement
+  groups to concrete ids (Wood → 9, Iron Bar → 22; `Recipe.cs:610-616` /
+  `:4738`) — the subset recipe table carries no group machinery (`craft.rs`).
+- LMB breaking of `frame_important` tiles (doors included) is still gated off
+  in `world_sim/editing.rs:158-165` (`!important`, cacti exempted) — the
+  cascade runs from every other break source; separate catalog line.
+- Placement does not run the KillTile cascade: `reframe_area` (and
+  `frame_world`) leave `frame_important` tiles alone, so a floating object at
+  placement does not pop although vanilla's `PlaceTile` → `SquareTileFrame`
+  would kill it; it resolves at the next neighbouring break.
+- The object route bypasses the app's legacy single-tile pre-checks
+  (neighbour/overlap) — `TileObject.CanPlace` owns the verdict;
+  `BlockPlacementIfOverPlayers` (`Player.cs:41427`) is not ported for the
+  wooden set.
+
+Verification: the workspace suite is green (457+12+276, `--skip
+migrates_version_2_kinds_to_item_ids`); deterministic `TR_FILL`/`TR_PLACE`/
+`TR_TOGGLE` load hooks (the `TR_PAINT` precedent) stage the wooden set on a
+painted strip; twin runs are SHA256-equal at zooms 1.0/1.5/2.0 (`49c07431…`,
+`f9b4d310…`, `c1bacbc2…`); the door scenario closed→open→closed returns to the
+byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
+differs exactly inside the door column (pixel_diff 1664 px, bbox
+(1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
+geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
@@ -2196,3 +2265,41 @@ grass seeds 7/15, shuriken 15/15 with `autoReuse` off, coins with
   (the Bladed Glove request is produced and then skipped until its item data
   registers), green/baby nothing. The executor drops only registry-known
   items.
+
+## Buff slots (M2-BUFF-1)
+
+`crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
+engine: the full `AddBuff` chain (`Player.cs:5263-5447`), `DelBuff`/`ClearBuff`/
+`FindBuffIndex` (`:5250-5480`), the `UpdateBuffs` timer head (`:9855-9876`) and
+the end-of-update immune purge (`:26012-26018`), hooked into the 60 Hz player
+step (tick at the top of `Player::update`, purge at the end — the C# calls
+`UpdateBuffs` at `:24535` and purges at `:26012`, so the interleave becomes
+meaningful only once per-buff effects land with M2-BUFF-3/4). The verbatim
+`Main.debuff`/`lightPet`/`vanityPet`/`meleeBuff`/`pvpBuff` tables are extracted
+from `Main.cs:8867-9316`.
+
+Deviations:
+
+- **Multiplayer branch skipped** — `AddBuff`'s `Main.netMode == 1` remote path
+  (`Player.cs:5269-5275`, msg 55 + `Main.pvpBuff`) is unreachable in the
+  single-player port; the `pvpBuff` table is kept as data for M6-NET.
+- **Difficulty multiplier is expert-only** — `AddBuff_DetermineBuffTimeToAdd`
+  samples `GameDifficultyData.DebuffTimeMultiplier` (Classic 1 → Expert 2 →
+  Master 2.5, `GameDifficultyData.cs:96-100`); the port has no difficulty modes
+  yet, so `expert_mode` applies ×2 and master waits for M6-CREATIVE/difficulty.
+  `resist_cold` and `dead_cells_potion_station` are `BuffSlots` fields defaulted
+  `false` — the rules are ported and unit-tested but have no sources yet.
+- **Timer-head effect branches deferred** — the mount refresh
+  (`buffTime = 10`, `:9881-9884`) and the per-buff effect chain (`:9875-12000`)
+  land with M2-MOUNT and M2-BUFF-3/4; the tick only decrements today.
+- **Quirks preserved verbatim**: `DelBuff`'s compaction runs to `maxBuffs - 1`
+  (deleting from a full bar leaves a hole at 42 while slot 43 keeps its buff —
+  `Player.cs:5457`); the pet-removal loops have **no** `i--` rescan while the
+  melee loop does (`:5377-5397` vs `:5347-5360`); a bar of 44 debuffs rejects
+  new buffs of any kind (the first non-debuff scan finds nothing, `:5331-5334`);
+  a debuff added to a mixed bar evicts the first *positive* buff; the immune
+  purge does not rescan after `DelBuff`. Each is covered by a unit test naming
+  the line.
+- **`buffImmune` sizing** — `BuffID.Count = 401` (`BuffID.cs:997`), so ids are
+  valid only below 401; the C# would throw on higher ids and the port panics the
+  same way (tests synthesise bars from real ids via a `safe_ids()` helper).

@@ -16,7 +16,10 @@ impl App {
             if let Some(p) = &self.player {
                 let inv =
                     std::array::from_fn(|i| (self.inventory[i].kind, self.inventory[i].count));
-                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins) {
+                // `Player.armor[0..3]`'s kinds — the equipped armor persists
+                // with the rest of the character (vanilla `Player.SavePlayer`).
+                let armor: [u16; 3] = std::array::from_fn(|i| self.equip.armor[i].kind);
+                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins, armor) {
                     log::warn!("player save failed: {e}");
                 }
             }

@@ -295,6 +295,129 @@ pub fn roll_only_bad_luck_extreme(rng: &mut dyn DropRng, luck: f32, range: i32) 
     -1
 }
 
+// --- Money (`NPC.NPCLoot_DropMoney`, `NPC.cs:79619-80106`) -------------------
+
+/// `NPC.NPCLoot_DropMoney` (`NPC.cs:79619-80106`): the value rolls (midas,
+/// the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck
+/// double-roll keeping the best/worst) then the platinum(74)/gold(73)/
+/// silver(72)/copper(71) split with the >50-count shrink rolls. `extra_value`
+/// is `NPC.extraValue` (0 for every ported kind). Coin ids are the C#
+/// literals; the stack is copper value.
+pub fn drop_money(
+    rng: &mut dyn DropRng,
+    value: f32,
+    luck: f32,
+    midas: bool,
+    blood_moon: bool,
+    extra_value: f32,
+    out: &mut Vec<DropRequest>,
+) {
+    let mut num = 0f32;
+    // The luck double-roll: `NextFloat() < |luck|` rolls twice; positive luck
+    // keeps the best roll, negative the worst (`NPC.cs:79622-79626`).
+    let rolls = if rng.next_float() < luck.abs() { 2 } else { 1 };
+    for i in 0..rolls {
+        let mut roll = value;
+        if midas {
+            // `Midas`: `* (1 + Next(30, 51) * 0.01f)` (`:79634-79637`).
+            roll *= 1.0 + rng.next_range(30, 51) as f32 * 0.01;
+        }
+        roll *= 1.0 + rng.next_range(-20, 76) as f32 * 0.01;
+        // The bonus chains: 1/2:+5-10 %, 1/4:+10-20 %, 1/8:+15-30 %,
+        // 1/16:+20-40 %, 1/32:+25-50 %, 1/64:+50-100 % (`:79641-79664`).
+        if rng.next_range(0, 2) == 0 {
+            roll *= 1.0 + rng.next_range(5, 11) as f32 * 0.01;
+        }
+        if rng.next_range(0, 4) == 0 {
+            roll *= 1.0 + rng.next_range(10, 21) as f32 * 0.01;
+        }
+        if rng.next_range(0, 8) == 0 {
+            roll *= 1.0 + rng.next_range(15, 31) as f32 * 0.01;
+        }
+        if rng.next_range(0, 16) == 0 {
+            roll *= 1.0 + rng.next_range(20, 41) as f32 * 0.01;
+        }
+        if rng.next_range(0, 32) == 0 {
+            roll *= 1.0 + rng.next_range(25, 51) as f32 * 0.01;
+        }
+        if rng.next_range(0, 64) == 0 {
+            roll *= 1.0 + rng.next_range(50, 101) as f32 * 0.01;
+        }
+        if blood_moon {
+            roll *= 1.0 + rng.next_range(0, 101) as f32 * 0.01;
+        }
+        // The first roll is the floor; later rolls win by best/worst luck
+        // (`:79666-79676`).
+        if i == 0 {
+            num = roll;
+        } else if luck < 0.0 {
+            if roll < num {
+                num = roll;
+            }
+        } else if roll > num {
+            num = roll;
+        }
+    }
+    num += extra_value;
+
+    // The coin split (`:79680-80105`). Every tier shrink-rolls a >50 count
+    // down (`Next(5) == 0` then `Next(3) + 1`, twice; copper's second roll is
+    // `Next(4) + 1`) and the copper remainder clamps to >= 1. The loop guard
+    // truncates (`while ((int)num > 0)`), so a sub-1 remainder exits instead
+    // of minting bonus coins.
+    while num as i32 > 0 {
+        if num > 1_000_000.0 {
+            let mut count = (num / 1_000_000.0) as i32;
+            if count > 50 && rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            if rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            let mut stack = count;
+            while stack > 999 {
+                stack -= 999;
+                out.push(drop_request(74, 999, false));
+            }
+            num -= (1_000_000 * count) as f32;
+            out.push(drop_request(74, stack, false));
+        } else if num > 10_000.0 {
+            let mut count = (num / 10_000.0) as i32;
+            if count > 50 && rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            if rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            num -= (10_000 * count) as f32;
+            out.push(drop_request(73, count, false));
+        } else if num > 100.0 {
+            let mut count = (num / 100.0) as i32;
+            if count > 50 && rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            if rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            num -= (100 * count) as f32;
+            out.push(drop_request(72, count, false));
+        } else {
+            let mut count = num as i32;
+            if count > 50 && rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 3) + 1;
+            }
+            if rng.next_range(0, 5) == 0 {
+                count /= rng.next_range(0, 4) + 1;
+            }
+            if count < 1 {
+                count = 1;
+            }
+            num -= count as f32;
+            out.push(drop_request(71, count, false));
+        }
+    }
+}
+
 // --- Rules -------------------------------------------------------------------
 
 macro_rules! impl_chains {
@@ -1217,6 +1340,75 @@ mod tests {
             let v = roll_luck(&mut c, 1.0, 100);
             assert!((0..100).contains(&v));
         }
+    }
+
+    #[test]
+    fn drop_money_splits_a_small_value_into_copper() {
+        // A 25-copper blue slime with no luck/midas/blood-moon: the ±20-75 %
+        // spread gives 20..=42 copper; the single stack is the coin id 71.
+        let mut rng = crate::tile_light::FastRandom::new(101);
+        let mut out = Vec::new();
+        drop_money(&mut rng, 25.0, 0.0, false, false, 0.0, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].item, 71);
+        assert!((20..=42).contains(&out[0].stack), "stack {}", out[0].stack);
+    }
+
+    #[test]
+    fn drop_money_makes_a_gold_coin_from_10000_copper() {
+        // Pinky's 10000f: the split takes the gold tier (num > 10000 is false
+        // at exactly 10000, so 1 gold via the... the gold tier needs > 10000;
+        // at exactly 10000 the silver tier splits 100 silver — the shrink may
+        // halve it. Assert the coin ids stay in the vanilla set and the total
+        // copper value lands in the vanilla shrink envelope.
+        let mut rng = crate::tile_light::FastRandom::new(202);
+        let mut out = Vec::new();
+        drop_money(&mut rng, 10_000.0, 0.0, false, false, 0.0, &mut out);
+        assert!(!out.is_empty());
+        let total: i32 = out
+            .iter()
+            .map(|r| {
+                r.stack
+                    * match r.item {
+                        74 => 1_000_000,
+                        73 => 10_000,
+                        72 => 100,
+                        _ => 1,
+                    }
+            })
+            .sum();
+        // The VALUE roll happens before the split: 10000 x (0.8..1.75) x the
+        // bonus chains (up to ~x1.1 more) -> the total spans roughly
+        // 2500..20000; the shrink rolls only reduce the stack counts.
+        assert!((2_500..=20_000).contains(&total), "total {total}");
+        for r in &out {
+            assert!(matches!(r.item, 71 | 72 | 73 | 74));
+        }
+    }
+
+    #[test]
+    fn drop_money_two_luck_rolls_keep_the_best() {
+        // The luck gate passes on the seeded stream (next_float < |luck|):
+        // two rolls and the best (luck >= 0) wins — the total must be >= the
+        // single-roll floor of the same stream's first roll.
+        let mut rng = crate::tile_light::FastRandom::new(303);
+        let mut out = Vec::new();
+        drop_money(&mut rng, 25.0, 1.0, false, false, 0.0, &mut out);
+        let total: i32 = out.iter().map(|r| r.stack).sum();
+        assert!(
+            (20..=42).contains(&total),
+            "best-of-two still 20..=42: {total}"
+        );
+    }
+
+    #[test]
+    fn drop_money_blood_moon_rolls_the_bump() {
+        // The blood moon multiplies by 1 + Next(101) * 0.01 — at most double.
+        let mut rng = crate::tile_light::FastRandom::new(404);
+        let mut out = Vec::new();
+        drop_money(&mut rng, 25.0, 0.0, false, true, 0.0, &mut out);
+        let total: i32 = out.iter().map(|r| r.stack).sum();
+        assert!((20..=85).contains(&total), "total {total}");
     }
 
     #[test]

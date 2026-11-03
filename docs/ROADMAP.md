@@ -55,7 +55,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Area | Status | Notes |
 | --- | --- | --- |
 | Renderer (atlas, instancing, zoom, frame cache) | ✅ | 2 draw calls; G6 cache; zoom 1.0–2.0 |
-| Autotiling / framing | ✅ (core) | generic chain + merge pairs + grass chain; TileFrameImportant multi-tile missing (M1.4-TO) |
+| Autotiling / framing | ✅ (core) | generic chain + merge pairs + grass chain; multi-tile objects landed (M1.4-TO: registry, placement, KillTile cascade, door interaction; gemspark/glow remain) |
 | Lighting | ✅ (core) | scanner 147 cases + blur + 4 modes; sun/moon/star light missing |
 | Liquids & waterfalls | ✅ (core) | sim + both draw passes + per-style waterfalls + shimmer draw; vertex distortion missing |
 | Sky / weather visuals | 🟡 | clouds/stars/sun/rain/storm banks done; ambient creature skies, `HorizonClouds` tint, storm branch missing |
@@ -148,6 +148,10 @@ referenced here exist in the catalog.
 
 **Tasks:** M1.4-TO (umbrella) → M1.4-TO-1 doors, -2 chests, -3 furniture/Check3x2 family,
 -4 herbs/alch/pots; TILE-DRAW-1/2/3/4/5 as before; TILE-DRAW-6 vines/moss/cactus arms.
+  **Landed (2026-11-03, `M1.4-TO-tile-objects`):** the TileObjectData registry + wooden-set
+  placement (10/11/14/15/18/21), the KillTile per-type cascade (Check1x2/2x1/3x2/Door/Chest),
+  the world interaction hook and OpenDoor/CloseDoor; remaining: -4 herbs/alch/pots,
+  gemspark/glow, the full-registry generator.
 
 ## 3. Liquids & waterfalls
 
@@ -514,7 +518,8 @@ goblin reforge UI + cost, M3-DYES-1 dye slot plumbing (shader-pass architecture)
 
 ## 12. Equipment & armor sets
 
-**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** ⬜ · ⬜.
+**C#** `Player.cs` equip sections, `DataStructures/ArmorSetBonuses.cs` · **Rust** `inv.rs`,
+`render/player_layers.rs` (armor sheets) · 🟡 slots + armor draw + persistence done.
 
 - Slots: `armor[20]`, `dye[10]`, `inventory[59]` (50-57 = 4 coins + 4 ammo) — functional
   accessories are slots 3-9 (5 base + Demon Heart + master slot) gated by
@@ -1196,7 +1201,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| 🟡 M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor/accessories go live with M3-EQUIP |
+| ✅ M2-DRAW-1 | `M2-DRAW-1-player-layers` | layering done (order + weapon slot + composite front arm + bob); armor renders with M3-EQUIP (accessories render with M3-EQUIP-3) |
 | ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation; the rotation source consumes M2-ANIM use fractions (swing-arc stand-in replaced in the M3-CRAFT merge) |
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
@@ -1208,7 +1213,7 @@ section in brackets before starting a row.
 | M2-PHYS-6 | `M2-PHYS-6-grapple-movement` | GrappleMovement + per-hook overrides [7] |
 | M2-PHYS-7 | `M2-PHYS-7-minecart` | rails/boost/ramp/sparks [7][22] |
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
-| M2-BUFF-1 | `M2-BUFF-1-buff-slots` | 44-slot engine + add/evict rules [8] |
+| ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | M2-BUFF-2 | `M2-BUFF-2-regen` | life/mana regen engines [8] |
 | M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
@@ -1216,7 +1221,7 @@ section in brackets before starting a row.
 | M2-BUFF-6 | `M2-BUFF-6-luck` | full Luck.cs (ladybug/torch/coin/kite/potions) [8] |
 | M2-BUFF-7 | `M2-BUFF-7-food` | WellFed tiers + foods [8] |
 | M2-BUFF-8 | `M2-BUFF-8-banners` | kills + tile scan + BannerStrength [8] |
-| M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps [9] |
+| ✅ M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps: `tr_core::damage::knock_back_npc` (`NPC.cs:81389-81458` — the soft caps 8/10/12/14/16, crit ×1.4, the damage gate `damage·10 > lifeMax` (expert ·15) gating the X push-away with its anti-drift shape, the Y pop −kb·0.75 / ×0.5 no-gravity) + `iframes_for` (`Player.cs:38385` — 40 ticks normal, 80 long-invincible, 20 exactly-1-damage, PVP 8) [9] | done 2026-11-03: `Npc::knock_back_resist()` per kind/variant (blue 0.8, eye 0.8, wandering 0.8, zombie 0.5, king 0, variants ×1.2/1.4/0.95/0.9); `Npc::hurt` runs the chain (kb 5.5 melee stand-in, 12 shuriken projectile); `Player::hurt` iframe 40 ticks (0.667 s) + the fixed 4.5/−3.5 contact push; the cooldown-counter IDs land with M2-BUFF (only General is modelled) |
 | M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes [9] |
 | M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones [9] |
 | M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules + bed spawn [9] |
@@ -1236,7 +1241,7 @@ section in brackets before starting a row.
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
 | M3-ITEM-5 | `M3-ITEM-5-channel-reuse` | channel + reuseDelay [10] |
 | M3-TOOL | `M3-TOOL-tiers` | pick/axe/hammer tiers + use logic |
-| M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12] |
+| ✅ M3-EQUIP | `M3-EQUIP-equipment` | slots + armor pages [12]; armor renders on the player (Cu/Fe/Ag/Au via the 1.4.4+ body composite), armor kinds persist in the `.trplayer` v4 sidecar, `TR_ARMOR=<metal>` equip hook; drag-and-drop equipping stays with the inventory interaction task |
 | M3-EQUIP-2 | `M3-EQUIP-2-set-bonuses` | ArmorSetBonuses engine [12] |
 | M3-EQUIP-3 | `M3-EQUIP-3-accessory-flags` | accessory effect flags [12] |
 | M3-EQUIP-4 | `M3-EQUIP-4-dye-slots` | dye plumbing [11][12] |
@@ -1253,16 +1258,17 @@ section in brackets before starting a row.
 | --- | --- | --- |
 | 🔄 M4-NPC-1 | `M4-NPC-1-slimes-eyes` ✅ (the slime colour family -3..-9 + vanilla stats/tints/gel drops, Wandering Eye 133, `GetBasicSlimeToSpawn` + the Pinky roll; done 2026-11-02) — fighters/cave/etc. to come | AI families [14] |
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
-| M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain + RNG streams [15] |
+| ✅ M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain: `GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order with the vanilla cast widths — hardmode, the depth ladder (underworld ×2 / deep ×0.4/×1.9 / below-surface ×0.5/×1.7), night ×0.6/×1.3 + blood ×0.3/×1.8 + moon events ×0.2/×2 + eclipse, the dungeon/sandstorm/UD/jungle-town-tiers/evil/meteor/temple/hallow-deep zone branches, the WoF override, both nearby-ramp passes, invis/calmed/sunflower/angler/enemySpawns, the water/peace candles + the >35%-depth candle cut, the rate floor (10 %) and the cap (3×), the moon-event raid pacing (rate 20, max 2+0.3·players) and the pre-Skeletron dungeon rate 10 [15] | done 2026-11-03: `SpawnFlags` carries the scene state (hardmode/blood/moon/zones/candles — all false until the owning systems land); remix/FTW/journey/skyblock/fairy branches constants-off (M5-SEED-1/M6-CREATIVE-1); 8 seeded tests |
 | M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | spawn tables + special rules [15] |
 | M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
 | ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |
+
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
+| ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ separate find: the waterfall sparkle pass breaks pure-world screenshot determinism (`TR_NO_WATERFALL=1` restores SHA256 equality; bisected 2026-11-03 on f07f96d1+loot, desert-with-water pair) — follow-up `M1.5-LIQUID-2-det-fix` || M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | M4-LOOT-3 | `M4-LOOT-3-money` | coin roll chain [16] |
-| M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline [9] |
-| M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
+| ✅ M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline: `tr-core/src/damage.rs` — `DamageVar` (±15 % + the luck reroll, banker’s rounding via `round_bankers`), `CalculateDamageNPCsTake` (defense x0.5, floor 1), `checkArmorPenetration` (ichor/broken/Betsy + the percent, capped at defense/2), the `StrikeNPC_Inner` line (crit x2 after defense), the crit gate (`Next(1,101) <= crit`, base 4) [9] | done 2026-11-03: 8 seeded tests; wired into the melee hit (`DamageVar` -> defense -> floor via the item stream); the contact hit passes flat damage until the combat rng reaches `Npc::contact` (deviation in ANALYSIS); the player-side defense/Hurt formulas land with M3-EQUIP || M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
 | M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |

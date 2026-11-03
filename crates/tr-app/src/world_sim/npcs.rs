@@ -27,19 +27,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
-    let dead: Vec<(NpcKind, SlimeVariant, f32, f32)> = app
-        .npcs
-        .iter()
-        .filter(|n| n.hp <= 0)
-        .map(|n| {
-            let (cx, cy) = n.center();
-            (n.kind, n.slime, cx, cy)
-        })
-        .collect();
+    let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
-    for (kind, slime, x, y) in dead {
-        spawn_coins(app, kind, x, y);
-        spawn_gel(app, kind, slime, x, y);
+    for npc in &dead {
+        spawn_coins(app, &npc);
+        spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
@@ -88,6 +80,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 })
                 .count() as f32;
             let ctx = spawner::SpawnContext {
+                // The scene flags arrive as the systems land (hardmode
+                // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
+                // chain runs with them false today.
+                flags: spawner::SpawnFlags::default(),
                 world: &app.world,
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),
@@ -169,7 +165,7 @@ fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) 
 }
 
 /// The engine's RNG adapter over the app's deterministic item stream.
-struct LootRng<'a>(&'a mut u64);
+pub(crate) struct LootRng<'a>(pub(crate) &'a mut u64);
 
 impl tr_core::loot::DropRng for LootRng<'_> {
     fn next_range(&mut self, min: i32, max: i32) -> i32 {
@@ -183,40 +179,37 @@ impl tr_core::loot::DropRng for LootRng<'_> {
     }
 }
 
-/// `Item.NewItem` coin drops: a few copper from small enemies, gold from the boss.
-pub(crate) fn spawn_coins(app: &mut App, kind: NpcKind, x: f32, y: f32) {
-    let roll = rand01(&mut app.item_rng);
-    let (denom, count) = match kind {
-        // The eyes share the coin roll (the Wandering Eye's `value = 500f`
-        // denominates the same way).
-        NpcKind::WanderingEye => (0u16, 2 + (roll * 4.0) as u32 % 3),
-        NpcKind::KingSlime => (2u16, 3 + (roll * 4.0) as u32),
-        NpcKind::Zombie => {
-            if roll < 0.2 {
-                (1, 1)
-            } else {
-                (0, 2 + (roll * 30.0) as u32 % 4)
-            }
-        }
-        NpcKind::Slime => {
-            if roll < 0.05 {
-                (1, 1)
-            } else {
-                (0, 1 + (roll * 20.0) as u32 % 3)
-            }
-        }
-        NpcKind::DemonEye => (0, 1 + (roll * 10.0) as u32 % 2),
-    };
-    let vx = (rand01(&mut app.item_rng) * 2.0 - 1.0) * 1.2;
-    let vy = -1.5 - rand01(&mut app.item_rng);
-    let phase = rand01(&mut app.item_rng) * std::f32::consts::TAU;
-    app.items.push(ItemDrop::new(
-        registry::coin_id(denom as usize),
-        count,
-        x - 7.0,
-        y - 7.0,
-        vx,
-        vy,
-        phase,
-    ));
+/// `NPC.NPCLoot_DropMoney` through the ported chain
+/// (`tr_core::loot::drop_money`): the per-kind `NPC.value` base, the
+/// ±20-75 % spread, the six bonus chains and the platinum/gold/silver/copper
+/// split. Coin velocities use the app's item stream like the C# scatter.
+fn spawn_coins(app: &mut App, npc: &Npc) {
+    let (x, y) = npc.center();
+    let mut rng_state = app.item_rng;
+    let mut loot_rng = LootRng(&mut rng_state);
+    let mut out = Vec::new();
+    tr_core::loot::drop_money(
+        &mut loot_rng,
+        npc.value(),
+        0.0,   // Player.luck: the buff engine lands with M2-BUFF-2
+        false, // Midas
+        false, // Main.bloodMoon
+        0.0,   // NPC.extraValue (master-mode bump, not modelled)
+        &mut out,
+    );
+    app.item_rng = rng_state;
+    for req in out {
+        let vx = (rand01(&mut app.item_rng) * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rand01(&mut app.item_rng);
+        let phase = rand01(&mut app.item_rng) * std::f32::consts::TAU;
+        app.items.push(ItemDrop::new(
+            req.item as u16,
+            req.stack as u32,
+            x,
+            y,
+            vx,
+            vy,
+            phase,
+        ));
+    }
 }

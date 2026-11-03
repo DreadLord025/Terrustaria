@@ -592,6 +592,13 @@ impl App {
                             }
                             _ => None,
                         },
+                        // `Player.armor[0..3]`'s item kinds — the armor draw
+                        // input (head/body/legs, 0 = the empty slot).
+                        [
+                            self.equip.armor.first().map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                            self.equip.armor.get(1).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                            self.equip.armor.get(2).map_or(0, |s| if s.count > 0 { s.kind } else { 0 }),
+                        ],
                         npcs,
                         npc_assets,
                         items,

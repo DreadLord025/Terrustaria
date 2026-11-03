@@ -1,9 +1,9 @@
 //! First enemy pass: a hopping blue slime, a flying demon eye and a walking zombie,
 //! modelled on the simplest `NPC.cs` behaviours.
 
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
-use crate::player::{collides_rect, Player};
+use crate::player::{Player, collides_rect};
 
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 8.0;
@@ -64,6 +64,8 @@ pub struct SlimeStats {
     pub scale: f32,
     pub color: [u8; 4],
     pub gel: (u32, u32),
+    /// `NPC.value` in copper (`NPCLoot_DropMoney`'s base).
+    pub value: f32,
 }
 
 impl SlimeVariant {
@@ -71,14 +73,78 @@ impl SlimeVariant {
     /// (blue: `NPC.cs:8567-8580`).
     pub fn stats(self) -> SlimeStats {
         match self {
-            SlimeVariant::Blue => SlimeStats { life: 25, damage: 7, defense: 2, scale: 1.0, color: [0, 80, 255, 100], gel: (1, 2) },
-            SlimeVariant::Green => SlimeStats { life: 14, damage: 6, defense: 0, scale: 0.9, color: [0, 220, 40, 100], gel: (0, 0) },
-            SlimeVariant::Pinky => SlimeStats { life: 150, damage: 5, defense: 5, scale: 0.6, color: [250, 30, 90, 90], gel: (0, 0) },
-            SlimeVariant::Baby => SlimeStats { life: 30, damage: 13, defense: 4, scale: 0.9, color: [0, 0, 0, 50], gel: (0, 0) },
-            SlimeVariant::Black => SlimeStats { life: 45, damage: 15, defense: 4, scale: 1.05, color: [0, 0, 0, 50], gel: (2, 5) },
-            SlimeVariant::Purple => SlimeStats { life: 40, damage: 12, defense: 6, scale: 1.2, color: [200, 0, 255, 150], gel: (2, 5) },
-            SlimeVariant::Red => SlimeStats { life: 35, damage: 12, defense: 4, scale: 1.025, color: [255, 30, 0, 100], gel: (2, 5) },
-            SlimeVariant::Yellow => SlimeStats { life: 45, damage: 15, defense: 7, scale: 1.2, color: [255, 255, 0, 100], gel: (2, 5) },
+            SlimeVariant::Blue => SlimeStats {
+                life: 25,
+                damage: 7,
+                defense: 2,
+                scale: 1.0,
+                color: [0, 80, 255, 100],
+                gel: (1, 2),
+                value: 25.0,
+            },
+            SlimeVariant::Green => SlimeStats {
+                life: 14,
+                damage: 6,
+                defense: 0,
+                scale: 0.9,
+                color: [0, 220, 40, 100],
+                gel: (0, 0),
+                value: 3.0,
+            },
+            SlimeVariant::Pinky => SlimeStats {
+                life: 150,
+                damage: 5,
+                defense: 5,
+                scale: 0.6,
+                color: [250, 30, 90, 90],
+                gel: (0, 0),
+                value: 10000.0,
+            },
+            SlimeVariant::Baby => SlimeStats {
+                life: 30,
+                damage: 13,
+                defense: 4,
+                scale: 0.9,
+                color: [0, 0, 0, 50],
+                gel: (0, 0),
+                value: 10.0,
+            },
+            SlimeVariant::Black => SlimeStats {
+                life: 45,
+                damage: 15,
+                defense: 4,
+                scale: 1.05,
+                color: [0, 0, 0, 50],
+                gel: (2, 5),
+                value: 20.0,
+            },
+            SlimeVariant::Purple => SlimeStats {
+                life: 40,
+                damage: 12,
+                defense: 6,
+                scale: 1.2,
+                color: [200, 0, 255, 150],
+                gel: (2, 5),
+                value: 10.0,
+            },
+            SlimeVariant::Red => SlimeStats {
+                life: 35,
+                damage: 12,
+                defense: 4,
+                scale: 1.025,
+                color: [255, 30, 0, 100],
+                gel: (2, 5),
+                value: 8.0,
+            },
+            SlimeVariant::Yellow => SlimeStats {
+                life: 45,
+                damage: 15,
+                defense: 7,
+                scale: 1.2,
+                color: [255, 255, 0, 100],
+                gel: (2, 5),
+                value: 10.0,
+            },
         }
     }
 
@@ -133,9 +199,9 @@ impl NpcKind {
 
     fn max_hp(self) -> i32 {
         match self {
-            NpcKind::Slime => 25,          // NPC.cs:8572
-            NpcKind::DemonEye => 60,       // case 2
-            NpcKind::WanderingEye => 300,  // case 133
+            NpcKind::Slime => 25,         // NPC.cs:8572
+            NpcKind::DemonEye => 60,      // case 2
+            NpcKind::WanderingEye => 300, // case 133
             NpcKind::Zombie => 45,
             NpcKind::KingSlime => 2000,
         }
@@ -143,9 +209,9 @@ impl NpcKind {
 
     fn contact_damage(self) -> i32 {
         match self {
-            NpcKind::Slime => 7,          // NPC.cs:8571
-            NpcKind::DemonEye => 18,      // case 2
-            NpcKind::WanderingEye => 40,  // case 133
+            NpcKind::Slime => 7,         // NPC.cs:8571
+            NpcKind::DemonEye => 18,     // case 2
+            NpcKind::WanderingEye => 40, // case 133
             NpcKind::Zombie => 14,
             NpcKind::KingSlime => 40,
         }
@@ -307,6 +373,67 @@ impl Npc {
         (self.x + w * 0.5, self.y + h * 0.5)
     }
 
+    /// `NPC.knockBackResist` — `StrikeNPC_Inner`'s soft-cap chain input
+    /// (blue `NPC.cs:8595` 0.8; demon eye 0.8, Wandering Eye 0.8,
+    /// zombie 0.5, King Slime 0; the slime variants multiply the blue
+    /// base per `SetDefaultsFromNetId`: green x1.2, pinky x1.4, baby
+    /// x0.95, purple x0.9, black/red/yellow x1).
+    pub fn knock_back_resist(&self) -> f32 {
+        if self.kind == NpcKind::Slime {
+            let mult = match self.slime {
+                SlimeVariant::Blue
+                | SlimeVariant::Black
+                | SlimeVariant::Red
+                | SlimeVariant::Yellow => 1.0,
+                SlimeVariant::Green => 1.2,
+                SlimeVariant::Pinky => 1.4,
+                SlimeVariant::Baby => 0.95,
+                SlimeVariant::Purple => 0.9,
+            };
+            return 0.8 * mult;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 0.8,
+            NpcKind::WanderingEye => 0.8,
+            NpcKind::Zombie => 0.5,
+            NpcKind::KingSlime => 0.0,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
+    /// `NPC.defense` — `Main.CalculateDamageNPCsTake`'s input
+    /// (blue `NPC.cs:8573` 2, demon eye 2, Wandering Eye 20, zombie 6,
+    /// King Slime 10; the slime variants ride their `SetDefaultsFromNetId`
+    /// lines).
+    pub fn defense(&self) -> i32 {
+        if self.kind == NpcKind::Slime {
+            return self.slime.stats().defense;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 2,
+            NpcKind::WanderingEye => 20,
+            NpcKind::Zombie => 6,
+            NpcKind::KingSlime => 10,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
+    /// `NPC.value` in copper — `NPCLoot_DropMoney`'s base
+    /// (blue `NPC.cs:8576` 25, demon eye 75, Wandering Eye 500, zombie 60,
+    /// King Slime 10000).
+    pub fn value(&self) -> f32 {
+        if self.kind == NpcKind::Slime {
+            return self.slime.stats().value;
+        }
+        match self.kind {
+            NpcKind::DemonEye => 75.0,
+            NpcKind::WanderingEye => 500.0,
+            NpcKind::Zombie => 60.0,
+            NpcKind::KingSlime => 10_000.0,
+            NpcKind::Slime => unreachable!(),
+        }
+    }
+
     /// The scaled size for slime variants (the hitbox rides
     /// `SetDefaults_ForNetId`'s size scale).
     pub fn size(&self) -> (f32, f32) {
@@ -324,20 +451,31 @@ impl Npc {
         wx >= self.x - 4.0 && wx <= self.x + w + 4.0 && wy >= self.y - 4.0 && wy <= self.y + h + 4.0
     }
 
-    pub fn hurt(&mut self, amount: i32, from_x: f32) -> bool {
+    /// `NPC.StrikeNPC`'s knockback half (`NPC.cs:81389-81458`): the
+    /// soft-capped impulse applied by `tr_core::damage::knock_back_npc`.
+    /// `hit_direction` is the knockback side (+1 = pushed right) and
+    /// `knock_back` the weapon's `Item.knockBack`.
+    pub fn hurt(&mut self, amount: i32, from_x: f32, knock_back: f32, crit: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
         self.hp -= amount;
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
-        let dir = if self.x + w * 0.5 >= from_x {
-            1.0
-        } else {
-            -1.0
-        };
-        self.vx = dir * 1.6;
-        self.vy = -2.0;
+        let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            self.knock_back_resist(),
+            crit,
+            amount,
+            self.max_hp,
+            (self.vx, self.vy),
+            dir,
+            false,
+            false,
+        );
+        self.vx = vx;
+        self.vy = vy;
         self.on_ground = false;
         true
     }
@@ -760,7 +898,7 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -867,7 +1005,7 @@ mod tests {
         let w = ground();
         let mut s = Npc::spawn_slime(&w, 20).unwrap();
         for _ in 0..3 {
-            assert!(s.hurt(10, 0.0));
+            assert!(s.hurt(10, 0.0, 5.5, false));
             s.hurt_cd = 0.0;
         }
         // Vanilla keeps `life` as the raw remainder and dies on
