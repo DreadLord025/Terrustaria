@@ -5,6 +5,7 @@
 
 pub mod anim;
 pub mod binio;
+pub mod damage;
 pub mod drawdata;
 pub mod edit;
 pub mod flame;
