@@ -91,6 +91,96 @@ pub fn strike_npc_damage(damage: i32, defense: i32, crit: bool) -> i32 {
     num as i32
 }
 
+/// `NPC.StrikeNPC_Inner`'s knockback section (`NPC.cs:81389-81458`): the
+/// soft caps 8/10/12/14/16, the crit x1.4, the damage gate
+/// (`damage * 10 > lifeMax` — expert `* 15`) gating the X push, and the Y pop
+/// (`-kb * 0.75`, `* 0.5` for no-gravity flyers). Returns the new velocity.
+pub fn knock_back_npc(
+    knock_back: f32,
+    knock_back_resist: f32,
+    crit: bool,
+    damage: i32,
+    life_max: i32,
+    velocity: (f32, f32),
+    hit_direction: i32,
+    no_gravity: bool,
+    expert: bool,
+) -> (f32, f32) {
+    let (mut vx, mut vy) = velocity;
+    if knock_back > 0.0 && knock_back_resist > 0.0 {
+        let mut num3 = knock_back * knock_back_resist;
+        if num3 > 8.0 {
+            num3 = 8.0 + (num3 - 8.0) * 0.9;
+        }
+        if num3 > 10.0 {
+            num3 = 10.0 + (num3 - 10.0) * 0.8;
+        }
+        if num3 > 12.0 {
+            num3 = 12.0 + (num3 - 12.0) * 0.7;
+        }
+        if num3 > 14.0 {
+            num3 = 14.0 + (num3 - 14.0) * 0.6;
+        }
+        if num3 > 16.0 {
+            num3 = 16.0;
+        }
+        if crit {
+            num3 *= 1.4;
+        }
+        let num4 = damage * if expert { 15 } else { 10 };
+        // The X push-away runs only when the hit is strong for the target
+        // (`num4 > lifeMax`); the shape resists an existing drift away.
+        if num4 > life_max {
+            if hit_direction < 0 && vx > -num3 {
+                if vx > 0.0 {
+                    vx -= num3;
+                }
+                vx -= num3;
+                if vx < -num3 {
+                    vx = -num3;
+                }
+            } else if hit_direction > 0 && vx < num3 {
+                if vx < 0.0 {
+                    vx += num3;
+                }
+                vx += num3;
+                if vx > num3 {
+                    vx = num3;
+                }
+            }
+        }
+        // The Y pop always runs (inside the kb/resist gate): upward unless the
+        // target is a no-gravity flyer, which gets pushed down at 0.5.
+        let pop = if no_gravity {
+            num3 * -0.5
+        } else {
+            num3 * -0.75
+        };
+        if vy > pop {
+            vy += pop;
+            if vy < pop {
+                vy = pop;
+            }
+        }
+    }
+    (vx, vy)
+}
+
+/// `Player.Hurt`'s immunity window in ticks (`Player.cs:38385`): PVP 8;
+/// otherwise damage != 1 -> long-invincibility 80 : 40, exactly-1 damage ->
+/// 40 : 20.
+pub fn iframes_for(damage: i32, pvp: bool, long_invince: bool) -> i32 {
+    if pvp {
+        8
+    } else if damage != 1 {
+        if long_invince { 80 } else { 40 }
+    } else if long_invince {
+        40
+    } else {
+        20
+    }
+}
+
 /// The crit roll (`Player.cs` `Main.rand.Next(1, 101) <= crit`, base crit 4
 /// per class at `Player.cs:2430`): `crit` is the percentage chance.
 pub fn crit_roll(rng: &mut dyn DropRng, crit: i32) -> bool {
