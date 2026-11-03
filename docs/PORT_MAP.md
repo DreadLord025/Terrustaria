@@ -55,6 +55,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Player.cs` regen engines (`UpdateLifeRegen` `:18942-19391`, `UpdateManaRegen`/`ApplyManaRegenerationDelay` `:19380-19562`) | `crates/tr-app/src/regen.rs` (`RegenState`/`RegenInputs`, wired in `update_survival`) | done (engine; DoT/aura/item inputs = M2-BUFF-3/5, M3-EQUIP) |
 | `NPC.cs`, `NPCSpawnParams.cs`, `NPCSpawningFlagsForDualDungeons.cs` | `crates/tr-app/src/npc.rs`, `spawner.rs` (tick in `world_sim/npcs.rs`) | partial |
 | `Projectile.cs` | `crates/tr-app/src/projectile.rs` (tick in `world_sim/projectiles.rs`) | partial |
+| `Projectile.cs` pool + immunity (`NewProjectileSetup` `:10823-10880`, `Damage_PVE` `:12562-12624`, the on-hit application `:14087-14119`, `DecrementLocalImmuneTimeCounters` `:17258`) | `crates/tr-app/src/projectile.rs` (`ProjectilePool`: 1000 slots, per-owner/ID-static/local immunity) | done (engine + shuriken; families = M4-PROJ-2..11) |
 | `Item.cs`, `GetItemSettings.cs`, `NewItemOwnership.cs` | `crates/tr-app/src/item.rs` (tick in `world_sim/items.rs`) | partial |
 | `Collision.cs`, `Physics/*` | `crates/tr-app/src/collision.rs` | partial |
 | `Rain.cs`, `Cloud.cs` | `crates/tr-app/src/rain.rs` (field + draw), the tick in `world_sim/weather.rs` | partial |

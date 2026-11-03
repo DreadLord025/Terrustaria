@@ -2378,3 +2378,41 @@ Deviations:
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
   20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
+
+## Projectile pool (M4-PROJ-1)
+
+`crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
+`NewProjectileSetup`'s first-free-slot spawn with the `FindOldestProjectile`
+recycle (`Projectile.cs:10811-10880`), the per-tick `timeLeft--`/`penetrate == 0`
+kill bookkeeping (`:17199-17208`), the `1 + extraUpdates` AI sub-step loop
+(`:16668`), `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`) and
+the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner gate `:12620-12624`)
+with the on-hit immunity application (`:14087-14119`). All three C# immunity
+systems are live: the per-owner `NPC.immune[owner] = 10` (stored on `Npc`,
+decremented per NPC update, `NPC.cs:90454-90459`), the per-projectile
+`localNPCImmunity` cooldowns (a flattened pool table) and the ID-static
+`perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps against
+`Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into the pool
+as its first AI family; its placeholder lifetime (`age > 2 s || bounces > 6`)
+was replaced by the faithful `timeLeft = 3600` / `penetrate` rules.
+
+Deviations:
+
+- **The projectile path bypasses the melee `hurt_cd` gate** —
+  `Npc::hurt_from_projectile` shares `hurt`'s body without the shared-cooldown
+  check, because a projectile's right to hit is decided by the three C#
+  immunity systems the pool now implements; the hit still arms `hurt_cd`, so
+  melee stays gated afterward (in the C# every `StrikeNPC` writes the same
+  `NPC.immune[owner] = 10` window).
+- **NPC immunity is indexed by the NPC's `Vec` position**, which is stable
+  between death compactions; the C# indexes stable NPC slots and clears them in
+  `ResetNPCSlotData` (`:609-618`). After a compaction a live local-immunity
+  entry may point one slot off for at most its remaining cooldown — revisit
+  with the data-oriented NPC slots (M4 plan).
+- **Multiplayer bookkeeping is not ported**: `ProjectileKey`/
+  `slotGenerations`, `netSpam`/`netImportant` (the recycle treats every slot as
+  recyclable) and the owner-sync asserts — single-player.
+- **`DebugOptions` branches** (`Shared_RandomizeProjectileSlots`, `ManaV2`
+  equivalents) are debug cheats and are not ported.
+- The shuriken's damage/knockback stay the first pass's stand-ins (registry
+  data lands with M3-ITEM-1); the pool itself is content-agnostic.
