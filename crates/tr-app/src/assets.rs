@@ -32,6 +32,27 @@ pub fn image_name_for_wall(wall: u16) -> String {
     format!("Wall_{wall}")
 }
 
+/// Every `Item_<id>.xnb` present in the content `Images` dir, sorted ascending
+/// and deduped so the atlas layout is reproducible. Non-item files (`Tiles_*`)
+/// and non-numeric suffixes are ignored; a missing dir yields an empty list.
+fn enumerate_item_icon_ids(images_dir: &Path) -> Vec<u16> {
+    let Ok(entries) = std::fs::read_dir(images_dir) else {
+        return Vec::new();
+    };
+    let mut ids: Vec<u16> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_str()?;
+            let id = name.strip_prefix("Item_")?.strip_suffix(".xnb")?;
+            id.parse::<u16>().ok()
+        })
+        .collect();
+    ids.sort_unstable();
+    ids.dedup();
+    ids
+}
+
 /// Loads only the sheets referenced by the world (plus a dirt fallback).
 pub fn load_world_images(
     dir: &Path,
@@ -172,20 +193,6 @@ pub fn load_world_images(
         "Armor/Armor_2",
         "Armor/Armor_3",
         "Armor/Armor_4",
-        // The armor items' inventory icons (`Item_89` copper helmet .. `Item_79`
-        // gold greaves) so the equipment slots and tooltips render them.
-        "Item_89",
-        "Item_80",
-        "Item_76",
-        "Item_90",
-        "Item_81",
-        "Item_77",
-        "Item_91",
-        "Item_82",
-        "Item_78",
-        "Item_92",
-        "Item_83",
-        "Item_79",
         "NPC_1",
         "NPC_2",
         "NPC_3",
@@ -193,26 +200,6 @@ pub fn load_world_images(
         "Rain",
         "Dust",
         "Projectile_3",
-        "Item_71",
-        "Item_72",
-        "Item_73",
-        "Item_74",
-        "Item_2",
-        "Item_3",
-        "Item_8",
-        "Item_9",
-        "Item_11",
-        "Item_12",
-        "Item_13",
-        "Item_14",
-        "Item_26",
-        "Item_30",
-        "Item_42",
-        "Item_169",
-        "Item_172",
-        "Item_174",
-        "Item_276",
-        "Item_593",
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
@@ -432,6 +419,34 @@ pub fn load_world_images(
         }
     }
 
+    // Every item icon the content carries: `AssetInitializer.cs:111-125` fills
+    // `TextureAssets.Item[i]` with `Images/Item_<i>` for the whole `ItemID`
+    // range, so the loader enumerates the files instead of a hand-list — an id
+    // whose file is absent simply never registers and its draw code falls
+    // through the coin/wall/tile fallbacks (the `item.rs` drop draw). Sorted
+    // ids keep the atlas layout reproducible: `Atlas::build`'s stable shelf
+    // sort breaks size ties by input order. C5: decoded on Rayon's pool,
+    // `par_iter().collect()` keeps iterator order.
+    let item_ids = enumerate_item_icon_ids(dir);
+    let item_images: Vec<(u16, Result<AtlasImage>)> = item_ids
+        .par_iter()
+        .map(|&id| (id, load_png(dir, &format!("Item_{id}"), SheetLayout::Raw)))
+        .collect();
+    let mut failed_items = Vec::new();
+    for (id, result) in item_images {
+        match result {
+            Ok(img) => images.push(img),
+            Err(_) => failed_items.push(id),
+        }
+    }
+    if !failed_items.is_empty() {
+        log::warn!(
+            "{} item icons failed to decode (first 10: {:?})",
+            failed_items.len(),
+            &failed_items[..failed_items.len().min(10)]
+        );
+    }
+
     // Tree canopies and branches are separate free-form textures (`Tree_Tops_*`,
     // `Tree_Branches_*`); the trunk itself lives in `Tiles_5.png`.
     for style in 0..32 {
@@ -538,8 +553,8 @@ fn content_images_dir() -> Option<&'static Path> {
 fn load_sheet(name: &str, layout: SheetLayout) -> Result<AtlasImage> {
     let dir = content_images_dir().context("Content/Images not found")?;
     let path = dir.join(format!("{name}.xnb"));
-    let img = tr_content::load_texture(&path)
-        .with_context(|| format!("decoding {}", path.display()))?;
+    let img =
+        tr_content::load_texture(&path).with_context(|| format!("decoding {}", path.display()))?;
     Ok(AtlasImage {
         name: name.to_string(),
         width: img.width,
@@ -655,7 +670,14 @@ pub fn build_ui_font(
             out.glyphs.insert(
                 g.ch,
                 FontGlyph {
-                    uv: uv_rect(rect, (atlas.width, atlas.height), sx, sy, w as u32, h as u32),
+                    uv: uv_rect(
+                        rect,
+                        (atlas.width, atlas.height),
+                        sx,
+                        sy,
+                        w as u32,
+                        h as u32,
+                    ),
                     w: w as f32,
                     h: h as f32,
                     pad: [g.pad[0] as f32, g.pad[1] as f32],
@@ -679,11 +701,28 @@ pub struct FrameTex {
 const GLOW_SHEET_NAMES: &[&str] = &[
     // `TextureAssets.GlowMask` ids the flame/glow branches use
     // (`TileDrawing.cs:2686-2825`, `:3463-3491`).
-    "Glow_131", "Glow_291", "Glow_293", "Glow_295", "Glow_296", "Glow_297", "Glow_298",
-    "Glow_299", "Glow_300", "Glow_325", "Glow_334", "Glow_335",
+    "Glow_131",
+    "Glow_291",
+    "Glow_293",
+    "Glow_295",
+    "Glow_296",
+    "Glow_297",
+    "Glow_298",
+    "Glow_299",
+    "Glow_300",
+    "Glow_325",
+    "Glow_334",
+    "Glow_335",
     // The named single-sheet textures.
-    "GlowSnail", "FireflyJar", "LightningBugJar", "XmasLight", "Timer", "SunAltar",
-    "jellyfishBowl1", "jellyfishBowl2", "jellyfishBowl3",
+    "GlowSnail",
+    "FireflyJar",
+    "LightningBugJar",
+    "XmasLight",
+    "Timer",
+    "SunAltar",
+    "jellyfishBowl1",
+    "jellyfishBowl2",
+    "jellyfishBowl3",
 ];
 
 /// Texture information for one tile type present in the world.
@@ -972,9 +1011,7 @@ impl Lookups {
             liquid_slopes: vec![None; 15],
             liquid_parts: vec![None; 15],
             waterfalls: [None; tr_core::waterfall::MAX_TYPES],
-            flames: std::array::from_fn(|i| {
-                atlas.sheet(&format!("Flame_{i}")).copied()
-            }),
+            flames: std::array::from_fn(|i| atlas.sheet(&format!("Flame_{i}")).copied()),
             glow_sheets: GLOW_SHEET_NAMES
                 .iter()
                 .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
@@ -998,14 +1035,19 @@ impl Lookups {
                     r.height as f32,
                 )
             }),
-            item_icons: [
-                2, 3, 8, 9, 11, 12, 13, 14, 26, 30, 42, 169, 172, 174, 276, 593,
-                // The early-metal armor sets (M3-EQUIP).
-                89, 80, 76, 90, 81, 77, 91, 82, 78, 92, 83, 79,
-            ]
-            .into_iter()
-            .filter_map(|i| atlas.sheet(&format!("Item_{i}")).map(|r| (i, *r)))
-            .collect(),
+            // Every `Item_<id>` sheet that made it into the atlas, keyed by the
+            // parsed id (`AssetInitializer.cs:124` names them
+            // `Images/Item_<i>`). An id without a texture file never registers,
+            // so the draw code's coin/wall/tile fallbacks (`item.rs`) stay
+            // reachable; the map content is iteration-order independent, so
+            // building it from the sheets HashMap keeps runs reproducible.
+            item_icons: atlas
+                .sheets
+                .iter()
+                .filter_map(|(name, rect)| {
+                    Some((name.strip_prefix("Item_")?.parse::<u16>().ok()?, *rect))
+                })
+                .collect(),
             ui_heart: atlas.sheet("Heart").copied(),
             ui_bubble: atlas.sheet("Bubble").copied(),
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
@@ -1066,7 +1108,9 @@ impl Lookups {
             ui_icon_newly_generated: atlas.sheet("UI/IconNewlyGenerated").copied(),
             cc_panel: atlas.sheet("UI/CharCreation/CategoryPanel").copied(),
             cc_panel_border: atlas.sheet("UI/CharCreation/CategoryPanelBorder").copied(),
-            cc_panel_highlight: atlas.sheet("UI/CharCreation/CategoryPanelHighlight").copied(),
+            cc_panel_highlight: atlas
+                .sheet("UI/CharCreation/CategoryPanelHighlight")
+                .copied(),
             cc_panel_gray: atlas.sheet("UI/CharCreation/PanelGrayscale").copied(),
             cc_small_panel: atlas.sheet("UI/CharCreation/SmallPanel").copied(),
             cc_small_panel_border: atlas.sheet("UI/CharCreation/SmallPanelBorder").copied(),
@@ -1084,10 +1128,17 @@ impl Lookups {
                 "UI/CharCreation/ColorShoes",
             ]
             .map(|n| atlas.sheet(n).copied()),
-            cc_copy_paste_random: ["UI/CharCreation/Copy", "UI/CharCreation/Paste", "UI/CharCreation/Randomize"]
-                .map(|n| atlas.sheet(n).copied()),
-            cc_cloth_styles: ["UI/CharCreation/ClothStyleMale", "UI/CharCreation/ClothStyleFemale"]
-                .map(|n| atlas.sheet(n).copied()),
+            cc_copy_paste_random: [
+                "UI/CharCreation/Copy",
+                "UI/CharCreation/Paste",
+                "UI/CharCreation/Randomize",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            cc_cloth_styles: [
+                "UI/CharCreation/ClothStyleMale",
+                "UI/CharCreation/ClothStyleFemale",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
             cc_voice: atlas.sheet("UI/CharCreation/Voice").copied(),
             cc_color_character: atlas.sheet("UI/CharCreation/ColorCharacter").copied(),
             wc_preview_border: atlas.sheet("UI/WorldCreation/PreviewBorder").copied(),
@@ -1221,13 +1272,7 @@ impl Lookups {
                     } else {
                         frames.push(Some(FrameTex {
                             uv: uv_of_size(atlas, rect, &name, fx, fy, 32, 32),
-                            opaque: atlas.rect_is_opaque(
-                                rect,
-                                fx as u32,
-                                fy as u32,
-                                32,
-                                32,
-                            ),
+                            opaque: atlas.rect_is_opaque(rect, fx as u32, fy as u32, 32, 32),
                         }));
                     }
                 }
@@ -1431,13 +1476,7 @@ impl Lookups {
     }
 
     /// UV of a `LiquidSlope_*` mask: 18 px stride, `slope` in 1..=4.
-    pub fn liquid_slope_uv(
-        &self,
-        index: usize,
-        slope: u8,
-        sy: i32,
-        h: u32,
-    ) -> Option<[f32; 4]> {
+    pub fn liquid_slope_uv(&self, index: usize, slope: u8, sy: i32, h: u32) -> Option<[f32; 4]> {
         let rect = self.liquid_slopes.get(index)?.as_ref()?;
         let sx = 18 * (slope.clamp(1, 4) as i32 - 1);
         Some(uv_rect(rect, self.atlas_size, sx, sy, 16, h))
@@ -1446,7 +1485,14 @@ impl Lookups {
     /// UV of a whole HUD sheet.
     pub fn hud_uv(&self, rect: Option<&tr_render::SheetRect>) -> Option<[f32; 4]> {
         let rect = rect?;
-        Some(uv_rect(rect, self.atlas_size, 0, 0, rect.width, rect.height))
+        Some(uv_rect(
+            rect,
+            self.atlas_size,
+            0,
+            0,
+            rect.width,
+            rect.height,
+        ))
     }
 
     /// UV and native size of the original `Item_<id>` sprite for a slot kind
@@ -1616,4 +1662,196 @@ fn uv_rect(
     let x0 = rect.x as f32 + sx.max(0) as f32;
     let y0 = rect.y as f32 + sy.max(0) as f32;
     [x0 / aw, y0 / ah, (x0 + w as f32) / aw, (y0 + h as f32) / ah]
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(non_snake_case)]
+
+    use super::*;
+    use std::collections::BTreeSet;
+    use std::sync::OnceLock;
+
+    fn raw_image(name: &str, w: u32, h: u32) -> tr_render::AtlasImage {
+        tr_render::AtlasImage {
+            name: name.to_string(),
+            width: w,
+            height: h,
+            rgba: vec![0; (w * h * 4) as usize],
+            layout: tr_render::SheetLayout::Raw,
+        }
+    }
+
+    /// The real content atlas + Lookups, built once per process. Decodes every
+    /// `Item_*.xnb` the junction carries (~6500 sheets), exactly like startup.
+    fn content_lookups() -> &'static (tr_render::Atlas, Lookups) {
+        static CACHE: OnceLock<Box<(tr_render::Atlas, Lookups)>> = OnceLock::new();
+        CACHE.get_or_init(|| {
+            let content = crate::app::find_content_dir()
+                .expect("assets/Content not found: the asset tests need the game content junction");
+            set_content_dir(content.clone());
+            let images_dir = content.join("Images");
+            let tiles = BTreeSet::new();
+            let walls = BTreeSet::new();
+            let images =
+                load_world_images(&images_dir, &tiles, &walls).expect("world image decode");
+            let atlas = tr_render::Atlas::build(images, 8192);
+            let lookups = Lookups::build(
+                &atlas,
+                std::iter::empty(),
+                std::iter::empty(),
+                None,
+                None,
+                None,
+            );
+            Box::new((atlas, lookups))
+        })
+    }
+
+    #[test]
+    fn test_DW_4_1_enumeration_sorted_deduped_deterministic() {
+        let dir = std::env::temp_dir().join(format!("tr_item_enum_{}", std::process::id()));
+        let images = dir.join("Images");
+        std::fs::create_dir_all(&images).unwrap();
+        for name in [
+            "Item_20.xnb",
+            "Item_2.xnb",
+            "Item_5.xnb",
+            "Tiles_0.xnb",
+            "Item_x.xnb",
+        ] {
+            std::fs::write(images.join(name), b"x").unwrap();
+        }
+        // Read_dir order is filesystem-dependent; the enumeration must not leak
+        // it into the atlas (the plan's determinism edge case).
+        let ids = enumerate_item_icon_ids(&images);
+        assert_eq!(
+            ids,
+            vec![2, 5, 20],
+            "sorted ascending, non-Item/non-numeric ignored"
+        );
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn enumeration_missing_dir_yields_empty_list() {
+        let dir = std::env::temp_dir().join(format!("tr_item_enum_absent_{}", std::process::id()));
+        assert_eq!(enumerate_item_icon_ids(&dir), Vec::<u16>::new());
+    }
+
+    #[test]
+    fn test_DW_4_3_fallback_lookups_survive_without_item_sheets() {
+        // An atlas carrying only the fallback sheets: `item_icons` must hold
+        // exactly the Item_ sheets it has, a file-less id must miss (so the
+        // `item.rs:176-191` chain proceeds), and the coin/shuriken/tile
+        // fallback lookups the chain ends at must still resolve.
+        let images = vec![
+            raw_image("Item_2", 16, 16),
+            raw_image("Item_71", 16, 16),
+            raw_image("Projectile_3", 22, 22),
+            raw_image("Tiles_0", 18, 18),
+        ];
+        let atlas = tr_render::Atlas::build(images, 8192);
+        let lookups = Lookups::build(
+            &atlas,
+            [(0u16, "Tiles_0".to_string())].into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+        );
+        assert_eq!(lookups.item_icons.len(), 2, "Item_2 and Item_71 only");
+        assert!(lookups.item_icon(2).is_some());
+        assert!(
+            lookups.item_icon(3).is_none(),
+            "id without a sheet misses so the fallback chain engages"
+        );
+        assert!(
+            lookups.coin_uv(0).is_some(),
+            "Item_71 feeds the coin fallback"
+        );
+        assert!(
+            lookups.shuriken_uv().is_some(),
+            "Projectile_3 feeds the shuriken fallback"
+        );
+        assert!(
+            lookups.plain_tex(0).is_some(),
+            "Tiles_0 feeds the tile fallback"
+        );
+    }
+
+    #[test]
+    fn test_DW_4_1_item_icons_cover_enumerated_content_files() {
+        let (atlas, lookups) = content_lookups();
+        let content = crate::app::find_content_dir().unwrap();
+        let enumerated: BTreeSet<u16> = enumerate_item_icon_ids(&content.join("Images"))
+            .into_iter()
+            .collect();
+        assert!(!enumerated.is_empty(), "content carries Item_*.xnb files");
+        let registered: BTreeSet<u16> = lookups.item_icons.keys().copied().collect();
+        assert_eq!(
+            registered.len(),
+            enumerated.len(),
+            "one icon per present Item_ file (atlas {}x{})",
+            atlas.width,
+            atlas.height
+        );
+        assert_eq!(
+            registered, enumerated,
+            "item_icons == the enumerated file set"
+        );
+    }
+
+    #[test]
+    fn test_DW_4_3_fileless_id_stays_out_of_item_icons() {
+        let (_, lookups) = content_lookups();
+        // 3665 opens the C# `TextureCopyLoad` block (`ItemID.cs:1314`) and has
+        // no `Item_3665.xnb` in content — the dirty boundary. It must miss so
+        // the draw code's fallback chain stays the path for it.
+        assert!(lookups.item_icon(3665).is_none());
+        assert!(
+            lookups.item_icon(2).is_some(),
+            "dirt block (textured) registers"
+        );
+        // The former allow-list ids survive the swap.
+        for id in [71, 74, 89, 593] {
+            assert!(lookups.item_icon(id).is_some(), "Item_{id} registered");
+        }
+        assert!(
+            lookups
+                .item_icons
+                .values()
+                .all(|r| r.width > 0 && r.height > 0),
+            "every registered rect is sane"
+        );
+    }
+
+    #[test]
+    fn coin_and_shuriken_fallbacks_resolve_from_enumerated_sheets() {
+        let (_, lookups) = content_lookups();
+        // `coins` and `shuriken` are atlas-sheet lookups, untouched by the swap;
+        // their sheets now arrive through the enumeration instead of the list.
+        assert!(lookups.coin_uv(0).is_some());
+        assert!(lookups.shuriken_uv().is_some());
+    }
+
+    #[test]
+    fn item_icon_uvs_are_normalized_and_atlas_fits() {
+        let (atlas, lookups) = content_lookups();
+        assert!(
+            atlas.height <= 8192,
+            "atlas {} px tall must stay within the strict-GPU bound",
+            atlas.height
+        );
+        for id in [2, 42, 71, 3664, 6195] {
+            let Some((uv, w, h)) = lookups.item_icon(id) else {
+                continue; // file-less ids legitimately miss
+            };
+            assert!(
+                uv.iter().all(|c| (0.0..=1.0).contains(c)),
+                "id {id} uv {uv:?}"
+            );
+            assert!(w > 0.0 && h > 0.0);
+        }
+    }
 }
