@@ -15,6 +15,7 @@
 
 mod caves;
 mod liquids;
+mod living_trees;
 mod noise;
 mod surface;
 mod terrain;
@@ -106,6 +107,11 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
 
+    // --- living trees -------------------------------------------------------
+    // Vanilla generates "Living Trees" before "Trees"
+    // (`GenPassNameID.cs:267-268`), so the clearance scans see bare terrain.
+    living_trees::plant_living_trees(&mut world, &mut rng, &map.heights, map.beach);
+
     // --- trees --------------------------------------------------------------
     surface::plant_trees(&mut world, &mut rng, &map.heights);
 
@@ -134,6 +140,70 @@ pub fn generate(opts: &GenOptions) -> World {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn living_trees_generate_for_seed() {
+        // The living-trees pass places tile 191 (wood) with 192 canopies and
+        // wall 244 interiors (`WorldGen.cs:15476-15715`).
+        let world = generate(&GenOptions {
+            name: "living".into(),
+            width: 4200,
+            height: 1200,
+            seed: 1,
+        });
+        let mut wood = 0;
+        let mut leaves = 0;
+        let mut wall = 0;
+        for t in &world.tiles {
+            if t.active() && t.kind == 191 {
+                wood += 1;
+            }
+            if t.active() && t.kind == 192 {
+                leaves += 1;
+            }
+        }
+        for t in world.tiles.iter() {
+            if t.wall == 244 {
+                wall += 1;
+            }
+        }
+        assert!(wood > 500, "living wood tiles: {wood}");
+        assert!(leaves > 500, "leaf blocks: {leaves}");
+        assert!(wall > 200, "living wood walls: {wall}");
+        // The anchor positions for the screenshot cameras (TR_CAM=x,y).
+        let mut xs: Vec<i32> = Vec::new();
+        for x in 0..world.width {
+            for y in 0..world.height {
+                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 191) {
+                    xs.push(x);
+                    break;
+                }
+            }
+        }
+        eprintln!("living columns: {} first {} last {}", xs.len(), xs.first().map_or(0, |v| *v), xs.last().map_or(0, |v| *v));
+        let mut ys: Vec<i32> = Vec::new();
+        for x in 1920..2020 {
+            for y in 0..world.height {
+                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 191) {
+                    ys.push(y);
+                    break;
+                }
+            }
+        }
+        eprintln!("first-191-y per column 1920..2020: min {} max {} count {}", ys.iter().min().map_or(0, |v| *v), ys.iter().max().map_or(0, |v| *v), ys.len());
+        for (px, py) in [(300i32, 0i32), (280, 0), (350, 0)] {
+            let mut rows = Vec::new();
+            for y in 0..world.height {
+                if world.tile(px, y).is_some_and(|t| t.active() && t.kind == 191) {
+                    rows.push(y);
+                }
+            }
+            let first = rows.first().map_or(-1, |v| *v);
+            let last = rows.last().map_or(-1, |v| *v);
+            eprintln!("col {px}: 191 rows {} first {first} last {last} (surface {})", rows.len(), world.surface_of(px));
+        }
+    }
+
 
     #[test]
     fn deterministic_for_seed() {

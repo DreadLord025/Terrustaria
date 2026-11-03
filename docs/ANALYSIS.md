@@ -576,6 +576,56 @@ diff exactly inside the rectangle against the unpainted frame (3756 px each);
 the unpainted branch is pixel-identical to main; the extras round-trip test
 covers the sparse save.
 
+## Living trees (M5-LIVING-trees)
+
+`crates/tr-core/src/worldgen/living_trees.rs` ports the "Living Trees"
+generation pass (`WorldGen.cs:15476-15715`) and `GrowLivingTree`
+(`WorldGen.cs:27973-28627`): the anchor/patch placement (outside the spawn
+plateau, `Next(4)` patches per side stepping `Next(13, 31)`), the tapering
+trunk (`Next(2, 3)` per side, 1/5 single-side widen, patch narrowing, the
+`Next(5, 15)` branch cadence and the `1/2` taper until the edges meet), the
+side branches (`width * (1 + Next(20, 30) * 0.1)` long with the 2-tile
+thickenings as leaf centres), the upper trunk (`Next(width*3, width*5)` rows,
+branches `Next(width, width*3)` flagged for round canopies), the roots
+(`Next(1, 6)` down-rows then `Next(2, width+1)` diagonal arms of
+`Next(width*3.5, width*6)`), the elliptical/round canopy blobs
+(`Next(5, 8) * (1 + width*0.05)`, round `Next(6, 12) + width`, the vertical
+squash `2.0 - Next(5)*0.1`) with `GrowLivingTree_CanPlaceLeaves`
+(`WorldGen.cs:28607-28627`), and the hollow passage (`MakePassage`,
+`WorldGen.cs:28865-29133`: 3-wide air, wall 244 lining, the drift every 6 rows,
+the shell, the patch tunnels).
+
+- Ground/anchor gates: the ground must be dirt/grass/stone or ore
+  (`WorldGen.cs:28004-28010` — sand is excluded, so beaches reject), the
+  anchor cell must be inactive, `j >= 150`, and — replacing the vanilla's
+  `j >= worldSurface → continue` scan gate (`WorldGen.cs:15549`), which does
+  not translate to this port's terrain-vs-`world_surface` offset — the anchor
+  cell and its ground must be free of liquid.
+- Living wood/leaf rendering is plain-tile: `Tiles_191`'s transparent gaps +
+  `tile_hides_wall`'s opacity check let wall 244 show through the bark (the
+  `TileID.Sets.DrawsWalls[191]` effect), and the hollow is real geometry (air
+  + wall 244). No special draw path exists in the vanilla either
+  (`TileDrawing` has no 191/192 case).
+- Framing: the generic merge dispatch gains the `WorldGen.cs:82070-82082`
+  pairs — 192's Frametest merge against 191 (the port merges unconditionally;
+  the vanilla re-frames the wood neighbour and reads `mergeDown/Up/...`, which
+  needs the generic -2 openness tables — documented) and 191's
+  `TileMergeAttempt(-2, 192)` leaf marker + the dirt fold.
+- Leaves (192) are walk-through: `WorldGen.cs:15715` sets
+  `tileSolid[192] = false` after the pass; the port adds the `kind != 192`
+  exception to the collision helpers, the wall-hide check and the column-
+  surface scans (the leaves never cut the sun), while
+  `TILE_BLOCK_LIGHT[192]` stays true (the canopies self-shadow, matching the
+  vanilla dark interiors).
+- Not ported: the hollow room's furniture (door style 7, chair style 5, the
+  Living Loom, the buried Living Wood Chest — `TileObjectData`, M1.4-TO), the
+  leaf-pile decorations (tiles 187/185 with `PlaceTile` frame tables), the
+  passage floor platforms (tile 19 style 23), the horizontal-tunnel doors, the
+  secret-seed/remix variants and `PaintTheLivingTrees`.
+- Determinism: the pass draws from the worldgen xorshift in the vanilla draw
+  order; the unit test `living_trees_generate_for_seed` asserts the 191/192/
+  wall-244 counts for seed 1.
+
 ## Rain and weather
 
 `rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
