@@ -22,6 +22,7 @@ here are transcribed from those audits — re-verify against the source when por
   starting. In-flight rows name the live branch.
 
 ## Legend
+<<<<<<< HEAD
 
 - ✅ done · 🟡 partial (missing items listed) · ⬜ not started · 🔄 in flight (branch exists).
 - **Scale** = measured size in the decompile (lines / ID counts).
@@ -1358,3 +1359,6 @@ section in brackets before starting a row.
 - Exact network compatibility *until* M6-NET — single-player first.
 - RGB peripheral lighting (`GameContent/RGB/*`) — platform-specific, excluded like
   `Social/*`.
+=======
+>>>>>>> origin/main
+>>>>>>> origin/main

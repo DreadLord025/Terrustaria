@@ -17,6 +17,7 @@ pub mod loot;
 pub mod map;
 pub mod mapdata;
 pub mod save;
+pub mod scene;
 pub mod sky;
 pub mod tile;
 pub mod tile_light;

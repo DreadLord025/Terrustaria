@@ -383,6 +383,28 @@ fn remap(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> 
     to_min + (to_max - to_min) * t
 }
 
+/// The WaterDistortion mask input (M1.4-BG-18 phase 4): one world-pixel rect per
+/// visible liquid record, exactly the extent [`draw_liquids`]/[`draw_shimmer`]
+/// emit (`tile * 16 + offset`, `src_w x src_h`). Vanilla renders the same liquid
+/// layer into `Main.waterTarget` (`Main.cs:56723-56734`) and the distortion pass
+/// reads its coverage; every liquid type counts (`RenderWater` draws water, lava,
+/// honey and shimmer into the one target). `tr-render`'s `WaterMask` rasterises
+/// the rects.
+pub(crate) fn water_mask_rects(draws: &[tr_core::liquid_draw::LiquidDraw]) -> Vec<[f32; 4]> {
+    draws
+        .iter()
+        .filter(|d| d.visible && d.src_w > 0 && d.src_h > 0)
+        .map(|d| {
+            [
+                d.x as f32 * TILE_PX + d.offset_x,
+                d.y as f32 * TILE_PX + d.offset_y,
+                d.src_w as f32,
+                d.src_h as f32,
+            ]
+        })
+        .collect()
+}
+
 /// `TileDrawing.DrawTile_LiquidBehindTile`: a block that stands in liquid gets the
 /// liquid drawn *behind* it, so the transparent parts of edge and slope frames show
 /// water instead of the parallax background.
@@ -603,4 +625,93 @@ pub(crate) fn draw_tile_liquid_behind(
         }
     }
     quads
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::liquid_draw::LiquidDraw;
+
+    fn record(x: i32, y: i32, w: i32, h: i32, visible: bool) -> LiquidDraw {
+        LiquidDraw {
+            x,
+            y,
+            src_x: 0,
+            src_y: 0,
+            src_w: w,
+            src_h: h,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            is_surface: false,
+            opacity: 1.0,
+            liquid_type: 0,
+            has_wall: false,
+            visible,
+        }
+    }
+
+    /// DW-4.2: the mask input is the visible liquid extent, in world pixels,
+    /// for several separate regions at once; invisible/empty records and
+    /// the per-record offset (a partial-height surface cell) are handled.
+    #[test]
+    fn test_DW_4_2_water_mask_rects_follow_the_liquid_records() {
+        let mut surface = record(3, 4, 16, 10, true);
+        surface.offset_y = 6.0; // a shallow surface cell sits low in its tile
+        let draws = [
+            record(1, 2, 16, 16, true),
+            record(9, 9, 16, 16, false),  // not visible: no water drawn
+            record(5, 5, 0, 16, true),    // zero-width source: nothing drawn
+            surface,
+            record(40, 41, 12, 16, true), // second region, narrow cell
+        ];
+        let rects = water_mask_rects(&draws);
+        assert_eq!(
+            rects,
+            vec![
+                [16.0, 32.0, 16.0, 16.0],
+                [48.0, 70.0, 16.0, 10.0],
+                [640.0, 656.0, 12.0, 16.0],
+            ]
+        );
+        assert!(water_mask_rects(&[]).is_empty(), "no water -> no rects");
+    }
+
+    /// End to end with the real record builder: a pool of liquid cells yields
+    /// rects that stay inside the pool's pixel bounds and cover its area, and
+    /// every liquid kind counts (lava, honey, shimmer share `Main.waterTarget`).
+    #[test]
+    fn test_DW_4_2_water_mask_rects_cover_a_built_pool() {
+        let mut world = World::new("mask-pool".into(), 40, 40);
+        for (x, y) in [(10, 10), (11, 10), (12, 10), (10, 11), (11, 11), (12, 11)] {
+            world.tile_mut(x, y).unwrap().liquid = 255;
+        }
+        // A stone floor and walls keep the pool from pouring out as a
+        // waterfall stream (open air under a liquid cell draws one, which is
+        // part of the mask too).
+        for (x, y) in [(10, 12), (11, 12), (12, 12), (9, 10), (9, 11), (13, 10), (13, 11)] {
+            let t = world.tile_mut(x, y).unwrap();
+            t.kind = 1;
+            t.flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let draws = tr_core::liquid_draw::build(&world, 0, 0, 39, 39);
+        let rects = water_mask_rects(&draws);
+        assert!(!rects.is_empty(), "a pool must produce mask rects");
+        let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+        let mut area = 0.0;
+        for r in &rects {
+            x0 = x0.min(r[0]);
+            y0 = y0.min(r[1]);
+            x1 = x1.max(r[0] + r[2]);
+            y1 = y1.max(r[1] + r[3]);
+            area += r[2] * r[3];
+        }
+        // The pool is 3x2 tiles at (10,10): 160..208 x 160..192 px.
+        assert!(x0 >= 160.0 - 16.0 && x1 <= 208.0 + 16.0, "x extent {x0}..{x1}");
+        assert!(y0 >= 160.0 - 16.0 && y1 <= 192.0 + 16.0, "y extent {y0}..{y1}");
+        assert!(area >= 3.0 * 2.0 * 16.0 * 16.0 * 0.5, "covers most of the pool: {area}");
+        // No liquid anywhere else -> no rects from an empty world.
+        let empty = World::new("mask-dry".into(), 40, 40);
+        let dry = tr_core::liquid_draw::build(&empty, 0, 0, 39, 39);
+        assert!(water_mask_rects(&dry).is_empty());
+    }
 }

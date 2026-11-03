@@ -977,7 +977,7 @@ impl App {
 }
 
 #[cfg(test)]
-mod front_flow_tests {
+pub(crate) mod front_flow_tests {
     use super::*;
     use crate::*;
 
@@ -1267,7 +1267,7 @@ mod front_flow_tests {
     /// does not read stays at its cheap default. `screen_size()` falls back
     /// to the deterministic 1280x720, so the tests aim the pointer through
     /// the same layout the click handler builds.
-    fn flow_app(
+    pub(crate) fn flow_app(
         front: Option<FrontScreen>,
         players: Vec<ui::save_list::PlayerEntry>,
         worlds: Vec<ui::save_list::WorldEntry>,
@@ -1278,6 +1278,12 @@ mod front_flow_tests {
             window: None,
             gpu: None,
             renderer: None,
+            post: None,
+            noise_tex: None,
+            water_mask: None,
+            scene_state: tr_core::scene::SceneState::new(),
+            sandstorm: tr_core::scene::Sandstorm::new(1),
+            filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
             world,
             lookups: assets::Lookups::default(),

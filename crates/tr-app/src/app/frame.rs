@@ -10,6 +10,7 @@ use std::time::Instant;
 use glam::Vec2;
 use tr_core::lighting::{LightParams, LightStyle};
 use tr_core::TILE_PX;
+use wgpu::util::DeviceExt;
 
 use crate::app::flow::{FrontDraw, FrontScreenBehaviours};
 use crate::app::{no_hud, App, WorldFrameKey};
@@ -155,6 +156,11 @@ impl App {
             self.update_liquids(dt);
             self.update_waterfalls(dt, screen);
             self.update_rain(dt, screen);
+            // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
+            // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
+            // `ApplyVisuals` driver; the post branch consumes
+            // `filter_driver.output`.
+            crate::world_sim::scene_scan::update_scene(self, dt, screen);
             self.update_items(dt);
             self.update_projectiles(dt);
             self.update_editing(dt, screen);
@@ -207,6 +213,10 @@ impl App {
             let App {
                 gpu,
                 renderer,
+                post,
+                noise_tex,
+                water_mask,
+                filter_driver,
                 world,
                 atlas,
                 lookups,
@@ -852,19 +862,81 @@ impl App {
                     .create_view(&wgpu::TextureViewDescriptor::default());
 
                 renderer.aberration = style.aberration_px;
-                stats = renderer.render(
-                    gpu,
-                    &view,
-                    draw_cam.to_array(),
-                    *zoom,
-                    now.elapsed().as_secs_f32(),
-                    wgpu::Color {
-                        r: 0.045,
-                        g: 0.055,
-                        b: 0.085,
-                        a: 1.0,
-                    },
-                );
+                // M1.4-BG-18 phase 3 (`TR_POST=1`): the scene renders into the
+                // offscreen post target, then the `ApplyVisuals` driver's
+                // winner uniform (`filter_driver.output`, computed in
+                // `update_scene`) selects the filter pass. `None` = no filter
+                // — the NEUTRAL/passthrough pair is the pixel-identity pass
+                // (DW-2.1).
+                if let Some(post) = post.as_mut() {
+                    let scene = post.scene_view(gpu);
+                    stats = renderer.render(
+                        gpu,
+                        scene,
+                        draw_cam.to_array(),
+                        *zoom,
+                        now.elapsed().as_secs_f32(),
+                        wgpu::Color {
+                            r: 0.045,
+                            g: 0.055,
+                            b: 0.085,
+                            a: 1.0,
+                        },
+                    );
+                    let noise = noise_tex.as_ref();
+                    // Phase 4: the water mask exists only while the
+                    // WaterDistortion filter is visible AND the liquid pass
+                    // drew water this frame (plan: "the second target only
+                    // while WaterDistortion is active"; with no water the pass
+                    // is the identity, so it and the target are skipped).
+                    let water_in_view =
+                        filter_driver.water_wanted() && !scratch.water_rects.is_empty();
+                    if let Some(mask) = water_mask.as_mut() {
+                        if water_in_view {
+                            mask.render(
+                                &gpu.device,
+                                &gpu.queue,
+                                (gpu.config.width, gpu.config.height),
+                                draw_cam.to_array(),
+                                *zoom,
+                                &scratch.water_rects,
+                            );
+                        } else {
+                            mask.release();
+                        }
+                    }
+                    let mut chain = filter_driver.chain(water_in_view);
+                    if chain.is_empty() {
+                        // No filter: the NEUTRAL passthrough (DW-2.1 identity).
+                        chain.push(tr_render::FilterPass {
+                            params: tr_render::FilterParams::NEUTRAL,
+                            pass: tr_render::PassId::PASSTHROUGH,
+                        });
+                    }
+                    post.apply_filters(
+                        gpu,
+                        &view,
+                        &chain,
+                        tr_render::FilterImages {
+                            noise,
+                            water_mask: water_mask.as_ref().and_then(|m| m.texture()),
+                        },
+                    );
+                } else {
+                    stats = renderer.render(
+                        gpu,
+                        &view,
+                        draw_cam.to_array(),
+                        *zoom,
+                        now.elapsed().as_secs_f32(),
+                        wgpu::Color {
+                            r: 0.045,
+                            g: 0.055,
+                            b: 0.085,
+                            a: 1.0,
+                        },
+                    );
+                }
                 if let Some(path) = shot_path.as_ref() {
                     if *frame_count >= *shot_at {
                         log::info!(
@@ -932,6 +1004,35 @@ impl App {
         self.bench_frames = None;
         std::process::exit(0);
     }
+}
+
+/// M1.4-BG-18 phase 2 harness: uploads `Images/Misc/noise` — the noise image every
+/// M1 screen filter binds (`ScreenEffectInitializer.cs:30-40`) — for the post pass
+/// bindings. Missing content returns None and `PostPipeline::apply_filter` binds
+/// its checkerboard fallback instead (plan edge case).
+pub(crate) fn load_noise_texture(gpu: &tr_render::Gpu) -> Option<wgpu::Texture> {
+    let path = crate::assets::content_dir()?.join("Images/Misc/noise.xnb");
+    let img = tr_content::load_texture(&path).ok()?;
+    let tex = gpu.device.create_texture_with_data(
+        &gpu.queue,
+        &wgpu::TextureDescriptor {
+            label: Some("post-noise"),
+            size: wgpu::Extent3d {
+                width: img.width,
+                height: img.height,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        },
+        wgpu::util::TextureDataOrder::LayerMajor,
+        &img.pixels,
+    );
+    Some(tex)
 }
 
 pub(crate) fn next_rand(state: &mut u64) -> u64 {
