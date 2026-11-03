@@ -1280,7 +1280,7 @@ section in brackets before starting a row.
 | M5-DESERT-structures | `M5-DESERT-structures` | desert + underground desert |
 | M5-DUNGEON | `M5-DUNGEON` | dungeon crawler |
 | M5-TEMPLE | `M5-TEMPLE` | jungle temple |
-| 🔄 M5-LIVING-trees | `M5-LIVING-trees` | living trees (branch claimed) |
+| ✅ M5-LIVING-trees | `M5-LIVING-trees` | living trees | ✅ done 2026-11-03 (the generation pass, the hollow passage + wall 244, the 191/192 framing merge, walk-through leaves; the room furniture needs M1.4-TO; deviations in `ANALYSIS.md`) |
 | M5-STRUCT-1..5 | `M5-STRUCT-1-shrines-cabins` … | structures [6] |
 | M5-ORES-1 | `M5-ORES-1-tilerunner` | ore fidelity + alt tiers [6] |
 | M5-HARDFORCE | `M5-HARDFORCE` | initializeHardMode + altars [6] |
