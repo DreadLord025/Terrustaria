@@ -23,6 +23,7 @@ use crate::player::{self, Player};
 /// `raining` is `Main.raining` (our `Rain::is_raining()`), `sandstorm_happening`
 /// is `Sandstorm::happening` — both are game-state inputs the zone derivation
 /// reads (`SceneMetrics.cs:701,703`).
+#[cfg(test)]
 pub(crate) fn scan_scene(
     world: &World,
     player: &Player,
@@ -38,7 +39,7 @@ pub(crate) fn scan_scene(
     scan_scene_at(world, center, raining, sandstorm_happening)
 }
 
-/// The injectable center variant of [`scan_scene`]: the headless TR_NOPLAYER
+/// The injectable center variant of `scan_scene`: the headless TR_NOPLAYER
 /// shots stand in the camera centre for the absent player (vanilla has no
 /// such path — a test hook, not a behaviour).
 pub(crate) fn scan_scene_at(
@@ -168,6 +169,7 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         scene_state,
         sandstorm,
         filter_driver,
+        settings,
         ..
     } = app;
     // The TR_ pins re-read per frame (idempotent; the parse glue of phase 1).
@@ -218,6 +220,8 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         bg_delay: *bg_delay,
         global_time: *anim_time % 3600.0,
     };
+    // The graphics gates follow the live menu toggles (`TR_*` pins override).
+    filter_driver.sync_settings(settings);
     filter_driver.apply_visuals(&metrics, scene_state, &inputs);
 }
 
@@ -226,6 +230,8 @@ mod tests {
     use super::*;
     use tr_core::scene::{Sandstorm, SceneState, thresholds};
     use tr_core::tile::FLAG_ACTIVE;
+
+    use crate::app::flow::front_flow_tests::flow_app;
 
     /// A small test world with vanilla-shaped surface lines.
     fn fixture_world() -> World {
@@ -462,5 +468,77 @@ mod tests {
         assert_eq!(thresholds::GRAVEYARD_TILE, 28);
         // `SceneMetrics.cs:917-919`.
         assert_eq!(ZONE_SCAN_SIZE, (169, 124));
+    }
+
+    /// A headless App on a 1000x400 world with the camera (the TR_NOPLAYER
+    /// scan center) on tile (300, 50) and 400 tombstones in the window.
+    fn graveyard_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture_world();
+        fill(&mut app.world, 260, 30, 280, 50, 85); // 400 tombstones
+        app.camera = Vec2::new(300.0 * 16.0, 50.0 * 16.0);
+        app
+    }
+
+    const SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    #[test]
+    fn update_scene_scans_updates_state_and_drives_the_filter() {
+        let mut app = graveyard_app();
+        assert!(app.scene_state.skip_transitions, "fresh state = load frame");
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        // Scan -> SceneState::update: the tombstones drove the graveyard
+        // intensity to its target and the skip flag flipped (`:62`).
+        assert_eq!(app.scene_state.graveyard_visual_intensity, 1.0);
+        assert!(!app.scene_state.skip_transitions);
+        // -> driver: the graveyard filter won, centred on the scan centre.
+        let out = app.filter_driver.output.expect("graveyard filter runs");
+        assert_eq!(out.pass_index, tr_render::PassId::GRAVEYARD.0);
+        assert_eq!(out.target_pos, [4800.0, 800.0], "metrics.center = camera");
+        assert_eq!(out.screen_resolution, [1280.0, 720.0]);
+    }
+
+    #[test]
+    fn update_scene_hands_the_pre_update_skip_flag_to_the_driver() {
+        // The load frame snaps the fade (skip is read BEFORE `update` flips
+        // it): opacity is already 1. A later activation fades in from 0.
+        let mut app = graveyard_app();
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        assert_eq!(app.filter_driver.output.unwrap().opacity, 1.0, "snap");
+
+        let mut app = graveyard_app();
+        app.scene_state.skip_transitions = false; // not the load frame
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        let fading = app.filter_driver.output.map_or(0.0, |p| p.opacity);
+        assert!(fading < 1.0, "no snap without skipTransitions: {fading}");
+    }
+
+    #[test]
+    fn update_scene_without_conditions_runs_no_tint_filter() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = fixture_world();
+        app.camera = Vec2::new(300.0 * 16.0, 50.0 * 16.0);
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        assert!(app.filter_driver.output.is_none());
+        assert!(!app.scene_state.skip_transitions);
+    }
+
+    #[test]
+    fn update_scene_feeds_the_driver_gates_from_settings() {
+        let mut app = graveyard_app();
+        app.settings.use_storm_effects = false;
+        app.settings.use_heat_distortion = false;
+        app.settings.wave_quality = 0;
+        update_scene(&mut app, 1.0 / 60.0, SCREEN);
+        // (A TR_* pin set in the test environment would override; unset here.)
+        if std::env::var_os("TR_STORM").is_none() {
+            assert!(!app.filter_driver.use_storm_effects);
+        }
+        if std::env::var_os("TR_HEAT").is_none() {
+            assert!(!app.filter_driver.use_heat_distortion);
+        }
+        if std::env::var_os("TR_WAVES").is_none() {
+            assert_eq!(app.filter_driver.wave_quality, 0);
+        }
     }
 }

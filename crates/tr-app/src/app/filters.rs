@@ -25,16 +25,56 @@ use tr_render::{FilterParams, FilterPass, PassId};
 const DEFAULT_WAVE_QUALITY: i32 = 3;
 
 /// `TR_WAVES=<0..3>`: pins `Main.WaveQuality` (clamped to its load range,
-/// `Main.cs:4439-4446`); unset/garbage keeps the retail default 3.
-fn parse_wave_quality(raw: Option<&str>) -> i32 {
+/// `Main.cs:4439-4446`); unset/garbage is no pin.
+fn pin_wave_quality(raw: Option<&str>) -> Option<i32> {
     raw.and_then(|v| v.trim().parse::<i32>().ok())
-        .map_or(DEFAULT_WAVE_QUALITY, |q| q.clamp(0, 3))
+        .map(|q| q.clamp(0, 3))
 }
 
-/// `TR_HEAT=0|1`: pins `Main.UseHeatDistortion` (default true,
-/// `Main.cs:66573`); only an explicit `0` turns it off.
+/// [`pin_wave_quality`] resolved against the retail default 3.
+fn parse_wave_quality(raw: Option<&str>) -> i32 {
+    pin_wave_quality(raw).unwrap_or(DEFAULT_WAVE_QUALITY)
+}
+
+/// `TR_HEAT=0|1`: pins `Main.UseHeatDistortion`; only an explicit `0` turns
+/// it off, any other value pins it on, unset is no pin.
+fn pin_use_heat(raw: Option<&str>) -> Option<bool> {
+    raw.map(|v| v.trim() != "0")
+}
+
+/// [`pin_use_heat`] resolved against the retail default true (`Main.cs:66573`).
 fn parse_use_heat(raw: Option<&str>) -> bool {
-    raw.map_or(true, |v| v.trim() != "0")
+    pin_use_heat(raw).unwrap_or(true)
+}
+
+/// `TR_STORM`: pins `Main.UseStormEffects`; `0` pins it off, any other value
+/// (including empty) pins it on, unset is no pin.
+fn pin_use_storm(raw: Option<&str>) -> Option<bool> {
+    raw.map(|v| v.trim() != "0")
+}
+
+/// The deterministic `TR_STORM` / `TR_WAVES` / `TR_HEAT` overrides for
+/// screenshots: a set pin beats the live `Settings` value.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct EnvPins {
+    storm: Option<bool>,
+    waves: Option<i32>,
+    heat: Option<bool>,
+}
+
+impl EnvPins {
+    pub(crate) fn from_env() -> Self {
+        Self::from_lookup(|var| std::env::var(var).ok())
+    }
+
+    /// The injectable body of [`EnvPins::from_env`].
+    pub(crate) fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> Self {
+        Self {
+            storm: pin_use_storm(lookup("TR_STORM").as_deref()),
+            waves: pin_wave_quality(lookup("TR_WAVES").as_deref()),
+            heat: pin_use_heat(lookup("TR_HEAT").as_deref()),
+        }
+    }
 }
 
 /// `Player.sunScorchCounter` — set by the sun-scorch debuff, which has no M1
@@ -94,18 +134,21 @@ pub(crate) struct FilterDriver {
     sandstorm_fx: tr_core::scene::StormShader,
     /// `BlizzardShaderData` state (smoothed wind + scroll).
     blizzard_fx: tr_core::scene::StormShader,
-    /// `Main.UseStormEffects` (`Main.cs:429`): the graphics toggle the
-    /// Sandstorm/Blizzard gates read (`SceneState.cs:96-97`). Retail default
-    /// is **false** — the filters show only with the option enabled;
-    /// `TR_STORM=1` pins it for deterministic shots.
+    /// `Main.UseStormEffects`: the graphics toggle the Sandstorm/Blizzard
+    /// gates read (`SceneState.cs:96-97`). Retail default is **true** — the
+    /// static constructor overrides the `:429` field initializer
+    /// (`Main.cs:66572`). Fed from `Settings` each frame by
+    /// [`FilterDriver::sync_settings`]; `TR_STORM` pins it.
     pub(crate) use_storm_effects: bool,
-    /// `Main.WaveQuality` (`Main.cs:427`, default 3): `> 0` activates
-    /// WaterDistortion (`SceneState.cs:105`). `TR_WAVES=<0..3>` pins it (no
-    /// settings UI yet).
+    /// `Main.WaveQuality` (default 3, `Main.cs:66571`): `> 0` activates
+    /// WaterDistortion (`SceneState.cs:105`). Fed from `Settings`;
+    /// `TR_WAVES=<0..3>` pins it.
     pub(crate) wave_quality: i32,
-    /// `Main.UseHeatDistortion` (`Main.cs:431`, default true); `TR_HEAT=0`
-    /// turns it off.
+    /// `Main.UseHeatDistortion` (default true, `Main.cs:66573`). Fed from
+    /// `Settings`; `TR_HEAT=0|1` pins it.
     pub(crate) use_heat_distortion: bool,
+    /// The `TR_*` overrides, re-applied over every settings sync.
+    pins: EnvPins,
     /// `WaterShaderData` state: the progress clock + last `UseIntensity`.
     water_fx: WaterShader,
     /// `Filters.Scene["HeatDistortion"].GetShader().Intensity` — the
@@ -124,24 +167,42 @@ pub(crate) struct FilterDriver {
 }
 
 impl FilterDriver {
-    /// A fresh driver. `TR_STORM=1` pins `use_storm_effects` for screenshots
-    /// (the vanilla graphics toggle lives in the settings UI this build
-    /// does not have yet).
+    /// A fresh driver: the gates start at the `Settings` defaults (the
+    /// `Main.cs:66571-66573` values) under the process's `TR_*` pins.
     pub(crate) fn new() -> Self {
-        Self {
+        Self::with_pins(EnvPins::from_env())
+    }
+
+    /// [`FilterDriver::new`] with explicit pins (the testable constructor).
+    pub(crate) fn with_pins(pins: EnvPins) -> Self {
+        let mut driver = Self {
             board: FilterBoard::new(),
             sandstorm_fx: tr_core::scene::StormShader::new(),
             blizzard_fx: tr_core::scene::StormShader::new(),
-            use_storm_effects: std::env::var_os("TR_STORM").is_some(),
-            wave_quality: parse_wave_quality(std::env::var("TR_WAVES").ok().as_deref()),
-            use_heat_distortion: parse_use_heat(std::env::var("TR_HEAT").ok().as_deref()),
+            use_storm_effects: true,
+            wave_quality: DEFAULT_WAVE_QUALITY,
+            use_heat_distortion: true,
+            pins,
             water_fx: WaterShader::new(),
             heat_intensity: 4.0,
             output: None,
             winner: None,
             heat: None,
             water: None,
-        }
+        };
+        driver.sync_settings(&crate::settings::Settings::default());
+        driver
+    }
+
+    /// Feeds the three graphics gates from `Settings` (so the menu toggles take
+    /// effect live); a set `TR_*` pin overrides its setting.
+    pub(crate) fn sync_settings(&mut self, settings: &crate::settings::Settings) {
+        self.use_storm_effects = self.pins.storm.unwrap_or(settings.use_storm_effects);
+        self.use_heat_distortion = self.pins.heat.unwrap_or(settings.use_heat_distortion);
+        self.wave_quality = self
+            .pins
+            .waves
+            .unwrap_or(i32::from(settings.wave_quality).clamp(0, 3));
     }
 
     /// The pass chain for this frame, in vanilla stack order
@@ -623,7 +684,7 @@ mod tests {
             "initializer intensity"
         );
 
-        // Without the graphics toggle (retail default) nothing activates.
+        // With the graphics toggle off nothing activates.
         let mut driver = FilterDriver::new();
         driver.use_storm_effects = false;
         state.outside_weather_effect_intensity = 1.0;
@@ -914,6 +975,80 @@ mod tests {
         let order: Vec<u32> = driver.chain(true).iter().map(|p| p.pass.0).collect();
         assert_eq!(*order.last().unwrap(), 9, "water is last");
         assert!(order.contains(&PassId::SANDSTORM_FOREGROUND.0));
+    }
+
+    fn pins(vars: &[(&str, &str)]) -> EnvPins {
+        EnvPins::from_lookup(|var| {
+            vars.iter()
+                .find(|(k, _)| *k == var)
+                .map(|(_, v)| v.to_string())
+        })
+    }
+
+    #[test]
+    fn test_settings_defaults_feed_the_driver_gates() {
+        // `Main.cs:66571-66573`: storm effects on, heat on, WaveQuality 3.
+        let driver = FilterDriver::with_pins(EnvPins::default());
+        assert!(driver.use_storm_effects, "UseStormEffects = true");
+        assert!(driver.use_heat_distortion, "UseHeatDistortion = true");
+        assert_eq!(driver.wave_quality, 3, "WaveQuality = 3");
+    }
+
+    #[test]
+    fn test_settings_toggle_flips_the_gate_live() {
+        let mut driver = FilterDriver::with_pins(EnvPins::default());
+        let mut settings = crate::settings::Settings::default();
+        settings.use_storm_effects = false;
+        settings.use_heat_distortion = false;
+        settings.wave_quality = 1;
+        driver.sync_settings(&settings);
+        assert!(!driver.use_storm_effects);
+        assert!(!driver.use_heat_distortion);
+        assert_eq!(driver.wave_quality, 1);
+
+        // The Sandstorm gate actually follows: storm zone + toggle off = none.
+        let mut metrics = SceneMetrics::new();
+        metrics.zone_desert = true;
+        metrics.zone_sandstorm = true;
+        metrics.surface_atmospherics = true;
+        let mut state = SceneState::new();
+        let mut storm = Sandstorm::new(1);
+        storm.force_severity(0.8);
+        let mut inputs = inputs_with(&storm);
+        inputs.bg_style = 2;
+        inputs.skip_transitions = true;
+        assert!(driver.apply_visuals(&metrics, &mut state, &inputs).is_none());
+        settings.use_storm_effects = true;
+        driver.sync_settings(&settings);
+        assert!(driver.use_storm_effects, "toggling back re-enables");
+        assert!(driver.apply_visuals(&metrics, &mut state, &inputs).is_some());
+    }
+
+    #[test]
+    fn test_env_pins_override_settings() {
+        let mut settings = crate::settings::Settings::default();
+        settings.use_storm_effects = false;
+        settings.use_heat_distortion = true;
+        settings.wave_quality = 3;
+        let mut driver = FilterDriver::with_pins(pins(&[
+            ("TR_STORM", "1"),
+            ("TR_HEAT", "0"),
+            ("TR_WAVES", "1"),
+        ]));
+        driver.sync_settings(&settings);
+        assert!(driver.use_storm_effects, "TR_STORM pins on over the setting");
+        assert!(!driver.use_heat_distortion, "TR_HEAT=0 pins off");
+        assert_eq!(driver.wave_quality, 1, "TR_WAVES pins the quality");
+        // The pin survives every later sync.
+        settings.wave_quality = 2;
+        driver.sync_settings(&settings);
+        assert_eq!(driver.wave_quality, 1);
+        // TR_STORM=0 pins off over an enabled setting; garbage pins nothing.
+        let mut driver = FilterDriver::with_pins(pins(&[("TR_STORM", "0"), ("TR_WAVES", "x")]));
+        settings.use_storm_effects = true;
+        driver.sync_settings(&settings);
+        assert!(!driver.use_storm_effects);
+        assert_eq!(driver.wave_quality, 2, "garbage TR_WAVES falls to settings");
     }
 
     #[test]
