@@ -59,6 +59,22 @@ pub struct World {
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
+    /// `Main.eclipse` — runtime event flag; no M1 event sets it (readers:
+    /// `AmbienceServer.cs:34`, `:66`). Runtime-only, not saved.
+    pub eclipse: bool,
+    /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
+    pub blood_moon: bool,
+    /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
+    pub pumpkin_moon: bool,
+    /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
+    pub snow_moon: bool,
+    /// `Main.hardMode` (`AmbienceServer.cs:61`). Runtime-only, not saved.
+    pub hard_mode: bool,
+    /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
+    /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
+    /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
+    /// and lands with M4 spawns, so the port keeps the reset value.
+    pub butterfly_chance: i32,
 }
 
 impl World {
@@ -85,6 +101,12 @@ impl World {
             seed: 0,
             revision: 0,
             extras: std::collections::HashMap::new(),
+            eclipse: false,
+            blood_moon: false,
+            pumpkin_moon: false,
+            snow_moon: false,
+            hard_mode: false,
+            butterfly_chance: 0,
         }
     }
 
@@ -303,5 +325,24 @@ impl World {
 
     pub fn memory_bytes(&self) -> usize {
         self.tiles.len() * std::mem::size_of::<Tile>()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_flags_default_false_and_stay_out_of_the_save() {
+        // `Main.eclipse/bloodMoon/pumpkinMoon/snowMoon/hardMode` start false
+        // (`AmbienceServer.cs` reads them at :34-:76); no M1 event sets them.
+        // `NPC.butterflyChance` resets to 0 (`NPC.cs:95172`).
+        let w = World::new("t".into(), 100, 100);
+        assert!(!w.eclipse);
+        assert!(!w.blood_moon);
+        assert!(!w.pumpkin_moon);
+        assert!(!w.snow_moon);
+        assert!(!w.hard_mode);
+        assert_eq!(w.butterfly_chance, 0);
     }
 }

@@ -277,6 +277,11 @@ pub(crate) struct App {
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
+    /// `Main.atmo` (`Main.cs:2503`): the atmosphere density
+    /// `UpdateAtmosphereTransparencyToSkyColor` derives per draw
+    /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
+    /// multiply their colour by it (`AmbientSky.cs:63`).
+    pub(crate) atmo: f32,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
@@ -926,6 +931,8 @@ impl App {
         wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
+        // `Main.atmo` starts at its surface value; recomputed per draw below.
+        let atmo = 1.0_f32;
 
         // Character name and the session menu (`M6`): screenshots and debug hooks skip
         // the menu so the deterministic output stays unchanged.
@@ -1175,6 +1182,7 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
             wind,
+            atmo,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             leaves: Vec::new(),

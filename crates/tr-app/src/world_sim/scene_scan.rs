@@ -68,7 +68,17 @@ pub(crate) fn scan_scene_at(
         .tile(tile_center.0, tile_center.1)
         .is_some_and(|t| t.wall > 0);
     metrics.aggregate_tile_counts();
-    metrics.calculate_zones(world.world_surface, raining, sandstorm_happening);
+    // `CalculateZones`' `ZoneUnderworldHeight`/`ZoneBeach` terms
+    // (`SceneMetrics.cs:674,691`): `Main.UnderworldLayer` is `maxTilesY - 200`
+    // (`Main.cs:2790`, `spawner::UNDERWORLD_LAYER`).
+    metrics.calculate_zones(
+        world.world_surface,
+        world.height - 200,
+        world.rock_layer,
+        world.width,
+        raining,
+        sandstorm_happening,
+    );
     metrics
 }
 

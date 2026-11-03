@@ -532,6 +532,17 @@ impl App {
                 }
                 // The parallax sky follows the camera continuously; it lives in the
                 // always-rebuilt back range so the world range can stay cached.
+                // `Main.UpdateAtmosphereTransparencyToSkyColor` runs per draw with
+                // `screenPosition.Y + screenHeight / 2` (`Main.cs:61983`) — the
+                // backbuffer-mapped view's top edge plus half the backbuffer. The
+                // port's `draw_cam` is that view's centre and it spans
+                // `screen / zoom` world pixels, so the equivalent input is
+                // `cam.y - screen.y / (2 * zoom) + screen.y / 2`.
+                self.atmo = tr_core::sky::atmosphere_transparency(
+                    draw_cam.y - screen.y / (2.0 * *zoom) + screen.y / 2.0,
+                    world.world_surface,
+                    world.width,
+                );
                 draw_sky(
                     renderer,
                     draw_cam,
