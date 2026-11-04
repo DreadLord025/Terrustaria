@@ -66,9 +66,12 @@ pub fn sky_bg_top_y(view_top: f32, world_surface: f64) -> i32 {
 /// dedicated-server override (`:63196-63199`, force 1) has no in-world caller
 /// in the port and is not reproduced.
 pub fn atmosphere_transparency(y: f32, world_surface: f64, max_tiles_x: i32) -> f32 {
-    // `num = Main.maxTilesX / 4200f` (`:63187`).
+    // `num = Main.maxTilesX / 4200f` (`:63187`); the numerator computes in
+    // f32, the division by `worldSurface / 5.0` in f64 (`:63188`), and the
+    // result casts back to f32 before the clamps.
     let num = max_tiles_x as f32 / 4200.0;
-    let atmo = (y / 16.0 - (65.0 + 10.0 * num * num)) / (world_surface as f32 / 5.0);
+    let numer = y / 16.0 - (65.0 + 10.0 * num * num);
+    let atmo = (numer as f64 / (world_surface / 5.0)) as f32;
     atmo.clamp(0.0, 1.0)
 }
 

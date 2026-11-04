@@ -423,12 +423,17 @@ impl SkyEntity {
             }
             // `:740-743` slime balloons — the wind gate too.
             SkyKind::SlimeBalloons => !ctx.happy_windy_day || rain || !day || eclipse,
-            // `:838-840`/`:947-953` hellbats/bats — raining or day aborts them.
-            SkyKind::HellBat | SkyKind::Bats => rain || !day,
+            // `:947-953` bats — raining or day aborts them. The hellbat's
+            // `Update` is `base.Update` only (`:836-838`): no abort.
+            SkyKind::Bats => rain || !day,
             // Wyvern (`:1003-1035`), the EOC family (`:1201-1289`) and the
             // meteor (`:1291-1314`) have no abort override — they fly their
             // lifetime out.
-            SkyKind::Wyvern | SkyKind::Eoc(_) | SkyKind::Meteor | SkyKind::BoneSerpent => false,
+            SkyKind::HellBat
+            | SkyKind::Wyvern
+            | SkyKind::Eoc(_)
+            | SkyKind::Meteor
+            | SkyKind::BoneSerpent => false,
         }
     }
 }
@@ -603,7 +608,8 @@ impl Ambience {
         if self.forced_spawns.is_empty() {
             return;
         }
-        for (ty, _target) in std::mem::take(&mut self.forced_spawns) {
+        // The C# walks the queue backwards (`:150-167`).
+        for (ty, _target) in std::mem::take(&mut self.forced_spawns).into_iter().rev() {
             // The `targetPlayer` routing (`:153-161`) collapses to the local
             // player in single player; the height gate still applies.
             if self.height_gate(ty, ctx) && self.player_sees_ambience(ctx) {
@@ -828,7 +834,13 @@ fn spawn_flier_prologue(
     ctx: &AmbienceCtx,
     kind: SkyKind,
     frames: u32,
+    // The C# `+ band` term (`:194`, `:238`, ...).
     y_band: f32,
+    // The C# multiplier's subtrahend: `worldSurface*16 - band_span`. The
+    // butterflies/pixie family subtracts the band itself (4000); the other
+    // six fliers subtract `1600 + 2400` (`:238`, `:296`, `:344`, `:447`,
+    // `:1018`, `:1073`).
+    band_span: f32,
     fade_in: f32,
     fade_out: f32,
     framing_speed: i32,
@@ -845,9 +857,9 @@ fn spawn_flier_prologue(
     } else {
         e.position.x = cam.x - EDGE_MARGIN;
     }
-    // `Position.Y = NextFloat() * (worldSurface*16 - band) + band`.
+    // `Position.Y = NextFloat() * (worldSurface*16 - band_span) + y_band`.
     let surface_px = ctx.world.world_surface as f32 * 16.0;
-    e.position.y = random.next_float() * (surface_px - y_band) + y_band;
+    e.position.y = random.next_float() * (surface_px - band_span) + y_band;
     e.depth = random.next_float() * 3.0 + depth_scale;
     e.position = set_position_in_world(e.position, e.depth, ctx.player_center);
     e
@@ -860,6 +872,7 @@ fn spawn_butterflies(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         ctx,
         SkyKind::Butterflies,
         19,
+        4000.0,
         4000.0,
         0.15,
         0.85,
@@ -884,6 +897,7 @@ fn spawn_lost_kite(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         SkyKind::LostKite,
         42,
         2400.0,
+        4000.0,
         0.15,
         0.85,
         6,
@@ -905,6 +919,7 @@ fn spawn_pegasus(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         SkyKind::Pegasus,
         11,
         2400.0,
+        4000.0,
         0.15,
         0.85,
         5,
@@ -922,6 +937,7 @@ fn spawn_vulture(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         SkyKind::Vulture,
         10,
         2400.0,
+        4000.0,
         0.15,
         0.85,
         5,
@@ -939,6 +955,7 @@ fn spawn_pixie_posse(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         ctx,
         SkyKind::PixiePosse,
         25,
+        4000.0,
         4000.0,
         0.15,
         0.85,
@@ -959,6 +976,7 @@ fn spawn_birds_pack(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
         SkyKind::BirdsPack,
         4,
         2400.0,
+        4000.0,
         0.15,
         0.85,
         5,
@@ -970,7 +988,18 @@ fn spawn_birds_pack(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
 
 /// `WyvernSkyEntity` (`:1003-1035`): a shorter lifetime.
 fn spawn_wyvern(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
-    let mut e = spawn_flier_prologue(random, ctx, SkyKind::Wyvern, 5, 2400.0, 0.15, 0.85, 4, 3.0);
+    let mut e = spawn_flier_prologue(
+        random,
+        ctx,
+        SkyKind::Wyvern,
+        5,
+        2400.0,
+        4000.0,
+        0.15,
+        0.85,
+        4,
+        3.0,
+    );
     e.life_time = random.next_range(40, 71) * 60;
     e
 }
@@ -978,7 +1007,18 @@ fn spawn_wyvern(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
 /// `AirshipSkyEntity` (`:1058-1099`): the flip is a coin, not the wind; the
 /// fade window is 0.05/0.95 and the lifetime is shorter.
 fn spawn_airship(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
-    let mut e = spawn_flier_prologue(random, ctx, SkyKind::Airship, 4, 2400.0, 0.05, 0.95, 4, 3.0);
+    let mut e = spawn_flier_prologue(
+        random,
+        ctx,
+        SkyKind::Airship,
+        4,
+        2400.0,
+        4000.0,
+        0.05,
+        0.95,
+        4,
+        3.0,
+    );
     e.flip = random.next(2) != 0;
     // The flip decides the edge (`:1063-1072`), so re-place after the draw.
     let cam = virtual_camera_position(ctx.player_center);
@@ -1062,11 +1102,13 @@ fn spawn_meteor(random: &mut FastRandom, ctx: &AmbienceCtx) -> SkyEntity {
     e.frames = 4;
     e.flip = random.next(2) != 0;
     e.depth = random.next_float() * 3.0 + 3.0;
-    // `angle = PI/4 + NextFloat() * PI/2`; the velocity covers
-    // `worldSurface * 16` px in `num2 = 1200` ticks.
+    // `angle = PI/4 + NextFloat() * PI/2`; `num = (worldSurface*16) / dir.y`
+    // and the velocity is `dir * (num / 1200)` (`:1300-1303`) — the vertical
+    // leg always covers the surface column in 1200 ticks.
     let angle = std::f32::consts::FRAC_PI_4 + random.next_float() * std::f32::consts::FRAC_PI_2;
     let surface_px = ctx.world.world_surface as f32 * 16.0;
-    e.velocity = Vec2::from_angle(angle) * (surface_px / 1200.0);
+    let dir = Vec2::from_angle(angle);
+    e.velocity = dir * (surface_px / dir.y / 1200.0);
     const RANGE: i32 = 100;
     e.position = ctx.player_center
         + Vec2::new(
@@ -1394,6 +1436,53 @@ mod tests {
     }
 
     #[test]
+    fn the_six_fliers_spawn_in_the_minus_1600_band() {
+        // `:238/:296/:344/:447/:1018/:1073`: the multiplier is
+        // `worldSurface*16 - 1600 - 2400`, the base 2400 — the spawn band is
+        // [2400, surface*16 - 1600], never inside the top 1600 px.
+        let world = test_world();
+        let ctx = ctx(&world, true, SURFACE_Y);
+        let cases = [
+            SkyKind::LostKite,
+            SkyKind::Pegasus,
+            SkyKind::Vulture,
+            SkyKind::BirdsPack,
+            SkyKind::Wyvern,
+            SkyKind::Airship,
+        ];
+        for kind in cases {
+            let mut e = spawn_flier_prologue(
+                &mut FastRandom::new(31),
+                &ctx,
+                kind,
+                10,
+                2400.0,
+                4000.0,
+                0.15,
+                0.85,
+                5,
+                3.0,
+            );
+            let mut r = FastRandom::new(31);
+            let expect_y = r.next_float() * (4800.0 - 4000.0) + 2400.0;
+            let _ = r.next_float(); // depth
+            // The raw Y before the screen-space mapping: recover it from the
+            // mapping (pos = center + (raw - center) * depth/3).
+            let raw_y =
+                ctx.player_center.y + (e.position.y - ctx.player_center.y) / (e.depth / 3.0);
+            assert!(
+                (raw_y - expect_y).abs() < 1e-3,
+                "{kind:?}: {raw_y} vs {expect_y}"
+            );
+            assert!(
+                raw_y <= 4800.0 - 1600.0 + 1e-3,
+                "{kind:?} too deep: {raw_y}"
+            );
+            let _ = &mut e;
+        }
+    }
+
+    #[test]
     fn pixie_posse_depth_uses_the_two_base_and_night_variant() {
         // `:396-401`: `Depth = NextFloat()*3 + 2`; a night spawn takes sheet 2.
         let world = test_world();
@@ -1483,8 +1572,13 @@ mod tests {
         // `velocity = dir(angle) * (surfacePx / 1200)` with the angle in
         // `[pi/4, 3pi/4]` — `velocity.y >= 0` and `velocity.y * 1200` is at
         // least `surfacePx / sqrt(2)`.
-        assert!(e.velocity.y >= 0.0);
-        assert!(e.velocity.y * 1200.0 >= 4800.0 / std::f32::consts::SQRT_2 - 1.0);
+        // `num = surfacePx / dir.y` (`:1301`): the vertical leg covers the
+        // surface column exactly in 1200 ticks.
+        assert!(
+            (e.velocity.y * 1200.0 - 4800.0).abs() < 1e-3,
+            "{:?}",
+            e.velocity
+        );
     }
 
     #[test]
@@ -1861,6 +1955,42 @@ mod tests {
     }
 
     #[test]
+    fn seagull_bats_crimera_eos_colour_multipliers() {
+        // `:539-542` seagulls [4]; `:962-965` bats max(3,0,10,11,12);
+        // `:1171-1174` crimera [8]; `:1195-1198` EOS [1].
+        let world = test_world();
+        let c = ctx(&world, true, SURFACE_Y);
+        let mut bg = [0.0f32; 16];
+        bg[4] = 0.4;
+        bg[3] = 0.9;
+        bg[8] = 0.5;
+        bg[1] = 0.6;
+        let dctx = draw_ctx(&bg, true);
+        let mut entities = Vec::new();
+        append_group(
+            &mut entities,
+            &mut FastRandom::new(2),
+            &c,
+            GroupKind::Seagulls,
+        );
+        let e = &mut entities[0];
+        e.opacity = 1.0;
+        let base = 0.5 + 0.5 * 0.2;
+        assert!((e.draw_color(&dctx)[0] - base * 0.4).abs() < 1e-5);
+        let mut entities = Vec::new();
+        append_group(&mut entities, &mut FastRandom::new(2), &c, GroupKind::Bats);
+        let e = &mut entities[0];
+        e.opacity = 1.0;
+        assert!((e.draw_color(&dctx)[0] - base * 0.9).abs() < 1e-5);
+        let mut e = spawn_eoc(&mut FastRandom::new(2), &c, EocVariant::Crimera);
+        e.opacity = 1.0;
+        assert!((e.draw_color(&dctx)[0] - base * 0.5).abs() < 1e-5);
+        let mut e = spawn_eoc(&mut FastRandom::new(2), &c, EocVariant::Eos);
+        e.opacity = 1.0;
+        assert!((e.draw_color(&dctx)[0] - base * 0.6).abs() < 1e-5);
+    }
+
+    #[test]
     fn atmo_scales_the_drawn_colour() {
         // `CommonDraw` (`:63`): `GetColor(...) * Main.atmo` — the shared draw
         // applies the atmosphere density on top of every kind's colour.
@@ -2107,13 +2237,20 @@ fn draw_depth_range(
     min_depth: f32,
     max_depth: f32,
 ) {
-    const DEPTH_SCALE: f32 = 3.0;
     for e in entities {
         if e.depth <= min_depth || e.depth > max_depth {
             continue;
         }
         let Some(sheet) = lookups.ambience.get(e.sheet_name()) else {
             continue;
+        };
+        // The `Draw` overrides' `depthScale - x` arguments (`:428` pixie and
+        // `:646` gastropod at -0.1, `:546` seagull at -1.5; the rest use the
+        // manager's 3, `:1378`).
+        let depth_scale = match e.kind {
+            SkyKind::Seagulls => 1.5,
+            SkyKind::PixiePosse | SkyKind::Gastropod => 2.9,
+            _ => 3.0,
         };
         // `GetDrawPositionByDepth` (`:67-70`).
         let depth = e.depth;
@@ -2126,7 +2263,7 @@ fn draw_depth_range(
         let centre = (draw_pos - top_left) * ctx.zoom;
         // `scale: depthScale / Depth` on the source frame; the frame is row
         // `frame` of the 1xN grid (`SourceRectangle`, `:34`).
-        let scale = DEPTH_SCALE / depth;
+        let scale = depth_scale / depth;
         let frame_h = sheet.h / sheet.frames as f32;
         let rows = sheet.frames as f32;
         let frame_uv = [
@@ -2135,7 +2272,10 @@ fn draw_depth_range(
             sheet.uv[2],
             sheet.uv[1] + (sheet.uv[3] - sheet.uv[1]) * ((e.frame + 1) as f32 / rows),
         ];
-        let size = [sheet.w * scale, frame_h * scale];
+        // The sprite-batch transform carries the zoom, so the on-screen size
+        // is `source * scale * zoom` (the batch position mapping above is the
+        // same transform).
+        let size = [sheet.w * scale * ctx.zoom, frame_h * scale * ctx.zoom];
         // `color: GetColor(Main.ColorOfTheSkies) * Main.atmo` (`:63`).
         let mut color = e.draw_color(ctx);
         for c in &mut color {

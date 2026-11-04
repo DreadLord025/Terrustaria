@@ -1093,6 +1093,7 @@ pub(crate) fn draw_sky(
             sc_adj,
             tint,
             amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Desert`: two dune layers (21/20), parallax 0.37/0.49,
         // scale 2.5/2.68, tops +1600/+2000, no tree line.
@@ -1113,6 +1114,7 @@ pub(crate) fn draw_sky(
             sc_adj,
             tint,
             amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Snow` (tree set `Main.snowBG` style 1 = `Background_37..39`):
         // same parallax/scale/top as the forest, but none of the layers is mirrored
@@ -1133,6 +1135,7 @@ pub(crate) fn draw_sky(
             sc_adj,
             tint,
             amb_pass.as_mut(),
+            true,
         );
     }
 

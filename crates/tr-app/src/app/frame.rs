@@ -203,10 +203,8 @@ impl App {
                             p.y + player::HEIGHT * 0.5,
                         )
                     }),
-                    player_y: self
-                        .player
-                        .as_ref()
-                        .map_or(self.camera.y, |p| p.y + player::HEIGHT),
+                    // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
+                    player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
                     day_rate: 1,
                 };
                 ambience.update(dt, &ctx, ambience_rng);
