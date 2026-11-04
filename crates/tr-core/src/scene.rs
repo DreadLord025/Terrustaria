@@ -82,6 +82,38 @@ pub struct SceneMetrics {
     /// `metrics.PerspectivePlayer.shimmering` via `AddPlayerEffects`
     /// (`SceneMetrics.cs:747+`): the local player stands in shimmer liquid.
     pub player_shimmering: bool,
+    // — the M2-BUFF-5 auras (`SceneMetrics.ScanTiles`, `:378-409`) —
+    /// `HasCampfire`: a `Campfires` tile (215) with `frameY < 36` (the lit
+    /// frames) or tile 405 with `frameX < 54` (`:378-380, 396-398`).
+    pub has_campfire: bool,
+    /// `WaterCandleCount` — tile 49, `frameX < 18` (`:382-385`).
+    pub water_candle_count: i32,
+    /// `PeaceCandleCount` — tile 372, `frameX < 18` (`:386-389`).
+    pub peace_candle_count: i32,
+    /// `ShadowCandleCount` — tile 646, `frameX < 18` (`:390-393`).
+    pub shadow_candle_count: i32,
+    /// `HasCatBast` — tile 506, `frameX < 72` (`:400-402`).
+    pub has_cat_bast: bool,
+    /// `HasHeartLantern` — tile 42, `frameY 324-358` (`:404-406`).
+    pub has_heart_lantern: bool,
+    /// `HasStarInBottle` — tile 42, `frameY 252-286` (`:407-409`).
+    pub has_star_in_bottle: bool,
+    /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
+    /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
+    pub has_sunflower: bool,
+}
+
+/// The `Player.SceneMetrics` aura read as a Copy snapshot — what
+/// `UpdateLifeRegen` (`:19170-19178`), `UpdateManaRegen` (`:19448`) and the
+/// scene-buff grants (`:25525-25555`) consume.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Auras {
+    pub campfire: bool,
+    pub heart_lantern: bool,
+    pub star_in_bottle: bool,
+    pub sunflower: bool,
+    pub cat_bast: bool,
+    pub shadow_candle: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -144,6 +176,26 @@ impl SceneMetrics {
             zone_hallow: false,
             zone_jungle: false,
             zone_beach: false,
+            has_campfire: false,
+            water_candle_count: 0,
+            peace_candle_count: 0,
+            shadow_candle_count: 0,
+            has_cat_bast: false,
+            has_heart_lantern: false,
+            has_star_in_bottle: false,
+            has_sunflower: false,
+        }
+    }
+
+    /// The [`Auras`] snapshot of the scan.
+    pub fn auras(&self) -> Auras {
+        Auras {
+            campfire: self.has_campfire,
+            heart_lantern: self.has_heart_lantern,
+            star_in_bottle: self.has_star_in_bottle,
+            sunflower: self.has_sunflower,
+            cat_bast: self.has_cat_bast,
+            shadow_candle: self.shadow_candle_count > 0,
         }
     }
 
@@ -233,10 +285,16 @@ impl SceneMetrics {
             + self.count(403)
             + self.count(401);
         // `SceneMetrics.cs:615-624`: tombstones minus half the sunflowers
-        // (integer division), floored at zero.
+        // (integer division), floored at zero; `HasSunflower` rides the same
+        // counts (`:617-624`) — any tile 27 raises it, a graveyard above
+        // `GraveyardTileMin` (16) cancels it.
         self.graveyard_tile_count = self.count(85) - self.count(27) / 2;
+        self.has_sunflower = self.count(27) > 0;
         if self.graveyard_tile_count < 0 {
             self.graveyard_tile_count = 0;
+        }
+        if self.graveyard_tile_count > thresholds::GRAVEYARD_TILE_MIN {
+            self.has_sunflower = false;
         }
         // `SceneMetrics.cs:629-639`: clamp each sum at zero before the
         // cross-subtraction.

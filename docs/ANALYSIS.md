@@ -2695,3 +2695,37 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
   `the_gate_output_flip_re_trips_its_own_wire_line`.
 - The logic sensors (tiles 593/594) emit wire signals from world state —
   M7-WIRE-2 (they need the player/liquid probes).
+
+## Teleporters & pumps (M7-WIRE-5)
+
+`wiring.rs` gains the teleporter and pump halves of `Wiring.cs`:
+
+- **The teleporter pads** (tile 235, `HitWireSingle`'s case 235 at
+  `:1066-1082`): the wall-87 Lihzahrd guard, the pad registration (the first
+  hit fills `_teleport[0]`, a hit at a different position fills
+  `_teleport[1]`, the halfBrick adds 0.5 to the anchor y), reset to (-1, -1)
+  per colour pass. `Teleport()` (`:3120-3178`) runs up to four times per
+  `TripWire` (once per colour pass that registered both pads): the too-close
+  reject rule (`:3122-3127`), the two 48×48 pad boxes anchored at
+  `(X·16, Y·16 − 48)` and `TeleporterHitboxIntersects`' union check
+  (`:3181-3189`).
+- **The entity half** lives in the app layer (`world_sim/wiring.rs`): the
+  engine emits the pad pairs; the app moves the living player (gated by
+  `blockPlayerTeleportationForOneIteration`, `Wiring.cs:3126/704-708`) and
+  the NPCs (`lifeMax > 5`, no bosses — King Slime in the port's roster, and
+  the `TeleportationImmune` set — none of the implemented kinds is immune,
+  `NPCID.cs:10433`).
+- **The pumps** (tiles 142 in / 143 out, `HitWireSingle` `:2046-2125`): the
+  2×2 body tiles SkipWire'd and registered into the per-pass queues (capped
+  at 19 entries each), `XferWater` (`:475-520`) after every colour pass with
+  both queues filled. **The C# re-reads the in tile's liquid after every out
+  transfer** (`liquid = Main.tile[num, num2].liquid`, `:506`) — the overflow
+  continues into the next out tile; the port's first cut captured the level
+  once and was corrected (the cap test asserts the 55+45 split).
+- The pump `SkipWire` of the 2×2 body means a pump tile reached as a flood
+  seed does not register — the trip must come from a switch/wire line, as in
+  vanilla builds.
+
+Deviations: the entity movement is the port's positional teleport (the C#'s
+`Player.Teleport`/`NPC.Teleport` effects — the dust, the styles — are
+M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
