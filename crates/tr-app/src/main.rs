@@ -37,6 +37,8 @@ mod render;
 mod spawner;
 mod settings;
 mod sound;
+mod test_world_helpers;
+mod town;
 mod ui;
 mod world_sim;
 

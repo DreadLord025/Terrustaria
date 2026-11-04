@@ -2996,3 +2996,89 @@ Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
 channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
 sounds/dust are render-side; the homing variants (182/866) and the
 phaseblade subset are out of the ported kinds.
+
+## Bombs (M4-PROJ-9)
+
+The aiStyle-16 thrown bombs (`AI_016_Bombs`, `Projectile.cs:46904-47545`)
+split into a small flight core and a heavy kill path.
+
+- **The flight**: `ai[0]++` per tick; the gravity tail (`:47505-47520`)
+  waits `ai[0] > 5f` (the thrown arc) and then adds
+  `velocity.Y += 0.2f` with the ground-slide `velocity.X *= 0.97f`
+  (the dynamite 29 another `*0.99f`, the tiny-x zero). The tile bounce
+  rides the `Update` movement's aiStyle-16 arm (`:19737-19762`): the hit
+  axis reflects at −0.4 (the dynamite another ×0.8 → −0.32). The
+  rotation `+= velocity.X * 0.1f`. The **flight damage zeroes** every
+  tick (`:47175-47176` — the kinds outside the keep-damage list; every
+  ported bomb is) — the explosion re-arms it.
+- **The sticky set** {37, 519} (`:46955`): no plain tile collide — the
+  scan (the box inset ±4 px against solid, non-127, non-platform tiles)
+  snaps `velocity = (0, -0.2f)` against a wall, so the bomb hovers and
+  detonates in place.
+- **The fuse seeds** live in `NewProjectileSetup`, not `SetDefaults`
+  (`:10970-10993`): 180 ticks (the bombs 28/37/516/519) and 300 (the
+  dynamite 29) — the AI's `owner == myPlayer && timeLeft <= 3` fires
+  the kill path (`:47165-47167`).
+- **The kill path** (`Kill()`'s aiStyle-16 branch, `:70662-70690`):
+  `PrepareBombToBlow` (`:46770-46844`) recentres the box to 128×128 and
+  re-arms damage 100 / knockback 8 (the bombs) or 250×250 / 250 / 10
+  (the dynamite), `tileCollide = false`; `Damage()` walks the NPCs
+  through the resized box (the pool's ordinary PVE walk); then
+  `Kill_ExplodeTiles` (`:77265-77380`) digs the crater — the radius 4
+  circle for the bombs, 7 for the dynamite, each tile passing
+  `CanExplodeTile` (`:78640-78700`) before `WorldGen.KillTile`, and the
+  3×3 wall walk around each killed tile (wall 350 = the echo wall
+  exempt).
+- **The firing needs nothing new**: the bombs flow through the generic
+  `Item.shoot` path from M4-PROJ-3 — `registry::projectile(166) = 28`,
+  the consumable decrement, the item's `shootSpeed` 5.
+
+Deviations: `SelfHurtPlayers()` (the bomb's self-damage) and the
+explosion visuals (dust/gore/sound) are M2-DEATH/M4-PROJ polish; the
+hardmode `CanExplodeTile` gates stay closed until M5-HARDFORCE; the wall
+breaks discard the wall item (the C# `KillWall` drops nothing in the
+explosion path either); the water-bomb transforms (784-807) and the
+special bombs (910/911, 102, 773) are out of the ported kinds.
+
+## Logic sensors & training dummy (M7-TE-2)
+
+The `RequiresUpdates` half of the tile entities (`TileEntity.PerformUpdates`
+runs from `UpdateWorld`, `WorldGen.cs:71507`): the logic sensors land fully
+and the training dummy lands as the engine state machine.
+
+- **The logic sensor** (`TELogicSensor.cs`, tile 423): the check type rides
+  `frameY / 18` — 0 Day, 1 Night, 2 PlayerAbove, 3 Water, 4 Lava, 5 Honey,
+  6 Liquid (`FigureCheckType` `:168-200`); the LED rides `frameX` (0 off /
+  18 on). `GetState` (`:202-267`): the Day/Night kinds read `Main.dayTime`;
+  the PlayerAbove kind scans the 82×162 box `(x*16 - 33, y*16 - 161)` vs
+  the live players' hitboxes; the liquid kinds read the anchor tile's own
+  liquid, the type match rejecting the wrong fluids (water rejects
+  honey/lava/shimmer), with the 15-tick `CountedData` grace keeping the On
+  state after the liquid disappears.
+- **The trip discipline**: the Day/Night kinds trip the wire only on the
+  rising edge (`!On && state`, `:109-118`); the rest trip on every state
+  change. `UpdateEndInternal` (`:135-152`) fires the collected trips
+  through `HitSwitch` **after** the scan — the port keeps that order — and
+  the PlayerAbove trips set `blockPlayerTeleportationForOneIteration` for
+  their hit (the teleporter-into-a-sensor-loop guard).
+- **`OnPlaced → FigureCheckState`**: the placement reads the check type
+  from the tile frame and settles the LED at the current state without a
+  trip (`figure_sensor_state`).
+- **The training dummy** (`TETrainingDummy.cs`, tile 378): the entity
+  carries `npc` (−1 = free); the free dummy spawns when a player's
+  hitbox intersects the 32×48 box inflated by 1600 px (`:56-74`), the
+  spawn anchor `(x*16 + 16, y*16 + 48)`; the tied dummy verifies its NPC
+  each tick and frees on the lost tie (`:45-53`). The engine half is
+  complete; **the app's NPC 488 spawn waits for the roster** — the port's
+  `NpcKind` has 83 match sites across 10 files, and the TargetDummy
+  (passive, no movement, no loot) lands with the M4-NPC families rather
+  than rippling the roster here.
+- **The behaviour tiles registered**: the dummy 378
+  (`frameY == 0 && frameX % 36 == 0`), the sensor 423 (`frameY % 18 == 0
+  && frameX % 18 == 0`), the jar 698, the kite anchor 723, the doll 470,
+  the pylon 597.
+
+Deviations: the display doll (970 lines — the armor poses, the dye slots,
+the mannequin interactions) is its own follow-up; the pylon network is
+M7-PYLON-1; the leashed critter/kite anchors need the critter entities;
+the dummy's DPS-meter hook rides the NPC 488 landing.

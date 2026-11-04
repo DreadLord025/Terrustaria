@@ -112,11 +112,13 @@ impl App {
                 }
             }
             net::ClientEvent::Joined { id, name } => {
-                self.remote_players.entry(id).or_insert_with(|| net::PlayerNet {
-                    id,
-                    name,
-                    ..Default::default()
-                });
+                self.remote_players
+                    .entry(id)
+                    .or_insert_with(|| net::PlayerNet {
+                        id,
+                        name,
+                        ..Default::default()
+                    });
             }
             net::ClientEvent::Left { id } => {
                 self.remote_players.remove(&id);
@@ -133,7 +135,10 @@ impl App {
                 self.world_key = None;
             }
             net::ClientEvent::Npcs(list) => {
-                self.npcs = list.iter().filter_map(|n| npc_from_net(&self.world, n)).collect();
+                self.npcs = list
+                    .iter()
+                    .filter_map(|n| npc_from_net(&self.world, n))
+                    .collect();
             }
             net::ClientEvent::Items(list) => {
                 self.items = list
@@ -287,6 +292,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             crate::npc::Npc::spawn_eye(world, tx)?
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
+        crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
     };
     npc.x = n.x;

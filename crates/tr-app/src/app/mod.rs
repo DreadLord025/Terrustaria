@@ -161,6 +161,9 @@ pub(crate) struct App {
     pub(crate) emotes: emotes::EmoteSystem,
     /// `BannerSystem`'s kill tally (M2-BUFF-8).
     pub(crate) banners: banners::BannerSystem,
+    /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
+    /// stand-in; M4-TOWN-1).
+    pub(crate) town_look_timer: f32,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1).
     pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
@@ -300,6 +303,9 @@ pub(crate) struct App {
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
     pub(crate) wiring_step: FixedStepper,
+    /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
+    /// logic sensors' per-tick scan, M7-TE-2).
+    pub(crate) te_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
@@ -544,6 +550,13 @@ impl App {
 
     pub(crate) fn update_wiring(&mut self, dt: f32) {
         world_sim::wiring::update_wiring(self, dt);
+    }
+
+    /// The tile-entity pass (`WorldGen.cs:71507`'s
+    /// `TileEntity.PerformUpdates`): the logic sensors scan their state and
+    /// fire the wire trips (M7-TE-2).
+    pub(crate) fn update_tile_entities(&mut self, dt: f32) {
+        world_sim::tile_entities::update_tile_entities(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1000,6 +1013,13 @@ impl App {
                 p.rocket_boots = b.clamp(0, 5);
             }
         }
+        // The Guide's world-gen arrival: one homeless Guide at the spawn
+        // point. The NPC persistence is M6-SAVE-1's (the world-file NPC
+        // sections), so every load respawns the Guide homeless — the
+        // look-for-home tick re-houses it within seconds.
+        if let Some(guide) = Npc::spawn_guide(&world, world.spawn_x) {
+            npcs.push(guide);
+        }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
         if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
             if let Some(p) = player.as_mut() {
@@ -1289,6 +1309,7 @@ impl App {
                 sys
             },
             banners: banners::BannerSystem::default(),
+            town_look_timer: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
@@ -1391,6 +1412,7 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
+            te_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
         ambient_waterfall,
         ambient_lavafall,
