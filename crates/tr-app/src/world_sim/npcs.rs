@@ -114,6 +114,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 nearby_active_npcs: nearby,
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 day_time: app.world.day_time,
+                player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);
