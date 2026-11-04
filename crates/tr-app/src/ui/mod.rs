@@ -2,6 +2,7 @@
 //! cursor, hearts and breath, and the boss bar.
 
 pub mod bars;
+pub(crate) mod bestiary;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
@@ -138,6 +139,9 @@ pub fn draw_hud(
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
+    bestiary_open: bool,
+    bestiary_selected: Option<usize>,
+    kill_tracker: &tr_core::bestiary::KillTracker,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -149,6 +153,20 @@ pub fn draw_hud(
     // (context 0: grey `InventoryBack`, hotbar row `InventoryBack9`); closed, the ten
     // slots animate between 0.75 and 1.0 (context 13: grey back at 200/255, the
     // selected one yellow `InventoryBack14` at full white).
+    // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
+    // the open inventory's top row, before the slots.
+    if inventory_open {
+        bestiary::draw_inventory_button(r, lookups, mouse_pos);
+    }
+
+    // `IngameFancyUI.OpenUIState(Main.BestiaryUI)` (`Main.cs:42459`): the
+    // bestiary covers the interface while open (the state's draw replaces
+    // the HUD behind it).
+    if bestiary_open {
+        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        return;
+    }
+
     let mut open_hover: Option<inventory::HoverRef> = None;
     if inventory_open {
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and

@@ -3,6 +3,7 @@
 mod app;
 mod assets;
 mod audio;
+mod bestiary;
 mod biome;
 mod buffs;
 mod collision;
@@ -16,6 +17,7 @@ mod net;
 mod npc;
 mod persist;
 mod player;
+mod player_file;
 mod projectile;
 mod rain;
 mod regen;

@@ -5,10 +5,10 @@
 //!
 //! Pure functions over injected directories — no `std::env` here (the App reads
 //! the `TR_FAKE_CHARS`/`TR_FAKE_WORLDS` screenshot hooks and passes the counts
-//! in, whole-UI P6 plan Task 5). The port has no `.plr` character format yet
-//! (plan §9.4 deviation): characters are the session entry plus optional fakes,
-//! while worlds are the real `Documents/My Games/Terrustaria/Worlds/*.trwld`
-//! headers.
+//! in, whole-UI P6 plan Task 5). Characters are the real
+//! `Documents/My Games/Terrustaria/Players/*.plr` files (read through the
+//! port's own `player_file` reader) plus the disk-less session stand-in and
+//! optional fakes; worlds are the real `.../Worlds/*.trwld` headers.
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
@@ -35,9 +35,12 @@ pub struct PlayerEntry {
     /// `loadStatus == Ok` (`StatusID.cs:16`, `WorldFileData.cs:75`); a
     /// sidecar-less session entry is playable.
     pub playable: bool,
-    /// False for the implicit session entry (nothing on disk to erase,
-    /// `Main.ErasePlayer` `Main.cs:4772-4791` needs a file).
+    /// False for the implicit session entry and the fakes (nothing on disk to
+    /// erase, `Main.ErasePlayer` `Main.cs:4772-4791` needs a file).
     pub deletable: bool,
+    /// The `.plr` file a disk-backed card erases; `None` for the session
+    /// stand-in and the fakes.
+    pub path: Option<PathBuf>,
 }
 
 /// `WorldFileData` as the cards need it (`UIWorldListItem` reads: GetWorldName,
@@ -215,14 +218,18 @@ fn read_header(path: &Path) -> (Option<String>, i32, bool) {
     (name, width, true)
 }
 
-/// `Main.LoadPlayers` (`Main.cs:4001-4030`). The port has no `.plr` format yet
-/// (spec §9.4 deviation, plan Task 9): `dir == None` yields the session entry
-/// when one is supplied. `fake_count > 0` prepends `Player 1..n` entries
-/// (`TR_FAKE_CHARS`, difficulty 0, 100/20, deletable) so the cards are
-/// screenshotable.
+/// `Main.LoadPlayers` (`Main.cs:4001-4030`): the `*.plr` scan, each file
+/// through `Player.GetFileData` (`Main.cs:4010-4017`) — files whose data
+/// cannot be loaded return null there and are skipped
+/// (`Player.cs:55862-55881`). `dir == None` (or a missing dir) yields only
+/// the entries below. A same-named session stand-in yields to its saved
+/// file: the disk card is the one vanilla lists (and erases) after
+/// `PlayerFileData.CreateAndSave`. `fake_count > 0` prepends `Player 1..n`
+/// entries (`TR_FAKE_CHARS`, difficulty 0, 100/20, deletable) so the cards
+/// are screenshotable.
 pub fn list_players(
     dir: Option<&Path>,
-    session: Option<PlayerEntry>,
+    mut session: Option<PlayerEntry>,
     fake_count: usize,
 ) -> Vec<PlayerEntry> {
     let mut out = Vec::new();
@@ -237,27 +244,45 @@ pub fn list_players(
             is_favorite: false,
             playable: true,
             deletable: true,
+            path: None,
         });
     }
-    if let Some(session) = session {
-        out.push(session);
-    }
+    let mut disk = Vec::new();
     if let Some(dir) = dir {
         // The `Directory.GetFiles(PlayerPath, "*.plr")` scan (`Main.cs:4007`),
-        // each through `Player.GetFileData` (`Main.cs:4010-4017`). Files whose
-        // data cannot be loaded return null there and are skipped
-        // (`Player.cs:55862-55881`) — and with no `.plr` reader every file
-        // fails, so the port lists none of them. The scan stays so a future
-        // reader slots into the same shape.
+        // each through `Player.GetFileData` (`Main.cs:4010-4017`) →
+        // `Player.LoadPlayer` — the port's own `player_file` reader.
         if let Ok(entries) = std::fs::read_dir(dir) {
             let mut paths: Vec<PathBuf> = entries
                 .filter_map(|e| e.ok().map(|e| e.path()))
                 .filter(|p| p.extension().is_some_and(|e| e == "plr"))
                 .collect();
             paths.sort();
-            let _ = paths.into_iter().take(MAX_LOAD).count();
+            for path in paths.into_iter().take(MAX_LOAD) {
+                // `GetFileData`'s null-on-failure skip (`Player.cs:55862-55881`).
+                let Ok(file) = crate::player_file::read_player_file(&path) else {
+                    continue;
+                };
+                disk.push(PlayerEntry {
+                    name: file.name,
+                    difficulty: file.difficulty,
+                    life_max: file.life_max,
+                    mana_max: file.mana_max,
+                    is_favorite: file.is_favorite,
+                    playable: true,
+                    deletable: true,
+                    path: Some(path),
+                });
+            }
         }
     }
+    if session.as_ref().is_some_and(|s| disk.iter().any(|d| d.name == s.name)) {
+        session = None;
+    }
+    if let Some(session) = session {
+        out.push(session);
+    }
+    out.extend(disk);
     out
 }
 
@@ -389,6 +414,7 @@ mod tests {
             is_favorite: favorite,
             playable: true,
             deletable: true,
+            path: None,
         }
     }
 
@@ -520,6 +546,7 @@ mod tests {
             is_favorite: false,
             playable: true,
             deletable: false,
+                  path: None,
         };
         assert_eq!(list_players(None, Some(session.clone()), 0), vec![session.clone()]);
         // `fake_count > 0` prepends `Player 1..n`, deletable per the plan.
@@ -545,6 +572,71 @@ mod tests {
         let missing = std::env::temp_dir().join("tr-savelist-noplayers");
         let _ = std::fs::remove_dir_all(&missing);
         assert!(list_players(Some(&missing), None, 0).is_empty());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn list_players_reads_real_plr_files() {
+        // The saved character lists through the port's own `.plr` reader
+        // (`Main.LoadPlayers`' `GetFileData` hop), a corrupt file is skipped,
+        // and a same-named session stand-in yields to the disk card.
+        let dir = temp_dir("tr-savelist-plr-read");
+        let mut inventory = [(0i32, 0i32, 0u8); 58];
+        inventory[0] = (3507, 1, 0);
+        let file = crate::player_file::PlayerFileWrite {
+            name: "Belsin".into(),
+            difficulty: 2,
+            skin_variant: 0,
+            hair: 3,
+            life: 400,
+            life_max: 400,
+            mana: 100,
+            mana_max: 100,
+            hair_color: [215, 90, 55],
+            skin_color: [255, 125, 90],
+            eye_color: [105, 90, 75],
+            shirt_color: [175, 165, 140],
+            undershirt_color: [160, 180, 215],
+            pants_color: [255, 230, 175],
+            shoe_color: [160, 105, 60],
+            inventory,
+        };
+        crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
+        std::fs::write(dir.join("junk.plr"), b"garbage").unwrap();
+
+        let listed = list_players(Some(&dir), None, 0);
+        assert_eq!(listed.len(), 1, "only the readable file lists");
+        assert_eq!(listed[0].name, "Belsin");
+        assert_eq!(listed[0].difficulty, 2);
+        assert_eq!((listed[0].life_max, listed[0].mana_max), (400, 100));
+        assert!(listed[0].playable && listed[0].deletable);
+        assert_eq!(
+            listed[0].path.as_deref().and_then(Path::file_name),
+            Some(std::ffi::OsStr::new("Belsin.plr"))
+        );
+
+        // The same-named session entry drops; the disk card (deletable, like
+        // vanilla after `CreateAndSave`) stays.
+        let session = PlayerEntry {
+            name: "Belsin".into(),
+            difficulty: 0,
+            life_max: 100,
+            mana_max: 20,
+            is_favorite: false,
+            playable: true,
+            deletable: false,
+            path: None,
+        };
+        let replaced = list_players(Some(&dir), Some(session.clone()), 0);
+        assert_eq!(replaced.len(), 1);
+        assert!(replaced[0].deletable && replaced[0].path.is_some());
+
+        // A different-named session entry stays alongside.
+        let mut other = session.clone();
+        other.name = "Hero".into();
+        let both = list_players(Some(&dir), Some(other), 0);
+        assert_eq!(both.len(), 2);
+
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

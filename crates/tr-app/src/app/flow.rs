@@ -1259,6 +1259,7 @@ pub(crate) mod front_flow_tests {
             is_favorite: false,
             playable: true,
             deletable,
+            path: None,
         }
     }
 
@@ -1275,6 +1276,9 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         App {
+            kill_tracker: tr_core::bestiary::KillTracker::new(),
+            bestiary_open: false,
+            bestiary_selected: None,
             window: None,
             gpu: None,
             renderer: None,

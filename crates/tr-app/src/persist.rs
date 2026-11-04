@@ -17,6 +17,10 @@ pub struct SavedPlayer {
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
     /// of the sidecar; older files load with all three empty.
     pub armor: [u16; 3],
+    /// `Main.BestiaryTracker.Kills`' pairs — version 5; older files load
+    /// with none. Vanilla keeps the same pairs in world-file section 11
+    /// (`NPCKillsTracker.Save`, M6-SAVE-1's scope).
+    pub kills: Vec<(String, i32)>,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -36,14 +40,22 @@ pub fn save(
     inventory: [(u16, u32); 50],
     coins: u64,
     armor: [u16; 3],
+    kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("4\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("5\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
     s.push_str(&format!("\n{coins}\n"));
     // The equipped armor kinds (head/body/legs) on their own line.
     s.push_str(&format!("{} {} {}\n", armor[0], armor[1], armor[2]));
+    // The bestiary kill pairs (`NPCKillsTracker.Save`'s `count (key value)*`
+    // walk) on their own line.
+    s.push_str(&format!("{} ", kills.len()));
+    for (id, count) in kills {
+        s.push_str(&format!("{id} {count} "));
+    }
+    s.push_str("\n");
     std::fs::write(player_path(world), s)
 }
 
@@ -55,7 +67,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         // Version 4 adds the equipped armor line; 3 stores vanilla `ItemID`s;
         // 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges and are
         // converted on load.
-        "3" | "4" => false,
+        "3" | "4" | "5" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -82,10 +94,22 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" {
+    if version == "4" || version == "5" {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
+        }
+    }
+    // Version 5 adds the bestiary kill pairs.
+    let mut kills = Vec::new();
+    if version == "5" {
+        let kill_line = lines.next()?;
+        let mut parts = kill_line.split_whitespace();
+        let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
+        for _ in 0..count {
+            let Some(id) = parts.next() else { break };
+            let Some(value) = parts.next().and_then(|v| v.parse().ok()) else { break };
+            kills.push((id.to_string(), value));
         }
     }
     Some(SavedPlayer {
@@ -95,6 +119,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         inventory,
         coins,
         armor,
+        kills,
     })
 }
 
@@ -117,7 +142,7 @@ mod tests {
         inv[2] = (8, 9);
         inv[3] = (12, 1);
         inv[4] = (71, 40);
-        save(&path, &p, inv, 123_456, [89, 80, 76]).unwrap();
+        save(&path, &p, inv, 123_456, [89, 80, 76], &[("BlueSlime".into(), 7)]).unwrap();
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
         assert_eq!(s.inventory[0], (2, 12));

@@ -30,6 +30,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     for npc in &dead {
+        // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
+        // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
+        // constants-on — every death the port produces today is a player
+        // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
+        let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+        app.kill_tracker.register_kill(entry.credit_id);
         spawn_coins(app, &npc);
         spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
     }

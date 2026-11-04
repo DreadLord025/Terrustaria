@@ -2446,3 +2446,71 @@ completion ports the **call discipline** of `NPC.SpawnNPC`
   respawn, `world_sim/player.rs`) freezes the stream advance while held — the
   C# has no such hold, so during it the port's stream lags the C#'s tick
   count; deterministic either way, and the hold clears.
+
+## Wiring engine (M7-WIRE-1)
+
+`tr-core/src/wiring.rs` ports the wiring core: the four colour passes of
+`TripWire` (`Wiring.cs:525-620`), the `HitWire` flood fill with its `SkipWire`
+set, the `_toProcess` multi-trigger counter — 4 on the seed cells, 3 on
+enqueue, `b = 0` through junction boxes (424/445), removed at zero so a
+5+-path convergence re-fires — and the `[2, max-2]` bounds (`:837-995`),
+`HitWireSingle`'s device subset and `HitSwitch`'s rect table
+(`:259-330`), plus `CheckMech`/`UpdateMech` (`:455-471`, `:145-258`) with the
+tile-144 timer periods 60/180/300/30/15 (by `frameX / 18`) and the 411
+lamp-pair frame flip.
+
+Deviations:
+
+- **Wire colours live in a sparse side table** (`World.wires: WireState`) —
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
+  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
+  pending (M6-SAVE-1); synthetic test worlds set wires through
+  `World.wires.set`.
+- **Device entity effects are passthroughs** — the mine (210), geyser (443),
+  statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
+  belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
+  nothing beyond the signal walk.
+- **The multi-tile actuation walk** (`ActuateForced` over `TileObjectData`
+  regions) is M7-WIRE-3; the engine toggles the single tile's
+  `FLAG_INACTIVE` (`Tile.flags` already carries the actuator/inactive bits).
+- **The wire pulse animation** (case 419's `frameX` shift in
+  `HitWireSingle`) is render-side state on a side-table colour, not a tile
+  frame — deferred with the wire renderer (M7-WIRE-3).
+- **Timers pulse indefinitely** while armed: the re-trip's own tile is
+  SkipWire'd for its own pass (the seeds pre-enter `_wireSkip`), so
+  `HitSwitch`'s frameY toggle does not disarm the armed timer — verified by
+  `the_timer_pulses_on_its_period_then_pops` (two pulses 60 ticks apart).
+- **Sounds** (`SoundEngine.PlaySound(28, …)`) are not wired to the audio
+  system yet (M6-AUDIO polish).
+
+## Tile entities (M7-TE-1)
+
+`tr-core/src/tile_entities.rs` ports the `TileEntity` framework and the
+item-holding entity halves: the registration-order ids
+(`TileEntitiesManager.cs:27-40` — TrainingDummy 0 … CritterAnchor 10, the
+discriminant IS the wire/save id), the `ByID`/`ByPosition` books
+(`TileEntity.cs:15-22`), `place`/`remove_at` with the per-TE `ValidTile` frame
+checks (`TEItemFrame.cs:37-43` tile 395 `frameY == 0 && frameX % 36 == 0`;
+`TEWeaponsRack.cs:33` tile 471 `% 54`; `TEFoodPlatter.cs:32` tile 520
+`frameY == 0`; `TEHatRack.cs:407` tile 475 `% 54`), the item payload as the
+`(short type, byte prefix, short stack)` triple the wire/save format carries
+(`TEItemFrame.cs:47-56`) and the HatRack presence-bitsByte round trip
+(`TEHatRack.cs:59-80`). The books live on `World.tile_entities`.
+
+Deviations:
+
+- **The behaviour halves are M7-TE-2**: the dummy's wired hit tracking, the
+  logic sensors, the display doll rendering, the pylon network, the Dead
+  Cells jar and the leashed anchors are registered (ids + placement
+  validity) with empty payloads.
+- **The food gate** (`ItemID.Sets.IsFood`, `TEFoodPlatter.FitsItemFrame`-style
+  placement check) is applied by the caller — the item registry lives in the
+  app layer.
+- **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
+  the UI layer maps between them; the triples are exactly what
+  `WriteExtraData`/`ReadExtraData` and msg 121 carry.
+- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
+  in the world-file section 7 (`WorldFile.cs`).
+- **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
+  per-chunk cap exists for the C#'s save-section packing; the port's books
+  are unbounded maps.

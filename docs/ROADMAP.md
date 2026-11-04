@@ -671,8 +671,10 @@ happiness & prices, M4-TOWN-3 shop stock (M4-TOWN umbrella), M7-PYLON-1 pylons
   `KillsToBanner` at full/½//5 (`CommonEnemyUICollectionInfoProvider.cs:49-64`); tracked
   via `Main.BestiaryTracker` (msg 51 case 5 remote credits).
 
-**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, M4-BEST-1
-bestiary data + UI, ✅ M4-LOOT-3 money roll chain.
+**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, ✅ M4-BEST-1
+bestiary data + UI (kill tracking, unlock tiers, the UIBestiaryTest screen, sidecar v5
+persistence; the world-file section 11 store stays M6-SAVE-1, sorting/filtering grids
+and the search bar stay REFACTOR-cleanup), ✅ M4-LOOT-3 money roll chain.
 
 ## 17. Projectiles
 
@@ -1010,8 +1012,18 @@ Back-targets (from P6 review).
 `persist.rs` · 🟡 (header+tiles of .wld; .trwld full).
 
 **Tasks:** M6-SAVE-1 remaining `.wld` sections (chests/signs/NPCs/TEs/TownManager/
-Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`), M6-SAVE-2 `.plr` reader
-(replaces save_list stand-ins).
+Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`). ~~M6-SAVE-2 `.plr` reader~~
+✅ done 2026-11-04: `player_file.rs` reads AND writes real vanilla `.plr` files —
+AES-128-CBC (`"h3y_gUyZ"` UTF-16-LE key = IV, `PaddingMode.None`,
+`Player.cs:796-798`), `FileMetadata` magic/type/revision/favorites, the
+release-279 section walk (name → difficulty → playTime → hair/dye → hide →
+skinVariant → stats with the 500/400/200 caps → unlock bools → tax/deaths →
+7 colors → armor 20× → dye 10× → inventory 58×), writer mirrors `SavePlayer`
+including `GetPlayerPathFromName`'s filename sanitization (`Main.cs:4820`) and
+the ctor starter items (`Player.cs:54356-54360`); `list_players` scans the real
+`Terrustaria/Players/*.plr` (the `GetFileData` null-skip kept), `PlayerEntry`
+carries the erase path, a same-named session stand-in yields to its saved file;
+4 round-trip tests + the scan test.
 
 ## 30. Secret seeds & special worlds
 
@@ -1297,7 +1309,7 @@ section in brackets before starting a row.
 | ✅ M4-PROJ-1 | `M4-PROJ-1-engine` | done 2026-11-04: the projectile pool — 1000 slots with `NewProjectileSetup` first-free/`FindOldestProjectile` recycle (`Projectile.cs:10811-10880`), the `timeLeft`/`penetrate` tick bookkeeping (`:17199-17208`), `1+extraUpdates` AI sub-steps (`:16668`), the PVE walk with all three immunity systems (per-owner `NPC.immune` 10, `localNPCImmunity` cooldowns, ID-static `GameUpdateCount` stamps) and the on-hit application (`:12562-12624`, `:14087-14119`); the shuriken moved into the pool as aiStyle 2; 8 tests |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
-| M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |
+| ✅ M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI: `tr-core/src/bestiary.rs` (the five `UnlockState` tiers, `GetUnlockStateByKillCount`'s 1/½/⅕/full ladder + the boss quick-unlock, `NPCKillsTracker` with the 999999999 cap, the family banner chain `NPCtoBanner`→`BannerToItem`→`KillsToBanner` — Pinky 25, rest 50, bosses 0) + the app catalog (12 entries, credit ids = `NPCID.Search.GetName`) + kill registration at the NPC death hook + sidecar v5 persistence + `ui/bestiary.rs` (the `UIBestiaryTest` screen: the 72px entry grid, `Slot_Back/Overlay/Front/Selection` cards with the 15% `Icon_Locked`, the tier-gated info page — `???` name / stats / kill progress / drop lines with rates from tier 4 — the completion bar, the inventory's `DrawBestiaryIcon` button (498,278), Esc/Back close) [16][23] | done 2026-11-04: 4 core tests + 2 app tests + the layout test; `TR_BESTIARY=<n>` screenshot hook (grid + info page verified) |
 | M4-REVENGE-1 | `M4-REVENGE-1-coin-loss` | revenge system [9] |
 | M4-TOWN | (umbrella retired into M4-TOWN-1..3) | — |
 
@@ -1334,7 +1346,7 @@ section in brackets before starting a row.
 | M6-NET-1..5 | `M6-NET-1-handshake` … | protocol parts [27] |
 | M6-SETTINGS | `M6-SETTINGS` | settings parity |
 | M6-SAVE-1 | `M6-SAVE-1-wld-sections` | remaining .wld sections [29] |
-| M6-SAVE-2 | `M6-SAVE-2-plr-reader` | .plr reader [29] |
+| ✅ M6-SAVE-2 | `M6-SAVE-2-plr-reader` | vanilla `.plr` reader+writer: AES-128-CBC (`Player.cs:796-798`), `FileMetadata`, the release-279 section walk with the stat caps, `SavePlayer` mirror (sanitized name, starter items), `list_players` scans real files + the session stand-in dedup + the erase path [29] | done 2026-11-04: 4 round-trip tests (crypto+sections, magic/type, caps, key) + the scan test |
 | M6-CHAT-1 | `M6-CHAT-1-chat` | chat system [24] |
 | M6-EMOTE-1 | `M6-EMOTE-1-emotes` | emote bubbles [24] |
 | M6-ACH-1 | `M6-ACH-1-achievements` | achievements framework [24] |
@@ -1345,8 +1357,13 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M7-WIRE-1..5 | `M7-WIRE-1-engine` … | wiring [19] |
-| M7-TE-1 | `M7-TE-1-tile-entities` | TE framework + 11 TEs [19] |
+| ✅ M7-WIRE-1 | `M7-WIRE-1-engine` | done 2026-11-04: `tr-core/src/wiring.rs` — the four wire colours as a sparse `WireState` side table on `World` (the C# `sTileHeader` bits, `Tile.cs:623-657`; the packed `Tile` has no header), `TripWire`'s four colour passes (`Wiring.cs:525-620`), the `HitWire` BFS with `SkipWire`, the `_toProcess` multi-trigger counter (4 on seeds, 3 on enqueue, 0 through junction boxes 424/445) and the `[2, max-2]` bounds (`:837-995`), `HitWireSingle`'s device subset (the actuator toggle, tile-144 re-trigger, the 421/422 lamp swap), `HitSwitch`'s switch/lever/timer/wide-switch/gem-lock rect table (`:259-330`), `CheckMech`/`UpdateMech` (the 999 queue, the 60/180/300/30/15 timer periods, the 411 lamp-pair flip) — 9 tests; device entity effects (statues/traps/pumps/teleporters/cannons) = M7-WIRE-2, the multi-tile actuation = M7-WIRE-3 |
+| M7-WIRE-2 | `M7-WIRE-2-traps-statues` | traps & statues [19] |
+| M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
+| M7-WIRE-4 | `M7-WIRE-4-logic-gates` | logic gates & sensors [19] |
+| M7-WIRE-5 | `M7-WIRE-5-teleporters` | teleporters & pumps [19] |
+| ✅ M7-TE-1 | `M7-TE-1-tile-entities` | done 2026-11-04: `tr-core/src/tile_entities.rs` — the framework (the registration-order ids `TileEntitiesManager.cs:27-40`, the `ByID`/`ByPosition` books on `World.tile_entities`, `place`/`remove_at`) and the item-holding halves — ItemFrame 395 / WeaponsRack 471 / FoodPlatter 520 / HatRack 475 with the `ValidTile` frame checks and the `(type, prefix, stack)` + presence-bitsByte wire/save shapes (`TEItemFrame.cs:37-56`, `TEHatRack.cs:59-80`) — 6 tests; the behaviour halves (dummy/sensor/doll/pylon/anchors) and the food gate = M7-TE-2, persistence = M6-SAVE-1 |
+| M7-TE-2 | `M7-TE-2-behaviour-halves` | dummy hit tracking, logic sensors, display doll, pylons, anchors [19] |
 | M7-SHIMMER-1 | `M7-SHIMMER-1-transforms` | shimmer [20] |
 | M7-GROWTH-1 | `M7-GROWTH-1-ticks` | growth [20] |
 | M7-EXTRACT-1 | `M7-EXTRACT-1-extractinator` | extractinator [20] |
