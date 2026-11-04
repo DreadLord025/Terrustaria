@@ -45,6 +45,12 @@ pub struct SceneMetrics {
     pub graveyard_tile_count: i32,
     /// `metrics.DesertSandTileCount` (`SceneMetrics.cs:658`).
     pub desert_sand_tile_count: i32,
+    /// `metrics.JungleTileCount` (`SceneMetrics.cs:610-612`, non-remix branch).
+    pub jungle_tile_count: i32,
+    /// `metrics.EvilTileCount` (`SceneMetrics.cs:613`, non-remix branch).
+    pub evil_tile_count: i32,
+    /// `metrics.BloodTileCount` (`SceneMetrics.cs:614`, non-remix branch).
+    pub blood_tile_count: i32,
     /// `metrics.SurfaceAtmospherics` (`SceneMetrics.cs:698`, `WorldGen.cs:10976`).
     pub surface_atmospherics: bool,
     /// `metrics.ZoneRain` (`SceneMetrics.cs:701`).
@@ -55,6 +61,70 @@ pub struct SceneMetrics {
     pub zone_desert: bool,
     /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:703-707`).
     pub zone_sandstorm: bool,
+    /// `metrics.ZoneCorrupt` (`SceneMetrics.cs:671`).
+    pub zone_corrupt: bool,
+    /// `metrics.ZoneCrimson` (`SceneMetrics.cs:672`).
+    pub zone_crimson: bool,
+    /// `metrics.ZoneHallow` (`SceneMetrics.cs:673`).
+    pub zone_hallow: bool,
+    /// `metrics.ZoneJungle` (`SceneMetrics.cs:674`).
+    pub zone_jungle: bool,
+    /// `metrics.ZoneBeach` (`SceneMetrics.cs:691`, `WorldGen.oceanDepths`).
+    pub zone_beach: bool,
+    /// `metrics.ShimmerTileCount` = `_liquidCounts[LiquidID.Shimmer]`
+    /// (`SceneMetrics.cs:594`): the type-3 liquid cells in the scan window.
+    pub shimmer_tile_count: i32,
+    /// `metrics.UndergroundForShimmering` (`SceneMetrics.cs:704`).
+    pub underground_for_shimmering: bool,
+    /// `metrics.ZoneShimmer` (`SceneMetrics.cs:705`; the dungeon gate is not
+    /// ported — no dungeon zone system yet).
+    pub zone_shimmer: bool,
+    /// `metrics.PerspectivePlayer.shimmering` via `AddPlayerEffects`
+    /// (`SceneMetrics.cs:747+`): the local player stands in shimmer liquid.
+    pub player_shimmering: bool,
+    // — the M2-BUFF-5 auras (`SceneMetrics.ScanTiles`, `:378-409`) —
+    /// `HasCampfire`: a `Campfires` tile (215) with `frameY < 36` (the lit
+    /// frames) or tile 405 with `frameX < 54` (`:378-380, 396-398`).
+    pub has_campfire: bool,
+    /// `WaterCandleCount` — tile 49, `frameX < 18` (`:382-385`).
+    pub water_candle_count: i32,
+    /// `PeaceCandleCount` — tile 372, `frameX < 18` (`:386-389`).
+    pub peace_candle_count: i32,
+    /// `ShadowCandleCount` — tile 646, `frameX < 18` (`:390-393`).
+    pub shadow_candle_count: i32,
+    /// `HasCatBast` — tile 506, `frameX < 72` (`:400-402`).
+    pub has_cat_bast: bool,
+    /// `HasHeartLantern` — tile 42, `frameY 324-358` (`:404-406`).
+    pub has_heart_lantern: bool,
+    /// `HasStarInBottle` — tile 42, `frameY 252-286` (`:407-409`).
+    pub has_star_in_bottle: bool,
+    /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
+    /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
+    pub has_sunflower: bool,
+    /// `MeteorTileCount` — the meteorite brick (37) tiles (`:611`).
+    pub meteor_tile_count: i32,
+    /// `DungeonTileCount` — the brick families 41/43/44/481/482/483 (`:612`).
+    pub dungeon_tile_count: i32,
+    /// `ZoneMeteor` (`:678`).
+    pub zone_meteor: bool,
+    /// `ZoneGraveyard` (`:679`).
+    pub zone_graveyard: bool,
+    /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
+    /// scan driver (they read the centre tile's wall).
+    pub zone_dungeon: bool,
+}
+
+/// The `Player.SceneMetrics` aura read as a Copy snapshot — what
+/// `UpdateLifeRegen` (`:19170-19178`), `UpdateManaRegen` (`:19448`) and the
+/// scene-buff grants (`:25525-25555`) consume.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Auras {
+    pub campfire: bool,
+    pub heart_lantern: bool,
+    pub star_in_bottle: bool,
+    pub sunflower: bool,
+    pub cat_bast: bool,
+    pub shadow_candle: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -74,6 +144,26 @@ pub mod thresholds {
     pub const GRAVEYARD_TILE_MIN: i32 = 16;
     /// `GraveyardTileMax` (`SceneMetrics.cs:939`).
     pub const GRAVEYARD_TILE_MAX: i32 = 36;
+    /// `CorruptionTileThreshold` (`SceneMetrics.cs:924`).
+    pub const CORRUPTION_TILE: i32 = 300;
+    /// `CrimsonTileThreshold` (`SceneMetrics.cs:926`).
+    pub const CRIMSON_TILE: i32 = 300;
+    /// `HallowTileThreshold` (`SceneMetrics.cs:927`).
+    pub const HALLOW_TILE: i32 = 125;
+    /// `JungleTileThreshold` (`SceneMetrics.cs:929`).
+    pub const JUNGLE_TILE: i32 = 140;
+    /// `ShimmerTileThreshold` (`SceneMetrics.cs:921`).
+    pub const SHIMMER_TILE: i32 = 300;
+    /// `MeteorTileThreshold` (`SceneMetrics.cs:937`).
+    pub const METEOR_TILE: i32 = 75;
+    /// `DungeonTileThreshold` (`SceneMetrics.cs:938`).
+    pub const DUNGEON_TILE: i32 = 250;
+}
+
+/// `Main.wallDungeon` (`Main.cs:10596-10607`): the brick/background walls
+/// the dungeon zone requires behind the scan centre.
+pub fn is_dungeon_wall(wall: u16) -> bool {
+    matches!(wall, 7 | 8 | 9 | 94..=99)
 }
 
 impl SceneMetrics {
@@ -83,6 +173,10 @@ impl SceneMetrics {
             center: [0.0; 2],
             tile_center: (0, 0),
             behind_backwall: false,
+            shimmer_tile_count: 0,
+            underground_for_shimmering: false,
+            zone_shimmer: false,
+            player_shimmering: false,
             tile_counts: vec![0; TILE_COUNT],
             ocean_sand_tile_count: 0,
             sand_tile_count: 0,
@@ -90,11 +184,44 @@ impl SceneMetrics {
             snow_tile_count: 0,
             graveyard_tile_count: 0,
             desert_sand_tile_count: 0,
+            jungle_tile_count: 0,
+            evil_tile_count: 0,
+            blood_tile_count: 0,
             surface_atmospherics: false,
             zone_rain: false,
             zone_snow: false,
             zone_desert: false,
             zone_sandstorm: false,
+            zone_corrupt: false,
+            zone_crimson: false,
+            zone_hallow: false,
+            zone_jungle: false,
+            zone_beach: false,
+            has_campfire: false,
+            water_candle_count: 0,
+            peace_candle_count: 0,
+            shadow_candle_count: 0,
+            has_cat_bast: false,
+            has_heart_lantern: false,
+            has_star_in_bottle: false,
+            has_sunflower: false,
+            meteor_tile_count: 0,
+            dungeon_tile_count: 0,
+            zone_meteor: false,
+            zone_graveyard: false,
+            zone_dungeon: false,
+        }
+    }
+
+    /// The [`Auras`] snapshot of the scan.
+    pub fn auras(&self) -> Auras {
+        Auras {
+            campfire: self.has_campfire,
+            heart_lantern: self.has_heart_lantern,
+            star_in_bottle: self.has_star_in_bottle,
+            sunflower: self.has_sunflower,
+            cat_bast: self.has_cat_bast,
+            shadow_candle: self.shadow_candle_count > 0,
         }
     }
 
@@ -117,13 +244,14 @@ impl SceneMetrics {
     }
 
     /// `SceneMetrics.AggregateTileCounts` (`SceneMetrics.cs:573-660`), M1
-    /// subset. The full routine also derives Jungle/Evil/Blood/Mushroom/
-    /// Meteor/Dungeon counts and the Holy/Evil/Blood cross-subtraction — none
-    /// of which has an M1 reader, so their terms stay 0 here and the
-    /// cross-subtraction (`:629-647`) is a no-op for the M1 sums.
+    /// subset. Mushroom/Meteor/Dungeon/Shimmer counts and the `HasSunflower`/
+    /// `HasGardenGnome` markers have no M1 reader and stay unported; the
+    /// `infectedSeed ×3` sunflower scaling (`:576-579`) and the remixWorld
+    /// count branch (`:604-609`) belong to seeds the port does not generate.
     pub fn aggregate_tile_counts(&mut self) {
-        // `num = -10` (`:575-578`) only scales `_tileCounts[27]` inside the
-        // Evil/Blood sums (×3 for the infected seed) — both are M-later.
+        // `num = -10` (`:575`): each sunflower counts as −10 evil/blood tiles
+        // (vanilla's sunflower suppression). `infectedSeed` would scale it ×3.
+        let sunflower_term: i32 = self.count(27) * -10;
         // `SceneMetrics.cs:589`:
         self.holy_tile_count = self.count(109)
             + self.count(492)
@@ -142,7 +270,42 @@ impl SceneMetrics {
             + self.count(164)
             + self.count(163)
             + self.count(200);
-        // `SceneMetrics.cs:613`:
+        // `SceneMetrics.cs:610-614`, non-remix branch (`:616-619`):
+        self.jungle_tile_count = self.count(60)
+            + self.count(61)
+            + self.count(62)
+            + self.count(74)
+            + self.count(226)
+            + self.count(225);
+        self.evil_tile_count = self.count(23)
+            + self.count(661)
+            + self.count(24)
+            + self.count(25)
+            + self.count(32)
+            + self.count(112)
+            + self.count(163)
+            + self.count(400)
+            + self.count(398)
+            + sunflower_term;
+        self.blood_tile_count = self.count(199)
+            + self.count(662)
+            + self.count(201)
+            + self.count(203)
+            + self.count(200)
+            + self.count(401)
+            + self.count(399)
+            + self.count(234)
+            + self.count(352)
+            + sunflower_term;
+        // `SceneMetrics.cs:611-612`:
+        self.meteor_tile_count = self.count(37);
+        self.dungeon_tile_count = self.count(41)
+            + self.count(43)
+            + self.count(44)
+            + self.count(481)
+            + self.count(482)
+            + self.count(483);
+        // `SceneMetrics.cs:625`:
         self.sand_tile_count = self.count(53)
             + self.count(112)
             + self.count(116)
@@ -156,11 +319,32 @@ impl SceneMetrics {
             + self.count(403)
             + self.count(401);
         // `SceneMetrics.cs:615-624`: tombstones minus half the sunflowers
-        // (integer division), floored at zero.
+        // (integer division), floored at zero; `HasSunflower` rides the same
+        // counts (`:617-624`) — any tile 27 raises it, a graveyard above
+        // `GraveyardTileMin` (16) cancels it.
         self.graveyard_tile_count = self.count(85) - self.count(27) / 2;
+        self.has_sunflower = self.count(27) > 0;
         if self.graveyard_tile_count < 0 {
             self.graveyard_tile_count = 0;
         }
+        if self.graveyard_tile_count > thresholds::GRAVEYARD_TILE_MIN {
+            self.has_sunflower = false;
+        }
+        // `SceneMetrics.cs:629-639`: clamp each sum at zero before the
+        // cross-subtraction.
+        self.holy_tile_count = self.holy_tile_count.max(0);
+        self.evil_tile_count = self.evil_tile_count.max(0);
+        self.blood_tile_count = self.blood_tile_count.max(0);
+        // `SceneMetrics.cs:645-653`: the holy/evil/blood cross-subtraction, in
+        // the original order, then clamp again (`:655-664`).
+        let holy_before = self.holy_tile_count;
+        self.holy_tile_count -= self.evil_tile_count;
+        self.holy_tile_count -= self.blood_tile_count;
+        self.evil_tile_count -= holy_before;
+        self.blood_tile_count -= holy_before;
+        self.holy_tile_count = self.holy_tile_count.max(0);
+        self.evil_tile_count = self.evil_tile_count.max(0);
+        self.blood_tile_count = self.blood_tile_count.max(0);
         // `SceneMetrics.cs:658`: `Math.Max(0, SandTileCount - OceanSandTileCount)`.
         self.desert_sand_tile_count = (self.sand_tile_count - self.ocean_sand_tile_count).max(0);
     }
@@ -171,19 +355,46 @@ impl SceneMetrics {
     }
 
     /// `SceneMetrics.CalculateZones` (`SceneMetrics.cs:662-707`), M1 subset.
-    /// `world_surface` is `Main.worldSurface`; `raining` is `Main.raining`;
-    /// `sandstorm_happening` is `Sandstorm.Happening`. The depth flags the
-    /// heat/water filters read (`ZoneOverworldHeight`, …) derive straight from
-    /// `tile_center` in the phase-3 driver.
+    /// `world_surface` is `Main.worldSurface`; `underworld_layer` is
+    /// `Main.UnderworldLayer`; `rock_layer` is `Main.rockLayer`; `max_tiles_x`
+    /// is `Main.maxTilesX`; `raining` is `Main.raining`; `sandstorm_happening`
+    /// is `Sandstorm.Happening`. The depth flags the heat/water filters read
+    /// (`ZoneOverworldHeight`, …) derive straight from `tile_center` in the
+    /// phase-3 driver. The `drunkWorld` dungeon override (`:683-686`) and the
+    /// remix atmospherics override (`:699-701`) belong to seeds the port does
+    /// not generate.
     pub fn calculate_zones(
         &mut self,
         world_surface: f64,
+        underworld_layer: i32,
+        rock_layer: f64,
+        max_tiles_x: i32,
+        max_tiles_y: i32,
         raining: bool,
         sandstorm_happening: bool,
     ) {
+        // `SceneMetrics.cs:671-674`:
+        self.zone_corrupt = self.evil_tile_count >= thresholds::CORRUPTION_TILE;
+        self.zone_crimson = self.blood_tile_count >= thresholds::CRIMSON_TILE;
+        self.zone_hallow = self.holy_tile_count >= thresholds::HALLOW_TILE;
+        let zone_underworld_height = self.tile_center.1 > underworld_layer;
+        self.zone_jungle =
+            self.jungle_tile_count >= thresholds::JUNGLE_TILE && !zone_underworld_height;
         // `SceneMetrics.cs:675-676`:
         self.zone_snow = self.enough_tiles_for_snow();
         self.zone_desert = self.enough_tiles_for_desert();
+        // `SceneMetrics.cs:678-679`:
+        self.zone_meteor = self.meteor_tile_count >= thresholds::METEOR_TILE;
+        self.zone_graveyard = self.enough_tiles_for_graveyard();
+        // `SceneMetrics.cs:691` via `WorldGen.oceanDepths` (`WorldGen.cs:4447`,
+        // ported as [`ocean_depths`]):
+        self.zone_beach = ocean_depths(
+            world_surface,
+            rock_layer,
+            self.tile_center.0,
+            max_tiles_x,
+            self.tile_center.1,
+        );
         // `SceneMetrics.cs:698` via `WorldGen.IsSurfaceForAtmospherics`
         // (`WorldGen.cs:10976-10985`; the remix branch is not ported):
         self.surface_atmospherics = self.tile_center.1 as f64 <= world_surface;
@@ -195,6 +406,14 @@ impl SceneMetrics {
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
+        // `SceneMetrics.cs:704-705`: the shimmer depth window and the zone —
+        // `EnoughTilesForShimmer` is `_liquidCounts[3] >= 300`
+        // (`:252`, threshold `:921`); the `!ZoneDungeon` term waits for the
+        // dungeon zone (M4-NPC families).
+        self.underground_for_shimmering = (self.tile_center.1 as f64) > world_surface + 84.0
+            && (self.tile_center.1 as i64) < max_tiles_y as i64 - 396;
+        self.zone_shimmer =
+            self.shimmer_tile_count >= thresholds::SHIMMER_TILE && self.underground_for_shimmering;
     }
 }
 
@@ -402,6 +621,15 @@ pub struct SceneState {
     /// Main, but `SceneState.UpdateGraveyard` (`:368-371`) is its only writer,
     /// so the port owns it here.
     pub graveyard_visual_intensity: f32,
+    /// `Main.shimmerAlpha` (`Main.cs:917`): vanilla keeps both on Main, but
+    /// `SceneState.UpdateShimmer` (`:283-309`) is their only writer, so the
+    /// port owns them here. The alpha gates the horizon-cloud suppression and
+    /// the draw-side shimmer effects; the darken multiplies the surface light
+    /// seeds (`TileLightScanner.cs:3222`).
+    pub shimmer_alpha: f32,
+    pub shimmer_darken: f32,
+    /// `SceneState._shimmerBrightenDelay` (`SceneState.cs:30`).
+    shimmer_brighten_delay: f32,
     /// `SceneState.skipTransitions` (`:35`).
     pub skip_transitions: bool,
     /// `Main.bloodMoon` — the only M1 reader is the phase-3 BloodMoon filter;
@@ -424,6 +652,9 @@ impl SceneState {
             outside_weather_effect_intensity: 1.0,
             outside_weather_effect_intensity_backing: 1.0,
             graveyard_visual_intensity: 0.0,
+            shimmer_alpha: 0.0,
+            shimmer_darken: 0.0,
+            shimmer_brighten_delay: 0.0,
             skip_transitions: true,
             blood_moon: false,
             forced_severity: None,
@@ -456,6 +687,8 @@ impl SceneState {
     /// driver is phase 3, the map capture already lives in `tr-core/map`.)
     pub fn update(&mut self, metrics: &SceneMetrics) {
         let skip = self.skip_transitions;
+        // `SceneState.cs:76` → `UpdateShimmer` (`:283-309`).
+        self.update_shimmer(metrics);
         // `SceneState.cs:72` → `UpdateGraveyard` (`:368-371`): fade toward the
         // count-derived 0..1 target (0.02/tick in, 0.1/tick out).
         let target = get_lerp_value(
@@ -499,6 +732,30 @@ impl SceneState {
     /// `SceneState.MoveTowards(ref value, target, amount)` (`:472-477`).
     pub fn move_towards(&self, value: &mut f32, target: f32, amount: f32) {
         move_towards_impl(self.skip_transitions, value, target, amount, amount);
+    }
+
+    /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the two ramps.
+    /// The monolith states (`:284,288`) and the perspective-player shimmering
+    /// term land with their systems (M4 events / M2-BUFF shimmer); the active
+    /// trigger is `metrics.ZoneShimmer` with its depth window.
+    fn update_shimmer(&mut self, metrics: &SceneMetrics) {
+        let flag = metrics.zone_shimmer
+            || (metrics.player_shimmering && metrics.underground_for_shimmering);
+        if flag {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 1.0, 0.025, 0.025);
+            if self.shimmer_alpha >= 0.5 {
+                move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 1.0, 0.025, 0.025);
+                self.shimmer_brighten_delay = 4.0;
+            }
+            return;
+        }
+        move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 0.0, 0.05, 0.05);
+        if self.shimmer_darken == 0.0 {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_brighten_delay, 0.0, 1.0, 1.0);
+        }
+        if self.shimmer_brighten_delay == 0.0 {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 0.0, 0.05, 0.05);
+        }
     }
 
     /// `SceneState.MoveTowards(ref value, target, inc, dec)` (`:479-491`).
@@ -1200,6 +1457,10 @@ mod tests {
     #[test]
     fn holy_and_snow_sums_match_source_id_lists() {
         // `SceneMetrics.cs:589-590`: 164 belongs to BOTH sums.
+        // Snow ids 163/200 also belong to the evil/blood sums
+        // (`SceneMetrics.cs:613-614`), so this id-list test uses the snow-only
+        // ids 147/148/161/162 and a holy sum that survives the
+        // cross-subtraction (no evil/blood tiles in the window).
         let mut m = metrics_with_counts(&[
             (109, 10),
             (492, 1),
@@ -1211,13 +1472,13 @@ mod tests {
             (403, 7),
             (402, 8),
             (147, 100),
+            (148, 150),
             (161, 200),
-            (163, 300),
-            (200, 400),
+            (162, 250),
         ]);
         m.aggregate_tile_counts();
         assert_eq!(m.holy_tile_count, 10 + 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8);
-        assert_eq!(m.snow_tile_count, 6 + 100 + 200 + 300 + 400);
+        assert_eq!(m.snow_tile_count, 6 + 100 + 150 + 200 + 250);
     }
 
     #[test]
@@ -1285,14 +1546,14 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL;
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
-        m.calculate_zones(100.0, false, false);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, false);
         assert!(m.zone_snow);
         assert!(m.zone_desert);
 
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL - 1;
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL - 1;
-        m.calculate_zones(100.0, false, false);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, false);
         assert!(!m.zone_snow);
         assert!(!m.zone_desert);
     }
@@ -1301,17 +1562,17 @@ mod tests {
     fn zone_rain_needs_raining_and_surface() {
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 100);
-        m.calculate_zones(150.0, true, false); // y=100 <= surface=150
+        m.calculate_zones(150.0, 1000, 135.0, 4200, 400, true, false); // y=100 <= surface=150
         assert!(m.zone_rain && m.surface_atmospherics);
 
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 200);
-        m.calculate_zones(150.0, true, false); // below the surface
+        m.calculate_zones(150.0, 1000, 135.0, 4200, 400, true, false); // below the surface
         assert!(!m.zone_rain && !m.surface_atmospherics);
 
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 100);
-        m.calculate_zones(150.0, false, false);
+        m.calculate_zones(150.0, 1000, 135.0, 4200, 400, false, false);
         assert!(!m.zone_rain);
     }
 
@@ -1322,7 +1583,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, false);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, false);
         assert!(m.zone_rain);
         assert!(m.zone_snow);
     }
@@ -1333,7 +1594,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, true);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, true);
         assert!(m.zone_sandstorm);
         assert!(!m.zone_rain);
 
@@ -1341,7 +1602,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, false);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, true, false);
         assert!(!m.zone_sandstorm);
         assert!(m.zone_rain);
 
@@ -1349,7 +1610,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 500);
-        m.calculate_zones(100.0, false, true);
+        m.calculate_zones(100.0, 1000, 135.0, 4200, 400, false, true);
         assert!(!m.zone_sandstorm);
     }
 
@@ -1904,7 +2165,7 @@ mod tests {
         let mut fx = StormShader::new();
         fx.update_blizzard(1.0, 1.0);
         assert!((fx.wind_speed - (1.0 * 0.05 + 0.1 * 0.95)).abs() < 1e-6); // 0.145
-        // Direction: (-windSpeed, -1) × (10, 2) normalized × (0.8, 0.6).
+                                                                           // Direction: (-windSpeed, -1) × (10, 2) normalized × (0.8, 0.6).
         let d = fx.direction();
         assert!(d[0] < 0.0 && d[1] < 0.0);
         // The scroll wraps into ±10.
@@ -1933,7 +2194,7 @@ mod tests {
         assert_eq!(blood_moon_opacity(100.0, surface, rock), 0.75);
         assert_eq!(blood_moon_opacity(150.0, surface, rock), 0.75); // at +50
         assert_eq!(blood_moon_opacity(280.0, surface, rock), 0.0); // at rock+100
-        // Midpoint: SmoothStep is a plain inverse lerp (`Utils.cs:126-129`).
+                                                                   // Midpoint: SmoothStep is a plain inverse lerp (`Utils.cs:126-129`).
         let mid = blood_moon_opacity(215.0, surface, rock); // (215-150)/(280-150) = 0.5
         assert!((mid - 0.375).abs() < 1e-6);
     }
@@ -2191,5 +2452,143 @@ mod tests {
         board.manage(FilterId::BloodMoon, true, true);
         board.set_hidden(FilterId::BloodMoon, true);
         assert_eq!(board.winner(), None);
+    }
+    // --- biome zones for the ambience gates (SceneMetrics.cs:671-691) ---
+
+    #[test]
+    fn corruption_crimson_hallow_jungle_thresholds_bound_their_zones() {
+        // Thresholds: corruption/crimson 300, hallow 125, jungle 140
+        // (`SceneMetrics.cs:922-929`).
+        let cases: [(u16, u16, i32, &str); 4] = [
+            (23, 0, 300, "corrupt"),  // ebonstone
+            (199, 0, 300, "crimson"), // crimstone
+            (109, 0, 125, "hallow"),  // hallowed grass
+            (60, 0, 140, "jungle"),   // jungle grass
+        ];
+        for &(id, _, threshold, name) in &cases {
+            // One tile short: no zone.
+            let mut m = metrics_with_counts(&[(id, (threshold - 1) as u32)]);
+            m.tile_center = (100, 100);
+            m.aggregate_tile_counts();
+            m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+            let zone = match name {
+                "corrupt" => m.zone_corrupt,
+                "crimson" => m.zone_crimson,
+                "hallow" => m.zone_hallow,
+                _ => m.zone_jungle,
+            };
+            assert!(!zone, "{name} below threshold");
+
+            // Exactly at the threshold: zone on.
+            let mut m = metrics_with_counts(&[(id, threshold as u32)]);
+            m.tile_center = (100, 100);
+            m.aggregate_tile_counts();
+            m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+            let zone = match name {
+                "corrupt" => m.zone_corrupt,
+                "crimson" => m.zone_crimson,
+                "hallow" => m.zone_hallow,
+                _ => m.zone_jungle,
+            };
+            assert!(zone, "{name} at threshold");
+        }
+    }
+
+    #[test]
+    fn jungle_needs_the_overworld_and_sunflowers_suppress_evil() {
+        // `ZoneJungle = EnoughTilesForJungle && !ZoneUnderworldHeight`
+        // (`SceneMetrics.cs:674`): the same count in the underworld is not a
+        // jungle (UnderworldLayer = maxTilesY - 200 -> 1000 here).
+        let mut m = metrics_with_counts(&[(60, 140)]);
+        m.tile_center = (100, 1001);
+        m.aggregate_tile_counts();
+        m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(!m.zone_jungle);
+
+        // Sunflowers count as -10 evil tiles each (`SceneMetrics.cs:575,613`),
+        // so 31 sunflowers cancel 300 ebonstone... 31 * -10 = -310: exactly
+        // one tile short stays short, one more cancels the zone entirely.
+        let mut m = metrics_with_counts(&[(23, 300), (27, 31)]);
+        m.tile_center = (100, 100);
+        m.aggregate_tile_counts();
+        assert_eq!(m.evil_tile_count, 0); // 300 - 310 clamped to 0
+        m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(!m.zone_corrupt);
+    }
+
+    #[test]
+    fn holy_and_evil_cancel_each_other_before_the_thresholds() {
+        // The cross-subtraction (`SceneMetrics.cs:645-653`): holy loses to both
+        // evil and blood, evil/blood each lose to the *pre-subtraction* holy.
+        // 200 holy + 250 evil: holy -> 0, evil -> 50 (< 300: no zone).
+        let mut m = metrics_with_counts(&[(109, 200), (23, 250)]);
+        m.tile_center = (100, 100);
+        m.aggregate_tile_counts();
+        assert_eq!(m.holy_tile_count, 0);
+        assert_eq!(m.evil_tile_count, 50);
+        m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(!m.zone_hallow);
+        assert!(!m.zone_corrupt);
+    }
+
+    #[test]
+    fn zone_beach_follows_ocean_depths() {
+        // `ZoneBeach = WorldGen.oceanDepths(TileCenter)` (`SceneMetrics.cs:691`):
+        // inside the 380-tile edge bands above oceanLevel, else false.
+        let mut m = SceneMetrics::new();
+        m.tile_center = (100, 50); // x < 380, y <= oceanLevel
+        m.aggregate_tile_counts();
+        m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(m.zone_beach);
+
+        let mut m = SceneMetrics::new();
+        m.tile_center = (2000, 50); // mid-world
+        m.aggregate_tile_counts();
+        m.calculate_zones(300.0, 1000, 135.0, 4200, 400, false, false);
+        assert!(!m.zone_beach);
+    }
+
+    /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the zone ramps
+    /// the alpha at 0.025/tick, the darken follows past 0.5; losing the zone
+    /// decays the darken first, then (after the 4-tick delay) the alpha.
+    #[test]
+    fn shimmer_ramps_follow_the_zone() {
+        let mut m = SceneMetrics::new();
+        m.shimmer_tile_count = thresholds::SHIMMER_TILE;
+        m.underground_for_shimmering = true;
+        m.zone_shimmer = true;
+        let mut st = SceneState::new();
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "alpha ramps in: {}", st.shimmer_alpha);
+        assert!(st.shimmer_darken > 0.9, "darken follows: {}", st.shimmer_darken);
+
+        // The zone off: the darken decays at 0.05/tick while the delay holds
+        // the alpha; the alpha decays after the delay drains.
+        m.zone_shimmer = false;
+        for _ in 0..20 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_darken < 0.05, "darken decays: {}", st.shimmer_darken);
+        assert!(st.shimmer_alpha > 0.9, "alpha held by the delay: {}", st.shimmer_alpha);
+        for _ in 0..60 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha < 0.05, "alpha decays after the delay: {}", st.shimmer_alpha);
+    }
+
+    /// The zone needs the depth window (`SceneMetrics.cs:704`): the count
+    /// alone is not enough above `worldSurface + 84`.
+    #[test]
+    fn shimmer_zone_needs_the_depth_window() {
+        let mut m = SceneMetrics::new();
+        m.shimmer_tile_count = thresholds::SHIMMER_TILE;
+        m.tile_center = (500, 100); // above the surface+84 line
+        m.calculate_zones(200.0, 1000, 135.0, 4200, 1200, false, false);
+        assert!(!m.zone_shimmer, "too shallow");
+        m.tile_center = (500, 400); // 200+84 < 400 < 1200-396
+        m.calculate_zones(200.0, 1000, 135.0, 4200, 1200, false, false);
+        assert!(m.zone_shimmer, "in the window");
     }
 }

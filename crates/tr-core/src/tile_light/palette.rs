@@ -63,6 +63,13 @@ impl FastRandom {
         self.next_bits(24) as f32 * 5.9604645e-8
     }
 
+    /// `FastRandom.Next(int max)` (`FastRandom.cs:63-76`): uniform in `0..max`.
+    /// `Next(min, max)` is `Next(max - min) + min` (`:78-81`), so this is the
+    /// same draw as [`Self::next_range`] with `min = 0`.
+    pub fn next(&mut self, max: i32) -> i32 {
+        self.next_range(0, max)
+    }
+
     /// `FastRandom.Next(int min, int max)` (`FastRandom.cs:80`, the
     /// `Next(max - min) + min` overload).
     pub fn next_range(&mut self, min: i32, max: i32) -> i32 {
@@ -285,5 +292,21 @@ mod tests {
         close(hsl_to_rgb(2.0 / 3.0, 1.0, 0.5), [0.0, 0.0, 1.0]);
         // `Math.Round(127.5)` is banker's rounding -> 128.
         close(hsl_to_rgb(0.0, 0.0, 0.5), [128.0 / 255.0; 3]);
+    }
+    #[test]
+    fn fast_random_next_n_matches_the_next_zero_min_range() {
+        // `Next(max)` is the same draw as `Next(0, max)` (`FastRandom.cs:78-81`).
+        let mut a = FastRandom::new(0xDEAD_BEEF);
+        let mut b = FastRandom::new(0xDEAD_BEEF);
+        for n in [1, 2, 3, 5, 8, 121] {
+            let v = a.next(n);
+            assert_eq!(v, b.next_range(0, n), "n = {n}");
+            assert!((0..n).contains(&v), "n = {n}, v = {v}");
+        }
+        // `Next(1)` is always 0 (the only value in 0..1).
+        let mut one = FastRandom::new(7);
+        for _ in 0..16 {
+            assert_eq!(one.next(1), 0);
+        }
     }
 }

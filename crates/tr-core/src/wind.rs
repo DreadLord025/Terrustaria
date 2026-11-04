@@ -102,6 +102,14 @@ pub struct Wind {
     pub any_player_120_life: bool,
     /// Creative wind freeze, Lantern Night, client/menu: skip the target walk.
     pub frozen: bool,
+    /// `Main._shouldUseWindyDayMusic` (`Main.cs:2903`, `Main.IsItAHappyWindyDay`):
+    /// the sticky windy-day flag. The ambience gates for the Airship, Slime
+    /// Balloons and the Lost Kite read it (`AmbienceServer.cs:62-66`).
+    pub happy_windy_day: bool,
+    /// `Main._shouldUseStormMusic` (`Main.cs:2904`, `Main.IsItStorming`): the
+    /// sticky storm flag; the Lost Kite's speed and frame rate read it
+    /// (`AmbientSky.cs:259-271`).
+    pub storming: bool,
 }
 
 impl Wind {
@@ -126,6 +134,8 @@ impl Wind {
             sway_enabled: true,
             any_player_120_life: true,
             frozen: false,
+            happy_windy_day: false,
+            storming: false,
         }
     }
 
@@ -133,6 +143,49 @@ impl Wind {
     #[inline]
     pub fn update(&mut self, raining: bool) {
         self.update_rain(if raining { 1.0 } else { 0.0 });
+    }
+
+    /// `Main.UpdateWindyDayState` (`Main.cs:12990-13027`): the sticky
+    /// windy-day / storm music flags. `cloud_alpha` is `Main.cloudAlpha`,
+    /// `time` is `Main.time`, `day_time` is `Main.dayTime`. Inside the
+    /// hysteresis bands both flags *hold* their previous value. The remixWorld
+    /// override (`:13022-13024`) belongs to a seed the port does not generate.
+    pub fn update_windy_day_state(&mut self, cloud_alpha: f32, time: f64, day_time: bool) {
+        // `Main._minWind = 0.34f; _maxWind = 0.4f; _minRain = 0.4f;
+        // _maxRain = 0.5f;` (`Main.cs:67224-67227`).
+        const MIN_WIND: f32 = 0.34;
+        const MAX_WIND: f32 = 0.4;
+        const MIN_RAIN: f32 = 0.4;
+        const MAX_RAIN: f32 = 0.5;
+        if cloud_alpha == 0.0 {
+            self.storming = false;
+            if time < 10800.0 || time > 43200.0 || !day_time {
+                self.happy_windy_day = false;
+                return;
+            }
+            if self.speed_target.abs() < MIN_WIND {
+                self.happy_windy_day = false;
+            }
+            if self.speed_target.abs() >= MAX_WIND {
+                self.happy_windy_day = true;
+            }
+        } else {
+            if cloud_alpha < MIN_RAIN || self.speed_target.abs() < MIN_WIND {
+                self.storming = false;
+            } else if cloud_alpha >= MAX_RAIN && self.speed_target.abs() >= MAX_WIND {
+                self.storming = true;
+            }
+            // The original's remix branch (`:13022-13024`) would keep storming
+            // false; non-remix worlds clear the windy-day flag whenever the
+            // sky is not fully clear (`:13025-13027`).
+            self.happy_windy_day = false;
+        }
+    }
+
+    /// `NPC.TooWindyForButterflies` (`NPC.cs:6885`): a pure threshold on the
+    /// wind *target*.
+    pub fn too_windy_for_butterflies(&self) -> bool {
+        self.speed_target.abs() >= 0.4
     }
 
     /// One 60 Hz `UpdateWeather` tick with the real `Main.maxRaining` value.
@@ -641,6 +694,79 @@ pub fn advance_sunflower_counter(counter: &mut f32, wind_speed: f32) {
 pub fn advance_vine_counter(counter: &mut f32, wind_speed: f32) {
     let num = visual_wind_amount(wind_speed);
     *counter += 1.0 / 120.0 + 1.0 / 120.0 * num * 0.400_000_005_960_464_5;
+
+    // --- UpdateWindyDayState (Main.cs:12990-13027) ---
+
+    #[test]
+    fn windy_day_holds_inside_the_band_and_flips_at_the_boundaries() {
+        let mut w = Wind::new(1);
+        // Clear day, inside the time window: target in [0.34, 0.4) holds the
+        // previous value (`Main.cs:13007-13012`).
+        w.speed_target = 0.36;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.happy_windy_day); // started false, held
+        w.happy_windy_day = true;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(w.happy_windy_day); // still held
+
+        // At >= 0.4 it turns on; below 0.34 it turns off.
+        w.speed_target = 0.4;
+        w.happy_windy_day = false;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(w.happy_windy_day);
+        w.speed_target = 0.339999;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.happy_windy_day);
+
+        // Outside the time window or at night it is false regardless
+        // (`Main.cs:13000-13005`).
+        w.speed_target = 0.8;
+        w.update_windy_day_state(0.0, 10000.0, true);
+        assert!(!w.happy_windy_day);
+        w.update_windy_day_state(0.0, 20000.0, false);
+        assert!(!w.happy_windy_day);
+    }
+
+    #[test]
+    fn storm_holds_inside_the_band_and_any_rain_kills_windy_day() {
+        let mut w = Wind::new(1);
+        // Raining: windy-day is false (`Main.cs:13025-13027`) and the storm
+        // flag holds inside rain [0.4, 0.5) x wind [0.34, 0.4)
+        // (`Main.cs:13013-13020`).
+        w.storming = true;
+        w.happy_windy_day = true;
+        w.update_windy_day_state(0.45, 20000.0, true);
+        assert!(w.storming); // held
+        assert!(!w.happy_windy_day);
+        // Rain >= 0.5 with wind >= 0.4 turns the storm on.
+        w.storming = false;
+        w.update_windy_day_state(0.5, 20000.0, true);
+        assert!(w.storming);
+        // Interior band edge: rain 0.5 but wind 0.39 -> held (started false).
+        w.storming = false;
+        w.speed_target = 0.39;
+        w.update_windy_day_state(0.5, 20000.0, true);
+        assert!(!w.storming);
+        // Rain < 0.4 clears it.
+        w.storming = true;
+        w.update_windy_day_state(0.39, 20000.0, true);
+        assert!(!w.storming);
+        // Fully clear sky always clears the storm flag (`:12992-12994`).
+        w.storming = true;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.storming);
+    }
+
+    #[test]
+    fn too_windy_for_butterflies_is_a_pure_target_threshold() {
+        // `NPC.TooWindyForButterflies` = |windSpeedTarget| >= 0.4 (NPC.cs:6885).
+        let mut w = Wind::new(1);
+        w.speed_target = 0.399999;
+        assert!(!w.too_windy_for_butterflies());
+        w.speed_target = -0.4;
+        assert!(w.too_windy_for_butterflies());
+    }
+
 }
 
 #[cfg(test)]

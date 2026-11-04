@@ -4,10 +4,12 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod anim;
+pub mod bestiary;
 pub mod binio;
 pub mod damage;
 pub mod drawdata;
 pub mod edit;
+pub mod falling;
 pub mod flame;
 pub mod framing;
 pub mod lighting;
@@ -24,9 +26,11 @@ pub mod tile;
 pub mod tile_light;
 pub mod tiledata;
 pub mod tileobject;
+pub mod tile_entities;
 pub mod torch;
 pub mod tree;
 pub mod waterfall;
+pub mod wiring;
 pub mod wind;
 pub mod wld;
 pub mod world;

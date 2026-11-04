@@ -3,6 +3,7 @@
 
 use tr_core::{TILE_PX, World};
 
+use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
 const GRAVITY: f32 = 0.4;
@@ -164,6 +165,38 @@ impl SlimeVariant {
     }
 }
 
+/// The bestiary info-page stat rows for one entry — the same tables
+/// `Npc::max_hp`/`defense`/`value`/`knock_back_resist` read, exposed for the
+/// UI without constructing an `Npc` (`EntryStats` mirrors
+/// `UIBestiaryEntryInfoPage`'s `Stat_*` lines).
+pub struct EntryStats {
+    pub hp: i32,
+    pub damage: i32,
+    pub defense: i32,
+    pub value: f32,
+    pub kb: f32,
+}
+
+/// The stat rows for one kind/variant pair; the slime variants ride their
+/// `SlimeStats`, the other kinds the `Npc` accessors' tables.
+pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
+    // The accessors live on `Npc` instances; the private ctor builds the
+    // shell and the variant rides the only other field the tables consult.
+    let mut shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+    shell.slime = variant;
+    EntryStats {
+        hp: kind.max_hp(),
+        damage: if kind == NpcKind::Slime {
+            variant.stats().damage
+        } else {
+            kind.contact_damage()
+        },
+        defense: shell.defense(),
+        value: shell.value(),
+        kb: shell.knock_back_resist(),
+    }
+}
+
 impl NpcKind {
     pub fn to_u16(self) -> u16 {
         match self {
@@ -197,7 +230,7 @@ impl NpcKind {
         }
     }
 
-    fn max_hp(self) -> i32 {
+    pub(crate) fn max_hp(self) -> i32 {
         match self {
             NpcKind::Slime => 25,         // NPC.cs:8572
             NpcKind::DemonEye => 60,      // case 2
@@ -235,6 +268,18 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
+    /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
+    /// (`NPC.cs:90454-90459`).
+    pub immune: [i32; 256],
+    /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
+    /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
+    /// check, `NPC.cs:78849`).
+    pub spawned_from_statue: bool,
+    /// `NPC.buffType[20]` / `buffTime[20]` / `buffImmune` — the debuff engine
+    /// (`npc_buffs.rs`, `NPC.cs:6193-6197`); the DoT tick runs from
+    /// `Npc::update` like the C# buff block of `UpdateNPC`.
+    pub buffs: NpcBuffs,
     /// `NPC.frame`: the rendered frame row, advanced by [`Npc::find_frame`] in
     /// the fixed step (the original advances animation in the sim too —
     /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
@@ -359,6 +404,9 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            immune: [0; 256],
+            spawned_from_statue: false,
+            buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
@@ -480,8 +528,52 @@ impl Npc {
         true
     }
 
+    /// The projectile-hit path: identical to [`Npc::hurt`] but without the
+    /// shared `hurt_cd` gate — a projectile's right to hit is decided by the
+    /// three C# immunity systems (`Projectile.cs:12577-12624`), not by the
+    /// melee cooldown stand-in. The hit still arms `hurt_cd`, so melee is
+    /// gated afterward, matching `StrikeNPC`'s 10-tick `NPC.immune` window.
+    pub fn hurt_from_projectile(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        if self.hp <= 0 {
+            return false;
+        }
+        self.hp -= amount;
+        self.hurt_cd = 0.18;
+        let (w, _) = self.size();
+        let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            self.knock_back_resist(),
+            crit,
+            amount,
+            self.max_hp,
+            (self.vx, self.vy),
+            dir,
+            false,
+            false,
+        );
+        self.vx = vx;
+        self.vy = vy;
+        self.on_ground = false;
+        true
+    }
+
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
+        // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
+        // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
+        // the frame's movement, exactly like the original.
+        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
+        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
+        for v in self.immune.iter_mut() {
+            *v = v.saturating_sub(1);
+        }
         self.anim += dt;
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),
@@ -841,7 +933,18 @@ impl Npc {
         }
     }
 
-    fn contact(&self, player: &mut Player) {
+    /// The contact overlap test (`contact`'s AABB) as a pure read —
+    /// `Player.StatusFromNPC`'s call site (`Player.cs:31425`) runs the
+    /// per-NPC debuff rolls on the same touch branch.
+    pub fn touches(&self, player: &Player) -> bool {
+        let (w, h) = self.size();
+        self.x < player.x + crate::player::WIDTH
+            && self.x + w > player.x
+            && self.y < player.y + crate::player::HEIGHT
+            && self.y + h > player.y
+    }
+
+    fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -849,6 +952,29 @@ impl Npc {
             && self.y + h > player.y
         {
             let (cx, _) = self.center();
+            // `Player.Update_NPCCollision`'s EoC shield hit
+            // (`Player.cs:21049-21116`): while `dash == 2 && eocDash > 0` the
+            // dash deals 30 x meleeDamage with knockback 9, ends itself
+            // (`dashDelay = 30`), bounces the player back, and grants the
+            // 4-tick collision immunity. The vanilla hitbox is expanded by 8
+            // and offset by half the velocity (the plain overlap stands in);
+            // the crit roll (4% base) waits for the combat rng pass.
+            if player.dash == 2 && player.eoc_dash > 0 {
+                let dmg = (30.0 * player.melee_damage) as i32;
+                self.hurt(dmg, cx, 9.0, false);
+                player.eoc_dash = 10;
+                player.dash_delay = 30;
+                let dir = if player.vx != 0.0 {
+                    player.vx.signum() as i32
+                } else {
+                    player.facing
+                };
+                player.vx = -(dir as f32) * 9.0;
+                player.vy = -4.0;
+                player.on_ground = false;
+                player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
+                return;
+            }
             let dmg = if self.kind == NpcKind::Slime {
                 self.slime.stats().damage
             } else {
@@ -1014,6 +1140,37 @@ mod tests {
         // (NPC.cs:8572), so three 10-damage hits leave -5.
         assert!(s.hp <= 0);
     }
+    #[test]
+    fn npc_update_runs_the_buff_tick_before_the_ai() {
+        // NPC.cs:90373-90377 — the buff block runs at the top of UpdateNPC;
+        // an OnFire slime dies from DoT alone (25 hp, 1 damage per 15 ticks —
+        // slimes are immune to Poisoned 20, so the fire row drives the tick).
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut s = Npc::spawn_slime(&w, 34).unwrap();
+        s.buffs.add_buff(24, 2000); // OnFire — 8 regenLoss/tick
+        for _ in 0..380 {
+            s.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(s.hp, 0, "hp {}", s.hp);
+    }
+
+    #[test]
+    fn spawned_npcs_carry_their_debuff_immunity_table() {
+        // SetDefaults' immunity application (NPC.cs:17818-17837) rides
+        // Npc::new → NpcBuffs::for_kind: slimes (type 1) are immune to
+        // Poisoned 20 (NPCID.cs:6079-6084) with the derived 30/375; zombies
+        // (null entry) have no immunity.
+        let s = Npc::spawn_slime(&ground(), 20).unwrap();
+        assert!(s.buffs.buff_immune[20]);
+        assert!(
+            s.buffs.buff_immune[30] && s.buffs.buff_immune[375],
+            "derived from 20"
+        );
+        let z = Npc::spawn_zombie(&ground(), 20).unwrap();
+        assert!(!z.buffs.buff_immune[20]);
+    }
+
     #[test]
     fn slime_variants_match_the_setdefaults_lines() {
         // NPC.cs:8567-8580 (blue) and the SetDefaultsFromNetId cases

@@ -111,6 +111,111 @@ pub(crate) fn tile_color(sky: [f32; 3]) -> [f32; 3] {
     ]
 }
 
+/// `SunGradients` (`GameContent/Drawing/SunGradients.cs:37-197`): the 15-entry
+/// gradient tables are hardcoded colours; only the middle entry
+/// (`gradient[gradient.Length / 2]`, `NextHorizonRenderer.cs:185`) feeds the
+/// light tint, so the port stores just that per table, in the vanilla list
+/// order (`:183-197`): Sunrises [Blue, Violet, Yellow, Aluminum], Sunsets
+/// [Blue, Dark, Pink, Red].
+mod sun_gradients {
+    /// `(r, g, b)` 0..255.
+    pub type Gradient = [f32; 3];
+
+    pub const SUNRISES: [Gradient; 4] = [
+        [68.0, 144.0, 149.0],  // _Sunrise_Blue[7]
+        [106.0, 92.0, 142.0],  // _Sunrise_Violet[7]
+        [69.0, 92.0, 102.0],   // _Sunrise_Yellow[7]
+        [138.0, 95.0, 155.0],  // _Sunrise_Aluminum[7]
+    ];
+    pub const SUNSETS: [Gradient; 4] = [
+        [192.0, 106.0, 115.0], // _Sunset_Blue[7]
+        [47.0, 23.0, 45.0],    // _Sunset_Dark[7]
+        [173.0, 93.0, 145.0],  // _Sunset_Pink[7]
+        [64.0, 32.0, 45.0],    // _Sunset_Red[7]
+    ];
+}
+
+/// `Main.HorizonPhase` (`Main.cs:2792-2805`): the moon phase, decremented
+/// before mid-day so the morning half belongs to the previous phase's horizon.
+pub(crate) fn horizon_phase(moon_phase: u8, day: bool, time: f64) -> usize {
+    let mut phase = moon_phase as i32;
+    if day && time < 27000.0 {
+        phase -= 1;
+    }
+    if phase < 0 {
+        phase += 8;
+    }
+    phase as usize
+}
+
+/// `Main.UpdateAtmosphereTransparencyToSkyColor` (`Main.cs:63185-63210`): the
+/// depth factor the horizon visibilities ride. `y` is the camera centre in
+/// world pixels (`Main.cs:61983`).
+pub(crate) fn atmosphere_factor(y: f32, world_surface: f64, max_tiles_x: i32) -> f32 {
+    let n = max_tiles_x as f32 / 4200.0;
+    let n = n * n;
+    let mut atmo = (y / 16.0 - (65.0 + 10.0 * n)) / (world_surface as f32 / 5.0);
+    atmo.clamp(0.0, 1.0)
+}
+
+/// `Utils.Remap`: the clamped from→to lerp the visibility chain uses.
+fn remap(value: f64, from_min: f64, from_max: f64, to_min: f64, to_max: f64) -> f64 {
+    let t = ((value - from_min) / (from_max - from_min)).clamp(0.0, 1.0);
+    to_min + (to_max - to_min) * t
+}
+
+/// `NextHorizonRenderer.GetVisibilities` (`NextHorizonRenderer.cs:196-234`):
+/// the sunrise/sunset light-tint strengths. `mushroom_influence` is
+/// `Main.SmoothedMushroomLightInfluence` (0 until the mushroom biome lands)
+/// and `eclipse` is false until M4 events — both terms omitted here.
+pub(crate) fn horizon_visibilities(time: f64, day: bool, atmo: f32, cloud_alpha: f32) -> (f64, f64) {
+    let mut sunrise = 1.0f64;
+    let mut sunset = 1.0f64;
+    let num = 1.0 * atmo as f64;
+    let num2 = 1.0 - cloud_alpha as f64;
+    let num = num * num2 * num2;
+    sunrise *= num;
+    sunset *= num;
+    if day {
+        // Dawn ramp in, morning ramp out; the sunset mirrors it around the
+        // afternoon (all windows in game ticks).
+        sunrise *= remap(time, 0.0, 2700.0, 0.0, 1.0) * remap(time, 3600.0, 10800.0, 1.0, 0.0);
+        let s = remap(time, 43200.0, 50400.0, 0.0, 1.0);
+        let e = remap(time, 50400.0, 54000.0, 1.0, 0.0);
+        sunset *= s * e * e;
+    } else {
+        sunrise = 0.0;
+        sunset = 0.0;
+    }
+    (sunset, sunrise)
+}
+
+/// `NextHorizonRenderer.BlendColor` (`NextHorizonRenderer.cs:183-194`) +
+/// `Main.instance.HorizonRenderer.ModifyHorizonLight` (`Main.cs:63921`): the
+/// mid gradient entries blend into the sky/tile colour at the visibility
+/// strengths — the "HorizonClouds tint".
+pub(crate) fn modify_horizon_light(
+    color: &mut [f32; 3],
+    moon_phase: u8,
+    day: bool,
+    time: f64,
+    atmo: f32,
+    cloud_alpha: f32,
+) {
+    let (sunset, sunrise) = horizon_visibilities(time, day, atmo, cloud_alpha);
+    let idx = horizon_phase(moon_phase, day, time) % 4;
+    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNSETS[idx]) {
+        let grad = gradient / 255.0;
+        let target = (*channel).max(grad);
+        *channel += (target - *channel) * sunset as f32;
+    }
+    for (channel, gradient) in color.iter_mut().zip(sun_gradients::SUNRISES[idx]) {
+        let grad = gradient / 255.0;
+        let target = (*channel).max(grad);
+        *channel += (target - *channel) * sunrise as f32;
+    }
+}
+
 /// `[lo, hi)` draw from the splitmix stream — the shape of `Random.Next(lo, hi)`.
 fn next_range(state: &mut u64, lo: i32, hi: i32) -> i32 {
     lo + (next_rand(state) % (hi - lo) as u64) as i32
@@ -501,6 +606,15 @@ pub(crate) fn draw_sky(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`), threaded to `DrawBackground` —
     // the underworld black box consumes the previous frame's hell floor line.
     hell_black_box_bottom: &mut f32,
+    // The ambient-sky creatures (`AmbientSky`): the live entities and the
+    // sheets they sample. Drawn between the passes at the C# `DrawToDepth`
+    // boundaries — see the `DRAW_TO_DEPTH` table below.
+    ambience: &[crate::ambience::SkyEntity],
+    lookups: &crate::assets::Lookups,
+    // `Main.ColorOfTheSkies` (the rain-dimmed sky tint, `Main.cs:63209`) and
+    // `Main.atmo` — the entity colour chain (`AmbientSky.cs:63`).
+    sky_color: [f32; 3],
+    atmo: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -766,6 +880,30 @@ pub(crate) fn draw_sky(
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && bg_block;
+    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`), reset at the top
+    // of the surface background pass (`Main.cs:59344`). Every `draw_range_min`
+    // below ports one `DrawToDepth` call of `Main.cs:59700-60290`; a call
+    // whose boundary is above the tracker no-ops, exactly like the original's
+    // stale-parallax call (`Main.cs:59890`).
+    //
+    // DRAW_TO_DEPTH boundary table (`.code-foundations/build/2026-11-03-
+    // M1.4-BG-19-ambient-skies-boundary-table.md`):
+    //   6.667 = 1/0.15 (Step1, `Main.cs:59812`) — before the far mountains
+    //   5.0   (`Main.cs:59878`) — between the far and near mountain rows
+    //   1/parallax[i] per front-tree row (`Main.cs:61304+`, biome fns)
+    //   1.0   (`Main.cs:60186`) — after the last front row
+    //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
+    //   backdrop
+    let mut amb_last = f32::INFINITY;
+    let amb_ctx = crate::ambience::SkyDrawCtx {
+        camera,
+        zoom,
+        screen,
+        color_of_the_skies: sky_color,
+        atmo,
+        bg_alpha_front,
+        background_enabled,
+    };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
@@ -837,6 +975,17 @@ pub(crate) fn draw_sky(
     // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
     // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
     // generator never uses that style.
+    // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
+    // closest entities (EOC slices above depth 6.667) draw behind the
+    // mountains.
+    crate::ambience::draw_range_min(
+        r,
+        ambience,
+        lookups,
+        &amb_ctx,
+        1.0 / 0.15,
+        &mut amb_last,
+    );
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -896,6 +1045,10 @@ pub(crate) fn draw_sky(
     // mountain Step1 when parallax is on (`Main.cs:59808`), else the plain
     // `bgTopY` of `Main.cs:59328` — the storm banks' own `bgTopY`
     // (`Main.cs:59433`) is overwritten by Step1 before this pass runs.
+    // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
+    // pass: the mid-depth entities draw between the mountain rows and the
+    // closer clouds.
+    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1016,6 +1169,15 @@ pub(crate) fn draw_sky(
 
     // Front layer loop (`Main.DrawSurfaceBG` 59529): forest (0), desert (2), snow (7).
     // Each layer draws with `ColorOfSurfaceBackgroundsBase * bgAlphaFrontLayer[i]`.
+    // Each active biome's row chain emits its own `DrawToDepth(1f/parallax)`
+    // boundaries (`Main.cs:61304+`); the pass threads the tracker so a second
+    // cross-fading biome's boundaries no-op like the original's.
+    let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
+        entities: ambience,
+        lookups,
+        ctx: &amb_ctx,
+        last: &mut amb_last,
+    });
     if show_bg {
         // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): parallax
         // 0.40/0.43/0.49, scale 2.5/2.62/2.68, tops +1300/+1550/+1800. The middle
@@ -1035,6 +1197,8 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Desert`: two dune layers (21/20), parallax 0.37/0.49,
         // scale 2.5/2.68, tops +1600/+2000, no tree line.
@@ -1054,6 +1218,8 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Snow` (tree set `Main.snowBG` style 1 = `Background_37..39`):
         // same parallax/scale/top as the forest, but none of the layers is mirrored
@@ -1073,9 +1239,15 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            true,
         );
     }
 
+    // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
+    // last front-row boundary) draw after every surface layer, before the
+    // underground backdrop.
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured
@@ -1134,6 +1306,63 @@ mod cloud_star_tests {
         // Daylight ignores the floor.
         let day = color_of_the_skies(13500.0, true, 4);
         assert!(day[0] > 0.09, "dawn stays dawn: {day:?}");
+    }
+
+    #[test]
+    fn horizon_phase_shifts_the_morning_half() {
+        // `Main.cs:2792-2805`: before mid-day the phase belongs to the
+        // previous moon phase (mod 8).
+        assert_eq!(horizon_phase(3, true, 20000.0), 2);
+        assert_eq!(horizon_phase(3, true, 30000.0), 3);
+        assert_eq!(horizon_phase(0, true, 10000.0), 7);
+        assert_eq!(horizon_phase(0, false, 10000.0), 0);
+    }
+
+    #[test]
+    fn horizon_visibilities_follow_the_day_windows() {
+        // Night: both closed (`NextHorizonRenderer.cs:231-233`).
+        let (sunset, sunrise) = horizon_visibilities(10000.0, false, 1.0, 0.0);
+        assert_eq!((sunset, sunrise), (0.0, 0.0));
+        // Noon: the dawn window (0..10800) has closed, the dusk one (43200+)
+        // has not opened.
+        let (sunset, sunrise) = horizon_visibilities(27000.0, true, 1.0, 0.0);
+        assert_eq!((sunset, sunrise), (0.0, 0.0));
+        // Dawn peak (t=1350): the sunrise at half strength, the sunset closed.
+        let (sunset, sunrise) = horizon_visibilities(1350.0, true, 1.0, 0.0);
+        assert!(sunset < 1e-6, "sunset={sunset}");
+        assert!((sunrise - 0.5).abs() < 1e-6, "sunrise={sunrise}");
+        // Dusk peak (t=50400): the sunset at full strength.
+        let (sunset, sunrise) = horizon_visibilities(50400.0, true, 1.0, 0.0);
+        assert!((sunset - 1.0).abs() < 1e-6, "sunset={sunset}");
+        assert!(sunrise < 1e-6, "sunrise={sunrise}");
+        // Cloud cover squares into the factor.
+        let (sunset_clear, _) = horizon_visibilities(50400.0, true, 1.0, 0.0);
+        let (sunset_cloudy, _) = horizon_visibilities(50400.0, true, 1.0, 0.5);
+        assert!((sunset_cloudy - sunset_clear * 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn modify_horizon_light_lifts_dark_dawn_toward_the_gradient() {
+        // A dawn-dark sky (25,35,35)/255 with the sunrise at half strength
+        // lifts toward Sunrise_Blue[7] (68,144,149)/255 — the max-channel
+        // blend (`NextHorizonRenderer.cs:183-194`).
+        let mut c = [25.0 / 255.0, 35.0 / 255.0, 35.0 / 255.0];
+        modify_horizon_light(&mut c, 1, true, 1350.0, 1.0, 0.0);
+        let grad = [68.0 / 255.0, 144.0 / 255.0, 149.0 / 255.0];
+        for (got, want) in c.iter().zip(grad) {
+            assert!(*got > 0.09 && *got <= want + 1e-6, "got {got}, want ≤ {want}");
+        }
+        // The white noon colour cannot rise (the max blend + zero visibility).
+        let mut noon = [1.0, 1.0, 1.0];
+        modify_horizon_light(&mut noon, 1, true, 27000.0, 1.0, 0.0);
+        assert_eq!(noon, [1.0, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn atmosphere_factor_clamps_to_the_unit_range() {
+        // Deep underground saturates at 1, high sky bottoms out at 0.
+        assert_eq!(atmosphere_factor(3000.0, 300.0, 4200), 1.0);
+        assert_eq!(atmosphere_factor(0.0, 300.0, 4200), 0.0);
     }
 
     #[test]

@@ -916,6 +916,58 @@ crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
 on the press (`Main.cs:42250` hover family); the rotation source for item use
 stays with M2-ANIM.
 
+## Ambient sky creatures (M1.4-BG-19)
+
+`M1.4-BG-19` ports `GameContent/Skies/AmbientSky.cs` (the `SkyEntity` base, the
+`FadingSkyEntity` envelope and the 18 live creature classes, plus the
+`AmbientSky : CustomSky` manager) and `GameContent/Ambience/AmbienceServer.cs`
+(the spawn scheduler) into `crates/tr-app/src/ambience.rs`; the draw side hooks
+into `render/sky.rs`'s background passes at the C# `DrawToDepth` boundaries.
+The single-player `NetAmbienceModule` loopback is inlined: the spawn seed is one
+draw from the scheduler's `Main.rand` stand-in stream (`ambience_rng`), and every
+entity attribute comes from the exact-C# `FastRandom(seed)`
+(`tile_light/palette.rs`) in the constructor's original draw order — the order is
+pinned by per-entity characterization tests. Per-tick updates consume no RNG.
+
+Determinism/proven pairs (pristine `.trwld` copies per run, `TR_DAY=0.5`):
+`TR_NOPLAYER` entity shots SHA256-equal at zoom 1.0/1.5/2.0 (`TR_SHOT_FRAME=600`,
+`TR_AMBIENCE=Eyeball,7`); player runs at frames 200/300/540 equal pairs; the
+`AirBalloon` (scheduler-spawned) visibly renders with its fade alpha. The forest
+spawn area's canopy **hides** the EOC eyeball completely — entity shots there are
+byte-identical to no-entity runs, which is itself the sandwich proof: the eyeball
+draws behind the front tree rows, exactly where the C# depth boundaries put it.
+
+Deviations, all deliberate:
+- **Ocean-line fade deferred** (research Q4): `Helper_GetOpacityWithAccountingFor
+  BackgroundsOff`'s sibling `Helper_GetOpacityWithAccountingForOceanWaterLine`
+  (`AmbientSky.cs:72-79`) is constant 1; the producer
+  (`Main.cs:59889` `UpdateOceanWaterLineForAmbience`) is cited for the follow-up.
+  Only visible when entities cross the ocean water line.
+- **The atlas grows**: loading the 28 `Images/Backgrounds/Ambience/*` sheets
+  reshuffles the tallest-first shelf packer, so screenshots differ from pre-task
+  binaries by 89 edge pixels (the B10 "normalised UV phase" class; the BG-11
+  content set itself shifted these when it added sheets). Twin-run equality —
+  the repo's screenshot gate — holds.
+- **`tenthAnniversaryWorld` = false** (the spawn-timer halving is dead),
+  **remix-world branches absent** (windy-state override `Main.cs:13022-13024`,
+  ambience packet gate), both seeds the port does not generate.
+- **`NPC.butterflyChance` sits at its reset value 0** (`NPC.cs:95172`): its
+  update logic is NPC-spawn-owned (`NPC.cs:93378-93397`, M4) — the gate reads
+  the field 1:1, so Butterflies spawn whenever their other conditions hold.
+- **The Meteor sky is unreachable until M4 meteor events**: `SkyEntityType.
+  Meteor` has no `_spawnConditions` entry and `ForceEntitySpawn` fires only from
+  the landing window (`Main.cs:65471-65489`); the queue and window hook shape
+  are ported.
+- **`BoneSerpent` stays dead**: the enum value and the texture exist, but
+  `AmbientSky.Spawn` has no case (`AmbientSky.cs:1394-1480`) — ported as-is.
+- **The scheduler pool pins `_spawnConditions` declaration order**; the C#
+  enumerates a `Dictionary`, whose order is implementation-defined.
+- **dayRate is the constant 1** until BG-21 lands; the `max(1, dayRate)` shape
+  is in place at both sites (the scheduler timer decrement and the entity
+  update repetition, `SkyManager.cs:24-46`).
+- Screenshot harness: `TR_AMBIENCE=<SkyEntityType>[,seed]` queues one forced
+  spawn with a pinned seed at load (the `ForceEntitySpawn` path) — test-only.
+
 ## Screen filters (M1.4-BG-18)
 
 `M1.4-BG-18` ports the `ScreenShaderData` post-process subsystem: a
@@ -2394,8 +2446,9 @@ Deviations:
   `RegenInputs` fields the engine already applies in the original order.
   The shinyStone standing-still package (`:19104-19108`, `:19126-19134`) folds
   into `extra_time`/`extra_regen`/`extra_ramp_scale` when M3-EQUIP lands.
-- **Death from a DoT drain clamps at 0 hp** — the C# `KillMe` reasons per
-  debuff (`:19367-19390`) land with M2-DEATH.
+- **Death from a DoT drain clamps at 0 hp** — resolved by M2-BUFF-3: the
+  `KillMe` reasons (`:19361-19385`) now flow through `regen.rs`'s `DotDeath`
+  (see "DoT debuffs (M2-BUFF-3)" below).
 - **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
   deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
 - **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
@@ -2403,3 +2456,387 @@ Deviations:
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
   20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
+
+## DoT debuffs (M2-BUFF-3)
+
+The DoT set (poison/fire/blood; ichor is *not* a DoT in 1.4.5.8 — it is the
+armor-penetration debuff and stays with M2-BUFF-4) landed on top of the
+M2-BUFF-1/2 engines:
+
+- **Player side** — `player.rs` derives the DoT deltas as a pure
+  `derive_dot_inputs(&self, expert) -> DotDerivation` in the exact C# branch
+  order (`Player.cs:18949→19095`: poisoned −4, venom/chlorophyte spore −30,
+  the fire family −8/−16/−24/−60 each doubled while dripping slime (buff
+  137) is held, suffocation −40, electrified −8 plus −32 more while
+  running, tongued −100 expert-only; bleeding (30) only zeroes the ramp
+  time, `:19178-19181`; honey (48) softens a negative sum by 4 clamped at
+  0, `:19096-19103`) and feeds the five `RegenInputs.dot_*` fields.
+  `regen.rs` runs the drain: the fast lane (burned || suffocating ||
+  tongued && expert, `:19313`) chunks −600 → 5 dmg with an early return
+  (`:19313-19335`), the generic lane keeps the ≤4 hp per −120 chunk; both
+  return a `DotDeath` (`ByOther` 7/8/9/10/12/22/23 — the priority chains
+  7→12→8 and 22→9→10→23→8 are precomputed by the caller,
+  `:19321-19331`/`:19362-19385`) that `death.rs::death_text_for` renders.
+  `update_survival` hosts the demo inflictions/cures: lava contact →
+  `add_buff(24, 420)` (`:27710-27711`), water deletes OnFire/OnFire3
+  (24/323, `:27750-27761`), Wet 103 re-grants the fire immunities every
+  frame (`:11740-11751`), and the expired-buff sweep (`:25608-25616`) +
+  per-frame `buff_immune` reset (`:25561-25565`) ride `Player::update` in
+  the C# frame order (reset → tick → sweep → … → immune purge,
+  `Player.cs:25555→26016`).
+- **NPC side** — `npc_buffs.rs` ports the NPC chain as its own module (the
+  C# keeps the Player and NPC `AddBuff` chains separate, so the port does
+  too): the 20-slot `NpcBuffs` (`buffType`/`buffTime` `NPC.cs:6193-6197`,
+  `NPC.maxBuffs = 20` `:95189`, `lifeRegenCount` `:6249`), the verbatim
+  `NPC.AddBuff` chain (`:89926-89983`: immune guard → same-id extend →
+  evict the first non-debuff → reject at 20 debuffs), the `UpdateNPC` buff
+  block ticked from the head of `Npc::update` at the C# position
+  (`:90373-90377`: set flags → clear expired → apply DOTs) with the
+  `DOTTally` sum (`NPC.cs:59-141`, `:91594-91774` — Oiled (204) adds a
+  flat +50 in combination with a fire debuff, AcceleratePoisons (398)
+  doubles the boostable half via `SupportAcceleration`) and
+  `GetHurtByDebuff`'s direct `life -=` drain that bypasses
+  `StrikeNPC`/i-frames/knockback (`:91864-91888`). Immunities are the
+  roster's slice of `NPCID.Sets.DebuffImmunitySets` (slime 20, King Slime
+  20+31, demon eye/zombie/wandering eye none — `NPCID.cs:6079-6086`,
+  `:6386-6392`, `:6905`) plus the derived rules of `NPC.cs:17818-17838`
+  (immune 20 ⇒ 30 + 375, immune 69 ⇒ 36).
+
+Deviations:
+
+- **Honey does not extinguish fire** — the C# curing loop is driven by
+  `WetCollision`, whose tile scan sets `Collision.honey` as readily as
+  `Collision.wet` (`Collision.cs:1608-1618`), so standing in honey *would*
+  douse OnFire in the original. The plan assumed the cure required actual
+  water; checked against the source it was wrong in the C#'s favour of
+  honey, and the port takes the plan fallback (DW-2.2): the cure is
+  conditioned on a water probe distinct from honey
+  (`in_water && !in_honey && !in_lava`).
+- **The NPC DoT drain stops at hp ≤ 0** — the C# `GetHurtByDebuff` clamps
+  `life = 1` and finishes the kill with `StrikeNPCNoInteraction(9999)`
+  (`NPC.cs:91880-91887`); the port instead breaks the drain loop at
+  `hp <= 0` and lets the existing hp ≤ 0 collect (`world_sim/npcs.rs:38`)
+  run the normal death path (coins/gel drop exactly once).
+- **The player-side DoT drain stops at the first hp ≤ 0 crossing** — the C#
+  while-loops keep chunking a dead player until the counter empties (fast
+  lane `:19315-19334`, generic `:19357-19385`); the port returns one death
+  per tick and clamps at 0 (`regen.rs:236-241` fast lane, `:251-255`
+  generic) — death lands the same tick, only the transient negative
+  `statLife` differs.
+- **The `dontTakeDamage` gate is omitted** — `UpdateNPC_BuffApplyDOTs` is
+  wrapped in `if (!this.dontTakeDamage)` (`NPC.cs:91596`); the flag has no
+  Rust counterpart yet, so the port always applies DOTs.
+- **The last tick of an expiring debuff does not drain** — the C# keeps the
+  boolean flags (`poisoned`, `onFire`, …) set until the end of the frame,
+  so `UpdateLifeRegen` (`:25977`) still drains on the tick a buff expires;
+  the port re-derives the flags by scanning the slots *after* the
+  expired-buff sweep, so a debuff whose timer hit 0 this tick contributes
+  nothing. One tick of drain lost per expiry; the sweep itself is verbatim.
+- **Wet self-deletion runs one tick early** — the C# branch tests the
+  previous frame's `lavaWet` (`:11741-11744`); the port tests the current
+  `in_lava` probe, so Wet is deleted one tick sooner and OnFire from lava
+  is granted immediately while Wet is held (the C# rejects it through the
+  immune guard for one frame).
+- **Pre-existing gaps made visible by the DoT path**: the lava contact hit
+  is 30 dmg vs the C#'s 80 (`Player.cs:27687`), and `Player::respawn` does
+  not wipe buffs while the C# `Spawn` clears every non-persistent buff
+  (`Player.cs:16995-17002`) — both predate this task and stay open.
+- **Death texts are EN stand-ins** — `death_text_for` hardcodes one English
+  string per `DotDeath` after the `DeathText.*` keys of `Lang.cs`'s
+  `CreateDeathMessage` switch (`:1073-1126`, e.g. `DeathText.Suffocated_*`);
+  the localization pass replaces them.
+- **Deferred pieces**: the starving lane and the honey regen aura
+  (M2-BUFF-7/M2-BUFF-5), the Daybreak/Dryad's Bane spear sources, the
+  `ApplyDOTs`-only flags (javelined/eelwhip/celled/…), `SuperNatural`
+  lifeRegen, `TryAddingRepeatedBuff`, `vampireSeed` (nothing grants buff 22
+  or sets the vampire-slime `ai[1] = 9` in the roster), ichor → M2-BUFF-4,
+  and the presentation half — combat text, dust and the buff-bar HUD icons.
+
+## Projectile pool (M4-PROJ-1)
+
+`crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
+`NewProjectileSetup`'s first-free-slot spawn with the `FindOldestProjectile`
+recycle (`Projectile.cs:10811-10880`), the per-tick `timeLeft--`/`penetrate == 0`
+kill bookkeeping (`:17199-17208`), the `1 + extraUpdates` AI sub-step loop
+(`:16668`), `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`) and
+the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner gate `:12620-12624`)
+with the on-hit immunity application (`:14087-14119`). All three C# immunity
+systems are live: the per-owner `NPC.immune[owner] = 10` (stored on `Npc`,
+decremented per NPC update, `NPC.cs:90454-90459`), the per-projectile
+`localNPCImmunity` cooldowns (a flattened pool table) and the ID-static
+`perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps against
+`Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into the pool
+as its first AI family; its placeholder lifetime (`age > 2 s || bounces > 6`)
+was replaced by the faithful `timeLeft = 3600` / `penetrate` rules.
+
+Deviations:
+
+- **The projectile path bypasses the melee `hurt_cd` gate** —
+  `Npc::hurt_from_projectile` shares `hurt`'s body without the shared-cooldown
+  check, because a projectile's right to hit is decided by the three C#
+  immunity systems the pool now implements; the hit still arms `hurt_cd`, so
+  melee stays gated afterward (in the C# every `StrikeNPC` writes the same
+  `NPC.immune[owner] = 10` window).
+- **NPC immunity is indexed by the NPC's `Vec` position**, which is stable
+  between death compactions; the C# indexes stable NPC slots and clears them in
+  `ResetNPCSlotData` (`:609-618`). After a compaction a live local-immunity
+  entry may point one slot off for at most its remaining cooldown — revisit
+  with the data-oriented NPC slots (M4 plan).
+- **Multiplayer bookkeeping is not ported**: `ProjectileKey`/
+  `slotGenerations`, `netSpam`/`netImportant` (the recycle treats every slot as
+  recyclable) and the owner-sync asserts — single-player.
+- **`DebugOptions` branches** (`Shared_RandomizeProjectileSlots`, `ManaV2`
+  equivalents) are debug cheats and are not ported.
+- The shuriken's damage/knockback stay the first pass's stand-ins (registry
+  data lands with M3-ITEM-1); the pool itself is content-agnostic.
+
+## Spawn call discipline (M4-SPAWN-1 completion)
+
+The spawn-rate multiplier chain and the caps landed earlier (2026-11-03); this
+completion ports the **call discipline** of `NPC.SpawnNPC`
+(`NPC.cs:80170-80176`) and its named RNG stream:
+
+- **The stream** — `Main.SwapRandom("SpawnNPC")` (`Main.cs:17886`) swaps in a
+  persistent per-stage stream for every world update. The port keeps
+  `App.npc_rng` as that stream's state and advances it (the xorshift LCG step)
+  once per update, **before** the latch/caps, so a suppressed or capped tick
+  still consumes stream state exactly like the C#'s swap; each call draws from
+  `FastRandom::new(state)`. Deterministic per world seed; verified by
+  `the_named_stream_is_deterministic_per_seed` (two identical runs agree
+  tick-for-tick over 900 moon-event night calls, and a different seed
+  diverges). The LCG step is the port's own xorshift core (agents.md's
+  "deterministic stand-in" pattern) — the C#'s exact `UnifiedRandom` sequence
+  is not reproduced, as everywhere else in the port.
+- **The `noSpawnCycle` latch** (`NPC.cs:6179`, consumed at `:80171-80174`) —
+  `App.spawn_no_cycle`; while set, one whole `SpawnNPC` call is suppressed and
+  the flag clears. No setter exists yet (the C# sets it from NPC
+  release/catch and the revenge spawn at `:77993/78137/91553`) — those systems
+  flip the flag when they land.
+- **The dead-player gate** — `CanSpawnEnemiesNear`'s `player.dead` branch
+  (`NPC.cs:349-351`); the journey spawn-rate-disable and Moon-Lord-distance
+  branches have no sources yet.
+- **Pacing quirk preserved**: the port's `npc_timer` (a 4 s spawn hold after
+  respawn, `world_sim/player.rs`) freezes the stream advance while held — the
+  C# has no such hold, so during it the port's stream lags the C#'s tick
+  count; deterministic either way, and the hold clears.
+
+## Wiring engine (M7-WIRE-1)
+
+`tr-core/src/wiring.rs` ports the wiring core: the four colour passes of
+`TripWire` (`Wiring.cs:525-620`), the `HitWire` flood fill with its `SkipWire`
+set, the `_toProcess` multi-trigger counter — 4 on the seed cells, 3 on
+enqueue, `b = 0` through junction boxes (424/445), removed at zero so a
+5+-path convergence re-fires — and the `[2, max-2]` bounds (`:837-995`),
+`HitWireSingle`'s device subset and `HitSwitch`'s rect table
+(`:259-330`), plus `CheckMech`/`UpdateMech` (`:455-471`, `:145-258`) with the
+tile-144 timer periods 60/180/300/30/15 (by `frameX / 18`) and the 411
+lamp-pair frame flip.
+
+Deviations:
+
+- **Wire colours live in a sparse side table** (`World.wires: WireState`) —
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
+  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
+  pending (M6-SAVE-1); synthetic test worlds set wires through
+  `World.wires.set`.
+- **Device entity effects are passthroughs** — the mine (210), geyser (443),
+  statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
+  belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
+  nothing beyond the signal walk.
+- **The multi-tile actuation walk** (`ActuateForced` over `TileObjectData`
+  regions) is M7-WIRE-3; the engine toggles the single tile's
+  `FLAG_INACTIVE` (`Tile.flags` already carries the actuator/inactive bits).
+- **The wire pulse animation** (case 419's `frameX` shift in
+  `HitWireSingle`) is render-side state on a side-table colour, not a tile
+  frame — deferred with the wire renderer (M7-WIRE-3).
+- **Timers pulse indefinitely** while armed: the re-trip's own tile is
+  SkipWire'd for its own pass (the seeds pre-enter `_wireSkip`), so
+  `HitSwitch`'s frameY toggle does not disarm the armed timer — verified by
+  `the_timer_pulses_on_its_period_then_pops` (two pulses 60 ticks apart).
+- **Sounds** (`SoundEngine.PlaySound(28, …)`) are not wired to the audio
+  system yet (M6-AUDIO polish).
+
+## Tile entities (M7-TE-1)
+
+`tr-core/src/tile_entities.rs` ports the `TileEntity` framework and the
+item-holding entity halves: the registration-order ids
+(`TileEntitiesManager.cs:27-40` — TrainingDummy 0 … CritterAnchor 10, the
+discriminant IS the wire/save id), the `ByID`/`ByPosition` books
+(`TileEntity.cs:15-22`), `place`/`remove_at` with the per-TE `ValidTile` frame
+checks (`TEItemFrame.cs:37-43` tile 395 `frameY == 0 && frameX % 36 == 0`;
+`TEWeaponsRack.cs:33` tile 471 `% 54`; `TEFoodPlatter.cs:32` tile 520
+`frameY == 0`; `TEHatRack.cs:407` tile 475 `% 54`), the item payload as the
+`(short type, byte prefix, short stack)` triple the wire/save format carries
+(`TEItemFrame.cs:47-56`) and the HatRack presence-bitsByte round trip
+(`TEHatRack.cs:59-80`). The books live on `World.tile_entities`.
+
+Deviations:
+
+- **The behaviour halves are M7-TE-2**: the dummy's wired hit tracking, the
+  logic sensors, the display doll rendering, the pylon network, the Dead
+  Cells jar and the leashed anchors are registered (ids + placement
+  validity) with empty payloads.
+- **The food gate** (`ItemID.Sets.IsFood`, `TEFoodPlatter.FitsItemFrame`-style
+  placement check) is applied by the caller — the item registry lives in the
+  app layer.
+- **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
+  the UI layer maps between them; the triples are exactly what
+  `WriteExtraData`/`ReadExtraData` and msg 121 carry.
+- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
+  in the world-file section 7 (`WorldFile.cs`).
+- **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
+  per-chunk cap exists for the C#'s save-section packing; the port's books
+  are unbounded maps.
+
+## Logic gates (M7-WIRE-4)
+
+`wiring.rs` gains the logic-gate half of `Wiring.cs`: `LogicGatePass`
+(`Wiring.cs:682-730`), `CheckLogicGate` (`:733-831`) and `PokeLogicGate`
+(`:380-386`). The tiles: LogicGateLamp = 419, LogicGate = 420
+(`TileID.cs:1467-1469`) — note the port's M7-WIRE-1 tests used kind 419 as a
+wire-tile filler; the engine reads the colour bits from `World.wires`, so the
+filler kind is inert, but the id belongs to the lamp. The mechanics:
+
+- A wire hit on a lamp toggles its frame (`case 419` verbatim:
+  `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36) num50 = 0;`)
+  and pokes the gate below through the lamp column walk
+  (`CheckLogicGate` descends past lamps to the first 420).
+- The gate counts the lamp stack above it (`frameX == 18` = on; a `frameX ==
+  36` lamp stops the count and marks the gate broken → its frame becomes 36),
+  evaluates the type by `frameY / 18` (the C#'s case order: 0 AND, 1 OR,
+  2 NAND, 3 NOR, 4 XOR, 5 XNOR) and writes `frameX = 18·output`.
+- A state change enqueues the gate into `_GatesNext`; the pass re-trips the
+  gate's own 1×1 wire (`_GatesDone` guards repeats) — that flood walks the
+  gate's whole wire line, toggling every logic lamp on it, which is how gates
+  chain downstream.
+- The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
+  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
+  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
+  the roll is deterministic per seed.
+- A gate with a lamp on its own tile flip-flops within one pass: the output
+  flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
+  gate re-evaluates to the opposite — the verbatim C# outcome, covered by
+  `the_gate_output_flip_re_trips_its_own_wire_line`.
+- The logic sensors (tiles 593/594) emit wire signals from world state —
+  M7-WIRE-2 (they need the player/liquid probes).
+
+## Teleporters & pumps (M7-WIRE-5)
+
+`wiring.rs` gains the teleporter and pump halves of `Wiring.cs`:
+
+- **The teleporter pads** (tile 235, `HitWireSingle`'s case 235 at
+  `:1066-1082`): the wall-87 Lihzahrd guard, the pad registration (the first
+  hit fills `_teleport[0]`, a hit at a different position fills
+  `_teleport[1]`, the halfBrick adds 0.5 to the anchor y), reset to (-1, -1)
+  per colour pass. `Teleport()` (`:3120-3178`) runs up to four times per
+  `TripWire` (once per colour pass that registered both pads): the too-close
+  reject rule (`:3122-3127`), the two 48×48 pad boxes anchored at
+  `(X·16, Y·16 − 48)` and `TeleporterHitboxIntersects`' union check
+  (`:3181-3189`).
+- **The entity half** lives in the app layer (`world_sim/wiring.rs`): the
+  engine emits the pad pairs; the app moves the living player (gated by
+  `blockPlayerTeleportationForOneIteration`, `Wiring.cs:3126/704-708`) and
+  the NPCs (`lifeMax > 5`, no bosses — King Slime in the port's roster, and
+  the `TeleportationImmune` set — none of the implemented kinds is immune,
+  `NPCID.cs:10433`).
+- **The pumps** (tiles 142 in / 143 out, `HitWireSingle` `:2046-2125`): the
+  2×2 body tiles SkipWire'd and registered into the per-pass queues (capped
+  at 19 entries each), `XferWater` (`:475-520`) after every colour pass with
+  both queues filled. **The C# re-reads the in tile's liquid after every out
+  transfer** (`liquid = Main.tile[num, num2].liquid`, `:506`) — the overflow
+  continues into the next out tile; the port's first cut captured the level
+  once and was corrected (the cap test asserts the 55+45 split).
+- The pump `SkipWire` of the 2×2 body means a pump tile reached as a flood
+  seed does not register — the trip must come from a switch/wire line, as in
+  vanilla builds.
+
+Deviations: the entity movement is the port's positional teleport (the C#'s
+`Player.Teleport`/`NPC.Teleport` effects — the dust, the styles — are
+M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
+
+## Traps & statues (M7-WIRE-2)
+
+`wiring.rs` gains the statue half of `HitWireSingle`'s case 105
+(`Wiring.cs:2125-2440`): the style decode (`num138 = frameX / 36 +
+(frameY / 54 % 3) * 55`), the 3×2 `SkipWire`, the spawn anchor
+`(num137·16 + 16, (num136 + 3)·16)` and the verbatim style → spawn map. The
+NPC styles run `CheckMech(30)`; the item styles `CheckMech(600)` plus the
+`Item.MechSpawn` group checks. The engine emits `StatueSpawn` requests; the
+app layer (`world_sim/wiring.rs`) runs the `MechSpawn` caps and constructs the
+entities.
+
+Deviations:
+
+- **The ported statue subset**: the Blue Slime statue (style 4 → NPC 1 →
+  `NpcKind::Slime`/Blue), the Demon Eye statue (style 35 → NPC 2) and the
+  Heart/Star/Bomb item statues (styles 37/2/17 → the C# item ids 58/184/166,
+  dropped as `ItemDrop`s with the pickup ids). The remaining ~50 styles map
+  to C# NPCs/items outside the port's content (the critters, the Eater of
+  Souls, the special teleporting/jar statues) — they emit nothing; the map
+  arms arrive with the NPC families (M4-NPC-1).
+- **The `MechSpawn` caps are verbatim**: `NPC.MechSpawn` (`NPC.cs:7420-7505`,
+  the rings 200/600 px, the caps 3/6/10, the same-type group merging — the
+  port's kinds map 1:1 to their C# ids so the groups only matter once those
+  NPCs land) and `Item.MechSpawn` (`Item.cs:49385-49405`, the rings 300/800
+  px) — implemented in `crates/tr-app/src/wiring_stub.rs` over the app's
+  entity lists.
+- **The statue-spawned loot gating**: `Npc.spawned_from_statue` carries
+  `NPC.SpawnedFromStatue` (`NPC.cs:6061`); the `NPCLoot`'s
+  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks
+  (`NPC.cs:78849`) gate the drops — the port's statue-spawned slimes drop
+  nothing until the AnyInteractions tracking lands (M4-NPC polish).
+- **The trap projectile emission** (the dart/spear/flame/boulder traps'
+  `Projectile.NewProjectile` calls, `Wiring.cs:1774-2000`) needs the
+  projectile families (M4-PROJ-2+) — their `CheckMech` cooldowns (200/90/300/
+  900) are already exercised by the queue; the emission arms are
+  passthroughs.
+
+## Falling blocks (M7-FALL-1)
+
+`tr-core/src/falling.rs` ports the trigger half of
+`WorldGen.SpawnFallingBlockProjectile` (`WorldGen.cs:86039-86090`); the flight
+half rides the app projectile pool (`tr-app/src/projectile.rs`), because in
+the C# the falling block **is** a projectile (`AI_010`'s `ai[0] == 1f`
+mode) — the sand at the broken support becomes projectile 31 and falls with
+`velocity.Y += 0.41f` per tick (the MP branch `:86074-86082` additionally
+dedupes falls within 60 ticks per column; the port is SP-layer, so the
+dedupe is not modelled).
+
+- **The trigger** (`check_falling`): the tile is one of
+  `TileID.Sets.Falling` {53, 234, 112, 116, 224, 123, 330-333, 495}, the
+  below passes `BlockBelowMakesSandFall` (`:86585-86604` — the below
+  inactive, or the two-below inactive with a non-solid below, or the
+  hardened-sand blend 165 below), and `AllowsSandfall` (`:86612-86624`) —
+  the chest/statue-anchor kinds above hold the column. The caller (the
+  break path in `world_sim/editing.rs`) clears the above tile — the C#'s
+  `tileCache.ClearTile()` — and spawns the projectile at
+  `(i·16 + 8, j·16 + 8)`.
+- **The projectile data** (`GetSandfallProjData`, `:86514-86570`): the
+  kind→(projectile, damage) map — the sand default 31, crimsand 56, mud 59,
+  sandstone 67, silt 71, ebonsand 241, the snow variants 411-414 with
+  damage 0, the desert fossil 812; damage 10 otherwise.
+- **The flight**: the gravity `+0.41` per sub-step capped at 10
+  (`TILE_FALL_GRAVITY`), and the position integrates the velocity per
+  sub-step (the generic `position += velocity` of `Projectile.Update`) —
+  the port's first cut only accumulated the velocity and the block hovered
+  in the air; the chain test caught it.
+- **The landing** (`landed` + `can_place_back`): when the box's bottom
+  edge (`y + 10`, the 10×10 sand-ball box) enters a solid tile row, the
+  tile is placed back **at the box center** (`(x + 5, y + 5)` — the C#'s
+  `AI_010` lands the projectile via the tile collision and
+  `Kill()`→`PlaceTile` at the box's tile), the liquid under it is
+  displaced (`liquid = 0` at the placed cell — the sink-in is a
+  simplification; the C# has the splash variants), and the projectile is
+  killed. The chain refill works: the placed tile supports the next
+  falling block only via the next break/trigger pass (the port does not
+  re-run `SpawnFallingBlockProjectile` from the landing itself — the C#
+  lands on the column below and stops).
+- The `timeLeft` default 3600 matches `SetDefaults`.
+
+Deviations: no MP dedupe (SP layer); the sink-into-liquid and the
+`Collision` niceties (the tile-collide step of the C#'s generic movement,
+which also kills on the side collision) are simplified to the
+bottom-edge landing; the projectile-vs-NPC contact damage of the falling
+ball works through the pool's ordinary `Damage_PVE` (the `damage` input
+of `spawn_falling`).

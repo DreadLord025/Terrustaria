@@ -1164,6 +1164,7 @@ mod tests {
                 is_favorite: false,
                 playable: true,
                 deletable: true,
+                path: None,
             },
             save_list::PlayerEntry {
                 name: "A".into(),
@@ -1173,6 +1174,7 @@ mod tests {
                 is_favorite: true,
                 playable: true,
                 deletable: true,
+                path: None,
             },
         ];
         sort_players(&mut players);

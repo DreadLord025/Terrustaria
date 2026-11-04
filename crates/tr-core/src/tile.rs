@@ -98,6 +98,22 @@ impl Tile {
     }
 
     #[inline]
+    pub fn set_liquid_kind(&mut self, kind: LiquidKind) {
+        self.flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER);
+        self.flags |= match kind {
+            LiquidKind::Lava => FLAG_LIQUID_LAVA,
+            LiquidKind::Honey => FLAG_LIQUID_HONEY,
+            LiquidKind::Shimmer => FLAG_LIQUID_SHIMMER,
+            LiquidKind::Water => 0,
+        };
+    }
+
+    #[inline]
+    pub fn clear_liquid_kind(&mut self) {
+        self.flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER);
+    }
+
+    #[inline]
     pub fn liquid_kind(&self) -> LiquidKind {
         if self.flags & FLAG_LIQUID_SHIMMER != 0 {
             LiquidKind::Shimmer

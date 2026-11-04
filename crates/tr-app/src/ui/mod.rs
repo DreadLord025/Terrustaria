@@ -2,6 +2,7 @@
 //! cursor, hearts and breath, and the boss bar.
 
 pub mod bars;
+pub(crate) mod bestiary;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
@@ -138,6 +139,10 @@ pub fn draw_hud(
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
+    bestiary_open: bool,
+    bestiary_selected: Option<usize>,
+    kill_tracker: &tr_core::bestiary::KillTracker,
+    chat_state: &mut crate::chat::ChatMonitor,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -149,6 +154,24 @@ pub fn draw_hud(
     // (context 0: grey `InventoryBack`, hotbar row `InventoryBack9`); closed, the ten
     // slots animate between 0.75 and 1.0 (context 13: grey back at 200/255, the
     // selected one yellow `InventoryBack14` at full white).
+    // `Main.DrawInterface`'s chat tail (`Main.cs:40928-40997`): the input
+    // strip + the log while open, the blinker advancing per drawn frame.
+    draw_chat(r, lookups, screen, chat_state);
+
+    // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
+    // the open inventory's top row, before the slots.
+    if inventory_open {
+        bestiary::draw_inventory_button(r, lookups, mouse_pos);
+    }
+
+    // `IngameFancyUI.OpenUIState(Main.BestiaryUI)` (`Main.cs:42459`): the
+    // bestiary covers the interface while open (the state's draw replaces
+    // the HUD behind it).
+    if bestiary_open {
+        bestiary::draw_screen(r, lookups, screen, kill_tracker, bestiary_selected, mouse_pos);
+        return;
+    }
+
     let mut open_hover: Option<inventory::HoverRef> = None;
     if inventory_open {
         // `Main.DrawInventory` (`Main.cs:41001`): the bounded 10x5 grid, the coin and
@@ -329,4 +352,95 @@ mod tests {
         assert!(!in_rect(Vec2::new(9.9, 30.0), r));
         assert!(!in_rect(Vec2::new(30.0, 19.9), r));
     }
+}
+
+/// The chat draw (`Main.cs:40928-40997` + `RemadeChatMonitor.DrawChat`):
+/// the blinker advances once per drawn frame, the closed chat draws nothing
+/// (the port has no `CanBeShownWhenChatIsClosed` sources), the open chat
+/// draws the log at `(88, screenHeight - 58)` upward 22 px per line and the
+/// input strip with the `|` cursor.
+fn draw_chat(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    chat: &mut crate::chat::ChatMonitor,
+) {
+    // `textBlinkerCount`/`textBlinkerState` (`:40928-40944`) — 20-frame
+    // toggle, like the menu input screens.
+    chat.blink_timer = chat.blink_timer.wrapping_add(1);
+    if chat.blink_timer >= 20 {
+        chat.blink_timer = 0;
+        chat.blink_on = !chat.blink_on;
+    }
+    if !chat.open {
+        return;
+    }
+    // `RemadeChatMonitor.DrawChat` (`:55-96`): the newest-first log, 22 px
+    // rows, capped by the port's 20-line window (`_showCount`'s screen-fit
+    // stand-in).
+    for (i, line) in chat.messages.iter().take(20).enumerate() {
+        let c = [
+            line.color[0] as f32 / 255.0,
+            line.color[1] as f32 / 255.0,
+            line.color[2] as f32 / 255.0,
+            1.0,
+        ];
+        text::hud_text(
+            r,
+            lookups,
+            88.0,
+            screen.y - 58.0 - i as f32 * 22.0,
+            1.0,
+            c,
+            &line.text,
+        );
+    }
+    // The `Text_Back` strip (`:40947-40976`): a head piece (the sheet minus
+    // 100 px), 300 px middle tiles, then the trimmed tail — the source runs
+    // the same three-piece loop for `screenWidth > 800`.
+    if let Some(sheet) = lookups.ui_text_back {
+        let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+        let y = screen.y - 36.0;
+        let h = sheet.height as f32;
+        let w = sheet.width as f32;
+        let head = (w - 100.0).max(0.0);
+        let mut draw_piece = |x: f32, piece_w: f32, src_x: f32, src_w: f32| {
+            if piece_w <= 0.0 || src_w <= 0.0 {
+                return;
+            }
+            let x0 = sheet.x as f32 + src_x;
+            let uv = [x0 / aw, sheet.y as f32 / ah, (x0 + src_w) / aw, (sheet.y as f32 + h) / ah];
+            r.push_ui_sprite([x, y], [piece_w, h], uv, [100.0 / 255.0, 100.0 / 255.0, 100.0 / 255.0, 100.0 / 255.0]);
+        };
+        // `num = screenWidth - 300` paces the loop; the tail consumes the
+        // remainder.
+        let mut num = screen.x - 300.0;
+        let mut x = 78.0;
+        draw_piece(x, head, 0.0, head);
+        x += head;
+        num -= 400.0;
+        while num > 0.0 {
+            if num > 300.0 {
+                draw_piece(x, 300.0, 100.0, w - 200.0);
+                x += 300.0;
+                num -= 300.0;
+            } else {
+                let tail = num;
+                draw_piece(x, tail, w - tail, tail);
+                num = 0.0;
+            }
+        }
+    }
+    // The input text (`:40986-40994`): white at `(88, screenHeight - 30)`,
+    // the `|` blinker appended while `textBlinkerState == 1`.
+    let cursor = if chat.blink_on { "|" } else { "" };
+    text::hud_text(
+        r,
+        lookups,
+        88.0,
+        screen.y - 30.0,
+        1.0,
+        [1.0, 1.0, 1.0, 1.0],
+        &format!("{}{}", chat.text, cursor),
+    );
 }

@@ -58,6 +58,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
+    // `Player.ItemCheck`'s `!frozen && !webbed` gate (`Player.cs:3381`): a
+    // frozen or webbed player cannot swing, throw, mine or place.
+    if app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.frozen || p.webbed)
+    {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let m = app.mouse_pos;
     let hud_top = screen.y - 96.0;
     if m.x < 0.0
@@ -116,13 +128,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     &mut loot_rng,
                     player.class_crit(registry::DamageClass::Ranged) + item_crit,
                 );
-                app.projectiles.push(Projectile::shuriken(
-                    spawn.x - 3.0,
-                    spawn.y - 3.0,
-                    dir.x * 11.0,
-                    dir.y * 11.0,
+                app.projectiles.spawn(
+                    crate::projectile::SHURIKEN,
+                    0,
+                    spawn - Vec2::splat(3.0),
+                    Vec2::new(dir.x * 11.0, dir.y * 11.0),
+                    10,
+                    12.0,
                     crit,
-                ));
+                );
                 app.inventory[app.selected].count =
                     app.inventory[app.selected].count.saturating_sub(1);
                 // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the swing
@@ -351,6 +365,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
+    // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
+    // above the break loses its support and the falling kind spawns the
+    // sandfall projectile (`SpawnFallingBlockProjectile`, `:86039-86090`).
+    if let Some(fall) = tr_core::falling::check_falling(&app.world, tx, ty - 1) {
+        if let Some(t) = app.world.tile_mut(tx, ty - 1) {
+            *t = Default::default();
+        }
+        let _ = app.projectiles.spawn_falling(
+            fall.tile_kind,
+            fall.proj_kind,
+            fall.damage,
+            fall.x,
+            fall.y,
+        );
+    }
     app.world_key = None;
 }
 

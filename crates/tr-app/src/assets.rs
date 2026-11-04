@@ -161,6 +161,38 @@ pub fn load_world_images(
         "Star_1",
         "Star_2",
         "Star_3",
+        // The ambient-sky creature sheets (`Images/Backgrounds/Ambience/*`, the
+        // textures `Main.Assets.Request`ed by the `AmbientSky` entity classes).
+        // `BoneSerpant.xnb` is skipped: `AmbientSky.Spawn` has no BoneSerpent
+        // case and the entity class never sets a texture (`AmbientSky.cs:1054`).
+        "Backgrounds/Ambience/ButterflySwarm1",
+        "Backgrounds/Ambience/ButterflySwarm2",
+        "Backgrounds/Ambience/LostKite",
+        "Backgrounds/Ambience/Pegasus",
+        "Backgrounds/Ambience/Vulture",
+        "Backgrounds/Ambience/PixiePosse1",
+        "Backgrounds/Ambience/PixiePosse2",
+        "Backgrounds/Ambience/BirdsVShape",
+        "Backgrounds/Ambience/Seagull",
+        "Backgrounds/Ambience/Gastropod",
+        "Backgrounds/Ambience/SlimeBalloons",
+        "Backgrounds/Ambience/HellBat1",
+        "Backgrounds/Ambience/HellBat2",
+        "Backgrounds/Ambience/Bat1",
+        "Backgrounds/Ambience/Bat2",
+        "Backgrounds/Ambience/Bat3",
+        "Backgrounds/Ambience/Wyvern",
+        "Backgrounds/Ambience/FlyingShip",
+        "Backgrounds/Ambience/AirBalloons_Large",
+        "Backgrounds/Ambience/AirBalloons_Small",
+        "Backgrounds/Ambience/EOC",
+        "Backgrounds/Ambience/EOS1",
+        "Backgrounds/Ambience/EOS2",
+        "Backgrounds/Ambience/EOS3",
+        "Backgrounds/Ambience/Crimera1",
+        "Backgrounds/Ambience/Crimera2",
+        "Backgrounds/Ambience/Crimera3",
+        "Backgrounds/Ambience/Meteor",
         // The ambient leaf gores the generated world's trees can shed
         // (`WorldGen.GetTreeLeaf`: forest grass 910, palm sand 911).
         "Gore_910",
@@ -258,6 +290,20 @@ pub fn load_world_images(
         "UI/ChestCraft_3",
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
+        "Text_Back",
+        "UI/Bestiary",
+        "UI/Bestiary/Slot_Back",
+        "UI/Bestiary/Slot_Front",
+        "UI/Bestiary/Slot_Overlay",
+        "UI/Bestiary/Slot_Selection",
+        "UI/Bestiary/Icon_Locked",
+        "UI/Bestiary/Portrait_Front",
+        "UI/Bestiary/Button_Back",
+        "UI/Bestiary/Stat_HP",
+        "UI/Bestiary/Stat_Attack",
+        "UI/Bestiary/Stat_Defense",
+        "UI/Bestiary/Stat_Knockback",
+        "UI/Bestiary/Stat_Copper",
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
@@ -725,6 +771,39 @@ const GLOW_SHEET_NAMES: &[&str] = &[
     "jellyfishBowl3",
 ];
 
+/// The ambient-sky creature sheets with their `SpriteFrame(1, rows)` row
+/// counts (`AmbientSky.cs`, one entry per `Main.Assets.Request`).
+const AMBIENCE_SHEETS: &[(&str, u32)] = &[
+    ("Backgrounds/Ambience/ButterflySwarm1", 17),
+    ("Backgrounds/Ambience/ButterflySwarm2", 19),
+    ("Backgrounds/Ambience/LostKite", 42),
+    ("Backgrounds/Ambience/Pegasus", 11),
+    ("Backgrounds/Ambience/Vulture", 10),
+    ("Backgrounds/Ambience/PixiePosse1", 25),
+    ("Backgrounds/Ambience/PixiePosse2", 25),
+    ("Backgrounds/Ambience/BirdsVShape", 4),
+    ("Backgrounds/Ambience/Seagull", 9),
+    ("Backgrounds/Ambience/Gastropod", 1),
+    ("Backgrounds/Ambience/SlimeBalloons", 7),
+    ("Backgrounds/Ambience/HellBat1", 10),
+    ("Backgrounds/Ambience/HellBat2", 10),
+    ("Backgrounds/Ambience/Bat1", 10),
+    ("Backgrounds/Ambience/Bat2", 10),
+    ("Backgrounds/Ambience/Bat3", 10),
+    ("Backgrounds/Ambience/Wyvern", 5),
+    ("Backgrounds/Ambience/FlyingShip", 4),
+    ("Backgrounds/Ambience/AirBalloons_Large", 5),
+    ("Backgrounds/Ambience/AirBalloons_Small", 5),
+    ("Backgrounds/Ambience/EOC", 3),
+    ("Backgrounds/Ambience/EOS1", 4),
+    ("Backgrounds/Ambience/EOS2", 4),
+    ("Backgrounds/Ambience/EOS3", 4),
+    ("Backgrounds/Ambience/Crimera1", 3),
+    ("Backgrounds/Ambience/Crimera2", 3),
+    ("Backgrounds/Ambience/Crimera3", 3),
+    ("Backgrounds/Ambience/Meteor", 4),
+];
+
 /// Texture information for one tile type present in the world.
 #[derive(Clone, Debug)]
 pub struct TypeTex {
@@ -767,6 +846,17 @@ pub struct CloudTex {
     pub h: f32,
 }
 
+/// One `Images/Backgrounds/Ambience/*` creature sheet: the full-sheet UV plus
+/// the 1×N row count the `SpriteFrame(1, rows)` grid addresses top-down.
+#[derive(Clone, Copy)]
+pub struct AmbienceTex {
+    pub uv: [f32; 4],
+    pub w: f32,
+    pub h: f32,
+    /// `SpriteFrame.RowCount`.
+    pub frames: u32,
+}
+
 /// Precomputed texture information for every type present in the world.
 #[derive(Default)]
 pub struct Lookups {
@@ -777,6 +867,9 @@ pub struct Lookups {
     pub foliage: Vec<Option<FoliageTex>>,
     /// `Cloud_0`..`Cloud_41`.
     pub clouds: Vec<Option<CloudTex>>,
+    /// The `Images/Backgrounds/Ambience/*` creature sheets, keyed by the
+    /// `Main.Assets.Request` name (`AmbientSky.cs`).
+    pub ambience: HashMap<&'static str, AmbienceTex>,
     /// `Misc/water_0..14` sheets (water styles, lava, honey, shimmer).
     pub liquids: Vec<Option<tr_render::SheetRect>>,
     /// `LiquidSlope_0..14`: 4 diagonal masks (18 px stride) drawn behind slopes.
@@ -882,8 +975,34 @@ pub struct Lookups {
     pub ui_search_icon: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_Border`: the hovered search-bar border.
     pub ui_search_border: Option<tr_render::SheetRect>,
+    /// `Images/UI/Bestiary`: the 2-frame inventory button
+    /// (`DrawBestiaryIcon`, `Main.cs:42464`).
+    pub ui_bestiary_button: Option<tr_render::SheetRect>,
+    /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
+    /// back, the hover frame, the 60 %-white overlay, the front border and
+    /// the locked portrait.
+    pub ui_bestiary_slot_back: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_selection: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_overlay: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_front: Option<tr_render::SheetRect>,
+    pub ui_bestiary_locked: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
+    pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
+    /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
+    /// `Stat_HP`/`Stat_Attack`/`Stat_Defense`/`Stat_Knockback`/
+    /// `Stat_Copper` sheets).
+    pub ui_bestiary_stat_hp: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_attack: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_defense: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_knockback: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_copper: Option<tr_render::SheetRect>,
+    /// The five NPC portrait sheets — `[slime, demon eye, wandering eye,
+    /// zombie, king slime]`, the `NpcAssets` set restated for the UI draws.
+    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 5],
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
+    /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
+    pub ui_text_back: Option<tr_render::SheetRect>,
     /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
     pub ui_hue: Option<tr_render::SheetRect>,
     /// `Images/ColorBar`: the value-bar / sat-lum-alpha track
@@ -1016,6 +1135,7 @@ impl Lookups {
                 .iter()
                 .filter_map(|n| atlas.sheet(n).map(|r| (*n, *r)))
                 .collect(),
+            ambience: HashMap::new(),
             frame_cache: HashMap::new(),
             rain: atlas.sheet("Rain").copied(),
             dust: atlas.sheet("Dust").copied(),
@@ -1078,9 +1198,29 @@ impl Lookups {
             }),
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
+            ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
+            ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
+            ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
+            ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
+            ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
+            ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
+            ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
+            ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),
+            ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
+            ui_bestiary_stat_knockback: atlas.sheet("UI/Bestiary/Stat_Knockback").copied(),
+            ui_bestiary_stat_copper: atlas.sheet("UI/Bestiary/Stat_Copper").copied(),
+            bestiary_npc_sheets: [
+                atlas.sheet("NPC_1").copied(),
+                atlas.sheet("NPC_2").copied(),
+                atlas.sheet("NPC_133").copied(),
+                atlas.sheet("NPC_3").copied(),
+                atlas.sheet("NPC_50").copied(),
+            ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
+            ui_text_back: atlas.sheet("Text_Back").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),
@@ -1301,6 +1441,21 @@ impl Lookups {
                     w: rect.width as f32,
                     h: rect.height as f32,
                 });
+            }
+        }
+        // The ambient-sky creature sheets (`AmbientSky.cs`'s requested
+        // textures); keyed by the request name.
+        for (name, frames) in AMBIENCE_SHEETS {
+            if let Some(rect) = atlas.sheet(name) {
+                me.ambience.insert(
+                    name,
+                    AmbienceTex {
+                        uv: uv_rect(rect, me.atlas_size, 0, 0, rect.width, rect.height),
+                        w: rect.width as f32,
+                        h: rect.height as f32,
+                        frames: *frames,
+                    },
+                );
             }
         }
         for i in 0..me.liquids.len() {
