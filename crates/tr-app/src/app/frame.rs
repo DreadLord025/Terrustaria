@@ -305,6 +305,7 @@ impl App {
             self.update_liquids(dt);
             self.update_waterfalls(dt, screen);
             self.update_wiring(dt);
+            self.update_tile_entities(dt);
             self.update_rain(dt, screen);
             // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
             // Update` (`Main.cs:62560,17816`) — the scan, the fades and the

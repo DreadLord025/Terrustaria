@@ -16,6 +16,7 @@ pub(crate) mod npcs;
 pub(crate) mod player;
 pub(crate) mod projectiles;
 pub(crate) mod scene_scan;
+pub(crate) mod tile_entities;
 pub(crate) mod step;
 pub(crate) mod weather;
 pub(crate) mod wiring;
