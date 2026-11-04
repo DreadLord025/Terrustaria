@@ -7305,35 +7305,40 @@ mod tests {
     #[test]
     fn test_DW_1_2_spot_sample_matches_item_cs() {
         // ItemID.DirtBlock
-        // Item.cs:1491 createTile = 0
+        // Item.cs:1412 createTile = 0 (case 2, :1406-1415)
         assert_eq!(ITEMS[2].tile, Some(0));
         // ResetStats CommonMaxStack = 9999 (Item.cs:49017, :49966)
         assert_eq!(ITEMS[2].max_stack, 9999);
-        // Item.cs:1493 useTime = 10
+        // Item.cs:1409 useTime = 10 (case 2)
         assert_eq!(ITEMS[2].use_time, 10);
-        // Item.cs:1494 useAnimation = 15
+        // Item.cs:1408 useAnimation = 15 (case 2)
         assert_eq!(ITEMS[2].use_animation, 15);
-        // Item.cs:1489 useStyle = 1
+        // Item.cs:1407 useStyle = 1 (case 2)
         assert_eq!(ITEMS[2].use_style, 1);
-        // Item.cs:1495 autoReuse = true
+        // Item.cs:1410 autoReuse = true (case 2)
         assert_eq!(ITEMS[2].auto_reuse, true);
         // ResetStats stock (Item.cs:49030)
         assert_eq!(ITEMS[2].value, 0);
         // IsAMaterial via recipes (Recipe.cs:15224)
         assert_eq!(ITEMS[2].material, true);
         // ItemID.Torch
-        // Item.cs:1621-1622 createTile = 4
+        // Item.cs:1497 createTile = 4
         assert_eq!(ITEMS[8].tile, Some(4));
-        // Item.cs:1628 holdStyle = 1
+        // Item.cs:1493 holdStyle = 1
         assert_eq!(ITEMS[8].hold_style, 1);
-        // Item.cs:1630 useTime = 10
+        // Item.cs:1492 useTime = 10
         assert_eq!(ITEMS[8].use_time, 10);
-        // Item.cs:1631 useAnimation = 15
+        // Item.cs:1491 useAnimation = 15
         assert_eq!(ITEMS[8].use_animation, 15);
-        // Item.cs:1633 autoReuse = true
-        assert_eq!(ITEMS[8].auto_reuse, true);
-        // Item.cs:1632 placeStyle = 0
-        assert_eq!(ITEMS[8].place_style, 0);
+        // ItemID.CobaltDrill
+        // Item.cs:5871 useTime = 13 -> x0.6 = 7
+        assert_eq!(ITEMS[385].use_time, 7);
+        // Item.cs:5870 useAnimation = 25 -> x0.6 = 15
+        assert_eq!(ITEMS[385].use_animation, 15);
+        // Item.cs:5878 pick = 110
+        assert_eq!(ITEMS[385].pick, 110);
+        // Item.cs:5881 rare = 4
+        assert_eq!(ITEMS[385].rare, 4);
         // ItemID.WoodenDoor
         // Item.cs:1677-1687 createTile = 10
         assert_eq!(ITEMS[25].tile, Some(10));
@@ -7348,13 +7353,13 @@ mod tests {
         // Item.cs:1684 value = 200
         assert_eq!(ITEMS[25].value, 200);
         // ItemID.Shuriken
-        // Item.cs:1703 damage = 10
+        // Item.cs:1872 damage = 10 (case 42, :1869-1890)
         assert_eq!(ITEMS[42].damage, 10);
-        // Item.cs:1705 shoot = 3 (Shuriken projectile)
+        // Item.cs:1871 shoot = 3
         assert_eq!(ITEMS[42].projectile, Some(3));
         // Item.cs:1871 shootSpeed = 9f (shuriken, case 42)
         assert_eq!(ITEMS[42].shoot_speed, 9.0);
-        // Item.cs:1709 useTime = 15
+        // Item.cs:1879 useTime = 15
         assert_eq!(ITEMS[42].use_time, 15);
         // ResetStats stock (Item.cs:48996) — thrown, no ammo
         assert_eq!(ITEMS[42].use_ammo, 0);

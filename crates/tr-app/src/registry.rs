@@ -269,6 +269,21 @@ mod tests {
     }
 
     #[test]
+    fn test_dw_2_3_out_of_range_fallbacks_unchanged() {
+        // Ids beyond ItemID.Count (6196) hit the accessors' fallbacks —
+        // byte-identical to the pre-M3-ITEM-1 behaviour. Id 0 is a REAL row
+        // now (SetDefaults(0): name "None", stock, stack 0 — Item.cs:48685).
+        assert_eq!(name(6196), "Item");
+        assert_eq!(max_stack(6196), 999);
+        assert_eq!(crate::item::hold_style(6196), 0);
+        assert!((crate::item::use_animation_secs(6196) - 0.25).abs() < 1e-6);
+        assert_eq!(place_style(6196), 0);
+        // id 0 is the faithful row
+        assert_eq!(name(0), "None");
+        assert_eq!(get(0).unwrap().stack, 1); // stock; dispatcher stack-0 rule applies at runtime
+    }
+
+    #[test]
     fn test_DW_3_2_tile_drop_wooden_set() {
         // The kill-cascade drop mapping — the style-0 slice of the vanilla
         // drop tables: `GetDoorItem(0)` = 25 (`WorldGen.cs:69200-69204`),

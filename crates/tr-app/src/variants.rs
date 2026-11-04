@@ -67,12 +67,12 @@ pub fn select(id: u16, flags: &SeedFlags) -> Option<ItemVariant> {
 }
 
 /// `ItemVariants.HasVariant` (`ItemVariants.cs:85-90`): the id is registered
-/// for `variant` (registration rows carry the condition; the in-case delta
-/// rows are the evidence the variant actually does something).
-pub fn has_variant(id: u16, variant: ItemVariant, flags: &SeedFlags) -> bool {
+/// for `variant` — the C# checks registration existence only, with NO
+/// condition evaluation; `flags` is unused but kept for seam symmetry.
+pub fn has_variant(id: u16, variant: ItemVariant, _flags: &SeedFlags) -> bool {
     VARIANT_OVERRIDES
         .iter()
-        .any(|o| o.id == id && o.variant == variant && o.condition.is_some_and(|c| c.is_met(flags)))
+        .any(|o| o.id == id && o.variant == variant && o.condition.is_some())
 }
 
 /// Applies the in-case stat deltas for `selected` to `row` — the generated

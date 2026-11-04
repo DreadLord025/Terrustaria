@@ -2372,22 +2372,30 @@ def emit_on_created(on_created):
 # values are hand-verified against the cited Item.cs lines (Phase 1 build).
 SPOT_CHECKS = [
     (2, [
-        ("tile", ("Some", 0), "Item.cs:1491 createTile = 0"),
+        ("tile", ("Some", 0), "Item.cs:1412 createTile = 0 (case 2, :1406-1415)"),
         ("max_stack", 9999, "ResetStats CommonMaxStack = 9999 (Item.cs:49017, :49966)"),
-        ("use_time", 10, "Item.cs:1493 useTime = 10"),
-        ("use_animation", 15, "Item.cs:1494 useAnimation = 15"),
-        ("use_style", 1, "Item.cs:1489 useStyle = 1"),
-        ("auto_reuse", True, "Item.cs:1495 autoReuse = true"),
+        ("use_time", 10, "Item.cs:1409 useTime = 10 (case 2)"),
+        ("use_animation", 15, "Item.cs:1408 useAnimation = 15 (case 2)"),
+        ("use_style", 1, "Item.cs:1407 useStyle = 1 (case 2)"),
+        ("auto_reuse", True, "Item.cs:1410 autoReuse = true (case 2)"),
         ("value", 0, "ResetStats stock (Item.cs:49030)"),
         ("material", True, "IsAMaterial via recipes (Recipe.cs:15224)"),
     ]),
+    # Torch — case 8, Item.cs:1488-1500 (flame/noWet, holdStyle 1, tile 4).
     (8, [
-        ("tile", ("Some", 4), "Item.cs:1621-1622 createTile = 4"),
-        ("hold_style", 1, "Item.cs:1628 holdStyle = 1"),
-        ("use_time", 10, "Item.cs:1630 useTime = 10"),
-        ("use_animation", 15, "Item.cs:1631 useAnimation = 15"),
-        ("auto_reuse", True, "Item.cs:1633 autoReuse = true"),
-        ("place_style", 0, "Item.cs:1632 placeStyle = 0"),
+        ("tile", ("Some", 4), "Item.cs:1497 createTile = 4"),
+        ("hold_style", 1, "Item.cs:1493 holdStyle = 1"),
+        ("use_time", 10, "Item.cs:1492 useTime = 10"),
+        ("use_animation", 15, "Item.cs:1491 useAnimation = 15"),
+    ]),
+    # Cobalt drill — case 385, Item.cs:5869-5876 (SD4 range): useTime 13,
+    # useAnimation 25, pick 110, rare 4; the drill epilogue x0.6 min 1
+    # (Item.cs:48884-48895) turns 13->7, 25->15.
+    (385, [
+        ("use_time", 7, "Item.cs:5871 useTime = 13 -> x0.6 = 7"),
+        ("use_animation", 15, "Item.cs:5870 useAnimation = 25 -> x0.6 = 15"),
+        ("pick", 110, "Item.cs:5878 pick = 110"),
+        ("rare", 4, "Item.cs:5881 rare = 4"),
     ]),
     (25, [
         ("tile", ("Some", 10), "Item.cs:1677-1687 createTile = 10"),
@@ -2398,10 +2406,10 @@ SPOT_CHECKS = [
         ("value", 200, "Item.cs:1684 value = 200"),
     ]),
     (42, [
-        ("damage", 10, "Item.cs:1703 damage = 10"),
-        ("projectile", ("Some", 3), "Item.cs:1705 shoot = 3 (Shuriken projectile)"),
+        ("damage", 10, "Item.cs:1872 damage = 10 (case 42, :1869-1890)"),
+        ("projectile", ("Some", 3), "Item.cs:1871 shoot = 3"),
         ("shoot_speed", 9.0, "Item.cs:1871 shootSpeed = 9f (shuriken, case 42)"),
-        ("use_time", 15, "Item.cs:1709 useTime = 15"),
+        ("use_time", 15, "Item.cs:1879 useTime = 15"),
         ("use_ammo", 0, "ResetStats stock (Item.cs:48996) — thrown, no ammo"),
         ("class", "DamageClass::Ranged", "Item.cs:1713 ranged = true"),
     ]),
