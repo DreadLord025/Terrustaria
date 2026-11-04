@@ -12,6 +12,7 @@ use crate::registry;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
 
+use glam::Vec2;
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
@@ -119,6 +120,8 @@ pub struct PlayerInput {
     pub right: bool,
     pub jump: bool,
     pub down: bool,
+    /// `Player.controlHook` (the quick-grapple key).
+    pub hook: bool,
 }
 
 /// The DoT-derived half of [`RegenInputs`] for one tick — what the held buffs
@@ -298,6 +301,17 @@ pub struct Player {
     no_fall_dmg: bool,
     /// `Player.hasWings` (`Player.cs:1336`): any wing equipped (M3-EQUIP-3).
     pub has_wings: bool,
+    /// `Player.grappling[0] != -1` (the per-tick rebuilt grapple state): the
+    /// hook is attached and `GrappleMovement` drives the velocity.
+    pub grappling_active: bool,
+    /// `Player.GoingDownWithGrapple` (`Player.cs:808`): the pull points
+    /// downward — the platforms fall through.
+    pub going_down_with_grapple: bool,
+    /// The grapple hook's attached center, set by the caller per tick (the
+    /// vanilla `GrappleMovement` reads `Main.projectile` directly).
+    pub grapple_hook_center: Vec2,
+    /// The attached hook's type (the pull-speed table lookup).
+    pub grapple_hook_type: i32,
     /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
     /// budget in ticks and its refill cap.
     pub wing_time: f32,
@@ -466,6 +480,10 @@ impl Player {
             extra_fall: 0,
             no_fall_dmg: false,
             has_wings: false,
+            grappling_active: false,
+            going_down_with_grapple: false,
+            grapple_hook_center: Vec2::ZERO,
+            grapple_hook_type: 13,
             wing_time: 0.0,
             wing_time_max: 0,
             wings_logic: 0,
@@ -726,6 +744,22 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        self.update_with_grapple(world, input, None)
+    }
+
+    /// The full tick with the optional grappling pull (`GrappleMovement`):
+    /// while a hook is attached the pull REPLACES the normal movement
+    /// (`Player.cs:27395-27399` gates the whole run/jump/wing/dash block).
+    pub fn update_with_grapple(
+        &mut self,
+        world: &World,
+        input: PlayerInput,
+        grapple: Option<(Vec2, i32)>,
+    ) {
+        // `Player.grappling[0] != -1` is rebuilt per tick by the attached
+        // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
+        // caller passes the attached state, so derive it here.
+        self.grappling_active = grapple.is_some();
         // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
         // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
         // end-of-update purge consumes the table at `:26011-26016`.
@@ -960,15 +994,21 @@ impl Player {
             self.try_keeping_hovering_up = false;
             self.try_keeping_hovering_down = false;
         }
+        // `Player.cs:27395-27399`: the whole run/jump/wing/dash movement
+        // block is bypassed while grappling — `GrappleMovement` replaces the
+        // velocity below.
+        let grappling = self.grappling_active;
         let dir = (input.right as i32 - input.left as i32) as f32;
         if dir != 0.0 {
             self.facing = dir as i32;
         }
-        // `:26496-26499`: the wing run-speed tweaks run before the movement.
-        if self.wings_logic > 0 && self.vy != 0.0 {
-            self.wing_air_logic_tweaks();
+        if !grappling {
+            // `:26496-26499`: the wing run-speed tweaks run before the movement.
+            if self.wings_logic > 0 && self.vy != 0.0 {
+                self.wing_air_logic_tweaks();
+            }
+            self.horizontal_movement(dir);
         }
-        self.horizontal_movement(dir);
 
         let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
         // `Player.cs:27008-27017`: in a liquid the gravity is `gravity / 3`
@@ -992,7 +1032,7 @@ impl Player {
         // `:21024` clears the latch at the END of the held block, so the
         // jump branches read the PREVIOUS tick's latch — capture it first.
         let released = self.release_jump;
-        if input.jump {
+        if input.jump && !grappling {
             // `:21024`: any held frame clears the release latch.
             self.release_jump = false;
             if self.on_ground && jump_pressed {
@@ -1051,19 +1091,29 @@ impl Player {
 
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
-        self.dash_movement(world, input);
+        if !grappling {
+            self.dash_movement(world, input);
+        }
+
+        // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
+        // `Player.cs:22613-22740`): the pull REPLACES the velocity — the
+        // vector to the attached hook center clamped to the pull speed. The
+        // fall origin refreshes per tick (no fall damage accrues).
+        if grappling {
+            self.grapple_movement(grapple, input);
+        }
 
         // The flight section (`Player.cs:26744-27360`): the wings and the
         // rocket boots REPLACE the gravity integration on the ticks they run.
         // The plain gravity below applies only in the fallback. The wet ticks
         // skip the flight (the vanilla water physics dominate; the swim cap
         // stays).
-        let flew = if !in_liquid && !self.webbed {
+        let flew = if !in_liquid && !self.webbed && !grappling {
             self.flight_section(world, input, gravity, fall_cap)
         } else {
             false
         };
-        if !flew && !self.webbed {
+        if !flew && !self.webbed && !grappling {
             self.vy = (self.vy + gravity).min(fall_cap);
         }
         self.vy = self.vy.max(if in_liquid {
@@ -1143,7 +1193,7 @@ impl Player {
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
         // the movement block reads the flags next tick (one tick stale).
-        if self.vy == 0.0 {
+        if self.vy == 0.0 && !grappling {
             self.floor_visuals(world);
         }
 
@@ -1886,6 +1936,84 @@ impl Player {
             if self.vy > -2.0 && self.vy < 1.0 {
                 self.vy = 1e-5;
             }
+        }
+    }
+
+    /// `Player.GrappleMovement` (`Player.cs:22613-22740`): the pull replaces
+    /// the velocity; the jump-off detaches. `hook` is `(center, type)` of the
+    /// attached hook (the param already filters to the attached state).
+    fn grapple_movement(&mut self, hook: Option<(Vec2, i32)>, input: PlayerInput) {
+        let Some((hook_center, hook_type)) = hook else {
+            return;
+        };
+        // `RefreshMovementAbilities` (`Player.cs:22858-22867`): the flight
+        // budgets refill every tick while grappling.
+        self.wing_time = self.wing_time_max as f32;
+        self.rocket_time = self.rocket_time_max;
+        self.rocket_delay = 0;
+        self.refresh_double_jumps();
+        // `:22645`: the fall origin refreshes per tick — no fall damage.
+        self.fall_start = (self.y / TILE_PX) as i32;
+
+        // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
+        // vector to the hook center clamped to the per-type pull speed.
+        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5);
+        let dist = to_hook.length();
+        let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
+        let pull = if dist > 0.001 {
+            to_hook * (pull_speed / dist).min(1.0)
+        } else {
+            Vec2::ZERO
+        };
+        // `:22659`: `flag3` = the pull points down while the CURRENT velocity
+        // is zero (a grounded pull) — read before the replacement.
+        let flag3 = pull.y > 0.0 && self.vy == 0.0;
+        // `:22660-22661`: the pull replaces the velocity outright.
+        self.vx = pull.x;
+        self.vy = pull.y;
+        // `:22655-22658`: the pull points downward → the platforms fall
+        // through (`GoingDownWithGrapple`).
+        self.going_down_with_grapple = pull.y > 0.0;
+        // `:22655-22658`: the pull points downward → the platforms fall
+        // through (`GoingDownWithGrapple`).
+
+        // `:22670-22673`: the direction follows the pull.
+        if self.vx > 0.0 {
+            self.facing = 1;
+        } else if self.vx < 0.0 {
+            self.facing = -1;
+        }
+
+        // `:22705-22739`: the jump-off.
+        if input.jump {
+            if self.release_jump {
+                // `flag` (`:22627`): nearly stationary.
+                let flag = Vec2::new(self.vx, self.vy).length() < 2.0;
+                // `flag2` (`:22628`): floating in water with near-zero vy.
+                let flag2 = self.in_water && self.vy.abs() < 0.02;
+                let mut flag4 = flag2 || flag;
+                if input.down {
+                    flag4 = false;
+                }
+                if flag3 && !self.control_jump {
+                    flag4 = false;
+                }
+                if flag4 {
+                    self.vy = -self.jump_speed;
+                    self.jump = self.jump_height;
+                    self.release_jump = false;
+                } else {
+                    self.vy += 0.01;
+                    self.release_jump = false;
+                }
+                self.refresh_double_jumps();
+                // `RemoveAllGrapplingHooks` (`Player.cs:33562-33566`): the
+                // caller observes `grappling_active == false` and drops the
+                // hook.
+                self.grappling_active = false;
+            }
+        } else {
+            self.release_jump = true;
         }
     }
 
@@ -2881,11 +3009,118 @@ mod tests {
         assert_eq!(p.wing_time, 42.0, "7 fuel ticks x 6 = 42 wing ticks");
     }
 
-    /// `Player.cs:27034-27037 + 27339-27350`: the wing glide — jump held
-    /// while falling caps the descent at `maxFallSpeed / 3` and refreshes
-    /// the fall origin (no fall damage accrues).
+    /// `Player.GrappleMovement` (`Player.cs:22613-22740`): while a hook is
+    /// attached the pull replaces the velocity — the vector to the hook
+    /// center clamped to the pull speed.
     #[test]
-    fn wing_glide_caps_the_fall() {
+    fn grapple_pull_replaces_the_velocity() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
+        let grapple = Some((hook_center, 13));
+        p.update_with_grapple(&w, PlayerInput::default(), grapple);
+        // The pull toward the hook: dx +, dy -.
+        assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
+        // The speed cap 11 px/tick for the Hook (13).
+        assert!(
+            Vec2::new(p.vx, p.vy).length() <= 11.0 + 1e-4,
+            "the pull speed capped: {}",
+            Vec2::new(p.vx, p.vy).length()
+        );
+        // GoingDownWithGrapple: the pull points up here.
+        assert!(!p.going_down_with_grapple);
+    }
+
+    /// `Player.cs:22645`: the fall origin refreshes per tick while
+    /// grappling — a long pull never accrues fall damage.
+    #[test]
+    fn grapple_refreshes_the_fall_origin() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        let start_row = (p.y / TILE_PX) as i32;
+        let grapple = Some((Vec2::new(p.x, p.y - 300.0), 13));
+        for _ in 0..40 {
+            p.update_with_grapple(&w, PlayerInput::default(), grapple);
+            // GrappleMovement refreshes the origin BEFORE the position
+            // integrates — one row behind the current position, like the
+            // original's call order (:27645 vs the collision block).
+            let row = (p.y / TILE_PX) as i32;
+            assert!(
+                (p.fall_start - row).abs() <= 1,
+                "the origin rides the pull: {} vs {row}",
+                p.fall_start
+            );
+        }
+        let _ = start_row;
+    }
+
+    /// `Player.cs:22705-22739`: the jump-off — a fresh jump press while
+    /// nearly stationary grants the full jump and detaches.
+    #[test]
+    fn grapple_jump_off_detaches() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Settle, then latch the hook right above (a near-stationary hang).
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.grappling_active = true;
+        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        p.grapple_hook_type = 13;
+        let grapple = Some((p.grapple_hook_center, 13));
+        // The press edge: the jump-off.
+        p.update_with_grapple(&w, PlayerInput {
+            jump: true,
+            ..Default::default()
+        }, grapple);
+        assert!(!p.grappling_active, "detached");
+        assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
+    }
+
+    /// `Player.cs:22713-22717`: holding DOWN cancels the stationary jump-off
+    /// — the nudge path detaches without the jump.
+    #[test]
+    fn grapple_jump_off_down_is_a_nudge() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.grappling_active = true;
+        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
+        p.grapple_hook_type = 13;
+        let grapple = Some((p.grapple_hook_center, 13));
+        p.update_with_grapple(&w, PlayerInput {
+            jump: true,
+            down: true,
+            ..Default::default()
+        }, grapple);
+        assert!(!p.grappling_active, "detached");
+        // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
+        // counter — the pull velocity carries (the vanilla does not zero it
+        // in RemoveAllGrapplingHooks).
+        assert_eq!(p.jump, 0, "no jump counter on the nudge path");
+    }
+
+    /// `Player.cs:22660-22661`: while pulling DOWN the platforms fall
+    /// through (`GoingDownWithGrapple`).
+    #[test]
+    fn downward_pull_sets_going_down() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.grappling_active = true;
+        p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
+        p.grapple_hook_type = 13;
+        let grapple = Some((p.grapple_hook_center, 13));
+        p.update_with_grapple(&w, PlayerInput::default(), grapple);
+        assert!(p.going_down_with_grapple, "the pull points down");
+    }
+
+    /// `Player.cs:19963,19993`: the overspeed continuation is gated on
+    /// `dashDelay >= 0` — no input acceleration while dashing (the decay
+    /// runs instead).
+    #[test]
+    fn no_input_acceleration_while_dashing() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         p.wings_logic = 1;
@@ -3111,7 +3346,7 @@ mod tests {
     /// `dashDelay >= 0` — no input acceleration while dashing (the decay
     /// runs instead).
     #[test]
-    fn no_input_acceleration_while_dashing() {
+    fn dash_overspeed_continuation_gated() {
         let w = ground_world();
         let mut p = Player::spawn(&w);
         p.dash_type = 2;
