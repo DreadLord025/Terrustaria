@@ -165,6 +165,38 @@ impl SlimeVariant {
     }
 }
 
+/// The bestiary info-page stat rows for one entry — the same tables
+/// `Npc::max_hp`/`defense`/`value`/`knock_back_resist` read, exposed for the
+/// UI without constructing an `Npc` (`EntryStats` mirrors
+/// `UIBestiaryEntryInfoPage`'s `Stat_*` lines).
+pub struct EntryStats {
+    pub hp: i32,
+    pub damage: i32,
+    pub defense: i32,
+    pub value: f32,
+    pub kb: f32,
+}
+
+/// The stat rows for one kind/variant pair; the slime variants ride their
+/// `SlimeStats`, the other kinds the `Npc` accessors' tables.
+pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
+    // The accessors live on `Npc` instances; the private ctor builds the
+    // shell and the variant rides the only other field the tables consult.
+    let mut shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+    shell.slime = variant;
+    EntryStats {
+        hp: kind.max_hp(),
+        damage: if kind == NpcKind::Slime {
+            variant.stats().damage
+        } else {
+            kind.contact_damage()
+        },
+        defense: shell.defense(),
+        value: shell.value(),
+        kb: shell.knock_back_resist(),
+    }
+}
+
 impl NpcKind {
     pub fn to_u16(self) -> u16 {
         match self {
@@ -198,7 +230,7 @@ impl NpcKind {
         }
     }
 
-    fn max_hp(self) -> i32 {
+    pub(crate) fn max_hp(self) -> i32 {
         match self {
             NpcKind::Slime => 25,         // NPC.cs:8572
             NpcKind::DemonEye => 60,      // case 2

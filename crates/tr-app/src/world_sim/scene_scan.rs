@@ -36,7 +36,7 @@ pub(crate) fn scan_scene(
         player.x + player::WIDTH * 0.5,
         player.y + player::HEIGHT * 0.5,
     ];
-    scan_scene_at(world, center, raining, sandstorm_happening)
+    scan_scene_at(world, center, raining, sandstorm_happening, player.shimmer_wet)
 }
 
 /// The injectable center variant of `scan_scene`: the headless TR_NOPLAYER
@@ -47,6 +47,7 @@ pub(crate) fn scan_scene_at(
     center: [f32; 2],
     raining: bool,
     sandstorm_happening: bool,
+    player_shimmering: bool,
 ) -> SceneMetrics {
     // `this.TileCenter = Center.ToTileCoordinates().ClampedInWorld()`
     // (`SceneMetrics.cs:333`); `ToTileCoordinates` is `(int)v >> 4`
@@ -68,7 +69,10 @@ pub(crate) fn scan_scene_at(
         .tile(tile_center.0, tile_center.1)
         .is_some_and(|t| t.wall > 0);
     metrics.aggregate_tile_counts();
-    metrics.calculate_zones(world.world_surface, raining, sandstorm_happening);
+    // `AddPlayerEffects` (`SceneMetrics.cs:747`): the local player's
+    // shimmering flag rides the metrics (`shimmerWet` = the center tile).
+    metrics.player_shimmering = player_shimmering;
+    metrics.calculate_zones(world.world_surface, world.height, raining, sandstorm_happening);
     metrics
 }
 
@@ -95,7 +99,13 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
             };
             if !tile.active() {
                 // `SceneMetrics.cs:365-371`: inactive tiles only feed the
-                // liquid counts (`_liquidCounts`) — no M1 reader.
+                // liquid counts (`_liquidCounts`) — the shimmer count is the
+                // M1 reader (`ShimmerTileCount` = `_liquidCounts[3]`, `:594`).
+                if tile.liquid > 0
+                    && tile.liquid_kind() == tr_core::tile::LiquidKind::Shimmer
+                {
+                    metrics.shimmer_tile_count += 1;
+                }
                 continue;
             }
             // `SceneMetrics.cs:373`: `_tileCounts[tile.type]++`.
@@ -186,7 +196,15 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         .as_ref()
         .map(|p| [p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5])
         .unwrap_or([camera.x, camera.y]);
-    let metrics = scan_scene_at(world, center, rain.is_raining(), sandstorm.happening);
+    let metrics = scan_scene_at(
+        world,
+        center,
+        rain.is_raining(),
+        sandstorm.happening,
+        player
+            .as_ref()
+            .is_some_and(|p| p.shimmer_wet),
+    );
     // `Main.SceneState.Update` (`Main.cs:17816`); the `skipTransitions` the
     // manage calls read is the pre-update value — vanilla flips it at `:62`,
     // after `ApplyVisuals` inside `Update`.
@@ -200,8 +218,23 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     let c =
         crate::render::sky::color_of_the_skies(quantised, world.day_time, world.moon_phase);
     let rain_dim = (1.0 - rain.visual_alpha() * 0.9).max(0.1);
-    let tile_color =
-        crate::render::sky::tile_color([c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim]);
+    let mut c = [c[0] * rain_dim, c[1] * rain_dim, c[2] * rain_dim];
+    // `ModifyHorizonLight` (`Main.cs:63921`) — the same blend the frame's
+    // light-map sky colour takes, so the filters see the tinted tileColor.
+    let atmo = crate::render::sky::atmosphere_factor(
+        camera.y,
+        world.world_surface,
+        world.width,
+    );
+    crate::render::sky::modify_horizon_light(
+        &mut c,
+        world.moon_phase,
+        world.day_time,
+        (world.time / 60.0).floor() * 60.0,
+        atmo,
+        rain.visual_alpha(),
+    );
+    let tile_color = crate::render::sky::tile_color(c);
     let inputs = crate::app::filters::SceneVisualInputs {
         storm: &*sandstorm,
         wind_speed_current: wind.speed_current,

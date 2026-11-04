@@ -32,6 +32,32 @@ pub fn default_world_path(name: &str) -> Option<PathBuf> {
     Some(default_world_dir()?.join(format!("{name}.trwld")))
 }
 
+/// `Main.PlayerPath` (`Main.cs:67065-67075`): `SavePath/Players` — the
+/// `Worlds` dir's parent joined with `Players` (`Terrustaria/Players`).
+pub fn default_players_dir() -> Option<PathBuf> {
+    Some(default_world_dir()?.parent()?.join("Players"))
+}
+
+/// `Main.GetPlayerPathFromName` (`Main.cs:4820-4841`): `.` and `*` become
+/// `_`, the Windows invalid-filename set becomes `-`, spaces become `_`,
+/// then `<name>.plr` under [`default_players_dir`].
+pub fn default_player_path(name: &str) -> Option<PathBuf> {
+    const INVALID: &[char] = &['"', '<', '>', '|', ':', '?', '\\', '/', '\u{0}'];
+    let mut safe = String::with_capacity(name.len());
+    for c in name.chars() {
+        safe.push(if c == '.' || c == '*' {
+            '_'
+        } else if INVALID.contains(&c) {
+            '-'
+        } else if c == ' ' {
+            '_'
+        } else {
+            c
+        });
+    }
+    Some(default_players_dir()?.join(format!("{safe}.plr")))
+}
+
 pub fn save(path: &Path, world: &World) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;

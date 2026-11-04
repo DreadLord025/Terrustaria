@@ -146,9 +146,16 @@ impl ApplicationHandler for App {
                         }
                         match code {
                             KeyCode::Escape => {
-                                // The original opens the inventory on Escape; the
-                                // world is saved on window close and with F9.
-                                self.inventory_open = !self.inventory_open;
+                                // The bestiary eats the Escape first
+                                // (`IngameFancyUI`'s GoBack), then the original
+                                // opens the inventory on Escape; the world is
+                                // saved on window close and with F9.
+                                if self.bestiary_open {
+                                    self.bestiary_open = false;
+                                    self.bestiary_selected = None;
+                                } else {
+                                    self.inventory_open = !self.inventory_open;
+                                }
                             }
                             KeyCode::F1 => self.debug = !self.debug,
                             KeyCode::F2 => {

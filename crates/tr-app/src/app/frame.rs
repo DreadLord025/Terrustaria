@@ -116,6 +116,7 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
+            self.handle_bestiary_clicks();
             if !self.handle_crafting_clicks() {
                 self.handle_inventory_clicks();
             }
@@ -313,11 +314,27 @@ impl App {
                 // sunlight) by `1 - cloudAlpha * 0.9`.
                 let rain_alpha = rain.visual_alpha();
                 let rain_dim = (1.0 - rain_alpha * 0.9).max(0.1);
-                let sky_tint = [
+                let mut sky_tint = [
                     sky_tint[0] * rain_dim,
                     sky_tint[1] * rain_dim,
                     sky_tint[2] * rain_dim,
                 ];
+                // `Main.instance.HorizonRenderer.ModifyHorizonLight`
+                // (`Main.cs:63921`): the sunrise/sunset gradient entries blend
+                // into the sky colour before it becomes the tile light.
+                let atmo = crate::render::sky::atmosphere_factor(
+                    camera.y,
+                    world.world_surface,
+                    world.width,
+                );
+                crate::render::sky::modify_horizon_light(
+                    &mut sky_tint,
+                    world.moon_phase,
+                    is_day,
+                    quantised,
+                    atmo,
+                    rain_alpha,
+                );
                 let sky_light = tile_color(sky_tint);
                 // `Main.DoUpdate_AnimateCursorColors`: mouseTextColor oscillates
                 // 190..=255, changing by 1 per frame, driving light flicker.
@@ -371,7 +388,8 @@ impl App {
                     raining: rain.is_raining(),
                     // `Main.shimmerDarken` / `Main.liquidAlpha[13]`: shimmer is not
                     // simulated yet, so both stay at their neutral value.
-                    shimmer_darken: 0.0,
+                    // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
+                    shimmer_darken: self.scene_state.shimmer_darken,
                     shimmer_alpha: 0.0,
                     sundial_cooldown: 0,
                     moondial_cooldown: 0,
@@ -685,6 +703,10 @@ impl App {
                     && front.is_none()
                     && !no_hud()
                     && !fullscreen_map
+                    // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
+                    // bestiary state covers the interface — the minimap HUD
+                    // does not draw under it.
+                    && !self.bestiary_open
                     && self.map_style == 1
                 {
                     if let Some(m) = map.as_ref() {
@@ -772,6 +794,9 @@ impl App {
                         },
                         m_h,
                         self.map_style,
+                        self.bestiary_open,
+                        self.bestiary_selected,
+                        &self.kill_tracker,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

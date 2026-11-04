@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.89"
 
 [workspace.dependencies]
+aes = "0.9"
 anyhow = "1"
 bytemuck = { version = "1", features = ["derive"] }
 log = "0.4"
