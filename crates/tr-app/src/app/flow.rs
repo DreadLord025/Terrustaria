@@ -1282,6 +1282,7 @@ pub(crate) mod front_flow_tests {
             chat: crate::chat::ChatMonitor::default(),
             achievements: crate::achievements::AchievementManager::ported(),
             emotes: crate::emotes::EmoteSystem::default(),
+            banners: crate::banners::BannerSystem::default(),
             window: None,
             gpu: None,
             renderer: None,

@@ -5,6 +5,7 @@
 use glam::Vec2;
 use tr_core::TILE_PX;
 
+use crate::achievements;
 use crate::app::{rand01, App};
 use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind, SlimeVariant};
@@ -66,6 +67,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // kill, and no ported kind fails `IsNPCValidForBestiaryKillCredit`.
         let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
         app.kill_tracker.register_kill(entry.credit_id);
+        // `AchievementsHelper.NotifyNPCKilled` (`GameContent/Achievements/`):
+        // the kill feeds the NPCKilledCondition rows (the M6-ACH-1 hook —
+        // the original wire pass lost it to a mid-script assert).
+        let _ = app
+            .achievements
+            .notify(achievements::CondKind::NpcKilled(entry.net_id));
+        // `NPC.CountKillForBannersAndDropThem` (`NPC.cs:79818-79827`) →
+        // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
+        // banner item at the death spot and announces the tally in the
+        // Command color.
+        if let Some((banner, text)) =
+            app.banners
+                .add_npc_kill_by(entry.net_id, &app.player_name)
+        {
+            crate::chat::broadcast_death_text(
+                &mut app.chat,
+                &text,
+                crate::chat::COLOR_COMMAND,
+            );
+            let item = tr_core::bestiary::banner_to_item(banner);
+            crate::world_sim::items::spawn_item_drop(
+                app,
+                item as u16,
+                (npc.x / 16.0) as i32,
+                (npc.y / 16.0) as i32,
+            );
+        }
         spawn_coins(app, &npc);
         spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
     }

@@ -138,6 +138,19 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
             {
                 metrics.ocean_sand_tile_count += 1;
             }
+            // The M2-BUFF-8 banner arm (`SceneMetrics.cs:416-445`): tile 91
+            // decodes to the banner id; the strength-enabled ones raise the
+            // buff (the port's family banners all carry the 1.5/0.75 pair).
+            if tile.kind == 91 {
+                if let Some(banner) =
+                    tr_core::bestiary::banner_num_from_frame(tile.frame_x, tile.frame_y)
+                {
+                    if let Some(buff) = metrics.npc_banner_buff.get_mut(banner as usize) {
+                        *buff = true;
+                        metrics.has_banner = true;
+                    }
+                }
+            }
             // The M2-BUFF-5 auras (`SceneMetrics.cs:378-409`): the lit-frame
             // gates ride the stored frames — the object system (DW-1.6)
             // writes real frames, so a computed `-1` only slips through the

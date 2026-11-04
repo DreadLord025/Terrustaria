@@ -117,11 +117,12 @@ impl KillTracker {
 /// `ItemID.Sets.KillsToBanner[item]` (`ItemID.cs:1303-1304` — the
 /// `CreateIntSet` default 50 with the explicit overrides). `0` = the boss
 /// entries have no banner; their providers are the quick-unlock kind.
-pub fn kills_needed_for(net_id: i32) -> i32 {
-    /// `(net id, banner id)` — the `NPCtoBanner` cases for the port's family
-    /// (`BannerSystem.cs`: 1→69 at `:588`, -3→119 at `:881`, -4→151 at `:802`,
-    /// -5→146 at `:788`, -6→90 at `:879`, -7→155 at `:885`, -8→159 at `:887`,
-    /// -9→183 at `:889`, 2→86 at `:467`, 3→87 at `:645`, 133→288 at `:1141`).
+/// `BannerSystem.NPCtoBanner` (`BannerSystem.cs:341+`) narrowed to the
+/// port's family — the `(net id, banner id)` pairs (`BannerSystem.cs`: 1→69
+/// at `:588`, -3→119 at `:881`, -4→151 at `:802`, -5→146 at `:788`, -6→90
+/// at `:879`, -7→155 at `:885`, -8→159 at `:887`, -9→183 at `:889`, 2→86 at
+/// `:467`, 3→87 at `:645`, 133→288 at `:1141`). `0` = no banner.
+pub fn npc_to_banner(net_id: i32) -> i32 {
     const BANNERS: &[(i32, i32)] = &[
         (1, 69),
         (-3, 119),
@@ -135,10 +136,41 @@ pub fn kills_needed_for(net_id: i32) -> i32 {
         (3, 87),
         (133, 288),
     ];
-    let Some((_, banner)) = BANNERS.iter().find(|(net, _)| *net == net_id) else {
+    BANNERS
+        .iter()
+        .find(|(net, _)| *net == net_id)
+        .map(|(_, banner)| *banner)
+        .unwrap_or(0)
+}
+
+/// `NPC.BannerToNPC`'s family inverse — the net id a banner announces.
+pub fn banner_to_npc(banner: i32) -> i32 {
+    const PAIRS: &[(i32, i32)] = &[
+        (69, 1),
+        (119, -3),
+        (151, -4),
+        (146, -5),
+        (90, -6),
+        (155, -7),
+        (159, -8),
+        (183, -9),
+        (86, 2),
+        (87, 3),
+        (288, 133),
+    ];
+    PAIRS
+        .iter()
+        .find(|(b, _)| *b == banner)
+        .map(|(_, net)| *net)
+        .unwrap_or(0)
+}
+
+pub fn kills_needed_for(net_id: i32) -> i32 {
+    let banner = npc_to_banner(net_id);
+    if banner <= 0 {
         return 0;
-    };
-    let item = banner_to_item(*banner);
+    }
+    let item = banner_to_item(banner);
     // The `KillsToBanner` overrides the family hits (`ItemID.cs:1304`):
     // only Pinky's banner item 2960 carries an explicit 25.
     if item == 2960 {
@@ -161,6 +193,38 @@ pub fn banner_to_item(banner: i32) -> i32 {
         return 2897 + banner - 88;
     }
     1615 + banner - 1
+}
+
+/// `ItemID.BannerEffect(1f)` sampled at the Classic difficulty — the
+/// damage-dealt ×1.5 / damage-received ×0.75 pair every non-DD2 banner
+/// carries (`ItemID.cs:11-31`: DamageDealt classic `1 + 1*0.5`, Damage
+/// Received classic `(1 + 1/2)/2`; the expert arms 2.0/0.5 land with the
+/// expert-mode toggle, M6-CREATIVE-1's difficulty flip).
+pub const BANNER_DAMAGE_DEALT: f32 = 1.5;
+pub const BANNER_DAMAGE_RECEIVED: f32 = 0.75;
+
+/// `SceneMetrics.ScanTiles`' tile-91 arm (`SceneMetrics.cs:416-439`): the
+/// banner id from the placed banner's frames — `frameX / 18` plus 111 per
+/// full `frameY` row, the blank cells (`frameX < 396 && frameY < 54`, the
+/// ids 311/312) skipped.
+pub fn banner_num_from_frame(frame_x: i16, frame_y: i16) -> Option<i32> {
+    let mut num = frame_x as i32 / 18;
+    let mut fy = frame_y;
+    while fy >= 54 {
+        num += 90 + 21;
+        fy -= 54;
+    }
+    if num >= 311 {
+        num -= 1;
+    }
+    if num >= 312 {
+        num -= 1;
+    }
+    let blank = frame_x < 396 && frame_y < 54;
+    if blank || num == 311 || num == 312 {
+        return None;
+    }
+    Some(num)
 }
 
 #[cfg(test)]
