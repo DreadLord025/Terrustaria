@@ -74,6 +74,9 @@ pub struct SceneMetrics {
     /// `metrics.ShimmerTileCount` = `_liquidCounts[LiquidID.Shimmer]`
     /// (`SceneMetrics.cs:594`): the type-3 liquid cells in the scan window.
     pub shimmer_tile_count: i32,
+    /// `metrics.MushroomTileCount` (`SceneMetrics.cs:610` — the blocks
+    /// 70/71/72/528).
+    pub mushroom_tile_count: i32,
     /// `metrics.UndergroundForShimmering` (`SceneMetrics.cs:704`).
     pub underground_for_shimmering: bool,
     /// `metrics.ZoneShimmer` (`SceneMetrics.cs:705`; the dungeon gate is not
@@ -165,6 +168,8 @@ pub mod thresholds {
     pub const JUNGLE_TILE: i32 = 140;
     /// `ShimmerTileThreshold` (`SceneMetrics.cs:921`).
     pub const SHIMMER_TILE: i32 = 300;
+    /// `MushroomTileThreshold` (`SceneMetrics.cs:935`).
+    pub const MUSHROOM_TILE: i32 = 100;
     /// `MeteorTileThreshold` (`SceneMetrics.cs:937`).
     pub const METEOR_TILE: i32 = 75;
     /// `DungeonTileThreshold` (`SceneMetrics.cs:938`).
@@ -185,6 +190,7 @@ impl SceneMetrics {
             tile_center: (0, 0),
             behind_backwall: false,
             shimmer_tile_count: 0,
+            mushroom_tile_count: 0,
             underground_for_shimmering: false,
             zone_shimmer: false,
             player_shimmering: false,
@@ -258,6 +264,37 @@ impl SceneMetrics {
         self.graveyard_tile_count >= thresholds::GRAVEYARD_TILE
     }
 
+    /// `metrics.EnoughTilesForJungle` (`SceneMetrics.cs:251`).
+    pub fn enough_tiles_for_jungle(&self) -> bool {
+        self.jungle_tile_count >= thresholds::JUNGLE_TILE
+    }
+
+    /// `metrics.EnoughTilesForHallow` (`SceneMetrics.cs:253`).
+    pub fn enough_tiles_for_hallow(&self) -> bool {
+        self.holy_tile_count >= thresholds::HALLOW_TILE
+    }
+
+    /// `metrics.EnoughTilesForCorruption` (`SceneMetrics.cs:265`).
+    pub fn enough_tiles_for_corruption(&self) -> bool {
+        self.evil_tile_count >= thresholds::CORRUPTION_TILE
+    }
+
+    /// `metrics.EnoughTilesForCrimson` (`SceneMetrics.cs:267`).
+    pub fn enough_tiles_for_crimson(&self) -> bool {
+        self.blood_tile_count >= thresholds::CRIMSON_TILE
+    }
+
+    /// `metrics.EnoughTilesForShimmer` (`SceneMetrics.cs:249`): the type-3
+    /// liquid cells in the window (the scan's liquid counting feeds it).
+    pub fn enough_tiles_for_shimmer(&self) -> bool {
+        self.shimmer_tile_count >= thresholds::SHIMMER_TILE
+    }
+
+    /// `metrics.EnoughTilesForGlowingMushroom` (`SceneMetrics.cs:257`).
+    pub fn enough_tiles_for_glowing_mushroom(&self) -> bool {
+        self.mushroom_tile_count >= thresholds::MUSHROOM_TILE
+    }
+
     /// `SceneMetrics.AggregateTileCounts` (`SceneMetrics.cs:573-660`), M1
     /// subset. Mushroom/Meteor/Dungeon/Shimmer counts and the `HasSunflower`/
     /// `HasGardenGnome` markers have no M1 reader and stay unported; the
@@ -312,6 +349,8 @@ impl SceneMetrics {
             + self.count(234)
             + self.count(352)
             + sunflower_term;
+        // `SceneMetrics.cs:610`: the glowing-mushroom block set.
+        self.mushroom_tile_count = self.count(70) + self.count(71) + self.count(72) + self.count(528);
         // `SceneMetrics.cs:611-612`:
         self.meteor_tile_count = self.count(37);
         self.dungeon_tile_count = self.count(41)

@@ -26,6 +26,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             right: false,
             jump: false,
             down: false,
+            hook: false,
         }
     } else {
         PlayerInput {
@@ -38,8 +39,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 || app.keys.contains(&KeyCode::KeyW)
                 || app.keys.contains(&KeyCode::ArrowUp),
             down: app.keys.contains(&KeyCode::KeyS) || app.keys.contains(&KeyCode::ArrowDown),
+            // `Player.controlHook` (the quick-grapple key).
+            hook: app.keys.contains(&KeyCode::KeyG),
         }
     };
+    let (sw, sh) = app.screen_size();
+    let mouse_world = Vec2::new(
+        app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+        app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+    );
+    let hook_type = *crate::grapple::HOOK_TYPE.get_or_init(|| {
+        std::env::var("TR_HOOK")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+            .unwrap_or(13)
+    });
     if let Some(p) = app.player.as_mut() {
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -70,9 +84,62 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
             return;
         }
+        // The quick-grapple fire: the `controlHook` press edge fires
+        // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
+        // out at a time (the vanilla `num7 = 1` recycle path for the
+        // single-hook items), aimed at the mouse world position.
+        static HOOK_PREV: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        let hook_edge = input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        if hook_edge && !p.dead {
+            let center = Vec2::new(
+                p.x + crate::player::WIDTH * 0.5,
+                p.y + crate::player::HEIGHT * 0.5,
+            );
+            app.grapple = Some(crate::grapple::GrappleHook::fire(
+                hook_type,
+                center,
+                mouse_world,
+                16.0,
+            ));
+        }
+        // The hook AI tick (`AI_007_GrapplingHooks`): the flight, the tile
+        // latch, the retract; the attached hook feeds the pull.
+        let grapple_snapshot = app
+            .grapple
+            .as_mut()
+            .and_then(|h| {
+                let center = Vec2::new(
+                    p.x + crate::player::WIDTH * 0.5,
+                    p.y + crate::player::HEIGHT * 0.5,
+                );
+                if h.update(&app.world, center) {
+                    Some((h.pos, h.hook_type, h.ai == crate::grapple::HookAi::Attached))
+                } else {
+                    None
+                }
+            });
+        p.grappling_active = grapple_snapshot
+            .as_ref()
+            .is_some_and(|(_, _, attached)| *attached);
+        if let Some((pos, hook_type, _)) = grapple_snapshot {
+            p.grapple_hook_center = pos;
+            p.grapple_hook_type = hook_type;
+        } else {
+            app.grapple = None;
+        }
+        let grapple_for_tick = grapple_snapshot
+            .filter(|(_, _, attached)| *attached)
+            .map(|(pos, hook_type, _)| (pos, hook_type));
         let step = 1.0 / 60.0;
-        app.player_step.tick(dt, |_| p.update(&app.world, input));
+        app.player_step.tick(dt, |_| {
+            p.update_with_grapple(&app.world, input, grapple_for_tick)
+        });
         app.player_step.drop_backlog();
+        // The jump-off consumed the hook (`RemoveAllGrapplingHooks`).
+        if !p.grappling_active {
+            app.grapple = None;
+        }
         if app.follow_player {
             // Follow the interpolated position so the camera is smooth between
             // the 60 Hz simulation steps.

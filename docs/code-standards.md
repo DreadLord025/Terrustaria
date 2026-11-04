@@ -1,5 +1,5 @@
-<!-- base-commit: 6fb9972 -->
-<!-- generated: 2026-11-03 -->
+<!-- base-commit: c30b09b -->
+<!-- generated: 2026-11-04 -->
 
 # Code Standards — Terraria-Rust
 
