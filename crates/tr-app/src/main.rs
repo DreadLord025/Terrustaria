@@ -3,6 +3,7 @@
 mod app;
 mod assets;
 mod audio;
+mod bestiary;
 mod biome;
 mod buffs;
 mod collision;

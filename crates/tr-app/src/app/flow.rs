@@ -1276,6 +1276,7 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         App {
+            kill_tracker: tr_core::bestiary::KillTracker::new(),
             window: None,
             gpu: None,
             renderer: None,

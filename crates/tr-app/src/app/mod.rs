@@ -142,6 +142,9 @@ pub(crate) struct App {
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     pub(crate) inventory_open: bool,
+    /// `Main.BestiaryTracker.Kills` (`NPCKillsTracker.cs`): the per-world
+    /// bestiary kill counts, persisted in the sidecar's v5 kills line.
+    pub(crate) kill_tracker: tr_core::bestiary::KillTracker,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -807,6 +810,8 @@ impl App {
             && std::env::var_os("TR_CAM").is_none()
             && std::env::var_os("TR_PAN").is_none();
         let mut coins = 0u64;
+        // The bestiary kill pairs, restored from the sidecar below.
+        let mut loaded_kills: Vec<(String, i32)> = Vec::new();
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
@@ -854,6 +859,10 @@ impl App {
                         };
                     }
                 }
+                // `NPCKillsTracker.Load` — the bestiary kill pairs ride the
+                // sidecar's v5 line; they feed the tracker the App literal
+                // below builds from.
+                loaded_kills = saved.kills;
             }
         }
         if let Ok(v) = std::env::var("TR_COINS") {
@@ -1084,6 +1093,11 @@ impl App {
                 s
             },
             inventory_open: std::env::var_os("TR_INV").is_some(),
+            kill_tracker: {
+                let mut tracker = tr_core::bestiary::KillTracker::new();
+                tracker.load_pairs(loaded_kills.into_iter());
+                tracker
+            },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
