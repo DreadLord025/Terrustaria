@@ -2996,3 +2996,46 @@ Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
 channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
 sounds/dust are render-side; the homing variants (182/866) and the
 phaseblade subset are out of the ported kinds.
+
+## Bombs (M4-PROJ-9)
+
+The aiStyle-16 thrown bombs (`AI_016_Bombs`, `Projectile.cs:46904-47545`)
+split into a small flight core and a heavy kill path.
+
+- **The flight**: `ai[0]++` per tick; the gravity tail (`:47505-47520`)
+  waits `ai[0] > 5f` (the thrown arc) and then adds
+  `velocity.Y += 0.2f` with the ground-slide `velocity.X *= 0.97f`
+  (the dynamite 29 another `*0.99f`, the tiny-x zero). The tile bounce
+  rides the `Update` movement's aiStyle-16 arm (`:19737-19762`): the hit
+  axis reflects at −0.4 (the dynamite another ×0.8 → −0.32). The
+  rotation `+= velocity.X * 0.1f`. The **flight damage zeroes** every
+  tick (`:47175-47176` — the kinds outside the keep-damage list; every
+  ported bomb is) — the explosion re-arms it.
+- **The sticky set** {37, 519} (`:46955`): no plain tile collide — the
+  scan (the box inset ±4 px against solid, non-127, non-platform tiles)
+  snaps `velocity = (0, -0.2f)` against a wall, so the bomb hovers and
+  detonates in place.
+- **The fuse seeds** live in `NewProjectileSetup`, not `SetDefaults`
+  (`:10970-10993`): 180 ticks (the bombs 28/37/516/519) and 300 (the
+  dynamite 29) — the AI's `owner == myPlayer && timeLeft <= 3` fires
+  the kill path (`:47165-47167`).
+- **The kill path** (`Kill()`'s aiStyle-16 branch, `:70662-70690`):
+  `PrepareBombToBlow` (`:46770-46844`) recentres the box to 128×128 and
+  re-arms damage 100 / knockback 8 (the bombs) or 250×250 / 250 / 10
+  (the dynamite), `tileCollide = false`; `Damage()` walks the NPCs
+  through the resized box (the pool's ordinary PVE walk); then
+  `Kill_ExplodeTiles` (`:77265-77380`) digs the crater — the radius 4
+  circle for the bombs, 7 for the dynamite, each tile passing
+  `CanExplodeTile` (`:78640-78700`) before `WorldGen.KillTile`, and the
+  3×3 wall walk around each killed tile (wall 350 = the echo wall
+  exempt).
+- **The firing needs nothing new**: the bombs flow through the generic
+  `Item.shoot` path from M4-PROJ-3 — `registry::projectile(166) = 28`,
+  the consumable decrement, the item's `shootSpeed` 5.
+
+Deviations: `SelfHurtPlayers()` (the bomb's self-damage) and the
+explosion visuals (dust/gore/sound) are M2-DEATH/M4-PROJ polish; the
+hardmode `CanExplodeTile` gates stay closed until M5-HARDFORCE; the wall
+breaks discard the wall item (the C# `KillWall` drops nothing in the
+explosion path either); the water-bomb transforms (784-807) and the
+special bombs (910/911, 102, 773) are out of the ported kinds.
