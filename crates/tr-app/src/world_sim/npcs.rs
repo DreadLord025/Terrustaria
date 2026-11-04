@@ -5,11 +5,19 @@
 use glam::Vec2;
 use tr_core::TILE_PX;
 
-use crate::app::{App, rand01};
+use crate::app::{rand01, App};
 use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind, SlimeVariant};
+use crate::regen::DotDeath;
 use crate::registry;
 use crate::spawner;
+
+/// The player's epitaph: a DoT drain death uses its attribution's table text
+/// (`KillMe(PlayerDeathReason.ByOther(N))` — `Player.cs:19321-19331`,
+/// `:19362-19385`); every other death keeps the M2-DEATH-1 stub.
+fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
+    pending.map_or("was slain...", crate::death::death_text_for)
+}
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
@@ -62,7 +70,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if player.hp <= 0 && !player.dead {
             let (dx, dy) = player.center();
             let boss_near = player.boss_hinders(&app.npcs);
-            let death_text = "was slain...".to_string();
+            let death_text = dot_death_text(player.dot_death).to_string();
+            player.dot_death = None;
             drop(player);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
@@ -233,5 +242,20 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
             vy,
             phase,
         ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dot_death_text_selects_table_over_stub() {
+        // DW-1.3 — the death collection resolves the DoT table text when the
+        // drain left a reason (`Player.cs:19321-19331,19362-19385`) and keeps
+        // the M2-DEATH-1 stub for any other death.
+        assert_eq!(dot_death_text(None), "was slain...");
+        assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
+        assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
     }
 }

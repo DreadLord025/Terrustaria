@@ -60,7 +60,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Liquids & waterfalls | ✅ (core) | sim + both draw passes + per-style waterfalls + shimmer draw; vertex distortion missing |
 | Sky / weather visuals | 🟡 | clouds/stars/sun/rain/storm banks done; ambient creature skies, `HorizonClouds` tint, storm branch missing |
 | World generation | 🟡 | compact native model (forest/snow/desert); vanilla pass pipeline not ported |
-| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot & regen engines (M2-BUFF-1/2); no debuff effects/combat stats/dash/wings/hooks/mounts |
+| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot & regen engines (M2-BUFF-1/2) + DoT debuff effects (M2-BUFF-3); stat debuffs (M2-BUFF-4)/combat stats/dash/wings/hooks/mounts missing |
 | Items | 🟡 | hotbar/mining/placing/drops + per-item use timings + a 7-recipe crafting subset (M3-CRAFT); no ammo/mana/equipment, the recipe table is a subset |
 | Combat | 🟡 | contact damage, melee, hurt/respawn, King Slime + the damage pipeline (DamageVar/armor-pen/crit gate + damage classes) + iframes/KB caps; no banners |
 | NPCs | 🟡 | slime colour family (8 variants + vanilla stats/tints/gel drops) + demon eye/Wandering Eye/zombie + King Slime + the drop-rule/money-roll engine; ~700 types, town system missing |
@@ -158,9 +158,27 @@ referenced here exist in the catalog.
 **C#** `Liquid.cs`, `LiquidBuffer.cs`, `GameContent/Liquid/*` · **Rust** `liquid.rs`,
 `liquid_draw.rs`, `waterfall/`, `render/liquids.rs` · ✅ core (M1.5-LIQUID-2 done).
 
-- Remaining: shimmer vertex distortion (`Main.DrawTileInWater` full effect),
-  `HorizonClouds` fall tint, pumps (`Wiring.XferWater` `Wiring.cs:475`, in/out caps 20,
-  type-locked, 255 max), actuator liquid control, buckets.
+- ✅ 2026-11-04 (M1.5-LIQUID-3): the research corrected the row — there is no
+  vertex-position warping in 1.4.5.8; the "distortion" is the per-corner vertex
+  colours (already ported with LIQUID-2) + the screen-space `WaterDistortion`
+  pass (landed with BG-18). What was missing and is now ported: the
+  `SceneState.UpdateShimmer` ramps (`SceneState.cs:283-309` — `shimmerAlpha`
+  0.025/tick, `shimmerDarken` follows past 0.5, the 4-tick brighten delay on
+  the way out) driven by `ZoneShimmer` (the `_liquidCounts[3] ≥ 300` scan +
+  the depth window `worldSurface + 84 .. maxTilesY - 396`) and the player
+  contact (`PerspectivePlayer.shimmering` via `AddPlayerEffects`);
+  `shimmerDarken` now multiplies the surface seeds (`TileLightScanner.cs:3222`
+  — the wire existed, the state did not); `ModifyHorizonLight`
+  (`NextHorizonRenderer.cs:154-194`, called from `Main.cs:63921`) blends the
+  hardcoded `SunGradients` mid entries into the sky/tile colour at the
+  `GetVisibilities` strengths (day-only dawn/dusk remap windows × atmo ×
+  cloudAlpha²), with `Main.HorizonPhase` (`Main.cs:2792`) picking the table.
+  Hook: `TR_TIME=<ticks>` pins the raw clock (the dawn 0..10800 and dusk
+  43200..54000 windows the `TR_DAY` half-mapping cannot reach). Remaining:
+  the submerged-tile vertex tint (`TileDrawing.cs:4145`,
+  `SetShimmerVertexColors` on tiles behind shimmer — the tile-draw seam), the
+  `HorizonClouds` shader draw itself (`CloudsEnd`, the sky-visual side),
+  pumps, actuator liquid control, buckets.
 - **Hidden:** liquid updates every other tick (`Liquid.skipCount > 1`); `curMaxLiquid`
   scales with gfx quality (`Main.cs:17115`); waterfalls re-scan every 30 ticks (ported).
 
@@ -410,7 +428,7 @@ jumps.
   has a duplicated unreachable branch (`>24900 → 0.175` twice, `Player.cs:18125`); buff
   383 cap 43200 = exactly one day; mana sickness −25 % magic at 300 ticks fading.
 
-**Tasks:** ✅ M2-BUFF-1 buff slot engine, ✅ M2-BUFF-2 regen engines (life/mana), M2-BUFF-3
+**Tasks:** ✅ M2-BUFF-1 buff slot engine, ✅ M2-BUFF-2 regen engines (life/mana), ✅ M2-BUFF-3
 DoT debuffs, M2-BUFF-4 stat/movement debuffs, M2-BUFF-5 environmental auras (SceneMetrics
 scan), M2-BUFF-6 luck system, M2-BUFF-7 food/WellFed, M2-BUFF-8 banners.
 
@@ -1209,7 +1227,7 @@ section in brackets before starting a row.
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
 | ✅ M1.5-LIQUID-2-det-fix | `M1.5-LIQUID-2-det-fix` | done 2026-11-03: the `TR_SHOT` SHA256 mismatch blamed on the sparkle pass was the **OS pointer** leaking into captures — `deterministic_pointer_park()` parks it offscreen and ignores `CursorMoved` during a capture without `TR_MOUSE`; the sparkle walk itself proven seed-deterministic (2 unit tests, byte-equal `TR_SPOUT` pairs). Caveat for future pairs: the autosave rewrites the loaded world — copy a pristine `.trwld` per run (ANALYSIS "Deterministic screenshots") |
-| M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
+| ✅ M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | the shimmer ramps (shimmerAlpha/shimmerDarken + the zone/contact triggers) + `shimmerDarken` on the surface seeds + `ModifyHorizonLight` (the sunrise/sunset gradient tint); the row's "vertex distortion" corrected by research — no vertex warping exists, the vertex colours + the WaterDistortion pass landed earlier [3] |
 | ✅ M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon light (night ramps + moon-phase floor), invisible blocks/walls light handling; stars = no light contribution (verified) [4] |
 | ✅ M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella — done 2026-11-03: the registry as a flat const slice (the wooden set 10/11/14/15/18/21), `TileObject.CanPlace`/`Place`, the KillTile cascade (CheckDoorClosed/Open, CheckChest, Check1x2/2x1/3x2), the world-interaction hook `interact_at` + OpenDoor/CloseDoor + door sounds; remaining: the full-registry generator, gemspark/glow (excluded — wall/light render work), the LMB frame_important gate (→ M1.4-TO-5); deviations in ANALYSIS "Tile objects (M1.4-TO)" [2] |
 | ✅ M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor — landed with the umbrella (closed/open door registry entries, the CheckDoor cascade, OpenDoor/CloseDoor behind `interact_at`, door sounds; net message 19 not wired) [2] |
@@ -1236,7 +1254,7 @@ section in brackets before starting a row.
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
 | ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | ✅ M2-BUFF-2 | `M2-BUFF-2-regen` | done 2026-11-03: `regen.rs` — the full `UpdateLifeRegen` accumulator (`Player.cs:18942-19391`: ramp tiers 300..3000, the 3600 cap, moving ×0.5 / still ×1.25, the banker's-rounded `statLifeMax2` add, the ±120/−600 counters) and `UpdateManaRegen`/`ApplyManaRegenerationDelay` (`:19380-19562`: the delay curve, the still/grapple double-add, the `num9 = 0.5` fill curve, floor 2, +1 per 120); DoT/aura/item/grapple inputs are neutral defaults for M2-BUFF-3/5 + M3-EQUIP; wired into `update_survival` |
-| 🔄 M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
+| ✅ M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | done 2026-11-04: the DoT set (poison/fire/…; ichor is **not** a DoT in 1.4.5.8 — armor-pen, moved to M2-BUFF-4): player-side derivation in the C# branch order (`Player.cs:18949→19095` — poisoned −4, venom/chlorophyte −30, the fire family −8/−16/−24/−60 doubled by dripping slime 137, suffocation −40, electrified −8/−40 while running, tongued −100 expert-only; bleeding resets the ramp only; honey +4 clamp) feeding the five `RegenInputs.dot_*` fields (`player.rs::derive_dot_inputs`); the drain fast-lane −600/5 with the early return + `DotDeath` (ByOther 7/8/9/10/12/22/23) and the death texts (`regen.rs`, `death.rs::death_text_for`); water cures OnFire/OnFire3 (24/323), lava → OnFire 420, Wet 103 with the per-frame `buff_immune` reset + expired sweep (`buffs.rs`/`player.rs`); NPC-side `npc_buffs.rs` — `NpcBuffs` (20 slots + `buffImmune` + `lifeRegenCount`), the verbatim `NPC.AddBuff` chain (`NPC.cs:89926-89983`), the per-tick buff block at the C# position (`NPC.cs:90373-90377`: set flags → clear expired → DOTTally → GetHurtByDebuff) and the roster immunities (`NPCID.Sets.DebuffImmunitySets` + derived 20⇒30/375, 69⇒36); deviations in ANALYSIS "DoT debuffs (M2-BUFF-3)" [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
 | M2-BUFF-5 | `M2-BUFF-5-auras` | SceneMetrics auras (campfire/lantern/star/sunflower/candles) [8] |
 | M2-BUFF-6 | `M2-BUFF-6-luck` | full Luck.cs (ladybug/torch/coin/kite/potions) [8] |
@@ -1342,7 +1360,7 @@ section in brackets before starting a row.
 | ✅ M7-WIRE-1 | `M7-WIRE-1-engine` | done 2026-11-04: `tr-core/src/wiring.rs` — the four wire colours as a sparse `WireState` side table on `World` (the C# `sTileHeader` bits, `Tile.cs:623-657`; the packed `Tile` has no header), `TripWire`'s four colour passes (`Wiring.cs:525-620`), the `HitWire` BFS with `SkipWire`, the `_toProcess` multi-trigger counter (4 on seeds, 3 on enqueue, 0 through junction boxes 424/445) and the `[2, max-2]` bounds (`:837-995`), `HitWireSingle`'s device subset (the actuator toggle, tile-144 re-trigger, the 421/422 lamp swap), `HitSwitch`'s switch/lever/timer/wide-switch/gem-lock rect table (`:259-330`), `CheckMech`/`UpdateMech` (the 999 queue, the 60/180/300/30/15 timer periods, the 411 lamp-pair flip) — 9 tests; device entity effects (statues/traps/pumps/teleporters/cannons) = M7-WIRE-2, the multi-tile actuation = M7-WIRE-3 |
 | M7-WIRE-2 | `M7-WIRE-2-traps-statues` | traps & statues [19] |
 | M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
-| M7-WIRE-4 | `M7-WIRE-4-logic-gates` | logic gates & sensors [19] |
+| ✅ M7-WIRE-4 | `M7-WIRE-4-logic-gates` | done 2026-11-04: the logic gates in `wiring.rs` — `LogicGatePass`/`PokeLogicGate`/`CheckLogicGate` (`Wiring.cs:682-831`, `:380-386`): the lamp queue, the gate walk down the column, the lamp-stack count (`frameX == 18` = on, `== 36` = the overflow/broken mark), the six types by `frameY / 18` (AND/OR/NAND/NOR/XOR/XNOR — the C#'s case numbering: 0 AND, 1 OR, 2 NAND, 3 NOR, 4 XOR, 5 XNOR), the output write + the `_GatesNext` re-trip chaining (`_GatesDone` guard), the faulty-lamp random roll (`Main.rand` → the deterministic xorshift stream), the case-419 lamp toggle verbatim (`num50 = 18 → -18 → 0`); 6 tests (the six types, the chain, the faulty lamp, the overflow) — the logic sensors (tiles 593/594) = M7-WIRE-2 |
 | M7-WIRE-5 | `M7-WIRE-5-teleporters` | teleporters & pumps [19] |
 | ✅ M7-TE-1 | `M7-TE-1-tile-entities` | done 2026-11-04: `tr-core/src/tile_entities.rs` — the framework (the registration-order ids `TileEntitiesManager.cs:27-40`, the `ByID`/`ByPosition` books on `World.tile_entities`, `place`/`remove_at`) and the item-holding halves — ItemFrame 395 / WeaponsRack 471 / FoodPlatter 520 / HatRack 475 with the `ValidTile` frame checks and the `(type, prefix, stack)` + presence-bitsByte wire/save shapes (`TEItemFrame.cs:37-56`, `TEHatRack.cs:59-80`) — 6 tests; the behaviour halves (dummy/sensor/doll/pylon/anchors) and the food gate = M7-TE-2, persistence = M6-SAVE-1 |
 | M7-TE-2 | `M7-TE-2-behaviour-halves` | dummy hit tracking, logic sensors, display doll, pylons, anchors [19] |

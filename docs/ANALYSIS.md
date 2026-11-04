@@ -2369,8 +2369,9 @@ Deviations:
   `RegenInputs` fields the engine already applies in the original order.
   The shinyStone standing-still package (`:19104-19108`, `:19126-19134`) folds
   into `extra_time`/`extra_regen`/`extra_ramp_scale` when M3-EQUIP lands.
-- **Death from a DoT drain clamps at 0 hp** — the C# `KillMe` reasons per
-  debuff (`:19367-19390`) land with M2-DEATH.
+- **Death from a DoT drain clamps at 0 hp** — resolved by M2-BUFF-3: the
+  `KillMe` reasons (`:19361-19385`) now flow through `regen.rs`'s `DotDeath`
+  (see "DoT debuffs (M2-BUFF-3)" below).
 - **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
   deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
 - **TheDebugOptions.ManaV2 block** is a debug cheat and is not ported.
@@ -2378,6 +2379,101 @@ Deviations:
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
   20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
+
+## DoT debuffs (M2-BUFF-3)
+
+The DoT set (poison/fire/blood; ichor is *not* a DoT in 1.4.5.8 — it is the
+armor-penetration debuff and stays with M2-BUFF-4) landed on top of the
+M2-BUFF-1/2 engines:
+
+- **Player side** — `player.rs` derives the DoT deltas as a pure
+  `derive_dot_inputs(&self, expert) -> DotDerivation` in the exact C# branch
+  order (`Player.cs:18949→19095`: poisoned −4, venom/chlorophyte spore −30,
+  the fire family −8/−16/−24/−60 each doubled while dripping slime (buff
+  137) is held, suffocation −40, electrified −8 plus −32 more while
+  running, tongued −100 expert-only; bleeding (30) only zeroes the ramp
+  time, `:19178-19181`; honey (48) softens a negative sum by 4 clamped at
+  0, `:19096-19103`) and feeds the five `RegenInputs.dot_*` fields.
+  `regen.rs` runs the drain: the fast lane (burned || suffocating ||
+  tongued && expert, `:19313`) chunks −600 → 5 dmg with an early return
+  (`:19313-19335`), the generic lane keeps the ≤4 hp per −120 chunk; both
+  return a `DotDeath` (`ByOther` 7/8/9/10/12/22/23 — the priority chains
+  7→12→8 and 22→9→10→23→8 are precomputed by the caller,
+  `:19321-19331`/`:19362-19385`) that `death.rs::death_text_for` renders.
+  `update_survival` hosts the demo inflictions/cures: lava contact →
+  `add_buff(24, 420)` (`:27710-27711`), water deletes OnFire/OnFire3
+  (24/323, `:27750-27761`), Wet 103 re-grants the fire immunities every
+  frame (`:11740-11751`), and the expired-buff sweep (`:25608-25616`) +
+  per-frame `buff_immune` reset (`:25561-25565`) ride `Player::update` in
+  the C# frame order (reset → tick → sweep → … → immune purge,
+  `Player.cs:25555→26016`).
+- **NPC side** — `npc_buffs.rs` ports the NPC chain as its own module (the
+  C# keeps the Player and NPC `AddBuff` chains separate, so the port does
+  too): the 20-slot `NpcBuffs` (`buffType`/`buffTime` `NPC.cs:6193-6197`,
+  `NPC.maxBuffs = 20` `:95189`, `lifeRegenCount` `:6249`), the verbatim
+  `NPC.AddBuff` chain (`:89926-89983`: immune guard → same-id extend →
+  evict the first non-debuff → reject at 20 debuffs), the `UpdateNPC` buff
+  block ticked from the head of `Npc::update` at the C# position
+  (`:90373-90377`: set flags → clear expired → apply DOTs) with the
+  `DOTTally` sum (`NPC.cs:59-141`, `:91594-91774` — Oiled (204) adds a
+  flat +50 in combination with a fire debuff, AcceleratePoisons (398)
+  doubles the boostable half via `SupportAcceleration`) and
+  `GetHurtByDebuff`'s direct `life -=` drain that bypasses
+  `StrikeNPC`/i-frames/knockback (`:91864-91888`). Immunities are the
+  roster's slice of `NPCID.Sets.DebuffImmunitySets` (slime 20, King Slime
+  20+31, demon eye/zombie/wandering eye none — `NPCID.cs:6079-6086`,
+  `:6386-6392`, `:6905`) plus the derived rules of `NPC.cs:17818-17838`
+  (immune 20 ⇒ 30 + 375, immune 69 ⇒ 36).
+
+Deviations:
+
+- **Honey does not extinguish fire** — the C# curing loop is driven by
+  `WetCollision`, whose tile scan sets `Collision.honey` as readily as
+  `Collision.wet` (`Collision.cs:1608-1618`), so standing in honey *would*
+  douse OnFire in the original. The plan assumed the cure required actual
+  water; checked against the source it was wrong in the C#'s favour of
+  honey, and the port takes the plan fallback (DW-2.2): the cure is
+  conditioned on a water probe distinct from honey
+  (`in_water && !in_honey && !in_lava`).
+- **The NPC DoT drain stops at hp ≤ 0** — the C# `GetHurtByDebuff` clamps
+  `life = 1` and finishes the kill with `StrikeNPCNoInteraction(9999)`
+  (`NPC.cs:91880-91887`); the port instead breaks the drain loop at
+  `hp <= 0` and lets the existing hp ≤ 0 collect (`world_sim/npcs.rs:38`)
+  run the normal death path (coins/gel drop exactly once).
+- **The player-side DoT drain stops at the first hp ≤ 0 crossing** — the C#
+  while-loops keep chunking a dead player until the counter empties (fast
+  lane `:19315-19334`, generic `:19357-19385`); the port returns one death
+  per tick and clamps at 0 (`regen.rs:236-241` fast lane, `:251-255`
+  generic) — death lands the same tick, only the transient negative
+  `statLife` differs.
+- **The `dontTakeDamage` gate is omitted** — `UpdateNPC_BuffApplyDOTs` is
+  wrapped in `if (!this.dontTakeDamage)` (`NPC.cs:91596`); the flag has no
+  Rust counterpart yet, so the port always applies DOTs.
+- **The last tick of an expiring debuff does not drain** — the C# keeps the
+  boolean flags (`poisoned`, `onFire`, …) set until the end of the frame,
+  so `UpdateLifeRegen` (`:25977`) still drains on the tick a buff expires;
+  the port re-derives the flags by scanning the slots *after* the
+  expired-buff sweep, so a debuff whose timer hit 0 this tick contributes
+  nothing. One tick of drain lost per expiry; the sweep itself is verbatim.
+- **Wet self-deletion runs one tick early** — the C# branch tests the
+  previous frame's `lavaWet` (`:11741-11744`); the port tests the current
+  `in_lava` probe, so Wet is deleted one tick sooner and OnFire from lava
+  is granted immediately while Wet is held (the C# rejects it through the
+  immune guard for one frame).
+- **Pre-existing gaps made visible by the DoT path**: the lava contact hit
+  is 30 dmg vs the C#'s 80 (`Player.cs:27687`), and `Player::respawn` does
+  not wipe buffs while the C# `Spawn` clears every non-persistent buff
+  (`Player.cs:16995-17002`) — both predate this task and stay open.
+- **Death texts are EN stand-ins** — `death_text_for` hardcodes one English
+  string per `DotDeath` after the `DeathText.*` keys of `Lang.cs`'s
+  `CreateDeathMessage` switch (`:1073-1126`, e.g. `DeathText.Suffocated_*`);
+  the localization pass replaces them.
+- **Deferred pieces**: the starving lane and the honey regen aura
+  (M2-BUFF-7/M2-BUFF-5), the Daybreak/Dryad's Bane spear sources, the
+  `ApplyDOTs`-only flags (javelined/eelwhip/celled/…), `SuperNatural`
+  lifeRegen, `TryAddingRepeatedBuff`, `vampireSeed` (nothing grants buff 22
+  or sets the vampire-slime `ai[1] = 9` in the roster), ichor → M2-BUFF-4,
+  and the presentation half — combat text, dust and the buff-bar HUD icons.
 
 ## Projectile pool (M4-PROJ-1)
 
@@ -2514,3 +2610,36 @@ Deviations:
 - **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
   per-chunk cap exists for the C#'s save-section packing; the port's books
   are unbounded maps.
+
+## Logic gates (M7-WIRE-4)
+
+`wiring.rs` gains the logic-gate half of `Wiring.cs`: `LogicGatePass`
+(`Wiring.cs:682-730`), `CheckLogicGate` (`:733-831`) and `PokeLogicGate`
+(`:380-386`). The tiles: LogicGateLamp = 419, LogicGate = 420
+(`TileID.cs:1467-1469`) — note the port's M7-WIRE-1 tests used kind 419 as a
+wire-tile filler; the engine reads the colour bits from `World.wires`, so the
+filler kind is inert, but the id belongs to the lamp. The mechanics:
+
+- A wire hit on a lamp toggles its frame (`case 419` verbatim:
+  `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36) num50 = 0;`)
+  and pokes the gate below through the lamp column walk
+  (`CheckLogicGate` descends past lamps to the first 420).
+- The gate counts the lamp stack above it (`frameX == 18` = on; a `frameX ==
+  36` lamp stops the count and marks the gate broken → its frame becomes 36),
+  evaluates the type by `frameY / 18` (the C#'s case order: 0 AND, 1 OR,
+  2 NAND, 3 NOR, 4 XOR, 5 XNOR) and writes `frameX = 18·output`.
+- A state change enqueues the gate into `_GatesNext`; the pass re-trips the
+  gate's own 1×1 wire (`_GatesDone` guards repeats) — that flood walks the
+  gate's whole wire line, toggling every logic lamp on it, which is how gates
+  chain downstream.
+- The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
+  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
+  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
+  the roll is deterministic per seed.
+- A gate with a lamp on its own tile flip-flops within one pass: the output
+  flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
+  gate re-evaluates to the opposite — the verbatim C# outcome, covered by
+  `the_gate_output_flip_re_trips_its_own_wire_line`.
+- The logic sensors (tiles 593/594) emit wire signals from world state —
+  M7-WIRE-2 (they need the player/liquid probes).
