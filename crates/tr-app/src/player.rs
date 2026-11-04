@@ -156,6 +156,9 @@ pub struct Player {
     /// (PlayerInput). The electrified drain tests them (Player.cs:19080-19082).
     pub control_left: bool,
     pub control_right: bool,
+    /// `Player.controlJump` / `controlDown`: this tick's held jump/down keys.
+    pub control_jump: bool,
+    pub control_down: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
     /// Jump was held on the previous fixed step, for press-edge detection.
@@ -194,7 +197,36 @@ pub struct Player {
     /// (M3-EQUIP-3). Always false until the accessory system lands.
     no_fall_dmg: bool,
     /// `Player.hasWings` (`Player.cs:1336`): any wing equipped (M3-EQUIP-3).
-    has_wings: bool,
+    pub has_wings: bool,
+    /// `Player.wingTime` / `wingTimeMax` (`Player.cs:1330,1338`): the flight
+    /// budget in ticks and its refill cap.
+    pub wing_time: f32,
+    pub wing_time_max: i32,
+    /// `Player.wingsLogic` (`Player.cs:1334`): the gameplay wing id
+    /// (`TR_WINGS=<ArmorIDs.Wing>` pins it; the granting items land with
+    /// M3-EQUIP-3).
+    pub wings_logic: i32,
+    /// `Player.rocketTime` / `rocketTimeMax` / `rocketDelay` / `rocketDelay2`
+    /// (`Player.cs:2744-2748`): the rocket-boots fuel and its thrust cadence.
+    pub rocket_time: i32,
+    rocket_time_max: i32,
+    pub rocket_delay: i32,
+    rocket_delay2: i32,
+    /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
+    /// (`TR_BOOTS=<1..5>` pins it).
+    pub rocket_boots: i32,
+    /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
+    /// midair arming and the release-jump latch the trigger reads.
+    can_rocket: bool,
+    rocket_release: bool,
+    /// `Player.releaseJump` (`Player.cs`): jump was released since the last
+    /// press — the wing/rocket refills on the ground gate on it.
+    release_jump: bool,
+    /// `Player.tryKeepingHoveringDown/Up` (`Player.cs:1818-1820`): the
+    /// press-down hover latches.
+    try_keeping_hovering_down: bool,
+    try_keeping_hovering_up: bool,
+    down_prev: bool,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
@@ -295,6 +327,8 @@ impl Player {
             in_water: false,
             control_left: false,
             control_right: false,
+            control_jump: false,
+            control_down: false,
             jump: 0,
             jump_held: false,
             spawn_x: sx,
@@ -313,6 +347,20 @@ impl Player {
             extra_fall: 0,
             no_fall_dmg: false,
             has_wings: false,
+            wing_time: 0.0,
+            wing_time_max: 0,
+            wings_logic: 0,
+            rocket_time: 0,
+            rocket_time_max: 7,
+            rocket_delay: 0,
+            rocket_delay2: 0,
+            rocket_boots: 0,
+            can_rocket: false,
+            rocket_release: false,
+            release_jump: false,
+            try_keeping_hovering_down: false,
+            try_keeping_hovering_up: false,
+            down_prev: false,
             last_stoned: false,
             dash_type: 0,
             dash: 0,
@@ -572,6 +620,8 @@ impl Player {
         // (input struct → fields early in `Player.Update`).
         self.control_left = input.left;
         self.control_right = input.right;
+        self.control_jump = input.jump;
+        self.control_down = input.down;
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
         // `Collision.WetCollision` / `LavaCollision` set the four wet flags
@@ -676,9 +726,29 @@ impl Player {
                 self.run_slowdown *= 0.1;
             }
         }
+        // `Player.cs:25256-25287`: the hover latches — a down press edge
+        // latches hover-down, an up edge swaps to hover-up; landing clears
+        // both. `Settings.HoverControl == Hold` clears them every tick; the
+        // vanilla default is the Toggle mode.
+        if input.down && !self.down_prev {
+            if self.try_keeping_hovering_up {
+                self.try_keeping_hovering_up = false;
+            } else {
+                self.try_keeping_hovering_down = true;
+            }
+        }
+        self.down_prev = input.down;
+        if self.vy == 0.0 {
+            self.try_keeping_hovering_up = false;
+            self.try_keeping_hovering_down = false;
+        }
         let dir = (input.right as i32 - input.left as i32) as f32;
         if dir != 0.0 {
             self.facing = dir as i32;
+        }
+        // `:26496-26499`: the wing run-speed tweaks run before the movement.
+        if self.wings_logic > 0 && self.vy != 0.0 {
+            self.wing_air_logic_tweaks();
         }
         self.horizontal_movement(dir);
 
@@ -692,16 +762,6 @@ impl Player {
         } else {
             MAX_FALL
         };
-        // Webbed sets `this.gravity = 0f` (`Player.cs:11878`) — the fall
-        // integration does not run while the player hangs in the web.
-        if !self.webbed {
-            self.vy = (self.vy + gravity).min(fall_cap);
-        }
-        self.vy = self.vy.max(if in_liquid {
-            -(MAX_FALL / 3.0)
-        } else {
-            -MAX_FALL
-        });
         // `WetCollision`'s `movementSpeed` (`Player.cs:28168-28171` + :23436):
         // the position delta scales by the liquid speed — water/lava 0.5,
         // honey 0.25, shimmer 0.375. The scaled step feeds the collision; the
@@ -728,12 +788,37 @@ impl Player {
             }
         } else {
             self.jump = 0;
+            // `:21026-21031`: jump released — the rocket re-arm latch and the
+            // wing/rocket ground refills gate on it.
+            self.release_jump = true;
+            self.rocket_release = true;
         }
 
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
         self.dash_movement(world, input);
 
+        // The flight section (`Player.cs:26744-27360`): the wings and the
+        // rocket boots REPLACE the gravity integration on the ticks they run.
+        // The plain gravity below applies only in the fallback. The wet ticks
+        // skip the flight (the vanilla water physics dominate; the swim cap
+        // stays).
+        let flew = if !in_liquid && !self.webbed {
+            self.flight_section(world, input, gravity, fall_cap)
+        } else {
+            false
+        };
+        if !flew && !self.webbed {
+            self.vy = (self.vy + gravity).min(fall_cap);
+        }
+        self.vy = self.vy.max(if in_liquid {
+            -(MAX_FALL / 3.0)
+        } else {
+            -MAX_FALL
+        });
+
+        // The AABB resolve (`TileCollision` + the step/slope helpers): the
+        // velocity phase above only shaped `velocity`; this integrates it.
         self.move_vanilla(world, input.down, gravity);
 
         // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
@@ -793,7 +878,9 @@ impl Player {
         // `Player.cs:25379-25382`: the continuous reset — jumping, liquid, the
         // slow-fall/rocket/sky-gravity/tongued terms (the four systems are not
         // ported yet) keep the fall origin at the current row.
-        if self.jump > 0 || self.in_water {
+        // `Player.cs:25379-25382`: the rocket thrust refreshes the fall
+        // origin (the plain wing ascent relies on `hasWings` instead).
+        if self.jump > 0 || self.rocket_delay > 0 || self.in_water {
             self.fall_start = (self.y / TILE_PX) as i32;
         }
 
@@ -1244,6 +1331,287 @@ impl Player {
                     && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.slope() != 0)
             })
         })
+    }
+
+    /// `ArmorIDs.Wing.Sets.Stats` via `WingStatsInitializer.cs:11-61`:
+    /// `(fly_time, acc_run_override, accel_mult, has_hover, hover_speed,
+    /// hover_accel)`. `-1` = no run-speed override. The dev/misc wings share
+    /// the 150/7 config.
+    pub fn wing_stats(id: i32) -> (i32, f32, f32, bool, f32, f32) {
+        match id {
+            46 => (25, 3.0, 1.0, false, -1.0, 1.0),
+            1 | 2 => (100, 6.25, 1.0, false, -1.0, 1.0),
+            6 | 7 | 10 | 25 => (130, 6.75, 1.0, false, -1.0, 1.0),
+            4 => (150, 6.5, 1.0, false, -1.0, 1.0),
+            5 | 9 | 13 | 14 | 15 => (160, 7.5, 1.0, false, -1.0, 1.0),
+            8 | 11 | 24 | 27 => (170, 7.5, 1.0, false, -1.0, 1.0),
+            22 => (170, 6.5, 1.0, true, 10.0, 10.0),
+            12 | 20 | 21 | 23 => (180, 7.5, 1.0, false, -1.0, 1.0),
+            26 => (180, 8.0, 2.0, false, -1.0, 1.0),
+            37 => (150, 7.0, 2.5, true, 12.0, 12.0),
+            44 => (150, 8.0, 2.0, false, -1.0, 1.0),
+            45 => (180, 8.0, 4.5, true, 16.0, 16.0),
+            29 | 32 => (180, 9.0, 2.5, false, -1.0, 1.0),
+            30 | 31 => (180, 6.5, 1.5, true, 12.0, 12.0),
+            3 | 16..=19 | 28 | 33..=43 | 48 | 49 => (150, 7.0, 1.0, false, -1.0, 1.0),
+            _ => (0, -1.0, 1.0, false, -1.0, 1.0),
+        }
+    }
+
+    /// `WingMovement`'s per-tier constants (`Player.cs:22023-22243`):
+    /// `(num, num2, num3, num4, num5)` — the ascent impulse, the falling
+    /// brake, the upward cap multiplier, the rising brake threshold, the
+    /// rising impulse.
+    fn wing_constants(id: i32) -> (f32, f32, f32, f32, f32) {
+        match id {
+            26 | 37 => (0.125, 0.75, 2.5, 1.0, 0.15),
+            8 | 11 | 22 | 24 | 27 => (0.1, 0.5, 1.66, 0.5, 0.1),
+            12 | 20 | 21 | 23 => (0.1, 0.5, 1.805, 0.5, 0.1),
+            29 | 32 => (0.135, 0.85, 3.0, 1.0, 0.15),
+            30 | 31 => (0.15, 0.5, 2.45, 1.0, 0.1),
+            44 | 45 => (0.1, 0.95, 4.5, 1.0, 0.15),
+            _ => (0.1, 0.5, 1.5, 0.5, 0.1),
+        }
+    }
+
+    /// The hold-down hover wing set (`Player.cs:27405`, the dampening list).
+    fn hover_dampening_wing(id: i32) -> bool {
+        matches!(id, 22 | 28 | 30 | 31 | 33 | 35 | 37 | 45)
+    }
+
+    /// `Player.WingAirLogicTweaks` (`Player.cs:29304-29323`): the wing's run
+    /// speed override and acceleration multiplier, the hover variants while
+    /// hold-down-hovering. Runs before `HorizontalMovement`.
+    fn wing_air_logic_tweaks(&mut self) {
+        let (_fly, acc_override, accel_mult, has_hover, hover_speed, hover_accel) =
+            Self::wing_stats(self.wings_logic);
+        let hovering = self.trying_to_hover_down()
+            && self.control_jump
+            && self.wing_time > 0.0
+            && !self.is_performing_down_dash();
+        if has_hover && hovering {
+            if hover_speed != -1.0 {
+                self.acc_run_speed = hover_speed;
+            }
+            self.run_acceleration *= hover_accel;
+        } else {
+            if acc_override != -1.0 && acc_override > self.acc_run_speed {
+                self.acc_run_speed = acc_override;
+            }
+            self.run_acceleration *= accel_mult;
+        }
+    }
+
+    /// `Player.TryingToHoverDown` (`Player.cs:3934-3941`): controlDown or the
+    /// latch.
+    fn trying_to_hover_down(&self) -> bool {
+        self.control_down || self.try_keeping_hovering_down
+    }
+
+    /// `Player.TryingToHoverUp` (`Player.cs:3924-3933`): the up latch.
+    fn trying_to_hover_up(&self) -> bool {
+        self.try_keeping_hovering_up
+    }
+
+    /// The `isPerformingJump_DownDash` stand-in: the flag lands with the
+    /// Dead-Cells dash (not in this task's scope), so it is always false.
+    fn is_performing_down_dash(&self) -> bool {
+        false
+    }
+
+    /// The flight section (`Player.cs:26772-27425`): `canRocket`, the ground
+    /// refills, `flag19`, `WingMovement`, the rocket trigger + thrust, the
+    /// glide. Returns true when it integrated vy itself (the plain gravity
+    /// is skipped this tick, like the original's else-if chain).
+    fn flight_section(
+        &mut self,
+        world: &World,
+        input: PlayerInput,
+        gravity: f32,
+        fall_cap: f32,
+    ) -> bool {
+        // `:26745-26752`: an unequipped tier zeroes its budget.
+        if self.wings_logic == 0 {
+            self.wing_time = 0.0;
+        }
+        if self.rocket_boots == 0 {
+            self.rocket_time = 0;
+        }
+        // `:26772-26775`: airborne outside the initial jump burst.
+        if self.vy > -JUMP_SPEED && self.vy != 0.0 {
+            self.can_rocket = true;
+        }
+        // `:26776-26781`: the wing refill on the ground needs a jump release.
+        if self.vy == 0.0 && self.release_jump {
+            self.wing_time = self.wing_time_max as f32;
+        }
+        // `:26859-26862`: the rocket fuel refills on any rest tick.
+        if self.vy == 0.0 {
+            self.rocket_time = self.rocket_time_max;
+        }
+        // `:26786-26798`: flag19 — actively flying this tick. The second
+        // condition is the hold-down-hover extension for the hover wings.
+        let mut flag19 = self.wings_logic > 0
+            && self.control_jump
+            && self.wing_time > 0.0
+            && self.jump == 0
+            && self.vy != 0.0;
+        if self.wings_logic > 0
+            && self.control_jump
+            && self.trying_to_hover_down()
+            && self.wing_time > 0.0
+            && matches!(self.wings_logic, 22 | 28 | 30 | 32 | 29 | 33 | 35 | 37 | 45)
+        {
+            flag19 = true;
+        }
+        // `:26825-26834`: with both equipped the rocket fuel converts into
+        // wing time (capped past the max).
+        if self.wings_logic > 0
+            && self.rocket_boots != 0
+            && self.vy != 0.0
+            && self.rocket_time != 0
+        {
+            let add = self.rocket_time * 6;
+            self.wing_time = (self.wing_time + add as f32)
+                .min(self.wing_time_max as f32 + add as f32);
+            self.rocket_time = 0;
+        }
+        if flag19 {
+            self.wing_movement(input);
+        }
+        // `:26867-26902`: the rocket trigger — only once the wing budget is
+        // spent (or absent); the arming needs a midair jump release.
+        if (self.wing_time == 0.0 || self.wings_logic == 0)
+            && self.rocket_boots != 0
+            && self.control_jump
+            && self.rocket_delay == 0
+            && self.can_rocket
+            && self.rocket_release
+        {
+            if self.rocket_time > 0 {
+                self.rocket_time -= 1;
+                self.rocket_delay = 10;
+                if self.rocket_delay2 <= 0 {
+                    self.rocket_delay2 = if self.rocket_boots == 1 { 30 } else { 15 };
+                }
+            } else {
+                self.can_rocket = false;
+            }
+        }
+        // `:26903-26914`: the flame cadence delay (the sound delay is audio).
+        if self.rocket_delay2 > 0 {
+            self.rocket_delay2 -= 1;
+        }
+        // `:26915-26955`: the rocket thrust — 10 ticks per fuel tick.
+        if self.rocket_delay > 0 {
+            self.rocket_delay -= 1;
+            self.vy -= 0.1;
+            if self.vy > 0.0 {
+                self.vy -= 0.5;
+            } else if self.vy > -JUMP_SPEED * 0.5 {
+                self.vy -= 0.1;
+            }
+            if self.vy < -JUMP_SPEED * 1.5 {
+                self.vy = -JUMP_SPEED * 1.5;
+            }
+            // `Player.cs:25379-25382`: the thrusting fall origin refreshes.
+            self.fall_start = (self.y / TILE_PX) as i32;
+            return true;
+        }
+        if !flag19 {
+            // `:27034-27037 + 27339-27350`: the wing glide — jump held while
+            // falling: gravity / 3, the fall cap / 3, the fall origin
+            // refreshed per tick (no fall damage accrues).
+            if self.wings_logic > 0 && self.control_jump && self.vy > 0.0 {
+                self.vy += gravity / 3.0;
+                if self.vy > fall_cap / 3.0 {
+                    self.vy = fall_cap / 3.0;
+                }
+                self.fall_start = (self.y / TILE_PX) as i32;
+                self.hover_dampening(input);
+                return true;
+            }
+            return false;
+        }
+        self.hover_dampening(input);
+        true
+    }
+
+    /// `Player.WingMovement` (`Player.cs:22023-22243`): the ascent physics —
+    /// the impulse, the falling brake, the rising brake, the upward cap, the
+    /// budget countdown (half while hover-down with no horizontal input, 2x
+    /// for the jetpack), and the wings-44/45 hover thrusts.
+    fn wing_movement(&mut self, input: PlayerInput) {
+        let (num, mut num2, mut num3, mut num4, mut num5) =
+            Self::wing_constants(self.wings_logic);
+        let hover_down = self.trying_to_hover_down() && !input.left && !input.right;
+        if self.wings_logic == 4 {
+            // `:22025-22058`: the jetpack hover-up burns 2 ticks per tick.
+            if self.trying_to_hover_up() {
+                self.vy -= 0.2;
+                if self.vy > 0.0 {
+                    self.vy -= 0.5;
+                } else if self.vy > -JUMP_SPEED * 0.5 {
+                    self.vy -= 0.1;
+                }
+                if self.vy < -JUMP_SPEED * 3.0 {
+                    self.vy = -JUMP_SPEED * 3.0;
+                }
+                self.wing_time -= 2.0;
+                return;
+            }
+        }
+        if self.wings_logic == 45 {
+            // `:22137-22180`: the hover thrusts (44 shares the numbers).
+            if self.trying_to_hover_up() {
+                self.vy -= 0.4;
+                if self.vy > 0.0 {
+                    self.vy -= 0.5;
+                } else if self.vy > -JUMP_SPEED * 0.5 {
+                    self.vy -= 0.2;
+                }
+                if self.vy < -JUMP_SPEED * 3.0 {
+                    self.vy = -JUMP_SPEED * 3.0;
+                }
+            }
+            if self.trying_to_hover_down() && !input.jump && self.vy != 0.0 {
+                self.vy += 0.4;
+            }
+        }
+        let _ = num2;
+        self.vy -= num;
+        if self.vy > 0.0 {
+            self.vy -= num2;
+        } else if self.vy > -JUMP_SPEED * num4 {
+            self.vy -= num5;
+        }
+        if self.vy < -JUMP_SPEED * num3 {
+            self.vy = -JUMP_SPEED * num3;
+        }
+        // `:22230-22237`: the budget countdown.
+        if hover_down && matches!(self.wings_logic, 22 | 28 | 30 | 31 | 37 | 45) {
+            self.wing_time -= 0.5;
+        } else {
+            self.wing_time -= 1.0;
+        }
+    }
+
+    /// `Player.cs:27404-27425`: the post-block hover dampening — the hover
+    /// wings holding down multiply vy toward the float.
+    fn hover_dampening(&mut self, input: PlayerInput) {
+        let can_use = self.has_wings && !self.is_performing_down_dash();
+        if Self::hover_dampening_wing(self.wings_logic)
+            && self.trying_to_hover_down()
+            && self.control_jump
+            && self.wing_time > 0.0
+            && can_use
+        {
+            let num67 = if self.wings_logic == 45 { 0.8 } else { 0.9 };
+            self.vy *= num67;
+            if self.vy > -2.0 && self.vy < 1.0 {
+                self.vy = 1e-5;
+            }
+        }
     }
 
     fn horizontal_movement(&mut self, dir: f32) {
@@ -2032,6 +2400,182 @@ mod tests {
             p.vx.abs() < 14.5,
             "the launch halved against the wall: vx={}",
             p.vx
+        );
+    }
+
+    /// The wings flight: `TR_WINGS`-shaped state — wings_logic 1 (100-tick
+    /// budget), jump held midair after the normal jump drains: the ascent
+    /// caps at `-jumpSpeed * 1.66` and the budget drains 1/tick.
+    #[test]
+    fn wings_lift_and_drain_the_budget() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let ground_y = p.y;
+        p.wings_logic = 1;
+        p.has_wings = true;
+        p.wing_time_max = 100;
+        p.wing_time = 100.0;
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        // Jump first (the flight needs `jump == 0`), then hold.
+        p.update(&w, held);
+        let mut min_vy = 0.0f32;
+        for _ in 0..60 {
+            p.update(&w, held);
+            min_vy = min_vy.min(p.vy);
+        }
+        assert!(p.y < ground_y - 200.0, "the player rose: y={}", p.y);
+        assert!(
+            min_vy >= -JUMP_SPEED * 1.66 - 0.5 && min_vy < 0.0,
+            "the ascent cap: {min_vy}"
+        );
+        assert!(p.wing_time < 100.0, "the budget drains: {}", p.wing_time);
+    }
+
+    /// `Player.cs:26776-26781`: the wing refill on the ground needs the jump
+    /// RELEASE — holding jump on the ground does not refill.
+    #[test]
+    fn wing_refill_needs_the_jump_release() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wings_logic = 1;
+        p.has_wings = true;
+        p.wing_time_max = 100;
+        p.wing_time = 30.0;
+        // Land and release: the refill.
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.wing_time, 100.0, "released on the ground");
+        // Hold jump: no refill while grounded.
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.wing_time = 30.0;
+        p.update(&w, held);
+        assert_eq!(p.wing_time, 30.0, "holding jump blocks the refill");
+    }
+
+    /// `Player.cs:26867-26955`: the rocket boots — a midair jump release
+    /// arms `rocketRelease`; holding jump again burns a fuel tick per 10
+    /// thrust ticks at 0.1 + brake impulses, capped at `-jumpSpeed * 1.5`.
+    #[test]
+    fn rocket_boots_thrust_after_the_rearm() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.rocket_boots = 2;
+        p.rocket_time = 7;
+        // Jump and release midair: the arming.
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        p.update(&w, PlayerInput::default());
+        assert!(p.rocket_release, "released midair");
+        // Hold again: the thrust (the ascent cap -5.01 * 1.5 = -7.515).
+        let mut min_vy = 0.0f32;
+        for _ in 0..30 {
+            p.update(&w, held);
+            min_vy = min_vy.min(p.vy);
+        }
+        assert!(min_vy <= -JUMP_SPEED * 1.5 + 0.5, "the thrust cap: {min_vy}");
+        assert!(p.rocket_time < 7, "the fuel drains: {}", p.rocket_time);
+    }
+
+    /// `Player.cs:26825-26834`: with wings AND boots the rocket fuel
+    /// converts into wing time (+6 per fuel tick, capped past the max)
+    /// before the rocket can trigger.
+    #[test]
+    fn rocket_fuel_converts_into_wing_time() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wings_logic = 1;
+        p.has_wings = true;
+        p.wing_time_max = 100;
+        p.wing_time = 0.0;
+        p.rocket_boots = 2;
+        p.rocket_time = 7;
+        // Airborne with both: the conversion consumed the fuel.
+        p.vy = 1.0;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.rocket_time, 0, "the fuel converted");
+        assert_eq!(p.wing_time, 42.0, "7 fuel ticks x 6 = 42 wing ticks");
+    }
+
+    /// `Player.cs:27034-27037 + 27339-27350`: the wing glide — jump held
+    /// while falling caps the descent at `maxFallSpeed / 3` and refreshes
+    /// the fall origin (no fall damage accrues).
+    #[test]
+    fn wing_glide_caps_the_fall() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 1;
+        p.has_wings = true;
+        p.fall_start = 40;
+        p.vy = 5.0;
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        assert!(p.vy <= MAX_FALL / 3.0 + 1e-4, "the glide cap: {}", p.vy);
+        assert_eq!(p.fall_start, (p.y / TILE_PX) as i32, "the origin refreshes");
+    }
+
+    /// `Player.cs:25360`: `!hasWings` gates the fall damage — any equipped
+    /// wings nullify it (PHYS-2's field, armed here).
+    #[test]
+    fn wings_nullify_the_fall_damage() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 1;
+        p.has_wings = true;
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert!(p.on_ground && p.hp == 100, "no fall damage with wings");
+    }
+
+    /// `Player.cs:27404-27425`: the hover wings holding down dampen vy
+    /// toward the float.
+    #[test]
+    fn hover_wings_dampen_the_descent() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.wings_logic = 22; // Hoverboard: HasDownHoverStats
+        p.has_wings = true;
+        p.wing_time_max = 170;
+        p.wing_time = 170.0;
+        p.vy = 3.0;
+        let held = PlayerInput {
+            jump: true,
+            down: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        assert!(
+            p.vy.abs() < 3.0 && p.vy >= 0.0,
+            "the descent dampened: vy={}",
+            p.vy
         );
     }
 
@@ -2993,3 +3537,4 @@ mod tests {
         assert!(p.buffs.find_buff_index(20).is_some());
     }
 }
+
