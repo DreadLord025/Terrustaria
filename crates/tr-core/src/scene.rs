@@ -101,6 +101,11 @@ pub struct SceneMetrics {
     /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
     /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
     pub has_sunflower: bool,
+    // — the M2-BUFF-8 banner fields (`SceneMetrics.cs:442-445`) —
+    /// `NPCBannerBuff[]`: the banner ids present in the scan window.
+    pub npc_banner_buff: Vec<bool>,
+    /// `hasBanner` — any strength-enabled banner in the window.
+    pub has_banner: bool,
     /// `MeteorTileCount` — the meteorite brick (37) tiles (`:611`).
     pub meteor_tile_count: i32,
     /// `DungeonTileCount` — the brick families 41/43/44/481/482/483 (`:612`).
@@ -112,6 +117,12 @@ pub struct SceneMetrics {
     /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
     /// scan driver (they read the centre tile's wall).
     pub zone_dungeon: bool,
+    // — the M6-AUDIO-2 music-box fields (`SceneMetrics.cs:4489-4501`) —
+    /// `ActiveMusicBox`: the box id playing in the window (`frameY / 36`),
+    /// -1 = none.
+    pub active_music_box: i32,
+    /// `MusicBoxSilence` — the silent box (`frameY / 36 == 100`).
+    pub music_box_silence: bool,
 }
 
 /// The `Player.SceneMetrics` aura read as a Copy snapshot — what
@@ -205,11 +216,15 @@ impl SceneMetrics {
             has_heart_lantern: false,
             has_star_in_bottle: false,
             has_sunflower: false,
+            npc_banner_buff: vec![false; 320],
+            has_banner: false,
             meteor_tile_count: 0,
             dungeon_tile_count: 0,
             zone_meteor: false,
             zone_graveyard: false,
             zone_dungeon: false,
+            active_music_box: -1,
+            music_box_silence: false,
         }
     }
 

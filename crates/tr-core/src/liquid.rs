@@ -375,10 +375,13 @@ fn set_kind(t: &mut Tile, code: u8) {
     }
 }
 
-/// `Main.tileSolid[type] && !Main.tileSolidTop[type]` on an active tile.
+/// `Main.tileSolid[type] && !Main.tileSolidTop[type]` on a `nactive()` tile —
+/// `Tile.nactive()` = `active() && !inActive()` (`Tile.cs`), so an actuated
+/// tile lets the liquid through (`Liquid.cs:171/:236/:457`).
 #[inline]
 fn is_solid(t: &Tile) -> bool {
     t.active()
+        && t.flags & crate::tile::FLAG_INACTIVE == 0
         && (t.kind as usize) < td::TILE_COUNT
         && td::TILE_SOLID.has(t.kind)
         && !td::TILE_SOLID_TOP.has(t.kind)
@@ -557,5 +560,23 @@ mod tests {
         assert_eq!(sys.active_len(), 1);
         sys.add_water(&w, 2, 2);
         assert_eq!(sys.active_len(), 1, "dry cells are not queued");
+    }
+
+    #[test]
+    fn the_actuated_floor_lets_water_through() {
+        // `Liquid`'s solid tests read `nactive()` (`Liquid.cs:171/:236/:457`
+        // — `active && !inActive`): an actuated basin floor seeps.
+        let mut w = basin(9, 8);
+        let i = w.index(4, 8);
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        w.frame_important = vec![false; td::TILE_COUNT];
+        put(&mut w, 4, 4, 255);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 4);
+        run(&mut sys, &mut w, 400);
+        assert!(
+            w.tile(4, 8).unwrap().liquid > 0,
+            "water entered the actuated floor tile"
+        );
     }
 }

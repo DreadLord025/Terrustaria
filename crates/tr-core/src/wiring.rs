@@ -149,6 +149,40 @@ pub struct Wiring {
     /// `Wiring.cs:666-678`) — the pixel boxes' placement is M7-WIRE-2, the
     /// pass flip is kept for parity.
     pixel_box_triggers: HashMap<(i32, i32), u8>,
+    /// The object drops the actuation cascade produced (the
+    /// `SquareTileFrame(resetFrame: false)` inside `DeActive`/`ReActive`
+    /// popping unsupported objects). The app layer drains and spawns them.
+    actuation_drops: Vec<crate::edit::ObjectDrop>,
+    /// The trap emission requests from the last flood (the case-137 trap
+    /// family). The app layer spawns the projectiles.
+    trap_requests: Vec<TrapRequest>,
+}
+
+/// A trap emission request (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
+/// the engine resolves the variant, the `CheckMech` cooldown, the direction
+/// decode and the speed/damage tables; the app layer spawns the projectile
+/// (`Shot`) or runs the spear's 1000-slot proximity cap first (`Spear` — the
+/// scan reads the projectile pool, so it lives app-side).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrapRequest {
+    Shot {
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        kind: u16,
+        damage: i32,
+    },
+    /// The Spear Trap's variant: the engine pre-rolls the ±1 px spread
+    /// (`Main.rand.Next(...) * 0.05f`, `Wiring.cs:1838-1839`), the app
+    /// applies the proximity cap before spawning.
+    Spear {
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+    },
 }
 
 /// The multi-trigger count a wire cell carries when first reached
@@ -156,6 +190,23 @@ pub struct Wiring {
 const TO_PROCESS_COUNT: i32 = 4;
 /// `CheckMech`'s queue cap (`Wiring.cs:466`).
 const MAX_MECHS: usize = 999;
+
+/// `TileID.Sets.NotReallySolid` (`TileID.cs:592`) — the "solid" kinds that
+/// never gain the inactive state (doors 10 included).
+const NOT_REALLY_SOLID: [u16; 3] = [387, 388, 10];
+/// `DeActive`'s forced flag=false set (`Wiring.cs:3204-3212`): the vines and
+/// the other half-solid kinds that never actuate even though the C# counts
+/// them solid.
+const DEACTIVE_SOLID_EXCEPTIONS: [u16; 7] = [314, 379, 386, 387, 388, 389, 476];
+/// `TileID.Sets.PreventsActuationUnder` (`TileID.cs:569`): the tile kinds
+/// that must not sit on an actuated block — the chests, the dolls, the
+/// sensor family (an actuated support would pop them through
+/// `SquareTileFrame`).
+const PREVENTS_ACTUATION_UNDER: [u16; 11] = [21, 467, 26, 77, 88, 470, 475, 237, 597, 441, 468];
+/// `TileID.Sets.IsATreeTrunk` (`TileID.cs:487`).
+const IS_A_TREE_TRUNK: [u16; 12] = [5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634];
+/// `TileID.Sets.Boulders` (`TileID.cs:504`) — 138 is the actuator itself.
+const BOULDERS: [u16; 10] = [138, 484, 664, 665, 711, 712, 713, 714, 715, 716];
 
 impl Wiring {
     pub fn new() -> Self {
@@ -389,15 +440,164 @@ impl Wiring {
         std::mem::take(&mut self.statue_spawns)
     }
 
+    /// Drains the trap emission requests (the case-137 trap family).
+    pub fn take_trap_requests(&mut self) -> Vec<TrapRequest> {
+        std::mem::take(&mut self.trap_requests)
+    }
+
+    /// The object drops the actuation cascade produced (see
+    /// [`Self::actuation_drops`]).
+    pub fn take_actuation_drops(&mut self) -> Vec<crate::edit::ObjectDrop> {
+        std::mem::take(&mut self.actuation_drops)
+    }
+
     /// Drains the teleport events computed by the last `TripWire`.
     pub fn take_teleport_events(&mut self) -> Vec<((f32, f32), (f32, f32))> {
         std::mem::take(&mut self.teleport_events)
     }
 
-    /// `Wiring.HitWireSingle`'s statue case (105, `Wiring.cs:2125-2440`): the
-    /// style parse (`num138 = frameX / 36 + (frameY / 54 % 3) * 55`), the
-    /// 3×2 SkipWire, the spawn anchor `(num137·16 + 16, (num136 + 3)·16)` and
-    /// the style → spawn map (the NPC styles `CheckMech(30)`, the item
+    /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
+    /// `frameY / 18` selects the trap — 0 dart (98, 20 dmg, speed 12),
+    /// 1 superdart (184, 40, 12), 2 flame (187, 40, 5), 3 spear (185, 40,
+    /// 4±1 with the ±1 px spread roll), 4 boulder (186, 60, 8), 5 spiky
+    /// ball (980, 30, 12) — the direction decodes from `frameX` (0 → −1 X,
+    /// 18 → +1 X, 36-71 → −1 Y, ≥72 → +1 Y; the spear uses `frameX / 18`
+    /// slots instead), the spawn offset ±10 (±14 spear, ±18 boulder) px.
+    /// The wall-mounted negatives (−10..−6) emit the same projectiles with
+    /// fixed offsets. The boulder (aiStyle 37) and the flame jet (aiStyle
+    /// 38) requests are emitted verbatim; the app-side spawn drops them
+    /// until their families land (M4-PROJ follow-ups).
+    fn trap_emit(&mut self, i: i32, j: i32, tile_frame_x: i16, tile_frame_y: i16) {
+        let variant = tile_frame_y as i32 / 18;
+        let frame_x = tile_frame_x;
+        // `Main.rand.Next(lo, hi)` → the deterministic engine stream.
+        let mut roll = |wiring: &mut Self, lo: i32, hi: i32| -> f32 {
+            let span = (hi - lo).max(1);
+            (wiring.faulty_next(span) + lo) as f32
+        };
+        match variant {
+            // `Wiring.cs:1772-1801`: the shared `CheckMech(200)` arm.
+            0 | 1 | 2 | 5 if self.check_mech(i, j, 200) => {
+                let dx: i32 = if frame_x == 0 {
+                    -1
+                } else if frame_x == 18 {
+                    1
+                } else {
+                    0
+                };
+                let dy: i32 = if frame_x >= 36 {
+                    if frame_x >= 72 {
+                        1
+                    } else {
+                        -1
+                    }
+                } else {
+                    0
+                };
+                let (kind, damage, speed) = match variant {
+                    0 => (98, 20, 12.0),
+                    1 => (184, 40, 12.0),
+                    2 => (187, 40, 5.0),
+                    _ => (980, 30, 12.0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 10 * dx) as f32,
+                    y: (j * 16 + 8 + 10 * dy) as f32,
+                    vx: (dx as f32) * speed,
+                    vy: (dy as f32) * speed,
+                    kind,
+                    damage,
+                });
+            }
+            // `Wiring.cs:1802-1849`: the spear — `CheckMech(300)` plus the
+            // ±1 px spread roll (the app layer runs the proximity cap).
+            3 if self.check_mech(i, j, 300) => {
+                let (dx, dy): (i32, i32) = match frame_x / 18 {
+                    0 | 1 => (0, 1),
+                    2 => (0, -1),
+                    3 => (-1, 0),
+                    4 => (1, 0),
+                    _ => (0, 0),
+                };
+                let lo_x = -20 + if dx == 1 { 20 } else { 0 };
+                let hi_x = 21 - if dx == -1 { 20 } else { 0 };
+                let lo_y = -20 + if dy == 1 { 20 } else { 0 };
+                let hi_y = 21 - if dy == -1 { 20 } else { 0 };
+                let sx = (4 * dx) as f32 + roll(self, lo_x, hi_x) * 0.05;
+                let sy = (4 * dy) as f32 + roll(self, lo_y, hi_y) * 0.05;
+                self.trap_requests.push(TrapRequest::Spear {
+                    x: (i * 16 + 8 + 14 * dx) as f32,
+                    y: (j * 16 + 8 + 14 * dy) as f32,
+                    vx: sx,
+                    vy: sy,
+                    damage: 40,
+                });
+            }
+            // `Wiring.cs:1906-1922`: the boulder — `CheckMech(90)`.
+            4 if self.check_mech(i, j, 90) => {
+                let (dx, dy): (i32, i32) = match frame_x / 18 {
+                    0 | 1 => (0, 1),
+                    2 => (0, -1),
+                    3 => (-1, 0),
+                    4 => (1, 0),
+                    _ => (0, 0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 18 * dx) as f32,
+                    y: (j * 16 + 8 + 18 * dy) as f32,
+                    vx: (8 * dx) as f32,
+                    vy: (8 * dy) as f32,
+                    kind: 186,
+                    damage: 60,
+                });
+            }
+            // `Wiring.cs:1883-1920`: the wall-mounted negatives — the same
+            // projectiles, fixed offsets, `frameX != 0 → +1 X`.
+            -10 | -9 | -8 if self.check_mech(i, j, 200) => {
+                let dx: i32 = if frame_x != 0 { 1 } else { -1 };
+                let (kind, damage, speed) = match variant {
+                    -10 => (98, 20, 12.0),
+                    -9 => (184, 40, 12.0),
+                    _ => (187, 40, 5.0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 10 * dx) as f32,
+                    y: (j * 16 + 7 + 2) as f32,
+                    vx: (dx as f32) * speed,
+                    vy: 2.0,
+                    kind,
+                    damage,
+                });
+            }
+            // The -7 spear fires downward with the symmetric spread
+            // (`speedY = 4 + rand(0,21) * 0.05`, spawn y + 6).
+            -7 if self.check_mech(i, j, 300) => {
+                let sx = roll(self, -20, 21) * 0.05;
+                let sy = 4.0 + roll(self, 0, 21) * 0.05;
+                self.trap_requests.push(TrapRequest::Spear {
+                    x: (i * 16 + 8) as f32,
+                    y: (j * 16 + 16 + 6) as f32,
+                    vx: sx,
+                    vy: sy,
+                    damage: 40,
+                });
+            }
+            // The -6 boulder fires straight down.
+            -6 if self.check_mech(i, j, 90) => {
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8) as f32,
+                    y: (j * 16 + 16 + 10) as f32,
+                    vx: 0.0,
+                    vy: 8.0,
+                    kind: 186,
+                    damage: 60,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// The style → spawn map (the NPC styles `CheckMech(30)`, the item
     /// styles `CheckMech(600)`). Returns the spawn request for the app layer,
     /// which runs the `MechSpawn` caps and constructs the entities.
     pub fn statue_trigger(&mut self, world: &mut World, i: i32, j: i32) {
@@ -754,6 +954,8 @@ impl Wiring {
         let actuator = tile.flags & FLAG_ACTUATOR != 0;
         let anchor_frame_x = (tile.frame_x / 18) as i32;
         let anchor_frame_y = (tile.frame_y / 18) as i32;
+        let tile_frame_x = tile.frame_x;
+        let tile_frame_y = tile.frame_y;
         let half_brick = tile.half_brick();
         // `HitWireSingle`'s `doSkipWires = true` → `SkipWire` (`Wiring.cs:998`,
         // `:1000`-area): the fired cell never re-fires within this flood.
@@ -788,6 +990,10 @@ impl Wiring {
             // The statue (105): the style parse + the CheckMech cooldown + the
             // spawn request ().
             105 => self.statue_trigger(world, i, j),
+            // The trap family (tile 137, `Wiring.cs:1763-1993`): the frame
+            // variants are the six traps — dart/superdart/flame/spear/
+            // boulder/spiky, plus the wall-mounted negatives.
+            137 => self.trap_emit(i, j, tile_frame_x, tile_frame_y),
             // The teleporter pad (235): the wall-87 temple guard, then the
             // pad registration — the first hit fills `_teleport[0]`, a hit at
             // a different position fills `_teleport[1]` (`Wiring.cs:1067-
@@ -855,17 +1061,149 @@ impl Wiring {
         }
     }
 
-    /// `Wiring.ActuateForced` (`Wiring.cs:389-407`), the single-tile core: the
-    /// actuated bit flips on tiles that carry an actuator. The multi-tile
-    /// region walk (chests, doors, `TileObjectData` frames) is M7-WIRE-3.
+    /// `Wiring.ActuateForced` (`Wiring.cs:407-416`): the forced toggle —
+    /// inactive → `ReActive`, active → `DeActive` (whose guards still
+    /// refuse the deactivation). The public gated twin `Actuate`
+    /// (`:391-403`) additionally requires the actuator bit.
     fn actuate_forced(&mut self, world: &mut World, i: i32, j: i32) {
-        let Some(t) = world.tile_mut(i, j) else {
+        let inactive = world
+            .tile(i, j)
+            .is_some_and(|t| t.flags & FLAG_INACTIVE != 0);
+        if inactive {
+            self.re_active(world, i, j);
+        } else {
+            self.de_active(world, i, j);
+        }
+    }
+
+    /// `Wiring.DeActive` (`Wiring.cs:3195-3222`): the guarded deactivation.
+    /// The tile must be active (the 226 Plantera bulb below the surface is
+    /// untouchable before the plant boss), be genuinely solid
+    /// (`NotReallySolid` and the {314, 379, 386-389, 476} exceptions are
+    /// out), and pass the placement rule: nothing that prevents actuation
+    /// sits directly above and `WorldGen.CanKillTile` allows it. On success
+    /// the inactive bit sets and `SquareTileFrame(resetFrame: false)` runs —
+    /// here the port's object-cascade slice, whose drops queue as events.
+    fn de_active(&mut self, world: &mut World, i: i32, j: i32) {
+        let Some(t) = world.tile(i, j) else {
             return;
         };
-        if t.flags & FLAG_ACTUATOR == 0 {
+        if !t.active() {
             return;
         }
-        t.flags ^= FLAG_INACTIVE;
+        // `Main.tile[i, j].type == 226 && j > worldSurface &&
+        // !NPC.downedPlantBoss` (`:3198`): the Plantera bulb guard. The port
+        // has no boss-progress flags yet (M5-HARDFORCE), so the bulb is
+        // always guarded below the surface.
+        if t.kind == 226 && j as f64 > world.world_surface {
+            return;
+        }
+        let mut flag =
+            crate::tiledata::TILE_SOLID.has(t.kind) && !NOT_REALLY_SOLID.contains(&t.kind);
+        if DEACTIVE_SOLID_EXCEPTIONS.contains(&t.kind) {
+            flag = false;
+        }
+        // `(!Main.tile[i, j - 1].active() ||
+        // (!TileID.Sets.PreventsActuationUnder[above] && CanKillTile(i, j)))`
+        // (`:3210-3211`).
+        let above_free = match world.tile(i, j - 1) {
+            Some(above) if above.active() => {
+                !PREVENTS_ACTUATION_UNDER.contains(&above.kind) && self.can_kill_tile(world, i, j)
+            }
+            _ => true,
+        };
+        if !flag || !above_free {
+            return;
+        }
+        if let Some(t) = world.tile_mut(i, j) {
+            t.flags |= FLAG_INACTIVE;
+        }
+        let drops = crate::edit::actuation_square_frame(world, i, j);
+        self.actuation_drops.extend(drops);
+    }
+
+    /// `Wiring.ReActive` (`Wiring.cs:3224-3232`): the unconditional
+    /// re-activation plus the same `SquareTileFrame(resetFrame: false)`.
+    fn re_active(&mut self, world: &mut World, i: i32, j: i32) {
+        if let Some(t) = world.tile_mut(i, j) {
+            t.flags &= !FLAG_INACTIVE;
+        }
+        let drops = crate::edit::actuation_square_frame(world, i, j);
+        self.actuation_drops.extend(drops);
+    }
+
+    /// `WorldGen.CanKillTile(i, j)` (`WorldGen.cs:70237-70330` for the
+    /// DeActive call site) — the anchored-tile slice: the bounds, the
+    /// inactive/air tiles refuse, wall 350 (the C#'s kill-protected echo
+    /// wall) refuses, the tree-trunk / cactus / chest / lantern anchors
+    /// above block, boulders (whose buried-chest scan `CheckBoulderChest`
+    /// is content-gated out — the port spawns no buried-chest boulders)
+    /// block, the locked door 10 refuses. The chest-inventory cases
+    /// (`CanDestroyChest`) pass: the port's chests hold no inventories yet
+    /// (M7-TE-2).
+    fn can_kill_tile(&self, world: &World, i: i32, j: i32) -> bool {
+        if i < 0 || j < 0 || i >= world.width || j >= world.height {
+            return false;
+        }
+        let Some(tile) = world.tile(i, j) else {
+            return false;
+        };
+        if !tile.active() {
+            return false;
+        }
+        if tile.wall == 350 {
+            return false;
+        }
+        // The anchor above: trees, cacti, chests and lanterns hold the tile.
+        if j >= 1 {
+            if let Some(above) = world.tile(i, j - 1) {
+                if above.active() {
+                    let kind = above.kind;
+                    if IS_A_TREE_TRUNK.contains(&kind)
+                        && tile.kind != kind
+                        && (above.frame_x != 66 || above.frame_y < 0 || above.frame_y > 44)
+                        && (above.frame_x != 88 || above.frame_y < 66 || above.frame_y > 110)
+                        && above.frame_y < 198
+                    {
+                        return false;
+                    }
+                    match kind {
+                        // 323 = the cactus: the base anchors the column.
+                        323 => {
+                            if tile.kind != kind && (above.frame_x == 66 || above.frame_x == 220) {
+                                return false;
+                            }
+                        }
+                        // 21/26/72/77/88/467/488 = the chest family.
+                        21 | 26 | 72 | 77 | 88 | 467 | 488 => {
+                            if tile.kind != kind {
+                                return false;
+                            }
+                        }
+                        // 80 = the hanging lantern: the anchor slots
+                        // `frameX / 18` in {0, 1, 4, 5} (`:70270-70278`).
+                        80 => {
+                            if tile.kind != kind {
+                                let num = above.frame_x / 18;
+                                if (0..=1).contains(&num) || (4..=5).contains(&num) {
+                                    return false;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // `TileID.Sets.Boulders[tile.type] && CheckBoulderChest(i, j)`
+        // (`:70280-70285`): the buried-chest scan is out of the port's
+        // content (see the doc comment).
+        if BOULDERS.contains(&tile.kind) {
+            return false;
+        }
+        // `case 10`: `WorldGen.IsLockedDoor` refuses (`:70286-70293`) — the
+        // port's doors carry no lock state yet (edit.rs), so the case passes.
+        true
     }
 }
 
@@ -1348,7 +1686,7 @@ mod teleport_tests {
         // A second wire hit on the SAME pad: `_teleport[0]` already holds it
         // (`Wiring.cs:1074-1081` — only a different position fills [1]).
         let mut wiring = Wiring::new();
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_teleport_events().is_empty(), "one pad → no teleport");
     }
 
@@ -1359,7 +1697,7 @@ mod teleport_tests {
         put_pad(&mut w, 10, 20, 0, 0, false);
         put_pad(&mut w, 12, 20, 0, 0, false);
         let mut wiring = Wiring::new();
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_teleport_events().is_empty());
     }
 
@@ -1527,7 +1865,7 @@ mod statue_tests {
             vec![StatueSpawn::Npc { x: 10 * 16 + 16, y: (20 + 3) * 16 - 12, npc_id: 1 }]
         );
         // `CheckMech(30)`: the second trip within 30 ticks is suppressed.
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_statue_spawns().is_empty(), "the 30-tick cooldown holds");
     }
 
@@ -1582,5 +1920,263 @@ mod statue_tests {
         let mut wiring = Wiring::new();
         wiring.trip_wire(&mut w, 9, 20, 1, 1);
         assert!(wiring.take_statue_spawns().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod actuation_tests {
+    //! The `DeActive`/`ReActive` actuation (`Wiring.cs:3195-3232`) and the
+    //! `CanKillTile` anchor slice (`WorldGen.cs:70237+`).
+
+    use super::*;
+    use crate::tile::{FLAG_ACTUATOR, FLAG_ACTIVE, FLAG_INACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// An actuator-carrying, wire-hit tile with a switch trigger to its
+    /// left, wired on its own cell (the colour is a header bit in the C#).
+    fn put_actuated(w: &mut World, x: i32, y: i32, kind: u16) {
+        put(w, x, y, kind);
+        let i = w.index(x, y);
+        w.tiles[i].flags |= FLAG_ACTUATOR;
+        w.wires.set(x, y, WireColor::Red, true);
+        put(w, x - 2, y, 135);
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+    }
+
+    fn trip(w: &mut World, x: i32, y: i32) -> Wiring {
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(w, x - 2, y);
+        wiring
+    }
+
+    #[test]
+    fn the_actuated_block_loses_and_regains_solidity() {
+        let mut w = world();
+        put_actuated(&mut w, 10, 20, 1);
+        let mut wiring = trip(&mut w, 10, 20);
+        assert!(
+            w.tile(10, 20).unwrap().flags & FLAG_INACTIVE != 0,
+            "`DeActive` set the inactive bit"
+        );
+        assert!(wiring.take_actuation_drops().is_empty());
+        // The re-trip runs `ReActive`.
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 20);
+        assert!(
+            w.tile(10, 20).unwrap().flags & FLAG_INACTIVE == 0,
+            "`ReActive` cleared the bit"
+        );
+    }
+
+    #[test]
+    fn the_not_really_solid_and_exception_kinds_refuse() {
+        // `NotReallySolid` {387, 388, 10} (`TileID.cs:592`) and the
+        // `DeActive` exception set {314, 379, 386-389, 476} (`:3204-3212`).
+        for kind in [10, 387, 314, 386, 476] {
+            let mut w = world();
+            put_actuated(&mut w, 10, 20, kind);
+            trip(&mut w, 10, 20);
+            assert!(
+                w.tile(10, 20).unwrap().flags & FLAG_INACTIVE == 0,
+                "kind {kind} never actuates"
+            );
+        }
+    }
+
+    #[test]
+    fn the_plantera_bulb_is_guarded_below_the_surface() {
+        // `:3198`: the 226 bulb below `Main.worldSurface` before the plant
+        // boss never actuates.
+        let mut w = world();
+        w.world_surface = 30.0;
+        put_actuated(&mut w, 10, 40, 226);
+        trip(&mut w, 10, 40);
+        assert!(
+            w.tile(10, 40).unwrap().flags & FLAG_INACTIVE == 0,
+            "the guarded bulb refuses"
+        );
+        // Above the surface the bulb actuates like anything else.
+        let mut w = world();
+        w.world_surface = 30.0;
+        put_actuated(&mut w, 10, 20, 226);
+        trip(&mut w, 10, 20);
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_INACTIVE != 0);
+    }
+
+    #[test]
+    fn the_tile_under_a_chest_never_actuates() {
+        // `PreventsActuationUnder` {21, ...} (`TileID.cs:569`): the chest
+        // above holds the block.
+        let mut w = world();
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 21);
+        trip(&mut w, 10, 21);
+        assert!(
+            w.tile(10, 21).unwrap().flags & FLAG_INACTIVE == 0,
+            "the chest blocks the actuation"
+        );
+    }
+
+    #[test]
+    fn the_tree_trunk_anchor_refuses_can_kill_tile() {
+        // `IsATreeTrunk` above (`:70243-70250`): the tile under a trunk
+        // cannot kill, so it cannot actuate.
+        let mut w = world();
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 5);
+        trip(&mut w, 10, 21);
+        assert!(w.tile(10, 21).unwrap().flags & FLAG_INACTIVE == 0);
+    }
+
+    #[test]
+    fn actuating_under_a_registered_object_pops_it() {
+        // The `SquareTileFrame(resetFrame: false)` tail: the work bench
+        // (18) on top of the actuated block loses its anchor and pops —
+        // the drop queues as an event (`registry::tile_drop(18)`).
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 18);
+        put(&mut w, 11, 20, 18);
+        let mut wiring = trip(&mut w, 10, 21);
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_ACTIVE == 0, "the bench popped");
+        let drops = wiring.take_actuation_drops();
+        assert!(drops.iter().any(|d| d.tile_kind == 18), "the bench drop queued");
+    }
+}
+
+#[cfg(test)]
+mod trap_tests {
+    //! The case-137 trap emission (`Wiring.cs:1763-1993`).
+
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put_trap(w: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 137,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The trigger runs through a switch two tiles left — the flood seeds
+        // are `SkipWire`-suppressed, so the trap itself cannot be the trip
+        // source (the statue fixture's lesson).
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
+    #[test]
+    fn the_dart_trap_fires_the_verbatim_shot() {
+        // Variant 0 (frameY 0 = the dart trap), frameX 18 → the +1 X
+        // direction: projectile 98, damage 20, speed 12, the +10 px spawn
+        // offset (`Wiring.cs:1772-1801`).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 18, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Shot {
+                x,
+                y,
+                vx,
+                vy,
+                kind,
+                damage,
+            } => {
+                assert_eq!((kind, damage), (98, 20));
+                assert_eq!(vx, 12.0);
+                assert_eq!(vy, 0.0);
+                assert_eq!(x, 10.0 * 16.0 + 8.0 + 10.0);
+                assert_eq!(y, 20.0 * 16.0 + 8.0);
+            }
+            _ => panic!("the dart variant emits a Shot"),
+        }
+    }
+
+    #[test]
+    fn the_trap_variants_map_verbatim() {
+        // 1 → 184/40/12, 2 → 187/40/5, 5 → 980/30/12 (`:1786-1796`); the
+        // vertical frameX decode (36-71 → −1 Y, ≥72 → +1 Y).
+        for (frame_y, kind, damage, speed) in
+            [(18, 184, 40, 12.0), (36, 187, 40, 5.0), (90, 980, 30, 12.0)]
+        {
+            let mut w = world();
+            put_trap(&mut w, 10, 20, 72, frame_y);
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            let reqs = wiring.take_trap_requests();
+            match reqs[0] {
+                TrapRequest::Shot { vy, kind: k, damage: d, .. } => {
+                    assert_eq!((k, d), (kind, damage));
+                    assert_eq!(vy, speed, "frameY {frame_y} fires downward");
+                }
+                _ => panic!("variant frameY {frame_y} emits a Shot"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_check_mech_cooldown_gates_the_trap() {
+        // `CheckMech(200)`: the re-trip inside the window emits nothing.
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 18, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_trap_requests().len(), 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_trap_requests().is_empty());
+    }
+
+    #[test]
+    fn the_spear_variant_requests_the_capped_spawn() {
+        // Variant 3 (frameY 54): a `Spear` request with the ±1 px spread
+        // roll and the +14 px offset; the frameX 0/18 slot fires downward
+        // (`Wiring.cs:1802-1849` — the cap scan runs app-side).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 0, 54);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        match reqs[0] {
+            TrapRequest::Spear { x, y, vx, vy, damage } => {
+                assert_eq!(damage, 40);
+                assert_eq!(x, 10.0 * 16.0 + 8.0);
+                assert_eq!(y, 20.0 * 16.0 + 8.0 + 14.0);
+                // `speedY = 4 * 1 + rand(0, 21) * 0.05` — 4..5 px/tick.
+                assert!((4.0..=5.0).contains(&vy), "vy {vy}");
+                // `speedX = rand(-20, 21) * 0.05` — the ±1 px spread.
+                assert!((-1.0..=1.0).contains(&vx), "vx {vx}");
+            }
+            _ => panic!("the spear variant emits a Spear"),
+        }
     }
 }

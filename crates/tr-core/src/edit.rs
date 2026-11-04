@@ -64,6 +64,24 @@ pub fn kill_tile(world: &mut World, x: i32, y: i32, no_item: bool) -> Option<Til
     kill_tile_cascading(world, x, y, no_item, &mut destroy_object)
 }
 
+/// `WorldGen.SquareTileFrame(i, j, resetFrame: false)` (`Wiring.cs:3212`,
+/// `:3229` — the `DeActive`/`ReActive` tails): the 3×3 `TileFrame` walk with
+/// the frame kept. Returns the object drops the support checks produced (a
+/// torch or a piece of furniture whose anchor actuated away pops, exactly
+/// like the C# `TileFrame` → `Check*` → `destroyObject` chain). The actuated
+/// tile itself stays "active" (the inactive state is a separate bit), so the
+/// cascade treats it as a normal cell.
+pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDrop> {
+    let mut destroy_object = false;
+    let mut kill = TileKill {
+        kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
+        object_drops: Vec::new(),
+    };
+    square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
+    after_edit(world, x, y);
+    kill.object_drops
+}
+
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
 /// (:4236). The checks re-entered through the cascade's own `KillTile` calls
 /// early-return while the flag is set, exactly like the C# static.

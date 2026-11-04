@@ -46,6 +46,11 @@ pub struct Audio {
     _stream: Option<rodio::OutputStream>,
     handle: Option<rodio::OutputStreamHandle>,
     cues: HashMap<&'static str, (u16, u32, Vec<i16>)>,
+    /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
+    /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
+    liquid_loops: [Option<rodio::Sink>; 2],
+    /// The decoded `Sounds/Liquid_{0,1}` loops (channels, rate, samples).
+    liquid_cues: [Option<(u16, u32, Vec<i16>)>; 2],
     /// Per-frame `Main.Camera.Center` + the volume sliders (see [`crate::sound`]).
     listener: Listener,
 }
@@ -80,11 +85,32 @@ impl Audio {
                 }
             }
         }
+        // `LegacySoundPlayer.cs:223-225`: `Sounds/Liquid_{0,1}` — the
+        // waterfall and lavafall loop assets.
+        let mut liquid_cues: [Option<(u16, u32, Vec<i16>)>; 2] = [None, None];
+        let sounds_dir = content.map(|c| c.join("Sounds"));
+        for (n, slot) in liquid_cues.iter_mut().enumerate() {
+            let Some(sounds_dir) = &sounds_dir else { break };
+            let path = sounds_dir.join(format!("Sounds/Liquid_{n}.xnb"));
+            match load_sound(&path) {
+                Ok(snd) => {
+                    let samples = snd
+                        .data
+                        .chunks_exact(2)
+                        .map(|b| i16::from_le_bytes([b[0], b[1]]))
+                        .collect();
+                    *slot = Some((snd.channels, snd.sample_rate, samples));
+                }
+                Err(e) => log::debug!("liquid loop {n}: {e:#}"),
+            }
+        }
         log::info!("audio: {} PCM cues loaded", cues.len());
         Self {
             _stream: stream,
             handle,
             cues,
+            liquid_loops: [None, None],
+            liquid_cues,
             listener: Listener {
                 camera_center: (0.0, 0.0),
                 sound_volume: 1.0,
@@ -132,6 +158,46 @@ impl Audio {
             channel: 0,
         };
         let _ = handle.play_raw(source);
+    }
+
+    /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
+    /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
+    /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
+    /// channel outright (the vanilla stops the instance; no fade). The pan is
+    /// baked at creation (a documented deviation — XNA re-pans the live
+    /// instance).
+    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32) {
+        let Some((channels, rate, samples)) = self.liquid_cues.get(channel).cloned().flatten()
+        else {
+            return;
+        };
+        let Some(handle) = &self.handle else { return };
+        let (left, right) = crate::sound::pan_gains(pan);
+        if volume <= 0.0 {
+            if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+                sink.stop();
+                self.liquid_loops[channel] = None;
+            }
+            return;
+        }
+        if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+            sink.set_volume(volume);
+            return;
+        }
+        // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
+        let buf = rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
+        let source = Panned {
+            inner: buf.repeat_infinite(),
+            channels,
+            left: left.max(right).max(0.0),
+            right: right.max(left).max(0.0),
+            channel: 0,
+        };
+        if let Ok(sink) = rodio::Sink::try_new(handle) {
+            sink.append(source);
+            sink.set_volume(volume);
+            self.liquid_loops[channel] = Some(sink);
+        }
     }
 }
 
@@ -200,7 +266,24 @@ pub struct MusicEnv {
     /// + screenHeight/2`), i.e. the `Main.cs:12815` branch.
     pub underground: bool,
     /// `Main.cloudAlpha > 0` (raining/storming).
+    /// `Main.cloudAlpha` (the rain coverage the volume follows).
+    pub cloud_alpha: f32,
     pub rain: bool,
+    // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
+    /// `SceneMetrics.ZoneRain`.
+    pub zone_rain: bool,
+    /// `SceneMetrics.ZoneSnow`.
+    pub zone_snow: bool,
+    /// `SceneMetrics.SurfaceAtmospherics`.
+    pub surface_atmospherics: bool,
+    /// `Main.windSpeedCurrent`.
+    pub wind_speed: f32,
+    /// `Main.shimmerAlpha` (the shimmer mutes both ambience tracks).
+    pub shimmer_alpha: f32,
+    /// `Main.atmo` (the depth factor, `Main.cs:63185`).
+    pub atmo: f32,
+    /// `Main.ambientVolume` (the user slider).
+    pub ambient_volume: f32,
     /// Music id of the nearest active boss (`NPCID → newMusic`), if any.
     pub boss_music: Option<u32>,
     /// `Main.time` (0..54000).
@@ -223,6 +306,11 @@ pub struct MusicEnv {
     pub blood_moon: bool,
     /// `Main._shouldUseWindyDayMusic` (`:12961`).
     pub windy_music: bool,
+    // — the M6-AUDIO-2 inputs (`Main.cs:11076-11350`) —
+    /// `SceneMetrics.ActiveMusicBox`: the box id playing, -1 = none.
+    pub music_box: i32,
+    /// `SceneMetrics.MusicBoxSilence` — the silent box cuts the music.
+    pub music_box_silence: bool,
     // — the M6-MUSIC-biome-tracks inputs (`:12686-12920`), ladder order —
     /// The space band: `num5 < 1f` with
     /// `num5 = (centerTileY - (65 + 10*(maxTilesX/4200)^2)) / (worldSurface/5)`
@@ -363,6 +451,10 @@ impl MusicSystem {
         if env.music_volume == 0.0 {
             self.new_music = 0;
         }
+        // `Main.cs:11076-11350`: the box chain sits in `UpdateAudio` AFTER
+        // `DecideOnNewMusic` returns — the box (or the silence box) wins
+        // over every world branch including the bosses.
+        self.apply_music_box_override(&env);
         self.cur_music = self.new_music;
 
         let is_main_track_audible = self
@@ -389,6 +481,29 @@ impl MusicSystem {
             } else {
                 self.update_common_track_toward_stopping(i, volume, is_main_track_audible);
             }
+        }
+
+        // `Main.cs:11527-11600`: the two ambience tracks ride the same pool —
+        // the rain loop (28) while ZoneRain and not ZoneSnow, the wind loop
+        // (45) while |windSpeed| >= 20/50 and SurfaceAtmospherics; the weather
+        // factor scales the system volume and shimmer mutes both.
+        if let Some(volume) = ambience_rain_volume(&env) {
+            self.update_common_track(true, 28, env.ambient_volume * volume);
+        } else {
+            self.update_common_track_toward_stopping(
+                28,
+                env.ambient_volume * ambience_rain_volume(&env).unwrap_or(0.0),
+                is_main_track_audible,
+            );
+        }
+        if let Some(volume) = ambience_wind_volume(&env) {
+            self.update_common_track(true, 45, env.ambient_volume * volume);
+        } else {
+            self.update_common_track_toward_stopping(
+                45,
+                env.ambient_volume * ambience_wind_volume(&env).unwrap_or(0.0),
+                is_main_track_audible,
+            );
         }
     }
 
@@ -620,6 +735,19 @@ impl MusicSystem {
         }
     }
 
+    /// The `UpdateAudio` box chain (`Main.cs:11076-11350`) — the override
+    /// pass that runs after `decide_new_music` returns; the box (or the
+    /// silence box) wins over every world branch including the bosses.
+    fn apply_music_box_override(&mut self, env: &MusicEnv) {
+        if env.music_box_silence {
+            self.new_music = 0;
+        } else if env.music_box >= 0 {
+            if let Some(track) = music_box_track(env.music_box) {
+                self.new_music = track;
+            }
+        }
+    }
+
     /// `LegacyAudioSystem.UpdateCommonTrack` (`LegacyAudioSystem.cs:292`).
     fn update_common_track(&mut self, active: bool, i: usize, total_volume: f32) {
         self.music_fade[i] += 0.005;
@@ -710,6 +838,119 @@ impl MusicSystem {
     }
 }
 
+/// `UpdateAudio`'s box→track mapping (`Main.cs:11076-11350`) — the 100
+/// `ActiveMusicBox == N → newMusic = M` pairs extracted verbatim; `None`
+/// for the boxes the source does not map (its chain is exhaustive 0..99,
+/// so only out-of-range ids land here).
+pub fn music_box_track(box_id: i32) -> Option<u32> {
+    const PAIRS: [(i32, u32); 100] = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 6),
+        (4, 4),
+        (5, 5),
+        (6, 7),
+        (7, 8),
+        (8, 10),
+        (9, 9),
+        (10, 12),
+        (11, 11),
+        (12, 13),
+        (13, 14),
+        (14, 15),
+        (15, 16),
+        (16, 17),
+        (17, 18),
+        (18, 19),
+        (19, 20),
+        (20, 21),
+        (21, 22),
+        (22, 23),
+        (23, 24),
+        (24, 25),
+        (25, 26),
+        (26, 27),
+        (27, 29),
+        (28, 30),
+        (29, 31),
+        (30, 32),
+        (31, 33),
+        (32, 38),
+        (33, 37),
+        (34, 35),
+        (35, 36),
+        (36, 34),
+        (37, 39),
+        (38, 40),
+        (39, 41),
+        (40, 44),
+        (41, 48),
+        (42, 42),
+        (43, 43),
+        (44, 46),
+        (45, 47),
+        (46, 49),
+        (47, 51),
+        (48, 52),
+        (49, 53),
+        (50, 54),
+        (51, 55),
+        (52, 56),
+        (53, 57),
+        (54, 58),
+        (55, 59),
+        (56, 60),
+        (57, 61),
+        (58, 62),
+        (59, 63),
+        (60, 64),
+        (61, 65),
+        (62, 66),
+        (63, 67),
+        (64, 68),
+        (65, 69),
+        (66, 70),
+        (67, 71),
+        (68, 72),
+        (69, 73),
+        (70, 74),
+        (71, 75),
+        (72, 76),
+        (73, 77),
+        (74, 78),
+        (75, 79),
+        (76, 80),
+        (77, 81),
+        (78, 82),
+        (79, 83),
+        (80, 84),
+        (81, 85),
+        (82, 86),
+        (83, 87),
+        (84, 88),
+        (85, 89),
+        (86, 90),
+        (87, 91),
+        (88, 93),
+        (89, 96),
+        (90, 95),
+        (91, 94),
+        (92, 97),
+        (93, 98),
+        (94, 92),
+        (95, 99),
+        (96, 101),
+        (97, 100),
+        (98, 104),
+        (99, 103),
+    ];
+    PAIRS
+        .iter()
+        .find(|(id, _)| *id == box_id)
+        .map(|(_, track)| *track)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -724,6 +965,14 @@ mod tests {
         MusicEnv {
             music_volume: 1.0,
             day,
+            cloud_alpha: 0.0,
+            zone_rain: false,
+            zone_snow: false,
+            surface_atmospherics: false,
+            wind_speed: 0.0,
+            shimmer_alpha: 0.0,
+            atmo: 1.0,
+            ambient_volume: 1.0,
             underground: false,
             rain: false,
             boss_music: None,
@@ -736,6 +985,8 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
+            music_box: -1,
+            music_box_silence: false,
             space_band: false,
             temple_wall: false,
             dungeon: false,
@@ -831,6 +1082,46 @@ mod tests {
         e.windy_music = true;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 44);
+    }
+
+    #[test]
+    fn the_music_box_overrides_the_whole_ladder() {
+        // `Main.cs:11076+`: the box chain sits behind `DecideOnNewMusic`,
+        // so a playing box beats the boss/eclipse/biome arms; the silent
+        // box cuts the music to 0; the box id 85 → the credits track 89
+        // (`SceneMetrics.cs:349`'s CanPlayCreditsRoll trigger).
+        let mut m = system();
+        let mut e = env(true);
+        e.boss_music = Some(93);
+        e.music_box = 0;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 1);
+        let mut m = system();
+        let mut e = env(true);
+        e.eclipse = true;
+        e.sandstorm = true;
+        e.music_box = 85;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 89);
+        let mut m = system();
+        let mut e = env(true);
+        e.music_box = 42;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42);
+        let mut m = system();
+        let mut e = env(true);
+        e.music_box_silence = true;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 0);
+        // The no-box case leaves the ladder untouched (the day pair
+        // alternates 1/18 — `Main.cs:12945`'s coin flip).
+        let mut m = system();
+        m.decide_new_music(env(true));
+        assert!(matches!(m.new_music, 1 | 18));
     }
 
     #[test]
@@ -949,4 +1240,35 @@ mod tests {
         m.decide_new_music(e);
         assert_ne!(m.new_music, 46);
     }
+}
+
+/// `Main.cs:11528-11546`: the rain track's weather factor — `Some` while the
+/// rain zone is active and snow isn't.
+fn ambience_rain_volume(env: &MusicEnv) -> Option<f32> {
+    if !(env.zone_rain && !env.zone_snow) {
+        return None;
+    }
+    let num10 = 0.5;
+    let mut num11 = env.cloud_alpha / 9.0 * 10.0 * num10 + (1.0 - num10);
+    if env.shimmer_alpha > 0.0 {
+        num11 *= 1.0 - env.shimmer_alpha;
+    }
+    let v = (num11.min(1.0)) * env.atmo.powi(4);
+    Some(v)
+}
+
+/// `Main.cs:11562-11595`: the wind track's weather factor — `Some` while
+/// `|windSpeedCurrent| >= 20/50` and `SurfaceAtmospherics`.
+fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
+    let num8 = 20.0f32;
+    if env.wind_speed.abs() < num8 / 50.0 || !env.surface_atmospherics {
+        return None;
+    }
+    let num6 = 0.7;
+    let mut num7 = env.wind_speed.abs() * num6 + (1.0 - num6);
+    if env.shimmer_alpha > 0.0 {
+        num7 *= 1.0 - env.shimmer_alpha;
+    }
+    let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
+    Some(v)
 }

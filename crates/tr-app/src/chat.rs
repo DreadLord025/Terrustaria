@@ -59,7 +59,13 @@ impl ChatMonitor {
     /// fold. A leading `/` routes the command table; an unknown command
     /// falls back to Say (`ChatCommandProcessor.cs:100-110`'s
     /// `_defaultCommand` arm).
-    pub fn send(&mut self, raw: &str, player_name: &str, rng: &mut u64) {
+    pub fn send(
+        &mut self,
+        raw: &str,
+        player_name: &str,
+        rng: &mut u64,
+        emotes: &mut crate::emotes::EmoteSystem,
+    ) {
         let Some(command) = raw.strip_prefix('/') else {
             self.say(raw, player_name);
             return;
@@ -98,6 +104,14 @@ impl ChatMonitor {
                 // always the one local player.
                 self.new_text(format!("{player_name}"), COLOR_SERVER_MESSAGE);
             }
+            "emoji" => {
+                // `EmojiCommand.ProcessOutgoingMessage` (`:44-72`): the int
+                // parse first, then the name table; a dead player is
+                // silenced (`:46-49`), a bad argument just consumes.
+                if let Some(id) = crate::emotes::resolve(rest.trim()) {
+                    emotes.new_bubble(id);
+                }
+            }
             _ => {
                 // The unknown-command fallback: Say consumes the raw text
                 // (`:100-110`).
@@ -120,6 +134,12 @@ pub fn broadcast_death(chat: &mut ChatMonitor, player_name: &str, text: &str) {
     chat.new_text(format!("{player_name} {text}"), COLOR_DEATH);
 }
 
+/// The colored system line (`ChatHelper.DisplayMessage`'s flat form) — the
+/// banner tallies and the other server announcements.
+pub fn broadcast_death_text(chat: &mut ChatMonitor, text: &str, color: [u8; 3]) {
+    chat.new_text(text, color);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,7 +148,7 @@ mod tests {
     fn plain_text_says_with_the_name_tag() {
         // `SayChatCommand` + `DisplayMessage`'s `{name-tag} {text}` prefix.
         let mut chat = ChatMonitor::default();
-        chat.send("hello world", "Belsin", &mut 1);
+        chat.send("hello world", "Belsin", &mut 1, &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hello world");
         assert_eq!(chat.messages[0].color, [255, 255, 255]);
     }
@@ -136,23 +156,23 @@ mod tests {
     #[test]
     fn the_commands_route_and_the_unknown_falls_back_to_say() {
         let mut chat = ChatMonitor::default();
-        chat.send("/roll", "Belsin", &mut 7);
+        chat.send("/roll", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
         assert!(chat.messages[0].text.starts_with("*Belsin rolls a "));
         let num: u32 = chat.messages[0].text.rsplit(' ').next().unwrap().parse().unwrap();
         assert!((1..=100).contains(&num));
         assert_eq!(chat.messages[0].color, COLOR_SERVER_MESSAGE);
-        chat.send("/help", "Belsin", &mut 7);
+        chat.send("/help", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
         // The help lines insert head-first: the newest ("/players") sits at
         // [0], "/say <text>" ends up at [4].
         assert_eq!(chat.messages[0].text, "/players");
         assert_eq!(chat.messages[4].text, "/say <text>");
-        chat.send("/players", "Belsin", &mut 7);
+        chat.send("/players", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin");
         // An unknown command says the raw text (the `_defaultCommand` arm).
-        chat.send("/frobnicate now", "Belsin", &mut 7);
+        chat.send("/frobnicate now", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin /frobnicate now");
         // `/say` rest routes as a plain say.
-        chat.send("/party hi there", "Belsin", &mut 7);
+        chat.send("/party hi there", "Belsin", &mut 7, &mut crate::emotes::EmoteSystem::default());
         assert_eq!(chat.messages[0].text, "Belsin hi there");
     }
 

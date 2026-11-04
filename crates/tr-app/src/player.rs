@@ -10,11 +10,11 @@
 
 use crate::registry;
 use tr_core::tiledata as td;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
-use crate::regen::{update_life_regen, update_mana_regen, DotDeath, RegenInputs, RegenState};
+use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -22,14 +22,96 @@ pub const HEIGHT: f32 = 42.0;
 const GRAVITY: f32 = 0.4;
 const MAX_FALL: f32 = 10.0;
 /// `Player.jumpSpeed` / `Player.jumpHeight`: holding the jump key keeps the
-/// upward velocity at `JUMP_SPEED` for `JUMP_HEIGHT` ticks, so tap and hold jumps
+/// upward velocity at `jumpSpeed` for `jumpHeight` ticks, so tap and hold jumps
 /// reach different heights.
 const JUMP_SPEED: f32 = 5.01;
-const JUMP_HEIGHT: i32 = 15;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
 const BREATH_CD: i32 = 7;
+
+/// The extra-jump options (`Player.hasJumpOption_*` / `canJumpAgain_*` /
+/// `isPerformingJump_*`, `Player.cs:2664-2716`). The mount jumps
+/// (Unicorn/Santank/WallOfFleshGoat/Basilisk) arm from the mounts
+/// (`Mount.cs:4884-4968`), the bottles from the accessories
+/// (`Player.cs:14787-15003`) — both out until M3-EQUIP-3/M2-MOUNT-1, so
+/// `TR_JUMPS=` pins them.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum ExtraJump {
+    Cloud,
+    Sandstorm,
+    Blizzard,
+    Fart,
+    Sail,
+    Unicorn,
+    Santank,
+    WallOfFleshGoat,
+    Basilisk,
+}
+
+impl ExtraJump {
+    /// The scan index into the flag arrays.
+    pub(crate) fn index(self) -> usize {
+        match self {
+            ExtraJump::Cloud => 0,
+            ExtraJump::Sandstorm => 1,
+            ExtraJump::Blizzard => 2,
+            ExtraJump::Fart => 3,
+            ExtraJump::Sail => 4,
+            ExtraJump::Unicorn => 5,
+            ExtraJump::Santank => 6,
+            ExtraJump::WallOfFleshGoat => 7,
+            ExtraJump::Basilisk => 8,
+        }
+    }
+
+    /// The consumption priority (`Player.cs:20698-20748`): the mount jumps
+    /// first, then Sandstorm, Blizzard, Fart, Sail, Cloud as the
+    /// unconditional fall-through.
+    pub(crate) const PRIORITY: [ExtraJump; 9] = [
+        ExtraJump::Basilisk,
+        ExtraJump::WallOfFleshGoat,
+        ExtraJump::Santank,
+        ExtraJump::Unicorn,
+        ExtraJump::Sandstorm,
+        ExtraJump::Blizzard,
+        ExtraJump::Fart,
+        ExtraJump::Sail,
+        ExtraJump::Cloud,
+    ];
+
+    /// The hold-boost counter the jump grants, in `jumpHeight` multiples
+    /// (`Player.cs:20787-21006`).
+    pub(crate) fn hold_multiplier(self) -> f32 {
+        match self {
+            ExtraJump::Sandstorm => 3.0,
+            ExtraJump::Blizzard => 1.5,
+            ExtraJump::Fart => 2.0,
+            ExtraJump::Sail => 1.25,
+            ExtraJump::Unicorn => 2.0,
+            ExtraJump::Santank => 2.0,
+            ExtraJump::WallOfFleshGoat => 2.0,
+            ExtraJump::Basilisk => 0.75,
+            ExtraJump::Cloud => 0.75,
+        }
+    }
+
+    /// The `TR_JUMPS=` name.
+    pub(crate) fn parse_name(name: &str) -> Option<Self> {
+        Some(match name.trim().to_ascii_lowercase().as_str() {
+            "cloud" => ExtraJump::Cloud,
+            "sandstorm" => ExtraJump::Sandstorm,
+            "blizzard" => ExtraJump::Blizzard,
+            "fart" => ExtraJump::Fart,
+            "sail" | "tsunami" => ExtraJump::Sail,
+            "unicorn" => ExtraJump::Unicorn,
+            "santank" => ExtraJump::Santank,
+            "goat" | "walloffleshgoat" => ExtraJump::WallOfFleshGoat,
+            "basilisk" => ExtraJump::Basilisk,
+            _ => return None,
+        })
+    }
+}
 
 #[derive(Default, Clone, Copy)]
 pub struct PlayerInput {
@@ -115,6 +197,17 @@ pub struct Player {
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
+    /// `Player.wellFed` — any of the fed tiers 26/206/207 held
+    /// (`Player.cs:11933-11967`); gates the re-eat (`:14353`) and the
+    /// expert regen halving.
+    pub well_fed: bool,
+    /// The WellFed mining speed bonus — the `pickSpeed -=` negative
+    /// (`:11945`: the tier's -0.05/-0.1/-0.15); the mining hardness
+    /// multiplies by (1 - bonus).
+    pub pick_speed_bonus: f32,
+    /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
+    /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
+    pub melee_speed_bonus: f32,
     pub slow: bool,
     pub chilled: bool,
     pub frozen: bool,
@@ -234,6 +327,20 @@ pub struct Player {
     try_keeping_hovering_down: bool,
     try_keeping_hovering_up: bool,
     down_prev: bool,
+    /// `Player.hasJumpOption_*` / `canJumpAgain_*` / `isPerformingJump_*`
+    /// (`Player.cs:2664-2716`), indexed by [`ExtraJump::index`]. The has
+    /// flags re-derive per tick from the equipment; the can flags re-arm on
+    /// the ground (`RefreshDoubleJumps`, `Player.cs:22869-22908`).
+    pub has_jump_options: [bool; 9],
+    pub can_jump_again: [bool; 9],
+    performing_jump: Option<ExtraJump>,
+    /// `Player.jumpBoost` (`Player.cs:2764`): the balloon family's stat
+    /// floor (`UpdateJumpHeight`, `Player.cs:19589-19593`).
+    pub jump_boost: bool,
+    /// `Player.jumpHeight` / `Player.jumpSpeed` (`Player.cs:24366-24367`):
+    /// the per-tick statics the jump branches read.
+    jump_height: i32,
+    jump_speed: f32,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
@@ -305,6 +412,9 @@ impl Player {
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
+            well_fed: false,
+            pick_speed_bonus: 0.0,
+            melee_speed_bonus: 0.0,
             slow: false,
             chilled: false,
             frozen: false,
@@ -370,6 +480,12 @@ impl Player {
             try_keeping_hovering_down: false,
             try_keeping_hovering_up: false,
             down_prev: false,
+            has_jump_options: [false; 9],
+            can_jump_again: [false; 9],
+            performing_jump: None,
+            jump_boost: false,
+            jump_height: 15,
+            jump_speed: 5.01,
             last_stoned: false,
             dash_type: 0,
             dash: 0,
@@ -588,6 +704,14 @@ impl Player {
         }
     }
 
+    /// `Player.ItemCheck`'s food consumption side (`:14353`'s gate): the
+    /// eat plays through the swing; the flag refreshes next tick's scan.
+    pub fn eat_food(&mut self) {
+        // The vanilla re-eat gate reads `wellFed` (the scan-derived flag);
+        // the caller already gated on `!well_fed`, so nothing extra here —
+        // the slot's buff grant is the state change.
+    }
+
     /// Direct health loss with no knockback or i-frames, used by drowning and fall
     /// damage (`statLife -= ...` in `Player.cs`).
     fn lose_health(&mut self, amount: i32) {
@@ -655,6 +779,14 @@ impl Player {
         self.run_acceleration = 0.08;
         self.run_slowdown = 0.2;
         self.acc_run_speed = self.max_run_speed;
+        // `Player.cs:24366-24367` + `UpdateJumpHeight` (`:19589-19593`): the
+        // jump statics reset per tick; the balloon floor lifts them.
+        self.jump_height = 15;
+        self.jump_speed = 5.01;
+        if self.jump_boost {
+            self.jump_height = self.jump_height.max(20);
+            self.jump_speed = self.jump_speed.max(6.51);
+        }
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
         // `Player.ResetEffects` + `UpdateBuffs`' slot scan (`Player.cs:18640/
@@ -671,10 +803,18 @@ impl Player {
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
         self.mana_regen_bonus = 0;
+        self.well_fed = false;
+        self.pick_speed_bonus = 0.0;
+        self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' crit bases (`Player.cs:18640+`): the per-slot adds
+        // (the fed tiers, the accessory states) stack on top per tick.
+        self.melee_crit = 4;
+        self.ranged_crit = 4;
+        self.magic_crit = 4;
         for bt in self.buffs.active_types() {
             match bt {
-                22 => self.blind = true,   // `BuffID.Darkness`
-                32 => self.slow = true,    // `BuffID.Slow`
+                22 => self.blind = true, // `BuffID.Darkness`
+                32 => self.slow = true,  // `BuffID.Slow`
                 33 => {
                     self.weak_stacks += 1; // `BuffID.Weak`
                     self.melee_damage -= 0.051;
@@ -690,6 +830,45 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // The WellFed tiers (`:11931-11969`): the per-slot stat adds.
+                // The `statDefense` half waits for the player-defense
+                // consumer (M3-EQUIP-3); the minion halves for M4-MINION.
+                26 => {
+                    self.well_fed = true;
+                    self.melee_crit += 2;
+                    self.melee_damage += 0.05;
+                    self.melee_speed_bonus += 0.05;
+                    self.ranged_crit += 2;
+                    self.ranged_damage += 0.05;
+                    self.magic_crit += 2;
+                    self.magic_damage += 0.05;
+                    self.move_speed += 0.2;
+                    self.pick_speed_bonus += 0.05;
+                }
+                206 => {
+                    self.well_fed = true;
+                    self.melee_crit += 3;
+                    self.melee_damage += 0.075;
+                    self.melee_speed_bonus += 0.075;
+                    self.ranged_crit += 3;
+                    self.ranged_damage += 0.075;
+                    self.magic_crit += 3;
+                    self.magic_damage += 0.075;
+                    self.move_speed += 0.3;
+                    self.pick_speed_bonus += 0.1;
+                }
+                207 => {
+                    self.well_fed = true;
+                    self.melee_crit += 4;
+                    self.melee_damage += 0.1;
+                    self.melee_speed_bonus += 0.1;
+                    self.ranged_crit += 4;
+                    self.ranged_damage += 0.1;
+                    self.magic_crit += 4;
+                    self.magic_damage += 0.1;
+                    self.move_speed += 0.4;
+                    self.pick_speed_bonus += 0.15;
+                }
                 149 => self.webbed = true, // `BuffID.Webbed`
                 _ => {}
             }
@@ -810,20 +989,54 @@ impl Player {
 
         let jump_pressed = input.jump && !self.jump_held;
         self.jump_held = input.jump;
+        // `:21024` clears the latch at the END of the held block, so the
+        // jump branches read the PREVIOUS tick's latch — capture it first.
+        let released = self.release_jump;
         if input.jump {
+            // `:21024`: any held frame clears the release latch.
+            self.release_jump = false;
             if self.on_ground && jump_pressed {
-                self.vy = -JUMP_SPEED;
-                self.jump = JUMP_HEIGHT;
+                // `Player.cs:20766-20767`: the ground jump; the landing re-arm
+                // follows (`:20755-20758` — `RefreshDoubleJumps`).
+                self.vy = -self.jump_speed;
+                self.jump = self.jump_height;
                 self.on_ground = false;
+                self.refresh_double_jumps();
             } else if self.jump > 0 {
                 if self.vy == 0.0 {
                     self.jump = 0;
                 } else {
-                    self.vy = -JUMP_SPEED;
+                    self.vy = -self.jump_speed;
                     self.jump -= 1;
                 }
             } else if self.in_water {
                 self.vy = -2.0;
+            } else if self.jump == 0
+                && released
+                && self.can_jump_again.iter().any(|&c| c)
+                && !self.in_water
+            {
+                // `Player.cs:20698-21022`: the extra-jump priority chain —
+                // the mount jumps first, then Sandstorm, Blizzard, Fart,
+                // Sail, Cloud as the unconditional fall-through. Each sets
+                // the standard ascent velocity and its own hold-boost
+                // counter; the performing flag is the visual state.
+                let jumped = ExtraJump::PRIORITY
+                    .iter()
+                    .copied()
+                    .find(|j| self.can_jump_again[j.index()]);
+                if let Some(j) = jumped {
+                    self.can_jump_again[j.index()] = false;
+                    self.performing_jump = Some(j);
+                    self.vy = -self.jump_speed;
+                    self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
+                } else {
+                    // `:20746`: the Cloud fall-through consumed even when
+                    // unarmed — the can flag clears all the same.
+                    if let Some(cloud) = self.can_jump_again.get_mut(0) {
+                        *cloud = false;
+                    }
+                }
             }
         } else {
             self.jump = 0;
@@ -832,6 +1045,9 @@ impl Player {
             self.release_jump = true;
             self.rocket_release = true;
         }
+
+        // `Player.cs:26061-26099`: the stale option clear while airborne.
+        self.clear_stale_jumps();
 
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
@@ -871,7 +1087,9 @@ impl Player {
 
         // `Player.cs:25293-25385`: the fall-damage block — the whole thing runs
         // whenever the player has come to rest this tick (`velocity.Y == 0`).
+        // `:26057-26060`: every rest tick re-arms the granted extra jumps.
         if self.vy == 0.0 {
+            self.refresh_double_jumps();
             // `num10 = 25 + extraFall` (`Player.cs:25301`); the mount addendum
             // (`Player.cs:25304`) waits for M2-MOUNT-1.
             let threshold = 25 + self.extra_fall;
@@ -1208,6 +1426,29 @@ impl Player {
         }
     }
 
+    /// `Player.RefreshDoubleJumps` (`Player.cs:22869-22908`): every option
+    /// the equipment grants re-arms.
+    fn refresh_double_jumps(&mut self) {
+        for i in 0..9 {
+            if self.has_jump_options[i] {
+                self.can_jump_again[i] = true;
+            }
+        }
+    }
+
+    /// `Player.cs:26061-26099`: while airborne, an extra jump whose option
+    /// vanished (an accessory swap) force-clears.
+    fn clear_stale_jumps(&mut self) {
+        if self.vy == 0.0 {
+            return;
+        }
+        for i in 0..9 {
+            if !self.has_jump_options[i] {
+                self.can_jump_again[i] = false;
+            }
+        }
+    }
+
     /// `Player.HorizontalMovement` (`Player.cs:19772-20088`): the primary
     /// acceleration gates on `maxRunSpeed`; between `maxRunSpeed` and
     /// `accRunSpeed` (the boot top speeds) acceleration continues at 0.2x —
@@ -1366,8 +1607,7 @@ impl Player {
         let ty1 = (cy / TILE_PX) as i32;
         [ty0, ty1].into_iter().any(|ty| {
             world.tile(tx, ty).is_some_and(|t| {
-                t.active()
-                    && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.slope() != 0)
+                t.active() && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.slope() != 0)
             })
         })
     }
@@ -1477,7 +1717,7 @@ impl Player {
             self.rocket_time = 0;
         }
         // `:26772-26775`: airborne outside the initial jump burst.
-        if self.vy > -JUMP_SPEED && self.vy != 0.0 {
+        if self.vy > -self.jump_speed && self.vy != 0.0 {
             self.can_rocket = true;
         }
         // `:26776-26781`: the wing refill on the ground needs a jump release.
@@ -1505,14 +1745,11 @@ impl Player {
         }
         // `:26825-26834`: with both equipped the rocket fuel converts into
         // wing time (capped past the max).
-        if self.wings_logic > 0
-            && self.rocket_boots != 0
-            && self.vy != 0.0
-            && self.rocket_time != 0
+        if self.wings_logic > 0 && self.rocket_boots != 0 && self.vy != 0.0 && self.rocket_time != 0
         {
             let add = self.rocket_time * 6;
-            self.wing_time = (self.wing_time + add as f32)
-                .min(self.wing_time_max as f32 + add as f32);
+            self.wing_time =
+                (self.wing_time + add as f32).min(self.wing_time_max as f32 + add as f32);
             self.rocket_time = 0;
         }
         if flag19 {
@@ -1547,11 +1784,11 @@ impl Player {
             self.vy -= 0.1;
             if self.vy > 0.0 {
                 self.vy -= 0.5;
-            } else if self.vy > -JUMP_SPEED * 0.5 {
+            } else if self.vy > -self.jump_speed * 0.5 {
                 self.vy -= 0.1;
             }
-            if self.vy < -JUMP_SPEED * 1.5 {
-                self.vy = -JUMP_SPEED * 1.5;
+            if self.vy < -self.jump_speed * 1.5 {
+                self.vy = -self.jump_speed * 1.5;
             }
             // `Player.cs:25379-25382`: the thrusting fall origin refreshes.
             self.fall_start = (self.y / TILE_PX) as i32;
@@ -1581,8 +1818,7 @@ impl Player {
     /// budget countdown (half while hover-down with no horizontal input, 2x
     /// for the jetpack), and the wings-44/45 hover thrusts.
     fn wing_movement(&mut self, input: PlayerInput) {
-        let (num, mut num2, mut num3, mut num4, mut num5) =
-            Self::wing_constants(self.wings_logic);
+        let (num, mut num2, mut num3, mut num4, mut num5) = Self::wing_constants(self.wings_logic);
         let hover_down = self.trying_to_hover_down() && !input.left && !input.right;
         if self.wings_logic == 4 {
             // `:22025-22058`: the jetpack hover-up burns 2 ticks per tick.
@@ -1621,11 +1857,11 @@ impl Player {
         self.vy -= num;
         if self.vy > 0.0 {
             self.vy -= num2;
-        } else if self.vy > -JUMP_SPEED * num4 {
+        } else if self.vy > -self.jump_speed * num4 {
             self.vy -= num5;
         }
-        if self.vy < -JUMP_SPEED * num3 {
-            self.vy = -JUMP_SPEED * num3;
+        if self.vy < -self.jump_speed * num3 {
+            self.vy = -self.jump_speed * num3;
         }
         // `:22230-22237`: the budget countdown.
         if hover_down && matches!(self.wings_logic, 22 | 28 | 30 | 31 | 37 | 45) {
@@ -1762,6 +1998,7 @@ impl Player {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
+                well_fed: self.well_fed,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
                 moving_x: self.vx != 0.0,
@@ -1865,8 +2102,16 @@ impl Player {
         let pre = vel;
         vel = tc.vel;
         let ms = self.liquid_step;
-        pos[0] += if vel[0] != pre[0] { vel[0] } else { vel[0] * ms };
-        pos[1] += if vel[1] != pre[1] { vel[1] } else { vel[1] * ms };
+        pos[0] += if vel[0] != pre[0] {
+            vel[0]
+        } else {
+            vel[0] * ms
+        };
+        pos[1] += if vel[1] != pre[1] {
+            vel[1]
+        } else {
+            vel[1] * ms
+        };
         if down {
             self.stair_fall = true;
         }
@@ -2002,6 +2247,40 @@ mod tests {
         p.update_survival();
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
+    }
+
+    #[test]
+    fn the_fed_tiers_stack_their_stat_adds() {
+        // `Player.cs:11931-11969`: the three tiers' per-slot adds — the
+        // crits/damage/speed ride the scan, the defense waits for
+        // M3-EQUIP-3, the minion halves for M4-MINION.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(26, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.well_fed);
+        assert_eq!(p.melee_crit, 4 + 2);
+        assert!((p.melee_damage - 1.05).abs() < 1e-4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-4);
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(207, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.melee_crit, 4 + 4);
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.move_speed - 1.4).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_fed_flag_clears_when_the_buff_expires() {
+        // ResetEffects' per-tick derivation: the flag rides the slots.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(26, 2);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.well_fed);
+        for _ in 0..3 {
+            p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        }
+        assert!(!p.well_fed);
     }
 
     #[test]
@@ -2145,7 +2424,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
@@ -2242,10 +2521,7 @@ mod tests {
         let on_dirt = q.vx;
         assert!(vx0 > 2.5, "should have accelerated, vx={vx0}");
         assert!(on_ice > 1.5, "ice keeps sliding: {on_ice}");
-        assert!(
-            on_dirt < 0.05,
-            "dirt friction stops the player: {on_dirt}"
-        );
+        assert!(on_dirt < 0.05, "dirt friction stops the player: {on_dirt}");
     }
 
     /// `Player.cs:26562-26565`: with `iceSkate` the ice multiplies
@@ -2381,18 +2657,24 @@ mod tests {
             p.update(w, PlayerInput::default());
         }
         p.dash_type = 2;
-        p.update(w, PlayerInput {
-            right: true,
-            ..Default::default()
-        });
+        p.update(
+            w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
         p.update(w, PlayerInput::default());
         for _ in 0..gap {
             p.update(w, PlayerInput::default());
         }
-        p.update(w, PlayerInput {
-            right: true,
-            ..Default::default()
-        });
+        p.update(
+            w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
         p.update(w, PlayerInput::default());
         (p.dash_delay, p.eoc_dash, p.vx)
     }
@@ -2408,7 +2690,10 @@ mod tests {
         assert_eq!(eoc, 15, "the EoC grace arms at the start");
         // The launch tick already took the ground friction AND the first
         // decay: (14.5 - 0.2) x 0.985.
-        assert!((vx - 14.3 * 0.985).abs() < 1e-4, "shield dash speed, vx={vx}");
+        assert!(
+            (vx - 14.3 * 0.985).abs() < 1e-4,
+            "shield dash speed, vx={vx}"
+        );
     }
 
     /// The window: a second tap after 15 ticks is too late — `dashTime` has
@@ -2566,7 +2851,10 @@ mod tests {
             p.update(&w, held);
             min_vy = min_vy.min(p.vy);
         }
-        assert!(min_vy <= -JUMP_SPEED * 1.5 + 0.5, "the thrust cap: {min_vy}");
+        assert!(
+            min_vy <= -JUMP_SPEED * 1.5 + 0.5,
+            "the thrust cap: {min_vy}"
+        );
         assert!(p.rocket_time < 7, "the fuel drains: {}", p.rocket_time);
     }
 
@@ -2654,6 +2942,169 @@ mod tests {
             "the descent dampened: vy={}",
             p.vy
         );
+    }
+
+    /// Arms the Cloud + Sandstorm options on a settled player.
+    fn settled_with_jumps(w: &World, opts: &[ExtraJump]) -> Player {
+        let mut p = Player::spawn(w);
+        for _ in 0..120 {
+            p.update(w, PlayerInput::default());
+        }
+        for j in opts {
+            p.has_jump_options[j.index()] = true;
+            p.can_jump_again[j.index()] = true;
+        }
+        p
+    }
+
+    /// Fires a jump edge (press + release + gap) while airborne.
+    fn tap_air(w: &World, p: &mut Player) {
+        p.update(
+            w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        p.update(w, PlayerInput::default());
+        for _ in 0..3 {
+            p.update(w, PlayerInput::default());
+        }
+        p.update(
+            w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+    }
+
+    /// `Player.cs:20698-20748`: the priority chain — with Sandstorm + Cloud
+    /// armed, the Sandstorm consumes first (hold-boost 3x).
+    #[test]
+    fn sandstorm_beats_cloud_in_the_chain() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Sandstorm, ExtraJump::Cloud]);
+        // Jump off the ground; the ground jump re-arms everything.
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.can_jump_again[ExtraJump::Sandstorm.index()], "re-armed");
+        tap_air(&w, &mut p);
+        assert!(
+            !p.can_jump_again[ExtraJump::Sandstorm.index()],
+            "sandstorm consumed first"
+        );
+        assert!(
+            p.can_jump_again[ExtraJump::Cloud.index()],
+            "cloud still armed"
+        );
+        assert_eq!(p.performing_jump, Some(ExtraJump::Sandstorm));
+        // The hold-boost counter: jumpHeight (15) x 3 = 45.
+        assert_eq!(p.jump, 45, "sandstorm 3x boost");
+        // The next tap: the Cloud fall-through (0.75x = 11).
+        tap_air(&w, &mut p);
+        assert_eq!(p.performing_jump, Some(ExtraJump::Cloud));
+        assert_eq!(p.jump, (15.0 * 0.75) as i32, "cloud 0.75x boost");
+    }
+
+    /// `Player.cs:20755-20758`: the ground jump re-arms every granted option.
+    #[test]
+    fn ground_jump_rearms_the_options() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Cloud]);
+        // Consume the cloud.
+        tap_air(&w, &mut p);
+        assert!(!p.can_jump_again[ExtraJump::Cloud.index()]);
+        // Land: the re-arm.
+        for _ in 0..300 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.can_jump_again[ExtraJump::Cloud.index()],
+            "re-armed on land"
+        );
+    }
+
+    /// `Player.cs:26061-26099`: while airborne, an option that vanished
+    /// force-clears its armed flag.
+    #[test]
+    fn stale_options_clear_while_airborne() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Cloud]);
+        // Airborne.
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        p.update(&w, PlayerInput::default());
+        assert!(p.vy != 0.0 || !p.on_ground);
+        // The accessory vanishes mid-air.
+        p.has_jump_options[ExtraJump::Cloud.index()] = false;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            !p.can_jump_again[ExtraJump::Cloud.index()],
+            "the stale option clears"
+        );
+    }
+
+    /// `Player.cs:21023-21031`: the second airborne jump requires the button
+    /// released since the previous one — holding through does not re-fire.
+    #[test]
+    fn the_second_jump_needs_the_release() {
+        let w = ground_world();
+        let mut p = settled_with_jumps(&w, &[ExtraJump::Cloud]);
+        // The ground jump.
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.can_jump_again[ExtraJump::Cloud.index()]);
+        // Hold through: no consumption (releaseJump stays false).
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        for _ in 0..20 {
+            p.update(&w, held);
+        }
+        assert!(
+            p.can_jump_again[ExtraJump::Cloud.index()],
+            "holding does not consume"
+        );
+        assert!(p.jump > 0 || p.vy < 0.0, "still in the first jump");
+    }
+
+    /// `Player.cs:19589-19593`: the balloon floor lifts the jump statics —
+    /// the ground jump height 20 instead of 15.
+    #[test]
+    fn balloon_lifts_the_jump_height() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.jump_boost = true;
+        let held = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        assert_eq!(p.jump, 20, "jumpHeight floor 20 with jumpBoost");
     }
 
     /// `Player.cs:19963,19993`: the overspeed continuation is gated on
@@ -3363,7 +3814,7 @@ mod tests {
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
-                                     // Inside the iframes the hit (and therefore the grant) repeats nothing.
+        // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
@@ -3614,4 +4065,3 @@ mod tests {
         assert!(p.buffs.find_buff_index(20).is_some());
     }
 }
-

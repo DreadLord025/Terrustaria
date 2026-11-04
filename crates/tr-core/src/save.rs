@@ -38,6 +38,13 @@ pub fn default_players_dir() -> Option<PathBuf> {
     Some(default_world_dir()?.parent()?.join("Players"))
 }
 
+/// `AchievementManager`'s save path (`Main.SavePath/achievements.dat`) —
+/// the port writes its own text format beside the vanilla name
+/// (`achievements.trdat`; M6-ACH-1's documented deviation).
+pub fn achievements_path() -> Option<PathBuf> {
+    Some(default_world_dir()?.parent()?.join("achievements.trdat"))
+}
+
 /// `Main.GetPlayerPathFromName` (`Main.cs:4820-4841`): `.` and `*` become
 /// `_`, the Windows invalid-filename set becomes `-`, spaces become `_`,
 /// then `<name>.plr` under [`default_players_dir`].

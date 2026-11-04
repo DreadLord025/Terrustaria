@@ -269,10 +269,11 @@ mod tests {
     #[test]
     fn registry_maps_items_to_tiles_walls_and_coins() {
         // `Terraria.ID.ItemID` ids: Dirt Block 2, Stone Wall 26, Shuriken 42.
-        assert_eq!(registry::place_wall(30), Some(2));
+        assert_eq!(registry::place_wall(30), Some(16)); // WallID.Dirt = 16 (WallID.cs:137)
         assert_eq!(registry::name(30), "Dirt Wall");
         assert_eq!(registry::name(3), "Stone Block");
-        assert_eq!(registry::by_wall(2), Some(30));
+        assert_eq!(registry::by_wall(16), Some(30)); // the placed (safe) wall
+        assert_eq!(registry::by_wall(2), Some(5546)); // DefaultToPlaceableWall(2), Item.cs case 5546
         assert_eq!(registry::projectile(42), Some(crate::projectile::SHURIKEN));
         assert!(registry::is_weapon(42));
         assert_eq!(registry::by_tile(0), Some(2));

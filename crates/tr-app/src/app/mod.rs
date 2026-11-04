@@ -39,8 +39,11 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::achievements;
 use crate::chat;
+use crate::emotes;
 use crate::audio;
+use crate::banners;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
@@ -154,6 +157,12 @@ pub(crate) struct App {
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
+    /// `EmoteBubble.byID` + the wheel state (M6-EMOTE-1).
+    pub(crate) emotes: emotes::EmoteSystem,
+    /// `BannerSystem`'s kill tally (M2-BUFF-8).
+    pub(crate) banners: banners::BannerSystem,
+    /// `Main.Achievements` — the achievement registry (M6-ACH-1).
+    pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -293,6 +302,14 @@ pub(crate) struct App {
     pub(crate) wiring_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
+    /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
+    pub(crate) ambient_waterfall: (f32, f32, f32),
+    /// `Main.ambientLavafallX/Y/Strength` (`WaterfallManager.cs:960-962`).
+    pub(crate) ambient_lavafall: (f32, f32, f32),
+    /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
+    /// (`Main.cs:13469-13476`).
+    pub(crate) ambient_counter: f32,
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
@@ -609,11 +626,8 @@ impl App {
                 // The listing root is `Main.PlayerPath` (`Main.cs:67065-67075`)
                 // — the port's `Terrustaria/Players` (`save.rs`'s mirror).
                 let dir = save::default_players_dir();
-                self.players = ui::save_list::list_players(
-                    dir.as_deref(),
-                    Some(self.session_entry()),
-                    fakes,
-                );
+                self.players =
+                    ui::save_list::list_players(dir.as_deref(), Some(self.session_entry()), fakes);
                 ui::char_select::sort_players(&mut self.players);
             }
             FrontScreen::WorldSelect => {
@@ -844,6 +858,13 @@ impl App {
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
+        // The achievement condition states, restored from the port's own
+        // `achievements.trdat` (the Rijndael+BSON vanilla format is the
+        // documented M6-ACH-1 deviation).
+        let mut loaded_achievements = achievements::AchievementManager::ported();
+        if let Some(path) = tr_core::save::achievements_path() {
+            achievements::load(&path, &mut loaded_achievements);
+        }
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
@@ -866,6 +887,30 @@ impl App {
                 kind: 42, // ItemID.Shuriken
                 name: registry::name(42),
                 count: 99,
+            },
+            // The vanilla starter tools (`Player.cs:54356-54360`'s copper
+            // trio) plus the copper hammer — the port has no shop yet, so
+            // the hammer ships in the kit (the deviation keeps the wall
+            // mining reachable; the vanilla starter omits it).
+            4 => ItemSlot {
+                kind: 3509, // ItemID.CopperPickaxe
+                name: registry::name(3509),
+                count: 1,
+            },
+            5 => ItemSlot {
+                kind: 3506, // ItemID.CopperAxe
+                name: registry::name(3506),
+                count: 1,
+            },
+            6 => ItemSlot {
+                kind: 3505, // ItemID.CopperHammer
+                name: registry::name(3505),
+                count: 1,
+            },
+            7 => ItemSlot {
+                kind: 3507, // ItemID.CopperShortsword
+                name: registry::name(3507),
+                count: 1,
             },
             _ => ItemSlot {
                 kind: 0,
@@ -910,6 +955,25 @@ impl App {
         {
             if let Some(p) = player.as_mut() {
                 p.dash_type = d.clamp(0, 6);
+            }
+        }
+        // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
+        // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
+        // BlizzardinaBottle 987, FartinaJar 1724, TsunamiInABottle 3201) and
+        // the mounts land with M3-EQUIP-3 / M2-MOUNT-1. `balloon` also lifts
+        // the jump statics (`jumpBoost`, `Player.cs:19589-19593`).
+        if let Ok(list) = std::env::var("TR_JUMPS") {
+            if let Some(p) = player.as_mut() {
+                for name in list.split(',') {
+                    if name.trim().eq_ignore_ascii_case("balloon") {
+                        p.jump_boost = true;
+                        continue;
+                    }
+                    if let Some(j) = crate::player::ExtraJump::parse_name(name) {
+                        p.has_jump_options[j.index()] = true;
+                        p.can_jump_again[j.index()] = true;
+                    }
+                }
             }
         }
         // `TR_WINGS=<ArmorIDs.Wing>` / `TR_BOOTS=<1..5>` pin the flight gear —
@@ -1009,6 +1073,9 @@ impl App {
         wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
+        let ambient_waterfall = (0.0, 0.0, 0.0);
+        let ambient_lavafall = (0.0, 0.0, 0.0);
+        let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
         let atmo = 1.0_f32;
 
@@ -1070,7 +1137,10 @@ impl App {
         // without waiting for the 10-120 s scheduler. Test harness only.
         let ambience_pin = std::env::var("TR_AMBIENCE").ok().and_then(|v| {
             let mut it = v.split(',');
-            let ty = it.next().map(str::trim).and_then(crate::ambience::parse_sky_entity_type);
+            let ty = it
+                .next()
+                .map(str::trim)
+                .and_then(crate::ambience::parse_sky_entity_type);
             let seed = it
                 .next()
                 .map(str::trim)
@@ -1184,10 +1254,12 @@ impl App {
             bestiary_selected: std::env::var("TR_BESTIARY")
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
-                .and_then(|n| if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
-                    Some(n - 1)
-                } else {
-                    None
+                .and_then(|n| {
+                    if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
+                        Some(n - 1)
+                    } else {
+                        None
+                    }
                 }),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
@@ -1201,6 +1273,20 @@ impl App {
                 }
                 chat
             },
+            achievements: {
+                // The condition states load below (the sidecar block).
+                loaded_achievements
+            },
+            emotes: {
+                // `TR_EMOTES` opens the wheel for the screenshot runs.
+                let mut sys = emotes::EmoteSystem::default();
+                if std::env::var_os("TR_EMOTES").is_some() {
+                    sys.menu_open = true;
+                    sys.new_bubble(0);
+                }
+                sys
+            },
+            banners: banners::BannerSystem::default(),
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
@@ -1304,6 +1390,9 @@ impl App {
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
+        ambient_waterfall,
+        ambient_lavafall,
+        ambient_counter,
             wind,
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),

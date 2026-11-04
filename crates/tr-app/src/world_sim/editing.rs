@@ -11,6 +11,7 @@ use crate::item::ItemSlot;
 use crate::npc::Npc;
 use crate::player::Player;
 use crate::projectile::Projectile;
+use crate::achievements;
 use crate::registry;
 
 use super::items::spawn_item_drop;
@@ -108,6 +109,43 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    // `Player.CanUseItem`'s fed gate + the food consumption (`:14353`):
+    // a food item (buff 26/206/207) eats on the use press while NOT
+    // wellFed — the buff rides the slot system, the count decrements, and
+    // the swing plays (`useStyle 9`'s eating animation).
+    if app.mine_down && held.count > 0 && !app.inventory_open {
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.consumable && matches!(d.buff_type, 26 | 206 | 207)
+        }) {
+            let Some(def) = def else { unreachable!() };
+            // The sim-context player borrow is immutable; the fed flag was
+            // derived by this tick's scan, so the gate reads it directly.
+            let can_eat = !player.well_fed;
+            if can_eat {
+                let time = if def.buff_time > 0 {
+                    def.buff_time
+                } else {
+                    14400 // the 4-minute vanilla fallback
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.buffs.add_buff(def.buff_type, time);
+                    p.eat_food();
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
+    }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
@@ -116,35 +154,51 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
         if app.attack_cd <= 0.0 && throw_ready {
-            let (pcx, pcy) = player.center();
-            let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
-            if dir != Vec2::ZERO {
-                let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-                // The ranged crit rolls at throw time (`rangedCrit` + the
-                // item's crit; `Projectile.Damage` consumes it on hit) — the
-                // item stream lives here, not in the projectile step.
-                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                let crit = tr_core::damage::crit_roll(
-                    &mut loot_rng,
-                    player.class_crit(registry::DamageClass::Ranged) + item_crit,
-                );
-                app.projectiles.spawn(
-                    crate::projectile::SHURIKEN,
-                    0,
-                    spawn - Vec2::splat(3.0),
-                    Vec2::new(dir.x * 11.0, dir.y * 11.0),
-                    10,
-                    12.0,
-                    crit,
-                );
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the swing
-                // lasts the item's `useAnimation` ticks; `attack_cd` matches so
-                // the throw repeats only when the swing is over.
-                app.swing_max = crate::item::use_animation_secs(held.kind);
-                app.swing = app.swing_max;
-                app.attack_cd = app.swing_max;
+            // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
+            // `Item.shoot` firing — the aim vector normalized to
+            // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
+            // is ×1 at the port's default melee speed), the spawn at the
+            // player center (`RotatedRelativePoint(MountedCenter)`), the
+            // damage `weaponDamage` (the class multiplier) and the item's
+            // knockback.
+            let def = registry::get(held.kind);
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                let (pcx, pcy) = player.center();
+                let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+                if dir != Vec2::ZERO {
+                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                    let class = def.class;
+                    let raw =
+                        def.damage as f32 * player.weapon_damage_multiplier(class);
+                    // The crit rolls at throw time (the class crit + the
+                    // item's crit; `Projectile.Damage` consumes it on hit) —
+                    // the item stream lives here, not in the projectile step.
+                    let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                    let crit =
+                        tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                    let slot = app.projectiles.spawn_with_data(
+                        proj,
+                        spawn.x,
+                        spawn.y,
+                        dir.x * def.shoot_speed,
+                        dir.y * def.shoot_speed,
+                        raw as i32,
+                        def.knock_back,
+                    );
+                    if let Some(slot) = slot {
+                        app.projectiles.set_crit(slot, crit);
+                    }
+                    if def.consumable {
+                        app.inventory[app.selected].count =
+                            app.inventory[app.selected].count.saturating_sub(1);
+                    }
+                    // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
+                    // swing lasts the item's `useAnimation` ticks; `attack_cd`
+                    // matches so the throw repeats only when the swing is over.
+                    app.swing_max = crate::item::use_animation_secs(held.kind);
+                    app.swing = app.swing_max;
+                    app.attack_cd = app.swing_max;
+                }
             }
         }
         return;
@@ -209,28 +263,60 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `ItemCheck_UseMiningTools_ActuallyUseMiningTool` → `PickTile`
     // (`Player.cs:45656`, `:53757`). The former cactus carve-out is gone with
     // it: cactus 80 is `tileAxe` in C# (`Main.cs:7210`), so vanilla LMB-pick
-    // does not break it — its pick-breakability in the port is part of the
-    // recorded tool-requirements deviation (`docs/ANALYSIS.md:1170-1172`).
+    // does not break it — and since the tool tiers landed on main
+    // (`tr_core::tool`, merged 2026-11-04) the axe gate covers kind 80 the
+    // same way, closing the TO-5-era pick-breakability deviation.
     if app.mine_down && tile.active() && !app.inventory_open {
-        if app.swing <= 0.0 {
-            app.swing_max = crate::item::use_animation_secs(held.kind);
-            app.swing = app.swing_max;
-        }
-        if app.mine_target == Some((tx, ty)) {
-            app.mine_timer += dt;
+        // The tool tiers (`GetPickaxeDamage`'s gates via `tr_core::tool`):
+        // the axe tiles chop with an axe, everything else mines with a pick
+        // whose power clears the tile's tier; the tier also paces the dig
+        // (the baseline timings assume the copper pick's 35).
+        let tool_pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
+        let tool_axe = registry::get(held.kind).map(|d| d.axe).unwrap_or(0);
+        let axe_tile = tr_core::tool::is_axe_tile(tile.kind);
+        let below_surface = (ty as f64) > app.world.world_surface;
+        let can_mine = if axe_tile {
+            tool_axe > 0
         } else {
-            app.mine_target = Some((tx, ty));
-            app.mine_timer = 0.0;
-        }
-        let hardness = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-            0.55
-        } else {
-            0.25
+            tool_pick > 0 && tr_core::tool::pick_can_mine(tile.kind, tool_pick as i32, below_surface)
         };
-        if app.mine_timer >= hardness {
-            break_tile(app, tx, ty);
+        if !can_mine {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            if app.swing <= 0.0 {
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+            }
+            if app.mine_target == Some((tx, ty)) {
+                app.mine_timer += dt;
+            } else {
+                app.mine_target = Some((tx, ty));
+                app.mine_timer = 0.0;
+            }
+            let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
+                0.55
+            } else {
+                0.25
+            };
+            // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
+            // the faster; the port folds it into the dig time.
+            let fed_speed = 1.0
+                - app
+                    .player
+                    .as_ref()
+                    .map(|p| p.pick_speed_bonus)
+                    .unwrap_or(0.0);
+            let hardness = if axe_tile {
+                base * 7.0 / tool_axe.max(1) as f32
+            } else {
+                base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
+            };
+            if app.mine_timer >= hardness {
+                break_tile(app, tx, ty);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            }
         }
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
         // No block in the cell: mining it removes the exposed wall.
@@ -244,11 +330,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_target = Some((tx, ty));
             app.mine_timer = 0.0;
         }
-        let hardness = if tile.wall == 1 { 0.7 } else { 0.35 };
-        if app.mine_timer >= hardness {
-            break_wall(app, tx, ty);
+        // The walls need a hammer (`Main.tileHammer`'s rule — the port
+        // gates on the held hammer power alone) and the hammer paces the
+        // dig (the baseline assumes the copper hammer's 35).
+        let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
+        if tool_hammer <= 0 {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            let hardness = (if tile.wall == 1 { 0.7 } else { 0.35 })
+                * 35.0
+                / tool_hammer.max(1) as f32;
+            if app.mine_timer >= hardness {
+                break_wall(app, tx, ty);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            }
         }
     } else {
         app.mine_target = None;
@@ -351,6 +448,17 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 }
 
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
+    // `AchievementsHelper.NotifyTileDestroyed` + the CustomInt "Pick"
+    // counter (BULLDOZER) — the destroyed tile feeds both rows.
+    let kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
+    if let Some(kind) = kind {
+        let _ = app
+            .achievements
+            .notify(achievements::CondKind::TileDestroyed(kind));
+        let _ = app
+            .achievements
+            .notify(achievements::CondKind::CustomInt("Pick", 10000));
+    }
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
@@ -896,8 +1004,10 @@ mod tests {
     /// three tiles right of the target, the camera pinned so the screen-centre
     /// cursor points at `(tx, ty)` — everything the mining branch of
     /// `update_editing` reads (the HUD/early-return gates, the reach circle,
-    /// the held slot). The empty held slot falls through the weapon branch;
-    /// `flow_app`'s NPC list is empty so the melee branch falls through too.
+    /// the held slot). The held Iron Pickaxe clears the tool-tier gates from
+    /// main (pick 40, `tr_core::tool`); the axe test swaps in the Iron Axe;
+    /// the pick carries no projectile so the weapon branch falls through, and
+    /// `flow_app`'s NPC list is empty so the melee branch does too.
     fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
@@ -907,6 +1017,8 @@ mod tests {
         app.player = Some(player);
         app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
         app.mouse_pos = Vec2::new(640.0, 360.0); // screen centre == the camera
+        app.inventory[app.selected].kind = 1; // the Iron Pickaxe (pick 40)
+        app.inventory[app.selected].count = 1;
         app.mine_down = true;
         app
     }
@@ -944,7 +1056,7 @@ mod tests {
             assert!(t.active() && t.kind == 10, "door cell (10, {y}) placed");
         }
         let mut app = mining_app(w, 10, 18);
-        mine_frames(&mut app, 40); // hardness 0.25 s = 15 frames
+        mine_frames(&mut app, 40); // hardness 0.25 s × 35/40 ≈ 13 frames
         for y in 17..=19 {
             assert!(
                 !app.world.tile(10, y).unwrap().active(),
@@ -984,15 +1096,18 @@ mod tests {
         assert_eq!(app.items[0].kind, 48, "the chest item");
     }
 
-    /// DW-1.2: the removed cactus carve-out is behaviour-neutral — kind 80
-    /// keeps exactly the path it had through the carve-out: it breaks, drops
-    /// per cell and runs no object cascade (`check_object`'s `_ => None`).
+    /// DW-1.2: the removed cactus carve-out is behaviour-neutral and the
+    /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
+    /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
+    /// drops per cell and runs no object cascade (`check_object`'s
+    /// `_ => None`).
     #[test]
     fn test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop() {
         let mut w = object_world();
         w.frame_important[80] = true;
         set_tile(&mut w, 10, 19, 80);
         let mut app = mining_app(w, 10, 19);
+        app.inventory[app.selected].kind = 10; // the Iron Axe (axe 9)
         mine_frames(&mut app, 40);
         assert!(!app.world.tile(10, 19).unwrap().active(), "cactus broke");
         assert!(
@@ -1005,13 +1120,14 @@ mod tests {
     }
 
     /// DW-1.2: a plain non-frameImportant tile keeps its pre-change behaviour —
-    /// the stone floor breaks after its (hardcoded) hardness and drops the
-    /// stone item at the hit cell.
+    /// the stone floor breaks after its tool-scaled hardness (0.55 s at the
+    /// baseline, ×35/40 for the held Iron Pickaxe) and drops the stone item
+    /// at the hit cell.
     #[test]
     fn test_DW_1_2_non_frame_important_tile_still_breaks_as_before() {
         let w = object_world(); // frame_important[1] = false
         let mut app = mining_app(w, 20, 20);
-        mine_frames(&mut app, 60); // stone hardness 0.55 s = 33 frames
+        mine_frames(&mut app, 60); // stone hardness 0.55 s × 35/40 ≈ 29 frames
         assert!(!app.world.tile(20, 20).unwrap().active(), "stone broke");
         assert_eq!(app.items.len(), 1);
         assert_eq!(app.items[0].kind, 3, "the stone item, per-cell drop");
@@ -1023,7 +1139,7 @@ mod tests {
     fn test_DW_1_5_releasing_mine_down_resets_the_mine_state() {
         let w = object_world();
         let mut app = mining_app(w, 20, 20);
-        mine_frames(&mut app, 10); // 9/60 s into the 0.55 s stone hardness
+        mine_frames(&mut app, 10); // 9/60 s into the pick-scaled stone hardness
         assert_eq!(app.mine_target, Some((20, 20)));
         assert!(app.mine_timer > 0.0 && app.mine_timer < 0.55);
         app.mine_down = false;

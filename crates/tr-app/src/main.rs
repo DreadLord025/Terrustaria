@@ -2,16 +2,20 @@
 
 mod app;
 mod assets;
+mod achievements;
 mod audio;
+mod banners;
 mod bestiary;
 mod biome;
 mod buffs;
 mod chat;
 mod collision;
 mod death;
+mod emotes;
 mod inv;
 mod wiring_stub;
 mod item;
+mod itemdata;
 mod loot_db;
 mod map;
 mod menu;
@@ -27,6 +31,7 @@ mod regen;
 mod ambience;
 mod craft;
 mod registry;
+mod variants;
 mod render;
 mod spawner;
 mod settings;
