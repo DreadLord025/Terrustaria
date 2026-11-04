@@ -109,6 +109,43 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    // `Player.CanUseItem`'s fed gate + the food consumption (`:14353`):
+    // a food item (buff 26/206/207) eats on the use press while NOT
+    // wellFed — the buff rides the slot system, the count decrements, and
+    // the swing plays (`useStyle 9`'s eating animation).
+    if app.mine_down && held.count > 0 && !app.inventory_open {
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.consumable && matches!(d.buff_type, 26 | 206 | 207)
+        }) {
+            let Some(def) = def else { unreachable!() };
+            // The sim-context player borrow is immutable; the fed flag was
+            // derived by this tick's scan, so the gate reads it directly.
+            let can_eat = !player.well_fed;
+            if can_eat {
+                let time = if def.buff_time > 0 {
+                    def.buff_time
+                } else {
+                    14400 // the 4-minute vanilla fallback
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.buffs.add_buff(def.buff_type, time);
+                    p.eat_food();
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
+    }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
@@ -260,10 +297,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             } else {
                 0.25
             };
+            // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
+            // the faster; the port folds it into the dig time.
+            let fed_speed = 1.0
+                - app
+                    .player
+                    .as_ref()
+                    .map(|p| p.pick_speed_bonus)
+                    .unwrap_or(0.0);
             let hardness = if axe_tile {
                 base * 7.0 / tool_axe.max(1) as f32
             } else {
-                base * tr_core::tool::pick_speed_scale(tool_pick as i32)
+                base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
             };
             if app.mine_timer >= hardness {
                 break_tile(app, tx, ty);
