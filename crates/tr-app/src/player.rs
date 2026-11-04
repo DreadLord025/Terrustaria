@@ -2378,6 +2378,22 @@ mod tests {
     }
 
     #[test]
+    fn the_potion_sickness_buff_gates_and_expires() {
+        // The buff 21 (`BuffID.PotionSickness`): the drink arm gates on it,
+        // and the 3600-tick timer expires like any buff.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(21, 3600);
+        assert!(p.buffs.find_buff_index(21).is_some());
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.buffs.find_buff_index(21).is_some());
+        // Expire it.
+        for _ in 0..3600 {
+            p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        }
+        assert!(p.buffs.find_buff_index(21).is_none());
+    }
+
+    #[test]
     fn the_fed_tiers_stack_their_stat_adds() {
         // `Player.cs:11931-11969`: the three tiers' per-slot adds — the
         // crits/damage/speed ride the scan, the defense waits for
