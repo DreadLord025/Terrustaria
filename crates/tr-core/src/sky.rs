@@ -58,6 +58,23 @@ pub fn sky_bg_top_y(view_top: f32, world_surface: f64) -> i32 {
     ((-view_top) / (world_surface as f32 * 16.0 - 600.0) * 200.0) as i32
 }
 
+/// `Main.UpdateAtmosphereTransparencyToSkyColor` (`Main.cs:63185-63199`): the
+/// atmosphere density `Main.atmo` — 1 at the surface, fading to 0 as the view
+/// descends. `y` is the pixel height the caller passes (`Main.cs:61983`:
+/// `screenPosition.Y + screenHeight / 2`); `world_surface` is
+/// `Main.worldSurface` and `max_tiles_x` is `Main.maxTilesX`. The menu /
+/// dedicated-server override (`:63196-63199`, force 1) has no in-world caller
+/// in the port and is not reproduced.
+pub fn atmosphere_transparency(y: f32, world_surface: f64, max_tiles_x: i32) -> f32 {
+    // `num = Main.maxTilesX / 4200f` (`:63187`); the numerator computes in
+    // f32, the division by `worldSurface / 5.0` in f64 (`:63188`), and the
+    // result casts back to f32 before the clamps.
+    let num = max_tiles_x as f32 / 4200.0;
+    let numer = y / 16.0 - (65.0 + 10.0 * num * num);
+    let atmo = (numer as f64 / (world_surface / 5.0)) as f32;
+    atmo.clamp(0.0, 1.0)
+}
+
 /// `SetBackColor` sun tint as sRGB bytes. Only the base (forest) day branches are
 /// ported; corruption/crimson/graveyard/blood-moon modifiers are not modelled.
 pub fn sun_color(time: f64) -> [u8; 3] {
@@ -139,4 +156,26 @@ mod tests {
         let c = moon_color(0.0);
         assert_eq!(c, [215, 225, 255]);
     }
+    // --- UpdateAtmosphereTransparencyToSkyColor (Main.cs:63185-63199) ---
+
+    #[test]
+    fn atmo_is_one_at_the_surface() {
+        // Small world (4200x1200): num = 1, surface = 300; at the surface row
+        // `y/16 = 300`: `(300 - 75) / 60 = 3.75` -> clamped to 1.
+        assert_eq!(atmosphere_transparency(4800.0, 300.0, 4200), 1.0);
+    }
+
+    #[test]
+    fn atmo_fades_with_depth_and_clamps() {
+        // Zero point: `y/16 = 65 + 10*num^2` = 75 tiles = 1200 px.
+        assert_eq!(atmosphere_transparency(1200.0, 300.0, 4200), 0.0);
+        // Below it the raw value is negative -> clamped to 0.
+        assert_eq!(atmosphere_transparency(800.0, 300.0, 4200), 0.0);
+        // Surface 500 ramps to 1 at `y/16 = 75 + 100` = 2800 px; the midpoint
+        // is `y/16 = 125` = 2000 px.
+        let half = atmosphere_transparency(2000.0, 500.0, 4200);
+        assert!((half - 0.5).abs() < 1e-4, "{half}");
+        assert_eq!(atmosphere_transparency(0.0, 500.0, 4200), 0.0);
+    }
+
 }

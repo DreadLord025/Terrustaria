@@ -25,6 +25,7 @@ use crate::render::debug::{capture_frame, draw_debug};
 use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
+use crate::player;
 use crate::sound;
 use crate::ui;
 use crate::ui::text::{hud_text, hud_text_width};
@@ -163,6 +164,53 @@ impl App {
             // `ApplyVisuals` driver; the post branch consumes
             // `filter_driver.output`.
             crate::world_sim::scene_scan::update_scene(self, dt, screen);
+            // `Main.UpdateWindyDayState` (`Main.cs:12990-13027`, called from
+            // the per-tick audio update): the sticky windy-day/storm flags the
+            // ambience gates read; the hysteresis bands make the per-frame
+            // evaluation equivalent.
+            self.wind.update_windy_day_state(
+                self.rain.visual_alpha(),
+                self.world.time,
+                self.world.day_time,
+            );
+            // `Main.AmbienceServer.Update` (`Main.cs:17214-17216`) +
+            // `SkyManager.Update` (`Main.cs:17139`): the ambient sky scheduler
+            // and its entities, stepped on the 60 Hz accumulator.
+            {
+                let ambience = &mut self.ambience;
+                let ambience_rng = &mut self.ambience_rng;
+                let ctx = crate::ambience::AmbienceCtx {
+                    world: &self.world,
+                    day_time: self.world.day_time,
+                    eclipse: self.world.eclipse,
+                    blood_moon: self.world.blood_moon,
+                    pumpkin_moon: self.world.pumpkin_moon,
+                    snow_moon: self.world.snow_moon,
+                    hard_mode: self.world.hard_mode,
+                    is_raining: self.rain.is_raining(),
+                    is_storming: self.wind.storming,
+                    happy_windy_day: self.wind.happy_windy_day,
+                    too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
+                    butterfly_chance: self.world.butterfly_chance,
+                    wind: self.wind.speed_current,
+                    zone_desert: self.scene_metrics.zone_desert,
+                    zone_hallow: self.scene_metrics.zone_hallow,
+                    zone_beach: self.scene_metrics.zone_beach,
+                    zone_corrupt: self.scene_metrics.zone_corrupt,
+                    zone_crimson: self.scene_metrics.zone_crimson,
+                    zone_jungle: self.scene_metrics.zone_jungle,
+                    player_center: self.player.as_ref().map_or(self.camera, |p| {
+                        Vec2::new(
+                            p.x + player::WIDTH * 0.5,
+                            p.y + player::HEIGHT * 0.5,
+                        )
+                    }),
+                    // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
+                    player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
+                    day_rate: 1,
+                };
+                ambience.update(dt, &ctx, ambience_rng);
+            }
             self.update_items(dt);
             self.update_projectiles(dt);
             self.update_editing(dt, screen);
@@ -406,7 +454,16 @@ impl App {
                 let sky_uv = atlas
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
-                let style = LightStyle::for_mode(*light_mode);
+                let mut style = LightStyle::for_mode(*light_mode);
+                // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
+                // the Darkness debuff's `blind` flag drops GlobalBrightness
+                // 1.2 → 1.0 while it lasts.
+                if player
+                    .as_ref()
+                    .is_some_and(|p: &crate::player::Player| p.blind)
+                {
+                    style.brightness = 1.0;
+                }
                 // Snap the render camera so integer world coordinates land on whole
                 // screen pixels at any zoom. With a fractional camera, nearest-neighbour
                 // sampling makes every tile texture crawl sub-pixel as the camera moves
@@ -556,6 +613,17 @@ impl App {
                 }
                 // The parallax sky follows the camera continuously; it lives in the
                 // always-rebuilt back range so the world range can stay cached.
+                // `Main.UpdateAtmosphereTransparencyToSkyColor` runs per draw with
+                // `screenPosition.Y + screenHeight / 2` (`Main.cs:61983`) — the
+                // backbuffer-mapped view's top edge plus half the backbuffer. The
+                // port's `draw_cam` is that view's centre and it spans
+                // `screen / zoom` world pixels, so the equivalent input is
+                // `cam.y - screen.y / (2 * zoom) + screen.y / 2`.
+                self.atmo = tr_core::sky::atmosphere_transparency(
+                    draw_cam.y - screen.y / (2.0 * *zoom) + screen.y / 2.0,
+                    world.world_surface,
+                    world.width,
+                );
                 draw_sky(
                     renderer,
                     draw_cam,
@@ -578,6 +646,10 @@ impl App {
                     bg_alpha_far,
                     light,
                     hell_black_box_bottom,
+                    &self.ambience.entities,
+                    lookups,
+                    sky_tint,
+                    self.atmo,
                 );
                 if !reuse_world {
                     tile_stats = draw_tiles(

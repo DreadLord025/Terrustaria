@@ -3,6 +3,7 @@
 
 use tr_core::{TILE_PX, World};
 
+use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
 const GRAVITY: f32 = 0.4;
@@ -271,6 +272,10 @@ pub struct Npc {
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
     pub immune: [i32; 256],
+    /// `NPC.buffType[20]` / `buffTime[20]` / `buffImmune` — the debuff engine
+    /// (`npc_buffs.rs`, `NPC.cs:6193-6197`); the DoT tick runs from
+    /// `Npc::update` like the C# buff block of `UpdateNPC`.
+    pub buffs: NpcBuffs,
     /// `NPC.frame`: the rendered frame row, advanced by [`Npc::find_frame`] in
     /// the fixed step (the original advances animation in the sim too —
     /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
@@ -396,6 +401,7 @@ impl Npc {
             anim: 0.0,
             hurt_cd: 0.0,
             immune: [0; 256],
+            buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
@@ -554,6 +560,10 @@ impl Npc {
     }
 
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
+        // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
+        // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
+        // the frame's movement, exactly like the original.
+        self.buffs.update_buffs_tick(&mut self.hp, self.max_hp);
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
         // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
         for v in self.immune.iter_mut() {
@@ -918,7 +928,18 @@ impl Npc {
         }
     }
 
-    fn contact(&self, player: &mut Player) {
+    /// The contact overlap test (`contact`'s AABB) as a pure read —
+    /// `Player.StatusFromNPC`'s call site (`Player.cs:31425`) runs the
+    /// per-NPC debuff rolls on the same touch branch.
+    pub fn touches(&self, player: &Player) -> bool {
+        let (w, h) = self.size();
+        self.x < player.x + crate::player::WIDTH
+            && self.x + w > player.x
+            && self.y < player.y + crate::player::HEIGHT
+            && self.y + h > player.y
+    }
+
+    fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -926,6 +947,29 @@ impl Npc {
             && self.y + h > player.y
         {
             let (cx, _) = self.center();
+            // `Player.Update_NPCCollision`'s EoC shield hit
+            // (`Player.cs:21049-21116`): while `dash == 2 && eocDash > 0` the
+            // dash deals 30 x meleeDamage with knockback 9, ends itself
+            // (`dashDelay = 30`), bounces the player back, and grants the
+            // 4-tick collision immunity. The vanilla hitbox is expanded by 8
+            // and offset by half the velocity (the plain overlap stands in);
+            // the crit roll (4% base) waits for the combat rng pass.
+            if player.dash == 2 && player.eoc_dash > 0 {
+                let dmg = (30.0 * player.melee_damage) as i32;
+                self.hurt(dmg, cx, 9.0, false);
+                player.eoc_dash = 10;
+                player.dash_delay = 30;
+                let dir = if player.vx != 0.0 {
+                    player.vx.signum() as i32
+                } else {
+                    player.facing
+                };
+                player.vx = -(dir as f32) * 9.0;
+                player.vy = -4.0;
+                player.on_ground = false;
+                player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
+                return;
+            }
             let dmg = if self.kind == NpcKind::Slime {
                 self.slime.stats().damage
             } else {
@@ -1091,6 +1135,37 @@ mod tests {
         // (NPC.cs:8572), so three 10-damage hits leave -5.
         assert!(s.hp <= 0);
     }
+    #[test]
+    fn npc_update_runs_the_buff_tick_before_the_ai() {
+        // NPC.cs:90373-90377 — the buff block runs at the top of UpdateNPC;
+        // an OnFire slime dies from DoT alone (25 hp, 1 damage per 15 ticks —
+        // slimes are immune to Poisoned 20, so the fire row drives the tick).
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut s = Npc::spawn_slime(&w, 34).unwrap();
+        s.buffs.add_buff(24, 2000); // OnFire — 8 regenLoss/tick
+        for _ in 0..380 {
+            s.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(s.hp, 0, "hp {}", s.hp);
+    }
+
+    #[test]
+    fn spawned_npcs_carry_their_debuff_immunity_table() {
+        // SetDefaults' immunity application (NPC.cs:17818-17837) rides
+        // Npc::new → NpcBuffs::for_kind: slimes (type 1) are immune to
+        // Poisoned 20 (NPCID.cs:6079-6084) with the derived 30/375; zombies
+        // (null entry) have no immunity.
+        let s = Npc::spawn_slime(&ground(), 20).unwrap();
+        assert!(s.buffs.buff_immune[20]);
+        assert!(
+            s.buffs.buff_immune[30] && s.buffs.buff_immune[375],
+            "derived from 20"
+        );
+        let z = Npc::spawn_zombie(&ground(), 20).unwrap();
+        assert!(!z.buffs.buff_immune[20]);
+    }
+
     #[test]
     fn slime_variants_match_the_setdefaults_lines() {
         // NPC.cs:8567-8580 (blue) and the SetDefaultsFromNetId cases
