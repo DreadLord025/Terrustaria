@@ -2295,6 +2295,18 @@ the no-break frame, `a4168a96…`), and pixel_diff against the pre-fix frame
 at zoom 1.0 differs exactly in the door column + the drop item (1064 px,
 bbox (1016,434)-(1053,495)).
 
+Re-taken on the post-merge state (`32a1aed`, M6-MUSIC/M7-FALL/M7-WIRE in):
+warm-run break twins are byte-equal at zooms 1.0/1.5/2.0 (`105a557f…` ×4,
+`03a86efd…` ×3, `ca9f40fa…` ×3 — the hashes above are claim-time bytes, the
+merged content changes pixels globally); the matched-camera before/after
+diff at zoom 1.0 is 910 px, bbox (1016,434)-(1047,495) — the same door
+column + drop. Harness notes for future shot runs: the first run after a
+rebuild (or at a new zoom pipeline) fires the shot mid-camera-lerp (camera
+`2025.26`/`2030.75` instead of the `2012.000` target — whole-frame twins
+look unequal), and a warm no-break run can settle at that second camera
+attractor; break runs always converged. Take twin pairs only on warm runs
+and match the `shot camera px` log line before comparing frames.
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
