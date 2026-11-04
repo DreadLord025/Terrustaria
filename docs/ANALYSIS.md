@@ -2350,9 +2350,11 @@ on the merged state: break twins byte-equal at zooms 1.0/1.5/2.0
 the matched-camera before/after diff at zoom 1.0 is again 910 px,
 bbox (1016,434)-(1047,495) — the merged content changes the frame bytes
 globally, but the break's own pixel footprint is unchanged. Re-verified
-once more after the M7-TE-2 sync-merge (logic sensors + training dummy,
-no pixel-bearing code): all four hashes and the 910 px footprint are
-byte-identical, so the shot evidence carries over as-is.
+twice more after the later sync-merges (M7-TE-2: logic sensors + the
+training dummy; M4-TOWN-1: the Guide + the housing move-in — neither
+pixel-bearing in the break scene, the Guide spawns off-frame): all four
+hashes and the 910 px footprint are byte-identical, so the shot evidence
+carries over as-is.
 
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
