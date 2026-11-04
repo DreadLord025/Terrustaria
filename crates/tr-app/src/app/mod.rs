@@ -888,6 +888,30 @@ impl App {
                 name: registry::name(42),
                 count: 99,
             },
+            // The vanilla starter tools (`Player.cs:54356-54360`'s copper
+            // trio) plus the copper hammer — the port has no shop yet, so
+            // the hammer ships in the kit (the deviation keeps the wall
+            // mining reachable; the vanilla starter omits it).
+            4 => ItemSlot {
+                kind: 3509, // ItemID.CopperPickaxe
+                name: registry::name(3509),
+                count: 1,
+            },
+            5 => ItemSlot {
+                kind: 3506, // ItemID.CopperAxe
+                name: registry::name(3506),
+                count: 1,
+            },
+            6 => ItemSlot {
+                kind: 3505, // ItemID.CopperHammer
+                name: registry::name(3505),
+                count: 1,
+            },
+            7 => ItemSlot {
+                kind: 3507, // ItemID.CopperShortsword
+                name: registry::name(3507),
+                count: 1,
+            },
             _ => ItemSlot {
                 kind: 0,
                 name: "",
