@@ -197,6 +197,17 @@ pub struct Player {
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
+    /// `Player.wellFed` — any of the fed tiers 26/206/207 held
+    /// (`Player.cs:11933-11967`); gates the re-eat (`:14353`) and the
+    /// expert regen halving.
+    pub well_fed: bool,
+    /// The WellFed mining speed bonus — the `pickSpeed -=` negative
+    /// (`:11945`: the tier's -0.05/-0.1/-0.15); the mining hardness
+    /// multiplies by (1 - bonus).
+    pub pick_speed_bonus: f32,
+    /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
+    /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
+    pub melee_speed_bonus: f32,
     pub slow: bool,
     pub chilled: bool,
     pub frozen: bool,
@@ -401,6 +412,9 @@ impl Player {
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
+            well_fed: false,
+            pick_speed_bonus: 0.0,
+            melee_speed_bonus: 0.0,
             slow: false,
             chilled: false,
             frozen: false,
@@ -690,6 +704,14 @@ impl Player {
         }
     }
 
+    /// `Player.ItemCheck`'s food consumption side (`:14353`'s gate): the
+    /// eat plays through the swing; the flag refreshes next tick's scan.
+    pub fn eat_food(&mut self) {
+        // The vanilla re-eat gate reads `wellFed` (the scan-derived flag);
+        // the caller already gated on `!well_fed`, so nothing extra here —
+        // the slot's buff grant is the state change.
+    }
+
     /// Direct health loss with no knockback or i-frames, used by drowning and fall
     /// damage (`statLife -= ...` in `Player.cs`).
     fn lose_health(&mut self, amount: i32) {
@@ -781,6 +803,14 @@ impl Player {
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
         self.mana_regen_bonus = 0;
+        self.well_fed = false;
+        self.pick_speed_bonus = 0.0;
+        self.melee_speed_bonus = 0.0;
+        // `ResetEffects`' crit bases (`Player.cs:18640+`): the per-slot adds
+        // (the fed tiers, the accessory states) stack on top per tick.
+        self.melee_crit = 4;
+        self.ranged_crit = 4;
+        self.magic_crit = 4;
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true, // `BuffID.Darkness`
@@ -800,6 +830,45 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // The WellFed tiers (`:11931-11969`): the per-slot stat adds.
+                // The `statDefense` half waits for the player-defense
+                // consumer (M3-EQUIP-3); the minion halves for M4-MINION.
+                26 => {
+                    self.well_fed = true;
+                    self.melee_crit += 2;
+                    self.melee_damage += 0.05;
+                    self.melee_speed_bonus += 0.05;
+                    self.ranged_crit += 2;
+                    self.ranged_damage += 0.05;
+                    self.magic_crit += 2;
+                    self.magic_damage += 0.05;
+                    self.move_speed += 0.2;
+                    self.pick_speed_bonus += 0.05;
+                }
+                206 => {
+                    self.well_fed = true;
+                    self.melee_crit += 3;
+                    self.melee_damage += 0.075;
+                    self.melee_speed_bonus += 0.075;
+                    self.ranged_crit += 3;
+                    self.ranged_damage += 0.075;
+                    self.magic_crit += 3;
+                    self.magic_damage += 0.075;
+                    self.move_speed += 0.3;
+                    self.pick_speed_bonus += 0.1;
+                }
+                207 => {
+                    self.well_fed = true;
+                    self.melee_crit += 4;
+                    self.melee_damage += 0.1;
+                    self.melee_speed_bonus += 0.1;
+                    self.ranged_crit += 4;
+                    self.ranged_damage += 0.1;
+                    self.magic_crit += 4;
+                    self.magic_damage += 0.1;
+                    self.move_speed += 0.4;
+                    self.pick_speed_bonus += 0.15;
+                }
                 149 => self.webbed = true, // `BuffID.Webbed`
                 _ => {}
             }
@@ -1929,6 +1998,7 @@ impl Player {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 mana_regen_bonus: self.mana_regen_bonus,
+                well_fed: self.well_fed,
                 campfire: self.auras.campfire,
                 heart_lantern: self.auras.heart_lantern,
                 moving_x: self.vx != 0.0,
@@ -2177,6 +2247,40 @@ mod tests {
         p.update_survival();
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
+    }
+
+    #[test]
+    fn the_fed_tiers_stack_their_stat_adds() {
+        // `Player.cs:11931-11969`: the three tiers' per-slot adds — the
+        // crits/damage/speed ride the scan, the defense waits for
+        // M3-EQUIP-3, the minion halves for M4-MINION.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(26, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.well_fed);
+        assert_eq!(p.melee_crit, 4 + 2);
+        assert!((p.melee_damage - 1.05).abs() < 1e-4);
+        assert!((p.move_speed - 1.2).abs() < 1e-4);
+        assert!((p.pick_speed_bonus - 0.05).abs() < 1e-4);
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(207, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.melee_crit, 4 + 4);
+        assert!((p.melee_damage - 1.1).abs() < 1e-4);
+        assert!((p.move_speed - 1.4).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_fed_flag_clears_when_the_buff_expires() {
+        // ResetEffects' per-tick derivation: the flag rides the slots.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(26, 2);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.well_fed);
+        for _ in 0..3 {
+            p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        }
+        assert!(!p.well_fed);
     }
 
     #[test]

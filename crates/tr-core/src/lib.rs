@@ -26,6 +26,7 @@ pub mod sky;
 pub mod tile;
 pub mod tile_light;
 pub mod tiledata;
+pub mod tool;
 pub mod tileobject;
 pub mod tile_entities;
 pub mod torch;

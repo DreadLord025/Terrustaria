@@ -109,6 +109,43 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
+    // `Player.CanUseItem`'s fed gate + the food consumption (`:14353`):
+    // a food item (buff 26/206/207) eats on the use press while NOT
+    // wellFed — the buff rides the slot system, the count decrements, and
+    // the swing plays (`useStyle 9`'s eating animation).
+    if app.mine_down && held.count > 0 && !app.inventory_open {
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.consumable && matches!(d.buff_type, 26 | 206 | 207)
+        }) {
+            let Some(def) = def else { unreachable!() };
+            // The sim-context player borrow is immutable; the fed flag was
+            // derived by this tick's scan, so the gate reads it directly.
+            let can_eat = !player.well_fed;
+            if can_eat {
+                let time = if def.buff_time > 0 {
+                    def.buff_time
+                } else {
+                    14400 // the 4-minute vanilla fallback
+                };
+                if let Some(p) = app.player.as_mut() {
+                    p.buffs.add_buff(def.buff_type, time);
+                    p.eat_food();
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
+    }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
@@ -228,25 +265,56 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
 
     if app.mine_down && tile.active() && !important && !app.inventory_open {
-        if app.swing <= 0.0 {
-            app.swing_max = crate::item::use_animation_secs(held.kind);
-            app.swing = app.swing_max;
-        }
-        if app.mine_target == Some((tx, ty)) {
-            app.mine_timer += dt;
+        // The tool tiers (`GetPickaxeDamage`'s gates via `tr_core::tool`):
+        // the axe tiles chop with an axe, everything else mines with a pick
+        // whose power clears the tile's tier; the tier also paces the dig
+        // (the baseline timings assume the copper pick's 35).
+        let tool_pick = registry::get(held.kind).map(|d| d.pick).unwrap_or(0);
+        let tool_axe = registry::get(held.kind).map(|d| d.axe).unwrap_or(0);
+        let axe_tile = tr_core::tool::is_axe_tile(tile.kind);
+        let below_surface = (ty as f64) > app.world.world_surface;
+        let can_mine = if axe_tile {
+            tool_axe > 0
         } else {
-            app.mine_target = Some((tx, ty));
-            app.mine_timer = 0.0;
-        }
-        let hardness = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
-            0.55
-        } else {
-            0.25
+            tool_pick > 0 && tr_core::tool::pick_can_mine(tile.kind, tool_pick as i32, below_surface)
         };
-        if app.mine_timer >= hardness {
-            break_tile(app, tx, ty);
+        if !can_mine {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            if app.swing <= 0.0 {
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+            }
+            if app.mine_target == Some((tx, ty)) {
+                app.mine_timer += dt;
+            } else {
+                app.mine_target = Some((tx, ty));
+                app.mine_timer = 0.0;
+            }
+            let base = if tile.kind == 1 || (6..=9).contains(&tile.kind) {
+                0.55
+            } else {
+                0.25
+            };
+            // `Player.pickSpeed`'s WellFed discount (`:11945`) — the lower
+            // the faster; the port folds it into the dig time.
+            let fed_speed = 1.0
+                - app
+                    .player
+                    .as_ref()
+                    .map(|p| p.pick_speed_bonus)
+                    .unwrap_or(0.0);
+            let hardness = if axe_tile {
+                base * 7.0 / tool_axe.max(1) as f32
+            } else {
+                base * tr_core::tool::pick_speed_scale(tool_pick as i32) * fed_speed.max(0.25)
+            };
+            if app.mine_timer >= hardness {
+                break_tile(app, tx, ty);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            }
         }
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
         // No block in the cell: mining it removes the exposed wall.
@@ -260,11 +328,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_target = Some((tx, ty));
             app.mine_timer = 0.0;
         }
-        let hardness = if tile.wall == 1 { 0.7 } else { 0.35 };
-        if app.mine_timer >= hardness {
-            break_wall(app, tx, ty);
+        // The walls need a hammer (`Main.tileHammer`'s rule — the port
+        // gates on the held hammer power alone) and the hammer paces the
+        // dig (the baseline assumes the copper hammer's 35).
+        let tool_hammer = registry::get(held.kind).map(|d| d.hammer).unwrap_or(0);
+        if tool_hammer <= 0 {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else {
+            let hardness = (if tile.wall == 1 { 0.7 } else { 0.35 })
+                * 35.0
+                / tool_hammer.max(1) as f32;
+            if app.mine_timer >= hardness {
+                break_wall(app, tx, ty);
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            }
         }
     } else {
         app.mine_target = None;
