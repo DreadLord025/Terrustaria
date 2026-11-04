@@ -9,6 +9,7 @@
 use glam::Vec2;
 
 use crate::app::App;
+use crate::regen::DotDeath;
 use tr_core::TILE_PX;
 
 /// `Player.DropItems(gemsOnly: true)` (`Player.cs:54302-54315`): softcore
@@ -184,6 +185,24 @@ pub fn tick_tomb_falls(app: &mut App, dt: f32) {
     app.tomb_falls.retain(|t| t.alive);
 }
 
+/// The DoT death texts — one minimal-English line per [`DotDeath`] variant,
+/// standing in for the vanilla localization table (the decompile carries only
+/// the `DeathText.*` keys, `Lang.cs:1073-1126` `CreateDeathMessage` switch;
+/// full localization is a separate task). Non-DoT deaths keep the M2-DEATH-1
+/// stub text at the call site.
+pub fn death_text_for(death: DotDeath) -> &'static str {
+    match death {
+        // The bare-predicate style matches the M2-DEATH-1 stub ("was slain...").
+        DotDeath::Suffocation => "has suffocated.",
+        DotDeath::Burned => "was burned.",
+        DotDeath::Poison => "was poisoned.",
+        DotDeath::Electrified => "was electrocuted.",
+        DotDeath::Tongued => "was licked.",
+        DotDeath::VampireSunlight => "was burned by the sun.",
+        DotDeath::ChlorophyteSpore => "was spored.",
+    }
+}
+
 /// The death entry point: the drops at the death spot plus the falling
 /// tombstone. `death_text` is the epitaph (`PlayerDeathReason.ToString()`).
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
@@ -198,6 +217,24 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn death_text_for_matches_the_by_other_table() {
+        // DW-1.2/DW-1.3 — Lang.cs:1073-1126: the ByOther(N) switch both drain
+        // lanes feed (`Player.cs:19321-19331,19362-19385`). The string bodies
+        // are the minimal-EN stand-ins (the decompile carries only the
+        // DeathText.* keys — ANALYSIS entry, Phase 4).
+        assert_eq!(death_text_for(DotDeath::Suffocation), "has suffocated."); // 7
+        assert_eq!(death_text_for(DotDeath::Burned), "was burned."); // 8
+        assert_eq!(death_text_for(DotDeath::Poison), "was poisoned."); // 9
+        assert_eq!(death_text_for(DotDeath::Electrified), "was electrocuted."); // 10
+        assert_eq!(death_text_for(DotDeath::Tongued), "was licked."); // 12
+        assert_eq!(
+            death_text_for(DotDeath::VampireSunlight),
+            "was burned by the sun."
+        ); // 22
+        assert_eq!(death_text_for(DotDeath::ChlorophyteSpore), "was spored."); // 23
+    }
 
     #[test]
     fn tombstone_roll_keeps_the_vanilla_id_set() {

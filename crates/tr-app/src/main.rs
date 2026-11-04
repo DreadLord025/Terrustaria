@@ -15,6 +15,7 @@ mod map;
 mod menu;
 mod net;
 mod npc;
+mod npc_buffs;
 mod persist;
 mod player;
 mod player_file;
