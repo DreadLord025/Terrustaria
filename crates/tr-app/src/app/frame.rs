@@ -113,6 +113,57 @@ impl App {
             game_menu: self.menu.is_some() || self.front.is_some(),
         });
 
+        // `Main.Ambience` (`Main.cs:13466-13515`): every 15 ticks (¼ s) the
+        // waterfall/lavafall loops re-volume from the strength scans; the
+        // volume math is the LegacySoundPlayer case 34/35 (the distance
+        // attenuation + strength/50 + the 0.2/0.65 multipliers). The strength
+        // scans ran in the waterfall pass this frame.
+        self.ambient_counter += dt;
+        if self.ambient_counter >= 0.25 {
+            self.ambient_counter = 0.0;
+            let ambient = self.settings.ambient_volume;
+            let quiet = self.menu.is_some() || self.front.is_some();
+            let sources = [
+                (
+                    self.ambient_waterfall.0,
+                    self.ambient_waterfall.1,
+                    self.ambient_waterfall.2,
+                    0.2,
+                ),
+                (
+                    self.ambient_lavafall.0,
+                    self.ambient_lavafall.1,
+                    self.ambient_lavafall.2,
+                    0.65,
+                ),
+            ];
+            for (channel, (strength, x, y, mult)) in sources.into_iter().enumerate() {
+                // The positional attenuation (`LegacySoundPlayer.cs:383-397`).
+                let dist = ((x - self.camera.x).powi(2) + (y - self.camera.y).powi(2)).sqrt();
+                let (atten, pan) = if dist < sound::SOUND_ATTENUATION_DISTANCE {
+                    (
+                        1.0 - dist / sound::SOUND_ATTENUATION_DISTANCE,
+                        ((x - self.camera.x) / (screen.x * 0.5)).clamp(-1.0, 1.0),
+                    )
+                } else {
+                    (0.0, 0.0)
+                };
+                // `:1249-1279`: strength/50 (clamped 1) x the 0.2/0.65
+                // multiplier x (1 - shimmerAlpha).
+                let strength_factor = (strength / 50.0).min(1.0);
+                let volume = if quiet {
+                    0.0
+                } else {
+                    atten
+                        * strength_factor
+                        * mult
+                        * (1.0 - self.scene_state.shimmer_alpha)
+                        * ambient
+                };
+                self.audio.set_liquid_loop(channel, volume, pan);
+            }
+        }
+
         if self.menu.is_none() && self.front.is_none() {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
@@ -190,6 +241,19 @@ impl App {
                         < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                 shimmer: self.scene_metrics.zone_shimmer,
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
+                cloud_alpha: self.rain.visual_alpha(),
+                zone_rain: self.scene_metrics.zone_rain,
+                zone_snow: self.scene_metrics.zone_snow,
+                surface_atmospherics: self.scene_metrics.surface_atmospherics,
+                wind_speed: self.wind.speed_current,
+                shimmer_alpha: self.scene_state.shimmer_alpha,
+                atmo: crate::render::sky::atmosphere_factor(
+                    self.camera.y,
+                    self.world.world_surface,
+                    self.world.width,
+                ),
+                ambient_volume: self.settings.ambient_volume,
                 shadow_candle: self.scene_metrics.shadow_candle_count > 0,
                 sandstorm: self.sandstorm.happening,
                 underworld: self.camera.y > underworld_px,
@@ -598,6 +662,48 @@ impl App {
                         [vx0, vy0, vx1, vy1],
                     );
                     scratch.waterfall_quads = waterfall.take_quads();
+                    // `WaterfallManager.DrawWaterfall`'s accumulators
+                    // (`WaterfallManager.cs:710-733` + the store `:960-965`):
+                    // per nearby fall segment, `1 - dist/(screenWidth*0.75)`
+                    // summed into the waterfall (any kind except the lava and
+                    // the rain/shimmer falls) or the lavafall (kind 1)
+                    // strength; the nearest segment's world position rides
+                    // along for the loop pan.
+                    let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
+                    let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
+                    let cam_c = Vec2::new(
+                        camera.x + screen.x * 0.5 - screen.x * 0.5,
+                        camera.y,
+                    );
+                    let _ = cam_c;
+                    for q in &scratch.waterfall_quads {
+                        let (fx, fy) = (q.pos[0], q.pos[1]);
+                        let dx = (fx - camera.x).abs();
+                        let dy = (fy - camera.y).abs();
+                        if dx >= screen.x * 2.0 || dy >= screen.y * 2.0 {
+                            continue;
+                        }
+                        let strength =
+                            1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
+                        if strength <= 0.0 {
+                            continue;
+                        }
+                        let (lava, slot) = if q.texture == 1 {
+                            (true, &mut lfs)
+                        } else {
+                            (false, &mut wfs)
+                        };
+                        let _ = lava;
+                        slot[0] += strength;
+                        if dx < slot[1].abs() || slot[1] == 0.0 {
+                            slot[1] = dx;
+                        }
+                        if dy < slot[2].abs() || slot[2] == 0.0 {
+                            slot[2] = dy;
+                        }
+                    }
+                    self.ambient_waterfall = (wfs[0], wfs[1], wfs[2]);
+                    self.ambient_lavafall = (lfs[0], lfs[1], lfs[2]);
                     scratch.waterfall_lights = lights;
                     // `WaterfallManager.TrySparkling`: drain the walk's spawns
                     // into the rain module's dust particles.
