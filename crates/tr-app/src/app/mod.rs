@@ -288,6 +288,21 @@ pub(crate) struct App {
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
+    /// `Main.atmo` (`Main.cs:2503`): the atmosphere density
+    /// `UpdateAtmosphereTransparencyToSkyColor` derives per draw
+    /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
+    /// multiply their colour by it (`AmbientSky.cs:63`).
+    pub(crate) atmo: f32,
+    /// `Main.SceneMetrics` (`Main.cs:1789`): the per-frame sensor state
+    /// `update_scene` derives; the ambience gates read its zone flags
+    /// (`AmbienceServer.cs:77-84`).
+    pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
+    /// The `AmbientSky` manager + `AmbienceServer` scheduler
+    /// (`crates/tr-app/src/ambience.rs`).
+    pub(crate) ambience: crate::ambience::Ambience,
+    /// The scheduler's `Main.rand` stand-in stream (the seed the inlined
+    /// `NetAmbienceModule` loopback hands to `FastRandom`).
+    pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
@@ -960,6 +975,8 @@ impl App {
         wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
+        // `Main.atmo` starts at its surface value; recomputed per draw below.
+        let atmo = 1.0_f32;
 
         // Character name and the session menu (`M6`): screenshots and debug hooks skip
         // the menu so the deterministic output stays unchanged.
@@ -1013,6 +1030,20 @@ impl App {
         if std::env::var_os("TR_MAP").is_some() {
             world_map.set_open(true);
         }
+        // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
+        // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
+        // with a pinned seed, so the creature skies stay screenshotable
+        // without waiting for the 10-120 s scheduler. Test harness only.
+        let ambience_pin = std::env::var("TR_AMBIENCE").ok().and_then(|v| {
+            let mut it = v.split(',');
+            let ty = it.next().map(str::trim).and_then(crate::ambience::parse_sky_entity_type);
+            let seed = it
+                .next()
+                .map(str::trim)
+                .and_then(|s| s.parse::<i32>().ok())
+                .unwrap_or(1);
+            ty.map(|ty| (ty, seed))
+        });
         let mut app = App {
             window: None,
             gpu: None,
@@ -1226,6 +1257,16 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
             wind,
+            atmo,
+            scene_metrics: tr_core::scene::SceneMetrics::new(),
+            ambience: {
+                let mut ambience = crate::ambience::Ambience::new();
+                if let Some((ty, seed)) = ambience_pin {
+                    ambience.forced_spawn_for_tests(ty, -1, seed);
+                }
+                ambience
+            },
+            ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             leaves: Vec::new(),

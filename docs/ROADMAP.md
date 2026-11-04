@@ -60,7 +60,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Liquids & waterfalls | ✅ (core) | sim + both draw passes + per-style waterfalls + shimmer draw; vertex distortion missing |
 | Sky / weather visuals | 🟡 | clouds/stars/sun/rain/storm banks done; ambient creature skies, `HorizonClouds` tint, storm branch missing |
 | World generation | 🟡 | compact native model (forest/snow/desert); vanilla pass pipeline not ported |
-| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot & regen engines (M2-BUFF-1/2); no debuff effects/combat stats/dash/wings/hooks/mounts |
+| Player | 🟡 | physics + survival + draw layers + item timings + the buff-slot & regen engines (M2-BUFF-1/2) + DoT debuff effects (M2-BUFF-3); stat debuffs (M2-BUFF-4)/combat stats/dash/wings/hooks/mounts missing |
 | Items | 🟡 | hotbar/mining/placing/drops + per-item use timings + a 7-recipe crafting subset (M3-CRAFT); no ammo/mana/equipment, the recipe table is a subset |
 | Combat | 🟡 | contact damage, melee, hurt/respawn, King Slime + the damage pipeline (DamageVar/armor-pen/crit gate + damage classes) + iframes/KB caps; no banners |
 | NPCs | 🟡 | slime colour family (8 variants + vanilla stats/tints/gel drops) + demon eye/Wandering Eye/zombie + King Slime + the drop-rule/money-roll engine; ~700 types, town system missing |
@@ -428,7 +428,7 @@ jumps.
   has a duplicated unreachable branch (`>24900 → 0.175` twice, `Player.cs:18125`); buff
   383 cap 43200 = exactly one day; mana sickness −25 % magic at 300 ticks fading.
 
-**Tasks:** ✅ M2-BUFF-1 buff slot engine, ✅ M2-BUFF-2 regen engines (life/mana), M2-BUFF-3
+**Tasks:** ✅ M2-BUFF-1 buff slot engine, ✅ M2-BUFF-2 regen engines (life/mana), ✅ M2-BUFF-3
 DoT debuffs, M2-BUFF-4 stat/movement debuffs, M2-BUFF-5 environmental auras (SceneMetrics
 scan), M2-BUFF-6 luck system, M2-BUFF-7 food/WellFed, M2-BUFF-8 banners.
 
@@ -1220,7 +1220,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-4 | `TILE-DRAW-4-paint-coatings` | shader-side paint recolor (compiled HLSL not in decompile) + wall paint/coatings in `World.extras` on E1's `paint()`/`set_paint()`; echo/invisible coats remain [2] |
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
-| 🔄 M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] |
+| ✅ M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] — done 2026-11-04: `AmbienceServer` scheduler (17 conditions, priority trick, forced-spawn queue) + all 18 live entity classes with ctor RNG order from `FastRandom(seed)`, drawn between the bg layers at the C# `DrawToDepth` boundaries via the `SkyManager` depth tracker; sounds → BG-20, ocean-line fade deferred (ANALYSIS) |
 | M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
 | M1.4-WEATHER-1 | `M1.4-WEATHER-1-wind-gusts` | wind gust events + extreme wind [5] |
@@ -1234,7 +1234,7 @@ section in brackets before starting a row.
 | 🟡 M1.4-TO-2 | `M1.4-TO-2-chests` | chest tiles + CheckChest + locking — the cascade + chest placement landed with the umbrella; the chest stays a pure tile object (indices/item storage/locking = the M3-CHEST-UI seam) [2][13] |
 | 🟡 M1.4-TO-3 | `M1.4-TO-3-furniture` | Check3x2/3x3/6x3 family + anchors — Check1x2/2x1/3x2 + table/chair/workbench placement landed; the 3x3/6x3 furniture and the table sub-tile styles 13/25 wait for the full-registry generator [2] |
 | M1.4-TO-4 | `M1.4-TO-4-herbs-pots` | herbs/pots/alch/sunflower/piles [2][20] |
-| M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles (`world_sim/editing.rs:158-165` — the cascade runs from every other break source; requested by the M1.4-TO report) [2] |
+| 🔄 M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles (`world_sim/editing.rs:158-165` — the cascade runs from every other break source; requested by the M1.4-TO report) [2] |
 
 ## Milestone 2 — player
 
@@ -1254,7 +1254,7 @@ section in brackets before starting a row.
 | M2-PHYS-8 | `M2-PHYS-8-extra-jumps` | the 8 extra jumps [7] |
 | ✅ M2-BUFF-1 | `M2-BUFF-1-buff-slots` | done 2026-11-03: `buffs.rs` `BuffSlots` — the full `AddBuff` chain (immune guard, fed-state wipe, time determine, additive caps 94/383, pet/melee exclusivity, Warmth reduction, the evict-or-reject scan), `DelBuff`/`ClearBuff`/`FindBuffIndex`, the `UpdateBuffs` timer head + end-of-update immune purge; verbatim `Main.debuff`/pet/melee/pvp set tables; effects = M2-BUFF-3/4 |
 | ✅ M2-BUFF-2 | `M2-BUFF-2-regen` | done 2026-11-03: `regen.rs` — the full `UpdateLifeRegen` accumulator (`Player.cs:18942-19391`: ramp tiers 300..3000, the 3600 cap, moving ×0.5 / still ×1.25, the banker's-rounded `statLifeMax2` add, the ±120/−600 counters) and `UpdateManaRegen`/`ApplyManaRegenerationDelay` (`:19380-19562`: the delay curve, the still/grapple double-add, the `num9 = 0.5` fill curve, floor 2, +1 per 120); DoT/aura/item/grapple inputs are neutral defaults for M2-BUFF-3/5 + M3-EQUIP; wired into `update_survival` |
-| 🔄 M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | DoT set (poison/fire/ichor…) [8] |
+| ✅ M2-BUFF-3 | `M2-BUFF-3-dot-debuffs` | done 2026-11-04: the DoT set (poison/fire/…; ichor is **not** a DoT in 1.4.5.8 — armor-pen, moved to M2-BUFF-4): player-side derivation in the C# branch order (`Player.cs:18949→19095` — poisoned −4, venom/chlorophyte −30, the fire family −8/−16/−24/−60 doubled by dripping slime 137, suffocation −40, electrified −8/−40 while running, tongued −100 expert-only; bleeding resets the ramp only; honey +4 clamp) feeding the five `RegenInputs.dot_*` fields (`player.rs::derive_dot_inputs`); the drain fast-lane −600/5 with the early return + `DotDeath` (ByOther 7/8/9/10/12/22/23) and the death texts (`regen.rs`, `death.rs::death_text_for`); water cures OnFire/OnFire3 (24/323), lava → OnFire 420, Wet 103 with the per-frame `buff_immune` reset + expired sweep (`buffs.rs`/`player.rs`); NPC-side `npc_buffs.rs` — `NpcBuffs` (20 slots + `buffImmune` + `lifeRegenCount`), the verbatim `NPC.AddBuff` chain (`NPC.cs:89926-89983`), the per-tick buff block at the C# position (`NPC.cs:90373-90377`: set flags → clear expired → DOTTally → GetHurtByDebuff) and the roster immunities (`NPCID.Sets.DebuffImmunitySets` + derived 20⇒30/375, 69⇒36); deviations in ANALYSIS "DoT debuffs (M2-BUFF-3)" [8] |
 | M2-BUFF-4 | `M2-BUFF-4-stat-debuffs` | slow/weak/webbed/frozen/darkness… [8] |
 | M2-BUFF-5 | `M2-BUFF-5-auras` | SceneMetrics auras (campfire/lantern/star/sunflower/candles) [8] |
 | M2-BUFF-6 | `M2-BUFF-6-luck` | full Luck.cs (ladybug/torch/coin/kite/potions) [8] |
@@ -1298,7 +1298,7 @@ section in brackets before starting a row.
 | ✅ M4-NPC-1 | `M4-NPC-1-slimes-eyes` | the slime colour family -3..-9 + vanilla stats/tints/gel drops, Wandering Eye 133, `GetBasicSlimeToSpawn` + the Pinky roll (done 2026-11-02); the remaining families (fighters, worms, flyers…) continue as per-family branches | AI families [14] |
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
 | ✅ M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain: `GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order with the vanilla cast widths — hardmode, the depth ladder (underworld ×2 / deep ×0.4/×1.9 / below-surface ×0.5/×1.7), night ×0.6/×1.3 + blood ×0.3/×1.8 + moon events ×0.2/×2 + eclipse, the dungeon/sandstorm/UD/jungle-town-tiers/evil/meteor/temple/hallow-deep zone branches, the WoF override, both nearby-ramp passes, invis/calmed/sunflower/angler/enemySpawns, the water/peace candles + the >35%-depth candle cut, the rate floor (10 %) and the cap (3×), the moon-event raid pacing (rate 20, max 2+0.3·players) and the pre-Skeletron dungeon rate 10 [15] | done 2026-11-03: `SpawnFlags` carries the scene state (hardmode/blood/moon/zones/candles — all false until the owning systems land); remix/FTW/journey/skyblock/fairy branches constants-off (M5-SEED-1/M6-CREATIVE-1); 8 seeded tests. 2026-11-04 (`M4-SPAWN-1-engine` completion): the named `Main.SwapRandom("SpawnNPC")` stream discipline — one LCG advance per world update before the latch/caps, deterministic per seed (`spawn_npc_call`, `NPC.cs:80170-80176`), the `noSpawnCycle` latch (`App.spawn_no_cycle`, one suppressed call, `:80171-80174`) and the dead-player gate (`CanSpawnEnemiesNear` subset, `:349-351`); 3 tests |
-| M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | spawn tables + special rules [15] |
+| ✅ M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | the `SpawnAnNPC` selection ladders in the vanilla roll order: `GetZombieSettings`' per-spawn style `Next(7)` + the `playerHasStartingHealth` torch denominator (5 vs 12, `NPC.cs:415/:5594`), the night ladder (the `Next(6)`/full-moon `Next(2)` eye roll with the short-circuit order, hardmode wandering 1/3, the bad-luck 300 pair, the new-moon hardmode 2/3, the hardmode 1/3, the blood-moon 2/5, the `IcesSnow` snow-zombie arm, the torch-zombie roll, the 7-style zombie table with the 1/3 size roll), the underground ladder (the 1/50 worm roll, hardmode 140/141, the snow arm, the `GetBasicSlimeToSpawn(false)` fallthrough), the day forest slime fallthrough [15] | done 2026-11-04: unmodelled outcomes consume their rolls and fall to the port's kind (documented in the ladder doc); `player_life_max` rides `SpawnContext`; 6 seed-sweep tests (eyes/zombies mix, the phase-4 doubling, the short-circuit isolation, hardmode WanderingEye, the underground slime-only spread, per-seed determinism) |
 | M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |

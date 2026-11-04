@@ -606,6 +606,15 @@ pub(crate) fn draw_sky(
     // `Main.hellBlackBoxBottom` (`Main.cs:2463`), threaded to `DrawBackground` —
     // the underworld black box consumes the previous frame's hell floor line.
     hell_black_box_bottom: &mut f32,
+    // The ambient-sky creatures (`AmbientSky`): the live entities and the
+    // sheets they sample. Drawn between the passes at the C# `DrawToDepth`
+    // boundaries — see the `DRAW_TO_DEPTH` table below.
+    ambience: &[crate::ambience::SkyEntity],
+    lookups: &crate::assets::Lookups,
+    // `Main.ColorOfTheSkies` (the rain-dimmed sky tint, `Main.cs:63209`) and
+    // `Main.atmo` — the entity colour chain (`AmbientSky.cs:63`).
+    sky_color: [f32; 3],
+    atmo: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -871,6 +880,30 @@ pub(crate) fn draw_sky(
     // `Main.BackgroundEnabled`: the parallax layers only; the gradient and the
     // clouds above stay, exactly like the original toggle.
     let show_bg = background_enabled && bg_block;
+    // The `SkyManager` depth tracker (`SkyManager.cs:48-78`), reset at the top
+    // of the surface background pass (`Main.cs:59344`). Every `draw_range_min`
+    // below ports one `DrawToDepth` call of `Main.cs:59700-60290`; a call
+    // whose boundary is above the tracker no-ops, exactly like the original's
+    // stale-parallax call (`Main.cs:59890`).
+    //
+    // DRAW_TO_DEPTH boundary table (`.code-foundations/build/2026-11-03-
+    // M1.4-BG-19-ambient-skies-boundary-table.md`):
+    //   6.667 = 1/0.15 (Step1, `Main.cs:59812`) — before the far mountains
+    //   5.0   (`Main.cs:59878`) — between the far and near mountain rows
+    //   1/parallax[i] per front-tree row (`Main.cs:61304+`, biome fns)
+    //   1.0   (`Main.cs:60186`) — after the last front row
+    //   flush (`Main.cs:59626` `DrawRemainingDepth`) — before the underground
+    //   backdrop
+    let mut amb_last = f32::INFINITY;
+    let amb_ctx = crate::ambience::SkyDrawCtx {
+        camera,
+        zoom,
+        screen,
+        color_of_the_skies: sky_color,
+        atmo,
+        bg_alpha_front,
+        background_enabled,
+    };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
     // between the mountain steps) and closest (`Main.cs:59520`, before the front
@@ -942,6 +975,17 @@ pub(crate) fn draw_sky(
     // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
     // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
     // generator never uses that style.
+    // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
+    // closest entities (EOC slices above depth 6.667) draw behind the
+    // mountains.
+    crate::ambience::draw_range_min(
+        r,
+        ambience,
+        lookups,
+        &amb_ctx,
+        1.0 / 0.15,
+        &mut amb_last,
+    );
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1001,6 +1045,10 @@ pub(crate) fn draw_sky(
     // mountain Step1 when parallax is on (`Main.cs:59808`), else the plain
     // `bgTopY` of `Main.cs:59328` — the storm banks' own `bgTopY`
     // (`Main.cs:59433`) is overwritten by Step1 before this pass runs.
+    // Step1's closing `DrawToDepth(5f)` (`Main.cs:59878`) runs before this
+    // pass: the mid-depth entities draw between the mountain rows and the
+    // closer clouds.
+    crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1121,6 +1169,15 @@ pub(crate) fn draw_sky(
 
     // Front layer loop (`Main.DrawSurfaceBG` 59529): forest (0), desert (2), snow (7).
     // Each layer draws with `ColorOfSurfaceBackgroundsBase * bgAlphaFrontLayer[i]`.
+    // Each active biome's row chain emits its own `DrawToDepth(1f/parallax)`
+    // boundaries (`Main.cs:61304+`); the pass threads the tracker so a second
+    // cross-fading biome's boundaries no-op like the original's.
+    let mut amb_pass = show_bg.then_some(crate::render::bg::AmbiencePass {
+        entities: ambience,
+        lookups,
+        ctx: &amb_ctx,
+        last: &mut amb_last,
+    });
     if show_bg {
         // `DrawSurfaceBG_Forest` (tree set 1 = `Background_50..52`): parallax
         // 0.40/0.43/0.49, scale 2.5/2.62/2.68, tops +1300/+1550/+1800. The middle
@@ -1140,6 +1197,8 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Desert`: two dune layers (21/20), parallax 0.37/0.49,
         // scale 2.5/2.68, tops +1600/+2000, no tree line.
@@ -1159,6 +1218,8 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            false,
         );
         // `DrawSurfaceBG_Snow` (tree set `Main.snowBG` style 1 = `Background_37..39`):
         // same parallax/scale/top as the forest, but none of the layers is mirrored
@@ -1178,9 +1239,15 @@ pub(crate) fn draw_sky(
             magic,
             sc_adj,
             tint,
+            amb_pass.as_mut(),
+            true,
         );
     }
 
+    // `Main.cs:59626` `DrawRemainingDepth`: the shallowest entities (below the
+    // last front-row boundary) draw after every surface layer, before the
+    // underground backdrop.
+    crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured

@@ -1089,6 +1089,18 @@ pub(crate) fn push_screen_rot(
     r.push_back_sprite_rot([wx, wy], [size[0] / zoom, size[1] / zoom], uv, color, rot);
 }
 
+/// The ambience draw state threaded through a biome's front-row chain: the
+/// entities, their sheets, the draw context and the `SkyManager` depth
+/// tracker (`SkyManager.cs:53-60`). `draw_front_trees` emits one
+/// `DrawToDepth(1f/parallax)` boundary before each row, like the C# biome
+/// functions do (`Main.cs:61304+`).
+pub(crate) struct AmbiencePass<'a> {
+    pub entities: &'a [crate::ambience::SkyEntity],
+    pub lookups: &'a crate::assets::Lookups,
+    pub ctx: &'a crate::ambience::SkyDrawCtx<'a>,
+    pub last: &'a mut f32,
+}
+
 /// The three foreground layers of one biome (`DrawSurfaceBG_Forest` /
 /// `_Desert` / `_Snow`).
 ///
@@ -1112,11 +1124,28 @@ pub(crate) fn draw_front_trees(
     magic: f32,
     sc_adj: f32,
     tint: [f32; 3],
+    mut ambience: Option<&mut AmbiencePass<'_>>,
+    // Only the Snow body ends with `DrawToDepth(1f)` (`Main.cs:60186`); the
+    // other biomes leave the stratum to the flush (`Main.cs:59626`).
+    closes_with_one: bool,
 ) {
     if alpha <= 0.0 {
         return;
     }
     for i in 0..3 {
+        // The biome's row boundary: `bgParallax = parallax[i]; DrawToDepth(
+        // 1f/bgParallax)` runs before the row draws (`Main.cs:61304-61306`
+        // and its siblings).
+        if let Some(p) = ambience.as_deref_mut() {
+            crate::ambience::draw_range_min(
+                r,
+                p.entities,
+                p.lookups,
+                p.ctx,
+                1.0 / parallax[i],
+                p.last,
+            );
+        }
         if let Some(t) = trees[i] {
             draw_bg_layer(
                 r,
@@ -1132,6 +1161,11 @@ pub(crate) fn draw_front_trees(
                 alpha,
             );
         }
+    }
+    // The Snow chain closes with `DrawToDepth(1f)` (`Main.cs:60186`); the
+    // other biomes' strata wait for the flush.
+    if closes_with_one && let Some(p) = ambience.as_deref_mut() {
+        crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
     }
 }
 

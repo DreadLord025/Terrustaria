@@ -96,6 +96,9 @@ pub struct SpawnContext<'a> {
     pub town_npcs: i32,
     /// `Main.dayTime`.
     pub day_time: bool,
+    /// `player.statLifeMax` — `playerHasStartingHealth`'s gate
+    /// (`NPC.cs:415`: `<= 100`) halves the torch-zombie denominator.
+    pub player_life_max: i32,
     pub flags: SpawnFlags,
 }
 
@@ -494,72 +497,184 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
     None
 }
 
-/// The default surface/night selection of `Spawner.SpawnAnNPC` (NPC.cs:
-/// ~4390-4810), restricted to the implemented enemy kinds:
-/// - surface, day: `GetBasicSlimeToSpawn` → blue slime (green/-red variants
-///   map to the same kind),
-/// - surface, night: demon eye on the 1/6 roll (1/2 during a full moon),
-///   otherwise a zombie,
-/// - underground: slime (`GetBasicSlimeToSpawn(surface: false)`).
+/// `Spawner.SpawnAnNPC`'s selection ladders (`NPC.cs:4348-4870`) for the
+/// port's enemy set. The roll ORDER is vanilla — every conditional roll the
+/// source makes consumes the stream exactly where it does, including the
+/// unmodelled outcomes (they map to the port's closest kind: the night
+/// surface defaults to the zombie arm, the underground to the slime arm);
+/// the flag-gated specials whose flags do not exist yet (graveyard,
+/// halloween/xmas, rain, wind, remix, skyblock, expert armed zombies) sit
+/// behind constants-off checks and consume nothing, exactly as the C#'s
+/// short-circuit skips them.
+///
+/// Deviations (documented):
+/// - the ladders stop at `underGround` — the `deeperThanRockLayer` and
+///   underworld ladders (NPC.cs:4869+) land with their NPC kinds;
+/// - the eye family's `case 0..4` double-spawn (`SpawnNPC(-3X)` AND
+///   `SpawnNPC(19X)`, NPC.cs:4584-4605) draws its `Next(3)` but returns one
+///   NPC — the multi-spawn returns land with the pool work;
+/// - `RollOnlyBadLuck`/`RollLuck` run as the plain `Next(n)` (the luck
+///   modifier does not reach the spawn stream);
+/// - `GetZombieSettings`' skyblock style-forcing and armed-zombie cut are
+///   constants-off (M5-SEED-1).
 fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Option<Npc> {
-    let surface = (y as f64) <= ctx.world.world_surface;
-    let kind = if surface {
-        if ctx.day_time {
-            // `GetBasicSlimeToSpawn(surface: true, tileType, dist)` — the
-            // forest default (jungle tile 60 -> -10 and snow 147/161 stay out
-            // until those biomes exist).
-            NpcKind::Slime
-        } else if rng.next(6) == 0 {
-            // NPC.cs:4549-4572: `Next(6) == 0` (or full-moon `Next(2) == 0`,
-            // moon phases are not modelled) picks a flying enemy; the
-            // non-hardmode surface branch is type 2 (demon eye); 190-194 and
-            // -43 map to the same kind.
-            NpcKind::DemonEye
-        } else {
-            // NPC.cs:4764-4809: zombie (style 0 → type 3); the -26/-27 AI
-            // variants and armed/torch zombies are not modelled.
-            NpcKind::Zombie
-        }
+    // `GetZombieSettings` (`NPC.cs:5583-5612`) is `SpawnAnNPC`'s FIRST
+    // statement (`NPC.cs:1284`) — the style roll happens for every spawn,
+    // day or night, surface or underground.
+    let zombie_style = rng.next(7);
+    // `playerHasStartingHealth` (`NPC.cs:415`): `statLifeMax <= 100` drops
+    // torchZombieChance 12 → `5 - players/2` (single player: 5).
+    let torch_zombie_chance = if ctx.player_life_max <= 100 {
+        (5 - 0 / 2).max(2)
     } else {
-        // Underground default: `GetBasicSlimeToSpawn(surface: false)`.
-        NpcKind::Slime
+        12
     };
-    if kind == NpcKind::Slime {
-        // `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) picks the
-        // variant, then `Spawner.SpawnNPC`'s blue-slime roll can still swap
-        // Pinky in (`NPC.cs:5238-5246`: `RollLuck(180) == 0`).
-        let dist = (x - ctx.world.spawn_x).abs();
-        let variant = if surface {
-            if rng.next(3) == 0 || dist < 200 {
-                SlimeVariant::Green
-            } else if rng.next(10) == 0 && dist > 400 {
-                SlimeVariant::Purple
-            } else {
-                SlimeVariant::Blue
+
+    // `world_surface` is in tiles; `y` arrives in pixels (`Main.worldSurface`
+    // comparisons run on the tile coordinate — NPC.cs:4846's `spawnTileY <
+    // Main.worldSurface`).
+    let surface = (y as f64) <= ctx.world.world_surface * 16.0;
+    let tile_kind = ctx
+        .world
+        .tile(x, y / 16)
+        .map(|t| t.kind)
+        .unwrap_or(0);
+    if surface {
+        if ctx.day_time {
+            // The day ladder's critter/water/wind specials all sit behind
+            // unmodelled tile+weather gates; the first reachable arm is the
+            // forest slime fallthrough (`NPC.cs:4511-4513`).
+            return spawn_basic_slime(ctx, rng, x, true);
+        }
+        // ---- the night ladder (`NPC.cs:4520-4810`) ----
+        // `Next(6) == 0 || (moonPhase == 4 && Next(2) == 0)` (`:4549`): the
+        // short-circuit leaves the second roll unconsumed on a first hit.
+        let eyes = rng.next(6) == 0 || (ctx.world.moon_phase == 4 && rng.next(2) == 0);
+        if eyes {
+            // `:4551-4558`: hardmode takes the Wandering Eye 1/3 of the time.
+            if ctx.flags.hard_mode && rng.next(3) == 0 {
+                return Npc::spawn_eye(ctx.world, x).map(|mut n| {
+                    n.kind = NpcKind::WanderingEye;
+                    n
+                });
             }
-        } else if rng.next(5) == 0 {
-            SlimeVariant::Yellow
-        } else if rng.next(2) == 0 {
+            if rng.next(2) == 0 {
+                // `:4564-4576`: -43 on the 1/4 roll, else type 2 — both the
+                // port's demon eye.
+                let _ = rng.next(4);
+                return Npc::spawn_eye(ctx.world, x);
+            }
+            // `:4577-4606`: the five 19X pairs with their 1/3 size-variant
+            // roll; the C# spawns BOTH — the port draws the roll and spawns
+            // the base (the deviation above).
+            let _ = rng.next(5);
+            let _ = rng.next(3);
+            return Npc::spawn_eye(ctx.world, x);
+        }
+        // `:4608-4612`: hardmode blood moon 1/50 → 109 (unmodelled).
+        if ctx.flags.hard_mode && ctx.flags.blood_moon && rng.next(50) == 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4614-4621`: the two bad-luck 300 blood-moon rolls (53, 536).
+        if ctx.flags.blood_moon && rng.next(300) == 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        if ctx.flags.blood_moon && rng.next(300) == 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4623-4627`: a new-moon hardmode 2/3 (104).
+        if ctx.world.moon_phase == 0 && ctx.flags.hard_mode && rng.next(3) != 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4628-4631`: hardmode 1/3 (140).
+        if ctx.flags.hard_mode && rng.next(3) == 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4632-4645`: blood moon 2/5 → 489/490 (the `Next(2)` picks).
+        if ctx.flags.blood_moon && rng.next(5) < 2 {
+            let _ = rng.next(2);
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4646-4665`: the snow/ice tile arm — hardmode's 169/155 rolls,
+        // then the Eskimo default (161; all the port's zombie kind).
+        if is_ices_snow(tile_kind) || tile_kind == 162 {
+            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next(4) == 0 {
+                return Npc::spawn_zombie(ctx.world, x);
+            }
+            if !ctx.flags.blood_moon && ctx.flags.hard_mode && rng.next(3) == 0 {
+                return Npc::spawn_zombie(ctx.world, x);
+            }
+            let _ = rng.next(2); // the armed-expert split (unmodelled)
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4666-4709`: the rain/graveyard specials — rain and the graveyard
+        // flag are constants-off, no rolls.
+        // `:4711-4721`: the torch zombie 1/chance (590) — the port's zombie.
+        if rng.next(torch_zombie_chance) == 0 {
+            return Npc::spawn_zombie(ctx.world, x);
+        }
+        // `:4723-4762`: halloween/xmas/expert-armed — constants-off.
+        // `:4764-4810`: the zombie style table (7 biome styles) with the
+        // 1/3 big/small variant roll — every outcome is the port's zombie.
+        let _ = rng.next(3);
+        let _ = zombie_style;
+        return Npc::spawn_zombie(ctx.world, x);
+    }
+    // ---- the underground ladder (`NPC.cs:4846-4869`) ----
+    // The 1/50 worm roll (hardmode splits 95/10) — unmodelled, the roll
+    // still draws and the outcome falls to the slime arm.
+    if rng.next(50) == 0 {
+        let _ = if ctx.flags.hard_mode { rng.next(3) } else { 0 };
+        return spawn_basic_slime(ctx, rng, x, false);
+    }
+    // `:4852-4858`: hardmode 140/141.
+    if ctx.flags.hard_mode && rng.next(3) == 0 {
+        return spawn_basic_slime(ctx, rng, x, false);
+    }
+    if ctx.flags.hard_mode && rng.next(2) == 0 {
+        return spawn_basic_slime(ctx, rng, x, false);
+    }
+    // `:4863-4867`: the snow-tile arm (147) — unmodelled → the slime arm.
+    if tile_kind == 147 || tile_kind == 161 {
+        return spawn_basic_slime(ctx, rng, x, false);
+    }
+    spawn_basic_slime(ctx, rng, x, false)
+}
+
+/// `Spawner.GetBasicSlimeToSpawn` (`NPC.cs:5625-5654`) + the Pinky swap
+/// (`:5238-5246`): the surface forest ladder (1/3 green or close, 1/10
+/// purple far, else blue) and the underground ladder (1/5 yellow, ½
+/// blue/red), then `RollLuck(180)` promotes the blue pick to Pinky.
+/// `TileID.Sets.IcesSnow` (`TileID.cs:561`): 161, 200, 163, 164, 147 — the
+/// night ladder's snow-tile gate (the generated `sets.rs` does not carry
+/// this set yet; the generator grows it with the next data pass).
+fn is_ices_snow(kind: u16) -> bool {
+    matches!(kind, 147 | 161 | 163 | 164 | 200)
+}
+
+fn spawn_basic_slime(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, surface: bool) -> Option<Npc> {
+    let dist = (x - ctx.world.spawn_x).abs();
+    let variant = if surface {
+        if rng.next(3) == 0 || dist < 200 {
+            SlimeVariant::Green
+        } else if rng.next(10) == 0 && dist > 400 {
+            SlimeVariant::Purple
+        } else {
             SlimeVariant::Blue
-        } else {
-            SlimeVariant::Red
-        };
-        let variant = if variant == SlimeVariant::Blue && rng.next(180) == 0 {
-            SlimeVariant::Pinky
-        } else {
-            variant
-        };
-        return Npc::spawn_slime_variant(ctx.world, x, variant);
-    }
-    match kind {
-        NpcKind::DemonEye => Npc::spawn_eye(ctx.world, x),
-        // `NPCID.WanderingEye` (133) spawns only on the night hardmode roll
-        // (`NPC.cs:4555-4558`); the port is pre-hardmode, so it stays out of
-        // the ambient pass (it rides the eye machine when debug-spawned).
-        NpcKind::WanderingEye => Npc::spawn_eye(ctx.world, x),
-        NpcKind::Zombie => Npc::spawn_zombie(ctx.world, x),
-        NpcKind::Slime | NpcKind::KingSlime => None, // handled above / boss only
-    }
+        }
+    } else if rng.next(5) == 0 {
+        SlimeVariant::Yellow
+    } else if rng.next(2) == 0 {
+        SlimeVariant::Blue
+    } else {
+        SlimeVariant::Red
+    };
+    let variant = if variant == SlimeVariant::Blue && rng.next(180) == 0 {
+        SlimeVariant::Pinky
+    } else {
+        variant
+    };
+    Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
 #[cfg(test)]
@@ -576,6 +691,7 @@ mod tests {
             nearby_active_npcs: 100.0,
             town_npcs: 0,
             day_time: day,
+            player_life_max: 100,
             flags: SpawnFlags::default(),
         }
     }
@@ -717,6 +833,151 @@ mod tests {
         w
     }
 
+    fn night_ctx_at<'a>(w: &'a World) -> SpawnContext<'a> {
+        let mut c = ctx(w, 295.0 * 16.0, false);
+        c.player_center.1 = 295.0 * 16.0;
+        c
+    }
+
+    fn night_ctx_flags<'a>(w: &'a World, hard: bool, blood: bool) -> SpawnContext<'a> {
+        let mut c = night_ctx_at(w);
+        c.flags.hard_mode = hard;
+        c.flags.blood_moon = blood;
+        c
+    }
+
+    /// Runs one spawn call at the surface tile column and classifies it.
+    fn outcome(ctx: &SpawnContext<'_>, seed: u64) -> Option<(NpcKind, SlimeVariant)> {
+        outcome_at(ctx, seed, 295 * 16)
+    }
+
+    /// The y-parameterized twin (pixels) — the underground tests spawn at
+    /// their depth band.
+    fn outcome_at(ctx: &SpawnContext<'_>, seed: u64, y_px: i32) -> Option<(NpcKind, SlimeVariant)> {
+        let mut rng = FastRandom::new(seed);
+        spawn_npc_at(ctx, &mut rng, 210, y_px).map(|n| (n.kind, n.slime))
+    }
+
+    #[test]
+    fn the_night_ladder_produces_both_eyes_and_zombies() {
+        // The 1/6 eye roll and the zombie fallthrough both hit across the
+        // seed sweep (NPC.cs:4549 vs :4764+).
+        let w = ground_tall();
+        let c = night_ctx_flags(&w, false, false);
+        let mut eyes = 0;
+        let mut zombies = 0;
+        let mut slimes = 0;
+        for seed in 1..2000u64 {
+            match outcome(&c, seed) {
+                Some((NpcKind::DemonEye, _)) | Some((NpcKind::WanderingEye, _)) => eyes += 1,
+                Some((NpcKind::Zombie, _)) => zombies += 1,
+                Some((NpcKind::Slime, _)) => slimes += 1,
+                _ => {}
+            }
+        }
+        assert!(eyes > 0, "no eyes in the sweep");
+        assert!(zombies > 0, "no zombies in the sweep");
+        assert_eq!(slimes, 0, "the night surface never slimes");
+    }
+
+    #[test]
+    fn the_full_moon_doubles_the_eye_roll() {
+        // `Next(6) == 0 || (moonPhase == 4 && Next(2) == 0)` (`:4549`): the
+        // phase-4 second roll can only fire where the first missed, so the
+        // phase-4 sweep must see strictly more eyes than the same seeds at
+        // phase 0.
+        let mut w0 = ground_tall();
+        w0.moon_phase = 0;
+        let c0 = night_ctx_flags(&w0, false, false);
+        let mut w4 = ground_tall();
+        w4.moon_phase = 4;
+        let c4 = night_ctx_flags(&w4, false, false);
+        let count = |c: &SpawnContext<'_>| -> usize {
+            (1..2000u64)
+                .filter(|seed| {
+                    matches!(
+                        outcome(c, *seed),
+                        Some((NpcKind::DemonEye, _)) | Some((NpcKind::WanderingEye, _))
+                    )
+                })
+                .count()
+        };
+        let (eyes0, eyes4) = (count(&c0), count(&c4));
+        assert!(eyes0 > 0 && eyes4 > eyes0, "phase 0: {eyes0}, phase 4: {eyes4}");
+    }
+
+    #[test]
+    fn the_short_circuit_order_is_vanilla() {
+        // A seed whose eye roll MISSES but whose moon roll HITS proves the
+        // `||` order: the same seed is an eye at phase 4 and a zombie at
+        // phase 0 (the moon roll never ran there).
+        let mut w0 = ground_tall();
+        w0.moon_phase = 0;
+        let c0 = night_ctx_flags(&w0, false, false);
+        let mut w4 = ground_tall();
+        w4.moon_phase = 4;
+        let c4 = night_ctx_flags(&w4, false, false);
+        let mut found = false;
+        for seed in 1..2000u64 {
+            let at0 = outcome(&c0, seed);
+            let at4 = outcome(&c4, seed);
+            if matches!(at0, Some((NpcKind::Zombie, _)))
+                && matches!(at4, Some((NpcKind::DemonEye, _)))
+            {
+                found = true;
+                break;
+            }
+        }
+        assert!(found, "no seed isolates the moon-phase arm");
+    }
+
+    #[test]
+    fn hardmode_night_yields_the_wandering_eye() {
+        // `:4551-4558`: hardmode eyes take 133 on the 1/3 roll.
+        let w = ground_tall();
+        let c = night_ctx_flags(&w, true, false);
+        let mut wandering = 0;
+        for seed in 1..3000u64 {
+            if matches!(outcome(&c, seed), Some((NpcKind::WanderingEye, _))) {
+                wandering += 1;
+            }
+        }
+        assert!(wandering > 0, "no wandering eye in the hardmode sweep");
+    }
+
+    #[test]
+    fn the_underground_ladder_only_slimes() {
+        // The worm/hardmode rolls consume, then every outcome falls to
+        // `GetBasicSlimeToSpawn(surface: false)` (NPC.cs:4846-4869).
+        let w = ground_tall();
+        let mut c = ctx(&w, 350.0 * 16.0, true);
+        c.flags.hard_mode = true;
+        let mut variants: Vec<SlimeVariant> = Vec::new();
+        let mut none_count = 0usize;
+        for seed in 1..800u64 {
+            match outcome_at(&c, seed, 350 * 16) {
+                Some((NpcKind::Slime, v)) => variants.push(v),
+                Some(other) => panic!("underground spawned {other:?}"),
+                None => none_count += 1,
+            }
+        }
+        assert!(none_count == 0, "{none_count} spawns failed to place");
+        assert!(variants.contains(&SlimeVariant::Blue));
+        assert!(variants.contains(&SlimeVariant::Red));
+        assert!(variants.contains(&SlimeVariant::Yellow));
+    }
+
+    #[test]
+    fn the_ladder_is_deterministic_per_seed() {
+        // Same seed, same outcome — the GetZombieSettings style roll rides
+        // the same stream, so the whole selection replays identically.
+        let w = ground_tall();
+        let c = night_ctx_flags(&w, false, false);
+        for seed in 1..200u64 {
+            assert_eq!(outcome(&c, seed), outcome(&c, seed), "seed {seed}");
+        }
+    }
+
     fn ctx_at<'a>(w: &'a World, day: bool) -> SpawnContext<'a> {
         SpawnContext {
             world: w,
@@ -725,6 +986,7 @@ mod tests {
             nearby_active_npcs: 0.0,
             town_npcs: 0,
             day_time: day,
+            player_life_max: 100,
             flags: SpawnFlags::default(),
         }
     }
@@ -895,6 +1157,7 @@ mod tests {
                     nearby_active_npcs: 0.0,
                     town_npcs: 0,
                     day_time: false,
+                    player_life_max: 100,
                     flags: SpawnFlags {
                         moon_event: true,
                         ..SpawnFlags::default()

@@ -32,7 +32,7 @@ an agent needs before touching code.
 | Underground backgrounds (`Main.DrawBackground` family) | `render/bg.rs` |
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`; the 60 Hz tick in `world_sim/player.rs` |
-| NPCs, spawning, projectiles | `npc.rs`, `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
+| NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `registry.rs`, `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Liquids: flow sim, draw cache, waterfalls | `tr-core/src/liquid.rs`, `liquid_draw.rs`, `waterfall/` |

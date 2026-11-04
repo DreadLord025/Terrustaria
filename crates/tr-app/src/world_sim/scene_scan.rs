@@ -72,7 +72,18 @@ pub(crate) fn scan_scene_at(
     // `AddPlayerEffects` (`SceneMetrics.cs:747`): the local player's
     // shimmering flag rides the metrics (`shimmerWet` = the center tile).
     metrics.player_shimmering = player_shimmering;
-    metrics.calculate_zones(world.world_surface, world.height, raining, sandstorm_happening);
+    // `CalculateZones`' `ZoneUnderworldHeight`/`ZoneBeach` terms
+    // (`SceneMetrics.cs:674,691`): `Main.UnderworldLayer` is `maxTilesY - 200`
+    // (`Main.cs:2790`, `spawner::UNDERWORLD_LAYER`).
+    metrics.calculate_zones(
+        world.world_surface,
+        world.height - 200,
+        world.rock_layer,
+        world.width,
+        world.height,
+        raining,
+        sandstorm_happening,
+    );
     metrics
 }
 
@@ -257,6 +268,9 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // The graphics gates follow the live menu toggles (`TR_*` pins override).
     filter_driver.sync_settings(settings);
     filter_driver.apply_visuals(&metrics, scene_state, &inputs);
+    // `Main.SceneMetrics` persists per frame (`Main.cs:1789`); the ambience
+    // gates read its zone flags from the stored copy.
+    app.scene_metrics = metrics;
 }
 
 #[cfg(test)]
