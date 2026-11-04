@@ -928,6 +928,17 @@ impl Npc {
         }
     }
 
+    /// The contact overlap test (`contact`'s AABB) as a pure read —
+    /// `Player.StatusFromNPC`'s call site (`Player.cs:31425`) runs the
+    /// per-NPC debuff rolls on the same touch branch.
+    pub fn touches(&self, player: &Player) -> bool {
+        let (w, h) = self.size();
+        self.x < player.x + crate::player::WIDTH
+            && self.x + w > player.x
+            && self.y < player.y + crate::player::HEIGHT
+            && self.y + h > player.y
+    }
+
     fn contact(&self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH

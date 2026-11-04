@@ -58,6 +58,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
+    // `Player.ItemCheck`'s `!frozen && !webbed` gate (`Player.cs:3381`): a
+    // frozen or webbed player cannot swing, throw, mine or place.
+    if app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.frozen || p.webbed)
+    {
+        app.edit_target = None;
+        app.mine_target = None;
+        app.mine_timer = 0.0;
+        return;
+    }
     let m = app.mouse_pos;
     let hud_top = screen.y - 96.0;
     if m.x < 0.0

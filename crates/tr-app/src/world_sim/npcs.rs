@@ -19,6 +19,24 @@ fn dot_death_text(pending: Option<DotDeath>) -> &'static str {
     pending.map_or("was slain...", crate::death::death_text_for)
 }
 
+/// `Player.StatusFromNPC` (`Player.cs:22333`), the black-slime row `:22591`:
+/// `npc.type == 1 && npc.netID == -6` rolls `Next(4) == 0` for 900 ticks of
+/// Darkness on touch. The roll rides the item stream — the port's
+/// `Main.rand` stand-in (the M4-LOOT convention).
+pub(crate) fn black_slime_darkness_touch(
+    slime: &Npc,
+    player: &mut crate::player::Player,
+    item_rng: &mut u64,
+) {
+    if slime.kind == NpcKind::Slime
+        && slime.slime == SlimeVariant::Black
+        && slime.touches(player)
+        && rand01(item_rng) < 0.25
+    {
+        player.buffs.add_buff(22, 900);
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     app.npc_timer -= dt;
@@ -31,6 +49,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(player) = player {
             for n in npcs.iter_mut() {
                 n.update(world, player, step);
+                black_slime_darkness_touch(n, player, &mut app.item_rng);
             }
         }
     });
@@ -248,6 +267,58 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tr_core::World;
+
+    #[test]
+    fn black_slime_darkness_touch_rolls_the_item_stream() {
+        // `Next(4) == 0` ≈ `rand01 < 0.25`: a crafted seed pins both
+        // outcomes; a non-black slime never rolls (the stream state proves
+        // it — the deny seed under the blue slime leaves the rng untouched).
+        let mut world = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 40..800 {
+                let i = world.index(x, y);
+                world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        world.compute_column_surface();
+        let mut player = crate::player::Player::spawn(&world);
+        let px = player.x;
+        let py = player.y;
+        let mut black =
+            Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Black)
+                .expect("the surface spawns a black slime");
+        black.x = px;
+        black.y = py;
+        // The first rand01 of seed 1 — under the 0.25 gate?
+        let mut rng = 1u64;
+        let first = rand01(&mut rng);
+        black_slime_darkness_touch(&black, &mut player, &mut 1u64);
+        assert_eq!(
+            player.buffs.active_types().contains(&22),
+            first < 0.25,
+            "seed 1 first roll {first}"
+        );
+        // A seed whose first roll is >= 0.25 denies the grant.
+        let mut deny_seed = 2u64;
+        while rand01(&mut deny_seed) < 0.25 {
+            deny_seed += 1;
+        }
+        let mut player2 = crate::player::Player::spawn(&world);
+        black_slime_darkness_touch(&black, &mut player2, &mut deny_seed);
+        assert!(!player2.buffs.active_types().contains(&22));
+        // The stream advances only when the touch rolls (a blue slime skips
+        // the roll entirely — the same seed stays put).
+        let blue = Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Blue)
+            .unwrap();
+        let mut untouched = 7u64;
+        black_slime_darkness_touch(&blue, &mut player, &mut untouched);
+        assert_eq!(untouched, 7);
+    }
 
     #[test]
     fn dot_death_text_selects_table_over_stub() {

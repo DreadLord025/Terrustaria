@@ -453,7 +453,16 @@ impl App {
                 let sky_uv = atlas
                     .as_ref()
                     .and_then(|a| assets::Lookups::sheet_uv(a, "Background_0"));
-                let style = LightStyle::for_mode(*light_mode);
+                let mut style = LightStyle::for_mode(*light_mode);
+                // `Lighting.UpdateGlobalBrightness` (`Lighting.cs:108-116`):
+                // the Darkness debuff's `blind` flag drops GlobalBrightness
+                // 1.2 → 1.0 while it lasts.
+                if player
+                    .as_ref()
+                    .is_some_and(|p: &crate::player::Player| p.blind)
+                {
+                    style.brightness = 1.0;
+                }
                 // Snap the render camera so integer world coordinates land on whole
                 // screen pixels at any zoom. With a fractional camera, nearest-neighbour
                 // sampling makes every tile texture crawl sub-pixel as the camera moves

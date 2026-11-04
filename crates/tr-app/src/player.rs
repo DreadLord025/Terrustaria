@@ -102,6 +102,22 @@ pub struct Player {
     pub respawn_timer: i32,
     /// The jump-input edge state for the dead-skip roll.
     prev_jump_input: bool,
+    /// The `UpdateBuffs`-derived debuff flags (`ResetEffects` clears,
+    /// `Player.cs:18640-18720`; the per-slot derivation `:10039-10061` and
+    /// the Weak/Webbed/Darkness rows). Movement reads `slow`/`chilled` as
+    /// the `strongestMoveSpeedDebuff` tiers (`:25945-25953`), `frozen`/
+    /// `webbed` lock the controls and the item use (`:3381`), `blind` drops
+    /// `Lighting.GlobalBrightness` 1.2 → 1 (`Lighting.cs:112`).
+    pub slow: bool,
+    pub chilled: bool,
+    pub frozen: bool,
+    pub webbed: bool,
+    pub blind: bool,
+    /// The per-slot Weak count — `meleeDamage -= 0.051f` and
+    /// `moveSpeed -= 0.1f` per slot (`Player.cs:11873-11878`); the
+    /// `statDefense -= 4` half has no player-defense consumer yet
+    /// (M3-EQUIP-3) and rides `weak_stacks` until it lands.
+    pub weak_stacks: i32,
     /// Top-left of the 20x42 hitbox, world pixels.
     pub x: f32,
     pub y: f32,
@@ -228,6 +244,12 @@ impl Player {
             dead_time: 0,
             respawn_timer: 0,
             prev_jump_input: false,
+            slow: false,
+            chilled: false,
+            frozen: false,
+            webbed: false,
+            blind: false,
+            weak_stacks: 0,
             melee_crit: 4,
             ranged_crit: 4,
             magic_crit: 4,
@@ -509,6 +531,15 @@ impl Player {
         self.prev_y = self.y;
         self.prev_gfx_off_y = self.gfx_off_y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
+        // `Player.Update`'s frozen/webbed control lock: the frozen flag
+        // zeroes the movement controls (`Player.cs:10057`'s flag gates the
+        // run keys), the webbed one zeroes velocity outright (the scan
+        // above). Gravity still applies to a frozen player.
+        let input = if self.frozen || self.webbed {
+            PlayerInput::default()
+        } else {
+            input
+        };
         // The run keys ride on the player like the C#'s `controlLeft`/`controlRight`
         // (input struct → fields early in `Player.Update`).
         self.control_left = input.left;
@@ -539,6 +570,46 @@ impl Player {
         self.acc_run_speed = self.max_run_speed;
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
+        // `Player.ResetEffects` + `UpdateBuffs`' slot scan (`Player.cs:18640/
+        // :9855`, the debuff rows `:10039-10061`, Weak `:11873-11878`, Webbed
+        // `:11865-11883`, Darkness→blind `:9969-9971`): the flags derive per
+        // slot, Weak's stat mods subtract per slot. The melee base recalc
+        // (`UpdateDamageRecalc`) has no other ported modifier yet, so the
+        // reset stands in for it (deviation until M3-EQUIP-3).
+        self.slow = false;
+        self.chilled = false;
+        self.frozen = false;
+        self.webbed = false;
+        self.blind = false;
+        self.weak_stacks = 0;
+        self.melee_damage = 1.0;
+        for bt in self.buffs.active_types() {
+            match bt {
+                22 => self.blind = true,   // `BuffID.Darkness`
+                32 => self.slow = true,    // `BuffID.Slow`
+                33 => {
+                    self.weak_stacks += 1; // `BuffID.Weak`
+                    self.melee_damage -= 0.051;
+                    self.move_speed -= 0.1;
+                }
+                46 => self.chilled = true, // `BuffID.Chilled`
+                47 => self.frozen = true,  // `BuffID.Frozen`
+                149 => self.webbed = true, // `BuffID.Webbed`
+                _ => {}
+            }
+        }
+        if self.slow {
+            self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.5);
+        }
+        if self.chilled {
+            self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.75);
+        }
+        if self.webbed {
+            // `:11866-11872`: velocity zeroed (airborne keeps a 1e-6 fall),
+            // jump height 0, gravity 0 — the player hangs in the web.
+            self.vx = 0.0;
+            self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
+        }
         self.move_speed *= self.strongest_move_speed_debuff;
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
@@ -593,7 +664,11 @@ impl Player {
         } else {
             MAX_FALL
         };
-        self.vy = (self.vy + gravity).min(fall_cap);
+        // Webbed sets `this.gravity = 0f` (`Player.cs:11878`) — the fall
+        // integration does not run while the player hangs in the web.
+        if !self.webbed {
+            self.vy = (self.vy + gravity).min(fall_cap);
+        }
         self.vy = self.vy.max(if in_liquid {
             -(MAX_FALL / 3.0)
         } else {
