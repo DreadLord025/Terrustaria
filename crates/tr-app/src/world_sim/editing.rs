@@ -365,6 +365,21 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     }
     app.request_edit(tx, ty, 0, 0);
     app.liquids.wake_around(&app.world, tx, ty, 3);
+    // `WorldGen.TileFrame`'s falling check (`WorldGen.cs:81380`): the tile
+    // above the break loses its support and the falling kind spawns the
+    // sandfall projectile (`SpawnFallingBlockProjectile`, `:86039-86090`).
+    if let Some(fall) = tr_core::falling::check_falling(&app.world, tx, ty - 1) {
+        if let Some(t) = app.world.tile_mut(tx, ty - 1) {
+            *t = Default::default();
+        }
+        let _ = app.projectiles.spawn_falling(
+            fall.tile_kind,
+            fall.proj_kind,
+            fall.damage,
+            fall.x,
+            fall.y,
+        );
+    }
     app.world_key = None;
 }
 

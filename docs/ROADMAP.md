@@ -802,7 +802,8 @@ M7-TE-1 TileEntity framework + 11 TEs.
 
 **C#** `GameContent/ShimmerHelper.cs` + `ShimmerTransforms.cs` + `ShimmerUnstuckHelper.cs`,
 `ExtractinatorHelper.cs`, `WorldGen` falling/growth parts, `DoorOpeningHelper.cs`,
-`PlayerSleepingHelper.cs`, `PlayerSittingHelper.cs` · **Rust** ⬜ · ⬜.
+`PlayerSleepingHelper.cs`, `PlayerSittingHelper.cs` · **Rust** `tr-core/src/falling.rs` ✅
+(falling blocks — M7-FALL-1) · 🟡.
 
 - Shimmer items: `shimmerTime += 0.01/tick` (`WorldItem.cs:518`); chain → coin
   transform → `ShimmerTransformToItem` (tile-139 trophies → 5538/5579/5638/5639/576;
@@ -819,6 +820,11 @@ M7-TE-1 TileEntity framework + 11 TEs.
   {2674, 2006, 2002, 2675}.
 - Falling blocks: set {53, 234, 112, 116, 224, 123, 330-333, 495}; SP velocity 0.41, MP
   dedupe 60 ticks; damage per type (sand→proj 56 dmg 10) (`WorldGen.cs:86514-86612`).
+  ✅ landed — `tr-core/src/falling.rs` (the trigger set, `GetSandfallProjData`,
+  `BlockBelowMakesSandFall`, `AllowsSandfall`) + the flight in `projectile.rs`
+  (`falling_tile`, the 0.41 gravity with the position integration, the landing places
+  the tile back at the box center); the break hook in `world_sim/editing.rs`. The MP
+  dedupe is SP-only here (no MP layer) — ANALYSIS "Falling blocks (M7-FALL-1)".
 - Growth ticks (`UpdateWorld` 71495): overground `3e-5·tiles` per tick (×2 notTheBees),
   underground `1.5e-5`, ×1.5 in rain, rate cap 24; trees `Next(20)` per update (gem
   saplings `Next(5)`); cactus water-limit box; herbs stage frames by time-of-day/rain/
@@ -1367,7 +1373,7 @@ section in brackets before starting a row.
 | M7-SHIMMER-1 | `M7-SHIMMER-1-transforms` | shimmer [20] |
 | M7-GROWTH-1 | `M7-GROWTH-1-ticks` | growth [20] |
 | M7-EXTRACT-1 | `M7-EXTRACT-1-extractinator` | extractinator [20] |
-| M7-FALL-1 | `M7-FALL-1-falling-blocks` | sand/silt physics [20] |
+| ✅ M7-FALL-1 | `M7-FALL-1-falling-blocks` | done 2026-11-04: `tr-core/src/falling.rs` — the `TileID.Sets.Falling` set {53, 234, 112, 116, 224, 123, 330-333, 495} (`WorldGen.cs:86039-86090`'s trigger), `GetSandfallProjData` (the kind→(proj, damage) map, `:86514-86570` — the sand default (31, 10), the snow variants damage 0), `BlockBelowMakesSandFall` (`:86585-86604` — the inactive below, or the two-below inactive + non-solid below, or the blend 165), `AllowsSandfall` (the chest/sensor kinds above hold the block, `:86612-86624`); the flight in `tr-app/src/projectile.rs` — `falling_tile`, `spawn_falling`, the per-sub-step `velocity.Y += 0.41f` (AI_010 `ai[0] == 1f`) with the position integration and the cap 10, the landing when the box's bottom edge enters a solid tile → the tile placed back at the box center (`can_place_back`'s free-spot check) and the projectile killed; the break hook in `world_sim/editing.rs` (the break spawns the fall of the tile above via `check_falling` + the `tileCache.ClearTile()` clear) — 12 tests; the MP 60-tick dedupe and the projectile-vs-tile collision nuances = SP-layer notes (ANALYSIS "Falling blocks (M7-FALL-1)") |
 | M7-FISH-1..2 | `M7-FISH-1-engine` … | fishing [21] |
 | M7-PYLON-1 | `M7-PYLON-1-pylons` | pylons [15] |
 | M7-INTERACT-1 | `M7-INTERACT-1-doors-beds` | doors/beds/sitting [20] |
