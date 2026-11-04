@@ -125,6 +125,16 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Wandering Eye",
     },
+    // The town NPCs unlock by chat/proximity (`TownNPCUICollectionInfoProvider`)
+    // — the quick-unlock shape stands in for it.
+    BestiaryEntryDef {
+        credit_id: "Guide",
+        net_id: 22,
+        kind: NpcKind::Guide,
+        variant: None,
+        quick_unlock: true,
+        name: "Guide",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

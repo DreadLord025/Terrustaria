@@ -100,6 +100,7 @@ pub(crate) struct NpcAssets {
     pub(crate) eye: Option<BgTex>,
     pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
+    pub(crate) guide: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -109,6 +110,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eye: sky_tex(atlas, "NPC_2", None),
         wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
+        guide: sky_tex(atlas, "NPC_22", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -528,6 +530,14 @@ pub(crate) fn draw_npcs(
             ),
             NpcKind::Zombie => (
                 assets.zombie.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Guide rides the zombie's humanoid frame machine (the
+            // `Main.npcFrameCount[22]` = 3 rows of the same 38x48 shape).
+            NpcKind::Guide => (
+                assets.guide.as_ref(),
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
