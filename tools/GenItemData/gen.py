@@ -1681,6 +1681,9 @@ def build_rows(parsed, tables, ids, prices, is_food, names):
         ctx.methods = parsed
         ctx.row = stock_row()
         ctx.row["type"] = item_id
+        if item_id == 0:
+            # dispatcher `if (this.type == 0) this.stack = 0;` (Item.cs:48685-48688)
+            ctx.row["stack"] = 0
         method = route_method(item_id, item_id in is_food)
         if method:
             run_method(parsed[method], item_id, ctx, "Item.cs")
@@ -2372,30 +2375,41 @@ def emit_on_created(on_created):
 # values are hand-verified against the cited Item.cs lines (Phase 1 build).
 SPOT_CHECKS = [
     (2, [
-        ("tile", ("Some", 0), "Item.cs:1412 createTile = 0 (case 2, :1406-1415)"),
+        ("tile", ("Some", 0), "Item.cs:1413 createTile = 0 (case 2, :1406-1415)"),
         ("max_stack", 9999, "ResetStats CommonMaxStack = 9999 (Item.cs:49017, :49966)"),
-        ("use_time", 10, "Item.cs:1409 useTime = 10 (case 2)"),
-        ("use_animation", 15, "Item.cs:1408 useAnimation = 15 (case 2)"),
+        ("use_time", 10, "Item.cs:1410 useTime = 10 (case 2)"),
+        ("use_animation", 15, "Item.cs:1409 useAnimation = 15 (case 2)"),
         ("use_style", 1, "Item.cs:1407 useStyle = 1 (case 2)"),
-        ("auto_reuse", True, "Item.cs:1410 autoReuse = true (case 2)"),
+        ("auto_reuse", True, "Item.cs:1411 autoReuse = true (case 2)"),
         ("value", 0, "ResetStats stock (Item.cs:49030)"),
         ("material", True, "IsAMaterial via recipes (Recipe.cs:15224)"),
     ]),
     # Torch — case 8, Item.cs:1488-1500 (flame/noWet, holdStyle 1, tile 4).
     (8, [
-        ("tile", ("Some", 4), "Item.cs:1497 createTile = 4"),
-        ("hold_style", 1, "Item.cs:1493 holdStyle = 1"),
-        ("use_time", 10, "Item.cs:1492 useTime = 10"),
-        ("use_animation", 15, "Item.cs:1491 useAnimation = 15"),
+        ("tile", ("Some", 4), "Item.cs:1498 createTile = 4"),
+        ("hold_style", 1, "Item.cs:1495 holdStyle = 1"),
+        ("use_time", 10, "Item.cs:1494 useTime = 10"),
+        ("use_animation", 15, "Item.cs:1493 useAnimation = 15"),
     ]),
-    # Cobalt drill — case 385, Item.cs:5869-5876 (SD4 range): useTime 13,
-    # useAnimation 25, pick 110, rare 4; the drill epilogue x0.6 min 1
+    # Cobalt drill — case 385, Item.cs:5869-5881 (SD1 range: id <= 1000
+    # routes to SetDefaults1): useTime 13 (:5872), useAnimation 25 (:5871),
+    # pick 110 (:5878), rare 4 (:5881); the drill epilogue x0.6 min 1
     # (Item.cs:48884-48895) turns 13->7, 25->15.
     (385, [
-        ("use_time", 7, "Item.cs:5871 useTime = 13 -> x0.6 = 7"),
-        ("use_animation", 15, "Item.cs:5870 useAnimation = 25 -> x0.6 = 15"),
+        ("use_time", 7, "Item.cs:5872 useTime = 13 -> x0.6 = 7"),
+        ("use_animation", 15, "Item.cs:5871 useAnimation = 25 -> x0.6 = 15"),
         ("pick", 110, "Item.cs:5878 pick = 110"),
         ("rare", 4, "Item.cs:5881 rare = 4"),
+    ]),
+    # Architect Gizmo Pack — case 3061, Item.cs:27677-27683 (SD4 range:
+    # 3001-3989 routes to SetDefaults4): width 30, height 30, rare 5,
+    # value buyPrice(0,20) = 200000; backSlot 8 (:27683) is a named skip.
+    (3061, [
+        ("rare", 5, "Item.cs:27681 rare = 5"),
+        ("value", 200000, "Item.cs:27682 buyPrice(0,20) = 20 gold"),
+        ("width", 30, "Item.cs:27678 width = 30"),
+        ("height", 30, "Item.cs:27679 height = 30"),
+        ("accessory", True, "Item.cs:27680 accessory = true"),
     ]),
     (25, [
         ("tile", ("Some", 10), "Item.cs:1677-1687 createTile = 10"),
@@ -2406,12 +2420,12 @@ SPOT_CHECKS = [
         ("value", 200, "Item.cs:1684 value = 200"),
     ]),
     (42, [
-        ("damage", 10, "Item.cs:1872 damage = 10 (case 42, :1869-1890)"),
-        ("projectile", ("Some", 3), "Item.cs:1871 shoot = 3"),
-        ("shoot_speed", 9.0, "Item.cs:1871 shootSpeed = 9f (shuriken, case 42)"),
+        ("damage", 10, "Item.cs:1873 damage = 10 (case 42, :1869-1890)"),
+        ("projectile", ("Some", 3), "Item.cs:1872 shoot = 3"),
+        ("shoot_speed", 9.0, "Item.cs:1871 shootSpeed = 9f (case 42)"),
         ("use_time", 15, "Item.cs:1879 useTime = 15"),
         ("use_ammo", 0, "ResetStats stock (Item.cs:48996) — thrown, no ammo"),
-        ("class", "DamageClass::Ranged", "Item.cs:1713 ranged = true"),
+        ("class", "DamageClass::Ranged", "Item.cs:1883 ranged = true"),
     ]),
     (99, [
         ("damage", 8, "Item.cs:2553 damage = 8 (case 99, Iron Bow)"),

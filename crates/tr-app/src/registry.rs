@@ -278,9 +278,10 @@ mod tests {
         assert_eq!(crate::item::hold_style(6196), 0);
         assert!((crate::item::use_animation_secs(6196) - 0.25).abs() < 1e-6);
         assert_eq!(place_style(6196), 0);
-        // id 0 is the faithful row
+        // id 0 is the faithful row: SetDefaults(0) leaves stack 0
+        // (Item.cs:48685-48688)
         assert_eq!(name(0), "None");
-        assert_eq!(get(0).unwrap().stack, 1); // stock; dispatcher stack-0 rule applies at runtime
+        assert_eq!(get(0).unwrap().stack, 0);
     }
 
     #[test]

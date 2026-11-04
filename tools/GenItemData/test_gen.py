@@ -125,6 +125,7 @@ def test_dw_1_2_spot_sample():
     r = row(2772)
     stock = gen.stock_row()
     stock["name"] = "None"  # TurnToAir ⇒ SetDefaults(0): id 0's name rides along
+    stock["stack"] = 0      # and the dispatcher's type==0 stack rule (Item.cs:48685-48688)
     check(r == stock, "deprecated 2772 zeroed (TurnToAir)")
 
     print("ok DW-1.2 spot sample (9 ids + redirect + deprecated)")
