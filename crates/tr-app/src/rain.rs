@@ -84,10 +84,19 @@ pub struct Rain {
     wind: f32,
     /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
     cloud_bg: f32,
-    /// Remaining lightning flash brightness, 0..1.
+    /// `Main.lightning`: the flash brightness ramping up via `lightningSpeed`
+    /// and decaying via `lightningDecay`, 0..1.
     flash: f32,
-    /// Ticks until the next lightning bolt.
-    lightning_timer: f32,
+    /// `Main.thunderDelay`: ticks until the thunder sound.
+    thunder_delay: i32,
+    /// `Main.thunderDistance`: the thunder sound's world offset.
+    thunder_distance: i32,
+    /// `Main.lightningSpeed`: the flash rise rate.
+    lightning_speed: f32,
+    /// `Main.lightningDecay`: the flash fall rate.
+    lightning_decay: f32,
+    /// `Main.IsItStorming` (`Player/Wind` sticky flag) for this tick.
+    storming: bool,
     drops: Vec<Drop>,
     splashes: Vec<Splash>,
     sparkles: Vec<Sparkle>,
@@ -98,6 +107,27 @@ pub struct Rain {
     spawn_acc: f32,
     forced: Option<f32>,
     accum: f32,
+}
+
+/// The cross-system inputs of the vanilla lightning chain
+/// (`Main.UpdateWeather`, `Main.cs:58784-58829`): the vanilla reads them
+/// from Main statics.
+#[derive(Clone, Copy, Default)]
+pub struct ThunderInputs {
+    /// `Main.IsItStorming` (the Wind sticky flag).
+    pub storming: bool,
+    /// `Main.windSpeedTarget` (the tier thresholds 0.5/0.6/0.7).
+    pub wind_target: f32,
+    /// `Main.maxRaining` (the tier thresholds 0.6/0.7/0.8).
+    pub max_raining: f32,
+    /// `Main.atmo == 1f` — the atmosphere factor reached the surface band.
+    pub atmo: f32,
+    /// `SceneMetrics.TileCenter.Y < Main.rockLayer`.
+    pub above_rock_layer: bool,
+    /// `Main.GraveyardVisualIntensity` (the >= 0.9 graveyard strikes).
+    pub graveyard_intensity: f32,
+    /// `Main.shimmerAlpha` (mutes `NewLightning`).
+    pub shimmer_alpha: f32,
 }
 
 impl Rain {
@@ -126,7 +156,11 @@ impl Rain {
             wind,
             cloud_bg: 0.0,
             flash: 0.0,
-            lightning_timer: 0.0,
+            thunder_delay: 0,
+            storming: false,
+            thunder_distance: 0,
+            lightning_speed: 0.0,
+            lightning_decay: 0.008,
             drops: Vec::with_capacity(MAX_DROPS),
             splashes: Vec::with_capacity(128),
             sparkles: Vec::with_capacity(64),
@@ -181,11 +215,35 @@ impl Rain {
         (self.next_u64() >> 40) as f32 / (1u32 << 24) as f32
     }
 
+    /// `Main.NewLightning` (`Main.cs:58708-58733`): the tiered thunder delay,
+    /// the distance copy, and the flash rise/decay rates. `FlashyEffectsWorld`
+    /// is true for the non-drunk worlds the port generates; the shimmer mute
+    /// reads the live `shimmerAlpha`.
+    fn new_lightning(&mut self, shimmer_alpha: f32) {
+        if shimmer_alpha > 0.0 {
+            return;
+        }
+        self.thunder_delay = if self.range(0, 3) == 0 {
+            self.range(1, 31) as i32
+        } else if self.range(0, 2) == 0 {
+            self.range(31, 121) as i32
+        } else {
+            self.range(11, 61) as i32
+        };
+        self.thunder_distance = self.thunder_delay;
+        self.lightning_decay = self.range(0, 1000) as f32 / 1000.0 * 0.05 + 0.008;
+        self.lightning_speed = self.range(0, 1000) as f32 / 1000.0 * 0.05 + 0.05;
+    }
+
     fn range(&mut self, lo: u32, hi: u32) -> u32 {
         lo + (self.next_u64() % (hi.saturating_sub(lo).max(1) as u64)) as u32
     }
 
-    /// Fixed 60 Hz stepping, independent of frame rate.
+    /// Fixed 60 Hz stepping, independent of frame rate. `weather` carries
+    /// the cross-system inputs the vanilla lightning chain reads from Main
+    /// statics (`Main.IsItStorming`, `windSpeedTarget`, `maxRaining`, the
+    /// atmosphere factor, the rock-layer depth gate, the graveyard
+    /// intensity, `shimmerAlpha`).
     pub fn update(
         &mut self,
         world: &World,
@@ -194,20 +252,21 @@ impl Rain {
         zoom: f32,
         dt: f32,
         snow_biome: bool,
+        weather: ThunderInputs,
     ) {
         self.snow_mode = snow_biome;
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
         while acc >= step && steps < 12 {
-            self.tick(world, camera, screen, zoom);
+            self.tick(world, camera, screen, zoom, weather);
             acc -= step;
             steps += 1;
         }
         self.accum = acc.min(step * 12.0);
     }
 
-    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
+    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32, weather: ThunderInputs) {
         if let Some(f) = self.forced {
             self.intensity = f;
             self.target = f;
@@ -240,19 +299,78 @@ impl Rain {
         let delta = (target - self.cloud_bg).clamp(-0.005, 0.005);
         self.cloud_bg = (self.cloud_bg + delta).clamp(0.0, 1.0);
 
-        // Thunderstorm lightning above 0.65 intensity: a short white flash every
-        // 5-15 s. `Main.SpawnStormLightning` plays a bolt and sound; this pass draws
-        // the screen flash only.
-        if self.intensity > 0.65 {
-            self.lightning_timer -= 1.0;
-            if self.lightning_timer <= 0.0 {
-                self.flash = 1.0;
-                self.lightning_timer = self.range(300, 900) as f32;
+        // `Main.UpdateWeather`'s lightning chain (`Main.cs:58737-58829`): the
+        // thunder-sound delay counts down; the flash rises via
+        // `lightningSpeed` and decays via `lightningDecay`; at delay 0 the
+        // storming roll re-arms with the rain/wind tier multipliers.
+        if self.thunder_delay > 0 {
+            self.thunder_delay -= 1;
+            if self.thunder_delay == 0 {
+                // `Main.cs:58756-58766`: the thunder sound plays `thunderDistance
+                // * 15` px away (the audio cue is not in the port's 8-cue set).
+                self.thunder_distance = 0;
             }
-        } else {
-            self.lightning_timer = self.range(120, 360) as f32;
         }
-        self.flash = (self.flash - 0.09).max(0.0);
+        if self.lightning_speed > 0.0 {
+            // `:58771-58778`: the flash rise, capped at 1.
+            self.flash += self.lightning_speed;
+            if self.flash >= 1.0 {
+                self.flash = 1.0;
+                self.lightning_speed = 0.0;
+            }
+        } else if self.flash > 0.0 {
+            // `:58779-58783`: the flash decay.
+            self.flash -= self.lightning_decay;
+            if self.flash < 0.0 {
+                self.flash = 0.0;
+            }
+        } else if self.thunder_delay <= 0
+            && weather.above_rock_layer
+            && weather.atmo >= 1.0
+        {
+            // `:58784-58829`: the storming roll. The tier multipliers shrink
+            // the delay window with heavier rain and stronger wind targets.
+            if weather.storming {
+                let mut num3 = 600.0f32;
+                let mut num4 = 1600.0f32;
+                if weather.max_raining > 0.8 {
+                    num3 *= 0.6;
+                    num4 *= 0.8;
+                }
+                if weather.max_raining > 0.7 {
+                    num3 *= 0.7;
+                    num4 *= 0.9;
+                }
+                if weather.max_raining > 0.6 {
+                    num3 *= 0.8;
+                    num4 *= 0.95;
+                }
+                if weather.wind_target.abs() > 0.7 {
+                    num3 *= 0.6;
+                    num4 *= 0.8;
+                }
+                if weather.wind_target.abs() > 0.6 {
+                    num3 *= 0.7;
+                    num4 *= 0.9;
+                }
+                if weather.wind_target.abs() > 0.5 {
+                    num3 *= 0.8;
+                    num4 *= 0.95;
+                }
+                let num5 = self
+                    .range(num3 as u32, num4 as u32) as f32
+                    * ((1.0 - weather.max_raining + 1.0) / 2.0)
+                    * ((1.0 - weather.wind_target + 1.0) / 2.0);
+                if self.range(0, num5.max(1.0) as u32) == 0 {
+                    self.new_lightning(weather.shimmer_alpha);
+                }
+            } else if weather.graveyard_intensity >= 0.9
+                && self.range(0, 120) == 0
+            {
+                // `:58830-58833`: the graveyard lightning.
+                self.new_lightning(weather.shimmer_alpha);
+            }
+        }
 
         // Each tick advances the drops at the original 60 Hz velocity.
         self.update_drops(world, camera, screen, zoom);
@@ -572,7 +690,7 @@ mod tests {
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..n {
-            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false);
+            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false, ThunderInputs::default());
         }
     }
 
@@ -601,7 +719,7 @@ mod tests {
         let mut rain = Rain::with_forced(17, Some(1.0), false);
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..120 {
-            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true);
+            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true, ThunderInputs::default());
         }
         assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
         assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
@@ -614,12 +732,12 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..60 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true, ThunderInputs::default());
         }
         let snow = rain.snow_count();
         assert!(snow > 0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
@@ -632,16 +750,17 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
         }
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
         rain.flash = 1.0;
-        rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+        rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
+        rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
         assert!(rain.flash < 1.0 && rain.flash > 0.7);
         for _ in 0..30 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
         }
-        assert_eq!(rain.flash, 0.0, "flash must decay");
+        assert_eq!(rain.flash, 0.0, "flash must decay to zero");
     }
 
     #[test]

@@ -68,10 +68,13 @@ impl Rng {
     }
 
     /// `UnifiedRandom.Next(min, max)`: `min` inclusive, `max` exclusive.
+    /// The modulo takes the HIGH 32 bits — xorshift64's low bits are weak
+    /// when the stream is sampled every few calls (the wind walk), which
+    /// skewed the extreme-wind tier rolls toward the calm branch.
     fn next_int(&mut self, min: i32, max: i32) -> i32 {
         debug_assert!(max > min);
         let range = (max - min) as u64;
-        min + (self.next_u64() % range) as i32
+        min + ((self.next_u64() >> 32) % range) as i32
     }
 }
 
@@ -796,5 +799,27 @@ mod set_tests {
         assert_eq!(leaf_frequency(0.5), 200 * 7);
         assert_eq!(leaf_frequency(1.05), 20 * 7);
         assert_eq!(leaf_frequency(1.5), 10 * 7);
+    }
+}
+
+#[cfg(test)]
+mod rng_probe {
+    use super::*;
+    #[test]
+    fn probe_roll_distribution() {
+        let mut rng = Rng::new(0xDEAD_BEEF);
+        // Warm up like a real session (~50 walks x 3 rolls + resets).
+        for _ in 0..200 {
+            rng.next_int(-100, 101);
+            rng.next_int(0, 30);
+        }
+        let mut counts = [0u32; 30];
+        for _ in 0..3000 {
+            let r = rng.next_int(0, 30);
+            counts[r as usize] += 1;
+        }
+        let small = counts[0..13].iter().sum::<u32>();
+        eprintln!("small(<13)={} large(>=13)={}", small, 3000 - small);
+        eprintln!("counts: {:?}", &counts[..15]);
     }
 }
