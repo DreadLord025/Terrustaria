@@ -223,6 +223,49 @@ pub struct MusicEnv {
     pub blood_moon: bool,
     /// `Main._shouldUseWindyDayMusic` (`:12961`).
     pub windy_music: bool,
+    // — the M6-MUSIC-biome-tracks inputs (`:12686-12920`), ladder order —
+    /// The space band: `num5 < 1f` with
+    /// `num5 = (centerTileY - (65 + 10*(maxTilesX/4200)^2)) / (worldSurface/5)`
+    /// (`:12533-12534`).
+    pub space_band: bool,
+    /// The Lihzahd temple wall behind the scene centre (`:12690`, wall 87).
+    pub temple_wall: bool,
+    /// `SceneMetrics.ZoneDungeon` (`:12694`).
+    pub dungeon: bool,
+    /// The mushroom background: `bgStyle == 9` on the surface band
+    /// (`:12700`; `undergroundBackground` is pinned 0 in the port).
+    pub mushroom_bg: bool,
+    /// `SceneMetrics.ZoneCorrupt` (`:12702`).
+    pub corrupt: bool,
+    /// `SceneMetrics.ZoneCrimson` (`:12731`).
+    pub crimson: bool,
+    /// The corrupt/crimson split's blood count lead (`:12704`).
+    pub blood_leads_evil: bool,
+    /// `SceneMetrics.ZoneMeteor` (`:12744`).
+    pub meteor: bool,
+    /// `SceneMetrics.ZoneGraveyard` (`:12746`).
+    pub graveyard: bool,
+    /// `SceneMetrics.ZoneDesert` (`:12750`).
+    pub desert: bool,
+    /// `SceneMetrics.ZoneJungle` (`:12752`).
+    pub jungle: bool,
+    /// `SceneMetrics.ZoneSnow` (`:12792`).
+    pub snow: bool,
+    /// `SceneMetrics.ZoneHallow` (`:12816/:12875`).
+    pub hallow: bool,
+    /// `Main._shouldUseStormMusic` (`:12887`).
+    pub storm: bool,
+    /// `WorldGen.oceanDepths` at the screen centre (`:12896`).
+    pub ocean: bool,
+    /// The depth bands in pixels: `rockLayer*16 + screenHeight/2`,
+    /// `(rockLayer-50)*16 + screenHeight/2` (the jungle's hysteresis),
+    /// `worldSurface*16 + screenHeight/2` — plus the scene centre Y.
+    pub center_y: f32,
+    pub surface_band_px: f32,
+    pub rock_band_px: f32,
+    pub jungle_deep_band_px: f32,
+    /// `Main.cloudAlpha == 0 && !windy` — the town arm's quiet-sky gate.
+    pub quiet_sky: bool,
 }
 
 /// MS-ADPCM music player using the XACT wave bank.
@@ -391,10 +434,18 @@ impl MusicSystem {
             return;
         }
         // `flag23` (`:12199`): `TownNPCCount >= 3 && !ZoneShadowCandle` —
-        // the town day 46 / night 47 tracks (`:12670-12678`, the quiet
-        // gates need `cloudAlpha == 0` or an underground view). The port has
-        // no town NPCs yet (M4-TOWN).
-        if env.town_npcs >= 3 && !env.shadow_candle && !env.blood_moon {
+        // the town day 46 / night 47 tracks (`:12670-12678`) with their
+        // quiet-sky gates (`cloudAlpha == 0 && !windy`, or the underground
+        // view) and the graveyard cut. The port has no town NPCs yet
+        // (M4-TOWN).
+        let quiet_or_underground =
+            env.quiet_sky || env.underground;
+        if env.town_npcs >= 3
+            && !env.shadow_candle
+            && !env.graveyard
+            && quiet_or_underground
+            && (!env.blood_moon || env.day)
+        {
             self.new_music = if env.day { 46 } else { 47 };
             return;
         }
@@ -408,7 +459,85 @@ impl MusicSystem {
             self.new_music = 36;
             return;
         }
+        // `:12686`: the space band (`num5 < 1f`).
+        if env.space_band {
+            self.new_music = if env.day { 42 } else { 15 };
+            return;
+        }
+        // `:12690`: the Lihzahd temple wall (87).
+        if env.temple_wall {
+            self.new_music = 26;
+            return;
+        }
+        // `:12694`: the dungeon zone.
+        if env.dungeon {
+            self.new_music = 23;
+            return;
+        }
+        // `:12700`: the mushroom background (the surface band; the port's
+        // `undergroundBackground` is pinned 0).
+        if env.mushroom_bg {
+            self.new_music = 29;
+            return;
+        }
+        // `:12702-12742`: the evil biomes — the corrupt arm splits on the
+        // crimson lead, the underground/surface halves pick 33/10/8/16.
+        if env.corrupt {
+            if env.crimson && env.blood_leads_evil {
+                self.new_music = if env.underground { 33 } else { 16 };
+            } else if env.underground {
+                self.new_music = 10;
+            } else {
+                self.new_music = 8;
+            }
+            return;
+        }
+        if env.crimson {
+            self.new_music = if env.underground { 33 } else { 16 };
+            return;
+        }
+        // `:12744-12751`: the meteor and the graveyard.
+        if env.meteor {
+            self.new_music = 2;
+            return;
+        }
+        if env.graveyard {
+            self.new_music = 53;
+            return;
+        }
+        // `:12750` (the UG-desert arm sits constants-off — the sandstone
+        // wall sets the port does not carry yet); `:12751`: the desert.
+        if env.desert {
+            self.new_music = 21;
+            return;
+        }
+        // `:12752-12791`: the jungle — the non-remix arm with the 54 band's
+        // 50-tile hysteresis above the rock layer.
+        if env.jungle {
+            if env.center_y > env.rock_band_px {
+                self.new_music = 54;
+            } else if self.new_music == 54 && env.center_y > env.jungle_deep_band_px {
+                self.new_music = 54;
+            } else if env.storm && env.center_y < env.surface_band_px {
+                self.new_music = 52;
+            } else if env.day {
+                self.new_music = 7;
+            } else {
+                self.new_music = 55;
+            }
+            return;
+        }
+        // `:12792-12811`: the snow — underground 20, surface 14.
+        if env.snow {
+            self.new_music = if env.underground { 20 } else { 14 };
+            return;
+        }
         if env.underground {
+            // `:12816-12821`: the hallow keeps its own underground track.
+            if env.hallow {
+                self.new_music = 11;
+                return;
+            }
             // `Main.cs:12830`: alternate Underground (4) / UndergroundAlt (31).
             if self.ug_music == 0 {
                 self.ug_music = 4;
@@ -429,6 +558,36 @@ impl MusicSystem {
                 }
             }
             self.new_music = self.ug_music;
+            return;
+        }
+        // `:12875-12894`: the surface fallthrough — the daytime hallow, then
+        // the storm pair (blood 2, else the storm track 52).
+        if env.day && env.hallow {
+            if env.storm {
+                self.new_music = 52;
+            } else if env.rain {
+                self.new_music = 19;
+            } else if env.windy_music {
+                self.new_music = 44;
+            } else {
+                self.new_music = 9;
+            }
+            return;
+        }
+        if env.storm {
+            self.new_music = if env.blood_moon { 2 } else { 52 };
+            return;
+        }
+        // `:12896-12915`: the ocean bands — blood 2, the town pair, else the
+        // ocean day 22 / night 43.
+        if env.ocean {
+            if env.blood_moon {
+                self.new_music = 2;
+            } else if env.town_npcs >= 3 && !env.shadow_candle {
+                self.new_music = if env.day { 46 } else { 47 };
+            } else {
+                self.new_music = if env.day { 22 } else { 43 };
+            }
             return;
         }
         // The surface tail (`:12925-12986`): night — blood moon 2, rain 19,
@@ -577,6 +736,26 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
+            space_band: false,
+            temple_wall: false,
+            dungeon: false,
+            mushroom_bg: false,
+            corrupt: false,
+            crimson: false,
+            blood_leads_evil: false,
+            meteor: false,
+            graveyard: false,
+            desert: false,
+            jungle: false,
+            snow: false,
+            hallow: false,
+            storm: false,
+            ocean: false,
+            center_y: 0.0,
+            surface_band_px: 1000.0,
+            rock_band_px: 2000.0,
+            jungle_deep_band_px: 1500.0,
+            quiet_sky: true,
         }
     }
 
@@ -652,6 +831,101 @@ mod tests {
         e.windy_music = true;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 44);
+    }
+
+    #[test]
+    fn the_biome_ladder_matches_the_source_order() {
+        // The dungeon/mushroom/corrupt/meteor/graveyard/desert run in front
+        // of the jungle/snow arms (`:12694-12811`), and the underground gate
+        // keeps its hallow arm.
+        let mut m = system();
+        let mut e = env(true);
+        e.dungeon = true;
+        e.corrupt = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 23);
+        let mut m = system();
+        let mut e = env(true);
+        e.mushroom_bg = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 29);
+        let mut m = system();
+        let mut e = env(true);
+        e.corrupt = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 10);
+        let mut m = system();
+        let mut e = env(true);
+        e.corrupt = true;
+        e.crimson = true;
+        e.blood_leads_evil = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 16);
+        let mut m = system();
+        let mut e = env(true);
+        e.meteor = true;
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 2);
+        let mut m = system();
+        let mut e = env(true);
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 53);
+        let mut m = system();
+        let mut e = env(true);
+        e.desert = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 21);
+        // The jungle surface day is 7, the deep band 54; the snow splits
+        // 14 surface / 20 underground.
+        let mut m = system();
+        let mut e = env(true);
+        e.jungle = true;
+        e.center_y = 500.0;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 7);
+        let mut m = system();
+        let mut e = env(true);
+        e.jungle = true;
+        e.center_y = 2500.0;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 54);
+        let mut m = system();
+        let mut e = env(true);
+        e.snow = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 14);
+        let mut m = system();
+        let mut e = env(true);
+        e.snow = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 20);
+        // The hallow keeps the underground gate; the storm pair and the
+        // ocean sit behind it (`:12816/:12875-12915`).
+        let mut m = system();
+        let mut e = env(true);
+        e.underground = true;
+        e.hallow = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 11);
+        let mut m = system();
+        let mut e = env(true);
+        e.storm = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 52);
+        let mut m = system();
+        let mut e = env(true);
+        e.ocean = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 22);
+        let mut m = system();
+        let mut e = env(false);
+        e.ocean = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 43);
     }
 
     #[test]

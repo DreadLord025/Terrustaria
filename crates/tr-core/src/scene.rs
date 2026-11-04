@@ -101,6 +101,17 @@ pub struct SceneMetrics {
     /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
     /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
     pub has_sunflower: bool,
+    /// `MeteorTileCount` — the meteorite brick (37) tiles (`:611`).
+    pub meteor_tile_count: i32,
+    /// `DungeonTileCount` — the brick families 41/43/44/481/482/483 (`:612`).
+    pub dungeon_tile_count: i32,
+    /// `ZoneMeteor` (`:678`).
+    pub zone_meteor: bool,
+    /// `ZoneGraveyard` (`:679`).
+    pub zone_graveyard: bool,
+    /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
+    /// scan driver (they read the centre tile's wall).
+    pub zone_dungeon: bool,
 }
 
 /// The `Player.SceneMetrics` aura read as a Copy snapshot — what
@@ -143,6 +154,16 @@ pub mod thresholds {
     pub const JUNGLE_TILE: i32 = 140;
     /// `ShimmerTileThreshold` (`SceneMetrics.cs:921`).
     pub const SHIMMER_TILE: i32 = 300;
+    /// `MeteorTileThreshold` (`SceneMetrics.cs:937`).
+    pub const METEOR_TILE: i32 = 75;
+    /// `DungeonTileThreshold` (`SceneMetrics.cs:938`).
+    pub const DUNGEON_TILE: i32 = 250;
+}
+
+/// `Main.wallDungeon` (`Main.cs:10596-10607`): the brick/background walls
+/// the dungeon zone requires behind the scan centre.
+pub fn is_dungeon_wall(wall: u16) -> bool {
+    matches!(wall, 7 | 8 | 9 | 94..=99)
 }
 
 impl SceneMetrics {
@@ -184,6 +205,11 @@ impl SceneMetrics {
             has_heart_lantern: false,
             has_star_in_bottle: false,
             has_sunflower: false,
+            meteor_tile_count: 0,
+            dungeon_tile_count: 0,
+            zone_meteor: false,
+            zone_graveyard: false,
+            zone_dungeon: false,
         }
     }
 
@@ -271,6 +297,14 @@ impl SceneMetrics {
             + self.count(234)
             + self.count(352)
             + sunflower_term;
+        // `SceneMetrics.cs:611-612`:
+        self.meteor_tile_count = self.count(37);
+        self.dungeon_tile_count = self.count(41)
+            + self.count(43)
+            + self.count(44)
+            + self.count(481)
+            + self.count(482)
+            + self.count(483);
         // `SceneMetrics.cs:625`:
         self.sand_tile_count = self.count(53)
             + self.count(112)
@@ -349,6 +383,9 @@ impl SceneMetrics {
         // `SceneMetrics.cs:675-676`:
         self.zone_snow = self.enough_tiles_for_snow();
         self.zone_desert = self.enough_tiles_for_desert();
+        // `SceneMetrics.cs:678-679`:
+        self.zone_meteor = self.meteor_tile_count >= thresholds::METEOR_TILE;
+        self.zone_graveyard = self.enough_tiles_for_graveyard();
         // `SceneMetrics.cs:691` via `WorldGen.oceanDepths` (`WorldGen.cs:4447`,
         // ported as [`ocean_depths`]):
         self.zone_beach = ocean_depths(
