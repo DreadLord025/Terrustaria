@@ -1234,7 +1234,8 @@ section in brackets before starting a row.
 | 🟡 M1.4-TO-2 | `M1.4-TO-2-chests` | chest tiles + CheckChest + locking — the cascade + chest placement landed with the umbrella; the chest stays a pure tile object (indices/item storage/locking = the M3-CHEST-UI seam) [2][13] |
 | 🟡 M1.4-TO-3 | `M1.4-TO-3-furniture` | Check3x2/3x3/6x3 family + anchors — Check1x2/2x1/3x2 + table/chair/workbench placement landed; the 3x3/6x3 furniture and the table sub-tile styles 13/25 wait for the full-registry generator [2] |
 | M1.4-TO-4 | `M1.4-TO-4-herbs-pots` | herbs/pots/alch/sunflower/piles [2][20] |
-| 🔄 M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles (`world_sim/editing.rs:158-165` — the cascade runs from every other break source; requested by the M1.4-TO report) [2] |
+| ✅ M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles — done 2026-11-04: the `!important` mining-branch gate removed (the former `world_sim/editing.rs:204-210`/`:213` at claim time — deleted by the fix; the old `:158-165` citation had drifted after the M2 merges), doors/chests/furniture reach `break_tile` with the full KillTile cascade + the object drop, cactus 80 and non-frame-important tiles unchanged; CanKillTile refusals stay unported (→ M1.4-TO-6); from the M1.4-TO plan (Notes) / ANALYSIS "Tile objects (M1.4-TO)" [2] |
+| M1.4-TO-6 | `M1.4-TO-6-cankilltile-refusals` | port the three `CanKillTile` refusals next to `WALL_UNBREAKABLE` (`tr-core/src/edit.rs:469`) — locked door type 10 (`WorldGen.cs:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`), the tile under a container (`:62259-62270`) — visible through LMB since TO-5 ungated the break [2] |
 
 ## Milestone 2 — player
 
@@ -1390,7 +1391,7 @@ section in brackets before starting a row.
 ## Recommended order of attack (updated)
 
 1. **Finish M1**: M1.5-LIGHT-3 (🔄 in flight) → M1.4-BG-19/20 (ambient skies /
-   ambience) → the M1.4-TO leftovers (TO-5 gate, TO-3 generator, TO-4) →
+   ambience) → the M1.4-TO leftovers (TO-6 CanKillTile, TO-3 generator, TO-4) →
    M1.5-LIQUID-3.
 2. **M2 combat floor**: M2-BUFF-3/4 (debuffs). The engines all landed (M4-DAMAGE,
    M2-BUFF-1/2, M2-COMBAT-1/2).

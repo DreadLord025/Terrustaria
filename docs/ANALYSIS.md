@@ -2236,9 +2236,29 @@ cites its builder chain. Deviations and seams:
 - The wooden recipes expand the `RecipeGroups.Wood`/`IronBar` requirement
   groups to concrete ids (Wood → 9, Iron Bar → 22; `Recipe.cs:610-616` /
   `:4738`) — the subset recipe table carries no group machinery (`craft.rs`).
-- LMB breaking of `frame_important` tiles (doors included) is still gated off
-  in `world_sim/editing.rs:158-165` (`!important`, cacti exempted) — the
-  cascade runs from every other break source; separate catalog line.
+- LMB breaking of `frame_important` tiles was gated off in
+  `world_sim/editing.rs` (the former `:204-210`/`:213` as of the M1.4-TO-5
+  claim — `!important`, cacti exempted; the earlier `:158-165` citation had
+  drifted after the M2 merges). Removed 2026-11-04 (M1.4-TO-5): vanilla's
+  mining chain has no `tileFrameImportant` check at all (grep over
+  `Player.cs` hits only `:40019`/`:40608`, both outside the mining chain —
+  `Player.cs:45656` → `PickTile :53757`), so doors/chests/furniture reach
+  `break_tile` through the mining branch with the full KillTile cascade and
+  the object drop. Cactus 80 keeps its old path (`check_object`
+  `_ => None`, the per-cell drop); the visible remainder is the missing
+  `CanKillTile` refusals (next bullet, M1.4-TO-6).
+- `CanKillTile` refusals are not ported (owner decision 2026-11-04): C#
+  `CanKillTile` (`WorldGen.cs:62219-62326`) refuses a locked door type 10
+  (`:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`) and the
+  tile under a container (`:62259-62270`); the port's `remove_tile` gates
+  only `active` + the wall (wall 350 via `WALL_UNBREAKABLE`,
+  `edit.rs:469`). With the LMB gate gone the gaps are visible through mining
+  — a locked door breaks free, a stocked chest breaks with its contents;
+  tracked as M1.4-TO-6 so the 1:1 fix is not lost.
+- The mining break carries no net messages: vanilla syncs the break/fail
+  with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
+  SP port has no replication for it (the same seam as the door message 19
+  above).
 - Placement does not run the KillTile cascade: `reframe_area` (and
   `frame_world`) leave `frame_important` tiles alone, so a floating object at
   placement does not pop although vanilla's `PlaceTile` → `SquareTileFrame`
@@ -2257,6 +2277,23 @@ byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
 differs exactly inside the door column (pixel_diff 1664 px, bbox
 (1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
 geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
+
+Verification (M1.4-TO-5, commit `52d5267`): the workspace suite is green
+(`test result: ok` ×7: 673+16+393+19 passed, 0 failed, `--skip
+migrates_version_2_kinds_to_item_ids`); the mining branch is covered by unit
+tests in `world_sim/editing.rs`
+(`test_DW_1_1_frame_important_door_breaks_through_the_mining_branch`,
+`test_DW_1_1_frame_important_chest_breaks_through_the_mining_branch`,
+`test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop`,
+`test_DW_1_2_non_frame_important_tile_still_breaks_as_before`,
+`test_DW_1_5_releasing_mine_down_resets_the_mine_state`,
+`test_DW_1_5_opening_the_inventory_resets_the_mine_state`, plus the torch
+edge case `torch_frame_important_kind_breaks_single_cell_with_its_item`);
+deterministic `TR_FILL` + LMB-break runs are SHA256-equal twins at zooms
+1.0/1.5/2.0 (`abf1ce09…`, `0ac90a0a…`, `3e4b56fd…`; the pre-fix run shows
+the no-break frame, `a4168a96…`), and pixel_diff against the pre-fix frame
+at zoom 1.0 differs exactly in the door column + the drop item (1064 px,
+bbox (1016,434)-(1053,495)).
 
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
