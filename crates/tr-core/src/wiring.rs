@@ -149,6 +149,10 @@ pub struct Wiring {
     /// `Wiring.cs:666-678`) — the pixel boxes' placement is M7-WIRE-2, the
     /// pass flip is kept for parity.
     pixel_box_triggers: HashMap<(i32, i32), u8>,
+    /// The object drops the actuation cascade produced (the
+    /// `SquareTileFrame(resetFrame: false)` inside `DeActive`/`ReActive`
+    /// popping unsupported objects). The app layer drains and spawns them.
+    actuation_drops: Vec<crate::edit::ObjectDrop>,
 }
 
 /// The multi-trigger count a wire cell carries when first reached
@@ -156,6 +160,23 @@ pub struct Wiring {
 const TO_PROCESS_COUNT: i32 = 4;
 /// `CheckMech`'s queue cap (`Wiring.cs:466`).
 const MAX_MECHS: usize = 999;
+
+/// `TileID.Sets.NotReallySolid` (`TileID.cs:592`) — the "solid" kinds that
+/// never gain the inactive state (doors 10 included).
+const NOT_REALLY_SOLID: [u16; 3] = [387, 388, 10];
+/// `DeActive`'s forced flag=false set (`Wiring.cs:3204-3212`): the vines and
+/// the other half-solid kinds that never actuate even though the C# counts
+/// them solid.
+const DEACTIVE_SOLID_EXCEPTIONS: [u16; 7] = [314, 379, 386, 387, 388, 389, 476];
+/// `TileID.Sets.PreventsActuationUnder` (`TileID.cs:569`): the tile kinds
+/// that must not sit on an actuated block — the chests, the dolls, the
+/// sensor family (an actuated support would pop them through
+/// `SquareTileFrame`).
+const PREVENTS_ACTUATION_UNDER: [u16; 11] = [21, 467, 26, 77, 88, 470, 475, 237, 597, 441, 468];
+/// `TileID.Sets.IsATreeTrunk` (`TileID.cs:487`).
+const IS_A_TREE_TRUNK: [u16; 12] = [5, 72, 583, 584, 585, 586, 587, 588, 589, 596, 616, 634];
+/// `TileID.Sets.Boulders` (`TileID.cs:504`) — 138 is the actuator itself.
+const BOULDERS: [u16; 10] = [138, 484, 664, 665, 711, 712, 713, 714, 715, 716];
 
 impl Wiring {
     pub fn new() -> Self {
@@ -387,6 +408,12 @@ impl Wiring {
     /// Drains the statue spawn requests computed by the statue triggers.
     pub fn take_statue_spawns(&mut self) -> Vec<StatueSpawn> {
         std::mem::take(&mut self.statue_spawns)
+    }
+
+    /// The object drops the actuation cascade produced (see
+    /// [`Self::actuation_drops`]).
+    pub fn take_actuation_drops(&mut self) -> Vec<crate::edit::ObjectDrop> {
+        std::mem::take(&mut self.actuation_drops)
     }
 
     /// Drains the teleport events computed by the last `TripWire`.
@@ -855,17 +882,149 @@ impl Wiring {
         }
     }
 
-    /// `Wiring.ActuateForced` (`Wiring.cs:389-407`), the single-tile core: the
-    /// actuated bit flips on tiles that carry an actuator. The multi-tile
-    /// region walk (chests, doors, `TileObjectData` frames) is M7-WIRE-3.
+    /// `Wiring.ActuateForced` (`Wiring.cs:407-416`): the forced toggle —
+    /// inactive → `ReActive`, active → `DeActive` (whose guards still
+    /// refuse the deactivation). The public gated twin `Actuate`
+    /// (`:391-403`) additionally requires the actuator bit.
     fn actuate_forced(&mut self, world: &mut World, i: i32, j: i32) {
-        let Some(t) = world.tile_mut(i, j) else {
+        let inactive = world
+            .tile(i, j)
+            .is_some_and(|t| t.flags & FLAG_INACTIVE != 0);
+        if inactive {
+            self.re_active(world, i, j);
+        } else {
+            self.de_active(world, i, j);
+        }
+    }
+
+    /// `Wiring.DeActive` (`Wiring.cs:3195-3222`): the guarded deactivation.
+    /// The tile must be active (the 226 Plantera bulb below the surface is
+    /// untouchable before the plant boss), be genuinely solid
+    /// (`NotReallySolid` and the {314, 379, 386-389, 476} exceptions are
+    /// out), and pass the placement rule: nothing that prevents actuation
+    /// sits directly above and `WorldGen.CanKillTile` allows it. On success
+    /// the inactive bit sets and `SquareTileFrame(resetFrame: false)` runs —
+    /// here the port's object-cascade slice, whose drops queue as events.
+    fn de_active(&mut self, world: &mut World, i: i32, j: i32) {
+        let Some(t) = world.tile(i, j) else {
             return;
         };
-        if t.flags & FLAG_ACTUATOR == 0 {
+        if !t.active() {
             return;
         }
-        t.flags ^= FLAG_INACTIVE;
+        // `Main.tile[i, j].type == 226 && j > worldSurface &&
+        // !NPC.downedPlantBoss` (`:3198`): the Plantera bulb guard. The port
+        // has no boss-progress flags yet (M5-HARDFORCE), so the bulb is
+        // always guarded below the surface.
+        if t.kind == 226 && j as f64 > world.world_surface {
+            return;
+        }
+        let mut flag =
+            crate::tiledata::TILE_SOLID.has(t.kind) && !NOT_REALLY_SOLID.contains(&t.kind);
+        if DEACTIVE_SOLID_EXCEPTIONS.contains(&t.kind) {
+            flag = false;
+        }
+        // `(!Main.tile[i, j - 1].active() ||
+        // (!TileID.Sets.PreventsActuationUnder[above] && CanKillTile(i, j)))`
+        // (`:3210-3211`).
+        let above_free = match world.tile(i, j - 1) {
+            Some(above) if above.active() => {
+                !PREVENTS_ACTUATION_UNDER.contains(&above.kind) && self.can_kill_tile(world, i, j)
+            }
+            _ => true,
+        };
+        if !flag || !above_free {
+            return;
+        }
+        if let Some(t) = world.tile_mut(i, j) {
+            t.flags |= FLAG_INACTIVE;
+        }
+        let drops = crate::edit::actuation_square_frame(world, i, j);
+        self.actuation_drops.extend(drops);
+    }
+
+    /// `Wiring.ReActive` (`Wiring.cs:3224-3232`): the unconditional
+    /// re-activation plus the same `SquareTileFrame(resetFrame: false)`.
+    fn re_active(&mut self, world: &mut World, i: i32, j: i32) {
+        if let Some(t) = world.tile_mut(i, j) {
+            t.flags &= !FLAG_INACTIVE;
+        }
+        let drops = crate::edit::actuation_square_frame(world, i, j);
+        self.actuation_drops.extend(drops);
+    }
+
+    /// `WorldGen.CanKillTile(i, j)` (`WorldGen.cs:70237-70330` for the
+    /// DeActive call site) — the anchored-tile slice: the bounds, the
+    /// inactive/air tiles refuse, wall 350 (the C#'s kill-protected echo
+    /// wall) refuses, the tree-trunk / cactus / chest / lantern anchors
+    /// above block, boulders (whose buried-chest scan `CheckBoulderChest`
+    /// is content-gated out — the port spawns no buried-chest boulders)
+    /// block, the locked door 10 refuses. The chest-inventory cases
+    /// (`CanDestroyChest`) pass: the port's chests hold no inventories yet
+    /// (M7-TE-2).
+    fn can_kill_tile(&self, world: &World, i: i32, j: i32) -> bool {
+        if i < 0 || j < 0 || i >= world.width || j >= world.height {
+            return false;
+        }
+        let Some(tile) = world.tile(i, j) else {
+            return false;
+        };
+        if !tile.active() {
+            return false;
+        }
+        if tile.wall == 350 {
+            return false;
+        }
+        // The anchor above: trees, cacti, chests and lanterns hold the tile.
+        if j >= 1 {
+            if let Some(above) = world.tile(i, j - 1) {
+                if above.active() {
+                    let kind = above.kind;
+                    if IS_A_TREE_TRUNK.contains(&kind)
+                        && tile.kind != kind
+                        && (above.frame_x != 66 || above.frame_y < 0 || above.frame_y > 44)
+                        && (above.frame_x != 88 || above.frame_y < 66 || above.frame_y > 110)
+                        && above.frame_y < 198
+                    {
+                        return false;
+                    }
+                    match kind {
+                        // 323 = the cactus: the base anchors the column.
+                        323 => {
+                            if tile.kind != kind && (above.frame_x == 66 || above.frame_x == 220) {
+                                return false;
+                            }
+                        }
+                        // 21/26/72/77/88/467/488 = the chest family.
+                        21 | 26 | 72 | 77 | 88 | 467 | 488 => {
+                            if tile.kind != kind {
+                                return false;
+                            }
+                        }
+                        // 80 = the hanging lantern: the anchor slots
+                        // `frameX / 18` in {0, 1, 4, 5} (`:70270-70278`).
+                        80 => {
+                            if tile.kind != kind {
+                                let num = above.frame_x / 18;
+                                if (0..=1).contains(&num) || (4..=5).contains(&num) {
+                                    return false;
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        // `TileID.Sets.Boulders[tile.type] && CheckBoulderChest(i, j)`
+        // (`:70280-70285`): the buried-chest scan is out of the port's
+        // content (see the doc comment).
+        if BOULDERS.contains(&tile.kind) {
+            return false;
+        }
+        // `case 10`: `WorldGen.IsLockedDoor` refuses (`:70286-70293`) — the
+        // port's doors carry no lock state yet (edit.rs), so the case passes.
+        true
     }
 }
 
@@ -1582,5 +1741,140 @@ mod statue_tests {
         let mut wiring = Wiring::new();
         wiring.trip_wire(&mut w, 9, 20, 1, 1);
         assert!(wiring.take_statue_spawns().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod actuation_tests {
+    //! The `DeActive`/`ReActive` actuation (`Wiring.cs:3195-3232`) and the
+    //! `CanKillTile` anchor slice (`WorldGen.cs:70237+`).
+
+    use super::*;
+    use crate::tile::{FLAG_ACTUATOR, FLAG_ACTIVE, FLAG_INACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// An actuator-carrying, wire-hit tile with a switch trigger to its
+    /// left, wired on its own cell (the colour is a header bit in the C#).
+    fn put_actuated(w: &mut World, x: i32, y: i32, kind: u16) {
+        put(w, x, y, kind);
+        let i = w.index(x, y);
+        w.tiles[i].flags |= FLAG_ACTUATOR;
+        w.wires.set(x, y, WireColor::Red, true);
+        put(w, x - 2, y, 135);
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+    }
+
+    fn trip(w: &mut World, x: i32, y: i32) -> Wiring {
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(w, x - 2, y);
+        wiring
+    }
+
+    #[test]
+    fn the_actuated_block_loses_and_regains_solidity() {
+        let mut w = world();
+        put_actuated(&mut w, 10, 20, 1);
+        let mut wiring = trip(&mut w, 10, 20);
+        assert!(
+            w.tile(10, 20).unwrap().flags & FLAG_INACTIVE != 0,
+            "`DeActive` set the inactive bit"
+        );
+        assert!(wiring.take_actuation_drops().is_empty());
+        // The re-trip runs `ReActive`.
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 20);
+        assert!(
+            w.tile(10, 20).unwrap().flags & FLAG_INACTIVE == 0,
+            "`ReActive` cleared the bit"
+        );
+    }
+
+    #[test]
+    fn the_not_really_solid_and_exception_kinds_refuse() {
+        // `NotReallySolid` {387, 388, 10} (`TileID.cs:592`) and the
+        // `DeActive` exception set {314, 379, 386-389, 476} (`:3204-3212`).
+        for kind in [10, 387, 314, 386, 476] {
+            let mut w = world();
+            put_actuated(&mut w, 10, 20, kind);
+            trip(&mut w, 10, 20);
+            assert!(
+                w.tile(10, 20).unwrap().flags & FLAG_INACTIVE == 0,
+                "kind {kind} never actuates"
+            );
+        }
+    }
+
+    #[test]
+    fn the_plantera_bulb_is_guarded_below_the_surface() {
+        // `:3198`: the 226 bulb below `Main.worldSurface` before the plant
+        // boss never actuates.
+        let mut w = world();
+        w.world_surface = 30.0;
+        put_actuated(&mut w, 10, 40, 226);
+        trip(&mut w, 10, 40);
+        assert!(
+            w.tile(10, 40).unwrap().flags & FLAG_INACTIVE == 0,
+            "the guarded bulb refuses"
+        );
+        // Above the surface the bulb actuates like anything else.
+        let mut w = world();
+        w.world_surface = 30.0;
+        put_actuated(&mut w, 10, 20, 226);
+        trip(&mut w, 10, 20);
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_INACTIVE != 0);
+    }
+
+    #[test]
+    fn the_tile_under_a_chest_never_actuates() {
+        // `PreventsActuationUnder` {21, ...} (`TileID.cs:569`): the chest
+        // above holds the block.
+        let mut w = world();
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 21);
+        trip(&mut w, 10, 21);
+        assert!(
+            w.tile(10, 21).unwrap().flags & FLAG_INACTIVE == 0,
+            "the chest blocks the actuation"
+        );
+    }
+
+    #[test]
+    fn the_tree_trunk_anchor_refuses_can_kill_tile() {
+        // `IsATreeTrunk` above (`:70243-70250`): the tile under a trunk
+        // cannot kill, so it cannot actuate.
+        let mut w = world();
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 5);
+        trip(&mut w, 10, 21);
+        assert!(w.tile(10, 21).unwrap().flags & FLAG_INACTIVE == 0);
+    }
+
+    #[test]
+    fn actuating_under_a_registered_object_pops_it() {
+        // The `SquareTileFrame(resetFrame: false)` tail: the work bench
+        // (18) on top of the actuated block loses its anchor and pops —
+        // the drop queues as an event (`registry::tile_drop(18)`).
+        let mut w = world();
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        put_actuated(&mut w, 10, 21, 1);
+        put(&mut w, 10, 20, 18);
+        put(&mut w, 11, 20, 18);
+        let mut wiring = trip(&mut w, 10, 21);
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_ACTIVE == 0, "the bench popped");
+        let drops = wiring.take_actuation_drops();
+        assert!(drops.iter().any(|d| d.tile_kind == 18), "the bench drop queued");
     }
 }

@@ -503,7 +503,9 @@ respawn rules, M4-REVENGE-1 coin-loss revenge.
   paint in inventory; single-instance projectiles block re-shoot; swing rate display
   `60/(useAnimation+reuseDelay+(!autoReuse))` (19490).
 
-**Tasks:** M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants), M3-ITEM-2 full use
+**Tasks:** ✅ M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants — 2026-11-04:
+all 6196 ids generated into `tr-app/src/itemdata.rs`, variants in `variants.rs`,
+conditions default false), M3-ITEM-2 full use
 styles, M3-ITEM-3 ammo system, M3-ITEM-4 mana & mana sickness, M3-ITEM-5 channel/reuseDelay,
 M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
 
@@ -793,6 +795,13 @@ priority chain.
 - **Hidden:** tile 226 (temple brick) actuator blocked pre-Plantera; gem-lock button
   frameX/36 == 4 mode; pixel boxes 424/445 with rotation filtering; mass wire cutter
   consumes item stacks.
+  ✅ landed — `DeActive`'s 226 guard (`Wiring.cs:3198`, the port's
+  `downedPlantBoss` always false = the strict state); the actuators render
+  and actuate: `DeActive`'s guard chain (`NotReallySolid`, the
+  {314, 379, 386-389, 476} exceptions, `PreventsActuationUnder`,
+  `CanKillTile`'s anchors) + the `SquareTileFrame(resetFrame: false)`
+  cascade; the wire overlay (`Main.DrawWires`) and the inactive ghost tint
+  (`actColor` ×0.4).
 
 **Tasks:** M7-WIRE-1 wiring engine, M7-WIRE-2 traps & statues, M7-WIRE-3 actuators
 (fold M3-ACTUATOR), M7-WIRE-4 logic gates & sensors, M7-WIRE-5 teleporters & pumps,
@@ -1280,7 +1289,7 @@ section in brackets before starting a row.
 | ✅ M3-CRAFT-recipes | `M3-CRAFT-recipes` | done 2026-11-03: a 7-recipe subset + can_craft/try_craft/adjacent_tiles (`craft.rs`) + the crafting panel on contexts 41/42/43 (the old 4/33 numbering was stale); follow-ups: the SetupRecipes generator, the dropped-item bridge, craft sound [11] |
 | M3-CRAFT-2 | `M3-CRAFT-2-groups-environment` | recipe groups + env flags + nearby chests [11] |
 | M3-CRAFT-3 | `M3-CRAFT-3-alchemy` | alchemy table 1/3 rule [11] |
-| 🔄 M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
+| ✅ M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
 | M3-ITEM-2 | `M3-ITEM-2-use-styles` | 16 use styles + body dispatch [10] |
 | M3-ITEM-3 | `M3-ITEM-3-ammo` | ammo system + not-consume rolls [10] |
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
@@ -1365,7 +1374,7 @@ section in brackets before starting a row.
 | --- | --- | --- |
 | ✅ M7-WIRE-1 | `M7-WIRE-1-engine` | done 2026-11-04: `tr-core/src/wiring.rs` — the four wire colours as a sparse `WireState` side table on `World` (the C# `sTileHeader` bits, `Tile.cs:623-657`; the packed `Tile` has no header), `TripWire`'s four colour passes (`Wiring.cs:525-620`), the `HitWire` BFS with `SkipWire`, the `_toProcess` multi-trigger counter (4 on seeds, 3 on enqueue, 0 through junction boxes 424/445) and the `[2, max-2]` bounds (`:837-995`), `HitWireSingle`'s device subset (the actuator toggle, tile-144 re-trigger, the 421/422 lamp swap), `HitSwitch`'s switch/lever/timer/wide-switch/gem-lock rect table (`:259-330`), `CheckMech`/`UpdateMech` (the 999 queue, the 60/180/300/30/15 timer periods, the 411 lamp-pair flip) — 9 tests; device entity effects (statues/traps/pumps/teleporters/cannons) = M7-WIRE-2, the multi-tile actuation = M7-WIRE-3 |
 | M7-WIRE-2 | `M7-WIRE-2-traps-statues` | traps & statues [19] |
-| M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
+| ✅ M7-WIRE-3 | `M7-WIRE-3-actuators` | done 2026-11-04: the multi-tile actuation in `tr-core/src/wiring.rs` — `ActuateForced` (`Wiring.cs:407-416`) drives `DeActive` (`:3195-3222`: the 226-bulb-below-surface pre-Plantera guard, `NotReallySolid` {387, 388, 10} (`TileID.cs:592`), the {314, 379, 386-389, 476} exceptions (`:3204-3212`), `PreventsActuationUnder` {21, 467, 26, 77, 88, 470, 475, 237, 597, 441, 468} (`TileID.cs:569`), the `CanKillTile` anchor slice — the tree trunks/cactus/chests/lantern 80 anchors above, wall 350, the boulder set with `CheckBoulderChest` content-gated out) and `ReActive` (`:3224-3232`), both closing with the `SquareTileFrame(resetFrame: false)` object cascade (`edit.rs::actuation_square_frame`, the drops drain as events); the consumers: `Collision`'s solid tests gained `!inActive` (`Collision.cs:445/:471/...`), the liquid solid tests read `nactive()` (`Liquid.cs:171/:236/:457`), the ghost draw `actColor` RGB ×0.4 (`Tile.cs:272-290`); the wire overlay `render/wires.rs` — `Main.DrawWires` (`Main.cs:58218-58701`) with the neighbour masks (+18/+36/+72/+144), the `WireNew` rows per colour, the `1/num7` overlap dimming, the 6 px inset strips, the actuator plate, the wall-87 pre-Golem visibility guard — 10 tests; the `HideWires`/builder-acc channels and the tile-423 special rect are fixed at the defaults (no wires UI/accessory yet — ANALYSIS "Actuation & wire rendering (M7-WIRE-3)") |
 | ✅ M7-WIRE-4 | `M7-WIRE-4-logic-gates` | done 2026-11-04: the logic gates in `wiring.rs` — `LogicGatePass`/`PokeLogicGate`/`CheckLogicGate` (`Wiring.cs:682-831`, `:380-386`): the lamp queue, the gate walk down the column, the lamp-stack count (`frameX == 18` = on, `== 36` = the overflow/broken mark), the six types by `frameY / 18` (AND/OR/NAND/NOR/XOR/XNOR — the C#'s case numbering: 0 AND, 1 OR, 2 NAND, 3 NOR, 4 XOR, 5 XNOR), the output write + the `_GatesNext` re-trip chaining (`_GatesDone` guard), the faulty-lamp random roll (`Main.rand` → the deterministic xorshift stream), the case-419 lamp toggle verbatim (`num50 = 18 → -18 → 0`); 6 tests (the six types, the chain, the faulty lamp, the overflow) — the logic sensors (tiles 593/594) = M7-WIRE-2 |
 | ✅ M7-WIRE-5 | `M7-WIRE-5-teleporters-pumps` | done 2026-11-04: the teleporter pads (tile 235 — the wall-87 guard, the two-pad registration with the halfBrick +0.5, the per-colour-pass reset), `Teleport()`'s reject rule + the 48×48 pad boxes (`Wiring.cs:3120-3189`), the events drained by the app layer (`world_sim/wiring.rs`: the player gated by `blockPlayerTeleportation`, the NPCs gated by lifeMax/boss), the pumps (142 in / 143 out — the 2×2 bodies SkipWire'd + registered, cap 19) and `XferWater` (`:475-520`) with the per-transfer liquid re-read (`:506` — the overflow continues into the next out tile); 7 tests |
 | ✅ M7-TE-1 | `M7-TE-1-tile-entities` | done 2026-11-04: `tr-core/src/tile_entities.rs` — the framework (the registration-order ids `TileEntitiesManager.cs:27-40`, the `ByID`/`ByPosition` books on `World.tile_entities`, `place`/`remove_at`) and the item-holding halves — ItemFrame 395 / WeaponsRack 471 / FoodPlatter 520 / HatRack 475 with the `ValidTile` frame checks and the `(type, prefix, stack)` + presence-bitsByte wire/save shapes (`TEItemFrame.cs:37-56`, `TEHatRack.cs:59-80`) — 6 tests; the behaviour halves (dummy/sensor/doll/pylon/anchors) and the food gate = M7-TE-2, persistence = M6-SAVE-1 |

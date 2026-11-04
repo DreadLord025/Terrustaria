@@ -210,11 +210,12 @@ pub(crate) fn draw_player(
     let swing = held.map_or(0.0, |(_, s)| s);
     // `Player.armor[0..3]`'s slot ids (`head`/`body`/`legs`, `Player.cs`): the
     // registry item → slot resolution the C# `Item.equipSlot` fields do at
-    // `SetDefaults`. 0 = the empty slot.
+    // `SetDefaults`. The generated slots are i16 with −1 = none
+    // (`Item.cs:48998-49000`); slot 0 is REAL (the Familiar set, ids 269-271).
     let [head_kind, body_kind, legs_kind] = armor;
-    let head_armor = registry::get(head_kind).map_or(0, |d| d.head_slot);
-    let body_armor = registry::get(body_kind).map_or(0, |d| d.body_slot);
-    let leg_armor = registry::get(legs_kind).map_or(0, |d| d.leg_slot);
+    let head_armor = registry::get(head_kind).map_or(-1, |d| d.head_slot);
+    let body_armor = registry::get(body_kind).map_or(-1, |d| d.body_slot);
+    let leg_armor = registry::get(legs_kind).map_or(-1, |d| d.leg_slot);
     let state = PlayerCompositeState {
         origin: [player.x - 10.0, player.y - 10.0],
         leg_frame: player.leg_frame,
