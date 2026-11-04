@@ -2344,7 +2344,7 @@ item 276 to place `CactusBlock` 188 (`TileID.CactusBlock = 188`), which
 emptied `by_tile(80)` and silently dropped the world-cactus break's item;
 `tile_drop`'s `80 => 276` case restores it (`KillTile_GetItemDrops`,
 `WorldGen.cs:64717-64720` — cases 80 and 188 both drop 276), commit
-`b4fff36`. Suite: `test result: ok` ×7 (747+16+431+19, 0 failed). Re-taken
+`423a503`. Suite: `test result: ok` ×7 (747+16+431+19, 0 failed). Re-taken
 on the merged state: break twins byte-equal at zooms 1.0/1.5/2.0
 (`6b613cb5…`, `c00e22e6…`, `9e7f6c85…` ×2 each; before `b6b4d136…`), and
 the matched-camera before/after diff at zoom 1.0 is again 910 px,
