@@ -35,10 +35,28 @@ use tr_render::sprite::SpriteRenderer;
 use crate::assets;
 use crate::npc::Npc;
 
-/// `ProjectileID.Shuriken = 3` (`ProjectileID.cs:560`) — the vanilla id the
-/// registry's generated rows carry (`itemdata.rs`); the C# `ProjectileID`
-/// mapping grows with M4-PROJ-2..11.
+/// The pool's kind ids are the C# `ProjectileID` values (`ProjectileID.cs`
+/// — the M4-PROJ-1 placeholder internal table was migrated to the verbatim
+/// ids; the shuriken 3 is the vanilla id the registry's generated rows
+/// carry, `itemdata.rs`).
 pub const SHURIKEN: u16 = 3;
+/// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
+pub const WOODEN_ARROW: u16 = 1;
+/// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
+pub const FLAME_ARROW: u16 = 2;
+/// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
+pub const MUSKET_BALL: u16 = 14;
+/// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
+/// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
+pub const TRAP_DART: u16 = 98;
+/// The Super Dart Trap's projectile (`Projectile.cs:2707-2716`).
+pub const TRAP_SUPERDART: u16 = 184;
+/// The Spear Trap's projectile (`Projectile.cs:2717-2727`).
+pub const TRAP_SPEAR: u16 = 185;
+/// The Spiky Ball Trap's projectile (`Projectile.cs:9330-9339`).
+pub const TRAP_SPIKY: u16 = 980;
+/// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
+pub const POISON_DART: u16 = 645;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -48,6 +66,63 @@ pub const TIME_LEFT_DEFAULT: i32 = 3600;
 /// (`Projectile.cs:14117`).
 const OWNER_IMMUNE_TICKS: i32 = 10;
 const SIZE: f32 = 6.0;
+
+/// The `SetDefaults` slice of the aiStyle-1/14 families (`Projectile.cs`):
+/// the box, the AI style, the penetrate/timeLeft overrides and the flags the
+/// flight behaves on. The damage stays the spawner's input.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjData {
+    pub w: f32,
+    pub h: f32,
+    /// `aiStyle` — 1 = the arrow/bullet family (`AI_001`), 14 = the
+    /// spear/dart flight (`AI()`'s `else if (this.aiStyle == 14)` branch).
+    pub ai_style: u8,
+    pub penetrate: i32,
+    pub time_left: i32,
+    pub extra_updates: u32,
+    pub tile_collide: bool,
+    /// `Projectile.arrow`.
+    pub arrow: bool,
+    /// `Projectile.trap`.
+    pub trap: bool,
+}
+
+/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
+/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
+/// families are M4-PROJ follow-ups.
+pub fn proj_data(kind: u16) -> Option<ProjData> {
+    let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap) =
+        match kind {
+            // `Projectile.cs:807-815` / `:817-827` (the flame arrow shares the
+            // box; `timeLeft = 1200` on both).
+            WOODEN_ARROW | FLAME_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
+            MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
+            // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
+            // the spiky ball — `penetrate = -1`, `trap = true`.
+            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY => {
+                (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, true)
+            }
+            // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
+            // `extraUpdates = 5`, the local immunity cooldown −1.
+            POISON_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 5, false, false, false),
+            // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
+            // `timeLeft = 900`.
+            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true),
+            _ => return None,
+        };
+    Some(ProjData {
+        w,
+        h,
+        ai_style,
+        penetrate,
+        time_left,
+        extra_updates,
+        tile_collide,
+        arrow,
+        trap,
+    })
+}
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
 #[derive(Clone, Debug)]
@@ -77,6 +152,18 @@ pub struct Projectile {
     pub id_static_hit_cooldown: i32,
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
+    /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
+    /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
+    pub ai: [f32; 3],
+    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
+    pub w: f32,
+    pub h: f32,
+    /// `Projectile.tileCollide` (the default true, `:787`-defaults).
+    pub tile_collide: bool,
+    /// `Projectile.arrow`.
+    pub arrow: bool,
+    /// `Projectile.trap`.
+    pub trap: bool,
     bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
@@ -104,6 +191,12 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            ai: [0.0; 3],
+            w: SIZE,
+            h: SIZE,
+            tile_collide: true,
+            arrow: false,
+            trap: false,
             bounces: 0,
             falling_tile: None,
         }
@@ -148,6 +241,87 @@ impl Projectile {
                 self.pos.y = ny;
             }
         }
+    }
+
+    /// `AI_001`'s generic arm (`Projectile.cs:57572-57583` + the rotation
+    /// default `:57725-57728` + the ±16 velocity clamp `:57756-57763`): the
+    /// flight counter `ai[0]++`, the gravity `velocity.Y += 0.1f` after 15
+    /// ticks, the flight-direction sprite rotation, and the tile collision —
+    /// the `Update` movement's blocked hit kills the projectile (the arrows
+    /// break on contact; the water transforms are M4-PROJ polish).
+    fn ai_arrow(&mut self, world: &World) {
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 15.0 {
+            self.vel.y += 0.1;
+        }
+        self.vel.y = self.vel.y.clamp(-16.0, 16.0);
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x || hit_y {
+                self.active = false;
+                self.time_left = 0;
+            } else {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+    }
+
+    /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
+    /// branch, the default arm `Projectile.cs:25143-25158` + the tile-kill
+    /// scan `:25726-25737` + the lava/shimmer kills `:25739-25750`): the
+    /// straight flight, `ai[0] > 5f` → `velocity.Y += 0.2f` with the 0.97
+    /// ground-slide friction, `rotation += velocity.X * 0.1f`, and the
+    /// center (+4, +8)-box vs solid-tile scan killing the projectile.
+    fn ai_spear(&mut self, world: &World) {
+        self.ai[0] += 1.0;
+        if self.ai[0] > 5.0 {
+            self.ai[0] = 5.0;
+            if self.vel.y == 0.0 && self.vel.x != 0.0 {
+                self.vel.x *= 0.97;
+                if (-0.01..0.01).contains(&self.vel.x) {
+                    self.vel.x = 0.0;
+                }
+            }
+            self.vel.y += 0.2;
+        }
+        self.rot += self.vel.x * 0.1;
+        // The tile-kill scan: the box inset to `(x + 4, y + 4)` with the
+        // +8 px center probe against solid, non-127 tiles (`:25726-25737`).
+        let cx = self.pos.x + 4.0;
+        let cy = self.pos.y + 4.0;
+        let tx0 = ((self.pos.x / 16.0) as i32 - 1).max(0);
+        let tx1 = (((self.pos.x + self.w) / 16.0) as i32 + 2).min(world.width - 1);
+        let ty0 = ((self.pos.y / 16.0) as i32 - 1).max(0);
+        let ty1 = (((self.pos.y + self.h) / 16.0) as i32 + 2).min(world.height - 1);
+        for ty in ty0..=ty1 {
+            for tx in tx0..=tx1 {
+                let Some(t) = world.tile(tx, ty) else {
+                    continue;
+                };
+                if !t.active()
+                    || t.kind == 127
+                    || !tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                {
+                    continue;
+                }
+                let rx = tx as f32 * 16.0;
+                let ry = ty as f32 * 16.0;
+                if cx + 8.0 > rx && cx < rx + 16.0 && cy + 8.0 > ry && cy < ry + 16.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+            }
+        }
+        self.pos += self.vel;
     }
 
     /// The per-slot draw (unchanged from the first pass).
@@ -336,8 +510,71 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            ai: [1.0, 0.0, 0.0],
+            // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
+            // flight is the custom falling-tile mode, not an aiStyle arm.
+            w: 10.0,
+            h: 10.0,
+            tile_collide: false,
+            arrow: false,
+            trap: false,
             bounces: 0,
             falling_tile: Some(tile_kind),
+        };
+        let base = slot * 256;
+        self.local_immunity[base..base + 256].fill(0);
+        Some(slot)
+    }
+
+    /// `NewProjectile` + `SetDefaults` in one: applies the family's
+    /// [`proj_data`] slice (the box, the penetrate/timeLeft overrides, the
+    /// extraUpdates) on top of the spawn arguments. `None` when the kind has
+    /// no ported data — the caller decides whether that is fatal.
+    pub fn spawn_with_data(
+        &mut self,
+        kind: u16,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        knock_back: f32,
+    ) -> Option<usize> {
+        let data = proj_data(kind)?;
+        let mut slot = None;
+        for (i, p) in self.slots.iter().enumerate() {
+            if !p.active {
+                slot = Some(i);
+                break;
+            }
+        }
+        let slot = slot?;
+        self.slots[slot] = Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(x, y),
+            rot: 0.0,
+            vel: Vec2::new(vx, vy),
+            damage,
+            knock_back,
+            crit: false,
+            time_left: data.time_left,
+            max_penetrate: data.penetrate,
+            penetrate: data.penetrate,
+            uses_local_immunity: false,
+            local_hit_cooldown: -2,
+            uses_id_static_immunity: false,
+            id_static_hit_cooldown: -1,
+            extra_updates: data.extra_updates,
+            ai: [0.0; 3],
+            w: data.w,
+            h: data.h,
+            tile_collide: data.tile_collide,
+            arrow: data.arrow,
+            trap: data.trap,
+            bounces: 0,
+            falling_tile: None,
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -365,6 +602,17 @@ impl ProjectilePool {
             for _ in 0..sub_steps {
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
+                }
+                // The aiStyle dispatch: the arrow/bullet family (aiStyle 1,
+                // `AI()`: `if (this.aiStyle == 1) this.AI_001();`) and the
+                // spear/dart family (aiStyle 14). The falling-tile mode
+                // keeps its custom flight.
+                else if let Some(data) = proj_data(self.slots[i].kind) {
+                    match data.ai_style {
+                        1 => self.slots[i].ai_arrow(world),
+                        14 => self.slots[i].ai_spear(world),
+                        _ => {}
+                    }
                 }
                 // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
                 // 0.41f` per tick, the position integrates the velocity (the
@@ -839,5 +1087,158 @@ mod falling_tests {
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
+    }
+}
+
+#[cfg(test)]
+mod arrow_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_family_data_map_is_verbatim() {
+        // `Projectile.cs:807-815` (the wooden arrow), `:817-827` (flame),
+        // `:950-961` (the musket ball), `:1823-1832`/`:2707-2716`/`:9330-9339`
+        // (the trap darts/spiky), `:6953-6966` (the poison dart),
+        // `:2717-2727` (the spear).
+        let arrow = proj_data(WOODEN_ARROW).unwrap();
+        assert_eq!((arrow.w, arrow.h), (10.0, 10.0));
+        assert_eq!(arrow.ai_style, 1);
+        assert_eq!(arrow.time_left, 1200);
+        assert!(arrow.arrow);
+        let ball = proj_data(MUSKET_BALL).unwrap();
+        assert_eq!((ball.w, ball.h), (4.0, 4.0));
+        assert_eq!(ball.time_left, 600);
+        assert_eq!(ball.extra_updates, 1);
+        let dart = proj_data(TRAP_DART).unwrap();
+        assert_eq!(dart.penetrate, -1);
+        assert!(dart.trap);
+        let poison = proj_data(POISON_DART).unwrap();
+        assert!(!poison.tile_collide);
+        assert_eq!(poison.extra_updates, 5);
+        let spear = proj_data(TRAP_SPEAR).unwrap();
+        assert_eq!((spear.w, spear.h), (14.0, 14.0));
+        assert_eq!(spear.ai_style, 14);
+        assert_eq!(spear.time_left, 900);
+        // The boulder 186 (aiStyle 37) and the flame jet 187 (aiStyle 38)
+        // are unported — no data, the emission drops at the drain.
+        assert!(proj_data(186).is_none());
+        assert!(proj_data(187).is_none());
+        // The shuriken keeps its aiStyle-2 path, not the data table.
+        assert!(proj_data(SHURIKEN).is_none());
+        assert_eq!(SHURIKEN, 3, "the C# ProjectileID.Shuriken");
+    }
+
+    #[test]
+    fn spawn_with_data_applies_the_family_slice() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TRAP_SPEAR, 160.0, 200.0, 4.0, 0.0, 40, 2.0)
+            .unwrap();
+        let p = &pool.slots[slot];
+        assert_eq!(p.kind, TRAP_SPEAR);
+        assert_eq!(p.time_left, 900);
+        assert_eq!(p.penetrate, -1);
+        assert_eq!((p.w, p.h), (14.0, 14.0));
+        assert!(p.trap);
+        assert_eq!(p.damage, 40);
+    }
+
+    #[test]
+    fn the_arrow_gains_gravity_after_15_ticks() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_ARROW, 160.0, 200.0, 10.0, 0.0, 5, 0.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        // `ai[0]` increments on the same tick the check runs (`:57572` +
+        // `:57580`), so the 15th update itself starts the gravity.
+        for _ in 0..14 {
+            pool.update(&mut w, &mut npcs);
+        }
+        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 14 ticks");
+        pool.update(&mut w, &mut npcs);
+        assert!(
+            (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
+            "the 15th tick starts the 0.1 gravity"
+        );
+        // The rotation rides the flight direction (`atan2 + 1.57`).
+        assert!((pool.slots[0].rot - (0.1f32.atan2(10.0) + 1.57)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_arrow_breaks_on_tile_contact() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_ARROW, 64.0, 10.0 * 16.0, 0.0, 16.0, 5, 0.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for y in 20..24 {
+            for x in 0..16 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        // The 16 px/tick fall reaches the row-20 floor inside 15 ticks; the
+        // blocked movement kills the arrow (`Update`'s tile collide).
+        let mut died = false;
+        for _ in 0..20 {
+            pool.update(&mut w, &mut npcs);
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(died, "the tile contact kills the arrow");
+    }
+
+    #[test]
+    fn the_spear_dies_on_the_tile_scan() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(TRAP_SPEAR, 8.0 * 16.0, 12.0 * 16.0, 0.0, 4.0, 40, 2.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for x in 0..16 {
+            put_solid(&mut w, x, 13);
+        }
+        // The scan runs before the move; the probe box reaches the row-13
+        // floor on the third tick.
+        let mut died = false;
+        for _ in 0..5 {
+            pool.update(&mut w, &mut npcs);
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(
+            died,
+            "the aiStyle-14 center-probe scan kills on solid contact"
+        );
+    }
+
+    #[test]
+    fn the_spear_gains_gravity_after_5_ticks() {
+        let mut pool = ProjectilePool::new();
+        // Straight right over open air.
+        pool.spawn_with_data(TRAP_SPEAR, 32.0, 16.0, 4.0, 0.0, 40, 2.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for _ in 0..5 {
+            pool.update(&mut w, &mut npcs);
+        }
+        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
+        pool.update(&mut w, &mut npcs);
+        assert!((pool.slots[0].vel.y - 0.2).abs() < 1e-6, "the 6th tick adds 0.2");
     }
 }
