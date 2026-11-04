@@ -12,6 +12,7 @@ pub mod edit;
 pub mod falling;
 pub mod flame;
 pub mod framing;
+pub mod housing;
 pub mod lighting;
 pub mod liquid;
 pub mod liquid_draw;

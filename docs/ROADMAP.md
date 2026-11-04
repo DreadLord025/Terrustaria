@@ -68,7 +68,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Wiring / tile entities / shimmer / fishing / pylons | ⬜ | — |
 | UI framework & screens | 🟡 | front-end char/world screens done; HUD partial; inventory UX partial; chest/creative/bestiary/emotes missing |
 | Localization | 🟡 | core ported + tested, not wired into UI |
-| Audio | 🟡 | 8 cues + XACT music engine + 3D attenuation; biome branches, ambience emitters missing |
+| Audio | 🟡 | 8 cues + XACT music engine + 3D attenuation + rain/wind ambience tracks + waterfall/lavafall loops; the blizzard loops and the remaining biome branches missing |
 | Networking | 🔄 | custom host/join flow; exact 1.4.5.8 protocol not started |
 | Saves | 🟡 | `.trwld` round-trip, `.wld` header+tiles, `.map` v326; chests/signs/NPC sections skipped |
 
@@ -503,7 +503,9 @@ respawn rules, M4-REVENGE-1 coin-loss revenge.
   paint in inventory; single-instance projectiles block re-shoot; swing rate display
   `60/(useAnimation+reuseDelay+(!autoReuse))` (19490).
 
-**Tasks:** M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants), M3-ITEM-2 full use
+**Tasks:** ✅ M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants — 2026-11-04:
+all 6196 ids generated into `tr-app/src/itemdata.rs`, variants in `variants.rs`,
+conditions default false), M3-ITEM-2 full use
 styles, M3-ITEM-3 ammo system, M3-ITEM-4 mana & mana sickness, M3-ITEM-5 channel/reuseDelay,
 M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
 
@@ -1234,7 +1236,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
 | ✅ M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] — done 2026-11-04: `AmbienceServer` scheduler (17 conditions, priority trick, forced-spawn queue) + all 18 live entity classes with ctor RNG order from `FastRandom(seed)`, drawn between the bg layers at the C# `DrawToDepth` boundaries via the `SkyManager` depth tracker; sounds → BG-20, ocean-line fade deferred (ANALYSIS) |
-| M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
+| ✅ M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops — done 2026-11-04: the research corrected the row (1.4.5.8 has no Ambience class/birds-crickets audio — the AmbienceServer is VISUAL = BG-19); ported `Main.Ambience` (`Main.cs:13466-13515`): the ¼ s tick driving the two `SoundInstanceLiquid` loops — the waterfall (Sound 34, Liquid_0) and the lavafall (Sound 35, Liquid_1) — with the vanilla volume math (the positional attenuation vs `SoundAttenuationDistance` 2500, strength/50 clamped, ×0.2/×0.65, ×(1−shimmerAlpha), the menu zeros, ambientVolume scales); the strength scans ride the waterfall pass (`WaterfallManager.cs:710-733,960-965`: Σ 1−dist/(screenWidth×0.75) within 2× screen dims, the lava kind 1 split, the nearest-segment positions); the rain loop (track 28: ZoneRain && !ZoneSnow, the cloudAlpha factor × atmo⁴) and the wind loop (track 45: |wind| ≥ 20/50 && SurfaceAtmospherics, ×0.9) ride the music-track pool with the +0.005/−0.005 fades (`UpdateAmbientCueState/TowardStopping`); the ambient statics on App; the settings `AmbientVolume` slider scales all. Out: the lava-pool loop (retro-only fill in vanilla — oldDrawWater), the blizzard loops (SceneState, with M4 events), the AmbienceServer audio (doesn't exist — visual) [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
 | M1.4-WEATHER-1 | `M1.4-WEATHER-1-wind-gusts` | wind gust events + extreme wind [5] |
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
@@ -1287,7 +1289,7 @@ section in brackets before starting a row.
 | ✅ M3-CRAFT-recipes | `M3-CRAFT-recipes` | done 2026-11-03: a 7-recipe subset + can_craft/try_craft/adjacent_tiles (`craft.rs`) + the crafting panel on contexts 41/42/43 (the old 4/33 numbering was stale); follow-ups: the SetupRecipes generator, the dropped-item bridge, craft sound [11] |
 | M3-CRAFT-2 | `M3-CRAFT-2-groups-environment` | recipe groups + env flags + nearby chests [11] |
 | M3-CRAFT-3 | `M3-CRAFT-3-alchemy` | alchemy table 1/3 rule [11] |
-| 🔄 M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
+| ✅ M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
 | M3-ITEM-2 | `M3-ITEM-2-use-styles` | 16 use styles + body dispatch [10] |
 | M3-ITEM-3 | `M3-ITEM-3-ammo` | ammo system + not-consume rolls [10] |
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
@@ -1312,7 +1314,7 @@ section in brackets before starting a row.
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
 | ✅ M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain: `GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order with the vanilla cast widths — hardmode, the depth ladder (underworld ×2 / deep ×0.4/×1.9 / below-surface ×0.5/×1.7), night ×0.6/×1.3 + blood ×0.3/×1.8 + moon events ×0.2/×2 + eclipse, the dungeon/sandstorm/UD/jungle-town-tiers/evil/meteor/temple/hallow-deep zone branches, the WoF override, both nearby-ramp passes, invis/calmed/sunflower/angler/enemySpawns, the water/peace candles + the >35%-depth candle cut, the rate floor (10 %) and the cap (3×), the moon-event raid pacing (rate 20, max 2+0.3·players) and the pre-Skeletron dungeon rate 10 [15] | done 2026-11-03: `SpawnFlags` carries the scene state (hardmode/blood/moon/zones/candles — all false until the owning systems land); remix/FTW/journey/skyblock/fairy branches constants-off (M5-SEED-1/M6-CREATIVE-1); 8 seeded tests. 2026-11-04 (`M4-SPAWN-1-engine` completion): the named `Main.SwapRandom("SpawnNPC")` stream discipline — one LCG advance per world update before the latch/caps, deterministic per seed (`spawn_npc_call`, `NPC.cs:80170-80176`), the `noSpawnCycle` latch (`App.spawn_no_cycle`, one suppressed call, `:80171-80174`) and the dead-player gate (`CanSpawnEnemiesNear` subset, `:349-351`); 3 tests |
 | ✅ M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | the `SpawnAnNPC` selection ladders in the vanilla roll order: `GetZombieSettings`' per-spawn style `Next(7)` + the `playerHasStartingHealth` torch denominator (5 vs 12, `NPC.cs:415/:5594`), the night ladder (the `Next(6)`/full-moon `Next(2)` eye roll with the short-circuit order, hardmode wandering 1/3, the bad-luck 300 pair, the new-moon hardmode 2/3, the hardmode 1/3, the blood-moon 2/5, the `IcesSnow` snow-zombie arm, the torch-zombie roll, the 7-style zombie table with the 1/3 size roll), the underground ladder (the 1/50 worm roll, hardmode 140/141, the snow arm, the `GetBasicSlimeToSpawn(false)` fallthrough), the day forest slime fallthrough [15] | done 2026-11-04: unmodelled outcomes consume their rolls and fall to the port's kind (documented in the ladder doc); `player_life_max` rides `SpawnContext`; 6 seed-sweep tests (eyes/zombies mix, the phase-4 doubling, the short-circuit isolation, hardmode WanderingEye, the underground slime-only spread, per-seed determinism) |
-| M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
+| 🟡 M4-TOWN-1 | `M4-TOWN-1-housing` | the room-check half done: `tr-core/src/housing.rs` — `check_room` (`StartRoomCheck`/`CheckRoom` `WorldGen.cs:6041-6243`: the 8-neighborhood flood fill, the 10-tile world edge, the solid-start cut, the maxRoomSize 100 window + the 750-tile cap + the span check, the solid/unfolded-gate tiles settle without branching — the C# records BlockingWall/BlockingOpenGate in the rich feedback only and does NOT clear canSpawn), the ±2 house-wall scan (`Main.wallHouse` `Main.cs:10403-10470+:23-128,60,66-68,72-74,84-85,88-93,100-128,173-186,224-241,245,312-317,323-346`; a 1×1 hole legitimately passes), `RoomNeeds` (`:5717-5756`) against the `TileID.Sets.RoomNeeds.*` sets (`TileID.cs:150-168`); the move-in evaluation (`UpdateTime_SpawnTownNPCs`, the per-NPC conditions) waits for the town-NPC kinds [15] | done 2026-11-04: 5 tests (the furnished pass + bounds, the missing-furniture cuts, the dirt-wall TooManyUnsafeWalls, the 5-tall breach HoleInWallIsTooBig, the edge/solid cuts) |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
 | M4-TOWN-3 | `M4-TOWN-3-shops` | shop stock + conditions [15] |
 | ✅ M4-LOOT-1 | `M4-LOOT-1-rule-engine` | drop rule engine: `tr-core/src/loot.rs` (`IItemDropRule` + the three chain kinds, `ItemDropResolver.ResolveRule/TryDropping`, `CommonDrop`/`CommonDropWithRerolls`/`OneFromOptions`/`ItemDropWithCondition`/`DropBasedOnExpertMode`/`MasterMode`/`ExtraGel`/`DropLocalPerClientAndResetsMoney`/`DropOneByOne`/`DropNothing`, `Luck.cs`'s five rolls, `ItemDropDatabase` register/multiple/remove) [16] | done 2026-11-02: 13 engine tests on seeded FastRandom streams; the slime family's gel/pink-gel/glove registrations moved from hand rolls to `loot_db.rs` (M4-LOOT-2 grows the rest; the bestiary `ReportDroprates` side stays out until M4-BEST-1) |

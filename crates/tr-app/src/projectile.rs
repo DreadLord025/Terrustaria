@@ -35,9 +35,10 @@ use tr_render::sprite::SpriteRenderer;
 use crate::assets;
 use crate::npc::Npc;
 
-/// The pool's kind ids are the C# `ProjectileID` values (the M4-PROJ-1
-/// placeholder internal table was migrated to the verbatim ids — the shuriken
-/// keeps its C# id 3).
+/// The pool's kind ids are the C# `ProjectileID` values (`ProjectileID.cs`
+/// — the M4-PROJ-1 placeholder internal table was migrated to the verbatim
+/// ids; the shuriken 3 is the vanilla id the registry's generated rows
+/// carry, `itemdata.rs`).
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
 pub const WOODEN_ARROW: u16 = 1;
