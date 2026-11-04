@@ -1280,6 +1280,7 @@ pub(crate) mod front_flow_tests {
             bestiary_open: false,
             bestiary_selected: None,
             chat: crate::chat::ChatMonitor::default(),
+            achievements: crate::achievements::AchievementManager::ported(),
             window: None,
             gpu: None,
             renderer: None,

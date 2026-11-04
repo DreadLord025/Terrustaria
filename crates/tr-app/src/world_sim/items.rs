@@ -4,6 +4,7 @@
 use glam::Vec2;
 use tr_core::TILE_PX;
 
+use crate::achievements;
 use crate::item::{ItemDrop, slot_for_pickup};
 use crate::registry;
 use crate::app::{NetRole, rand01, App};
@@ -43,6 +44,8 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let audio = &mut app.audio;
     app.item_step.tick(dt.min(0.25), |step| {
         let player_center = player.as_ref().map(|p| Vec2::new(p.center().0, p.center().1));
+        // `AchievementsHelper.NotifyItemPickup`'s registry handle.
+        let achievements = &mut app.achievements;
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -58,6 +61,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     inventory[slot].count = inventory[slot].count.saturating_add(drop.count);
                     let c = drop.center();
                     audio.play_at("Item_1", c.x, c.y, 1.0);
+                    // `AchievementsHelper.NotifyItemPickup` — the pickup
+                    // feeds the ItemPickupCondition rows (TIMBER).
+                    if let Some(_done) = achievements.notify(achievements::CondKind::ItemPickup(drop.kind)) {
+                        log::info!("achievement completed");
+                    }
                     items.swap_remove(i);
                     continue;
                 }

@@ -39,6 +39,7 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::achievements;
 use crate::chat;
 use crate::audio;
 use crate::biome::{
@@ -154,6 +155,8 @@ pub(crate) struct App {
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
+    /// `Main.Achievements` — the achievement registry (M6-ACH-1).
+    pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -844,6 +847,13 @@ impl App {
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
+        // The achievement condition states, restored from the port's own
+        // `achievements.trdat` (the Rijndael+BSON vanilla format is the
+        // documented M6-ACH-1 deviation).
+        let mut loaded_achievements = achievements::AchievementManager::ported();
+        if let Some(path) = tr_core::save::achievements_path() {
+            achievements::load(&path, &mut loaded_achievements);
+        }
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
@@ -1200,6 +1210,10 @@ impl App {
                     chat.new_text("Belsin hello world", [255, 255, 255]);
                 }
                 chat
+            },
+            achievements: {
+                // The condition states load below (the sidecar block).
+                loaded_achievements
             },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

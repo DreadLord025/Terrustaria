@@ -11,6 +11,7 @@ use crate::app::netglue::compressed_world;
 use crate::app::{App, NetRole, no_hud};
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
 use crate::menu;
+use crate::achievements;
 use crate::net;
 use crate::ui;
 use glam::Vec2;
@@ -133,6 +134,11 @@ impl App {
         if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind) {
             self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
+        // `AchievementsHelper.NotifyItemCraft` — the station craft feeds the
+        // ItemCraftCondition rows (BENCHED).
+        let _ = self
+            .achievements
+            .notify(achievements::CondKind::ItemCraft);
         self.ui_left_press = false;
         true
     }
