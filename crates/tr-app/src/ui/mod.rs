@@ -3,6 +3,7 @@
 
 pub mod bars;
 pub(crate) mod bestiary;
+pub(crate) mod emotes;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
@@ -143,6 +144,7 @@ pub fn draw_hud(
     bestiary_selected: Option<usize>,
     kill_tracker: &tr_core::bestiary::KillTracker,
     chat_state: &mut crate::chat::ChatMonitor,
+    emotes_state: &crate::emotes::EmoteSystem,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -157,6 +159,15 @@ pub fn draw_hud(
     // `Main.DrawInterface`'s chat tail (`Main.cs:40928-40997`): the input
     // strip + the log while open, the blinker advancing per drawn frame.
     draw_chat(r, lookups, screen, chat_state);
+
+    // `EmoteBubble.DrawAll` + the `UIEmotesMenu` state (M6-EMOTE-1).
+    let (pc, pdir) = player
+        .map(|p| {
+            let (cx, cy) = p.center();
+            (Vec2::new(cx, cy), p.facing)
+        })
+        .unwrap_or((Vec2::new(camera.x, camera.y), 1));
+    emotes::draw(r, lookups, screen, emotes_state, pc, pdir, mouse_pos);
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides
     // the open inventory's top row, before the slots.

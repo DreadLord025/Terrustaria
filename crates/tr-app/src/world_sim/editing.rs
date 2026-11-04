@@ -11,6 +11,7 @@ use crate::item::ItemSlot;
 use crate::npc::Npc;
 use crate::player::Player;
 use crate::projectile::Projectile;
+use crate::achievements;
 use crate::registry;
 
 use super::items::spawn_item_drop;
@@ -350,6 +351,17 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
 }
 
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
+    // `AchievementsHelper.NotifyTileDestroyed` + the CustomInt "Pick"
+    // counter (BULLDOZER) — the destroyed tile feeds both rows.
+    let kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
+    if let Some(kind) = kind {
+        let _ = app
+            .achievements
+            .notify(achievements::CondKind::TileDestroyed(kind));
+        let _ = app
+            .achievements
+            .notify(achievements::CondKind::CustomInt("Pick", 10000));
+    }
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };

@@ -22,6 +22,19 @@ use crate::npc::{NpcKind, SlimeVariant};
 /// `UIBestiaryEntryButton`'s 72 px cell (`:27-28`).
 pub const CELL: f32 = 72.0;
 
+/// The inventory's emote button — `DrawEmoteBubblesButton`'s rect
+/// (`Main.cs:42369-42408`: num=534, num2=244+30+4=278, the 30x30 box).
+pub const EMOTE_BUTTON_RECT: [f32; 4] = [534.0, 278.0, 30.0, 30.0];
+
+/// `true` while the cursor is over the emote button (`:42397`'s inclusive
+/// `rectangle.Contains`).
+pub fn emote_button_hit(mouse: Vec2) -> bool {
+    mouse.x >= EMOTE_BUTTON_RECT[0]
+        && mouse.x <= EMOTE_BUTTON_RECT[0] + EMOTE_BUTTON_RECT[2]
+        && mouse.y >= EMOTE_BUTTON_RECT[1]
+        && mouse.y <= EMOTE_BUTTON_RECT[1] + EMOTE_BUTTON_RECT[3]
+}
+
 /// The inventory button's hover rect — `DrawBestiaryIcon`'s
 /// `rectangle = new Rectangle(num, num2, 30, 30)` with the sheet-position
 /// constants resolved (`Main.cs:42438-42442`: num=498, num2=244+30+4=278).

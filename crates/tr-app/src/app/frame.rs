@@ -827,6 +827,20 @@ impl App {
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
                 );
+                // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
+                // rides the tile batch after the liquids, under the
+                // over-wire entities (the port draws it before the
+                // projectiles, matching `DrawCachedProjsOverWiresUI`).
+                crate::render::wires::draw_wires(
+                    renderer,
+                    world,
+                    light,
+                    &style,
+                    draw_cam,
+                    *zoom,
+                    screen,
+                    anim_time,
+                );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 }
@@ -952,6 +966,7 @@ impl App {
                         self.bestiary_selected,
                         &self.kill_tracker,
                         &mut self.chat,
+                        &self.emotes,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

@@ -11,6 +11,7 @@ use crate::app::netglue::compressed_world;
 use crate::app::{App, NetRole, no_hud};
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
 use crate::menu;
+use crate::achievements;
 use crate::net;
 use crate::ui;
 use glam::Vec2;
@@ -133,6 +134,11 @@ impl App {
         if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind) {
             self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
+        // `AchievementsHelper.NotifyItemCraft` — the station craft feeds the
+        // ItemCraftCondition rows (BENCHED).
+        let _ = self
+            .achievements
+            .notify(achievements::CondKind::ItemCraft);
         self.ui_left_press = false;
         true
     }
@@ -173,6 +179,31 @@ impl App {
             self.bestiary_open = true;
             self.bestiary_selected = None;
             self.ui_left_press = false;
+            return;
+        }
+        // `DrawEmoteBubblesButton`'s click arm (`Main.cs:42400-42405`):
+        // open the emotes wheel.
+        if self.inventory_open && ui::bestiary::emote_button_hit(self.mouse_pos) {
+            self.inventory_open = false;
+            self.emotes.menu_open = true;
+            self.ui_left_press = false;
+            return;
+        }
+        // The wheel: a pick fires `MakeLocalPlayerEmote` (`:281-286`) and
+        // closes; the Back panel just closes.
+        if self.emotes.menu_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            if let Some(id) = ui::emotes::card_at(screen, self.mouse_pos, self.emotes.scroll) {
+                self.emotes.new_bubble(id);
+                self.emotes.menu_open = false;
+                self.ui_left_press = false;
+                return;
+            }
+            if ui::bestiary::back_hit(screen, self.mouse_pos) {
+                self.emotes.menu_open = false;
+                self.ui_left_press = false;
+            }
         }
     }
 

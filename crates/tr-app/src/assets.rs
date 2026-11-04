@@ -291,6 +291,7 @@ pub fn load_world_images(
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
         "Text_Back",
+        "Extra_48",
         "UI/Bestiary",
         "UI/Bestiary/Slot_Back",
         "UI/Bestiary/Slot_Front",
@@ -550,6 +551,16 @@ pub fn load_world_images(
         match load_png(dir, &name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => log::warn!("missing flame sheet {name}"),
+        }
+    }
+
+    // `DrawWires`'s overlays (`Main.cs:58218+`): `TextureAssets.WireNew` is
+    // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
+    // and `TextureAssets.Actuator` the actuator plate drawn on every
+    // actuator-carrying tile.
+    for name in ["WiresNew", "Actuator"] {
+        if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
+            images.push(img);
         }
     }
 
@@ -1003,6 +1014,8 @@ pub struct Lookups {
     pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
     pub ui_text_back: Option<tr_render::SheetRect>,
+    /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
+    pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
     pub ui_hue: Option<tr_render::SheetRect>,
     /// `Images/ColorBar`: the value-bar / sat-lum-alpha track
@@ -1221,6 +1234,7 @@ impl Lookups {
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),
             ui_text_back: atlas.sheet("Text_Back").copied(),
+            ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
             ui_color_bar: atlas.sheet("ColorBar").copied(),
             ui_color_blip: atlas.sheet("ColorBlip").copied(),

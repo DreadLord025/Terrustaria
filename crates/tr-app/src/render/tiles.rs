@@ -411,7 +411,13 @@ pub(crate) fn draw_tiles(
             let ex = ((cx + 1) * chunk - 1).min(x1);
             for tx in sx..=ex {
                 let tile = &world.tiles[row_base + tx as usize];
-                let l = light.get(tx, ty);
+                let mut l = light.get(tx, ty);
+                // `Tile.actColor` (`Tile.cs:272-290`) via
+                // `TileDrawing.GetFinalLight` (`TileDrawing.cs:4380-4397`):
+                // an actuated (inactive) tile draws ghosted — RGB × 0.4.
+                if tile.flags & tr_core::tile::FLAG_INACTIVE != 0 {
+                    l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
+                }
                 let active = tile.active();
                 let is_tree = active && tree::is_tree(tile.kind);
                 let marker = if is_tree {

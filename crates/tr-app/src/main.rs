@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod achievements;
 mod audio;
 mod bestiary;
 mod biome;
@@ -9,6 +10,7 @@ mod buffs;
 mod chat;
 mod collision;
 mod death;
+mod emotes;
 mod inv;
 mod wiring_stub;
 mod item;
