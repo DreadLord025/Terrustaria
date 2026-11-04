@@ -303,6 +303,9 @@ pub(crate) struct App {
     /// pads (`Wiring.cs`).
     pub(crate) wiring: tr_core::wiring::Wiring,
     pub(crate) wiring_step: FixedStepper,
+    /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
+    /// logic sensors' per-tick scan, M7-TE-2).
+    pub(crate) te_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
@@ -545,6 +548,13 @@ impl App {
 
     pub(crate) fn update_wiring(&mut self, dt: f32) {
         world_sim::wiring::update_wiring(self, dt);
+    }
+
+    /// The tile-entity pass (`WorldGen.cs:71507`'s
+    /// `TileEntity.PerformUpdates`): the logic sensors scan their state and
+    /// fire the wire trips (M7-TE-2).
+    pub(crate) fn update_tile_entities(&mut self, dt: f32) {
+        world_sim::tile_entities::update_tile_entities(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1400,6 +1410,7 @@ impl App {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
+            te_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
         ambient_waterfall,
         ambient_lavafall,

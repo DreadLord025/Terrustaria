@@ -63,6 +63,19 @@ pub const ENCHANTED_BOOMERANG: u16 = 6;
 pub const WOODEN_BOOMERANG: u16 = 52;
 /// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
 pub const ICE_BOOMERANG: u16 = 113;
+/// `ProjectileID.Bomb` (`Projectile.cs:1106-1112`).
+pub const BOMB: u16 = 28;
+/// `ProjectileID.Dynamite` (`Projectile.cs:1113-1121`).
+pub const DYNAMITE: u16 = 29;
+/// `ProjectileID.StickyBomb` (`Projectile.cs:1198-1205`).
+pub const STICKY_BOMB: u16 = 37;
+/// `ProjectileID.BouncyBomb` (`Projectile.cs:5862-5869`).
+pub const BOUNCY_BOMB: u16 = 516;
+/// `ProjectileID.BombFish` (`Projectile.cs:5889-5896`).
+pub const BOMB_FISH: u16 = 519;
+/// The sticky/hover bomb set of `AI_016_Bombs` (`Projectile.cs:46955`): the
+/// kinds that snap to a wall instead of bouncing.
+pub const STICKY_BOMBS: [u16; 7] = [37, 397, 470, 519, 773, 911, 1087];
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -72,6 +85,31 @@ pub const TIME_LEFT_DEFAULT: i32 = 3600;
 /// (`Projectile.cs:14117`).
 const OWNER_IMMUNE_TICKS: i32 = 10;
 const SIZE: f32 = 6.0;
+
+/// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
+/// the per-tile permission for the bomb crater. The hardmode gates (the
+/// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed —
+/// the port has no hardmode flag yet (M5-HARDFORCE).
+fn can_explode_tile(kind: u16, frame_y_variant: i32) -> bool {
+    match kind {
+        // `:78655-78668`: the chests, the dolls, the sensors, the other
+        // untouchables.
+        122 | 150 | 211 | 226 | 237 | 248 | 249 | 250 | 346 | 470 | 475 | 504 | 685 | 686 => false,
+        // The hardmode ores (`:78669-78673`) — the `explodeHardmodeOres`
+        // flag is only true for 1086/1087 (not ported).
+        107 | 108 | 111 | 221 | 222 | 223 => false,
+        // The shadow orb / crimson heart containers, pre-hardmode.
+        37 | 58 => false,
+        // The demon altar (`:78676-78679`).
+        77 => false,
+        // The pressure plates (`:78680-78684` — the getGood gate).
+        48 | 232 => false,
+        // The trap family (`:78685-78690`): the variants 1-4
+        // (superdart/flame/spear/boulder) stay guarded until Golem.
+        137 => !(1..=4).contains(&frame_y_variant),
+        _ => true,
+    }
+}
 
 /// The `SetDefaults` slice of the aiStyle-1/14 families (`Projectile.cs`):
 /// the box, the AI style, the penetrate/timeLeft overrides and the flags the
@@ -120,6 +158,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
                 (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
             }
+            // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
+            // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
+            // ticks for the bombs, 300 for the dynamite. The sticky set
+            // {37, 519} disables the plain tile collide — their hover scan
+            // stops them.
+            BOMB | BOUNCY_BOMB => (22.0, 22.0, 16, -1, 180, 0, true, false, false),
+            STICKY_BOMB => (22.0, 22.0, 16, -1, 180, 0, false, false, false),
+            BOMB_FISH => (24.0, 24.0, 16, -1, 180, 0, false, false, false),
+            DYNAMITE => (10.0, 10.0, 16, -1, 300, 0, true, false, false),
             _ => return None,
         };
     Some(ProjData {
@@ -180,6 +227,9 @@ pub struct Projectile {
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
     /// per tick and places the tile on landing.
     pub falling_tile: Option<u16>,
+    /// `AI_016`'s `timeLeft <= 3` trigger: the bomb waits for the pool's
+    /// end-of-tick explosion pass (`Kill()`'s bomb path).
+    pub detonated: bool,
 }
 
 impl Default for Projectile {
@@ -210,6 +260,7 @@ impl Default for Projectile {
             trap: false,
             bounces: 0,
             falling_tile: None,
+            detonated: false,
         }
     }
 }
@@ -434,6 +485,102 @@ impl Projectile {
         }
     }
 
+    /// `AI_016_Bombs` (`Projectile.cs:46904-47545`): the thrown-bomb flight.
+    /// `ai[0]` counts; the sticky set {37, 519} hovers against a solid (the
+    /// scan sets `velocity = (0, -0.2)`); the gravity tail (`:47505-47520`)
+    /// adds `velocity.Y += 0.2f` after 5 ticks with the 0.97 ground-slide
+    /// (the dynamite 29 another ×0.99); the flight damage zeroes (the
+    /// explosion carries it); the detonation fires when `timeLeft <= 3`
+    /// (`:47165-47167`).
+    fn ai_bomb(&mut self, world: &World) {
+        self.ai[0] += 1.0;
+        if STICKY_BOMBS.contains(&self.kind) {
+            // The sticky scan (`:46956-47025`): the box inset ±4 px vs
+            // solid, non-127, non-platform tiles — the hit snaps the
+            // velocity to the hover.
+            let scan = |world: &World, pos: Vec2, w: f32, h: f32| -> bool {
+                let tx0 = ((pos.x / 16.0) as i32 - 1).max(0);
+                let tx1 = (((pos.x + w) / 16.0) as i32 + 2).min(world.width - 1);
+                let ty0 = ((pos.y / 16.0) as i32 - 1).max(0);
+                let ty1 = (((pos.y + h) / 16.0) as i32 + 2).min(world.height - 1);
+                for ty in ty0..=ty1 {
+                    for tx in tx0..=tx1 {
+                        let Some(t) = world.tile(tx, ty) else {
+                            continue;
+                        };
+                        if !t.active()
+                            || t.kind == 127
+                            || !tr_core::tiledata::TILE_SOLID.has(t.kind)
+                            || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                        {
+                            continue;
+                        }
+                        let rx = tx as f32 * 16.0;
+                        let ry = ty as f32 * 16.0;
+                        if pos.x + w - 4.0 > rx
+                            && pos.x + 4.0 < rx + 16.0
+                            && pos.y + h - 4.0 > ry
+                            && pos.y + 4.0 < ry + 16.0
+                        {
+                            return true;
+                        }
+                    }
+                }
+                false
+            };
+            if scan(world, self.pos, self.w, self.h) {
+                self.vel.x = 0.0;
+                self.vel.y = -0.2;
+            }
+        }
+        // The gravity tail (`:47505-47520`): the thrown arc — the gravity
+        // waits `ai[0] > 5f`.
+        if self.ai[0] > 5.0 {
+            self.ai[0] = 10.0;
+            if self.vel.y == 0.0 && self.vel.x != 0.0 {
+                self.vel.x *= 0.97;
+                if self.kind == DYNAMITE {
+                    self.vel.x *= 0.99;
+                }
+                if (-0.01..0.01).contains(&self.vel.x) {
+                    self.vel.x = 0.0;
+                }
+            }
+            self.vel.y += 0.2;
+        }
+        // The tile collision (the aiStyle-16 arm of the `Update` movement,
+        // `:19737-19762`): the bounce at −0.4 (the dynamite another ×0.8).
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let damp = if self.kind == DYNAMITE { 0.32 } else { 0.4 };
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            if hit_x {
+                self.vel.x = -self.vel.x * damp;
+            } else {
+                self.pos.x = nx;
+            }
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_y {
+                self.vel.y = -self.vel.y * damp;
+            } else {
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+        self.rot += self.vel.x * 0.1;
+        // The flight damage zeroes (`:47175-47176` — the kinds outside the
+        // keep-damage list; all the port's bombs are) — the explosion
+        // re-arms the damage.
+        self.damage = 0;
+        // The detonation (`:47165-47167`): `timeLeft <= 3` on the local
+        // owner.
+        if self.time_left <= 3 {
+            self.detonated = true;
+        }
+    }
+
     /// The per-slot draw (unchanged from the first pass).
     pub fn draw(
         &self,
@@ -637,6 +784,7 @@ impl ProjectilePool {
             trap: false,
             bounces: 0,
             falling_tile: Some(tile_kind),
+            detonated: false,
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -692,6 +840,7 @@ impl ProjectilePool {
             trap: data.trap,
             bounces: 0,
             falling_tile: None,
+            detonated: false,
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -729,6 +878,7 @@ impl ProjectilePool {
                         1 => self.slots[i].ai_arrow(world),
                         3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
+                        16 => self.slots[i].ai_bomb(world),
                         _ => {}
                     }
                 }
@@ -761,6 +911,13 @@ impl ProjectilePool {
                     self.slots[i].time_left = 0;
                 }
             }
+            // `Kill()`'s bomb path (`:70662-70690`): `PrepareBombToBlow`
+            // resizes and re-arms the damage, the PVE walk hits through the
+            // resized box, `Kill_ExplodeTiles` digs the crater, then the
+            // projectile dies.
+            if self.slots[i].detonated {
+                self.explode_bomb(i, world, npcs);
+            }
             self.damage_pve(i, npcs);
             // `:17199-17208`.
             let (time_left, penetrate) = {
@@ -774,6 +931,88 @@ impl ProjectilePool {
                 p.time_left = 0;
             }
         }
+    }
+
+    /// `Kill()`'s bomb path: `PrepareBombToBlow` (`Projectile.cs:46770-
+    /// 46844`) resizes the box and re-arms the damage, `Damage()` walks the
+    /// NPCs through the resized box, `Kill_ExplodeTiles` (`:77265-77380`)
+    /// digs the radius circle, and the slot deactivates.
+    fn explode_bomb(&mut self, slot: usize, world: &mut World, npcs: &mut [Npc]) {
+        let (w, h, damage, knock_back) = match self.slots[slot].kind {
+            // `:46775-46781`: the bombs — 128×128, damage 100, knockback 8.
+            BOMB | STICKY_BOMB | BOUNCY_BOMB | BOMB_FISH => (128.0, 128.0, 100, 8.0),
+            // `:46787-46791`: the dynamite — 250×250, damage 250,
+            // knockback 10.
+            DYNAMITE => (250.0, 250.0, 250, 10.0),
+            _ => {
+                self.slots[slot].detonated = false;
+                return;
+            }
+        };
+        let p = &mut self.slots[slot];
+        // `PrepareBombToBlow`: the box recentres on the old center.
+        let cx = p.pos.x + p.w * 0.5;
+        let cy = p.pos.y + p.h * 0.5;
+        p.w = w;
+        p.h = h;
+        p.pos = Vec2::new(cx - w * 0.5, cy - h * 0.5);
+        p.damage = damage;
+        p.knock_back = knock_back;
+        p.tile_collide = false;
+        p.detonated = false;
+        // `Damage()` — the PVE walk through the resized box.
+        self.damage_pve(slot, npcs);
+        // `Kill_ExplodeTiles`: the radius circle kills the tiles
+        // (`ExplodeTiles` `:78707+` — the distance check per tile), the
+        // 3×3 walls around each kill follow (`:78741-78762`).
+        let radius = match self.slots[slot].kind {
+            DYNAMITE => 7.0,
+            _ => 4.0,
+        };
+        let p = &self.slots[slot];
+        let ctx = ((p.pos.x + p.w * 0.5) / 16.0) as i32;
+        let cty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+        let r = radius as i32;
+        let min_i = (ctx - r).max(0);
+        let max_i = (ctx + r).min(world.width - 1);
+        let min_j = (cty - r).max(0);
+        let max_j = (cty + r).min(world.height - 1);
+        for ty in min_j..=max_j {
+            for tx in min_i..=max_i {
+                let dx = (tx as f32 - ctx as f32).abs();
+                let dy = (ty as f32 - cty as f32).abs();
+                if (dx * dx + dy * dy).sqrt() >= radius {
+                    continue;
+                }
+                let Some(t) = world.tile(tx, ty) else {
+                    continue;
+                };
+                if !t.active() || !can_explode_tile(t.kind, t.frame_y as i32 / 18) {
+                    continue;
+                }
+                // `WorldGen.KillTile(i, j)` — the default drops stay on (the
+                // C# passes no `noItem`).
+                let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                // `ExplodeTiles`' wall walk: the 3×3 around the killed tile.
+                for wy in (ty - 1)..=(ty + 1) {
+                    for wx in (tx - 1)..=(tx + 1) {
+                        let Some(wt) = world.tile(wx, wy) else {
+                            continue;
+                        };
+                        if wt.wall != 0 && wt.wall != 350 {
+                            // `WorldGen.KillWall` — the port's wall break
+                            // discards the item (the C# KillWall drops the
+                            // wall item; the explosion path drops nothing —
+                            // see ANALYSIS).
+                            let _ = tr_core::edit::break_wall(world, wx, wy);
+                        }
+                    }
+                }
+            }
+        }
+        // The kill bookkeeping.
+        self.slots[slot].active = false;
+        self.slots[slot].time_left = 0;
     }
 
     /// The target-selection gate of `Damage_PVE` (`:12577-12583`): the slot's
@@ -1509,5 +1748,153 @@ mod boomerang_tests {
             }
         }
         assert!(died, "the stray kills past the cut-off");
+    }
+}
+
+#[cfg(test)]
+mod bomb_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut tr_core::World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_bomb_data_is_verbatim() {
+        // `Projectile.cs:1106-1112` + the fuse seeds `:10970-10993`: the
+        // bomb 180 ticks, the dynamite 300; the sticky set has no plain
+        // tile collide (`:1198-1205`).
+        let bomb = proj_data(BOMB).unwrap();
+        assert_eq!((bomb.w, bomb.h), (22.0, 22.0));
+        assert_eq!(bomb.ai_style, 16);
+        assert_eq!(bomb.time_left, 180);
+        let dyna = proj_data(DYNAMITE).unwrap();
+        assert_eq!((dyna.w, dyna.h), (10.0, 10.0));
+        assert_eq!(dyna.time_left, 300);
+        let sticky = proj_data(STICKY_BOMB).unwrap();
+        assert!(!sticky.tile_collide);
+        assert_eq!(proj_data(BOMB_FISH).unwrap().time_left, 180);
+    }
+
+    #[test]
+    fn the_bomb_detonates_and_digs_the_crater() {
+        // The fuse: 180 ticks → `timeLeft <= 3` → the kill path resizes to
+        // 128×128/damage 100 (`PrepareBombToBlow`) and digs radius 4
+        // (`Kill_ExplodeTiles`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        let mut w = world();
+        // A stone slab 20×20 centred on the bomb.
+        for y in 14..34 {
+            for x in 10..40 {
+                put(&mut w, x, y, 1);
+            }
+        }
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..181 {
+            pool.update(&mut w, &mut npcs, None);
+        }
+        assert!(!pool.slots[0].active, "the bomb exploded at the fuse end");
+        // The crater: the tiles inside radius 4 are gone.
+        assert!(w.tile(20, 20).unwrap().flags & FLAG_ACTIVE == 0, "the center dug");
+        assert!(
+            w.tile(23, 20).unwrap().flags & FLAG_ACTIVE == 0,
+            "3 tiles out dug"
+        );
+        // The tiles at distance ≥ 4 survive.
+        assert!(
+            w.tile(25, 20).unwrap().flags & FLAG_ACTIVE != 0,
+            "5 tiles out survives"
+        );
+    }
+
+    #[test]
+    fn the_dynamite_digs_a_wider_crater() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(DYNAMITE, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        let mut w = world();
+        for y in 10..40 {
+            for x in 5..45 {
+                put(&mut w, x, y, 1);
+            }
+        }
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..301 {
+            pool.update(&mut w, &mut npcs, None);
+        }
+        assert!(!pool.slots[0].active);
+        assert!(w.tile(26, 20).unwrap().flags & FLAG_ACTIVE == 0, "6 tiles out dug");
+        assert!(
+            w.tile(28, 20).unwrap().flags & FLAG_ACTIVE != 0,
+            "8 tiles out survives"
+        );
+    }
+
+    #[test]
+    fn the_blast_guards_protect_the_chests_and_traps() {
+        // `CanExplodeTile` (`:78640-78700`): the chests 21 survive via the
+        // PreventsActuationUnder-style guard set (the 470/475 are in it;
+        // the plain chest 21 dies in the C# — the port's tile 21 is the
+        // chest, no guard) — the guarded ones are the sensors/dolls; the
+        // trap 137 variants 1-4 survive pre-Golem, the dart variant 0 dies.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOMB, 20.0 * 16.0, 20.0 * 16.0, 0.0, 0.0, 0, 0.0);
+        let mut w = world();
+        for y in 14..34 {
+            for x in 10..40 {
+                put(&mut w, x, y, 1);
+            }
+        }
+        // The display doll (475) and a guarded trap variant stand in the
+        // blast radius.
+        put(&mut w, 20, 19, 475);
+        let i = w.index(21, 19);
+        w.tiles[i] = Tile {
+            kind: 137,
+            frame_y: 18, // the superdart variant — guarded
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut npcs: Vec<Npc> = Vec::new();
+        for _ in 0..181 {
+            pool.update(&mut w, &mut npcs, None);
+        }
+        assert!(
+            w.tile(20, 19).unwrap().flags & FLAG_ACTIVE != 0,
+            "the doll survives the blast"
+        );
+        assert!(
+            w.tile(21, 19).unwrap().flags & FLAG_ACTIVE != 0,
+            "the guarded trap variant survives"
+        );
+    }
+
+    #[test]
+    fn the_flight_damage_zeroes_and_the_bounce_damps() {
+        // `:47175-47176`: the flight damage zeroes on the first AI tick;
+        // the bounce damp is −0.4 (`:19737-19762`).
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOMB, 16.0, 16.0, 8.0, 0.0, 55, 0.0);
+        let mut w = world();
+        pool.update(&mut w, &mut [], None);
+        assert_eq!(pool.slots[0].damage, 0, "the flight damage zeroes");
+        assert!((pool.slots[0].vel.y - 0.2).abs() > 1e-6, "no gravity before tick 5");
+        for _ in 0..5 {
+            pool.update(&mut w, &mut [], None);
+        }
+        assert!(
+            (pool.slots[0].vel.y - 0.2).abs() < 1e-6,
+            "the gravity tail adds 0.2"
+        );
     }
 }

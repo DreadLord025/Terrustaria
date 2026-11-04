@@ -1407,6 +1407,7 @@ pub(crate) mod front_flow_tests {
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
+            te_step: FixedStepper::new(1.0 / 60.0, 8),
             rain: Rain::new(1),
             wind: tr_core::wind::Wind::new(1),
             atmo: 1.0,
