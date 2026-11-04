@@ -77,6 +77,10 @@ pub struct Projectile {
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
     bounces: u8,
+    /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
+    /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
+    /// per tick and places the tile on landing.
+    pub falling_tile: Option<u16>,
 }
 
 impl Default for Projectile {
@@ -100,6 +104,7 @@ impl Default for Projectile {
             id_static_hit_cooldown: -1,
             extra_updates: 0,
             bounces: 0,
+            falling_tile: None,
         }
     }
 }
@@ -299,10 +304,49 @@ impl ProjectilePool {
         p.id_static_hit_cooldown = id_static_hit_cooldown;
     }
 
+    /// The tile-fall spawn (`SpawnFallingBlockProjectile`'s
+    /// `Projectile.NewProjectile(..., 0f, 0.41f, projType, dmg, ...)` +
+    /// `ai[0] = 1f`, `WorldGen.cs:86071-86073`): the 10×10 sand ball falls
+    /// with the tile-fall gravity and places its tile on landing.
+    pub fn spawn_falling(&mut self, tile_kind: u16, proj_kind: u16, damage: i32, x: f32, y: f32) -> Option<usize> {
+        let mut slot = None;
+        for (i, p) in self.slots.iter().enumerate() {
+            if !p.active {
+                slot = Some(i);
+                break;
+            }
+        }
+        let slot = slot?;
+        self.slots[slot] = Projectile {
+            active: true,
+            kind: proj_kind,
+            owner: 0,
+            pos: Vec2::new(x, y),
+            rot: 0.0,
+            vel: Vec2::new(0.0, 0.41),
+            damage,
+            knock_back: 0.0,
+            crit: false,
+            time_left: tr_core::falling::TIME_LEFT_DEFAULT,
+            max_penetrate: 1,
+            penetrate: 1,
+            uses_local_immunity: false,
+            local_hit_cooldown: -2,
+            uses_id_static_immunity: false,
+            id_static_hit_cooldown: -1,
+            extra_updates: 0,
+            bounces: 0,
+            falling_tile: Some(tile_kind),
+        };
+        let base = slot * 256;
+        self.local_immunity[base..base + 256].fill(0);
+        Some(slot)
+    }
+
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
-    pub fn update(&mut self, world: &World, npcs: &mut [Npc]) {
+    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc]) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
@@ -320,6 +364,34 @@ impl ProjectilePool {
             for _ in 0..sub_steps {
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
+                }
+                // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
+                // 0.41f` per tick, the position integrates the velocity (the
+                // generic `position += velocity` of `Update`), and the
+                // landing places the tile back.
+                if self.slots[i].falling_tile.is_some() {
+                    self.slots[i].vel.y =
+                        (self.slots[i].vel.y + tr_core::falling::TILE_FALL_GRAVITY).min(10.0);
+                    let vel = self.slots[i].vel;
+                    self.slots[i].pos += vel;
+                }
+            }
+            if let Some(tile_kind) = self.slots[i].falling_tile {
+                // The landing: the bottom edge inside a solid tile → place
+                // the tile back and kill the projectile.
+                let p = &self.slots[i];
+                if tr_core::falling::landed(world, p.pos.x, p.pos.y)
+                    && tr_core::falling::can_place_back(world, p.pos.x, p.pos.y, tile_kind)
+                {
+                    let tx = (p.pos.x / 16.0) as i32;
+                    let ty = (p.pos.y / 16.0) as i32;
+                    if let Some(t) = world.tile_mut(tx, ty) {
+                        t.kind = tile_kind;
+                        t.flags |= tr_core::tile::FLAG_ACTIVE;
+                        t.liquid = 0;
+                    }
+                    self.slots[i].active = false;
+                    self.slots[i].time_left = 0;
                 }
             }
             self.damage_pve(i, npcs);
@@ -445,7 +517,7 @@ mod tests {
 
     /// One pool update plus the per-NPC decay the NPC update would run
     /// (`NPC.cs:90454-90459`), so multi-tick tests see the gates age.
-    fn tick(world: &World, pool: &mut ProjectilePool, npc: &mut Npc) {
+    fn tick(world: &mut World, pool: &mut ProjectilePool, npc: &mut Npc) {
         for v in npc.immune.iter_mut() {
             *v = (*v - 1).max(0);
         }
@@ -485,7 +557,7 @@ mod tests {
 
     #[test]
     fn single_hit_shuriken_dies_without_touching_immunity() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
@@ -501,7 +573,7 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&world, std::slice::from_mut(&mut npc));
+        pool.update(&mut world, std::slice::from_mut(&mut npc));
         assert!(!pool.slots()[slot].active, "penetrate 1 → dead after the hit");
         assert_eq!(pool.slots()[slot].penetrate, 0);
         assert!(npc.hp < npc.max_hp);
@@ -511,7 +583,7 @@ mod tests {
 
     #[test]
     fn local_immunity_gates_rehits_for_the_cooldown() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
@@ -531,7 +603,7 @@ mod tests {
         // `usesLocalNPCImmunity` + `localNPCHitCooldown = 12` in SetDefaults).
         pool.set_immunity(slot, 3, true, 12, false, -1);
         let hp0 = npc.hp;
-        tick(&world, &mut pool, &mut npc);
+        tick(&mut world, &mut pool, &mut npc);
         assert!(pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].penetrate, 2);
         assert_eq!(npc.hp, hp0 - 10);
@@ -540,17 +612,17 @@ mod tests {
         // `NPC.immune[owner]` (`:14108-14109`). Set to 12 on tick 1, it frees
         // the gate on tick 13.
         for _ in 0..11 {
-            tick(&world, &mut pool, &mut npc);
+            tick(&mut world, &mut pool, &mut npc);
         }
         assert_eq!(npc.hp, hp0 - 10, "gated for the 11 middle ticks");
-        tick(&world, &mut pool, &mut npc);
+        tick(&mut world, &mut pool, &mut npc);
         assert_eq!(npc.hp, hp0 - 20, "tick 13: the local entry expired");
         assert_eq!(pool.slots()[slot].penetrate, 1);
     }
 
     #[test]
     fn default_penetrating_hits_use_the_owner_immunity_of_10() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
@@ -568,15 +640,15 @@ mod tests {
             .unwrap();
         pool.set_immunity(slot, 5, false, -2, false, -1);
         let hp0 = npc.hp;
-        tick(&world, &mut pool, &mut npc);
+        tick(&mut world, &mut pool, &mut npc);
         assert_eq!(npc.hp, hp0 - 10);
         assert_eq!(npc.immune[0], 10, "`:14117`");
         for _ in 0..9 {
-            tick(&world, &mut pool, &mut npc);
+            tick(&mut world, &mut pool, &mut npc);
         }
         assert_eq!(npc.hp, hp0 - 10, "the owner gate holds for the 10 ticks");
         assert_eq!(pool.slots()[slot].penetrate, 4, "tick 1 already spent one");
-        tick(&world, &mut pool, &mut npc);
+        tick(&mut world, &mut pool, &mut npc);
         assert_eq!(npc.hp, hp0 - 20, "the 10th decay tick freed the gate");
         assert_eq!(npc.immune[0], 10, "re-applied");
         assert_eq!(pool.slots()[slot].penetrate, 3, "the freed gate landed a hit");
@@ -584,7 +656,7 @@ mod tests {
 
     #[test]
     fn id_static_immunity_is_shared_across_slots_of_the_same_kind() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let mut npc = one_npc(&world);
         npc.x = 20.0 * TILE_PX;
@@ -614,14 +686,14 @@ mod tests {
         pool.set_immunity(a, 2, false, -2, true, 30);
         pool.set_immunity(b, 2, false, -2, true, 30);
         let hp0 = npc.hp;
-        tick(&world, &mut pool, &mut npc);
+        tick(&mut world, &mut pool, &mut npc);
         // Both slots overlap the NPC in the same tick: the ID-static stamp
         // written by the first hit (`:13972`) gates the second.
         assert_eq!(npc.hp, hp0 - 10);
         let stamp = *pool.id_static.get(&(SHURIKEN, 0)).unwrap();
         assert!(stamp > pool.update_count, "the stamp must still be live");
         for _ in 0..31 {
-            tick(&world, &mut pool, &mut npc);
+            tick(&mut world, &mut pool, &mut npc);
         }
         assert!(
             npc.hp < hp0 - 10,
@@ -631,14 +703,14 @@ mod tests {
 
     #[test]
     fn time_left_expires_the_slot() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn(SHURIKEN, 0, Vec2::ZERO, Vec2::ZERO, 10, 0.0, false)
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&world, &mut []);
+            pool.update(&mut world, &mut []);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -646,7 +718,7 @@ mod tests {
 
     #[test]
     fn extra_updates_runs_the_ai_twice_per_tick() {
-        let world = ground();
+        let mut world = ground();
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn(
@@ -660,11 +732,111 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&world, &mut []);
+        pool.update(&mut world, &mut []);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
             pool.slots()[slot].pos.x - 10.0 * TILE_PX
         );
+    }
+}
+#[cfg(test)]
+mod falling_tests {
+    use super::*;
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    // The update needs `&mut World` (the landing placement) — the fixtures
+    // build the world, then pass it mutably.
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_falling_block_falls_at_the_tile_fall_gravity() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_falling(53, 31, 10, 160.0, 200.0)
+            .unwrap();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut w = world();
+        pool.update(&mut w, &mut npcs);
+        // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
+        assert!(
+            (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
+            "the tile-fall gravity (`AI_010`'s `velocity.Y += 0.41f`)"
+        );
+        assert!(pool.slots()[slot].active);
+        assert_eq!(pool.slots()[slot].kind, 31, "the sand ball projectile");
+    }
+
+    #[test]
+    fn the_falling_block_lands_and_places_the_tile() {
+        let mut pool = ProjectilePool::new();
+        // The spawn just above the solid row 24: the bottom edge (y + 10)
+        // starts at 384 — the top of row 24 — and the first gravity step
+        // pushes it inside.
+        let slot = pool
+            .spawn_falling(53, 31, 10, 160.0, 374.0)
+            .unwrap();
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(&mut w, &mut npcs);
+        assert!(!pool.slots()[slot].active, "the projectile died on landing");
+        // The placement resolves through the box center → the tile row 23
+        // (the last free row above the solid).
+        let placed = w.tile(10, 23).unwrap();
+        assert_eq!(placed.kind, 53, "the sand placed back");
+        assert!(placed.active());
+        assert_eq!(placed.liquid, 0);
+    }
+
+    #[test]
+    fn the_falling_block_chain_refills_the_column() {
+        // A two-sand column: breaking the support spawns the first fall; the
+        // landing frees the second (the next edit pass re-checks).
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+        for y in [21, 22] {
+            let i = w.index(10, y);
+            w.tiles[i] = Tile {
+                kind: 53,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut npcs: Vec<Npc> = Vec::new();
+        // Break the support (the tile at (10, 23)).
+        {
+            let i = w.index(10, 23);
+            w.tiles[i] = Tile::default();
+        }
+        let Some(fall) = tr_core::falling::check_falling(&w, 10, 22) else {
+            panic!("the sand at (10, 22) lost its support");
+        };
+        // Clear the falling tile (the C# `tileCache.ClearTile()`).
+        {
+            let i = w.index(10, 22);
+            w.tiles[i] = Tile::default();
+        }
+        pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
+        // Update until the landing.
+        for _ in 0..40 {
+            pool.update(&mut w, &mut npcs);
+        }
+        assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
+        assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
     }
 }

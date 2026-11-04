@@ -75,6 +75,15 @@ pub(crate) fn scan_scene_at(
     // `CalculateZones`' `ZoneUnderworldHeight`/`ZoneBeach` terms
     // (`SceneMetrics.cs:674,691`): `Main.UnderworldLayer` is `maxTilesY - 200`
     // (`Main.cs:2790`, `spawner::UNDERWORLD_LAYER`).
+    // `SceneMetrics.cs:682-684`: ZoneDungeon — the brick count, below the
+    // world surface, behind a dungeon wall at the scan centre.
+    if metrics.dungeon_tile_count >= tr_core::scene::thresholds::DUNGEON_TILE
+        && (metrics.tile_center.1 as f64) > world.world_surface
+    {
+        metrics.zone_dungeon = world
+            .tile(metrics.tile_center.0, metrics.tile_center.1)
+            .is_some_and(|t| tr_core::scene::is_dungeon_wall(t.wall));
+    }
     metrics.calculate_zones(
         world.world_surface,
         world.height - 200,
@@ -128,6 +137,51 @@ fn scan_tiles(world: &World, metrics: &mut SceneMetrics) {
                 && ocean_depths(world.world_surface, world.rock_layer, x, world.width, y)
             {
                 metrics.ocean_sand_tile_count += 1;
+            }
+            // The M2-BUFF-5 auras (`SceneMetrics.cs:378-409`): the lit-frame
+            // gates ride the stored frames — the object system (DW-1.6)
+            // writes real frames, so a computed `-1` only slips through the
+            // `<` gates (a legacy -1 lantern matches neither range).
+            match tile.kind {
+                215 => {
+                    if tile.frame_y < 36 {
+                        metrics.has_campfire = true;
+                    }
+                }
+                405 => {
+                    if tile.frame_x < 54 {
+                        metrics.has_campfire = true;
+                    }
+                }
+                49 => {
+                    if tile.frame_x < 18 {
+                        metrics.water_candle_count += 1;
+                    }
+                }
+                372 => {
+                    if tile.frame_x < 18 {
+                        metrics.peace_candle_count += 1;
+                    }
+                }
+                646 => {
+                    if tile.frame_x < 18 {
+                        metrics.shadow_candle_count += 1;
+                    }
+                }
+                506 => {
+                    if tile.frame_x < 72 {
+                        metrics.has_cat_bast = true;
+                    }
+                }
+                42 => {
+                    if (324..=358).contains(&tile.frame_y) {
+                        metrics.has_heart_lantern = true;
+                    }
+                    if (252..=286).contains(&tile.frame_y) {
+                        metrics.has_star_in_bottle = true;
+                    }
+                }
+                _ => {}
             }
         }
     }
@@ -275,6 +329,85 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
 
 #[cfg(test)]
 mod tests {
+    /// A ground world with one aura tile set at `(x, y)`.
+    fn aura_world(kind: u16, frame_x: i16, frame_y: i16) -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 100..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let i = w.index(100, 95);
+        w.tiles[i] = tr_core::Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_aura_scan_reads_the_frame_gates() {
+        // `SceneMetrics.ScanTiles` (`:378-409`): the lit campfire, the three
+        // candles and the lantern/star ranges ride their frame windows; the
+        // wrong-frame tile does not count.
+        // The lit campfire: 215 with frameY < 36.
+        let m = scan_scene_at(&aura_world(215, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.has_campfire);
+        // An unlit campfire frame (>= 36) does not count.
+        let m = scan_scene_at(&aura_world(215, 0, 54), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(!m.has_campfire);
+        // The water candle: 49 with frameX < 18.
+        let m = scan_scene_at(&aura_world(49, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert_eq!(m.water_candle_count, 1);
+        let m = scan_scene_at(&aura_world(49, 18, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert_eq!(m.water_candle_count, 0);
+        // The peace/shadow candles count separately.
+        let m = scan_scene_at(&aura_world(372, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert_eq!(m.peace_candle_count, 1);
+        let m = scan_scene_at(&aura_world(646, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert_eq!(m.shadow_candle_count, 1);
+        // The heart lantern range 324-358 vs the star range 252-286 on 42.
+        let m = scan_scene_at(&aura_world(42, 0, 324), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.has_heart_lantern && !m.has_star_in_bottle);
+        let m = scan_scene_at(&aura_world(42, 0, 252), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.has_star_in_bottle && !m.has_heart_lantern);
+        // The snapshot the Player reads.
+        let m = scan_scene_at(&aura_world(215, 0, 0), [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.auras().campfire);
+    }
+
+    #[test]
+    fn the_sunflower_count_and_the_graveyard_cancel() {
+        // `AggregateTileCounts` (`:617-624`): a sunflower (27) in the window
+        // raises HasSunflower; a graveyard above GraveyardTileMin cancels it.
+        let mut w = aura_world(27, 0, 0);
+        let m = scan_scene_at(&w, [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.has_sunflower);
+        // Tombstones (85) past the min cancel the flower.
+        for x in 90..120 {
+            for y in 60..75 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 85,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let m = scan_scene_at(&w, [100.0 * 16.0, 95.0 * 16.0], false, false, false);
+        assert!(m.graveyard_tile_count > tr_core::scene::thresholds::GRAVEYARD_TILE_MIN);
+        assert!(!m.has_sunflower);
+    }
+
     use super::*;
     use tr_core::scene::{Sandstorm, SceneState, thresholds};
     use tr_core::tile::FLAG_ACTIVE;

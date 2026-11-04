@@ -92,6 +92,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let death_text = dot_death_text(player.dot_death).to_string();
             player.dot_death = None;
             drop(player);
+            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
+            // color (`ChatColors.cs`); the ported monitor rides the App.
+            crate::chat::broadcast_death(
+                &mut app.chat,
+                &app.player_name,
+                &death_text,
+            );
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(boss_near, false);
@@ -134,8 +141,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             Some(spawner::SpawnContext {
                 // The scene flags arrive as the systems land (hardmode
                 // M5-HARDFORCE, blood moon M2-WEATHER, zones M5-BIOME); the
-                // chain runs with them false today.
-                flags: spawner::SpawnFlags::default(),
+                // candle zones ride the M2-BUFF-5 scene scan
+                // (`SceneMetrics.CalculateZones`, `:706-708`).
+                flags: spawner::SpawnFlags {
+                    zone_water_candle: app.scene_metrics.water_candle_count > 0,
+                    zone_peace_candle: app.scene_metrics.peace_candle_count > 0,
+                    ..spawner::SpawnFlags::default()
+                },
                 world: &app.world,
                 player_center: (pcx, pcy),
                 player_pos: (player.x, player.y),

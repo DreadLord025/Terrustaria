@@ -18,3 +18,4 @@ pub(crate) mod projectiles;
 pub(crate) mod scene_scan;
 pub(crate) mod step;
 pub(crate) mod weather;
+pub(crate) mod wiring;

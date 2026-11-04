@@ -39,6 +39,7 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::chat;
 use crate::audio;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
@@ -150,6 +151,9 @@ pub(crate) struct App {
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
     pub(crate) bestiary_selected: Option<usize>,
+    /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
+    /// chat state (M6-CHAT-1).
+    pub(crate) chat: chat::ChatMonitor,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -283,6 +287,10 @@ pub(crate) struct App {
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
+    /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
+    /// pads (`Wiring.cs`).
+    pub(crate) wiring: tr_core::wiring::Wiring,
+    pub(crate) wiring_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
@@ -513,6 +521,10 @@ impl App {
     /// original's per-update tick and 30-tick rescan cadence.
     pub(crate) fn update_waterfalls(&mut self, dt: f32, screen: Vec2) {
         world_sim::liquids::update_waterfalls(self, dt, screen);
+    }
+
+    pub(crate) fn update_wiring(&mut self, dt: f32) {
+        world_sim::wiring::update_wiring(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -900,6 +912,28 @@ impl App {
                 p.dash_type = d.clamp(0, 6);
             }
         }
+        // `TR_WINGS=<ArmorIDs.Wing>` / `TR_BOOTS=<1..5>` pin the flight gear —
+        // the granting accessories land with M3-EQUIP-3. The wings set
+        // `hasWings` (the fall-damage suppressor, `Player.cs:15602`).
+        if let Some(w) = std::env::var("TR_WINGS")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+        {
+            if let Some(p) = player.as_mut() {
+                p.wings_logic = w.clamp(0, 49);
+                let (fly, _, _, _, _, _) = crate::player::Player::wing_stats(w);
+                p.wing_time_max = fly;
+                p.has_wings = w > 0;
+            }
+        }
+        if let Some(b) = std::env::var("TR_BOOTS")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+        {
+            if let Some(p) = player.as_mut() {
+                p.rocket_boots = b.clamp(0, 5);
+            }
+        }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
         if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
             if let Some(p) = player.as_mut() {
@@ -1155,6 +1189,18 @@ impl App {
                 } else {
                     None
                 }),
+            chat: {
+                // `TR_CHAT` opens the chat for the screenshot runs
+                // (the vanilla state opens on Enter only).
+                let mut chat = chat::ChatMonitor::default();
+                if std::env::var_os("TR_CHAT").is_some() {
+                    chat.open = true;
+                    chat.new_text("Belsin was slain...", crate::chat::COLOR_DEATH);
+                    chat.new_text("*Belsin rolls a 42", crate::chat::COLOR_SERVER_MESSAGE);
+                    chat.new_text("Belsin hello world", [255, 255, 255]);
+                }
+                chat
+            },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
@@ -1255,6 +1301,8 @@ impl App {
             liquid_tick: 0,
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
+            wiring: tr_core::wiring::Wiring::new(),
+            wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
             wind,
             atmo,
@@ -1290,6 +1338,9 @@ impl App {
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
+        // The faulty-lamp roll stream seeds from the world (`Main.rand`'s
+        // role in `Wiring`'s random branch, `Wiring.cs:812`).
+        app.wiring.seed_faulty_rng(world_seed | 1);
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {

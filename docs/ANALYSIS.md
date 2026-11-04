@@ -2732,3 +2732,123 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
   `the_gate_output_flip_re_trips_its_own_wire_line`.
 - The logic sensors (tiles 593/594) emit wire signals from world state —
   M7-WIRE-2 (they need the player/liquid probes).
+
+## Teleporters & pumps (M7-WIRE-5)
+
+`wiring.rs` gains the teleporter and pump halves of `Wiring.cs`:
+
+- **The teleporter pads** (tile 235, `HitWireSingle`'s case 235 at
+  `:1066-1082`): the wall-87 Lihzahrd guard, the pad registration (the first
+  hit fills `_teleport[0]`, a hit at a different position fills
+  `_teleport[1]`, the halfBrick adds 0.5 to the anchor y), reset to (-1, -1)
+  per colour pass. `Teleport()` (`:3120-3178`) runs up to four times per
+  `TripWire` (once per colour pass that registered both pads): the too-close
+  reject rule (`:3122-3127`), the two 48×48 pad boxes anchored at
+  `(X·16, Y·16 − 48)` and `TeleporterHitboxIntersects`' union check
+  (`:3181-3189`).
+- **The entity half** lives in the app layer (`world_sim/wiring.rs`): the
+  engine emits the pad pairs; the app moves the living player (gated by
+  `blockPlayerTeleportationForOneIteration`, `Wiring.cs:3126/704-708`) and
+  the NPCs (`lifeMax > 5`, no bosses — King Slime in the port's roster, and
+  the `TeleportationImmune` set — none of the implemented kinds is immune,
+  `NPCID.cs:10433`).
+- **The pumps** (tiles 142 in / 143 out, `HitWireSingle` `:2046-2125`): the
+  2×2 body tiles SkipWire'd and registered into the per-pass queues (capped
+  at 19 entries each), `XferWater` (`:475-520`) after every colour pass with
+  both queues filled. **The C# re-reads the in tile's liquid after every out
+  transfer** (`liquid = Main.tile[num, num2].liquid`, `:506`) — the overflow
+  continues into the next out tile; the port's first cut captured the level
+  once and was corrected (the cap test asserts the 55+45 split).
+- The pump `SkipWire` of the 2×2 body means a pump tile reached as a flood
+  seed does not register — the trip must come from a switch/wire line, as in
+  vanilla builds.
+
+Deviations: the entity movement is the port's positional teleport (the C#'s
+`Player.Teleport`/`NPC.Teleport` effects — the dust, the styles — are
+M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
+
+## Traps & statues (M7-WIRE-2)
+
+`wiring.rs` gains the statue half of `HitWireSingle`'s case 105
+(`Wiring.cs:2125-2440`): the style decode (`num138 = frameX / 36 +
+(frameY / 54 % 3) * 55`), the 3×2 `SkipWire`, the spawn anchor
+`(num137·16 + 16, (num136 + 3)·16)` and the verbatim style → spawn map. The
+NPC styles run `CheckMech(30)`; the item styles `CheckMech(600)` plus the
+`Item.MechSpawn` group checks. The engine emits `StatueSpawn` requests; the
+app layer (`world_sim/wiring.rs`) runs the `MechSpawn` caps and constructs the
+entities.
+
+Deviations:
+
+- **The ported statue subset**: the Blue Slime statue (style 4 → NPC 1 →
+  `NpcKind::Slime`/Blue), the Demon Eye statue (style 35 → NPC 2) and the
+  Heart/Star/Bomb item statues (styles 37/2/17 → the C# item ids 58/184/166,
+  dropped as `ItemDrop`s with the pickup ids). The remaining ~50 styles map
+  to C# NPCs/items outside the port's content (the critters, the Eater of
+  Souls, the special teleporting/jar statues) — they emit nothing; the map
+  arms arrive with the NPC families (M4-NPC-1).
+- **The `MechSpawn` caps are verbatim**: `NPC.MechSpawn` (`NPC.cs:7420-7505`,
+  the rings 200/600 px, the caps 3/6/10, the same-type group merging — the
+  port's kinds map 1:1 to their C# ids so the groups only matter once those
+  NPCs land) and `Item.MechSpawn` (`Item.cs:49385-49405`, the rings 300/800
+  px) — implemented in `crates/tr-app/src/wiring_stub.rs` over the app's
+  entity lists.
+- **The statue-spawned loot gating**: `Npc.spawned_from_statue` carries
+  `NPC.SpawnedFromStatue` (`NPC.cs:6061`); the `NPCLoot`'s
+  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks
+  (`NPC.cs:78849`) gate the drops — the port's statue-spawned slimes drop
+  nothing until the AnyInteractions tracking lands (M4-NPC polish).
+- **The trap projectile emission** (the dart/spear/flame/boulder traps'
+  `Projectile.NewProjectile` calls, `Wiring.cs:1774-2000`) needs the
+  projectile families (M4-PROJ-2+) — their `CheckMech` cooldowns (200/90/300/
+  900) are already exercised by the queue; the emission arms are
+  passthroughs.
+
+## Falling blocks (M7-FALL-1)
+
+`tr-core/src/falling.rs` ports the trigger half of
+`WorldGen.SpawnFallingBlockProjectile` (`WorldGen.cs:86039-86090`); the flight
+half rides the app projectile pool (`tr-app/src/projectile.rs`), because in
+the C# the falling block **is** a projectile (`AI_010`'s `ai[0] == 1f`
+mode) — the sand at the broken support becomes projectile 31 and falls with
+`velocity.Y += 0.41f` per tick (the MP branch `:86074-86082` additionally
+dedupes falls within 60 ticks per column; the port is SP-layer, so the
+dedupe is not modelled).
+
+- **The trigger** (`check_falling`): the tile is one of
+  `TileID.Sets.Falling` {53, 234, 112, 116, 224, 123, 330-333, 495}, the
+  below passes `BlockBelowMakesSandFall` (`:86585-86604` — the below
+  inactive, or the two-below inactive with a non-solid below, or the
+  hardened-sand blend 165 below), and `AllowsSandfall` (`:86612-86624`) —
+  the chest/statue-anchor kinds above hold the column. The caller (the
+  break path in `world_sim/editing.rs`) clears the above tile — the C#'s
+  `tileCache.ClearTile()` — and spawns the projectile at
+  `(i·16 + 8, j·16 + 8)`.
+- **The projectile data** (`GetSandfallProjData`, `:86514-86570`): the
+  kind→(projectile, damage) map — the sand default 31, crimsand 56, mud 59,
+  sandstone 67, silt 71, ebonsand 241, the snow variants 411-414 with
+  damage 0, the desert fossil 812; damage 10 otherwise.
+- **The flight**: the gravity `+0.41` per sub-step capped at 10
+  (`TILE_FALL_GRAVITY`), and the position integrates the velocity per
+  sub-step (the generic `position += velocity` of `Projectile.Update`) —
+  the port's first cut only accumulated the velocity and the block hovered
+  in the air; the chain test caught it.
+- **The landing** (`landed` + `can_place_back`): when the box's bottom
+  edge (`y + 10`, the 10×10 sand-ball box) enters a solid tile row, the
+  tile is placed back **at the box center** (`(x + 5, y + 5)` — the C#'s
+  `AI_010` lands the projectile via the tile collision and
+  `Kill()`→`PlaceTile` at the box's tile), the liquid under it is
+  displaced (`liquid = 0` at the placed cell — the sink-in is a
+  simplification; the C# has the splash variants), and the projectile is
+  killed. The chain refill works: the placed tile supports the next
+  falling block only via the next break/trigger pass (the port does not
+  re-run `SpawnFallingBlockProjectile` from the landing itself — the C#
+  lands on the column below and stops).
+- The `timeLeft` default 3600 matches `SetDefaults`.
+
+Deviations: no MP dedupe (SP layer); the sink-into-liquid and the
+`Collision` niceties (the tile-collide step of the C#'s generic movement,
+which also kills on the side collision) are simplified to the
+bottom-edge landing; the projectile-vs-NPC contact damage of the falling
+ball works through the pool's ordinary `Damage_PVE` (the `damage` input
+of `spawn_falling`).

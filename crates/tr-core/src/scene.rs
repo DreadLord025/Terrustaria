@@ -82,6 +82,49 @@ pub struct SceneMetrics {
     /// `metrics.PerspectivePlayer.shimmering` via `AddPlayerEffects`
     /// (`SceneMetrics.cs:747+`): the local player stands in shimmer liquid.
     pub player_shimmering: bool,
+    // — the M2-BUFF-5 auras (`SceneMetrics.ScanTiles`, `:378-409`) —
+    /// `HasCampfire`: a `Campfires` tile (215) with `frameY < 36` (the lit
+    /// frames) or tile 405 with `frameX < 54` (`:378-380, 396-398`).
+    pub has_campfire: bool,
+    /// `WaterCandleCount` — tile 49, `frameX < 18` (`:382-385`).
+    pub water_candle_count: i32,
+    /// `PeaceCandleCount` — tile 372, `frameX < 18` (`:386-389`).
+    pub peace_candle_count: i32,
+    /// `ShadowCandleCount` — tile 646, `frameX < 18` (`:390-393`).
+    pub shadow_candle_count: i32,
+    /// `HasCatBast` — tile 506, `frameX < 72` (`:400-402`).
+    pub has_cat_bast: bool,
+    /// `HasHeartLantern` — tile 42, `frameY 324-358` (`:404-406`).
+    pub has_heart_lantern: bool,
+    /// `HasStarInBottle` — tile 42, `frameY 252-286` (`:407-409`).
+    pub has_star_in_bottle: bool,
+    /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
+    /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
+    pub has_sunflower: bool,
+    /// `MeteorTileCount` — the meteorite brick (37) tiles (`:611`).
+    pub meteor_tile_count: i32,
+    /// `DungeonTileCount` — the brick families 41/43/44/481/482/483 (`:612`).
+    pub dungeon_tile_count: i32,
+    /// `ZoneMeteor` (`:678`).
+    pub zone_meteor: bool,
+    /// `ZoneGraveyard` (`:679`).
+    pub zone_graveyard: bool,
+    /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
+    /// scan driver (they read the centre tile's wall).
+    pub zone_dungeon: bool,
+}
+
+/// The `Player.SceneMetrics` aura read as a Copy snapshot — what
+/// `UpdateLifeRegen` (`:19170-19178`), `UpdateManaRegen` (`:19448`) and the
+/// scene-buff grants (`:25525-25555`) consume.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Auras {
+    pub campfire: bool,
+    pub heart_lantern: bool,
+    pub star_in_bottle: bool,
+    pub sunflower: bool,
+    pub cat_bast: bool,
+    pub shadow_candle: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -111,6 +154,16 @@ pub mod thresholds {
     pub const JUNGLE_TILE: i32 = 140;
     /// `ShimmerTileThreshold` (`SceneMetrics.cs:921`).
     pub const SHIMMER_TILE: i32 = 300;
+    /// `MeteorTileThreshold` (`SceneMetrics.cs:937`).
+    pub const METEOR_TILE: i32 = 75;
+    /// `DungeonTileThreshold` (`SceneMetrics.cs:938`).
+    pub const DUNGEON_TILE: i32 = 250;
+}
+
+/// `Main.wallDungeon` (`Main.cs:10596-10607`): the brick/background walls
+/// the dungeon zone requires behind the scan centre.
+pub fn is_dungeon_wall(wall: u16) -> bool {
+    matches!(wall, 7 | 8 | 9 | 94..=99)
 }
 
 impl SceneMetrics {
@@ -144,6 +197,31 @@ impl SceneMetrics {
             zone_hallow: false,
             zone_jungle: false,
             zone_beach: false,
+            has_campfire: false,
+            water_candle_count: 0,
+            peace_candle_count: 0,
+            shadow_candle_count: 0,
+            has_cat_bast: false,
+            has_heart_lantern: false,
+            has_star_in_bottle: false,
+            has_sunflower: false,
+            meteor_tile_count: 0,
+            dungeon_tile_count: 0,
+            zone_meteor: false,
+            zone_graveyard: false,
+            zone_dungeon: false,
+        }
+    }
+
+    /// The [`Auras`] snapshot of the scan.
+    pub fn auras(&self) -> Auras {
+        Auras {
+            campfire: self.has_campfire,
+            heart_lantern: self.has_heart_lantern,
+            star_in_bottle: self.has_star_in_bottle,
+            sunflower: self.has_sunflower,
+            cat_bast: self.has_cat_bast,
+            shadow_candle: self.shadow_candle_count > 0,
         }
     }
 
@@ -219,6 +297,14 @@ impl SceneMetrics {
             + self.count(234)
             + self.count(352)
             + sunflower_term;
+        // `SceneMetrics.cs:611-612`:
+        self.meteor_tile_count = self.count(37);
+        self.dungeon_tile_count = self.count(41)
+            + self.count(43)
+            + self.count(44)
+            + self.count(481)
+            + self.count(482)
+            + self.count(483);
         // `SceneMetrics.cs:625`:
         self.sand_tile_count = self.count(53)
             + self.count(112)
@@ -233,10 +319,16 @@ impl SceneMetrics {
             + self.count(403)
             + self.count(401);
         // `SceneMetrics.cs:615-624`: tombstones minus half the sunflowers
-        // (integer division), floored at zero.
+        // (integer division), floored at zero; `HasSunflower` rides the same
+        // counts (`:617-624`) — any tile 27 raises it, a graveyard above
+        // `GraveyardTileMin` (16) cancels it.
         self.graveyard_tile_count = self.count(85) - self.count(27) / 2;
+        self.has_sunflower = self.count(27) > 0;
         if self.graveyard_tile_count < 0 {
             self.graveyard_tile_count = 0;
+        }
+        if self.graveyard_tile_count > thresholds::GRAVEYARD_TILE_MIN {
+            self.has_sunflower = false;
         }
         // `SceneMetrics.cs:629-639`: clamp each sum at zero before the
         // cross-subtraction.
@@ -291,6 +383,9 @@ impl SceneMetrics {
         // `SceneMetrics.cs:675-676`:
         self.zone_snow = self.enough_tiles_for_snow();
         self.zone_desert = self.enough_tiles_for_desert();
+        // `SceneMetrics.cs:678-679`:
+        self.zone_meteor = self.meteor_tile_count >= thresholds::METEOR_TILE;
+        self.zone_graveyard = self.enough_tiles_for_graveyard();
         // `SceneMetrics.cs:691` via `WorldGen.oceanDepths` (`WorldGen.cs:4447`,
         // ported as [`ocean_depths`]):
         self.zone_beach = ocean_depths(
