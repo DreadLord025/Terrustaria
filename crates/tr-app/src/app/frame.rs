@@ -116,6 +116,7 @@ impl App {
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
+            self.handle_bestiary_clicks();
             if !self.handle_crafting_clicks() {
                 self.handle_inventory_clicks();
             }
@@ -685,6 +686,10 @@ impl App {
                     && front.is_none()
                     && !no_hud()
                     && !fullscreen_map
+                    // `Main.inFancyUI` (`IngameFancyUI.cs:64-72`): the
+                    // bestiary state covers the interface — the minimap HUD
+                    // does not draw under it.
+                    && !self.bestiary_open
                     && self.map_style == 1
                 {
                     if let Some(m) = map.as_ref() {
@@ -772,6 +777,9 @@ impl App {
                         },
                         m_h,
                         self.map_style,
+                        self.bestiary_open,
+                        self.bestiary_selected,
+                        &self.kill_tracker,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

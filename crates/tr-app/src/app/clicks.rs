@@ -137,6 +137,45 @@ impl App {
         true
     }
 
+    /// The bestiary screen's clicks: the inventory button that opens it
+    /// (`Main.cs:42455-42462` — `SetTalkNPC(-1)`/`npcChatCornerItem = 0` have
+    /// no port counterpart), then the grid cards and the Back panel while it
+    /// is open. Consumes the press on every hit.
+    pub(crate) fn handle_bestiary_clicks(&mut self) {
+        let left = self.ui_left_press;
+        if !left {
+            return;
+        }
+        if self.bestiary_open {
+            let (sw, sh) = self.screen_size();
+            let screen = Vec2::new(sw, sh);
+            // The Back panel closes the screen (`MakeExitButton` ->
+            // `Click_GoBack`); the inventory stays closed, like the source's
+            // `IngameFancyUI` return.
+            if ui::bestiary::back_hit(screen, self.mouse_pos) {
+                self.bestiary_open = false;
+                self.bestiary_selected = None;
+                self.ui_left_press = false;
+                return;
+            }
+            // A card opens its info page (`Click_SelectEntryButton`).
+            if let Some(idx) = ui::bestiary::card_at(screen, self.mouse_pos) {
+                self.bestiary_selected = Some(idx);
+                self.ui_left_press = false;
+                return;
+            }
+            return;
+        }
+        // The inventory button (`DrawBestiaryIcon`'s click arm): open the
+        // bestiary, close the inventory (`IngameFancyUI.OpenUIState`).
+        if self.inventory_open && ui::bestiary::button_hit(self.mouse_pos) {
+            self.inventory_open = false;
+            self.bestiary_open = true;
+            self.bestiary_selected = None;
+            self.ui_left_press = false;
+        }
+    }
+
     pub(crate) fn handle_inventory_clicks(&mut self) {
         let left = self.ui_left_press;
         let right = self.ui_right_press;

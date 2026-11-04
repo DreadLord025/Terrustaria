@@ -145,6 +145,11 @@ pub(crate) struct App {
     /// `Main.BestiaryTracker.Kills` (`NPCKillsTracker.cs`): the per-world
     /// bestiary kill counts, persisted in the sidecar's v5 kills line.
     pub(crate) kill_tracker: tr_core::bestiary::KillTracker,
+    /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`'s port — the bestiary
+    /// screen over the world, opened from the inventory's bestiary button
+    /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
+    pub(crate) bestiary_open: bool,
+    pub(crate) bestiary_selected: Option<usize>,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -1098,6 +1103,17 @@ impl App {
                 tracker.load_pairs(loaded_kills.into_iter());
                 tracker
             },
+            bestiary_open: std::env::var_os("TR_BESTIARY").is_some(),
+            // `TR_BESTIARY=<n>` also selects entry n (1-based) for the
+            // info-page screenshots; `0`/absent stays on the grid.
+            bestiary_selected: std::env::var("TR_BESTIARY")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .and_then(|n| if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
+                    Some(n - 1)
+                } else {
+                    None
+                }),
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).

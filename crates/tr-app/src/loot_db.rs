@@ -38,3 +38,17 @@ pub fn slime_database() -> &'static ItemDropDatabase {
         db
     })
 }
+
+/// The bestiary's per-entry drop lines — the  view of the same registrations the executor runs
+/// (ItemDropBestiaryInfoElement reads the database's rules; the port
+/// restates the family's rows so the info page and the drops stay in sync
+/// until the rules walk themselves for display, M4-BEST-1 follow-up).
+/// denom <= 1 = the always-drop case.
+pub fn drop_lines(net_id: i32) -> &'static [(i32, i32, i32, i32)] {
+    match net_id {
+        BLUE_SLIME => &[(23, 1, 2, 1)],
+        RED_SLIME | PURPLE_SLIME | BLACK_SLIME => &[(23, 2, 5, 1)],
+        PINKY => &[(3111, 25, 50, 1), (1309, 0, 0, 100)],
+        _ => &[],
+    }
+}

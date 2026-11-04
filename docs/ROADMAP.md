@@ -653,8 +653,10 @@ happiness & prices, M4-TOWN-3 shop stock (M4-TOWN umbrella), M7-PYLON-1 pylons
   `KillsToBanner` at full/½//5 (`CommonEnemyUICollectionInfoProvider.cs:49-64`); tracked
   via `Main.BestiaryTracker` (msg 51 case 5 remote credits).
 
-**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, M4-BEST-1
-bestiary data + UI, ✅ M4-LOOT-3 money roll chain.
+**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, ✅ M4-BEST-1
+bestiary data + UI (kill tracking, unlock tiers, the UIBestiaryTest screen, sidecar v5
+persistence; the world-file section 11 store stays M6-SAVE-1, sorting/filtering grids
+and the search bar stay REFACTOR-cleanup), ✅ M4-LOOT-3 money roll chain.
 
 ## 17. Projectiles
 
@@ -1289,7 +1291,7 @@ section in brackets before starting a row.
 | ✅ M4-PROJ-1 | `M4-PROJ-1-engine` | done 2026-11-04: the projectile pool — 1000 slots with `NewProjectileSetup` first-free/`FindOldestProjectile` recycle (`Projectile.cs:10811-10880`), the `timeLeft`/`penetrate` tick bookkeeping (`:17199-17208`), `1+extraUpdates` AI sub-steps (`:16668`), the PVE walk with all three immunity systems (per-owner `NPC.immune` 10, `localNPCImmunity` cooldowns, ID-static `GameUpdateCount` stamps) and the on-hit application (`:12562-12624`, `:14087-14119`); the shuriken moved into the pool as aiStyle 2; 8 tests |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
-| M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |
+| ✅ M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI: `tr-core/src/bestiary.rs` (the five `UnlockState` tiers, `GetUnlockStateByKillCount`'s 1/½/⅕/full ladder + the boss quick-unlock, `NPCKillsTracker` with the 999999999 cap, the family banner chain `NPCtoBanner`→`BannerToItem`→`KillsToBanner` — Pinky 25, rest 50, bosses 0) + the app catalog (12 entries, credit ids = `NPCID.Search.GetName`) + kill registration at the NPC death hook + sidecar v5 persistence + `ui/bestiary.rs` (the `UIBestiaryTest` screen: the 72px entry grid, `Slot_Back/Overlay/Front/Selection` cards with the 15% `Icon_Locked`, the tier-gated info page — `???` name / stats / kill progress / drop lines with rates from tier 4 — the completion bar, the inventory's `DrawBestiaryIcon` button (498,278), Esc/Back close) [16][23] | done 2026-11-04: 4 core tests + 2 app tests + the layout test; `TR_BESTIARY=<n>` screenshot hook (grid + info page verified) |
 | M4-REVENGE-1 | `M4-REVENGE-1-coin-loss` | revenge system [9] |
 | M4-TOWN | (umbrella retired into M4-TOWN-1..3) | — |
 
