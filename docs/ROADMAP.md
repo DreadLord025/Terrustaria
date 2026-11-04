@@ -158,9 +158,27 @@ referenced here exist in the catalog.
 **C#** `Liquid.cs`, `LiquidBuffer.cs`, `GameContent/Liquid/*` · **Rust** `liquid.rs`,
 `liquid_draw.rs`, `waterfall/`, `render/liquids.rs` · ✅ core (M1.5-LIQUID-2 done).
 
-- Remaining: shimmer vertex distortion (`Main.DrawTileInWater` full effect),
-  `HorizonClouds` fall tint, pumps (`Wiring.XferWater` `Wiring.cs:475`, in/out caps 20,
-  type-locked, 255 max), actuator liquid control, buckets.
+- ✅ 2026-11-04 (M1.5-LIQUID-3): the research corrected the row — there is no
+  vertex-position warping in 1.4.5.8; the "distortion" is the per-corner vertex
+  colours (already ported with LIQUID-2) + the screen-space `WaterDistortion`
+  pass (landed with BG-18). What was missing and is now ported: the
+  `SceneState.UpdateShimmer` ramps (`SceneState.cs:283-309` — `shimmerAlpha`
+  0.025/tick, `shimmerDarken` follows past 0.5, the 4-tick brighten delay on
+  the way out) driven by `ZoneShimmer` (the `_liquidCounts[3] ≥ 300` scan +
+  the depth window `worldSurface + 84 .. maxTilesY - 396`) and the player
+  contact (`PerspectivePlayer.shimmering` via `AddPlayerEffects`);
+  `shimmerDarken` now multiplies the surface seeds (`TileLightScanner.cs:3222`
+  — the wire existed, the state did not); `ModifyHorizonLight`
+  (`NextHorizonRenderer.cs:154-194`, called from `Main.cs:63921`) blends the
+  hardcoded `SunGradients` mid entries into the sky/tile colour at the
+  `GetVisibilities` strengths (day-only dawn/dusk remap windows × atmo ×
+  cloudAlpha²), with `Main.HorizonPhase` (`Main.cs:2792`) picking the table.
+  Hook: `TR_TIME=<ticks>` pins the raw clock (the dawn 0..10800 and dusk
+  43200..54000 windows the `TR_DAY` half-mapping cannot reach). Remaining:
+  the submerged-tile vertex tint (`TileDrawing.cs:4145`,
+  `SetShimmerVertexColors` on tiles behind shimmer — the tile-draw seam), the
+  `HorizonClouds` shader draw itself (`CloudsEnd`, the sky-visual side),
+  pumps, actuator liquid control, buckets.
 - **Hidden:** liquid updates every other tick (`Liquid.skipCount > 1`); `curMaxLiquid`
   scales with gfx quality (`Main.cs:17115`); waterfalls re-scan every 30 ticks (ported).
 
@@ -653,8 +671,10 @@ happiness & prices, M4-TOWN-3 shop stock (M4-TOWN umbrella), M7-PYLON-1 pylons
   `KillsToBanner` at full/½//5 (`CommonEnemyUICollectionInfoProvider.cs:49-64`); tracked
   via `Main.BestiaryTracker` (msg 51 case 5 remote credits).
 
-**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, M4-BEST-1
-bestiary data + UI, ✅ M4-LOOT-3 money roll chain.
+**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, ✅ M4-BEST-1
+bestiary data + UI (kill tracking, unlock tiers, the UIBestiaryTest screen, sidecar v5
+persistence; the world-file section 11 store stays M6-SAVE-1, sorting/filtering grids
+and the search bar stay REFACTOR-cleanup), ✅ M4-LOOT-3 money roll chain.
 
 ## 17. Projectiles
 
@@ -1207,7 +1227,7 @@ section in brackets before starting a row.
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
 | ✅ M1.5-LIQUID-2-det-fix | `M1.5-LIQUID-2-det-fix` | done 2026-11-03: the `TR_SHOT` SHA256 mismatch blamed on the sparkle pass was the **OS pointer** leaking into captures — `deterministic_pointer_park()` parks it offscreen and ignores `CursorMoved` during a capture without `TR_MOUSE`; the sparkle walk itself proven seed-deterministic (2 unit tests, byte-equal `TR_SPOUT` pairs). Caveat for future pairs: the autosave rewrites the loaded world — copy a pristine `.trwld` per run (ANALYSIS "Deterministic screenshots") |
-| M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
+| ✅ M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | the shimmer ramps (shimmerAlpha/shimmerDarken + the zone/contact triggers) + `shimmerDarken` on the surface seeds + `ModifyHorizonLight` (the sunrise/sunset gradient tint); the row's "vertex distortion" corrected by research — no vertex warping exists, the vertex colours + the WaterDistortion pass landed earlier [3] |
 | ✅ M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon light (night ramps + moon-phase floor), invisible blocks/walls light handling; stars = no light contribution (verified) [4] |
 | ✅ M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella — done 2026-11-03: the registry as a flat const slice (the wooden set 10/11/14/15/18/21), `TileObject.CanPlace`/`Place`, the KillTile cascade (CheckDoorClosed/Open, CheckChest, Check1x2/2x1/3x2), the world-interaction hook `interact_at` + OpenDoor/CloseDoor + door sounds; remaining: the full-registry generator, gemspark/glow (excluded — wall/light render work), the LMB frame_important gate (→ M1.4-TO-5); deviations in ANALYSIS "Tile objects (M1.4-TO)" [2] |
 | ✅ M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor — landed with the umbrella (closed/open door registry entries, the CheckDoor cascade, OpenDoor/CloseDoor behind `interact_at`, door sounds; net message 19 not wired) [2] |
@@ -1289,7 +1309,7 @@ section in brackets before starting a row.
 | ✅ M4-PROJ-1 | `M4-PROJ-1-engine` | done 2026-11-04: the projectile pool — 1000 slots with `NewProjectileSetup` first-free/`FindOldestProjectile` recycle (`Projectile.cs:10811-10880`), the `timeLeft`/`penetrate` tick bookkeeping (`:17199-17208`), `1+extraUpdates` AI sub-steps (`:16668`), the PVE walk with all three immunity systems (per-owner `NPC.immune` 10, `localNPCImmunity` cooldowns, ID-static `GameUpdateCount` stamps) and the on-hit application (`:12562-12624`, `:14087-14119`); the shuriken moved into the pool as aiStyle 2; 8 tests |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
-| M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |
+| ✅ M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI: `tr-core/src/bestiary.rs` (the five `UnlockState` tiers, `GetUnlockStateByKillCount`'s 1/½/⅕/full ladder + the boss quick-unlock, `NPCKillsTracker` with the 999999999 cap, the family banner chain `NPCtoBanner`→`BannerToItem`→`KillsToBanner` — Pinky 25, rest 50, bosses 0) + the app catalog (12 entries, credit ids = `NPCID.Search.GetName`) + kill registration at the NPC death hook + sidecar v5 persistence + `ui/bestiary.rs` (the `UIBestiaryTest` screen: the 72px entry grid, `Slot_Back/Overlay/Front/Selection` cards with the 15% `Icon_Locked`, the tier-gated info page — `???` name / stats / kill progress / drop lines with rates from tier 4 — the completion bar, the inventory's `DrawBestiaryIcon` button (498,278), Esc/Back close) [16][23] | done 2026-11-04: 4 core tests + 2 app tests + the layout test; `TR_BESTIARY=<n>` screenshot hook (grid + info page verified) |
 | M4-REVENGE-1 | `M4-REVENGE-1-coin-loss` | revenge system [9] |
 | M4-TOWN | (umbrella retired into M4-TOWN-1..3) | — |
 

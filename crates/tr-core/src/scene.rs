@@ -55,6 +55,17 @@ pub struct SceneMetrics {
     pub zone_desert: bool,
     /// `metrics.ZoneSandstorm` (`SceneMetrics.cs:703-707`).
     pub zone_sandstorm: bool,
+    /// `metrics.ShimmerTileCount` = `_liquidCounts[LiquidID.Shimmer]`
+    /// (`SceneMetrics.cs:594`): the type-3 liquid cells in the scan window.
+    pub shimmer_tile_count: i32,
+    /// `metrics.UndergroundForShimmering` (`SceneMetrics.cs:704`).
+    pub underground_for_shimmering: bool,
+    /// `metrics.ZoneShimmer` (`SceneMetrics.cs:705`; the dungeon gate is not
+    /// ported — no dungeon zone system yet).
+    pub zone_shimmer: bool,
+    /// `metrics.PerspectivePlayer.shimmering` via `AddPlayerEffects`
+    /// (`SceneMetrics.cs:747+`): the local player stands in shimmer liquid.
+    pub player_shimmering: bool,
 }
 
 /// `SceneMetrics.AssumedConstantScreenSize` / `ZoneScanPadding` /
@@ -74,6 +85,8 @@ pub mod thresholds {
     pub const GRAVEYARD_TILE_MIN: i32 = 16;
     /// `GraveyardTileMax` (`SceneMetrics.cs:939`).
     pub const GRAVEYARD_TILE_MAX: i32 = 36;
+    /// `ShimmerTileThreshold` (`SceneMetrics.cs:921`).
+    pub const SHIMMER_TILE: i32 = 300;
 }
 
 impl SceneMetrics {
@@ -83,6 +96,10 @@ impl SceneMetrics {
             center: [0.0; 2],
             tile_center: (0, 0),
             behind_backwall: false,
+            shimmer_tile_count: 0,
+            underground_for_shimmering: false,
+            zone_shimmer: false,
+            player_shimmering: false,
             tile_counts: vec![0; TILE_COUNT],
             ocean_sand_tile_count: 0,
             sand_tile_count: 0,
@@ -178,6 +195,7 @@ impl SceneMetrics {
     pub fn calculate_zones(
         &mut self,
         world_surface: f64,
+        max_tiles_y: i32,
         raining: bool,
         sandstorm_happening: bool,
     ) {
@@ -195,6 +213,14 @@ impl SceneMetrics {
         if self.zone_sandstorm {
             self.zone_rain = false;
         }
+        // `SceneMetrics.cs:704-705`: the shimmer depth window and the zone —
+        // `EnoughTilesForShimmer` is `_liquidCounts[3] >= 300`
+        // (`:252`, threshold `:921`); the `!ZoneDungeon` term waits for the
+        // dungeon zone (M4-NPC families).
+        self.underground_for_shimmering = (self.tile_center.1 as f64) > world_surface + 84.0
+            && (self.tile_center.1 as i64) < max_tiles_y as i64 - 396;
+        self.zone_shimmer =
+            self.shimmer_tile_count >= thresholds::SHIMMER_TILE && self.underground_for_shimmering;
     }
 }
 
@@ -402,6 +428,15 @@ pub struct SceneState {
     /// Main, but `SceneState.UpdateGraveyard` (`:368-371`) is its only writer,
     /// so the port owns it here.
     pub graveyard_visual_intensity: f32,
+    /// `Main.shimmerAlpha` (`Main.cs:917`): vanilla keeps both on Main, but
+    /// `SceneState.UpdateShimmer` (`:283-309`) is their only writer, so the
+    /// port owns them here. The alpha gates the horizon-cloud suppression and
+    /// the draw-side shimmer effects; the darken multiplies the surface light
+    /// seeds (`TileLightScanner.cs:3222`).
+    pub shimmer_alpha: f32,
+    pub shimmer_darken: f32,
+    /// `SceneState._shimmerBrightenDelay` (`SceneState.cs:30`).
+    shimmer_brighten_delay: f32,
     /// `SceneState.skipTransitions` (`:35`).
     pub skip_transitions: bool,
     /// `Main.bloodMoon` — the only M1 reader is the phase-3 BloodMoon filter;
@@ -424,6 +459,9 @@ impl SceneState {
             outside_weather_effect_intensity: 1.0,
             outside_weather_effect_intensity_backing: 1.0,
             graveyard_visual_intensity: 0.0,
+            shimmer_alpha: 0.0,
+            shimmer_darken: 0.0,
+            shimmer_brighten_delay: 0.0,
             skip_transitions: true,
             blood_moon: false,
             forced_severity: None,
@@ -456,6 +494,8 @@ impl SceneState {
     /// driver is phase 3, the map capture already lives in `tr-core/map`.)
     pub fn update(&mut self, metrics: &SceneMetrics) {
         let skip = self.skip_transitions;
+        // `SceneState.cs:76` → `UpdateShimmer` (`:283-309`).
+        self.update_shimmer(metrics);
         // `SceneState.cs:72` → `UpdateGraveyard` (`:368-371`): fade toward the
         // count-derived 0..1 target (0.02/tick in, 0.1/tick out).
         let target = get_lerp_value(
@@ -499,6 +539,30 @@ impl SceneState {
     /// `SceneState.MoveTowards(ref value, target, amount)` (`:472-477`).
     pub fn move_towards(&self, value: &mut f32, target: f32, amount: f32) {
         move_towards_impl(self.skip_transitions, value, target, amount, amount);
+    }
+
+    /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the two ramps.
+    /// The monolith states (`:284,288`) and the perspective-player shimmering
+    /// term land with their systems (M4 events / M2-BUFF shimmer); the active
+    /// trigger is `metrics.ZoneShimmer` with its depth window.
+    fn update_shimmer(&mut self, metrics: &SceneMetrics) {
+        let flag = metrics.zone_shimmer
+            || (metrics.player_shimmering && metrics.underground_for_shimmering);
+        if flag {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 1.0, 0.025, 0.025);
+            if self.shimmer_alpha >= 0.5 {
+                move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 1.0, 0.025, 0.025);
+                self.shimmer_brighten_delay = 4.0;
+            }
+            return;
+        }
+        move_towards_impl(self.skip_transitions, &mut self.shimmer_darken, 0.0, 0.05, 0.05);
+        if self.shimmer_darken == 0.0 {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_brighten_delay, 0.0, 1.0, 1.0);
+        }
+        if self.shimmer_brighten_delay == 0.0 {
+            move_towards_impl(self.skip_transitions, &mut self.shimmer_alpha, 0.0, 0.05, 0.05);
+        }
     }
 
     /// `SceneState.MoveTowards(ref value, target, inc, dec)` (`:479-491`).
@@ -1285,14 +1349,14 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL;
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
-        m.calculate_zones(100.0, false, false);
+        m.calculate_zones(100.0, 400, false, false);
         assert!(m.zone_snow);
         assert!(m.zone_desert);
 
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL - 1;
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL - 1;
-        m.calculate_zones(100.0, false, false);
+        m.calculate_zones(100.0, 400, false, false);
         assert!(!m.zone_snow);
         assert!(!m.zone_desert);
     }
@@ -1301,17 +1365,17 @@ mod tests {
     fn zone_rain_needs_raining_and_surface() {
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 100);
-        m.calculate_zones(150.0, true, false); // y=100 <= surface=150
+        m.calculate_zones(150.0, 400, true, false); // y=100 <= surface=150
         assert!(m.zone_rain && m.surface_atmospherics);
 
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 200);
-        m.calculate_zones(150.0, true, false); // below the surface
+        m.calculate_zones(150.0, 400, true, false); // below the surface
         assert!(!m.zone_rain && !m.surface_atmospherics);
 
         let mut m = SceneMetrics::new();
         m.tile_center = (100, 100);
-        m.calculate_zones(150.0, false, false);
+        m.calculate_zones(150.0, 400, false, false);
         assert!(!m.zone_rain);
     }
 
@@ -1322,7 +1386,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.snow_tile_count = thresholds::SNOW_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, false);
+        m.calculate_zones(100.0, 400, true, false);
         assert!(m.zone_rain);
         assert!(m.zone_snow);
     }
@@ -1333,7 +1397,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, true);
+        m.calculate_zones(100.0, 400, true, true);
         assert!(m.zone_sandstorm);
         assert!(!m.zone_rain);
 
@@ -1341,7 +1405,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 10);
-        m.calculate_zones(100.0, true, false);
+        m.calculate_zones(100.0, 400, true, false);
         assert!(!m.zone_sandstorm);
         assert!(m.zone_rain);
 
@@ -1349,7 +1413,7 @@ mod tests {
         let mut m = SceneMetrics::new();
         m.desert_sand_tile_count = thresholds::DESERT_TILE_NORMAL;
         m.tile_center = (0, 500);
-        m.calculate_zones(100.0, false, true);
+        m.calculate_zones(100.0, 400, false, true);
         assert!(!m.zone_sandstorm);
     }
 
@@ -2191,5 +2255,49 @@ mod tests {
         board.manage(FilterId::BloodMoon, true, true);
         board.set_hidden(FilterId::BloodMoon, true);
         assert_eq!(board.winner(), None);
+    }
+
+    /// `SceneState.UpdateShimmer` (`SceneState.cs:283-309`): the zone ramps
+    /// the alpha at 0.025/tick, the darken follows past 0.5; losing the zone
+    /// decays the darken first, then (after the 4-tick delay) the alpha.
+    #[test]
+    fn shimmer_ramps_follow_the_zone() {
+        let mut m = SceneMetrics::new();
+        m.shimmer_tile_count = thresholds::SHIMMER_TILE;
+        m.underground_for_shimmering = true;
+        m.zone_shimmer = true;
+        let mut st = SceneState::new();
+        for _ in 0..40 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha >= 0.99, "alpha ramps in: {}", st.shimmer_alpha);
+        assert!(st.shimmer_darken > 0.9, "darken follows: {}", st.shimmer_darken);
+
+        // The zone off: the darken decays at 0.05/tick while the delay holds
+        // the alpha; the alpha decays after the delay drains.
+        m.zone_shimmer = false;
+        for _ in 0..20 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_darken < 0.05, "darken decays: {}", st.shimmer_darken);
+        assert!(st.shimmer_alpha > 0.9, "alpha held by the delay: {}", st.shimmer_alpha);
+        for _ in 0..60 {
+            st.update(&m);
+        }
+        assert!(st.shimmer_alpha < 0.05, "alpha decays after the delay: {}", st.shimmer_alpha);
+    }
+
+    /// The zone needs the depth window (`SceneMetrics.cs:704`): the count
+    /// alone is not enough above `worldSurface + 84`.
+    #[test]
+    fn shimmer_zone_needs_the_depth_window() {
+        let mut m = SceneMetrics::new();
+        m.shimmer_tile_count = thresholds::SHIMMER_TILE;
+        m.tile_center = (500, 100); // above the surface+84 line
+        m.calculate_zones(200.0, 1200, false, false);
+        assert!(!m.zone_shimmer, "too shallow");
+        m.tile_center = (500, 400); // 200+84 < 400 < 1200-396
+        m.calculate_zones(200.0, 1200, false, false);
+        assert!(m.zone_shimmer, "in the window");
     }
 }

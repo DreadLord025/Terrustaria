@@ -142,6 +142,14 @@ pub(crate) struct App {
     pub(crate) hotbar_scales: [f32; HOTBAR],
     /// Escape toggles the inventory panel (`Main.OpenInventory`), it no longer quits.
     pub(crate) inventory_open: bool,
+    /// `Main.BestiaryTracker.Kills` (`NPCKillsTracker.cs`): the per-world
+    /// bestiary kill counts, persisted in the sidecar's v5 kills line.
+    pub(crate) kill_tracker: tr_core::bestiary::KillTracker,
+    /// `IngameFancyUI.OpenUIState(Main.BestiaryUI)`'s port — the bestiary
+    /// screen over the world, opened from the inventory's bestiary button
+    /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
+    pub(crate) bestiary_open: bool,
+    pub(crate) bestiary_selected: Option<usize>,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -807,6 +815,8 @@ impl App {
             && std::env::var_os("TR_CAM").is_none()
             && std::env::var_os("TR_PAN").is_none();
         let mut coins = 0u64;
+        // The bestiary kill pairs, restored from the sidecar below.
+        let mut loaded_kills: Vec<(String, i32)> = Vec::new();
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
@@ -854,6 +864,10 @@ impl App {
                         };
                     }
                 }
+                // `NPCKillsTracker.Load` — the bestiary kill pairs ride the
+                // sidecar's v5 line; they feed the tracker the App literal
+                // below builds from.
+                loaded_kills = saved.kills;
             }
         }
         if let Ok(v) = std::env::var("TR_COINS") {
@@ -1084,6 +1098,22 @@ impl App {
                 s
             },
             inventory_open: std::env::var_os("TR_INV").is_some(),
+            kill_tracker: {
+                let mut tracker = tr_core::bestiary::KillTracker::new();
+                tracker.load_pairs(loaded_kills.into_iter());
+                tracker
+            },
+            bestiary_open: std::env::var_os("TR_BESTIARY").is_some(),
+            // `TR_BESTIARY=<n>` also selects entry n (1-based) for the
+            // info-page screenshots; `0`/absent stays on the grid.
+            bestiary_selected: std::env::var("TR_BESTIARY")
+                .ok()
+                .and_then(|v| v.parse::<usize>().ok())
+                .and_then(|n| if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
+                    Some(n - 1)
+                } else {
+                    None
+                }),
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
@@ -1345,6 +1375,16 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
         .and_then(|v| v.parse::<u8>().ok())
     {
         world.moon_phase = p & 7;
+    }
+    // `TR_TIME=<ticks>` pins the raw world clock — the dawn/dusk windows the
+    // `TR_DAY` day-half mapping cannot reach (the sunrise visibility spans
+    // ticks 0..10800, the sunset 43200..54000).
+    if let Some(t) = std::env::var("TR_TIME")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        world.time = t;
+        world.day_time = t < 54000.0;
     }
     // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
     // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,

@@ -4,6 +4,7 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod anim;
+pub mod bestiary;
 pub mod binio;
 pub mod damage;
 pub mod drawdata;
