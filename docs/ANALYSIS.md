@@ -2610,3 +2610,36 @@ Deviations:
 - **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
   per-chunk cap exists for the C#'s save-section packing; the port's books
   are unbounded maps.
+
+## Logic gates (M7-WIRE-4)
+
+`wiring.rs` gains the logic-gate half of `Wiring.cs`: `LogicGatePass`
+(`Wiring.cs:682-730`), `CheckLogicGate` (`:733-831`) and `PokeLogicGate`
+(`:380-386`). The tiles: LogicGateLamp = 419, LogicGate = 420
+(`TileID.cs:1467-1469`) — note the port's M7-WIRE-1 tests used kind 419 as a
+wire-tile filler; the engine reads the colour bits from `World.wires`, so the
+filler kind is inert, but the id belongs to the lamp. The mechanics:
+
+- A wire hit on a lamp toggles its frame (`case 419` verbatim:
+  `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36) num50 = 0;`)
+  and pokes the gate below through the lamp column walk
+  (`CheckLogicGate` descends past lamps to the first 420).
+- The gate counts the lamp stack above it (`frameX == 18` = on; a `frameX ==
+  36` lamp stops the count and marks the gate broken → its frame becomes 36),
+  evaluates the type by `frameY / 18` (the C#'s case order: 0 AND, 1 OR,
+  2 NAND, 3 NOR, 4 XOR, 5 XNOR) and writes `frameX = 18·output`.
+- A state change enqueues the gate into `_GatesNext`; the pass re-trips the
+  gate's own 1×1 wire (`_GatesDone` guards repeats) — that flood walks the
+  gate's whole wire line, toggling every logic lamp on it, which is how gates
+  chain downstream.
+- The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
+  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
+  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
+  the roll is deterministic per seed.
+- A gate with a lamp on its own tile flip-flops within one pass: the output
+  flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
+  gate re-evaluates to the opposite — the verbatim C# outcome, covered by
+  `the_gate_output_flip_re_trips_its_own_wire_line`.
+- The logic sensors (tiles 593/594) emit wire signals from world state —
+  M7-WIRE-2 (they need the player/liquid probes).

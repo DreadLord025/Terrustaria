@@ -108,6 +108,16 @@ pub struct Wiring {
     /// paths must fire once and then stay silent for N-1 re-entries
     /// (`HitWire`'s `Add(point, 4)` + the decrement, `:915-950`).
     to_process: HashMap<(i32, i32), i32>,
+    /// `Wiring._LampsToCheck` (`:31`): the logic lamps poked by wire hits.
+    lamps_to_check: std::collections::VecDeque<(i32, i32)>,
+    /// `Wiring._GatesNext` (`:821`): the gates whose output changed and whose
+    /// own wire line re-trips after the current pass.
+    gates_next: std::collections::VecDeque<(i32, i32)>,
+    /// `Wiring._GatesDone` (`:699-706`).
+    gates_done: HashMap<(i32, i32), bool>,
+    /// The deterministic stand-in for `Main.rand` (the faulty-lamp roll,
+    /// `:812`): the port's xorshift core seeded from the world seed.
+    faulty_rng: u64,
 }
 
 /// The multi-trigger count a wire cell carries when first reached
@@ -119,6 +129,22 @@ const MAX_MECHS: usize = 999;
 impl Wiring {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Seeds the faulty-lamp roll stream (call once per world load).
+    pub fn seed_faulty_rng(&mut self, seed: u64) {
+        self.faulty_rng = seed ^ 0x9E37_79B9_7F4A_7C15;
+    }
+
+    fn faulty_next(&mut self, n: i32) -> i32 {
+        self.faulty_rng = self
+            .faulty_rng
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let z = self.faulty_rng;
+        let z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        let z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        ((z ^ (z >> 31)) % n.max(1) as u64) as i32
     }
 
     /// `Wiring.CheckMech` (`Wiring.cs:455-471`): one cooldown entry per tile
@@ -278,6 +304,141 @@ impl Wiring {
         self.trip_wire_color(world, left, top, width, height, WireColor::Blue);
         self.trip_wire_color(world, left, top, width, height, WireColor::Green);
         self.trip_wire_color(world, left, top, width, height, WireColor::Yellow);
+        // `Wiring.LogicGatePass()` at the end of `TripWire` (`Wiring.cs:665`).
+        self.logic_gate_pass(world);
+    }
+
+    /// `Wiring.PokeLogicGate` (`Wiring.cs:380-386`): queue one lamp and run
+    /// the pass.
+    pub fn poke_logic_gate(&mut self, world: &mut World, lamp_x: i32, lamp_y: i32) {
+        self.lamps_to_check.push_back((lamp_x, lamp_y));
+        self.logic_gate_pass(world);
+    }
+
+    /// `Wiring.LogicGatePass` (`Wiring.cs:682-730`): the lamp queue drains
+    /// into `CheckLogicGate`; every gate whose output changed enqueues into
+    /// `_GatesNext`, and the pass re-trips each changed gate's own 1×1 wire
+    /// once (`_GatesDone` guards repeats) — that is how gates chain.
+    pub fn logic_gate_pass(&mut self, world: &mut World) {
+        if !self.gates_next.is_empty() {
+            return;
+        }
+        self.gates_done.clear();
+        while !self.lamps_to_check.is_empty() {
+            while let Some((x, y)) = self.lamps_to_check.pop_front() {
+                self.check_logic_gate(world, x, y);
+            }
+            while !self.gates_next.is_empty() {
+                while let Some(key) = self.gates_next.front().copied() {
+                    if self.gates_done.get(&key).copied().unwrap_or(false) {
+                        self.gates_next.pop_front();
+                        continue;
+                    }
+                    self.gates_done.insert(key, true);
+                    self.trip_wire(world, key.0, key.1, 1, 1);
+                    self.gates_next.pop_front();
+                }
+            }
+        }
+        self.gates_done.clear();
+    }
+
+    /// `Wiring.CheckLogicGate` (`Wiring.cs:733-830`): walk down from the lamp
+    /// to the gate (420) below, count the lamp stack above it, evaluate the
+    /// gate type (`frameY / 18`: 0 AND, 1 OR, 2 NAND, 3 NOR, 4 XOR, 5 XNOR —
+    /// with `frameX == 18` = currently on) and write the new output. A state
+    /// change re-enqueues the gate into `_GatesNext`; the faulty lamp
+    /// (`frameX == 36` on the poked lamp) rolls the output randomly.
+    fn check_logic_gate(&mut self, world: &mut World, lamp_x: i32, lamp_y: i32) {
+        if !world.in_bounds(lamp_x, lamp_y) {
+            return;
+        }
+        let lamp_frame_x = world.tile_frame_x(lamp_x, lamp_y);
+        for i in lamp_y..world.height {
+            let Some(tile) = world.tile(lamp_x, i) else {
+                break;
+            };
+            if !tile.active() {
+                break;
+            }
+            if tile.kind == 420 {
+                let done = self.gates_done.get(&(lamp_x, i)).copied().unwrap_or(false);
+                let gate_type = tile.frame_y / 18;
+                let flag = tile.frame_x == 18;
+                let flag2 = tile.frame_x == 36;
+                if gate_type < 0 {
+                    break;
+                }
+                // The lamp stack above the gate (`:769-779`): every 419 tile
+                // counts; `frameX == 18` counts as on; `frameX == 36` marks
+                // the overflow.
+                let mut num2 = 0;
+                let mut num3 = 0;
+                let mut flag3 = false;
+                let mut num4 = i - 1;
+                while num4 > 0 {
+                    let Some(t2) = world.tile(lamp_x, num4) else {
+                        break;
+                    };
+                    if !t2.active() || t2.kind != 419 {
+                        break;
+                    }
+                    if t2.frame_x == 36 {
+                        flag3 = true;
+                        break;
+                    }
+                    num2 += 1;
+                    num3 += i32::from(t2.frame_x == 18);
+                    num4 -= 1;
+                }
+                let flag4 = match gate_type {
+                    0 => num2 == num3,
+                    1 => num3 > 0,
+                    2 => num2 != num3,
+                    3 => num3 == 0,
+                    4 => num3 == 1,
+                    5 => num3 != 1,
+                    _ => return,
+                };
+                let flag5 = !flag3 & flag2;
+                let flag6 = flag3 && world.tile_frame_x(lamp_x, lamp_y) == 36;
+                if !((flag4 != flag) | flag5 | flag6) {
+                    // No state change — keep walking deeper.
+                } else {
+                    world.set_tile_frame_x(lamp_x, i, if flag4 { 18 } else { 0 });
+                    if flag3 {
+                        world.set_tile_frame_x(lamp_x, i, 36);
+                    }
+                    // `Wiring.SkipWire(lampX, i); WorldGen.SquareTileFrame…`
+                    self.skip.insert((lamp_x, i));
+                    let mut flag7 = !flag3 || flag6;
+                    if flag6 {
+                        // The faulty lamp: a random share of the on-lamps
+                        // (`Main.rand.Next(num2) < num3`, `:812`).
+                        if num3 == 0 || num2 == 0 {
+                            flag7 = false;
+                        }
+                        flag7 = self.faulty_next(num2) < num3;
+                    }
+                    if flag5 {
+                        flag7 = false;
+                    }
+                    if flag7 {
+                        if !done {
+                            self.gates_next.push_back((lamp_x, i));
+                            break;
+                        }
+                        // The burn-out poof (`:822-825`) is visual — M7-WIRE-3.
+                    }
+                    break;
+                }
+            }
+            // `if (tile.type != 419) break;` (`:828-831`): the walk descends
+            // past lamps only.
+            if world.tile(lamp_x, i).map(|t| t.kind) != Some(419) {
+                break;
+            }
+        }
     }
 
     fn trip_wire_color(
@@ -369,6 +530,21 @@ impl Wiring {
             // The wire lamp: the lit/unlit tile pair swaps types (`:1013-1026`).
             421 => world.swap_tile_kind(i, j, 422),
             422 => world.swap_tile_kind(i, j, 421),
+            // The logic lamp (419): `case 419` verbatim (`Wiring.cs:1053-1070`)
+            // — `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36)
+            // num50 = 0; frameX += num50;` — then the gate below is poked.
+            419 => {
+                let frame_x = world.tile_frame_x(i, j);
+                let mut num50 = 18i32;
+                if frame_x >= num50 {
+                    num50 = -num50;
+                }
+                if frame_x == 36 {
+                    num50 = 0;
+                }
+                world.set_tile_frame_x(i, j, frame_x + num50);
+                self.lamps_to_check.push_back((i, j));
+            }
             _ => {}
         }
     }
@@ -580,6 +756,155 @@ mod tests {
         }
         assert!(!wiring.check_mech(9_999, 9_999, 10), "the 999 cap holds");
         assert_eq!(wiring.mechs.len(), MAX_MECHS);
+    }
+
+    /// Builds a gate column: the gate tile 420 at (10, y) with `frame_y`
+    /// selecting the type, `stack` lamps (419) above it at (10, y-1..), the
+    /// bottom lamp wired to a switch at (9, y-stack). Returns the world.
+    fn gate_world(gate_type_row: i16, stack: usize, on_frames: usize) -> (World, Wiring) {
+        let mut w = world();
+        // The gate: frameY = 18 * gate_type_row, frameX = 0 (off).
+        put_device(&mut w, 10, 20, 420, 0, gate_type_row * 18);
+        // The lamp stack above: the bottom `on_frames` lamps are on (18).
+        for k in 1..=stack {
+            let y = 20 - k as i32;
+            let fx: i16 = if k <= on_frames { 18 } else { 0 };
+            put_device(&mut w, 10, y, 419, fx, 0);
+        }
+        // The wire + switch hits the BOTTOM lamp (the poke entry point).
+        put_device(&mut w, 9, 20 - stack as i32, 135, 0, 0);
+        w.wires
+            .set(9, 20 - stack as i32, WireColor::Red, true);
+        w.wires
+            .set(10, 20 - stack as i32, WireColor::Red, true);
+        (w, Wiring::new())
+    }
+
+    fn gate_frame(w: &World) -> i32 {
+        w.tile_frame_x(10, 20)
+    }
+
+    /// The wire hit on the stack's bottom lamp TOGGLES that lamp
+    /// (`HitWireSingle`'s case 419) before the gate is poked — every
+    /// expectation below accounts for it.
+    #[test]
+    fn the_and_gate_is_on_only_when_all_lamps_are_on() {
+        // 3 lamps all off → the hit turns the bottom one on → 1 on → false.
+        let (mut w, mut wiring) = gate_world(0, 3, 0);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 0);
+        // 2 lamps pre-on + the hit turning the third on → 3 on → true.
+        let (mut w, mut wiring) = gate_world(0, 3, 2);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 18);
+    }
+
+    #[test]
+    fn the_or_gate_is_on_when_any_lamp_is_on() {
+        let (mut w, mut wiring) = gate_world(1, 3, 0);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 18);
+        // NOR: the bottom lamp pre-on, the hit turns it off → 2 on → false.
+        let (mut w, mut wiring) = gate_world(3, 3, 3);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 0);
+    }
+
+    #[test]
+    fn the_xor_gate_is_on_with_exactly_one_on() {
+        let (mut w, mut wiring) = gate_world(4, 3, 0);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 18);
+        // XNOR mirrors XOR.
+        let (mut w, mut wiring) = gate_world(5, 3, 0);
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 0);
+    }
+
+    #[test]
+    fn the_gate_output_flip_re_trips_its_own_wire_line() {
+        // Two OR gates chained by a wire line: the wire hit toggles the
+        // upper gate's stack lamp (`case 419`) and pokes the gate; its
+        // output flips and its own 1×1 re-trip walks the line down, toggling
+        // the lower gate's stack lamp — the lower gate re-evaluates
+        // (`_GatesNext`, `Wiring.cs:716-730`).
+        let mut w = world();
+        put_device(&mut w, 10, 20, 420, 0, 1 * 18);
+        put_device(&mut w, 10, 19, 419, 0, 0);
+        put_device(&mut w, 10, 30, 420, 0, 1 * 18);
+        put_device(&mut w, 10, 29, 419, 18, 0);
+        // The wire lies on the line INCLUDING both gate tiles (a gate's
+        // re-trip floods its own tile).
+        for y in 19..=30 {
+            w.wires.set(10, y, WireColor::Red, true);
+        }
+        let mut wiring = Wiring::new();
+        // The wire hit on the upper stack lamp: the toggle + the poke.
+        wiring.hit_wire_single(&mut w, 10, 19);
+        wiring.logic_gate_pass(&mut w);
+        // VERBATIM C# outcome: the gate flips on (18), its own re-trip's
+        // flood walks the shared line and re-toggles the stack lamp 18→0,
+        // which re-pokes the gate — it re-evaluates to off (0) before the
+        // pass ends (`_GatesNext` → `TripWire` → the flood, `:716-730`). The
+        // flood dies at the re-toggled lamp: its `_toProcess` entry absorbs
+        // the walk back through the gate, so the lower gate's line is never
+        // reached and the lower stack lamp keeps its frame.
+        assert_eq!(w.tile_frame_x(10, 20), 0, "the gate flip-flopped off");
+        assert_eq!(w.tile_frame_x(10, 19), 0, "the lamp ended off");
+        // The flood walks the whole continuous wire line (through the empty
+        // tiles carrying wire bits) and toggles the lower stack lamp too.
+        assert_eq!(w.tile_frame_x(10, 29), 0, "the line toggled the lower lamp");
+        assert_eq!(w.tile_frame_x(10, 30), 0, "the lower gate re-evaluated to off");
+    }
+
+    #[test]
+    fn the_faulty_lamp_rolls_the_output() {
+        // The faulty lamp (frameX 36) sits OUTSIDE the counted stack, on its
+        // own wire below the gate: `flag6` (the poked lamp is faulty) makes
+        // the output roll `Main.rand.Next(num2) < num3` (`:812`) — with
+        // num2 = num3 the roll always passes, deterministically per seed.
+        let mut w = world();
+        // The faulty lamp (frameX 36) is the STACK TOP: the count stops at it
+        // (`flag3`) and the gate's frame becomes 36 — the broken visual; the
+        // roll only decides whether the gate's wire line re-pulses.
+        put_device(&mut w, 10, 20, 420, 0, 1 * 18);
+        put_device(&mut w, 10, 19, 419, 36, 0);
+        w.wires.set(10, 20, WireColor::Red, true);
+        w.wires.set(10, 19, WireColor::Red, true);
+        let mut wiring = Wiring::new();
+        wiring.seed_faulty_rng(0xC0FF_EE00);
+        wiring.hit_wire_single(&mut w, 10, 19);
+        wiring.logic_gate_pass(&mut w);
+        let f = gate_frame(&w);
+        assert_eq!(f, 36, "the stack-topped faulty lamp marks the gate broken");
+        // The same seed runs the same roll → the same state.
+        let mut w2 = world();
+        put_device(&mut w2, 10, 20, 420, 0, 1 * 18);
+        put_device(&mut w2, 10, 19, 419, 36, 0);
+        w2.wires.set(10, 20, WireColor::Red, true);
+        w2.wires.set(10, 19, WireColor::Red, true);
+        let mut wiring2 = Wiring::new();
+        wiring2.seed_faulty_rng(0xC0FF_EE00);
+        wiring2.hit_wire_single(&mut w2, 10, 19);
+        wiring2.logic_gate_pass(&mut w2);
+        assert_eq!(f, gate_frame(&w2), "the faulty roll is deterministic");
+    }
+
+    #[test]
+    fn the_overflow_marks_the_gate_broken() {
+        // A lamp at frameX 36 inside the stack stops the count and marks the
+        // gate's output as 36 (`:774-778`).
+        let (mut w, mut wiring) = gate_world(1, 3, 2);
+        w.tile_mut(10, 18).unwrap().frame_x = 36;
+        wiring.hit_switch(&mut w, 9, 17);
+        wiring.logic_gate_pass(&mut w);
+        assert_eq!(gate_frame(&w), 36);
     }
 
     #[test]
