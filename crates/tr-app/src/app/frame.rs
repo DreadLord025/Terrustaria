@@ -966,6 +966,7 @@ impl App {
                         self.bestiary_selected,
                         &self.kill_tracker,
                         &mut self.chat,
+                        &self.emotes,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

@@ -41,6 +41,7 @@ use crate::app::netglue::compressed_world;
 use crate::assets;
 use crate::achievements;
 use crate::chat;
+use crate::emotes;
 use crate::audio;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
@@ -155,6 +156,8 @@ pub(crate) struct App {
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
+    /// `EmoteBubble.byID` + the wheel state (M6-EMOTE-1).
+    pub(crate) emotes: emotes::EmoteSystem,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1).
     pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
@@ -1235,6 +1238,15 @@ impl App {
             achievements: {
                 // The condition states load below (the sidecar block).
                 loaded_achievements
+            },
+            emotes: {
+                // `TR_EMOTES` opens the wheel for the screenshot runs.
+                let mut sys = emotes::EmoteSystem::default();
+                if std::env::var_os("TR_EMOTES").is_some() {
+                    sys.menu_open = true;
+                    sys.new_bubble(0);
+                }
+                sys
             },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

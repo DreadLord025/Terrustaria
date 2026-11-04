@@ -126,7 +126,12 @@ impl ApplicationHandler for App {
                                 KeyCode::Enter | KeyCode::NumpadEnter => {
                                     let name = self.player_name.clone();
                                     let mut rng = self.item_rng;
-                                    self.chat.send(&self.chat.text.clone(), &name, &mut rng);
+                                    self.chat.send(
+                                        &self.chat.text.clone(),
+                                        &name,
+                                        &mut rng,
+                                        &mut self.emotes,
+                                    );
                                     self.item_rng = rng;
                                     self.chat.text.clear();
                                     self.chat.open = false;
@@ -194,6 +199,8 @@ impl ApplicationHandler for App {
                                 if self.bestiary_open {
                                     self.bestiary_open = false;
                                     self.bestiary_selected = None;
+                                } else if self.emotes.menu_open {
+                                    self.emotes.menu_open = false;
                                 } else {
                                     self.inventory_open = !self.inventory_open;
                                 }
