@@ -1259,6 +1259,7 @@ pub(crate) mod front_flow_tests {
             is_favorite: false,
             playable: true,
             deletable,
+            path: None,
         }
     }
 
@@ -1275,6 +1276,9 @@ pub(crate) mod front_flow_tests {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
         App {
+            kill_tracker: tr_core::bestiary::KillTracker::new(),
+            bestiary_open: false,
+            bestiary_selected: None,
             window: None,
             gpu: None,
             renderer: None,
@@ -1304,6 +1308,7 @@ pub(crate) mod front_flow_tests {
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             npc_rng: 0,
+            spawn_no_cycle: false,
             attack_cd: 0.0,
             inventory: std::array::from_fn(|_| EMPTY_SLOT),
             equip: inv::EquipSlots::empty(),
@@ -1408,7 +1413,7 @@ pub(crate) mod front_flow_tests {
             swing: 0.0,
             swing_max: 0.0,
             coins: 0,
-            projectiles: Vec::new(),
+            projectiles: crate::projectile::ProjectilePool::new(),
             tomb_falls: Vec::new(),
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),

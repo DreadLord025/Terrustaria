@@ -164,6 +164,38 @@ impl SlimeVariant {
     }
 }
 
+/// The bestiary info-page stat rows for one entry — the same tables
+/// `Npc::max_hp`/`defense`/`value`/`knock_back_resist` read, exposed for the
+/// UI without constructing an `Npc` (`EntryStats` mirrors
+/// `UIBestiaryEntryInfoPage`'s `Stat_*` lines).
+pub struct EntryStats {
+    pub hp: i32,
+    pub damage: i32,
+    pub defense: i32,
+    pub value: f32,
+    pub kb: f32,
+}
+
+/// The stat rows for one kind/variant pair; the slime variants ride their
+/// `SlimeStats`, the other kinds the `Npc` accessors' tables.
+pub(crate) fn entry_stats(kind: NpcKind, variant: SlimeVariant) -> EntryStats {
+    // The accessors live on `Npc` instances; the private ctor builds the
+    // shell and the variant rides the only other field the tables consult.
+    let mut shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+    shell.slime = variant;
+    EntryStats {
+        hp: kind.max_hp(),
+        damage: if kind == NpcKind::Slime {
+            variant.stats().damage
+        } else {
+            kind.contact_damage()
+        },
+        defense: shell.defense(),
+        value: shell.value(),
+        kb: shell.knock_back_resist(),
+    }
+}
+
 impl NpcKind {
     pub fn to_u16(self) -> u16 {
         match self {
@@ -197,7 +229,7 @@ impl NpcKind {
         }
     }
 
-    fn max_hp(self) -> i32 {
+    pub(crate) fn max_hp(self) -> i32 {
         match self {
             NpcKind::Slime => 25,         // NPC.cs:8572
             NpcKind::DemonEye => 60,      // case 2
@@ -235,6 +267,10 @@ pub struct Npc {
     pub hop_timer: f32,
     pub anim: f32,
     pub hurt_cd: f32,
+    /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
+    /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
+    /// (`NPC.cs:90454-90459`).
+    pub immune: [i32; 256],
     /// `NPC.frame`: the rendered frame row, advanced by [`Npc::find_frame`] in
     /// the fixed step (the original advances animation in the sim too —
     /// `FindFrame` runs from `NPC.Update`, `NPC.cs:66684`).
@@ -359,6 +395,7 @@ impl Npc {
             hop_timer,
             anim: 0.0,
             hurt_cd: 0.0,
+            immune: [0; 256],
             frame: 0,
             frame_counter: 0.0,
             rotation: 0.0,
@@ -480,8 +517,48 @@ impl Npc {
         true
     }
 
+    /// The projectile-hit path: identical to [`Npc::hurt`] but without the
+    /// shared `hurt_cd` gate — a projectile's right to hit is decided by the
+    /// three C# immunity systems (`Projectile.cs:12577-12624`), not by the
+    /// melee cooldown stand-in. The hit still arms `hurt_cd`, so melee is
+    /// gated afterward, matching `StrikeNPC`'s 10-tick `NPC.immune` window.
+    pub fn hurt_from_projectile(
+        &mut self,
+        amount: i32,
+        from_x: f32,
+        knock_back: f32,
+        crit: bool,
+    ) -> bool {
+        if self.hp <= 0 {
+            return false;
+        }
+        self.hp -= amount;
+        self.hurt_cd = 0.18;
+        let (w, _) = self.size();
+        let dir = if self.x + w * 0.5 >= from_x { 1 } else { -1 };
+        let (vx, vy) = tr_core::damage::knock_back_npc(
+            knock_back,
+            self.knock_back_resist(),
+            crit,
+            amount,
+            self.max_hp,
+            (self.vx, self.vy),
+            dir,
+            false,
+            false,
+        );
+        self.vx = vx;
+        self.vy = vy;
+        self.on_ground = false;
+        true
+    }
+
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
         self.hurt_cd = (self.hurt_cd - dt).max(0.0);
+        // `NPC.Update`'s per-owner i-frame decay (`NPC.cs:90454-90459`).
+        for v in self.immune.iter_mut() {
+            *v = v.saturating_sub(1);
+        }
         self.anim += dt;
         match self.kind {
             NpcKind::Slime => self.update_slime(world, player, dt),

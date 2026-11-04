@@ -19,7 +19,12 @@ impl App {
                 // `Player.armor[0..3]`'s kinds — the equipped armor persists
                 // with the rest of the character (vanilla `Player.SavePlayer`).
                 let armor: [u16; 3] = std::array::from_fn(|i| self.equip.armor[i].kind);
-                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins, armor) {
+                let kills: Vec<(String, i32)> = self
+                    .kill_tracker
+                    .pairs()
+                    .map(|(id, count)| (id.to_string(), count))
+                    .collect();
+                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins, armor, &kills) {
                     log::warn!("player save failed: {e}");
                 }
             }
@@ -47,8 +52,7 @@ impl App {
     /// `MapHelper.LoadMap`: load the explored map at world load. The wiped-map
     /// symptom (the map resetting on every restart) came from never calling this.
     pub(crate) fn load_map(&mut self) {
-        if !self.world_path.extension().is_some_and(|e| e == "trwld")
-            || !self.settings.map_enabled
+        if !self.world_path.extension().is_some_and(|e| e == "trwld") || !self.settings.map_enabled
         {
             return;
         }

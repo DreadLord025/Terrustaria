@@ -158,9 +158,27 @@ referenced here exist in the catalog.
 **C#** `Liquid.cs`, `LiquidBuffer.cs`, `GameContent/Liquid/*` · **Rust** `liquid.rs`,
 `liquid_draw.rs`, `waterfall/`, `render/liquids.rs` · ✅ core (M1.5-LIQUID-2 done).
 
-- Remaining: shimmer vertex distortion (`Main.DrawTileInWater` full effect),
-  `HorizonClouds` fall tint, pumps (`Wiring.XferWater` `Wiring.cs:475`, in/out caps 20,
-  type-locked, 255 max), actuator liquid control, buckets.
+- ✅ 2026-11-04 (M1.5-LIQUID-3): the research corrected the row — there is no
+  vertex-position warping in 1.4.5.8; the "distortion" is the per-corner vertex
+  colours (already ported with LIQUID-2) + the screen-space `WaterDistortion`
+  pass (landed with BG-18). What was missing and is now ported: the
+  `SceneState.UpdateShimmer` ramps (`SceneState.cs:283-309` — `shimmerAlpha`
+  0.025/tick, `shimmerDarken` follows past 0.5, the 4-tick brighten delay on
+  the way out) driven by `ZoneShimmer` (the `_liquidCounts[3] ≥ 300` scan +
+  the depth window `worldSurface + 84 .. maxTilesY - 396`) and the player
+  contact (`PerspectivePlayer.shimmering` via `AddPlayerEffects`);
+  `shimmerDarken` now multiplies the surface seeds (`TileLightScanner.cs:3222`
+  — the wire existed, the state did not); `ModifyHorizonLight`
+  (`NextHorizonRenderer.cs:154-194`, called from `Main.cs:63921`) blends the
+  hardcoded `SunGradients` mid entries into the sky/tile colour at the
+  `GetVisibilities` strengths (day-only dawn/dusk remap windows × atmo ×
+  cloudAlpha²), with `Main.HorizonPhase` (`Main.cs:2792`) picking the table.
+  Hook: `TR_TIME=<ticks>` pins the raw clock (the dawn 0..10800 and dusk
+  43200..54000 windows the `TR_DAY` half-mapping cannot reach). Remaining:
+  the submerged-tile vertex tint (`TileDrawing.cs:4145`,
+  `SetShimmerVertexColors` on tiles behind shimmer — the tile-draw seam), the
+  `HorizonClouds` shader draw itself (`CloudsEnd`, the sky-visual side),
+  pumps, actuator liquid control, buckets.
 - **Hidden:** liquid updates every other tick (`Liquid.skipCount > 1`); `curMaxLiquid`
   scales with gfx quality (`Main.cs:17115`); waterfalls re-scan every 30 ticks (ported).
 
@@ -653,8 +671,10 @@ happiness & prices, M4-TOWN-3 shop stock (M4-TOWN umbrella), M7-PYLON-1 pylons
   `KillsToBanner` at full/½//5 (`CommonEnemyUICollectionInfoProvider.cs:49-64`); tracked
   via `Main.BestiaryTracker` (msg 51 case 5 remote credits).
 
-**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, M4-BEST-1
-bestiary data + UI, ✅ M4-LOOT-3 money roll chain.
+**Tasks:** ✅ M4-LOOT-1 drop-rule engine, M4-LOOT-2 database population, ✅ M4-BEST-1
+bestiary data + UI (kill tracking, unlock tiers, the UIBestiaryTest screen, sidecar v5
+persistence; the world-file section 11 store stays M6-SAVE-1, sorting/filtering grids
+and the search bar stay REFACTOR-cleanup), ✅ M4-LOOT-3 money roll chain.
 
 ## 17. Projectiles
 
@@ -992,8 +1012,18 @@ Back-targets (from P6 review).
 `persist.rs` · 🟡 (header+tiles of .wld; .trwld full).
 
 **Tasks:** M6-SAVE-1 remaining `.wld` sections (chests/signs/NPCs/TEs/TownManager/
-Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`), M6-SAVE-2 `.plr` reader
-(replaces save_list stand-ins).
+Bestiary/CreativePowers — sections 4-11, `WorldFile.cs:1150`). ~~M6-SAVE-2 `.plr` reader~~
+✅ done 2026-11-04: `player_file.rs` reads AND writes real vanilla `.plr` files —
+AES-128-CBC (`"h3y_gUyZ"` UTF-16-LE key = IV, `PaddingMode.None`,
+`Player.cs:796-798`), `FileMetadata` magic/type/revision/favorites, the
+release-279 section walk (name → difficulty → playTime → hair/dye → hide →
+skinVariant → stats with the 500/400/200 caps → unlock bools → tax/deaths →
+7 colors → armor 20× → dye 10× → inventory 58×), writer mirrors `SavePlayer`
+including `GetPlayerPathFromName`'s filename sanitization (`Main.cs:4820`) and
+the ctor starter items (`Player.cs:54356-54360`); `list_players` scans the real
+`Terrustaria/Players/*.plr` (the `GetFileData` null-skip kept), `PlayerEntry`
+carries the erase path, a same-named session stand-in yields to its saved file;
+4 round-trip tests + the scan test.
 
 ## 30. Secret seeds & special worlds
 
@@ -1197,7 +1227,7 @@ section in brackets before starting a row.
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
 | ✅ M1.5-LIQUID-2 | `M1.5-LIQUID-2-water-styles` | water styles + shimmer draw |
 | ✅ M1.5-LIQUID-2-det-fix | `M1.5-LIQUID-2-det-fix` | done 2026-11-03: the `TR_SHOT` SHA256 mismatch blamed on the sparkle pass was the **OS pointer** leaking into captures — `deterministic_pointer_park()` parks it offscreen and ignores `CursorMoved` during a capture without `TR_MOUSE`; the sparkle walk itself proven seed-deterministic (2 unit tests, byte-equal `TR_SPOUT` pairs). Caveat for future pairs: the autosave rewrites the loaded world — copy a pristine `.trwld` per run (ANALYSIS "Deterministic screenshots") |
-| M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | shimmer vertex distortion + HorizonClouds tint [3] |
+| ✅ M1.5-LIQUID-3 | `M1.5-LIQUID-3-shimmer-distortion` | the shimmer ramps (shimmerAlpha/shimmerDarken + the zone/contact triggers) + `shimmerDarken` on the surface seeds + `ModifyHorizonLight` (the sunrise/sunset gradient tint); the row's "vertex distortion" corrected by research — no vertex warping exists, the vertex colours + the WaterDistortion pass landed earlier [3] |
 | ✅ M1.5-LIGHT-3 | `M1.5-LIGHT-3-sun-star-light` | sun/moon light (night ramps + moon-phase floor), invisible blocks/walls light handling; stars = no light contribution (verified) [4] |
 | ✅ M1.4-TO | `M1.4-TO-tile-objects` | TileObjectData umbrella — done 2026-11-03: the registry as a flat const slice (the wooden set 10/11/14/15/18/21), `TileObject.CanPlace`/`Place`, the KillTile cascade (CheckDoorClosed/Open, CheckChest, Check1x2/2x1/3x2), the world-interaction hook `interact_at` + OpenDoor/CloseDoor + door sounds; remaining: the full-registry generator, gemspark/glow (excluded — wall/light render work), the LMB frame_important gate (→ M1.4-TO-5); deviations in ANALYSIS "Tile objects (M1.4-TO)" [2] |
 | ✅ M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor — landed with the umbrella (closed/open door registry entries, the CheckDoor cascade, OpenDoor/CloseDoor behind `interact_at`, door sounds; net message 19 not wired) [2] |
@@ -1214,9 +1244,9 @@ section in brackets before starting a row.
 | ✅ M2-DRAW-2 | `M2-DRAW-2-arm-rotation` | composite arm rotation; the rotation source consumes M2-ANIM use fractions (swing-arc stand-in replaced in the M3-CRAFT merge) |
 | ✅ M2-ANIM-foundation | `M2-ANIM-foundation` | anim primitives + faithful draw |
 | ✅ M2-ANIM-item-timings | `M2-ANIM-item-timings` | useTime/useAnimation/useStyle |
-| M2-PHYS-1 | `M2-PHYS-1-movement-constants` | boots/ice/sand/wet multipliers [7] |
-| M2-PHYS-2 | `M2-PHYS-2-fall-damage` | thresholds/extraFall/stoned [7] |
-| M2-PHYS-3 | `M2-PHYS-3-fluids-breath` | wet multipliers, drowning fidelity [7] |
+| ✅ M2-PHYS-1 | `M2-PHYS-1-movement-constants` | boots/ice/sand/wet multipliers — done 2026-11-04: `HorizontalMovement` restructured to the vanilla chain (`Player.cs:19772-20088`) — primary acceleration gates on `maxRunSpeed` 3, the 0.2x continuation runs to `accRunSpeed` (the boot top speeds), no-input friction 0.2 ground / 0.1 air, no hard clamp (overspeed rides out by decay); the per-tick defaults + `moveSpeed`/`strongestMoveSpeedDebuff` application (`:24364`, `:26004` — accRunSpeed takes only the debuff); the `FloorVisuals` flags (`:23708-23743`, one tick stale, feet row center-first solid sample) drive the modifier chain (`:26522-26579`): cobweb ×0.25/×2+clamp, asphalt ×3.5/×2, sand ×1.75 with Dunerider Boots (**no sand penalty in 1.4.5.8**), FrozenSlime accel ×0.6 slowdown 0, IceSkateSlippery accel ×0.7 slowdown ×0.1 without skates / ×3.5 + maxSpeed ×1.25 with (`SET_ICE_SKATE_SLIPPERY`, `SET_CONVERSION_*SAND` added); wet = `WetCollision` displacement (free axes ×0.5 water/lava, ×0.25 honey, collided axes keep full velocity — momentum survives), the wet path skips the step helpers (`DryCollision` internals); ice_skate/desert_boots/moveSpeed fields wait for M3-EQUIP-3, the wet gravity/jump defaults for PHYS-3 [7] |
+| ✅ M2-PHYS-2 | `M2-PHYS-2-fall-damage` | thresholds/extraFall/stoned — done 2026-11-04: the landing block rides the vanilla `velocity.Y == 0` structure (`Player.cs:25293-25385`): int-truncated tile distance, strict threshold `25 + extraFall`, `(fell - threshold) * 10` with hitDirection 0 (no knockback, `immune = false` forced before the Hurt), the petrified branch (fixed 2-tile grace, ×20, immune cleared after), the flat 20 petrify-transition hit (buff 156 via `BuffSlots`), the cloud/soft-tile zeroing (`SET_CLOUDS` 189/196/460/717-719 + tile 666 + platform-19 variant 49), the continuous reset `jump > 0 \|\| wet` (rocket/slowFall/sky-gravity/tongued terms land with PHYS-1/5; the old `vy <= 0` pre-movement reset removed — falls now measure from the apex/rest); `extra_fall`/`no_fall_dmg`/`has_wings` fields wait for M3-EQUIP-3 [7] |
+| ✅ M2-PHYS-3 | `M2-PHYS-3-fluids-breath` | wet multipliers, drowning fidelity: the four wet flags (`wet`/`lavaWet`/`honeyWet`/`shimmerWet` from the mid-tile liquid kind, `Player.cs:27728-27910`), the in-liquid gravity / 3 with the both-ways fall cap at `maxFallSpeed / 3` (`Player.cs:27008-27017`), the `WetCollision` movement speed scaling of the position delta (water/lava 0.5, honey 0.25, shimmer 0.375 — `Player.cs:28168-28171` + `:23436-23449`), with the velocity itself kept unscaled so the exit speed is preserved; `movement_speed_for`/`liquid_gravity`/`liquid_fall_cap` helpers [7] | done 2026-11-04: 2 tests; `TryFloatingInFluid` (the auto-swim float) is gated by `ShouldFloatInWater` accessories — not in the item set, stays out; the breath/drowning was already ported (M1 core) |
 | M2-PHYS-4 | `M2-PHYS-4-dash` | dashTypes 1/2/3/6 [7] |
 | M2-PHYS-5 | `M2-PHYS-5-wings-rocket-boots` | flight/hover/rocket merge [7] |
 | M2-PHYS-6 | `M2-PHYS-6-grapple-movement` | GrappleMovement + per-hook overrides [7] |
@@ -1233,7 +1263,7 @@ section in brackets before starting a row.
 | ✅ M2-COMBAT-1 | `M2-COMBAT-1-iframes-knockback` | cooldown counters + KB caps: `tr_core::damage::knock_back_npc` (`NPC.cs:81389-81458` — the soft caps 8/10/12/14/16, crit ×1.4, the damage gate `damage·10 > lifeMax` (expert ·15) gating the X push-away with its anti-drift shape, the Y pop −kb·0.75 / ×0.5 no-gravity) + `iframes_for` (`Player.cs:38385` — 40 ticks normal, 80 long-invincible, 20 exactly-1-damage, PVP 8) [9] | done 2026-11-03: `Npc::knock_back_resist()` per kind/variant (blue 0.8, eye 0.8, wandering 0.8, zombie 0.5, king 0, variants ×1.2/1.4/0.95/0.9); `Npc::hurt` runs the chain (kb 5.5 melee stand-in, 12 shuriken projectile); `Player::hurt` iframe 40 ticks (0.667 s) + the fixed 4.5/−3.5 contact push; the cooldown-counter IDs land with M2-BUFF (only General is modelled) |
 | ✅ M2-COMBAT-2 | `M2-COMBAT-2-crit-classes` | crit rolls + damage classes: `registry::DamageClass` (None/Melee/Ranged/Magic/Summon/Thrown; the shuriken is Ranged, blocks/torches classless), `ItemDef.crit` + `Player` class stats (`meleeCrit`/`rangedCrit`/`magicCrit` = 4, the ×1.0 damage multipliers — `Player.cs:2430-2437`), `weapon_damage_multiplier`/`class_crit` accessors (`GetWeaponDamageMultiplier` `Player.cs:53386`), the melee hit rolls `crit_roll(meleeCrit + item.crit)` and applies the multiplier; the shuriken’s ranged crit bakes at throw time from the item stream | done 2026-11-03: the crit gate itself landed with M4-DAMAGE; ammo/bow-gun specialist splits stay out until the ammo system (M3-ITEM-3) |
 | ✅ M2-DEATH-1 | `M2-DEATH-1-death-drops` | coin loss/gem drops/tombstones: `crates/tr-app/src/death.rs` — `DropItems(gemsOnly)` (softcore drops only the large gems 1522-1527 + 3643 the player carries, `Player.cs:54302-54315`), `DropCoins` (stack/2 keeps the rest; the greedy platinum/gold/silver/copper split of the dropped half), `DropTombstone` (the rich-grave roll `coinsOwned > 100000 -> Next(5)+527`, else `Next(6)`: 0 → the Tombstone projectile 43, else a marker 201-205; the X scatter `Next(−35,36)·0.1` until |vx| > 2) [9] | done 2026-11-03: the falling tombstones place tile 85 through `TileObjectData` on landing; the epitaph text lives in `App.tomb_texts` (the text render over the tombstone is M7-UI); the respawn TIMER is M2-DEATH-2 |
-| M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules + bed spawn [9] |
+| ✅ M2-DEATH-2 | `M2-DEATH-2-respawn` | timers + skip rules: the dead state in `Player` (`dead`/`deadTime`/`respawnTimer`), `start_death` -> `get_respawn_time` (600 base, +600 boss-near via the `boss_hinders` Manhattan-4000 check, ×1.5 expert; the FTW-multiplayer ×2 stays with M5-SEED-1), `update_dead` (`UpdateDead` Player.cs:16919-17070 — `deadTime++`, the decrement clamped to `respawnTimerMax` 3600, the jump-edge skip while `allows_respawn_timer_skip`: deadTime ≥ 90 with no boss/danger NPCs — the danger-NPC gate has no `DangerThatPreventsOtherDangers` members yet), `revive` = Spawn(ReviveFromDeath); the dead player is invisible and the respawn clears the NPC list [9] | done 2026-11-04: 6 tests; the bed spawn lands with M7-INTERACT-1 (beds) |
 | M2-MOUNT-1..4 | `M2-MOUNT-1-framework` … | mounts per category [22] |
 | M2-BUFF | (umbrella retired into M2-BUFF-1..8) | — |
 
@@ -1267,7 +1297,7 @@ section in brackets before starting a row.
 | --- | --- | --- |
 | ✅ M4-NPC-1 | `M4-NPC-1-slimes-eyes` | the slime colour family -3..-9 + vanilla stats/tints/gel drops, Wandering Eye 133, `GetBasicSlimeToSpawn` + the Pinky roll (done 2026-11-02); the remaining families (fighters, worms, flyers…) continue as per-family branches | AI families [14] |
 | M4-NPC-2 | `M4-NPC-2-worms` | multi-segment framework [14] |
-| ✅ M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain: `GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order with the vanilla cast widths — hardmode, the depth ladder (underworld ×2 / deep ×0.4/×1.9 / below-surface ×0.5/×1.7), night ×0.6/×1.3 + blood ×0.3/×1.8 + moon events ×0.2/×2 + eclipse, the dungeon/sandstorm/UD/jungle-town-tiers/evil/meteor/temple/hallow-deep zone branches, the WoF override, both nearby-ramp passes, invis/calmed/sunflower/angler/enemySpawns, the water/peace candles + the >35%-depth candle cut, the rate floor (10 %) and the cap (3×), the moon-event raid pacing (rate 20, max 2+0.3·players) and the pre-Skeletron dungeon rate 10 [15] | done 2026-11-03: `SpawnFlags` carries the scene state (hardmode/blood/moon/zones/candles — all false until the owning systems land); remix/FTW/journey/skyblock/fairy branches constants-off (M5-SEED-1/M6-CREATIVE-1); 8 seeded tests |
+| ✅ M4-SPAWN-1 | `M4-SPAWN-1-engine` | spawn engine + multiplier chain: `GetSpawnRate` (`NPC.cs:473-810`) in the vanilla order with the vanilla cast widths — hardmode, the depth ladder (underworld ×2 / deep ×0.4/×1.9 / below-surface ×0.5/×1.7), night ×0.6/×1.3 + blood ×0.3/×1.8 + moon events ×0.2/×2 + eclipse, the dungeon/sandstorm/UD/jungle-town-tiers/evil/meteor/temple/hallow-deep zone branches, the WoF override, both nearby-ramp passes, invis/calmed/sunflower/angler/enemySpawns, the water/peace candles + the >35%-depth candle cut, the rate floor (10 %) and the cap (3×), the moon-event raid pacing (rate 20, max 2+0.3·players) and the pre-Skeletron dungeon rate 10 [15] | done 2026-11-03: `SpawnFlags` carries the scene state (hardmode/blood/moon/zones/candles — all false until the owning systems land); remix/FTW/journey/skyblock/fairy branches constants-off (M5-SEED-1/M6-CREATIVE-1); 8 seeded tests. 2026-11-04 (`M4-SPAWN-1-engine` completion): the named `Main.SwapRandom("SpawnNPC")` stream discipline — one LCG advance per world update before the latch/caps, deterministic per seed (`spawn_npc_call`, `NPC.cs:80170-80176`), the `noSpawnCycle` latch (`App.spawn_no_cycle`, one suppressed call, `:80171-80174`) and the dead-player gate (`CanSpawnEnemiesNear` subset, `:349-351`); 3 tests |
 | M4-SPAWN-2 | `M4-SPAWN-2-biome-tables` | spawn tables + special rules [15] |
 | M4-TOWN-1 | `M4-TOWN-1-housing` | room check + move-in [15] |
 | M4-TOWN-2 | `M4-TOWN-2-happiness` | happiness + prices [15] |
@@ -1276,10 +1306,10 @@ section in brackets before starting a row.
 | M4-LOOT-2 | `M4-LOOT-2-database` | 643 registrations [16] |
 | ✅ M4-LOOT-3 | `M4-LOOT-3-money` | the coin roll chain: `tr_core::loot::drop_money` (`NPC.cs:79619-80106` — midas, the ±20-75 % spread, the six bonus chains, the blood-moon bump, the luck double-roll best/worst, `NPC.extraValue`, the platinum/gold/silver/copper split with the >50-count shrink rolls and the truncating loop guard) [16] | done 2026-11-03: 4 seeded tests; `NpcKind::value()`/`SlimeStats.value` from the `SetDefaults` lines; `spawn_coins` rewired from the hand rolls — ⚠ the SHA256 pair mismatch originally blamed on the sparkle pass was the OS pointer leaking into `TR_SHOT` captures; fixed by `M1.5-LIQUID-2-det-fix` (the sparkle walk itself is seed-pinned and byte-stable — ANALYSIS "Deterministic screenshots") |
 | ✅ M4-DAMAGE | `M4-DAMAGE-damage` | damage pipeline: `tr-core/src/damage.rs` — `DamageVar` (±15 % + the luck reroll, banker’s rounding via `round_bankers`), `CalculateDamageNPCsTake` (defense x0.5, floor 1), `checkArmorPenetration` (ichor/broken/Betsy + the percent, capped at defense/2), the `StrikeNPC_Inner` line (crit x2 after defense), the crit gate (`Next(1,101) <= crit`, base 4) [9] | done 2026-11-03: 8 seeded tests; wired into the melee hit (`DamageVar` -> defense -> floor via the item stream); the contact hit passes flat damage until the combat rng reaches `Npc::contact` (deviation in ANALYSIS); the player-side defense/Hurt formulas land with M3-EQUIP |
-| M4-PROJ-1..11 | `M4-PROJ-1-engine` … | projectiles per family [17] |
+| ✅ M4-PROJ-1 | `M4-PROJ-1-engine` | done 2026-11-04: the projectile pool — 1000 slots with `NewProjectileSetup` first-free/`FindOldestProjectile` recycle (`Projectile.cs:10811-10880`), the `timeLeft`/`penetrate` tick bookkeeping (`:17199-17208`), `1+extraUpdates` AI sub-steps (`:16668`), the PVE walk with all three immunity systems (per-owner `NPC.immune` 10, `localNPCImmunity` cooldowns, ID-static `GameUpdateCount` stamps) and the on-hit application (`:12562-12624`, `:14087-14119`); the shuriken moved into the pool as aiStyle 2; 8 tests |
 | M4-BOSS | `M4-BOSS-bosses` | per-boss branches [18] |
 | M4-EVENT-1..6 | `M4-EVENT-1-invasions` … | events [18] |
-| M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI [16][23] |
+| ✅ M4-BEST-1 | `M4-BEST-1-bestiary` | bestiary data + UI: `tr-core/src/bestiary.rs` (the five `UnlockState` tiers, `GetUnlockStateByKillCount`'s 1/½/⅕/full ladder + the boss quick-unlock, `NPCKillsTracker` with the 999999999 cap, the family banner chain `NPCtoBanner`→`BannerToItem`→`KillsToBanner` — Pinky 25, rest 50, bosses 0) + the app catalog (12 entries, credit ids = `NPCID.Search.GetName`) + kill registration at the NPC death hook + sidecar v5 persistence + `ui/bestiary.rs` (the `UIBestiaryTest` screen: the 72px entry grid, `Slot_Back/Overlay/Front/Selection` cards with the 15% `Icon_Locked`, the tier-gated info page — `???` name / stats / kill progress / drop lines with rates from tier 4 — the completion bar, the inventory's `DrawBestiaryIcon` button (498,278), Esc/Back close) [16][23] | done 2026-11-04: 4 core tests + 2 app tests + the layout test; `TR_BESTIARY=<n>` screenshot hook (grid + info page verified) |
 | M4-REVENGE-1 | `M4-REVENGE-1-coin-loss` | revenge system [9] |
 | M4-TOWN | (umbrella retired into M4-TOWN-1..3) | — |
 
@@ -1316,7 +1346,7 @@ section in brackets before starting a row.
 | M6-NET-1..5 | `M6-NET-1-handshake` … | protocol parts [27] |
 | M6-SETTINGS | `M6-SETTINGS` | settings parity |
 | M6-SAVE-1 | `M6-SAVE-1-wld-sections` | remaining .wld sections [29] |
-| M6-SAVE-2 | `M6-SAVE-2-plr-reader` | .plr reader [29] |
+| ✅ M6-SAVE-2 | `M6-SAVE-2-plr-reader` | vanilla `.plr` reader+writer: AES-128-CBC (`Player.cs:796-798`), `FileMetadata`, the release-279 section walk with the stat caps, `SavePlayer` mirror (sanitized name, starter items), `list_players` scans real files + the session stand-in dedup + the erase path [29] | done 2026-11-04: 4 round-trip tests (crypto+sections, magic/type, caps, key) + the scan test |
 | M6-CHAT-1 | `M6-CHAT-1-chat` | chat system [24] |
 | M6-EMOTE-1 | `M6-EMOTE-1-emotes` | emote bubbles [24] |
 | M6-ACH-1 | `M6-ACH-1-achievements` | achievements framework [24] |
@@ -1327,8 +1357,13 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M7-WIRE-1..5 | `M7-WIRE-1-engine` … | wiring [19] |
-| M7-TE-1 | `M7-TE-1-tile-entities` | TE framework + 11 TEs [19] |
+| ✅ M7-WIRE-1 | `M7-WIRE-1-engine` | done 2026-11-04: `tr-core/src/wiring.rs` — the four wire colours as a sparse `WireState` side table on `World` (the C# `sTileHeader` bits, `Tile.cs:623-657`; the packed `Tile` has no header), `TripWire`'s four colour passes (`Wiring.cs:525-620`), the `HitWire` BFS with `SkipWire`, the `_toProcess` multi-trigger counter (4 on seeds, 3 on enqueue, 0 through junction boxes 424/445) and the `[2, max-2]` bounds (`:837-995`), `HitWireSingle`'s device subset (the actuator toggle, tile-144 re-trigger, the 421/422 lamp swap), `HitSwitch`'s switch/lever/timer/wide-switch/gem-lock rect table (`:259-330`), `CheckMech`/`UpdateMech` (the 999 queue, the 60/180/300/30/15 timer periods, the 411 lamp-pair flip) — 9 tests; device entity effects (statues/traps/pumps/teleporters/cannons) = M7-WIRE-2, the multi-tile actuation = M7-WIRE-3 |
+| M7-WIRE-2 | `M7-WIRE-2-traps-statues` | traps & statues [19] |
+| M7-WIRE-3 | `M7-WIRE-3-actuators` | multi-tile actuation + wire rendering [19] |
+| ✅ M7-WIRE-4 | `M7-WIRE-4-logic-gates` | done 2026-11-04: the logic gates in `wiring.rs` — `LogicGatePass`/`PokeLogicGate`/`CheckLogicGate` (`Wiring.cs:682-831`, `:380-386`): the lamp queue, the gate walk down the column, the lamp-stack count (`frameX == 18` = on, `== 36` = the overflow/broken mark), the six types by `frameY / 18` (AND/OR/NAND/NOR/XOR/XNOR — the C#'s case numbering: 0 AND, 1 OR, 2 NAND, 3 NOR, 4 XOR, 5 XNOR), the output write + the `_GatesNext` re-trip chaining (`_GatesDone` guard), the faulty-lamp random roll (`Main.rand` → the deterministic xorshift stream), the case-419 lamp toggle verbatim (`num50 = 18 → -18 → 0`); 6 tests (the six types, the chain, the faulty lamp, the overflow) — the logic sensors (tiles 593/594) = M7-WIRE-2 |
+| M7-WIRE-5 | `M7-WIRE-5-teleporters` | teleporters & pumps [19] |
+| ✅ M7-TE-1 | `M7-TE-1-tile-entities` | done 2026-11-04: `tr-core/src/tile_entities.rs` — the framework (the registration-order ids `TileEntitiesManager.cs:27-40`, the `ByID`/`ByPosition` books on `World.tile_entities`, `place`/`remove_at`) and the item-holding halves — ItemFrame 395 / WeaponsRack 471 / FoodPlatter 520 / HatRack 475 with the `ValidTile` frame checks and the `(type, prefix, stack)` + presence-bitsByte wire/save shapes (`TEItemFrame.cs:37-56`, `TEHatRack.cs:59-80`) — 6 tests; the behaviour halves (dummy/sensor/doll/pylon/anchors) and the food gate = M7-TE-2, persistence = M6-SAVE-1 |
+| M7-TE-2 | `M7-TE-2-behaviour-halves` | dummy hit tracking, logic sensors, display doll, pylons, anchors [19] |
 | M7-SHIMMER-1 | `M7-SHIMMER-1-transforms` | shimmer [20] |
 | M7-GROWTH-1 | `M7-GROWTH-1-ticks` | growth [20] |
 | M7-EXTRACT-1 | `M7-EXTRACT-1-extractinator` | extractinator [20] |

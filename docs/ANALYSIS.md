@@ -2430,3 +2430,172 @@ Deviations:
   bar belonged to the placeholder (1 hp/0.5 s). Faithful pace at
   `statLifeMax2 = 100`: the ramp scale is `0.3625`, tiers 1-2 round to 0, and
   20 s standing yields ≈ +4 hp; the test now asserts `50 < hp ≤ 56`.
+
+## Projectile pool (M4-PROJ-1)
+
+`crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
+`NewProjectileSetup`'s first-free-slot spawn with the `FindOldestProjectile`
+recycle (`Projectile.cs:10811-10880`), the per-tick `timeLeft--`/`penetrate == 0`
+kill bookkeeping (`:17199-17208`), the `1 + extraUpdates` AI sub-step loop
+(`:16668`), `DecrementLocalImmuneTimeCounters` (`:16674`, `:17258-17277`) and
+the PVE walk (`Damage_PVE` `:12562-12600`, the per-owner gate `:12620-12624`)
+with the on-hit immunity application (`:14087-14119`). All three C# immunity
+systems are live: the per-owner `NPC.immune[owner] = 10` (stored on `Npc`,
+decremented per NPC update, `NPC.cs:90454-90459`), the per-projectile
+`localNPCImmunity` cooldowns (a flattened pool table) and the ID-static
+`perIDStaticNPCImmunity[immunityIdentity = type, npc]` stamps against
+`Main.GameUpdateCount` (`:604-607`, `:13972`). The shuriken moved into the pool
+as its first AI family; its placeholder lifetime (`age > 2 s || bounces > 6`)
+was replaced by the faithful `timeLeft = 3600` / `penetrate` rules.
+
+Deviations:
+
+- **The projectile path bypasses the melee `hurt_cd` gate** —
+  `Npc::hurt_from_projectile` shares `hurt`'s body without the shared-cooldown
+  check, because a projectile's right to hit is decided by the three C#
+  immunity systems the pool now implements; the hit still arms `hurt_cd`, so
+  melee stays gated afterward (in the C# every `StrikeNPC` writes the same
+  `NPC.immune[owner] = 10` window).
+- **NPC immunity is indexed by the NPC's `Vec` position**, which is stable
+  between death compactions; the C# indexes stable NPC slots and clears them in
+  `ResetNPCSlotData` (`:609-618`). After a compaction a live local-immunity
+  entry may point one slot off for at most its remaining cooldown — revisit
+  with the data-oriented NPC slots (M4 plan).
+- **Multiplayer bookkeeping is not ported**: `ProjectileKey`/
+  `slotGenerations`, `netSpam`/`netImportant` (the recycle treats every slot as
+  recyclable) and the owner-sync asserts — single-player.
+- **`DebugOptions` branches** (`Shared_RandomizeProjectileSlots`, `ManaV2`
+  equivalents) are debug cheats and are not ported.
+- The shuriken's damage/knockback stay the first pass's stand-ins (registry
+  data lands with M3-ITEM-1); the pool itself is content-agnostic.
+
+## Spawn call discipline (M4-SPAWN-1 completion)
+
+The spawn-rate multiplier chain and the caps landed earlier (2026-11-03); this
+completion ports the **call discipline** of `NPC.SpawnNPC`
+(`NPC.cs:80170-80176`) and its named RNG stream:
+
+- **The stream** — `Main.SwapRandom("SpawnNPC")` (`Main.cs:17886`) swaps in a
+  persistent per-stage stream for every world update. The port keeps
+  `App.npc_rng` as that stream's state and advances it (the xorshift LCG step)
+  once per update, **before** the latch/caps, so a suppressed or capped tick
+  still consumes stream state exactly like the C#'s swap; each call draws from
+  `FastRandom::new(state)`. Deterministic per world seed; verified by
+  `the_named_stream_is_deterministic_per_seed` (two identical runs agree
+  tick-for-tick over 900 moon-event night calls, and a different seed
+  diverges). The LCG step is the port's own xorshift core (agents.md's
+  "deterministic stand-in" pattern) — the C#'s exact `UnifiedRandom` sequence
+  is not reproduced, as everywhere else in the port.
+- **The `noSpawnCycle` latch** (`NPC.cs:6179`, consumed at `:80171-80174`) —
+  `App.spawn_no_cycle`; while set, one whole `SpawnNPC` call is suppressed and
+  the flag clears. No setter exists yet (the C# sets it from NPC
+  release/catch and the revenge spawn at `:77993/78137/91553`) — those systems
+  flip the flag when they land.
+- **The dead-player gate** — `CanSpawnEnemiesNear`'s `player.dead` branch
+  (`NPC.cs:349-351`); the journey spawn-rate-disable and Moon-Lord-distance
+  branches have no sources yet.
+- **Pacing quirk preserved**: the port's `npc_timer` (a 4 s spawn hold after
+  respawn, `world_sim/player.rs`) freezes the stream advance while held — the
+  C# has no such hold, so during it the port's stream lags the C#'s tick
+  count; deterministic either way, and the hold clears.
+
+## Wiring engine (M7-WIRE-1)
+
+`tr-core/src/wiring.rs` ports the wiring core: the four colour passes of
+`TripWire` (`Wiring.cs:525-620`), the `HitWire` flood fill with its `SkipWire`
+set, the `_toProcess` multi-trigger counter — 4 on the seed cells, 3 on
+enqueue, `b = 0` through junction boxes (424/445), removed at zero so a
+5+-path convergence re-fires — and the `[2, max-2]` bounds (`:837-995`),
+`HitWireSingle`'s device subset and `HitSwitch`'s rect table
+(`:259-330`), plus `CheckMech`/`UpdateMech` (`:455-471`, `:145-258`) with the
+tile-144 timer periods 60/180/300/30/15 (by `frameX / 18`) and the 411
+lamp-pair frame flip.
+
+Deviations:
+
+- **Wire colours live in a sparse side table** (`World.wires: WireState`) —
+  the C# packs them as `sTileHeader` bits (`Tile.cs:623-657`) and the port's
+  12-byte `Tile` has no header space (E1). Persistence in `.trwld`/`.map` is
+  pending (M6-SAVE-1); synthetic test worlds set wires through
+  `World.wires.set`.
+- **Device entity effects are passthroughs** — the mine (210), geyser (443),
+  statue spawns, pumps (`XferWater`), teleporters and the cannons' projectiles
+  belong to M7-WIRE-2/5; their `HitSwitch`/`HitWireSingle` cases currently do
+  nothing beyond the signal walk.
+- **The multi-tile actuation walk** (`ActuateForced` over `TileObjectData`
+  regions) is M7-WIRE-3; the engine toggles the single tile's
+  `FLAG_INACTIVE` (`Tile.flags` already carries the actuator/inactive bits).
+- **The wire pulse animation** (case 419's `frameX` shift in
+  `HitWireSingle`) is render-side state on a side-table colour, not a tile
+  frame — deferred with the wire renderer (M7-WIRE-3).
+- **Timers pulse indefinitely** while armed: the re-trip's own tile is
+  SkipWire'd for its own pass (the seeds pre-enter `_wireSkip`), so
+  `HitSwitch`'s frameY toggle does not disarm the armed timer — verified by
+  `the_timer_pulses_on_its_period_then_pops` (two pulses 60 ticks apart).
+- **Sounds** (`SoundEngine.PlaySound(28, …)`) are not wired to the audio
+  system yet (M6-AUDIO polish).
+
+## Tile entities (M7-TE-1)
+
+`tr-core/src/tile_entities.rs` ports the `TileEntity` framework and the
+item-holding entity halves: the registration-order ids
+(`TileEntitiesManager.cs:27-40` — TrainingDummy 0 … CritterAnchor 10, the
+discriminant IS the wire/save id), the `ByID`/`ByPosition` books
+(`TileEntity.cs:15-22`), `place`/`remove_at` with the per-TE `ValidTile` frame
+checks (`TEItemFrame.cs:37-43` tile 395 `frameY == 0 && frameX % 36 == 0`;
+`TEWeaponsRack.cs:33` tile 471 `% 54`; `TEFoodPlatter.cs:32` tile 520
+`frameY == 0`; `TEHatRack.cs:407` tile 475 `% 54`), the item payload as the
+`(short type, byte prefix, short stack)` triple the wire/save format carries
+(`TEItemFrame.cs:47-56`) and the HatRack presence-bitsByte round trip
+(`TEHatRack.cs:59-80`). The books live on `World.tile_entities`.
+
+Deviations:
+
+- **The behaviour halves are M7-TE-2**: the dummy's wired hit tracking, the
+  logic sensors, the display doll rendering, the pylon network, the Dead
+  Cells jar and the leashed anchors are registered (ids + placement
+  validity) with empty payloads.
+- **The food gate** (`ItemID.Sets.IsFood`, `TEFoodPlatter.FitsItemFrame`-style
+  placement check) is applied by the caller — the item registry lives in the
+  app layer.
+- **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
+  the UI layer maps between them; the triples are exactly what
+  `WriteExtraData`/`ReadExtraData` and msg 121 carry.
+- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
+  in the world-file section 7 (`WorldFile.cs`).
+- **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
+  per-chunk cap exists for the C#'s save-section packing; the port's books
+  are unbounded maps.
+
+## Logic gates (M7-WIRE-4)
+
+`wiring.rs` gains the logic-gate half of `Wiring.cs`: `LogicGatePass`
+(`Wiring.cs:682-730`), `CheckLogicGate` (`:733-831`) and `PokeLogicGate`
+(`:380-386`). The tiles: LogicGateLamp = 419, LogicGate = 420
+(`TileID.cs:1467-1469`) — note the port's M7-WIRE-1 tests used kind 419 as a
+wire-tile filler; the engine reads the colour bits from `World.wires`, so the
+filler kind is inert, but the id belongs to the lamp. The mechanics:
+
+- A wire hit on a lamp toggles its frame (`case 419` verbatim:
+  `num50 = 18; if (frameX >= 18) num50 = -18; if (frameX == 36) num50 = 0;`)
+  and pokes the gate below through the lamp column walk
+  (`CheckLogicGate` descends past lamps to the first 420).
+- The gate counts the lamp stack above it (`frameX == 18` = on; a `frameX ==
+  36` lamp stops the count and marks the gate broken → its frame becomes 36),
+  evaluates the type by `frameY / 18` (the C#'s case order: 0 AND, 1 OR,
+  2 NAND, 3 NOR, 4 XOR, 5 XNOR) and writes `frameX = 18·output`.
+- A state change enqueues the gate into `_GatesNext`; the pass re-trips the
+  gate's own 1×1 wire (`_GatesDone` guards repeats) — that flood walks the
+  gate's whole wire line, toggling every logic lamp on it, which is how gates
+  chain downstream.
+- The faulty lamp (the poked lamp at `frameX == 36` — `flag6`) rolls the
+  output: `Main.rand.Next(num2) < num3` (`:812`). The port consumes its own
+  xorshift stream seeded per world (`Wiring::seed_faulty_rng`) — the C#'s
+  `Main.rand` sequence is not reproduced (the port-wide RNG deviation), but
+  the roll is deterministic per seed.
+- A gate with a lamp on its own tile flip-flops within one pass: the output
+  flip re-trips the gate's wire, the flood re-toggles the stack lamp and the
+  gate re-evaluates to the opposite — the verbatim C# outcome, covered by
+  `the_gate_output_flip_re_trips_its_own_wire_line`.
+- The logic sensors (tiles 593/594) emit wire signals from world state —
+  M7-WIRE-2 (they need the player/liquid probes).

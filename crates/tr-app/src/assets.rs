@@ -303,6 +303,19 @@ pub fn load_world_images(
         "UI/ChestCraft_3",
         "UI/Creative/Infinite_Icons",
         "UI/Creative/Infinite_Tabs_B_2",
+        "UI/Bestiary",
+        "UI/Bestiary/Slot_Back",
+        "UI/Bestiary/Slot_Front",
+        "UI/Bestiary/Slot_Overlay",
+        "UI/Bestiary/Slot_Selection",
+        "UI/Bestiary/Icon_Locked",
+        "UI/Bestiary/Portrait_Front",
+        "UI/Bestiary/Button_Back",
+        "UI/Bestiary/Stat_HP",
+        "UI/Bestiary/Stat_Attack",
+        "UI/Bestiary/Stat_Defense",
+        "UI/Bestiary/Stat_Knockback",
+        "UI/Bestiary/Stat_Copper",
         "UI/Bestiary/Button_Search_2",
         "UI/Bestiary/Button_Search_Border",
         "UI/SearchCancel",
@@ -922,6 +935,30 @@ pub struct Lookups {
     pub ui_search_icon: Option<tr_render::SheetRect>,
     /// `UI/Bestiary/Button_Search_Border`: the hovered search-bar border.
     pub ui_search_border: Option<tr_render::SheetRect>,
+    /// `Images/UI/Bestiary`: the 2-frame inventory button
+    /// (`DrawBestiaryIcon`, `Main.cs:42464`).
+    pub ui_bestiary_button: Option<tr_render::SheetRect>,
+    /// The bestiary card stack (`UIBestiaryEntryButton.cs:40-86`): the cell
+    /// back, the hover frame, the 60 %-white overlay, the front border and
+    /// the locked portrait.
+    pub ui_bestiary_slot_back: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_selection: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_overlay: Option<tr_render::SheetRect>,
+    pub ui_bestiary_slot_front: Option<tr_render::SheetRect>,
+    pub ui_bestiary_locked: Option<tr_render::SheetRect>,
+    /// `UI/Bestiary/Portrait_Front`: the info page's portrait backdrop.
+    pub ui_bestiary_portrait: Option<tr_render::SheetRect>,
+    /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
+    /// `Stat_HP`/`Stat_Attack`/`Stat_Defense`/`Stat_Knockback`/
+    /// `Stat_Copper` sheets).
+    pub ui_bestiary_stat_hp: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_attack: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_defense: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_knockback: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_copper: Option<tr_render::SheetRect>,
+    /// The five NPC portrait sheets — `[slime, demon eye, wandering eye,
+    /// zombie, king slime]`, the `NpcAssets` set restated for the UI draws.
+    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 5],
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// `Images/Hue`: the hue gradient row of the colour menus (`Main.cs:51141`).
@@ -1116,6 +1153,25 @@ impl Lookups {
             }),
             ui_infinite_icons: atlas.sheet("UI/Creative/Infinite_Icons").copied(),
             ui_infinite_tabs_b2: atlas.sheet("UI/Creative/Infinite_Tabs_B_2").copied(),
+            ui_bestiary_button: atlas.sheet("UI/Bestiary").copied(),
+            ui_bestiary_slot_back: atlas.sheet("UI/Bestiary/Slot_Back").copied(),
+            ui_bestiary_slot_selection: atlas.sheet("UI/Bestiary/Slot_Selection").copied(),
+            ui_bestiary_slot_overlay: atlas.sheet("UI/Bestiary/Slot_Overlay").copied(),
+            ui_bestiary_slot_front: atlas.sheet("UI/Bestiary/Slot_Front").copied(),
+            ui_bestiary_locked: atlas.sheet("UI/Bestiary/Icon_Locked").copied(),
+            ui_bestiary_portrait: atlas.sheet("UI/Bestiary/Portrait_Front").copied(),
+            ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
+            ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),
+            ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
+            ui_bestiary_stat_knockback: atlas.sheet("UI/Bestiary/Stat_Knockback").copied(),
+            ui_bestiary_stat_copper: atlas.sheet("UI/Bestiary/Stat_Copper").copied(),
+            bestiary_npc_sheets: [
+                atlas.sheet("NPC_1").copied(),
+                atlas.sheet("NPC_2").copied(),
+                atlas.sheet("NPC_133").copied(),
+                atlas.sheet("NPC_3").copied(),
+                atlas.sheet("NPC_50").copied(),
+            ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
             ui_search_cancel: atlas.sheet("UI/SearchCancel").copied(),

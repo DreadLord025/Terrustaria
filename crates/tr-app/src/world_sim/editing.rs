@@ -116,13 +116,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     &mut loot_rng,
                     player.class_crit(registry::DamageClass::Ranged) + item_crit,
                 );
-                app.projectiles.push(Projectile::shuriken(
-                    spawn.x - 3.0,
-                    spawn.y - 3.0,
-                    dir.x * 11.0,
-                    dir.y * 11.0,
+                app.projectiles.spawn(
+                    crate::projectile::SHURIKEN,
+                    0,
+                    spawn - Vec2::splat(3.0),
+                    Vec2::new(dir.x * 11.0, dir.y * 11.0),
+                    10,
+                    12.0,
                     crit,
-                ));
+                );
                 app.inventory[app.selected].count =
                     app.inventory[app.selected].count.saturating_sub(1);
                 // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the swing
