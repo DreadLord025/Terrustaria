@@ -2729,3 +2729,52 @@ filler kind is inert, but the id belongs to the lamp. The mechanics:
 Deviations: the entity movement is the port's positional teleport (the C#'s
 `Player.Teleport`/`NPC.Teleport` effects — the dust, the styles — are
 M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
+
+## Falling blocks (M7-FALL-1)
+
+`tr-core/src/falling.rs` ports the trigger half of
+`WorldGen.SpawnFallingBlockProjectile` (`WorldGen.cs:86039-86090`); the flight
+half rides the app projectile pool (`tr-app/src/projectile.rs`), because in
+the C# the falling block **is** a projectile (`AI_010`'s `ai[0] == 1f`
+mode) — the sand at the broken support becomes projectile 31 and falls with
+`velocity.Y += 0.41f` per tick (the MP branch `:86074-86082` additionally
+dedupes falls within 60 ticks per column; the port is SP-layer, so the
+dedupe is not modelled).
+
+- **The trigger** (`check_falling`): the tile is one of
+  `TileID.Sets.Falling` {53, 234, 112, 116, 224, 123, 330-333, 495}, the
+  below passes `BlockBelowMakesSandFall` (`:86585-86604` — the below
+  inactive, or the two-below inactive with a non-solid below, or the
+  hardened-sand blend 165 below), and `AllowsSandfall` (`:86612-86624`) —
+  the chest/statue-anchor kinds above hold the column. The caller (the
+  break path in `world_sim/editing.rs`) clears the above tile — the C#'s
+  `tileCache.ClearTile()` — and spawns the projectile at
+  `(i·16 + 8, j·16 + 8)`.
+- **The projectile data** (`GetSandfallProjData`, `:86514-86570`): the
+  kind→(projectile, damage) map — the sand default 31, crimsand 56, mud 59,
+  sandstone 67, silt 71, ebonsand 241, the snow variants 411-414 with
+  damage 0, the desert fossil 812; damage 10 otherwise.
+- **The flight**: the gravity `+0.41` per sub-step capped at 10
+  (`TILE_FALL_GRAVITY`), and the position integrates the velocity per
+  sub-step (the generic `position += velocity` of `Projectile.Update`) —
+  the port's first cut only accumulated the velocity and the block hovered
+  in the air; the chain test caught it.
+- **The landing** (`landed` + `can_place_back`): when the box's bottom
+  edge (`y + 10`, the 10×10 sand-ball box) enters a solid tile row, the
+  tile is placed back **at the box center** (`(x + 5, y + 5)` — the C#'s
+  `AI_010` lands the projectile via the tile collision and
+  `Kill()`→`PlaceTile` at the box's tile), the liquid under it is
+  displaced (`liquid = 0` at the placed cell — the sink-in is a
+  simplification; the C# has the splash variants), and the projectile is
+  killed. The chain refill works: the placed tile supports the next
+  falling block only via the next break/trigger pass (the port does not
+  re-run `SpawnFallingBlockProjectile` from the landing itself — the C#
+  lands on the column below and stops).
+- The `timeLeft` default 3600 matches `SetDefaults`.
+
+Deviations: no MP dedupe (SP layer); the sink-into-liquid and the
+`Collision` niceties (the tile-collide step of the C#'s generic movement,
+which also kills on the side collision) are simplified to the
+bottom-edge landing; the projectile-vs-NPC contact damage of the falling
+ball works through the pool's ordinary `Damage_PVE` (the `damage` input
+of `spawn_falling`).

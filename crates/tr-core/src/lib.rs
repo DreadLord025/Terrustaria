@@ -9,6 +9,7 @@ pub mod binio;
 pub mod damage;
 pub mod drawdata;
 pub mod edit;
+pub mod falling;
 pub mod flame;
 pub mod framing;
 pub mod lighting;
