@@ -33,7 +33,7 @@ an agent needs before touching code.
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`; the 60 Hz tick in `world_sim/player.rs` |
 | NPCs, spawning, projectiles | `npc.rs`, `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
-| Items, drops, inventory slots | `item.rs`, `registry.rs`, `inv.rs`; drop tick in `world_sim/items.rs` |
+| Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Liquids: flow sim, draw cache, waterfalls | `tr-core/src/liquid.rs`, `liquid_draw.rs`, `waterfall/` |
 | World generation | `tr-core/src/worldgen/` |

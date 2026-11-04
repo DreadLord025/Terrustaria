@@ -249,6 +249,10 @@ mod tests {
         assert_eq!((critter.bait, critter.rare), (50, 3));
         let golf = get(4251).unwrap();
         assert_eq!((golf.projectile, golf.rare, golf.value), (Some(748), 2, 10000));
+        // SD4 range: Architect Gizmo Pack 3061 (Item.cs:27677-27683)
+        let gizmo = get(3061).unwrap();
+        assert_eq!((gizmo.rare, gizmo.value), (5, 200000));
+        assert!(gizmo.accessory);
         assert_eq!(get(2).unwrap().max_stack, 9999);
         // Slots are i16 with −1 = none; slot 0 is REAL (the Familiar set,
         // ids 269-271, `Item.cs` case 269/270/271 headSlot/bodySlot/legSlot 0).

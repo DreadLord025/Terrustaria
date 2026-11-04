@@ -485,7 +485,9 @@ respawn rules, M4-REVENGE-1 coin-loss revenge.
   paint in inventory; single-instance projectiles block re-shoot; swing rate display
   `60/(useAnimation+reuseDelay+(!autoReuse))` (19490).
 
-**Tasks:** M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants), M3-ITEM-2 full use
+**Tasks:** ✅ M3-ITEM-1 SetDefaults registry scale-up (+ItemVariants — 2026-11-04:
+all 6196 ids generated into `tr-app/src/itemdata.rs`, variants in `variants.rs`,
+conditions default false), M3-ITEM-2 full use
 styles, M3-ITEM-3 ammo system, M3-ITEM-4 mana & mana sickness, M3-ITEM-5 channel/reuseDelay,
 M3-TOOL (tiers/durability), M2-ANIM-item-timings ✅.
 
@@ -1244,7 +1246,7 @@ section in brackets before starting a row.
 | ✅ M3-CRAFT-recipes | `M3-CRAFT-recipes` | done 2026-11-03: a 7-recipe subset + can_craft/try_craft/adjacent_tiles (`craft.rs`) + the crafting panel on contexts 41/42/43 (the old 4/33 numbering was stale); follow-ups: the SetupRecipes generator, the dropped-item bridge, craft sound [11] |
 | M3-CRAFT-2 | `M3-CRAFT-2-groups-environment` | recipe groups + env flags + nearby chests [11] |
 | M3-CRAFT-3 | `M3-CRAFT-3-alchemy` | alchemy table 1/3 rule [11] |
-| 🔄 M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
+| ✅ M3-ITEM-1 | `M3-ITEM-1-registry-scaleup` | SetDefaults 1-5 + ItemVariants [10] |
 | M3-ITEM-2 | `M3-ITEM-2-use-styles` | 16 use styles + body dispatch [10] |
 | M3-ITEM-3 | `M3-ITEM-3-ammo` | ammo system + not-consume rolls [10] |
 | M3-ITEM-4 | `M3-ITEM-4-mana` | mana costs + sickness [10] |
