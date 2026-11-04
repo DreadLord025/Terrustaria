@@ -2482,3 +2482,35 @@ Deviations:
   `the_timer_pulses_on_its_period_then_pops` (two pulses 60 ticks apart).
 - **Sounds** (`SoundEngine.PlaySound(28, …)`) are not wired to the audio
   system yet (M6-AUDIO polish).
+
+## Tile entities (M7-TE-1)
+
+`tr-core/src/tile_entities.rs` ports the `TileEntity` framework and the
+item-holding entity halves: the registration-order ids
+(`TileEntitiesManager.cs:27-40` — TrainingDummy 0 … CritterAnchor 10, the
+discriminant IS the wire/save id), the `ByID`/`ByPosition` books
+(`TileEntity.cs:15-22`), `place`/`remove_at` with the per-TE `ValidTile` frame
+checks (`TEItemFrame.cs:37-43` tile 395 `frameY == 0 && frameX % 36 == 0`;
+`TEWeaponsRack.cs:33` tile 471 `% 54`; `TEFoodPlatter.cs:32` tile 520
+`frameY == 0`; `TEHatRack.cs:407` tile 475 `% 54`), the item payload as the
+`(short type, byte prefix, short stack)` triple the wire/save format carries
+(`TEItemFrame.cs:47-56`) and the HatRack presence-bitsByte round trip
+(`TEHatRack.cs:59-80`). The books live on `World.tile_entities`.
+
+Deviations:
+
+- **The behaviour halves are M7-TE-2**: the dummy's wired hit tracking, the
+  logic sensors, the display doll rendering, the pylon network, the Dead
+  Cells jar and the leashed anchors are registered (ids + placement
+  validity) with empty payloads.
+- **The food gate** (`ItemID.Sets.IsFood`, `TEFoodPlatter.FitsItemFrame`-style
+  placement check) is applied by the caller — the item registry lives in the
+  app layer.
+- **Items are `(type, prefix, stack)` triples**, not the app's `ItemSlot`s —
+  the UI layer maps between them; the triples are exactly what
+  `WriteExtraData`/`ReadExtraData` and msg 121 carry.
+- **Persistence** in `.trwld`/`.map` is pending (M6-SAVE-1); the C# keeps TEs
+  in the world-file section 7 (`WorldFile.cs`).
+- **`MaxEntitiesPerChunk = 1000`** (`TileEntity.cs:14`) is not enforced — the
+  per-chunk cap exists for the C#'s save-section packing; the port's books
+  are unbounded maps.
