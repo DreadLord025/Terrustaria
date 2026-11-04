@@ -10,6 +10,7 @@ mod buffs;
 mod chat;
 mod collision;
 mod death;
+mod emotes;
 mod inv;
 mod wiring_stub;
 mod item;
