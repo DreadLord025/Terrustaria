@@ -39,6 +39,7 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::achievements;
 use crate::chat;
 use crate::audio;
 use crate::biome::{
@@ -154,6 +155,8 @@ pub(crate) struct App {
     /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
     /// chat state (M6-CHAT-1).
     pub(crate) chat: chat::ChatMonitor,
+    /// `Main.Achievements` — the achievement registry (M6-ACH-1).
+    pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -609,11 +612,8 @@ impl App {
                 // The listing root is `Main.PlayerPath` (`Main.cs:67065-67075`)
                 // — the port's `Terrustaria/Players` (`save.rs`'s mirror).
                 let dir = save::default_players_dir();
-                self.players = ui::save_list::list_players(
-                    dir.as_deref(),
-                    Some(self.session_entry()),
-                    fakes,
-                );
+                self.players =
+                    ui::save_list::list_players(dir.as_deref(), Some(self.session_entry()), fakes);
                 ui::char_select::sort_players(&mut self.players);
             }
             FrontScreen::WorldSelect => {
@@ -844,6 +844,13 @@ impl App {
         let mut coins = 0u64;
         // The bestiary kill pairs, restored from the sidecar below.
         let mut loaded_kills: Vec<(String, i32)> = Vec::new();
+        // The achievement condition states, restored from the port's own
+        // `achievements.trdat` (the Rijndael+BSON vanilla format is the
+        // documented M6-ACH-1 deviation).
+        let mut loaded_achievements = achievements::AchievementManager::ported();
+        if let Some(path) = tr_core::save::achievements_path() {
+            achievements::load(&path, &mut loaded_achievements);
+        }
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
@@ -910,6 +917,25 @@ impl App {
         {
             if let Some(p) = player.as_mut() {
                 p.dash_type = d.clamp(0, 6);
+            }
+        }
+        // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
+        // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
+        // BlizzardinaBottle 987, FartinaJar 1724, TsunamiInABottle 3201) and
+        // the mounts land with M3-EQUIP-3 / M2-MOUNT-1. `balloon` also lifts
+        // the jump statics (`jumpBoost`, `Player.cs:19589-19593`).
+        if let Ok(list) = std::env::var("TR_JUMPS") {
+            if let Some(p) = player.as_mut() {
+                for name in list.split(',') {
+                    if name.trim().eq_ignore_ascii_case("balloon") {
+                        p.jump_boost = true;
+                        continue;
+                    }
+                    if let Some(j) = crate::player::ExtraJump::parse_name(name) {
+                        p.has_jump_options[j.index()] = true;
+                        p.can_jump_again[j.index()] = true;
+                    }
+                }
             }
         }
         // `TR_WINGS=<ArmorIDs.Wing>` / `TR_BOOTS=<1..5>` pin the flight gear —
@@ -1070,7 +1096,10 @@ impl App {
         // without waiting for the 10-120 s scheduler. Test harness only.
         let ambience_pin = std::env::var("TR_AMBIENCE").ok().and_then(|v| {
             let mut it = v.split(',');
-            let ty = it.next().map(str::trim).and_then(crate::ambience::parse_sky_entity_type);
+            let ty = it
+                .next()
+                .map(str::trim)
+                .and_then(crate::ambience::parse_sky_entity_type);
             let seed = it
                 .next()
                 .map(str::trim)
@@ -1184,10 +1213,12 @@ impl App {
             bestiary_selected: std::env::var("TR_BESTIARY")
                 .ok()
                 .and_then(|v| v.parse::<usize>().ok())
-                .and_then(|n| if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
-                    Some(n - 1)
-                } else {
-                    None
+                .and_then(|n| {
+                    if (1..=crate::bestiary::ENTRIES.len()).contains(&n) {
+                        Some(n - 1)
+                    } else {
+                        None
+                    }
                 }),
             chat: {
                 // `TR_CHAT` opens the chat for the screenshot runs
@@ -1200,6 +1231,10 @@ impl App {
                     chat.new_text("Belsin hello world", [255, 255, 255]);
                 }
                 chat
+            },
+            achievements: {
+                // The condition states load below (the sidecar block).
+                loaded_achievements
             },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on

@@ -2,6 +2,7 @@
 
 mod app;
 mod assets;
+mod achievements;
 mod audio;
 mod bestiary;
 mod biome;
