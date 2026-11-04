@@ -195,6 +195,43 @@ impl App {
                 underworld: self.camera.y > underworld_px,
                 blood_moon: self.world.blood_moon,
                 windy_music: self.wind.happy_windy_day,
+                // The biome chain (`:12686-12920`): the space band with
+                // `num4 = maxTilesX / 4200`, the temple wall behind the scene
+                // centre, the metrics zones, the mushroom bg style and the
+                // storm flag.
+                space_band: {
+                    let num4 = self.world.width as f32 / 4200.0;
+                    let center_tile_y = self.camera.y / 16.0;
+                    (center_tile_y - (65.0 + 10.0 * num4 * num4))
+                        / (self.world.world_surface as f32 / 5.0)
+                        < 1.0
+                },
+                temple_wall: self
+                    .world
+                    .tile((self.camera.x / 16.0) as i32, (self.camera.y / 16.0) as i32)
+                    .is_some_and(|t| t.wall == 87),
+                dungeon: self.scene_metrics.zone_dungeon,
+                mushroom_bg: self.bg_style == 9
+                    && self.camera.y
+                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                corrupt: self.scene_metrics.zone_corrupt,
+                crimson: self.scene_metrics.zone_crimson,
+                blood_leads_evil: self.scene_metrics.blood_tile_count
+                    > self.scene_metrics.evil_tile_count,
+                meteor: self.scene_metrics.zone_meteor,
+                graveyard: self.scene_metrics.zone_graveyard,
+                desert: self.scene_metrics.zone_desert,
+                jungle: self.scene_metrics.zone_jungle,
+                snow: self.scene_metrics.zone_snow,
+                hallow: self.scene_metrics.zone_hallow,
+                storm: self.wind.storming,
+                ocean: self.scene_metrics.zone_beach,
+                center_y: self.camera.y,
+                surface_band_px: self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
+                jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
+                    + screen.y * 0.5,
+                quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
             });
             if !self.is_client() {
                 self.update_npcs(dt);
@@ -914,6 +951,7 @@ impl App {
                         self.bestiary_open,
                         self.bestiary_selected,
                         &self.kill_tracker,
+                        &mut self.chat,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

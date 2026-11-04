@@ -75,6 +75,15 @@ pub(crate) fn scan_scene_at(
     // `CalculateZones`' `ZoneUnderworldHeight`/`ZoneBeach` terms
     // (`SceneMetrics.cs:674,691`): `Main.UnderworldLayer` is `maxTilesY - 200`
     // (`Main.cs:2790`, `spawner::UNDERWORLD_LAYER`).
+    // `SceneMetrics.cs:682-684`: ZoneDungeon — the brick count, below the
+    // world surface, behind a dungeon wall at the scan centre.
+    if metrics.dungeon_tile_count >= tr_core::scene::thresholds::DUNGEON_TILE
+        && (metrics.tile_center.1 as f64) > world.world_surface
+    {
+        metrics.zone_dungeon = world
+            .tile(metrics.tile_center.0, metrics.tile_center.1)
+            .is_some_and(|t| tr_core::scene::is_dungeon_wall(t.wall));
+    }
     metrics.calculate_zones(
         world.world_surface,
         world.height - 200,

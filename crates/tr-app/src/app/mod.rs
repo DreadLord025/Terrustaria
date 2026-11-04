@@ -39,6 +39,7 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::chat;
 use crate::audio;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
@@ -150,6 +151,9 @@ pub(crate) struct App {
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
     pub(crate) bestiary_selected: Option<usize>,
+    /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
+    /// chat state (M6-CHAT-1).
+    pub(crate) chat: chat::ChatMonitor,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -1206,6 +1210,18 @@ impl App {
                         None
                     }
                 }),
+            chat: {
+                // `TR_CHAT` opens the chat for the screenshot runs
+                // (the vanilla state opens on Enter only).
+                let mut chat = chat::ChatMonitor::default();
+                if std::env::var_os("TR_CHAT").is_some() {
+                    chat.open = true;
+                    chat.new_text("Belsin was slain...", crate::chat::COLOR_DEATH);
+                    chat.new_text("*Belsin rolls a 42", crate::chat::COLOR_SERVER_MESSAGE);
+                    chat.new_text("Belsin hello world", [255, 255, 255]);
+                }
+                chat
+            },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).

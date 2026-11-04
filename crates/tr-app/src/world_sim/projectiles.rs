@@ -25,9 +25,9 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         }
         app.dev_throw = false;
     }
-    let world = &app.world;
     let npcs = &mut app.npcs;
     let pool = &mut app.projectiles;
+    let world = &mut app.world;
     app.projectile_step.tick(dt.min(0.25), |_| {
         pool.update(world, npcs);
     });

@@ -6,6 +6,7 @@ mod audio;
 mod bestiary;
 mod biome;
 mod buffs;
+mod chat;
 mod collision;
 mod death;
 mod inv;
