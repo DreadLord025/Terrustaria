@@ -34,6 +34,9 @@ pub enum NpcKind {
     WanderingEye,
     Zombie,
     KingSlime,
+    /// `NPCID.Guide` (22) — the first town NPC (`aiStyle 7`): the port's
+    /// walker is the zombie machine minus the chase (the town NPC wanders).
+    Guide,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -205,6 +208,7 @@ impl NpcKind {
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
             NpcKind::KingSlime => 4,
+            NpcKind::Guide => 5,
         }
     }
 
@@ -215,6 +219,7 @@ impl NpcKind {
             2 => NpcKind::WanderingEye,
             3 => NpcKind::Zombie,
             4 => NpcKind::KingSlime,
+            5 => NpcKind::Guide,
             _ => return None,
         })
     }
@@ -226,6 +231,8 @@ impl NpcKind {
             NpcKind::Slime => (24.0, 18.0),
             NpcKind::DemonEye | NpcKind::WanderingEye => (30.0, 32.0),
             NpcKind::Zombie => (18.0, 40.0),
+            // The Guide's hitbox rides the same humanoid frame.
+            NpcKind::Guide => (18.0, 40.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
     }
@@ -236,6 +243,8 @@ impl NpcKind {
             NpcKind::DemonEye => 60,      // case 2
             NpcKind::WanderingEye => 300, // case 133
             NpcKind::Zombie => 45,
+            // `NPC.SetDefaults` case 22 (`NPC.cs:8815`): 250 HP.
+            NpcKind::Guide => 250,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -246,6 +255,7 @@ impl NpcKind {
             NpcKind::DemonEye => 18,     // case 2
             NpcKind::WanderingEye => 40, // case 133
             NpcKind::Zombie => 14,
+            NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
     }
@@ -294,6 +304,10 @@ pub struct Npc {
     burn: f32,
     /// A boss that just landed wants the app to spawn a minion (`AI_015`).
     pub wants_minion: bool,
+    /// The town NPC's assigned home tile (`homeTileX/Y`); `None` =
+    /// homeless (`NPC.homeless` inverted). The in-memory state — the
+    /// world-file persistence lands with M6-SAVE-1's NPC sections.
+    pub home: Option<(i32, i32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
 }
@@ -357,6 +371,22 @@ impl Npc {
     }
 
     /// Zombies walk on the surface and burn away at dawn.
+    /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
+    /// world-gen arrival).
+    pub fn spawn_guide(world: &World, x_tile: i32) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = NpcKind::Guide.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(NpcKind::Guide, x, y, 1, 0.0))
+    }
+
     pub fn spawn_zombie(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
@@ -412,6 +442,7 @@ impl Npc {
             rotation: 0.0,
             burn: 0.0,
             wants_minion: false,
+            home: None,
             wet_x: 0.0,
         }
     }
@@ -444,6 +475,8 @@ impl Npc {
             NpcKind::DemonEye => 0.8,
             NpcKind::WanderingEye => 0.8,
             NpcKind::Zombie => 0.5,
+            // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
+            NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -461,6 +494,7 @@ impl Npc {
             NpcKind::DemonEye => 2,
             NpcKind::WanderingEye => 20,
             NpcKind::Zombie => 6,
+            NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -477,6 +511,7 @@ impl Npc {
             NpcKind::DemonEye => 75.0,
             NpcKind::WanderingEye => 500.0,
             NpcKind::Zombie => 60.0,
+            NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -579,6 +614,7 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
+            NpcKind::Guide => self.update_guide(world, dt),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
         self.find_frame();
@@ -681,6 +717,33 @@ impl Npc {
             // frame 0; walking accumulates `|velocity.X|` through the band
             // 0 → 1 → 2 → 1 at thresholds 8/16/24/32 and restarts.
             NpcKind::Zombie => {
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        // The original leaves `frame.Y` on its previous value
+                        // here — the restart tick keeps frame 1.
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
                     || (self.facing == 1 && self.vx < 0.0)
@@ -944,6 +1007,49 @@ impl Npc {
             && self.y + h > player.y
     }
 
+    /// `AI_007_TownNPCs`'s walk subset (`NPC.cs:10586+`): the town NPC
+    /// wanders on the ground, turns at the walls/ledges, jumps the
+    /// one-tile obstacles. The chase/doors/talk arms land with their
+    /// systems.
+    fn update_guide(&mut self, world: &World, _dt: f32) {
+        let (w, h) = NpcKind::Guide.size();
+        // The wander: a walking pace with the random turn every few
+        // seconds (`ai[3]`'s idle timer shape).
+        self.anim += 1.0;
+        // The deterministic turn: every 240 ticks the wander flips (the
+        // per-NPC randomness rides the shared streams' order).
+        if self.anim % 240.0 < 1.0 {
+            self.facing = -self.facing;
+        }
+        self.vx = self.facing as f32 * 0.5;
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+
+        let nx = self.x + self.vx;
+        if !collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else if self.on_ground {
+            self.vy = -6.2;
+            self.on_ground = false;
+        } else {
+            self.vx = 0.0;
+        }
+
+        let ny = self.y + self.vy;
+        if !collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+    }
+
     fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
@@ -975,12 +1081,15 @@ impl Npc {
                 player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
                 return;
             }
-            let dmg = if self.kind == NpcKind::Slime {
-                self.slime.stats().damage
-            } else {
-                self.kind.contact_damage()
-            };
-            player.hurt(dmg, cx);
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact).
+            if self.kind != NpcKind::Guide {
+                let dmg = if self.kind == NpcKind::Slime {
+                    self.slime.stats().damage
+                } else {
+                    self.kind.contact_damage()
+                };
+                player.hurt(dmg, cx);
+            }
         }
     }
 
@@ -1000,6 +1109,7 @@ impl Npc {
             NpcKind::WanderingEye => 2,
             NpcKind::Zombie => 3,
             NpcKind::KingSlime => 4,
+            NpcKind::Guide => 5,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;

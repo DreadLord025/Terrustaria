@@ -299,6 +299,7 @@ fn portrait_data(
         NpcKind::WanderingEye => 2,
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
+        NpcKind::Guide => 5,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -329,6 +330,7 @@ fn portrait_data(
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::Zombie, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Guide, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
