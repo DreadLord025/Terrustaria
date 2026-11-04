@@ -45,6 +45,12 @@ pub fn tile_drop(tile: u16) -> Option<u16> {
     match tile {
         2 => Some(2),
         11 => Some(25),
+        // The world cactus 80 drops the Cactus item even though the item
+        // places the CactusBlock 188, not 80 (`KillTile_GetItemDrops`,
+        // `WorldGen.cs:64717-64720`: `case 80`/`case 188` both → 276) — the
+        // generated item table only carries the 276→188 placement, so the
+        // reverse `by_tile` lookup misses 80.
+        80 => Some(276),
         _ => by_tile(tile),
     }
 }

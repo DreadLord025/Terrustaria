@@ -1167,9 +1167,10 @@ any tile in front of it unbreakable and unplaceable. `edit::WALL_UNBREAKABLE` gu
 `break_wall`, `break_tile` (`remove_tile`) and `place_tile`; the dungeon's pre-Skeletron
 wall rule is not needed because the dungeon is not generated.
 
-Not ported: the full `Item.cs` use logic, tool requirements and mining speed, item sprite
-sheet lookup, inventory windows/crafting/chests, paint, actuators/wiring, and liquid
-re-simulation after an edit.
+Not ported: the full `Item.cs` use logic, item sprite sheet lookup, inventory
+windows/crafting/chests, paint, actuators/wiring, and liquid re-simulation after
+an edit. (The tool requirements and the mining speed landed since — `tr_core::tool`'s
+pick gates + the pacing in the mining branch; the full `Item.cs` use logic stays out.)
 
 ### Torch attachment (`WorldGen.CheckTorch`)
 
@@ -2261,9 +2262,29 @@ cites its builder chain. Deviations and seams:
 - The wooden recipes expand the `RecipeGroups.Wood`/`IronBar` requirement
   groups to concrete ids (Wood → 9, Iron Bar → 22; `Recipe.cs:610-616` /
   `:4738`) — the subset recipe table carries no group machinery (`craft.rs`).
-- LMB breaking of `frame_important` tiles (doors included) is still gated off
-  in `world_sim/editing.rs:158-165` (`!important`, cacti exempted) — the
-  cascade runs from every other break source; separate catalog line.
+- LMB breaking of `frame_important` tiles was gated off in
+  `world_sim/editing.rs` (the former `:204-210`/`:213` as of the M1.4-TO-5
+  claim — `!important`, cacti exempted; the earlier `:158-165` citation had
+  drifted after the M2 merges). Removed 2026-11-04 (M1.4-TO-5): vanilla's
+  mining chain has no `tileFrameImportant` check at all (grep over
+  `Player.cs` hits only `:40019`/`:40608`, both outside the mining chain —
+  `Player.cs:45656` → `PickTile :53757`), so doors/chests/furniture reach
+  `break_tile` through the mining branch with the full KillTile cascade and
+  the object drop. Cactus 80 keeps its old path (`check_object`
+  `_ => None`, the per-cell drop); the visible remainder is the missing
+  `CanKillTile` refusals (next bullet, M1.4-TO-6).
+- `CanKillTile` refusals are not ported (owner decision 2026-11-04): C#
+  `CanKillTile` (`WorldGen.cs:62219-62326`) refuses a locked door type 10
+  (`:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`) and the
+  tile under a container (`:62259-62270`); the port's `remove_tile` gates
+  only `active` + the wall (wall 350 via `WALL_UNBREAKABLE`,
+  `edit.rs:469`). With the LMB gate gone the gaps are visible through mining
+  — a locked door breaks free, a stocked chest breaks with its contents;
+  tracked as M1.4-TO-6 so the 1:1 fix is not lost.
+- The mining break carries no net messages: vanilla syncs the break/fail
+  with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
+  SP port has no replication for it (the same seam as the door message 19
+  above).
 - Placement does not run the KillTile cascade: `reframe_area` (and
   `frame_world`) leave `frame_important` tiles alone, so a floating object at
   placement does not pop although vanilla's `PlaceTile` → `SquareTileFrame`
@@ -2282,6 +2303,58 @@ byte-identical closed frame (`door2 == z1a == 49c07431…`) while the open frame
 differs exactly inside the door column (pixel_diff 1664 px, bbox
 (1016,434)-(1055,497)). There is no vanilla baseline for placed furniture —
 geometry fidelity is carried by the registry/`CanPlace`/`Place` unit tests.
+
+Verification (M1.4-TO-5, commit `52d5267`): the workspace suite is green
+(`test result: ok` ×7: 673+16+393+19 passed, 0 failed, `--skip
+migrates_version_2_kinds_to_item_ids`); the mining branch is covered by unit
+tests in `world_sim/editing.rs`
+(`test_DW_1_1_frame_important_door_breaks_through_the_mining_branch`,
+`test_DW_1_1_frame_important_chest_breaks_through_the_mining_branch`,
+`test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop`,
+`test_DW_1_2_non_frame_important_tile_still_breaks_as_before`,
+`test_DW_1_5_releasing_mine_down_resets_the_mine_state`,
+`test_DW_1_5_opening_the_inventory_resets_the_mine_state`, plus the torch
+edge case `torch_frame_important_kind_breaks_single_cell_with_its_item`);
+deterministic `TR_FILL` + LMB-break runs are SHA256-equal twins at zooms
+1.0/1.5/2.0 (`abf1ce09…`, `0ac90a0a…`, `3e4b56fd…`; the pre-fix run shows
+the no-break frame, `a4168a96…`), and pixel_diff against the pre-fix frame
+at zoom 1.0 differs exactly in the door column + the drop item (1064 px,
+bbox (1016,434)-(1053,495)).
+
+Re-taken on the post-merge state (`32a1aed`, M6-MUSIC/M7-FALL/M7-WIRE in):
+warm-run break twins are byte-equal at zooms 1.0/1.5/2.0 (`105a557f…` ×4,
+`03a86efd…` ×3, `ca9f40fa…` ×3 — the hashes above are claim-time bytes, the
+merged content changes pixels globally); the matched-camera before/after
+diff at zoom 1.0 is 910 px, bbox (1016,434)-(1047,495) — the same door
+column + drop. Harness notes for future shot runs: the first run after a
+rebuild (or at a new zoom pipeline) fires the shot mid-camera-lerp (camera
+`2025.26`/`2030.75` instead of the `2012.000` target — whole-frame twins
+look unequal), and a warm no-break run can settle at that second camera
+attractor; break runs always converged. Take twin pairs only on warm runs
+and match the `shot camera px` log line before comparing frames.
+
+Second sync-merge (`af4fe98`, 2026-11-04 — M4-PROJ-9 bombs, M2-BUFF-7 food,
+the tool tiers, the itemdata regen): the mining branch keeps the ungated
+condition and gains the tool-tier gates on top — the same union C# mines
+with (`Player.cs:45656`: the pick on non-axe/non-hammer tiles, the axe on
+`tileAxe`, the hammer on `tileHammer`); the DW-1.x fixtures hold the Iron
+Pickaxe (the cactus test the Iron Axe), because the empty slot they used
+before has no tool power and mines nothing. The itemdata regen also moves
+item 276 to place `CactusBlock` 188 (`TileID.CactusBlock = 188`), which
+emptied `by_tile(80)` and silently dropped the world-cactus break's item;
+`tile_drop`'s `80 => 276` case restores it (`KillTile_GetItemDrops`,
+`WorldGen.cs:64717-64720` — cases 80 and 188 both drop 276), commit
+`423a503`. Suite: `test result: ok` ×7 (747+16+431+19, 0 failed). Re-taken
+on the merged state: break twins byte-equal at zooms 1.0/1.5/2.0
+(`6b613cb5…`, `c00e22e6…`, `9e7f6c85…` ×2 each; before `b6b4d136…`), and
+the matched-camera before/after diff at zoom 1.0 is again 910 px,
+bbox (1016,434)-(1047,495) — the merged content changes the frame bytes
+globally, but the break's own pixel footprint is unchanged. Re-verified
+twice more after the later sync-merges (M7-TE-2: logic sensors + the
+training dummy; M4-TOWN-1: the Guide + the housing move-in — neither
+pixel-bearing in the break scene, the Guide spawns off-frame): all four
+hashes and the 910 px footprint are byte-identical, so the shot evidence
+carries over as-is.
 
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
