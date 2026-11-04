@@ -10,11 +10,11 @@
 
 use crate::registry;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 use crate::buffs::BuffSlots;
 use crate::collision;
-use crate::regen::{RegenInputs, RegenState, update_life_regen, update_mana_regen};
+use crate::regen::{update_life_regen, update_mana_regen, DotDeath, RegenInputs, RegenState};
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -109,6 +109,10 @@ pub struct Player {
     /// The life/mana regen accumulators (`Player.lifeRegen`/`lifeRegenTime`/
     /// `lifeRegenCount`/`manaRegen*`, `Player.cs:1930-1946`) — `regen.rs`.
     pub regen: RegenState,
+    /// The pending DoT death reason: the drain engine's `KillMe` attribution
+    /// (`Player.cs:19319-19334,19361-19384`) rides with the player until the
+    /// death pipeline (world_sim) resolves the epitaph text and clears it.
+    pub dot_death: Option<DotDeath>,
     /// `Player.fallStart` (`Player.cs:2882`): the tile row the fall started on,
     /// int-truncated like the original's `(int)(position.Y / 16f)`.
     fall_start: i32,
@@ -174,6 +178,7 @@ impl Player {
             breath: BREATH_MAX,
             breath_cd: 0,
             regen: RegenState::default(),
+            dot_death: None,
             fall_start: (sy / TILE_PX) as i32,
             extra_fall: 0,
             no_fall_dmg: false,
@@ -221,6 +226,7 @@ impl Player {
         self.breath = BREATH_MAX;
         self.breath_cd = 0;
         self.regen = RegenState::default();
+        self.dot_death = None;
         self.fall_start = (self.y / TILE_PX) as i32;
         self.in_lava = false;
         self.gfx_off_y = 0.0;
@@ -617,7 +623,9 @@ impl Player {
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
                 ..RegenInputs::default()
             };
-            update_life_regen(&mut self.regen, &in_, &mut self.hp);
+            if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
+                self.dot_death = Some(death);
+            }
             update_mana_regen(&mut self.regen, &in_, &mut self.mana);
         }
     }
@@ -792,6 +800,21 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 #[cfg(test)]
 mod tests {
     #[test]
+    fn dot_death_survival_drain_records_the_reason() {
+        // DW-1.3 — Player.cs:19361-19384: a drain kill carries its reason out
+        // of UpdateLifeRegen; update_survival parks it on the player for the
+        // death pipeline (the default generic attribution here = Burned, 8).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.update_survival();
+        assert_eq!(p.dot_death, None); // a healthy tick records nothing
+        p.hp = 8;
+        p.regen.life_regen_count = -1200;
+        p.update_survival();
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.dot_death, Some(DotDeath::Burned));
+    }
+
+    #[test]
     fn respawn_time_base_boss_and_expert() {
         // Player.cs:39060-39082: 600 base, +600 boss-near, x1.5 expert.
         assert_eq!(Player::get_respawn_time(false, false), 600);
@@ -878,7 +901,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
