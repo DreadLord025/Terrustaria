@@ -117,6 +117,12 @@ pub struct SceneMetrics {
     /// `ZoneDungeon` (`:682-684`) — the depth + wall gates fill in the
     /// scan driver (they read the centre tile's wall).
     pub zone_dungeon: bool,
+    // — the M6-AUDIO-2 music-box fields (`SceneMetrics.cs:4489-4501`) —
+    /// `ActiveMusicBox`: the box id playing in the window (`frameY / 36`),
+    /// -1 = none.
+    pub active_music_box: i32,
+    /// `MusicBoxSilence` — the silent box (`frameY / 36 == 100`).
+    pub music_box_silence: bool,
 }
 
 /// The `Player.SceneMetrics` aura read as a Copy snapshot — what
@@ -217,6 +223,8 @@ impl SceneMetrics {
             zone_meteor: false,
             zone_graveyard: false,
             zone_dungeon: false,
+            active_music_box: -1,
+            music_box_silence: false,
         }
     }
 

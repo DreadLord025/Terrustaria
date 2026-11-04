@@ -971,8 +971,14 @@ framework.
 **C#** `Audio/*` (23), XACT banks, `Main.UpdateAudio` · **Rust** `audio.rs`, `sound.rs`,
 `tr-content/xact.rs` ✅ engine · 🟡.
 
-**Tasks:** M6-MUSIC-biome-tracks, M6-AUDIO-1 ambience emitters (§5), M6-AUDIO-2 music
-box overrides (box 85 enables credits roll, `SceneMetrics.cs:349`).
+**Tasks:** ✅ M6-MUSIC-biome-tracks, M6-AUDIO-1 ambience emitters (§5), ✅ M6-AUDIO-2 music
+box overrides — done 2026-11-04: the tile-139 scan raises `ActiveMusicBox`/`MusicBoxSilence`
+(`SceneMetrics.cs:4489-4501`, the 169x124 window stands in for the visual screen rect),
+and the 100-pair box→track chain (`Main.cs:11076-11350`, extracted verbatim) runs as a
+post-ladder override pass in `UpdateAudio` after `DecideOnNewMusic` returns — the box wins
+over every branch including the bosses, the silent box cuts to 0, the box 85 → the credits
+track 89 (`SceneMetrics.cs:349`'s CanPlayCreditsRoll trigger); the actual box TILE placement
+waits for M1.4-TO; 1 test (the override beats the bosses, the silence, the credits box).
 
 ## 27. Multiplayer protocol
 
