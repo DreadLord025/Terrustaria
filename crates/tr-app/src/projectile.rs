@@ -57,6 +57,12 @@ pub const TRAP_SPEAR: u16 = 185;
 pub const TRAP_SPIKY: u16 = 980;
 /// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
 pub const POISON_DART: u16 = 645;
+/// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
+pub const ENCHANTED_BOOMERANG: u16 = 6;
+/// `ProjectileID.WoodenBoomerang` (`Projectile.cs:1345-1353`).
+pub const WOODEN_BOOMERANG: u16 = 52;
+/// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
+pub const ICE_BOOMERANG: u16 = 113;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -109,6 +115,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
             // `timeLeft = 900`.
             TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true),
+            // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
+            // 22×22, aiStyle 3, `penetrate = -1`, melee.
+            ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
+                (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
             _ => return None,
         };
     Some(ProjData {
@@ -324,6 +335,105 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39331` the
+    /// outbound, `:39468-39545` the return). The OUT state flies straight
+    /// (`ai[1]++`; at `>= 30f` — the Light Disc 106 at `>= 45f` — the return
+    /// state sets) and bounces off a tile or an NPC hit by reversing the
+    /// velocity and setting `ai[0] = 1` (`:14594-14602`, `:13068-13080`).
+    /// The RETURN state disables tile collision, seeks the owner at the
+    /// speed 9 / accel 0.4 (the per-type overrides are the special
+    /// boomerangs; the plain 6/52/113 use the defaults) with the ±2×
+    /// crossing boost, kills past 3000 px from the owner and when the
+    /// owner's box intersects (`:39538-39544`).
+    fn ai_boomerang(&mut self, world: &World, owner: Option<(f32, f32)>) {
+        if self.ai[0] == 0.0 {
+            // The outbound flight; the 106 Light Disc returns at 45 ticks.
+            self.ai[1] += 1.0;
+            let limit = if self.kind == 106 { 45.0 } else { 30.0 };
+            if self.ai[1] >= limit {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+            }
+            if self.tile_collide {
+                let nx = self.pos.x + self.vel.x;
+                let ny = self.pos.y + self.vel.y;
+                let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+                let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+                if hit_x || hit_y {
+                    // `:14594-14602`: the outbound tile hit reverses into the
+                    // return state instead of killing.
+                    if self.ai[0] == 0.0 {
+                        self.vel = -self.vel;
+                    }
+                    self.ai[0] = 1.0;
+                    return;
+                }
+                self.pos.x = nx;
+                self.pos.y = ny;
+            } else {
+                self.pos += self.vel;
+            }
+        } else {
+            // The return (`:39468-39545`): `tileCollide = false`, the owner
+            // seek at the speed 9 / accel 0.4, the ±2× crossing boost.
+            self.tile_collide = false;
+            let Some((ox, oy)) = owner else {
+                return;
+            };
+            let cx = self.pos.x + self.w * 0.5;
+            let cy = self.pos.y + self.h * 0.5;
+            let mut dx = ox - cx;
+            let mut dy = oy - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            // `:39500-39505`: the 3000 px cut-off kills the stray.
+            if dist > 3000.0 {
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            // The `meleeSpeed` remap (`:39487-39497`) is ×1 at the port's
+            // default melee speed.
+            let (speed, accel) = (9.0f32, 0.4f32);
+            let inv = speed / dist.max(f32::EPSILON);
+            dx *= inv;
+            dy *= inv;
+            if self.vel.x < dx {
+                self.vel.x += accel;
+                if self.vel.x < 0.0 && dx > 0.0 {
+                    self.vel.x += accel;
+                }
+            } else if self.vel.x > dx {
+                self.vel.x -= accel;
+                if self.vel.x > 0.0 && dx < 0.0 {
+                    self.vel.x -= accel;
+                }
+            }
+            if self.vel.y < dy {
+                self.vel.y += accel;
+                if self.vel.y < 0.0 && dy > 0.0 {
+                    self.vel.y += accel;
+                }
+            } else if self.vel.y > dy {
+                self.vel.y -= accel;
+                if self.vel.y > 0.0 && dy < 0.0 {
+                    self.vel.y -= accel;
+                }
+            }
+            self.pos += self.vel;
+            // `:39538-39544`: the owner's box catches the boomerang.
+            // The 20x42 hitbox (/).
+            let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
+            let hit = self.pos.x + self.w > ox - pw * 0.5
+                && self.pos.x < ox + pw * 0.5
+                && self.pos.y + self.h > oy - ph * 0.5
+                && self.pos.y < oy + ph * 0.5;
+            if hit {
+                self.active = false;
+                self.time_left = 0;
+            }
+        }
+    }
+
     /// The per-slot draw (unchanged from the first pass).
     pub fn draw(
         &self,
@@ -390,6 +500,13 @@ impl ProjectilePool {
             local_immunity: vec![0; MAX_PROJECTILES * 256],
             id_static: HashMap::new(),
             update_count: 0,
+        }
+    }
+
+    /// Sets the slot's crit flag (the throw path rolls it at spawn time).
+    pub fn set_crit(&mut self, slot: usize, crit: bool) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.crit = crit;
         }
     }
 
@@ -584,7 +701,7 @@ impl ProjectilePool {
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
-    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc]) {
+    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc], owner: Option<(f32, f32)>) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
@@ -610,6 +727,7 @@ impl ProjectilePool {
                 else if let Some(data) = proj_data(self.slots[i].kind) {
                     match data.ai_style {
                         1 => self.slots[i].ai_arrow(world),
+                        3 => self.slots[i].ai_boomerang(world, owner),
                         14 => self.slots[i].ai_spear(world),
                         _ => {}
                     }
@@ -771,7 +889,7 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc));
+        pool.update(world, std::slice::from_mut(npc), None);
     }
 
     #[test]
@@ -822,7 +940,7 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc));
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None);
         assert!(!pool.slots()[slot].active, "penetrate 1 → dead after the hit");
         assert_eq!(pool.slots()[slot].penetrate, 0);
         assert!(npc.hp < npc.max_hp);
@@ -959,7 +1077,7 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut []);
+            pool.update(&mut world, &mut [], None);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -981,7 +1099,7 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut []);
+        pool.update(&mut world, &mut [], None);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -1018,7 +1136,7 @@ mod falling_tests {
             .unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -1040,7 +1158,7 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -1083,7 +1201,7 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
@@ -1166,10 +1284,10 @@ mod arrow_tests {
         // `ai[0]` increments on the same tick the check runs (`:57572` +
         // `:57580`), so the 15th update itself starts the gravity.
         for _ in 0..14 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 14 ticks");
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         assert!(
             (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
             "the 15th tick starts the 0.1 gravity"
@@ -1193,7 +1311,7 @@ mod arrow_tests {
         // blocked movement kills the arrow (`Update`'s tile collide).
         let mut died = false;
         for _ in 0..20 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -1215,7 +1333,7 @@ mod arrow_tests {
         // floor on the third tick.
         let mut died = false;
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
             if !pool.slots[0].active {
                 died = true;
                 break;
@@ -1235,10 +1353,161 @@ mod arrow_tests {
         let mut npcs = Vec::new();
         let mut w = world();
         for _ in 0..5 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
         }
         assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         assert!((pool.slots[0].vel.y - 0.2).abs() < 1e-6, "the 6th tick adds 0.2");
+    }
+}
+
+#[cfg(test)]
+mod boomerang_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_registry_maps_the_boomerang_items() {
+        // `itemdata.rs`: the Enchanted 55 / Wooden 284 / Ice 670 shoot the
+        // projectiles 6 / 52 / 113, and the item data carries the throw
+        // inputs the use path reads.
+        assert_eq!(crate::registry::projectile(55), Some(ENCHANTED_BOOMERANG));
+        assert_eq!(crate::registry::projectile(284), Some(WOODEN_BOOMERANG));
+        assert_eq!(crate::registry::projectile(670), Some(ICE_BOOMERANG));
+        let def = crate::registry::get(284).unwrap();
+        assert_eq!(def.shoot_speed, 6.5);
+        assert_eq!(def.knock_back, 5.0);
+        assert_eq!(def.damage, 10);
+        assert_eq!(def.class, crate::registry::DamageClass::Melee);
+        assert!(!def.consumable, "the boomerang is not consumed on throw");
+    }
+
+    #[test]
+    fn the_boomerang_data_is_verbatim() {
+        // `Projectile.cs:864-873` / `:1345-1353` / `:2012-2022`: 22×22,
+        // aiStyle 3, `penetrate = -1`.
+        for kind in [ENCHANTED_BOOMERANG, WOODEN_BOOMERANG, ICE_BOOMERANG] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (22.0, 22.0));
+            assert_eq!(d.ai_style, 3);
+            assert_eq!(d.penetrate, -1);
+            assert!(d.tile_collide);
+        }
+    }
+
+    #[test]
+    fn the_boomerang_switches_to_the_return_at_30_ticks() {
+        // `:39024-39030` + `:39327-39331`: the outbound `ai[1]++`, the
+        // return at `ai[1] >= 30f`.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        for _ in 0..29 {
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+        }
+        assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
+        assert_eq!(pool.slots[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn the_outbound_boomerang_bounces_off_a_wall() {
+        // `:14594-14602`: the outbound tile hit reverses the velocity and
+        // sets the return state instead of killing.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 8.0 * 16.0, 16.0 * 16.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        for y in 14..20 {
+            for x in 12..24 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut bounced = false;
+        for _ in 0..20 {
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)));
+            if pool.slots[0].ai[0] == 1.0 {
+                bounced = true;
+                break;
+            }
+        }
+        assert!(bounced, "the wall hit switched to the return state");
+        assert!(
+            pool.slots[0].vel.x < 0.0,
+            "the velocity reversed (x = {})",
+            pool.slots[0].vel.x
+        );
+    }
+
+    #[test]
+    fn the_returning_boomerang_passes_tiles_and_is_caught() {
+        // The return state disables tile collision (`:39468-39470`) and the
+        // owner's box catches it (`:39538-39544`).
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::new(-9.0, 0.0),
+            damage: 10,
+            ..Default::default()
+        };
+        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        let mut w = world();
+        // A wall directly on the path home.
+        for y in 18..20 {
+            for x in 20..22 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut caught = false;
+        for _ in 0..40 {
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)));
+            if !pool.slots[0].active {
+                caught = true;
+                break;
+            }
+        }
+        assert!(caught, "the return flies through the wall and is caught");
+    }
+
+    #[test]
+    fn the_stray_boomerang_dies_past_3000_px() {
+        // `:39500-39505`: the 3000 px cut-off.
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            pos: Vec2::new(200.0, 200.0),
+            vel: Vec2::new(30.0, 0.0),
+            damage: 10,
+            ..Default::default()
+        };
+        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        let mut w = world();
+        let mut died = false;
+        for _ in 0..120 {
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)));
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(died, "the stray kills past the cut-off");
     }
 }

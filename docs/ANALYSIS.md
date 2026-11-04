@@ -2955,3 +2955,44 @@ families land; the arrow item recovery on kill does not exist in 1.4.4
 (no `Kill` drop path found); the spear spread's rand order (engine-side
 pre-roll vs the C#'s post-cap roll) differs by one stream draw and is
 MP-invisible.
+
+## Boomerangs (M4-PROJ-3, the boomerang half)
+
+`AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
+`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden) and 113
+(Ice) all ride the generic arms — the per-type parameter table only
+starts at the special boomerangs (the Light Disc 106's 45-tick window is
+the one verbatim override kept).
+
+- **The OUT state** (`ai[0] == 0`, `:39024-39331`): `ai[1]++` per tick;
+  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`).
+  The straight flight keeps `tileCollide`; **the outbound tile hit does
+  not kill** — it reverses the velocity and switches to the return
+  (`:14594-14602` in `Kill()`'s collision path, mirrored at
+  `:13068-13080` for the NPC hits).
+- **The RETURN state** (`ai[0] == 1`, `:39468-39545`): `tileCollide =
+  false` — the boomerang flies home through terrain. The seek builds the
+  owner-center vector, kills past 3000 px (`:39500-39505`), scales it to
+  the speed 9 (`num26`; the per-type overrides 12-20 are the special
+  kinds) and steers per-axis at the accel 0.4 (`num27`) with the ±2×
+  boost when crossing the target velocity (`:39515-39537`). The
+  `meleeSpeed` remap (`:39487-39497`, ×1-10) is ×1 at the port's default
+  melee speed (M3-EQUIP brings the stat). The owner's 20×42 box catching
+  the boomerang kills it (`:39538-39544`).
+- **The generic `Item.shoot` firing**: the throw path was the M4-PROJ-1
+  shuriken hardcode; it is now `Player.ItemCheck_Shoot` (`:47056+`) —
+  the aim vector normalized to the item's `shootSpeed`
+  (`:47274-47292`; the melee `speed /= meleeSpeed` is ×1), the spawn at
+  the player center + 10 px toward the cursor, `weaponDamage` (the item
+  damage × the class multiplier), the item's knockback, the crit roll
+  from the item's damage class and the `consumable` decrement (the
+  boomerangs stay in the inventory; the shuriken is consumed).
+- The pool's `update` carries `owner: Option<(f32, f32)>` — the seek
+  input (`Main.player[owner]` reads); `None` keeps the boomerangs
+  outbound until the timer flips them.
+
+Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
+877-line per-type parameter table + the chain state machine + the
+channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
+sounds/dust are render-side; the homing variants (182/866) and the
+phaseblade subset are out of the ported kinds.
