@@ -16,6 +16,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // false)` inside `DeActive`/`ReActive`), resolved through
     // `registry::tile_drop` exactly like the break path's object drops.
     let mut actuation_drops = Vec::new();
+    // The trap emissions (`HitWireSingle`'s case 137) drain into the spawn
+    // loop after the step.
+    let mut trap_requests = Vec::new();
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -88,6 +91,10 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         // whole `app` into the closure would break its disjoint capture of
         // `app.wiring_step`'s receiver borrow.
         actuation_drops.extend(app.wiring.take_actuation_drops());
+        // The trap emissions (`HitWireSingle`'s case 137): the spear's
+        // proximity cap reads the pool, so the drain splits it from the
+        // direct shots.
+        trap_requests.extend(app.wiring.take_trap_requests());
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
             let ay = (from.1 * 16.0) as i32 - 48;
@@ -130,10 +137,79 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         }
     });
     // The actuation drops spawn after the fixed step (see the drain comment
-    // above).
+    // above); the trap requests spawn right after (the spear's proximity
+    // cap reads the pool, so the drain splits it from the direct shots).
     for drop in actuation_drops {
         if let Some(id) = crate::registry::tile_drop(drop.tile_kind) {
             crate::world_sim::items::spawn_item_drop(app, id, drop.x, drop.y);
+        }
+    }
+    // The trap emissions spawn after the fixed step (`NewProjectile` with
+    // the knockback 2f, `Wiring.cs:1990-1992`). The boulder 186 (aiStyle 37)
+    // and the flame jet 187 (aiStyle 38) have no ported families yet — their
+    // requests drop here until M4-PROJ ports those AIs.
+    for req in trap_requests {
+        match req {
+            tr_core::wiring::TrapRequest::Shot {
+                x,
+                y,
+                vx,
+                vy,
+                kind,
+                damage,
+            } => {
+                if crate::projectile::proj_data(kind).is_some() {
+                    app.projectiles
+                        .spawn_with_data(kind, x, y, vx, vy, damage, 2.0);
+                }
+            }
+            tr_core::wiring::TrapRequest::Spear {
+                x,
+                y,
+                vx,
+                vy,
+                damage,
+            } => {
+                // `Wiring.cs:1825-1843`: the 1000-slot scan of the trap's own
+                // projectile kind — the 200 base count decrements by the
+                // distance rings 50/100/200/300/400/500/700/900/1200 px
+                // (−50/−15/−10/−8/−6/−5/−4/−3/−2, else −1). The C#'s `j *
+                // 18 + 8` center y is verbatim (including the 18).
+                let mut count = 200;
+                for p in app.projectiles.slots().iter().filter(|p| p.active) {
+                    if p.kind != crate::projectile::TRAP_SPEAR {
+                        continue;
+                    }
+                    let dx = (x - p.pos.x).abs();
+                    let dy = (y - p.pos.y).abs();
+                    let dist = (dx * dx + dy * dy).sqrt();
+                    count -= if dist < 50.0 {
+                        50
+                    } else if dist < 100.0 {
+                        15
+                    } else if dist < 200.0 {
+                        10
+                    } else if dist < 300.0 {
+                        8
+                    } else if dist < 400.0 {
+                        6
+                    } else if dist < 500.0 {
+                        5
+                    } else if dist < 700.0 {
+                        4
+                    } else if dist < 900.0 {
+                        3
+                    } else if dist < 1200.0 {
+                        2
+                    } else {
+                        1
+                    };
+                }
+                if count > 0 {
+                    app.projectiles
+                        .spawn_with_data(crate::projectile::TRAP_SPEAR, x, y, vx, vy, damage, 2.0);
+                }
+            }
         }
     }
     app.wiring_step.cap_backlog();

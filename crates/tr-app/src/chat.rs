@@ -134,6 +134,12 @@ pub fn broadcast_death(chat: &mut ChatMonitor, player_name: &str, text: &str) {
     chat.new_text(format!("{player_name} {text}"), COLOR_DEATH);
 }
 
+/// The colored system line (`ChatHelper.DisplayMessage`'s flat form) — the
+/// banner tallies and the other server announcements.
+pub fn broadcast_death_text(chat: &mut ChatMonitor, text: &str, color: [u8; 3]) {
+    chat.new_text(text, color);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -28,8 +28,17 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     let npcs = &mut app.npcs;
     let pool = &mut app.projectiles;
     let world = &mut app.world;
+    // The boomerangs' return seek reads the owner's center (`AI_003`'s
+    // `Main.player[owner]` inputs).
+    let owner = app
+        .player
+        .as_ref()
+        .map(|p| {
+            let (x, y) = p.center();
+            (x, y)
+        });
     app.projectile_step.tick(dt.min(0.25), |_| {
-        pool.update(world, npcs);
+        pool.update(world, npcs, owner);
     });
     app.projectile_step.cap_backlog();
 }

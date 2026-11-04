@@ -153,6 +153,36 @@ pub struct Wiring {
     /// `SquareTileFrame(resetFrame: false)` inside `DeActive`/`ReActive`
     /// popping unsupported objects). The app layer drains and spawns them.
     actuation_drops: Vec<crate::edit::ObjectDrop>,
+    /// The trap emission requests from the last flood (the case-137 trap
+    /// family). The app layer spawns the projectiles.
+    trap_requests: Vec<TrapRequest>,
+}
+
+/// A trap emission request (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
+/// the engine resolves the variant, the `CheckMech` cooldown, the direction
+/// decode and the speed/damage tables; the app layer spawns the projectile
+/// (`Shot`) or runs the spear's 1000-slot proximity cap first (`Spear` — the
+/// scan reads the projectile pool, so it lives app-side).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TrapRequest {
+    Shot {
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        kind: u16,
+        damage: i32,
+    },
+    /// The Spear Trap's variant: the engine pre-rolls the ±1 px spread
+    /// (`Main.rand.Next(...) * 0.05f`, `Wiring.cs:1838-1839`), the app
+    /// applies the proximity cap before spawning.
+    Spear {
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+    },
 }
 
 /// The multi-trigger count a wire cell carries when first reached
@@ -410,6 +440,11 @@ impl Wiring {
         std::mem::take(&mut self.statue_spawns)
     }
 
+    /// Drains the trap emission requests (the case-137 trap family).
+    pub fn take_trap_requests(&mut self) -> Vec<TrapRequest> {
+        std::mem::take(&mut self.trap_requests)
+    }
+
     /// The object drops the actuation cascade produced (see
     /// [`Self::actuation_drops`]).
     pub fn take_actuation_drops(&mut self) -> Vec<crate::edit::ObjectDrop> {
@@ -421,10 +456,148 @@ impl Wiring {
         std::mem::take(&mut self.teleport_events)
     }
 
-    /// `Wiring.HitWireSingle`'s statue case (105, `Wiring.cs:2125-2440`): the
-    /// style parse (`num138 = frameX / 36 + (frameY / 54 % 3) * 55`), the
-    /// 3×2 SkipWire, the spawn anchor `(num137·16 + 16, (num136 + 3)·16)` and
-    /// the style → spawn map (the NPC styles `CheckMech(30)`, the item
+    /// The trap family (`HitWireSingle`'s case 137, `Wiring.cs:1763-1993`):
+    /// `frameY / 18` selects the trap — 0 dart (98, 20 dmg, speed 12),
+    /// 1 superdart (184, 40, 12), 2 flame (187, 40, 5), 3 spear (185, 40,
+    /// 4±1 with the ±1 px spread roll), 4 boulder (186, 60, 8), 5 spiky
+    /// ball (980, 30, 12) — the direction decodes from `frameX` (0 → −1 X,
+    /// 18 → +1 X, 36-71 → −1 Y, ≥72 → +1 Y; the spear uses `frameX / 18`
+    /// slots instead), the spawn offset ±10 (±14 spear, ±18 boulder) px.
+    /// The wall-mounted negatives (−10..−6) emit the same projectiles with
+    /// fixed offsets. The boulder (aiStyle 37) and the flame jet (aiStyle
+    /// 38) requests are emitted verbatim; the app-side spawn drops them
+    /// until their families land (M4-PROJ follow-ups).
+    fn trap_emit(&mut self, i: i32, j: i32, tile_frame_x: i16, tile_frame_y: i16) {
+        let variant = tile_frame_y as i32 / 18;
+        let frame_x = tile_frame_x;
+        // `Main.rand.Next(lo, hi)` → the deterministic engine stream.
+        let mut roll = |wiring: &mut Self, lo: i32, hi: i32| -> f32 {
+            let span = (hi - lo).max(1);
+            (wiring.faulty_next(span) + lo) as f32
+        };
+        match variant {
+            // `Wiring.cs:1772-1801`: the shared `CheckMech(200)` arm.
+            0 | 1 | 2 | 5 if self.check_mech(i, j, 200) => {
+                let dx: i32 = if frame_x == 0 {
+                    -1
+                } else if frame_x == 18 {
+                    1
+                } else {
+                    0
+                };
+                let dy: i32 = if frame_x >= 36 {
+                    if frame_x >= 72 {
+                        1
+                    } else {
+                        -1
+                    }
+                } else {
+                    0
+                };
+                let (kind, damage, speed) = match variant {
+                    0 => (98, 20, 12.0),
+                    1 => (184, 40, 12.0),
+                    2 => (187, 40, 5.0),
+                    _ => (980, 30, 12.0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 10 * dx) as f32,
+                    y: (j * 16 + 8 + 10 * dy) as f32,
+                    vx: (dx as f32) * speed,
+                    vy: (dy as f32) * speed,
+                    kind,
+                    damage,
+                });
+            }
+            // `Wiring.cs:1802-1849`: the spear — `CheckMech(300)` plus the
+            // ±1 px spread roll (the app layer runs the proximity cap).
+            3 if self.check_mech(i, j, 300) => {
+                let (dx, dy): (i32, i32) = match frame_x / 18 {
+                    0 | 1 => (0, 1),
+                    2 => (0, -1),
+                    3 => (-1, 0),
+                    4 => (1, 0),
+                    _ => (0, 0),
+                };
+                let lo_x = -20 + if dx == 1 { 20 } else { 0 };
+                let hi_x = 21 - if dx == -1 { 20 } else { 0 };
+                let lo_y = -20 + if dy == 1 { 20 } else { 0 };
+                let hi_y = 21 - if dy == -1 { 20 } else { 0 };
+                let sx = (4 * dx) as f32 + roll(self, lo_x, hi_x) * 0.05;
+                let sy = (4 * dy) as f32 + roll(self, lo_y, hi_y) * 0.05;
+                self.trap_requests.push(TrapRequest::Spear {
+                    x: (i * 16 + 8 + 14 * dx) as f32,
+                    y: (j * 16 + 8 + 14 * dy) as f32,
+                    vx: sx,
+                    vy: sy,
+                    damage: 40,
+                });
+            }
+            // `Wiring.cs:1906-1922`: the boulder — `CheckMech(90)`.
+            4 if self.check_mech(i, j, 90) => {
+                let (dx, dy): (i32, i32) = match frame_x / 18 {
+                    0 | 1 => (0, 1),
+                    2 => (0, -1),
+                    3 => (-1, 0),
+                    4 => (1, 0),
+                    _ => (0, 0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 18 * dx) as f32,
+                    y: (j * 16 + 8 + 18 * dy) as f32,
+                    vx: (8 * dx) as f32,
+                    vy: (8 * dy) as f32,
+                    kind: 186,
+                    damage: 60,
+                });
+            }
+            // `Wiring.cs:1883-1920`: the wall-mounted negatives — the same
+            // projectiles, fixed offsets, `frameX != 0 → +1 X`.
+            -10 | -9 | -8 if self.check_mech(i, j, 200) => {
+                let dx: i32 = if frame_x != 0 { 1 } else { -1 };
+                let (kind, damage, speed) = match variant {
+                    -10 => (98, 20, 12.0),
+                    -9 => (184, 40, 12.0),
+                    _ => (187, 40, 5.0),
+                };
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8 + 10 * dx) as f32,
+                    y: (j * 16 + 7 + 2) as f32,
+                    vx: (dx as f32) * speed,
+                    vy: 2.0,
+                    kind,
+                    damage,
+                });
+            }
+            // The -7 spear fires downward with the symmetric spread
+            // (`speedY = 4 + rand(0,21) * 0.05`, spawn y + 6).
+            -7 if self.check_mech(i, j, 300) => {
+                let sx = roll(self, -20, 21) * 0.05;
+                let sy = 4.0 + roll(self, 0, 21) * 0.05;
+                self.trap_requests.push(TrapRequest::Spear {
+                    x: (i * 16 + 8) as f32,
+                    y: (j * 16 + 16 + 6) as f32,
+                    vx: sx,
+                    vy: sy,
+                    damage: 40,
+                });
+            }
+            // The -6 boulder fires straight down.
+            -6 if self.check_mech(i, j, 90) => {
+                self.trap_requests.push(TrapRequest::Shot {
+                    x: (i * 16 + 8) as f32,
+                    y: (j * 16 + 16 + 10) as f32,
+                    vx: 0.0,
+                    vy: 8.0,
+                    kind: 186,
+                    damage: 60,
+                });
+            }
+            _ => {}
+        }
+    }
+
+    /// The style → spawn map (the NPC styles `CheckMech(30)`, the item
     /// styles `CheckMech(600)`). Returns the spawn request for the app layer,
     /// which runs the `MechSpawn` caps and constructs the entities.
     pub fn statue_trigger(&mut self, world: &mut World, i: i32, j: i32) {
@@ -781,6 +954,8 @@ impl Wiring {
         let actuator = tile.flags & FLAG_ACTUATOR != 0;
         let anchor_frame_x = (tile.frame_x / 18) as i32;
         let anchor_frame_y = (tile.frame_y / 18) as i32;
+        let tile_frame_x = tile.frame_x;
+        let tile_frame_y = tile.frame_y;
         let half_brick = tile.half_brick();
         // `HitWireSingle`'s `doSkipWires = true` → `SkipWire` (`Wiring.cs:998`,
         // `:1000`-area): the fired cell never re-fires within this flood.
@@ -815,6 +990,10 @@ impl Wiring {
             // The statue (105): the style parse + the CheckMech cooldown + the
             // spawn request ().
             105 => self.statue_trigger(world, i, j),
+            // The trap family (tile 137, `Wiring.cs:1763-1993`): the frame
+            // variants are the six traps — dart/superdart/flame/spear/
+            // boulder/spiky, plus the wall-mounted negatives.
+            137 => self.trap_emit(i, j, tile_frame_x, tile_frame_y),
             // The teleporter pad (235): the wall-87 temple guard, then the
             // pad registration — the first hit fills `_teleport[0]`, a hit at
             // a different position fills `_teleport[1]` (`Wiring.cs:1067-
@@ -1507,7 +1686,7 @@ mod teleport_tests {
         // A second wire hit on the SAME pad: `_teleport[0]` already holds it
         // (`Wiring.cs:1074-1081` — only a different position fills [1]).
         let mut wiring = Wiring::new();
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_teleport_events().is_empty(), "one pad → no teleport");
     }
 
@@ -1518,7 +1697,7 @@ mod teleport_tests {
         put_pad(&mut w, 10, 20, 0, 0, false);
         put_pad(&mut w, 12, 20, 0, 0, false);
         let mut wiring = Wiring::new();
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_teleport_events().is_empty());
     }
 
@@ -1686,7 +1865,7 @@ mod statue_tests {
             vec![StatueSpawn::Npc { x: 10 * 16 + 16, y: (20 + 3) * 16 - 12, npc_id: 1 }]
         );
         // `CheckMech(30)`: the second trip within 30 ticks is suppressed.
-        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_statue_spawns().is_empty(), "the 30-tick cooldown holds");
     }
 
@@ -1876,5 +2055,128 @@ mod actuation_tests {
         assert!(w.tile(10, 20).unwrap().flags & FLAG_ACTIVE == 0, "the bench popped");
         let drops = wiring.take_actuation_drops();
         assert!(drops.iter().any(|d| d.tile_kind == 18), "the bench drop queued");
+    }
+}
+
+#[cfg(test)]
+mod trap_tests {
+    //! The case-137 trap emission (`Wiring.cs:1763-1993`).
+
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put_trap(w: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 137,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The trigger runs through a switch two tiles left — the flood seeds
+        // are `SkipWire`-suppressed, so the trap itself cannot be the trip
+        // source (the statue fixture's lesson).
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
+    #[test]
+    fn the_dart_trap_fires_the_verbatim_shot() {
+        // Variant 0 (frameY 0 = the dart trap), frameX 18 → the +1 X
+        // direction: projectile 98, damage 20, speed 12, the +10 px spawn
+        // offset (`Wiring.cs:1772-1801`).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 18, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Shot {
+                x,
+                y,
+                vx,
+                vy,
+                kind,
+                damage,
+            } => {
+                assert_eq!((kind, damage), (98, 20));
+                assert_eq!(vx, 12.0);
+                assert_eq!(vy, 0.0);
+                assert_eq!(x, 10.0 * 16.0 + 8.0 + 10.0);
+                assert_eq!(y, 20.0 * 16.0 + 8.0);
+            }
+            _ => panic!("the dart variant emits a Shot"),
+        }
+    }
+
+    #[test]
+    fn the_trap_variants_map_verbatim() {
+        // 1 → 184/40/12, 2 → 187/40/5, 5 → 980/30/12 (`:1786-1796`); the
+        // vertical frameX decode (36-71 → −1 Y, ≥72 → +1 Y).
+        for (frame_y, kind, damage, speed) in
+            [(18, 184, 40, 12.0), (36, 187, 40, 5.0), (90, 980, 30, 12.0)]
+        {
+            let mut w = world();
+            put_trap(&mut w, 10, 20, 72, frame_y);
+            let mut wiring = Wiring::new();
+            wiring.trip_wire(&mut w, 8, 20, 1, 1);
+            let reqs = wiring.take_trap_requests();
+            match reqs[0] {
+                TrapRequest::Shot { vy, kind: k, damage: d, .. } => {
+                    assert_eq!((k, d), (kind, damage));
+                    assert_eq!(vy, speed, "frameY {frame_y} fires downward");
+                }
+                _ => panic!("variant frameY {frame_y} emits a Shot"),
+            }
+        }
+    }
+
+    #[test]
+    fn the_check_mech_cooldown_gates_the_trap() {
+        // `CheckMech(200)`: the re-trip inside the window emits nothing.
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 18, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert_eq!(wiring.take_trap_requests().len(), 1);
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        assert!(wiring.take_trap_requests().is_empty());
+    }
+
+    #[test]
+    fn the_spear_variant_requests_the_capped_spawn() {
+        // Variant 3 (frameY 54): a `Spear` request with the ±1 px spread
+        // roll and the +14 px offset; the frameX 0/18 slot fires downward
+        // (`Wiring.cs:1802-1849` — the cap scan runs app-side).
+        let mut w = world();
+        put_trap(&mut w, 10, 20, 0, 54);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        match reqs[0] {
+            TrapRequest::Spear { x, y, vx, vy, damage } => {
+                assert_eq!(damage, 40);
+                assert_eq!(x, 10.0 * 16.0 + 8.0);
+                assert_eq!(y, 20.0 * 16.0 + 8.0 + 14.0);
+                // `speedY = 4 * 1 + rand(0, 21) * 0.05` — 4..5 px/tick.
+                assert!((4.0..=5.0).contains(&vy), "vy {vy}");
+                // `speedX = rand(-20, 21) * 0.05` — the ±1 px spread.
+                assert!((-1.0..=1.0).contains(&vx), "vx {vx}");
+            }
+            _ => panic!("the spear variant emits a Spear"),
+        }
     }
 }

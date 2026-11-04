@@ -35,10 +35,34 @@ use tr_render::sprite::SpriteRenderer;
 use crate::assets;
 use crate::npc::Npc;
 
-/// `ProjectileID.Shuriken = 3` (`ProjectileID.cs:560`) — the vanilla id the
-/// registry's generated rows carry (`itemdata.rs`); the C# `ProjectileID`
-/// mapping grows with M4-PROJ-2..11.
+/// The pool's kind ids are the C# `ProjectileID` values (`ProjectileID.cs`
+/// — the M4-PROJ-1 placeholder internal table was migrated to the verbatim
+/// ids; the shuriken 3 is the vanilla id the registry's generated rows
+/// carry, `itemdata.rs`).
 pub const SHURIKEN: u16 = 3;
+/// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
+pub const WOODEN_ARROW: u16 = 1;
+/// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
+pub const FLAME_ARROW: u16 = 2;
+/// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
+pub const MUSKET_BALL: u16 = 14;
+/// `ProjectileID.PoisonDartBlowgun`-family dart the Dart Trap fires
+/// (`Projectile.cs:1823-1832` — the Wiring emission uses 98, `Wiring.cs:1785`).
+pub const TRAP_DART: u16 = 98;
+/// The Super Dart Trap's projectile (`Projectile.cs:2707-2716`).
+pub const TRAP_SUPERDART: u16 = 184;
+/// The Spear Trap's projectile (`Projectile.cs:2717-2727`).
+pub const TRAP_SPEAR: u16 = 185;
+/// The Spiky Ball Trap's projectile (`Projectile.cs:9330-9339`).
+pub const TRAP_SPIKY: u16 = 980;
+/// `ProjectileID.PoisonDart` — the Blowgun's dart (`Projectile.cs:6953-6966`).
+pub const POISON_DART: u16 = 645;
+/// `ProjectileID.EnchantedBoomerang` (`Projectile.cs:864-873`).
+pub const ENCHANTED_BOOMERANG: u16 = 6;
+/// `ProjectileID.WoodenBoomerang` (`Projectile.cs:1345-1353`).
+pub const WOODEN_BOOMERANG: u16 = 52;
+/// `ProjectileID.FrostBoomerang` — the Ice Boomerang (`Projectile.cs:2012-2022`).
+pub const ICE_BOOMERANG: u16 = 113;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -48,6 +72,68 @@ pub const TIME_LEFT_DEFAULT: i32 = 3600;
 /// (`Projectile.cs:14117`).
 const OWNER_IMMUNE_TICKS: i32 = 10;
 const SIZE: f32 = 6.0;
+
+/// The `SetDefaults` slice of the aiStyle-1/14 families (`Projectile.cs`):
+/// the box, the AI style, the penetrate/timeLeft overrides and the flags the
+/// flight behaves on. The damage stays the spawner's input.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ProjData {
+    pub w: f32,
+    pub h: f32,
+    /// `aiStyle` — 1 = the arrow/bullet family (`AI_001`), 14 = the
+    /// spear/dart flight (`AI()`'s `else if (this.aiStyle == 14)` branch).
+    pub ai_style: u8,
+    pub penetrate: i32,
+    pub time_left: i32,
+    pub extra_updates: u32,
+    pub tile_collide: bool,
+    /// `Projectile.arrow`.
+    pub arrow: bool,
+    /// `Projectile.trap`.
+    pub trap: bool,
+}
+
+/// The ported families' `SetDefaults` slice. The boulder (186, aiStyle 37)
+/// and the flame jet (187, aiStyle 38) traps stay passthroughs — their AI
+/// families are M4-PROJ follow-ups.
+pub fn proj_data(kind: u16) -> Option<ProjData> {
+    let (w, h, ai_style, penetrate, time_left, extra_updates, tile_collide, arrow, trap) =
+        match kind {
+            // `Projectile.cs:807-815` / `:817-827` (the flame arrow shares the
+            // box; `timeLeft = 1200` on both).
+            WOODEN_ARROW | FLAME_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
+            MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
+            // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
+            // the spiky ball — `penetrate = -1`, `trap = true`.
+            TRAP_DART | TRAP_SUPERDART | TRAP_SPIKY => {
+                (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 0, true, false, true)
+            }
+            // `:6953-6966`: the Blowgun's dart — `tileCollide = false`,
+            // `extraUpdates = 5`, the local immunity cooldown −1.
+            POISON_DART => (10.0, 10.0, 1, -1, TIME_LEFT_DEFAULT, 5, false, false, false),
+            // `:2717-2727`: the Spear Trap's spear rides aiStyle 14,
+            // `timeLeft = 900`.
+            TRAP_SPEAR => (14.0, 14.0, 14, -1, 900, 0, true, false, true),
+            // `:864-873` / `:1345-1353` / `:2012-2022`: the boomerangs —
+            // 22×22, aiStyle 3, `penetrate = -1`, melee.
+            ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG => {
+                (22.0, 22.0, 3, -1, TIME_LEFT_DEFAULT, 0, true, false, false)
+            }
+            _ => return None,
+        };
+    Some(ProjData {
+        w,
+        h,
+        ai_style,
+        penetrate,
+        time_left,
+        extra_updates,
+        tile_collide,
+        arrow,
+        trap,
+    })
+}
 
 /// One pool slot (`Projectile.cs:296-470`, the engine-relevant subset).
 #[derive(Clone, Debug)]
@@ -77,6 +163,18 @@ pub struct Projectile {
     pub id_static_hit_cooldown: i32,
     /// `extraUpdates`: the AI runs `1 + extraUpdates` times per tick (`:16668`).
     pub extra_updates: u32,
+    /// The C# `ai[0..2]` scratch array — the aiStyle-1 flight counter lives
+    /// in `ai[0]` (the generic arm `ai[0] >= 15f`, `Projectile.cs:57572`).
+    pub ai: [f32; 3],
+    /// The box (`base.width`/`base.height`); the shuriken keeps `SIZE`.
+    pub w: f32,
+    pub h: f32,
+    /// `Projectile.tileCollide` (the default true, `:787`-defaults).
+    pub tile_collide: bool,
+    /// `Projectile.arrow`.
+    pub arrow: bool,
+    /// `Projectile.trap`.
+    pub trap: bool,
     bounces: u8,
     /// The tile-fall mode (`AI_010`'s `ai[0] == 1f`): the projectile carries a
     /// falling tile kind (`spawn_falling`), falls with `velocity.Y += 0.41f`
@@ -104,6 +202,12 @@ impl Default for Projectile {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            ai: [0.0; 3],
+            w: SIZE,
+            h: SIZE,
+            tile_collide: true,
+            arrow: false,
+            trap: false,
             bounces: 0,
             falling_tile: None,
         }
@@ -146,6 +250,186 @@ impl Projectile {
                 self.bounces += 1;
             } else {
                 self.pos.y = ny;
+            }
+        }
+    }
+
+    /// `AI_001`'s generic arm (`Projectile.cs:57572-57583` + the rotation
+    /// default `:57725-57728` + the ±16 velocity clamp `:57756-57763`): the
+    /// flight counter `ai[0]++`, the gravity `velocity.Y += 0.1f` after 15
+    /// ticks, the flight-direction sprite rotation, and the tile collision —
+    /// the `Update` movement's blocked hit kills the projectile (the arrows
+    /// break on contact; the water transforms are M4-PROJ polish).
+    fn ai_arrow(&mut self, world: &World) {
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 15.0 {
+            self.vel.y += 0.1;
+        }
+        self.vel.y = self.vel.y.clamp(-16.0, 16.0);
+        self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        if self.tile_collide {
+            let nx = self.pos.x + self.vel.x;
+            let ny = self.pos.y + self.vel.y;
+            let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+            let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+            if hit_x || hit_y {
+                self.active = false;
+                self.time_left = 0;
+            } else {
+                self.pos.x = nx;
+                self.pos.y = ny;
+            }
+        } else {
+            self.pos += self.vel;
+        }
+    }
+
+    /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
+    /// branch, the default arm `Projectile.cs:25143-25158` + the tile-kill
+    /// scan `:25726-25737` + the lava/shimmer kills `:25739-25750`): the
+    /// straight flight, `ai[0] > 5f` → `velocity.Y += 0.2f` with the 0.97
+    /// ground-slide friction, `rotation += velocity.X * 0.1f`, and the
+    /// center (+4, +8)-box vs solid-tile scan killing the projectile.
+    fn ai_spear(&mut self, world: &World) {
+        self.ai[0] += 1.0;
+        if self.ai[0] > 5.0 {
+            self.ai[0] = 5.0;
+            if self.vel.y == 0.0 && self.vel.x != 0.0 {
+                self.vel.x *= 0.97;
+                if (-0.01..0.01).contains(&self.vel.x) {
+                    self.vel.x = 0.0;
+                }
+            }
+            self.vel.y += 0.2;
+        }
+        self.rot += self.vel.x * 0.1;
+        // The tile-kill scan: the box inset to `(x + 4, y + 4)` with the
+        // +8 px center probe against solid, non-127 tiles (`:25726-25737`).
+        let cx = self.pos.x + 4.0;
+        let cy = self.pos.y + 4.0;
+        let tx0 = ((self.pos.x / 16.0) as i32 - 1).max(0);
+        let tx1 = (((self.pos.x + self.w) / 16.0) as i32 + 2).min(world.width - 1);
+        let ty0 = ((self.pos.y / 16.0) as i32 - 1).max(0);
+        let ty1 = (((self.pos.y + self.h) / 16.0) as i32 + 2).min(world.height - 1);
+        for ty in ty0..=ty1 {
+            for tx in tx0..=tx1 {
+                let Some(t) = world.tile(tx, ty) else {
+                    continue;
+                };
+                if !t.active()
+                    || t.kind == 127
+                    || !tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                {
+                    continue;
+                }
+                let rx = tx as f32 * 16.0;
+                let ry = ty as f32 * 16.0;
+                if cx + 8.0 > rx && cx < rx + 16.0 && cy + 8.0 > ry && cy < ry + 16.0 {
+                    self.active = false;
+                    self.time_left = 0;
+                    return;
+                }
+            }
+        }
+        self.pos += self.vel;
+    }
+
+    /// `AI_003_Boomerang`'s generic arms (`Projectile.cs:39024-39331` the
+    /// outbound, `:39468-39545` the return). The OUT state flies straight
+    /// (`ai[1]++`; at `>= 30f` — the Light Disc 106 at `>= 45f` — the return
+    /// state sets) and bounces off a tile or an NPC hit by reversing the
+    /// velocity and setting `ai[0] = 1` (`:14594-14602`, `:13068-13080`).
+    /// The RETURN state disables tile collision, seeks the owner at the
+    /// speed 9 / accel 0.4 (the per-type overrides are the special
+    /// boomerangs; the plain 6/52/113 use the defaults) with the ±2×
+    /// crossing boost, kills past 3000 px from the owner and when the
+    /// owner's box intersects (`:39538-39544`).
+    fn ai_boomerang(&mut self, world: &World, owner: Option<(f32, f32)>) {
+        if self.ai[0] == 0.0 {
+            // The outbound flight; the 106 Light Disc returns at 45 ticks.
+            self.ai[1] += 1.0;
+            let limit = if self.kind == 106 { 45.0 } else { 30.0 };
+            if self.ai[1] >= limit {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+            }
+            if self.tile_collide {
+                let nx = self.pos.x + self.vel.x;
+                let ny = self.pos.y + self.vel.y;
+                let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
+                let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+                if hit_x || hit_y {
+                    // `:14594-14602`: the outbound tile hit reverses into the
+                    // return state instead of killing.
+                    if self.ai[0] == 0.0 {
+                        self.vel = -self.vel;
+                    }
+                    self.ai[0] = 1.0;
+                    return;
+                }
+                self.pos.x = nx;
+                self.pos.y = ny;
+            } else {
+                self.pos += self.vel;
+            }
+        } else {
+            // The return (`:39468-39545`): `tileCollide = false`, the owner
+            // seek at the speed 9 / accel 0.4, the ±2× crossing boost.
+            self.tile_collide = false;
+            let Some((ox, oy)) = owner else {
+                return;
+            };
+            let cx = self.pos.x + self.w * 0.5;
+            let cy = self.pos.y + self.h * 0.5;
+            let mut dx = ox - cx;
+            let mut dy = oy - cy;
+            let dist = (dx * dx + dy * dy).sqrt();
+            // `:39500-39505`: the 3000 px cut-off kills the stray.
+            if dist > 3000.0 {
+                self.active = false;
+                self.time_left = 0;
+                return;
+            }
+            // The `meleeSpeed` remap (`:39487-39497`) is ×1 at the port's
+            // default melee speed.
+            let (speed, accel) = (9.0f32, 0.4f32);
+            let inv = speed / dist.max(f32::EPSILON);
+            dx *= inv;
+            dy *= inv;
+            if self.vel.x < dx {
+                self.vel.x += accel;
+                if self.vel.x < 0.0 && dx > 0.0 {
+                    self.vel.x += accel;
+                }
+            } else if self.vel.x > dx {
+                self.vel.x -= accel;
+                if self.vel.x > 0.0 && dx < 0.0 {
+                    self.vel.x -= accel;
+                }
+            }
+            if self.vel.y < dy {
+                self.vel.y += accel;
+                if self.vel.y < 0.0 && dy > 0.0 {
+                    self.vel.y += accel;
+                }
+            } else if self.vel.y > dy {
+                self.vel.y -= accel;
+                if self.vel.y > 0.0 && dy < 0.0 {
+                    self.vel.y -= accel;
+                }
+            }
+            self.pos += self.vel;
+            // `:39538-39544`: the owner's box catches the boomerang.
+            // The 20x42 hitbox (/).
+            let (pw, ph) = (crate::player::WIDTH, crate::player::HEIGHT);
+            let hit = self.pos.x + self.w > ox - pw * 0.5
+                && self.pos.x < ox + pw * 0.5
+                && self.pos.y + self.h > oy - ph * 0.5
+                && self.pos.y < oy + ph * 0.5;
+            if hit {
+                self.active = false;
+                self.time_left = 0;
             }
         }
     }
@@ -216,6 +500,13 @@ impl ProjectilePool {
             local_immunity: vec![0; MAX_PROJECTILES * 256],
             id_static: HashMap::new(),
             update_count: 0,
+        }
+    }
+
+    /// Sets the slot's crit flag (the throw path rolls it at spawn time).
+    pub fn set_crit(&mut self, slot: usize, crit: bool) {
+        if let Some(p) = self.slots.get_mut(slot) {
+            p.crit = crit;
         }
     }
 
@@ -336,8 +627,71 @@ impl ProjectilePool {
             uses_id_static_immunity: false,
             id_static_hit_cooldown: -1,
             extra_updates: 0,
+            ai: [1.0, 0.0, 0.0],
+            // The sand-ball box (`GetSandfallProjData`'s 10×10 family); the
+            // flight is the custom falling-tile mode, not an aiStyle arm.
+            w: 10.0,
+            h: 10.0,
+            tile_collide: false,
+            arrow: false,
+            trap: false,
             bounces: 0,
             falling_tile: Some(tile_kind),
+        };
+        let base = slot * 256;
+        self.local_immunity[base..base + 256].fill(0);
+        Some(slot)
+    }
+
+    /// `NewProjectile` + `SetDefaults` in one: applies the family's
+    /// [`proj_data`] slice (the box, the penetrate/timeLeft overrides, the
+    /// extraUpdates) on top of the spawn arguments. `None` when the kind has
+    /// no ported data — the caller decides whether that is fatal.
+    pub fn spawn_with_data(
+        &mut self,
+        kind: u16,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        damage: i32,
+        knock_back: f32,
+    ) -> Option<usize> {
+        let data = proj_data(kind)?;
+        let mut slot = None;
+        for (i, p) in self.slots.iter().enumerate() {
+            if !p.active {
+                slot = Some(i);
+                break;
+            }
+        }
+        let slot = slot?;
+        self.slots[slot] = Projectile {
+            active: true,
+            kind,
+            owner: 0,
+            pos: Vec2::new(x, y),
+            rot: 0.0,
+            vel: Vec2::new(vx, vy),
+            damage,
+            knock_back,
+            crit: false,
+            time_left: data.time_left,
+            max_penetrate: data.penetrate,
+            penetrate: data.penetrate,
+            uses_local_immunity: false,
+            local_hit_cooldown: -2,
+            uses_id_static_immunity: false,
+            id_static_hit_cooldown: -1,
+            extra_updates: data.extra_updates,
+            ai: [0.0; 3],
+            w: data.w,
+            h: data.h,
+            tile_collide: data.tile_collide,
+            arrow: data.arrow,
+            trap: data.trap,
+            bounces: 0,
+            falling_tile: None,
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
@@ -347,7 +701,7 @@ impl ProjectilePool {
     /// `Projectile.Update` (`:16668-17208`): the AI sub-steps, the PVE damage
     /// walk, then the `timeLeft`/`penetrate` bookkeeping. The NPC per-owner
     /// i-frame decay runs with the NPC update (`NPC.cs:90454-90459`).
-    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc]) {
+    pub fn update(&mut self, world: &mut World, npcs: &mut [Npc], owner: Option<(f32, f32)>) {
         self.update_count += 1;
         for i in 0..MAX_PROJECTILES {
             if !self.slots[i].active {
@@ -365,6 +719,18 @@ impl ProjectilePool {
             for _ in 0..sub_steps {
                 if self.slots[i].kind == SHURIKEN {
                     self.slots[i].ai_shuriken(world);
+                }
+                // The aiStyle dispatch: the arrow/bullet family (aiStyle 1,
+                // `AI()`: `if (this.aiStyle == 1) this.AI_001();`) and the
+                // spear/dart family (aiStyle 14). The falling-tile mode
+                // keeps its custom flight.
+                else if let Some(data) = proj_data(self.slots[i].kind) {
+                    match data.ai_style {
+                        1 => self.slots[i].ai_arrow(world),
+                        3 => self.slots[i].ai_boomerang(world, owner),
+                        14 => self.slots[i].ai_spear(world),
+                        _ => {}
+                    }
                 }
                 // `AI_010`'s tile-fall mode (`ai[0] == 1f`): `velocity.Y +=
                 // 0.41f` per tick, the position integrates the velocity (the
@@ -523,7 +889,7 @@ mod tests {
             *v = (*v - 1).max(0);
         }
         npc.hurt_cd = (npc.hurt_cd - 1.0 / 60.0).max(0.0);
-        pool.update(world, std::slice::from_mut(npc));
+        pool.update(world, std::slice::from_mut(npc), None);
     }
 
     #[test]
@@ -574,7 +940,7 @@ mod tests {
                 false,
             )
             .unwrap();
-        pool.update(&mut world, std::slice::from_mut(&mut npc));
+        pool.update(&mut world, std::slice::from_mut(&mut npc), None);
         assert!(!pool.slots()[slot].active, "penetrate 1 → dead after the hit");
         assert_eq!(pool.slots()[slot].penetrate, 0);
         assert!(npc.hp < npc.max_hp);
@@ -711,7 +1077,7 @@ mod tests {
             .unwrap();
         pool.slots_mut()[slot].time_left = 3;
         for _ in 0..3 {
-            pool.update(&mut world, &mut []);
+            pool.update(&mut world, &mut [], None);
         }
         assert!(!pool.slots()[slot].active);
         assert_eq!(pool.slots()[slot].time_left, 0);
@@ -733,7 +1099,7 @@ mod tests {
             )
             .unwrap();
         pool.slots_mut()[slot].extra_updates = 1;
-        pool.update(&mut world, &mut []);
+        pool.update(&mut world, &mut [], None);
         assert!(
             (pool.slots()[slot].pos.x - (10.0 * TILE_PX + 44.0)).abs() < 0.01,
             "two AI steps × 22 px = 44 px, got {}",
@@ -770,7 +1136,7 @@ mod falling_tests {
             .unwrap();
         let mut npcs: Vec<Npc> = Vec::new();
         let mut w = world();
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         // The spawn vel (0, 0.41) + one gravity step (0.41) = 0.82.
         assert!(
             (pool.slots()[slot].vel.y - 0.82).abs() < 0.001,
@@ -792,7 +1158,7 @@ mod falling_tests {
         let mut w = world();
         put_solid(&mut w, 10, 24);
         let mut npcs: Vec<Npc> = Vec::new();
-        pool.update(&mut w, &mut npcs);
+        pool.update(&mut w, &mut npcs, None);
         assert!(!pool.slots()[slot].active, "the projectile died on landing");
         // The placement resolves through the box center → the tile row 23
         // (the last free row above the solid).
@@ -835,9 +1201,313 @@ mod falling_tests {
         pool.spawn_falling(fall.tile_kind, fall.proj_kind, fall.damage, fall.x, fall.y);
         // Update until the landing.
         for _ in 0..40 {
-            pool.update(&mut w, &mut npcs);
+            pool.update(&mut w, &mut npcs, None);
         }
         assert_eq!(w.tile(10, 23).unwrap().kind, 53, "the sand placed back");
         assert!(!pool.slots().iter().any(|p| p.active), "the fall is spent");
+    }
+}
+
+#[cfg(test)]
+mod arrow_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_family_data_map_is_verbatim() {
+        // `Projectile.cs:807-815` (the wooden arrow), `:817-827` (flame),
+        // `:950-961` (the musket ball), `:1823-1832`/`:2707-2716`/`:9330-9339`
+        // (the trap darts/spiky), `:6953-6966` (the poison dart),
+        // `:2717-2727` (the spear).
+        let arrow = proj_data(WOODEN_ARROW).unwrap();
+        assert_eq!((arrow.w, arrow.h), (10.0, 10.0));
+        assert_eq!(arrow.ai_style, 1);
+        assert_eq!(arrow.time_left, 1200);
+        assert!(arrow.arrow);
+        let ball = proj_data(MUSKET_BALL).unwrap();
+        assert_eq!((ball.w, ball.h), (4.0, 4.0));
+        assert_eq!(ball.time_left, 600);
+        assert_eq!(ball.extra_updates, 1);
+        let dart = proj_data(TRAP_DART).unwrap();
+        assert_eq!(dart.penetrate, -1);
+        assert!(dart.trap);
+        let poison = proj_data(POISON_DART).unwrap();
+        assert!(!poison.tile_collide);
+        assert_eq!(poison.extra_updates, 5);
+        let spear = proj_data(TRAP_SPEAR).unwrap();
+        assert_eq!((spear.w, spear.h), (14.0, 14.0));
+        assert_eq!(spear.ai_style, 14);
+        assert_eq!(spear.time_left, 900);
+        // The boulder 186 (aiStyle 37) and the flame jet 187 (aiStyle 38)
+        // are unported — no data, the emission drops at the drain.
+        assert!(proj_data(186).is_none());
+        assert!(proj_data(187).is_none());
+        // The shuriken keeps its aiStyle-2 path, not the data table.
+        assert!(proj_data(SHURIKEN).is_none());
+        assert_eq!(SHURIKEN, 3, "the C# ProjectileID.Shuriken");
+    }
+
+    #[test]
+    fn spawn_with_data_applies_the_family_slice() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TRAP_SPEAR, 160.0, 200.0, 4.0, 0.0, 40, 2.0)
+            .unwrap();
+        let p = &pool.slots[slot];
+        assert_eq!(p.kind, TRAP_SPEAR);
+        assert_eq!(p.time_left, 900);
+        assert_eq!(p.penetrate, -1);
+        assert_eq!((p.w, p.h), (14.0, 14.0));
+        assert!(p.trap);
+        assert_eq!(p.damage, 40);
+    }
+
+    #[test]
+    fn the_arrow_gains_gravity_after_15_ticks() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_ARROW, 160.0, 200.0, 10.0, 0.0, 5, 0.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        // `ai[0]` increments on the same tick the check runs (`:57572` +
+        // `:57580`), so the 15th update itself starts the gravity.
+        for _ in 0..14 {
+            pool.update(&mut w, &mut npcs, None);
+        }
+        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 14 ticks");
+        pool.update(&mut w, &mut npcs, None);
+        assert!(
+            (pool.slots[0].vel.y - 0.1).abs() < 1e-6,
+            "the 15th tick starts the 0.1 gravity"
+        );
+        // The rotation rides the flight direction (`atan2 + 1.57`).
+        assert!((pool.slots[0].rot - (0.1f32.atan2(10.0) + 1.57)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_arrow_breaks_on_tile_contact() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_ARROW, 64.0, 10.0 * 16.0, 0.0, 16.0, 5, 0.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for y in 20..24 {
+            for x in 0..16 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        // The 16 px/tick fall reaches the row-20 floor inside 15 ticks; the
+        // blocked movement kills the arrow (`Update`'s tile collide).
+        let mut died = false;
+        for _ in 0..20 {
+            pool.update(&mut w, &mut npcs, None);
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(died, "the tile contact kills the arrow");
+    }
+
+    #[test]
+    fn the_spear_dies_on_the_tile_scan() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(TRAP_SPEAR, 8.0 * 16.0, 12.0 * 16.0, 0.0, 4.0, 40, 2.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for x in 0..16 {
+            put_solid(&mut w, x, 13);
+        }
+        // The scan runs before the move; the probe box reaches the row-13
+        // floor on the third tick.
+        let mut died = false;
+        for _ in 0..5 {
+            pool.update(&mut w, &mut npcs, None);
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(
+            died,
+            "the aiStyle-14 center-probe scan kills on solid contact"
+        );
+    }
+
+    #[test]
+    fn the_spear_gains_gravity_after_5_ticks() {
+        let mut pool = ProjectilePool::new();
+        // Straight right over open air.
+        pool.spawn_with_data(TRAP_SPEAR, 32.0, 16.0, 4.0, 0.0, 40, 2.0);
+        let mut npcs = Vec::new();
+        let mut w = world();
+        for _ in 0..5 {
+            pool.update(&mut w, &mut npcs, None);
+        }
+        assert_eq!(pool.slots[0].vel.y, 0.0, "no gravity for the first 5 ticks");
+        pool.update(&mut w, &mut npcs, None);
+        assert!((pool.slots[0].vel.y - 0.2).abs() < 1e-6, "the 6th tick adds 0.2");
+    }
+}
+
+#[cfg(test)]
+mod boomerang_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> tr_core::World {
+        tr_core::World::new("t".into(), 64, 64)
+    }
+
+    fn put_solid(w: &mut tr_core::World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_registry_maps_the_boomerang_items() {
+        // `itemdata.rs`: the Enchanted 55 / Wooden 284 / Ice 670 shoot the
+        // projectiles 6 / 52 / 113, and the item data carries the throw
+        // inputs the use path reads.
+        assert_eq!(crate::registry::projectile(55), Some(ENCHANTED_BOOMERANG));
+        assert_eq!(crate::registry::projectile(284), Some(WOODEN_BOOMERANG));
+        assert_eq!(crate::registry::projectile(670), Some(ICE_BOOMERANG));
+        let def = crate::registry::get(284).unwrap();
+        assert_eq!(def.shoot_speed, 6.5);
+        assert_eq!(def.knock_back, 5.0);
+        assert_eq!(def.damage, 10);
+        assert_eq!(def.class, crate::registry::DamageClass::Melee);
+        assert!(!def.consumable, "the boomerang is not consumed on throw");
+    }
+
+    #[test]
+    fn the_boomerang_data_is_verbatim() {
+        // `Projectile.cs:864-873` / `:1345-1353` / `:2012-2022`: 22×22,
+        // aiStyle 3, `penetrate = -1`.
+        for kind in [ENCHANTED_BOOMERANG, WOODEN_BOOMERANG, ICE_BOOMERANG] {
+            let d = proj_data(kind).unwrap();
+            assert_eq!((d.w, d.h), (22.0, 22.0));
+            assert_eq!(d.ai_style, 3);
+            assert_eq!(d.penetrate, -1);
+            assert!(d.tile_collide);
+        }
+    }
+
+    #[test]
+    fn the_boomerang_switches_to_the_return_at_30_ticks() {
+        // `:39024-39030` + `:39327-39331`: the outbound `ai[1]++`, the
+        // return at `ai[1] >= 30f`.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 320.0, 320.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        for _ in 0..29 {
+            pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+        }
+        assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound at tick 29");
+        pool.update(&mut w, &mut [], Some((320.0, 320.0)));
+        assert_eq!(pool.slots[0].ai[0], 1.0, "the return state at tick 30");
+        assert_eq!(pool.slots[0].ai[1], 0.0);
+    }
+
+    #[test]
+    fn the_outbound_boomerang_bounces_off_a_wall() {
+        // `:14594-14602`: the outbound tile hit reverses the velocity and
+        // sets the return state instead of killing.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(WOODEN_BOOMERANG, 8.0 * 16.0, 16.0 * 16.0, 10.0, 0.0, 10, 5.0);
+        let mut w = world();
+        for y in 14..20 {
+            for x in 12..24 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut bounced = false;
+        for _ in 0..20 {
+            pool.update(&mut w, &mut [], Some((100.0, 260.0)));
+            if pool.slots[0].ai[0] == 1.0 {
+                bounced = true;
+                break;
+            }
+        }
+        assert!(bounced, "the wall hit switched to the return state");
+        assert!(
+            pool.slots[0].vel.x < 0.0,
+            "the velocity reversed (x = {})",
+            pool.slots[0].vel.x
+        );
+    }
+
+    #[test]
+    fn the_returning_boomerang_passes_tiles_and_is_caught() {
+        // The return state disables tile collision (`:39468-39470`) and the
+        // owner's box catches it (`:39538-39544`).
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::new(-9.0, 0.0),
+            damage: 10,
+            ..Default::default()
+        };
+        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        let mut w = world();
+        // A wall directly on the path home.
+        for y in 18..20 {
+            for x in 20..22 {
+                put_solid(&mut w, x, y);
+            }
+        }
+        let mut caught = false;
+        for _ in 0..40 {
+            pool.update(&mut w, &mut [], Some((80.0, 308.0)));
+            if !pool.slots[0].active {
+                caught = true;
+                break;
+            }
+        }
+        assert!(caught, "the return flies through the wall and is caught");
+    }
+
+    #[test]
+    fn the_stray_boomerang_dies_past_3000_px() {
+        // `:39500-39505`: the 3000 px cut-off.
+        let mut pool = ProjectilePool::new();
+        pool.slots[0] = Projectile {
+            active: true,
+            kind: WOODEN_BOOMERANG,
+            owner: 0,
+            pos: Vec2::new(200.0, 200.0),
+            vel: Vec2::new(30.0, 0.0),
+            damage: 10,
+            ..Default::default()
+        };
+        pool.slots[0].ai = [1.0, 0.0, 0.0];
+        let mut w = world();
+        let mut died = false;
+        for _ in 0..120 {
+            pool.update(&mut w, &mut [], Some((100.0, 200.0)));
+            if !pool.slots[0].active {
+                died = true;
+                break;
+            }
+        }
+        assert!(died, "the stray kills past the cut-off");
     }
 }

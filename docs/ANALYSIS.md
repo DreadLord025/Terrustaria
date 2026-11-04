@@ -2901,3 +2901,98 @@ Deviations: `WiresUI.Settings.HideWires` and the mechanic-accessory
 at the defaults — no wires UI or accessory equip yet, so `num = 1` and
 every channel draws at the light colour; the tile-423 LightSeaGreen
 special rect is content-gated; the MP branches are skipped.
+
+## Arrows & bullets (M4-PROJ-2)
+
+The aiStyle-1 family turns out to cover **both** the arrows and the
+bullets — the musket ball (projectile 14) rides `AI_001` with the arrows
+(`SetDefaults` `Projectile.cs:950-961`), so "arrows & bullets" is one
+generic arm plus the per-type data.
+
+- **The generic arm** (`Projectile.cs:57572-57583`): `ai[0]++` per tick
+  (the `flag3` set — the special types opt out, `:55945-56037`), and when
+  `ai[0] >= 15f` the gravity `velocity.Y += 0.1f` starts (the counter pins
+  at 15). The ±16 velocity clamp rides the tail (`:57756-57763`), and the
+  generic rotation is the flight direction + 1.57 (`:57725-57728`).
+- **The tile contact**: the C# `Update`'s tileCollide movement blocks the
+  hit axis; for the aiStyle-1 projectiles the blocked hit kills (the
+  arrows break on contact). The port runs the per-axis
+  `collides_rect` check and kills on either.
+- **The aiStyle-14 spear family** (the trap spear 185): the default arm
+  (`:25143-25158`) — the straight flight, `ai[0] > 5f` →
+  `velocity.Y += 0.2f` with the ground-slide `velocity.X *= 0.97f` (and
+  the <0.01 zero), `rotation += velocity.X * 0.1f`; the tile-kill scan
+  (`:25726-25737`) probes the box inset `(x + 4, y + 4)` with the +8 px
+  center box against solid, non-127 tiles; `lavaWet` and the shimmer
+  kill (`:25739-25750`).
+- **The data** (`proj_data`): the `SetDefaults` slice — the wooden arrow
+  1 / the flame arrow 2 (10×10, `timeLeft` 1200, `arrow`), the musket
+  ball 14 (4×4, `timeLeft` 600, `extraUpdates` 1), the trap darts 98 /
+  184 and the spiky ball 980 (10×10, `penetrate` −1, `trap`), the
+  Blowgun's poison dart 645 (`tileCollide` false, `extraUpdates` 5, the
+  local immunity cooldown −1) and the trap spear 185 (14×14, aiStyle 14,
+  `timeLeft` 900). The pool's kind ids migrated from the M4-PROJ-1
+  internal table to the verbatim `ProjectileID` (the shuriken 1 → 3) —
+  the internal 1 collided with the C# wooden arrow.
+- **The trap emission** (`Wiring.cs:1763-1993`): the six traps are FRAME
+  VARIANTS of tile 137 (`frameY / 18`: 0 dart → 98/20 dmg/12 speed,
+  1 superdart → 184/40/12, 2 flame → 187/40/5, 3 spear → 185/40/4±1,
+  4 boulder → 186/60/8, 5 spiky → 980/30/12); the direction decodes from
+  `frameX` (0 → −1 X, 18 → +1 X, 36-71 → −1 Y, ≥72 → +1 Y), the spawn
+  offsets ±10 px (±14 spear, ±18 boulder), the wall-mounted negatives
+  (−10..−6) emit with the fixed offsets. The `CheckMech` cooldowns
+  200/300/90 run in the engine; the requests (`TrapRequest`) drain
+  app-side where the spear's 1000-slot proximity cap applies (`:1825-1843`
+  — the 200 base count decrements by the distance rings
+  50/100/200/300/400/500/700/900/1200 px; the C#'s `j * 18 + 8` center y
+  is verbatim, typo included).
+
+Deviations: the flame arrow's water transform (`TransformType(1)`,
+`:16825-16827`) needs the projectile wet tracking — M4-PROJ polish; the
+boulder 186 (aiStyle 37) and the flame jet 187 (aiStyle 38) requests are
+emitted verbatim but dropped at the spawn boundary until their AI
+families land; the arrow item recovery on kill does not exist in 1.4.4
+(no `Kill` drop path found); the spear spread's rand order (engine-side
+pre-roll vs the C#'s post-cap roll) differs by one stream draw and is
+MP-invisible.
+
+## Boomerangs (M4-PROJ-3, the boomerang half)
+
+`AI_003_Boomerang` (`Projectile.cs:38866-39545`) is a two-state machine on
+`ai[0]`/`ai[1]`; the ported kinds 6 (Enchanted), 52 (Wooden) and 113
+(Ice) all ride the generic arms — the per-type parameter table only
+starts at the special boomerangs (the Light Disc 106's 45-tick window is
+the one verbatim override kept).
+
+- **The OUT state** (`ai[0] == 0`, `:39024-39331`): `ai[1]++` per tick;
+  at `ai[1] >= 30f` the return state sets (`ai[0] = 1f, ai[1] = 0f`).
+  The straight flight keeps `tileCollide`; **the outbound tile hit does
+  not kill** — it reverses the velocity and switches to the return
+  (`:14594-14602` in `Kill()`'s collision path, mirrored at
+  `:13068-13080` for the NPC hits).
+- **The RETURN state** (`ai[0] == 1`, `:39468-39545`): `tileCollide =
+  false` — the boomerang flies home through terrain. The seek builds the
+  owner-center vector, kills past 3000 px (`:39500-39505`), scales it to
+  the speed 9 (`num26`; the per-type overrides 12-20 are the special
+  kinds) and steers per-axis at the accel 0.4 (`num27`) with the ±2×
+  boost when crossing the target velocity (`:39515-39537`). The
+  `meleeSpeed` remap (`:39487-39497`, ×1-10) is ×1 at the port's default
+  melee speed (M3-EQUIP brings the stat). The owner's 20×42 box catching
+  the boomerang kills it (`:39538-39544`).
+- **The generic `Item.shoot` firing**: the throw path was the M4-PROJ-1
+  shuriken hardcode; it is now `Player.ItemCheck_Shoot` (`:47056+`) —
+  the aim vector normalized to the item's `shootSpeed`
+  (`:47274-47292`; the melee `speed /= meleeSpeed` is ×1), the spawn at
+  the player center + 10 px toward the cursor, `weaponDamage` (the item
+  damage × the class multiplier), the item's knockback, the crit roll
+  from the item's damage class and the `consumable` decrement (the
+  boomerangs stay in the inventory; the shuriken is consumed).
+- The pool's `update` carries `owner: Option<(f32, f32)>` — the seek
+  input (`Main.player[owner]` reads); `None` keeps the boomerangs
+  outbound until the timer flips them.
+
+Deviations: the flails (aiStyle 15, `AI_015_Flails` `:43724-44600` — the
+877-line per-type parameter table + the chain state machine + the
+channel coupling) are the explicit follow-up (M4-PROJ-3b); the boomerang
+sounds/dust are render-side; the homing variants (182/866) and the
+phaseblade subset are out of the ported kinds.
