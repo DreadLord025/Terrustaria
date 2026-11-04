@@ -1347,7 +1347,7 @@ section in brackets before starting a row.
 | M6-SETTINGS | `M6-SETTINGS` | settings parity |
 | M6-SAVE-1 | `M6-SAVE-1-wld-sections` | remaining .wld sections [29] |
 | ✅ M6-SAVE-2 | `M6-SAVE-2-plr-reader` | vanilla `.plr` reader+writer: AES-128-CBC (`Player.cs:796-798`), `FileMetadata`, the release-279 section walk with the stat caps, `SavePlayer` mirror (sanitized name, starter items), `list_players` scans real files + the session stand-in dedup + the erase path [29] | done 2026-11-04: 4 round-trip tests (crypto+sections, magic/type, caps, key) + the scan test |
-| M6-CHAT-1 | `M6-CHAT-1-chat` | chat system [24] |
+| ✅ M6-CHAT-1 | `M6-CHAT-1-chat` | the single-player chat: `chat.rs` — the `RemadeChatMonitor` log (500-line cap, newest-first insert `:40-52`), the `drawingPlayerChat`/`chatText` input pair, the command processor (Say/Party/Roll/Help/Players + the unknown-command Say fallback `ChatCommandProcessor.cs:100-110`; the roll `*\{name\} rolls a \{1..100\}` via `Lang.mp[9]`, the ServerMessage 255,240,20 color), the death broadcast (`{name} \{text\}` in the Death 255,25,25 color from the KillMe hook), the draw (the log at (88, screenH-58) upward 22px, the `Text_Back` input strip + the 20-frame `|` blinker) [24] | done 2026-11-04: `TR_CHAT=1` screenshot hook (verified: the colors, the newest-at-bottom order, the strip); the PvP/party-color channels and the snippet markup ([c/i/g] tags) land with net and the rich-text pass |
 | M6-EMOTE-1 | `M6-EMOTE-1-emotes` | emote bubbles [24] |
 | M6-ACH-1 | `M6-ACH-1-achievements` | achievements framework [24] |
 | M6-CREATIVE-1 | `M6-CREATIVE-1-powers` | journey powers [28] |

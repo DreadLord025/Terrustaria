@@ -914,6 +914,7 @@ impl App {
                         self.bestiary_open,
                         self.bestiary_selected,
                         &self.kill_tracker,
+                        &mut self.chat,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
