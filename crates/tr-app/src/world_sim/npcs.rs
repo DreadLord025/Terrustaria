@@ -92,6 +92,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             let death_text = dot_death_text(player.dot_death).to_string();
             player.dot_death = None;
             drop(player);
+            // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
+            // color (`ChatColors.cs`); the ported monitor rides the App.
+            crate::chat::broadcast_death(
+                &mut app.chat,
+                &app.player_name,
+                &death_text,
+            );
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(boss_near, false);

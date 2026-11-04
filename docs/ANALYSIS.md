@@ -2730,6 +2730,43 @@ Deviations: the entity movement is the port's positional teleport (the C#'s
 `Player.Teleport`/`NPC.Teleport` effects — the dust, the styles — are
 M2-DEATH/M7-WIRE-3 polish); the `DebugOptions` and MP branches are skipped.
 
+## Traps & statues (M7-WIRE-2)
+
+`wiring.rs` gains the statue half of `HitWireSingle`'s case 105
+(`Wiring.cs:2125-2440`): the style decode (`num138 = frameX / 36 +
+(frameY / 54 % 3) * 55`), the 3×2 `SkipWire`, the spawn anchor
+`(num137·16 + 16, (num136 + 3)·16)` and the verbatim style → spawn map. The
+NPC styles run `CheckMech(30)`; the item styles `CheckMech(600)` plus the
+`Item.MechSpawn` group checks. The engine emits `StatueSpawn` requests; the
+app layer (`world_sim/wiring.rs`) runs the `MechSpawn` caps and constructs the
+entities.
+
+Deviations:
+
+- **The ported statue subset**: the Blue Slime statue (style 4 → NPC 1 →
+  `NpcKind::Slime`/Blue), the Demon Eye statue (style 35 → NPC 2) and the
+  Heart/Star/Bomb item statues (styles 37/2/17 → the C# item ids 58/184/166,
+  dropped as `ItemDrop`s with the pickup ids). The remaining ~50 styles map
+  to C# NPCs/items outside the port's content (the critters, the Eater of
+  Souls, the special teleporting/jar statues) — they emit nothing; the map
+  arms arrive with the NPC families (M4-NPC-1).
+- **The `MechSpawn` caps are verbatim**: `NPC.MechSpawn` (`NPC.cs:7420-7505`,
+  the rings 200/600 px, the caps 3/6/10, the same-type group merging — the
+  port's kinds map 1:1 to their C# ids so the groups only matter once those
+  NPCs land) and `Item.MechSpawn` (`Item.cs:49385-49405`, the rings 300/800
+  px) — implemented in `crates/tr-app/src/wiring_stub.rs` over the app's
+  entity lists.
+- **The statue-spawned loot gating**: `Npc.spawned_from_statue` carries
+  `NPC.SpawnedFromStatue` (`NPC.cs:6061`); the `NPCLoot`'s
+  StatueSpawnedDropRarity/NoEarlymodeLootWhenSpawnedFromStatue checks
+  (`NPC.cs:78849`) gate the drops — the port's statue-spawned slimes drop
+  nothing until the AnyInteractions tracking lands (M4-NPC polish).
+- **The trap projectile emission** (the dart/spear/flame/boulder traps'
+  `Projectile.NewProjectile` calls, `Wiring.cs:1774-2000`) needs the
+  projectile families (M4-PROJ-2+) — their `CheckMech` cooldowns (200/90/300/
+  900) are already exercised by the queue; the emission arms are
+  passthroughs.
+
 ## Falling blocks (M7-FALL-1)
 
 `tr-core/src/falling.rs` ports the trigger half of

@@ -39,6 +39,7 @@ use winit::window::Window;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::chat;
 use crate::audio;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
@@ -150,6 +151,9 @@ pub(crate) struct App {
     /// (`Main.cs:42420-42470`). `Some(index)` = an entry's info page.
     pub(crate) bestiary_open: bool,
     pub(crate) bestiary_selected: Option<usize>,
+    /// `Main.chatMonitor` + `Main.drawingPlayerChat`/`Main.chatText` — the
+    /// chat state (M6-CHAT-1).
+    pub(crate) chat: chat::ChatMonitor,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
@@ -908,6 +912,28 @@ impl App {
                 p.dash_type = d.clamp(0, 6);
             }
         }
+        // `TR_WINGS=<ArmorIDs.Wing>` / `TR_BOOTS=<1..5>` pin the flight gear —
+        // the granting accessories land with M3-EQUIP-3. The wings set
+        // `hasWings` (the fall-damage suppressor, `Player.cs:15602`).
+        if let Some(w) = std::env::var("TR_WINGS")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+        {
+            if let Some(p) = player.as_mut() {
+                p.wings_logic = w.clamp(0, 49);
+                let (fly, _, _, _, _, _) = crate::player::Player::wing_stats(w);
+                p.wing_time_max = fly;
+                p.has_wings = w > 0;
+            }
+        }
+        if let Some(b) = std::env::var("TR_BOOTS")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+        {
+            if let Some(p) = player.as_mut() {
+                p.rocket_boots = b.clamp(0, 5);
+            }
+        }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
         if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
             if let Some(p) = player.as_mut() {
@@ -1163,6 +1189,18 @@ impl App {
                 } else {
                     None
                 }),
+            chat: {
+                // `TR_CHAT` opens the chat for the screenshot runs
+                // (the vanilla state opens on Enter only).
+                let mut chat = chat::ChatMonitor::default();
+                if std::env::var_os("TR_CHAT").is_some() {
+                    chat.open = true;
+                    chat.new_text("Belsin was slain...", crate::chat::COLOR_DEATH);
+                    chat.new_text("*Belsin rolls a 42", crate::chat::COLOR_SERVER_MESSAGE);
+                    chat.new_text("Belsin hello world", [255, 255, 255]);
+                }
+                chat
+            },
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).

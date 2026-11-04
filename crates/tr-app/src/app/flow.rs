@@ -1279,6 +1279,7 @@ pub(crate) mod front_flow_tests {
             kill_tracker: tr_core::bestiary::KillTracker::new(),
             bestiary_open: false,
             bestiary_selected: None,
+            chat: crate::chat::ChatMonitor::default(),
             window: None,
             gpu: None,
             renderer: None,

@@ -115,6 +115,47 @@ impl ApplicationHandler for App {
                 if let PhysicalKey::Code(code) = event.physical_key {
                     if event.state == ElementState::Pressed {
                         self.keys.insert(code);
+                        // `DoUpdate_HandleChat` (`Main.cs:18318-18372`): the
+                        // open chat eats the keyboard before the world
+                        // routes — Enter sends + closes (`inputTextEnter`),
+                        // Escape closes (`inputTextEscape`), Backspace
+                        // trims, printable text appends (`GetInputText`).
+                        // The world controls stay live like the source.
+                        if self.chat.open {
+                            match code {
+                                KeyCode::Enter | KeyCode::NumpadEnter => {
+                                    let name = self.player_name.clone();
+                                    let mut rng = self.item_rng;
+                                    self.chat.send(&self.chat.text.clone(), &name, &mut rng);
+                                    self.item_rng = rng;
+                                    self.chat.text.clear();
+                                    self.chat.open = false;
+                                }
+                                KeyCode::Escape => {
+                                    self.chat.text.clear();
+                                    self.chat.open = false;
+                                }
+                                KeyCode::Backspace => {
+                                    self.chat.text.pop();
+                                }
+                                _ => {}
+                            }
+                            if let Some(text) = event.text.as_ref() {
+                                for ch in text.chars() {
+                                    if !ch.is_control() {
+                                        self.chat.text.push(ch);
+                                    }
+                                }
+                            }
+                            return;
+                        }
+                        // `Main.chatRelease && !drawingPlayerChat` →
+                        // `OpenPlayerChat` (`Main.cs:18268-18287`): Enter
+                        // opens the chat.
+                        if matches!(code, KeyCode::Enter | KeyCode::NumpadEnter) {
+                            self.chat.open = true;
+                            return;
+                        }
                         if self.menu.is_some() {
                             if let Some(text) = event.text.as_ref() {
                                 if let Some(m) = self.menu.as_mut() {
