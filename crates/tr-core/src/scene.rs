@@ -101,6 +101,11 @@ pub struct SceneMetrics {
     /// `HasSunflower` — any tile 27 in the window, cancelled by a graveyard
     /// above `GraveyardTileMin` (`AggregateTileCounts`, `:617-624`).
     pub has_sunflower: bool,
+    // — the M2-BUFF-8 banner fields (`SceneMetrics.cs:442-445`) —
+    /// `NPCBannerBuff[]`: the banner ids present in the scan window.
+    pub npc_banner_buff: Vec<bool>,
+    /// `hasBanner` — any strength-enabled banner in the window.
+    pub has_banner: bool,
     /// `MeteorTileCount` — the meteorite brick (37) tiles (`:611`).
     pub meteor_tile_count: i32,
     /// `DungeonTileCount` — the brick families 41/43/44/481/482/483 (`:612`).
@@ -205,6 +210,8 @@ impl SceneMetrics {
             has_heart_lantern: false,
             has_star_in_bottle: false,
             has_sunflower: false,
+            npc_banner_buff: vec![false; 320],
+            has_banner: false,
             meteor_tile_count: 0,
             dungeon_tile_count: 0,
             zone_meteor: false,
