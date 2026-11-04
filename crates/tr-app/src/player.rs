@@ -12,7 +12,7 @@ use crate::registry;
 use tr_core::tiledata as td;
 use tr_core::{World, TILE_PX};
 
-use crate::buffs::BuffSlots;
+use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
 use crate::regen::{update_life_regen, update_mana_regen, DotDeath, RegenInputs, RegenState};
 
@@ -41,6 +41,23 @@ pub struct PlayerInput {
     pub right: bool,
     pub jump: bool,
     pub down: bool,
+}
+
+/// The DoT-derived half of [`RegenInputs`] for one tick — what the held buffs
+/// say about the drain (`Player.cs:18949-19385`). `update_survival` copies the
+/// fields into the engine's inputs; the engine (regen.rs) owns the lanes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct DotDerivation {
+    /// The summed DoT delta (honey mitigation included) → `RegenInputs::dot_regen`.
+    regen: i32,
+    /// Any DoT (or bleeding) held → `RegenInputs::dot_resets_time`.
+    resets_time: bool,
+    /// `burned || suffocating || (tongued && expert)` (`Player.cs:19313`).
+    fast_lane: bool,
+    /// The fast lane's kill reason (7 → 12 → 8, `Player.cs:19321-19331`).
+    death_fast: DotDeath,
+    /// The generic lane's kill reason (22 → 9 → 10 → 23 → 8, `:19362-19385`).
+    death_generic: DotDeath,
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +103,14 @@ pub struct Player {
     /// advances a leg row every `8.0`.
     leg_frame_counter: f32,
     pub in_water: bool,
+    /// The mid-tile probe found honey — the physics `in_water` probe covers both
+    /// water and honey; the DoT system must tell them apart (the fire-extinguish
+    /// condition, Player.cs:27728+27750).
+    pub in_honey: bool,
+    /// `Player.controlLeft` / `Player.controlRight`: this tick's held run keys
+    /// (PlayerInput). The electrified drain tests them (Player.cs:19080-19082).
+    pub control_left: bool,
+    pub control_right: bool,
     /// Remaining ticks of the held-jump boost (`Player.jump`).
     jump: i32,
     /// Jump was held on the previous fixed step, for press-edge detection.
@@ -165,6 +190,9 @@ impl Player {
             body_frame: 0,
             leg_frame_counter: 0.0,
             in_water: false,
+            in_honey: false,
+            control_left: false,
+            control_right: false,
             jump: 0,
             jump_held: false,
             spawn_x: sx,
@@ -389,13 +417,24 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
+        // The buff-frame head of `Player.Update` (`Player.cs:25555-25616`): the
+        // `buffImmune` reset precedes `UpdateBuffs` and every re-grant; the
+        // end-of-update purge consumes the table at `:26011-26016`.
+        self.buffs.reset_buff_immune();
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // Buffs whose timer ran out are deleted right after the tick
+        // (`Player.cs:25608-25616`) — before any effect can read them.
+        self.remove_expired_buffs();
         self.prev_x = self.x;
         self.prev_y = self.y;
         self.prev_gfx_off_y = self.gfx_off_y;
         self.hurt_cd = (self.hurt_cd - 1.0 / 60.0).max(0.0);
+        // The run keys ride on the player like the C#'s `controlLeft`/`controlRight`
+        // (input struct → fields early in `Player.Update`).
+        self.control_left = input.left;
+        self.control_right = input.right;
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
         self.in_water = mid.is_some_and(|t| {
@@ -405,6 +444,8 @@ impl Player {
                     tr_core::tile::LiquidKind::Water | tr_core::tile::LiquidKind::Honey
                 )
         });
+        self.in_honey = mid
+            .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Honey);
         self.in_lava =
             mid.is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
 
@@ -590,7 +631,212 @@ impl Player {
         };
     }
 
+    /// The expired-buff sweep of `Player.Update` (`Player.cs:25608-25616`): a
+    /// slot holding a type with a non-positive timer is deleted. Like the C#,
+    /// the loop does not rescan after `DelBuff` compaction.
+    fn remove_expired_buffs(&mut self) {
+        for i in 0..MAX_BUFFS {
+            if self.buffs.buff_type[i] > 0 && self.buffs.buff_time[i] <= 0 {
+                self.buffs.del_buff(i);
+            }
+        }
+    }
+
+    /// The slot scan behind the C# per-buff flag chain: a buff counts while it
+    /// occupies a slot with a positive timer (`Player.cs:9869-9870`). The scan
+    /// ignores `buffImmune` on purpose — an immune-held buff still sets its
+    /// flag for the one frame before the purge deletes it (`:26011-26016`).
+    fn holding_index(&self, buff_type: i32) -> Option<usize> {
+        (0..MAX_BUFFS)
+            .find(|&i| self.buffs.buff_time[i] > 0 && self.buffs.buff_type[i] == buff_type)
+    }
+
+    /// `true` while `buff_type` is held on a live slot (see [`Self::holding_index`]).
+    fn holding(&self, buff_type: i32) -> bool {
+        self.holding_index(buff_type).is_some()
+    }
+
+    /// The Wet-buff (103) player-side effects of the `UpdateBuffs` chain
+    /// (`Player.cs:11740-11751`): while held, lava contact deletes the buff;
+    /// otherwise it re-grants this frame's fire immunities (OnFire 24, OnFire3
+    /// 323, Burning 67).
+    fn refresh_wet_state(&mut self) {
+        // The C# branch runs inside the per-buff slot loop and uses the
+        // previous frame's `lavaWet`; the port's `in_lava` probe is this
+        // frame's, so the removal lands one tick earlier than the original's
+        // lagging flag (docs/ANALYSIS.md, Phase 4).
+        if let Some(i) = self.holding_index(103) {
+            if self.in_lava {
+                self.buffs.del_buff(i);
+            } else {
+                self.buffs.buff_immune[24] = true;
+                self.buffs.buff_immune[323] = true;
+                self.buffs.buff_immune[67] = true;
+            }
+        }
+    }
+
+    /// The DoT branches of `Player.UpdateLifeRegen` as a pure derivation.
+    ///
+    /// Pseudocode (branch order = C# `Player.cs:18949→19095`; each hit branch
+    /// clamps a positive regen and zeroes the ramp time, folded into
+    /// `resets_time`):
+    /// ```text
+    /// regen ← 0; resets_time ← false
+    /// poisoned(20): −4 | venom(70): −30 | chlorophyteSpore(397): −30
+    /// onFire(24): −8, ×2 while drippingSlime(137)
+    /// onFire3(323): −8 ×2 | frostburn(44): −16 ×2 | frostburn2(324): −16 ×2
+    /// cursedInferno(39): −24 ×2 | burned(67): −60 ×2
+    /// suffocating(68): −40
+    /// electrified(144): −8, −32 more while controlLeft || controlRight
+    /// tongued(38) && expert: −100
+    /// bleeding(30): zeroes the ramp time only (no delta, `:19178-19181`)
+    /// honey(48) while regen < 0: regen += 4, clamped at 0 (never positive)
+    /// fast_lane ← burned || suffocating || (tongued && expert)      (:19313)
+    /// death_fast ← suffocating → 7, else tongued → 12, else 8       (:19321-19331)
+    /// death_generic ← vampire(22, unported) → poisoned||venom → 9 →
+    ///                 electrified → 10 → chlorophyte → 23 → else 8  (:19362-19385)
+    /// ```
+    fn derive_dot_inputs(&self, expert: bool) -> DotDerivation {
+        let mut regen = 0i32;
+        let mut resets_time = false;
+        // The DoT branches in the exact C# order (`Player.cs:18949-19095`).
+        // Each branch clamps a positive regen and zeroes `lifeRegenTime`
+        // before subtracting (`:18951-18956` shape) — the engine's
+        // `dot_resets_time` covers the clamp+reset for the folded sum.
+        if self.holding(20) {
+            // Poisoned — `:18949-18957`.
+            resets_time = true;
+            regen -= 4;
+        }
+        if self.holding(70) {
+            // Venom — `:18958-18966`.
+            resets_time = true;
+            regen -= 30;
+        }
+        if self.holding(397) {
+            // Chlorophyte Spore — `:18967-18975`.
+            resets_time = true;
+            regen -= 30;
+        }
+        let drip = self.holding(137); // drippingSlime doubles the fire family
+        if self.holding(24) {
+            // OnFire — `:18976-18998` (the vampireSeed −100 variant has no
+            // source and stays out per plan).
+            resets_time = true;
+            regen -= 8;
+            if drip {
+                regen -= 8;
+            }
+        }
+        if self.holding(323) {
+            // OnFire3 (hellfire) — `:19000-19012`.
+            resets_time = true;
+            regen -= 8;
+            if drip {
+                regen -= 8;
+            }
+        }
+        if self.holding(44) {
+            // Frostburn — `:19013-19025`.
+            resets_time = true;
+            regen -= 16;
+            if drip {
+                regen -= 16;
+            }
+        }
+        if self.holding(324) {
+            // Frostburn2 — `:19026-19038`.
+            resets_time = true;
+            regen -= 16;
+            if drip {
+                regen -= 16;
+            }
+        }
+        if self.holding(39) {
+            // Cursed Inferno (C# `onFire2`) — `:19039-19051`.
+            resets_time = true;
+            regen -= 24;
+            if drip {
+                regen -= 24;
+            }
+        }
+        if self.holding(67) {
+            // Burning (C# `burned`) — `:19052-19064`.
+            resets_time = true;
+            regen -= 60;
+            if drip {
+                regen -= 60;
+            }
+        }
+        if self.holding(68) {
+            // Suffocation — `:19065-19073`.
+            resets_time = true;
+            regen -= 40;
+        }
+        if self.holding(144) {
+            // Electrified — `:19074-19086`; the extra 32 needs the run keys.
+            resets_time = true;
+            regen -= 8;
+            if self.control_left || self.control_right {
+                regen -= 32;
+            }
+        }
+        let tongued = self.holding(38);
+        if tongued && expert {
+            // Tongued, expert-only — `:19087-19095`.
+            resets_time = true;
+            regen -= 100;
+        }
+        // Bleeding zeroes the ramp time without draining — `:19178-19181`.
+        if self.holding(30) {
+            resets_time = true;
+        }
+        // Honey softens a drain by 4, clamped at 0 so it never heals —
+        // `:19096-19103`. At this point the C# `lifeRegen` holds only the DoT
+        // sum (the flat adds come later), so folding here is exact.
+        if self.holding(48) && regen < 0 {
+            regen = (regen + 4).min(0);
+        }
+        // The fast-lane entry condition — `:19313`.
+        let fast_lane = self.holding(67) || self.holding(68) || (tongued && expert);
+        // The fast lane's kill reason — `:19319-19333` (suffocation 7 →
+        // tongued 12 → the fire fallback 8).
+        let death_fast = if self.holding(68) {
+            DotDeath::Suffocation
+        } else if tongued {
+            DotDeath::Tongued
+        } else {
+            DotDeath::Burned
+        };
+        // The generic lane's kill reason — `:19361-19384`. The C# tests
+        // `vampireBurningInSunlight` (22) first; nothing grants it in the
+        // port, so the chain starts at poisoned/venom (9).
+        let death_generic = if self.holding(20) || self.holding(70) {
+            DotDeath::Poison
+        } else if self.holding(144) {
+            DotDeath::Electrified
+        } else if self.holding(397) {
+            DotDeath::ChlorophyteSpore
+        } else {
+            DotDeath::Burned
+        };
+        DotDerivation {
+            regen,
+            resets_time,
+            fast_lane,
+            death_fast,
+            death_generic,
+        }
+    }
+
     fn update_survival(&mut self) {
+        // The Wet-buff effects and the DoT derivation are the flag sources the
+        // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
+        // (`Player.cs:11740-11751, 18949-19103`).
+        self.refresh_wet_state();
+        let dots = self.derive_dot_inputs(self.buffs.expert_mode);
+
         if self.in_water {
             self.breath_cd += 1;
             if self.breath_cd >= BREATH_CD {
@@ -606,27 +852,55 @@ impl Player {
             self.breath_cd = 0;
         }
 
-        if self.in_lava && self.hurt_cd <= 0.0 {
-            let cx = self.x + WIDTH * 0.5;
-            self.hurt(30, cx);
-        }
-
         // `Player.Update` → `UpdateLifeRegen` / `UpdateManaRegen`
-        // (`Player.cs:25977,25995`). The DoT/aura/item/grapple inputs stay at
-        // their defaults until those systems land (`regen.rs`); the hp gate
-        // stands in for the original's dead-player check (M2-DEATH).
+        // (`Player.cs:25977,25995`). The aura/item/grapple inputs stay at their
+        // defaults until those systems land (`regen.rs`); the hp gate stands in
+        // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
                 moving_x: self.vx != 0.0,
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
+                dot_regen: dots.regen,
+                dot_resets_time: dots.resets_time,
+                dot_fast_lane: dots.fast_lane,
+                dot_death_fast: dots.death_fast,
+                dot_death_generic: dots.death_generic,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
                 self.dot_death = Some(death);
             }
             update_mana_regen(&mut self.regen, &in_, &mut self.mana);
+        }
+
+        // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
+        // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
+        // this tick wins over the lava hit.
+        if self.in_lava && self.hurt_cd <= 0.0 {
+            let cx = self.x + WIDTH * 0.5;
+            if self.hurt(30, cx) {
+                // The Hurt return `num81 > 0.0` gates the OnFire grant
+                // (`Player.cs:27710-27711`; remix/ashWood/lavaRose variants out
+                // of scope). `AddBuff` applies the expert ×2 itself (24 is in
+                // the difficulty set, `BuffID.cs:50`).
+                self.buffs.add_buff(24, 420);
+            }
+        }
+        // Water extinguishes only OnFire (24) and OnFire3 (323) — Frostburn,
+        // CursedInferno and Burning are immune to it — and only while not
+        // standing in lava (`Player.cs:27750-27761`). Deviation (Assumption-2
+        // fallback): the C# `WetCollision` flag covers honey too, the port
+        // conditions on a water probe distinct from honey (docs/ANALYSIS.md,
+        // Phase 4). The C# loop does not rescan after `DelBuff` compaction.
+        if self.in_water && !self.in_honey && !self.in_lava {
+            for i in 0..MAX_BUFFS {
+                let t = self.buffs.buff_type[i];
+                if t == 24 || t == 323 {
+                    self.buffs.del_buff(i);
+                }
+            }
         }
     }
 
@@ -1469,5 +1743,395 @@ mod tests {
             "feet {feet} expected {expected}"
         );
         assert!(p.on_ground);
+    }
+
+    // — Phase 2 (M2-BUFF-3): DoT derivation, water/lava/honey treatment —
+
+    /// A player with a large life pool for 300-tick drain runs; `update_survival`
+    /// only (the buff timers are not decremented there, so the buff holds).
+    fn drain_rig() -> Player {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.max_hp = 1000;
+        p.hp = 1000;
+        p
+    }
+
+    #[test]
+    fn dot_table_rows_drain_exact_life_regen() {
+        // DW-2.1 — the §2.1 table rows as exact `lifeRegen` values, branch order
+        // and constants per `Player.cs:18949-19095`; bleeding resets the ramp
+        // only (`:19178-19181`). `loss` is the exact hp drop over 300 ticks
+        // where the chunk math is closed-form (None = assert "drained").
+        let rows: &[(i32, bool, i32, Option<i32>)] = &[
+            (20, false, -4, Some(10)),   // Poisoned: −4×300 = −1200 → 10×1 hp
+            (70, false, -30, Some(75)),  // Venom: −120 every 4 ticks → 75×1
+            (397, false, -30, None),     // Chlorophyte Spore
+            (24, false, -8, Some(20)),   // OnFire: −120 every 15 ticks → 20×1
+            (323, false, -8, Some(20)),  // OnFire3
+            (44, false, -16, None),      // Frostburn
+            (324, false, -16, None),     // Frostburn2
+            (39, false, -24, Some(60)),  // Cursed Inferno: −120 every 5 ticks
+            (67, false, -60, Some(150)), // Burning: fast lane −600/10 ticks → 30×5
+            (68, false, -40, Some(100)), // Suffocation: fast lane −600/15 → 20×5
+            (144, false, -8, Some(20)),  // Electrified standing
+            (38, true, -100, Some(250)), // Tongued expert: fast lane −600/6 → 50×5
+            (30, false, 0, Some(0)),     // Bleeding: ramp reset only, no drain
+        ];
+        for &(id, expert, regen, loss) in rows {
+            let mut p = drain_rig();
+            p.buffs.expert_mode = expert;
+            p.buffs.add_buff(id, 600);
+            for _ in 0..300 {
+                p.update_survival();
+            }
+            assert_eq!(
+                p.regen.life_regen, regen,
+                "buff {id} must drain exactly {regen}/tick"
+            );
+            match loss {
+                Some(lost) => assert_eq!(1000 - p.hp, lost, "buff {id} total loss"),
+                None => assert!(p.hp < 1000, "buff {id} must drain"),
+            }
+            assert!(p.hp > 0, "buff {id} rig must survive 300 ticks");
+        }
+    }
+
+    #[test]
+    fn water_extinguishes_only_onfire_and_onfire3() {
+        // DW-2.2 — `Player.cs:27750-27761`: only 24 and 323 are deleted; the
+        // rest of the fire/poison family rides through the water.
+        for id in [24, 323] {
+            let mut p = drain_rig();
+            p.buffs.add_buff(id, 600);
+            p.in_water = true;
+            p.update_survival();
+            assert!(
+                p.buffs.find_buff_index(id).is_none(),
+                "water must cure buff {id}"
+            );
+        }
+        for id in [44, 324, 39, 67, 20, 68, 144, 30] {
+            let mut p = drain_rig();
+            p.buffs.add_buff(id, 600);
+            p.in_water = true;
+            p.update_survival();
+            assert!(
+                p.buffs.find_buff_index(id).is_some(),
+                "water must not cure buff {id}"
+            );
+        }
+    }
+
+    #[test]
+    fn lava_wet_blocks_the_water_extinguish() {
+        // DW-2.2 — `!base.lavaWet` guard (`Player.cs:27751`): standing in lava
+        // the water cannot cure OnFire. (The lava hit also re-hurt: hp 70.)
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.in_water = true;
+        p.in_lava = true;
+        p.update_survival();
+        assert!(
+            p.buffs.find_buff_index(24).is_some(),
+            "lavaWet blocks the cure"
+        );
+        assert_eq!(p.buffs.buff_time[p.buffs.find_buff_index(24).unwrap()], 600);
+    }
+
+    #[test]
+    fn honey_does_not_extinguish_fire() {
+        // DW-2.2 (Assumption-2 fallback) — the port conditions the cure on a
+        // water probe distinct from honey; the C# `WetCollision` flag would
+        // cover honey too (Collision.cs:1608-1618) — deviation recorded for
+        // docs/ANALYSIS.md (Phase 4).
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.in_water = true; // the physics probe covers water | honey
+        p.in_honey = true;
+        p.update_survival();
+        assert!(
+            p.buffs.find_buff_index(24).is_some(),
+            "honey must not cure OnFire"
+        );
+    }
+
+    #[test]
+    fn water_cures_both_fire_buffs_over_two_ticks_despite_the_no_rescan_quirk() {
+        // DW-2.2 quirk — the C# extinguish loop does not rescan after `DelBuff`
+        // compaction (`Player.cs:27753-27761`): with 24 and 323 both held, one
+        // tick deletes the first and skips the shifted-in second.
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(323, 600);
+        p.in_water = true;
+        p.update_survival();
+        let left = p.buffs.active_types();
+        assert_eq!(left.len(), 1, "one fire buff survives the shift-skip");
+        p.update_survival();
+        assert!(
+            p.buffs.active_types().is_empty(),
+            "the second falls next tick"
+        );
+    }
+
+    #[test]
+    fn lava_contact_grants_onfire_420() {
+        // DW-2.3 — `Player.cs:27710-27711`: a landed lava Hurt grants
+        // AddBuff(24, 420); while the iframes run (`num81 == 0`) nothing lands.
+        let mut p = drain_rig();
+        p.in_lava = true;
+        p.update_survival();
+        let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
+        assert_eq!(p.buffs.buff_time[idx], 420);
+        assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
+                                     // Inside the iframes the hit (and therefore the grant) repeats nothing.
+        let hp = p.hp;
+        p.update_survival();
+        assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
+        // Expert doubles the buff time through the AddBuff chain
+        // (`AddBuff_DetermineBuffTimeToAdd`, 24 is in the difficulty set).
+        let mut p = drain_rig();
+        p.buffs.expert_mode = true;
+        p.in_lava = true;
+        p.update_survival();
+        let idx = p.buffs.find_buff_index(24).unwrap();
+        assert_eq!(p.buffs.buff_time[idx], 840);
+    }
+
+    #[test]
+    fn wet_immunity_removes_held_fire_within_one_tick() {
+        // DW-2.4 — Wet (103) re-grants `buffImmune[24/323/67]` for the frame
+        // (`Player.cs:11740-11751`) and the end-of-update purge deletes the
+        // held fire buff (`:26011-26016`): one full update tick clears it.
+        // The C# still drains one frame from the flags (the chain runs before
+        // the purge): −8 OnFire on the counter.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(103, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.buffs.find_buff_index(24).is_none(),
+            "OnFire purged in 1 tick"
+        );
+        assert!(
+            p.buffs.find_buff_index(103).is_some(),
+            "Wet itself survives"
+        );
+        assert_eq!(p.regen.life_regen_count, -8, "one verbatim drain frame");
+    }
+
+    #[test]
+    fn immune_purge_skips_the_compacted_fire_buff_for_a_frame() {
+        // The purge's no-rescan quirk (`Player.cs:26012-26018`, pinned in
+        // buffs.rs): deleting slot 0 shifts the second fire buff into it and
+        // the loop never rescans — Burning falls one tick later.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(67, 600);
+        p.buffs.add_buff(103, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(24).is_none());
+        assert!(
+            p.buffs.active_types().contains(&67),
+            "the compacted-in Burning is skipped this frame (still held; \
+             find_buff_index hides it behind the live immunity)"
+        );
+        p.update(&w, PlayerInput::default());
+        assert!(
+            !p.buffs.active_types().contains(&67),
+            "Burning purged the next frame"
+        );
+        assert!(p.buffs.find_buff_index(103).is_some());
+    }
+
+    #[test]
+    fn wet_immunity_vanishes_after_wet_expires() {
+        // DW-2.4 — the per-frame reset (`Player.cs:25562-25565`) means the
+        // immunities live exactly as long as the Wet buff does.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.buffs.add_buff(103, 2);
+        for _ in 0..3 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.buffs.find_buff_index(103).is_none(), "Wet expired");
+        assert!(!p.buffs.buff_immune[24], "OnFire immunity gone");
+        assert!(!p.buffs.buff_immune[323], "OnFire3 immunity gone");
+        assert!(!p.buffs.buff_immune[67], "Burning immunity gone");
+        // A fresh OnFire now sticks — the immunity is really gone.
+        p.buffs.add_buff(24, 100);
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(24).is_some());
+    }
+
+    #[test]
+    fn wet_self_removes_on_lava_contact() {
+        // `Player.cs:11741-11744`: the Wet branch deletes itself while
+        // `lavaWet`, granting no immunities that frame.
+        let mut p = drain_rig();
+        p.buffs.add_buff(103, 600);
+        p.in_lava = true;
+        p.update_survival();
+        assert!(p.buffs.find_buff_index(103).is_none());
+        assert!(!p.buffs.buff_immune[24], "no fire immunity without Wet");
+    }
+
+    #[test]
+    fn honey_softens_a_drain_by_four_and_never_heals() {
+        // DW-2.5 — `Player.cs:19096-19103`: honey +4 to a negative regen,
+        // clamped at 0 — never positive, no heal from the mitigation itself.
+        let mut p = drain_rig();
+        p.buffs.add_buff(20, 600); // Poisoned −4
+        p.buffs.add_buff(48, 600); // Honey
+        for _ in 0..300 {
+            p.update_survival();
+        }
+        assert_eq!(p.regen.life_regen, 0, "−4 + 4 clamps at 0");
+        assert_eq!(p.hp, 1000, "a softened −4 drains nothing");
+        let mut p = drain_rig();
+        p.buffs.add_buff(70, 600); // Venom −30
+        p.buffs.add_buff(48, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -26, "−30 + 4 stays negative");
+        // Honey without a drain never adds anything (the +2 aura is M2-BUFF-5).
+        let mut p = drain_rig();
+        p.buffs.add_buff(48, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, 0);
+        assert_eq!(p.hp, 1000);
+    }
+
+    #[test]
+    fn fire_family_deltas_sum_with_dripping_slime() {
+        // Dirty — fire debuffs coexist and sum (`Player.cs` has no replace
+        // chain); drippingSlime (137) doubles the fire family only.
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600); // OnFire −8
+        p.buffs.add_buff(324, 600); // Frostburn2 −16
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -24);
+        let mut p = drain_rig();
+        p.buffs.add_buff(24, 600);
+        p.buffs.add_buff(324, 600);
+        p.buffs.add_buff(137, 600); // drippingSlime
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -48, "drip doubles both fire parts");
+        // A poison part is not doubled by the drip.
+        let mut p = drain_rig();
+        p.buffs.add_buff(20, 600); // Poisoned −4
+        p.buffs.add_buff(24, 600); // OnFire −8
+        p.buffs.add_buff(137, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -20, "−4 poison + (−8×2) fire");
+    }
+
+    #[test]
+    fn electrified_drains_more_while_moving() {
+        // Dirty — `Player.cs:19074-19086`: −8, −32 more while `controlLeft ||
+        // controlRight` (the run keys, not velocity).
+        let mut p = drain_rig();
+        p.buffs.add_buff(144, 600);
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -8);
+        p.control_left = true;
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -40, "−8 −32 with the left key");
+        let mut p = drain_rig();
+        p.buffs.add_buff(144, 600);
+        p.control_right = true;
+        p.update_survival();
+        assert_eq!(p.regen.life_regen, -40, "−8 −32 with the right key");
+    }
+
+    #[test]
+    fn dot_death_reasons_follow_the_derivation_priority() {
+        // Decision #5 — the caller-side reason selection (fast 7→12→8,
+        // generic 22→9→10→23→8) is this phase's job; unit checks on the
+        // derivation against `Player.cs:19313-19331,19361-19385`.
+        let derive = |buffs: &[i32], expert: bool| -> DotDerivation {
+            let mut p = drain_rig();
+            p.buffs.expert_mode = expert;
+            for &id in buffs {
+                p.buffs.add_buff(id, 600);
+            }
+            p.derive_dot_inputs(expert)
+        };
+        let d = derive(&[20], false);
+        assert!(!d.fast_lane);
+        assert_eq!(d.death_generic, DotDeath::Poison); // 9 before 10/23
+        let d = derive(&[70, 144], false);
+        assert_eq!(d.death_generic, DotDeath::Poison); // poisoned||venom first
+        let d = derive(&[144, 397], false);
+        assert_eq!(d.death_generic, DotDeath::Electrified); // 10 before 23
+        let d = derive(&[397], false);
+        assert_eq!(d.death_generic, DotDeath::ChlorophyteSpore);
+        let d = derive(&[67, 20], false);
+        assert!(d.fast_lane);
+        assert_eq!(d.death_fast, DotDeath::Burned); // the fast fallback 8
+        assert_eq!(d.death_generic, DotDeath::Poison); // the generic lane too
+        let d = derive(&[68, 67], false);
+        assert_eq!(d.death_fast, DotDeath::Suffocation); // 7 before 8
+        let d = derive(&[68, 38], true);
+        assert_eq!(d.death_fast, DotDeath::Suffocation); // 7 before 12
+        let d = derive(&[38], true);
+        assert!(d.fast_lane);
+        assert_eq!(d.death_fast, DotDeath::Tongued); // 12
+        let d = derive(&[38], false);
+        assert!(!d.fast_lane, "tongued needs expert for the fast lane");
+        assert_eq!(d.regen, 0, "non-expert tongued drains nothing");
+    }
+
+    #[test]
+    fn fast_lane_kill_carries_the_derived_reason() {
+        // The derivation → engine seam end-to-end: the drain kill returns the
+        // reason the held buffs selected (world_sim resolves the text).
+        let mut p = drain_rig();
+        p.buffs.add_buff(68, 600); // suffocating → fast lane, reason 7
+        p.regen.life_regen_count = -600;
+        p.hp = 3;
+        p.update_survival();
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.dot_death, Some(DotDeath::Suffocation));
+        let mut p = drain_rig();
+        p.buffs.add_buff(20, 600); // poisoned → generic lane, reason 9
+        p.regen.life_regen_count = -120;
+        p.hp = 1;
+        p.update_survival();
+        assert_eq!(p.hp, 0);
+        assert_eq!(p.dot_death, Some(DotDeath::Poison));
+    }
+
+    #[test]
+    fn expired_buffs_are_swept_after_the_tick() {
+        // `Player.cs:25608-25616`: slots with a type but no timer are deleted
+        // right after `UpdateBuffs`, before any effect reads them.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.buffs.add_buff(20, 1);
+        p.buffs.add_buff(70, 1);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.buffs.active_types().is_empty(),
+            "both expired buffs swept: {:?}",
+            p.buffs.active_types()
+        );
+        // And a swept id can be re-added fresh afterwards.
+        p.buffs.add_buff(20, 600);
+        p.update(&w, PlayerInput::default());
+        assert!(p.buffs.find_buff_index(20).is_some());
     }
 }

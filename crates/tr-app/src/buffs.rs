@@ -358,6 +358,14 @@ impl BuffSlots {
         }
     }
 
+    /// The per-frame `buffImmune` reset (`Player.cs:25562-25565`): every entry
+    /// clears at the head of `Player.Update`, before `UpdateBuffs` re-grants this
+    /// frame's immunities (Wet: 24/323/67, `Player.cs:11740-11751`) and long
+    /// before the end-of-update purge consumes them.
+    pub fn reset_buff_immune(&mut self) {
+        self.buff_immune = [false; BUFF_ID_COUNT];
+    }
+
     /// The end-of-update immune purge (`Player.cs:26012-26018`). Like the C#, the
     /// loop does not rescan after `DelBuff`: the buff compacted into slot `i` is
     /// skipped for this frame.
