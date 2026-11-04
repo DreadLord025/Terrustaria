@@ -272,6 +272,10 @@ pub struct Npc {
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
     pub immune: [i32; 256],
+    /// `NPC.SpawnedFromStatue` (`NPC.cs:6061`): set by the wire-triggered
+    /// statue spawns; gates the loot (`NPCLoot`'s StatueSpawnedDropRarity
+    /// check, `NPC.cs:78849`).
+    pub spawned_from_statue: bool,
     /// `NPC.buffType[20]` / `buffTime[20]` / `buffImmune` — the debuff engine
     /// (`npc_buffs.rs`, `NPC.cs:6193-6197`); the DoT tick runs from
     /// `Npc::update` like the C# buff block of `UpdateNPC`.
@@ -401,6 +405,7 @@ impl Npc {
             anim: 0.0,
             hurt_cd: 0.0,
             immune: [0; 256],
+            spawned_from_statue: false,
             buffs: NpcBuffs::for_kind(kind),
             frame: 0,
             frame_counter: 0.0,

@@ -9,6 +9,7 @@ mod buffs;
 mod collision;
 mod death;
 mod inv;
+mod wiring_stub;
 mod item;
 mod loot_db;
 mod map;

@@ -28,6 +28,15 @@ use crate::tile::LiquidKind;
 use crate::tile::{FLAG_ACTUATOR, FLAG_INACTIVE};
 use crate::world::World;
 
+/// A statue spawn request (`HitWireSingle`'s case 105): the C# NPC/item id
+/// and the spawn pixel anchor. The app layer resolves the ids to its content
+/// and runs the `MechSpawn` caps (`NPC.cs:7420`, `Item.cs:49385`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StatueSpawn {
+    Npc { x: i32, y: i32, npc_id: i16 },
+    Item { x: i32, y: i32, item_id: i16 },
+}
+
 /// The four wire colours, in `TripWire`'s pass order (`Wiring.cs:525`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum WireColor {
@@ -127,6 +136,9 @@ pub struct Wiring {
     /// up to four times — once per colour pass, `Wiring.cs:651-661`). The app
     /// layer drains these and moves the entities.
     teleport_events: Vec<((f32, f32), (f32, f32))>,
+    /// The statue spawn requests from the last `TripWire` (the statue case
+    /// runs inside `HitWireSingle`).
+    statue_spawns: Vec<StatueSpawn>,
     /// `Wiring._inPumpX/Y` + `_outPumpX/Y` (`Wiring.cs:43-51`, the 19-cap
     /// registration at `:2065-2125`).
     in_pumps: Vec<(i32, i32)>,
@@ -372,9 +384,78 @@ impl Wiring {
         let _ = world;
     }
 
+    /// Drains the statue spawn requests computed by the statue triggers.
+    pub fn take_statue_spawns(&mut self) -> Vec<StatueSpawn> {
+        std::mem::take(&mut self.statue_spawns)
+    }
+
     /// Drains the teleport events computed by the last `TripWire`.
     pub fn take_teleport_events(&mut self) -> Vec<((f32, f32), (f32, f32))> {
         std::mem::take(&mut self.teleport_events)
+    }
+
+    /// `Wiring.HitWireSingle`'s statue case (105, `Wiring.cs:2125-2440`): the
+    /// style parse (`num138 = frameX / 36 + (frameY / 54 % 3) * 55`), the
+    /// 3×2 SkipWire, the spawn anchor `(num137·16 + 16, (num136 + 3)·16)` and
+    /// the style → spawn map (the NPC styles `CheckMech(30)`, the item
+    /// styles `CheckMech(600)`). Returns the spawn request for the app layer,
+    /// which runs the `MechSpawn` caps and constructs the entities.
+    pub fn statue_trigger(&mut self, world: &mut World, i: i32, j: i32) {
+        let Some(tile) = world.tile(i, j) else {
+            return;
+        };
+        if tile.kind != 105 {
+            return;
+        }
+        // `:2128-2139`: the 3-wide body columns × 54-tall style rows.
+        let num137 = i - (tile.frame_x % 36 / 18) as i32;
+        let num136 = j - (tile.frame_y % 54 / 18) as i32;
+        let style = (tile.frame_x / 36) as i32 + (tile.frame_y as i32 / 54 % 3) * 55;
+        for corner in [
+            (num137, num136),
+            (num137, num136 + 1),
+            (num137, num136 + 2),
+            (num137 + 1, num136),
+            (num137 + 1, num136 + 1),
+            (num137 + 1, num136 + 2),
+        ] {
+            self.skip.insert(corner);
+        }
+        // The spawn anchor: `(num137 * 16 + 16, (num136 + 3) * 16)`
+        // (`Wiring.cs:2148-2149`).
+        let sx = num137 * 16 + 16;
+        let sy = (num136 + 3) * 16;
+        // The verbatim style map (`Wiring.cs:2170-2440`). The NPC styles
+        // CheckMech(30); the item styles CheckMech(600) — the `Item.MechSpawn`
+        // caps run in the app layer (they need the dropped-item list).
+        // The SelectRandom styles (the critter/bird/bat statues 51-82) spawn
+        // C# NPCs the port does not model yet — they roll nothing here.
+        let spawn = match style {
+            // The NPC statues (`CheckMech(30)` + `NPC.MechSpawn` in the app).
+            4 if self.check_mech(num137, num136, 30) => {
+                Some(StatueSpawn::Npc { x: sx, y: sy - 12, npc_id: 1 })
+            }
+            35 if self.check_mech(num137, num136, 30) => {
+                Some(StatueSpawn::Npc { x: sx, y: sy - 12, npc_id: 2 })
+            }
+            // The item statues (`CheckMech(600)` + `Item.MechSpawn`).
+            37 if self.check_mech(num137, num136, 600) => {
+                Some(StatueSpawn::Item { x: sx, y: sy - 16, item_id: 58 })
+            }
+            2 if self.check_mech(num137, num136, 600) => {
+                Some(StatueSpawn::Item { x: sx, y: sy - 16, item_id: 184 })
+            }
+            17 if self.check_mech(num137, num136, 600) => {
+                Some(StatueSpawn::Item { x: sx, y: sy - 20, item_id: 166 })
+            }
+            // The unported statue styles: the C# styles mapping to NPCs/items
+            // outside the port's content (the critters 51-82, the Eater 30,
+            // the special 9/28/40/71) — documented in ANALYSIS.
+            _ => None,
+        };
+        if let Some(spawn) = spawn {
+            self.statue_spawns.push(spawn);
+        }
     }
 
     /// The player-teleportation suppress flag (`Wiring.cs:3126` guard); the
@@ -704,6 +785,9 @@ impl Wiring {
                 world.set_tile_frame_x(i, j, frame_x + num50);
                 self.lamps_to_check.push_back((i, j));
             }
+            // The statue (105): the style parse + the CheckMech cooldown + the
+            // spawn request ().
+            105 => self.statue_trigger(world, i, j),
             // The teleporter pad (235): the wall-87 temple guard, then the
             // pad registration — the first hit fills `_teleport[0]`, a hit at
             // a different position fills `_teleport[1]` (`Wiring.cs:1067-
@@ -1386,5 +1470,117 @@ mod teleport_tests {
         let mut wiring2 = Wiring::new();
         wiring2.trip_wire(&mut w2, 9, 10, 1, 1);
         assert_eq!(w2.tile(10, 10).unwrap().liquid, 100, "the type lock holds");
+    }
+}
+
+#[cfg(test)]
+mod statue_tests {
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn put_device(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
+    fn world_with_statue(style_col: i32, style_row: i32) -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        // The statue tile 105 at (10, 20): the 3×2 body anchored at
+        // (10, 20) — the frame encodes the style via `frameX / 36 +
+        // (frameY / 54 % 3) * 55`.
+        let i = w.index(10, 20);
+        w.tiles[i] = Tile {
+            kind: 105,
+            frame_x: (style_col * 36) as i16,
+            frame_y: (style_row * 54) as i16,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        put_device(&mut w, 9, 20, 135, 0, 0);
+        w.wires.set(9, 20, WireColor::Red, true);
+        // The statue tile carries the wire bit too — in vanilla the statue
+        // sits on the wire and the flood reaches it via a neighbor walk.
+        w.wires.set(10, 20, WireColor::Red, true);
+        w
+    }
+
+    #[test]
+    fn the_slime_statue_emits_a_blue_slime_request() {
+        // The Blue Slime statue = style 4 (the second switch's `case 4` →
+        // `NPC.NewNPC(..., 1)`, `Wiring.cs:2321-2326`); the col/row decode:
+        // style 4 = col 0, row 0? — style 4 = frameX/36 = 0 + row*55 → row 0
+        // gives 0; style 4 needs col 4? The decode: frameX/36 = 4 → col 4,
+        // row 0 → frameX = 144.
+        let mut w = world_with_statue(4, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        let spawns = wiring.take_statue_spawns();
+        assert_eq!(
+            spawns,
+            vec![StatueSpawn::Npc { x: 10 * 16 + 16, y: (20 + 3) * 16 - 12, npc_id: 1 }]
+        );
+        // `CheckMech(30)`: the second trip within 30 ticks is suppressed.
+        wiring.trip_wire(&mut w, 10, 20, 1, 1);
+        assert!(wiring.take_statue_spawns().is_empty(), "the 30-tick cooldown holds");
+    }
+
+    #[test]
+    fn the_eye_statue_emits_a_demon_eye_request() {
+        // The Demon Eye statue = style 35 (the first switch's `case 35` →
+        // `num143 = 2`): col 35, row 0? — style 35 = col 35 → frameX = 1260
+        // exceeds i16? The style decode: col = frameX / 36, row adds 55 —
+        // style 35 = col 35, row 0.
+        let mut w = world_with_statue(35, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        let spawns = wiring.take_statue_spawns();
+        assert_eq!(
+            spawns,
+            vec![StatueSpawn::Npc { x: 10 * 16 + 16, y: (20 + 3) * 16 - 12, npc_id: 2 }]
+        );
+    }
+
+    #[test]
+    fn the_heart_statue_emits_a_heart_drop_request() {
+        // The Heart statue = style 37 (the item half's `case 37` →
+        // `Item.NewItem(..., 58)`, `Wiring.cs:2382-2387`).
+        let mut w = world_with_statue(37, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        let spawns = wiring.take_statue_spawns();
+        assert_eq!(
+            spawns,
+            vec![StatueSpawn::Item { x: 10 * 16 + 16, y: (20 + 3) * 16 - 16, item_id: 58 }]
+        );
+    }
+
+    #[test]
+    fn the_star_statue_emits_a_star_drop_request() {
+        // The Star statue = style 2 (the item half's `case 2` →
+        // `Item.NewItem(..., 184)`).
+        let mut w = world_with_statue(2, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert_eq!(
+            wiring.take_statue_spawns(),
+            vec![StatueSpawn::Item { x: 10 * 16 + 16, y: (20 + 3) * 16 - 16, item_id: 184 }]
+        );
+    }
+
+    #[test]
+    fn the_unported_statue_styles_emit_nothing() {
+        // The critter/bird statue styles (51-82) map to C# NPCs the port
+        // does not model — they emit nothing (documented in ANALYSIS).
+        let mut w = world_with_statue(51, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 9, 20, 1, 1);
+        assert!(wiring.take_statue_spawns().is_empty());
     }
 }
