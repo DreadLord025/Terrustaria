@@ -117,35 +117,51 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
         if app.attack_cd <= 0.0 && throw_ready {
-            let (pcx, pcy) = player.center();
-            let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
-            if dir != Vec2::ZERO {
-                let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
-                // The ranged crit rolls at throw time (`rangedCrit` + the
-                // item's crit; `Projectile.Damage` consumes it on hit) — the
-                // item stream lives here, not in the projectile step.
-                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                let crit = tr_core::damage::crit_roll(
-                    &mut loot_rng,
-                    player.class_crit(registry::DamageClass::Ranged) + item_crit,
-                );
-                app.projectiles.spawn(
-                    crate::projectile::SHURIKEN,
-                    0,
-                    spawn - Vec2::splat(3.0),
-                    Vec2::new(dir.x * 11.0, dir.y * 11.0),
-                    10,
-                    12.0,
-                    crit,
-                );
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the swing
-                // lasts the item's `useAnimation` ticks; `attack_cd` matches so
-                // the throw repeats only when the swing is over.
-                app.swing_max = crate::item::use_animation_secs(held.kind);
-                app.swing = app.swing_max;
-                app.attack_cd = app.swing_max;
+            // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
+            // `Item.shoot` firing — the aim vector normalized to
+            // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
+            // is ×1 at the port's default melee speed), the spawn at the
+            // player center (`RotatedRelativePoint(MountedCenter)`), the
+            // damage `weaponDamage` (the class multiplier) and the item's
+            // knockback.
+            let def = registry::get(held.kind);
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
+                let (pcx, pcy) = player.center();
+                let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+                if dir != Vec2::ZERO {
+                    let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+                    let class = def.class;
+                    let raw =
+                        def.damage as f32 * player.weapon_damage_multiplier(class);
+                    // The crit rolls at throw time (the class crit + the
+                    // item's crit; `Projectile.Damage` consumes it on hit) —
+                    // the item stream lives here, not in the projectile step.
+                    let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                    let crit =
+                        tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                    let slot = app.projectiles.spawn_with_data(
+                        proj,
+                        spawn.x,
+                        spawn.y,
+                        dir.x * def.shoot_speed,
+                        dir.y * def.shoot_speed,
+                        raw as i32,
+                        def.knock_back,
+                    );
+                    if let Some(slot) = slot {
+                        app.projectiles.set_crit(slot, crit);
+                    }
+                    if def.consumable {
+                        app.inventory[app.selected].count =
+                            app.inventory[app.selected].count.saturating_sub(1);
+                    }
+                    // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
+                    // swing lasts the item's `useAnimation` ticks; `attack_cd`
+                    // matches so the throw repeats only when the swing is over.
+                    app.swing_max = crate::item::use_animation_secs(held.kind);
+                    app.swing = app.swing_max;
+                    app.attack_cd = app.swing_max;
+                }
             }
         }
         return;
