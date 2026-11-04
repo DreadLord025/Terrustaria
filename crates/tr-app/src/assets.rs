@@ -538,6 +538,16 @@ pub fn load_world_images(
         }
     }
 
+    // `DrawWires`'s overlays (`Main.cs:58218+`): `TextureAssets.WireNew` is
+    // the four-colour wire sheet (16 px mask columns × the 18 px colour rows)
+    // and `TextureAssets.Actuator` the actuator plate drawn on every
+    // actuator-carrying tile.
+    for name in ["WiresNew", "Actuator"] {
+        if let Ok(img) = load_png(dir, name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+
     // The tile-side glow sheets of `DrawSingleTile_Flames`
     // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
     // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the

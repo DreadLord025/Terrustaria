@@ -2815,3 +2815,64 @@ which also kills on the side collision) are simplified to the
 bottom-edge landing; the projectile-vs-NPC contact damage of the falling
 ball works through the pool's ordinary `Damage_PVE` (the `damage` input
 of `spawn_falling`).
+
+## Actuation & wire rendering (M7-WIRE-3)
+
+The actuation completes `HitWireSingle`'s first actuator hook (`Wiring.cs:
+1001-1003`): any wire-hit tile that carries an actuator runs
+`ActuateForced` (`:407-416`) — inactive → `ReActive`, otherwise
+`DeActive`. The public gated twin `Actuate` (`:391-403`) exists for the
+placement paths and is not consumed yet.
+
+- **`DeActive`'s guard chain** (`:3195-3222`): the tile must be active;
+  tile 226 (the Plantera bulb) below `Main.worldSurface` is untouchable
+  before `NPC.downedPlantBoss` — the port has no boss-progress flags yet
+  (M5-HARDFORCE), so the guard is always in the strict state. The solidity
+  gate `tileSolid && !NotReallySolid` (`TileID.cs:592` = {387, 388, 10})
+  then the forced `flag = false` set {314, 379, 386-389, 476}. The
+  placement rule `!above.active() ||
+  (!PreventsActuationUnder[above.type] && WorldGen.CanKillTile(i, j))`
+  (`:3210-3211`) — `PreventsActuationUnder` (`TileID.cs:569`) = {21, 467,
+  26, 77, 88, 470, 475, 237, 597, 441, 468} (the chests/dolls/sensors
+  would pop through the reframing, so their support never actuates).
+- **`CanKillTile`'s slice** (`WorldGen.cs:70237-70330`): the bounds, the
+  inactive tiles refuse, wall 350 refuses, the anchors above block —
+  `IsATreeTrunk` (`TileID.cs:487`) with the frameX 66/88 + frameY 198
+  window, the cactus 323 (the base frames 66/220), the chest family
+  {21, 26, 72, 77, 88, 467, 488}, the lantern 80 (the anchor slots
+  `frameX / 18` in {0, 1, 4, 5}) — then the boulder set
+  (`TileID.cs:504`) refuses. The buried-chest scan (`CheckBoulderChest`)
+  is content-gated out (the port spawns no buried-chest boulders); the
+  locked-door case passes (`IsLockedDoor` — the port's doors carry no
+  lock state yet); `CanDestroyChest` passes (no chest inventories yet,
+  M7-TE-2).
+- **The `SquareTileFrame(resetFrame: false)` tails** (`:3212`, `:3229`):
+  the port runs the object-cascade + reframe halves
+  (`edit.rs::actuation_square_frame`) — a work bench whose anchor
+  actuated away pops and its drop queues on the engine
+  (`take_actuation_drops`), spawned by the app layer through
+  `registry::tile_drop` like the break path's drops.
+- **The consumers**: `Collision`'s every solid test carries
+  `!tile.inActive()` in the C# (`Collision.cs:445/:461/:471/:549/:565/:
+  574/...`) — the port's `solid()` and the `StepUp`/`StepDown` support
+  gates gained the conjunct, so actuated blocks are walk-through and
+  liquids read `nactive()` (`Liquid.cs:171/:236/:457`) and seep through.
+  The draw side applies `Tile.actColor` (`Tile.cs:272-290`) — RGB ×0.4 —
+  via the tile light.
+- **The wire overlay** (`render/wires.rs`, hooked after the liquids
+  before the over-wire projectiles per `Main.cs:57028-57030`):
+  `Main.DrawWires` (`Main.cs:58218-58701`) verbatim in structure — the
+  per-colour neighbour masks (+18 up, +36 right, +72 down, +144 left on
+  the `WireNew` sheet's 16 px columns, the colour rows at +0/+18/+36/+54
+  plus the junction-box column offset for 424/445), the
+  `color * (1 / num7)` dimming when several colours share a tile, the
+  6 px inset strips where a later colour claims a side an earlier one
+  already holds, the actuator plate (`TextureAssets.Actuator`) on every
+  actuator tile that receives light, and `CanShowWireStuffHere`'s
+  pre-Golem wall-87 temple guard (`Player.cs:46946-46961`).
+
+Deviations: `WiresUI.Settings.HideWires` and the mechanic-accessory
+`builderAccStatus` per-colour channels (White/×0.5/Transparent) are fixed
+at the defaults — no wires UI or accessory equip yet, so `num = 1` and
+every channel draws at the light colour; the tile-423 LightSeaGreen
+special rect is content-gated; the MP branches are skipped.
