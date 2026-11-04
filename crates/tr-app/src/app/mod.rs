@@ -302,6 +302,14 @@ pub(crate) struct App {
     pub(crate) wiring_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
+    /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
+    pub(crate) ambient_waterfall: (f32, f32, f32),
+    /// `Main.ambientLavafallX/Y/Strength` (`WaterfallManager.cs:960-962`).
+    pub(crate) ambient_lavafall: (f32, f32, f32),
+    /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
+    /// (`Main.cs:13469-13476`).
+    pub(crate) ambient_counter: f32,
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
@@ -1041,6 +1049,9 @@ impl App {
         wind.sway_enabled = std::env::var_os("TR_NO_WIND").is_none();
         let liquids_sim = LiquidSystem::new(&world);
         let rain = Rain::new(world_seed);
+        let ambient_waterfall = (0.0, 0.0, 0.0);
+        let ambient_lavafall = (0.0, 0.0, 0.0);
+        let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
         let atmo = 1.0_f32;
 
@@ -1355,6 +1366,9 @@ impl App {
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
+        ambient_waterfall,
+        ambient_lavafall,
+        ambient_counter,
             wind,
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),

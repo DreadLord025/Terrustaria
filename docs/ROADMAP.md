@@ -68,7 +68,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Wiring / tile entities / shimmer / fishing / pylons | ⬜ | — |
 | UI framework & screens | 🟡 | front-end char/world screens done; HUD partial; inventory UX partial; chest/creative/bestiary/emotes missing |
 | Localization | 🟡 | core ported + tested, not wired into UI |
-| Audio | 🟡 | 8 cues + XACT music engine + 3D attenuation; biome branches, ambience emitters missing |
+| Audio | 🟡 | 8 cues + XACT music engine + 3D attenuation + rain/wind ambience tracks + waterfall/lavafall loops; the blizzard loops and the remaining biome branches missing |
 | Networking | 🔄 | custom host/join flow; exact 1.4.5.8 protocol not started |
 | Saves | 🟡 | `.trwld` round-trip, `.wld` header+tiles, `.map` v326; chests/signs/NPC sections skipped |
 
@@ -1236,7 +1236,7 @@ section in brackets before starting a row.
 | ✅ TILE-DRAW-5 | `TILE-DRAW-5-grass-framing` | full grass framing |
 | ✅ M1.4-BG-18 | `M1.4-BG-18-screen-filters` | SceneState.ApplyVisuals filters + monoliths [5] — done 2026-11-03: post-pass pipeline (offscreen target + ScreenShader.xnb pass table via the tr-content Effect reader), SceneMetrics/Sandstorm/SceneState sensors, WGSL ports (Graveyard/Noir/BloodMoon/Sandstorm fg+bg/Blizzard fg+bg/Heat/Water with mask target); towers/monoliths/Aurora/Sepia OUT (M4/sky/DST) |
 | ✅ M1.4-BG-19 | `M1.4-BG-19-ambient-skies` | AmbientSky creature entities [5] — done 2026-11-04: `AmbienceServer` scheduler (17 conditions, priority trick, forced-spawn queue) + all 18 live entity classes with ctor RNG order from `FastRandom(seed)`, drawn between the bg layers at the C# `DrawToDepth` boundaries via the `SkyManager` depth tracker; sounds → BG-20, ocean-line fade deferred (ANALYSIS) |
-| M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops [5] |
+| ✅ M1.4-BG-20 | `M1.4-BG-20-ambience-emitters` | ambience sounds + waterfall/lava loops — done 2026-11-04: the research corrected the row (1.4.5.8 has no Ambience class/birds-crickets audio — the AmbienceServer is VISUAL = BG-19); ported `Main.Ambience` (`Main.cs:13466-13515`): the ¼ s tick driving the two `SoundInstanceLiquid` loops — the waterfall (Sound 34, Liquid_0) and the lavafall (Sound 35, Liquid_1) — with the vanilla volume math (the positional attenuation vs `SoundAttenuationDistance` 2500, strength/50 clamped, ×0.2/×0.65, ×(1−shimmerAlpha), the menu zeros, ambientVolume scales); the strength scans ride the waterfall pass (`WaterfallManager.cs:710-733,960-965`: Σ 1−dist/(screenWidth×0.75) within 2× screen dims, the lava kind 1 split, the nearest-segment positions); the rain loop (track 28: ZoneRain && !ZoneSnow, the cloudAlpha factor × atmo⁴) and the wind loop (track 45: |wind| ≥ 20/50 && SurfaceAtmospherics, ×0.9) ride the music-track pool with the +0.005/−0.005 fades (`UpdateAmbientCueState/TowardStopping`); the ambient statics on App; the settings `AmbientVolume` slider scales all. Out: the lava-pool loop (retro-only fill in vanilla — oldDrawWater), the blizzard loops (SceneState, with M4 events), the AmbienceServer audio (doesn't exist — visual) [5] |
 | M1.4-BG-21 | `M1.4-BG-21-sundial` | sundial/moondial fast-forward + dayRate plumbing [1][5] |
 | M1.4-WEATHER-1 | `M1.4-WEATHER-1-wind-gusts` | wind gust events + extreme wind [5] |
 | M1.4-WEATHER-2 | `M1.4-WEATHER-2-sandstorm` | sandstorm severity/visuals [5] |
