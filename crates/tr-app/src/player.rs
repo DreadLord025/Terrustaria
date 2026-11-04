@@ -108,6 +108,13 @@ pub struct Player {
     /// the `strongestMoveSpeedDebuff` tiers (`:25945-25953`), `frozen`/
     /// `webbed` lock the controls and the item use (`:3381`), `blind` drops
     /// `Lighting.GlobalBrightness` 1.2 → 1 (`Lighting.cs:112`).
+    /// The `Player.SceneMetrics` aura snapshot — the app refreshes it per
+    /// tick from the scene scan; the buff grants and the regen inputs read
+    /// it (`M2-BUFF-5`).
+    pub auras: tr_core::scene::Auras,
+    /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
+    /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
+    pub mana_regen_bonus: i32,
     pub slow: bool,
     pub chilled: bool,
     pub frozen: bool,
@@ -264,6 +271,8 @@ impl Player {
             dead_time: 0,
             respawn_timer: 0,
             prev_jump_input: false,
+            auras: tr_core::scene::Auras::default(),
+            mana_regen_bonus: 0,
             slow: false,
             chilled: false,
             frozen: false,
@@ -611,6 +620,7 @@ impl Player {
         self.blind = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
+        self.mana_regen_bonus = 0;
         for bt in self.buffs.active_types() {
             match bt {
                 22 => self.blind = true,   // `BuffID.Darkness`
@@ -622,6 +632,14 @@ impl Player {
                 }
                 46 => self.chilled = true, // `BuffID.Chilled`
                 47 => self.frozen = true,  // `BuffID.Frozen`
+                // `:11001-11004`: the Sunflower buff's movement tier —
+                // `moveSpeed += 0.1f; moveSpeed *= 1.1f` per slot.
+                146 => {
+                    self.move_speed += 0.1;
+                    self.move_speed *= 1.1;
+                }
+                // `:9932-9934`: the Star in a Bottle's mana-regen add.
+                158 => self.mana_regen_bonus += 10,
                 149 => self.webbed = true, // `BuffID.Webbed`
                 _ => {}
             }
@@ -639,6 +657,27 @@ impl Player {
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
         self.move_speed *= self.strongest_move_speed_debuff;
+        // `Player.UpdateBuffs`' scene-buff grants (`Player.cs:25525-25555`):
+        // the 2-tick indicator buffs refresh from the scan; the effect cases
+        // above read the previous tick's grant, exactly like the source.
+        if self.auras.shadow_candle {
+            self.buffs.add_buff(350, 2);
+        }
+        if self.auras.campfire {
+            self.buffs.add_buff(87, 2);
+        }
+        if self.auras.cat_bast {
+            self.buffs.add_buff(215, 2);
+        }
+        if self.auras.star_in_bottle {
+            self.buffs.add_buff(158, 2);
+        }
+        if self.auras.heart_lantern {
+            self.buffs.add_buff(89, 2);
+        }
+        if self.auras.sunflower {
+            self.buffs.add_buff(146, 2);
+        }
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
         self.acc_run_speed *= self.strongest_move_speed_debuff;
@@ -1354,6 +1393,9 @@ impl Player {
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
+                mana_regen_bonus: self.mana_regen_bonus,
+                campfire: self.auras.campfire,
+                heart_lantern: self.auras.heart_lantern,
                 moving_x: self.vx != 0.0,
                 standing_still: self.vx.abs() < 0.05 && self.vy.abs() < 0.05,
                 dot_regen: dots.regen,
@@ -1592,6 +1634,41 @@ mod tests {
         p.update_survival();
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
+    }
+
+    #[test]
+    fn the_sunflower_buff_moves_and_the_star_buffs_mana_regen() {
+        // `Player.cs:11001-11004`: the 146 slot — `moveSpeed += 0.1; *= 1.1`
+        // (1.0 -> 1.21); `:9932-9934`: the 158 slot — `manaRegenBonus += 10`.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(146, 60);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!((p.move_speed - 1.21).abs() < 1e-4);
+        assert!((p.max_run_speed - 3.0 * 1.21).abs() < 1e-3);
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(158, 60);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.mana_regen_bonus, 10);
+    }
+
+    #[test]
+    fn the_aura_buffs_grant_from_the_scene_snapshot() {
+        // `Player.cs:25525-25555`: the 2-tick indicator buffs refresh from
+        // the scan; the effect cases read the previous tick's grant (the
+        // sunflower's movement starts one tick after the aura appears).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.auras.campfire = true;
+        p.auras.heart_lantern = true;
+        p.auras.star_in_bottle = true;
+        p.auras.sunflower = true;
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        let types = p.buffs.active_types();
+        assert!(types.contains(&87) && types.contains(&89) && types.contains(&158));
+        // The grant happened after this tick's scan, so 146 applies NEXT
+        // tick — the move_speed is still 1.0 here.
+        assert!((p.move_speed - 1.0).abs() < 1e-4);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!((p.move_speed - 1.21).abs() < 1e-4);
     }
 
     #[test]

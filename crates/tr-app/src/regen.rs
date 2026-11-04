@@ -90,6 +90,9 @@ pub struct RegenInputs {
     pub heart_lantern: bool,
     /// The mana-regen buff: delay cap 20 (`:19388`), the still/grapple triple
     /// and `num9 = 1.0` (`:19471`).
+    /// `Player.manaRegenBonus` — the star-in-bottle's +10 (`:19448` adds it
+    /// to the base `statManaMax2 / 3 + 1` line).
+    pub mana_regen_bonus: i32,
     pub mana_regen_buff: bool,
     // — items / misc states (M3-EQUIP) —
     /// soulDrain / heartyMeal / honey / shinyStone-still regen adds
@@ -128,6 +131,7 @@ impl Default for RegenInputs {
             dot_death_generic: DotDeath::Burned,
             campfire: false,
             heart_lantern: false,
+            mana_regen_bonus: 0,
             mana_regen_buff: false,
             extra_regen: 0,
             extra_time: 0.0,
@@ -282,7 +286,8 @@ pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i
     }
     let mut refilled = false;
     if state.mana_regen_delay <= 0.0 {
-        let num5 = in_.max_mana / 3 + 1;
+        // `Player.cs:19448`: `statManaMax2 / 3 + manaRegenBonus + 1`.
+        let num5 = in_.max_mana / 3 + in_.mana_regen_bonus + 1;
         state.mana_regen = num5;
         if in_.standing_still || in_.grappling || in_.mana_regen_buff {
             state.mana_regen += num5;

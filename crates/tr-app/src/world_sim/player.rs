@@ -41,6 +41,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     };
     if let Some(p) = app.player.as_mut() {
+        // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
+        // global the source reads): the frame's `update_scene` scan feeds
+        // the per-tick aura copy.
+        p.auras = app.scene_metrics.auras();
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
