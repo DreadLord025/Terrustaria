@@ -8,9 +8,15 @@ use tr_core::tile::Tile;
 use tr_core::tiledata as td;
 use tr_core::{TILE_PX, World};
 
-/// `Main.tileSolid[type] || (Main.tileSolidTop[type] && frameY == 0)`.
+/// `Main.tileSolid[type] || (Main.tileSolidTop[type] && frameY == 0)` — and
+/// the C#'s every solid test carries `!tile.inActive()`
+/// (`Collision.cs:445/:471/:549/:574/...`): an actuated tile is
+/// walk-through.
 fn solid(t: &Tile) -> bool {
-    if !t.active() || (t.kind as usize) >= td::TILE_COUNT {
+    if !t.active() || t.flags & tr_core::tile::FLAG_INACTIVE != 0 {
+        return false;
+    }
+    if (t.kind as usize) >= td::TILE_COUNT {
         return false;
     }
     // `WorldGen.cs:15715`: `tileSolid[192] = false` at the end of the Living
@@ -22,6 +28,14 @@ fn solid(t: &Tile) -> bool {
 fn solid_kind(kind: u16) -> bool {
     // `WorldGen.cs:15715`: leaf blocks (192) go non-solid after generation.
     (kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(kind) && kind != 192
+}
+
+/// The support-test tile gate of `StepUp`/`StepDown`
+/// (`Collision.cs:445/:461/:549/:565/:574/...`): the tile counts as support
+/// only when it is active, **not actuated**, genuinely solid — the C#'s
+/// `!tile.inActive() && tile.active() && Main.tileSolid[...]` conjuncts.
+fn support_solid(t: &Tile) -> bool {
+    t.active() && t.flags & tr_core::tile::FLAG_INACTIVE == 0 && solid_kind(t.kind)
 }
 
 /// `Tile.slope() > 0 && slope() < 3`: the two ground ramps (`topSlope()`).
@@ -422,38 +436,38 @@ pub fn step_up(
         let Some(t) = world.tile(num2, num3 - j) else {
             return;
         };
-        flag = flag && (!t.active() || !solid_kind(t.kind) || td::TILE_SOLID_TOP.has(t.kind));
+        flag = flag && (!support_solid(t) || td::TILE_SOLID_TOP.has(t.kind));
     }
     let t = world.tile(num2 - num, num3 - num4).unwrap();
-    let flag2 = !t.active() || !solid_kind(t.kind) || td::TILE_SOLID_TOP.has(t.kind);
+    let flag2 = !support_solid(t) || td::TILE_SOLID_TOP.has(t.kind);
     let Some(tile_a) = world.tile(num2, num3 - 1) else {
         return;
     };
     let Some(tile_a2) = world.tile(num2, num3 - (num4 + 1)) else {
         return;
     };
-    let flag3 = !tile_a.active()
-        || !solid_kind(tile_a.kind)
+    let flag3 = !support_solid(tile_a)
         || td::TILE_SOLID_TOP.has(tile_a.kind)
         || (tile_a.slope() == 1 && pos[0] + width * 0.5 > num2 as f32 * TILE_PX)
         || (tile_a.slope() == 2 && pos[0] + width * 0.5 < num2 as f32 * TILE_PX + TILE_PX)
         || (tile_a.half_brick()
-            && (!tile_a2.active()
-                || !solid_kind(tile_a2.kind)
-                || td::TILE_SOLID_TOP.has(tile_a2.kind)));
+            && (!support_solid(tile_a2) || td::TILE_SOLID_TOP.has(tile_a2.kind)));
     let tile_b = world.tile(num2, num3).unwrap();
     let tile_b2 = world.tile(num2, num3 - 1).unwrap();
     let holds = holds_matching
         && ((td::TILE_SOLID_TOP.has(tile_b.kind) && tile_b.frame_y == 0)
             || td::SET_PLATFORMS.has(tile_b.kind))
-        && (!solid_kind(tile_b2.kind) || !tile_b2.active());
+        && !support_solid(tile_b2);
     let mut flag4 = (tile_b.active()
+        && tile_b.flags & tr_core::tile::FLAG_INACTIVE == 0
         && (!top_slope(&tile_b)
             || (tile_b.slope() == 1 && pos[0] + width * 0.5 < num2 as f32 * TILE_PX)
             || (tile_b.slope() == 2 && pos[0] + width * 0.5 > num2 as f32 * TILE_PX + TILE_PX))
         && (!top_slope(&tile_b) || pos[1] + height > num3 as f32 * TILE_PX)
         && ((solid_kind(tile_b.kind) && !td::TILE_SOLID_TOP.has(tile_b.kind)) || holds))
-        || (tile_b2.half_brick() && tile_b2.active());
+        || (tile_b2.half_brick()
+            && tile_b2.active()
+            && tile_b2.flags & tr_core::tile::FLAG_INACTIVE == 0);
     flag4 &= !td::TILE_SOLID_TOP.has(tile_b.kind) || !td::TILE_SOLID_TOP.has(tile_b2.kind);
     if !(num2 as f32 * TILE_PX < vx + width) || !(num2 as f32 * TILE_PX + TILE_PX > vx) {
         return;
@@ -505,6 +519,7 @@ pub fn step_down(
             let t = world.tile(i, j);
             let active_solid = t.is_some_and(|t| {
                 t.active()
+                    && t.flags & tr_core::tile::FLAG_INACTIVE == 0
                     && (td::TILE_SOLID.has(t.kind) || td::TILE_SOLID_TOP.has(t.kind))
             });
             if (j as f32) >= num6 || active_solid {
@@ -529,5 +544,48 @@ pub fn step_down(
         *step_speed = if num10 > 9.0 { 2.5 } else { 1.5 };
         *gfx_off_y += pos[1] + height - num5;
         pos[1] = num5 - height;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::tile::FLAG_ACTIVE;
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_actuated_block_is_walk_through() {
+        // `Collision`'s every solid test carries `!tile.inActive()`
+        // (`Collision.cs:445/:471/:549/:574/...`): a falling body passes an
+        // actuated floor and lands on the row below it.
+        let mut w = world();
+        for x in 8..12 {
+            put(&mut w, x, 20, 1);
+            put(&mut w, x, 21, 1);
+        }
+        // The 40 px body sits above the floor (the bottom at 316 < 320) and
+        // moves 5 px down into row 20 — the landing clamps the velocity.
+        let solid_hit = tile_collision(&w, [8.0 * 16.0, 276.0], [0.0, 5.0], 20.0, 40.0, false, false);
+        assert!(solid_hit.down, "the active floor stops the body");
+        assert!(solid_hit.vel[1] < 5.0, "the velocity clamped to the floor");
+        for x in 8..12 {
+            let i = w.index(x, 20);
+            w.tiles[i].flags |= tr_core::tile::FLAG_INACTIVE;
+        }
+        let actuated_pass = tile_collision(&w, [8.0 * 16.0, 276.0], [0.0, 5.0], 20.0, 40.0, false, false);
+        assert!(!actuated_pass.down, "the actuated row does not stop the body");
+        assert_eq!(actuated_pass.vel[1], 5.0, "the velocity kept falling");
     }
 }

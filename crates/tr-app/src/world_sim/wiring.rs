@@ -12,6 +12,10 @@ use crate::npc::NpcKind;
 /// The engine half (`Wiring::update` + the pad pairs) lives in
 /// `tr-core/src/wiring.rs`.
 pub(crate) fn update_wiring(app: &mut App, dt: f32) {
+    // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
+    // false)` inside `DeActive`/`ReActive`), resolved through
+    // `registry::tile_drop` exactly like the break path's object drops.
+    let mut actuation_drops = Vec::new();
     app.wiring_step.tick(dt.min(0.25), |_| {
         app.wiring.update(&mut app.world);
         // `Wiring.Teleport()` per registered pad pair (`Wiring.cs:3120-3178`):
@@ -78,6 +82,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                 }
             }
         }
+        // The actuation cascade's object drops (`SquareTileFrame(resetFrame:
+        // false)` inside `DeActive`/`ReActive`) are drained after the step —
+        // spawning goes through `spawn_item_drop(&mut App)`, and passing the
+        // whole `app` into the closure would break its disjoint capture of
+        // `app.wiring_step`'s receiver borrow.
+        actuation_drops.extend(app.wiring.take_actuation_drops());
         for (from, to) in app.wiring.take_teleport_events() {
             let ax = (from.0 * 16.0) as i32;
             let ay = (from.1 * 16.0) as i32 - 48;
@@ -119,5 +129,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             }
         }
     });
+    // The actuation drops spawn after the fixed step (see the drain comment
+    // above).
+    for drop in actuation_drops {
+        if let Some(id) = crate::registry::tile_drop(drop.tile_kind) {
+            crate::world_sim::items::spawn_item_drop(app, id, drop.x, drop.y);
+        }
+    }
     app.wiring_step.cap_backlog();
 }

@@ -35,9 +35,10 @@ use tr_render::sprite::SpriteRenderer;
 use crate::assets;
 use crate::npc::Npc;
 
-/// The port's internal projectile kind table (the C# `ProjectileID` mapping
-/// grows with M4-PROJ-2..11; the shuriken keeps its registry id).
-pub const SHURIKEN: u16 = 1;
+/// `ProjectileID.Shuriken = 3` (`ProjectileID.cs:560`) — the vanilla id the
+/// registry's generated rows carry (`itemdata.rs`); the C# `ProjectileID`
+/// mapping grows with M4-PROJ-2..11.
+pub const SHURIKEN: u16 = 3;
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
