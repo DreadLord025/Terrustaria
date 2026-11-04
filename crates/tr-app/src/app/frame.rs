@@ -296,6 +296,8 @@ impl App {
                 jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
                     + screen.y * 0.5,
                 quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+                music_box: self.scene_metrics.active_music_box,
+                music_box_silence: self.scene_metrics.music_box_silence,
             });
             if !self.is_client() {
                 self.update_npcs(dt);

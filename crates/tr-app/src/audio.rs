@@ -306,6 +306,11 @@ pub struct MusicEnv {
     pub blood_moon: bool,
     /// `Main._shouldUseWindyDayMusic` (`:12961`).
     pub windy_music: bool,
+    // — the M6-AUDIO-2 inputs (`Main.cs:11076-11350`) —
+    /// `SceneMetrics.ActiveMusicBox`: the box id playing, -1 = none.
+    pub music_box: i32,
+    /// `SceneMetrics.MusicBoxSilence` — the silent box cuts the music.
+    pub music_box_silence: bool,
     // — the M6-MUSIC-biome-tracks inputs (`:12686-12920`), ladder order —
     /// The space band: `num5 < 1f` with
     /// `num5 = (centerTileY - (65 + 10*(maxTilesX/4200)^2)) / (worldSurface/5)`
@@ -446,6 +451,10 @@ impl MusicSystem {
         if env.music_volume == 0.0 {
             self.new_music = 0;
         }
+        // `Main.cs:11076-11350`: the box chain sits in `UpdateAudio` AFTER
+        // `DecideOnNewMusic` returns — the box (or the silence box) wins
+        // over every world branch including the bosses.
+        self.apply_music_box_override(&env);
         self.cur_music = self.new_music;
 
         let is_main_track_audible = self
@@ -726,6 +735,19 @@ impl MusicSystem {
         }
     }
 
+    /// The `UpdateAudio` box chain (`Main.cs:11076-11350`) — the override
+    /// pass that runs after `decide_new_music` returns; the box (or the
+    /// silence box) wins over every world branch including the bosses.
+    fn apply_music_box_override(&mut self, env: &MusicEnv) {
+        if env.music_box_silence {
+            self.new_music = 0;
+        } else if env.music_box >= 0 {
+            if let Some(track) = music_box_track(env.music_box) {
+                self.new_music = track;
+            }
+        }
+    }
+
     /// `LegacyAudioSystem.UpdateCommonTrack` (`LegacyAudioSystem.cs:292`).
     fn update_common_track(&mut self, active: bool, i: usize, total_volume: f32) {
         self.music_fade[i] += 0.005;
@@ -816,6 +838,119 @@ impl MusicSystem {
     }
 }
 
+/// `UpdateAudio`'s box→track mapping (`Main.cs:11076-11350`) — the 100
+/// `ActiveMusicBox == N → newMusic = M` pairs extracted verbatim; `None`
+/// for the boxes the source does not map (its chain is exhaustive 0..99,
+/// so only out-of-range ids land here).
+pub fn music_box_track(box_id: i32) -> Option<u32> {
+    const PAIRS: [(i32, u32); 100] = [
+        (0, 1),
+        (1, 2),
+        (2, 3),
+        (3, 6),
+        (4, 4),
+        (5, 5),
+        (6, 7),
+        (7, 8),
+        (8, 10),
+        (9, 9),
+        (10, 12),
+        (11, 11),
+        (12, 13),
+        (13, 14),
+        (14, 15),
+        (15, 16),
+        (16, 17),
+        (17, 18),
+        (18, 19),
+        (19, 20),
+        (20, 21),
+        (21, 22),
+        (22, 23),
+        (23, 24),
+        (24, 25),
+        (25, 26),
+        (26, 27),
+        (27, 29),
+        (28, 30),
+        (29, 31),
+        (30, 32),
+        (31, 33),
+        (32, 38),
+        (33, 37),
+        (34, 35),
+        (35, 36),
+        (36, 34),
+        (37, 39),
+        (38, 40),
+        (39, 41),
+        (40, 44),
+        (41, 48),
+        (42, 42),
+        (43, 43),
+        (44, 46),
+        (45, 47),
+        (46, 49),
+        (47, 51),
+        (48, 52),
+        (49, 53),
+        (50, 54),
+        (51, 55),
+        (52, 56),
+        (53, 57),
+        (54, 58),
+        (55, 59),
+        (56, 60),
+        (57, 61),
+        (58, 62),
+        (59, 63),
+        (60, 64),
+        (61, 65),
+        (62, 66),
+        (63, 67),
+        (64, 68),
+        (65, 69),
+        (66, 70),
+        (67, 71),
+        (68, 72),
+        (69, 73),
+        (70, 74),
+        (71, 75),
+        (72, 76),
+        (73, 77),
+        (74, 78),
+        (75, 79),
+        (76, 80),
+        (77, 81),
+        (78, 82),
+        (79, 83),
+        (80, 84),
+        (81, 85),
+        (82, 86),
+        (83, 87),
+        (84, 88),
+        (85, 89),
+        (86, 90),
+        (87, 91),
+        (88, 93),
+        (89, 96),
+        (90, 95),
+        (91, 94),
+        (92, 97),
+        (93, 98),
+        (94, 92),
+        (95, 99),
+        (96, 101),
+        (97, 100),
+        (98, 104),
+        (99, 103),
+    ];
+    PAIRS
+        .iter()
+        .find(|(id, _)| *id == box_id)
+        .map(|(_, track)| *track)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -850,6 +985,8 @@ mod tests {
             underworld: false,
             blood_moon: false,
             windy_music: false,
+            music_box: -1,
+            music_box_silence: false,
             space_band: false,
             temple_wall: false,
             dungeon: false,
@@ -945,6 +1082,46 @@ mod tests {
         e.windy_music = true;
         m.decide_new_music(e);
         assert_eq!(m.new_music, 44);
+    }
+
+    #[test]
+    fn the_music_box_overrides_the_whole_ladder() {
+        // `Main.cs:11076+`: the box chain sits behind `DecideOnNewMusic`,
+        // so a playing box beats the boss/eclipse/biome arms; the silent
+        // box cuts the music to 0; the box id 85 → the credits track 89
+        // (`SceneMetrics.cs:349`'s CanPlayCreditsRoll trigger).
+        let mut m = system();
+        let mut e = env(true);
+        e.boss_music = Some(93);
+        e.music_box = 0;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 1);
+        let mut m = system();
+        let mut e = env(true);
+        e.eclipse = true;
+        e.sandstorm = true;
+        e.music_box = 85;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 89);
+        let mut m = system();
+        let mut e = env(true);
+        e.music_box = 42;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 42);
+        let mut m = system();
+        let mut e = env(true);
+        e.music_box_silence = true;
+        m.decide_new_music(e.clone());
+        m.apply_music_box_override(&e);
+        assert_eq!(m.new_music, 0);
+        // The no-box case leaves the ladder untouched (the day pair
+        // alternates 1/18 — `Main.cs:12945`'s coin flip).
+        let mut m = system();
+        m.decide_new_music(env(true));
+        assert!(matches!(m.new_music, 1 | 18));
     }
 
     #[test]
