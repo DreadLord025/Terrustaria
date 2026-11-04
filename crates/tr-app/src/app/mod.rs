@@ -1339,6 +1339,16 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     {
         world.moon_phase = p & 7;
     }
+    // `TR_TIME=<ticks>` pins the raw world clock — the dawn/dusk windows the
+    // `TR_DAY` day-half mapping cannot reach (the sunrise visibility spans
+    // ticks 0..10800, the sunset 43200..54000).
+    if let Some(t) = std::env::var("TR_TIME")
+        .ok()
+        .and_then(|v| v.parse::<f64>().ok())
+    {
+        world.time = t;
+        world.day_time = t < 54000.0;
+    }
     // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
     // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,
     // `WorldGen.cs:44134-44217`) — so the light pass's invisible handling stays
