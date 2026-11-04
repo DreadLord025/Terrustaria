@@ -205,6 +205,24 @@ pub struct MusicEnv {
     pub boss_music: Option<u32>,
     /// `Main.time` (0..54000).
     pub clock: f64,
+    // — the M6-MUSIC-1 chain inputs (`UpdateAudio_DecideOnNewMusic`,
+    // `Main.cs:12187-12988`), in ladder order —
+    /// `Main.eclipse` with the surface gate (`:12644`).
+    pub eclipse: bool,
+    /// `SceneMetrics.ZoneShimmer` (`:12668`).
+    pub shimmer: bool,
+    /// `SceneMetrics.TownNPCCount` (`:12199`) — 0 until M4-TOWN lands.
+    pub town_npcs: i32,
+    /// `SceneMetrics.ZoneShadowCandle` — the town-music cut (`:12199`).
+    pub shadow_candle: bool,
+    /// `SceneMetrics.ZoneSandstorm` (`:12680`).
+    pub sandstorm: bool,
+    /// The scene centre below `Main.UnderworldLayer` (`:12682`).
+    pub underworld: bool,
+    /// `Main.bloodMoon` — the night tail (`:12968`).
+    pub blood_moon: bool,
+    /// `Main._shouldUseWindyDayMusic` (`:12961`).
+    pub windy_music: bool,
 }
 
 /// MS-ADPCM music player using the XACT wave bank.
@@ -352,8 +370,42 @@ impl MusicSystem {
             .unwrap_or(self.last_music_played);
 
         if let Some(boss) = env.boss_music {
-            // `if (flag) Main.newMusic = 5;` / King Slime → 93 (`Main.cs:12598`).
+            // The boss-flag ladder (`:12560-12620`): the event tracks (DD2
+            // 92, the frost/pumpkin moons 97/98, the mech bosses 34/24/57/58,
+            // Deerclops 38, the pillars…) sit between King Slime's 93
+            // (flag19, `:12596`) and the generic `boss` 5 (flag, `:12611`) —
+            // none of those NPCs exist in the port yet, so the effective
+            // order is 93 then 5.
             self.new_music = boss;
+            return;
+        }
+        // `:12644`: the eclipse — surface only (`!remixWorld` and the scene
+        // centre above `worldSurface * 16 + screenHeight/2`).
+        if env.eclipse {
+            self.new_music = 27;
+            return;
+        }
+        // `:12668`: the shimmer zone.
+        if env.shimmer {
+            self.new_music = 91;
+            return;
+        }
+        // `flag23` (`:12199`): `TownNPCCount >= 3 && !ZoneShadowCandle` —
+        // the town day 46 / night 47 tracks (`:12670-12678`, the quiet
+        // gates need `cloudAlpha == 0` or an underground view). The port has
+        // no town NPCs yet (M4-TOWN).
+        if env.town_npcs >= 3 && !env.shadow_candle && !env.blood_moon {
+            self.new_music = if env.day { 46 } else { 47 };
+            return;
+        }
+        // `:12680`: the sandstorm.
+        if env.sandstorm {
+            self.new_music = 40;
+            return;
+        }
+        // `:12682`: the underworld — `Center.Y > UnderworldLayer * 16`.
+        if env.underworld {
+            self.new_music = 36;
             return;
         }
         if env.underground {
@@ -379,32 +431,34 @@ impl MusicSystem {
             self.new_music = self.ug_music;
             return;
         }
-        if env.rain {
-            // `Main.cs:12932` (day) / `12973` (night).
-            self.new_music = if env.day {
-                if env.clock < 10800.0 {
-                    59 // MorningRain
-                } else {
-                    19 // Rain
-                }
-            } else {
+        // The surface tail (`:12925-12986`): night — blood moon 2, rain 19,
+        // else OverworldNight 3.
+        if !env.day {
+            self.new_music = if env.blood_moon {
+                2
+            } else if env.rain {
                 19
+            } else {
+                3 // OverworldNight
             };
             return;
         }
-        if env.day {
-            // `Main.cs:12945`: alternate OverworldDay (1) / OverworldDayAlt (18).
-            if self.day_music == 0 {
-                self.day_music = 1;
-            }
-            if !self.is_track_playing(1) && !self.is_track_playing(18) {
-                self.day_music = if self.next_rand() % 2 == 0 { 1 } else { 18 };
-            }
-            self.new_music = self.day_music;
+        // Day (`:12936-12966`): the rain morning split, then the 1/18
+        // alternates with the windy-day override after the pick.
+        if env.rain {
+            self.new_music = if env.clock < 10800.0 { 59 } else { 19 };
             return;
         }
-        // `Main.cs:12979`.
-        self.new_music = 3; // OverworldNight
+        if self.day_music == 0 {
+            self.day_music = 1;
+        }
+        if !self.is_track_playing(1) && !self.is_track_playing(18) {
+            self.day_music = if self.next_rand() % 2 == 0 { 1 } else { 18 };
+        }
+        self.new_music = self.day_music;
+        if env.windy_music {
+            self.new_music = 44;
+        }
     }
 
     /// `LegacyAudioSystem.UpdateCommonTrack` (`LegacyAudioSystem.cs:292`).
@@ -494,5 +548,131 @@ impl MusicSystem {
             sink.stop();
         }
         self.tracks[i] = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A headless system (no sinks) — `decide_new_music` only touches the
+    /// fade table and the picked ids.
+    fn system() -> MusicSystem {
+        MusicSystem::new(None)
+    }
+
+    fn env(day: bool) -> MusicEnv {
+        MusicEnv {
+            music_volume: 1.0,
+            day,
+            underground: false,
+            rain: false,
+            boss_music: None,
+            clock: 27000.0,
+            eclipse: false,
+            shimmer: false,
+            town_npcs: 0,
+            shadow_candle: false,
+            sandstorm: false,
+            underworld: false,
+            blood_moon: false,
+            windy_music: false,
+        }
+    }
+
+    #[test]
+    fn the_ladder_order_beats_the_surface_tail() {
+        // The boss scan outranks everything the port models; the eclipse and
+        // the sandstorm cut in front of the underworld and the underground.
+        let mut m = system();
+        let mut e = env(true);
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93);
+        let mut m = system();
+        let mut e = env(true);
+        e.eclipse = true;
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27);
+        let mut m = system();
+        let mut e = env(true);
+        e.sandstorm = true;
+        e.underworld = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 40);
+        let mut m = system();
+        let mut e = env(true);
+        e.underworld = true;
+        e.underground = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 36);
+        let mut m = system();
+        let mut e = env(true);
+        e.underground = true;
+        m.decide_new_music(e);
+        // The underground pair alternates 4/31 (`Main.cs:12830`'s coin flip).
+        assert!(matches!(m.new_music, 4 | 31));
+    }
+
+    #[test]
+    fn the_surface_tail_blood_rain_and_wind() {
+        // Night: blood moon 2 over rain 19 over night 3 (`:12968-12979`).
+        let mut m = system();
+        let mut e = env(false);
+        e.blood_moon = true;
+        e.rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 2);
+        let mut m = system();
+        let mut e = env(false);
+        e.rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 19);
+        let mut m = system();
+        m.decide_new_music(env(false));
+        assert_eq!(m.new_music, 3);
+        // Day rain: the morning split on the clock (`:12940-12947`).
+        let mut m = system();
+        let mut e = env(true);
+        e.rain = true;
+        e.clock = 5000.0;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 59);
+        e.clock = 20000.0;
+        let mut m = system();
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 19);
+        // The windy-day override rides AFTER the 1/18 pick (`:12961`).
+        let mut m = system();
+        let mut e = env(true);
+        e.windy_music = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 44);
+    }
+
+    #[test]
+    fn the_town_gate_needs_three_npcs_and_no_shadow_candle() {
+        // `flag23` (`:12199`): TownNPCCount >= 3 && !ZoneShadowCandle; the
+        // blood-moon night keeps the regular tail (`:12674`'s gates).
+        let mut m = system();
+        let mut e = env(true);
+        e.town_npcs = 3;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 46);
+        let mut m = system();
+        let mut e = env(false);
+        e.town_npcs = 3;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 47);
+        let mut m = system();
+        let mut e = env(true);
+        e.town_npcs = 3;
+        e.shadow_candle = true;
+        m.decide_new_music(e);
+        assert_ne!(m.new_music, 46);
     }
 }

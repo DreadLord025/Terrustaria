@@ -138,11 +138,45 @@ impl App {
             // `Main.UpdateAudio_DecideOnNewMusic` reads the scene centre, not the
             // player: underground once the view centre passes the world surface
             // (`Main.cs:12815`).
-            let boss_music = self
-                .npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-                .then_some(93); // MusicID.KingSlime
+            // The boss scan (`Main.cs:12224-12430`): the screen rect expanded
+            // 5000 px around each active NPC's centre; the type→slot switch
+            // feeds the flag chain. The port's bosses: King Slime (50 → slot
+            // 19 → track 93, outranking the others) and the generic `boss`
+            // slot 1 → 5 (no other ported kind carries `NPC.boss`).
+            let (sw, sh) = self.screen_size();
+            let screen_rect = [
+                self.camera.x - sw * 0.5,
+                self.camera.y - sh * 0.5,
+                sw,
+                sh,
+            ];
+            let mut king_near = false;
+            let mut generic_boss_near = false;
+            for n in &self.npcs {
+                if n.hp <= 0 {
+                    continue;
+                }
+                let (cx, cy) = n.center();
+                let near = cx + 5000.0 >= screen_rect[0]
+                    && cx - 5000.0 <= screen_rect[0] + screen_rect[2]
+                    && cy + 5000.0 >= screen_rect[1]
+                    && cy - 5000.0 <= screen_rect[1] + screen_rect[3];
+                if !near {
+                    continue;
+                }
+                if n.kind == NpcKind::KingSlime {
+                    king_near = true;
+                }
+                // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
+            }
+            let boss_music = if king_near {
+                Some(93) // MusicID.KingSlime (flag19, `:12596`)
+            } else {
+                // No other ported kind sets `boss` — the generic slot stays
+                // out until a second boss lands.
+                None
+            };
+            let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
             self.music.update(audio::MusicEnv {
                 music_volume: self.settings.music_volume,
                 day: self.world.day_time,
@@ -151,6 +185,16 @@ impl App {
                 rain: self.rain.is_raining(),
                 boss_music,
                 clock: self.world.time,
+                eclipse: self.world.eclipse
+                    && self.camera.y
+                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                shimmer: self.scene_metrics.zone_shimmer,
+                town_npcs: 0, // no town NPCs yet (M4-TOWN)
+                shadow_candle: self.scene_metrics.shadow_candle_count > 0,
+                sandstorm: self.sandstorm.happening,
+                underworld: self.camera.y > underworld_px,
+                blood_moon: self.world.blood_moon,
+                windy_music: self.wind.happy_windy_day,
             });
             if !self.is_client() {
                 self.update_npcs(dt);

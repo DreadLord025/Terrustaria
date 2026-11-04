@@ -1339,7 +1339,7 @@ section in brackets before starting a row.
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
 | M6-MUSIC-biome-tracks | `M6-MUSIC-biome-tracks` | biome branches + SceneMetrics |
-| M6-MUSIC-1 | `M6-MUSIC-1-selection-chain` | full priority chain + boxes [18][26] |
+| ✅ M6-MUSIC-1 | `M6-MUSIC-1-selection-chain` | the full `UpdateAudio_DecideOnNewMusic` ladder in the vanilla order (`Main.cs:12187-12988`): the boss scan (the screen rect + 5000 px, the type→slot map — King Slime 50 → 19 → 93 outranking the generic `boss` 1 → 5), the eclipse 27 (surface-gated), the shimmer 91, the town 46/47 (`TownNPCCount >= 3 && !ZoneShadowCandle`, `:12199`), the sandstorm 40, the underworld 36, the underground 4/31 alternates, the day tail (rain 59/19 by the 10800 clock split, the 1/18 alternates, the windy-day 44 override after the pick) and the night tail (blood moon 2, rain 19, night 3) [18][26] | done 2026-11-04: the event/snow/jungle/desert/ocean/hallow/dungeon branches and the music-box override (`:11076+`, M6-AUDIO-2's row) stay constants-off with citations — the port's zones/NPCs do not exist yet; `MusicEnv` grew the eight chain inputs; 3 chain tests (the ladder order, the blood/rain/wind tail, the town gate) |
 | M6-AUDIO-1 | `M6-AUDIO-1-ambience` | ambience emitters [5] |
 | M6-LOCALIZE-wire | `M6-LOCALIZE-wire` | wire core into HUD/menus |
 | M6-NET-protocol | `M6-NET-protocol` | umbrella [27] |
