@@ -615,6 +615,10 @@ impl App {
                     bg_alpha_far,
                     light,
                     hell_black_box_bottom,
+                    &self.ambience.entities,
+                    lookups,
+                    sky_tint,
+                    self.atmo,
                 );
                 if !reuse_world {
                     tile_stats = draw_tiles(

@@ -451,6 +451,10 @@ pub(crate) struct Ambience {
     /// The 60 Hz accumulator (`Main.Update` runs the scheduler once per tick,
     /// `Main.cs:17214`).
     accumulator: f32,
+    /// The `TR_AMBIENCE` test pin: the next forced spawn uses this seed
+    /// instead of drawing the scheduler stream, keeping the entity's
+    /// attributes reproducible for screenshots.
+    pinned_seed: Option<i32>,
 }
 
 impl Default for Ambience {
@@ -467,12 +471,25 @@ impl Ambience {
             updates_until_next_attempt: 0,
             forced_spawns: Vec::new(),
             accumulator: 0.0,
+            pinned_seed: None,
         }
     }
 
     /// `AmbienceServer.ForceEntitySpawn` (`:139-142`).
     pub(crate) fn force_spawn(&mut self, ty: SkyEntityType, target_player: i32) {
         self.forced_spawns.push((ty, target_player));
+    }
+
+    /// The `TR_AMBIENCE` test harness: queue a forced spawn whose entity
+    /// attributes derive from the pinned seed.
+    pub(crate) fn forced_spawn_for_tests(
+        &mut self,
+        ty: SkyEntityType,
+        target_player: i32,
+        seed: i32,
+    ) {
+        self.forced_spawns.push((ty, target_player));
+        self.pinned_seed = Some(seed);
     }
 
     /// The per-frame entry point: fixed-step 60 Hz like the original's update
@@ -590,7 +607,10 @@ impl Ambience {
             // The `targetPlayer` routing (`:153-161`) collapses to the local
             // player in single player; the height gate still applies.
             if self.height_gate(ty, ctx) && self.player_sees_ambience(ctx) {
-                let seed = next_rand(rng) as i32;
+                let seed = self
+                    .pinned_seed
+                    .take()
+                    .unwrap_or_else(|| next_rand(rng) as i32);
                 self.spawn(ctx, ty, seed);
             }
         }
@@ -689,6 +709,32 @@ impl Ambience {
             BoneSerpent => {}
         }
     }
+}
+
+/// The `SkyEntityType` C# name parser for the `TR_AMBIENCE` pin.
+pub(crate) fn parse_sky_entity_type(name: &str) -> Option<SkyEntityType> {
+    Some(match name {
+        "BirdsV" => BirdsV,
+        "Wyvern" => Wyvern,
+        "Airship" => Airship,
+        "AirBalloon" => AirBalloon,
+        "Eyeball" => Eyeball,
+        "Meteor" => Meteor,
+        "BoneSerpent" => BoneSerpent,
+        "Bats" => Bats,
+        "Butterflies" => Butterflies,
+        "LostKite" => LostKite,
+        "Vulture" => Vulture,
+        "PixiePosse" => PixiePosse,
+        "Seagulls" => Seagulls,
+        "SlimeBalloons" => SlimeBalloons,
+        "Gastropods" => Gastropods,
+        "Pegasus" => Pegasus,
+        "EaterOfSouls" => EaterOfSouls,
+        "Crimera" => Crimera,
+        "Hellbats" => Hellbats,
+        _ => return None,
+    })
 }
 
 /// The `_secondarySpawnConditionsPerPlayer` table (`:77-84`) as zone lookups.
@@ -1724,6 +1770,114 @@ mod tests {
         }
     }
 
+    // --- Draw colour chain (GetColor overrides, DW-3.4) ---
+
+    fn draw_ctx<'a>(bg: &'a [f32; 16], backgrounds: bool) -> SkyDrawCtx<'a> {
+        SkyDrawCtx {
+            camera: Vec2::ZERO,
+            zoom: 1.0,
+            screen: Vec2::new(1280.0, 720.0),
+            color_of_the_skies: [0.5, 0.6, 0.7],
+            atmo: 1.0,
+            bg_alpha_front: bg,
+            background_enabled: backgrounds,
+        }
+    }
+
+    #[test]
+    fn pegasus_multiplies_by_bg_alpha_six() {
+        // `:323-326`: `base.GetColor * bgAlphaFrontLayer[6]`.
+        let mut bg = [0.0f32; 16];
+        bg[6] = 0.25;
+        let world = test_world();
+        let c = ctx(&world, true, SURFACE_Y);
+        let mut e = spawn_pegasus(&mut FastRandom::new(1), &c);
+        e.opacity = 1.0;
+        let rgba = e.draw_color(&draw_ctx(&bg, true));
+        // The base lerp: sky (0.5,0.6,0.7) toward white by 0.2, times alpha 1.
+        assert!(
+            (rgba[0] - (0.5 + 0.5 * 0.2) * 0.25).abs() < 1e-5,
+            "{rgba:?}"
+        );
+        assert!((rgba[3] - 0.25).abs() < 1e-5, "{rgba:?}");
+    }
+
+    #[test]
+    fn vulture_takes_the_max_of_its_layer_set() {
+        // `:371-375`: `max(bg[2], max(bg[5], bg[14], bg[13]))`.
+        let mut bg = [0.0f32; 16];
+        bg[2] = 0.1;
+        bg[14] = 0.9;
+        let world = test_world();
+        let c = ctx(&world, true, SURFACE_Y);
+        let mut e = spawn_vulture(&mut FastRandom::new(1), &c);
+        e.opacity = 1.0;
+        let rgba = e.draw_color(&draw_ctx(&bg, true));
+        assert!((rgba[0] - (0.5 + 0.5 * 0.2) * 0.9).abs() < 1e-5, "{rgba:?}");
+    }
+
+    #[test]
+    fn hellbat_vanishes_with_backgrounds_off_and_grays_with_depth() {
+        // `:848-895`: `Lerp(White, Gray, Depth/15) * ... * BackgroundsOff`.
+        let world = test_world();
+        let c = ctx(&world, true, HELL_Y);
+        let bg = [0.0f32; 16];
+        let mut entities = Vec::new();
+        append_group(
+            &mut entities,
+            &mut FastRandom::new(4),
+            &c,
+            GroupKind::HellBats,
+        );
+        let e = &entities[0];
+        let off = e.draw_color(&draw_ctx(&bg, false));
+        assert_eq!(off[3], 0.0);
+        let on = e.draw_color(&draw_ctx(&bg, true));
+        let t = e.depth / 15.0;
+        let expect = (1.0 + (128.0 / 255.0 - 1.0) * t) * e.opacity;
+        assert!((on[0] - expect).abs() < 1e-4, "{on:?} vs {expect}");
+    }
+
+    #[test]
+    fn gastropod_lerps_toward_the_glow_colour_without_the_bg_alpha() {
+        // `:639-642`: `Lerp(bg, (102, 0, 63), 0.75) * opacity`.
+        let world = test_world();
+        let c = ctx(&world, false, SURFACE_Y);
+        let bg = [0.0f32; 16];
+        let mut entities = Vec::new();
+        append_group(
+            &mut entities,
+            &mut FastRandom::new(4),
+            &c,
+            GroupKind::Gastropods,
+        );
+        let e = &mut entities[0];
+        e.opacity = 1.0;
+        let rgba = e.draw_color(&draw_ctx(&bg, true));
+        let t = e.brightness_lerper;
+        let expect_r = 0.5 + (102.0 / 255.0 - 0.5) * t;
+        assert!((rgba[0] - expect_r).abs() < 1e-5, "{rgba:?}");
+        assert!((rgba[2] - (0.7 + (63.0 / 255.0 - 0.7) * t)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn atmo_scales_the_drawn_colour() {
+        // `CommonDraw` (`:63`): `GetColor(...) * Main.atmo` — the shared draw
+        // applies the atmosphere density on top of every kind's colour.
+        let world = test_world();
+        let c = ctx(&world, true, SURFACE_Y);
+        let mut e = spawn_birds_pack(&mut FastRandom::new(1), &c);
+        e.opacity = 1.0;
+        let bg = [0.0f32; 16];
+        let mut ctx_draw = draw_ctx(&bg, true);
+        ctx_draw.atmo = 0.5;
+        let rgba = e.draw_color(&ctx_draw);
+        // draw_color itself does not include atmo; draw_depth_range multiplies.
+        assert!((rgba[3] - 1.0).abs() < 1e-5);
+        let full = 0.5 + 0.5 * 0.2;
+        assert!((rgba[0] * ctx_draw.atmo - full * 0.5).abs() < 1e-5);
+    }
+
     // --- Determinism ---
 
     #[test]
@@ -1757,5 +1911,253 @@ mod tests {
         };
         assert_eq!(run(123), run(123));
         assert_ne!(run(123), run(124));
+    }
+}
+
+// --- Draw side (the CommonDraw port; consumed by render::sky) ---
+
+/// The draw-time inputs `CommonDraw` reads off `Main`
+/// (`AmbientSky.cs:58-65`): the view centre, the backbuffer size, the sky
+/// colour, the atmosphere density and the per-layer cross-fade alphas.
+pub(crate) struct SkyDrawCtx<'a> {
+    /// The view centre in world pixels (`Main.Camera.Center`).
+    pub camera: Vec2,
+    pub zoom: f32,
+    /// The backbuffer size (`Main.screenWidth/Height`).
+    pub screen: Vec2,
+    /// `Main.ColorOfTheSkies`.
+    pub color_of_the_skies: [f32; 3],
+    /// `Main.atmo` (`Main.cs:2503`).
+    pub atmo: f32,
+    /// `Main.bgAlphaFrontLayer`.
+    pub bg_alpha_front: &'a [f32; 16],
+    /// `Main.BackgroundEnabled` — the hellbat visibility gate
+    /// (`AmbientSky.cs:888-895`).
+    pub background_enabled: bool,
+}
+
+impl SkyEntity {
+    /// The texture key this entity draws from — the `Main.Assets.Request`
+    /// argument of its class (`AmbientSky.cs`).
+    pub(crate) fn sheet_name(&self) -> &'static str {
+        match self.kind {
+            SkyKind::Butterflies => match self.variant {
+                1 => "Backgrounds/Ambience/ButterflySwarm1",
+                _ => "Backgrounds/Ambience/ButterflySwarm2",
+            },
+            SkyKind::LostKite => "Backgrounds/Ambience/LostKite",
+            SkyKind::Pegasus => "Backgrounds/Ambience/Pegasus",
+            SkyKind::Vulture => "Backgrounds/Ambience/Vulture",
+            SkyKind::PixiePosse => match self.variant {
+                1 => "Backgrounds/Ambience/PixiePosse1",
+                _ => "Backgrounds/Ambience/PixiePosse2",
+            },
+            SkyKind::BirdsPack => "Backgrounds/Ambience/BirdsVShape",
+            SkyKind::Seagulls => "Backgrounds/Ambience/Seagull",
+            SkyKind::Gastropod => "Backgrounds/Ambience/Gastropod",
+            SkyKind::SlimeBalloons => "Backgrounds/Ambience/SlimeBalloons",
+            SkyKind::HellBat => match self.variant {
+                1 => "Backgrounds/Ambience/HellBat1",
+                _ => "Backgrounds/Ambience/HellBat2",
+            },
+            SkyKind::Bats => match self.variant {
+                1 => "Backgrounds/Ambience/Bat1",
+                2 => "Backgrounds/Ambience/Bat2",
+                _ => "Backgrounds/Ambience/Bat3",
+            },
+            SkyKind::Wyvern => "Backgrounds/Ambience/Wyvern",
+            SkyKind::Airship => "Backgrounds/Ambience/FlyingShip",
+            SkyKind::AirBalloon => match self.variant {
+                0 => "Backgrounds/Ambience/AirBalloons_Large",
+                _ => "Backgrounds/Ambience/AirBalloons_Small",
+            },
+            SkyKind::Eoc(EocVariant::Eyeball) => "Backgrounds/Ambience/EOC",
+            SkyKind::Eoc(EocVariant::Eos) => match self.texture_tier() {
+                1 => "Backgrounds/Ambience/EOS1",
+                2 => "Backgrounds/Ambience/EOS2",
+                _ => "Backgrounds/Ambience/EOS3",
+            },
+            SkyKind::Eoc(EocVariant::Crimera) => match self.texture_tier() {
+                1 => "Backgrounds/Ambience/Crimera1",
+                2 => "Backgrounds/Ambience/Crimera2",
+                _ => "Backgrounds/Ambience/Crimera3",
+            },
+            SkyKind::Meteor => "Backgrounds/Ambience/Meteor",
+            SkyKind::BoneSerpent => "Backgrounds/Ambience/BoneSerpant",
+        }
+    }
+
+    /// The EOC depth tier (`:1158-1166`/`:1182-1190`):
+    /// `3`, demoted at depth <= 6 and <= 5.
+    fn texture_tier(&self) -> u8 {
+        if self.depth <= 5.0 {
+            1
+        } else if self.depth <= 6.0 {
+            2
+        } else {
+            3
+        }
+    }
+
+    /// The `GetColor` overrides (`AmbientSky.cs`): the returned RGBA is the
+    /// lerped/opacity-scaled colour *before* the `x Main.atmo` the shared
+    /// draw applies. `ctx.color_of_the_skies` is `Main.ColorOfTheSkies`.
+    fn draw_color(&self, ctx: &SkyDrawCtx) -> [f32; 4] {
+        let sky = ctx.color_of_the_skies;
+        let opacity = self.opacity * self.final_opacity_multiplier;
+        match self.kind {
+            // `:848-851`: `Lerp(White, Gray, Depth/15) * opacity * mult *
+            // Helper_GetOpacityWithAccountingForBackgroundsOff` — the hellbat
+            // is invisible with backgrounds off. (`Color.Gray` = 128.)
+            SkyKind::HellBat => {
+                let t = (self.depth / 15.0).clamp(0.0, 1.0);
+                let on = if ctx.background_enabled { 1.0 } else { 0.0 };
+                let gray = 128.0 / 255.0;
+                let ch = (1.0 + (gray - 1.0) * t) * opacity * on;
+                [ch, ch, ch, opacity * on]
+            }
+            // `:639-642`: the gastropod glows — `Lerp(bg,
+            // Colors.AmbientNPCGastropodLight (102, 0, 63), BrightnessLerper)
+            // * opacity * mult`, with no ocean-line term.
+            SkyKind::Gastropod => {
+                let t = self.brightness_lerper;
+                let light = [102.0 / 255.0, 0.0, 63.0 / 255.0];
+                [
+                    (sky[0] + (light[0] - sky[0]) * t) * opacity,
+                    (sky[1] + (light[1] - sky[1]) * t) * opacity,
+                    (sky[2] + (light[2] - sky[2]) * t) * opacity,
+                    opacity,
+                ]
+            }
+            // The `FadingSkyEntity` base (`:159-162`): `Lerp(bg, White,
+            // BrightnessLerper) * opacity * mult * oceanLine` — the ocean line
+            // is the Q4 deviation (constant 1). The per-type overrides that
+            // only scale (`:323-326` pegasus [6], `:371-375` vulture,
+            // `:539-542` seagulls [4], `:962-965` bats, `:1171-1174` crimera
+            // [8], `:1195-1198` EOS [1]) fold their `bgAlphaFrontLayer`
+            // multiplier in here.
+            kind => {
+                let t = self.brightness_lerper;
+                let mut rgba = [
+                    (sky[0] + (1.0 - sky[0]) * t) * opacity,
+                    (sky[1] + (1.0 - sky[1]) * t) * opacity,
+                    (sky[2] + (1.0 - sky[2]) * t) * opacity,
+                    opacity,
+                ];
+                let bg = ctx.bg_alpha_front;
+                let multiplier = match kind {
+                    SkyKind::Pegasus => bg[6],
+                    SkyKind::Vulture => bg[2].max(bg[5].max(bg[14].max(bg[13]))),
+                    SkyKind::Seagulls => bg[4],
+                    SkyKind::Bats => bg[3].max(bg[0].max(bg[10].max(bg[11].max(bg[12])))),
+                    SkyKind::Eoc(EocVariant::Crimera) => bg[8],
+                    SkyKind::Eoc(EocVariant::Eos) => bg[1],
+                    _ => 1.0,
+                };
+                for c in &mut rgba {
+                    *c *= multiplier;
+                }
+                rgba
+            }
+        }
+    }
+}
+
+/// `SkyManager.DrawDepthRange`'s semantics on the port's surface pass: draw
+/// every entity with `Depth in (min_depth, last]`, then move the tracker down
+/// (`SkyManager.cs:53-60`). A call with `min_depth >= *last` no-ops — exactly
+/// the stale-parallax no-op of `Main.cs:59890`.
+pub(crate) fn draw_range_min(
+    r: &mut tr_render::SpriteRenderer,
+    entities: &[SkyEntity],
+    lookups: &crate::assets::Lookups,
+    ctx: &SkyDrawCtx,
+    min_depth: f32,
+    last: &mut f32,
+) {
+    if *last <= min_depth {
+        return;
+    }
+    draw_depth_range(r, entities, lookups, ctx, min_depth, *last);
+    *last = min_depth;
+}
+
+/// `SkyManager.DrawRemainingDepth` (`SkyManager.cs:70-75`): flush everything
+/// below the tracker (`Main.cs:59626`).
+pub(crate) fn draw_range_remaining(
+    r: &mut tr_render::SpriteRenderer,
+    entities: &[SkyEntity],
+    lookups: &crate::assets::Lookups,
+    ctx: &SkyDrawCtx,
+    last: &mut f32,
+) {
+    draw_depth_range(r, entities, lookups, ctx, f32::NEG_INFINITY, *last);
+    *last = f32::NEG_INFINITY;
+}
+
+/// `AmbientSky.Draw` (`:1369-1380`) then `CommonDraw` (`:58-65`): the depth
+/// cull, the `(1/Depth, 0.9/Depth)` parallax about the view centre, the
+/// `depthScale / Depth` scale with the manager's `depthScale = 3` (`:1378`),
+/// the centred origin and the `GetColor * Main.atmo` colour.
+fn draw_depth_range(
+    r: &mut tr_render::SpriteRenderer,
+    entities: &[SkyEntity],
+    lookups: &crate::assets::Lookups,
+    ctx: &SkyDrawCtx,
+    min_depth: f32,
+    max_depth: f32,
+) {
+    const DEPTH_SCALE: f32 = 3.0;
+    for e in entities {
+        if e.depth <= min_depth || e.depth > max_depth {
+            continue;
+        }
+        let Some(sheet) = lookups.ambience.get(e.sheet_name()) else {
+            continue;
+        };
+        // `GetDrawPositionByDepth` (`:67-70`).
+        let depth = e.depth;
+        let parallax = Vec2::new(1.0 / depth, 0.9 / depth);
+        let draw_pos = ctx.camera + (e.position - ctx.camera) * parallax;
+        // The sprite's screen-space centre: the batch position is
+        // `drawPos - Main.Camera.UnscaledPosition` (`:63`) — the unscaled
+        // top-left of the view is `camera - screen*0.5/zoom`.
+        let top_left = ctx.camera - ctx.screen * 0.5 / ctx.zoom;
+        let centre = (draw_pos - top_left) * ctx.zoom;
+        // `scale: depthScale / Depth` on the source frame; the frame is row
+        // `frame` of the 1xN grid (`SourceRectangle`, `:34`).
+        let scale = DEPTH_SCALE / depth;
+        let frame_h = sheet.h / sheet.frames as f32;
+        let rows = sheet.frames as f32;
+        let frame_uv = [
+            sheet.uv[0],
+            sheet.uv[1] + (sheet.uv[3] - sheet.uv[1]) * (e.frame as f32 / rows),
+            sheet.uv[2],
+            sheet.uv[1] + (sheet.uv[3] - sheet.uv[1]) * ((e.frame + 1) as f32 / rows),
+        ];
+        let size = [sheet.w * scale, frame_h * scale];
+        // `color: GetColor(Main.ColorOfTheSkies) * Main.atmo` (`:63`).
+        let mut color = e.draw_color(ctx);
+        for c in &mut color {
+            *c *= ctx.atmo;
+        }
+        // The flip swaps the UV horizontally (the `SpriteEffects` port the
+        // cloud pass uses).
+        let uv = if e.flip {
+            [frame_uv[2], frame_uv[1], frame_uv[0], frame_uv[3]]
+        } else {
+            frame_uv
+        };
+        crate::render::bg::push_screen_rot(
+            r,
+            ctx.camera,
+            ctx.zoom,
+            ctx.screen,
+            centre.to_array(),
+            size,
+            uv,
+            color,
+            e.rotation,
+        );
     }
 }

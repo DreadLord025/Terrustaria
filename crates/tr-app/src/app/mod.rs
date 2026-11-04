@@ -996,6 +996,20 @@ impl App {
         if std::env::var_os("TR_MAP").is_some() {
             world_map.set_open(true);
         }
+        // `TR_AMBIENCE=<SkyEntityType>[,seed]`: queue one forced spawn (the
+        // `AmbienceServer.ForceEntitySpawn` path, `AmbienceServer.cs:139-142`)
+        // with a pinned seed, so the creature skies stay screenshotable
+        // without waiting for the 10-120 s scheduler. Test harness only.
+        let ambience_pin = std::env::var("TR_AMBIENCE").ok().and_then(|v| {
+            let mut it = v.split(',');
+            let ty = it.next().map(str::trim).and_then(crate::ambience::parse_sky_entity_type);
+            let seed = it
+                .next()
+                .map(str::trim)
+                .and_then(|s| s.parse::<i32>().ok())
+                .unwrap_or(1);
+            ty.map(|ty| (ty, seed))
+        });
         let mut app = App {
             window: None,
             gpu: None,
@@ -1194,7 +1208,13 @@ impl App {
             wind,
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
-            ambience: crate::ambience::Ambience::new(),
+            ambience: {
+                let mut ambience = crate::ambience::Ambience::new();
+                if let Some((ty, seed)) = ambience_pin {
+                    ambience.forced_spawn_for_tests(ty, -1, seed);
+                }
+                ambience
+            },
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
