@@ -1167,9 +1167,10 @@ any tile in front of it unbreakable and unplaceable. `edit::WALL_UNBREAKABLE` gu
 `break_wall`, `break_tile` (`remove_tile`) and `place_tile`; the dungeon's pre-Skeletron
 wall rule is not needed because the dungeon is not generated.
 
-Not ported: the full `Item.cs` use logic, tool requirements and mining speed, item sprite
-sheet lookup, inventory windows/crafting/chests, paint, actuators/wiring, and liquid
-re-simulation after an edit.
+Not ported: the full `Item.cs` use logic, item sprite sheet lookup, inventory
+windows/crafting/chests, paint, actuators/wiring, and liquid re-simulation after
+an edit. (The tool requirements and the mining speed landed since — `tr_core::tool`'s
+pick gates + the pacing in the mining branch; the full `Item.cs` use logic stays out.)
 
 ### Torch attachment (`WorldGen.CheckTorch`)
 
@@ -2331,6 +2332,24 @@ rebuild (or at a new zoom pipeline) fires the shot mid-camera-lerp (camera
 look unequal), and a warm no-break run can settle at that second camera
 attractor; break runs always converged. Take twin pairs only on warm runs
 and match the `shot camera px` log line before comparing frames.
+
+Second sync-merge (`af4fe98`, 2026-11-04 — M4-PROJ-9 bombs, M2-BUFF-7 food,
+the tool tiers, the itemdata regen): the mining branch keeps the ungated
+condition and gains the tool-tier gates on top — the same union C# mines
+with (`Player.cs:45656`: the pick on non-axe/non-hammer tiles, the axe on
+`tileAxe`, the hammer on `tileHammer`); the DW-1.x fixtures hold the Iron
+Pickaxe (the cactus test the Iron Axe), because the empty slot they used
+before has no tool power and mines nothing. The itemdata regen also moves
+item 276 to place `CactusBlock` 188 (`TileID.CactusBlock = 188`), which
+emptied `by_tile(80)` and silently dropped the world-cactus break's item;
+`tile_drop`'s `80 => 276` case restores it (`KillTile_GetItemDrops`,
+`WorldGen.cs:64717-64720` — cases 80 and 188 both drop 276), commit
+`b4fff36`. Suite: `test result: ok` ×7 (747+16+431+19, 0 failed). Re-taken
+on the merged state: break twins byte-equal at zooms 1.0/1.5/2.0
+(`6b613cb5…`, `c00e22e6…`, `9e7f6c85…` ×2 each; before `b6b4d136…`), and
+the matched-camera before/after diff at zoom 1.0 is again 910 px,
+bbox (1016,434)-(1047,495) — the merged content changes the frame bytes
+globally, but the break's own pixel footprint is unchanged.
 
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
