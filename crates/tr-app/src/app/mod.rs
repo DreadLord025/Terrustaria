@@ -890,6 +890,16 @@ impl App {
                 coins = n;
             }
         }
+        // `TR_DASH=<1|2|3|6>` pins `Player.dashType` — the granting items land
+        // with M3-EQUIP-3 (Tabi/EoC Shield/Master Ninja Gear).
+        if let Some(d) = std::env::var("TR_DASH")
+            .ok()
+            .and_then(|v| v.parse::<i32>().ok())
+        {
+            if let Some(p) = player.as_mut() {
+                p.dash_type = d.clamp(0, 6);
+            }
+        }
         // Debug spawn override: place the player at a tile coordinate (the camera follows).
         if let Some((tx, ty)) = std::env::var("TR_XY").ok().and_then(|v| parse_xy(&v)) {
             if let Some(p) = player.as_mut() {

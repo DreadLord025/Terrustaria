@@ -197,6 +197,26 @@ pub struct Player {
     has_wings: bool,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
+    /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
+    /// The granters (Tabi 977, EoCShield 3097, Master Ninja Gear 984) land
+    /// with M3-EQUIP-3, the Solar set and the Chillet mounts with their own
+    /// tasks — `TR_DASH=<1|2|3|6>` pins it for now.
+    pub dash_type: i32,
+    /// `Player.dash` (`:1046`): the committed dash type of the lifecycle.
+    pub dash: i32,
+    /// `Player.dashTime` (`:1048`): the signed 15-tick double-tap window.
+    dash_time: i32,
+    /// `Player.dashDelay` (`:1052`): 0 ready, -1 dashing, >0 cooldown.
+    pub dash_delay: i32,
+    /// `Player.eocDash` / `eocHit` (`:1054,1056`): the Shield of Cthulhu
+    /// post-hit grace (the struck-NPC exclusion + the drain on cooldown).
+    pub eoc_dash: i32,
+    eoc_hit: i32,
+    /// The previous-tick direction keys — the press edges the double-tap
+    /// reads (`Player.cs:27618-27635` recomputes the release flags at the
+    /// end of the tick).
+    right_prev: bool,
+    left_prev: bool,
     /// `Player.maxRunSpeed` / `runAcceleration` / `runSlowdown` /
     /// `accRunSpeed` (`Player.cs:24364-24371`): the per-tick horizontal
     /// defaults the `HorizontalMovement` branches and the floor modifiers ride.
@@ -294,6 +314,14 @@ impl Player {
             no_fall_dmg: false,
             has_wings: false,
             last_stoned: false,
+            dash_type: 0,
+            dash: 0,
+            dash_time: 0,
+            dash_delay: 0,
+            eoc_dash: 0,
+            eoc_hit: -1,
+            right_prev: false,
+            left_prev: false,
             max_run_speed: 3.0,
             run_acceleration: 0.08,
             run_slowdown: 0.2,
@@ -702,6 +730,10 @@ impl Player {
             self.jump = 0;
         }
 
+        // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
+        // velocity-only dash pass before the collision step.
+        self.dash_movement(world, input);
+
         self.move_vanilla(world, input.down, gravity);
 
         // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
@@ -791,6 +823,11 @@ impl Player {
         self.buffs.purge_immune_buffs();
 
         self.update_frames();
+
+        // `Player.cs:27618-27635`: the release flags recompute at the end of
+        // the tick — the double-tap reads the press edges against them.
+        self.right_prev = input.right;
+        self.left_prev = input.left;
     }
 
     /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
@@ -1052,6 +1089,163 @@ impl Player {
     /// MOUNT-1, and `dashDelay >= 0` always holds until M2-PHYS-4. No input
     /// decays by `runSlowdown` on the ground and half of it in the air. There
     /// is no hard clamp — the decay bounds the speed (knockback rides out).
+    /// `Player.DashMovement` (`Player.cs:21034-21538`), dashTypes 1/2/3/6.
+    /// The dash granters (Tabi 977, EoCShield 3097, Master Ninja Gear 984 →
+    /// type 1/2/1) land with M3-EQUIP-3, the Solar set (type 3) and the
+    /// Chillet mounts (type 6) with their own tasks — `TR_DASH=<1|2|3|6>`
+    /// pins the capability for now. The dust/gore trails are visual seams;
+    /// the vanilla plays no dash sounds.
+    fn dash_movement(&mut self, world: &World, input: PlayerInput) {
+        // `:21040-21048`: the lifecycle re-sync.
+        if self.dash_delay == 0 {
+            self.dash = self.dash_type;
+        }
+        if self.dash == 0 {
+            self.dash_time = 0;
+            self.dash_delay = 0;
+            return;
+        }
+        if self.dash_delay > 0 {
+            // `:21237-21248`: the cooldown ticks; the EoC grace drains with it.
+            if self.eoc_dash > 0 {
+                self.eoc_dash -= 1;
+            }
+            if self.eoc_dash == 0 {
+                self.eoc_hit = -1;
+            }
+            self.dash_delay -= 1;
+            return;
+        }
+        if self.dash_delay < 0 {
+            // `:21249-21399`: the active dash — the duration is a speed-decay
+            // model, not a tick timer.
+            let mut threshold = 12.0f32;
+            let mut fast = 0.992f32;
+            let run_band = self.acc_run_speed.max(self.max_run_speed);
+            let mut mid = 0.96f32;
+            let mut cooldown = 20;
+            match self.dash {
+                // `:21271-21285`: the shield decays faster, cooldowns longer.
+                2 => {
+                    fast = 0.985;
+                    mid = 0.94;
+                    cooldown = 30;
+                }
+                // `:21286-21307`: the Solar dash rides higher and longer.
+                3 => {
+                    threshold = 14.0;
+                    fast = 0.985;
+                    mid = 0.94;
+                }
+                // `:21346-21351`: a direction flip or losing the capability
+                // ends a mount dash at 30 with a damp.
+                6 => {
+                    if self.vx.signum() as i32 != self.facing || self.dash_type != 6 {
+                        self.dash_delay = 30;
+                        self.vx *= 0.3;
+                        self.dash_time = 0;
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            if self.dash <= 0 {
+                return;
+            }
+            if self.vx > threshold || self.vx < -threshold {
+                self.vx *= fast;
+                return;
+            }
+            if self.vx > run_band || self.vx < -run_band {
+                self.vx *= mid;
+                return;
+            }
+            // `:21390-21398`: the dash ends — the cooldown starts and the
+            // velocity pins to the run band in the held/facing direction.
+            self.dash_delay = cooldown;
+            if self.vx < 0.0 || (self.vx == 0.0 && input.left) {
+                self.vx = -run_band;
+            } else if self.vx > 0.0 || (self.vx == 0.0 && input.right) {
+                self.vx = run_band;
+            }
+            return;
+        }
+        // `:21400-21537`: the dash start (`dashDelay == 0`), per type.
+        let Some((dir, dashing)) = self.do_common_dash_handle(input) else {
+            return;
+        };
+        if !dashing {
+            return;
+        }
+        let speed = match self.dash {
+            1 => 16.9,
+            2 => 14.5,
+            3 => 21.9,
+            // `:21520-21523`: the mount hop at the start.
+            6 => {
+                if self.vy == 0.0 {
+                    self.vy = -4.0;
+                }
+                16.0
+            }
+            _ => return,
+        };
+        self.vx = speed * dir as f32;
+        // `:21414-21417`: a solid or sloped tile ahead halves the launch.
+        if self.solid_ahead(world, dir) {
+            self.vx /= 2.0;
+        }
+        self.dash_delay = -1;
+        if self.dash == 2 {
+            self.eoc_dash = 15;
+        }
+    }
+
+    /// `Player.DoCommonDashHandle` (`Player.cs:21546-21605`): the 15-tick
+    /// double-tap window (`Settings.DashControl == AllowDoubleTap`, the
+    /// default) — the first tap arms `dashTime = ±15`, the same-direction
+    /// press edge inside the window fires. The dedicated dash button
+    /// (`controlDash`) has no port input binding yet.
+    fn do_common_dash_handle(&mut self, input: PlayerInput) -> Option<(i32, bool)> {
+        if self.dash_time > 0 {
+            self.dash_time -= 1;
+        }
+        if self.dash_time < 0 {
+            self.dash_time += 1;
+        }
+        let right_edge = input.right && !self.right_prev;
+        let left_edge = input.left && !self.left_prev;
+        if right_edge {
+            if self.dash_time > 0 {
+                return Some((1, true));
+            }
+            self.dash_time = 15;
+        } else if left_edge {
+            if self.dash_time < 0 {
+                return Some((-1, true));
+            }
+            self.dash_time = -15;
+        }
+        None
+    }
+
+    /// `WorldGen.SolidOrSlopedTile` on the two launch-probe points
+    /// (`Player.cs:21412-21414`): the hitbox's leading edge at the upper
+    /// body and the center rows.
+    fn solid_ahead(&self, world: &World, dir: i32) -> bool {
+        let cx = self.x + WIDTH * 0.5;
+        let cy = self.y + HEIGHT * 0.5;
+        let tx = ((cx + dir as f32 * (WIDTH * 0.5 + 2.0)) / TILE_PX) as i32;
+        let ty0 = ((cy - HEIGHT * 0.5 + 2.0) / TILE_PX) as i32;
+        let ty1 = (cy / TILE_PX) as i32;
+        [ty0, ty1].into_iter().any(|ty| {
+            world.tile(tx, ty).is_some_and(|t| {
+                t.active()
+                    && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.slope() != 0)
+            })
+        })
+    }
+
     fn horizontal_movement(&mut self, dir: f32) {
         if dir < 0.0 {
             if self.vx > -self.max_run_speed {
@@ -1059,7 +1253,7 @@ impl Player {
                     self.vx -= self.run_slowdown;
                 }
                 self.vx -= self.run_acceleration;
-            } else if self.vx > -self.acc_run_speed && self.vy == 0.0 {
+            } else if self.vx > -self.acc_run_speed && self.vy == 0.0 && self.dash_delay >= 0 {
                 if self.vx > self.run_slowdown {
                     self.vx -= self.run_slowdown;
                 }
@@ -1071,7 +1265,7 @@ impl Player {
                     self.vx += self.run_slowdown;
                 }
                 self.vx += self.run_acceleration;
-            } else if self.vx < self.acc_run_speed && self.vy == 0.0 {
+            } else if self.vx < self.acc_run_speed && self.vy == 0.0 && self.dash_delay >= 0 {
                 if self.vx < -self.run_slowdown {
                     self.vx += self.run_slowdown;
                 }
@@ -1731,6 +1925,133 @@ mod tests {
             "no clamp, friction only: vx={}",
             p.vx
         );
+    }
+
+    /// Simulates the double-tap: a right press edge, a release, a second
+    /// press `gap` ticks later. Returns (dashDelay, eocDash, vx) one tick
+    /// after the second press.
+    fn double_tap(w: &World, gap: u32) -> (i32, i32, f32) {
+        let mut p = Player::spawn(w);
+        for _ in 0..120 {
+            p.update(w, PlayerInput::default());
+        }
+        p.dash_type = 2;
+        p.update(w, PlayerInput {
+            right: true,
+            ..Default::default()
+        });
+        p.update(w, PlayerInput::default());
+        for _ in 0..gap {
+            p.update(w, PlayerInput::default());
+        }
+        p.update(w, PlayerInput {
+            right: true,
+            ..Default::default()
+        });
+        p.update(w, PlayerInput::default());
+        (p.dash_delay, p.eoc_dash, p.vx)
+    }
+
+    /// `Player.cs:21571-21600`: a second same-direction tap inside the 15-tick
+    /// window fires the dash — velocity 14.5 (dash 2), `dashDelay = -1`, the
+    /// EoC grace armed at 15.
+    #[test]
+    fn double_tap_fires_the_dash() {
+        let w = ground_world();
+        let (delay, eoc, vx) = double_tap(&w, 5);
+        assert_eq!(delay, -1, "dashing");
+        assert_eq!(eoc, 15, "the EoC grace arms at the start");
+        // The launch tick already took the ground friction AND the first
+        // decay: (14.5 - 0.2) x 0.985.
+        assert!((vx - 14.3 * 0.985).abs() < 1e-4, "shield dash speed, vx={vx}");
+    }
+
+    /// The window: a second tap after 15 ticks is too late — `dashTime` has
+    /// decayed to 0 and re-arms instead of firing.
+    #[test]
+    fn double_tap_window_is_15_ticks() {
+        let w = ground_world();
+        let (delay, _, _) = double_tap(&w, 20);
+        assert_eq!(delay, 0, "outside the window");
+    }
+
+    /// `Player.cs:21374-21398`: the dash decays 0.985/tick above the 12-tile
+    /// threshold; the end starts the 30-tick shield cooldown and pins the
+    /// velocity to the run band.
+    #[test]
+    fn shield_dash_decays_into_cooldown() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.dash_type = 2;
+        p.dash = 2;
+        p.dash_delay = -1;
+        p.eoc_dash = 15;
+        p.vx = 14.5;
+        let mut max_delay = 0;
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+            max_delay = max_delay.max(p.dash_delay);
+        }
+        // The dash ended into the 30-tick shield cooldown (the highest count
+        // observed) and the cooldown has fully run out by now.
+        assert_eq!(max_delay, 30, "the shield cooldown");
+        assert_eq!(p.dash_delay, 0, "the cooldown expired");
+        assert!(
+            p.vx.abs() <= 3.0 + 0.09,
+            "pinned to the run band: vx={}",
+            p.vx
+        );
+        assert_eq!(p.eoc_dash, 0, "the grace drained on the cooldown");
+    }
+
+    /// `Player.cs:21414-21417`: a solid tile ahead halves the launch speed.
+    #[test]
+    fn wall_halves_the_launch() {
+        let mut w = ground_world();
+        for y in 55..62 {
+            for x in [12, 13] {
+                let i = w.index(x, y);
+                w.tiles[i].kind = 1;
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&w);
+        p.dash_type = 2;
+        let held = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        p.update(&w, PlayerInput::default());
+        for _ in 0..3 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(&w, held);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.vx.abs() < 14.5,
+            "the launch halved against the wall: vx={}",
+            p.vx
+        );
+    }
+
+    /// `Player.cs:19963,19993`: the overspeed continuation is gated on
+    /// `dashDelay >= 0` — no input acceleration while dashing (the decay
+    /// runs instead).
+    #[test]
+    fn no_input_acceleration_while_dashing() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.dash_type = 2;
+        p.dash = 2;
+        p.dash_delay = -1;
+        p.vx = 14.5;
+        let held = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        p.update(&w, held);
+        assert!(p.vx > 14.0, "decay, not acceleration: vx={}", p.vx);
     }
 
     /// `Player.cs:23755-23783`: `GetFloorTile` samples the center column

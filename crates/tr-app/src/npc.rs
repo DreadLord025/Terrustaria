@@ -939,7 +939,7 @@ impl Npc {
             && self.y + h > player.y
     }
 
-    fn contact(&self, player: &mut Player) {
+    fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
             && self.x + w > player.x
@@ -947,6 +947,29 @@ impl Npc {
             && self.y + h > player.y
         {
             let (cx, _) = self.center();
+            // `Player.Update_NPCCollision`'s EoC shield hit
+            // (`Player.cs:21049-21116`): while `dash == 2 && eocDash > 0` the
+            // dash deals 30 x meleeDamage with knockback 9, ends itself
+            // (`dashDelay = 30`), bounces the player back, and grants the
+            // 4-tick collision immunity. The vanilla hitbox is expanded by 8
+            // and offset by half the velocity (the plain overlap stands in);
+            // the crit roll (4% base) waits for the combat rng pass.
+            if player.dash == 2 && player.eoc_dash > 0 {
+                let dmg = (30.0 * player.melee_damage) as i32;
+                self.hurt(dmg, cx, 9.0, false);
+                player.eoc_dash = 10;
+                player.dash_delay = 30;
+                let dir = if player.vx != 0.0 {
+                    player.vx.signum() as i32
+                } else {
+                    player.facing
+                };
+                player.vx = -(dir as f32) * 9.0;
+                player.vy = -4.0;
+                player.on_ground = false;
+                player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
+                return;
+            }
             let dmg = if self.kind == NpcKind::Slime {
                 self.slime.stats().damage
             } else {
