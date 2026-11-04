@@ -1286,6 +1286,7 @@ pub(crate) mod front_flow_tests {
             achievements: crate::achievements::AchievementManager::ported(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),
+            town_look_timer: 0.0,
             window: None,
             gpu: None,
             renderer: None,

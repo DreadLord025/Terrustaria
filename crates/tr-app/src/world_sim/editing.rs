@@ -255,16 +255,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.edit_target = None;
         return;
     };
-    let important = app
-        .world
-        .frame_important
-        .get(tile.kind as usize)
-        .copied()
-        .unwrap_or(false)
-        && tile.kind != 80; // cacti have fixed frames but are mineable
     let held_wall = held.count > 0 && registry::place_wall(held.kind).is_some();
 
-    if app.mine_down && tile.active() && !important && !app.inventory_open {
+    // No `frame_important` gate on this branch — vanilla's LMB mining chain
+    // has none: `tileFrameImportant` is read only by the placement/replacement
+    // paths (`Player.cs:40019`, `:40608`), never by the pick tick
+    // `ItemCheck_UseMiningTools_ActuallyUseMiningTool` → `PickTile`
+    // (`Player.cs:45656`, `:53757`). The former cactus carve-out is gone with
+    // it: cactus 80 is `tileAxe` in C# (`Main.cs:7210`), so vanilla LMB-pick
+    // does not break it — and since the tool tiers landed on main
+    // (`tr_core::tool`, merged 2026-11-04) the axe gate covers kind 80 the
+    // same way, closing the TO-5-era pick-breakability deviation.
+    if app.mine_down && tile.active() && !app.inventory_open {
         // The tool tiers (`GetPickaxeDamage`'s gates via `tr_core::tool`):
         // the axe tiles chop with an axe, everything else mines with a pick
         // whose power clears the tile's tier; the tier also paces the dig
@@ -990,5 +992,190 @@ mod tests {
             5,
             19
         ));
+    }
+
+    // ---- Phase 1 (M1.4-TO-5): the ungated LMB mining branch ----------------
+
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    const MINE_SCREEN: Vec2 = Vec2::new(1280.0, 720.0);
+
+    /// A headless mining rig: `world` staged by the caller, the player parked
+    /// three tiles right of the target, the camera pinned so the screen-centre
+    /// cursor points at `(tx, ty)` — everything the mining branch of
+    /// `update_editing` reads (the HUD/early-return gates, the reach circle,
+    /// the held slot). The held Iron Pickaxe clears the tool-tier gates from
+    /// main (pick 40, `tr_core::tool`); the axe test swaps in the Iron Axe;
+    /// the pick carries no projectile so the weapon branch falls through, and
+    /// `flow_app`'s NPC list is empty so the melee branch does too.
+    fn mining_app(world: World, tx: i32, ty: i32) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = world;
+        let mut player = Player::spawn(&app.world);
+        player.x = (tx + 3) as f32 * TILE_PX;
+        player.y = ty as f32 * TILE_PX;
+        app.player = Some(player);
+        app.camera = Vec2::new(tx as f32 * TILE_PX + 8.0, ty as f32 * TILE_PX + 8.0);
+        app.mouse_pos = Vec2::new(640.0, 360.0); // screen centre == the camera
+        app.inventory[app.selected].kind = 1; // the Iron Pickaxe (pick 40)
+        app.inventory[app.selected].count = 1;
+        app.mine_down = true;
+        app
+    }
+
+    fn mine_frames(app: &mut App, n: usize) {
+        for _ in 0..n {
+            update_editing(app, 1.0 / 60.0, MINE_SCREEN);
+        }
+    }
+
+    fn set_tile(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// DW-1.1: with `frame_important` set — the exact condition the removed
+    /// gate read — the closed door now runs the mining branch to `break_tile`:
+    /// the whole object cascades away and the door item drops, the same result
+    /// the other break sources already produce (vanilla's pick tick has no
+    /// `frame_important` gate, `Player.cs:45656` → `PickTile :53757`).
+    #[test]
+    fn test_DW_1_1_frame_important_door_breaks_through_the_mining_branch() {
+        let mut w = object_world();
+        w.frame_important[10] = true;
+        // A doorway: a stone ceiling above the 3-tall door (both `SolidTile`
+        // anchors `CheckDoorClosed` verifies), the floor comes with the fixture.
+        set_tile(&mut w, 10, 16, 1);
+        assert!(edit::place_item_tile(&mut w, 10, 17, 10, 0, 1));
+        for y in 17..=19 {
+            let t = w.tile(10, y).unwrap();
+            assert!(t.active() && t.kind == 10, "door cell (10, {y}) placed");
+        }
+        let mut app = mining_app(w, 10, 18);
+        mine_frames(&mut app, 40); // hardness 0.25 s × 35/40 ≈ 13 frames
+        for y in 17..=19 {
+            assert!(
+                !app.world.tile(10, y).unwrap().active(),
+                "door cell (10, {y}) cascaded away"
+            );
+        }
+        assert_eq!(app.items.len(), 1, "one object drop from the cascade");
+        assert_eq!(app.items[0].kind, registry::tile_drop(10).unwrap());
+        assert_eq!(app.items[0].kind, 25, "GetDoorItem(0) — the wooden door");
+    }
+
+    /// DW-1.1: the chest likewise — `frame_important[21]` no longer gates the
+    /// branch; breaking one cell destroys the whole object and drops its item.
+    #[test]
+    fn test_DW_1_1_frame_important_chest_breaks_through_the_mining_branch() {
+        let mut w = object_world();
+        w.frame_important[21] = true;
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        for x in [10, 11] {
+            for y in [18, 19] {
+                let t = w.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 21, "chest cell ({x}, {y}) placed");
+            }
+        }
+        let mut app = mining_app(w, 10, 18);
+        mine_frames(&mut app, 40);
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    !app.world.tile(x, y).unwrap().active(),
+                    "chest cell ({x}, {y}) cascaded away"
+                );
+            }
+        }
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, registry::tile_drop(21).unwrap());
+        assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// DW-1.2: the removed cactus carve-out is behaviour-neutral and the
+    /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
+    /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
+    /// drops per cell and runs no object cascade (`check_object`'s
+    /// `_ => None`).
+    #[test]
+    fn test_DW_1_2_cactus_80_still_breaks_with_the_per_cell_drop() {
+        let mut w = object_world();
+        w.frame_important[80] = true;
+        set_tile(&mut w, 10, 19, 80);
+        let mut app = mining_app(w, 10, 19);
+        app.inventory[app.selected].kind = 10; // the Iron Axe (axe 9)
+        mine_frames(&mut app, 40);
+        assert!(!app.world.tile(10, 19).unwrap().active(), "cactus broke");
+        assert!(
+            app.world.tile(10, 20).unwrap().active(),
+            "the floor below survives — no cascade for kind 80"
+        );
+        assert_eq!(app.items.len(), 1, "the per-cell drop only");
+        assert_eq!(app.items[0].kind, registry::tile_drop(80).unwrap());
+        assert_eq!(app.items[0].kind, 276, "the cactus item");
+    }
+
+    /// DW-1.2: a plain non-frameImportant tile keeps its pre-change behaviour —
+    /// the stone floor breaks after its tool-scaled hardness (0.55 s at the
+    /// baseline, ×35/40 for the held Iron Pickaxe) and drops the stone item
+    /// at the hit cell.
+    #[test]
+    fn test_DW_1_2_non_frame_important_tile_still_breaks_as_before() {
+        let w = object_world(); // frame_important[1] = false
+        let mut app = mining_app(w, 20, 20);
+        mine_frames(&mut app, 60); // stone hardness 0.55 s × 35/40 ≈ 29 frames
+        assert!(!app.world.tile(20, 20).unwrap().active(), "stone broke");
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, 3, "the stone item, per-cell drop");
+    }
+
+    /// DW-1.5: releasing the button before the hardness threshold leaves the
+    /// tile intact and resets the mining state — the unchanged `else` semantics.
+    #[test]
+    fn test_DW_1_5_releasing_mine_down_resets_the_mine_state() {
+        let w = object_world();
+        let mut app = mining_app(w, 20, 20);
+        mine_frames(&mut app, 10); // 9/60 s into the pick-scaled stone hardness
+        assert_eq!(app.mine_target, Some((20, 20)));
+        assert!(app.mine_timer > 0.0 && app.mine_timer < 0.55);
+        app.mine_down = false;
+        mine_frames(&mut app, 1);
+        assert!(app.world.tile(20, 20).unwrap().active(), "tile intact");
+        assert_eq!(app.mine_target, None);
+        assert_eq!(app.mine_timer, 0.0);
+    }
+
+    /// DW-1.5: opening the inventory mid-accumulation interrupts the same way.
+    #[test]
+    fn test_DW_1_5_opening_the_inventory_resets_the_mine_state() {
+        let w = object_world();
+        let mut app = mining_app(w, 20, 20);
+        mine_frames(&mut app, 10);
+        assert_eq!(app.mine_target, Some((20, 20)));
+        app.inventory_open = true;
+        mine_frames(&mut app, 1);
+        assert!(app.world.tile(20, 20).unwrap().active(), "tile intact");
+        assert_eq!(app.mine_target, None);
+        assert_eq!(app.mine_timer, 0.0);
+    }
+
+    /// A frame_important kind without a registry entry (torch 4) breaks as a
+    /// single cell with its `by_tile` drop — the plan's stated edge case for
+    /// the ungated branch (no `Check*` routine exists for kind 4).
+    #[test]
+    fn torch_frame_important_kind_breaks_single_cell_with_its_item() {
+        let mut w = object_world();
+        w.frame_important[4] = true;
+        set_tile(&mut w, 10, 19, 4);
+        let mut app = mining_app(w, 10, 19);
+        mine_frames(&mut app, 40);
+        assert!(!app.world.tile(10, 19).unwrap().active(), "torch broke");
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, registry::tile_drop(4).unwrap());
+        assert_eq!(app.items[0].kind, 8, "the torch item");
     }
 }

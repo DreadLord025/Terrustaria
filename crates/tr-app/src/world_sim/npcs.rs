@@ -58,6 +58,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
+    // `NPC.UpdateHomeTileState`'s look-for-home shape (`NPC.cs:5739`'s
+    // `QuickFindHome` rides): the homeless town NPCs scan every 2 s.
+    app.town_look_timer += dt;
+    if app.town_look_timer >= 2.0 {
+        app.town_look_timer = 0.0;
+        let world = &app.world;
+        let npcs = &mut app.npcs;
+        for n in npcs.iter_mut() {
+            if n.kind != NpcKind::Guide || n.home.is_some() {
+                continue;
+            }
+            let tx = (n.x / TILE_PX) as i32;
+            let ty = (n.y / TILE_PX) as i32;
+            if let Some((hx, hy)) = crate::town::quick_find_home(world, tx, ty) {
+                // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
+                // the home assigns, the homeless flag clears.
+                n.home = Some((hx, hy));
+            }
+        }
+    }
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     for npc in &dead {
