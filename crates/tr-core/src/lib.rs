@@ -28,6 +28,7 @@ pub mod tile_light;
 pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
+pub mod pylons;
 pub mod tile_entities;
 pub mod torch;
 pub mod tree;

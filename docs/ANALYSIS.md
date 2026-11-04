@@ -3082,3 +3082,47 @@ Deviations: the display doll (970 lines — the armor poses, the dye slots,
 the mannequin interactions) is its own follow-up; the pylon network is
 M7-PYLON-1; the leashed critter/kite anchors need the critter entities;
 the dummy's DPS-meter hook rides the NPC 488 landing.
+
+## Pylon network (M7-PYLON-1)
+
+The pylon system is the network-validity engine
+(`TeleportPylonsSystem.cs`) — the port's slice covers the whole gate
+ladder; the UI and the town-NPC fields plug into it from their tasks.
+
+- **The types** (`TeleportPylonType.cs:5-17`): 11 kinds whose enum values
+  ARE the tile styles (`GetPylonTypeFromPylonTileStyle` =
+  `(TeleportPylonType)style`, `TETeleportationPylon.cs:175-178`), decoded
+  from `frameX / 54` on the tile 597's anchor
+  (`frameY == 0 && frameX % 54 == 0`, `:135-139`). The item map
+  (`:116-131`): the surface purity 4876, the jungle 4875, the hallow
+  through the mushroom 4916-4921, the victory 4951, the underworld/
+  shimmer 5652/5653.
+- **The NPC-home rule** (`DoesPositionHaveEnoughNPCs`, `:203-219`): the
+  town NPCs' `homeTileX/Y` inside the `ZoneScanSize` rectangle centred on
+  the pylon **and** each home within 100 *tiles* of its own NPC's current
+  centre (`Vector2.Distance(homeTile, Center/16) < 100f` — the
+  home-and-NPC proximity, easy to misread as a pylon distance; the port
+  carries the pairs). The count: 2 for every type except the Victory
+  pylon's 0 (`HowManyNPCsDoesPylonNeed`, `:309-316`).
+- **The gate ladder** (`HandleTeleportRequest`, `:93-186`): the near
+  check (the tile 597 within the 60-tile pylon reach,
+  `TileReachCheckSettings.Pylons` `:86-90`), the destination's NPC homes,
+  the Lihzahrd wall guard (pre-PlantBoss + below the surface + wall 87),
+  the destination's biome gate, then the other-usable-pylon stage ladder
+  (1 = the NPCs missing at the current pylon, 2 = the biome missing,
+  else not-near) — the first failed gate wins the message, and the port
+  short-circuits in that order.
+- **The biome gates** (`DoesPylonAcceptTeleportation`, `:240-306`): the
+  purity pylon requires above-surface, outside the 380-tile ocean bands
+  and NO other biome's `EnoughTilesFor*` at the spot; the jungle 140 /
+  hallow 125 / corruption+crimson 300 / shimmer 300 / mushroom 100 tile
+  thresholds; the underground `y >= worldSurface`; the underworld
+  `y >= maxTilesY - 200`; the Victory pylon always accepts. `scene.rs`
+  gained the six missing `EnoughTilesFor*` gates and the mushroom count
+  (the blocks 70/71/72/528).
+
+Deviations: the remix branches (`:244-290`) are skipped (the port
+generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
+`isLikeATownNPC && !homeless` fields); the map-click teleport UI and the
+`NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
+styles are M2-DEATH polish.

@@ -143,6 +143,9 @@ impl TeKind {
             // `frameY == 0 && frameX % 18 == 0` (`TEDeadCellsDisplayJar.cs:
             // 33-36`).
             TeKind::DeadCellsDisplayJar => t.frame_y == 0 && t.frame_x % 18 == 0,
+            // `frameY != 0 || frameX % 54 != 0` (`TETeleportationPylon.cs:
+            // 135-139`).
+            TeKind::TeleportationPylon => t.frame_y == 0 && t.frame_x % 54 == 0,
             // The doll/pylon/anchors: the frame checks are the multi-tile
             // registries (the doll = the 3×4 rack, the pylon = the 3×4
             // network side); the anchor-tile checks land with their
