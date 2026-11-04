@@ -22,6 +22,7 @@ mod rain;
 mod regen;
 mod craft;
 mod registry;
+mod variants;
 mod render;
 mod spawner;
 mod settings;
