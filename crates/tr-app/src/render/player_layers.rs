@@ -181,14 +181,15 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) item_size: [f32; 2],
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
-    /// `Player.head` — the equipped helmet's armor slot (0 = none); a set slot
-    /// suppresses the hair (`Head.Sets.HidesHead`, `PlayerDrawLayers.cs:2512`).
-    pub(crate) head_armor: u8,
+    /// `Player.head` — the equipped helmet's armor slot (−1 = none); a set
+    /// slot suppresses the hair (`Head.Sets.HidesHead`,
+    /// `PlayerDrawLayers.cs:2512`). Slot 0 is real (Familiar Wig).
+    pub(crate) head_armor: i16,
     /// `Player.body` — the chest armor's slot; the composite `Armor/Armor_{n}`
     /// sheet replaces the shirt torso and both arm stacks' sleeve pieces.
-    pub(crate) body_armor: u8,
+    pub(crate) body_armor: i16,
     /// `Player.legs` — the leg armor's slot; replaces the pants sprite.
-    pub(crate) leg_armor: u8,
+    pub(crate) leg_armor: i16,
     /// `Player.compositeFrontArm` (`Player.cs:1906`).
     pub(crate) front_arm: CompositeArmState,
     /// `Player.compositeBackArm`.
@@ -420,7 +421,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part(
         &mut out,
         PlayerPart::BackUnder,
-        if s.body_armor > 0 { None } else { a.undershirt },
+        if s.body_armor >= 0 { None } else { a.undershirt },
         |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
         back_pos,
         back_rotation,
@@ -432,13 +433,13 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part(
         &mut out,
         PlayerPart::BackSleeve,
-        if s.body_armor > 0 { None } else { a.arm_shirt },
+        if s.body_armor >= 0 { None } else { a.arm_shirt },
         |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
         back_pos,
         back_rotation,
         tint(s.light, SHIRT),
     );
-    if s.body_armor > 0 {
+    if s.body_armor >= 0 {
         push_part(
             &mut out,
             PlayerPart::BackShoulderArmor,
@@ -464,7 +465,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part(
         &mut out,
         PlayerPart::Pants,
-        if s.leg_armor > 0 {
+        if s.leg_armor >= 0 {
             a.armor_legs.get(s.leg_armor as usize).copied().flatten()
         } else {
             a.pants
@@ -472,7 +473,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         |t| flip_uv(player_frame_uv(t, s.leg_frame), flip),
         part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
-        tint(s.light, if s.leg_armor > 0 { ARMOR_WHITE } else { PANTS }),
+        tint(s.light, if s.leg_armor >= 0 { ARMOR_WHITE } else { PANTS }),
     );
     push_part(
         &mut out,
@@ -488,8 +489,8 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     // draws the shirt instead).
     push_part(
         &mut out,
-        if s.body_armor > 0 { PlayerPart::ArmorTorso } else { PlayerPart::Shirt },
-        if s.body_armor > 0 {
+        if s.body_armor >= 0 { PlayerPart::ArmorTorso } else { PlayerPart::Shirt },
+        if s.body_armor >= 0 {
             a.armor_body.get(s.body_armor as usize).copied().flatten()
         } else {
             a.shirt
@@ -502,7 +503,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         },
         part_pos(s, shift, [0.0, 0.0], 0.0),
         0.0,
-        tint(s.light, if s.body_armor > 0 { ARMOR_WHITE } else { SHIRT }),
+        tint(s.light, if s.body_armor >= 0 { ARMOR_WHITE } else { SHIRT }),
     );
     // 21_Head: head, eye whites, eyes, hair.
     push_part(
@@ -539,7 +540,7 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part(
         &mut out,
         PlayerPart::Hair,
-        if s.head_armor > 0 { None } else { a.hair },
+        if s.head_armor >= 0 { None } else { a.hair },
         |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
         part_pos(s, 0.0, [0.0, 0.0], 0.0),
         0.0,
@@ -587,7 +588,7 @@ fn arm_stack(
     let shoulder = base == PlayerPart::FrontShoulderSkin;
     // The armor arm/shoulder cell rides the skin piece (`PlayerDrawLayers.cs:
     // 3661-3706` armor branch); the sleeve and shirt are armor-only skips.
-    let armor_tex = if s.body_armor > 0 {
+    let armor_tex = if s.body_armor >= 0 {
         a.armor_body.get(s.body_armor as usize).copied().flatten()
     } else {
         None
@@ -610,7 +611,7 @@ fn arm_stack(
             } else {
                 PlayerPart::FrontSleeve
             },
-            if s.body_armor > 0 { None } else { a.arm_shirt },
+            if s.body_armor >= 0 { None } else { a.arm_shirt },
             tint(s.light, SHIRT),
         ),
         (
@@ -619,7 +620,7 @@ fn arm_stack(
             } else {
                 PlayerPart::FrontShirt
             },
-            if s.body_armor > 0 { None } else { a.shirt },
+            if s.body_armor >= 0 { None } else { a.shirt },
             tint(s.light, SHIRT),
         ),
     ] {
@@ -1160,9 +1161,9 @@ mod tests {
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
-            head_armor: 0,
-            body_armor: 0,
-            leg_armor: 0,
+            head_armor: -1,
+            body_armor: -1,
+            leg_armor: -1,
             front_arm: CompositeArmState::DISABLED,
             back_arm: CompositeArmState::DISABLED,
         }

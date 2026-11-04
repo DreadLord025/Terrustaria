@@ -13,7 +13,9 @@ use tr_render::sprite::SpriteRenderer;
 use crate::assets;
 use crate::npc::Npc;
 
-pub const SHURIKEN: u16 = 1;
+/// `ProjectileID.Shuriken = 3` (`ProjectileID.cs`). The sim does not
+/// dispatch on the id yet; the const pins the vanilla id for the registry.
+pub const SHURIKEN: u16 = 3;
 const SIZE: f32 = 6.0;
 
 #[derive(Clone, Debug)]

@@ -2049,7 +2049,7 @@ def emit_rows(rows, names, multi_flags):
         parts = []
         for rust, key, kind in RUST_FIELDS:
             if kind == "name":
-                parts.append("name: %s" % rust_str(row["name"]))
+                parts.append("name: %s" % rust_str(display_split(row["name"])))
                 continue
             if kind == "id":
                 parts.append("id: %d" % item_id)
@@ -2077,6 +2077,14 @@ def emit_rows(rows, names, multi_flags):
             parts.append("%s: %d" % (rust, v))
         out.append("    ItemDef { %s }," % ", ".join(parts))
     return out
+
+
+def display_split(ident):
+    """Raw `ItemID` identifier → display name ("DirtBlock" → "Dirt Block")."""
+    t = ident.replace("_", " ")
+    t = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", t)
+    t = re.sub(r"(?<=[A-Z])(?=[A-Z][a-z])", " ", t)
+    return t
 
 
 def rust_str(s):
@@ -2258,14 +2266,14 @@ pub enum VField {
     PlaceStyle,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VVal {
     Int(i64),
     Float(f32),
     Bool(bool),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum VOp {
     Set(VField, VVal),
 }
@@ -2277,7 +2285,7 @@ pub enum VOp {
 ///   restore row for a `Variant !=` branch (the branch body applies to the
 ///   no-variant state; the restore row reverses it when the variant IS
 ///   selected); `variants::apply` consumes `set`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct VariantOverride {
     pub id: u16,
     pub variant: ItemVariant,
@@ -2365,7 +2373,7 @@ def emit_on_created(on_created):
 SPOT_CHECKS = [
     (2, [
         ("tile", ("Some", 0), "Item.cs:1491 createTile = 0"),
-        ("max_stack", 999, "Item.cs:1492 maxStack = 999"),
+        ("max_stack", 9999, "ResetStats CommonMaxStack = 9999 (Item.cs:49017, :49966)"),
         ("use_time", 10, "Item.cs:1493 useTime = 10"),
         ("use_animation", 15, "Item.cs:1494 useAnimation = 15"),
         ("use_style", 1, "Item.cs:1489 useStyle = 1"),
@@ -2387,51 +2395,67 @@ SPOT_CHECKS = [
         ("use_animation", 15, "Item.cs:1684 useAnimation = 15"),
         ("use_style", 1, "Item.cs:1681 useStyle = 1"),
         ("auto_reuse", False, "Item.cs:1677-1687 — no autoReuse in the case"),
-        ("value", 0, "Item.cs:1685 value = 0"),
+        ("value", 200, "Item.cs:1684 value = 200"),
     ]),
     (42, [
         ("damage", 10, "Item.cs:1703 damage = 10"),
         ("projectile", ("Some", 3), "Item.cs:1705 shoot = 3 (Shuriken projectile)"),
-        ("shoot_speed", 7.0, "Item.cs:1706 shootSpeed = 7f"),
+        ("shoot_speed", 9.0, "Item.cs:1871 shootSpeed = 9f (shuriken, case 42)"),
         ("use_time", 15, "Item.cs:1709 useTime = 15"),
         ("use_ammo", 0, "ResetStats stock (Item.cs:48996) — thrown, no ammo"),
         ("class", "DamageClass::Ranged", "Item.cs:1713 ranged = true"),
     ]),
     (99, [
-        ("damage", 6, "Item.cs:1788-1796 Wooden Bow: damage = 6"),
-        ("shoot_speed", 6.0, "Item.cs:1790 shootSpeed = 6f"),
-        ("use_ammo", 1, "Item.cs:1789 useAmmo = AmmoID.Arrow (1)"),
-        ("use_time", 22, "Item.cs:1791 useTime = 22"),
-        ("use_animation", 24, "Item.cs:1792 useAnimation = 24"),
+        ("damage", 8, "Item.cs:2553 damage = 8 (case 99, Iron Bow)"),
+        ("shoot_speed", 6.6, "Item.cs:2554 shootSpeed = 6.6f"),
+        ("use_ammo", 40, "Item.cs:2549 useAmmo = AmmoID.Arrow (40)"),
+        ("use_time", 28, "Item.cs:2547 useTime = 28"),
+        ("use_animation", 28, "Item.cs:2546 useAnimation = 28"),
         ("auto_reuse", False, "Item.cs:1788-1796 — no autoReuse"),
     ]),
+    # 112 is the Flower of Fire (Item.cs:2710-2723); Muramasa is 155 — the
+    # original pins here carried Muramasa data and were replaced (M3-ITEM-1).
     (112, [
-        ("damage", 18, "Item.cs:2705-2715 Muramasa: damage = 18"),
-        ("use_animation", 17, "Item.cs:2707 useAnimation = 17"),
-        ("use_time", 17, "Item.cs:2708 useTime = 17"),
-        ("width", 24, "Item.cs:2710 width = 24"),
-        ("height", 24, "Item.cs:2711 height = 24"),
-        ("knock_back", 3.0, "Item.cs:2709 knockBack = 3f"),
-        ("class", "DamageClass::Melee", "Item.cs:2712 melee = true"),
-        ("value", 0, "Item.cs:2714 value = hellPrice (125000) via Item.cs:77"),
-        ("material", False, "IsAMaterial via recipes — Muramasa crafts nothing"),
+        ("damage", 48, "Item.cs:2711 damage = 48"),
+        ("mana", 9, "Item.cs:2710 mana = 9"),
+        ("use_animation", 16, "Item.cs:2720 useAnimation = 16"),
+        ("use_time", 16, "Item.cs:2721 useTime = 16"),
+        ("rare", 3, "Item.cs:2718 rare = 3"),
+        ("value", 125000, "Item.cs:2714 hellPrice = sellPrice(0,2,50) = 125000"),
+        ("knock_back", 5.5, "Item.cs:2719 knockBack = 5.5f"),
+        ("width", 26, "Item.cs:2716 width = 26"),
+        ("height", 28, "Item.cs:2717 height = 28"),
+        ("class", "DamageClass::Magic", "Item.cs:2722 magic = true"),
+        ("projectile", ("Some", 15), "Item.cs:2713 shoot = 15"),
     ]),
+    # 1881 is the Red & Green Garland (the plan's "potion ~1881" guess was
+    # wrong); the potion pin moved to id 28 (Item.cs:1711-1722).
     (1881, [
-        ("heal_life", 50, "Item.cs:16774-16785 Lesser Healing Potion: healLife = 50"),
-        ("potion", True, "DefaultToHealingPotion — Item.cs:48581"),
-        ("consumable", True, "DefaultToHealingPotion — Item.cs:48576"),
-        ("use_style", 9, "DefaultToHealingPotion — Item.cs:48573"),
-        ("use_time", 17, "DefaultToHealingPotion animationTime default — Item.cs:48570"),
-        ("rare", 1, "DefaultToHealingPotion — Item.cs:48579"),
-        ("value", 2000, "DefaultToHealingPotion — Item.cs:48580 buyPrice(0,0,20)"),
-        ("width", 14, "Item.cs:16774-16785 width = 14"),
-        ("height", 24, "Item.cs:16774-16785 height = 24"),
+        ("value", 500, "Item.cs case 1881: value = 500 (garland)"),
+        ("use_time", 10, "Item.cs case 1881: useTime = 10"),
+        ("use_animation", 15, "Item.cs case 1881: useAnimation = 15"),
+        ("auto_reuse", True, "Item.cs case 1881: autoReuse = true"),
     ]),
+    # Lesser Healing Potion — Item.cs:1711-1722
+    (28, [
+        ("heal_life", 50, "Item.cs:1712 healLife = 50"),
+        ("potion", True, "Item.cs:1720 potion = true"),
+        ("consumable", True, "Item.cs:1717 consumable = true"),
+        ("use_style", 9, "Item.cs:1713 useStyle = 9"),
+        ("use_time", 17, "Item.cs:1716 useTime = 17"),
+        ("use_animation", 17, "Item.cs:1715 useAnimation = 17"),
+        ("value", 300, "Item.cs:1721 value = 300"),
+        ("width", 14, "Item.cs:1718 width = 14"),
+        ("height", 24, "Item.cs:1719 height = 24"),
+    ]),
+    # 4254 is a golf BALL, not a hook — DefaultToGolfBall (Item.cs:35444-35460)
+    # sets its own timings; the projHook zeroing (Item.cs:48893-48898) applies
+    # only to hook projectiles (aiStyle 7: 84, 185, 939, 1273, 1800).
     (4254, [
-        ("projectile", ("Some", 739), "Item.cs:41338-41345 Skeletron Hand? — hook: shoot in projHook"),
-        ("use_style", 0, "Item.cs:48893-48898 projHook zeroing"),
-        ("use_time", 0, "Item.cs:48893-48898 projHook zeroing"),
-        ("use_animation", 0, "Item.cs:48893-48898 projHook zeroing"),
+        ("projectile", ("Some", 751), "Item.cs case 4254: DefaultToGolfBall(751)"),
+        ("use_style", 1, "DefaultToGolfBall — Item.cs:35448-35460"),
+        ("use_time", 15, "DefaultToGolfBall — Item.cs:35458"),
+        ("use_animation", 15, "DefaultToGolfBall — Item.cs:35457"),
     ]),
 ]
 
@@ -2444,6 +2468,8 @@ def emit_test_module(spot_checks, food_ids, deprecated_ids, bait_rare3, variant_
     lines.append("#[cfg(test)]")
     lines.append("mod tests {")
     lines.append("    #![allow(non_snake_case)] // DW-IDs stay in the test names")
+    lines.append("")
+    lines.append("    use super::*;")
     lines.append("")
     lines.append("    /// Rows describe the post-SetDefaults state; redirect/deprecated")
     lines.append("    /// rows differ from their source row only in `id`.")
@@ -2485,7 +2511,11 @@ def emit_test_module(spot_checks, food_ids, deprecated_ids, bait_rare3, variant_
     lines.append("        // (DefaultToFood) or, for case-less 4010, the stock shape + holdStyle 1.")
     lines.append("        let food = [%s];" % ", ".join(str(i) for i in sorted(food_ids)))
     lines.append("        assert_eq!(food.len(), %d);" % len(food_ids))
+    lines.append("        // 4010 is Deprecated (ItemID.cs:1316) — TurnToAir zeroes it")
+    lines.append("        // (Item.cs:48921-48924); the epilogue holdStyle never applies.")
+    lines.append("        assert!(same_except_id(&ITEMS[4010], &ITEMS[0]));")
     lines.append("        for &id in &food {")
+    lines.append("            if id == 4010 { continue; }")
     lines.append("            let d = &ITEMS[id as usize];")
     lines.append("            assert_eq!(d.hold_style, 1, \"id {id}\"); // Item.cs:48913-48916")
     lines.append("            if id != 4010 {")
@@ -2493,8 +2523,9 @@ def emit_test_module(spot_checks, food_ids, deprecated_ids, bait_rare3, variant_
     lines.append("                assert!(d.consumable, \"id {id}\");")
     lines.append("                assert!(d.use_turn, \"id {id}\");")
     lines.append("                assert_eq!((d.use_time, d.use_animation), (17, 17), \"id {id}\");")
-    lines.append("                assert_eq!(d.rare, 1, \"id {id}\");")
-    lines.append("                assert_eq!(d.value, 2000, \"id {id}\"); // buyPrice(0, 0, 20)")
+    lines.append("                // rare/value come from the per-id SetShopValues call —")
+    lines.append("                // the DefaultToFood stock (rare 1, buyPrice(0,0,20) = 2000) is")
+    lines.append("                // overridden for most foods, so only the timings pin here.")
     lines.append("            }")
     lines.append("        }")
     lines.append("        // bait rare ladder — Item.cs:48838-48852: bait >= 50 → rare 3")
@@ -2515,8 +2546,8 @@ def emit_test_module(spot_checks, food_ids, deprecated_ids, bait_rare3, variant_
     lines.append("    #[test]")
     lines.append("    fn test_DW_1_2_negative_defaults_and_on_created() {")
     lines.append("        assert_eq!(NEGATIVE_DEFAULTS.len(), 48);")
-    lines.append("        assert_eq!(NEGATIVE_DEFAULTS[0], (-1, 3521)); // Item.cs:1217-1219")
-    lines.append("        assert_eq!(NEGATIVE_DEFAULTS[47], (-48, 3480)); // Item.cs:1358-1360")
+    lines.append("        assert_eq!(NEGATIVE_DEFAULTS[47], (-1, 3521)); // Item.cs:1217-1219")
+    lines.append("        assert_eq!(NEGATIVE_DEFAULTS[0], (-48, 3480)); // Item.cs:1358-1360")
     lines.append("        assert_eq!(ON_CREATED, &[(5437, 5358)]); // Item.cs:48936-48942")
     lines.append("    }")
     lines.append("")
@@ -2562,7 +2593,7 @@ def emit_test_module(spot_checks, food_ids, deprecated_ids, bait_rare3, variant_
     lines.append("        assert_eq!(NAMES[0], \"None\");")
     lines.append("        assert_eq!(NAMES[2], \"DirtBlock\");")
     lines.append("        assert_eq!(NAMES[6195], \"OldStyleParkourBookInactive\");")
-    lines.append("        assert_eq!(ITEMS[2].name, \"DirtBlock\");")
+    lines.append("        assert_eq!(ITEMS[2].name, \"Dirt Block\");")
     lines.append("    }")
     lines.append("}")
     return "\n".join(lines)

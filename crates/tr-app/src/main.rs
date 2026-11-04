@@ -9,6 +9,7 @@ mod collision;
 mod death;
 mod inv;
 mod item;
+mod itemdata;
 mod loot_db;
 mod map;
 mod menu;
