@@ -49,6 +49,12 @@ re-implement something that already exists, or to port the wrong file.
 | `Program.cs` (entry) | `crates/tr-app/src/main.rs` (`fn main`, the bootstrap) | done |
 | `Main.DrawBackground` underground tree (`DrawBackground_*`, `Main.cs:52798-53402`) | `crates/tr-app/src/render/bg.rs` (shared prologue `PassPrologue`) | done (classic style set; per-biome cave sets + 9-slice documented deviations) |
 | `Main.DrawSurfaceBG`/`DrawSunAndMoon` (sky, clouds, parallax stack) | `crates/tr-app/src/render/sky.rs` (+ `biome.rs` for the style/alpha transitions) | partial |
+| `GameContent/Skies/AmbientSky.cs` (SkyEntity + 18 creature classes + the manager) | `crates/tr-app/src/ambience.rs` (state + update + draw fns; render hooks in `render/sky.rs`/`bg.rs`) | done |
+| `GameContent/Ambience/AmbienceServer.cs` (spawn scheduler) | `crates/tr-app/src/ambience.rs` (`Ambience::update_scheduler`) | done |
+| `GameContent/Ambience/SkyEntityType.cs` | `ambience::SkyEntityType` | done |
+| `GameContent/NetModules/NetAmbienceModule.cs` (spawn packet, seed) | inlined SP loopback — the seed is one draw from the scheduler's `Main.rand` stand-in (`Ambience::update_scheduler`) | done (MP when it lands) |
+| `Graphics/Effects/SkyManager.cs` depth segments (`DrawToDepth`/`DrawRemainingDepth`) | `render/sky.rs` boundary calls with a local tracker (`amb_last`) + `ambience::draw_range_min/remaining` | done |
+| `GameContent/Ambience/AmbientSkyDrawCache.cs` | `Underworld[5]` dead in 1.4.5.8 (no `SetUnderworldInfo` caller); ocean-line producer `Main.cs:59983` deferred (Q4) | partial |
 | `Main.DoDraw_Waterfalls`, tile/liquid draw passes, `DrawTrees` | `crates/tr-app/src/render/{tiles,liquids,foliage}.rs` | partial |
 | `Player.cs` | `crates/tr-app/src/player.rs` (physics), `collision.rs`, the 60 Hz tick in `world_sim/player.rs` | partial |
 | `Player.cs` buff slots (`AddBuff` family `:5263-5480`, `UpdateBuffs` head `:9855-9876`, immune purge `:26012-26018`) | `crates/tr-app/src/buffs.rs` (`BuffSlots`, verbatim `Main.debuff`/pet/melee set tables) | done (slot engine; per-buff effects: DoT landed — M2-BUFF-3 (the per-frame `buff_immune` reset `:25561-25565` + expired sweep `:25608-25616` ride `Player::update`), stat/movement = M2-BUFF-4) |

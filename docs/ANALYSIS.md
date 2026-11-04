@@ -916,6 +916,58 @@ crafting contexts are **41/42/43** (`ItemSlot.cs:126-130`). Clicks:
 on the press (`Main.cs:42250` hover family); the rotation source for item use
 stays with M2-ANIM.
 
+## Ambient sky creatures (M1.4-BG-19)
+
+`M1.4-BG-19` ports `GameContent/Skies/AmbientSky.cs` (the `SkyEntity` base, the
+`FadingSkyEntity` envelope and the 18 live creature classes, plus the
+`AmbientSky : CustomSky` manager) and `GameContent/Ambience/AmbienceServer.cs`
+(the spawn scheduler) into `crates/tr-app/src/ambience.rs`; the draw side hooks
+into `render/sky.rs`'s background passes at the C# `DrawToDepth` boundaries.
+The single-player `NetAmbienceModule` loopback is inlined: the spawn seed is one
+draw from the scheduler's `Main.rand` stand-in stream (`ambience_rng`), and every
+entity attribute comes from the exact-C# `FastRandom(seed)`
+(`tile_light/palette.rs`) in the constructor's original draw order — the order is
+pinned by per-entity characterization tests. Per-tick updates consume no RNG.
+
+Determinism/proven pairs (pristine `.trwld` copies per run, `TR_DAY=0.5`):
+`TR_NOPLAYER` entity shots SHA256-equal at zoom 1.0/1.5/2.0 (`TR_SHOT_FRAME=600`,
+`TR_AMBIENCE=Eyeball,7`); player runs at frames 200/300/540 equal pairs; the
+`AirBalloon` (scheduler-spawned) visibly renders with its fade alpha. The forest
+spawn area's canopy **hides** the EOC eyeball completely — entity shots there are
+byte-identical to no-entity runs, which is itself the sandwich proof: the eyeball
+draws behind the front tree rows, exactly where the C# depth boundaries put it.
+
+Deviations, all deliberate:
+- **Ocean-line fade deferred** (research Q4): `Helper_GetOpacityWithAccountingFor
+  BackgroundsOff`'s sibling `Helper_GetOpacityWithAccountingForOceanWaterLine`
+  (`AmbientSky.cs:72-79`) is constant 1; the producer
+  (`Main.cs:59889` `UpdateOceanWaterLineForAmbience`) is cited for the follow-up.
+  Only visible when entities cross the ocean water line.
+- **The atlas grows**: loading the 28 `Images/Backgrounds/Ambience/*` sheets
+  reshuffles the tallest-first shelf packer, so screenshots differ from pre-task
+  binaries by 89 edge pixels (the B10 "normalised UV phase" class; the BG-11
+  content set itself shifted these when it added sheets). Twin-run equality —
+  the repo's screenshot gate — holds.
+- **`tenthAnniversaryWorld` = false** (the spawn-timer halving is dead),
+  **remix-world branches absent** (windy-state override `Main.cs:13022-13024`,
+  ambience packet gate), both seeds the port does not generate.
+- **`NPC.butterflyChance` sits at its reset value 0** (`NPC.cs:95172`): its
+  update logic is NPC-spawn-owned (`NPC.cs:93378-93397`, M4) — the gate reads
+  the field 1:1, so Butterflies spawn whenever their other conditions hold.
+- **The Meteor sky is unreachable until M4 meteor events**: `SkyEntityType.
+  Meteor` has no `_spawnConditions` entry and `ForceEntitySpawn` fires only from
+  the landing window (`Main.cs:65471-65489`); the queue and window hook shape
+  are ported.
+- **`BoneSerpent` stays dead**: the enum value and the texture exist, but
+  `AmbientSky.Spawn` has no case (`AmbientSky.cs:1394-1480`) — ported as-is.
+- **The scheduler pool pins `_spawnConditions` declaration order**; the C#
+  enumerates a `Dictionary`, whose order is implementation-defined.
+- **dayRate is the constant 1** until BG-21 lands; the `max(1, dayRate)` shape
+  is in place at both sites (the scheduler timer decrement and the entity
+  update repetition, `SkyManager.cs:24-46`).
+- Screenshot harness: `TR_AMBIENCE=<SkyEntityType>[,seed]` queues one forced
+  spawn with a pinned seed at load (the `ForceEntitySpawn` path) — test-only.
+
 ## Screen filters (M1.4-BG-18)
 
 `M1.4-BG-18` ports the `ScreenShaderData` post-process subsystem: a
