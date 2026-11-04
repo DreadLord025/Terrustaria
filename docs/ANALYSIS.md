@@ -2438,8 +2438,14 @@ Deviations:
 - **The NPC DoT drain stops at hp ≤ 0** — the C# `GetHurtByDebuff` clamps
   `life = 1` and finishes the kill with `StrikeNPCNoInteraction(9999)`
   (`NPC.cs:91880-91887`); the port instead breaks the drain loop at
-  `hp <= 0` and lets the existing hp ≤ 0 collect (`world_sim/npcs.rs:30`)
+  `hp <= 0` and lets the existing hp ≤ 0 collect (`world_sim/npcs.rs:38`)
   run the normal death path (coins/gel drop exactly once).
+- **The player-side DoT drain stops at the first hp ≤ 0 crossing** — the C#
+  while-loops keep chunking a dead player until the counter empties (fast
+  lane `:19315-19334`, generic `:19357-19385`); the port returns one death
+  per tick and clamps at 0 (`regen.rs:236-241` fast lane, `:251-255`
+  generic) — death lands the same tick, only the transient negative
+  `statLife` differs.
 - **The `dontTakeDamage` gate is omitted** — `UpdateNPC_BuffApplyDOTs` is
   wrapped in `if (!this.dontTakeDamage)` (`NPC.cs:91596`); the flag has no
   Rust counterpart yet, so the port always applies DOTs.
