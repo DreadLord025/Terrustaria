@@ -1,4 +1,4 @@
-<!-- base-commit: 4dd6f0c -->
+<!-- base-commit: 6fb9972 -->
 <!-- generated: 2026-11-03 -->
 
 # Code Standards — Terraria-Rust
@@ -98,8 +98,10 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
   22 px, walls 36 px cell/8 px inset — keep source rects on those grids.
 - RNG: `tr-core` `FastRandom` (`tile_light/palette.rs:20`) is the **exact C# stream** —
   use it when the C# stream matters; `spawner.rs:30` documents the stand-in for places
-  that only need uniformity. Worldgen uses the xorshift stream; determinism is a hard
-  invariant.
+  that only need uniformity. Per-event seeds: one draw from a named stand-in stream
+  becomes the seed, then `FastRandom(seed)` drives the attributes in the C# call order
+  (`ambience.rs` — pinned by per-entity characterization tests). Worldgen uses the
+  xorshift stream; determinism is a hard invariant.
 - Time: 60 Hz fixed step (`FixedStepper`), one update per draw, accumulator clamped 3×.
 
 ## Exemplar Files
