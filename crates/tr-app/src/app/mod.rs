@@ -322,6 +322,8 @@ pub(crate) struct App {
     /// `update_scene` derives; the ambience gates read its zone flags
     /// (`AmbienceServer.cs:77-84`).
     pub(crate) scene_metrics: tr_core::scene::SceneMetrics,
+    /// The single grappling hook (`AI_007_GrapplingHooks` state machine).
+    pub(crate) grapple: Option<crate::grapple::GrappleHook>,
     /// The `AmbientSky` manager + `AmbienceServer` scheduler
     /// (`crates/tr-app/src/ambience.rs`).
     pub(crate) ambience: crate::ambience::Ambience,
@@ -1396,6 +1398,7 @@ impl App {
             wind,
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
+        grapple: None,
             ambience: {
                 let mut ambience = crate::ambience::Ambience::new();
                 if let Some((ty, seed)) = ambience_pin {

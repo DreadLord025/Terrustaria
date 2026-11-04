@@ -23,6 +23,7 @@ mod net;
 mod npc;
 mod npc_buffs;
 mod persist;
+mod grapple;
 mod player;
 mod player_file;
 mod projectile;

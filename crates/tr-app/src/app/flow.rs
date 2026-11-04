@@ -1278,6 +1278,7 @@ pub(crate) mod front_flow_tests {
         App {
             ambient_waterfall: (0.0, 0.0, 0.0),
             ambient_lavafall: (0.0, 0.0, 0.0),
+            grapple: None,
             ambient_counter: 0.0,
             kill_tracker: tr_core::bestiary::KillTracker::new(),
             bestiary_open: false,
