@@ -283,6 +283,10 @@ pub(crate) struct App {
     /// `Main.waterfallManager`: scanning, animation counters and draw geometry.
     pub(crate) waterfall: tr_core::waterfall::WaterfallManager,
     pub(crate) waterfall_step: FixedStepper,
+    /// `Wiring`'s statics: the mech queue, the wire floods and the teleporter
+    /// pads (`Wiring.cs`).
+    pub(crate) wiring: tr_core::wiring::Wiring,
+    pub(crate) wiring_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
@@ -513,6 +517,10 @@ impl App {
     /// original's per-update tick and 30-tick rescan cadence.
     pub(crate) fn update_waterfalls(&mut self, dt: f32, screen: Vec2) {
         world_sim::liquids::update_waterfalls(self, dt, screen);
+    }
+
+    pub(crate) fn update_wiring(&mut self, dt: f32) {
+        world_sim::wiring::update_wiring(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1255,6 +1263,8 @@ impl App {
             liquid_tick: 0,
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
+            wiring: tr_core::wiring::Wiring::new(),
+            wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             rain,
             wind,
             atmo,
@@ -1290,6 +1300,9 @@ impl App {
             world_key: None,
             hell_black_box_bottom: 0.0,
         };
+        // The faulty-lamp roll stream seeds from the world (`Main.rand`'s
+        // role in `Wiring`'s random branch, `Wiring.cs:812`).
+        app.wiring.seed_faulty_rng(world_seed | 1);
         // `TR_UI=<screen>`: preset the front-end flow state for screenshots (the
         // `TR_PAGE` pattern — the plan Task 5 hook table).
         if let Some(preset) = tr_ui.as_deref().and_then(tr_ui_preset) {
