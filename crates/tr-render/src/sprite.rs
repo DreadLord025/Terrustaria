@@ -65,6 +65,13 @@ pub struct SpriteRenderer {
     /// Always-rebuilt background range, drawn before the cached world range.
     pub back: Vec<SpriteInstance>,
     pub world: Vec<SpriteInstance>,
+    /// Screen-space world-effect sprites (rain, snow, sand dust, leaf gores)
+    /// that the vanilla draws as world content: after the world, **before**
+    /// the map batches and the interface, so the fullscreen map and the HUD
+    /// cover them (`Main.Draw`'s order — the world draw, `DrawMap`, then
+    /// `DrawInterface`). Always rebuilt — the particles change per frame, so
+    /// they must not ride the G6-cached world range.
+    pub fx: Vec<SpriteInstance>,
     /// Screen-space atlas sprites drawn behind the map (biome `MapBG` backdrop and
     /// the `Images/Map` scroll frame). Always rebuilt; empty until Task 7.
     pub map_back: Vec<SpriteInstance>,
@@ -291,6 +298,7 @@ impl SpriteRenderer {
             capacity,
             back: Vec::with_capacity(1024),
             world: Vec::with_capacity(64 * 1024),
+            fx: Vec::with_capacity(2048),
             map_back: Vec::with_capacity(64),
             map: Vec::with_capacity(8),
             ui: Vec::with_capacity(8 * 1024),
@@ -551,6 +559,40 @@ impl SpriteRenderer {
         });
     }
 
+    /// Screen-space world-effect sprite (rain, snow, sand dust, leaf gores):
+    /// the UI camera transform, drawn before the map batches and the interface.
+    pub fn push_fx_sprite_rot(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+    ) {
+        self.fx.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+        paint: 0.0,
+        });
+    }
+
+    /// Solid-colour rectangle in the world-effect range (the rain flash).
+    pub fn push_fx_rect(&mut self, pos: [f32; 2], size: [f32; 2], color: [f32; 4]) {
+        self.fx.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [self.white_uv[0], self.white_uv[1]],
+            uv1: [self.white_uv[2], self.white_uv[3]],
+            color,
+            rot: 0.0,
+        paint: 0.0,
+        });
+    }
+
     /// Solid-colour rectangle in screen space (debug UI).
     pub fn push_ui_rect(&mut self, pos: [f32; 2], size: [f32; 2], color: [f32; 4]) {
         self.ui.push(SpriteInstance {
@@ -647,6 +689,7 @@ impl SpriteRenderer {
     pub fn begin_frame(&mut self) {
         self.back.clear();
         self.world.clear();
+        self.fx.clear();
         self.map_back.clear();
         self.map.clear();
         self.ui.clear();
@@ -658,11 +701,14 @@ impl SpriteRenderer {
     /// range is stale.
     pub fn begin_frame_keep_world(&mut self) {
         self.back.clear();
+        self.fx.clear();
         self.map_back.clear();
         self.map.clear();
         self.ui.clear();
     }
 
+    /// The full composite in the source order: background, world, world
+    /// effects, the map batches, the interface.
     pub fn render(
         &mut self,
         gpu: &Gpu,
@@ -671,6 +717,49 @@ impl SpriteRenderer {
         zoom: f32,
         time: f32,
         clear: wgpu::Color,
+    ) -> RenderStats {
+        self.draw_ranges(gpu, view, camera, zoom, time, Some(clear), true, true)
+    }
+
+    /// The world half of the split post path (`TR_POST=1`): the background,
+    /// world and world-effect ranges, cleared — the target the filter passes
+    /// read. The vanilla order puts the filters between the world draw and
+    /// `DrawMap`/`DrawInterface`, so the map and the HUD paint over them.
+    pub fn render_world_fx(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+        clear: wgpu::Color,
+    ) -> RenderStats {
+        self.draw_ranges(gpu, view, camera, zoom, time, Some(clear), true, false)
+    }
+
+    /// The interface half of the split post path: the map batches and the UI
+    /// range, loaded over the filter output (no clear).
+    pub fn render_map_ui(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+    ) -> RenderStats {
+        self.draw_ranges(gpu, view, camera, zoom, time, None, false, true)
+    }
+
+    fn draw_ranges(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+        clear: Option<wgpu::Color>,
+        world_half: bool,
+        ui_half: bool,
     ) -> RenderStats {
         let mut stats = RenderStats::default();
         let w = gpu.config.width as f32;
@@ -711,6 +800,7 @@ impl SpriteRenderer {
 
         let total = self.back.len()
             + self.world.len()
+            + self.fx.len()
             + self.map_back.len()
             + self.map.len()
             + self.ui.len();
@@ -735,48 +825,61 @@ impl SpriteRenderer {
 
         // B1: no per-frame `collect`. The world and UI ranges are written straight
         // into one buffer at their final offsets (56-byte instances keep 4-byte
-        // alignment, so a single `write_buffer` copy of each slice is valid).
+        // alignment, so a single `write_buffer` copy of each slice is valid). The
+        // offsets follow the full concatenated layout in both halves of the split
+        // post path — a half only uploads (and draws) its own ranges.
         let idx = self.frame_index;
         self.frame_index = (self.frame_index + 1) % RING;
         let buffer = &self.instances[idx];
         let back_bytes = std::mem::size_of_val(self.back.as_slice());
         let world_bytes = std::mem::size_of_val(self.world.as_slice());
+        let fx_bytes = std::mem::size_of_val(self.fx.as_slice());
         let map_back_bytes = std::mem::size_of_val(self.map_back.as_slice());
         let map_bytes = std::mem::size_of_val(self.map.as_slice());
-        if !self.back.is_empty() {
+        let mut uploaded = 0u64;
+        if world_half && !self.back.is_empty() {
             gpu.queue
                 .write_buffer(buffer, 0, bytemuck::cast_slice(&self.back));
+            uploaded += back_bytes as u64;
         }
-        if !self.world.is_empty() {
+        if world_half && !self.world.is_empty() {
             gpu.queue
                 .write_buffer(buffer, back_bytes as u64, bytemuck::cast_slice(&self.world));
+            uploaded += world_bytes as u64;
         }
-        if !self.map_back.is_empty() {
+        if world_half && !self.fx.is_empty() {
             gpu.queue.write_buffer(
                 buffer,
                 (back_bytes + world_bytes) as u64,
+                bytemuck::cast_slice(&self.fx),
+            );
+            uploaded += fx_bytes as u64;
+        }
+        if ui_half && !self.map_back.is_empty() {
+            gpu.queue.write_buffer(
+                buffer,
+                (back_bytes + world_bytes + fx_bytes) as u64,
                 bytemuck::cast_slice(&self.map_back),
             );
+            uploaded += map_back_bytes as u64;
         }
-        if !self.map.is_empty() {
+        if ui_half && !self.map.is_empty() {
             gpu.queue.write_buffer(
                 buffer,
-                (back_bytes + world_bytes + map_back_bytes) as u64,
+                (back_bytes + world_bytes + fx_bytes + map_back_bytes) as u64,
                 bytemuck::cast_slice(&self.map),
             );
+            uploaded += map_bytes as u64;
         }
-        if !self.ui.is_empty() {
+        if ui_half && !self.ui.is_empty() {
             gpu.queue.write_buffer(
                 buffer,
-                (back_bytes + world_bytes + map_back_bytes + map_bytes) as u64,
+                (back_bytes + world_bytes + fx_bytes + map_back_bytes + map_bytes) as u64,
                 bytemuck::cast_slice(&self.ui),
             );
+            uploaded += std::mem::size_of_val(self.ui.as_slice()) as u64;
         }
-        stats.uploaded_bytes = (back_bytes
-            + world_bytes
-            + map_back_bytes
-            + map_bytes
-            + std::mem::size_of_val(self.ui.as_slice())) as u64;
+        stats.uploaded_bytes = uploaded;
         stats.instances = total as u32;
 
         let mut encoder = gpu
@@ -786,6 +889,10 @@ impl SpriteRenderer {
             });
 
         {
+            let load = match clear {
+                Some(c) => wgpu::LoadOp::Clear(c),
+                None => wgpu::LoadOp::Load,
+            };
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("main-pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -793,7 +900,7 @@ impl SpriteRenderer {
                     resolve_target: None,
                     depth_slice: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(clear),
+                        load,
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -804,33 +911,47 @@ impl SpriteRenderer {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_vertex_buffer(0, buffer.slice(..));
-            if !self.back.is_empty() {
+            if world_half && !self.back.is_empty() {
                 pass.set_bind_group(0, &self.bind_world, &[]);
                 pass.draw(0..6, 0..self.back.len() as u32);
                 stats.draw_calls += 1;
             }
-            if !self.world.is_empty() {
+            if world_half && !self.world.is_empty() {
                 let start = self.back.len() as u32;
                 pass.set_bind_group(0, &self.bind_world, &[]);
                 pass.draw(0..6, start..(start + self.world.len() as u32));
                 stats.draw_calls += 1;
             }
-            if !self.map_back.is_empty() {
+            // The world-effect range: the UI camera transform, the world draw
+            // order — under the map batches and the interface.
+            if world_half && !self.fx.is_empty() {
                 let start = (self.back.len() + self.world.len()) as u32;
+                pass.set_bind_group(0, &self.bind_ui, &[]);
+                pass.draw(0..6, start..(start + self.fx.len() as u32));
+                stats.draw_calls += 1;
+            }
+            if ui_half && !self.map_back.is_empty() {
+                let start = (self.back.len() + self.world.len() + self.fx.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
                 pass.draw(0..6, start..(start + self.map_back.len() as u32));
                 stats.draw_calls += 1;
             }
-            if !self.map.is_empty() {
+            if ui_half && !self.map.is_empty() {
                 if let Some(bind_map) = &self.bind_map {
-                    let start = (self.back.len() + self.world.len() + self.map_back.len()) as u32;
+                    let start =
+                        (self.back.len() + self.world.len() + self.fx.len() + self.map_back.len())
+                            as u32;
                     pass.set_bind_group(0, bind_map, &[]);
                     pass.draw(0..6, start..(start + self.map.len() as u32));
                     stats.draw_calls += 1;
                 }
             }
-            if !self.ui.is_empty() {
-                let start = (self.back.len() + self.world.len() + self.map_back.len() + self.map.len())
+            if ui_half && !self.ui.is_empty() {
+                let start = (self.back.len()
+                    + self.world.len()
+                    + self.fx.len()
+                    + self.map_back.len()
+                    + self.map.len())
                     as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
                 pass.draw(0..6, start..(start + self.ui.len() as u32));

@@ -919,8 +919,9 @@ impl App {
 
                 // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
                 // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                // UI range like the rain. `TR_NO_WIND` is the A/B switch for the
-                // whole wind feature, spawns included.
+                // world-effect range like the rain (world content — under the map
+                // batches and the interface). `TR_NO_WIND` is the A/B switch for
+                // the whole wind feature, spawns included.
                 let wind_ab_on = std::env::var_os("TR_NO_WIND").is_none();
                 let drained: Vec<_> = leaf_spawns.drain(..).collect();
                 for s in drained.into_iter().take_while(|_| wind_ab_on) {
@@ -935,8 +936,9 @@ impl App {
                 crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
                 rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
-                // `Main.DrawDust`'s 268 entries: the flying sand, the same UI
-                // range as the rain (`Main.DrawRain`'s draw call site).
+                // `Main.DrawDust`'s 268 entries: the flying sand, the same
+                // world-effect range as the rain (`Main.DrawRain`'s draw call
+                // site — world content, under the map batches and the UI).
                 sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
@@ -1194,12 +1196,18 @@ impl App {
                 // (DW-2.1).
                 if let Some(post) = post.as_mut() {
                     let scene = post.scene_view(gpu);
-                    stats = renderer.render(
+                    // The vanilla order puts the filters between the world draw
+                    // and `DrawMap`/`DrawInterface` (`Main.DoDraw`): the world
+                    // and the world-effect ranges render into the post target,
+                    // the filter chain lands on the screen, then the map
+                    // batches and the interface draw over the filtered frame.
+                    let now_secs = now.elapsed().as_secs_f32();
+                    stats = renderer.render_world_fx(
                         gpu,
                         scene,
                         draw_cam.to_array(),
                         *zoom,
-                        now.elapsed().as_secs_f32(),
+                        now_secs,
                         wgpu::Color {
                             r: 0.045,
                             g: 0.055,
@@ -1246,6 +1254,11 @@ impl App {
                             water_mask: water_mask.as_ref().and_then(|m| m.texture()),
                         },
                     );
+                    let ui_stats =
+                        renderer.render_map_ui(gpu, &view, draw_cam.to_array(), *zoom, now_secs);
+                    stats.instances += ui_stats.instances;
+                    stats.draw_calls += ui_stats.draw_calls;
+                    stats.uploaded_bytes += ui_stats.uploaded_bytes;
                 } else {
                     stats = renderer.render(
                         gpu,

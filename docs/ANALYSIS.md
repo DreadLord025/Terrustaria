@@ -3259,10 +3259,10 @@ Harness notes: (1) the seed-1 desert band's ground sits ~4 tiles below
 `world_surface` (361), so a standing player loses
 `IsSurfaceForAtmospherics` (`ZoneSandstorm` dies with it) — verify desert
 shots with `TR_NOPLAYER` + `TR_CAM=<x,y>` (the scan then centres on the
-camera above the line); (2) the `TR_POST` pass covers the whole composite
-including the UI, so with an active storm the map panel shows the pass's
-noise — vanilla draws the UI after the filters; the world/UI split is a
-BG-18 follow-up.
+camera above the line); (2) fixed since: the `TR_POST` pass used to cover
+the whole composite including the UI (the map panel showed the filter's
+noise under an active storm) — the draw now splits per the vanilla order
+(see "World-effect draw range" below).
 
 Verification: 7 sand tests (the gates, the budget, the weighted colours,
 the scale hold/fade, the sine, the bottom death, seed determinism);
@@ -3387,6 +3387,28 @@ jungle shrines, the temple, the pyramids and the biome chests are the
 follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
 tiny worlds collapse the evil band and guard every range.
 
+## World-effect draw range (FIX-FX-under-ui)
+
+The weather particles (rain drops/snow/splashes/sparkles, leaf gores, the
+sandstorm dust) rendered in the UI sprite range, which draws **after** the
+map batches — so the rain streaks and the sand specks painted over the
+minimap, the fullscreen map and the HUD. Vanilla draws them as world
+content: the world, then `DrawMap`, then `DrawInterface`.
+
+Fix: `SpriteRenderer` gained an `fx` range — the UI camera transform
+(screen-space, so the G6-cached world range stays cacheable — the moving
+particles must not ride it), drawn between `world` and `map_back` — and
+the post path splits: `render_world_fx` (background + world + fx, cleared)
+feeds the filter chain, `apply_filters` lands on the screen, then
+`render_map_ui` (the map batches + the interface, loaded, no clear) draws
+over the filtered frame. The vanilla filter position is exactly there —
+the filters cover the world, never the map or the HUD.
+
+`Rain::draw` (drops, snow, splashes, sparkles, the lightning flash),
+`foliage::draw_leaves` and `Sand::draw` push the `fx` range now.
+Verification: rain/sand/leaf shots with the fullscreen map and the
+minimap — no particle over either; the sandstorm filter no longer paints
+the minimap (the twins SHA256-equal); the workspace suite 1261/0.
 ## Structures (M1.4-WGEN-2)
 
 The structure passes ride their own RNG stream (`opts.seed ^
@@ -3460,3 +3482,33 @@ Deviations: the hallowed/crimson vine arms wait for the hallow
 (M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
 `GrowUndergroundTree` canvas are approximated; the mushroom trees are the
 tile-71 stands (the full tree generator = the follow-up).
+
+## Floating islands (M1.4-WGEN-4)
+
+The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
+islands over the 10-90 % band:
+
+- **The placement** (`:12975-13033`): the x avoids the spawn ±150 and the
+  ±180 spacing from the placed islands; the y = `Next(90, worldSurface −
+  100)` — `worldSurface = surface_max + 25` carries the ground margin, so
+  the disc bottoms stay ~75+ tiles over the deepest terrain column. The
+  open-sky clearance scans the ±75-vertical window (the C# `:13015-13028`).
+- **The island body** (`CloudIsland`, `:78132-78540`): the elliptical
+  cloud disc (the tile 189) with the ragged boundary (the C#'s
+  `Next(80, 120) · 0.01` wobble on the rim cells), the grass cap 2 rows
+  on the top surface. Every third island is a `CloudLake` sky lake — the
+  rain-cloud (196) bowl sunk 3 deep with the water inside.
+- **The houses** (`FloatingIslandHouses`, `:17862+`): the planks-9 box on
+  the island's top with the cloud-wall (73) interior and the chest.
+- **The living-tree interaction**: the islands occupy the sky the C#'s
+  empty skies don't — the living-tree anchor scan starts at the
+  height-map row (not from y=0, which anchored on the island discs), and
+  the grow rides the anchor-attempt loop (`:15553-15555` — the clearance
+  failures retry the next candidate; the port's original structure wasted
+  the whole tree on one failed clearance). The desert test skips the sky
+  columns wholesale (the islands legitimately hang over the dunes; the
+  dirt caps read as the surface via `surface_of`).
+
+Deviations: the snow/desert cloud-island variants
+(`SnowCloudIsland`/`DesertCloudIsland`) and the house furniture sets are
+the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
