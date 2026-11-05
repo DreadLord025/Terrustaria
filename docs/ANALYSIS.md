@@ -3200,6 +3200,75 @@ generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
 `NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
 styles are M2-DEATH polish.
 
+## Sandstorm (M1.4-WEATHER-2)
+
+The research corrected the row: the severity machine, the SceneState
+filters, the music-40 ladder, the zone gate and the bgDelay tracking
+already landed (BG-18 / WEATHER-1), and the `SandstormSky` sky tint is
+**dead code in 1.4.5.8** — registered (`ScreenEffectInitializer.cs:71`)
+but never activated anywhere, so `_opacity` stays 0 and the quad never
+draws. Documented out; the visible sky wash is the SceneState
+filter/overlay pair.
+
+The task's real delta is `Sandstorm.EmitDust` (`Main.cs:17247`) — the
+flying sand, in `crates/tr-app/src/sand.rs`:
+
+* the budget: `1000*(screenWidth/1920)*(gfxQuality*0.5+0.5) +
+  1000*screenWidth/1920*0.1 − Dust.SandStormCount` per tick, `20*Severity`
+  spawn attempts behind the `Next(num6/4)` gate (`Next(0)` rolls 0 — XNA),
+  the windward screen-edge rolls (both `Next(3)`s always evaluate, C# `&&`
+  order), the off-screen-x y-spread, the wall gate (`tile.wall != 0` skips),
+  and the cluster shuffler: `Next(maxValue)` re-rolls the position by
+  `RandomVector2(±10) + velocity*-1.1` and spawns again until the roll hits
+  or the budget dies (a rejected `NewDust` slot still burns budget and
+  still feeds the shuffle its velocity — `EmitDust` sets the properties on
+  the returned index blindly);
+* the four sand-family weighted colours (`53/396/397` desert,
+  `112/400/398` crimson, `234/401/399` jungle, `116/403/402` snow;
+  `WeightedRandom` falls through to the first entry on a zero total);
+* the dust-268 AI (`Dust.cs:1789-1818` + the generic tail): the move,
+  the `1.0050251` speed-up, the scale drift (`+0.01`, `−0.05` without
+  `ShowSandstormVisuals`), the spawn-`fadeIn` one-off `+0.03` then the
+  generic `−0.01` (with the storm on the three cancel and the scale holds
+  at ~0.94; without it the net `−0.05`/tick fades the orphans out in ~17
+  ticks), the player-fall parallax (`vel.y` lerps toward the player's fall,
+  `pos.y += vy*0.2`), the solid damp (`scale*0.9`, `vel*0.25`, the spawn
+  `fadeIn` keeps the first tick damp-free) vs the sine fall
+  `sin(x*0.0043982295)*2+3`, the off-bottom and `scale<0.1` deaths, and
+  the black-light kill at draw (`Main.cs:39015-39017`);
+* the draw: the shared `Dust` sheet's second band — `dust.frame` maps type
+  268 to x = 10*268−2000, y = 60+10*rand(3) (`Dust.cs:177-182`), the sheet
+  the atlas already loads — at `10*scale` px with the light base pass plus
+  the `GetColor` overlay (`colour + light − 255` per channel, floored at
+  0, skipped when every channel is 0).
+
+`update_scene` runs emit+tick after `Sandstorm.UpdateTime` and ahead of
+the rescan (the vanilla call order), spawning off the stored
+`SceneMetrics` (vanilla's last-scan persistence); the draw rides the
+frame's UI-range batch next to the rain.
+
+Deviations: the RNG is the module's own splitmix stream (the port's
+per-consumer convention — vanilla rolls the shared `Main.rand`); the
+`NewDust` initial-velocity rolls are not consumed (`EmitDust` overwrites
+both components); `gfxQuality`/`dCount` pinned `1.0`/`0` — no pool-pressure
+governor, the budget and the deaths bound the population; the multiplayer
+`SendData(7)` tail is MP scope; the spawn multipliers stay out (no
+spawner depth); the WindPushed buff is M2-BUFF-4.
+
+Harness notes: (1) the seed-1 desert band's ground sits ~4 tiles below
+`world_surface` (361), so a standing player loses
+`IsSurfaceForAtmospherics` (`ZoneSandstorm` dies with it) — verify desert
+shots with `TR_NOPLAYER` + `TR_CAM=<x,y>` (the scan then centres on the
+camera above the line); (2) the `TR_POST` pass covers the whole composite
+including the UI, so with an active storm the map panel shows the pass's
+noise — vanilla draws the UI after the filters; the world/UI split is a
+BG-18 follow-up.
+
+Verification: 7 sand tests (the gates, the budget, the weighted colours,
+the scale hold/fade, the sine, the bottom death, seed determinism);
+`TR_SANDSTORM=1` desert twins SHA256-equal (two runs byte-identical,
+a third run in a fresh dir matched and one earlier run raced — the known
+first-run gotcha), the off-pin A/B clean.
 ## Fishing engine (M7-FISH-1)
 
 The rule core of the fishing system — the power, the pond and the rolls —
@@ -3317,3 +3386,77 @@ C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
 jungle shrines, the temple, the pyramids and the biome chests are the
 follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
 tiny worlds collapse the evil band and guard every range.
+
+## Structures (M1.4-WGEN-2)
+
+The structure passes ride their own RNG stream (`opts.seed ^
+0x9E37_79B9_7F4A_7C15`) — the shared worldgen stream feeds the
+living-tree/tree passes after them, and consuming it early shifted the
+tree placements to empty results on the small worlds.
+
+- **The jungle shrines** (`JungleShrines`, `WorldGen.cs:15977-16140`):
+  7-12 hut rings of the brick 119 (`GenVars.jungleHut`'s first pick,
+  `:11319`) in the underground jungle — the carved interiors carry the
+  shrine walls (24) and a torch (the tile 4, the style 3), the mud
+  pillars fill under the floor (`:16092-16106`) and the sloped brick caps
+  close the top (`:16108-16120`). The C# retry loop (`num4`, `:15991`)
+  maps to 8 attempts per shrine — the caves carve the mud band before
+  this pass, so most raw spots miss. The net brick is the shell ring
+  only (~25-32 tiles per shrine — the interior does not count).
+- **The chests** (`ChestsInJungleShrines` + the cavern scatter): the
+  shrine spots take the chests first (`place_chest` writes the intact
+  2×2 tile-21 quads with the frame corners), then the cave floors
+  scatter `maxTilesX / 40` more.
+- **The altars** (`DemonAndCrimsonAltars`, `:15750-15800`): the count
+  `tiles × 3.3e-6` (the small worlds clamp the 281-tile ocean margins),
+  the 3×2 tile 26 with the style frames, the middle-10 % exclusion; the
+  body may carve the loose cells (`Place3x2`'s free placement).
+- **The pyramids** (`DunesAndPyramidLocations`, `:15367+`): 1-2 stepped
+  hulls of the sandstone brick 480 over the desert surface with the base
+  chambers, the entrance tunnels and a chest.
+- **The pots** (`PotsGraveyardsAndBoulderPiles`, `:17996+`): the pot 28
+  with the 7 styles, scattered with a 20-row seat scan (the point draws
+  rarely hit the cave floors — the C#'s denser caves accept more).
+
+Deviations: the chest inventories ride the storage task (the C#
+`Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
+piles and the graveyards are the follow-ups; the layouts are shape-level.
+
+## Biome detail passes (M1.4-WGEN-3)
+
+The decorator passes over the finished biomes — the ocean caves, the
+fragile ice, the underground jungle trees, the mushroom/jungle plants and
+the vines — ride their own `drng` stream (the shared worldgen stream stays
+reserved for the biome + tree passes; the stream discipline bit in
+WGEN-2's review: consuming it early shifted the living-tree placements to
+empty results on the small worlds).
+
+- **The ocean caves** (`OceanCaves`, `WorldGen.cs:15167-15191`): one
+  winding shaft per ocean side at the `Next(3)` gate, the first-active
+  surface scan, the walkable carve down past the sea floor into the
+  terminal bubble room (the C# `oceanCave`'s winding shaft shape is
+  approximated).
+- **The fragile ice** (`FragileIceOverIceBiomeWater`, `:16667-16690`): the
+  ice band's water tiles break their skin — the 1-3 wide holes at 1/4 per
+  tile (the C# `MakeWateryIceThing`'s open-pocket shape).
+- **The underground jungle trees** (`UndergroundJungleTrees`,
+  `:17840-17856`): the `Next(10)` per column over the mud band, the 5-8
+  tall trunks (the tile 5) with the leaf balls (the tile 6), rooted in the
+  mud with the two-row clearance.
+- **The plants** (`GlowingMushroomPlantsUndergroundAndJunglePlants`,
+  `:20122-20158`): the glowing mushrooms (71) on the free mushroom-grass
+  cells below the surface (the C#'s triple tree retry collapses to the
+  plant placement in the port — the mushroom trees are the tile-71 stands),
+  the jungle plants (61) on every free jungle-grass cell.
+- **The vines** (`ActionVines` + the grass-growth vine arms): the
+  overhangs hang the jungle vines 62 (the cap 20), the regular vines 52
+  (12) and the mushroom vines 528 (12) at the 1/3 gate.
+- The desert test learned two vanilla-legitimate exceptions: the pyramid
+  entrances open the surface (`Pyramid` carves into the dunes) and the
+  living trees grow on sand (`GrowLivingTree` gates only the anchor air,
+  not the soil).
+
+Deviations: the hallowed/crimson vine arms wait for the hallow
+(M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
+`GrowUndergroundTree` canvas are approximated; the mushroom trees are the
+tile-71 stands (the full tree generator = the follow-up).
