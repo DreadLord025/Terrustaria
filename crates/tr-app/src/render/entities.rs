@@ -101,6 +101,7 @@ pub(crate) struct NpcAssets {
     pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
+    pub(crate) merchant: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -120,6 +121,15 @@ pub(crate) struct NpcAssets {
     pub(crate) goldfish: Option<BgTex>,
     pub(crate) piranha: Option<BgTex>,
     pub(crate) shark: Option<BgTex>,
+    pub(crate) devourer_head: Option<BgTex>,
+    pub(crate) devourer_body: Option<BgTex>,
+    pub(crate) devourer_tail: Option<BgTex>,
+    pub(crate) giant_worm_head: Option<BgTex>,
+    pub(crate) giant_worm_body: Option<BgTex>,
+    pub(crate) giant_worm_tail: Option<BgTex>,
+    pub(crate) eow_head: Option<BgTex>,
+    pub(crate) eow_body: Option<BgTex>,
+    pub(crate) eow_tail: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -130,6 +140,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
+        merchant: sky_tex(atlas, "NPC_17", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -149,6 +160,15 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         goldfish: sky_tex(atlas, "NPC_55", None),
         piranha: sky_tex(atlas, "NPC_58", None),
         shark: sky_tex(atlas, "NPC_65", None),
+        devourer_head: sky_tex(atlas, "NPC_7", None),
+        devourer_body: sky_tex(atlas, "NPC_8", None),
+        devourer_tail: sky_tex(atlas, "NPC_9", None),
+        giant_worm_head: sky_tex(atlas, "NPC_10", None),
+        giant_worm_body: sky_tex(atlas, "NPC_11", None),
+        giant_worm_tail: sky_tex(atlas, "NPC_12", None),
+        eow_head: sky_tex(atlas, "NPC_13", None),
+        eow_body: sky_tex(atlas, "NPC_14", None),
+        eow_tail: sky_tex(atlas, "NPC_15", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -585,6 +605,13 @@ pub(crate) fn draw_npcs(
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
             ),
+            // The Merchant: the same humanoid shape over NPC_17.
+            NpcKind::Merchant => (
+                assets.merchant.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => (
@@ -653,6 +680,38 @@ pub(crate) fn draw_npcs(
                     tex.map_or(18.0, |t| t.h / frames),
                     [bw + 4.0, bh + 2.0],
                     [n.x - 2.0, n.y - 1.0],
+                )
+            }
+            // The worms: the single-frame segments rotated along the chain
+            // (`rotation = atan2 + 1.57`), drawn only in the open — the
+            // vanilla `behindTiles` hides them under the ground (the
+            // behindTiles layer lands with the render-layers work).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => {
+                let tex = match n.kind {
+                    NpcKind::DevourerHead => assets.devourer_head.as_ref(),
+                    NpcKind::DevourerBody => assets.devourer_body.as_ref(),
+                    NpcKind::DevourerTail => assets.devourer_tail.as_ref(),
+                    NpcKind::GiantWormHead => assets.giant_worm_head.as_ref(),
+                    NpcKind::GiantWormBody => assets.giant_worm_body.as_ref(),
+                    NpcKind::GiantWormTail => assets.giant_worm_tail.as_ref(),
+                    NpcKind::EaterOfWorldsHead => assets.eow_head.as_ref(),
+                    NpcKind::EaterOfWorldsBody => assets.eow_body.as_ref(),
+                    _ => assets.eow_tail.as_ref(),
+                };
+                let (bw, bh) = n.size();
+                (
+                    tex,
+                    tex.map_or(bh, |t| t.h),
+                    [bw + 4.0, bh + 4.0],
+                    [n.x - 2.0, n.y - 2.0],
                 )
             }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {

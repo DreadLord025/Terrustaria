@@ -131,6 +131,9 @@ pub(crate) struct App {
     pub(crate) npcs: Vec<Npc>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
+    /// The worm chain id counter (`AI_006`'s chain identity) — the head
+    /// takes the next id, the segments share it.
+    pub(crate) next_worm_id: u32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -338,6 +341,11 @@ pub(crate) struct App {
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
+    /// The shared 60 Hz world tick (M1.4-BG-22): the dayRate cluster — the
+    /// `UpdateWeather` thunder arm, the ×dayRate wind walk,
+    /// `Sandstorm.UpdateTime` — steps on this accumulator in
+    /// `world_sim::weather::update_world_tick` (`Main.cs:17228-17231`).
+    pub(crate) world_tick_step: FixedStepper,
     /// `Main.atmo` (`Main.cs:2503`): the atmosphere density
     /// `UpdateAtmosphereTransparencyToSkyColor` derives per draw
     /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
@@ -1235,6 +1243,7 @@ impl App {
             npcs,
             npc_assets,
             npc_timer: 6.0,
+            next_worm_id: 1,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1449,6 +1458,7 @@ impl App {
             ambient_lavafall,
             ambient_counter,
             wind,
+            world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             grapple: None,

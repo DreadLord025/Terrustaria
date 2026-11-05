@@ -289,6 +289,41 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Shark",
     },
+    BestiaryEntryDef {
+        credit_id: "DevourerHead",
+        net_id: 7,
+        kind: NpcKind::DevourerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Devourer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantWormHead",
+        net_id: 10,
+        kind: NpcKind::GiantWormHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Worm",
+    },
+    // The worm segments fold onto the head's entry (`entry_for_npc`'s
+    // mapping): the vanilla credits the whole worm to the head's bestiary
+    // id — one entry per credit.
+    BestiaryEntryDef {
+        credit_id: "Merchant",
+        net_id: 17,
+        kind: NpcKind::Merchant,
+        variant: None,
+        quick_unlock: false,
+        name: "Merchant",
+    },
+    BestiaryEntryDef {
+        credit_id: "EaterofWorldsHead",
+        net_id: 13,
+        kind: NpcKind::EaterOfWorldsHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Eater of Worlds",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -307,6 +342,14 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
 pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryEntryDef {
+    // The worm segments fold onto the head's entry (the vanilla credits the
+    // whole worm to the head's bestiary id — one entry per credit).
+    let kind = match kind {
+        NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
+        NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
+        NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        other => other,
+    };
     ENTRIES
         .iter()
         .find(|e| {

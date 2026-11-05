@@ -319,6 +319,16 @@ fn portrait_data(
         NpcKind::Goldfish => 22,
         NpcKind::Piranha => 23,
         NpcKind::Shark => 24,
+        NpcKind::DevourerHead => 25,
+        NpcKind::DevourerBody => 26,
+        NpcKind::DevourerTail => 27,
+        NpcKind::GiantWormHead => 28,
+        NpcKind::GiantWormBody => 29,
+        NpcKind::GiantWormTail => 30,
+        NpcKind::EaterOfWorldsHead => 31,
+        NpcKind::EaterOfWorldsBody => 32,
+        NpcKind::EaterOfWorldsTail => 33,
+        NpcKind::Merchant => 34,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -372,6 +382,17 @@ fn portrait_data(
         (NpcKind::Goldfish, _) => (sheet_i, 18.0, 20.0, 18.0, white),
         (NpcKind::Piranha, _) => (sheet_i, 20.0, 18.0, 20.0, white),
         (NpcKind::Shark, _) => (sheet_i, 24.0, 100.0, 24.0, white),
+        // The worm segments: the square sheets.
+        (NpcKind::DevourerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::DevourerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::DevourerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::GiantWormHead, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::GiantWormBody, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::GiantWormTail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::EaterOfWorldsHead, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

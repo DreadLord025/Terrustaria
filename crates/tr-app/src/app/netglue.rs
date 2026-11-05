@@ -293,6 +293,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Merchant => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
@@ -303,6 +304,21 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         // The swimmers: the ctor plants the feet on the column surface —
         // the net state overwrites the position below.
         crate::npc::NpcKind::Goldfish | crate::npc::NpcKind::Piranha | crate::npc::NpcKind::Shark => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // The worm segments: the net spawns each link standalone (the chain
+        // links rebuild through the init — the head; a lone body/tail dies
+        // finding no leader — the net-chain sync lands with the netglue
+        // worm work).
+        crate::npc::NpcKind::DevourerHead
+        | crate::npc::NpcKind::DevourerBody
+        | crate::npc::NpcKind::DevourerTail
+        | crate::npc::NpcKind::GiantWormHead
+        | crate::npc::NpcKind::GiantWormBody
+        | crate::npc::NpcKind::GiantWormTail
+        | crate::npc::NpcKind::EaterOfWorldsHead
+        | crate::npc::NpcKind::EaterOfWorldsBody
+        | crate::npc::NpcKind::EaterOfWorldsTail => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         // The casters/spheres: the ctor only seeds the stats — the net
