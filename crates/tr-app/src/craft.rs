@@ -962,6 +962,65 @@ pub(crate) static RECIPES: &[Recipe] = &[
         stations: &[16],
         ..BASE
     },
+    // --- The utility batch: the chain, the stations, the light and the
+    // houseware basics (`itemdata.rs` rows exist for every result).
+    // Recipe.cs (SetupRecipes) — Chain x15: 1 Iron Bar
+    // (`RequireGroup(RecipeGroups.IronBar)`), at an anvil.
+    Recipe {
+        create: (85, 15),
+        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 1)],
+        stations: &[16],
+        ..BASE
+    },
+    // — Sawmill: 10 Wood + 2 Iron Bar + 1 Chain, at a work bench.
+    Recipe {
+        create: (363, 1),
+        required: &[
+            Requirement::group(9, RecipeGroups::WOOD, 10),
+            Requirement::group(22, RecipeGroups::IRON_BAR, 2),
+            Requirement::item(85, 1),
+        ],
+        stations: &[18],
+        ..BASE
+    },
+    // — Loom: 12 Wood, at a sawmill.
+    Recipe {
+        create: (332, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 12)],
+        stations: &[106],
+        ..BASE
+    },
+    // — Sign: 6 Wood, at a work bench.
+    Recipe {
+        create: (171, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
+        stations: &[18],
+        ..BASE
+    },
+    // — Cooking Pot: 10 Iron Bar + 2 Wood, at an anvil.
+    Recipe {
+        create: (345, 1),
+        required: &[
+            Requirement::group(22, RecipeGroups::IRON_BAR, 10),
+            Requirement::group(9, RecipeGroups::WOOD, 2),
+        ],
+        stations: &[16],
+        ..BASE
+    },
+    // — Bowl: 2 Clay Block, at a furnace.
+    Recipe {
+        create: (356, 1),
+        required: &[Requirement::item(133, 2)],
+        stations: &[17],
+        ..BASE
+    },
+    // — Gold Candle: 1 Gold Bar + 1 Torch, at a work bench.
+    Recipe {
+        create: (105, 1),
+        required: &[Requirement::item(19, 1), Requirement::item(8, 1)],
+        stations: &[18],
+        ..BASE
+    },
 ];
 
 #[cfg(test)]
@@ -1481,5 +1540,41 @@ mod tests {
         assert!(!can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones));
         let mut inv = inv_with(&[(619, 8), (704, 2)]);
         assert!(can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones), "Lead Bar is IronBar");
+    }
+
+    #[test]
+    fn the_utility_batch_chains_the_stations() {
+        // The C# rows: Chain x15 (anvil), Sawmill (work bench + the chain),
+        // Loom (sawmill), Sign (work bench), Cooking Pot (anvil), Bowl
+        // (furnace, clay), Gold Candle (work bench, gold bar + torch).
+        let mut rng = 1u64;
+        let zones = Zones::default();
+        let anvil = Adjacent { tiles: vec![16], water: false, honey: false, lava: false, alchemy_table: false };
+        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false, alchemy_table: false };
+        let sawmill = Adjacent { tiles: vec![106], water: false, honey: false, lava: false, alchemy_table: false };
+        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false, alchemy_table: false };
+        let mut chests = Vec::new();
+        // Chain: one Lead Bar (the IronBar group) makes 15 — the anvil gates it.
+        let mut inv = inv_with(&[(704, 1)]);
+        assert!(!can_craft(&inv, &[], &[], recipe_by_create(85), &bench, &zones), "anvil required");
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(85), &anvil, &zones, &mut rng), Some((85, 15)));
+        // The sawmill: wood + iron bars + the fresh chain, at the work bench.
+        let mut inv = inv_with(&[(9, 10), (704, 2), (85, 1)]);
+        assert!(!can_craft(&inv, &[], &[], recipe_by_create(363), &anvil, &zones), "work bench required");
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(363), &bench, &zones, &mut rng), Some((363, 1)));
+        // The loom rides the sawmill station; the sign is a plain work bench row.
+        let mut inv = inv_with(&[(9, 12)]);
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(332), &sawmill, &zones, &mut rng), Some((332, 1)));
+        let mut inv = inv_with(&[(9, 6)]);
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(171), &bench, &zones, &mut rng), Some((171, 1)));
+        // The cooking pot: iron bars + wood at the anvil. The bowl: clay at
+        // the furnace. The gold candle: a gold bar + a torch at the work bench.
+        let mut inv = inv_with(&[(22, 10), (9, 2)]);
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(345), &anvil, &zones, &mut rng), Some((345, 1)));
+        let mut inv = inv_with(&[(133, 2)]);
+        assert!(!can_craft(&inv, &[], &[], recipe_by_create(356), &bench, &zones), "furnace required");
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(356), &furnace, &zones, &mut rng), Some((356, 1)));
+        let mut inv = inv_with(&[(19, 1), (8, 1)]);
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(105), &bench, &zones, &mut rng), Some((105, 1)));
     }
 }

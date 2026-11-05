@@ -4013,4 +4013,40 @@ the `Recipe.cs` registrations):
 Deviations: the iron armor requirements author the iron bar 22 with the
 accepted IRON_BAR group (the C#'s `RequireGroup` shape — the group
 members 22/704 both accepted); the remaining ~1950 C# rows wait for the
-SetupRecipes generator; the craft sound is the follow-up.
+SetupRecipes generator.
+
+## Craft grant sound + the utility batch (M3-CRAFT-5)
+
+The craft sound: `CraftingEffects.SpawnEffects_BeforeGrantingItem` fires
+`SoundEngine.PlaySound(7)` before the result enters the inventory
+(`CraftingEffects.cs:51`, called from `OnCraft` — the grant happens once
+per successful craft, not per ingredient consumed). Legacy id 7 = Grab
+(`SoundID.cs`), the `Sounds/Grab.xnb` cue — the port adds the
+`("Grab", 7)` cue to `SFX_CUES` and fires `audio.play("Grab")` at the
+successful `try_craft` in `handle_crafting_clicks` (the 2D `play`, no
+attenuation — the C# passes no position).
+
+The utility batch (7 recipes, each verified against its `SetupRecipes`
+row; `ItemID.cs` resolves the ids — the wiki-familiar ids are wrong in
+several places):
+
+- **Chain 85 ×15** = 1 Iron Bar (the group), at the anvil 16 — 1.4.5.8
+  makes **15** per bar (the older 10-stack is the stale number).
+- **Sawmill 363** = 10 Wood (the group) + 2 Iron Bar (the group) + 1
+  Chain, at the work bench 18.
+- **Loom 332** = 12 Wood (the group), at the sawmill 106.
+- **Sign 171** = 6 Wood (the group), at the work bench 18.
+- **Cooking Pot 345** = 10 Iron Bar (the group) + 2 Wood (the group), at
+  the anvil 16.
+- **Bowl 356** = 2 Clay Block 133, at the furnace 17 (the glass is NOT
+  the ingredient — that is the pre-1.4 recipe).
+- **Gold Candle 105** = 1 Gold Bar 19 + 1 Torch 8, at the work bench 18.
+
+The anvil 16 and the sawmill 106 enter the station list for the first
+time — `scan_adjacent` collects every active tile kind, so the new
+stations needed no engine change. The chain/sawmill pair makes the
+station chain craftable end-to-end from the vanilla iron bar.
+
+Deviations: the platinum candle variant waits for the platinum-bar rows
+(the generator batch); the cauldron 1791/piano 333 skip (the cauldron
+crafts at the cooking-pot tile, the piano needs bone + book).
