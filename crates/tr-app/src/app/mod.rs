@@ -306,6 +306,10 @@ pub(crate) struct App {
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
+    /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) growth_step: FixedStepper,
+    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
+    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
@@ -557,6 +561,11 @@ impl App {
     /// fire the wire trips (M7-TE-2).
     pub(crate) fn update_tile_entities(&mut self, dt: f32) {
         world_sim::tile_entities::update_tile_entities(self, dt);
+    }
+
+    /// The world-growth pass (`UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) fn update_growth(&mut self, dt: f32) {
+        world_sim::growth::update_growth(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1413,6 +1422,8 @@ impl App {
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
             rain,
         ambient_waterfall,
         ambient_lavafall,

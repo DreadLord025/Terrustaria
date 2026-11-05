@@ -29,6 +29,7 @@ pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
 pub mod fishing;
+pub mod growth;
 pub mod pylons;
 pub mod tile_entities;
 pub mod torch;

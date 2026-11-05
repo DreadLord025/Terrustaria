@@ -10,6 +10,7 @@
 pub(crate) mod camera;
 pub(crate) mod clock;
 pub(crate) mod editing;
+pub(crate) mod growth;
 pub(crate) mod items;
 pub(crate) mod liquids;
 pub(crate) mod npcs;
