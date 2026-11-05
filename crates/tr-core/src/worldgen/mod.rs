@@ -175,7 +175,13 @@ pub fn generate(opts: &GenOptions) -> World {
     mini_biomes::pass_cave_houses(&mut world, layers.rock_layer, &mut srng);
     mini_biomes::pass_campsites(&mut world, &mut srng);
     mini_biomes::pass_spike_pits(&mut world, &spans, layers.rock_layer, &mut srng);
-    mini_biomes::pass_sword_shrines(&mut world, &map.heights, layers.rock_layer, &mut srng);
+    mini_biomes::pass_sword_shrines(
+        &mut world,
+        &map.heights,
+        layers.rock_layer,
+        (map.desert_start, map.desert_end),
+        &mut srng,
+    );
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -506,7 +512,7 @@ mod tests {
         // The 4200-world carries the cave houses (the wood frames 27 + the
         // platforms 19 + the chests), the campsites (the tents 196-199),
         // the spike pits (the stone blobs in the jungle) and the sword
-        // shrines (the sword tile 197).
+        // shrines (the real sword tile 187, breaks into the item 989).
         let w = generate(&GenOptions {
             seed: 44,
             ..Default::default()
@@ -520,7 +526,7 @@ mod tests {
         assert!(count(27) > 100, "the cabin wood frames ({})", count(27));
         assert!(count(19) > 20, "the cabin platforms ({})", count(19));
         assert!(count(196) + count(197) + count(198) + count(199) > 30, "the tents");
-        assert!(count(197) >= 2, "the sword shrines ({})", count(197));
+        assert!(count(187) >= 2, "the sword shrines ({})", count(187));
     }
 
     #[test]

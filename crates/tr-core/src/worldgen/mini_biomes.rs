@@ -245,6 +245,32 @@ pub(crate) fn pass_spike_pits(
             }
             r1 -= 1;
         }
+        // The spikes (48) on the inner rim touching the air (`:53-55`: the
+        // IsTouchingAir cells, the checkerboard 2 spacing).
+        for dx in -r1..=r1 {
+            for dy in -r1..=r1 {
+                let px = cx + dx;
+                let py = cy + 12 + dy;
+                if (dx + dy) % 2 != 0 {
+                    continue;
+                }
+                if active_at(world, px, py) {
+                    continue;
+                }
+                // The cell touches the pit's stone (the wall or the floor).
+                let touching = [
+                    (px - 1, py),
+                    (px + 1, py),
+                    (px, py - 1),
+                    (px, py + 1),
+                ]
+                .iter()
+                .any(|(nx, ny)| active_at(world, *nx, *ny));
+                if touching {
+                    put(world, px, py, 48);
+                }
+            }
+        }
         placed += 1;
     }
     placed
@@ -257,12 +283,19 @@ pub(crate) fn pass_sword_shrines(
     world: &mut World,
     surface: &[i32],
     rock_layer: f64,
+    desert: (i32, i32),
     rng: &mut super::Rng,
 ) -> u32 {
     let count = 2 + rng.range(0, 3) as i32;
     let mut placed = 0u32;
     for _ in 0..count {
         let x = rng.range(100, world.width - 100);
+        // The desert band skips (the C#'s tile-scan gate `:24-30` requires
+        // 1250 of the tiles 0/1 in the 50×50 box — the desert's sand 53
+        // fails it, so the shrines never generate there).
+        if x >= desert.0 && x < desert.1 {
+            continue;
+        }
         // The depth gate (`:32-38`): the origin 55+ tiles under the
         // surface.
         let ground = surface[x as usize];
@@ -289,8 +322,11 @@ pub(crate) fn pass_sword_shrines(
                 }
             }
         }
-        // The sword tile in the chamber's centre.
-        put(world, x, chamber_y + 2, 197);
+        // The sword tile in the chamber's centre (`:100-108`): the
+        // `ChanceOfRealSword` config value is 1.0 — the real sword tile 187
+        // always (the break drops the Enchanted Sword item 989); the fake
+        // tile 186 arm is dead with this config.
+        put(world, x, chamber_y + 2, 187);
         placed += 1;
     }
     placed
