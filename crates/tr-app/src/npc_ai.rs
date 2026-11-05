@@ -497,6 +497,196 @@ pub fn sphere_step(npc: &mut Npc, target_x: f32, target_y: f32, world: &World) {
     }
 }
 
+/// The swim tunables — `AI_016`'s per-kind constants (`NPC.cs`'s aiStyle 16
+/// block: the chase accel/caps and the aggro gate).
+#[derive(Clone, Copy, Debug)]
+pub struct SwimParams {
+    /// The chase acceleration per axis (`:23805`'s 0.15 for the Shark,
+    /// `:23826`'s 0.1 for the rest).
+    pub chase_accel: f32,
+    /// The chase X cap (`:23807`'s 5 for the Shark, `:23828`'s 3).
+    pub chase_max_x: f32,
+    /// The chase Y cap (`:23815`'s 3 for the Shark, `:23836`'s 2).
+    pub chase_max_y: f32,
+    /// The idle X cap (`:23906`'s num258 = 1).
+    pub idle_max_x: f32,
+    /// The aggro gate — `flag25`'s kind exclusion (`:23701`): the Goldfish
+    /// never chases (55 sits in the exclusion list).
+    pub aggro: bool,
+}
+
+impl SwimParams {
+    /// The Shark (`:23803-23823`'s 65/102/692 group).
+    pub const SHARK: Self = Self {
+        chase_accel: 0.15,
+        chase_max_x: 5.0,
+        chase_max_y: 3.0,
+        idle_max_x: 1.0,
+        aggro: true,
+    };
+    /// The Piranha (`:23824-23844`'s else group).
+    pub const PIRANHA: Self = Self {
+        chase_accel: 0.1,
+        chase_max_x: 3.0,
+        chase_max_y: 2.0,
+        idle_max_x: 1.0,
+        aggro: true,
+    };
+    /// The Goldfish — the flag25 exclusion (`:23701`).
+    pub const GOLDFISH: Self = Self {
+        chase_accel: 0.1,
+        chase_max_x: 3.0,
+        chase_max_y: 2.0,
+        idle_max_x: 1.0,
+        aggro: false,
+    };
+}
+
+/// `Collision.CanHit`'s stand-in: the segment sampled every half tile
+/// rejects solid tiles. The vanilla's exact shape walk lands with the
+/// projectile line-of-sight work.
+pub fn line_clear(world: &World, from: (f32, f32), to: (f32, f32)) -> bool {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let steps = ((dx * dx + dy * dy).sqrt() / (TILE_PX * 0.5)).ceil().max(1.0) as i32;
+    for i in 0..=steps {
+        let t = i as f32 / steps as f32;
+        let x = ((from.0 + dx * t) / TILE_PX) as i32;
+        let y = ((from.1 + dy * t) / TILE_PX) as i32;
+        if world
+            .tile(x, y)
+            .is_some_and(|tl| tl.active() && tr_core::tiledata::TILE_SOLID.has(tl.kind))
+        {
+            return false;
+        }
+    }
+    true
+}
+
+/// `AI_016`'s wet machine (`NPC.cs:23698-23961`). `aggro_ok` is `flag25` —
+/// the caller folds the kind gate (`:23701`'s exclusion), the player's
+/// `wet`/alive state and `CanHit`. The order is vanilla: the slope flips at
+/// the feet (`:23709-23736`), the idle bob (`:23848-23960`: the X accel to
+/// the 1-px cap, the ±0.3 vertical bob through `ai[0]`, the beach-avoid,
+/// the 0.95 damping past 0.4) or the chase (`:23766-23845`: `ai[0] = 0`,
+/// the accel to the kind caps), then the tilt (`:24008-24019`) and the
+/// tile integration (the X flip on the wall — `:23739-23744`; the Y bounce
+/// through `directionY`/`ai[0]` — `:23745-23760`).
+pub fn swim_step(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    aggro_ok: bool,
+    params: SwimParams,
+) {
+    let (w, h) = npc.size();
+    let cx = npc.x + w * 0.5;
+    // The slope flips at the feet (`:23709-23736`): the tile under the
+    // centre (and one below) with a top slope pushes the fish downhill —
+    // `topSlope()` = slope 1|2, `leftSlope()` = slope 2|4 (`Tile.cs:290+`).
+    let feet_y = ((npc.y + h) / TILE_PX) as i32;
+    let feet_x = (cx / TILE_PX) as i32;
+    for dy in 0..=1 {
+        let slope = world.tile(feet_x, feet_y + dy).map(|t| t.slope());
+        if let Some(sl) = slope {
+            if matches!(sl, 1 | 2) {
+                if sl == 2 || sl == 4 {
+                    npc.facing = -1;
+                    npc.vx = -npc.vx.abs();
+                } else {
+                    npc.facing = 1;
+                    npc.vx = npc.vx.abs();
+                }
+                break;
+            }
+        }
+    }
+    if aggro_ok {
+        // The chase (`:23766-23845`): `ai[0] = 0`, the target direction,
+        // the accel to the kind caps.
+        if npc.swim_phase != 0.0 {
+            npc.swim_phase = 0.0;
+        }
+        npc.facing = if target_x >= cx { 1 } else { -1 };
+        let dir_y = if target_y >= npc.y + h * 0.5 { 1 } else { -1 };
+        npc.vx += npc.facing as f32 * params.chase_accel;
+        npc.vy += dir_y as f32 * params.chase_accel;
+        if npc.vx > params.chase_max_x {
+            npc.vx = params.chase_max_x;
+        }
+        if npc.vx < -params.chase_max_x {
+            npc.vx = -params.chase_max_x;
+        }
+        if npc.vy > params.chase_max_y {
+            npc.vy = params.chase_max_y;
+        }
+        if npc.vy < -params.chase_max_y {
+            npc.vy = -params.chase_max_y;
+        }
+    } else {
+        // The idle bob (`:23848-23960`).
+        if npc.swim_phase == 0.0 {
+            npc.swim_phase = 1.0;
+        }
+        npc.vx += npc.facing as f32 * 0.1;
+        if npc.vx < -params.idle_max_x || npc.vx > params.idle_max_x {
+            npc.vx *= 0.95;
+        }
+        if npc.swim_phase == -1.0 {
+            npc.vy -= 0.01;
+            if npc.vy < -0.3 {
+                npc.swim_phase = 1.0;
+            }
+        } else {
+            npc.vy += 0.01;
+            if npc.vy > 0.3 {
+                npc.swim_phase = -1.0;
+            }
+        }
+        // The beach-avoid (`:23946-23956`): water above the centre and a
+        // tile one or two below it active — rise.
+        let ccx = (cx / TILE_PX) as i32;
+        let ccy = ((npc.y + h * 0.5) / TILE_PX) as i32;
+        let water_above = world
+            .tile(ccx, ccy - 1)
+            .is_some_and(|t| t.liquid > 128);
+        let floor_below = world.tile(ccx, ccy + 1).is_some_and(|t| t.active())
+            || world.tile(ccx, ccy + 2).is_some_and(|t| t.active());
+        if water_above && floor_below {
+            npc.swim_phase = -1.0;
+        }
+        if npc.vy > 0.4 || npc.vy < -0.4 {
+            npc.vy *= 0.95;
+        }
+    }
+    // The tilt (`:24008-24019`): `rotation = vy * direction * 0.1` clamped
+    // to ±0.2.
+    npc.rotation = (npc.vy * npc.facing as f32 * 0.1).clamp(-0.2, 0.2);
+    // The X integration + the wall flip (`:23739-23744`).
+    let nx = npc.x + npc.vx;
+    if !crate::player::collides_rect(world, nx, npc.y, w, h) {
+        npc.x = nx;
+    } else {
+        npc.vx = -npc.vx;
+        npc.facing = -npc.facing;
+    }
+    // The Y integration + the bounce (`:23745-23760`): the sign flips and
+    // `ai[0]` rides the new vertical direction.
+    let ny = npc.y + npc.vy;
+    if !crate::player::collides_rect(world, npc.x, ny, w, h) {
+        npc.y = ny;
+    } else if npc.vy > 0.0 {
+        npc.vy = -npc.vy.abs();
+        npc.swim_phase = -1.0;
+    } else if npc.vy < 0.0 {
+        npc.vy = npc.vy.abs();
+        npc.swim_phase = 1.0;
+    } else {
+        npc.vy = 0.0;
+    }
+}
+
 fn npc_size_w(npc: &Npc) -> f32 {
     npc.size().0
 }

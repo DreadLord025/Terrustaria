@@ -11,7 +11,7 @@ pub(crate) const GRAVITY: f32 = 0.4;
 pub(crate) const MAX_FALL: f32 = 8.0;
 
 /// `Collision.WetCollision` (simplified): any water tile overlapping the body.
-fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     let x0 = (x / TILE_PX).floor() as i32;
     let x1 = ((x + w - 0.01) / TILE_PX).floor() as i32;
     let y0 = (y / TILE_PX).floor() as i32;
@@ -80,6 +80,15 @@ pub enum NpcKind {
     /// `NPCID.WaterSphere` (33) — the Dark Caster's sphere (`aiStyle 9`,
     /// `NPC.cs:9135`).
     WaterSphere,
+    /// `NPCID.Goldfish` (55) — the passive water critter (`aiStyle 16`,
+    /// `NPC.cs:9460`: 20x18, 5 HP, damage 0, the flag25 exclusion).
+    Goldfish,
+    /// `NPCID.Piranha` (58) — the jungle/deep-water fish (`aiStyle 16`,
+    /// `NPC.cs:9502`: 18x20, 30 HP).
+    Piranha,
+    /// `NPCID.Shark` (65) — the ocean fish (`aiStyle 16`, `NPC.cs:9610`:
+    /// 100x24, 300 HP).
+    Shark,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -268,6 +277,9 @@ impl NpcKind {
             NpcKind::ChaosBall => 19,
             NpcKind::BurningSphere => 20,
             NpcKind::WaterSphere => 21,
+            NpcKind::Goldfish => 22,
+            NpcKind::Piranha => 23,
+            NpcKind::Shark => 24,
         }
     }
 
@@ -295,6 +307,9 @@ impl NpcKind {
             19 => NpcKind::ChaosBall,
             20 => NpcKind::BurningSphere,
             21 => NpcKind::WaterSphere,
+            22 => NpcKind::Goldfish,
+            23 => NpcKind::Piranha,
+            24 => NpcKind::Shark,
             _ => return None,
         })
     }
@@ -332,6 +347,11 @@ impl NpcKind {
             NpcKind::ChaosBall => (16.0, 16.0),
             NpcKind::BurningSphere => (16.0, 16.0),
             NpcKind::WaterSphere => (16.0, 16.0),
+            // The swimmers: `SetDefaults` cases 55/58/65 (`NPC.cs:9460`/
+            // `:9502`/`:9610`).
+            NpcKind::Goldfish => (20.0, 18.0),
+            NpcKind::Piranha => (18.0, 20.0),
+            NpcKind::Shark => (100.0, 24.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -367,6 +387,10 @@ impl NpcKind {
             NpcKind::ChaosBall => 1,
             NpcKind::BurningSphere => 1,
             NpcKind::WaterSphere => 1,
+            // The swimmers: `SetDefaults` cases 55/58/65.
+            NpcKind::Goldfish => 5,
+            NpcKind::Piranha => 30,
+            NpcKind::Shark => 300,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -398,6 +422,10 @@ impl NpcKind {
             NpcKind::ChaosBall => 20,
             NpcKind::BurningSphere => 30,
             NpcKind::WaterSphere => 20,
+            // The swimmers: damage 0/25/40 — the Goldfish never hurts.
+            NpcKind::Goldfish => 0,
+            NpcKind::Piranha => 25,
+            NpcKind::Shark => 40,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -457,6 +485,9 @@ pub struct Npc {
     /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
     /// `num88` after a teleport; the shoot fires at the params' tick).
     pub cast_windup: i32,
+    /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
+    /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
+    pub swim_phase: f32,
     /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
@@ -561,6 +592,13 @@ impl Npc {
             if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
             0.0,
         ))
+    }
+
+    /// Spawns a swimmer standing on the found ground tile inside its water
+    /// column (`SpawnNPC`'s `Bottom = (x*16+8, y*16)` — the same placement
+    /// the casters ride).
+    pub fn spawn_swimmer(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Option<Self> {
+        Self::spawn_caster(world, x_tile, ground_y, kind)
     }
 
     /// Spawns a cave flyer hanging in the open air of the cave layer (the
@@ -676,6 +714,7 @@ impl Npc {
             caster_counter: 0,
             cast_windup: 0,
             wants_sphere: None,
+            swim_phase: 0.0,
             wet_x: 0.0,
         }
     }
@@ -729,6 +768,12 @@ impl Npc {
             NpcKind::ChaosBall => 0.0,
             NpcKind::BurningSphere => 0.0,
             NpcKind::WaterSphere => 0.0,
+            // The swimmers: the Goldfish 0.5 (`:9471`), the Shark 0.7
+            // (`:9622`), the Piranha no row — the `SetDefaults` head's 1f
+            // reset (`:8533`).
+            NpcKind::Goldfish => 0.5,
+            NpcKind::Piranha => 1.0,
+            NpcKind::Shark => 0.7,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -769,6 +814,10 @@ impl Npc {
             NpcKind::ChaosBall => 0,
             NpcKind::BurningSphere => 0,
             NpcKind::WaterSphere => 0,
+            // The swimmers: defense 0/2/2.
+            NpcKind::Goldfish => 0,
+            NpcKind::Piranha => 2,
+            NpcKind::Shark => 2,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -807,6 +856,12 @@ impl Npc {
             NpcKind::ChaosBall => 0.0,
             NpcKind::BurningSphere => 0.0,
             NpcKind::WaterSphere => 0.0,
+            // The swimmers: the Piranha 50 (`:9514`), the Shark 400
+            // (`:9621`), the Goldfish no row (the catch item 261 rides the
+            // critter-catch work).
+            NpcKind::Goldfish => 0.0,
+            NpcKind::Piranha => 50.0,
+            NpcKind::Shark => 400.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -939,6 +994,9 @@ impl Npc {
             | NpcKind::FireImp => self.update_caster(world, player, rng),
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
                 self.update_sphere(world, player)
+            }
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
+                self.update_swimmer(world, player, rng)
             }
         }
         self.find_frame();
@@ -1170,6 +1228,23 @@ impl Npc {
             }
             // The spheres: `Main.npcFrameCount` 30/25/33 = 1.
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {}
+            // The swimmers: the plain flap cycles over `Main.npcFrameCount`
+            // 55/58 = 6, 65 = 4 (`Main.cs:67082`).
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
+                let count = match self.kind {
+                    NpcKind::Shark => 4,
+                    _ => 6,
+                };
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= count {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
             NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
@@ -1618,6 +1693,77 @@ impl Npc {
         crate::npc_ai::sphere_step(self, pcx, pcy, world);
     }
 
+    /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16
+    /// block): the wet path rides the machine — `flag25` folds the kind
+    /// gate (`:23701`'s Goldfish exclusion), the player's `wet`/alive and
+    /// the `CanHit` stand-in; the dry path is the beached flop (`:23963-
+    /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
+    /// jump through `Main.rand`).
+    fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let params = match self.kind {
+            NpcKind::Shark => crate::npc_ai::SwimParams::SHARK,
+            NpcKind::Piranha => crate::npc_ai::SwimParams::PIRANHA,
+            _ => crate::npc_ai::SwimParams::GOLDFISH,
+        };
+        if is_wet(world, self.x, self.y, w, h) {
+            let (pcx, pcy) = player.center();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            // `flag25` (`:23701-23707`): the kind gate + the player wet +
+            // alive + `Collision.CanHit`.
+            let aggro_ok = params.aggro
+                && player.wet
+                && !player.dead
+                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+            crate::npc_ai::swim_step(self, world, pcx, pcy, aggro_ok, params);
+        } else {
+            // The beached flop (`:23963-23989`).
+            if self.kind == NpcKind::Shark {
+                // `:23967-23974`: the Shark's stand decay.
+                if self.vy == 0.0 {
+                    self.vx *= 0.94;
+                    if self.vx > -0.2 && self.vx < 0.2 {
+                        self.vx = 0.0;
+                    }
+                }
+            } else {
+                // `:23975-23981`: the random jump (`Next(-50,-20)*0.1`,
+                // `Next(-20,20)*0.1`, the direction coin).
+                self.vy = -(crate::app::frame::rand01(rng) * 2.9 + 2.1);
+                self.vx = (crate::app::frame::rand01(rng) * 39.0 - 20.0) * 0.1;
+                self.facing = if crate::app::frame::rand01(rng) < 0.5 {
+                    1
+                } else {
+                    -1
+                };
+            }
+            // `:23983-23988`: the gravity + the sink phase.
+            self.vy = (self.vy + 0.3).min(10.0);
+            self.swim_phase = 1.0;
+            // The generic tile integration (`UpdateCollision`): the flop
+            // stops at the walls (the wet path's bounce flips ride the wet
+            // branch only).
+            let nx = self.x + self.vx;
+            if !collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            let ny = self.y + self.vy;
+            if !collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            } else {
+                self.vy = 0.0;
+            }
+        }
+    }
+
     fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
@@ -1649,14 +1795,18 @@ impl Npc {
                 player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
                 return;
             }
-            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact).
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact);
+            // the 0-damage kinds (the Goldfish) never hurt either (the
+            // vanilla `damage > 0` gate).
             if self.kind != NpcKind::Guide {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
                     self.kind.contact_damage()
                 };
-                player.hurt(dmg, cx);
+                if dmg > 0 {
+                    player.hurt(dmg, cx);
+                }
             }
         }
     }
@@ -1694,6 +1844,9 @@ impl Npc {
             NpcKind::ChaosBall => 19,
             NpcKind::BurningSphere => 20,
             NpcKind::WaterSphere => 21,
+            NpcKind::Goldfish => 22,
+            NpcKind::Piranha => 23,
+            NpcKind::Shark => 24,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -2366,6 +2519,178 @@ mod tests {
             (NpcKind::ChaosBall, 30),
             (NpcKind::BurningSphere, 25),
             (NpcKind::WaterSphere, 33),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
+    /// The swim arena: the ground from y = 120 with a water pool (x
+    /// 60..140, y 118..134 liquid-filled, the floor at 135) and a dry pit
+    /// for the flop tests.
+    fn water_pool() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 60..140 {
+            for y in 118..135 {
+                let i = w.index(x, y);
+                // The water tile: no block (`active()` false — kind 0 is
+                // DIRT and an active dirt tile is solid), just the liquid.
+                w.tiles[i] = Tile::default();
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_swimmer_bobs_idly_in_water() {
+        // `AI_016`'s idle machine (`NPC.cs:23848-23960`): the X drift to
+        // the 1-px cap with the wall flip, the ±0.3 vertical bob through
+        // `ai[0]`, the 0.95 damping.
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = false;
+        // The goldfish floats mid-pool: the idle bob never chases.
+        let mut fish = Npc::new(NpcKind::Goldfish, 90.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut rng = 3u64;
+        let mut rose = false;
+        let mut sank = false;
+        for _ in 0..600 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if fish.swim_phase == -1.0 {
+                rose = true;
+            }
+            if fish.swim_phase == 1.0 {
+                sank = true;
+            }
+            // The idle drift's fixed point is 2.0 (x*0.95 + 0.1 = x) — the
+            // 1.0 in `num258` is the damping THRESHOLD, not a cap
+            // (`:23905-23914`).
+            assert!(fish.vx.abs() <= 2.01, "the idle X drift ({})", fish.vx);
+        }
+        assert!(rose && sank, "the bob cycled both ways (rose {rose} sank {sank})");
+        // The fish stayed inside the pool's water column.
+        assert!(fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0, "the pool held");
+    }
+
+    #[test]
+    fn the_shark_chases_the_wet_player() {
+        // The chase (`:23766-23845`): `ai[0] = 0`, the accel to the 5/3
+        // caps while `flag25` holds (the player wet + the line clear).
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = true;
+        // The shark mid-pool, the player in the water at the pool's edge.
+        player.x = 100.0 * 16.0;
+        player.y = 128.0 * 16.0;
+        let mut shark = Npc::new(NpcKind::Shark, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        shark.hp = shark.max_hp;
+        let mut rng = 5u64;
+        let start = shark.x;
+        for _ in 0..120 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(shark.swim_phase, 0.0, "the chase phase set");
+        assert!(shark.x > start + 10.0, "the shark closed in");
+        let speed = (shark.vx * shark.vx + shark.vy * shark.vy).sqrt();
+        assert!(speed > 1.0, "the chase reached speed ({speed})");
+    }
+
+    #[test]
+    fn the_goldfish_never_chases() {
+        // The flag25 exclusion (`:23701`): the Goldfish ignores the wet
+        // player in the line of sight — the phase never hits the chase's 0
+        // and the speed stays idle.
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = true;
+        player.x = 100.0 * 16.0;
+        player.y = 128.0 * 16.0;
+        let mut fish = Npc::new(NpcKind::Goldfish, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut rng = 9u64;
+        for _ in 0..300 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert!(fish.vx.abs() <= 2.01, "the goldfish stayed idle");
+        }
+        assert!(fish.swim_phase != 0.0, "the chase phase never set");
+    }
+
+    #[test]
+    fn the_beached_fish_flops() {
+        // The dry path (`:23963-23989`): the gravity pulls the fish down;
+        // the Shark's stand decay holds it still on the ground.
+        let mut w = water_pool();
+        // A dry pocket inside the pool column: x 80..100, y 118..134 air.
+        for x in 80..100 {
+            for y in 118..135 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+        let mut player = surface_player(&w);
+        let mut shark = Npc::new(NpcKind::Shark, 90.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        shark.hp = shark.max_hp;
+        let mut rng = 13u64;
+        for _ in 0..200 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        // The beached shark rests on the pocket floor (y = 135*16 - 24).
+        let feet = shark.y + shark.size().1;
+        assert!(
+            (feet - 135.0 * 16.0).abs() < 1.0,
+            "the shark beached on the floor ({feet})"
+        );
+        assert!(shark.vx.abs() < 0.2, "the stand decay held ({})", shark.vx);
+        // The goldfish flops randomly out of water (the jump impulse).
+        let mut fish = Npc::new(NpcKind::Goldfish, 95.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut jumped = false;
+        for _ in 0..60 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if fish.vy < -1.0 {
+                jumped = true;
+            }
+        }
+        assert!(jumped, "the flopping goldfish jumped");
+    }
+
+    #[test]
+    fn the_swimmers_spawn_and_map() {
+        // `spawn_swimmer` plants the feet on the pool floor; the stats ride
+        // the verified `SetDefaults` rows; the bestiary entries round-trip.
+        let w = water_pool();
+        let shark = Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark)
+            .expect("the shark spawns in the pool");
+        assert_eq!(shark.size(), (100.0, 24.0));
+        assert_eq!(shark.max_hp, 300);
+        assert!((shark.y - (135.0 * 16.0 - 24.0)).abs() < 0.01);
+        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish)
+            .expect("the goldfish spawns");
+        assert_eq!(fish.size(), (20.0, 18.0));
+        assert_eq!(fish.max_hp, 5);
+        assert_eq!(fish.knock_back_resist(), 0.5);
+        let piranha = Npc::new(NpcKind::Piranha, 0.0, 0.0, 1, 0.0);
+        assert_eq!(piranha.max_hp, 30);
+        assert_eq!(NpcKind::Piranha.contact_damage(), 25);
+        assert_eq!(piranha.knock_back_resist(), 1.0);
+        for (kind, net) in [
+            (NpcKind::Goldfish, 55),
+            (NpcKind::Piranha, 58),
+            (NpcKind::Shark, 65),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);

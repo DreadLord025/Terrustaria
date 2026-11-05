@@ -117,6 +117,9 @@ pub(crate) struct NpcAssets {
     pub(crate) chaos_ball: Option<BgTex>,
     pub(crate) burning_sphere: Option<BgTex>,
     pub(crate) water_sphere: Option<BgTex>,
+    pub(crate) goldfish: Option<BgTex>,
+    pub(crate) piranha: Option<BgTex>,
+    pub(crate) shark: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -143,6 +146,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         chaos_ball: sky_tex(atlas, "NPC_30", None),
         burning_sphere: sky_tex(atlas, "NPC_25", None),
         water_sphere: sky_tex(atlas, "NPC_33", None),
+        goldfish: sky_tex(atlas, "NPC_55", None),
+        piranha: sky_tex(atlas, "NPC_58", None),
+        shark: sky_tex(atlas, "NPC_65", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -626,6 +632,22 @@ pub(crate) fn draw_npcs(
                     tex.map_or(16.0, |t| t.h),
                     [bw + 4.0, bh],
                     [n.x - 2.0, n.y - 2.0],
+                )
+            }
+            // The swimmers: the 6/6/4-frame strips (`Main.npcFrameCount`
+            // 55/58/65, `Main.cs:67082`) over the hitbox.
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::Goldfish => (assets.goldfish.as_ref(), 6.0),
+                    NpcKind::Piranha => (assets.piranha.as_ref(), 6.0),
+                    _ => (assets.shark.as_ref(), 4.0),
+                };
+                let (bw, bh) = n.size();
+                (
+                    tex,
+                    tex.map_or(18.0, |t| t.h / frames),
+                    [bw + 4.0, bh + 2.0],
+                    [n.x - 2.0, n.y - 1.0],
                 )
             }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {

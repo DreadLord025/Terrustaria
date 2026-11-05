@@ -399,16 +399,24 @@ fn find_ground_tile(world: &World, x: i32, y: i32) -> i32 {
 /// without dungeon ground and submerged (non-lava) spawn points.
 fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) -> bool {
     let _ = ground_y;
+    // `PostCheckChosenSpawnTile` (`NPC.cs:1032-1042`): the two liquid tiles
+    // above the ground reject SHIMMER and HONEY only — plain water passes
+    // (the water spawns ride it: `waterTile` in `SetSpawnFlagsForChosenTile`
+    // `:1057`).
     let liquid_at = |dy: i32| {
         world
             .tile(x, y + dy)
             .is_some_and(|t| t.active() && t.liquid > 0)
     };
     if liquid_at(-1) && liquid_at(-2) {
-        let lava = world
+        let kind = world
             .tile(x, y - 1)
-            .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
-        if !lava {
+            .map(|t| t.liquid_kind())
+            .unwrap_or(tr_core::tile::LiquidKind::Water);
+        if matches!(
+            kind,
+            tr_core::tile::LiquidKind::Shimmer | tr_core::tile::LiquidKind::Honey
+        ) {
             return false;
         }
     }
@@ -545,6 +553,69 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         .tile(x, y / 16)
         .map(|t| t.kind)
         .unwrap_or(0);
+    // ---- the water ladder (`NPC.cs:1795-2082`'s arms in the vanilla
+    // order; `waterTile` = the two tiles above the ground are WATER,
+    // `:1057`'s `liquidType() == 0`) ----
+    let water_above = |dy: i32| {
+        ctx.world.tile(x, y / 16 + dy).is_some_and(|t| {
+            t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water
+        })
+    };
+    if water_above(-1) && water_above(-2) {
+        // The ocean arm (`:1795`): `isOcean` = the x-edge within
+        // `WorldGen.oceanDistance` = 250 (`WorldGen.cs:86913`) on a sand
+        // tile above the rock layer (`NPC.cs`'s isOcean row); the
+        // `SharkSpawnChance` is 10 (`:5546-5563`, the Sonar 2 constants-off).
+        let is_sand = matches!(tile_kind, 53 | 234 | 397);
+        let is_ocean = (x < 250 || x > ctx.world.width - 250)
+            && is_sand
+            && (y as f64 / 16.0) < ctx.world.rock_layer;
+        if is_ocean && rng.next(10) == 0 {
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Shark);
+        }
+        // The Piranha arm (`:1929`): `!spawnFriendly && waterTile &&
+        // ((deeperThanRockLayer && Next(2) == 0) || mud floor 60)`.
+        if ((y as f64 / 16.0) > ctx.world.rock_layer && rng.next(2) == 0) || tile_kind == 60 {
+            // The mud-critter scan (`:1932`'s `tileType == 60 &&
+            // surfaceSpawn && day && Next(3) == 0` → 616/612/613/608) is
+            // unmodelled — the roll consumes where the vanilla's gate hits.
+            if tile_kind == 60
+                && surface
+                && y / 16 > 50
+                && rng.next(3) == 0
+                && ctx.day_time
+            {
+                let _ = rng.next(5);
+            }
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Piranha);
+        }
+        // The underground fish (`:1985`): 63/103 unmodelled — the roll
+        // consumes, the port maps to the Goldfish (the closest water
+        // critter; the Angler Fish lands with the fish-family pass).
+        if (y as f64 / 16.0) > ctx.world.world_surface && rng.next(3) == 0 {
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Goldfish);
+        }
+        // The water critter arm (`:1996`): `Next(4) == 0 && (x outside the
+        // ocean || y > worldSurface + 50)`; the corrupt 57/crimson 465
+        // kinds are unmodelled — the port maps them to the Piranha (the
+        // aggressive water fish); the day critter scans (the ducks/the
+        // seahorses) sit constants-off; the golden goldfish 592's
+        // `goldCritterChance` roll consumes nothing.
+        if rng.next(4) == 0
+            && ((x > 250 && x < ctx.world.width - 250)
+                || (y as f64 / 16.0) > ctx.world.world_surface + 50.0)
+        {
+            let fish = if ctx.flags.zone_evil {
+                NpcKind::Piranha
+            } else {
+                NpcKind::Goldfish
+            };
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, fish);
+        }
+        // The missed water rolls fall through to the dry ladder (the
+        // vanilla's remaining water arms — the sand-crab/beach chains —
+        // map to the port's closest kinds there).
+    }
     if surface {
         if ctx.day_time {
             // The day ladder's critter/water/wind specials all sit behind
@@ -1401,5 +1472,94 @@ mod tests {
         assert_eq!(imps, 0, "the deep-cavern depth never rolls the Fire Imp");
     }
 
+    #[test]
+    fn the_water_ladder_rolls_the_fish() {
+        // The water ladder (`NPC.cs:1795-2082`): a plain inland pool rolls
+        // the Goldfish through the critter arm (`Next(4)`, x inside the
+        // land window); the mud floor rolls the Piranha directly
+        // (`tileType == 60`); the ocean sand rolls the Shark
+        // (`Next(SharkSpawnChance) == 0`).
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        w.compute_column_surface();
+        // The inland pool: the water rows 330..339 over the floor 340, the
+        // columns 205..215 (the fish bodies span two tiles).
+        for cx in 205..216 {
+            for y in 330..340 {
+                let i = w.index(cx, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].liquid = 255;
+            }
+        }
+        let c = ctx(&w, 330.0 * 16.0, false);
+        let mut goldfish = 0;
+        for seed in 1..3000u64 {
+            if matches!(outcome_at(&c, seed, 340 * 16), Some((NpcKind::Goldfish, _))) {
+                goldfish += 1;
+            }
+        }
+        assert!(goldfish > 0, "the pool sweep never rolled the Goldfish");
+        // The mud pool: the same shape with a mud floor (tile 60).
+        let mut w2 = w.clone();
+        for cx in 205..216 {
+            let i = w2.index(cx, 340);
+            w2.tiles[i].kind = 60;
+        }
+        let c2 = ctx(&w2, 330.0 * 16.0, false);
+        let mut piranhas = 0;
+        for seed in 1..3000u64 {
+            if matches!(outcome_at(&c2, seed, 340 * 16), Some((NpcKind::Piranha, _))) {
+                piranhas += 1;
+            }
+        }
+        assert_eq!(piranhas, 3000 - 1, "the mud floor always rolls the Piranha");
+        // The ocean: the sand floor (53) at the x-edge columns — the
+        // isOcean gate needs the spawn ABOVE the rock layer (`:isOcean`'s
+        // `spawnTileY < Main.rockLayer`), so the pool rides the surface
+        // (the water rows 296..299 over the sand floor 300, above
+        // world_surface 310 — the water ladder precedes the surface block).
+        let mut w3 = w.clone();
+        for cx in 5..16 {
+            for y in 296..300 {
+                let i = w3.index(cx, y);
+                w3.tiles[i] = Tile::default();
+                w3.tiles[i].liquid = 255;
+            }
+        }
+        for cx in 5..16 {
+            let i = w3.index(cx, 300);
+            w3.tiles[i].kind = 53;
+        }
+        let c3 = ctx(&w3, 297.0 * 16.0, false);
+        let mut sharks = 0;
+        let mut others = 0;
+        for seed in 1..3000u64 {
+            // The ocean column 10 — `outcome_at`'s x is the land 210.
+            let mut rng = FastRandom::new(seed);
+            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16).map(|n| n.kind) {
+                Some(NpcKind::Shark) => sharks += 1,
+                _ => others += 1,
+            }
+        }
+        assert!(sharks > 0, "the ocean sweep never rolled the Shark");
+        assert!(sharks < 3000, "the ocean roll is gated");
+    }
+
 }
+
+
+
 
