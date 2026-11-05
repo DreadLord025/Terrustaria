@@ -165,8 +165,8 @@ pub(crate) fn pass_floating_islands(
             }
             let x = rng.range((world.width as f32 * 0.1) as i32, (world.width as f32 * 0.9) as i32);
             // The spawn exclusion (`:12975-12978`: the ±`num8` band around
-            // the middle).
-            if (x - world.width / 2).abs() < 150 {
+            // the middle — wide enough to cover the spawn lake).
+            if (x - world.width / 2).abs() < 340 {
                 continue;
             }
             // The ±180 spacing from the placed islands (`:12987-12995`).

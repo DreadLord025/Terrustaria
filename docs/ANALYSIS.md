@@ -3601,3 +3601,26 @@ Deviations: the C#'s multi-room crawl with the doors
 (`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
 summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
 are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+
+## Polish passes (M1.4-WGEN-7)
+
+The worldgen rounding-out:
+
+- **The dungeon colour** (`pass_dungeon`): the brick roll (the blue 41 /
+  the green 43 / the pink 44) now drives the walls too (7/8/9) — the
+  port's walls were pinned to the blue 7.
+- **The ice shell** (the fill): the snow band's underground is the ice
+  (161) from the surface to the rock layer (the `IceBiome` shape — the
+  port's fill previously kept the dirt under the snow surface, leaving
+  the ice-biome decorators nothing to sit on).
+- **The exposed gems** (`ExposedGemsInIceBiome`, `WorldGen.cs:20697-20735`):
+  `maxTilesX · 0.25` attempts — the y between `(worldSurface +
+  rockLayer) / 2` and the lava line, the x in the snow band, the anchor
+  tile from the snow/ice family (147/161/162/224); the gem patch (the
+  tile 178) fills the `Next(1, 4)`-half-sized rectangle of the free
+  cells, the styles weighted `Next(12)`: <3 → 0 (the amethyst), <6 → 1,
+  <8 → 2, <10 → 3, ≥11 → 5 (the diamond), else 4.
+
+Deviations: the gem torches (the ice biome's torch placements) and the
+ice-cave water pools are the follow-ups; the ice shell's dirt pockets
+ride the cave pass's blob machinery.

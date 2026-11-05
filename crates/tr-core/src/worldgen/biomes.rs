@@ -42,7 +42,7 @@ pub(crate) const WALL_GRANITE: u16 = 180;
 pub(crate) const WALL_MARBLE: u16 = 178;
 pub(crate) const WALL_EBONSTONE: u16 = 3;
 pub(crate) const WALL_CRIMSON: u16 = 192;
-pub(crate) const WALL_DUNGEON: u16 = 7;
+
 
 /// The biome span decisions shared by the passes (the C# `GenVars` slice):
 /// the jungle on the west edge, the evil band east of spawn, the dungeon at
@@ -376,7 +376,11 @@ pub(crate) fn pass_granite_marble(
 /// with the dungeon walls, the corridors carved inward. The brick colour
 /// rides the world's dungeon roll (41 blue / 43 green / 44 pink).
 pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpans, rng: &mut super::Rng) {
-    let brick = [41u16, 43, 44][rng.range(0, 3) as usize];
+    // The brick colour rides the world roll (`Main.cs`'s dungeon roll): the
+    // blue 41 / the green 43 / the pink 44 — the walls follow (7/8/9).
+    let brick_i = rng.range(0, 3) as usize;
+    let brick = [41u16, 43, 44][brick_i];
+    let dungeon_wall = [7u16, 8, 9][brick_i];
     let x0 = spans.dungeon_x;
     let top = surface[x0 as usize];
     let bottom = (world.height - 220).min(top + (world.rock_layer as i32) * 2);
@@ -384,7 +388,7 @@ pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpan
     let mut y = top - 8;
     while y < top + 30 {
         for dx in -3..=3 {
-            put(world, x0 + dx, y, brick, WALL_DUNGEON);
+            put(world, x0 + dx, y, brick, dungeon_wall);
         }
         y += 1;
     }
@@ -393,7 +397,7 @@ pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpan
         for dx in -1..=1 {
             let i = world.index(x0 + dx, yy);
             world.tiles[i] = Tile::default();
-            world.tiles[i].wall = WALL_DUNGEON;
+            world.tiles[i].wall = dungeon_wall;
         }
     }
     // The corridor levels: a stair-stepping crawl to the bottom, each level
@@ -415,14 +419,14 @@ pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpan
                     let i = world.index(x + dx, cy + dy);
                     if x + dx > 2 && x + dx < world.width - 2 && cy + dy < world.height - 2 {
                         world.tiles[i] = Tile::default();
-                        world.tiles[i].wall = WALL_DUNGEON;
+                        world.tiles[i].wall = dungeon_wall;
                     }
                 }
             }
             // The brick lining above and below the tunnel.
             for dy in [-1i32, 4] {
                 for dx in 0..2 {
-                    put(world, x + dx, cy + dy, brick, WALL_DUNGEON);
+                    put(world, x + dx, cy + dy, brick, dungeon_wall);
                 }
             }
             x += step;
@@ -434,7 +438,7 @@ pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpan
                 let i = world.index(cx, cy);
                 if cx > 2 && cx < world.width - 2 && cy < world.height - 2 {
                     world.tiles[i] = Tile::default();
-                    world.tiles[i].wall = WALL_DUNGEON;
+                    world.tiles[i].wall = dungeon_wall;
                 }
                 let _ = dx;
                 cy += 1;
