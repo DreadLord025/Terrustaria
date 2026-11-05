@@ -3267,7 +3267,11 @@ Determinism/proven pairs (pristine `.trwld` copies per run, pointer park, zoom
 2.0, `TR_NOHUD`/`TR_NO_BG`): a `TR_DAY=0.25` night shot with both dials placed
 by `TR_FILL` — the cooldown-0 glow lighting the ground around them —
 SHA256-equal double run (`695bab0a…`); and `TR_TIME=32340` + `TR_SUNDIAL=1`
-arming the fast-forward exactly 60 ticks under the dawn boundary — the shot
-dt's add crosses it on frame 1 (the `>=` case above) — with the frame-3600
-capture showing the day after the crossing, SHA256-equal double run
-(`fca1e1d0…`).
+arming the fast-forward from a day-half time (`app/mod.rs:1603` maps it to
+`day_time`, so the add is read only by the `>= 54000` dusk check) — with the
+shot dt pinned to 1/60 (`frame.rs:48-49`) each frame adds 60 ticks, landing
+dusk exactly on `time` = 54000 at frame 361 (`clock.rs:26`) and, 540 frames
+later (the 32400-tick night), dawn exactly on `time` = 32400 at frame 901
+(`clock.rs:39`) — both boundary-exact, the `>=` case above — with the
+frame-3600 capture showing the new morning (the dial cleared at dawn, the
+rate back to 1), SHA256-equal double run (`fca1e1d0…`).
