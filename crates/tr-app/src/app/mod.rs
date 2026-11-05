@@ -338,6 +338,16 @@ pub(crate) struct App {
     pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
+    /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
+    /// own sway counter — the flower never rides the grass one (its special pass
+    /// reads `_sunflowerWindCounter`, `TileDrawing.cs:8918`). C# advances it per
+    /// world-update tick (`TilesRenderer.Update()` in `Main.DoUpdateInWorld_Inner`,
+    /// `Main.cs:17812`), so [`Self::sunflower_wind_step`] steps it on the 60 Hz
+    /// accumulator instead of the redraw cadence the grass/tree counters inherited.
+    pub(crate) sunflower_wind_counter: f32,
+    /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
+    /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
+    pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
@@ -1431,6 +1441,8 @@ impl App {
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
+            sunflower_wind_counter: 0.0,
+            sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
@@ -1571,6 +1583,12 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     if let Ok(v) = std::env::var("TR_TOGGLE") {
         apply_tr_toggles(&mut world, &parse_tr_toggle(&v));
     }
+    // `TR_TILES=x,y,kind,fx,fy[;...]`: write tiles with explicit frames at
+    // load — the render fixture for the M1.4-TO-4 kinds (the plan stages the
+    // scene by direct World writes, not through Phase 1 placement).
+    if let Ok(v) = std::env::var("TR_TILES") {
+        apply_tr_tiles(&mut world, &parse_tr_tiles(&v));
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()
@@ -1674,6 +1692,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
 // `TR_TOGGLE=x,y[,n][;...]` presses the Phase-4 interaction dispatcher
 // (`edit::interact_at`) n times at one tile — the closed→open→closed door
 // scenario.
+//
+// `TR_TILES=x,y,kind,fx,fy[;...]` writes single cells with explicit frames —
+// the render fixture for the M1.4-TO-4 kinds (sunflower 2x4, pots, clay pot,
+// herbs, piles, planter box), staged without the placement route.
 
 /// One `TR_PLACE` group: place this tile kind through the registry route.
 struct TrPlace {
@@ -1798,6 +1820,101 @@ fn apply_tr_places(world: &mut World, ops: &[TrPlace]) {
         );
     }
     if !ops.is_empty() {
+        world.revision = world.revision.wrapping_add(1);
+    }
+}
+
+/// One `TR_TILES` cell: write this exact tile kind with these exact frames —
+/// the render fixture's direct world write (the plan's "tiles and frames are
+/// written into the World directly"), bypassing placement and framing. The
+/// 4-token `x,y,w,h` form clears the rectangle to air (and wipes its walls) so
+/// the fixture can stage a clean stage on lived-in terrain.
+struct TrTile {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: i64,
+    fx: i16,
+    fy: i16,
+}
+
+fn parse_tr_tiles(v: &str) -> Vec<TrTile> {
+    v.split(';')
+        .filter_map(|group| match tr_nums(group)?[..] {
+            [x, y, w, h] => Some(TrTile {
+                x: x as i32,
+                y: y as i32,
+                w: w as i32,
+                h: h as i32,
+                kind: -1,
+                fx: 0,
+                fy: 0,
+            }),
+            [x, y, kind, fx, fy] => Some(TrTile {
+                x: x as i32,
+                y: y as i32,
+                w: 1,
+                h: 1,
+                kind,
+                fx: fx as i16,
+                fy: fy as i16,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn apply_tr_tiles(world: &mut World, ops: &[TrTile]) {
+    let mut touched = false;
+    for op in ops {
+        for dy in 0..op.h {
+            for dx in 0..op.w {
+                let (x, y) = (op.x + dx, op.y + dy);
+                if op.kind >= 0 {
+                    let kind = op.kind as u16;
+                    // Every fixture kind is `Main.tileFrameImportant` in vanilla
+                    // (`Main.cs:7415/:7632/:7663-7685`), so the written frames
+                    // survive the post-hook `frame_world` even when the save's
+                    // table lacks the bit.
+                    if (kind as usize) < world.frame_important.len() {
+                        world.frame_important[kind as usize] = true;
+                    }
+                }
+                let Some(t) = world.tile_mut(x, y) else {
+                    continue;
+                };
+                if op.kind < 0 {
+                    // The clear: air, no wall — a blank stage cell.
+                    *t = tr_core::tile::Tile::default();
+                    touched = true;
+                    continue;
+                }
+                let kind = op.kind as u16;
+                *t = tr_core::tile::Tile {
+                    kind,
+                    frame_x: op.fx,
+                    frame_y: op.fy,
+                    ..Default::default()
+                };
+                t.flags |= tr_core::tile::FLAG_ACTIVE;
+                touched = true;
+            }
+        }
+        if op.kind >= 0 {
+            log::info!(
+                "TR_TILES {},{} kind {} frame ({},{}) {}x{}",
+                op.x,
+                op.y,
+                op.kind,
+                op.fx,
+                op.fy,
+                op.w,
+                op.h
+            );
+        }
+    }
+    if touched {
         world.revision = world.revision.wrapping_add(1);
     }
 }
