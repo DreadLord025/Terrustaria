@@ -13,6 +13,7 @@ mod collision;
 mod death;
 mod emotes;
 mod inv;
+mod luck;
 mod wiring_stub;
 mod item;
 mod itemdata;
