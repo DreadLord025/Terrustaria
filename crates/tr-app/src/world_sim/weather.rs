@@ -9,11 +9,13 @@ use crate::app::App;
 use crate::biome::is_snow_biome;
 
 /// Rain runs on its own 60 Hz accumulator; drops are simulated at the original
-/// per-tick velocity regardless of frame rate.
+/// per-tick velocity regardless of frame rate. The visual ramps scale by
+/// `max(1, day_rate)` (`Main.cs:61902-61906`).
 pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
     let snow = is_snow_biome(&app.world, app.camera);
+    let day_rate = app.world.day_rate();
     app.rain
-        .update(&app.world, app.camera, screen, app.zoom, dt, snow);
+        .update(&app.world, app.camera, screen, app.zoom, dt, snow, day_rate);
 }
 
 /// The cross-system inputs of the vanilla lightning chain
@@ -50,8 +52,12 @@ fn thunder_inputs(app: &App) -> crate::rain::ThunderInputs {
 /// 2. the wind part (`Main.cs:58830-58950`) runs once per iteration, i.e.
 ///    `world.day_rate()` times per tick, fed the real `Main.maxRaining`
 ///    (`:58832` `windSpeedTarget * (1 + 5/9 * maxRaining)`);
-/// 3. `Sandstorm.UpdateTime` (`Main.cs:64966`) follows the weather loop with
-///    `Main.dayRate` as its first argument; while the TR_SANDSTORM pin holds
+/// 3. `Rain::update_time` (`Main.cs:64833-64949`) — `Main.UpdateTime`'s rain
+///    section: the `ladyBugRainBoost` drain, the `rainTime` drain + the
+///    strength-change roll while raining, the ×5.75/×4.25/ladybug start rolls
+///    when not, and `StartRain`/`ChangeRain`/`StopRain`;
+/// 4. `Sandstorm.UpdateTime` (`Main.cs:64966`) follows with `Main.dayRate` as
+///    its first argument; while the TR_SANDSTORM pin holds
 ///    (`scene_state.forced_severity`) the state machine stays frozen — the
 ///    same gate `scene_scan` used before the call moved here.
 ///
@@ -62,6 +68,9 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // The lightning chain's cross-system inputs (vanilla reads Main statics
     // live per call; the port snapshots them per frame like `update_rain`).
     let weather = thunder_inputs(app);
+    // `Main.cs:64899`'s `statLifeMax >= 120` scan, folded to the port's one
+    // player (`Main.player[i].statLifeMax`).
+    let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
     let App {
         world_tick_step,
         world,
@@ -81,9 +90,14 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         for _ in 0..day_rate {
             wind.update_rain(max_raining);
         }
-        // M1.4-BG-22 phase 2: Main.UpdateTime's rain rolls (Main.cs:64864-64949)
-        // run here, after the weather loop, before Sandstorm.UpdateTime (Main.cs:64966).
-        // (3) `Main.cs:64966`; the TR_SANDSTORM pin freezes the state machine
+        // (3) `Main.cs:64833-64949`: Main.UpdateTime's rain section — the
+        // `ladyBugRainBoost` drain, the `rainTime` drain + strength-change roll
+        // while raining, the ×5.75/×4.25/ladybug start rolls when not (the
+        // `86400/dayRate` denominators), and `StartRain`/`ChangeRain`/`StopRain`.
+        // Runs after the weather loop, before Sandstorm.UpdateTime
+        // (`Main.cs:64966`); `remixWorld` reads Wind's stand-in field.
+        rain.update_time(day_rate, world, any_player_120, wind.remix_world);
+        // (4) `Main.cs:64966`; the TR_SANDSTORM pin freezes the state machine
         // (the periodic intention roll would fight the pin — phase-1 glue doc).
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
@@ -117,8 +131,8 @@ mod tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world.fast_forward_to_dawn = true; // day_rate 60
         app.rain = Rain::with_forced(7, Some(0.8), false); // maxRaining 0.8
-        // The forced pin materializes inside `Rain::tick` — run one drop-sim
-        // tick so `max_raining()` really reads 0.8.
+                                                           // The forced pin materializes inside `Rain::tick` — run one drop-sim
+                                                           // tick so `max_raining()` really reads 0.8.
         app.rain.update(
             &app.world,
             app.camera,
@@ -126,6 +140,7 @@ mod tests {
             1.0,
             STEP,
             false,
+            1,
         );
         assert_eq!(app.rain.max_raining(), 0.8);
         app.wind.speed_current = 0.55;
@@ -160,6 +175,7 @@ mod tests {
             1.0,
             STEP,
             false,
+            1,
         );
         app.wind.speed_current = 0.55;
         app.wind.speed_target = 0.8;
@@ -219,6 +235,48 @@ mod tests {
         assert_eq!(
             app.world.time, time_before,
             "the tick leaves the clock alone"
+        );
+    }
+
+    #[test]
+    fn test_DW_2_2_tick_feeds_the_player_scan() {
+        // `Main.cs:64894-64909` through the tick: the port's one player's
+        // `max_hp` is the `statLifeMax >= 120` scan. With a 100-HP player the
+        // start rolls are gated off even on a fire-seeded stream; at 120 the
+        // same seed starts the rain.
+        let fire = (1..2_000_000u64)
+            .find(|&s| {
+                // The `Rain` stream replay (see rain.rs tests): first draw
+                // ≡ 0 mod 8280 = the ×5.75 bound at dayRate 60.
+                let mut r = (s ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+                r = r.wrapping_add(0x9E37_79B9_7F4A_7C15);
+                let mut z = r;
+                z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+                (z ^ (z >> 31)) % 8280 == 0
+            })
+            .expect("a fire seed exists");
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.fast_forward_to_dawn = true; // day_rate 60 → num2 = 1440
+        app.world.world_surface = 200.0; // `isThereAWorldSurface`
+        app.rain = Rain::with_forced(fire, None, false);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 100; // below the `statLifeMax >= 120` gate
+        app.player = Some(player);
+        update_world_tick(&mut app, STEP);
+        assert!(
+            !app.rain.is_raining(),
+            "a 100-HP player gates the start rolls off"
+        );
+
+        app.rain = Rain::with_forced(fire, None, false);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 120;
+        app.player = Some(player);
+        update_world_tick(&mut app, STEP);
+        assert!(
+            app.rain.is_raining(),
+            "statLifeMax >= 120 arms the start rolls"
         );
     }
 }

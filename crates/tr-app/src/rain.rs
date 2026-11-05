@@ -1,13 +1,21 @@
 //! Rain: `Rain.MakeRain` / `Rain.Update` / `Main.DrawRain`.
 //!
 //! Weather follows the original's shape: a target intensity (`Main.maxRaining`) that
-//! `cloudAlpha` ramps toward at `0.0005` per 60 Hz tick, a countdown that ends the
-//! event, and one drop per `MakeRain` spawn slot per tick with the original fall
-//! velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around their top-left
-//! origin with the local light colour, and die on solid or wet tiles with a splash.
-//! In a snow biome the event renders as snowfall instead: no rain drops, and
-//! `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the time, with
-//! the storm intensity increasing the count and the wind.
+//! `cloudAlpha` ramps toward at `0.0005 * max(1, dayRate)` per 60 Hz tick, a countdown
+//! that ends the event, and one drop per `MakeRain` spawn slot per tick with the
+//! original fall velocity (`wind * 18, 14` px/tick). Drops are drawn rotated around
+//! their top-left origin with the local light colour, and die on solid or wet tiles
+//! with a splash. In a snow biome the event renders as snowfall instead: no rain
+//! drops, and `Dust` type 76 flakes (vanilla's ambient snow dust) drift down all the
+//! time, with the storm intensity increasing the count and the wind.
+//!
+//! Since M1.4-BG-22 the event lifecycle is the vanilla `UpdateTime` rain section
+//! (`Main.cs:64833-64949`) — the `ladyBugRainBoost` drain, the `rainTime` drain with
+//! the strength-change roll while raining, and the ×5.75/×4.25/ladybug start rolls
+//! with the `86400/dayRate` denominators plus `StartRain`/`ChangeRain`/`StopRain` —
+//! driven once per 60 Hz world tick (`world_sim::weather::update_world_tick`); the
+//! old session-local schedule is retired. Every roll consumes Rain's own splitmix
+//! stream (the WEATHER-2 per-consumer-stream convention).
 //!
 //! Storms also thicken the cloud deck (`Background_112/113` layered behind the
 //! mountains) and, above 0.65 intensity, throw random lightning flashes.
@@ -15,9 +23,9 @@
 //! the scheduler.
 
 use glam::Vec2;
-use tr_core::World;
 use tr_core::lighting::LightMap;
 use tr_core::tiledata as td;
+use tr_core::World;
 use tr_render::sprite::SpriteRenderer;
 
 use crate::assets;
@@ -29,6 +37,18 @@ const MAX_SNOW: usize = 600;
 const TICKS_PER_SEC: f32 = 60.0;
 /// `cloudAlpha` change per tick while raining (vanilla `0.0005 * dayRate`).
 const RAMP_PER_TICK: f32 = 0.0005;
+/// The `cloudBGAlpha` clamp-step per tick — 10× the `cloudAlpha` ramp so the storm
+/// deck appears within it (kept from the retired session schedule), scaled by
+/// `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for
+/// (`Main.cs:13187/13205`; the full `updateCloudLayer` state machine is unported).
+const CLOUD_BG_RAMP_PER_TICK: f32 = 0.005;
+/// The `numClouds` stand-in for `ChangeRain`'s strength bands (`Main.cs:64730`): the
+/// port's static cloud field is pinned at 100 (`render/sky.rs` `make_clouds`'s
+/// `num_clouds = 100.0`) — the live cloud-count system (`Main.cs:58952-59036`) is
+/// unported. With exactly 100 the `numClouds > 150` and `numClouds > 100` arms are
+/// both false, so only the storm gate (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`)
+/// reaches the heavy bands; revisit with the weather-completion row.
+const NUM_CLOUDS_STAND_IN: i32 = 100;
 const DROP_W: f32 = 2.0;
 const DROP_H: f32 = 40.0;
 const SPLASH_LIFE: f32 = 0.32;
@@ -78,8 +98,17 @@ pub struct Rain {
     /// `Main.maxRaining`: intensity the event ramps toward.
     target: f32,
     raining: bool,
-    /// Ticks until the current event starts or stops.
-    timer: f32,
+    /// `Main.rainTime`: ticks left in the current event (`Main.cs:64874` drains it
+    /// by `dayRate` per world tick); 0 outside an event.
+    rain_time: i32,
+    /// `Main.ladyBugRainBoost` (`Main.cs:64833-64836`): the ladybug-death rain
+    /// window, drained by `dayRate` per tick and gating the third start arm
+    /// (`Main.cs:64920`). The setter side (M4 ladybug deaths) is not ported — the
+    /// field is inert until then.
+    lady_bug_rain_boost: i32,
+    /// TR_NO_WEATHER: the port's scheduler switch — with it the C#-shaped rolls
+    /// never run (the retired session schedule honoured the same switch).
+    calm: bool,
     /// `Main.windSpeedCurrent`: -1..1.
     wind: f32,
     /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
@@ -130,6 +159,20 @@ pub struct ThunderInputs {
     pub shimmer_alpha: f32,
 }
 
+/// Bridges the Rain stream into [`tr_core::loot::DropRng`] for `Luck.RollLuck`
+/// (`Main.cs:64668`): `Random.Next(min,max)` / `NextDouble()` semantics over
+/// Rain's `range`/`rand01`.
+struct RainLootRng<'a>(&'a mut Rain);
+
+impl tr_core::loot::DropRng for RainLootRng<'_> {
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.range(min.max(0) as u32, max.max(0) as u32) as i32
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.rand01()
+    }
+}
+
 impl Rain {
     pub fn new(seed: u64) -> Self {
         let forced = std::env::var("TR_RAIN")
@@ -145,16 +188,13 @@ impl Rain {
     pub(crate) fn with_forced(seed: u64, forced: Option<f32>, start_calm: bool) -> Self {
         let rng = (seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
         let wind = (((rng >> 40) & 0xFFFF) as f32 / 65535.0 - 0.5) * 0.7;
-        let timer = if start_calm {
-            f32::INFINITY
-        } else {
-            1800.0 + (rng % 7200) as f32
-        };
         Self {
             intensity: 0.0,
             target: 0.0,
             raining: false,
-            timer,
+            rain_time: 0,
+            lady_bug_rain_boost: 0,
+            calm: start_calm,
             wind,
             cloud_bg: 0.0,
             flash: 0.0,
@@ -242,8 +282,10 @@ impl Rain {
     }
 
     /// Fixed 60 Hz stepping, independent of frame rate. The drop sim and the
-    /// event schedule only — the lightning chain moved onto the shared world
-    /// tick (`thunder_step`, driven by `world_sim::weather::update_world_tick`).
+    /// visual ramps only — the event lifecycle moved onto the shared world tick
+    /// (`update_time`, driven by `world_sim::weather::update_world_tick`) and the
+    /// lightning chain runs there too (`thunder_step`). `day_rate` scales the
+    /// ramps (`Main.cs:61902-61906`'s `num4 < 1 → 1` clamp shape).
     pub fn update(
         &mut self,
         world: &World,
@@ -252,50 +294,49 @@ impl Rain {
         zoom: f32,
         dt: f32,
         snow_biome: bool,
+        day_rate: i32,
     ) {
         self.snow_mode = snow_biome;
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
         while acc >= step && steps < 12 {
-            self.tick(world, camera, screen, zoom);
+            self.tick(world, camera, screen, zoom, day_rate);
             acc -= step;
             steps += 1;
         }
         self.accum = acc.min(step * 12.0);
     }
 
-    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
+    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32, day_rate: i32) {
         if let Some(f) = self.forced {
             self.intensity = f;
             self.target = f;
             self.raining = f > 0.01;
         } else {
-            self.timer -= 1.0;
-            if self.raining {
-                if self.timer <= 0.0 {
-                    self.raining = false;
-                    self.target = 0.0;
-                    self.timer = self.range(3600, 14400) as f32;
-                }
-            } else if self.timer <= 0.0 {
-                self.raining = true;
-                self.target = 0.45 + self.rand01() * 0.75;
-                self.timer = self.range(3600, 18000) as f32;
-                self.wind = (self.rand01() * 2.0 - 1.0) * (0.25 + self.rand01() * 0.35);
-            }
-            let delta = (self.target - self.intensity).clamp(-RAMP_PER_TICK, RAMP_PER_TICK);
+            // M1.4-BG-22 phase 2: the session schedule (timer rolls) is retired —
+            // the vanilla state machine (`update_time`) runs on the shared world
+            // tick. Only the `cloudAlpha` ramp remains here, per rain tick
+            // (documented deviation vs C#'s per-draw ramp, `Main.cs:61909-61924`),
+            // scaled by `max(1, dayRate)` (`:61902-61906`).
+            let rate = day_rate.max(1) as f32;
+            let ramp = RAMP_PER_TICK * rate;
+            let delta = (self.target - self.intensity).clamp(-ramp, ramp);
             self.intensity += delta;
         }
 
-        // `cloudBGAlpha` ramps toward the storm strength (vanilla 0.0005/tick; a bit
-        // faster here so the cloud deck appears within the ramp, not a minute later).
+        // `cloudBGAlpha` ramps toward the storm strength (kept at 10× the
+        // `cloudAlpha` ramp so the deck appears within it; scaled by
+        // `max(1, dayRate)` like the `cloudBGActive` ramp it stands in for,
+        // `Main.cs:13187/13205`). Runs under the pin too, as before.
+        let rate = day_rate.max(1) as f32;
+        let bg_ramp = CLOUD_BG_RAMP_PER_TICK * rate;
         let target = if self.intensity > 0.05 {
             self.intensity.min(1.0)
         } else {
             0.0
         };
-        let delta = (target - self.cloud_bg).clamp(-0.005, 0.005);
+        let delta = (target - self.cloud_bg).clamp(-bg_ramp, bg_ramp);
         self.cloud_bg = (self.cloud_bg + delta).clamp(0.0, 1.0);
 
         // The lightning chain (`Main.UpdateWeather`'s
@@ -399,6 +440,201 @@ impl Rain {
                 self.new_lightning(weather.shimmer_alpha);
             }
         }
+    }
+
+    /// `Main.UpdateTime`'s rain section (`Main.cs:64833-64949`), driven once per
+    /// 60 Hz world tick from `world_sim::weather::update_world_tick` — after the
+    /// dayRate wind loop, before `Sandstorm.UpdateTime` (`Main.cs:64966`).
+    ///
+    /// C# order: the `ladyBugRainBoost` drain (`:64833-64836`), the outer
+    /// `(netMode != 1 && !gameMenu) && (isThereAWorldSurface || remixWorld)` gate
+    /// (`:64846` — netMode 0 and an in-game tick make the first conjunct true),
+    /// the raining branch (`:64864-64888`), then the not-raining start arms
+    /// (`:64890-64923`). The slime-rain block after them (`:64925-64949`) is M4
+    /// events. `FreezeRainPower`, `LanternNight` and `slimeRain` do not exist in
+    /// the port — their gates resolve to the C# shape with all false. There is no
+    /// `Main.dayTime` gate on the start arms (only the slime roll is day-gated).
+    pub(crate) fn update_time(
+        &mut self,
+        day_rate: i32,
+        world: &World,
+        any_player_120: bool,
+        remix_world: bool,
+    ) {
+        // TR_RAIN pin / TR_NO_WEATHER: port-only scheduler switches — the pin
+        // overrides the state machine exactly as the retired session schedule was
+        // skipped under it, and `start_calm` disabled that schedule too.
+        if self.forced.is_some() || self.calm {
+            return;
+        }
+        // `Main.cs:64833-64836`.
+        if self.lady_bug_rain_boost > 0 {
+            self.lady_bug_rain_boost -= day_rate;
+        }
+        // `Main.cs:2788`: `isThereAWorldSurface => worldSurface > 50.0`; the
+        // `remixWorld` half reads Wind's stand-in field.
+        let world_surface_ok = world.world_surface > 50.0;
+        if !(world_surface_ok || remix_world) {
+            return;
+        }
+        if self.raining {
+            // `Main.cs:64864-64888` — the drain and the strength-change roll.
+            self.rain_time -= day_rate; // `:64874`
+            if day_rate > 0 {
+                // `:64875` — always true today (`day_rate()` is 60|1); the gate is
+                // the C# shape.
+                let num = 86400 / day_rate / 24; // `:64877`
+                if self.rain_time <= 0 {
+                    self.stop_rain(); // `:64880`
+                } else if self.range(0, (num * 2) as u32) == 0 {
+                    self.change_rain(); // `:64882-64885`
+                }
+            }
+        } else {
+            // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
+            // !NextNightIsLanternNight` — all port-absent.
+            let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
+                                                                         // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
+                                                                         // freeze power is port-absent.
+            let mut flag = day_rate != 0;
+            if flag && !any_player_120 {
+                // `:64894-64909`: the 255-player `statLifeMax >= 120` scan; the
+                // port has one player and the tick computes the bool.
+                flag = false;
+            }
+            if flag {
+                // The start arms in C# order — each gate short-circuits before
+                // its roll, exactly like the `&&` chains.
+                if self.range(0, ((num2 as f64) * 5.75) as u32) == 0 {
+                    self.start_rain(world, remix_world); // `:64912-64914`
+                } else if self.cloud_bg >= 1.0 && self.range(0, ((num2 as f64) * 4.25) as u32) == 0
+                {
+                    // `:64916-64918`: `cloudBGActive >= 1f` reads the
+                    // `cloudBGAlpha` stand-in (`cloud_bg`, documented).
+                    self.start_rain(world, remix_world);
+                } else if self.lady_bug_rain_boost > 0 && self.range(0, num2 as u32) == 0 {
+                    self.start_rain(world, remix_world); // `:64920-64922`
+                }
+            }
+        }
+    }
+
+    /// `Main.StartRain` (`Main.cs:64659-64727`). The `instant`/`strengthOverride`
+    /// params default to the C# values (the port's callers never pass them) and
+    /// `IsRainingForever` has no save field — both cited inline.
+    fn start_rain(&mut self, world: &World, remix_world: bool) {
+        // `Main.cs:64661`.
+        if !remix_world && world.world_surface > 50.0 && !self.raining {
+            // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary 5 needs
+            // anniversary worlds (`tenthAnniversaryWorld`) — none is generated.
+            let range = 25;
+            // `Main.cs:64668`: `GetPlayerWithHighestLuck().RollLuck(range)` — the
+            // luck system is engine-only (luck 0 today, plain semantics), consumed
+            // on the Rain stream like every rain roll (WEATHER-2).
+            let hit = {
+                let mut loot_rng = RainLootRng(self);
+                tr_core::loot::roll_luck(&mut loot_rng, 0.0, range) == 0
+            };
+            if hit {
+                // `Main.cs:64670-64673`: the coin-rain value — CONSUMED, not
+                // stored: coin projectiles are unported (M2/M4). The would-be
+                // `Main.coinRain` is `(int)(Next(75,151) * 100 * 100 *
+                // maxTilesX/4200f)`.
+                let num = world.width as f32 / 4200.0; // `Main.maxTilesX`
+                let coin_rain = self.range(75, 151) as i32 * 100 * 100;
+                let _would_be_coin_rain = (coin_rain as f32 * num) as i32;
+            }
+        }
+        // `Main.cs:64676-64701`: the `rainTime` ladder.
+        let num3 = 86400 / 24; // `num2`/`num3` at `:64676-64677`
+        let mut num4 = self.range((num3 * 8) as u32, 86400) as i64; // `:64678`
+        if self.range(0, 3) == 0 {
+            num4 += self.range(0, num3 as u32) as i64; // `:64679-64682`
+        }
+        if self.range(0, 4) == 0 {
+            num4 += self.range(0, (num3 * 2) as u32) as i64; // `:64683-64686`
+        }
+        if self.range(0, 5) == 0 {
+            num4 += self.range(0, (num3 * 2) as u32) as i64; // `:64687-64690`
+        }
+        if self.range(0, 6) == 0 {
+            num4 += self.range(0, (num3 * 3) as u32) as i64; // `:64691-64694`
+        }
+        if self.range(0, 7) == 0 {
+            num4 += self.range(0, (num3 * 4) as u32) as i64; // `:64695-64698`
+        }
+        if self.range(0, 8) == 0 {
+            num4 += self.range(0, (num3 * 5) as u32) as i64; // `:64699-64702`
+        }
+        // `Main.cs:64703-64719`: the strength ladder.
+        let mut num5 = 1.0f32;
+        if self.range(0, 2) == 0 {
+            num5 += 0.05;
+        }
+        if self.range(0, 3) == 0 {
+            num5 += 0.1;
+        }
+        if self.range(0, 4) == 0 {
+            num5 += 0.15;
+        }
+        if self.range(0, 5) == 0 {
+            num5 += 0.2;
+        }
+        // `Main.cs:64720-64723`: `IsRainingForever` has no save field — the
+        // assignment always runs (the C# gate is skipped, cited).
+        self.rain_time = (num4 as f32 * num5) as i32; // `:64722` `(int)((float)num4 * num5)`
+        self.change_rain(); // `:64724` — `ChangeRain(instant, strengthOverride)` defaults
+        self.raining = true; // `:64725`
+    }
+
+    /// `Main.ChangeRain` (`Main.cs:64728-64740`). The `instant`/`strengthOverride`
+    /// params default to the C# values (the port's callers never pass them);
+    /// `numClouds` reads the static cloud-field stand-in and `cloudBGActive >= 1f`
+    /// the `cloudBGAlpha` stand-in — the live cloud system (`Main.cs:58952-59036`)
+    /// is unported.
+    fn change_rain(&mut self) {
+        let val = if self.cloud_bg >= 1.0 || NUM_CLOUDS_STAND_IN > 150 {
+            // `Main.cs:64730` band 1: `Next(40,91)` / `Next(20,91)` ×0.01.
+            if self.range(0, 3) != 0 {
+                self.range(40, 91) as f32 * 0.01
+            } else {
+                self.range(20, 91) as f32 * 0.01
+            }
+        } else if NUM_CLOUDS_STAND_IN > 100 {
+            // Band 2: dead with the 100-cloud stand-in (100 is not > 100).
+            if self.range(0, 3) != 0 {
+                self.range(20, 61) as f32 * 0.01
+            } else {
+                self.range(10, 71) as f32 * 0.01
+            }
+        } else {
+            // Band 3: `Next(5,31)` / `Next(5,41)` ×0.01.
+            if self.range(0, 3) != 0 {
+                self.range(5, 31) as f32 * 0.01
+            } else {
+                self.range(5, 41) as f32 * 0.01
+            }
+        };
+        // `Main.cs:64731-64734`: the `IsRainingForever` `max(val, 0.1f)` floor —
+        // no save field, skipped (cited).
+        self.target = val; // `:64735` `Main.maxRaining = val`
+                           // `:64736-64739`: the `instant` arm snaps `cloudAlpha` — the port's
+                           // callers never pass it (default false) and the visual ramps own
+                           // `cloudAlpha`.
+    }
+
+    /// `Main.StopRain` (`Main.cs:64644-64658`): the event clears and `cloudAlpha`
+    /// decays through the visual ramp (`Main.cs:61928-61937`'s not-raining arm —
+    /// `target` 0). The `instant` default false is the ported arm;
+    /// `IsRainingForever` has no save field.
+    fn stop_rain(&mut self) {
+        self.rain_time = 0; // `:64648`
+        self.raining = false; // `:64649`
+        self.target = 0.0; // `:64650` `Main.maxRaining = 0f`
+                           // `:64651` `Main.coinRain = 0` — never stored (see `start_rain`).
+                           // `:64652-64655`: the `instant` arm would snap `cloudAlpha` to 0 — the
+                           // port's callers use the default and the ramp decays the visible
+                           // intensity.
     }
 
     /// Takes a batch of `WaterfallManager.TrySparkling` spawns (world pixels).
@@ -676,7 +912,7 @@ pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground() -> World {
         let mut w = World::new("rain".into(), 64, 64);
@@ -698,7 +934,15 @@ mod tests {
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..n {
-            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false);
+            rain.update(
+                w,
+                camera,
+                Vec2::new(1600.0, 200.0),
+                1.0,
+                1.0 / 60.0,
+                false,
+                1,
+            );
         }
     }
 
@@ -727,7 +971,15 @@ mod tests {
         let mut rain = Rain::with_forced(17, Some(1.0), false);
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..120 {
-            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true);
+            rain.update(
+                &w,
+                camera,
+                Vec2::new(1600.0, 200.0),
+                1.0,
+                1.0 / 60.0,
+                true,
+                1,
+            );
         }
         assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
         assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
@@ -740,12 +992,12 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..60 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true, 1);
         }
         let snow = rain.snow_count();
         assert!(snow > 0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, 1);
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
@@ -758,13 +1010,13 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, 1);
         }
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
         rain.flash = 1.0;
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
-        // The flash rise/decay lives in the lightning chain — `thunder_step`,
-        // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
+                                     // The flash rise/decay lives in the lightning chain — `thunder_step`,
+                                     // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
         rain.thunder_step(ThunderInputs::default());
         assert!(rain.flash < 1.0 && rain.flash > 0.7);
         for _ in 0..30 {
@@ -791,16 +1043,19 @@ mod tests {
         assert!(ramping.visual_alpha() < 0.8, "intensity still ramping");
 
         // A forced storm pins both (`TR_RAIN`), and the event end resets it to 0
-        // (`Main.cs:64650`).
+        // (`Main.cs:64650`, via `StopRain` from `update_time`'s drain).
         let mut forced = Rain::with_forced(13, Some(1.5), false);
         run(&mut forced, &w, 2);
         assert_eq!(forced.max_raining(), 1.5);
         let mut ending = Rain::with_forced(15, None, false);
         ending.raining = true;
         ending.target = 0.8;
-        ending.timer = 1.0;
-        run(&mut ending, &w, 2);
+        ending.rain_time = 0;
+        let mut tall = ground();
+        tall.world_surface = 200.0; // `isThereAWorldSurface` (`Main.cs:2788`)
+        ending.update_time(1, &tall, true, false);
         assert_eq!(ending.max_raining(), 0.0);
+        assert!(!ending.is_raining());
     }
 
     #[test]
@@ -846,5 +1101,425 @@ mod tests {
         app.rain.flash = 1.0;
         crate::world_sim::weather::update_world_tick(&mut app, 1.0 / 60.0);
         assert!(app.rain.flash < 1.0, "the decay ran exactly once per tick");
+    }
+
+    /// The exact `Rain` stream replay for pinned-seed tests: `with_forced`'s
+    /// seed mix plus the splitmix of [`Rain::next_u64`], drawn with the C#
+    /// `Random.Next(min, max)` semantics `Rain::range` mirrors.
+    struct StreamReplay(u64);
+
+    impl StreamReplay {
+        fn new(seed: u64) -> Self {
+            Self((seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+        }
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+            z ^ (z >> 31)
+        }
+        fn next(&mut self, lo: u64, hi: u64) -> u64 {
+            lo + self.next_u64() % (hi - lo).max(1)
+        }
+    }
+
+    /// A `ground()` world above the `isThereAWorldSurface` gate
+    /// (`Main.worldSurface > 50.0`, `Main.cs:2788`) so `update_time` runs.
+    fn rain_world() -> World {
+        let mut w = ground();
+        w.world_surface = 200.0;
+        w
+    }
+
+    /// Mirrors `Main.StartRain`'s full draw sequence (`Main.cs:64659-64738`)
+    /// on the replay stream: the coin arm (`RollLuck(25)` at luck 0 — one
+    /// draw — plus the `Next(75,151)` roll on a hit), the `rainTime` ladder
+    /// (`:64676-64701`), the strength ladder (`:64703-64719`), then
+    /// `ChangeRain`'s lowest band (`:64730` — the 100-cloud stand-in keeps
+    /// `numClouds > 150`/`> 100` false and `cloud_bg` is 0). Returns the
+    /// expected `(rainTime, maxRaining, final stream state)`.
+    fn replay_start_rain(seed: u64) -> (i32, f32, u64) {
+        let mut r = StreamReplay::new(seed);
+        if r.next(0, 25) == 0 {
+            let _coin = r.next(75, 151); // `Main.cs:64672` — consumed, not spawned
+        }
+        let num3 = 86400 / 24;
+        let mut num4 = r.next((num3 * 8) as u64, 86400) as i64; // `:64678`
+        if r.next(0, 3) == 0 {
+            num4 += r.next(0, num3 as u64) as i64;
+        }
+        if r.next(0, 4) == 0 {
+            num4 += r.next(0, (num3 * 2) as u64) as i64;
+        }
+        if r.next(0, 5) == 0 {
+            num4 += r.next(0, (num3 * 2) as u64) as i64;
+        }
+        if r.next(0, 6) == 0 {
+            num4 += r.next(0, (num3 * 3) as u64) as i64;
+        }
+        if r.next(0, 7) == 0 {
+            num4 += r.next(0, (num3 * 4) as u64) as i64;
+        }
+        if r.next(0, 8) == 0 {
+            num4 += r.next(0, (num3 * 5) as u64) as i64;
+        }
+        let mut num5 = 1.0f32;
+        if r.next(0, 2) == 0 {
+            num5 += 0.05;
+        }
+        if r.next(0, 3) == 0 {
+            num5 += 0.1;
+        }
+        if r.next(0, 4) == 0 {
+            num5 += 0.15;
+        }
+        if r.next(0, 5) == 0 {
+            num5 += 0.2;
+        }
+        // `Main.cs:64730`, band 3.
+        let val = if r.next(0, 3) != 0 {
+            r.next(5, 31) as f32 * 0.01
+        } else {
+            r.next(5, 41) as f32 * 0.01
+        };
+        ((num4 as f32 * num5) as i32, val, r.0)
+    }
+
+    #[test]
+    fn test_DW_2_1_start_rain_ladder_matches_the_csharp_replay() {
+        // The ladder of `Main.StartRain` (`Main.cs:64659-64727`) replayed
+        // straight from the C# — values AND exact stream position must match
+        // at pinned seeds covering both coin-arm outcomes and fired/skipped
+        // bonus gates.
+        let w = rain_world();
+        for seed in [42u64, 1337, 90_210, 271_828] {
+            let mut rain = Rain::with_forced(seed, None, false);
+            rain.start_rain(&w, false);
+            assert!(rain.is_raining(), "seed {seed}");
+            assert!(rain.rain_time > 0, "seed {seed}");
+            let (want_time, want_target, want_state) = replay_start_rain(seed);
+            assert_eq!(rain.rain_time, want_time, "seed {seed}: rainTime ladder");
+            assert_eq!(rain.target, want_target, "seed {seed}: ChangeRain band");
+            assert_eq!(rain.rng, want_state, "seed {seed}: exact stream position");
+            assert!(
+                (0.05..0.41).contains(&rain.target),
+                "lowest band, seed {seed}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_DW_2_1_change_rain_band_gates_pick_by_cloud_bg_stand_in() {
+        // `Main.cs:64730`: the bands gate on `cloudBGActive >= 1f ||
+        // numClouds > 150`, then `numClouds > 100`. The stand-in pins numClouds
+        // at 100 (`sky.rs` `make_clouds`), so only the `cloud_bg >= 1.0` storm
+        // gate reaches the heavy band; the middle band is dead by construction.
+        for seed in [5u64, 77, 1234] {
+            let mut calm = Rain::with_forced(seed, None, false);
+            calm.change_rain();
+            assert!(
+                (0.05..0.41).contains(&calm.target),
+                "calm band, seed {seed}: {}",
+                calm.target
+            );
+            let mut r = StreamReplay::new(seed);
+            let want_calm = if r.next(0, 3) != 0 {
+                r.next(5, 31) as f32 * 0.01
+            } else {
+                r.next(5, 41) as f32 * 0.01
+            };
+            assert_eq!(calm.target, want_calm, "seed {seed}");
+
+            let mut storm = Rain::with_forced(seed, None, false);
+            storm.cloud_bg = 1.0; // the `cloudBGActive >= 1f` stand-in
+            storm.change_rain();
+            assert!(
+                (0.40..0.91).contains(&storm.target),
+                "storm band, seed {seed}: {}",
+                storm.target
+            );
+            let mut r = StreamReplay::new(seed);
+            let want_storm = if r.next(0, 3) != 0 {
+                r.next(40, 91) as f32 * 0.01
+            } else {
+                r.next(20, 91) as f32 * 0.01
+            };
+            assert_eq!(storm.target, want_storm, "seed {seed}");
+        }
+    }
+
+    #[test]
+    fn test_DW_2_1_stop_rain_clears_the_event_state() {
+        let mut rain = Rain::with_forced(7, None, false);
+        rain.raining = true;
+        rain.target = 0.8;
+        rain.rain_time = 5_000;
+        rain.stop_rain();
+        assert!(!rain.is_raining());
+        assert_eq!(rain.max_raining(), 0.0);
+        assert_eq!(rain.rain_time, 0);
+        // `Main.cs:64652-64655`: without `instant` the visible `cloudAlpha`
+        // decays through the ramp — `StopRain` leaves the field alone.
+        rain.intensity = 0.5;
+        rain.stop_rain();
+        assert_eq!(rain.intensity, 0.5, "the ramp owns the decay, not StopRain");
+    }
+
+    #[test]
+    fn test_DW_2_2_start_denominator_8280_at_day_rate_60_vs_496800_at_1() {
+        // `Main.cs:64892` + `:64912`: `num2 = 86400 / max(1, dayRate)`; the
+        // first start arm rolls `Next((int)(num2 * 5.75))` — 1440·5.75 = 8280
+        // at dayRate 60, 86400·5.75 = 496800 at dayRate 1. A first draw
+        // ≡ 0 mod 8280 but not mod 496800 starts the rain only at dayRate 60.
+        let w = rain_world();
+        let fire_at_60 = (1..2_000_000u64)
+            .find(|&s| {
+                let d = StreamReplay::new(s).next_u64();
+                d % 8280 == 0 && d % 496_800 != 0
+            })
+            .expect("a 8280-only seed exists");
+        let mut fast = Rain::with_forced(fire_at_60, None, false);
+        fast.update_time(60, &w, true, false);
+        assert!(fast.is_raining(), "the ×5.75 roll hit at dayRate 60");
+
+        let mut slow = Rain::with_forced(fire_at_60, None, false);
+        slow.update_time(1, &w, true, false);
+        assert!(
+            !slow.is_raining(),
+            "dayRate 1 rolls the plain 86400·5.75 denominator"
+        );
+
+        // A draw ≡ 0 mod 496800 hits BOTH denominators (496800 = 8280 × 60) —
+        // dayRate 1 is the plain 86400 shape.
+        let fire_at_both = (1..8_000_000u64)
+            .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
+            .expect("a 496800 seed exists");
+        let mut both_fast = Rain::with_forced(fire_at_both, None, false);
+        both_fast.update_time(60, &w, true, false);
+        assert!(both_fast.is_raining());
+        let mut both_slow = Rain::with_forced(fire_at_both, None, false);
+        both_slow.update_time(1, &w, true, false);
+        assert!(
+            both_slow.is_raining(),
+            "the plain 86400 shape fired at dayRate 1"
+        );
+    }
+
+    #[test]
+    fn test_DW_2_2_rain_time_zero_boundary_stops_rain_without_rolling() {
+        // `Main.cs:64874-64886`: the drain hits `rainTime <= 0` (exactly 0 is
+        // the boundary) → `StopRain`, and the `else if` roll is never
+        // evaluated — the stream stays put.
+        let w = rain_world();
+        let mut rain = Rain::with_forced(7, None, false);
+        rain.raining = true;
+        rain.target = 0.8;
+        rain.rain_time = 1;
+        let state = rain.rng;
+        rain.update_time(1, &w, true, false);
+        assert!(!rain.is_raining());
+        assert_eq!(rain.max_raining(), 0.0);
+        assert_eq!(rain.rain_time, 0, "StopRain pins rainTime to 0 (`:64648`)");
+        assert_eq!(rain.rng, state, "no roll is consumed on the stop arm");
+
+        // One tick above the boundary survives and rolls (`rainTime` 2 → 1).
+        let mut alive = Rain::with_forced(7, None, false);
+        alive.raining = true;
+        alive.target = 0.8;
+        alive.rain_time = 2;
+        alive.update_time(1, &w, true, false);
+        assert!(alive.is_raining(), "rainTime 1 is still above the boundary");
+        assert_eq!(alive.rain_time, 1);
+    }
+
+    #[test]
+    fn test_update_time_night_start_roll_fires_without_a_day_time_gate() {
+        // `Main.cs:64912-64923`: the start arms carry no `Main.dayTime` gate —
+        // only the slime-rain roll at `:64925` is day-gated, and that block is
+        // M4. A hit on the ×5.75 bound starts rain regardless of time of day.
+        let w = rain_world();
+        let fire = (1..8_000_000u64)
+            .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
+            .expect("a 496800 seed exists");
+        let mut rain = Rain::with_forced(fire, None, false);
+        rain.update_time(1, &w, true, false);
+        assert!(rain.is_raining());
+        assert!(rain.rain_time > 0);
+    }
+
+    #[test]
+    fn test_lady_bug_boost_drains_by_day_rate_and_arms_the_third_start_roll() {
+        // `Main.cs:64833-64836`: the boost drains by dayRate per tick (the
+        // setter side — M4 ladybug deaths — is inert); `:64920-64922`: the
+        // third start arm only rolls while the boost is up, after the first
+        // arm missed and with the storm gate down (`cloud_bg` 0 skips the
+        // second arm's roll entirely).
+        let w = rain_world();
+        let mut drain = Rain::with_forced(7, None, false);
+        drain.lady_bug_rain_boost = 120;
+        drain.update_time(60, &w, false, false); // no 120-HP player: arms gated
+        assert_eq!(drain.lady_bug_rain_boost, 60);
+        drain.update_time(60, &w, false, false);
+        assert_eq!(drain.lady_bug_rain_boost, 0, "the `> 0` gate clamps at 0");
+
+        let fire = (1..200_000u64)
+            .find(|&s| {
+                // The first draw is arm 1's miss; the third arm's roll is the
+                // SECOND stream draw.
+                let mut r = StreamReplay::new(s);
+                let d1 = r.next_u64();
+                let d2 = r.next_u64();
+                d1 % 8280 != 0 && d2 % 1440 == 0
+            })
+            .expect("a ladybug-arm seed exists");
+        let mut rain = Rain::with_forced(fire, None, false);
+        rain.lady_bug_rain_boost = 100;
+        rain.update_time(60, &w, true, false);
+        assert!(rain.is_raining(), "the ladybug arm fired");
+
+        let mut quiet = Rain::with_forced(fire, None, false);
+        quiet.update_time(60, &w, true, false);
+        assert!(
+            !quiet.is_raining(),
+            "boost 0 gates the third arm before its roll"
+        );
+    }
+
+    #[test]
+    fn test_DW_2_3_cloud_alpha_ramp_moves_60x_at_day_rate_60() {
+        // `Main.cs:61902-61924`: `num5 = 0.0005 * max(1, dayRate)` per step
+        // toward `maxRaining` — one visual tick at dayRate 60 moves 60× the
+        // dry constant. The storm deck ramp scales the same way (the
+        // `Main.cs:13187/13205` shape at the port's 0.005 stand-in rate).
+        let w = ground();
+        let step = 1.0 / 60.0;
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+
+        let mut fast = Rain::with_forced(11, None, false);
+        fast.raining = true;
+        fast.target = 1.0;
+        fast.update(&w, camera, screen, 1.0, step, false, 60);
+        assert!(
+            (fast.visual_alpha() - 0.03).abs() < 1e-6,
+            "60× ramp: {}",
+            fast.visual_alpha()
+        );
+
+        let mut slow = Rain::with_forced(11, None, false);
+        slow.raining = true;
+        slow.target = 1.0;
+        slow.update(&w, camera, screen, 1.0, step, false, 1);
+        assert!(
+            (slow.visual_alpha() - 0.0005).abs() < 1e-9,
+            "dry ramp: {}",
+            slow.visual_alpha()
+        );
+
+        let mut deck = Rain::with_forced(11, None, false);
+        deck.intensity = 1.0; // above the 0.05 gate: the deck chases the intensity
+        deck.update(&w, camera, screen, 1.0, step, false, 60);
+        assert!(
+            (deck.cloud_bg() - 0.3).abs() < 1e-6,
+            "deck at FF: {}",
+            deck.cloud_bg()
+        );
+        let mut dry = Rain::with_forced(11, None, false);
+        dry.intensity = 1.0;
+        dry.update(&w, camera, screen, 1.0, step, false, 1);
+        assert!(
+            (dry.cloud_bg() - 0.005).abs() < 1e-9,
+            "deck dry: {}",
+            dry.cloud_bg()
+        );
+    }
+
+    #[test]
+    fn test_DW_2_4_forced_pin_precedence_over_update_time() {
+        // The TR_RAIN pin is the scheduler: `update_time` never runs under it
+        // (the retired session schedule skipped the same way) — a dead
+        // `rainTime` cannot stop a pinned storm and no roll consumes the
+        // stream. TR_NO_WEATHER (`calm`) disables the rolls the same way.
+        let w = rain_world();
+        let mut rain = Rain::with_forced(7, Some(0.8), false);
+        rain.rain_time = 0;
+        rain.lady_bug_rain_boost = 100;
+        let state = rain.rng;
+        rain.update_time(60, &w, true, false);
+        assert_eq!(rain.rain_time, 0, "no drain under the pin");
+        assert_eq!(rain.lady_bug_rain_boost, 100, "no drain under the pin");
+        assert_eq!(rain.rng, state, "no rolls under the pin");
+        // The pin still owns the visual state through the drop-sim tick.
+        rain.update(
+            &w,
+            Vec2::new(512.0, 400.0),
+            Vec2::new(1600.0, 200.0),
+            1.0,
+            1.0 / 60.0,
+            false,
+            60,
+        );
+        assert_eq!(rain.max_raining(), 0.8);
+        assert!(rain.is_raining());
+
+        let mut quiet = Rain::with_forced(9, None, true);
+        quiet.lady_bug_rain_boost = 100;
+        let state = quiet.rng;
+        quiet.update_time(60, &w, true, false);
+        assert_eq!(
+            quiet.lady_bug_rain_boost, 100,
+            "no drain under TR_NO_WEATHER"
+        );
+        assert_eq!(quiet.rng, state);
+    }
+
+    #[test]
+    fn test_DW_2_4_coin_rain_roll_is_consumed_without_a_spawn() {
+        // `Main.cs:64668-64673`: on a `RollLuck(25)` hit the coin value
+        // (`Next(75,151) * 100 * 100 * maxTilesX/4200f`) is CONSUMED but never
+        // spawned — coin projectiles are unported (M2/M4), the port stores no
+        // `coinRain`. The stream position proves both draws happened; the
+        // event still starts with the full ladder behind them.
+        let hit = (1..10_000u64)
+            .find(|&s| StreamReplay::new(s).next_u64() % 25 == 0)
+            .expect("a RollLuck hit seed exists");
+        let w = rain_world();
+        let mut rain = Rain::with_forced(hit, None, false);
+        rain.start_rain(&w, false);
+        assert!(rain.is_raining());
+        let (want_time, want_target, want_state) = replay_start_rain(hit);
+        assert_eq!(rain.rng, want_state, "the coin draw was consumed");
+        assert_eq!(rain.rain_time, want_time);
+        assert_eq!(rain.target, want_target);
+        // Sanity: the pinned seed really took the coin arm.
+        let mut r = StreamReplay::new(hit);
+        assert_eq!(r.next(0, 25), 0, "the seed hits RollLuck(25)");
+        let coin = r.next(75, 151);
+        let num = 64.0f32 / 4200.0; // `ground()` is 64 tiles wide
+        let _would_be_coin_rain = ((coin as i32 * 100 * 100) as f32 * num) as i32;
+    }
+
+    #[test]
+    fn test_DW_2_2_update_time_runs_inside_the_world_tick() {
+        // The phase-2 slot: `update_time` runs inside `update_world_tick`
+        // after the wind loop and before the sandstorm arm — a dead storm
+        // stops in one tick and the sandstorm still decays behind it.
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.rain = Rain::with_forced(7, None, false);
+        app.rain.raining = true;
+        app.rain.target = 0.8;
+        app.rain.rain_time = 0;
+        app.world.world_surface = 200.0; // `isThereAWorldSurface`
+        app.sandstorm.happening = true;
+        app.sandstorm.time_left = 5_000;
+        crate::world_sim::weather::update_world_tick(&mut app, 1.0 / 60.0);
+        assert!(!app.rain.is_raining(), "StopRain fired inside the tick");
+        assert_eq!(app.rain.max_raining(), 0.0);
+        assert!(
+            app.sandstorm.time_left < 5_000,
+            "the sandstorm arm ran after the rain section"
+        );
     }
 }
