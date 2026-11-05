@@ -656,7 +656,7 @@ fn rain_zone(world: &World, camera: Vec2) -> bool {
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
-fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
+pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
     if light.w <= 0 || light.h <= 0 {
         return [1.0; 3];
     }

@@ -30,6 +30,7 @@ mod player_file;
 mod projectile;
 mod rain;
 mod regen;
+mod sand;
 mod ambience;
 mod craft;
 mod registry;
