@@ -419,7 +419,7 @@ impl Npc {
         Some(Self::new(NpcKind::DemonEye, x, y, 1, 0.0))
     }
 
-    fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
+    pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
             slime: SlimeVariant::Blue,

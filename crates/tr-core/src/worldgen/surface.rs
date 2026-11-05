@@ -48,7 +48,7 @@ pub(crate) fn plant_trees(world: &mut World, rng: &mut Rng, surface: &[i32]) {
         }
         let top = surface[x as usize];
         let ground = *world.tile(x, top).unwrap_or(&Tile::default());
-        if !(ground.active() && (ground.kind == TILE_GRASS || ground.kind == TILE_SNOW))
+        if !(ground.active() && super::biomes::tree_soil(ground.kind))
             || ground.slope() != 0
         {
             continue;

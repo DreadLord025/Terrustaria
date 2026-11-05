@@ -725,6 +725,13 @@ pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Resu
         width,
         height,
         seed,
+        // `FinishCreatingWorld` (`UIWorldCreation.cs:852+`): the `_optionEvil`
+        // choice feeds `WorldGen.crimson` — 0 Random rolls from the seed.
+        crimson: match draft.evil {
+            1 => false,
+            2 => true,
+            _ => tr_core::worldgen::roll_crimson(seed),
+        },
     });
     // `generate` seeds its noise/RNG but leaves `World::new`'s `seed: 0` —
     // the header records the draft's (`save.rs:61`'s `world.seed` write).
