@@ -13,6 +13,7 @@
 //! order and every RNG draw are part of the world contract; `deterministic_for_seed`
 //! pins them.
 
+mod biomes;
 mod caves;
 mod liquids;
 mod living_trees;
@@ -31,6 +32,9 @@ pub struct GenOptions {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    /// `WorldGen.crimson`: the evil biome's flavour (the corruption when
+    /// false).
+    pub crimson: bool,
 }
 
 impl Default for GenOptions {
@@ -39,9 +43,17 @@ impl Default for GenOptions {
             name: "Terrustaria".into(),
             width: 4200,
             height: 1200,
+            crimson: false,
             seed: 1,
         }
     }
+}
+
+/// The world's evil flavour roll for the `_optionEvil = Random` choice —
+/// the C# menu rolls `WorldGen.crimson` from the seed; the port derives it
+/// deterministically from the seed's high bit.
+pub fn roll_crimson(seed: u64) -> bool {
+    (seed >> 56) & 1 == 1
 }
 
 /// The vanilla tile/wall ids the generator paints with.
@@ -78,6 +90,14 @@ pub fn generate(opts: &GenOptions) -> World {
     let mut map = terrain::surface_height_map(width, height, &noise);
     let layers = terrain::fill_terrain(&mut world, width, height, &noise, &map);
 
+    // --- biomes (the C# order: the jungle/evil/mushroom/granite/marble run
+    // before the caves so the caves cut through them) -----------------------
+    let spans = biomes::plan_spans(width, &map.heights, map.beach);
+    biomes::pass_jungle(&mut world, &map.heights, &spans, layers.rock_layer, &mut rng);
+    biomes::pass_evil(&mut world, &map.heights, &spans, &mut rng, opts.crimson);
+    biomes::pass_mushroom(&mut world, &spans, layers.rock_layer, &mut rng);
+    biomes::pass_granite_marble(&mut world, layers.rock_layer, &mut rng);
+
     // --- caves --------------------------------------------------------------
     caves::carve_caves(&mut world, width, &noise, &map.heights, layers.hell_top);
     // Dirt pockets inside stone and stone outcrops inside dirt.
@@ -103,6 +123,10 @@ pub fn generate(opts: &GenOptions) -> World {
 
     // --- liquids ------------------------------------------------------------
     liquids::place_liquids(&mut world, &mut rng, &mut map, &layers, width);
+
+    // --- dungeon (the C# `Dungeon` pass runs after the caves; carving after
+    // the liquids keeps the shafts dry) -------------------------------------
+    biomes::pass_dungeon(&mut world, &map.heights, &spans, &mut rng);
 
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
@@ -146,6 +170,7 @@ mod tests {
         // The living-trees pass places tile 191 (wood) with 192 canopies and
         // wall 244 interiors (`WorldGen.cs:15476-15715`).
         let world = generate(&GenOptions {
+            crimson: false,
             name: "living".into(),
             width: 4200,
             height: 1200,
@@ -302,6 +327,51 @@ mod tests {
         assert!(
             w.tiles.iter().any(|t| t.active() && t.kind == TILE_SNOW),
             "generator should place a snow biome"
+        );
+    }
+
+    #[test]
+    fn the_biome_passes_place_the_missing_biomes() {
+        // The 4200-wide world carries the jungle (60/59), the evil band
+        // (23/25 corruption — or 199/203 crimson), the mushroom patches
+        // (70), the granite/marble caves (368/367) and the dungeon brick.
+        let w = generate(&GenOptions {
+            seed: 77,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(60) > 200, "the jungle grass ({})", count(60));
+        assert!(count(59) > 500, "the mud ({})", count(59));
+        assert!(count(25) > 200, "the ebonstone ({})", count(25));
+        assert!(count(23) > 50, "the corrupt grass ({})", count(23));
+        assert!(count(70) > 50, "the mushroom grass ({})", count(70));
+        assert!(count(368) > 300, "the granite ({})", count(368));
+        assert!(count(367) > 300, "the marble ({})", count(367));
+        assert!(count(41) > 200, "the dungeon brick ({})", count(41));
+        // The crimson flavour swaps the evil tile set.
+        let c = generate(&GenOptions {
+            seed: 77,
+            crimson: true,
+            ..Default::default()
+        });
+        let crimstone = c
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 203)
+            .count();
+        assert!(crimstone > 200, "the crimstone ({crimstone})");
+        assert_eq!(
+            c.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 25)
+                .count(),
+            0,
+            "no ebonstone in the crimson world"
         );
     }
 }

@@ -23,7 +23,8 @@ re-implement something that already exists, or to port the wrong file.
 | `Graphics/Light/ILightingEngine.cs` | `crates/tr-core/src/lighting/mod.rs` (the `LightEngine` trait seam) | done |
 | `Graphics/Light/Lighting.cs` (LightMap/9-slice) | `crates/tr-core/src/lighting/` (`mod`/`params`/`blur`) | done |
 | `Graphics/Light/TileLightScanner.cs` | `crates/tr-core/src/tile_light/` (`scanner.rs` the 147-case switch, `palette.rs` `FastRandom`/colours, `mod.rs` surface/hell/wall) | done |
-| `WorldGen.cs` (`GenerateWorld`, the passes) | `crates/tr-core/src/worldgen/` (`mod`/`noise`/`terrain`/`caves`/`liquids`/`surface`) | partial |
+| `WorldGen.cs` biome passes (`JunglePass`, `CorruptionAndCrimson`, `GlowingMushroomPatches`, `Granite`/`Marble`, `Dungeon`) | `crates/tr-core/src/worldgen/biomes.rs` (`pass_jungle`/`pass_evil`/`pass_mushroom`/`pass_granite_marble`/`pass_dungeon`, `plan_spans`) + `GenOptions.crimson` + `roll_crimson` (the seed-side draw) + the UI `_optionEvil` feed | done (the shape-level port — ANALYSIS "Biome passes (M1.4-WGEN-1)"; the shrines/temple/pyramids/chests = the follow-ups) |
+| `WorldGen.cs` (`GenerateWorld`, the passes) | `crates/tr-core/src/worldgen/` (`mod`/`noise`/`terrain`/`caves`/`liquids`/`surface`/`biomes`/`living_trees`) | partial |
 | `WorldBuilding/*` (`WorldGenerator.cs`, `WorldGenSnapshot.cs`, `WorldBuilding/*`) | `crates/tr-core/src/worldgen/` | partial |
 | `Framing.cs`, `HitTile.cs`, `TileMergeAttempt*`, `TileFrameCosmetic` grass family (82184-84836) | `crates/tr-core/src/framing.rs` | done |
 | `Tile.cs` + tile tables/IDs | `crates/tr-core/src/tile.rs`, `tiledata/` (generated: `sets`/`emissive`/`merge`) | done |

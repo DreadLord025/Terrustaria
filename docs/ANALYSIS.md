@@ -3277,3 +3277,43 @@ tree/cactus growth and the biome spread are M7-GROWTH-2; the
 notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
+
+## Biome passes (M1.4-WGEN-1)
+
+The overworld biomes the compact generator lacked — the jungle, the evil
+band, the glowing mushroom patches, the granite/marble caves and the
+dungeon — land as `worldgen/biomes.rs` in the C# pass order (before the
+caves, so the caves cut through them; the dungeon carves after the
+liquids to keep its shafts dry):
+
+- **The jungle** (`JunglePass` + `MudCavesToJungleGrass`): the west-edge
+  band (`beach + 40 .. width/3`) converts the dirt/stone surface band to
+  the mud (59) with the jungle grass (60) on top and the mud walls (64)
+  down to the rock layer, plus the leaky mud blobs past the band edges;
+  the surface dips every ~40 columns carve the shallow water pockets
+  (`SurfaceWaterInJungle`'s shape).
+- **The evil band** (`CorruptionAndCrimson`): the stone+grass band east of
+  spawn converts to the evil set — the corruption (the corrupt grass 23 /
+  the ebonstone 25 / the walls 3) or the crimson (199/203/192) by
+  `GenOptions.crimson`, fed from the UI's `_optionEvil` (the Random choice
+  rolls from the seed's high bit, `roll_crimson`). The chasms: 3-4
+  wandering widening shafts with the evil-stone sheaths, cut down past the
+  rock layer.
+- **The mushroom patches** (`GlowingMushroomPatches`): 1-2 domes in the
+  cavern layer near the jungle — the mud cores with the mushroom grass
+  (70) shells and the mushroom walls (74).
+- **The granite/marble caves** (`Granite`/`Marble`): 1-2 blob caves each
+  in the stone (the granite 368 / the marble 367, the walls 180/178).
+- **The dungeon** (`Dungeon` + `DungeonCrawler`): the entrance tower at
+  the snow side, the carved shaft, and 3 corridor levels stepping to the
+  bottom with the brick lining (41/43/44 by the world's dungeon roll) and
+  the dungeon walls (7).
+- The tree placement grew the soil set (the jungle/corrupt/crimson/
+  mushroom grasses grow trees like the forest grass).
+
+Deviations: the port reproduces the vanilla SHAPES with its own
+deterministic noise/blob machinery — the exact tile-level layouts of the
+C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
+jungle shrines, the temple, the pyramids and the biome chests are the
+follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
+tiny worlds collapse the evil band and guard every range.
