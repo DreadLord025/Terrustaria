@@ -178,6 +178,9 @@ pub(crate) struct App {
     /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
     /// `M6-SAVE-2`) — in-memory for now.
     pub(crate) world_chests: Vec<craft::WorldChest>,
+    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
+    /// alchemy discount rolls.
+    pub(crate) craft_rng: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -318,6 +321,8 @@ pub(crate) struct App {
     pub(crate) growth_step: FixedStepper,
     /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
     pub(crate) growth_rng: tr_core::tile_light::FastRandom,
+    /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
+    pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
@@ -1337,6 +1342,7 @@ impl App {
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
             world_chests: Vec::new(),
+            craft_rng: 1,
             menu: menu_state,
             front: None,
             front_backup: None,
@@ -1437,6 +1443,7 @@ impl App {
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
+            ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain,
             ambient_waterfall,
             ambient_lavafall,

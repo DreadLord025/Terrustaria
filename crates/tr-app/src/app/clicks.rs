@@ -152,7 +152,15 @@ impl App {
         };
         let recipe = &craft::RECIPES[idx];
         let Some((kind, count)) =
-            craft::try_craft(&mut self.inventory, &mut self.world_chests, &in_range, recipe, &adj, &zones)
+            craft::try_craft(
+                &mut self.inventory,
+                &mut self.world_chests,
+                &in_range,
+                recipe,
+                &adj,
+                &zones,
+                &mut self.craft_rng,
+            )
         else {
             // The recipe row shows with a partial ingredient set; a click
             // without the full set does nothing (`Main.cs:42250` hover only).

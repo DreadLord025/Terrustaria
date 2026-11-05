@@ -30,6 +30,7 @@ pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
 pub mod fishing;
+pub mod ores;
 pub mod spread;
 pub mod growth;
 pub mod pylons;

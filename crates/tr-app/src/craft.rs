@@ -48,6 +48,10 @@ pub(crate) struct Recipe {
     pub(crate) need_snow: bool,
     /// `needGraveyardBiome` (`:92`): `player.ZoneGraveyard`.
     pub(crate) need_graveyard: bool,
+    /// `alchemy` (`:88`) — auto-set by `AddRecipe` iff `requiredTile == 13`
+    /// (`:16722-16726`); gates the 1/3 ingredient discount at craft time
+    /// (`GetIngredientCraftingDiscount`, `:214-228`).
+    pub(crate) alchemy: bool,
 }
 
 /// The zero recipe the static entries inherit the unset fields from.
@@ -60,6 +64,7 @@ const BASE: Recipe = Recipe {
     need_lava: false,
     need_snow: false,
     need_graveyard: false,
+    alchemy: false,
 };
 
 /// One `requiredItem` entry: the authored item id + stack, with the accepted
@@ -293,6 +298,9 @@ pub(crate) struct Adjacent {
     pub(crate) honey: bool,
     /// `player.adjLava` — `tile.liquid > 200` lava.
     pub(crate) lava: bool,
+    /// `player.alchemyTable` — the alchemy-table tiles
+    /// (`Player.SetAdjTile`, `Player.cs:35647-35649`).
+    pub(crate) alchemy_table: bool,
 }
 
 /// `Player.AdjTiles` (`Player.cs:35661`) with `TileReachCheckSettings.Simple`
@@ -307,12 +315,19 @@ pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
     let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + REACH_X;
     let ly = (player.y / 16.0).floor() as i32 - REACH_Y;
     let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + REACH_Y;
-    let mut adj = Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false };
+    let mut adj =
+        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false };
     for i in lx.max(0)..=hx.min(world.width as i32 - 1) {
         for j in ly.max(0)..=hy.min(world.height as i32 - 1) {
             if let Some(t) = world.tile(i, j) {
-                if t.active() && !adj.tiles.contains(&t.kind) {
-                    adj.tiles.push(t.kind);
+                if t.active() {
+                    if !adj.tiles.contains(&t.kind) {
+                        adj.tiles.push(t.kind);
+                    }
+                    // `Player.SetAdjTile` (`Player.cs:35646-35649`).
+                    if t.kind == 355 || t.kind == 699 {
+                        adj.alchemy_table = true;
+                    }
                 }
                 // `TileID.Sets.CountsAsWaterForCrafting` (`:35685-35687`).
                 if t.active() && COUNTS_AS_WATER.contains(&t.kind) {
@@ -349,6 +364,25 @@ pub(crate) struct WorldChest {
     pub(crate) tile: (i32, i32),
     /// `(item id, stack)` stacks, `Chest.maxItems` = 40 at most.
     pub(crate) slots: Vec<(u16, u32)>,
+}
+
+/// `Main.rand.Next(3) == 0` against the crafting stream — the port's
+/// per-consumer RNG convention (vanilla rolls the shared `Main.rand`).
+pub(crate) fn next_rand3(rng: &mut u64) -> bool {
+    *rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *rng;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    (z ^ (z >> 31)) % 3 == 0
+}
+
+/// `Recipe.GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): one free unit
+/// per 1/3 roll while the recipe brews at an alchemy table.
+fn ingredient_discount(alchemy: bool, alchemy_table: bool, stack: u32, rng: &mut u64) -> u32 {
+    if !alchemy || !alchemy_table {
+        return 0;
+    }
+    (0..stack).filter(|_| next_rand3(rng)).count() as u32
 }
 
 /// `NearbyChests.GetChestsInRangeOf`'s default range (`NearbyChests.cs:14`).
@@ -570,12 +604,17 @@ pub(crate) fn try_craft(
     recipe: &Recipe,
     adj: &Adjacent,
     zones: &Zones,
+    rng: &mut u64,
 ) -> Option<(u16, u32)> {
     if !can_craft(inv, chests, in_range, recipe, adj, zones) {
         return None;
     }
     for req in recipe.required {
-        let mut to_consume = req.stack;
+        // `GetIngredientsForOneCraft` (`Recipe.cs:196-212`): the discount
+        // comes off the consumed stack (availability counts full stacks).
+        let discount =
+            ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, rng);
+        let mut to_consume = req.stack - discount;
         // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots). A
         // group entry drains whichever member the slots hold first.
         if req.group != NO_GROUP {
@@ -754,6 +793,29 @@ pub(crate) static RECIPES: &[Recipe] = &[
         need_graveyard: true,
         ..BASE
     },
+    // Recipe.cs:1586-1597 — Lesser Healing Potion x2: 1 Mushroom + 2 Gel +
+    // 2 Bottle, at a placed bottle (`AddRecipe` auto-sets `alchemy`,
+    // `:16722-16726` — the CRAFT-3 discount).
+    Recipe {
+        create: (28, 2),
+        required: &[
+            Requirement::item(5, 1),
+            Requirement::item(23, 2),
+            Requirement::item(31, 2),
+        ],
+        stations: &[13],
+        alchemy: true,
+        ..BASE
+    },
+    // Recipe.cs:1606-1611 — Healing Potion: 2 Lesser Healing Potion +
+    // 1 Glowing Mushroom, at a placed bottle.
+    Recipe {
+        create: (188, 1),
+        required: &[Requirement::item(28, 2), Requirement::item(183, 1)],
+        stations: &[13],
+        alchemy: true,
+        ..BASE
+    },
 ];
 
 #[cfg(test)]
@@ -780,7 +842,7 @@ mod tests {
     }
 
     fn dry_adj() -> Adjacent {
-        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false }
+        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false }
     }
 
     fn world_with_station(kind: u16, x: i32, y: i32) -> World {
@@ -923,7 +985,7 @@ mod tests {
         assert!(can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
         // The snow cloud: the Sky Mill + the snow zone, both required.
         let snow = recipe_by_create(3756);
-        let mut snow_adj = Adjacent { tiles: vec![305], water: false, honey: false, lava: false };
+        let mut snow_adj = Adjacent { tiles: vec![305], water: false, honey: false, lava: false, alchemy_table: false };
         let inv = inv_with(&[(751, 1)]);
         assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no snow zone");
         let zones = Zones { snow: true, graveyard: false };
@@ -932,7 +994,7 @@ mod tests {
         assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no Sky Mill");
         // The graveyard shelf: the Bone Welder (300) + the graveyard zone.
         let shelf = recipe_by_create(1389);
-        let gy_adj = Adjacent { tiles: vec![300], water: false, honey: false, lava: false };
+        let gy_adj = Adjacent { tiles: vec![300], water: false, honey: false, lava: false, alchemy_table: false };
         let inv = inv_with(&[(9, 1)]);
         let zones = Zones { snow: false, graveyard: false };
         assert!(!can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
@@ -998,6 +1060,7 @@ mod tests {
 
     #[test]
     fn the_chest_ingredients_count_and_drain() {
+        let mut rng = 1u64;
         // `CollectItemsFromChests` + `Consume` (`CraftingRequests.cs:218-254`):
         // the chest stacks count toward the recipe and drain after the
         // inventory.
@@ -1015,7 +1078,7 @@ mod tests {
         // The drain takes the inventory first, then the chest.
         
         assert_eq!(
-            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones),
+            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones, &mut rng),
             Some((36, 1))
         );
         assert_eq!(count_kind(&inv, 9), 0, "the inventory drained first");
@@ -1068,7 +1131,80 @@ mod tests {
     }
 
     #[test]
+    fn addrecipe_sets_alchemy_on_the_tile_13_recipes() {
+        // `AddRecipe` (`Recipe.cs:16722-16726`): `requiredTile == 13` ⇒
+        // `alchemy = true` — the discount gate.
+        for r in RECIPES {
+            if r.stations.contains(&13) {
+                assert!(r.alchemy, "recipe {:?}", r.create);
+            }
+        }
+        // And the two subset potions are there.
+        assert!(recipe_by_create(28).alchemy && recipe_by_create(28).stations == &[13]);
+        assert!(recipe_by_create(188).alchemy && recipe_by_create(188).stations == &[13]);
+    }
+
+    #[test]
+    fn the_alchemy_table_discounts_a_third_of_the_units() {
+        // `GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): while the
+        // recipe brews at an alchemy table, each unit survives on a 1/3 roll.
+        let mut w = world_with_station(13, 30, 32); // the placed bottle
+        let i = w.index(32, 32);
+        w.tiles[i].kind = 355; // the alchemy table next to it
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.alchemy_table, "the alchemy table is adjacent");
+        // Near the table the bottle requirement is satisfied too
+        // (`TileCountsAs` 355->13).
+        assert!(adj.tiles.iter().any(|&k| satisfies_station(13, k)));
+        let zones = Zones::default();
+        let lhp = recipe_by_create(28);
+        let mut chests = Vec::new();
+        // Generous stock: 9 mushroom, 18 gel, 18 bottles.
+        let mut inv = inv_with(&[(5, 9), (23, 18), (31, 18)]);
+        let mut rng = 7u64;
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], lhp, &adj, &zones, &mut rng),
+            Some((28, 2))
+        );
+        // The consumed amounts are the stacks minus the rolled-off units —
+        // recompute the expectation from the same stream state.
+        let mut expect_rng = 7u64;
+        let discount = |stack: u32, rng: &mut u64| {
+            ingredient_discount(true, true, stack, rng)
+        };
+        let d1 = discount(1, &mut expect_rng);
+        let d2 = discount(2, &mut expect_rng);
+        let d3 = discount(2, &mut expect_rng);
+        assert!(d1 + d2 + d3 > 0, "the seed rolls at least one free unit");
+        assert_eq!(count_kind(&inv, 5), 9 - (1 - d1));
+        assert_eq!(count_kind(&inv, 23), 18 - (2 - d2));
+        assert_eq!(count_kind(&inv, 31), 18 - (2 - d3));
+        // The bottle without the alchemy table: every unit drains.
+        let bottle_only = Adjacent {
+            tiles: vec![13],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let mut inv = inv_with(&[(5, 1), (23, 2), (31, 2)]);
+        let mut rng = 7u64;
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], lhp, &bottle_only, &zones, &mut rng),
+            Some((28, 2))
+        );
+        assert_eq!(count_kind(&inv, 5), 0);
+        assert_eq!(count_kind(&inv, 23), 0);
+        assert_eq!(count_kind(&inv, 31), 0);
+    }
+
+    #[test]
     fn test_dw_2_2_try_craft_consumes_and_returns() {
+        let mut rng = 1u64;
         // Wood spread across three slots (4 + 4 + 2): a 10x-wood recipe
         // consumes all three, exact amounts.
         let mut inv = inv_with(&[(9, 4)]);
@@ -1078,7 +1214,7 @@ mod tests {
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones), Some((36, 1)));
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
         assert_eq!(count_kind(&inv, 9), 0);
     }
 
@@ -1105,7 +1241,7 @@ mod tests {
         let inv = inv_with(&[(11, 3)]);
         let bar = recipe_by_create(22);
         assert!(!can_craft(&inv, &[], &[], bar, &adj, &zones));
-        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false };
+        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false, alchemy_table: false };
         assert!(can_craft(&inv, &[], &[], bar, &furnace, &zones));
         // Empty inventory: cannot craft anything.
         let inv = [crate::item::EMPTY_SLOT; INV];
@@ -1121,6 +1257,7 @@ mod tests {
 
     #[test]
     fn test_dw_2_5_full_inventory_still_crafts() {
+        let mut rng = 1u64;
         // Fill every slot with stone, keep 10 wood in the first slot: the
         // work bench still crafts (the result-drop duty is the caller's, like
         // vanilla `Item.giveItem` dropping on the ground).
@@ -1132,11 +1269,12 @@ mod tests {
         let adj = dry_adj();
         let zones = Zones::default();
         let mut chests = Vec::new();
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones), Some((36, 1)));
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
     }
 
     #[test]
     fn furniture_recipe_crafts_and_consumes() {
+        let mut rng = 1u64;
         // 16 wood -> work bench (by hand) leaves 6, exactly a door — which
         // then needs the bench standing next to the player. The chest needs
         // the iron bar too: wood alone is refused.
@@ -1144,12 +1282,12 @@ mod tests {
         let adj = dry_adj();
         let mut chests = Vec::new();
         let mut inv = inv_with(&[(9, 16)]);
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(36), &adj, &zones), Some((36, 1)));
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(36), &adj, &zones, &mut rng), Some((36, 1)));
         assert_eq!(count_kind(&inv, 9), 6);
         let door = recipe_by_create(25);
-        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false };
+        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false, alchemy_table: false };
         assert!(!can_craft(&inv, &[], &[], door, &adj, &zones), "no station adjacent yet");
-        assert_eq!(try_craft(&mut inv, &mut chests, &[], door, &bench, &zones), Some((25, 1)));
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng), Some((25, 1)));
         assert_eq!(count_kind(&inv, 9), 0);
         // Rich Mahogany satisfies the chest's wood group too.
         let mut inv = inv_with(&[(619, 8)]);
