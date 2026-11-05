@@ -3317,3 +3317,38 @@ C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
 jungle shrines, the temple, the pyramids and the biome chests are the
 follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
 tiny worlds collapse the evil band and guard every range.
+
+## Structures (M1.4-WGEN-2)
+
+The structure passes ride their own RNG stream (`opts.seed ^
+0x9E37_79B9_7F4A_7C15`) — the shared worldgen stream feeds the
+living-tree/tree passes after them, and consuming it early shifted the
+tree placements to empty results on the small worlds.
+
+- **The jungle shrines** (`JungleShrines`, `WorldGen.cs:15977-16140`):
+  7-12 hut rings of the brick 119 (`GenVars.jungleHut`'s first pick,
+  `:11319`) in the underground jungle — the carved interiors carry the
+  shrine walls (24) and a torch (the tile 4, the style 3), the mud
+  pillars fill under the floor (`:16092-16106`) and the sloped brick caps
+  close the top (`:16108-16120`). The C# retry loop (`num4`, `:15991`)
+  maps to 8 attempts per shrine — the caves carve the mud band before
+  this pass, so most raw spots miss. The net brick is the shell ring
+  only (~25-32 tiles per shrine — the interior does not count).
+- **The chests** (`ChestsInJungleShrines` + the cavern scatter): the
+  shrine spots take the chests first (`place_chest` writes the intact
+  2×2 tile-21 quads with the frame corners), then the cave floors
+  scatter `maxTilesX / 40` more.
+- **The altars** (`DemonAndCrimsonAltars`, `:15750-15800`): the count
+  `tiles × 3.3e-6` (the small worlds clamp the 281-tile ocean margins),
+  the 3×2 tile 26 with the style frames, the middle-10 % exclusion; the
+  body may carve the loose cells (`Place3x2`'s free placement).
+- **The pyramids** (`DunesAndPyramidLocations`, `:15367+`): 1-2 stepped
+  hulls of the sandstone brick 480 over the desert surface with the base
+  chambers, the entrance tunnels and a chest.
+- **The pots** (`PotsGraveyardsAndBoulderPiles`, `:17996+`): the pot 28
+  with the 7 styles, scattered with a 20-row seat scan (the point draws
+  rarely hit the cave floors — the C#'s denser caves accept more).
+
+Deviations: the chest inventories ride the storage task (the C#
+`Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
+piles and the graveyards are the follow-ups; the layouts are shape-level.

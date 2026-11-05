@@ -14,6 +14,7 @@
 //! pins them.
 
 mod biomes;
+mod structures;
 mod caves;
 mod liquids;
 mod living_trees;
@@ -127,6 +128,24 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- dungeon (the C# `Dungeon` pass runs after the caves; carving after
     // the liquids keeps the shafts dry) -------------------------------------
     biomes::pass_dungeon(&mut world, &map.heights, &spans, &mut rng);
+
+    // --- structures (the C# order: the shrines and the altars ride the
+    // world's later passes; the chests fill the registered spots; the pots
+    // scatter last) ---------------------------------------------------------
+    // The structures run on their own stream — the shared  feeds the
+    // living-tree/tree passes after this point and must not shift.
+    let mut srng = Rng(opts.seed ^ 0x9E37_79B9_7F4A_7C15);
+    let shrine_spots = structures::pass_jungle_shrines(&mut world, &spans, layers.rock_layer, &mut srng);
+    structures::pass_chests(&mut world, &shrine_spots, &mut srng);
+    structures::pass_altars(&mut world, opts.crimson, &mut srng);
+    structures::pass_pyramids(
+        &mut world,
+        map.desert_start,
+        map.desert_end,
+        &map.heights,
+        &mut srng,
+    );
+    structures::pass_pots(&mut world, &mut srng);
 
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
@@ -373,5 +392,51 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    #[test]
+    fn the_structure_passes_place_the_contents() {
+        // The 4200-world carries the shrine brick huts (119) with the torches,
+        // the chests (21), the demon altars (26), the pyramid brick (480) and
+        // the pots (28).
+        let w = generate(&GenOptions {
+            seed: 91,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        // The brick ring only (the carved interior does not count): ~25-32
+        // tiles per shrine shell.
+        assert!(count(119) > 150, "the shrine brick ({})", count(119));
+        assert!(count(4) > 3, "the shrine torches ({})", count(4));
+        assert!(count(21) >= 4, "the chests ({})", count(21) / 4);
+        assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);
+        assert!(count(480) > 300, "the pyramid brick ({})", count(480));
+        assert!(count(28) > 50, "the pots ({})", count(28));
+        // The chest tiles come in intact 2x2 quads — every chest anchor
+        // (frame 0,0) has its three siblings.
+        let mut anchors = 0;
+        for y in 1..w.height - 2 {
+            for x in 1..w.width - 2 {
+                let t = w.tile(x, y).unwrap();
+                if t.active() && t.kind == 21 && t.frame_x == 0 && t.frame_y == 0 {
+                    let ok = [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
+                        .iter()
+                        .all(|(dx, dy, fx)| {
+                            w.tile(x + dx, y + dy).is_some_and(|n| {
+                                n.active() && n.kind == 21 && n.frame_x == *fx && n.frame_y == if *dy == 1 { 18 } else { 0 }
+                            })
+                        });
+                    if ok {
+                        anchors += 1;
+                    }
+                }
+            }
+        }
+        assert!(anchors >= 4, "the intact chest quads ({anchors})");
     }
 }
