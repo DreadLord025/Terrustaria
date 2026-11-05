@@ -19,23 +19,42 @@ pub const WALL_UNBREAKABLE: u16 = 350;
 /// :46973/:49187`): the whole object was removed and vanilla would spawn
 /// `Item.NewItem` with the rect origin at `(x, y)` (tile coordinates; the
 /// rect is 32x32 px for furniture, 16x16 for doors). `tile_kind` is the
-/// object's tile id; the item id resolves app-side through
+/// object's tile id; `item` carries the id only when the `Check*` body spawns
+/// the item itself — the sunflower's `Item.NewItem(…, 63)`
+/// (`WorldGen.cs:53787-53791`); `None` resolves app-side through
 /// `registry::tile_drop` (style-0 drops: door 25, table 32, chair 34, bench
 /// 36, chest 48 — `WorldGen.cs:69204/:42194/:42635/:42447/:41677`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct ObjectDrop {
     pub tile_kind: u16,
+    pub x: i32,
+    pub y: i32,
+    /// The item the check spawned with the destruction, if any (see above).
+    pub item: Option<i32>,
+}
+
+/// One broken loot pot — `CheckPot`'s tail (`WorldGen.cs:57011-57014`): after
+/// the 2x2 dies, vanilla runs `SpawnThingsFromPot(i, j, num, num2, num4)` at
+/// the check's trigger cell with the pot's style row (`frameY / 36`). The app
+/// resolves the loot rolls (phase 3) and plays the break sound
+/// ([`pot_break_sound`]) from `style`; gated by `netMode != 1` only, so the
+/// event ignores `kill_tile`'s `no_item`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PotEvent {
+    pub style: i32,
     pub x: i32,
     pub y: i32,
 }
 
 /// The result of `kill_tile`: the kind of the hit cell plus every object
-/// destruction the cascade performed, in `SquareTileFrame` visit order.
-#[derive(Clone, Debug)]
+/// destruction the cascade performed, in `SquareTileFrame` visit order, and
+/// every loot pot the cascade broke.
+#[derive(Clone, Debug, Default)]
 pub struct TileKill {
     /// Tile kind of the killed (hit) cell.
     pub kind: u16,
     pub object_drops: Vec<ObjectDrop>,
+    pub events: Vec<PotEvent>,
 }
 
 /// `SquareTileFrame`'s `TileFrame` visit order (`WorldGen.cs:80185-80196`):
@@ -76,6 +95,7 @@ pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDr
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
         object_drops: Vec::new(),
+        events: Vec::new(),
     };
     square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
     after_edit(world, x, y);
@@ -99,6 +119,7 @@ fn kill_tile_cascading(
     let mut kill = TileKill {
         kind,
         object_drops: Vec::new(),
+        events: Vec::new(),
     };
     square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
@@ -145,7 +166,15 @@ fn square_tile_frame(
             continue;
         };
         if !no_item {
-            kill.object_drops.push(plan.drop);
+            if let Some(drop) = plan.drop {
+                kill.object_drops.push(drop);
+            }
+        }
+        // `SpawnThingsFromPot`'s only gate is `Main.netMode != 1`
+        // (:57011-57014) — the `noItem` flag never suppresses pot loot, so
+        // the event passes through unchanged.
+        if let Some(event) = plan.pot_event {
+            kill.events.push(event);
         }
         // The shared tail of every `Check*`: `destroyObject = true`, kill
         // every object cell of the type (`WorldGen.cs:57941-57952`,
@@ -195,29 +224,40 @@ fn solid_tile_allow_bottom_slope(world: &World, x: i32, y: i32) -> bool {
         && !t.half_brick()
 }
 
-/// The destruction plan of one `Check*` routine: the drop vanilla would
-/// spawn and the object cells to `KillTile` (active cells of the object's
-/// type — the exact cell guard each C# kill loop applies).
+/// The destruction plan of one `Check*` routine: the object cells to
+/// `KillTile` (active cells of the object's type — the exact cell guard each
+/// C# kill loop applies), the drop vanilla would spawn (`None` for checks
+/// whose loot is per-cell `KillTile_GetItemDrops`, an event, or RNG-deferred —
+/// `check_alch`/`check_pot`/`check_pile*`/the piles) and the pot-loot event.
 struct CheckPlan {
-    drop: ObjectDrop,
+    drop: Option<ObjectDrop>,
     cells: Vec<(i32, i32)>,
+    pot_event: Option<PotEvent>,
 }
 
 /// The `TileFrameImportant` object dispatch (`WorldGen.cs:84962`): runs the
 /// `Check*` routine for the cell's registry kind and returns its destruction
 /// plan. Cell routines: 10 → `CheckDoorClosed` (:86432), 11 →
-/// `CheckDoorOpen` (:86339), 14 → `Check3x2` (:49187), 15 → `Check1x2`
-/// (:43335), 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
-/// `TileID.Sets.BasicChest` :85616-85619).
+/// `CheckDoorOpen` (:86339), 14/186/187 → `Check3x2` (:49187, dispatch
+/// :85980-85988), 15 → `Check1x2` (:43335), 18 → `Check2x1` (:46973), 21 →
+/// `CheckChest` (:57923, via `TileID.Sets.BasicChest` :85616-85619), 27 →
+/// `CheckSunflower` (:85639), 28 → `CheckPot` (:85643), 185 → `CheckPile`
+/// (:85275), 82/83/84 → `CheckAlch` (the `Main.tileAlch` default arm,
+/// :85830-85832). Tile 78 routes here through the registry gateway but has no
+/// arm yet — `CheckOnTable1x1` (:43503-43546) is outside this phase's scope.
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
         10 => check_door_closed(world, x, y),
         11 => check_door_open(world, x, y),
-        14 => check_table(world, x, y),
+        14 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
         21 => check_chest(world, x, y),
+        27 => check_sunflower(world, x, y),
+        28 => check_pot(world, x, y),
+        82 | 83 | 84 => check_alch(world, x, y),
+        185 => check_pile(world, x, y),
         _ => None,
     }
 }
@@ -257,12 +297,14 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     }
     let region: Vec<(i32, i32)> = (0..3).map(|dy| (x, oy + dy)).collect();
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: Some(ObjectDrop {
             tile_kind: 10,
             x,
             y,
-        },
+            item: None,
+        }),
         cells: killable_cells(world, &region, 10),
+        pot_event: None,
     })
 }
 
@@ -300,24 +342,35 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         return None;
     }
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: Some(ObjectDrop {
             tile_kind: 11,
             x,
             y,
-        },
+            item: None,
+        }),
         cells: killable_cells(world, &region, 11),
+        pot_event: None,
     })
 }
 
-/// `WorldGen.Check3x2` (`WorldGen.cs:49187-49412`) for the wooden table
-/// (type 14): origin from `frameY % 36 / 18` and `frameX / 18` mod 3
-/// (:49199-49209 — the hardcoded 36 is the `Style3x2` full height; table
-/// styles are horizontal with `StyleWrapLimit = 0`, so `frameY` only ever
-/// encodes the row), every cell must be active type-14 with the expected
-/// frames (:49219-49226), and `SolidTileAllowBottomSlope` below each column
-/// (the final `else if`, :49396-49399). Drop = `GetItemDrop_Tables(style)`
-/// (:49424-49426), 32x32 at the trigger cell; style 0 → 32 (:42194).
-fn check_table(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+/// `WorldGen.Check3x2` (`WorldGen.cs:49187-49430`) for the wooden table
+/// (type 14) and the large piles (186/187 — dispatch `WorldGen.cs:85980-85988`):
+/// origin from `frameY % 36 / 18` and `frameX / 18` mod 3 (:49199-49209 — the
+/// hardcoded 36 is the `Style3x2` full height; styles are horizontal, so
+/// `frameY` encodes the row), every cell must be active of `kind` with the
+/// expected frames (:49219-49226), and the per-column support judge branches
+/// on the kind (:49280-49373): 186/187 refuse `SolidTileAllowBottomSlope`
+/// failures, Boulders (`InvalidTileForPilesOrSpeleothems` :38979-38994, set
+/// `TileID.cs:504`) and each style's ground family; the table keeps the
+/// default `SolidTileAllowBottomSlope` arm (the trailing `else if`,
+/// :49396-49399). Table style 25 spans a single row (`flag2`, :49223-49229).
+/// The 187→186 conversion (:49379-49393) runs before the early return: an
+/// intact snowy 187 over non-dirt ground becomes a 186 (`frameX -= 378` on
+/// all six cells) and survives — the kill loop below then matches zero cells
+/// of `kind`. Drop: only the table carries one (`GetItemDrop_Tables(style)`,
+/// :49424-49426, 32x32 at the trigger cell; style 0 → 32 :42194); the piles'
+/// case group is empty (:65759+).
+fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
     let frame_x = t.frame_x as i32;
     let frame_y = t.frame_y as i32;
@@ -330,10 +383,12 @@ fn check_table(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         style += 1;
     }
     let ox = x - dx;
+    // `flag2` (:49223-49229): table style 25 is a single-row 3x1.
+    let rows = if kind == 14 && style == 25 { 1 } else { 2 };
     let mut broken = false;
     let mut region = Vec::with_capacity(6);
     for k in ox..ox + 3 {
-        for l in oy..oy + 2 {
+        for l in oy..oy + rows {
             region.push((k, l));
             let expected = (
                 ((k - ox) * 18 + style * 54) as i16,
@@ -341,26 +396,114 @@ fn check_table(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             );
             if world
                 .tile(k, l)
-                .is_none_or(|c| !c.active() || c.kind != 14 || (c.frame_x, c.frame_y) != expected)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
             {
                 broken = true;
             }
         }
-        if !solid_tile_allow_bottom_slope(world, k, oy + 2) {
-            broken = true;
+        // The per-column support judge (:49280-49373 + the trailing
+        // `else if` :49396-49399). The 186/ style sets re-judge the ground
+        // family from `TileID.Sets` (`TileID.cs:89-94/558`).
+        match kind {
+            186 => {
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows)
+                    || invalid_tile_for_piles(world, k, oy + rows)
+                {
+                    broken = true;
+                } else if let Some(g) = world.tile(k, oy + rows).filter(|g| g.active()) {
+                    match style {
+                        26..=31 => {
+                            if !(td::SET_ICES_SNOW.has(g.kind)
+                                || g.kind == 162
+                                || g.kind == 224)
+                            {
+                                broken = true;
+                            }
+                        }
+                        32..=34 => {
+                            if !(td::SET_MUD.has(g.kind) || g.kind == 70) {
+                                broken = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            187 => {
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows)
+                    || invalid_tile_for_piles(world, k, oy + rows)
+                {
+                    broken = true;
+                } else if let Some(g) = world.tile(k, oy + rows).filter(|g| g.active()) {
+                    match style {
+                        0..=5 => {
+                            if !(td::SET_MUD.has(g.kind) || g.kind == 60 || g.kind == 226) {
+                                broken = true;
+                            }
+                        }
+                        6..=8 => {
+                            if !matches!(g.kind, 57 | 58 | 75 | 76) {
+                                broken = true;
+                            }
+                        }
+                        29..=34 => {
+                            if !(td::SET_CONVERSION_SAND.has(g.kind)
+                                || td::SET_CONVERSION_HARDENED_SAND.has(g.kind)
+                                || td::SET_CONVERSION_SANDSTONE.has(g.kind))
+                            {
+                                broken = true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {
+                if !solid_tile_allow_bottom_slope(world, k, oy + rows) {
+                    broken = true;
+                }
+            }
+        }
+    }
+    // The 187→186 conversion (:49379-49393): the origin's `frameX` in
+    // 756..=900 (the snowy LargePiles2 styles) and none of the six ground
+    // cells is dirt/grass — every cell becomes a 186 with `frameX -= 378`.
+    // Runs even when `flag` is set; the kill loop's kind filter then spares
+    // the converted cells, exactly like the C# `type == 187` test.
+    if kind == 187
+        && world
+            .tile(ox, oy)
+            .is_some_and(|c| (756..=900).contains(&i32::from(c.frame_x)))
+        && (0..3).all(|d| {
+            world
+                .tile(ox + d, oy + rows)
+                .is_none_or(|g| !matches!(g.kind, 2 | 477 | 492))
+        })
+    {
+        for l in oy..oy + rows {
+            for k in ox..ox + 3 {
+                let cell = world.tile_mut(k, l).unwrap();
+                cell.kind = 186;
+                cell.frame_x -= 378;
+                touch(world, k, l);
+            }
         }
     }
     if !broken {
         return None;
     }
-    let _ = style; // `GetItemDrop_Tables(style)` — the slice covers style 0 (→ 32)
+    // The drop is the table's alone (`GetItemDrop_Tables(style)`,
+    // :49424-49426 — the slice covers style 0 → 32); the piles' case group
+    // is empty.
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: (kind == 14).then(|| ObjectDrop {
             tile_kind: 14,
             x,
             y,
-        },
-        cells: killable_cells(world, &region, 14),
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
     })
 }
 
@@ -389,12 +532,14 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     }
     let region = [(x, oy), (x, oy + 1)];
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: Some(ObjectDrop {
             tile_kind: 15,
             x,
             y: oy,
-        },
+            item: None,
+        }),
         cells: killable_cells(world, &region, 15),
+        pot_event: None,
     })
 }
 
@@ -422,12 +567,14 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     }
     let region = [(ox, y), (ox + 1, y)];
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: Some(ObjectDrop {
             tile_kind: 18,
             x: ox,
             y,
-        },
+            item: None,
+        }),
         cells: killable_cells(world, &region, 18),
+        pot_event: None,
     })
 }
 
@@ -471,12 +618,388 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         return None;
     }
     Some(CheckPlan {
-        drop: ObjectDrop {
+        drop: Some(ObjectDrop {
             tile_kind: 21,
             x,
             y,
-        },
+            item: None,
+        }),
         cells: killable_cells(world, &region, 21),
+        pot_event: None,
+    })
+}
+
+/// `WorldGen.InvalidTileForPilesOrSpeleothems` (`WorldGen.cs:38979-38994`):
+/// an active support cell whose kind is in `TileID.Sets.Boulders`
+/// (`TileID.cs:504`) refuses to carry piles/speleothems. Inactive and
+/// out-of-world cells are valid (`!active` / the `InWorld` guard → false).
+fn invalid_tile_for_piles(world: &World, x: i32, y: i32) -> bool {
+    /// `TileID.Sets.Boulders` (`TileID.cs:504`).
+    const BOULDERS: &[u16] = &[138, 484, 664, 665, 711, 712, 713, 714, 715, 716];
+    world
+        .tile(x, y)
+        .is_some_and(|t| t.active() && BOULDERS.contains(&t.kind))
+}
+
+/// `WorldGen.SolidTile2(Tile)` (`WorldGen.cs:70134-70147`; the indexed
+/// overload :70492-70504): active, solid, slopeless (or a platform with a top
+/// slope — the refinement cannot occur in the port), non-halfBrick, not
+/// actuated. Unlike [`solid_tile`] solid-top tiles pass; an out-of-world cell
+/// is refused (the C# try/catch returns false) — the in-world null case does
+/// not exist in the port's dense array.
+fn solid_tile2(world: &World, x: i32, y: i32) -> bool {
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    t.active()
+        && td::TILE_SOLID.has(t.kind)
+        && ((td::SET_PLATFORMS.has(t.kind) && (t.half_brick() || t.top_slope()))
+            || t.slope() == 0)
+        && !t.half_brick()
+        && crate::tileobject::nactive(t)
+}
+
+/// `Tile.anyLava` (`Tile.cs:410-415`): a positive liquid amount whose kind
+/// flag is lava (`Tile.lava()`, `Tile.cs:345-347`).
+fn any_lava(tile: &Tile) -> bool {
+    tile.liquid > 0 && tile.liquid_kind() == crate::tile::LiquidKind::Lava
+}
+
+/// The alch soil table — the per-variant ground families shared by
+/// `WorldGen.PlaceAlch` (`WorldGen.cs:45393-45441`) and `CheckAlch`
+/// (:45998-46086); every variant also accepts the clay pot 78 and the
+/// planter box 380.
+const ALCH_SOILS: [&[u16]; 7] = [
+    &[2, 477, 492, 78, 380, 109],
+    &[60, 78, 380],
+    &[0, 59, 78, 380],
+    &[661, 662, 199, 203, 23, 25, 78, 380],
+    &[53, 78, 380, 116],
+    &[57, 633, 78, 380],
+    &[78, 380, 147, 161, 163, 164, 200],
+];
+
+/// `WorldGen.CheckSunflower` (`WorldGen.cs:53729-53792`): the 2x4 sunflower
+/// needs all eight cells active type-27 with the origin derived from the
+/// frames (:53739-53751 — the column from `frameX / 18` reduced mod 2, the
+/// row from `frameY / 18`) and `nactive` ground of {2,477,492,109,60,633}
+/// that is also `SolidTile` under both columns (:53756-53770 — 78/380 are
+/// absent, unlike the herbs). On a break every matching cell dies
+/// (:53773-53783) and the sunflower item spawns at the check's trigger cell
+/// (:53787-53791 — `Item.NewItem(…, 63)`, 32x32 at `(i, j)`).
+fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    /// :53758-53764 — the ground family.
+    const SOILS: &[u16] = &[2, 477, 492, 109, 60, 633];
+    let t = world.tile(x, y)?;
+    let ox = x - i32::from(t.frame_x) / 18 % 2; // :53739-53747
+    let oy = y - i32::from(t.frame_y) / 18; // :53741
+    let mut broken = false;
+    let mut region = Vec::with_capacity(8);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 4 {
+            region.push((k, l));
+            // :53746-53755 — `nactive`, the type, the column and the row.
+            let intact = world.tile(k, l).is_some_and(|c| {
+                crate::tileobject::nactive(c)
+                    && c.kind == 27
+                    && i32::from(c.frame_x) / 18 % 2 == k - ox
+                    && i32::from(c.frame_y) == (l - oy) * 18
+            });
+            if !intact {
+                broken = true;
+            }
+        }
+        // :53756-53770 — `nactive` + the soil set + `SolidTile`.
+        let ground = world.tile(k, oy + 4);
+        if !ground.is_some_and(|g| crate::tileobject::nactive(g) && SOILS.contains(&g.kind))
+            || !solid_tile(world, k, oy + 4)
+        {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: 27,
+            x,
+            y,
+            item: Some(63), // :53787-53791
+        }),
+        cells: killable_cells(world, &region, 27),
+        pot_event: None,
+    })
+}
+
+/// The `CheckPot` break sound (`WorldGen.cs:56856-56867`): styles 7-9 break
+/// with sound 6, 16-24 with 4, everything else with 13. The app plays it at
+/// the event's cell.
+pub fn pot_break_sound(style: i32) -> u16 {
+    match style {
+        7..=9 => 6,
+        16..=24 => 4,
+        _ => 13,
+    }
+}
+
+/// `WorldGen.CheckPot` (`WorldGen.cs:56797-57016`) for tile 28 — the echo pot
+/// 653 is out of scope. The 2x2 needs all four cells active type-28 with the
+/// origin derived from the frames (:56808-56817 — the column from `frameX /
+/// 18` reduced mod 2, the row reduced mod 2 while the style accumulates
+/// `frameY / 36`) and `SolidTile2` ground under both columns (:56845-56849 —
+/// solid-top platforms pass, `Main.tileSolid[19] = true`, `Main.cs:7893`).
+/// On a break the sound plays by style (:56856-56867, [`pot_break_sound`]),
+/// every matching cell dies (:56871-56877) and the loot event fires
+/// (:57011-57014). The Gore shards (:56878-56953) have no port mechanism
+/// (only the leaf `LeafGore`) and stay deferred — no item spawns here for
+/// tile 28 (`Item.NewItem` exists only in the 653 arm, :56955-57009).
+fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let ox = x - i32::from(t.frame_x) / 18 % 2; // :56808-56811
+    let mut row = i32::from(t.frame_y) / 18; // :56812-56817
+    let mut style = 0;
+    while row > 1 {
+        row -= 2;
+        style += 1;
+    }
+    let oy = y - row;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(4);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            // :56829-56837 — `active` (not `nactive`), the type, the column
+            // and the style-row frame.
+            let intact = world.tile(k, l).is_some_and(|c| {
+                c.active()
+                    && c.kind == 28
+                    && i32::from(c.frame_x) / 18 % 2 == k - ox
+                    && i32::from(c.frame_y) == (l - oy) * 18 + style * 36
+            });
+            if !intact {
+                broken = true;
+            }
+        }
+        if !solid_tile2(world, k, oy + 2) {
+            broken = true; // :56845-56849
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        // No `Item.NewItem` for tile 28 — the loot runs through the event.
+        drop: None,
+        cells: killable_cells(world, &region, 28),
+        pot_event: Some(PotEvent { style, x, y }),
+    })
+}
+
+/// `WorldGen.CheckPile` (`WorldGen.cs:46875-46971`) for tile 185: a `frameY`
+/// of 18 is the 2x1 variant and routes to [`check_pile_2x1`] (:46896);
+/// otherwise the pile needs `SolidTileAllowBottomSlope` below (:46898-46902)
+/// and, for the ground-judged styles, the soil family under it
+/// (:46915-46969): 36-47 the snow/ice family (162/224 included), 54-59 and
+/// 73-76 the sand families; the remaining styles judge nothing. The kill is
+/// the single cell (`KillTile(i, y)`); no item spawns for 185 (the empty
+/// per-cell group :65759+ — the coin-pile rolls of the 2x1 arm are RNG drops,
+/// phase 3).
+fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let t = *world.tile(x, y)?;
+    if t.frame_y == 18 {
+        return check_pile_2x1(world, x, y, t.kind);
+    }
+    if !solid_tile_allow_bottom_slope(world, x, y + 1) {
+        return Some(CheckPlan {
+            drop: None,
+            cells: killable_cells(world, &[(x, y)], t.kind),
+            pot_event: None,
+        });
+    }
+    // :46904-46913 — only 185 carries the ground rules (the echo 649 is out
+    // of scope); a dead ground cell below returns without a kill.
+    if t.kind != 185 {
+        return None;
+    }
+    let Some(below) = world.tile(x, y + 1).filter(|g| g.active()) else {
+        return None;
+    };
+    let style = i32::from(t.frame_x) / 18;
+    let grounded = match style {
+        // :46915-46931 — the snow/ice styles.
+        36..=47 => td::SET_ICES_SNOW.has(below.kind) || below.kind == 162 || below.kind == 224,
+        // :46932-46952 — the sand styles.
+        54..=59 | 73..=76 => {
+            td::SET_CONVERSION_SAND.has(below.kind)
+                || td::SET_CONVERSION_HARDENED_SAND.has(below.kind)
+                || td::SET_CONVERSION_SANDSTONE.has(below.kind)
+        }
+        // :46953-46968 — the explicit empty cases and everything before 36.
+        _ => true,
+    };
+    if grounded {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: None,
+        cells: killable_cells(world, &[(x, y)], t.kind),
+        pot_event: None,
+    })
+}
+
+/// The `Check2x1` type-185 arm (`WorldGen.cs:46973-47140`): the 2x1 pile
+/// needs both cells active of `kind` with the right-hand frame continuing the
+/// left's by 18 (:47000-47006), `SolidTileAllowBottomSlope` below both
+/// columns (the default arm, :47026-47031), no Boulder under either column
+/// and the style's ground family (`num5 = frameX / 36`, :47044-47086: 25-30
+/// snow/ice, 41-46 and 62-64 sand). The grass-covered variants (`frameX`
+/// 1368-1458) revert to the bare pile (`frameX -= 1368` on both cells) when
+/// neither ground cell is dirt/grass (:47040-47048) — before the style is
+/// re-judged. The coin-pile `Item.NewItem` rolls (:47142-47232) are RNG drops
+/// — phase 3.
+fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let ox = x - i32::from(t.frame_x) / 18 % 2; // :46981-46988
+    let left = world.tile(ox, y);
+    let right = world.tile(ox + 1, y);
+    // :47000-47006 — the pair intact.
+    let mut broken = !right.is_some_and(|c| {
+        c.frame_x == left.map(|l| l.frame_x).unwrap_or(i16::MIN) + 18
+    }) || !left.is_some_and(|c| c.active() && c.kind == kind)
+        || !right.is_some_and(|c| c.active() && c.kind == kind);
+    // :47026-47031 — the default support arm.
+    if !solid_tile_allow_bottom_slope(world, ox, y + 1)
+        || !solid_tile_allow_bottom_slope(world, ox + 1, y + 1)
+    {
+        broken = true;
+    }
+    if kind == 185 {
+        // :47041-47048 — the grass-covered variants revert on non-dirt
+        // ground (both columns).
+        let ground_not_dirt =
+            |world: &World, dx: i32| {
+                world
+                    .tile(ox + dx, y + 1)
+                    .is_none_or(|g| !matches!(g.kind, 2 | 477 | 492))
+            };
+        if left.is_some_and(|c| (1368..=1458).contains(&i32::from(c.frame_x)))
+            && ground_not_dirt(world, 0)
+            && ground_not_dirt(world, 1)
+        {
+            for dx in 0..2 {
+                if let Some(cell) = world.tile_mut(ox + dx, y) {
+                    cell.frame_x -= 1368;
+                    touch(world, ox + dx, y);
+                }
+            }
+        }
+        // :47050-47086 — no Boulder below, then the style's ground family
+        // (`num5` reads the origin after the conversion; it is only
+        // load-bearing when the pair is intact, so the origin is active).
+        let origin = world.tile(ox, y);
+        let num5 = i32::from(origin.map(|c| c.frame_x).unwrap_or(0)) / 36
+            + (i32::from(origin.map(|c| c.frame_y).unwrap_or(0)) / 18 - 1) * 52;
+        for dx in 0..2 {
+            if invalid_tile_for_piles(world, ox + dx, y + 1) {
+                broken = true;
+                break;
+            }
+            if let Some(g) = world.tile(ox + dx, y + 1).filter(|g| g.active()) {
+                match num5 {
+                    25..=30 => {
+                        if !(td::SET_ICES_SNOW.has(g.kind) || g.kind == 162 || g.kind == 224) {
+                            broken = true;
+                        }
+                    }
+                    41..=46 | 62..=64 => {
+                        if !(td::SET_CONVERSION_SAND.has(g.kind)
+                            || td::SET_CONVERSION_HARDENED_SAND.has(g.kind)
+                            || td::SET_CONVERSION_SANDSTONE.has(g.kind))
+                        {
+                            broken = true;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    if !broken {
+        return None;
+    }
+    let region = [(ox, y), (ox + 1, y)];
+    Some(CheckPlan {
+        drop: None,
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+    })
+}
+
+/// `WorldGen.CheckAlch` (`WorldGen.cs:45972-46092`): the herb dies when the
+/// soil below is not `nactive` or is a half brick (:45983-45990 — slopes
+/// pass: no slope test exists here), or — per the `frameX / 18` variant —
+/// when the soil is not in the variant's set ([`ALCH_SOILS`], :45998-46086)
+/// or the herb cell itself holds lava (`anyLava` — every variant except 5).
+/// Variant 5 (Fireblossom) never dies from lava: the cell blinks instead —
+/// `liquid > 16` turns a mature 83 into the blooming 84, `liquid <= 16`
+/// turns an 84 back (:46052-46075; skipped for the immature 82 and on
+/// multiplayer clients — the port is single-player). The unconditional
+/// `frameY = 0` (:45991) is kept as a gated write (the port's herbs always
+/// carry it). The kill is the single cell; no item spawns here (the per-cell
+/// herb drops are phase 3 — `KillTile_GetItemDrops` :65674-65698).
+fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let herb = *world.tile(x, y)?;
+    // :45983-45990 — the support pair.
+    let mut flag = world
+        .tile(x, y + 1)
+        .is_none_or(|soil| !crate::tileobject::nactive(soil) || soil.half_brick());
+    // :45991 — `frameY = 0`.
+    if herb.frame_y != 0 {
+        world.tile_mut(x, y).unwrap().frame_y = 0;
+        touch(world, x, y);
+    }
+    if !flag {
+        let style = i32::from(herb.frame_x) / 18;
+        match style {
+            s @ 0..=6 => {
+                // :45998-46086 — the variant's soil set.
+                if !world
+                    .tile(x, y + 1)
+                    .is_some_and(|soil| ALCH_SOILS[s as usize].contains(&soil.kind))
+                {
+                    flag = true;
+                }
+                if s == 5 {
+                    // :46052-46075 — the Fireblossom blink (no lava death).
+                    if herb.kind != 82 && any_lava(&herb) {
+                        let cell = world.tile_mut(x, y).unwrap();
+                        if herb.liquid > 16 {
+                            if cell.kind == 83 {
+                                cell.kind = 84;
+                                touch(world, x, y);
+                            }
+                        } else if cell.kind == 84 {
+                            cell.kind = 83;
+                            touch(world, x, y);
+                        }
+                    }
+                } else if any_lava(&herb) {
+                    flag = true; // :46006-46008 and peers
+                }
+            }
+            // No case matches: the C# switch falls through unchecked
+            // (:45996) — the seed fall-through's mirror.
+            _ => {}
+        }
+    }
+    if !flag {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: None,
+        cells: killable_cells(world, &[(x, y)], herb.kind),
+        pot_event: None,
     })
 }
 
@@ -636,16 +1159,7 @@ pub fn place_alch(world: &mut World, x: i32, y: i32, style: i32) -> bool {
         return false;
     }
     // :45393-45441 — the per-style soil sets (every style also accepts the
-    // clay pot 78 and the planter box 380).
-    const ALCH_SOILS: [&[u16]; 7] = [
-        &[2, 477, 492, 78, 380, 109],
-        &[60, 78, 380],
-        &[0, 59, 78, 380],
-        &[661, 662, 203, 199, 23, 25, 78, 380],
-        &[53, 78, 380, 116],
-        &[57, 633, 78, 380],
-        &[78, 380, 147, 161, 163, 164, 200],
-    ];
+    // clay pot 78 and the planter box 380); shared with `check_alch`.
     let soil_rejected = match style {
         s @ 0..=6 => !ALCH_SOILS[s as usize].contains(&soil.kind),
         // No case matches: the C# switch falls through with the reject flag
@@ -1462,7 +1976,8 @@ mod tests {
                 vec![ObjectDrop {
                     tile_kind: 18,
                     x: dx,
-                    y: dy
+                    y: dy,
+                item: None
                 }]
             );
         }
@@ -1489,7 +2004,8 @@ mod tests {
                 vec![ObjectDrop {
                     tile_kind: 14,
                     x: dx,
-                    y: dy
+                    y: dy,
+                item: None
                 }]
             );
         }
@@ -1515,7 +2031,8 @@ mod tests {
                 vec![ObjectDrop {
                     tile_kind: 21,
                     x: dx,
-                    y: dy
+                    y: dy,
+                item: None
                 }]
             );
         }
@@ -1536,7 +2053,8 @@ mod tests {
             vec![ObjectDrop {
                 tile_kind: 15,
                 x: 10,
-                y: 18
+                y: 18,
+                item: None
             }]
         );
     }
@@ -1559,7 +2077,8 @@ mod tests {
                 vec![ObjectDrop {
                     tile_kind: 10,
                     x: dx,
-                    y: dy
+                    y: dy,
+                item: None
                 }]
             );
         }
@@ -1615,7 +2134,8 @@ mod tests {
                 vec![ObjectDrop {
                     tile_kind: 11,
                     x: dx,
-                    y: dy
+                    y: dy,
+                item: None
                 }]
             );
         }
@@ -1639,7 +2159,8 @@ mod tests {
             vec![ObjectDrop {
                 tile_kind: 11,
                 x: dx,
-                y: dy
+                y: dy,
+                item: None
             }]
         );
     }
@@ -1715,7 +2236,8 @@ mod tests {
             vec![ObjectDrop {
                 tile_kind: 15,
                 x: 10,
-                y: 16
+                y: 16,
+                item: None
             }]
         );
     }
@@ -2512,5 +3034,779 @@ mod tests {
         assert!(!place_item_tile(&mut w, 10, 19, 82, 4, 1));
         assert_eq!(before, w.tiles, "world unchanged");
         assert!(w.tile(10, 19).unwrap().liquid == 200, "liquid untouched");
+    }
+
+    // ---- M1.4-TO-4 phase 2 (DW-2.1..2.5): the KillTile cascade arms --------
+
+    /// Kills the active block at `(x, y)` — the neighbouring break whose
+    /// `SquareTileFrame` pass frames the fixture object.
+    fn trigger_at(w: &mut World, x: i32, y: i32) -> TileKill {
+        kill_tile(w, x, y, false).unwrap()
+    }
+
+    /// A herb of `kind`/`frame_x` at (10, 19) on a `soil` floor with a stone
+    /// trigger block at (11, 19) — killing the block frames the herb's cell
+    /// (its 3x3 covers x 10..=12). All three alch kinds carry the
+    /// frame-important boot static (`Main.cs:7685-7687`) because the
+    /// Fireblossom blink rewrites the kind under the cascade's re-frame.
+    fn herb_world(soil: u16, kind: u16, frame_x: i16) -> World {
+        let mut w = soil_world(soil);
+        set_object_cell(&mut w, 10, 19, kind, frame_x, 0);
+        for alch in crate::tileobject::TILE_ALCH {
+            w.frame_important[*alch as usize] = true;
+        }
+        set_active(&mut w, 11, 19, 1);
+        w
+    }
+
+    #[test]
+    fn test_DW_2_1_herb_dies_without_support() {
+        // `CheckAlch` (:45983-45990): the soil below must be `nactive` —
+        // breaking the soil block under the herb kills it through the
+        // cascade. No drop and no pot event (the herb per-cell drops are
+        // phase 3).
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 19, 83, 0, 0);
+        for alch in crate::tileobject::TILE_ALCH {
+            w.frame_important[*alch as usize] = true;
+        }
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 2, "the dirt block is the hit cell");
+        assert!(!w.tile(10, 19).unwrap().active(), "the herb died");
+        assert!(kill.object_drops.is_empty());
+        assert!(kill.events.is_empty());
+        // A direct hit on the herb itself kills it alone.
+        let mut w = soil_world(2);
+        set_object_cell(&mut w, 10, 19, 84, 18, 0);
+        for alch in crate::tileobject::TILE_ALCH {
+            w.frame_important[*alch as usize] = true;
+        }
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.kind, 84);
+        assert!(!w.tile(10, 19).unwrap().active());
+        assert!(kill.object_drops.is_empty());
+    }
+
+    #[test]
+    fn test_DW_2_1_herb_soil_sets_by_variant() {
+        // `CheckAlch`'s per-variant soil sets (:45998-46086) — the same
+        // families `PlaceAlch` plants on (78/380 included everywhere): a
+        // mature herb survives a passing cascade on its own soils and dies
+        // off them (stone 1 is in no set).
+        for (style, soils) in ALCH_SOIL_TABLE {
+            let frame_x = (18 * style) as i16;
+            for soil in soils {
+                let mut w = herb_world(*soil, 83, frame_x);
+                trigger_at(&mut w, 11, 19);
+                let t = w.tile(10, 19).unwrap();
+                assert!(
+                    t.active() && t.kind == 83 && t.frame_x == frame_x,
+                    "style {style} survives on soil {soil}"
+                );
+            }
+            let mut w = herb_world(1, 83, frame_x);
+            trigger_at(&mut w, 11, 19);
+            assert!(
+                !w.tile(10, 19).unwrap().active(),
+                "style {style} dies on stone"
+            );
+        }
+    }
+
+    #[test]
+    fn test_DW_2_1_herb_half_brick_kills_slope_survives() {
+        // :45983-45990 — the support test is `nactive` + `halfBrick` only:
+        // a half-brick soil kills the herb, a sloped one does not (no slope
+        // test exists in `CheckAlch`).
+        let mut w = herb_world(2, 83, 0);
+        let soil = w.index(10, 20);
+        w.tiles[soil].flags |= crate::tile::FLAG_HALF_BRICK;
+        trigger_at(&mut w, 11, 19);
+        assert!(!w.tile(10, 19).unwrap().active(), "half brick kills");
+
+        let mut w = herb_world(2, 83, 0);
+        let soil = w.index(10, 20);
+        w.tiles[soil].set_slope(2);
+        trigger_at(&mut w, 11, 19);
+        let t = w.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 83, "a sloped soil passes");
+    }
+
+    #[test]
+    fn test_DW_2_1_lava_kills_by_style() {
+        // Every variant except 5 dies when the herb cell itself holds lava
+        // (`liquid > 0 && lava()`, :46006-46008 and peers); the Fireblossom
+        // (style 5) never does — its lava handling is the blink.
+        for style in 0..=6i32 {
+            let soil = ALCH_SOIL_TABLE[style as usize].1[0];
+            let mut w = herb_world(soil, 83, (18 * style) as i16);
+            set_liquid(&mut w, 10, 19, 100, true);
+            trigger_at(&mut w, 11, 19);
+            assert_eq!(
+                w.tile(10, 19).unwrap().active(),
+                style == 5,
+                "style {style} in lava"
+            );
+        }
+        // Water is not a `CheckAlch` death (the global `WaterCheck` path is
+        // out of scope): a style-0 herb in water survives the framing.
+        let mut w = herb_world(2, 83, 0);
+        set_liquid(&mut w, 10, 19, 200, false);
+        trigger_at(&mut w, 11, 19);
+        assert!(w.tile(10, 19).unwrap().active(), "water does not kill");
+    }
+
+    #[test]
+    fn test_DW_2_1_fireblossom_blinks_liquid_16_17() {
+        // :46052-46075 — the style-5 lava branch: `liquid > 16` turns a
+        // mature 83 into the blooming 84, `liquid <= 16` turns an 84 back;
+        // no death either way and the frames stay (the stage is the type).
+        // The boundary pair 16/17 plus the guard cases (82 never blinks, no
+        // lava no blink).
+        let cases: [(u16, u8, u16); 6] = [
+            (83, 17, 84), // 83 above the boundary blooms
+            (84, 16, 83), // 84 at/below it reverts
+            (84, 17, 84), // 84 above stays blooming
+            (83, 16, 83), // 83 at/below stays mature
+            (82, 17, 82), // the immature herb never blinks
+            (83, 0, 83),  // no lava: the branch is skipped
+        ];
+        for (kind, liquid, expected) in cases {
+            let mut w = herb_world(57, kind, 90); // style 5, ash soil
+            set_liquid(&mut w, 10, 19, liquid, true);
+            trigger_at(&mut w, 11, 19);
+            let t = w.tile(10, 19).unwrap();
+            assert!(t.active(), "kind {kind} liquid {liquid} survives");
+            assert_eq!(t.kind, expected, "kind {kind} liquid {liquid}");
+            assert_eq!((t.frame_x, t.frame_y), (90, 0), "frames untouched");
+        }
+    }
+
+    #[test]
+    fn herb_frame_y_is_normalized_and_out_of_range_style_unchecked() {
+        // :45991 — `frameY = 0` unconditionally (a gated write in the port);
+        // :45996 — a variant outside 0-6 matches no switch case and the herb
+        // is judged on the support alone (the seed fall-through's mirror).
+        let mut w = herb_world(2, 83, 0);
+        w.tile_mut(10, 19).unwrap().frame_y = 36;
+        trigger_at(&mut w, 11, 19);
+        let t = w.tile(10, 19).unwrap();
+        assert!(
+            t.active() && (t.frame_x, t.frame_y) == (0, 0),
+            "normalized"
+        );
+
+        let mut w = herb_world(1, 82, 162); // style 9 on stone
+        trigger_at(&mut w, 11, 19);
+        assert!(w.tile(10, 19).unwrap().active(), "no case: unchecked");
+    }
+
+    /// The eight cells of the canonical style-0 sunflower at (10..11,
+    /// 16..19) on a dirt floor.
+    const SUNFLOWER_CELLS: [(i32, i32); 8] = [
+        (10, 16),
+        (11, 16),
+        (10, 17),
+        (11, 17),
+        (10, 18),
+        (11, 18),
+        (10, 19),
+        (11, 19),
+    ];
+
+    /// [`sunflower_world`] with the floor repainted to `soil` and the sheet
+    /// column shifted to `style` (`frameX = dx*18 + style*36`).
+    fn sunflower_world_with_soil(soil: u16, style: i32) -> World {
+        let mut w = soil_world(soil);
+        for dy in 0..4i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    16 + dy,
+                    27,
+                    (dx * 18 + style * 36) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    fn sunflower_world() -> World {
+        sunflower_world_with_soil(2, 0)
+    }
+
+    #[test]
+    fn test_DW_2_2_sunflower_cascades_from_every_cell() {
+        // `CheckSunflower` (:53729-53792): any of the eight cells triggers
+        // the full destruction and the sunflower item drops at the check's
+        // trigger cell (:53787-53791 — `Item.NewItem(…, 63)`), carried as
+        // the record's `item`.
+        for hit in SUNFLOWER_CELLS {
+            let mut w = sunflower_world();
+            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            assert_eq!(kill.kind, 27);
+            assert_all_gone(&w, &SUNFLOWER_CELLS);
+            let (dx, dy) = expected_drop(&SUNFLOWER_CELLS, hit, 27);
+            assert_eq!(
+                kill.object_drops,
+                vec![ObjectDrop {
+                    tile_kind: 27,
+                    x: dx,
+                    y: dy,
+                    item: Some(63),
+                }],
+                "hit {hit:?}"
+            );
+            assert!(kill.events.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_DW_2_2_sunflower_ground_set_and_solidtile() {
+        // :53756-53770 — the ground must be `nactive`, in {2,477,492,109,60,
+        // 633} AND `SolidTile`: dirt passes, stone (1) and the clay pot 78
+        // are not in the sunflower set (unlike the herbs), a half brick
+        // fails `SolidTile`. The frame column decode is style-agnostic
+        // (`frameX / 18` mod 2 only) — the style-2 variant checks the same.
+        let mut w = sunflower_world();
+        set_active(&mut w, 9, 19, 1); // a stone block beside the stem
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        for x in [10, 11] {
+            assert!(w.tile(x, 19).unwrap().active(), "dirt ground holds");
+        }
+
+        for soil in [1u16, 78] {
+            let mut w = sunflower_world_with_soil(soil, 0);
+            set_active(&mut w, 9, 19, 1);
+            kill_tile(&mut w, 9, 19, false).unwrap();
+            assert!(
+                !w.tile(10, 19).unwrap().active(),
+                "soil {soil} refuses the sunflower"
+            );
+        }
+
+        let mut w = sunflower_world();
+        let soil = w.index(10, 20);
+        w.tiles[soil].flags |= crate::tile::FLAG_HALF_BRICK;
+        set_active(&mut w, 9, 19, 1);
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        assert!(!w.tile(10, 19).unwrap().active(), "half brick ground kills");
+
+        // The style-2 sheet column (frames 72/90) passes the same checks.
+        let mut w = sunflower_world_with_soil(2, 2);
+        set_active(&mut w, 9, 19, 1);
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        for (x, y) in SUNFLOWER_CELLS {
+            assert!(w.tile(x, y).unwrap().active(), "({x}, {y})");
+        }
+    }
+
+    #[test]
+    fn test_DW_2_2_support_break_drops_63() {
+        // Mining the ground under one stem column: the cascade reaches the
+        // sunflower through `SquareTileFrame`, all eight cells die and the
+        // item-63 record spawns (per-cell drops stay empty — 27 is in the
+        // empty `KillTile_GetItemDrops` group, :65759+).
+        let mut w = sunflower_world();
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 2, "the dirt block is the hit cell");
+        assert_all_gone(&w, &SUNFLOWER_CELLS);
+        assert_eq!(kill.object_drops.len(), 1);
+        assert_eq!(
+            (
+                kill.object_drops[0].tile_kind,
+                kill.object_drops[0].x,
+                kill.object_drops[0].y,
+                kill.object_drops[0].item
+            ),
+            (27, 10, 19, Some(63))
+        );
+    }
+
+    /// A 2x2 pot of `style` at (10..11, 18..19) on the stone floor.
+    fn pot_world(style: i32) -> World {
+        let mut w = object_world();
+        for dy in 0..2i32 {
+            for dx in 0..2i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    28,
+                    (dx * 18) as i16,
+                    (dy * 18 + style * 36) as i16,
+                );
+            }
+        }
+        w
+    }
+
+    /// The four cells of [`pot_world`].
+    const POT_CELLS: [(i32, i32); 4] = [(10, 18), (11, 18), (10, 19), (11, 19)];
+
+    #[test]
+    fn test_DW_2_3_pot_cascades_from_every_cell() {
+        // `CheckPot` (:56797-57016): any of the four cells triggers the full
+        // destruction; no item record exists for tile 28 (the loot runs
+        // through the pot event, :57011-57014) — `object_drops` stays empty
+        // and the event carries the check's trigger cell.
+        for hit in POT_CELLS {
+            let mut w = pot_world(0);
+            let kill = kill_tile(&mut w, hit.0, hit.1, false).unwrap();
+            assert_eq!(kill.kind, 28);
+            assert_all_gone(&w, &POT_CELLS);
+            assert!(kill.object_drops.is_empty(), "no items for tile 28");
+            let (tx, ty) = expected_trigger(&POT_CELLS, hit);
+            assert_eq!(
+                kill.events,
+                vec![PotEvent { style: 0, x: tx, y: ty }],
+                "hit {hit:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_DW_2_3_pot_style_decode_and_event() {
+        // :56812-56817 — the style is the `frameY / 36` row (`num4`),
+        // independent of the `frameX` sheet column. A support break yields
+        // the same event.
+        for style in [0i32, 8, 20] {
+            let mut w = pot_world(style);
+            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            assert_eq!(kill.kind, 1);
+            assert_all_gone(&w, &POT_CELLS);
+            assert_eq!(
+                kill.events,
+                vec![PotEvent {
+                    style,
+                    x: 10,
+                    y: 19
+                }],
+                "style {style}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_DW_2_3_pot_break_sound_by_style() {
+        // :56856-56867 — styles 7-9 break with sound 6, 16-24 with 4,
+        // everything else (including 100) with 13.
+        for (style, sound) in [
+            (0i32, 13u16),
+            (6, 13),
+            (7, 6),
+            (9, 6),
+            (10, 13),
+            (15, 13),
+            (16, 4),
+            (24, 4),
+            (25, 13),
+            (100, 13),
+        ] {
+            assert_eq!(pot_break_sound(style), sound, "style {style}");
+        }
+    }
+
+    #[test]
+    fn test_DW_2_3_pot_ground_solid_tile2() {
+        // :56845-56849 — the ground is `SolidTile2` (:70134-70147): solid
+        // and slopeless and not actuated — a platform row passes
+        // (`Main.tileSolid[19] = true`, `Main.cs:7893`), a half brick or an
+        // actuated floor fails.
+        let mut w = pot_world(0);
+        for x in 10..=11 {
+            set_object_cell(&mut w, x, 20, 19, 0, 0); // platforms under both
+        }
+        set_active(&mut w, 9, 19, 1);
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        for (x, y) in POT_CELLS {
+            assert!(w.tile(x, y).unwrap().active(), "({x}, {y}) on platforms");
+        }
+
+        let mut w = pot_world(0);
+        let soil = w.index(10, 20);
+        w.tiles[soil].flags |= crate::tile::FLAG_HALF_BRICK;
+        set_active(&mut w, 9, 19, 1);
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        assert!(!w.tile(10, 19).unwrap().active(), "half brick ground kills");
+
+        let mut w = pot_world(0);
+        let floor = w.index(10, 20);
+        w.tiles[floor].flags |= crate::tile::FLAG_INACTIVE;
+        set_active(&mut w, 9, 19, 1);
+        kill_tile(&mut w, 9, 19, false).unwrap();
+        assert!(!w.tile(10, 19).unwrap().active(), "actuated ground kills");
+    }
+
+    #[test]
+    fn test_DW_2_3_no_gore_items_spawn() {
+        // The Gore-shard block (:56878-56953) has no port mechanism — a
+        // broken pot spawns no items at all (the shard styles included) and
+        // only the loot event leaves; the ANALYSIS entry lands in phase 5.
+        for style in [0i32, 25, 31] {
+            let mut w = pot_world(style);
+            let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+            assert_all_gone(&w, &POT_CELLS);
+            assert!(kill.object_drops.is_empty(), "style {style}");
+            assert_eq!(kill.events.len(), 1, "style {style}");
+        }
+    }
+
+    /// A 1x1 pile of `style` (`frameX = style * 18`, `frameY = 0`) at
+    /// (10, 19) on a `soil` floor with a stone trigger block beside it.
+    fn pile_1x1_world(soil: u16, style: i32) -> World {
+        let mut w = soil_world(soil);
+        set_object_cell(&mut w, 10, 19, 185, (style * 18) as i16, 0);
+        set_active(&mut w, 11, 19, 1);
+        w
+    }
+
+    #[test]
+    fn test_DW_2_4_pile_1x1_ground_rules() {
+        // `CheckPile` (:46875-46971): `SolidTileAllowBottomSlope` below the
+        // cell (:46898-46902), then the style's ground family
+        // (:46915-46969) — 36-47 snow/ice (162/224 included), 54-59 and
+        // 73-76 sand; the other styles judge nothing.
+        for (style, soil) in [(36i32, 147u16), (47, 161), (54, 53), (59, 53), (73, 53)] {
+            let mut w = pile_1x1_world(soil, style);
+            trigger_at(&mut w, 11, 19);
+            assert!(
+                w.tile(10, 19).unwrap().active(),
+                "style {style} on soil {soil}"
+            );
+        }
+        // Off-family grounds kill.
+        for (style, soil) in [(36i32, 2u16), (47, 2), (54, 2), (76, 2)] {
+            let mut w = pile_1x1_world(soil, style);
+            trigger_at(&mut w, 11, 19);
+            assert!(
+                !w.tile(10, 19).unwrap().active(),
+                "style {style} dies on dirt"
+            );
+        }
+        // Styles outside the judged ranges are free.
+        for style in [0i32, 35, 48, 60, 72, 77] {
+            let mut w = pile_1x1_world(2, style);
+            trigger_at(&mut w, 11, 19);
+            assert!(
+                w.tile(10, 19).unwrap().active(),
+                "style {style} is unjudged"
+            );
+        }
+        // A dead support kills regardless of style (:46898-46902).
+        let mut w = pile_1x1_world(2, 0);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 2);
+        assert!(!w.tile(10, 19).unwrap().active(), "lost support kills");
+        assert!(kill.object_drops.is_empty(), "no items for tile 185");
+        assert!(kill.events.is_empty());
+    }
+
+    /// A 2x1 pile of `style` (`frameY = 18`, `frameX = style*36 + dx*18`)
+    /// at (10..11, 19) on a `soil` floor, with a stone trigger block at
+    /// (12, 19).
+    fn pile_2x1_world(soil: u16, style: i32) -> World {
+        let mut w = soil_world(soil);
+        set_object_cell(&mut w, 10, 19, 185, (style * 36) as i16, 18);
+        set_object_cell(&mut w, 11, 19, 185, (style * 36 + 18) as i16, 18);
+        set_active(&mut w, 12, 19, 1);
+        w
+    }
+
+    #[test]
+    fn test_DW_2_4_pile_2x1_support_and_styles() {
+        // The `Check2x1` type-185 arm (:47040-47086): both columns need
+        // `SolidTileAllowBottomSlope` and no Boulder, then the `frameX / 36`
+        // style's family — 25-30 snow/ice, 41-46 and 62-64 sand.
+        // Unjudged styles stand anywhere.
+        for style in [0i32, 24, 31] {
+            let mut w = pile_2x1_world(2, style);
+            trigger_at(&mut w, 12, 19);
+            for x in [10, 11] {
+                assert!(w.tile(x, 19).unwrap().active(), "style {style}");
+            }
+        }
+        // Snow styles on snow hold, on dirt die; sand styles mirror.
+        for (style, good, bad) in [(25i32, 147u16, 2u16), (41, 53, 2), (62, 53, 2)] {
+            let mut w = pile_2x1_world(good, style);
+            trigger_at(&mut w, 12, 19);
+            assert!(w.tile(10, 19).unwrap().active(), "style {style} on {good}");
+            let mut w = pile_2x1_world(bad, style);
+            trigger_at(&mut w, 12, 19);
+            assert!(!w.tile(10, 19).unwrap().active(), "style {style} on {bad}");
+        }
+        // A Boulder under one column refuses the support (:47052-47055).
+        let mut w = pile_2x1_world(2, 0);
+        set_active(&mut w, 11, 20, 138);
+        trigger_at(&mut w, 12, 19);
+        assert!(!w.tile(10, 19).unwrap().active(), "boulder refuses");
+        // A lost support column kills; no items for tile 185 (the coin-pile
+        // rolls are phase-3 RNG).
+        let mut w = pile_2x1_world(2, 0);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 2);
+        assert!(!w.tile(10, 19).unwrap().active());
+        assert!(!w.tile(11, 19).unwrap().active());
+        assert!(kill.object_drops.is_empty());
+        assert!(kill.events.is_empty());
+    }
+
+    #[test]
+    fn test_DW_2_4_pile_2x1_grass_cover_conversion() {
+        // :47041-47048 — the grass-covered variants (`frameX` 1368-1458)
+        // revert (`frameX -= 1368`) when neither ground cell is dirt/grass,
+        // BEFORE the style is re-judged: over stone the converted pile
+        // survives with bare frames; over dirt no conversion happens and
+        // the covered pile keeps its frames; over stone the covered snow
+        // style (1404 → 39 → 36) converts and the stone ground kills.
+        let mut w = pile_2x1_world(1, 38); // frameX 1368 over stone
+        trigger_at(&mut w, 12, 19);
+        assert!(w.tile(10, 19).unwrap().active(), "converted pile survives");
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 0, "reverted to bare");
+        assert_eq!(w.tile(11, 19).unwrap().frame_x, 18);
+
+        let mut w = pile_2x1_world(2, 38); // over dirt: no conversion
+        trigger_at(&mut w, 12, 19);
+        assert!(w.tile(10, 19).unwrap().active());
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 1368, "frames kept");
+
+        let mut w = pile_2x1_world(1, 39); // 1404 → 36 → num5 = 1 (unjudged)
+        trigger_at(&mut w, 12, 19);
+        assert!(w.tile(10, 19).unwrap().active(), "converted style 1 passes");
+        assert_eq!(w.tile(10, 19).unwrap().frame_x, 36);
+    }
+
+    /// A 3x2 pile of `kind`/`style` at (10..12, 18..19) on a `soil` floor,
+    /// with a stone trigger block at (13, 19).
+    fn pile_3x2_world(kind: u16, soil: u16, style: i32) -> World {
+        let mut w = soil_world(soil);
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                set_object_cell(
+                    &mut w,
+                    10 + dx,
+                    18 + dy,
+                    kind,
+                    (dx * 18 + style * 54) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        set_active(&mut w, 13, 19, 1);
+        // Both pile kinds are boot-static frame-important (`Main.cs:7416`/
+        // `7417`) — the 187→186 conversion rewrites the kind under the
+        // cascade's re-frame, so both bits must be set.
+        w.frame_important[186] = true;
+        w.frame_important[187] = true;
+        w
+    }
+
+    #[test]
+    fn test_DW_2_4_pile_3x2_support_and_styles() {
+        // `Check3x2`'s 186/187 arms (:49300-49373): `SolidTileAllowBottomSlope`
+        // plus no Boulder per column, then the style's ground family — 186:
+        // 26-31 snow/ice, 32-34 mud/70; 187: 0-5 mud/60/226, 6-8 ash,
+        // 29-34 sand. Unjudged styles stand on any solid ground.
+        for (kind, style, soil) in [
+            (186u16, 0i32, 1u16),
+            (186, 26, 147),
+            (186, 32, 59),
+            (187, 0, 59),
+            (187, 6, 57),
+            (187, 29, 53),
+            (187, 9, 1),
+        ] {
+            let mut w = pile_3x2_world(kind, soil, style);
+            trigger_at(&mut w, 13, 19);
+            for x in 10..=12 {
+                assert!(
+                    w.tile(x, 18).unwrap().active(),
+                    "kind {kind} style {style} on {soil}"
+                );
+            }
+        }
+        for (kind, style, soil) in [(186u16, 26i32, 2u16), (187, 0, 2), (187, 29, 2)] {
+            let mut w = pile_3x2_world(kind, soil, style);
+            trigger_at(&mut w, 13, 19);
+            for x in 10..=12 {
+                assert!(
+                    !w.tile(x, 18).unwrap().active(),
+                    "kind {kind} style {style} dies on {soil}"
+                );
+            }
+        }
+        // A Boulder under one column refuses the whole pile.
+        for kind in [186u16, 187] {
+            let mut w = pile_3x2_world(kind, 1, 0);
+            set_active(&mut w, 11, 20, 138);
+            trigger_at(&mut w, 13, 19);
+            for x in 10..=12 {
+                assert!(
+                    !w.tile(x, 18).unwrap().active(),
+                    "kind {kind} over a boulder dies"
+                );
+            }
+        }
+        // A broken support column kills (:49396-49399 arm); no items for
+        // the piles (the empty case group, :65759+).
+        let mut w = pile_3x2_world(186, 1, 0);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 1);
+        for x in 10..=12 {
+            for y in 18..=19 {
+                assert!(!w.tile(x, y).unwrap().active());
+            }
+        }
+        assert!(kill.object_drops.is_empty());
+        assert!(kill.events.is_empty());
+    }
+
+    #[test]
+    fn test_DW_2_4_187_converts_to_186_frames() {
+        // :49379-49393 — an 187 whose origin `frameX` is 756..=900 (the
+        // snowy styles 14-16; canonical origins are 756/810/864, the 900
+        // range end is only reachable on degenerate frames) over non-dirt
+        // ground converts in place: every cell becomes a 186 with
+        // `frameX -= 378` and the pile survives — even with a broken cell,
+        // where the kill loop's kind filter then matches nothing.
+        for style in [14i32, 15, 16] {
+            let mut w = pile_3x2_world(187, 1, style);
+            trigger_at(&mut w, 13, 19);
+            for dy in 0..2i32 {
+                for dx in 0..3i32 {
+                    let t = w.tile(10 + dx, 18 + dy).unwrap();
+                    assert!(t.active() && t.kind == 186, "style {style}");
+                    assert_eq!(t.frame_x, (dx * 18 + (style - 7) * 54) as i16);
+                    assert_eq!(t.frame_y, (dy * 18) as i16, "frameY untouched");
+                }
+            }
+        }
+        // Style 13 (origin 702) is below the range: no conversion.
+        let mut w = pile_3x2_world(187, 1, 13);
+        trigger_at(&mut w, 13, 19);
+        let t = w.tile(10, 18).unwrap();
+        assert!(t.active() && t.kind == 187, "below the range: no conversion");
+        assert_eq!(t.frame_x, 702);
+        // Over dirt (2) the conversion refuses; style 14 has no ground case,
+        // so the pile also survives as an 187.
+        let mut w = pile_3x2_world(187, 2, 14);
+        trigger_at(&mut w, 13, 19);
+        let t = w.tile(10, 18).unwrap();
+        assert!(t.active() && t.kind == 187 && t.frame_x == 756);
+        // A broken cell with the conversion: the rewrite still runs (the
+        // cells become 186, so this check's own kind-filtered kill loop
+        // matches nothing), but the hole keeps the object broken — the next
+        // framing visit re-checks the pile as a 186 and takes the
+        // survivors. Nothing drops either way (the piles' case group is
+        // empty).
+        let mut w = pile_3x2_world(187, 1, 14);
+        let gone = w.index(11, 19);
+        w.tiles[gone] = Tile::default();
+        let kill = trigger_at(&mut w, 13, 19);
+        for (x, y) in [(10i32, 18i32), (11, 18), (12, 18), (10, 19), (11, 19), (12, 19)] {
+            assert!(!w.tile(x, y).unwrap().active(), "({x}, {y}) gone");
+        }
+        assert!(kill.object_drops.is_empty());
+    }
+
+    #[test]
+    fn test_DW_2_5_pile_on_boulder_refuses_support() {
+        // `InvalidTileForPilesOrSpeleothems` (:38979-38994): an active
+        // Boulder under any column sets the plan even with every other
+        // support intact — the pile dies while the Boulder and the
+        // neighbouring ground survive (the kill region never includes
+        // supports).
+        for kind in [186u16, 187] {
+            let mut w = pile_3x2_world(kind, 1, 0);
+            set_active(&mut w, 11, 20, 138);
+            let kill = kill_tile(&mut w, 13, 19, false).unwrap();
+            for x in 10..=12 {
+                for y in 18..=19 {
+                    assert!(!w.tile(x, y).unwrap().active(), "kind {kind}");
+                }
+            }
+            let boulder = w.tile(11, 20).unwrap();
+            assert!(boulder.active() && boulder.kind == 138, "boulder stays");
+            assert!(w.tile(10, 20).unwrap().active(), "stone stays");
+            assert!(kill.object_drops.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_DW_2_5_intact_pile_survives_passing_cascade() {
+        // A fully supported pile survives a cascade that merely passes by
+        // (a neighbouring block breaks): the check runs and finds nothing.
+        let mut w = pile_3x2_world(186, 1, 0);
+        let kill = kill_tile(&mut w, 13, 19, false).unwrap();
+        assert_eq!(kill.kind, 1);
+        for x in 10..=12 {
+            for y in 18..=19 {
+                let t = w.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 186, "({x}, {y}) survives");
+                assert_eq!(t.frame_x, ((x - 10) * 18) as i16, "frames kept");
+            }
+        }
+        assert!(kill.object_drops.is_empty());
+        assert!(kill.events.is_empty());
+    }
+
+    #[test]
+    fn test_DW_2_5_conversion_spares_neighbours() {
+        // The 187→186 rewrite touches exactly the converting pile's six
+        // cells: an adjacent 186 keeps its kind and frames through the same
+        // cascade (the trigger block sits between the two piles).
+        let mut w = pile_3x2_world(187, 1, 14);
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                set_object_cell(
+                    &mut w,
+                    14 + dx,
+                    18 + dy,
+                    186,
+                    (dx * 18) as i16,
+                    (dy * 18) as i16,
+                );
+            }
+        }
+        trigger_at(&mut w, 13, 19);
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                let t = w.tile(10 + dx, 18 + dy).unwrap();
+                assert!(t.active() && t.kind == 186, "converted pile");
+                assert_eq!(t.frame_x, (dx * 18 + 378) as i16);
+                let n = w.tile(14 + dx, 18 + dy).unwrap();
+                assert!(n.active() && n.kind == 186, "neighbour intact");
+                assert_eq!(n.frame_x, (dx * 18) as i16, "neighbour frames kept");
+            }
+        }
+    }
+
+    #[test]
+    fn style_25_table_spans_a_single_row() {
+        // `Check3x2`'s `flag2` (:49223-49229): table style 25 is a 3x1 —
+        // the support row is `oy + 1` and the cell region one row.
+        let mut w = object_world();
+        for dx in 0..3i32 {
+            set_object_cell(&mut w, 10 + dx, 18, 14, (dx * 18 + 25 * 54) as i16, 0);
+            set_active(&mut w, 10 + dx, 19, 1); // its own support row
+        }
+        set_active(&mut w, 9, 18, 1);
+        kill_tile(&mut w, 9, 18, false).unwrap();
+        for dx in 0..3i32 {
+            assert!(
+                w.tile(10 + dx, 18).unwrap().active(),
+                "style-25 table supported"
+            );
+        }
+        // Breaking its support row still kills it.
+        let kill = kill_tile(&mut w, 11, 19, false).unwrap();
+        assert_eq!(kill.kind, 1);
+        for dx in 0..3i32 {
+            assert!(!w.tile(10 + dx, 18).unwrap().active());
+        }
+        assert_eq!(kill.object_drops.len(), 1);
+        assert_eq!(kill.object_drops[0].tile_kind, 14);
     }
 }

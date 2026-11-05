@@ -886,6 +886,7 @@ mod tests {
         let kill = edit::TileKill {
             kind: 1,
             object_drops: vec![],
+            ..Default::default()
         };
         assert_eq!(break_drop_events(&kill, 7, 12), vec![(3, 7, 12)]);
     }
@@ -904,7 +905,9 @@ mod tests {
                 tile_kind: 18,
                 x: 10,
                 y: 19,
+                ..Default::default()
             }],
+            ..Default::default()
         };
         assert_eq!(break_drop_events(&kill, 11, 19), vec![(36, 10, 19)]);
 
@@ -914,7 +917,9 @@ mod tests {
                 tile_kind: 11,
                 x: 9,
                 y: 18,
+                ..Default::default()
             }],
+            ..Default::default()
         };
         assert_eq!(
             break_drop_events(&kill, 9, 17),
@@ -937,6 +942,7 @@ mod tests {
                 tile_kind: 10,
                 x: 10,
                 y: 18,
+                ..Default::default()
             }],
         })
         .unwrap();
@@ -957,6 +963,7 @@ mod tests {
                 tile_kind: 14,
                 x: 10,
                 y: 17,
+                ..Default::default()
             }],
         })
         .unwrap();
