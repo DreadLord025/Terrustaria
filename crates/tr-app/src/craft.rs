@@ -52,6 +52,9 @@ pub(crate) struct Recipe {
     /// (`:16722-16726`); gates the 1/3 ingredient discount at craft time
     /// (`GetIngredientCraftingDiscount`, `:214-228`).
     pub(crate) alchemy: bool,
+    /// `notDecraftable` — the derived reverse platform/wall rows carry it
+    /// (`Recipe.cs:16665`/:16689); the craft direction ignores it.
+    pub(crate) not_decraftable: bool,
 }
 
 /// The zero recipe the static entries inherit the unset fields from.
@@ -65,6 +68,7 @@ const BASE: Recipe = Recipe {
     need_snow: false,
     need_graveyard: false,
     alchemy: false,
+    not_decraftable: false,
 };
 
 /// One `requiredItem` entry: the authored item id + stack, with the accepted
@@ -641,387 +645,12 @@ pub(crate) fn try_craft(
     Some(recipe.create)
 }
 
-/// The subset recipe table. Every entry cites its `Recipe.cs` registration;
-/// group requirements carry the accepted group (`RequireGroup`) instead of
-/// the old concrete-id expansion.
-pub(crate) static RECIPES: &[Recipe] = &[
-    // Recipe.cs:610-615 — Torch x3: 1 Gel + 1 Wood (RecipeGroups.Wood), by hand.
-    Recipe {
-        create: (8, 3),
-        required: &[
-            Requirement::item(23, 1),
-            Requirement::group(9, RecipeGroups::WOOD, 1),
-        ],
-        ..BASE
-    },
-    // Recipe.cs:4751-4754 — Work Bench: 10 Wood, by hand.
-    Recipe {
-        create: (36, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 10)],
-        ..BASE
-    },
-    // Recipe.cs:4722-4726 — Wooden Door: 6 Wood, at a work bench.
-    Recipe {
-        create: (25, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:4727-4731 — Wooden Chair: 4 Wood, at a work bench.
-    Recipe {
-        create: (34, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 4)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:4732-4739 — Chest: 8 Wood + 2 Iron Bar
-    // (`RequireGroup(RecipeGroups.IronBar)`), at a work bench.
-    Recipe {
-        create: (48, 1),
-        required: &[
-            Requirement::group(9, RecipeGroups::WOOD, 8),
-            Requirement::group(22, RecipeGroups::IRON_BAR, 2),
-        ],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:4746-4750 — Wooden Table: 8 Wood, at a work bench.
-    Recipe {
-        create: (32, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:4568-4572 — Stone Wall: 1 Stone
-    // (`RequireGroup(RecipeGroups.Stone)`), at a work bench.
-    Recipe {
-        create: (26, 1),
-        required: &[Requirement::group(3, RecipeGroups::STONE, 1)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:4521-4524 — Dirt Wall: 1 Dirt, at a work bench.
-    Recipe {
-        create: (30, 1),
-        required: &[Requirement::item(2, 1)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:9606-9614 — Furnace: 20 Stone + 4 Wood + 3 Torch, at a work bench.
-    Recipe {
-        create: (33, 1),
-        required: &[
-            Requirement::group(3, RecipeGroups::STONE, 20),
-            Requirement::group(9, RecipeGroups::WOOD, 4),
-            Requirement::item(8, 3),
-        ],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:9817-9820 — Iron Bar: 3 Iron Ore, at a furnace.
-    Recipe {
-        create: (22, 1),
-        required: &[Requirement::item(11, 3)],
-        stations: &[17],
-        ..BASE
-    },
-    // Recipe.cs:9822-9826 — Iron Anvil: 5 Iron Bar, at a work bench.
-    Recipe {
-        create: (35, 1),
-        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:3114-3119 — Glass: 2 Sand (`RequireGroup(RecipeGroups.Sand)`),
-    // at a furnace.
-    Recipe {
-        create: (170, 1),
-        required: &[Requirement::group(169, RecipeGroups::SAND, 2)],
-        stations: &[17],
-        ..BASE
-    },
-    // Recipe.cs:1559-1563 — Bottled Water: 1 Bottle, needWater.
-    Recipe {
-        create: (126, 1),
-        required: &[Requirement::item(31, 1)],
-        need_water: true,
-        ..BASE
-    },
-    // Recipe.cs:1564-1568 — Bottled Honey: 1 Bottle, needHoney.
-    Recipe {
-        create: (1134, 1),
-        required: &[Requirement::item(31, 1)],
-        need_honey: true,
-        ..BASE
-    },
-    // Recipe.cs:2299-2302 — Wet Bomb: 1 Dry Bomb, needWater.
-    Recipe {
-        create: (4824, 1),
-        required: &[Requirement::item(4827, 1)],
-        need_water: true,
-        ..BASE
-    },
-    // Recipe.cs:2303-2306 — Lava Bomb: 1 Dry Bomb, needLava.
-    Recipe {
-        create: (4825, 1),
-        required: &[Requirement::item(4827, 1)],
-        need_lava: true,
-        ..BASE
-    },
-    // Recipe.cs:2307-2310 — Honey Bomb: 1 Dry Bomb, needHoney.
-    Recipe {
-        create: (4826, 1),
-        required: &[Requirement::item(4827, 1)],
-        need_honey: true,
-        ..BASE
-    },
-    // Recipe.cs:7687-7692 — Snow Cloud Block: 1 Cloud, at a Sky Mill,
-    // needSnowBiome.
-    Recipe {
-        create: (3756, 1),
-        required: &[Requirement::item(751, 1)],
-        stations: &[305],
-        need_snow: true,
-        ..BASE
-    },
-    // Recipe.cs:2645-2651 — Wood Shelf x2: 1 Wood, at a Bone Welder,
-    // needGraveyardBiome.
-    Recipe {
-        create: (1389, 2),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 1)],
-        stations: &[300],
-        need_graveyard: true,
-        ..BASE
-    },
-    // Recipe.cs:1586-1597 — Lesser Healing Potion x2: 1 Mushroom + 2 Gel +
-    // 2 Bottle, at a placed bottle (`AddRecipe` auto-sets `alchemy`,
-    // `:16722-16726` — the CRAFT-3 discount).
-    Recipe {
-        create: (28, 2),
-        required: &[
-            Requirement::item(5, 1),
-            Requirement::item(23, 2),
-            Requirement::item(31, 2),
-        ],
-        stations: &[13],
-        alchemy: true,
-        ..BASE
-    },
-    // Recipe.cs:1606-1611 — Healing Potion: 2 Lesser Healing Potion +
-    // 1 Glowing Mushroom, at a placed bottle.
-    Recipe {
-        create: (188, 1),
-        required: &[Requirement::item(28, 2), Requirement::item(183, 1)],
-        stations: &[13],
-        alchemy: true,
-        ..BASE
-    },
-    // --- The progression batch (the wooden tools, the bars, the metal
-    // armor) — every entry cites its Recipe.cs registration.
-    // Recipe.cs:6800-6806 — Wooden Sword: 7 Wood (the group), at a work
-    // bench.
-    Recipe {
-        create: (24, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 7)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:6810-6814 — Wooden Hammer: 8 Wood, at a work bench.
-    Recipe {
-        create: (196, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:6815-6818 — Wooden Bow: 10 Wood, at a work bench.
-    Recipe {
-        create: (39, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 10)],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:2077-2082 — Wooden Arrow x25: 1 Wood + 1 Stone, at a work
-    // bench.
-    Recipe {
-        create: (40, 25),
-        required: &[
-            Requirement::group(9, RecipeGroups::WOOD, 1),
-            Requirement::group(3, RecipeGroups::STONE, 1),
-        ],
-        stations: &[18],
-        ..BASE
-    },
-    // Recipe.cs:2376-2378 — Wood Platform x2: 1 Wood, by hand.
-    Recipe {
-        create: (94, 2),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 1)],
-        ..BASE
-    },
-    // Recipe.cs:9652-9656 — Copper Bar: 3 Copper Ore, at a furnace.
-    Recipe {
-        create: (20, 1),
-        required: &[Requirement::item(12, 3)],
-        stations: &[17],
-        ..BASE
-    },
-    // Recipe.cs:10076-10080 — Silver Bar: 4 Silver Ore, at a furnace.
-    Recipe {
-        create: (21, 1),
-        required: &[Requirement::item(14, 4)],
-        stations: &[17],
-        ..BASE
-    },
-    // Recipe.cs:10236-10240 — Gold Bar: 4 Gold Ore, at a furnace.
-    Recipe {
-        create: (19, 1),
-        required: &[Requirement::item(13, 4)],
-        stations: &[17],
-        ..BASE
-    },
-    // Recipe.cs:9708-9712 — Copper Helmet: 12 Copper Bar, at an anvil.
-    Recipe {
-        create: (89, 1),
-        required: &[Requirement::item(20, 12)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:9714-9717 — Copper Chainmail: 20 Copper Bar, at an anvil.
-    Recipe {
-        create: (80, 1),
-        required: &[Requirement::item(20, 20)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:9718-9721 — Copper Greaves: 16 Copper Bar, at an anvil.
-    Recipe {
-        create: (76, 1),
-        required: &[Requirement::item(20, 16)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:9882-9885 — Iron Helmet: 15 Iron Bar, at an anvil.
-    Recipe {
-        create: (90, 1),
-        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 15)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:9887-9890 — Iron Chainmail: 25 Iron Bar, at an anvil.
-    Recipe {
-        create: (81, 1),
-        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 25)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:9892-9895 — Iron Greaves: 20 Iron Bar, at an anvil.
-    Recipe {
-        create: (77, 1),
-        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 20)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10127-10130 — Silver Helmet: 15 Silver Bar, at an anvil.
-    Recipe {
-        create: (91, 1),
-        required: &[Requirement::item(21, 15)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10132-10135 — Silver Chainmail: 25 Silver Bar, at an anvil.
-    Recipe {
-        create: (82, 1),
-        required: &[Requirement::item(21, 25)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10137-10140 — Silver Greaves: 20 Silver Bar, at an anvil.
-    Recipe {
-        create: (78, 1),
-        required: &[Requirement::item(21, 20)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10287-10290 — Gold Helmet: 20 Gold Bar, at an anvil.
-    Recipe {
-        create: (92, 1),
-        required: &[Requirement::item(19, 20)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10292-10295 — Gold Chainmail: 30 Gold Bar, at an anvil.
-    Recipe {
-        create: (83, 1),
-        required: &[Requirement::item(19, 30)],
-        stations: &[16],
-        ..BASE
-    },
-    // Recipe.cs:10297-10300 — Gold Greaves: 25 Gold Bar, at an anvil.
-    Recipe {
-        create: (79, 1),
-        required: &[Requirement::item(19, 25)],
-        stations: &[16],
-        ..BASE
-    },
-    // --- The utility batch: the chain, the stations, the light and the
-    // houseware basics (`itemdata.rs` rows exist for every result).
-    // Recipe.cs (SetupRecipes) — Chain x15: 1 Iron Bar
-    // (`RequireGroup(RecipeGroups.IronBar)`), at an anvil.
-    Recipe {
-        create: (85, 15),
-        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 1)],
-        stations: &[16],
-        ..BASE
-    },
-    // — Sawmill: 10 Wood + 2 Iron Bar + 1 Chain, at a work bench.
-    Recipe {
-        create: (363, 1),
-        required: &[
-            Requirement::group(9, RecipeGroups::WOOD, 10),
-            Requirement::group(22, RecipeGroups::IRON_BAR, 2),
-            Requirement::item(85, 1),
-        ],
-        stations: &[18],
-        ..BASE
-    },
-    // — Loom: 12 Wood, at a sawmill.
-    Recipe {
-        create: (332, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 12)],
-        stations: &[106],
-        ..BASE
-    },
-    // — Sign: 6 Wood, at a work bench.
-    Recipe {
-        create: (171, 1),
-        required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
-        stations: &[18],
-        ..BASE
-    },
-    // — Cooking Pot: 10 Iron Bar + 2 Wood, at an anvil.
-    Recipe {
-        create: (345, 1),
-        required: &[
-            Requirement::group(22, RecipeGroups::IRON_BAR, 10),
-            Requirement::group(9, RecipeGroups::WOOD, 2),
-        ],
-        stations: &[16],
-        ..BASE
-    },
-    // — Bowl: 2 Clay Block, at a furnace.
-    Recipe {
-        create: (356, 1),
-        required: &[Requirement::item(133, 2)],
-        stations: &[17],
-        ..BASE
-    },
-    // — Gold Candle: 1 Gold Bar + 1 Torch, at a work bench.
-    Recipe {
-        create: (105, 1),
-        required: &[Requirement::item(19, 1), Requirement::item(8, 1)],
-        stations: &[18],
-        ..BASE
-    },
-];
+/// The full recipe table - GENERATED from the decompiled `Recipe.cs`
+/// `SetupRecipes` (1.4.5.8) by `tools/gen_recipes.py` (2764 rows: the main
+/// body, the furniture helpers, the critter statues, the loop ranges and the
+/// derived reverse platform/wall recipes, in the C# registration order).
+/// Do not edit by hand - rerun the generator.
+pub(crate) static RECIPES: &[Recipe] = include!("recipes_gen.rs");
 
 #[cfg(test)]
 mod tests {
@@ -1043,7 +672,9 @@ mod tests {
     }
 
     fn recipe_by_create(create: u16) -> &'static Recipe {
-        RECIPES.iter().find(|r| r.create.0 == create).unwrap()
+        // The first authored (non-reverse) row: the C# lookup order over the
+        // base table (`Main.recipe[i]` before the derived inserts).
+        RECIPES.iter().find(|r| r.create.0 == create && !r.not_decraftable).unwrap()
     }
 
     fn dry_adj() -> Adjacent {
@@ -1061,12 +692,13 @@ mod tests {
     #[test]
     fn the_progression_batch_registers_verbatim() {
         // The C# anchors: the wooden tools (the workbench), the bars (the
-        // furnace), the metal armor (the anvil).
+        // furnace), the metal armor (the anvil). The generated rows author
+        // the plain item ids exactly as `SetupRecipes` does.
         let sword = recipe_by_create(24);
         assert_eq!(sword.stations, &[18]);
         assert_eq!(sword.required.len(), 1);
+        assert_eq!(sword.required[0].item, 9);
         assert_eq!(sword.required[0].stack, 7);
-        assert_eq!(sword.required[0].group, RecipeGroups::WOOD);
         let hammer = recipe_by_create(196);
         assert_eq!(hammer.required[0].stack, 8);
         let bow = recipe_by_create(39);
@@ -1074,6 +706,9 @@ mod tests {
         let arrow = recipe_by_create(40);
         assert_eq!(arrow.create.1, 25);
         assert_eq!(arrow.required.len(), 2);
+        assert_eq!(arrow.required[0].group, RecipeGroups::WOOD);
+        assert_eq!(arrow.required[1].item, 3);
+        assert_eq!(arrow.stations, &[18]);
         let platform = recipe_by_create(94);
         assert_eq!(platform.create.1, 2);
         assert!(platform.stations.is_empty(), "by hand");
@@ -1084,19 +719,20 @@ mod tests {
             assert_eq!(r.required[0].item, ore);
             assert_eq!(r.required[0].stack, stack);
         }
-        // The armor at the anvil: the copper (the plain bars), the iron
-        // (the iron-bar group), the silver/gold (the plain bars).
+        // The armor at the anvil: the copper, the iron and the silver/gold
+        // rows author their plain bars (the iron row is NOT group-based in
+        // the C# source).
         let copper_helm = recipe_by_create(89);
         assert_eq!(copper_helm.stations, &[16]);
         assert_eq!(copper_helm.required[0].stack, 12);
         let iron_helm = recipe_by_create(90);
-        assert_eq!(iron_helm.required[0].group, RecipeGroups::IRON_BAR);
+        assert_eq!(iron_helm.required[0].item, 22);
         assert_eq!(iron_helm.required[0].stack, 15);
         let gold_greaves = recipe_by_create(79);
         assert_eq!(gold_greaves.required[0].stack, 25);
-        // The counts: 20 progression entries + the pre-existing table.
+        // The full generated table.
         let total = RECIPES.len();
-        assert!(total >= 38, "the table grew ({total})");
+        assert!(total >= 2700, "the full table ({total})");
     }
 
     #[test]
@@ -1127,9 +763,12 @@ mod tests {
                     );
                 }
             }
-            assert!(!seen.contains(&r.create.0), "duplicate create {}", r.create.0);
+            // The C# table legitimately repeats create ids across the variant
+            // rows (the five Ice Torch crafts, the wall colours, ...), so the
+            // create ids are NOT unique - only the row count is pinned.
             seen.push(r.create.0);
         }
+        assert!(seen.len() >= 2700, "the full table ({})", seen.len());
     }
 
     #[test]
@@ -1178,33 +817,41 @@ mod tests {
 
     #[test]
     fn test_dw_1_2_workbench_reference_recipe() {
-        // `Recipe.cs:4751-4754`: 10x Wood -> Work Bench, no station — now a
-        // group requirement (any wood works).
+        // `Recipe.cs:4751-4754`: 10x Wood -> Work Bench, no station - the C#
+        // row authors the plain item 9 (no RequireGroup on this row).
         let wb = recipe_by_create(36);
         assert_eq!(wb.create, (36, 1));
         assert_eq!(wb.required.len(), 1);
+        assert_eq!(wb.required[0].item, 9);
         assert_eq!(wb.required[0].stack, 10);
-        assert_eq!(wb.required[0].group, RecipeGroups::WOOD);
+        assert_eq!(wb.required[0].group, NO_GROUP);
         assert!(wb.stations.is_empty());
     }
 
     #[test]
     fn test_dw_2_1_can_craft_cases() {
-        // Work Bench (10x wood, by hand): enough wood -> true.
+        // Work Bench (10x wood, by hand - the plain item 9): enough -> true.
         let zones = Zones::default();
         let adj = dry_adj();
         let wb = recipe_by_create(36);
         let inv = inv_with(&[(9, 10)]);
         assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
-        // Rich Mahogany (619) also counts — the group substitute.
-        let inv = inv_with(&[(619, 10)]);
-        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
-        // 5 wood + 5 palm wood: the group fold reaches 10.
-        let inv = inv_with(&[(9, 5), (2503, 5)]);
-        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
-        // Not enough wood -> false.
+        // Not enough wood -> false. Rich Mahogany (619) does NOT substitute -
+        // the bench row has no group (`Recipe.cs:4751-4754`).
         let inv = inv_with(&[(9, 9)]);
         assert!(!can_craft(&inv, &[], &[], wb, &adj, &zones));
+        let inv = inv_with(&[(619, 10)]);
+        assert!(!can_craft(&inv, &[], &[], wb, &adj, &zones));
+        // The group substitute lives on the rows that carry RequireGroup -
+        // the torch (1 Gel + 1 of any wood, `Recipe.cs:610-615`).
+        let torch = recipe_by_create(8);
+        let inv = inv_with(&[(23, 1), (9, 1)]);
+        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
+        let inv = inv_with(&[(23, 1), (619, 1)]);
+        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
+        // 1 gel + a mix of two woods: the group fold reaches 1.
+        let inv = inv_with(&[(23, 1)]);
+        assert!(!can_craft(&inv, &[], &[], torch, &adj, &zones));
     }
 
     #[test]
@@ -1535,10 +1182,11 @@ mod tests {
         assert!(!can_craft(&inv, &[], &[], door, &adj, &zones), "no station adjacent yet");
         assert_eq!(try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng), Some((25, 1)));
         assert_eq!(count_kind(&inv, 9), 0);
-        // Rich Mahogany satisfies the chest's wood group too.
-        let mut inv = inv_with(&[(619, 8)]);
+        // The chest's wood is the plain item 9 (no group on the C# row);
+        // the iron-bar half still draws from the IronBar group.
+        let mut inv = inv_with(&[(9, 8)]);
         assert!(!can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones));
-        let mut inv = inv_with(&[(619, 8), (704, 2)]);
+        let mut inv = inv_with(&[(9, 8), (704, 2)]);
         assert!(can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones), "Lead Bar is IronBar");
     }
 

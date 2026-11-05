@@ -59,6 +59,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
         p.auras = app.scene_metrics.auras();
+        // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
+        // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
+        p.zones = app.scene_metrics.zones();
+        // The held torch's style (`inventory[selectedItem].createTile == 4`,
+        // `Player.cs:17917-17920`).
+        p.held_torch_style = app
+            .inventory
+            .get(app.selected)
+            .filter(|slot| slot.count > 0)
+            .and_then(|slot| crate::registry::get(slot.kind))
+            .filter(|def| def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT)
+            .map(|def| def.place_style as u8);
             // `Player.statDefense` (`Player.UpdateEquips`): the equipped
             // pieces' defense plus the set bonus (M3-EQUIP-2).
             let armor_kinds: Vec<i32> = app

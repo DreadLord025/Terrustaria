@@ -2697,6 +2697,70 @@ Deviations:
   or sets the vampire-slime `ai[1] = 9` in the roster), ichor → M2-BUFF-4,
   and the presentation half — combat text, dust and the buff-bar HUD icons.
 
+## Luck value (M2-BUFF-6)
+
+`crates/tr-app/src/luck.rs` holds the full `RecalculateLuck` formula
+(`Player.cs:29137-29164`) in `LuckState`, the three `Main.dayRate` decay
+timers (`:18103-18110` coinLuck ×0.9999^dayRate floored <0.25, `:18836-18854`
+ladyBugLuckTimeLeft draining to 0 from either sign, `:29166-29182`
+brokenMirrorBadLuckTime driving the −0.25 flag), the torch-luck scan
+(`TryRecalculatingTorchLuck`/`UpdateTorchLuck_ConsumeCountersAndCalculate`
+`:17731-18088` — one tile row per player tick, style `frameY/22`,
+`frameX<66` unsnuffed, the 13-verdict biome table, `torchLuck` floored at 0),
+the coin tiers (`:18115-18153` incl. the duplicated unreachable
+`>24900 → 0.175` branch, kept verbatim), the ladybug windows
+(`NPC.cs:81566-81652`: kill 400 px linear / nearby 800 px `(1−d/800)^6`,
+gold ×2, extremes win) and the buff-driven inputs (257 tier by remaining
+time `:10285-10301`, 120 stinky `:10276-10280`, 383 kite tier
+`buffTime/10800` clamp 0..3 `:9920-9924`). `update_luck` runs at the C#
+`UpdateLuck` position (`Player.cs:25645` → `:29041`, after the buff effects);
+the value is **never clamped** — the −0.7/1.0 caps are UI-only
+(`NormalizedLuck`, `:4107-4122`). Consumers wired: the gel drop rules and
+`drop_money` read `player.luck()` (`CommonDrop.cs:36`, `NPC.cs:79622`), the
+melee `DamageVar` passes the raw value (`Player.cs:44342`), and
+`start_rain`'s coin gate reads it as `GetPlayerWithHighestLuck().luck`
+(`Main.cs:64668`).
+
+Deviations, all deliberate:
+- **Absent writers are neutral-default inputs, terms stay live**: lantern
+  night (`LanternNight.LanternsUp` — M4-EVENT-4), the garden gnome
+  (tile-567 SceneMetrics count, M4), `usedGalaxyPearl` (item 5340), the
+  broken-mirror writer (projectile 1085 / item 5577), the accessory bonus
+  (clover 5574-5576 / horseshoe 158 / lucky coin 855 — M3-EQUIP) and the
+  kite items (`IsAKite`) all default to 0/false; `RecalculateLuck` applies
+  every term in the original order so those tasks only fill the inputs.
+- **`usedGalaxyPearl` is not persisted** — the C# writes it to the player
+  file (`Player.cs:54784/:55258`); the port has no player-file writer yet.
+- **The ladybug/coin writers have no live caller** — the ladybug NPC
+  (604/605) and gold critters are the M4 critter row, the town NPCs the M6
+  row; the setters (`on_lady_bug_killed/nearby`, `on_town_npc_death`,
+  `add_coin_luck`) are unit-tested callables. `on_lady_bug_killed` returns
+  the raw `ladyBugRainTime` add for the future `rain.rs` writer instead of
+  touching `Main.ladyBugRainBoost` (the C# applies the 18000 cap at the
+  add site, `NPC.cs:81568-81572`).
+- **The Torch God event is out** — the `happyFunTorchTime` /
+  `torchGodCooldown` head of the scan and the `:18066-18086` trigger tail
+  are not ported; the `nearbyTorches` counter still runs.
+- **The temple zone is unmodelled** — the skip gate
+  `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
+- **`ZoneLihzhardTemple`-free torch inputs** — the zones ride a per-tick
+  `SceneMetrics::zones()` snapshot on the player (the `auras()` pattern),
+  refreshed beside `p.auras` in `world_sim/player.rs`.
+- **No kite-luck reset** — the C# never zeroes `kiteLuckLevel` (assigned
+  only inside the buff-383 branch, `:9920-9924`); the port matches:
+  stale-until-recomputed.
+- **Net-only halves skipped** — `luckNeedsSync`, packet 134
+  (`NetMessage.cs:1557-1568`), the `oldLuckPotion` diff and the buff-120
+  `talkNPC = -1` dialogue half (host-authoritative single player).
+- **The first lucky branches diverge the streams C#-faithfully** — with
+  luck 0 every wired consumer stays byte-identical to its pre-wiring plain
+  roll; at luck > 0 the hit branches consume their extra draws exactly as
+  the C# branch shape implies (pinned by `test_DW_3_4`'s luck-1.0 stream
+  replay and the luck-0 equality tests).
+- **C# float widening quirks preserved** — the coin tier compare
+  `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
+  widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
 ## Projectile pool (M4-PROJ-1)
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
@@ -4182,3 +4246,57 @@ inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
 metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
 the style-0 wooden slice places. The DrawYOffset fields are preview-only
 (`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
+## The full SetupRecipes table (M3-CRAFT-6)
+
+`tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
+`SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
+table as ONE `&[Recipe, ...]` expression spliced via
+`include!` into `RECIPES`. 2764 rows in the C# registration order
+(= the UI listing order):
+
+- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+  helpers spliced at their call positions + the `AddCritterStatueRecipe`
+  rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
+- the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
+  the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
+  (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
+  expanded/evaluated;
+- 284 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
+  single-ingredient recipe whose result is a placed platform
+  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
+  (`createWall > 0`, the ingredient not a wall) and insert it right
+  after the source with `notDecraftable` - the port carries that exact
+  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+
+Findings the hand table had wrong (the generator is the truth now):
+
+- The C# authors the work bench, the doors, the chairs, the tables and
+  the furniture with the **plain item 9** - no `RequireGroup(Wood)` on
+  those rows. Rich Mahogany does NOT craft a work bench. The group
+  substitution only lives where the row says so (the torch, the arrow,
+  the chest's iron bars, ...).
+- The iron armor rows author the plain bar 22 (not the IRON_BAR group).
+- `RequireGroup` binds to a slot by membership
+  (`CreateRequiredItemQuickLookups`, `:15162-15191`): a group whose
+  members do not contain the authored item stays unbound and the row
+  requires the exact item (the Lesion furniture rows: item 3955 is not
+  in the Wood group - they require lesion wood exactly).
+- `corruption`/`crimson` never gate crafting - they only feed
+  `ItemID.Sets.IsCraftedCorruption/Crimson` for the decrafting UI
+  (`:15252-15257`); the port ignores them.
+- 1.4.5.8's Chain craft makes 15 per bar (the C# `createItem.stack`)
+  and the arrow crafts at the work bench - both differ from the older
+  wiki/hand-table expectations.
+
+The generator validates every create/ingredient id against the port's
+`itemdata.rs` and every group against the port group table - the run
+reports 0 warnings and 1 skipped row (the `needTorchGodsFavor` gate; no
+port system). `--check` mode pins the generated file to the sources.
+
+Deviations: `needMechdusa` never fires in 1.4.5.8's setup body (the
+flag exists, no row sets it); the deco/shimmer variant rows
+(`AddCustomShimmerResult`) keep their craft direction and drop the
+shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
+rule (`AddRecipe`, `:16720-16724`).
