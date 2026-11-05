@@ -4050,3 +4050,57 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
+
+## The full SetupRecipes table (M3-CRAFT-6)
+
+`tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
+`SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
+table as ONE `&[Recipe, ...]` expression spliced via
+`include!` into `RECIPES`. 2764 rows in the C# registration order
+(= the UI listing order):
+
+- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+  helpers spliced at their call positions + the `AddCritterStatueRecipe`
+  rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
+- the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
+  the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
+  (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
+  expanded/evaluated;
+- 284 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
+  single-ingredient recipe whose result is a placed platform
+  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
+  (`createWall > 0`, the ingredient not a wall) and insert it right
+  after the source with `notDecraftable` - the port carries that exact
+  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+
+Findings the hand table had wrong (the generator is the truth now):
+
+- The C# authors the work bench, the doors, the chairs, the tables and
+  the furniture with the **plain item 9** - no `RequireGroup(Wood)` on
+  those rows. Rich Mahogany does NOT craft a work bench. The group
+  substitution only lives where the row says so (the torch, the arrow,
+  the chest's iron bars, ...).
+- The iron armor rows author the plain bar 22 (not the IRON_BAR group).
+- `RequireGroup` binds to a slot by membership
+  (`CreateRequiredItemQuickLookups`, `:15162-15191`): a group whose
+  members do not contain the authored item stays unbound and the row
+  requires the exact item (the Lesion furniture rows: item 3955 is not
+  in the Wood group - they require lesion wood exactly).
+- `corruption`/`crimson` never gate crafting - they only feed
+  `ItemID.Sets.IsCraftedCorruption/Crimson` for the decrafting UI
+  (`:15252-15257`); the port ignores them.
+- 1.4.5.8's Chain craft makes 15 per bar (the C# `createItem.stack`)
+  and the arrow crafts at the work bench - both differ from the older
+  wiki/hand-table expectations.
+
+The generator validates every create/ingredient id against the port's
+`itemdata.rs` and every group against the port group table - the run
+reports 0 warnings and 1 skipped row (the `needTorchGodsFavor` gate; no
+port system). `--check` mode pins the generated file to the sources.
+
+Deviations: `needMechdusa` never fires in 1.4.5.8's setup body (the
+flag exists, no row sets it); the deco/shimmer variant rows
+(`AddCustomShimmerResult`) keep their craft direction and drop the
+shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
+rule (`AddRecipe`, `:16720-16724`).
