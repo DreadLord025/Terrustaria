@@ -76,6 +76,12 @@ pub(crate) const TILE_SILVER: u16 = 9;
 pub(crate) const TILE_ASH: u16 = 57;
 pub(crate) const TILE_ICE: u16 = 161;
 pub(crate) const TILE_HELLSTONE: u16 = 58;
+/// The alternate pre-hardmode ores (`TileID.cs`: the tin 166, the lead
+/// 167, the tungsten 168, the platinum 169).
+pub(crate) const TILE_TIN: u16 = 166;
+pub(crate) const TILE_LEAD: u16 = 167;
+pub(crate) const TILE_TUNGSTEN: u16 = 168;
+pub(crate) const TILE_PLATINUM: u16 = 169;
 pub(crate) const WALL_STONE: u16 = 1;
 pub(crate) const WALL_DIRT: u16 = 2;
 pub(crate) const WALL_SANDSTONE: u16 = 187;
@@ -441,7 +447,10 @@ mod tests {
         assert!(count(70) > 50, "the mushroom grass ({})", count(70));
         assert!(count(368) > 300, "the granite ({})", count(368));
         assert!(count(367) > 300, "the marble ({})", count(367));
-        assert!(count(41) > 200, "the dungeon brick ({})", count(41));
+        // The dungeon colour rides the roll (the blue 41 / the green 43 /
+        // the pink 44 — one per world).
+        let dungeon = count(41) + count(43) + count(44);
+        assert!(dungeon > 200, "the dungeon brick ({dungeon})");
         // The crimson flavour swaps the evil tile set.
         let c = generate(&GenOptions {
             seed: 77,
@@ -512,6 +521,36 @@ mod tests {
         assert!(count(19) > 20, "the cabin platforms ({})", count(19));
         assert!(count(196) + count(197) + count(198) + count(199) > 30, "the tents");
         assert!(count(197) >= 2, "the sword shrines ({})", count(197));
+    }
+
+    #[test]
+    fn the_ore_pools_roll_one_alternate_per_pair() {
+        // The world rolls one kind per metal pair (the copper 7 / the tin
+        // 166, the iron 6 / the lead 167, the silver 9 / the tungsten 168,
+        // the gold 8 / the platinum 169) — the rolled kinds' veins exist in
+        // the stone band, the other pair's kinds are absent.
+        let w = generate(&GenOptions {
+            seed: 66,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        for (a, b) in [(7u16, 166u16), (6, 167), (9, 168), (8, 169)] {
+            let (ca, cb) = (count(a), count(b));
+            assert!(
+                (ca > 100 && cb == 0) || (cb > 100 && ca == 0),
+                "the pair {a}/{b}: {ca} vs {cb}"
+            );
+        }
+        // The gems in the stone band (the amethyst 63 .. the diamond 68).
+        let gems: usize = (63..=68)
+            .map(|k| w.tiles.iter().filter(|t| t.active() && t.kind == k).count())
+            .sum();
+        assert!(gems > 40, "the gem veins ({gems})");
     }
 
     #[test]
