@@ -291,10 +291,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 } else {
                     15.0
                 };
+                // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
+                // passes the raw value (`ProcessHitAgainstNPC`,
+                // `Player.cs:44342`; damage taken negates it, `:31387`).
+                let luck = player.luck();
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                 let crit =
                     tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
-                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, 0.0);
+                let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
                 // (`NPC.cs:81546`) so the hit is placed at the NPC corner.
@@ -882,6 +886,56 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 mod tests {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
+    /// parked under the screen-centre cursor and no tile there, so the
+    /// `mine_down` arm takes the NPC branch (`ItemCheck_MeleeHitNPCs` →
+    /// `ProcessHitAgainstNPC`). A floor row at y 300 gives the spawner a
+    /// surface; the cursor tile (30, 260) stays air so nothing is mined.
+    fn melee_app() -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        let mut npc = crate::npc::Npc::spawn_slime_variant(
+            &app.world,
+            30,
+            crate::npc::SlimeVariant::Blue,
+        )
+        .expect("the floor row spawns the slime");
+        npc.x = 30.0 * TILE_PX;
+        npc.y = 260.0 * TILE_PX;
+        app.npcs.push(npc);
+        app
+    }
+
+    #[test]
+    fn test_DW_3_2_melee_hit_passes_the_player_luck_to_damage_var() {
+        // DW-3.2 — `Main.DamageVar(dmg, this.luck)` with the RAW value for
+        // player-dealt damage (`ProcessHitAgainstNPC`, `Player.cs:44342`;
+        // damage taken negates it, `:31387` — that contact site is not wired
+        // in the port yet). At luck 1.0 the reroll branch always fires
+        // (2 extra draws), so the item stream diverges from luck 0 while the
+        // hit lands either way.
+        let mut a = melee_app();
+        let hp_0 = a.npcs[0].hp;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp < hp_0, "the melee hit landed");
+        let state_0 = a.item_rng;
+
+        let mut b = melee_app();
+        b.player.as_mut().unwrap().luck_state.luck = 1.0;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp < hp_0, "the lucky hit landed too");
+        assert_ne!(b.item_rng, state_0, "luck 1.0 rerolled DamageVar");
+    }
 
     /// 40x40 world with a stone floor at y = 20 — the core `edit.rs` fixture
     /// shape, deep enough inside the world for `CanPlace`'s 5-tile edge margin
