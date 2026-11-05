@@ -39,6 +39,7 @@ mod variants;
 mod render;
 mod spawner;
 mod settings;
+mod shop;
 mod sound;
 mod test_world_helpers;
 mod town;
