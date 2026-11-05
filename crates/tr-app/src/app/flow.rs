@@ -1328,6 +1328,7 @@ pub(crate) mod front_flow_tests {
             inventory_open: false,
             crafting_open: false,
             world_chests: Vec::new(),
+            craft_rng: 1,
             menu: None,
             front,
             front_backup: None,

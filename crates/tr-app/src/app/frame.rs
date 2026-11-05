@@ -1053,6 +1053,7 @@ impl App {
                                         water: false,
                                         honey: false,
                                         lava: false,
+                                        alchemy_table: false,
                                     },
                                     Vec::new(),
                                 )

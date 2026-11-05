@@ -3754,3 +3754,24 @@ The worldgen rounding-out:
 Deviations: the gem torches (the ice biome's torch placements) and the
 ice-cave water pools are the follow-ups; the ice shell's dirt pockets
 ride the cave pass's blob machinery.
+
+## The alchemy discount (M3-CRAFT-3)
+
+`AddRecipe` auto-sets `Recipe.alchemy` iff `requiredTile == 13`
+(`Recipe.cs:16722-16726`); `Player.SetAdjTile` raises `player.alchemyTable`
+for tiles 355/699 (`Player.cs:35647-35649`) — the `TileCountsAs` pairs
+355→13/699→13 (CRAFT-2) already satisfy a placed-bottle station requirement
+near the table. The discount itself: `GetIngredientCraftingDiscount`
+(`Recipe.cs:214-228`) rolls `Main.rand.Next(3) == 0` per ingredient unit and
+`GetIngredientsForOneCraft` (`:196-212`) subtracts the survivors from the
+consumed stacks — the availability check counts full stacks (the split is
+the vanilla's). Port: `try_craft` subtracts the rolled-off units from each
+requirement's drain (group entries discount on the folded stack), the rolls
+come from the App's `craft_rng` stream (the per-consumer RNG convention —
+vanilla rolls the shared `Main.rand`; the seed is fixed like the other
+streams, so crafting is seed-deterministic). The subset gains the two
+placed-bottle potions: Lesser Healing Potion ×2 (1 Mushroom + 2 Gel +
+2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2 LHP +
+1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state, so
+the discount depends on every prior craft — the documented determinism
+caveat mirrors the vanilla (Main.rand's shared stream).
