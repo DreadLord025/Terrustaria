@@ -1618,7 +1618,7 @@ pub fn open_door(
             if t.active()
                 && !crate::tileobject::tile_cut(t.kind)
                 && t.kind != 165
-                && !is_drip_tile(t.kind)
+                && !crate::tileobject::is_drip_tile(t.kind)
             {
                 return false;
             }
@@ -1629,7 +1629,9 @@ pub fn open_door(
     for l in num..num + 3 {
         if let Some(t) = world.tile(num7, l) {
             if t.active()
-                && (crate::tileobject::tile_cut(t.kind) || t.kind == 165 || is_drip_tile(t.kind))
+                && (crate::tileobject::tile_cut(t.kind)
+                    || t.kind == 165
+                    || crate::tileobject::is_drip_tile(t.kind))
             {
                 if let Some(kill) = kill_tile(world, num7, l, false) {
                     drops.extend(kill.object_drops);
@@ -1841,12 +1843,6 @@ fn ensure_frame_important(world: &mut World, kind: u16) {
 /// matches; the guard is ported because `OpenDoor` calls it.
 fn is_locked_door(tile: &Tile) -> bool {
     tile.kind == 10 && (594..=646).contains(&tile.frame_y) && tile.frame_x < 54
-}
-
-/// `TileID.Sets.IsADripTile` (`TileID.cs:485`): the vine/drip set `OpenDoor`'s
-/// destination sweep kills like cut tiles (`WorldGen.cs:37704-37717`).
-fn is_drip_tile(kind: u16) -> bool {
-    matches!(kind, 373 | 374 | 375 | 461 | 709)
 }
 
 fn liquid_flags(flags: u8) -> u8 {

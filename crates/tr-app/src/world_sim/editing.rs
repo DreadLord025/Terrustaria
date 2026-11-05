@@ -483,13 +483,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
-    // path sets for held 213/5295, `Player.cs:41038-41041`): the port reads
-    // the held slot at the break moment.
-    let staff_of_regrowth = matches!(app.inventory[app.selected].kind, 213 | 5295);
+    // path sets for held 213/5295): the port reads the held slot at the
+    // break moment.
+    let staff_bonus = staff_of_regrowth(app.inventory[app.selected].kind);
     let ctx = drop_ctx(app);
     let (drops, portals) = {
         let mut main_rng = super::npcs::LootRng(&mut app.item_rng);
-        break_drop_events(&kill, &app.world, hit, staff_of_regrowth, &mut main_rng, &ctx)
+        break_drop_events(&kill, &app.world, hit, staff_bonus, &mut main_rng, &ctx)
     };
     for (id, count, x, y) in drops {
         spawn_item_drop(app, id, count, x, y);
@@ -1480,12 +1480,24 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some(kind) = registry::place_tile(held.kind) else {
         return false;
     };
-    // The plant-kill of `PlaceThing_Tiles_BlockPlacementForAssortedThings`
-    // (`Player.cs:41260-41292`) runs on the non-`TileObject` placement route
+    // The plant rules of `PlaceThing_Tiles_BlockPlacementForAssortedThings`
+    // (`Player.cs:41036-41360`) run on the non-`TileObject` placement route
     // before the can-place chain — seeds (82) are forced onto that route by
-    // `Player.cs:39771-39772` even though the registry has the def.
-    if adjust_plants_route(kind) {
-        adjust_plants(app, tx, ty);
+    // `Player.cs:39771-39772` even though the registry has the def. The two
+    // C# halves split by the held item: the Staff of Regrowth sets
+    // `staffOfRegrowthBonus` (:41038-41041) and takes the kill+replant block
+    // (:41262-41293, `canPlace` false unless the target was 0/1/38); every
+    // other item takes the `flag2` tileCut rule (:41298-41331) — the kill
+    // plants nothing, so the clicked seed then places itself through the
+    // normal route below and is consumed.
+    if assorted_placement_route(kind) {
+        if staff_of_regrowth(held.kind) {
+            if !adjust_plants(app, tx, ty) {
+                return false;
+            }
+        } else if !cut_plants_for_placement(app, tx, ty, kind) {
+            return false;
+        }
     }
     if legacy_precheck_applies(kind) && !can_place(app, tx, ty) {
         return false;
@@ -1493,49 +1505,115 @@ fn use_tile_item(app: &mut App, tx: i32, ty: i32) -> bool {
     place_tile(app, tx, ty, kind)
 }
 
-/// The C# placement route the plant-kill rides (`Player.cs:39771-39772`):
+/// The C# placement route the plant rules ride (`Player.cs:39771-39772`):
 /// `TileObjectData.CustomPlace(tileToCreate, placeStyle) && tileToCreate != 82
 /// && tileToCreate != 227 && tileToCreate != 4` sends 82/227/4 to the legacy
 /// route even when registered. The port's registry matches `CustomPlace`, and
 /// 227/4 are unregistered — so the predicate is "unregistered or 82".
-fn adjust_plants_route(kind: u16) -> bool {
+fn assorted_placement_route(kind: u16) -> bool {
     tr_core::tileobject::def_for_tile(kind).is_none() || kind == 82
 }
 
-/// `Player.PlaceThing_Tiles_BlockPlacementForAssortedThings`'s plant-kill
-/// block (`Player.cs:41260-41292`): clicking a tile item over a plant
-/// destroys it — saplings 3/73 and the blooming herb 84 always, the mature
-/// 83 only when `IsAlchemyPlantHarvestable` — and the blooming herb
-/// auto-replants (`try_replanting_herbs`). The harvest's drops ride the same
-/// `break_tile` kill path as every other break source.
-fn adjust_plants(app: &mut App, tx: i32, ty: i32) {
-    let Some(t) = app.world.tile(tx, ty).copied() else {
-        return;
-    };
-    if !t.active() {
-        return;
+/// The held-item gate of `staffOfRegrowthBonus` (`Player.cs:41038-41041`, the
+/// placement route; `:44649-44651`, the swing cut) — items 213/5295.
+fn staff_of_regrowth(kind: u16) -> bool {
+    matches!(kind, 213 | 5295)
+}
+
+/// The Staff-of-Regrowth half of
+/// `Player.PlaceThing_Tiles_BlockPlacementForAssortedThings`
+/// (`Player.cs:41038-41041`, `:41262-41293`): with the staff held, clicking
+/// over a plant destroys it — saplings 3/73 and the blooming herb 84 always,
+/// the mature 83 only when `IsAlchemyPlantHarvestable` — and the blooming
+/// herb auto-replants (`try_replanting_herbs`). The harvest's drops ride the
+/// same `break_tile` kill path as every other break source. Returns the C#
+/// `canPlace` at the method's return: the staff's own branch sets it true
+/// only over 0/1/38 (:41045-41048; an inactive cell reads as type 0), so no
+/// grass is placed into a cell the staff just harvested.
+fn adjust_plants(app: &mut App, tx: i32, ty: i32) -> bool {
+    // :41045-41048 — `if (flag) { if (type == 0 || 1 || 38) canPlace = true; }`
+    let can_place = app
+        .world
+        .tile(tx, ty)
+        .map_or(true, |t| !t.active() || matches!(t.kind, 0 | 1 | 38));
+    if let Some(t) = app.world.tile(tx, ty).copied() {
+        if t.active() {
+            match t.kind {
+                3 | 73 | 84 => {
+                    let herb_style = i32::from(t.frame_x) / 18;
+                    let replant = t.kind == 84;
+                    break_tile(app, tx, ty);
+                    // `if (!Main.tile[...].active()) { if (type == 84)
+                    // TryReplantingHerbs(herbStyle); }` (:41270-41278).
+                    if replant && app.world.tile(tx, ty).is_some_and(|t| !t.active()) {
+                        try_replanting_herbs(app, tx, ty, herb_style);
+                    }
+                }
+                83 => {
+                    // :41283-41292 — the kill is unconditional once the bloom
+                    // window holds, and the replant follows without a check.
+                    let herb_style = i32::from(t.frame_x) / 18;
+                    if is_alchemy_plant_harvestable(herb_style, ty, &drop_ctx(app)) {
+                        break_tile(app, tx, ty);
+                        try_replanting_herbs(app, tx, ty, herb_style);
+                    }
+                }
+                _ => {}
+            }
+        }
     }
-    match t.kind {
-        3 | 73 | 84 => {
-            let herb_style = i32::from(t.frame_x) / 18;
-            let replant = t.kind == 84;
-            break_tile(app, tx, ty);
-            // `if (!Main.tile[...].active()) { if (type == 84)
-            // TryReplantingHerbs(herbStyle); }` (:41270-41278).
-            if replant && app.world.tile(tx, ty).is_some_and(|t| !t.active()) {
-                try_replanting_herbs(app, tx, ty, herb_style);
-            }
-        }
-        83 => {
-            // :41280-41292 — the kill is unconditional once the bloom window
-            // holds, and the replant follows without a success check.
-            let herb_style = i32::from(t.frame_x) / 18;
-            if is_alchemy_plant_harvestable(herb_style, ty, &drop_ctx(app)) {
-                break_tile(app, tx, ty);
-                try_replanting_herbs(app, tx, ty, herb_style);
-            }
-        }
-        _ => {}
+    can_place
+}
+
+/// The `flag2` half of
+/// `Player.PlaceThing_Tiles_BlockPlacementForAssortedThings`
+/// (`Player.cs:41298-41331`) — the rule every non-staff placement item runs
+/// on the legacy route: an active target that is `tileCut`,
+/// `BreakableWhenPlacing` or `IsADripTile` and not the held item's own tile
+/// is killed when it does not stand on 78/380/579 (`num9`), or — potted —
+/// only for the rule's named plants (saplings, vines, drips, 165,
+/// harvestable alch herbs) with an alch-placing item (`flag8`, the seeds).
+/// No replant here: the killed cell takes the normal placement route below,
+/// so the clicked seed plants itself (`PlaceAlch`) and is consumed. Returns
+/// the C# `canPlace`: `false` refuses the placement and the plant stands.
+fn cut_plants_for_placement(app: &mut App, tx: i32, ty: i32, create_tile: u16) -> bool {
+    let Some(t) = app.world.tile(tx, ty).copied() else {
+        return true;
+    };
+    // :41303 — the block only judges active cuttable targets.
+    if !t.active() {
+        return true;
+    }
+    if !(tr_core::tileobject::tile_cut(t.kind)
+        || tr_core::tileobject::breakable_when_placing(t.kind)
+        || tr_core::tileobject::is_drip_tile(t.kind))
+    {
+        return true;
+    }
+    // :41327-41330 — the held item's own tile refuses instead of cutting.
+    if t.kind == create_tile {
+        return false;
+    }
+    // :41307 — the support types below, read raw (no `active()` in the C#).
+    let on_pot = app
+        .world
+        .tile(tx, ty + 1)
+        .is_some_and(|s| matches!(s.kind, 78 | 380 | 579));
+    // :41308-41313 — `(flag3 | flag4 | flag5 | flag6 | flag7) & flag8`.
+    let ctx = drop_ctx(app);
+    let named_plant = matches!(t.kind, 3 | 73)
+        || tr_core::tileobject::is_vine(t.kind)
+        || tr_core::tileobject::is_drip_tile(t.kind)
+        || t.kind == 165
+        || (tr_core::tileobject::tile_alch(t.kind)
+            && is_harvestable_herb_with_seed(t.kind, i32::from(t.frame_x) / 18, ty, &ctx));
+    let alch_item = tr_core::tileobject::tile_alch(create_tile);
+    // `num9 || ((flag3|flag4|flag5|flag6|flag7) & flag8)` (:41314-41321).
+    if !on_pot || (named_plant && alch_item) {
+        break_tile(app, tx, ty);
+        true
+    } else {
+        false // :41322-41325 — the potted plant stands; the placement refuses.
     }
 }
 
@@ -2860,45 +2938,75 @@ mod tests {
         assert_eq!(run(), run(), "identical seeds and actions → identical drops");
     }
 
-    // DW-3.6: the seed click on a blooming herb — the harvest kill drops
-    // through `break_tile` and the same herb replants on the clay pot; the
-    // seed item is kept (the replanted cell refuses the placement).
+    // DW-3.6 (amended): the seed route is the `flag2` tileCut rule
+    // (`Player.cs:41302-41340`), not the staff's replant block — a
+    // non-potted cuttable plant dies to any placement item regardless of
+    // bloom (`num9`), and the clicked seed then plants ITSELF through the
+    // normal placement route: consumed, its own style, stage 0.
     #[test]
-    fn test_DW_3_6_seed_click_harvests_and_replants_84() {
+    fn test_DW_3_6_seed_on_non_potted_herb_kills_and_plants_the_seed() {
         let mut w = object_world();
-        // A clay pot on the floor with a blooming Daybloom on it.
+        // Grass soil (the Daybloom set) with an out-of-bloom mature 83.
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 2,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        set_herb(&mut w, 10, 18, 83, 0);
+        let mut app = break_app(w, 0xBEA5);
+        app.world.day_time = false; // night: `IsAlchemyPlantHarvestable(0)` false
+        app.inventory[app.selected] = slot(307, 5); // Daybloom seeds
+        // The cut rule kills (no pot below), then the seed plants itself.
+        assert!(use_tile_item(&mut app, 10, 18));
+        let t = app.world.tile(10, 18).unwrap();
+        assert!(t.active() && t.kind == 82, "the seed planted itself");
+        assert_eq!(t.frame_x, 0, "the seed's own style, stage 0");
+        // The seed was consumed by its own placement.
+        assert_eq!(app.inventory[app.selected].count, 4);
+        // The kill surfaced the herb drop; the out-of-bloom 83 drops no seeds.
+        let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+        assert!(kinds.contains(&313), "the herb drop in {kinds:?}");
+        assert!(!kinds.contains(&307), "no seeds out of bloom");
+    }
+
+    // DW-3.6 (amended): a potted herb in bloom — the kill needs
+    // `flag7` (harvestable) & `flag8` (the seeds) on top of the pot support
+    // (`Player.cs:41307-41316`); the seed then plants itself into the pot
+    // and is consumed.
+    #[test]
+    fn test_DW_3_6_seed_on_potted_blooming_herb_kills_and_plants_the_seed() {
+        let mut w = object_world();
         let i = w.index(10, 19);
         w.tiles[i] = Tile {
             kind: 78,
-            frame_x: 0,
-            frame_y: 0,
             ..Default::default()
         };
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.frame_important[78] = true;
         set_herb(&mut w, 10, 18, 84, 0);
         let mut app = break_app(w, 0xBEA5);
-        app.inventory[app.selected] = slot(307, 5); // Daybloom seeds
-        // The click harvests; the seed's own placement is then refused by
-        // the replanted cell (C# `PlaceAlch`'s empty-cell gate), so the
-        // route reports "not placed" — the world effects are the contract.
-        assert!(!use_tile_item(&mut app, 10, 18));
-        // The herb was harvested: the drop items exist…
-        let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
-        assert!(kinds.contains(&313), "the herb drop in {kinds:?}");
-        assert!(kinds.contains(&307), "the seed drop");
-        // …and the same herb replanted in the same cell on the pot.
+        app.inventory[app.selected] = slot(307, 5);
+        assert!(use_tile_item(&mut app, 10, 18));
         let t = app.world.tile(10, 18).unwrap();
-        assert!(t.active() && t.kind == 82 && t.frame_x == 0, "replanted");
-        // The held seeds were NOT consumed: the replant occupies the cell
-        // and the placement is refused (`PlaceAlch`'s empty-cell gate).
-        assert_eq!(app.inventory[app.selected].count, 5);
+        assert!(
+            t.active() && t.kind == 82 && t.frame_x == 0,
+            "the seed's own plant"
+        );
+        assert_eq!(app.inventory[app.selected].count, 4, "the seed consumed");
+        // The harvest drops ride the same kill path (84 always harvestable).
+        let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+        assert!(
+            kinds.contains(&313) && kinds.contains(&307),
+            "herb + seed drops in {kinds:?}"
+        );
     }
 
-    // DW-3.6: the mature 83 harvests only inside the bloom window.
+    // DW-3.6 (amended): a potted out-of-bloom 83 — `num9` false and `flag7`
+    // false, so the C# kill rule fails and `canPlace = false`
+    // (`Player.cs:41322-41325`): the plant stands and the seed is kept.
     #[test]
-    fn test_DW_3_6_seed_click_83_only_when_harvestable() {
-        // Daybloom 83 by day → harvest + replant.
+    fn test_DW_3_6_seed_on_potted_out_of_bloom_herb_is_refused() {
         let mut w = object_world();
         let i = w.index(10, 19);
         w.tiles[i] = Tile {
@@ -2909,32 +3017,46 @@ mod tests {
         w.frame_important[78] = true;
         set_herb(&mut w, 10, 18, 83, 0);
         let mut app = break_app(w, 0xBEA5);
+        app.world.day_time = false; // night: not harvestable
         app.inventory[app.selected] = slot(307, 5);
-        assert!(!use_tile_item(&mut app, 10, 18), "refused by the replant");
-        assert!(app.world.tile(10, 18).unwrap().kind == 82, "replanted");
-        assert!(!app.items.is_empty(), "the harvest dropped");
-
-        // The same herb at night: `IsAlchemyPlantHarvestable(0)` is false —
-        // no kill, no drop, and the placement refuses on the living cell.
-        let mut w = object_world();
-        let i = w.index(10, 19);
-        w.tiles[i] = Tile {
-            kind: 78,
-            ..Default::default()
-        };
-        w.tiles[i].flags |= FLAG_ACTIVE;
-        w.frame_important[78] = true;
-        set_herb(&mut w, 10, 18, 83, 0);
-        let mut app = break_app(w, 0xBEA5);
-        app.world.day_time = false;
-        app.inventory[app.selected] = slot(307, 5);
-        assert!(!use_tile_item(&mut app, 10, 18), "occupied cell refuses");
-        assert!(app.items.is_empty(), "no harvest at night");
+        assert!(!use_tile_item(&mut app, 10, 18));
         let t = app.world.tile(10, 18).unwrap();
         assert!(t.active() && t.kind == 83, "the mature herb stands");
+        assert_eq!(app.inventory[app.selected].count, 5, "the seed kept");
+        assert!(app.items.is_empty(), "no harvest");
     }
 
-    // DW-3.6: the replant support matrix 78/380/579 (`Player.cs:45826`).
+    // DW-3.6 (amended): the Staff-of-Regrowth keeps the kill+replant block
+    // (`Player.cs:41262-41293` — `TryReplantingHerbs`'s only C# call sites)
+    // and `canPlace` stays false, so no grass is placed into the harvested
+    // cell; the staff rolls 1-2 herbs + 1-5 seeds (`WorldGen.cs:65689-65693`).
+    #[test]
+    fn test_DW_3_6_staff_click_harvests_replants_and_refuses_placement() {
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 78,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.frame_important[78] = true;
+        set_herb(&mut w, 10, 18, 84, 0);
+        let mut app = break_app(w, 0xBEA5);
+        app.inventory[app.selected] = slot(213, 1); // Staff of Regrowth
+        assert!(!use_tile_item(&mut app, 10, 18), "no placement after the kill");
+        let t = app.world.tile(10, 18).unwrap();
+        assert!(t.active() && t.kind == 82 && t.frame_x == 0, "replanted");
+        let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+        assert!(
+            kinds.contains(&313) && kinds.contains(&307),
+            "staff rolls in {kinds:?}"
+        );
+        // The staff item is not consumed.
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    // DW-3.6: the Staff-of-Regrowth replant support matrix 78/380/579
+    // (`Player.cs:45826`, called from the `flag` block :41279/:41290).
     #[test]
     fn test_DW_3_6_replant_support_78_380_579() {
         let replant_world = |support: u16| {
@@ -2954,7 +3076,7 @@ mod tests {
         // 78 and 380 replant the harvested herb (the style survives).
         for support in [78u16, 380] {
             let mut app = break_app(replant_world(support), 1);
-            adjust_plants(&mut app, 10, 18);
+            assert!(!adjust_plants(&mut app, 10, 18), "no placement canPlace");
             let t = app.world.tile(10, 18).unwrap();
             assert!(
                 t.active() && t.kind == 82 && t.frame_x == 72,
@@ -2964,7 +3086,7 @@ mod tests {
         // 579 passes the gate but `PlaceAlch`'s soil sets refuse it — the
         // decompile's text kept 1:1 (the plan Notes).
         let mut app = break_app(replant_world(579), 1);
-        adjust_plants(&mut app, 10, 18);
+        assert!(!adjust_plants(&mut app, 10, 18));
         assert!(
             !app.world.tile(10, 18).unwrap().active(),
             "579 cannot host the replant"
@@ -2973,8 +3095,22 @@ mod tests {
         let mut w = object_world();
         set_herb(&mut w, 10, 18, 84, 0);
         let mut app = break_app(w, 1);
-        adjust_plants(&mut app, 10, 18);
+        assert!(!adjust_plants(&mut app, 10, 18));
         assert!(!app.world.tile(10, 18).unwrap().active());
+    }
+
+    // Beyond the DW list: `Player.cs:41327-41330` — the held item's own tile
+    // refuses instead of cutting (seeds on the immature 82).
+    #[test]
+    fn seed_on_its_own_immature_tile_is_refused() {
+        let mut w = object_world();
+        set_herb(&mut w, 10, 18, 82, 0);
+        let mut app = break_app(w, 1);
+        app.inventory[app.selected] = slot(307, 5);
+        assert!(!use_tile_item(&mut app, 10, 18));
+        let t = app.world.tile(10, 18).unwrap();
+        assert!(t.active() && t.kind == 82, "the young plant stands");
+        assert_eq!(app.inventory[app.selected].count, 5, "the seed kept");
     }
 
     // Beyond the DW list: the `drop_ctx` torch scan mirrors the C# inventory
@@ -3091,10 +3227,12 @@ mod tests {
         assert!(!loot.iter().any(|(id, _)| matches!(id, 4286 | 4295)));
     }
 
-    // Beyond the DW list: the 3/73 arm — any legacy-route tile item (the
-    // seed here) cuts a sapling without a replant (`Player.cs:41264-41278`).
+    // Beyond the DW list: the `num9` arm — any placement item cuts a
+    // non-potted cuttable plant (`Player.cs:41307-41316`); the seed's own
+    // placement then refuses on the sapling's stone floor (not a Daybloom
+    // soil), the seed kept.
     #[test]
-    fn seed_click_cuts_a_sapling_without_replanting() {
+    fn seed_click_cuts_a_sapling_and_its_own_planting_refuses_on_stone() {
         let mut w = object_world();
         let i = w.index(10, 19);
         w.tiles[i] = Tile {
@@ -3106,15 +3244,19 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut app = break_app(w, 1);
         app.inventory[app.selected] = slot(307, 5);
-        use_tile_item(&mut app, 10, 19);
+        assert!(
+            !use_tile_item(&mut app, 10, 19),
+            "the seed's placement refuses"
+        );
         assert!(
             !app.world.tile(10, 19).unwrap().active(),
             "the sapling was cut"
         );
         assert!(
             !app.world.tile(10, 18).unwrap().active(),
-            "nothing replanted above"
+            "nothing planted above"
         );
+        assert_eq!(app.inventory[app.selected].count, 5, "the seed kept");
     }
 
     // Beyond the DW list: the Staff of Regrowth seeds a mature 83 even

@@ -68,7 +68,8 @@
 //! Hand-extracted tile tables (the `GenTileData` generator cannot emit
 //! `Main.`-prefixed assignments — see `torch.rs`'s module doc for the same
 //! precedent): [`TILE_CUT`], [`TILE_TABLE`], [`BREAKABLE_WHEN_PLACING`],
-//! [`NOT_REALLY_SOLID`]. `Main.tileNoAttach`, `TileID.Sets.IsATreeTrunk`,
+//! [`IS_A_DRIP_TILE`], [`IS_VINE`], [`NOT_REALLY_SOLID`]. `Main.tileNoAttach`,
+//! `TileID.Sets.IsATreeTrunk`,
 //! `PlatformFrameWidth()` and `WorldGen.PlatformProperTopFrame` are reused from
 //! [`crate::torch`].
 
@@ -339,6 +340,12 @@ const fn base_def() -> TileObjectDef {
 
 /// `TileID.Sets.BreakableWhenPlacing` (`TileID.cs:604`).
 const BREAKABLE_WHEN_PLACING: &[u16] = &[324, 186, 187, 185, 165, 530, 233, 227, 485, 81, 624];
+
+/// `TileID.Sets.IsADripTile` (`TileID.cs:485`).
+const IS_A_DRIP_TILE: &[u16] = &[373, 374, 375, 461, 709];
+
+/// `TileID.Sets.IsVine` (`TileID.cs:531`).
+const IS_VINE: &[u16] = &[52, 382, 62, 115, 205, 528, 636, 638];
 
 /// `TileID.Sets.NotReallySolid` (`TileID.cs:592`).
 const NOT_REALLY_SOLID: &[u16] = &[387, 388, 10];
@@ -985,12 +992,25 @@ fn liquid_place(def: &TileObjectDef, tile: &Tile) -> bool {
     }
 }
 
-pub(crate) fn tile_cut(kind: u16) -> bool {
+/// Membership in [`TILE_CUT`] — read by the placement cut rule
+/// (`Player.cs:41303`) and the door sweep (`WorldGen.cs:37704-37717`).
+pub fn tile_cut(kind: u16) -> bool {
     TILE_CUT.contains(&kind)
 }
 
-fn breakable_when_placing(kind: u16) -> bool {
+/// Membership in [`BREAKABLE_WHEN_PLACING`] (`Player.cs:41303`).
+pub fn breakable_when_placing(kind: u16) -> bool {
     BREAKABLE_WHEN_PLACING.contains(&kind)
+}
+
+/// Membership in [`IS_A_DRIP_TILE`] (`Player.cs:41310`).
+pub fn is_drip_tile(kind: u16) -> bool {
+    IS_A_DRIP_TILE.contains(&kind)
+}
+
+/// Membership in [`IS_VINE`] (`Player.cs:41309`).
+pub fn is_vine(kind: u16) -> bool {
+    IS_VINE.contains(&kind)
 }
 
 fn not_really_solid(kind: u16) -> bool {
