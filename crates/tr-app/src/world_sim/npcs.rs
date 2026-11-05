@@ -110,6 +110,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             crate::world_sim::items::spawn_item_drop(
                 app,
                 item as u16,
+                1,
                 (npc.x / 16.0) as i32,
                 (npc.y / 16.0) as i32,
             );

@@ -46,15 +46,45 @@ pub struct PotEvent {
     pub y: i32,
 }
 
+/// One cascade-killed herb cell — `CheckAlch`'s kill loop (`WorldGen.cs:46088-46091`)
+/// whose `KillTile` runs the per-cell `KillTile_DropItems` herb rolls
+/// (`KillTile_GetItemDrops`, `WorldGen.cs:65674-65698`: the herb `313 + frameX / 18`
+/// plus the seed stack behind `IsHarvestableHerbWithSeed`). The app resolves the
+/// RNG rolls (phase 3); `noItem`-gated like the records (the C# drop is a
+/// `KillTile_DropItems` drop).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct HerbEvent {
+    pub kind: u16,
+    /// `frameX / 18` — the herb style (0 Daybloom … 6 Shiverthorn).
+    pub style: i32,
+    pub x: i32,
+    pub y: i32,
+}
+
+/// One broken 2x1 pile's loot block — `Check2x1`'s `Item.NewItem` table for
+/// tile 185 (`WorldGen.cs:47130-47245`), keyed on the origin cell's `frameX`
+/// (the right cell's when the origin already died). The app resolves the
+/// `genRand` coin/ore counts (phase 3); a `Check*`-level `Item.NewItem`, so it
+/// is not `noItem`-gated.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub struct PileLootEvent {
+    pub frame_x: i32,
+    pub x: i32,
+    pub y: i32,
+}
+
 /// The result of `kill_tile`: the kind of the hit cell plus every object
-/// destruction the cascade performed, in `SquareTileFrame` visit order, and
-/// every loot pot the cascade broke.
+/// destruction the cascade performed, in `SquareTileFrame` visit order, every
+/// loot pot the cascade broke, every cascade-killed herb cell and every broken
+/// 2x1 pile's loot block.
 #[derive(Clone, Debug, Default)]
 pub struct TileKill {
     /// Tile kind of the killed (hit) cell.
     pub kind: u16,
     pub object_drops: Vec<ObjectDrop>,
     pub events: Vec<PotEvent>,
+    pub herb_events: Vec<HerbEvent>,
+    pub pile_events: Vec<PileLootEvent>,
 }
 
 /// `SquareTileFrame`'s `TileFrame` visit order (`WorldGen.cs:80185-80196`):
@@ -94,8 +124,7 @@ pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDr
     let mut destroy_object = false;
     let mut kill = TileKill {
         kind: world.tile(x, y).map(|t| t.kind).unwrap_or(0),
-        object_drops: Vec::new(),
-        events: Vec::new(),
+        ..Default::default()
     };
     square_tile_frame(world, x, y, false, &mut destroy_object, &mut kill);
     after_edit(world, x, y);
@@ -118,8 +147,7 @@ fn kill_tile_cascading(
     let kind = remove_tile(world, x, y)?;
     let mut kill = TileKill {
         kind,
-        object_drops: Vec::new(),
-        events: Vec::new(),
+        ..Default::default()
     };
     square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
@@ -169,6 +197,16 @@ fn square_tile_frame(
             if let Some(drop) = plan.drop {
                 kill.object_drops.push(drop);
             }
+            // The herb event stands for the killed cell's `KillTile_DropItems`
+            // roll (`WorldGen.cs:63860-63864`), so it carries the same
+            // `noItem` gate; the pile loot block is a `Check2x1`-level
+            // `Item.NewItem` and is not gated (:47130-47245).
+            if let Some(herb) = plan.herb_event {
+                kill.herb_events.push(herb);
+            }
+        }
+        if let Some(pile) = plan.pile_event {
+            kill.pile_events.push(pile);
         }
         // `SpawnThingsFromPot`'s only gate is `Main.netMode != 1`
         // (:57011-57014) — the `noItem` flag never suppresses pot loot, so
@@ -233,6 +271,8 @@ struct CheckPlan {
     drop: Option<ObjectDrop>,
     cells: Vec<(i32, i32)>,
     pot_event: Option<PotEvent>,
+    herb_event: Option<HerbEvent>,
+    pile_event: Option<PileLootEvent>,
 }
 
 /// The `TileFrameImportant` object dispatch (`WorldGen.cs:84962`): runs the
@@ -306,6 +346,8 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 10),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -351,6 +393,8 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 11),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -505,6 +549,8 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         }),
         cells: killable_cells(world, &region, kind),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -541,6 +587,8 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 15),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -576,6 +624,8 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 18),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -627,6 +677,8 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 21),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -730,6 +782,8 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &region, 27),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -794,6 +848,8 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         drop: None,
         cells: killable_cells(world, &region, 28),
         pot_event: Some(PotEvent { style, x, y }),
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -816,6 +872,8 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             drop: None,
             cells: killable_cells(world, &[(x, y)], t.kind),
             pot_event: None,
+            herb_event: None,
+            pile_event: None,
         });
     }
     // :46904-46913 — only 185 carries the ground rules (the echo 649 is out
@@ -846,6 +904,8 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         drop: None,
         cells: killable_cells(world, &[(x, y)], t.kind),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -930,10 +990,31 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         return None;
     }
     let region = [(ox, y), (ox + 1, y)];
+    // `int frameX = Main.tile[num, y].frameX; if (!Main.tile[num, y].active())
+    // frameX = Main.tile[num + 1, y].frameX;` (:47127-47131) — read before the
+    // kills, after the grass-cover conversion. Only type 185 carries the loot
+    // block (`if (type == 185)`, :47130).
+    let pile_event = if kind == 185 {
+        let frame_x = world
+            .tile(ox, y)
+            .filter(|c| c.active())
+            .or_else(|| world.tile(ox + 1, y))
+            .map(|c| i32::from(c.frame_x))
+            .unwrap_or(0);
+        Some(PileLootEvent {
+            frame_x,
+            x: ox,
+            y,
+        })
+    } else {
+        None
+    };
     Some(CheckPlan {
         drop: None,
         cells: killable_cells(world, &region, kind),
         pot_event: None,
+        herb_event: None,
+        pile_event,
     })
 }
 
@@ -1016,6 +1097,8 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         }),
         cells: killable_cells(world, &[(x, y)], kind),
         pot_event: None,
+        herb_event: None,
+        pile_event: None,
     })
 }
 
@@ -1083,6 +1166,16 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         drop: None,
         cells: killable_cells(world, &[(x, y)], herb.kind),
         pot_event: None,
+        // The killed cell's per-cell drop rolls (`KillTile_GetItemDrops`,
+        // `WorldGen.cs:65674-65698`) ride the herb event; the app resolves
+        // them with the RNG streams and the harvest predicates.
+        herb_event: Some(HerbEvent {
+            kind: herb.kind,
+            style: i32::from(herb.frame_x) / 18,
+            x,
+            y,
+        }),
+        pile_event: None,
     })
 }
 
@@ -4039,5 +4132,73 @@ mod tests {
             w.tile(10, 19).unwrap().active(),
             "actuated table still holds the pot"
         );
+    }
+
+    // ---- Phase 3 (M1.4-TO-4): the herb/pile loot event channels -------------
+
+    #[test]
+    fn test_DW_3_2_herb_event_records_the_killed_cell() {
+        // `CheckAlch`'s kill records the per-cell herb drop as an event —
+        // the kind, the `frameX / 18` style and the cell (`KillTile_DropItems`
+        // rolls the app resolves, `WorldGen.cs:65674-65698`).
+        let mut w = object_world();
+        // Soil swap: dirt → sand (the style-2 Blinkroot set {0, 59}) is not
+        // needed — style 0 also accepts 0 via {2,477,109,492}? no: dirt 2 is
+        // the style-0 set, so the bare fixture stands.
+        set_object_cell(&mut w, 10, 19, 83, 2 * 18, 0);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_all_gone(&w, &[(10, 19)]);
+        assert_eq!(
+            kill.herb_events,
+            vec![HerbEvent {
+                kind: 83,
+                style: 2,
+                x: 10,
+                y: 19
+            }]
+        );
+        assert!(kill.object_drops.is_empty(), "no per-cell record");
+    }
+
+    #[test]
+    fn test_DW_3_2_herb_event_gated_by_no_item() {
+        // The herb event stands for a `KillTile_DropItems` roll — the C#
+        // `noItem` gate suppresses it like the records (:63860-63864).
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 19, 84, 0, 0);
+        let kill = kill_tile(&mut w, 10, 20, true).unwrap();
+        assert_all_gone(&w, &[(10, 19)]);
+        assert!(kill.herb_events.is_empty());
+    }
+
+    #[test]
+    fn test_DW_3_3_pile_event_records_the_loot_block() {
+        // A broken 2x1 coin pile (185, frameX 576 — the copper sub-style)
+        // records the loot block with the origin's frameX, read before the
+        // kills and after the grass-cover conversion (:47127-47131).
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 19, 185, 576, 18);
+        set_object_cell(&mut w, 11, 19, 185, 594, 18);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_all_gone(&w, &[(10, 19), (11, 19)]);
+        assert_eq!(
+            kill.pile_events,
+            vec![PileLootEvent {
+                frame_x: 576,
+                x: 10,
+                y: 19
+            }]
+        );
+    }
+
+    #[test]
+    fn test_DW_3_3_bench_2x1_carries_no_pile_event() {
+        // The loot block keys on `type == 185` (:47130) — the bench's 2x1
+        // destruction records only its item drop.
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 10, 19, 18, 0, 1));
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.object_drops.len(), 1);
+        assert!(kill.pile_events.is_empty());
     }
 }
