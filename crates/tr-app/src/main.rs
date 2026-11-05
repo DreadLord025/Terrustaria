@@ -21,6 +21,7 @@ mod map;
 mod menu;
 mod net;
 mod npc;
+mod npc_ai;
 mod npc_buffs;
 mod persist;
 mod grapple;

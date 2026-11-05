@@ -4,6 +4,7 @@
 //! world files can be mapped 1:1 without lossy conversion.
 
 pub mod anim;
+pub mod armor_sets;
 pub mod bestiary;
 pub mod binio;
 pub mod damage;
@@ -28,6 +29,8 @@ pub mod tile_light;
 pub mod tiledata;
 pub mod tool;
 pub mod tileobject;
+pub mod fishing;
+pub mod growth;
 pub mod pylons;
 pub mod tile_entities;
 pub mod torch;

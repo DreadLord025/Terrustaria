@@ -3269,3 +3269,120 @@ the scale hold/fade, the sine, the bottom death, seed determinism);
 `TR_SANDSTORM=1` desert twins SHA256-equal (two runs byte-identical,
 a third run in a fresh dir matched and one earlier run raced — the known
 first-run gotcha), the off-pin A/B clean.
+## Fishing engine (M7-FISH-1)
+
+The rule core of the fishing system — the power, the pond and the rolls —
+without the content (the tables, the bobber flight, the rods):
+
+- **The power** (`Player.cs:42197-42300`): `bait + pole + fishingSkill`
+  plus the situational +5s (the 25 fishing buff, `canFloatInWater && wet`,
+  sitting — the sitting bonus rides `PlayerSittingHelper`), scaled by
+  `Fishing_GetPowerMultiplier` (`:42233-42263`): the rain ×1.2, the
+  background clouds ×1.1, the early-morning/late-afternoon daylight
+  (`time < 5400 || time > 48600`) ×1.3, the midday (`16200..37800`) ×0.8,
+  the mid-night (`6480..25920`) ×0.8, the moon phases (the full ×1.1, the
+  gibbous pair ×1.05, the crescent pair ×0.95, the new ×0.9) and the
+  blood moon ×1.1.
+- **The pond** (`GetFishingPondState`/`GetFishingPondWidth`,
+  `Projectile.cs:21576-21642`): the liquid span along the bobber's row
+  (the solids and the 10-tile world margins bound it), then the columns
+  down to the floor; the honey pond counts ×1.5; the lava/honey flags
+  ride the tiles.
+- **The attempt gates** (`FishingCheck`/`TryBuildFishingContext`,
+  `:20583-20760`): the hard 75-tile floor, the chum bonuses (+11/+6/+3
+  for 1/2/3+ chums), `waterNeededToFish = 300 × atmo` with the
+  atmosphere `(y - (60 + 10·num²)) / (worldSurface / 6)` (`num =
+  maxTilesX / 4200`) clamped 0.25..1, the quality scaling
+  (`level × quality` when the pond is short) and the depth ladder
+  (0 space / 1 surface / 3 underground / 2 cavern with the 50 % re-roll
+  to the surface / 4 underworld). The junk roll: both `Next(50) > level`
+  and the pond below the need (`:20743`).
+- **The rolls**: the bite accumulator (`AI_061` `:53821-53847` —
+  `Next(300) < level` adds `Next(1,3)`, `+= level/30`, `+= Next(1,3)`,
+  `Next(60)==0` adds 60; past 660 the `FishingCheck` fires), the hit roll
+  `(level + 75) / 2` of 100 (`:20587-20591`) and the drop levels
+  (`:21512-21574` — the 150/300/1050/2250/4500 ÷ level windows with the
+  mins 2/3/4/5/6 and the crate percentage `Next(100) < 10 [+15 potion]`).
+
+Deviations: the drop tables (`GameContent/FishDropRules/*` — the 10-file
+populator), the bobber projectile's flight (`AI_061`'s water-line states),
+the rod/bait items (`Item.fishingPole`/`bait` — the registry growth) and
+the quest fish are M7-FISH-2; the chum bonuses take the count from the
+caller (the chum projectile book is FISH-2); the RNG rides `FastRandom`.
+
+## Growth ticks (M7-GROWTH-1)
+
+`WorldGen.UpdateWorld`'s rate-driven tile picks (`WorldGen.cs:71540-71632`)
+with the two growth families the port's content exercises:
+
+- **The rates** (`GetWorldUpdateRate` `:72020-72030`): `min(dayRate, 24)`
+  (0 while frozen); `dayRate` = the time rate ×5 while every player sleeps
+  (`Main.cs:6210-6220`). The overground loop
+  `maxX·maxY · 3e-5 · rate` (×1.5 raining), the underground
+  `maxX·maxY · 1.5e-5 · rate`. Each overground pick rolls the alch-seed
+  gate `Next(num7·100) == 0` → skip, `num7 = Lerp(151, 151·2.8,
+  clamp(maxTilesX/4200 − 1, 0, 1))` — the small worlds roll 1/15100, the
+  large 1/42280.
+- **`GrowAlch`** (`:45777-45890`): the herb lifecycle over the tileAlch
+  set {82, 83, 84}. The 82 sprout blooms on the generic `Next(50) == 0`
+  (the frame 108 needing the extra `Next(2)`) — **the day/night/rain/
+  depth cue arms are the chain's fallbacks**, not the only path (the
+  stage-0 sprout blooms at night through the generic arm). The wrong
+  liquid kills the herb unless the stage matches (the lava keeps the
+  stage-5 shape, the water the 1/4 stages).
+- **The crystal shards** (`hardUpdateWorld`'s arm, `:69603-69643`): the
+  `CanGrowCrystalShards` stones {117, 116, 164, 402, 403} below the rock
+  layer roll `Next(5)`, pick a neighbour — **the C#'s `default` case
+  resolves `num3 = +1` for both switch values 2 and 3**, so the shards
+  never grow upward — need the cell empty, keep the radius-6 density
+  under 2 and place tile 129 with the style `Next(18)` (the big shards
+  `18 + Next(6)` at 1/50).
+- **The app pass** (`world_sim/growth.rs`): the 60 Hz `growth_step` after
+  the TE pass, the `growth_rng` stream seeded from the world seed, the
+  rain state from `rain.is_raining()`.
+
+Deviations: the vines/moss (the grass-growth pass `:74269+`), the
+tree/cactus growth and the biome spread are M7-GROWTH-2; the
+notTheBees/remix loop variants are skipped (no such seeds); the
+`hardUpdateWorld` shards run unconditionally in the port (the hardmode
+gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
+
+## Biome passes (M1.4-WGEN-1)
+
+The overworld biomes the compact generator lacked — the jungle, the evil
+band, the glowing mushroom patches, the granite/marble caves and the
+dungeon — land as `worldgen/biomes.rs` in the C# pass order (before the
+caves, so the caves cut through them; the dungeon carves after the
+liquids to keep its shafts dry):
+
+- **The jungle** (`JunglePass` + `MudCavesToJungleGrass`): the west-edge
+  band (`beach + 40 .. width/3`) converts the dirt/stone surface band to
+  the mud (59) with the jungle grass (60) on top and the mud walls (64)
+  down to the rock layer, plus the leaky mud blobs past the band edges;
+  the surface dips every ~40 columns carve the shallow water pockets
+  (`SurfaceWaterInJungle`'s shape).
+- **The evil band** (`CorruptionAndCrimson`): the stone+grass band east of
+  spawn converts to the evil set — the corruption (the corrupt grass 23 /
+  the ebonstone 25 / the walls 3) or the crimson (199/203/192) by
+  `GenOptions.crimson`, fed from the UI's `_optionEvil` (the Random choice
+  rolls from the seed's high bit, `roll_crimson`). The chasms: 3-4
+  wandering widening shafts with the evil-stone sheaths, cut down past the
+  rock layer.
+- **The mushroom patches** (`GlowingMushroomPatches`): 1-2 domes in the
+  cavern layer near the jungle — the mud cores with the mushroom grass
+  (70) shells and the mushroom walls (74).
+- **The granite/marble caves** (`Granite`/`Marble`): 1-2 blob caves each
+  in the stone (the granite 368 / the marble 367, the walls 180/178).
+- **The dungeon** (`Dungeon` + `DungeonCrawler`): the entrance tower at
+  the snow side, the carved shaft, and 3 corridor levels stepping to the
+  bottom with the brick lining (41/43/44 by the world's dungeon roll) and
+  the dungeon walls (7).
+- The tree placement grew the soil set (the jungle/corrupt/crimson/
+  mushroom grasses grow trees like the forest grass).
+
+Deviations: the port reproduces the vanilla SHAPES with its own
+deterministic noise/blob machinery — the exact tile-level layouts of the
+C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
+jungle shrines, the temple, the pyramids and the biome chests are the
+follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
+tiny worlds collapse the evil band and guard every range.

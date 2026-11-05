@@ -109,10 +109,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
-    // `Player.CanUseItem`'s fed gate + the food consumption (`:14353`):
-    // a food item (buff 26/206/207) eats on the use press while NOT
-    // wellFed — the buff rides the slot system, the count decrements, and
-    // the swing plays (`useStyle 9`'s eating animation).
+    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
+    // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
+    // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
+    // mana pay (`CheckMana`).
     if app.mine_down && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| {
@@ -145,6 +145,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 return;
             }
         }
+        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
+        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
+        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
+        // clamps to max, the count decrements.
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.potion && d.heal_life > 0
+        }) {
+            let Some(def) = def else { unreachable!() };
+            let sick = player
+                .buffs
+                .find_buff_index(21)
+                .is_some();
+            if !sick {
+                let heal = def.heal_life;
+                if let Some(p) = app.player.as_mut() {
+                    p.hp = (p.hp + heal).min(p.max_hp);
+                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                    // rides `Item.potionDelay` = 3600 (60 s).
+                    p.buffs.add_buff(21, 3600);
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
     }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
@@ -153,7 +187,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
-        if app.attack_cd <= 0.0 && throw_ready {
+        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+            // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
+            // `item.mana * manaCost` (the multiplier is the 1f base — the
+            // accessories fold out); a failed check blocks the use. The pay
+            // resets the mana regen delay (`apply_mana_regen_delay`).
+            let mana_cost = registry::get(held.kind).map(|d| d.mana).unwrap_or(0);
+            // The mutable player borrow covers the whole throw (the mana
+            // pay + the reads the block makes through it).
+            let Some(p) = app.player.as_mut() else { unreachable!() };
+            if mana_cost > 0 {
+                // `Player.CheckMana`'s pay arm: a failed check blocks the use.
+                if p.mana < mana_cost {
+                    return;
+                }
+                p.mana -= mana_cost;
+                crate::regen::apply_mana_regen_delay(
+                    &mut p.regen,
+                    p.mana_max,
+                    p.mana,
+                    false,
+                );
+            }
+            // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
+            // rides the use start.
+            if let Some(d) = registry::get(held.kind) {
+                app.reuse_delay = d.reuse_delay as f32 / 60.0;
+            }
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
             // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
@@ -163,19 +223,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
-                let (pcx, pcy) = player.center();
+                let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
                     let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
                     let raw =
-                        def.damage as f32 * player.weapon_damage_multiplier(class);
+                        def.damage as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
-                        tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
                     let slot = app.projectiles.spawn_with_data(
                         proj,
                         spawn.x,
@@ -203,8 +263,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
         return;
     }
+    if app.reuse_delay > 0.0 {
+        app.reuse_delay = (app.reuse_delay - dt).max(0.0);
+    }
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    if app.mine_down && app.attack_cd <= 0.0 && !app.inventory_open {
+    if app.mine_down && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && !app.inventory_open {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let reach2 = 4.0 * TILE_PX;
@@ -242,6 +305,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 n.hurt(dmg, pcx, 5.5, crit);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
+        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
+        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
+        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
+        // clamps to max, the count decrements.
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.potion && d.heal_life > 0
+        }) {
+            let Some(def) = def else { unreachable!() };
+            let sick = player
+                .buffs
+                .find_buff_index(21)
+                .is_some();
+            if !sick {
+                let heal = def.heal_life;
+                if let Some(p) = app.player.as_mut() {
+                    p.hp = (p.hp + heal).min(p.max_hp);
+                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                    // rides `Item.potionDelay` = 3600 (60 s).
+                    p.buffs.add_buff(21, 3600);
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
                 app.attack_cd = app.swing_max;
@@ -367,6 +464,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         .map(|d| d.use_time as f32 / 60.0)
         .filter(|t| *t > 0.0)
         .unwrap_or(swing_secs);
+    // `Player.channel` (`Item.cs:52960-52965` sets it; `Player.cs:43576`'s
+    // `if (!this.channel)` guards the animation decrement): while the
+    // button is held the item's animation HOLDS instead of ending — the
+    // channel persists until the release.
+    let channels = timings.is_some_and(|d| d.channel) && app.mine_down && !held_weapon;
+    if channels && app.swing <= 0.0 {
+        // The hold: the animation stays at the last frame.
+        app.swing = 0.2;
+        app.attack_cd = app.attack_cd.max(0.2);
+    }
     let swing_over = app.swing <= 0.0;
     let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
     let starting = swing_over && reuse_ready;
