@@ -293,6 +293,14 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::CaveBat => {
+            // The net spawn hangs the bat at the net Y (the cave air).
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_cave_flyer(world, tx, y)?
+        }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
     };
     npc.x = n.x;

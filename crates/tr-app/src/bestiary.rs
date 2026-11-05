@@ -135,6 +135,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Guide",
     },
+    BestiaryEntryDef {
+        credit_id: "Skeleton",
+        net_id: 21,
+        kind: NpcKind::Skeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "UndeadMiner",
+        net_id: 44,
+        kind: NpcKind::UndeadMiner,
+        variant: None,
+        quick_unlock: false,
+        name: "Undead Miner",
+    },
+    BestiaryEntryDef {
+        credit_id: "CaveBat",
+        net_id: 49,
+        kind: NpcKind::CaveBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Cave Bat",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

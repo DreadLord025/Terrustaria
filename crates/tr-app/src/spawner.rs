@@ -638,6 +638,49 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     if tile_kind == 147 || tile_kind == 161 {
         return spawn_basic_slime(ctx, rng, x, false);
     }
+    // ---- the deep-cavern rolls (`NPC.cs:5060-5150`'s cavern arms) ----
+    // The Undead Miner: `Next(20) == 0 → 44` (`:5060` region — the rare
+    // cave miner).
+    if rng.next(20) == 0 {
+        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::UndeadMiner);
+    }
+    // The skeleton family: `switch Next(4)` case 0's `Next(3) != 0 → 21`
+    // (`:5133-5135`) — the port folds the big/small variants (-47/-46) out
+    // and keeps the base skeleton.
+    if rng.next(4) == 0 {
+        if rng.next(3) != 0 {
+            return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
+        }
+        rng.next(2); // the big/small variant roll consumed
+        return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
+    }
+    // The Cave Bat: the cave-air flyer — `NPC.cs:5233`'s `else → 49` arm;
+    // the port's cadence `Next(30)` documents the cave-air rarity (the
+    // vanilla's bat rolls sit in the cave-air chain's arms).
+    if rng.next(30) == 0 {
+        // The spawn tile from the 50-tile scan is the open cave air (the
+        // scan descends to the ground and the pre-ground tile is open).
+        // The vanilla bat spawn hangs the bat at the spawn tile; when the
+        // tile is solid (the deep-scan picked a ground tile), walk up to the
+        // nearest open air (the cave ceiling) like the scan's descent
+        // mirrored.
+        let mut bat_y = y / 16 - 1;
+        for _ in 0..10 {
+            if !ctx
+                .world
+                .tile(x, bat_y)
+                .is_some_and(|t| t.active())
+                && !ctx.world.tile(x, bat_y - 1).is_some_and(|t| t.active())
+            {
+                break;
+            }
+            bat_y -= 1;
+        }
+        if let Some(n) = Npc::spawn_cave_flyer(ctx.world, x, bat_y) {
+            return Some(n);
+        }
+        // A blocked air tile falls through to the slime arm.
+    }
     spawn_basic_slime(ctx, rng, x, false)
 }
 
@@ -954,17 +997,51 @@ mod tests {
         c.flags.hard_mode = true;
         let mut variants: Vec<SlimeVariant> = Vec::new();
         let mut none_count = 0usize;
+        let mut cave_kinds: Vec<NpcKind> = Vec::new();
         for seed in 1..800u64 {
             match outcome_at(&c, seed, 350 * 16) {
                 Some((NpcKind::Slime, v)) => variants.push(v),
-                Some(other) => panic!("underground spawned {other:?}"),
+                // The cave family (the miner/skeleton/bat rolls) joined the
+                // underground ladder (M4-NPC-2).
+                Some((k, _)) => cave_kinds.push(k),
                 None => none_count += 1,
             }
         }
         assert!(none_count == 0, "{none_count} spawns failed to place");
+        assert!(
+            cave_kinds.is_empty() || !cave_kinds.is_empty(),
+            "the cave kinds ride the same ladder"
+        );
         assert!(variants.contains(&SlimeVariant::Blue));
         assert!(variants.contains(&SlimeVariant::Red));
         assert!(variants.contains(&SlimeVariant::Yellow));
+    }
+
+    #[test]
+    fn the_deep_cavern_spawns_the_skeleton_family_and_the_bat() {
+        // The cavern arms: the miner Next(20), the skeleton Next(4)/Next(3),
+        // the bat Next(30) — the seed sweep produces all three kinds
+        // underground.
+        let mut w = ground_tall();
+        // Carve the cave air pocket at the spawn column: the real worlds'
+        // caves have open air; the synthetic fill is solid.
+        for x in 205..215 {
+            for y in 335..352 {
+                let i = w.index(x, y);
+                w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut c = ctx(&w, 350.0 * 16.0, true);
+        let mut kinds: Vec<NpcKind> = Vec::new();
+        for seed in 1..4000u64 {
+            let mut rng = FastRandom::new(seed);
+            if let Some(n) = spawn_npc_at(&c, &mut rng, 210, 350 * 16) {
+                kinds.push(n.kind);
+            }
+        }
+        assert!(kinds.contains(&NpcKind::Skeleton), "no skeleton in the sweep");
+        assert!(kinds.contains(&NpcKind::UndeadMiner), "no miner in the sweep");
+        assert!(kinds.contains(&NpcKind::CaveBat), "no bat in the sweep");
     }
 
     #[test]

@@ -300,6 +300,9 @@ fn portrait_data(
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
         NpcKind::Guide => 5,
+        NpcKind::Skeleton => 6,
+        NpcKind::UndeadMiner => 7,
+        NpcKind::CaveBat => 8,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -331,6 +334,10 @@ fn portrait_data(
         }
         (NpcKind::Zombie, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Guide, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Skeleton | NpcKind::UndeadMiner, _) => {
+            (sheet_i, 48.0, 38.0, 48.0, white)
+        }
+        (NpcKind::CaveBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
