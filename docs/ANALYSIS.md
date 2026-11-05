@@ -3804,3 +3804,35 @@ Deviations: the wall-lining pass (the 25·scale cave cavities lined with
 the hallowed walls 200-203, `:31668-31697`) is the follow-up; the altar
 ore drops (the adamantite/etc.) and the WoF summon/kill are the
 M4-NPC/M4-LOOT tasks; the remix jungle-V arm is out (no remix worlds).
+
+## Hardmode ores (M5-HARDFORCE-ores)
+
+The altar-smash ore seeding — the second generation half of the hardmode
+switch (`WorldGen.cs:48920-49090`):
+
+- **The tiers** (`:48947-49040`): the altar count % 3 → the cobalt 107 /
+  the palladium 221 (the count ×1.05), the mythril 108 / the orichalcum
+  222, the adamantite 111 / the titanium 223 (the alternates bump the
+  blob strength +9 via `num4` and the count ×0.9); the 50/50 rolls save
+  into `SavedOreTiers` (−1 = not rolled).
+- **The blob count** (`:48935-48937`): `(maxTilesX/4200 · 310 − 85·tier)
+  · 0.85 / (tier + 1)` — the tier-3 blobs need the full-scale world (the
+  small worlds genuinely get 0 blobs for the adamantite — the C#'s
+  minimum 4200-wide world yields ~39).
+- **The bands** (`:49045-49058`): the cobalt/palladium from
+  `worldSurface`, the mythril/orichalcum from `rockLayer`, the
+  adamantite/titanium from `(2·rockLayer + maxTilesY) / 3`, all down to
+  `maxTilesY − 150` — the bands stay separated by construction.
+- **`OreRunner`** (`:48831-48900`): the random walk with the velocity
+  `Next(-10, 11) · 0.1`, placing the shrinking Manhattan discs —
+  `strength · (steps_left / steps)` with the rim wobble
+  `Next(-10, 11) · 0.015` — over the replace set {0, 1, 23, 25, 40, 53,
+  57, 59, 60, 70, 109, 112, 116, 117, 147, 161, 163, 164, the moss,
+  199, 200, 203, 234, 396-403, 225 unless the hive wall 108}.
+- **The app smash**: the hammer hit (the mining path) on the altar 26 in
+  hardmode runs `smash_altar` — `World.altars_smashed` counts, the App's
+  `ore_tiers` saves the rolls.
+
+Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
+follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
+swapping is out; the ore walls (`wallType`) are out.

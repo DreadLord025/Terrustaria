@@ -321,6 +321,8 @@ pub(crate) struct App {
     pub(crate) growth_step: FixedStepper,
     /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
     pub(crate) growth_rng: tr_core::tile_light::FastRandom,
+    /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
+    pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
@@ -1441,6 +1443,7 @@ impl App {
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
+            ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain,
             ambient_waterfall,
             ambient_lavafall,
