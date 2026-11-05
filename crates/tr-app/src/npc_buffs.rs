@@ -159,6 +159,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // King Slime: `{ 50, [20, 31] }` (`NPCID.cs:6386-6392`).
         // The Guide: no immunities (the town NPCs have no data rows).
         NpcKind::Guide => &[],
+        NpcKind::Merchant => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],

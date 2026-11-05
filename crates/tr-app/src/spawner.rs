@@ -447,6 +447,27 @@ pub fn spawn_npc_call(
     }
 }
 
+/// `NPC.SpawnAllowed_Merchant` (`NPC.cs:7175-7219`): the players'
+/// inventories' copper total reaches 5000 (50 silver — the copper x1, the
+/// silver x100, the gold x10000, the platinum x1000000). The port reads the
+/// local player's inventory (id, stack) pairs.
+pub fn spawn_allowed_merchant(inventory: &[(u16, u32)]) -> bool {
+    let mut total = 0u64;
+    for &(id, stack) in inventory {
+        match id {
+            71 => total += stack as u64,
+            72 => total += stack as u64 * 100,
+            73 => total += stack as u64 * 10000,
+            74 => total += stack as u64 * 1000000,
+            _ => {}
+        }
+        if total >= 5000 {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
