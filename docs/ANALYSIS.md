@@ -3530,3 +3530,49 @@ the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
 Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
 port's blob dome (the shape-level port); the Queen Bee summon from the
 larva and the fort doors = the follow-ups.
+
+## Biome spread (M5-SPREAD-2)
+
+`hardUpdateWorld`'s infection arms (`WorldGen.cs:69645-69860`) — the
+living world's evil/crimson/chlorophyte evolution:
+
+- **The spread sets** (`TileID.cs:580/:589`): the corruption {23, 661, 25,
+  112, 398, 400, 163, 32, 636, 24} and the crimson {199, 662, 203, 234,
+  399, 401, 200, 352, 205, 201} — the corrupt grass, the ebonstone/
+  crimstone, the ebonsand/crimsand, the hardened sand, the sandstone, the
+  ice and the thorn kinds.
+- **The Convert map** (`Convert`, `:55139-55205`): the grass family (2,
+  477, 60, 69) → the corrupt grass 23 / the crimson grass 199 (the jungle
+  grass 60 → 662 in the crimson), the stone + the moss → the ebonstone 25
+  / the crimstone 203, the sand 53 → the ebonsand 112 / the crimsand 234,
+  the ice 161 → the purple 163 / the red 200, the hardened sand 397 →
+  398/399, the sandstone 396 → 400/401. The natural walls convert too —
+  the stone wall 1 → the ebonstone wall 3 / the crimson wall 192, the
+  dirt wall 2 → 69/193 (the natural-wall slice of the C#'s
+  `WallID.Sets.Conversion` tables).
+- **The spread loop** (`:69696-69860`): the ±3 random target, the
+  chlorophyte defence (`nearbyChlorophyte` within 5 → the loop breaks —
+  `ChlorophyteDefense` itself converts only in the remix worlds,
+  `:69456-69460`), the sunflower (27) suppression within 2 tiles
+  (`CountNearBlocksTypes(i, j, 2, 1, 27)`), and the conversions with the
+  `Next(2) == 0` re-roll chain (the spreading tile walks the ±3 window
+  converting until the roll fails).
+- **The chlorophyte** (`:69646-69685`): the 211 chlorophyte + the 346
+  chlorophyte-jungle-grass sources grow into the mud (59) and the jungle
+  grass (60) via `Convert(..., 8)`, gated by `CanChlorophyteGrow`
+  (`:69464-69500` — the chlorophyte count in the radius-35 box ≤ 40 (the
+  box ×1.5 and the count cap /2 above the rock layer) and ≤ 130 in the
+  radius-85 box) plus the ±6 random re-scan.
+- **The gates**: the post-PlantBoss worlds halve the spread (`Next(2) !=
+  0`, `:69688-69691`); `AllowedToSpreadInfections` (the creative
+  spread-stop power) freezes it.
+- **The app call**: the spread rides the growth pass's underground picks
+  (`world_sim/growth.rs`) — one `hard_update_world` per tick on a random
+  cavern-layer column.
+
+Deviations: the thorn bushes (32/352) spread by the set membership but
+grow no bush tiles (the plant placement = the follow-up); the wall
+conversion covers the natural-wall slice (the C#'s tables span the brick
+walls too); the remix `ChlorophyteDefense` conversion is out (no remix
+worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
+unconditionally).

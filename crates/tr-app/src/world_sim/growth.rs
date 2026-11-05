@@ -16,6 +16,12 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // The port has no freeze-time power and runs at the day rate 1
         // (`Main.desiredWorldTilesUpdateRate` = `dayRate`).
         tr_core::growth::update_world(world, 1, raining, false, day_time, &mut rng);
+        // `hardUpdateWorld`'s spread arms ride the same picks (the port
+        // runs them unconditionally — the hardmode gate waits for
+        // M5-HARDFORCE; `downedPlantBoss` false = the full rate).
+        let sx = rng.next_range(10, world.width - 10);
+        let sy = rng.next_range(world.rock_layer as i32, world.height - 40);
+        tr_core::spread::hard_update_world(world, sx, sy, false, true, &mut rng);
     });
     app.growth_step.cap_backlog();
 }

@@ -1356,7 +1356,8 @@ section in brackets before starting a row.
 | M5-ORES-1 | `M5-ORES-1-tilerunner` | ore fidelity + alt tiers [6] |
 | M5-HARDFORCE | `M5-HARDFORCE` | initializeHardMode + altars [6] |
 | M5-SPREAD-1 | `M5-SPREAD-1-growth` | growth ticks [20] |
-| M5-SPREAD-2 | `M5-SPREAD-2-evil-chlorophyte` | spread + chlorophyte [20] |
+| ✅ M5-SPREAD-2 | `M5-SPREAD-2-evil-chlorophyte` | done 2026-11-05: `tr-core/src/spread.rs` — `hardUpdateWorld`'s infection arms (`WorldGen.cs:69645-69860`): the spread sets (`SpreadsCorruption` {23, 661, 25, 112, 398, 400, 163, 32, 636, 24} / `SpreadsCrimson` {199, 662, 203, 234, 399, 401, 200, 352, 205, 201} `TileID.cs:580/:589`), the `Convert` tile map (`:55139-55205`: the grass 2/60 → 23/199/662, the stone → 25/203, the sand → 112/234, the ice → 163/200, 397→398/399, 396→400/401; the natural walls 1→3/192, 2→69/193), the spread loop (the ±3 random target, the `Next(2) == 0` re-roll chain, the sunflower-27 suppression `CountNearBlocksTypes(i, j, 2, 1, 27)`, `ChlorophyteDefense` — the remix-only conversion, the normal worlds just break), the chlorophyte arms (the 211/346 sources grow into the mud/the jungle grass via `CanChlorophyteGrow` `:69464-69500` — the density gates 40/130 with the ×1.5 rock-layer box), the post-PlantBoss rate halving (`Next(2) != 0`) and the `AllowedToSpreadInfections` gate; the app call rides the growth picks (`world_sim/growth.rs`) — 5 tests (the Convert map, the neighbour conversions + the wall, the sunflower/defence, the chlorophyte growth, the gates); the thorn bush growth (32/352) and the wall-brick conversion tables = the follow-ups |
+| M5-SPREAD-1 | `M5-SPREAD-1-growth` | growth ticks [20] |
 | M5-CHEST-gen | `M5-CHEST-gen` | chest loot generation |
 | M5-SEED-1 | `M5-SEED-1-classic-seeds` | drunk/FTW/remix/anniv/DST [30] |
 | M5-SEED-2 | `M5-SEED-2-micro-seeds` | 38 modular seeds [30] |
