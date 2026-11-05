@@ -132,8 +132,10 @@ pub fn actuation_square_frame(world: &mut World, x: i32, y: i32) -> Vec<ObjectDr
 }
 
 /// The body of `KillTile` plus the shared `WorldGen.destroyObject` flag
-/// (:4236). The checks re-entered through the cascade's own `KillTile` calls
-/// early-return while the flag is set, exactly like the C# static.
+/// (:4236). The guarded checks re-entered through the cascade's own `KillTile`
+/// calls early-return while the flag is set; the unguarded `CheckAlch`,
+/// `CheckOnTable1x1` and `CheckPile`-1x1 run and kill straight through it —
+/// exactly like the C# static.
 fn kill_tile_cascading(
     world: &mut World,
     x: i32,
@@ -186,8 +188,13 @@ fn square_tile_frame(
             continue;
         }
         // `Check*` re-entrancy guard (`WorldGen.destroyObject`, read at
-        // :57926/:86341/:86435/:43338/:46976/:49190).
-        if *destroy_object {
+        // :43338/:46976/:49190/:53732/:56800/:57926/:86341/:86434): only the
+        // multi-tile object checks carry the entry guard. `CheckAlch`
+        // (:45972-46092), `CheckOnTable1x1` (:43503-43546) and `CheckPile`'s
+        // 1x1 body (:46875-46971) have none — they run and kill while another
+        // object's kill loop is in flight.
+        let guarded = destroy_object_guarded(cell);
+        if *destroy_object && guarded {
             continue;
         }
         let Some(plan) = check_object(world, cx, cy) else {
@@ -214,21 +221,63 @@ fn square_tile_frame(
         if let Some(event) = plan.pot_event {
             kill.events.push(event);
         }
-        // The shared tail of every `Check*`: `destroyObject = true`, kill
-        // every object cell of the type (`WorldGen.cs:57941-57952`,
-        // :86414-86428, :86494-86502, :43466-43472, :47108-47115,
-        // :49416-49423), `destroyObject = false`. Each `KillTile` is a full
-        // recursive kill (inner `SquareTileFrame`), but the flag keeps the
-        // re-entered checks silent until the loop ends — a supported object
+        // The guarded checks' shared tail: `destroyObject = true`, kill every
+        // object cell of the type (`WorldGen.cs:57941-57952`, :86414-86428,
+        // :86494-86502, :43466-43472, :47108-47115, :49416-49423),
+        // `destroyObject = false`. Each `KillTile` is a full recursive kill
+        // (inner `SquareTileFrame`), but the flag keeps the re-entered
+        // guarded checks silent until the loop ends — a supported object
         // whose support died inside the loop stays put until a later break
         // near it (`WorldGen.cs:49841` resets the flag last in `Check3x2`).
-        *destroy_object = true;
-        for (mx, my) in plan.cells {
-            if let Some(inner) = kill_tile_cascading(world, mx, my, no_item, destroy_object) {
-                kill.object_drops.extend(inner.object_drops);
-            }
+        // The unguarded checks call `KillTile` plainly (:43513-43543, :46091,
+        // :46910): the flag passes through unchanged, so a herb or a clay pot
+        // dies inside another object's loop while that loop's own silence
+        // holds.
+        if guarded {
+            *destroy_object = true;
+            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
+            *destroy_object = false;
+        } else {
+            kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
         }
-        *destroy_object = false;
+    }
+}
+
+/// Whether the cell's `Check*` routine carries the `WorldGen.destroyObject`
+/// entry guard and wraps its kill loop in the flag. The multi-tile object
+/// checks do (`Check1x2` :43337/:43442-43500, `Check2x1` :46976/:47108-47363,
+/// `Check3x2` :49190/:49417-49841, `CheckSunflower` :53732/:53779-53791,
+/// `CheckPot` :56800/:56855-57015, `CheckChest` :57926/:57970-57986,
+/// `CheckDoorOpen` :86341/:86414-86428, `CheckDoorClosed` :86434/:86495-86510);
+/// `CheckAlch` (:45972-46092), `CheckOnTable1x1` (:43503-43546) and
+/// `CheckPile`'s 1x1 body (:46875-46971) have neither. `CheckPile` hands its
+/// 2x1 variant (`frameY == 18`, :46899-46902 — the echo 649 is not in the
+/// registry) to the guarded `Check2x1`, so only the 1x1 pile runs unwrapped.
+fn destroy_object_guarded(cell: &Tile) -> bool {
+    match cell.kind {
+        78 | 82 | 83 | 84 => false,
+        185 => cell.frame_y == 18,
+        _ => true,
+    }
+}
+
+/// Kills a plan's cells — one recursive `KillTile` per cell — and folds every
+/// nested record into `kill`: a nested `KillTile` runs the full cascade in the
+/// C#, so its drops, pot loot, herb rolls and pile loot all surface.
+fn kill_plan_cells(
+    world: &mut World,
+    cells: &[(i32, i32)],
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    for &(mx, my) in cells {
+        if let Some(inner) = kill_tile_cascading(world, mx, my, no_item, destroy_object) {
+            kill.object_drops.extend(inner.object_drops);
+            kill.events.extend(inner.events);
+            kill.herb_events.extend(inner.herb_events);
+            kill.pile_events.extend(inner.pile_events);
+        }
     }
 }
 
@@ -3225,6 +3274,12 @@ mod tests {
     /// (its 3x3 covers x 10..=12). All three alch kinds carry the
     /// frame-important boot static (`Main.cs:7685-7687`) because the
     /// Fireblossom blink rewrites the kind under the cascade's re-frame.
+    /// The soil row rests on a stone row at y = 21: the pot soils 78/380 are
+    /// registry kinds whose `CheckOnTable1x1` (:43534-43540) kills an
+    /// unsupported pot mid-cascade — taking the herb with it (:45983-45990)
+    /// — so the "survives on its own soils" scenario needs the pots
+    /// supported, as a planted pot always is. The row is inert for the plain
+    /// soils (nothing frames or judges y = 21).
     fn herb_world(soil: u16, kind: u16, frame_x: i16) -> World {
         let mut w = soil_world(soil);
         set_object_cell(&mut w, 10, 19, kind, frame_x, 0);
@@ -3232,6 +3287,9 @@ mod tests {
             w.frame_important[*alch as usize] = true;
         }
         set_active(&mut w, 11, 19, 1);
+        for x in 0..40 {
+            set_active(&mut w, x, 21, 1);
+        }
         w
     }
 
@@ -3375,6 +3433,41 @@ mod tests {
         let mut w = herb_world(1, 82, 162); // style 9 on stone
         trigger_at(&mut w, 11, 19);
         assert!(w.tile(10, 19).unwrap().active(), "no case: unchecked");
+    }
+
+    #[test]
+    fn test_DW_2_1_herb_in_a_pot_dies_when_the_pot_cascade_kills() {
+        // Neither `CheckOnTable1x1` (:43503-43546) nor `CheckAlch`
+        // (:45972-46092) carries the `destroyObject` guard or wraps its
+        // `KillTile` in the flag: breaking the floor under a potted herb
+        // kills the pot through its own check, and the pot's plain `KillTile`
+        // re-frames the herb cell, whose `CheckAlch` sees the vanished
+        // support (78 is in every style's soil set, :45998-46086) and kills
+        // it — the herb's drop roll (`KillTile_GetItemDrops` :65674-65698)
+        // rides out of the nested kill as an event.
+        let mut w = clay_pot_world();
+        set_object_cell(&mut w, 10, 18, 83, 0, 0);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 1, "the floor block is the hit cell");
+        assert_all_gone(&w, &[(10, 19), (10, 18)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 78,
+                x: 10,
+                y: 19,
+                item: None,
+            }]
+        );
+        assert_eq!(
+            kill.herb_events,
+            vec![HerbEvent {
+                kind: 83,
+                style: 0,
+                x: 10,
+                y: 18
+            }]
+        );
     }
 
     /// The eight cells of the canonical style-0 sunflower at (10..11,
@@ -4131,6 +4224,96 @@ mod tests {
         assert!(
             w.tile(10, 19).unwrap().active(),
             "actuated table still holds the pot"
+        );
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_on_a_table_dies_when_the_table_cascade_kills() {
+        // `CheckOnTable1x1` has no `destroyObject` guard (:43503-43546), so
+        // when the registry table's `Check3x2` kill loop (:49416-49423) takes
+        // the pot's support cell, the re-framed pot is re-checked inside the
+        // loop and dies — while the table's own cells stay silent (guarded).
+        // Its 222 record (`KillTile_GetItemDrops` case 78, :64711-64713)
+        // rides out of the nested kill after the table's own record.
+        let mut w = object_world();
+        // Style-0 table 3x2 at (10..12, 18..19); the pot stands on the
+        // top-middle cell.
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                set_object_cell(&mut w, 10 + dx, 18 + dy, 14, (dx * 18) as i16, (dy * 18) as i16);
+            }
+        }
+        set_object_cell(&mut w, 11, 17, 78, 0, 0);
+        // The hit bottom-left table cell is two rows below the pot: the pot
+        // survives the first framing pass (its support is still alive) and
+        // its verdict comes from inside `Check3x2`'s flag-wrapped loop.
+        let kill = kill_tile(&mut w, 10, 19, false).unwrap();
+        assert_eq!(kill.kind, 14);
+        assert_all_gone(
+            &w,
+            &[
+                (10, 18),
+                (10, 19),
+                (11, 18),
+                (11, 19),
+                (12, 18),
+                (12, 19),
+                (11, 17),
+            ],
+        );
+        assert_eq!(
+            kill.object_drops,
+            vec![
+                ObjectDrop {
+                    tile_kind: 14,
+                    x: 10,
+                    y: 18,
+                    item: None,
+                },
+                ObjectDrop {
+                    tile_kind: 78,
+                    x: 11,
+                    y: 17,
+                    item: None,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_on_a_workbench_dies_when_the_bench_cascade_kills() {
+        // The review's repro: the bench (`Check2x1`, guarded :46976) holds
+        // the pot through `Main.tileTable[18]` (`Main.cs:8034`) while alive;
+        // killing the far bench cell re-frames the pot inside `Check2x1`'s
+        // kill loop (:47108-47115), where the ungated `CheckOnTable1x1`
+        // (:43503-43546) kills it — mid-loop, with the flag still in flight.
+        let mut w = object_world();
+        // Work bench 2x1 at (10..11, 20); the pot on its left cell.
+        set_object_cell(&mut w, 10, 20, 18, 0, 0);
+        set_object_cell(&mut w, 11, 20, 18, 18, 0);
+        set_object_cell(&mut w, 10, 19, 78, 0, 0);
+        // Mine the bench cell that is not the pot's support: the first
+        // framing pass anchors the pot (the table arm, :43530-43532), the
+        // kill loop's re-frame kills it.
+        let kill = kill_tile(&mut w, 11, 20, false).unwrap();
+        assert_eq!(kill.kind, 18);
+        assert_all_gone(&w, &[(10, 20), (11, 20), (10, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![
+                ObjectDrop {
+                    tile_kind: 18,
+                    x: 10,
+                    y: 20,
+                    item: None,
+                },
+                ObjectDrop {
+                    tile_kind: 78,
+                    x: 10,
+                    y: 19,
+                    item: None,
+                },
+            ]
         );
     }
 
