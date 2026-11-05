@@ -268,7 +268,32 @@ pub struct TileObjectInstance {
 /// (`TileObjectData.cs:1743-1803`) and `Initialize` (:2117-2133), and
 /// `LavaDeath=true` is pre-folded into `lava_placement = NotAllowed` exactly
 /// like `Calculate` does (:1821-1831).
-pub const TABLE: &[TileObjectDef] = &[DOOR_CLOSED, DOOR_OPEN, TABLE_WOOD, CHAIR, WORK_BENCH, CHEST];
+pub const TABLE: &[TileObjectDef] = &[
+    DOOR_CLOSED,
+    DOOR_OPEN,
+    TABLE_WOOD,
+    CHAIR,
+    WORK_BENCH,
+    CHEST,
+    SUNFLOWER,
+    POTS,
+    CLAY_POT,
+    IMMATURE_HERBS,
+    MATURE_HERBS,
+    BLOOMING_HERBS,
+    SMALL_PILES,
+    LARGE_PILES,
+    LARGE_PILES2,
+];
+
+/// `Main.tileAlch` (`Main.cs:7806-7808`): the three herb-stage tiles the legacy
+/// `WorldGen.PlaceTile` dispatcher routes to `PlaceAlch` (`WorldGen.cs:60177-60181`).
+pub const TILE_ALCH: &[u16] = &[82, 83, 84];
+
+/// Membership in [`TILE_ALCH`].
+pub fn tile_alch(kind: u16) -> bool {
+    TILE_ALCH.contains(&kind)
+}
 
 /// `TileObjectData._baseObject` effective defaults
 /// (`TileObjectData.cs:1743-1803` SetupBaseObject; `LavaDeath` folding per
@@ -540,6 +565,306 @@ const CHEST: TileObjectDef = TileObjectDef {
     anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
     frame_important: true, // `Main.cs:7656`
     ..base_def()
+};
+
+// -- sunflower (tile 27) — `TileObjectData.cs:4851-4864` ----------------------
+
+/// The 2x4 sunflower (`:4851-4864`): Origin(0,3), `AnchorBottom = SolidTile`
+/// over the whole width, 18 px bottom row, `AnchorValidTiles` grass family,
+/// `RandomStyleRange = 3` (the three sheet variants resolve through
+/// `CalculatePlacementStyle` + `can_place`'s random slot), `LavaDeath = true`
+/// (folded to `lava_placement = NotAllowed`) and water refused. `DrawYOffset`
+/// is not set; draw-only fields stay unported (module doc).
+const SUNFLOWER: TileObjectDef = TileObjectDef {
+    kind: 27,
+    width: 2,
+    height: 4,
+    origin: Point16::new(0, 3),
+    anchor_bottom: AnchorData::new(anchor_type::SOLID_TILE, 2, 0),
+    anchor_valid_tiles: &[2, 477, 109, 60, 492, 633],
+    coordinate_heights: &[16, 16, 16, 18],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    random_style_range: 3,
+    water_placement: LiquidPlacement::NotAllowed,
+    frame_important: true, // `Main.cs:7663`
+    ..base_def()
+};
+
+// -- loot pots (tile 28) — `TileObjectData.cs:3553-3559` + Style2x2 -----------
+
+/// `Style2x2` preset (`:3451-3460`: 2x2, Origin(0,1), heights 16/16) with the
+/// pot overrides (`:3554-3558`): `ApplyNaturalObjectRules()` (UsesCustomCanPlace
+/// /UsesGlobalLiquidChecks — routing/liquid-death flags, not ported), the
+/// bottom anchor WITHOUT `AnchorType.Table`, horizontal styles, wrap 3.
+const POTS: TileObjectDef = TileObjectDef {
+    kind: 28,
+    width: 2,
+    height: 2,
+    origin: Point16::new(0, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    style_wrap_limit: 3,
+    frame_important: true, // `Main.cs:7664`
+    ..base_def()
+};
+
+// -- clay pot (tile 78) — `TileObjectData.cs:2384-2388` + StyleOnTable1x1 -----
+
+/// `StyleOnTable1x1` preset (`:2324-2334`: 1x1, Table anchor, heights 16) with
+/// the pot overrides (`:2385-2387`): the anchor widened to solid/full-top/
+/// table/side and `LavaDeath = false`. As with the chest (:3468), setting only
+/// `LavaDeath = false` never re-allows lava placement — `SetupBaseObject`
+/// defaults `LavaPlacement = NotAllowed` (:1768) and `Calculate` (:1821-1831)
+/// folds death -> placement only when the flag is true, so the baked
+/// `NotAllowed` stands and the pot refuses lava (`TileObject.cs:342`).
+const CLAY_POT: TileObjectDef = TileObjectDef {
+    kind: 78,
+    width: 1,
+    height: 1,
+    origin: Point16::ZERO,
+    anchor_bottom: AnchorData::new(
+        anchor_type::SOLID_TILE
+            | anchor_type::SOLID_WITH_TOP
+            | anchor_type::TABLE
+            | anchor_type::SOLID_SIDE,
+        1,
+        0,
+    ),
+    coordinate_heights: &[16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    frame_important: true, // `Main.cs:7682`
+    ..base_def()
+};
+
+// -- herbs (tiles 82/83/84) — `TileObjectData.cs:4738-4788` + StyleAlch -------
+
+/// `StyleAlch` with the style-0 anchor set (`:4738-4756`): 1x1, 20 px row,
+/// `AnchorBottom = SolidTile | AlternateTile` over `AnchorAlternateTiles {78}`,
+/// water refused, `LavaDeath = true` (folded to `lava_placement =
+/// NotAllowed`). The herb stage is the tile TYPE (82 immature / 83 mature /
+/// 84 blooming) and the herb KIND is `frameX = 18 * kind` (`PlaceAlch`
+/// `WorldGen.cs:45470-45475`) — the registry entry exists for the kill
+/// cascade's gateway and the frames, because the seed route bypasses
+/// `TileObject.CanPlace` (`Player.cs:39772` excludes 82).
+///
+/// Draw-only fields stay unported (module doc): `DrawYOffset = -2`,
+/// `DrawFlipHorizontal = true`.
+const HERB_BASE: TileObjectDef = TileObjectDef {
+    width: 1,
+    height: 1,
+    origin: Point16::ZERO,
+    anchor_bottom: AnchorData::new(
+        anchor_type::SOLID_TILE | anchor_type::ALTERNATE_TILE,
+        1,
+        0,
+    ),
+    anchor_valid_tiles: &[2, 477, 109, 492],
+    anchor_alternate_tiles: &[78],
+    coordinate_heights: &[20],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    water_placement: LiquidPlacement::NotAllowed,
+    frame_important: true, // `Main.cs:7685`
+    ..base_def()
+};
+
+/// Sub-styles 1-6 (`:4757-4783`) — each `CopyFrom(StyleAlch)` plus its soil
+/// set and liquid overrides. Style 4 (water: 53/116) allows water; style 5
+/// (ash: 57/633) allows lava and drops `LavaDeath`; style 6 (snow) allows
+/// water.
+const HERB_1: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[60],
+    ..HERB_BASE
+};
+const HERB_2: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[0, 59],
+    ..HERB_BASE
+};
+const HERB_3: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[199, 203, 25, 23],
+    ..HERB_BASE
+};
+const HERB_4: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[53, 116],
+    water_placement: LiquidPlacement::Allowed,
+    ..HERB_BASE
+};
+const HERB_5: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[57, 633],
+    lava_placement: LiquidPlacement::Allowed,
+    ..HERB_BASE
+};
+const HERB_6: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[147, 161, 163, 164, 200],
+    water_placement: LiquidPlacement::Allowed,
+    ..HERB_BASE
+};
+
+/// Tile 82 (`:4784`): the base def carries style 0, sub-tiles 1-6 resolve
+/// through `get_tile_data` exactly like C# `SubTiles[style]` (:5136-5144).
+const IMMATURE_HERBS: TileObjectDef = TileObjectDef {
+    kind: 82,
+    subtiles: &[
+        (1, &HERB_1),
+        (2, &HERB_2),
+        (3, &HERB_3),
+        (4, &HERB_4),
+        (5, &HERB_5),
+        (6, &HERB_6),
+    ],
+    ..HERB_BASE
+};
+
+/// Tile 83 — `FullCopyFrom(82)` (`:4785-4786`).
+const MATURE_HERBS: TileObjectDef = TileObjectDef {
+    kind: 83,
+    frame_important: true, // `Main.cs:7686`
+    ..IMMATURE_HERBS
+};
+
+/// Tile 84 — `FullCopyFrom(83)` (`:4787-4788`).
+const BLOOMING_HERBS: TileObjectDef = TileObjectDef {
+    kind: 84,
+    frame_important: true, // `Main.cs:7687`
+    ..MATURE_HERBS
+};
+
+// -- small piles (tile 185) — `TileObjectData.cs:4975-4985` + Style1x1/2x1 ----
+
+/// The `SubTiles[0]` of the small piles (`:4981-4984`): a `Style2x1` copy
+/// (`:2798-2808`) with wrap 53 — selected whenever the tile's `frameY >= 18`
+/// (`GetStyle_SmallPiles` :5303-5310; the frameY-based override is the
+/// tile-based `GetTileData(Tile)` overload, phase-2 cascade material — the
+/// `(type, style)` overload indexes `SubTiles[0]` directly, :5136-5144).
+const SMALL_PILES_2X1: TileObjectDef = TileObjectDef {
+    width: 2,
+    height: 1,
+    origin: Point16::ZERO,
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
+    coordinate_heights: &[16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    style_wrap_limit: 53,
+    frame_important: true, // `Main.cs:7415`
+    ..base_def()
+};
+
+/// Tile 185 (`:4975-4981`): a `Style1x1` copy (`:4238-4250`) — which carries
+/// the shared 11-id `AnchorInvalidTiles` (`:4244` → the list built at
+/// `:2112-2116`, the same list the chest uses) — plus `StyleHorizontal`,
+/// `ApplyNaturalObjectRules()` (not ported) and `GetStyleOverride` (see the
+/// sub-tile above). `LavaDeath = true` folds to `lava_placement = NotAllowed`.
+const SMALL_PILES: TileObjectDef = TileObjectDef {
+    kind: 185,
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 1, 0),
+    anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
+    coordinate_heights: &[16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    subtiles: &[(0, &SMALL_PILES_2X1)],
+    frame_important: true, // `Main.cs:7415`
+    ..base_def()
+};
+
+// -- large piles (tiles 186/187) — `TileObjectData.cs:3285-3312` + Style3x2 ---
+
+/// The large-pile `Style3x2` copy with the shared overrides (`:3286-3290` /
+/// `:3301-3304`): `LavaDeath = false` (baked `lava_placement = NotAllowed`
+/// stands — the Calculate fold only applies when the flag is true) and
+/// `DrawYOffset = 2` (draw-only, unported).
+const LARGE_PILES_BASE: TileObjectDef = TileObjectDef {
+    width: 3,
+    height: 2,
+    origin: Point16::new(1, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    ..base_def()
+};
+
+/// 186's snow/ice sub-styles (`:3291-3294`): 26-31 sit on the snow family,
+/// 32-34 on ice/mushroom grass.
+const LARGE_PILES_SNOW: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[147, 161, 163, 200, 164, 162, 224],
+    ..LARGE_PILES_BASE
+};
+const LARGE_PILES_ICE: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[59, 70],
+    ..LARGE_PILES_BASE
+};
+
+/// Tile 186 (`:3285-3295`): the base def (styles 0-25 carry no valid-tile
+/// list — any solid anchor passes) plus the two sub-style groups.
+const LARGE_PILES: TileObjectDef = TileObjectDef {
+    kind: 186,
+    subtiles: &[
+        (26, &LARGE_PILES_SNOW),
+        (27, &LARGE_PILES_SNOW),
+        (28, &LARGE_PILES_SNOW),
+        (29, &LARGE_PILES_SNOW),
+        (30, &LARGE_PILES_SNOW),
+        (31, &LARGE_PILES_SNOW),
+        (32, &LARGE_PILES_ICE),
+        (33, &LARGE_PILES_ICE),
+        (34, &LARGE_PILES_ICE),
+    ],
+    frame_important: true, // `Main.cs:7416`
+    ..LARGE_PILES_BASE
+};
+
+/// 187's sub-styles (`:3305-3311`): 0-5 jungle grass family, 6-8 ash family,
+/// 29-34 the sand family.
+const LARGE_PILES2_JUNGLE: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[59, 60, 226],
+    ..LARGE_PILES_BASE
+};
+const LARGE_PILES2_ASH: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[57, 58, 75, 76],
+    ..LARGE_PILES_BASE
+};
+const LARGE_PILES2_SAND: TileObjectDef = TileObjectDef {
+    anchor_valid_tiles: &[
+        53, 397, 396, 112, 398, 400, 234, 399, 401, 116, 402, 403,
+    ],
+    ..LARGE_PILES_BASE
+};
+
+/// Tile 187 (`:3301-3312`): `Style3x2` + `StyleWrapLimit = 35`,
+/// `LavaDeath = false`, three sub-style groups.
+const LARGE_PILES2: TileObjectDef = TileObjectDef {
+    kind: 187,
+    style_wrap_limit: 35,
+    subtiles: &[
+        (0, &LARGE_PILES2_JUNGLE),
+        (1, &LARGE_PILES2_JUNGLE),
+        (2, &LARGE_PILES2_JUNGLE),
+        (3, &LARGE_PILES2_JUNGLE),
+        (4, &LARGE_PILES2_JUNGLE),
+        (5, &LARGE_PILES2_JUNGLE),
+        (6, &LARGE_PILES2_ASH),
+        (7, &LARGE_PILES2_ASH),
+        (8, &LARGE_PILES2_ASH),
+        (29, &LARGE_PILES2_SAND),
+        (30, &LARGE_PILES2_SAND),
+        (31, &LARGE_PILES2_SAND),
+        (32, &LARGE_PILES2_SAND),
+        (33, &LARGE_PILES2_SAND),
+        (34, &LARGE_PILES2_SAND),
+    ],
+    frame_important: true, // `Main.cs:7417`
+    ..LARGE_PILES_BASE
 };
 
 /// `TileObjectData.GetTileData(type)` — the tile's base definition
@@ -2592,5 +2917,339 @@ mod tests {
         // (:818-824).
         let obj = can_place(&w, 10, 19, &SPECIFIC, 2, 1, Some(1)).unwrap();
         assert_eq!(obj.random, 7); // 9 - 2
+    }
+
+    // ---- M1.4-TO-4 phase 1 (DW-1.2): the herb/pot/pile registry slice ------
+
+    /// The `world()` fixture floor repainted to `kind` — a support row the
+    /// anchor checks judge.
+    fn floor_of(w: &mut World, kind: u16) {
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i].kind = kind;
+        }
+    }
+
+    #[test]
+    fn test_DW_1_2_herb_pot_pile_geometry_matches_csharp() {
+        // Numbers straight from the builder chains cited on each entry.
+        let sunflower = def_for_tile(27).unwrap();
+        assert_eq!((sunflower.width, sunflower.height), (2, 4)); // :4851-4852
+        assert_eq!(sunflower.origin, Point16::new(0, 3)); // :4853
+        assert_eq!(
+            sunflower.anchor_bottom,
+            AnchorData::new(anchor_type::SOLID_TILE, 2, 0)
+        ); // :4854
+        assert_eq!(sunflower.anchor_valid_tiles, &[2, 477, 109, 60, 492, 633]); // :4859
+        assert_eq!(sunflower.coordinate_heights, &[16, 16, 16, 18]); // :4856
+        assert!(sunflower.style_horizontal); // :4860
+        assert_eq!(sunflower.random_style_range, 3); // :4861
+        assert_eq!(sunflower.water_placement, LiquidPlacement::NotAllowed); // :4863
+        assert_eq!(sunflower.lava_placement, LiquidPlacement::NotAllowed); // :4862 + Calculate
+        assert_eq!(sunflower.coordinate_full_width(), 36);
+        assert_eq!(sunflower.coordinate_full_height(), 74);
+
+        let pots = def_for_tile(28).unwrap();
+        assert_eq!((pots.width, pots.height), (2, 2)); // Style2x2 :3451-3452
+        assert_eq!(pots.origin, Point16::new(0, 1)); // :3453
+        // :3556 — the pot anchor drops the preset's `AnchorType.Table`.
+        assert_eq!(
+            pots.anchor_bottom,
+            AnchorData::new(
+                anchor_type::SOLID_TILE | anchor_type::SOLID_WITH_TOP | anchor_type::SOLID_SIDE,
+                2,
+                0
+            )
+        );
+        assert_eq!(pots.coordinate_heights, &[16, 16]); // :3456
+        assert!(pots.style_horizontal); // :3557
+        assert_eq!(pots.style_wrap_limit, 3); // :3558
+
+        let pot = def_for_tile(78).unwrap();
+        assert_eq!((pot.width, pot.height), (1, 1)); // StyleOnTable1x1 :2324-2325
+        assert_eq!(
+            pot.anchor_bottom,
+            AnchorData::new(
+                anchor_type::SOLID_TILE
+                    | anchor_type::SOLID_WITH_TOP
+                    | anchor_type::TABLE
+                    | anchor_type::SOLID_SIDE,
+                1,
+                0
+            )
+        ); // :2385
+        assert_eq!(pot.coordinate_heights, &[16]); // :2332
+        // :2387 sets only LavaDeath = false — the baked NotAllowed stands
+        // (the chest precedent, :3468).
+        assert_eq!(pot.lava_placement, LiquidPlacement::NotAllowed);
+
+        // Herbs 82/83/84: `FullCopyFrom` chains (:4784-4788) — one shared
+        // shape, stage = tile type.
+        let immature = def_for_tile(82).unwrap();
+        for herb in [immature, def_for_tile(83).unwrap(), def_for_tile(84).unwrap()] {
+            assert_eq!((herb.width, herb.height), (1, 1)); // StyleAlch :4738-4739
+            assert_eq!(herb.coordinate_heights, &[20]); // :4741
+            assert_eq!(herb.coordinate_width, 16); // :4742
+            assert_eq!(herb.coordinate_padding, 2); // :4743
+            assert!(herb.style_horizontal); // :4745
+            assert_eq!(herb.water_placement, LiquidPlacement::NotAllowed); // :4748
+            assert_eq!(herb.lava_placement, LiquidPlacement::NotAllowed); // :4750
+            assert_eq!(
+                herb.anchor_bottom,
+                AnchorData::new(
+                    anchor_type::SOLID_TILE | anchor_type::ALTERNATE_TILE,
+                    1,
+                    0
+                )
+            ); // :4746-4747
+            assert_eq!(herb.anchor_alternate_tiles, &[78]); // the style-0 chain :4756
+        }
+        assert_eq!(immature.subtiles.len(), 6, "sub-styles 1-6 (:4757-4783)");
+
+        let piles = def_for_tile(185).unwrap();
+        assert_eq!((piles.width, piles.height), (1, 1)); // Style1x1 :4238-4239
+        assert_eq!(
+            piles.anchor_bottom,
+            AnchorData::new(ANCHOR_SWTSS, 1, 0) // Style1x1 :4240
+        );
+        assert_eq!(piles.anchor_invalid_tiles.len(), 11, "Style1x1's shared list (:4244)");
+        assert!(piles.style_horizontal); // :4978
+        assert_eq!(piles.subtiles.len(), 1, "SubTiles[0] = the 2x1 variant (:4981-4984)");
+
+        for (kind, wrap) in [(186u16, 0), (187, 35)] {
+            let def = def_for_tile(kind).unwrap();
+            assert_eq!((def.width, def.height), (3, 2)); // Style3x2 :3170-3171
+            assert_eq!(def.origin, Point16::new(1, 1)); // :3172
+            assert_eq!(def.anchor_bottom.tile_count, 3); // :3173
+            assert_eq!(def.coordinate_heights, &[16, 16]); // :3175
+            assert!(def.style_horizontal); // :3177
+            assert_eq!(def.style_wrap_limit, wrap, "kind {kind}"); // 187 only, :3302
+            assert_eq!(def.lava_placement, LiquidPlacement::NotAllowed, "kind {kind} (LavaDeath=false keeps the baked NotAllowed)");
+        }
+        assert_eq!(def_for_tile(186).unwrap().subtiles.len(), 9, "26-31 snow + 32-34 ice (:3291-3294)");
+        assert_eq!(def_for_tile(187).unwrap().subtiles.len(), 15, "0-5 + 6-8 + 29-34 (:3305-3311)");
+    }
+
+    #[test]
+    fn test_DW_1_2_herb_subtile_styles_resolve_anchor_sets() {
+        // `GetTileData(82, style)` (`:5136-5144`): styles 1-6 hit the
+        // sub-tiles, style 0 stays the base — each with its C# soil set.
+        let herb = def_for_tile(82).unwrap();
+        let sets: [(i32, &[u16]); 7] = [
+            (0, &[2, 477, 109, 492]),
+            (1, &[60]),
+            (2, &[0, 59]),
+            (3, &[199, 203, 25, 23]),
+            (4, &[53, 116]),
+            (5, &[57, 633]),
+            (6, &[147, 161, 163, 164, 200]),
+        ];
+        for (style, expected) in sets {
+            let resolved = get_tile_data(herb, style, 0).unwrap();
+            assert_eq!(resolved.anchor_valid_tiles, expected, "style {style}");
+            // Every style keeps the clay-pot alternate anchor (:4756 etc.).
+            assert_eq!(resolved.anchor_alternate_tiles, &[78], "style {style}");
+        }
+        // Style 4 allows water (:4757-4782's subtile chain), style 5 allows
+        // lava and drops LavaDeath, style 6 allows water.
+        assert_eq!(get_tile_data(herb, 4, 0).unwrap().water_placement, LiquidPlacement::Allowed);
+        assert_eq!(get_tile_data(herb, 5, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
+        assert_eq!(get_tile_data(herb, 6, 0).unwrap().water_placement, LiquidPlacement::Allowed);
+        // 83/84 are FullCopyFrom chains — the sub-tiles ride along.
+        for kind in [83u16, 84] {
+            let def = def_for_tile(kind).unwrap();
+            assert_eq!(get_tile_data(def, 5, 0).unwrap().lava_placement, LiquidPlacement::Allowed);
+        }
+        // Small piles: style 0 IS the 2x1 sub-tile (SubTiles[0] non-null,
+        // :4981-4984); any other style falls back to the 1x1 base.
+        let piles = def_for_tile(185).unwrap();
+        assert_eq!(get_tile_data(piles, 0, 0).unwrap().width, 2);
+        assert_eq!(get_tile_data(piles, 0, 0).unwrap().style_wrap_limit, 53);
+        assert_eq!(get_tile_data(piles, 1, 0).unwrap().width, 1);
+        // 186's sparse sub-tiles: 26-31 snow, 32-34 ice, others the base.
+        let large = def_for_tile(186).unwrap();
+        assert_eq!(
+            get_tile_data(large, 26, 0).unwrap().anchor_valid_tiles,
+            &[147, 161, 163, 200, 164, 162, 224]
+        );
+        assert_eq!(get_tile_data(large, 32, 0).unwrap().anchor_valid_tiles, &[59, 70]);
+        assert!(get_tile_data(large, 0, 0).unwrap().anchor_valid_tiles.is_empty());
+        // 187: 0-5 jungle, 6-8 ash, 29-34 sands.
+        let large2 = def_for_tile(187).unwrap();
+        assert_eq!(get_tile_data(large2, 0, 0).unwrap().anchor_valid_tiles, &[59, 60, 226]);
+        assert_eq!(get_tile_data(large2, 6, 0).unwrap().anchor_valid_tiles, &[57, 58, 75, 76]);
+        assert_eq!(
+            get_tile_data(large2, 29, 0).unwrap().anchor_valid_tiles,
+            &[53, 397, 396, 112, 398, 400, 234, 399, 401, 116, 402, 403]
+        );
+        assert!(get_tile_data(large2, 9, 0).unwrap().anchor_valid_tiles.is_empty());
+    }
+
+    #[test]
+    fn test_DW_1_2_sunflower_places_2x4_with_anchors() {
+        let mut w = world();
+        floor_of(&mut w, 2); // grass — in the valid set (:4859)
+        let sunflower = def_for_tile(27).unwrap();
+        // Clicking the bottom row (y = 19, origin (0,3) → origin row 16).
+        let obj = must_place(&w, 10, 19, sunflower, 1);
+        assert_eq!((obj.x_coord, obj.y_coord), (10, 16));
+        assert!(place(&mut w, &obj));
+        // The 8 cells: columns frameX 0/18, rows frameY 0/18/36/54 — the
+        // legacy PlaceSunflower layout (`WorldGen.cs:53658-53668`) through the
+        // generic Place math (`TileObject.cs:56-110`).
+        for (dx, dy) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1), (0, 2), (1, 2), (0, 3), (1, 3)] {
+            let t = w.tile(10 + dx, 16 + dy).unwrap();
+            assert!(t.active() && t.kind == 27, "cell ({},{})", 10 + dx, 16 + dy);
+            assert_eq!((t.frame_x, t.frame_y), ((18 * dx) as i16, (18 * dy) as i16));
+        }
+        // The single click-point scheme: the resolved origin is always the
+        // click shifted by Origin (0,3) — `TileObject.cs:839-844`.
+        assert_eq!((obj.x_coord, obj.y_coord), (10, 16));
+        assert!(w.frame_important[27]);
+    }
+
+    #[test]
+    fn test_DW_1_2_sunflower_anchor_set_and_random_style() {
+        // Every `AnchorValidTiles` entry supports the flower (:4859).
+        for soil in [2u16, 477, 109, 60, 492, 633] {
+            let mut w = world();
+            floor_of(&mut w, soil);
+            assert!(
+                can_place(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_some(),
+                "soil {soil} must support the sunflower"
+            );
+        }
+        // A stone floor is solid but unlisted — refused.
+        let w = world();
+        assert!(
+            can_place(&w, 10, 19, def_for_tile(27).unwrap(), 0, 1, None).is_none(),
+            "stone is not in the sunflower's anchor set"
+        );
+        // RandomStyleRange resolves through the random slot
+        // (`CalculatePlacementStyle` :1990-1998): placement = 0*1 + 0 + random.
+        let mut w2 = world();
+        floor_of(&mut w2, 2);
+        let sunflower = def_for_tile(27).unwrap();
+        let obj = can_place(&w2, 10, 19, sunflower, 0, 1, Some(2)).unwrap();
+        assert_eq!(obj.random, 2);
+        assert!(place(&mut w2, &obj));
+        // frameX = CFW(36) * placement(2) + column(18) = 90 on the right cell.
+        assert_eq!(w2.tile(10, 19).unwrap().frame_x, 72);
+        assert_eq!(w2.tile(11, 19).unwrap().frame_x, 90);
+        // forced_random folds into the range (:788-791); a clear spot for the
+        // next resolution.
+        let obj = can_place(&w2, 20, 19, sunflower, 0, 1, Some(5)).unwrap();
+        assert_eq!(obj.random, 2);
+    }
+
+    #[test]
+    fn test_DW_1_2_pots_natural_anchor_set() {
+        // The pot anchor (:3556) keeps SolidTile/SolidWithTop/SolidSide and
+        // drops the Style2x2 preset's Table.
+        let pots = def_for_tile(28).unwrap();
+        let mut w = world(); // stone floor: solid, flat
+        assert!(can_place(&w, 10, 19, pots, 0, 1, None).is_some());
+        let obj = must_place(&w, 10, 19, pots, 1);
+        assert!(place(&mut w, &obj));
+        // Cells (10..11, 18..19), frames 0/18 × 0/18 (heights 16/16).
+        for (dx, dy) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1)] {
+            let t = w.tile(10 + dx, 18 + dy).unwrap();
+            assert!(t.active() && t.kind == 28);
+            assert_eq!((t.frame_x, t.frame_y), ((18 * dx) as i16, (18 * dy) as i16));
+        }
+        // A table floor is no anchor at all: tables are neither solid nor
+        // solid-top, and the preset's Table type was dropped from the pot's
+        // anchor (:3556), so every branch of the check fails.
+        let mut wt = world();
+        floor_of(&mut wt, 14);
+        assert!(can_place(&wt, 10, 19, pots, 0, 1, None).is_none());
+        assert!(w.frame_important[28]);
+    }
+
+    #[test]
+    fn test_DW_1_2_clay_pot_table_and_solid_anchors() {
+        let pot = def_for_tile(78).unwrap();
+        // On a table (:2385 keeps AnchorType.Table)…
+        let mut w = world();
+        set_active(&mut w, 10, 19, 14);
+        assert!(can_place(&w, 10, 18, pot, 0, 1, None).is_some());
+        // …on plain solid ground…
+        let w2 = world();
+        assert!(can_place(&w2, 10, 19, pot, 0, 1, None).is_some());
+        // …and in lava it is refused (LavaDeath=false never re-allows lava —
+        // the baked NotAllowed, same chain as the chest).
+        let mut wl = world();
+        set_liquid(&mut wl, 10, 19, 200, true);
+        assert!(can_place(&wl, 10, 19, pot, 0, 1, None).is_none());
+        // Water is fine (base WaterPlacement.Allowed).
+        let mut ww = world();
+        set_liquid(&mut ww, 10, 19, 200, false);
+        assert!(can_place(&ww, 10, 19, pot, 0, 1, None).is_some());
+    }
+
+    #[test]
+    fn test_DW_1_2_pile_subtile_styles_and_anchors() {
+        // 186 snow style 26 sits on snow (:3293) and refuses stone…
+        let large = def_for_tile(186).unwrap();
+        let mut snow = world();
+        floor_of(&mut snow, 147);
+        assert!(can_place(&snow, 10, 19, large, 26, 1, None).is_some());
+        let stone = world();
+        assert!(can_place(&stone, 10, 19, large, 26, 1, None).is_none());
+        // …while the base styles (0-25, no valid-tile list) take any solid
+        // floor.
+        assert!(can_place(&stone, 10, 19, large, 0, 1, None).is_some());
+        // 187 sand style 29 on sand (:3310-3311), refuses stone; style 0 is
+        // the jungle sub-tile (SubTiles[0] non-null) — refuses stone too.
+        let large2 = def_for_tile(187).unwrap();
+        let mut sand = world();
+        floor_of(&mut sand, 53);
+        assert!(can_place(&sand, 10, 19, large2, 29, 1, None).is_some());
+        assert!(can_place(&sand, 10, 19, large2, 0, 1, None).is_none());
+        assert!(can_place(&stone, 10, 19, large2, 29, 1, None).is_none());
+        // Place a 3x2: origin (1,1), click (11, 19) → origin (10, 18). The
+        // generic Place math puts style 29 on sheet row 29: wrap 35 keeps the
+        // column (`num4 = 29 % 35`), so frameX = CFW(54) * 29 + dx*18,
+        // frameY = dy*18 (`TileObject.cs:56-110`).
+        let obj = can_place(&sand, 11, 19, large2, 29, 1, None).unwrap();
+        assert_eq!((obj.x_coord, obj.y_coord), (10, 18));
+        assert!(place(&mut sand, &obj));
+        for dx in 0..3i32 {
+            for dy in 0..2i32 {
+                let t = sand.tile(10 + dx, 18 + dy).unwrap();
+                assert!(t.active() && t.kind == 187, "cell ({},{})", 10 + dx, 18 + dy);
+                assert_eq!(
+                    (t.frame_x, t.frame_y),
+                    ((54 * 29 + 18 * dx) as i16, (18 * dy) as i16),
+                    "cell ({},{})",
+                    10 + dx,
+                    18 + dy
+                );
+            }
+        }
+        assert!(sand.frame_important[187]);
+        // 185's two shapes both resolve through `can_place` (no items place
+        // them in vanilla — worldgen only; the registry still judges them):
+        // style 0 → the 2x1 sub-tile over a 2-wide support.
+        let piles = def_for_tile(185).unwrap();
+        let w = world();
+        assert!(can_place(&w, 10, 19, piles, 0, 1, None).is_some());
+    }
+
+    #[test]
+    fn test_DW_1_2_herbs_registered_but_legacy_routed() {
+        // The registry slice: all three herb stages resolve (`def_for_tile`),
+        // the seed style sub-tiles are reachable, and the `tileAlch` set
+        // drives the legacy routing (`Main.cs:7806-7808`).
+        for kind in [82u16, 83, 84] {
+            let def = def_for_tile(kind).unwrap();
+            assert_eq!(def.kind, kind);
+        }
+        assert_eq!(TILE_ALCH, &[82u16, 83, 84]);
+        assert!(tile_alch(82) && tile_alch(83) && tile_alch(84));
+        assert!(!tile_alch(28) && !tile_alch(380));
+        // 380 is deliberately NOT registered (`TileObjectData` has no entry;
+        // vanilla routes it through the legacy case, `WorldGen.cs:60226`).
+        assert!(def_for_tile(380).is_none());
     }
 }

@@ -1178,4 +1178,69 @@ mod tests {
         assert_eq!(app.items[0].kind, registry::tile_drop(4).unwrap());
         assert_eq!(app.items[0].kind, 8, "the torch item");
     }
+
+    // ---- M1.4-TO-4 phase 1 (DW-1.1): the seed route through the app --------
+
+    /// `object_world` with the floor repainted to grass — a style-0 soil of
+    /// `PlaceAlch` (`WorldGen.cs:45395-45397`).
+    fn grass_floor_world() -> World {
+        let mut w = object_world();
+        for x in 0..40 {
+            set_tile(&mut w, x, 20, 2);
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    #[test]
+    fn test_DW_1_1_seeds_plant_through_the_app_route() {
+        // The routing flip: tile 82 is registered now, so the legacy
+        // neighbour/overlap pre-checks no longer gate the seed — vanilla
+        // excludes it from the TileObject route (`Player.cs:39772`) and
+        // `PlaceAlch`'s soil/liquid rules decide instead.
+        assert!(!legacy_precheck_applies(82));
+        // The registry resolves the seed's tile and placeStyle.
+        assert_eq!(registry::place_tile(307), Some(82));
+        assert_eq!(registry::place_style(307), 0);
+        assert_eq!(registry::place_style(312), 5, "Fireblossom Seeds");
+        // The full item route: grass soil, Daybloom Seeds held — one item
+        // consumed, the herb written with the style's frames.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = grass_floor_world();
+        app.inventory[app.selected] = slot(307, 5);
+        assert!(use_tile_item(&mut app, 10, 19));
+        assert_eq!(app.inventory[app.selected].count, 4, "one seed consumed");
+        let t = *app.world.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 82, "the herb is in the world");
+        assert_eq!((t.frame_x, t.frame_y), (0, 0), "frameX = 18*0");
+        // Refused soil keeps the item (stone is not in style 0's set).
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(307, 5);
+        assert!(!use_tile_item(&mut app2, 10, 19));
+        assert_eq!(app2.inventory[app2.selected].count, 5, "the seed is kept");
+        assert!(!app2.world.tile(10, 19).unwrap().active(), "nothing written");
+    }
+
+    #[test]
+    fn test_DW_1_3_planter_box_items_place_through_the_app_route() {
+        // The planter boxes keep the legacy pre-checks (no registry entry)
+        // and land in the case-380 write with `frameY = 18 * placeStyle`.
+        assert!(legacy_precheck_applies(380));
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        app.inventory[app.selected] = slot(3215, 3); // Day Bloom Planter Box
+        assert!(use_tile_item(&mut app, 10, 19));
+        assert_eq!(app.inventory[app.selected].count, 2);
+        let t = *app.world.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 380);
+        assert_eq!(t.frame_y, 0, "placeStyle 0");
+        // Fire Blossom Planter Box (placeStyle 7) → frameY 126.
+        let mut app2 = flow_app(None, vec![], vec![]);
+        app2.world = object_world();
+        app2.inventory[app2.selected] = slot(3222, 1);
+        assert!(use_tile_item(&mut app2, 12, 19));
+        assert_eq!(app2.world.tile(12, 19).unwrap().frame_y, 126);
+    }
 }

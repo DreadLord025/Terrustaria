@@ -70,6 +70,22 @@ pub fn generate(opts: &GenOptions) -> World {
     world.frame_important[tree::TREE as usize] = true;
     world.frame_important[3] = true;
     world.frame_important[4] = true;
+    // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families
+    // (sunflower 27 / pots 28 `Main.cs:7663-7664`, clay pot 78 `:7682`,
+    // herbs 82-84 `:7685-7687`, piles 185-187 `:7415-7417`, planter box 380
+    // `:7632`) — vanilla worlds honour them from boot, so a generated world
+    // must too: `framing` keeps the stored frames of these kinds and the kill
+    // cascade reaches them.
+    world.frame_important[27] = true;
+    world.frame_important[28] = true;
+    world.frame_important[78] = true;
+    world.frame_important[82] = true;
+    world.frame_important[83] = true;
+    world.frame_important[84] = true;
+    world.frame_important[185] = true;
+    world.frame_important[186] = true;
+    world.frame_important[187] = true;
+    world.frame_important[380] = true;
 
     let noise = Noise { seed: opts.seed };
     let mut rng = Rng(opts.seed ^ 0xA076_1D64_78BD_642F);
@@ -303,5 +319,25 @@ mod tests {
             w.tiles.iter().any(|t| t.active() && t.kind == TILE_SNOW),
             "generator should place a snow biome"
         );
+    }
+
+    /// DW-1.4: the generated world mirrors `Main.tileFrameImportant`'s boot
+    /// statics for the M1.4-TO-4 families (sunflower 27 / pots 28 `Main.cs:
+    /// 7663-7664`, clay pot 78 `:7682`, herbs 82-84 `:7685-7687`, piles
+    /// 185-187 `:7415-7417`, planter box 380 `:7632`).
+    #[test]
+    fn test_DW_1_4_generated_world_carries_frame_important_bits() {
+        let world = generate(&GenOptions {
+            name: "bits".into(),
+            width: 512,
+            height: 512,
+            seed: 7,
+        });
+        for kind in [27u16, 28, 78, 82, 83, 84, 185, 186, 187, 380] {
+            assert!(
+                world.frame_important[kind as usize],
+                "frame_important[{kind}] must be set in a generated world"
+            );
+        }
     }
 }
