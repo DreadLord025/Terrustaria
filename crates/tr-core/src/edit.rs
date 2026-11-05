@@ -624,10 +624,15 @@ pub fn place_alch(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     let Some(soil) = world.tile(x, y + 1).copied() else {
         return false;
     };
-    // :45389-45391 — the herb cell must be empty and the soil below an
-    // active, flat block (`nactive() && !halfBrick() && slope() == 0`; the
-    // C# `nactive` inActive term is vacuous — the port has no actuated flag).
-    if herb.active() || !soil.active() || soil.half_brick() || soil.slope() != 0 {
+    // :45390-45392 — the herb cell must be empty and the soil below must be
+    // `nactive()` — active and not actuated (`Tile.nactive`, `Tile.cs:240-246`;
+    // wiring actuation keeps `FLAG_ACTIVE` and sets `FLAG_INACTIVE`) — and flat
+    // (`!halfBrick() && slope() == 0`).
+    if herb.active()
+        || !crate::tileobject::nactive(&soil)
+        || soil.half_brick()
+        || soil.slope() != 0
+    {
         return false;
     }
     // :45393-45441 — the per-style soil sets (every style also accepts the
@@ -2338,7 +2343,7 @@ mod tests {
 
     #[test]
     fn test_DW_1_1_seed_rejected_on_slope_or_half_brick_soil() {
-        // :45389-45391 — the soil must be flat (`!halfBrick && slope == 0`).
+        // :45390-45392 — the soil must be flat (`!halfBrick && slope == 0`).
         let cases: [(&str, fn(&mut Tile)); 2] = [
             ("half brick", |t: &mut Tile| t.flags |= crate::tile::FLAG_HALF_BRICK),
             ("slope", |t: &mut Tile| t.set_slope(1)),
@@ -2353,6 +2358,34 @@ mod tests {
             );
             assert!(!w.tile(10, 19).unwrap().active(), "{label} soil writes nothing");
         }
+    }
+
+    #[test]
+    fn test_DW_1_1_seed_rejected_on_actuated_soil() {
+        // :45390-45392 — the soil must pass `tile2.nactive()` (`Tile.cs:240-246`:
+        // active AND not inActive). `Wiring.Actuate` keeps `FLAG_ACTIVE` and sets
+        // `FLAG_INACTIVE`, so an actuated soil reads `active()` but fails
+        // `nactive()` — vanilla refuses the seed and nothing is written. The
+        // same soil without the actuated flag accepts it.
+        let mut w = soil_world(2);
+        let i = w.index(10, 20);
+        w.tiles[i].flags |= crate::tile::FLAG_INACTIVE;
+        assert!(
+            !place_item_tile(&mut w, 10, 19, 82, 0, 1),
+            "actuated soil refuses the seed"
+        );
+        assert!(
+            !w.tile(10, 19).unwrap().active(),
+            "actuated soil writes nothing"
+        );
+        // `Wiring.ReActive` clears the actuation bit; the identical soil now plants.
+        w.tiles[i].flags &= !crate::tile::FLAG_INACTIVE;
+        assert!(
+            place_item_tile(&mut w, 10, 19, 82, 0, 1),
+            "de-actuated soil accepts the seed"
+        );
+        let t = *w.tile(10, 19).unwrap();
+        assert!(t.active() && t.kind == 82 && t.frame_x == 0 && t.frame_y == 0);
     }
 
     #[test]

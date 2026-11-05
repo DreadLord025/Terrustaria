@@ -924,7 +924,7 @@ pub fn calculate_placement_style(
 // ---------------------------------------------------------------- helpers --
 
 /// `Tile.nactive` (`Tile.cs:240-246`): active and not `inActive` (framed off).
-fn nactive(tile: &Tile) -> bool {
+pub(crate) fn nactive(tile: &Tile) -> bool {
     tile.active() && tile.flags & crate::tile::FLAG_INACTIVE == 0
 }
 
