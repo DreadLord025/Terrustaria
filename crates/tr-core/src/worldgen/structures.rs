@@ -379,3 +379,173 @@ pub(crate) fn pass_pots(world: &mut World, rng: &mut super::Rng) -> u32 {
 }
 
 const _: (u16, u16, u16) = (TILE_DIRT, TILE_STONE, WALL_DIRT);
+
+pub(crate) const TILE_HIVE: u16 = 225;
+pub(crate) const TILE_LARVA: u16 = 231;
+pub(crate) const TILE_HELL_BRICK: u16 = 75;
+pub(crate) const WALL_HELL_BRICK: u16 = 14;
+
+fn put_hive(world: &mut World, x: i32, y: i32, kind: u16) {
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return;
+    }
+    let i = world.index(x, y);
+    let t = &mut world.tiles[i];
+    t.kind = kind;
+    t.flags |= FLAG_ACTIVE;
+    t.liquid = 0;
+    t.set_slope(0);
+}
+
+/// `Beehives` + `BeeLarvaInBeehives` (`WorldGen.cs:15927-16000`,
+/// `AddBeeLarva` `:32050-32068`): 1-8 hive domes in the underground jungle —
+/// the hive-block (225) shell with the honey pockets (the liquid 2) inside,
+/// roughly half carrying the larva (231) in the 3×4 clear centre.
+pub(crate) fn pass_beehives(
+    world: &mut World,
+    spans: &super::biomes::BiomeSpans,
+    rock_layer: f64,
+    rng: &mut super::Rng,
+) -> u32 {
+    if spans.jungle_end <= spans.jungle_start {
+        return 0;
+    }
+    let count = 1 + rng.range(0, (5.0 * (world.width as f32 / 4200.0)) as i32 + 1)
+        + rng.range(0, 3);
+    let mut placed = 0u32;
+    let y_lo = ((world.world_surface as i32 + rock_layer as i32) / 2).max(spans.jungle_start.min(spans.jungle_end));
+    let y_hi = (world.height - 300).max(y_lo + 20);
+    for _ in 0..count {
+        let cx_lo = spans.jungle_start + 10;
+        let cx_hi = (spans.jungle_end - 10).max(cx_lo + 1);
+        let cx = rng.range(cx_lo, cx_hi);
+        if y_hi <= y_lo {
+            return placed;
+        }
+        let cy = rng.range(y_lo, y_hi);
+        let r = rng.range(10, 18);
+        // The dome: the hive shell with the honey core.
+        for dx in -r..=r {
+            for dy in -r..=r {
+                let px = cx + dx;
+                let py = cy + dy;
+                let dist = ((dx * dx + dy * dy) as f32).sqrt();
+                if dist > r as f32 {
+                    continue;
+                }
+                if !world
+                    .tile(px, py)
+                    .is_some_and(|t| t.active() || t.liquid > 0)
+                {
+                    continue;
+                }
+                if dist < r as f32 - 3.0 {
+                    // The core: the honey pockets (the liquid 2 = honey).
+                    let i = world.index(px, py);
+                    let t = &mut world.tiles[i];
+                    if dist < r as f32 - 5.0 && rng.range(0, 3) != 0 {
+                        *t = Tile::default();
+                        t.liquid = 255;
+                        t.set_liquid_kind(crate::tile::LiquidKind::Honey);
+                    } else {
+                        t.kind = 0;
+                        t.flags &= !FLAG_ACTIVE;
+                        t.liquid = 0;
+                    }
+                } else {
+                    put_hive(world, px, py, TILE_HIVE);
+                }
+            }
+        }
+        // The larva in ~half the hives (`num5 = Next(5)` honey patches; the
+        // larva ride the hive centre — `AddBeeLarva`'s 3×4 clear + the 231).
+        if rng.range(0, 2) == 0 {
+            for dx in -1..=1 {
+                for dy in -2..=1 {
+                    let px = cx + dx;
+                    let py = cy + dy;
+                    if dy == 1 {
+                        let i = world.index(px, py);
+                        let wall = world.tiles[i].wall;
+                        world.tiles[i] = Tile {
+                            kind: TILE_HIVE,
+                            ..Default::default()
+                        };
+                        world.tiles[i].flags |= FLAG_ACTIVE;
+                        world.tiles[i].wall = wall;
+                    } else {
+                        let i = world.index(px, py);
+                        world.tiles[i] = Tile::default();
+                    }
+                }
+            }
+            let i = world.index(cx, cy);
+            world.tiles[i] = Tile {
+                kind: TILE_LARVA,
+                ..Default::default()
+            };
+            world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        placed += 1;
+    }
+    placed
+}
+
+/// `HellFort` (`WorldGen.cs:32683+`, the tile 75 / the wall 14 defaults):
+/// the brick boxes in the hell layer — the shell with the carved rooms, the
+/// lava pools on the floors and the chests.
+pub(crate) fn pass_hell_forts(world: &mut World, hell_top: i32, rng: &mut super::Rng) -> u32 {
+    let count = 2 + (world.width / 4200) as i32;
+    let mut placed = 0u32;
+    let cy_lo = hell_top + 20;
+    let cy_hi = world.height - 60;
+    if cy_hi <= cy_lo {
+        return placed;
+    }
+    for _ in 0..count {
+        let cx = rng.range(200, (world.width - 200).max(201));
+        let cy = rng.range(cy_lo, cy_hi);
+        let hw = rng.range(10, 18);
+        let hh = rng.range(6, 10);
+        // The shell.
+        for px in (cx - hw)..=(cx + hw) {
+            for py in (cy - hh)..=(cy + hh) {
+                if px < 2 || py < 2 || px >= world.width - 2 || py >= world.height - 2 {
+                    continue;
+                }
+                if !world.tile(px, py).is_some_and(|t| t.active() || t.liquid > 0) {
+                    continue;
+                }
+                put_hive(world, px, py, TILE_HELL_BRICK);
+                let i = world.index(px, py);
+                world.tiles[i].wall = WALL_HELL_BRICK;
+            }
+        }
+        // The two floors of the carved rooms with the lava pools.
+        for floor in 0..2 {
+            let fy = cy - hh / 2 + floor * hh;
+            for px in (cx - hw + 2)..=(cx + hw - 2) {
+                for py in (fy - 3)..=fy {
+                    if px < 2 || py < 2 || px >= world.width - 2 || py >= world.height - 2 {
+                        continue;
+                    }
+                    let i = world.index(px, py);
+                    world.tiles[i] = Tile::default();
+                    world.tiles[i].wall = WALL_HELL_BRICK;
+                }
+                // The lava pool strip on the floor.
+                if px % 7 != 0 {
+                    let i = world.index(px, fy);
+                    let t = &mut world.tiles[i];
+                    t.liquid = 200;
+                    t.set_liquid_kind(crate::tile::LiquidKind::Lava);
+                }
+            }
+        }
+        // The chest in the upper room.
+        if place_chest(world, cx - 3, cy - hh / 2 - 1) {
+            placed += 1;
+        }
+    }
+    placed
+}

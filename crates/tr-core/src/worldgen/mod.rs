@@ -154,6 +154,8 @@ pub fn generate(opts: &GenOptions) -> World {
         &mut srng,
     );
     structures::pass_pots(&mut world, &mut srng);
+    structures::pass_beehives(&mut world, &spans, layers.rock_layer, &mut srng);
+    structures::pass_hell_forts(&mut world, layers.hell_top, &mut srng);
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -446,6 +448,32 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    #[test]
+    fn the_hives_and_forts_place_the_content() {
+        // The 4200-world carries the hive domes (225) with the honey (the
+        // liquid 2) and the larva (231), the hell forts (the brick 75 with
+        // the walls 14, the lava, the chests).
+        let w = generate(&GenOptions {
+            seed: 63,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let honey = w
+            .tiles
+            .iter()
+            .filter(|t| t.liquid > 0 && t.flags & crate::tile::FLAG_LIQUID_HONEY != 0)
+            .count();
+        assert!(count(225) > 200, "the hive blocks ({})", count(225));
+        assert!(honey > 100, "the honey pockets ({honey})");
+        assert!(count(231) >= 1, "the larva ({})", count(231));
+        assert!(count(75) > 300, "the hell brick ({})", count(75));
     }
 
     #[test]

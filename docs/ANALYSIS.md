@@ -3512,3 +3512,21 @@ islands over the 10-90 % band:
 Deviations: the snow/desert cloud-island variants
 (`SnowCloudIsland`/`DesertCloudIsland`) and the house furniture sets are
 the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
+
+## Hives & hell forts (M1.4-WGEN-5)
+
+- **The beehives** (`Beehives` + `BeeLarvaInBeehives`, `WorldGen.cs:
+  15927-16000`): 1-8 hive domes in the underground jungle band (the count
+  scales `maxTilesX / 4200` like the C#'s `Next(5·num, 8·num)`), the
+  hive-block (225) shells with the honey pockets (the liquid 2) carved in
+  the cores, roughly half carrying the larva (231) — `AddBeeLarva`'s
+  3×4 clear with the hive base row (`:32050-32068`).
+- **The hell forts** (`HellFort`, `:32683+`): the obsidian-brick (75 /
+  the wall 14) boxes in the hell layer — the shell with the two carved
+  room floors, the lava pool strips on the floors and the chests. The C#'s
+  multi-room layout with the doors (`HellFort_AttemptToPlaceDoor`) is
+  approximated by the two-floor shape.
+
+Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
+port's blob dome (the shape-level port); the Queen Bee summon from the
+larva and the fort doors = the follow-ups.
