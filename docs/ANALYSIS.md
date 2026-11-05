@@ -3865,3 +3865,20 @@ Deviations: the HouseBuilder room variants (the biome walls, the furniture
 sets) are the shape-level approximation; the spike tiles and the sword
 item drop are the follow-ups; the structure-map exclusions are the
 per-pass neighbour scans.
+
+## Ore pools (M1.4-WGEN-9)
+
+The pre-hardmode ore alternates — the vanilla pairs roll one kind per
+world (`TileID.cs`: the copper 7 / the tin 166, the iron 6 / the lead
+167, the silver 9 / the tungsten 168, the gold 8 / the platinum 169):
+
+- **The pool roll** (`OrePools`/`roll_ore_pools`): the 50/50 draw per
+  pair on the shared worldgen stream at the ore pass — the rolled kinds'
+  veins generate, the other pair's kinds are absent from the world.
+- **The gem veins**: the amethyst 63 .. the diamond 68 — the small 1-3
+  blobs in the stone band (280 attempts), one kind per vein.
+- The dungeon colour test accepts the roll (the biome test's stream
+  shifted with the new draws).
+
+Deviations: the TileRunner-strength bands (the C#'s vein shapes carry the
+depth-dependent strengths) are the follow-up; the ore walls are out.
