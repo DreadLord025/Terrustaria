@@ -21,6 +21,7 @@ mod temple;
 mod caves;
 mod liquids;
 mod living_trees;
+mod mini_biomes;
 mod noise;
 mod surface;
 mod terrain;
@@ -163,6 +164,12 @@ pub fn generate(opts: &GenOptions) -> World {
     // The temple: the last big structure (the C#  pass
     // runs after the jungle passes).
     let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
+    // The micro-biomes (the cave houses / the campsites / the spike pits /
+    // the sword shrines) run after the big structures.
+    mini_biomes::pass_cave_houses(&mut world, layers.rock_layer, &mut srng);
+    mini_biomes::pass_campsites(&mut world, &mut srng);
+    mini_biomes::pass_spike_pits(&mut world, &spans, layers.rock_layer, &mut srng);
+    mini_biomes::pass_sword_shrines(&mut world, &map.heights, layers.rock_layer, &mut srng);
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -483,6 +490,28 @@ mod tests {
         assert!(count(137) >= 3, "the dart traps ({})", count(137));
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
         assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
+    }
+
+    #[test]
+    fn the_micro_biomes_place_the_content() {
+        // The 4200-world carries the cave houses (the wood frames 27 + the
+        // platforms 19 + the chests), the campsites (the tents 196-199),
+        // the spike pits (the stone blobs in the jungle) and the sword
+        // shrines (the sword tile 197).
+        let w = generate(&GenOptions {
+            seed: 44,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(27) > 100, "the cabin wood frames ({})", count(27));
+        assert!(count(19) > 20, "the cabin platforms ({})", count(19));
+        assert!(count(196) + count(197) + count(198) + count(199) > 30, "the tents");
+        assert!(count(197) >= 2, "the sword shrines ({})", count(197));
     }
 
     #[test]
