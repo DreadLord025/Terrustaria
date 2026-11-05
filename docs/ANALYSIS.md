@@ -4103,7 +4103,6 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
-<<<<<<< HEAD
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
@@ -4158,5 +4157,3 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
-=======
->>>>>>> origin/main
