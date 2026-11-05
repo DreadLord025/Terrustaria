@@ -280,6 +280,27 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     if scene_state.forced_severity.is_none() {
         sandstorm.update_time(1, wind.speed_current);
     }
+    // `Sandstorm.EmitDust` (`Main.cs:17247`): the flying sand spawns off the
+    // stored `SceneMetrics` (vanilla's last-scan persistence) and ticks the
+    // `Dust` 268 AI, ahead of this frame's rescan.
+    let show = sandstorm.show_sandstorm_visuals(
+        app.scene_metrics.zone_sandstorm,
+        tr_core::scene::is_desert_bg_style(*bg_style),
+        *bg_delay,
+    );
+    let player_vy = player.as_ref().map(|p| p.vy).unwrap_or(0.0);
+    app.sand.emit_dust(
+        &app.scene_metrics,
+        sandstorm.severity,
+        show,
+        wind.speed_current,
+        *camera,
+        screen,
+        *zoom,
+        world,
+    );
+    app.sand
+        .tick(show, player_vy, *camera, screen, *zoom, world);
     // `Main.UpdateSceneMetrics` (`Main.cs:62560`): the scan center is the
     // local player's center; headless shots (TR_NOPLAYER) stand in the camera.
     let center = player

@@ -453,6 +453,7 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                sand,
                 liquid_alpha,
                 wind,
                 tree_wind_counter,
@@ -933,6 +934,9 @@ impl App {
                 crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
                 rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                // `Main.DrawDust`'s 268 entries: the flying sand, the same UI
+                // range as the rain (`Main.DrawRain`'s draw call site).
+                sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
                 );

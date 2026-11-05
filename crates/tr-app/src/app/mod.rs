@@ -308,6 +308,8 @@ pub(crate) struct App {
     pub(crate) te_step: FixedStepper,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
+    pub(crate) sand: crate::sand::Sand,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -1176,6 +1178,7 @@ impl App {
             renderer: None,
             post: None,
             noise_tex: None,
+            sand: crate::sand::Sand::new(1),
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),

@@ -3199,3 +3199,73 @@ generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
 `isLikeATownNPC && !homeless` fields); the map-click teleport UI and the
 `NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
 styles are M2-DEATH polish.
+
+## Sandstorm (M1.4-WEATHER-2)
+
+The research corrected the row: the severity machine, the SceneState
+filters, the music-40 ladder, the zone gate and the bgDelay tracking
+already landed (BG-18 / WEATHER-1), and the `SandstormSky` sky tint is
+**dead code in 1.4.5.8** — registered (`ScreenEffectInitializer.cs:71`)
+but never activated anywhere, so `_opacity` stays 0 and the quad never
+draws. Documented out; the visible sky wash is the SceneState
+filter/overlay pair.
+
+The task's real delta is `Sandstorm.EmitDust` (`Main.cs:17247`) — the
+flying sand, in `crates/tr-app/src/sand.rs`:
+
+* the budget: `1000*(screenWidth/1920)*(gfxQuality*0.5+0.5) +
+  1000*screenWidth/1920*0.1 − Dust.SandStormCount` per tick, `20*Severity`
+  spawn attempts behind the `Next(num6/4)` gate (`Next(0)` rolls 0 — XNA),
+  the windward screen-edge rolls (both `Next(3)`s always evaluate, C# `&&`
+  order), the off-screen-x y-spread, the wall gate (`tile.wall != 0` skips),
+  and the cluster shuffler: `Next(maxValue)` re-rolls the position by
+  `RandomVector2(±10) + velocity*-1.1` and spawns again until the roll hits
+  or the budget dies (a rejected `NewDust` slot still burns budget and
+  still feeds the shuffle its velocity — `EmitDust` sets the properties on
+  the returned index blindly);
+* the four sand-family weighted colours (`53/396/397` desert,
+  `112/400/398` crimson, `234/401/399` jungle, `116/403/402` snow;
+  `WeightedRandom` falls through to the first entry on a zero total);
+* the dust-268 AI (`Dust.cs:1789-1818` + the generic tail): the move,
+  the `1.0050251` speed-up, the scale drift (`+0.01`, `−0.05` without
+  `ShowSandstormVisuals`), the spawn-`fadeIn` one-off `+0.03` then the
+  generic `−0.01` (with the storm on the three cancel and the scale holds
+  at ~0.94; without it the net `−0.05`/tick fades the orphans out in ~17
+  ticks), the player-fall parallax (`vel.y` lerps toward the player's fall,
+  `pos.y += vy*0.2`), the solid damp (`scale*0.9`, `vel*0.25`, the spawn
+  `fadeIn` keeps the first tick damp-free) vs the sine fall
+  `sin(x*0.0043982295)*2+3`, the off-bottom and `scale<0.1` deaths, and
+  the black-light kill at draw (`Main.cs:39015-39017`);
+* the draw: the shared `Dust` sheet's second band — `dust.frame` maps type
+  268 to x = 10*268−2000, y = 60+10*rand(3) (`Dust.cs:177-182`), the sheet
+  the atlas already loads — at `10*scale` px with the light base pass plus
+  the `GetColor` overlay (`colour + light − 255` per channel, floored at
+  0, skipped when every channel is 0).
+
+`update_scene` runs emit+tick after `Sandstorm.UpdateTime` and ahead of
+the rescan (the vanilla call order), spawning off the stored
+`SceneMetrics` (vanilla's last-scan persistence); the draw rides the
+frame's UI-range batch next to the rain.
+
+Deviations: the RNG is the module's own splitmix stream (the port's
+per-consumer convention — vanilla rolls the shared `Main.rand`); the
+`NewDust` initial-velocity rolls are not consumed (`EmitDust` overwrites
+both components); `gfxQuality`/`dCount` pinned `1.0`/`0` — no pool-pressure
+governor, the budget and the deaths bound the population; the multiplayer
+`SendData(7)` tail is MP scope; the spawn multipliers stay out (no
+spawner depth); the WindPushed buff is M2-BUFF-4.
+
+Harness notes: (1) the seed-1 desert band's ground sits ~4 tiles below
+`world_surface` (361), so a standing player loses
+`IsSurfaceForAtmospherics` (`ZoneSandstorm` dies with it) — verify desert
+shots with `TR_NOPLAYER` + `TR_CAM=<x,y>` (the scan then centres on the
+camera above the line); (2) the `TR_POST` pass covers the whole composite
+including the UI, so with an active storm the map panel shows the pass's
+noise — vanilla draws the UI after the filters; the world/UI split is a
+BG-18 follow-up.
+
+Verification: 7 sand tests (the gates, the budget, the weighted colours,
+the scale hold/fade, the sine, the bottom death, seed determinism);
+`TR_SANDSTORM=1` desert twins SHA256-equal (two runs byte-identical,
+a third run in a fresh dir matched and one earlier run raced — the known
+first-run gotcha), the off-pin A/B clean.
