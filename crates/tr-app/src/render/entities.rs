@@ -256,8 +256,13 @@ pub(crate) fn draw_player(
     let head_armor = registry::get(head_kind).map_or(-1, |d| d.head_slot);
     let body_armor = registry::get(body_kind).map_or(-1, |d| d.body_slot);
     let leg_armor = registry::get(legs_kind).map_or(-1, |d| d.leg_slot);
+    // `PlayerDrawSet.cs:343-347` + `GetSittingOffsetInfo`
+    // (`PlayerSittingHelper.cs:14-31`): the sitting body draws shifted up by
+    // the seat adjustment (-4 px; the index-0 posOffset is zero). The
+    // sliced-leg sit pose is the render follow-up.
+    let sit_shift = if player.sitting { -4.0 } else { 0.0 };
     let state = PlayerCompositeState {
-        origin: [player.x - 10.0, player.y - 10.0],
+        origin: [player.x - 10.0, player.y - 10.0 + sit_shift],
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,

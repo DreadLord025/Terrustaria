@@ -784,6 +784,64 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     let (player, npcs) = (&app.player, &app.npcs);
     let cell_blocked = |x: i32, y: i32| cell_blocked_by_entity(player.as_ref(), npcs, x, y);
     let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
+    // The furniture interactions that touch the player/world state ahead of
+    // the cue/drop mapping.
+    match &result {
+        edit::TileInteraction::ChairSit { seat_x, seat_y, direction } => {
+            if let Some(p) = app.player.as_mut() {
+                p.sit_down(*seat_x, *seat_y, *direction);
+            }
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::BedInteract {
+            set_spawn,
+            spawn_x,
+            spawn_y,
+        } => {
+            if *set_spawn {
+                // `Player.cs:32678-32691`: the same cell toggles the spawn
+                // off; `CheckSpawn` gates the change with its messages.
+                if app.world.bed_spawn == Some((*spawn_x, *spawn_y)) {
+                    app.world.bed_spawn = None;
+                    // `RemoveSpawn` → `FindSpawn`'s re-scan; the port resets
+                    // to the generated spawn.
+                    if let Some(p) = app.player.as_mut() {
+                        p.spawn_x = app.world.spawn_x as f32 * tr_core::TILE_PX + 8.0
+                            - crate::player::WIDTH as f32 * 0.5;
+                        p.spawn_y = app.world.spawn_y as f32 * tr_core::TILE_PX
+                            - crate::player::HEIGHT as f32;
+                    }
+                    app.chat
+                        .new_text("Spawn point removed!", crate::chat::COLOR_SERVER_MESSAGE);
+                } else if check_bed_spawn(&app.world, *spawn_x, *spawn_y, &mut app.chat) {
+                    app.world.bed_spawn = Some((*spawn_x, *spawn_y));
+                    // `ChangeSpawn` (`Player.cs:54635`).
+                    if let Some(p) = app.player.as_mut() {
+                        p.spawn_x = *spawn_x as f32 * tr_core::TILE_PX + 8.0
+                            - crate::player::WIDTH as f32 * 0.5;
+                        p.spawn_y = *spawn_y as f32 * tr_core::TILE_PX
+                            - crate::player::HEIGHT as f32;
+                    }
+                    app.chat
+                        .new_text("Spawn point set!", crate::chat::COLOR_SERVER_MESSAGE);
+                }
+            }
+            // The top half (`sleeping.StartSleeping`) is consumed but inert —
+            // the sleep state is not ported yet (documented in ANALYSIS).
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::ClockRead { text } => {
+            app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+            return true;
+        }
+        edit::TileInteraction::CandleToggled => {
+            app.world_key = None;
+            return true;
+        }
+        _ => {}
+    }
     let Some((cue, drops)) = interaction_events(result) else {
         return false;
     };
@@ -818,12 +876,73 @@ fn interaction_events(
         // The refused gate (`Player.cs:32638`): still consumed (`flag2 = true`,
         // `:32637`) — no cue, no drops, no state change.
         edit::TileInteraction::DialRefused => (None, Vec::new()),
+        // The furniture interactions are consumed in `interact_tile` ahead of
+        // this mapping; the arms only keep the match exhaustive.
+        edit::TileInteraction::CandleToggled => (None, Vec::new()),
+        edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
+        edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
+        edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
     };
     let events = object_drops
         .iter()
         .filter_map(|d| registry::tile_drop(d.tile_kind).map(|id| (id, d.x, d.y)))
         .collect();
     Some((cue, events))
+}
+
+/// `Player.CheckSpawn` (`Player.cs:54533-54590`): the bounds (the C# checks
+/// `y` against `maxTilesX` — mirrored), the bed tile above the spawn cell,
+/// the 3x3 area above free of solid non-solid-top tiles, and the room check.
+/// The failure messages ride the chat like `Main.NewText`.
+fn check_bed_spawn(
+    world: &tr_core::World,
+    x: i32,
+    y: i32,
+    chat: &mut crate::chat::ChatMonitor,
+) -> bool {
+    if x < 10 || x > world.width as i32 - 10 || y < 10 || y > world.width as i32 - 10 {
+        return false;
+    }
+    if !world
+        .tile(x, y - 1)
+        .is_some_and(|t| t.active() && t.kind == 79)
+    {
+        return false;
+    }
+    for i in x - 1..=x + 1 {
+        for j in y - 3..y {
+            if let Some(t) = world.tile(i, j) {
+                if (t.active() || t.has_any_liquid())
+                    && td::TILE_SOLID.has(t.kind)
+                    && !td::TILE_SOLID_TOP.has(t.kind)
+                {
+                    chat.new_text("The bed is obstructed.", crate::chat::COLOR_SERVER_MESSAGE);
+                    return false;
+                }
+            }
+        }
+    }
+    match tr_core::housing::check_room(world, x, y - 1) {
+        Ok(_) => true,
+        Err(reason) => {
+            let text = match reason {
+                tr_core::housing::RoomFailure::TooCloseToWorldEdge => {
+                    "This bed is too close to the edge of the world."
+                }
+                tr_core::housing::RoomFailure::RoomIsTooBig => "This room is too big.",
+                tr_core::housing::RoomFailure::RoomIsTooSmall => "This room is too small.",
+                tr_core::housing::RoomFailure::HoleInWallIsTooBig => {
+                    "This room has holes in its walls."
+                }
+                tr_core::housing::RoomFailure::TooManyUnsafeWalls => {
+                    "This room has too many unsafe walls."
+                }
+                _ => "This room is not valid housing.",
+            };
+            chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+            false
+        }
+    }
 }
 
 /// The entity half of `Collision.EmptyTile(i, j, ignoreTiles: true)`
