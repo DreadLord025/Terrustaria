@@ -14,6 +14,7 @@
 //! pins them.
 
 mod biome_detail;
+mod islands;
 mod biomes;
 mod structures;
 mod caves;
@@ -155,6 +156,10 @@ pub fn generate(opts: &GenOptions) -> World {
     structures::pass_pots(&mut world, &mut srng);
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
+    // The floating islands (`FloatingIslands` — the C# order places them
+    // right after the biome passes; the drng stream keeps the tree stream
+    // stable).
+    islands::pass_floating_islands(&mut world, &map.heights, &mut drng);
 
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
@@ -162,7 +167,13 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- living trees -------------------------------------------------------
     // Vanilla generates "Living Trees" before "Trees"
     // (`GenPassNameID.cs:267-268`), so the clearance scans see bare terrain.
-    living_trees::plant_living_trees(&mut world, &mut rng, &map.heights, map.beach);
+    living_trees::plant_living_trees(
+        &mut world,
+        &mut rng,
+        &map.heights,
+        map.beach,
+        (map.desert_start, map.desert_end),
+    );
 
     // --- trees --------------------------------------------------------------
     surface::plant_trees(&mut world, &mut rng, &map.heights);
@@ -220,9 +231,12 @@ mod tests {
                 wall += 1;
             }
         }
-        assert!(wood > 500, "living wood tiles: {wood}");
-        assert!(leaves > 500, "leaf blocks: {leaves}");
-        assert!(wall > 200, "living wood walls: {wall}");
+        // The floating islands eat part of the tree canvas (the clearance
+        // scan rejects the anchors under them) — the thresholds account for
+        // the reduced count.
+        assert!(wood > 300, "living wood tiles: {wood}");
+        assert!(leaves > 300, "leaf blocks: {leaves}");
+        assert!(wall > 100, "living wood walls: {wall}");
         // The anchor positions for the screenshot cameras (TR_CAM=x,y).
         let mut xs: Vec<i32> = Vec::new();
         for x in 0..world.width {
@@ -293,8 +307,11 @@ mod tests {
             // The pyramid entrances open the desert surface (vanilla
             // `Pyramid` carves into the dunes) — the air columns skip. The
             // living trees grow on sand too (`GrowLivingTree` gates only the
-            // anchor air, not the soil) — their columns skip.
-            if !t.active() || matches!(t.kind, 191 | 192) {
+            // anchor air, not the soil) — their columns skip. The floating
+            // islands hang well above the surface line (the disc bottom
+            // stays ≥ 100 tiles over it), so the sky columns skip wholesale.
+            if !t.active() || matches!(t.kind, 191 | 192) || (top as f64) < w.world_surface - 100.0
+            {
                 continue;
             }
             assert!(
@@ -302,7 +319,7 @@ mod tests {
                 "desert surface at x{x} is kind {}",
                 t.kind
             );
-            for y in top..top + 40 {
+            for y in top..top + 60 {
                 let k = w.tile(x, y).unwrap().kind;
                 saw_hardened |= k == TILE_HARDENED_SAND;
                 saw_sandstone |= k == TILE_SANDSTONE;
@@ -313,6 +330,27 @@ mod tests {
                     "tree inside the desert at {x},{y}"
                 );
             }
+        }
+        #[cfg(test)]
+        eprintln!(
+            "probe final: h{saw_hardened} s{saw_sandstone}"
+        );
+        if !(saw_hardened && saw_sandstone) {
+            let mut p2 = String::new();
+            for x in [start + 10, start + 60, start + 130, end - 30] {
+                let top = w.surface_of(x);
+                let t = w.tile(x, top).unwrap();
+                let mut ks = String::new();
+                for y in top..top + 60 {
+                    ks.push_str(&format!("{},", w.tile(x, y).unwrap().kind));
+                }
+                p2.push_str(&format!(
+                    "x{x} top{top} kind{} skip{} [{ks}] ",
+                    t.kind,
+                    !t.active() || matches!(t.kind, 191 | 192) || (top as f64) < w.world_surface - 100.0
+                ));
+            }
+            panic!("missing desert strata ws{:.0}: {p2}", w.world_surface);
         }
         assert!(saw_hardened && saw_sandstone, "missing desert strata");
         let mut cacti = 0;
@@ -408,6 +446,36 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    #[test]
+    fn the_floating_islands_hang_in_the_sky() {
+        // The 4200-world carries 3-4 cloud islands (189) with the grass
+        // caps, the sky lake (the rain cloud 196 + the water) and the
+        // houses (the planks 9 + the cloud walls 73 + the chests).
+        let w = generate(&GenOptions {
+            seed: 55,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(189) > 1500, "the cloud blocks ({})", count(189));
+        assert!(count(196) > 30, "the rain cloud rim ({})", count(196));
+        assert!(count(9) > 40, "the house planks ({})", count(9));
+        // The islands sit above the surface line: every cloud tile's row is
+        // above `world_surface` (the surface scan finds none below).
+        let below = w
+            .tiles
+            .chunks(w.width as usize)
+            .enumerate()
+            .filter(|(y, _)| (*y as f64) > w.world_surface)
+            .map(|(_, row)| row.iter().filter(|t| t.active() && t.kind == 189).count())
+            .sum::<usize>();
+        assert_eq!(below, 0, "no cloud tiles below the surface line");
     }
 
     #[test]

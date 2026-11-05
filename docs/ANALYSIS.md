@@ -3460,3 +3460,33 @@ Deviations: the hallowed/crimson vine arms wait for the hallow
 (M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
 `GrowUndergroundTree` canvas are approximated; the mushroom trees are the
 tile-71 stands (the full tree generator = the follow-up).
+
+## Floating islands (M1.4-WGEN-4)
+
+The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
+islands over the 10-90 % band:
+
+- **The placement** (`:12975-13033`): the x avoids the spawn ±150 and the
+  ±180 spacing from the placed islands; the y = `Next(90, worldSurface −
+  100)` — `worldSurface = surface_max + 25` carries the ground margin, so
+  the disc bottoms stay ~75+ tiles over the deepest terrain column. The
+  open-sky clearance scans the ±75-vertical window (the C# `:13015-13028`).
+- **The island body** (`CloudIsland`, `:78132-78540`): the elliptical
+  cloud disc (the tile 189) with the ragged boundary (the C#'s
+  `Next(80, 120) · 0.01` wobble on the rim cells), the grass cap 2 rows
+  on the top surface. Every third island is a `CloudLake` sky lake — the
+  rain-cloud (196) bowl sunk 3 deep with the water inside.
+- **The houses** (`FloatingIslandHouses`, `:17862+`): the planks-9 box on
+  the island's top with the cloud-wall (73) interior and the chest.
+- **The living-tree interaction**: the islands occupy the sky the C#'s
+  empty skies don't — the living-tree anchor scan starts at the
+  height-map row (not from y=0, which anchored on the island discs), and
+  the grow rides the anchor-attempt loop (`:15553-15555` — the clearance
+  failures retry the next candidate; the port's original structure wasted
+  the whole tree on one failed clearance). The desert test skips the sky
+  columns wholesale (the islands legitimately hang over the dunes; the
+  dirt caps read as the surface via `surface_of`).
+
+Deviations: the snow/desert cloud-island variants
+(`SnowCloudIsland`/`DesertCloudIsland`) and the house furniture sets are
+the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.

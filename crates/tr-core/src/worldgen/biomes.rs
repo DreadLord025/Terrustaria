@@ -445,6 +445,15 @@ pub(crate) fn pass_dungeon(world: &mut World, surface: &[i32], spans: &BiomeSpan
     }
 }
 
+/// The solid biome-ground tile test for the island clearance scans (the
+/// stone/dirt/ice/sand family the islands must not overlap).
+pub(crate) fn is_solid_biome_tile(kind: u16) -> bool {
+    matches!(
+        kind,
+        0 | 1 | 53 | 59 | 112 | 147 | 161 | 199 | 203 | 234 | 367 | 368 | 41
+    )
+}
+
 /// The tree pass extension: the jungle and the evil grass grow trees like
 /// the forest grass (`UndergroundJungleTrees` for the surface jungle — the
 /// surface jungle uses the regular tree placement on the jungle grass).
