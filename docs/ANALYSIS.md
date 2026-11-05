@@ -3199,3 +3199,44 @@ generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
 `isLikeATownNPC && !homeless` fields); the map-click teleport UI and the
 `NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
 styles are M2-DEATH polish.
+
+## Fishing engine (M7-FISH-1)
+
+The rule core of the fishing system — the power, the pond and the rolls —
+without the content (the tables, the bobber flight, the rods):
+
+- **The power** (`Player.cs:42197-42300`): `bait + pole + fishingSkill`
+  plus the situational +5s (the 25 fishing buff, `canFloatInWater && wet`,
+  sitting — the sitting bonus rides `PlayerSittingHelper`), scaled by
+  `Fishing_GetPowerMultiplier` (`:42233-42263`): the rain ×1.2, the
+  background clouds ×1.1, the early-morning/late-afternoon daylight
+  (`time < 5400 || time > 48600`) ×1.3, the midday (`16200..37800`) ×0.8,
+  the mid-night (`6480..25920`) ×0.8, the moon phases (the full ×1.1, the
+  gibbous pair ×1.05, the crescent pair ×0.95, the new ×0.9) and the
+  blood moon ×1.1.
+- **The pond** (`GetFishingPondState`/`GetFishingPondWidth`,
+  `Projectile.cs:21576-21642`): the liquid span along the bobber's row
+  (the solids and the 10-tile world margins bound it), then the columns
+  down to the floor; the honey pond counts ×1.5; the lava/honey flags
+  ride the tiles.
+- **The attempt gates** (`FishingCheck`/`TryBuildFishingContext`,
+  `:20583-20760`): the hard 75-tile floor, the chum bonuses (+11/+6/+3
+  for 1/2/3+ chums), `waterNeededToFish = 300 × atmo` with the
+  atmosphere `(y - (60 + 10·num²)) / (worldSurface / 6)` (`num =
+  maxTilesX / 4200`) clamped 0.25..1, the quality scaling
+  (`level × quality` when the pond is short) and the depth ladder
+  (0 space / 1 surface / 3 underground / 2 cavern with the 50 % re-roll
+  to the surface / 4 underworld). The junk roll: both `Next(50) > level`
+  and the pond below the need (`:20743`).
+- **The rolls**: the bite accumulator (`AI_061` `:53821-53847` —
+  `Next(300) < level` adds `Next(1,3)`, `+= level/30`, `+= Next(1,3)`,
+  `Next(60)==0` adds 60; past 660 the `FishingCheck` fires), the hit roll
+  `(level + 75) / 2` of 100 (`:20587-20591`) and the drop levels
+  (`:21512-21574` — the 150/300/1050/2250/4500 ÷ level windows with the
+  mins 2/3/4/5/6 and the crate percentage `Next(100) < 10 [+15 potion]`).
+
+Deviations: the drop tables (`GameContent/FishDropRules/*` — the 10-file
+populator), the bobber projectile's flight (`AI_061`'s water-line states),
+the rod/bait items (`Item.fishingPole`/`bait` — the registry growth) and
+the quest fish are M7-FISH-2; the chum bonuses take the count from the
+caller (the chum projectile book is FISH-2); the RNG rides `FastRandom`.
