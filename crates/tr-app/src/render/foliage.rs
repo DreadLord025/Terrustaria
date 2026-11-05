@@ -179,7 +179,7 @@ pub(crate) fn draw_leaves(
         };
         // The frame size comes from the sheet: 32 columns × 8 rows.
         let (fw, fh) = lookups.leaf_frame(l.style).unwrap_or((8.0, 8.0));
-        r.push_ui_sprite_rot(
+        r.push_fx_sprite_rot(
             to_screen(l.pos),
             [fw * l.scale * zoom, fh * l.scale * zoom],
             uv,

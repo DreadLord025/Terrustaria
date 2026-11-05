@@ -349,7 +349,7 @@ impl Sand {
             let size = 10.0 * p.scale * zoom;
             // The base pass: `GetAlpha(light)` with `alpha == 0` is the light
             // itself (`Dust.cs:2724-2737`).
-            r.push_ui_sprite_rot(to_screen(p.pos), [size, size], uv, [c[0], c[1], c[2], 1.0], 0.0);
+            r.push_fx_sprite_rot(to_screen(p.pos), [size, size], uv, [c[0], c[1], c[2], 1.0], 0.0);
             // The overlay pass: `GetColor(light)` = colour + light − 255 per
             // channel, floored at 0; skipped when every channel is 0.
             let oc = [
@@ -360,7 +360,7 @@ impl Sand {
             // The alpha: `color.A + light.A - 255`, the light's A is 255.
             let oa = p.color[3];
             if oc.iter().any(|&c| c > 0.0) || oa > 0.0 {
-                r.push_ui_sprite_rot(to_screen(p.pos), [size, size], uv, [oc[0], oc[1], oc[2], oa], 0.0);
+                r.push_fx_sprite_rot(to_screen(p.pos), [size, size], uv, [oc[0], oc[1], oc[2], oa], 0.0);
             }
         }
     }

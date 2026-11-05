@@ -101,6 +101,9 @@ pub(crate) struct NpcAssets {
     pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
+    pub(crate) skeleton: Option<BgTex>,
+    pub(crate) undead_miner: Option<BgTex>,
+    pub(crate) cave_bat: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -111,6 +114,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
+        skeleton: sky_tex(atlas, "NPC_21", None),
+        undead_miner: sky_tex(atlas, "NPC_44", None),
+        cave_bat: sky_tex(atlas, "NPC_49", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -541,6 +547,28 @@ pub(crate) fn draw_npcs(
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
+            ),
+            // The skeleton family: the same humanoid frame shape — the
+            // strip's frame height rides the sheet (15 frames).
+            NpcKind::Skeleton | NpcKind::UndeadMiner => (
+                if n.kind == NpcKind::Skeleton {
+                    assets.skeleton.as_ref()
+                } else {
+                    assets.undead_miner.as_ref()
+                },
+                assets
+                    .skeleton
+                    .as_ref()
+                    .map_or(48.0, |t| t.h / 15.0),
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Cave Bat: the 5-frame flap over the 22x18 frames.
+            NpcKind::CaveBat => (
+                assets.cave_bat.as_ref(),
+                assets.cave_bat.as_ref().map_or(18.0, |t| t.h / 5.0),
+                [26.0, 18.0],
+                [n.x - 12.0, n.y - 9.0],
             ),
             NpcKind::KingSlime => (
                 assets.king_slime.as_ref(),
