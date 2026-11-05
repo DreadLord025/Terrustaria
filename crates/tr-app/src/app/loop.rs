@@ -256,7 +256,14 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
-                            KeyCode::Digit1 => self.selected = 0,
+                            KeyCode::Digit1 => {
+                                // The shop open: the 1 key buys the first
+                                // stock slot (the click-buy lands with the
+                                // click-routing work).
+                                if !self.buy_shop_item(0) {
+                                    self.selected = 0;
+                                }
+                            }
                             KeyCode::Digit2 => self.selected = 1,
                             KeyCode::Digit3 => self.selected = 2,
                             KeyCode::Digit4 => self.selected = 3,

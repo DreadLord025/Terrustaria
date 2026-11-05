@@ -48,6 +48,58 @@ pub(crate) fn black_slime_darkness_touch(
 /// (`:51511-51518`'s `Transform`) is deferred: a middle kill takes the tail
 /// with it (the chain-death rule), the split lands with the boss-summon
 /// work.
+/// The town shop open (`NPC.cs`'s right-click dialog → `OpenShop`): the
+/// press-edge cursor on a town NPC's rect opens the MERCHANT's shop (the
+/// Guide offers none — M4-TOWN-3's finding). The stock and the happiness
+/// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
+/// `ShopHelper.OpenShop` pair).
+pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+    let Some(idx) = app.npcs.iter().position(|n| {
+        n.hp > 0
+            && n.kind == NpcKind::Merchant
+            && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+    }) else {
+        return false;
+    };
+    let (pcx, pcy) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((0.0, 0.0));
+    let mood = crate::happiness::process_mood(
+        &app.world,
+        &app.npcs,
+        &app.npcs[idx],
+        (pcx, pcy),
+        false,
+    );
+    let flags = crate::shop::ShopFlags {
+        hard_mode: false,
+        night: !app.world.day_time,
+        blood_moon: app.world.blood_moon,
+        zone_snow: app.scene_metrics.zone_snow,
+        zone_jungle: app.scene_metrics.zone_jungle,
+        downed_boss2: false,
+        downed_boss3: false,
+    };
+    let inv_ids: Vec<u16> = app
+        .inventory
+        .iter()
+        .filter(|sl| sl.kind != 0 && sl.count > 0)
+        .map(|sl| sl.kind)
+        .collect();
+    app.shop_stock = crate::shop::resolve_stock(1, &flags, &inv_ids);
+    app.shop_mood = mood.multiplier;
+    app.shop_npc = Some(idx);
+    true
+}
+
 pub(crate) fn update_worms(app: &mut App) {
     let mut rng = app.item_rng;
     let world = &app.world;

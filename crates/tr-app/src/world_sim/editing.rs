@@ -507,6 +507,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // `releaseUseTile` right after the attempt, so the door branch fires on
     // the press edge. A handled interaction consumes the click; anything else
     // falls through to the place path unchanged.
+    if app.place_down
+        && !app.place_prev_down
+        && !app.inventory_open
+        && crate::world_sim::npcs::try_open_shop_at_cursor(app, world_pos)
+    {
+        return;
+    }
     if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
