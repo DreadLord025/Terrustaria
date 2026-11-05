@@ -107,26 +107,53 @@ impl App {
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
     /// `NewCraftingUI`'s recipe clicks: a click on an available recipe cell
-    /// crafts it — `try_craft` consumes the ingredients and the result goes to
-    /// the inventory via `slot_for_pickup` (a full inventory drops on the
-    /// ground in the original; the drop bridge is not wired yet, so a full
-    /// inventory stacks only what fits — see docs/ANALYSIS.md). Consumes the
-    /// press only when a recipe was crafted.
+    /// crafts it — `try_craft` consumes the ingredients (the inventory, then
+    /// the in-range chests) and the result goes to the inventory via
+    /// `slot_for_pickup` (a full inventory drops on the ground in the
+    /// original; the drop bridge is not wired yet, so a full inventory stacks
+    /// only what fits — see docs/ANALYSIS.md). Consumes the press only when a
+    /// recipe was crafted.
     pub(crate) fn handle_crafting_clicks(&mut self) -> bool {
         if !self.crafting_open || !self.ui_left_press {
             return false;
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
+        // The toggles before the grid: the nearby-chests toggle flips the
+        // setting (`CraftingUI.cs:336-355`), and a consumed press does not
+        // reach the recipe cells.
+        if ui::crafting::nearby_toggle_hit(screen, self.mouse_pos) {
+            self.settings.craft_from_nearby_chests = !self.settings.craft_from_nearby_chests;
+            self.ui_left_press = false;
+            return true;
+        }
         let Some(player) = self.player.as_ref() else { return false; };
-        let adj = craft::adjacent_tiles(&self.world, player);
-        let available = craft::available(&self.inventory, &adj);
+        let adj = craft::scan_adjacent(&self.world, player);
+        let zones = craft::Zones {
+            snow: self.scene_metrics.zone_snow,
+            graveyard: self.scene_metrics.zone_graveyard,
+        };
+        let in_range = craft::chests_in_range(
+            &self.world,
+            player,
+            &self.world_chests,
+            self.settings.craft_from_nearby_chests,
+        );
+        let available = craft::available(
+            &self.inventory,
+            &self.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+        );
         let Some(idx) = ui::crafting::hit_test(screen, &self.lookups, self.mouse_pos, &available)
         else {
             return false;
         };
         let recipe = &craft::RECIPES[idx];
-        let Some((kind, count)) = craft::try_craft(&mut self.inventory, recipe, &adj) else {
+        let Some((kind, count)) =
+            craft::try_craft(&mut self.inventory, &mut self.world_chests, &in_range, recipe, &adj, &zones)
+        else {
             // The recipe row shows with a partial ingredient set; a click
             // without the full set does nothing (`Main.cs:42250` hover only).
             return false;

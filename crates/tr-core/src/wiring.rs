@@ -1057,7 +1057,55 @@ impl Wiring {
                     queue.push(corner);
                 }
             }
+            // The dials (356 sundial / 663 moondial, `Wiring.cs:1137-1175`):
+            // the 2×3 SkipWire plus the gated Sundialing/Moondialing.
+            356 | 663 => self.wire_dial(world, kind == 356, i, j, tile_frame_x, tile_frame_y),
             _ => {}
+        }
+    }
+
+    /// `Wiring.HitWireSingle` cases 356/663 (`Wiring.cs:1137-1175`): the
+    /// dial's anchor decodes from `frameX % 36 / 18` / `frameY % 54 / 18`,
+    /// the whole 2×3 sprite is `SkipWire`'d, then the use path's compound
+    /// gate (`:1150-1152`/:1170-1172) runs before
+    /// `Main.Sundialing()`/`Moondialing()`. `SendTileSquare` is net-only,
+    /// not ported.
+    fn wire_dial(
+        &mut self,
+        world: &mut World,
+        sundial: bool,
+        i: i32,
+        j: i32,
+        frame_x: i16,
+        frame_y: i16,
+    ) {
+        // `int num = tile.frameX % 36 / 18; int num2 = tile.frameY % 54 / 18;`
+        // (`:1139-1141`) — the anchor of the 2×3 sprite.
+        let x0 = i - i32::from(frame_x % 36 / 18);
+        let y0 = j - i32::from(frame_y % 54 / 18);
+        for k in x0..x0 + 2 {
+            for l in y0..y0 + 3 {
+                self.skip.insert((k, l)); // `Wiring.SkipWire(k, l)` (`:1144-1149`)
+            }
+        }
+        let (already_ff, cooling) = if sundial {
+            (
+                world.fast_forward_to_dawn,
+                world.sundial_cooldown != 0, // `Main.sundialCooldown == 0`, `:1150`
+            )
+        } else {
+            (
+                world.fast_forward_to_dusk,
+                world.moondial_cooldown != 0, // `Main.moondialCooldown == 0`, `:1170`
+            )
+        };
+        if already_ff || cooling {
+            return; // `:1150-1152`/:1170-1172 false — no dial.
+        }
+        if sundial {
+            world.sundialing(); // Main.Sundialing, Main.cs:6169-6181
+        } else {
+            world.moondialing(); // Main.Moondialing, Main.cs:6184-6196
         }
     }
 
@@ -2177,6 +2225,126 @@ mod trap_tests {
                 assert!((-1.0..=1.0).contains(&vx), "vx {vx}");
             }
             _ => panic!("the spear variant emits a Spear"),
+        }
+    }
+}
+
+#[cfg(test)]
+mod dial_tests {
+    //! The cases 356/663 (`Wiring.cs:1137-1175`).
+
+    use super::*;
+    use crate::tile::{Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    /// A 2×3 dial (356 sundial / 663 moondial) anchored at `(x, y)`: the
+    /// per-cell frames decode back to that anchor (`frameX % 36 / 18`,
+    /// `frameY % 54 / 18`). A switch two tiles left feeds a red wire line
+    /// into the anchor cell (the trap fixture's lesson — the flood seeds are
+    /// `SkipWire`-suppressed, so the dial cannot be the trip source).
+    fn put_dial(w: &mut World, x: i32, y: i32, kind: u16) {
+        for dy in 0..3i32 {
+            for dx in 0..2i32 {
+                let i = w.index(x + dx, y + dy);
+                w.tiles[i] = Tile {
+                    kind,
+                    frame_x: (dx * 18) as i16,
+                    frame_y: (dy * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
+    #[test]
+    fn dw_2_5_wire_signal_arms_the_sundial() {
+        // `Wiring.cs:1137-1157`: the anchor decodes, the 2×3 SkipWire's, and
+        // the gate `!fastForwardTimeToDawn && sundialCooldown == 0`
+        // (`:1150-1152`) fires `Main.Sundialing()` — the same effect the use
+        // path produces.
+        let mut w = world();
+        put_dial(&mut w, 10, 10, 356);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 10);
+        assert!(w.fast_forward_to_dawn, "the wire armed the sundial");
+        assert!(!w.fast_forward_to_dusk);
+        assert_eq!(w.sundial_cooldown, 8);
+    }
+
+    #[test]
+    fn dw_2_5_wire_signal_arms_the_moondial() {
+        // Case 663 (`Wiring.cs:1159-1175`) mirrors the sundial onto
+        // `Main.Moondialing()`.
+        let mut w = world();
+        put_dial(&mut w, 10, 10, 663);
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 10);
+        assert!(w.fast_forward_to_dusk, "the wire armed the moondial");
+        assert!(!w.fast_forward_to_dawn);
+        assert_eq!(w.moondial_cooldown, 8);
+    }
+
+    #[test]
+    fn dw_2_5_wire_refusal_on_running_cooldown_is_a_no_op() {
+        // `:1150-1152` false on the cooldown conjunct — the signal is
+        // absorbed without arming or restarting anything.
+        let mut w = world();
+        put_dial(&mut w, 10, 10, 356);
+        w.sundial_cooldown = 3;
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 10);
+        assert!(!w.fast_forward_to_dawn);
+        assert_eq!(w.sundial_cooldown, 3, "the cooldown was not touched");
+    }
+
+    #[test]
+    fn dw_2_5_wire_refusal_while_fast_forwarding_is_a_no_op() {
+        // `:1150-1152` false on the `fastForwardTimeToDawn` conjunct — the
+        // running dial is never restarted by a wire signal.
+        let mut w = world();
+        put_dial(&mut w, 10, 10, 356);
+        w.fast_forward_to_dawn = true;
+        let mut wiring = Wiring::new();
+        wiring.hit_switch(&mut w, 8, 10);
+        assert!(w.fast_forward_to_dawn, "the running dial continues");
+        assert_eq!(w.sundial_cooldown, 0, "no cooldown was started");
+    }
+
+    #[test]
+    fn dw_2_5_non_anchor_dial_cell_fires_via_wire() {
+        // The frame decode (`:1139-1141`): a signal hitting the frameX-18
+        // cell (anchor offset +1) still resolves the (10, 10) anchor, and the
+        // whole 2×3 lands in the skip set (`:1144-1149`) — a direct
+        // `HitWireSingle` call so the flood's end-of-pass clear keeps its
+        // hands off the set.
+        let mut w = world();
+        put_dial(&mut w, 10, 10, 356);
+        let mut wiring = Wiring::new();
+        wiring.hit_wire_single(&mut w, 11, 10);
+        assert!(w.fast_forward_to_dawn);
+        assert_eq!(w.sundial_cooldown, 8);
+        for dy in 0..3i32 {
+            for dx in 0..2i32 {
+                assert!(
+                    wiring.skip.contains(&(10 + dx, 10 + dy)),
+                    "SkipWire covered ({}, {})",
+                    10 + dx,
+                    10 + dy
+                );
+            }
         }
     }
 }
