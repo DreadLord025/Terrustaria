@@ -25,6 +25,7 @@ mod npc_ai;
 mod npc_buffs;
 mod persist;
 mod grapple;
+mod happiness;
 mod player;
 mod player_file;
 mod projectile;
