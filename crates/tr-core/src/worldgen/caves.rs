@@ -72,6 +72,32 @@ pub(crate) fn blob_pass(
 }
 
 /// Scatters the ore tier blobs below the surface plus hellstone in the ash layer.
+/// The ore pool roll — one kind per metal pair per world (`TileID.cs`:
+/// the copper 7 / the tin 166, the iron 6 / the lead 167, the silver 9 /
+/// the tungsten 168, the gold 8 / the platinum 169; the C# rolls the
+/// alternates at the world creation — `WorldGen.copper`-style flags).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct OrePools {
+    pub(crate) tier1: u16,
+    pub(crate) tier2: u16,
+    pub(crate) tier3: u16,
+    pub(crate) tier4: u16,
+}
+
+pub(crate) fn roll_ore_pools(rng: &mut Rng) -> OrePools {
+    let mut pick = |a: u16, b: u16| if rng.range(0, 2) == 0 { a } else { b };
+    OrePools {
+        tier1: pick(TILE_COPPER, 166),
+        tier2: pick(TILE_IRON, 167),
+        tier3: pick(TILE_SILVER, 168),
+        tier4: pick(TILE_GOLD, 169),
+    }
+}
+
+/// The gem tile kinds (`TileID.cs`: the amethyst 63 .. the diamond 68) —
+/// the small veins in the stone (`WorldGen`'s gem placements).
+const GEM_KINDS: [u16; 6] = [63, 64, 65, 66, 67, 68];
+
 pub(crate) fn place_ores(
     world: &mut World,
     rng: &mut Rng,
@@ -81,11 +107,13 @@ pub(crate) fn place_ores(
     hell_top: i32,
 ) {
     // --- ores ---------------------------------------------------------------
+    // The rolled pools: one kind per metal pair.
+    let pools = roll_ore_pools(rng);
     let ores: [(u16, i32, i32, usize, i32); 4] = [
-        (TILE_COPPER, 20, 400, 1400, 4),
-        (TILE_IRON, 60, 600, 1100, 4),
-        (TILE_SILVER, 160, 800, 800, 3),
-        (TILE_GOLD, 280, 1000, 600, 3),
+        (pools.tier1, 20, 400, 1400, 4),
+        (pools.tier2, 60, 600, 1100, 4),
+        (pools.tier3, 160, 800, 800, 3),
+        (pools.tier4, 280, 1000, 600, 3),
     ];
     for (kind, y0, y1, count, size) in ores {
         for _ in 0..count {
@@ -96,6 +124,14 @@ pub(crate) fn place_ores(
             }
             ore_blob(world, x, y, kind, rng.range(2, size + 3), rng);
         }
+    }
+    // The gem veins in the stone band (the small 1-3 blobs, one kind per
+    // vein — the C# `TileRunner` gem placements).
+    for _ in 0..280 {
+        let x = rng.range(10, width - 10);
+        let y = rng.range(160, hell_top);
+        let kind = GEM_KINDS[rng.range(0, 6) as usize];
+        ore_blob(world, x, y, kind, rng.range(1, 4), rng);
     }
     // Hellstone in the ash layer.
     for _ in 0..900 {

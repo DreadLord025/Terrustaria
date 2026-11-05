@@ -166,6 +166,22 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // venom-immunity rides the hornet projectile set — folded out).
         NpcKind::EaterOfSouls | NpcKind::MeteorHead => &[],
         NpcKind::Hornet => &[20],
+        // The casters/spheres: no debuff-immunity rows in the data (the
+        // Fire Imp's `lavaImmune` rides the liquid system).
+        NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => &[],
+        NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => &[],
+        // The swimmers: no debuff-immunity rows.
+        NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => &[],
+        // The worms: no debuff-immunity rows.
+        NpcKind::DevourerHead
+        | NpcKind::DevourerBody
+        | NpcKind::DevourerTail
+        | NpcKind::GiantWormHead
+        | NpcKind::GiantWormBody
+        | NpcKind::GiantWormTail
+        | NpcKind::EaterOfWorldsHead
+        | NpcKind::EaterOfWorldsBody
+        | NpcKind::EaterOfWorldsTail => &[],
         NpcKind::KingSlime => &[20, 31],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }

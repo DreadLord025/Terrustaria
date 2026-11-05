@@ -40,6 +40,7 @@ use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
+use crate::craft;
 use crate::audio;
 use crate::banners;
 use crate::biome::{
@@ -130,6 +131,9 @@ pub(crate) struct App {
     pub(crate) npcs: Vec<Npc>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
+    /// The worm chain id counter (`AI_006`'s chain identity) — the head
+    /// takes the next id, the segments share it.
+    pub(crate) next_worm_id: u32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -173,6 +177,13 @@ pub(crate) struct App {
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
     pub(crate) crafting_open: bool,
+    /// The world chest item stores (`Main.chest[]`'s `Chest.item`) the
+    /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
+    /// `M6-SAVE-2`) — in-memory for now.
+    pub(crate) world_chests: Vec<craft::WorldChest>,
+    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
+    /// alchemy discount rolls.
+    pub(crate) craft_rng: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -313,6 +324,8 @@ pub(crate) struct App {
     pub(crate) growth_step: FixedStepper,
     /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
     pub(crate) growth_rng: tr_core::tile_light::FastRandom,
+    /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
+    pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
@@ -1230,6 +1243,7 @@ impl App {
             npcs,
             npc_assets,
             npc_timer: 6.0,
+            next_worm_id: 1,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1336,6 +1350,8 @@ impl App {
             // (the `TR_INV` presence pattern).
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
+            world_chests: Vec::new(),
+            craft_rng: 1,
             menu: menu_state,
             front: None,
             front_backup: None,
@@ -1436,6 +1452,7 @@ impl App {
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
+            ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain,
             ambient_waterfall,
             ambient_lavafall,

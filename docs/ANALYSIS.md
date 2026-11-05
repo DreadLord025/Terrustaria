@@ -3665,6 +3665,61 @@ Deviations: the hallowed/crimson vine arms wait for the hallow
 `GrowUndergroundTree` canvas are approximated; the mushroom trees are the
 tile-71 stands (the full tree generator = the follow-up).
 
+## Crafting groups, environment, chests (M3-CRAFT-2)
+
+The research corrected the row: 1.4.5.8 has **no Condition-object system** —
+the recipe environment inputs are hardcoded bool fields on `Recipe`
+(`needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome/
+needTorchGodsFavor/needMechdusa`, `Recipe.cs:72-100`), checked by
+`PlayerMeetsEnvironmentConditions` (`:322-358`); there is no
+`DataStructures/Condition.cs` and no `AddCondition` (that name lives on
+achievements only). The liquid proximity rides the same 5×3 tile region as
+the stations (`Player.AdjTiles`, `Player.cs:35661-35699`): `tile.liquid > 200`
+by type plus the `CountsAsWaterForCrafting` tiles {172 sink, 207 fountain}.
+
+The group system (`Recipe.SetupRecipeGroups`, `Recipe.cs:499-533`): 34
+groups, the registration order is the id; an ingredient whose item belongs
+to an accepted group substitutes the whole member set
+(`CreateRequiredItemQuickLookups`, `:15162-15191`) and the C# folds the
+members into a fake item id (`1000000 + index`,
+`AddFakeCountsForItemGroups :409-416`). The port carries the accepted group
+on the `Requirement` directly — the same totals without the fake-id
+indirection. `Requirement::matches` reproduces `RequiredItemEntry.Matches`
+(`:36-43`), so the drain (`CraftingRequests.Consume :218-254`) takes any
+member by slot order: the inventory first, then each chest in collection
+order, `ConsumeItemsFrom`'s partial-stack-then-clear shape (the port's
+`consume_kind`/`consume_chest`).
+
+The nearby chests are real 1.4.5 vanilla:
+`Recipe.CollectItemsFromChests` (`:375-407`) = the open container + the
+void bag + (with `Player.Settings.CraftFromNearbyChests`, default true,
+`Player.cs:406`) the container projectiles/banks in a ±39-tile rect and the
+world chests within 600 px of the player's feet
+(`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
+the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
+gated by the new `craft_from_nearby_chests` setting wired to the panel's
+nearby-chests toggle. Deviations: the store's population is M3-CHEST-UI's
+(the chest tiles place with no inventories yet), the save/persistence is
+M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
+passes for every chest (no chest locking); the scan order is raster (the
+vanilla iterates `Main.chest[]`'s instance order — the port has no instance
+registry); the group drain walks members in the group's registration order
+when the inventory pass runs per-member (the vanilla drains one flat pass
+matching `Matches` — the same totals, a different slot walk).
+
+`available` now implements `UpdateRecipeList`'s composition
+(`Recipe.cs:230-259`): environment × enough-ingredients — the port's older
+"station adjacent and any ingredient present" partial list is gone (the
+classic pane shows craftable rows only). Station requirements inherit
+`Recipe.TileCountsAs` (`:559-571`): near a work bench (17) satisfies a
+sawmill (215) requirement, the chain walks 302→17→215. The 8 new subset
+recipes exercise every ported flag: Bottled Water/Honey, the
+Wet/Lava/Honey Bomb trio, Snow Cloud Block (Sky Mill + snow), Wood Shelf
+(Bone Welder + graveyard), Glass (the Sand group); the 11 pre-existing
+recipes re-authored as group entries — the old "Wood → 9 / IronBar → 22"
+expansion deviation is retired. Out: the alchemy discount (M3-CRAFT-3),
+the torch-god/mechdusa flags (no systems), the guide-item mode
+(`CollectGuideRecipes`), the `SendData(32)` chest syncs (multiplayer).
 ## Floating islands (M1.4-WGEN-4)
 
 The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
@@ -3806,3 +3861,131 @@ The worldgen rounding-out:
 Deviations: the gem torches (the ice biome's torch placements) and the
 ice-cave water pools are the follow-ups; the ice shell's dirt pockets
 ride the cave pass's blob machinery.
+
+## The alchemy discount (M3-CRAFT-3)
+
+`AddRecipe` auto-sets `Recipe.alchemy` iff `requiredTile == 13`
+(`Recipe.cs:16722-16726`); `Player.SetAdjTile` raises `player.alchemyTable`
+for tiles 355/699 (`Player.cs:35647-35649`) — the `TileCountsAs` pairs
+355→13/699→13 (CRAFT-2) already satisfy a placed-bottle station requirement
+near the table. The discount itself: `GetIngredientCraftingDiscount`
+(`Recipe.cs:214-228`) rolls `Main.rand.Next(3) == 0` per ingredient unit and
+`GetIngredientsForOneCraft` (`:196-212`) subtracts the survivors from the
+consumed stacks — the availability check counts full stacks (the split is
+the vanilla's). Port: `try_craft` subtracts the rolled-off units from each
+requirement's drain (group entries discount on the folded stack), the rolls
+come from the App's `craft_rng` stream (the per-consumer RNG convention —
+vanilla rolls the shared `Main.rand`; the seed is fixed like the other
+streams, so crafting is seed-deterministic). The subset gains the two
+placed-bottle potions: Lesser Healing Potion ×2 (1 Mushroom + 2 Gel +
+2 Bottle, `Recipe.cs:1586-1597`) and Healing Potion (2 LHP +
+1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state, so
+the discount depends on every prior craft — the documented determinism
+caveat mirrors the vanilla (Main.rand's shared stream).
+## Hardmode switch (M5-HARDFORCE)
+
+The generation half of the hardmode switch — `WorldGen.StartHardmode` →
+`initializeHardMode` (`WorldGen.cs:31570-31697`):
+
+- **The runners** (`GERunner`, `:76169-76330`): the V-shaped strip walker —
+  the position starts at the sky, the velocity `(3·num5, 5f)` per step
+  with `num5 = ±1` (`:31585-31590` — the 3:5 slope verbatim), each step
+  converting the Manhattan disc of the radius `Next(200, 250) · scale ·
+  0.5` with the rim wobble `Next(-10, 11) · 0.015`.
+- **The hallow map** (the good runner): the hallowed grass 109 (from the
+  grass 2 and the corrupt/crimson grass 23/199), the pearlstone 117 (from
+  the stone 1 / the ebonstone 25 / the crimstone 203), the hallowed sand
+  116 (from all the sands 53/123/112/234), the hallowed ice 164 (from
+  161/163/200), the hallowed sandstone 403 and the hardened 402 — plus
+  the purify arm: the corrupt/crimson jungle grass 661/662 revert to the
+  jungle grass 60 (the hallow and the evil cancel on the jungle). The
+  walls: the sandstone wall 187 → 222, the ebonstone/crimstone walls
+  3/83 → the hallowed stone wall 28.
+- **The evil runner** reuses `Convert`'s map by the world's flavour (the
+  corruption or the crimson — `initialize_hard_mode(corruption)`).
+- **The app trigger**: `TR_HARDMODE=1` (the env dev hook) sets
+  `World.hard_mode` and runs `initialize_hard_mode` once — the WoF kill
+  rides the M4-NPC families.
+
+Deviations: the wall-lining pass (the 25·scale cave cavities lined with
+the hallowed walls 200-203, `:31668-31697`) is the follow-up; the altar
+ore drops (the adamantite/etc.) and the WoF summon/kill are the
+M4-NPC/M4-LOOT tasks; the remix jungle-V arm is out (no remix worlds).
+
+## Hardmode ores (M5-HARDFORCE-ores)
+
+The altar-smash ore seeding — the second generation half of the hardmode
+switch (`WorldGen.cs:48920-49090`):
+
+- **The tiers** (`:48947-49040`): the altar count % 3 → the cobalt 107 /
+  the palladium 221 (the count ×1.05), the mythril 108 / the orichalcum
+  222, the adamantite 111 / the titanium 223 (the alternates bump the
+  blob strength +9 via `num4` and the count ×0.9); the 50/50 rolls save
+  into `SavedOreTiers` (−1 = not rolled).
+- **The blob count** (`:48935-48937`): `(maxTilesX/4200 · 310 − 85·tier)
+  · 0.85 / (tier + 1)` — the tier-3 blobs need the full-scale world (the
+  small worlds genuinely get 0 blobs for the adamantite — the C#'s
+  minimum 4200-wide world yields ~39).
+- **The bands** (`:49045-49058`): the cobalt/palladium from
+  `worldSurface`, the mythril/orichalcum from `rockLayer`, the
+  adamantite/titanium from `(2·rockLayer + maxTilesY) / 3`, all down to
+  `maxTilesY − 150` — the bands stay separated by construction.
+- **`OreRunner`** (`:48831-48900`): the random walk with the velocity
+  `Next(-10, 11) · 0.1`, placing the shrinking Manhattan discs —
+  `strength · (steps_left / steps)` with the rim wobble
+  `Next(-10, 11) · 0.015` — over the replace set {0, 1, 23, 25, 40, 53,
+  57, 59, 60, 70, 109, 112, 116, 117, 147, 161, 163, 164, the moss,
+  199, 200, 203, 234, 396-403, 225 unless the hive wall 108}.
+- **The app smash**: the hammer hit (the mining path) on the altar 26 in
+  hardmode runs `smash_altar` — `World.altars_smashed` counts, the App's
+  `ore_tiers` saves the rolls.
+
+Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
+follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
+swapping is out; the ore walls (`wallType`) are out.
+
+## Micro-biomes (M1.4-WGEN-8)
+
+The micro-biome decorators over the finished world:
+
+- **The cave houses** (`CaveHouseBiome`, `:34-92`): 8-12 wood-framed
+  cabins in the underground dirt/stone band — the 25-tile chest/wire
+  exclusion scan (`:38-52`), the wood-frame box (the tile 27), the carved
+  interior with the wood walls (9), the platform row (19), the torches and
+  the chest (`place_chest`'s quads). The C#'s `HouseBuilder` chest
+  variants (the ice/jungle/granite/marble/mushroom/desert chances) resolve
+  to the plain gold chest — the port's chests hold no inventories yet.
+- **The desert campsites** (`CampsiteBiome`, `:9-55`): the disc of the
+  radius `Next(6, 10)` with the solid-count gate (the solid cells within 5
+  of the total), the tent tiles (196 + `Next(4)`) replacing the sand
+  family {53, 396, 397, 404}.
+- **The jungle spike pits** (`SpikePitBiome`, `:10-57`): the shrinking
+  stone circles offset down (the C#'s 4+4+4 circle walk with the blotch
+  modifiers), the carved hollows — the spike tile placement is the
+  follow-up (the jungle spikes = the wiring trap family).
+- **The sword shrines** (`EnchantedSwordBiome`, `:19-113`): the 1-wide
+  shaft down from the surface into the buried 7×5 chamber with the sword
+  tile (197 — the C#'s sword sprite tile; the breakable item drop = the
+  follow-up).
+
+Deviations: the HouseBuilder room variants (the biome walls, the furniture
+sets) are the shape-level approximation; the spike tiles and the sword
+item drop are the follow-ups; the structure-map exclusions are the
+per-pass neighbour scans.
+
+## Ore pools (M1.4-WGEN-9)
+
+The pre-hardmode ore alternates — the vanilla pairs roll one kind per
+world (`TileID.cs`: the copper 7 / the tin 166, the iron 6 / the lead
+167, the silver 9 / the tungsten 168, the gold 8 / the platinum 169):
+
+- **The pool roll** (`OrePools`/`roll_ore_pools`): the 50/50 draw per
+  pair on the shared worldgen stream at the ore pass — the rolled kinds'
+  veins generate, the other pair's kinds are absent from the world.
+- **The gem veins**: the amethyst 63 .. the diamond 68 — the small 1-3
+  blobs in the stone band (280 attempts), one kind per vein.
+- The dungeon colour test accepts the roll (the biome test's stream
+  shifted with the new draws).
+
+Deviations: the TileRunner-strength bands (the C#'s vein shapes carry the
+depth-dependent strengths) are the follow-up; the ore walls are out.

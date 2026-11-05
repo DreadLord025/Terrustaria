@@ -44,6 +44,9 @@ pub fn max_stack(id: u16) -> u32 {
 pub fn tile_drop(tile: u16) -> Option<u16> {
     match tile {
         2 => Some(2),
+        // The sword shrine's real sword (`KillTile_GetItemDrops`: the tile
+        // 187 breaks into the Enchanted Sword 989).
+        187 => Some(989),
         11 => Some(25),
         // The world cactus 80 drops the Cactus item even though the item
         // places the CactusBlock 188, not 80 (`KillTile_GetItemDrops`,

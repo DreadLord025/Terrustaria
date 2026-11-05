@@ -399,16 +399,24 @@ fn find_ground_tile(world: &World, x: i32, y: i32) -> i32 {
 /// without dungeon ground and submerged (non-lava) spawn points.
 fn post_check_chosen_spawn_tile(world: &World, x: i32, y: i32, ground_y: i32) -> bool {
     let _ = ground_y;
+    // `PostCheckChosenSpawnTile` (`NPC.cs:1032-1042`): the two liquid tiles
+    // above the ground reject SHIMMER and HONEY only — plain water passes
+    // (the water spawns ride it: `waterTile` in `SetSpawnFlagsForChosenTile`
+    // `:1057`).
     let liquid_at = |dy: i32| {
         world
             .tile(x, y + dy)
             .is_some_and(|t| t.active() && t.liquid > 0)
     };
     if liquid_at(-1) && liquid_at(-2) {
-        let lava = world
+        let kind = world
             .tile(x, y - 1)
-            .is_some_and(|t| t.liquid_kind() == tr_core::tile::LiquidKind::Lava);
-        if !lava {
+            .map(|t| t.liquid_kind())
+            .unwrap_or(tr_core::tile::LiquidKind::Water);
+        if matches!(
+            kind,
+            tr_core::tile::LiquidKind::Shimmer | tr_core::tile::LiquidKind::Honey
+        ) {
             return false;
         }
     }
@@ -494,8 +502,11 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         if !post_check_chosen_spawn_tile(ctx.world, num, j, ground_y) {
             continue;
         }
-        // `SpawnAnNPC` default selection for the implemented kinds.
-        return spawn_npc_at(ctx, rng, num, j);
+        // `SpawnAnNPC` default selection for the implemented kinds. `y`
+        // converts to pixels at the boundary (`spawn_npc_at`'s `y` is
+        // pixels — the `Main.worldSurface` comparisons run on the tile
+        // coordinate through `y / 16`).
+        return spawn_npc_at(ctx, rng, num, j * 16);
     }
     None
 }
@@ -542,6 +553,69 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         .tile(x, y / 16)
         .map(|t| t.kind)
         .unwrap_or(0);
+    // ---- the water ladder (`NPC.cs:1795-2082`'s arms in the vanilla
+    // order; `waterTile` = the two tiles above the ground are WATER,
+    // `:1057`'s `liquidType() == 0`) ----
+    let water_above = |dy: i32| {
+        ctx.world.tile(x, y / 16 + dy).is_some_and(|t| {
+            t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water
+        })
+    };
+    if water_above(-1) && water_above(-2) {
+        // The ocean arm (`:1795`): `isOcean` = the x-edge within
+        // `WorldGen.oceanDistance` = 250 (`WorldGen.cs:86913`) on a sand
+        // tile above the rock layer (`NPC.cs`'s isOcean row); the
+        // `SharkSpawnChance` is 10 (`:5546-5563`, the Sonar 2 constants-off).
+        let is_sand = matches!(tile_kind, 53 | 234 | 397);
+        let is_ocean = (x < 250 || x > ctx.world.width - 250)
+            && is_sand
+            && (y as f64 / 16.0) < ctx.world.rock_layer;
+        if is_ocean && rng.next(10) == 0 {
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Shark);
+        }
+        // The Piranha arm (`:1929`): `!spawnFriendly && waterTile &&
+        // ((deeperThanRockLayer && Next(2) == 0) || mud floor 60)`.
+        if ((y as f64 / 16.0) > ctx.world.rock_layer && rng.next(2) == 0) || tile_kind == 60 {
+            // The mud-critter scan (`:1932`'s `tileType == 60 &&
+            // surfaceSpawn && day && Next(3) == 0` → 616/612/613/608) is
+            // unmodelled — the roll consumes where the vanilla's gate hits.
+            if tile_kind == 60
+                && surface
+                && y / 16 > 50
+                && rng.next(3) == 0
+                && ctx.day_time
+            {
+                let _ = rng.next(5);
+            }
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Piranha);
+        }
+        // The underground fish (`:1985`): 63/103 unmodelled — the roll
+        // consumes, the port maps to the Goldfish (the closest water
+        // critter; the Angler Fish lands with the fish-family pass).
+        if (y as f64 / 16.0) > ctx.world.world_surface && rng.next(3) == 0 {
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Goldfish);
+        }
+        // The water critter arm (`:1996`): `Next(4) == 0 && (x outside the
+        // ocean || y > worldSurface + 50)`; the corrupt 57/crimson 465
+        // kinds are unmodelled — the port maps them to the Piranha (the
+        // aggressive water fish); the day critter scans (the ducks/the
+        // seahorses) sit constants-off; the golden goldfish 592's
+        // `goldCritterChance` roll consumes nothing.
+        if rng.next(4) == 0
+            && ((x > 250 && x < ctx.world.width - 250)
+                || (y as f64 / 16.0) > ctx.world.world_surface + 50.0)
+        {
+            let fish = if ctx.flags.zone_evil {
+                NpcKind::Piranha
+            } else {
+                NpcKind::Goldfish
+            };
+            return Npc::spawn_swimmer(ctx.world, x, y / 16, fish);
+        }
+        // The missed water rolls fall through to the dry ladder (the
+        // vanilla's remaining water arms — the sand-crab/beach chains —
+        // map to the port's closest kinds there).
+    }
     if surface {
         if ctx.day_time {
             // The day ladder's critter/water/wind specials all sit behind
@@ -642,6 +716,44 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         return spawn_basic_slime(ctx, rng, x, false);
     }
     // ---- the deep-cavern rolls (`NPC.cs:5060-5150`'s cavern arms) ----
+    // The depth gates: `NPC.cs:4869`'s `spawnTileY > maxTilesY - 190`
+    // underworld branch precedes the `:5005+` cavern branch — mutually
+    // exclusive in vanilla; the port keeps the exclusivity inside one
+    // section.
+    let underworld_depth = (y as f64 / 16.0) > ctx.world.height as f64 - 190.0;
+    // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
+    // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
+    // (`:1286`); `CanSpawnDevourer` is the custom-seed gate — true in the
+    // port; the hardmode 98/99 split waits for the hardmode worm pass).
+    if ctx.flags.zone_evil && rng.next(65) == 0 {
+        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::DevourerHead));
+    }
+    // The Giant Worm: the cavern roll (`NPC.cs:4815-4832`:
+    // `underGround && !noWorms && Next(50) == 0 && !ZoneSnow` — the port
+    // approximates the snow gate with the snow-floor tiles 147/161).
+    if !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
+        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::GiantWormHead));
+    }
+    // The Tim: the deep-cavern roll (`:5014`): `(remixWorld ||
+    // spawnTileY > (rockLayer + maxTilesY) / 2.0) && (Next(200) == 0 ||
+    // (offensiveToTim && Next(50) == 0)) → 45` — non-underworld depth
+    // only. The port gates the depth alone: the offensiveToTim accessory
+    // rows (`NPC.cs:418`, the M3-EQUIP-3 work) stay constants-off, so the
+    // Next(50) never runs.
+    if !underworld_depth
+        && (y as f64 / 16.0) > (ctx.world.rock_layer + ctx.world.height as f64) / 2.0
+        && rng.next(200) == 0
+    {
+        return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::Tim);
+    }
+    // The Fire Imp: the underworld arm (`:4891-4893`'s `Next(14) == 0 →
+    // 24`); the lava-critter Next(8) and Demon Next(40) arms ahead of it
+    // are unmodelled (constants-off, consume nothing), and a missed imp
+    // roll falls through to the cavern arms (the vanilla's remaining
+    // underworld arms map to the port's closest kinds there).
+    if underworld_depth && rng.next(14) == 0 {
+        return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::FireImp);
+    }
     // The Undead Miner: `Next(20) == 0 → 44` (`:5060` region — the rare
     // cave miner).
     if rng.next(20) == 0 {
@@ -1304,4 +1416,200 @@ mod tests {
         // And the seed changes the sequence (the stream is not constant).
         assert_ne!(a, run(0x0FED_CBA9_8765_4321));
     }
+    /// Carves an air pocket (x 200..220) whose floor tile sits at
+    /// `floor_y` — `spawn_caster` plants the feet on it, so the pocket
+    /// must clear the 2.5-tile body above.
+    fn carve_pocket(w: &mut World, floor_y: i32) {
+        for x in 200..220 {
+            for y in (floor_y - 6)..floor_y {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+    }
+
+    #[test]
+    fn the_depth_bands_split_tim_and_fire_imp() {
+        // The depth gates (`NPC.cs:4869`'s underworld branch vs `:5014`'s
+        // cavern roll): the underworld depth never rolls Tim; the
+        // deep-cavern depth (below the (rock+height)/2 gate, above the
+        // underworld line) never rolls the imp; each rolls its own caster.
+        // ground_tall's bands touch (both at 510), so a taller world
+        // separates them: rock 320, height 900 → the Tim gate 610, the
+        // underworld line 710.
+        let mut w = World::new("t".into(), 400, 900);
+        for x in 0..400 {
+            for y in 300..900 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        // The underworld pocket: the floor at 720 (past the 710 line =
+        // height 900 - 190).
+        carve_pocket(&mut w, 720);
+        let c_hell = ctx(&w, 720.0 * 16.0, false);
+        let mut tims = 0;
+        let mut imps = 0;
+        for seed in 1..3000u64 {
+            match outcome_at(&c_hell, seed, 720 * 16) {
+                Some((NpcKind::Tim, _)) => tims += 1,
+                Some((NpcKind::FireImp, _)) => imps += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(tims, 0, "the underworld depth never rolls Tim");
+        assert!(imps > 0, "the underworld pocket never rolled the Fire Imp");
+        // The deep-cavern pocket: the floor at 640 (past the 610 gate,
+        // above the 710 underworld line).
+        carve_pocket(&mut w, 640);
+        let c_deep = ctx(&w, 640.0 * 16.0, false);
+        let mut tims = 0;
+        let mut imps = 0;
+        for seed in 1..3000u64 {
+            match outcome_at(&c_deep, seed, 640 * 16) {
+                Some((NpcKind::Tim, _)) => tims += 1,
+                Some((NpcKind::FireImp, _)) => imps += 1,
+                _ => {}
+            }
+        }
+        assert!(tims > 0, "the deep-cavern sweep never rolled Tim");
+        assert_eq!(imps, 0, "the deep-cavern depth never rolls the Fire Imp");
+    }
+
+    #[test]
+    fn the_water_ladder_rolls_the_fish() {
+        // The water ladder (`NPC.cs:1795-2082`): a plain inland pool rolls
+        // the Goldfish through the critter arm (`Next(4)`, x inside the
+        // land window); the mud floor rolls the Piranha directly
+        // (`tileType == 60`); the ocean sand rolls the Shark
+        // (`Next(SharkSpawnChance) == 0`).
+        let mut w = World::new("t".into(), 400, 700);
+        for x in 0..400 {
+            for y in 300..700 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        w.compute_column_surface();
+        // The inland pool: the water rows 330..339 over the floor 340, the
+        // columns 205..215 (the fish bodies span two tiles).
+        for cx in 205..216 {
+            for y in 330..340 {
+                let i = w.index(cx, y);
+                w.tiles[i] = Tile::default();
+                w.tiles[i].liquid = 255;
+            }
+        }
+        let c = ctx(&w, 330.0 * 16.0, false);
+        let mut goldfish = 0;
+        for seed in 1..3000u64 {
+            if matches!(outcome_at(&c, seed, 340 * 16), Some((NpcKind::Goldfish, _))) {
+                goldfish += 1;
+            }
+        }
+        assert!(goldfish > 0, "the pool sweep never rolled the Goldfish");
+        // The mud pool: the same shape with a mud floor (tile 60).
+        let mut w2 = w.clone();
+        for cx in 205..216 {
+            let i = w2.index(cx, 340);
+            w2.tiles[i].kind = 60;
+        }
+        let c2 = ctx(&w2, 330.0 * 16.0, false);
+        let mut piranhas = 0;
+        for seed in 1..3000u64 {
+            if matches!(outcome_at(&c2, seed, 340 * 16), Some((NpcKind::Piranha, _))) {
+                piranhas += 1;
+            }
+        }
+        assert_eq!(piranhas, 3000 - 1, "the mud floor always rolls the Piranha");
+        // The ocean: the sand floor (53) at the x-edge columns — the
+        // isOcean gate needs the spawn ABOVE the rock layer (`:isOcean`'s
+        // `spawnTileY < Main.rockLayer`), so the pool rides the surface
+        // (the water rows 296..299 over the sand floor 300, above
+        // world_surface 310 — the water ladder precedes the surface block).
+        let mut w3 = w.clone();
+        for cx in 5..16 {
+            for y in 296..300 {
+                let i = w3.index(cx, y);
+                w3.tiles[i] = Tile::default();
+                w3.tiles[i].liquid = 255;
+            }
+        }
+        for cx in 5..16 {
+            let i = w3.index(cx, 300);
+            w3.tiles[i].kind = 53;
+        }
+        let c3 = ctx(&w3, 297.0 * 16.0, false);
+        let mut sharks = 0;
+        let mut others = 0;
+        for seed in 1..3000u64 {
+            // The ocean column 10 — `outcome_at`'s x is the land 210.
+            let mut rng = FastRandom::new(seed);
+            match spawn_npc_at(&c3, &mut rng, 10, 300 * 16).map(|n| n.kind) {
+                Some(NpcKind::Shark) => sharks += 1,
+                _ => others += 1,
+            }
+        }
+        assert!(sharks > 0, "the ocean sweep never rolled the Shark");
+        assert!(sharks < 3000, "the ocean roll is gated");
+    }
+
+    #[test]
+    fn the_cavern_rolls_worm_heads() {
+        // The worm arms: the Devourer `ZoneCorrupt && Next(65) == 0`
+        // (`:3701-3710`), the Giant Worm `underGround && Next(50) == 0`
+        // (`:4815-4832`) — the sweeps produce the heads, the non-evil dirt
+        // never rolls the Devourer.
+        let mut w = ground_tall();
+        // The evil cavern pocket: the corruption zone + a carved air pocket
+        // so the head lands.
+        let mut c = ctx(&w, 350.0 * 16.0, false);
+        c.flags.zone_evil = true;
+        let mut devourers = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+                devourers += 1;
+            }
+        }
+        assert!(devourers > 0, "the corruption sweep never rolled the Devourer");
+        // The plain dirt never rolls the Devourer (the zone gate).
+        let c_plain = ctx(&w, 350.0 * 16.0, false);
+        let mut devourers = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+                devourers += 1;
+            }
+        }
+        assert_eq!(devourers, 0, "the plain cavern never rolls the Devourer");
+        // The Giant Worm: the same depth without the corruption.
+        let mut worms = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::GiantWormHead, _))) {
+                worms += 1;
+            }
+        }
+        assert!(worms > 0, "the cavern sweep never rolled the Giant Worm");
+    }
+
 }
+
+
+
+

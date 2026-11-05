@@ -1,262 +1,827 @@
-//! The crafting recipe table (subset-first, M3-CRAFT): `Recipe` data ported
-//! from `Recipe.cs` `SetupRecipes` over the items the registry and our item
-//! subset actually have. The full ~16k-line `SetupRecipes` extraction is a
+//! The crafting recipe table + the availability machine (M3-CRAFT-2):
+//! `Recipe` / `RecipeGroup` / `PlayerMeetsEnvironmentConditions` /
+//! `CollectItemsToCraftWithFrom` ported from `Recipe.cs` over the items the
+//! registry actually has. The full ~15k-line `SetupRecipes` extraction is a
 //! separate task (`tools/GenRecipes` candidate).
 //!
-//! Item ids reference [`crate::registry`]; station ids are `TileID` values
-//! the player must stand near (`Player.AdjTiles`, `Player.cs:35661`).
+//! Item ids reference [`crate::registry`]; station ids are `TileID` values the
+//! player must stand near (`Player.AdjTiles`, `Player.cs:35661`).
+//!
+//! Port notes: the C# runtime folds group members into a fake item id
+//! (`1000000 + groupIndex`, `Recipe.cs:409-416`) — the port's static tables
+//! carry the accepted group on the [`Requirement`] directly, which is the
+//! same lookup result `CreateRequiredItemQuickLookups` (`Recipe.cs:15162-15191`)
+//! produces. The chest store ([`WorldChest`]) is in-memory only — the
+//! chest inventories' save/persistence is M6-SAVE-2's and the chest UI is
+//! M3-CHEST-UI's; banks (piggy/safe/void bag) are M3-STORE-1's, so the
+//! `CollectItemsFromChests` subset here is the tile chests in range
+//! (`NearbyChests.GetChestsInRangeOf`).
+
+use std::collections::HashMap;
 
 use crate::item::{ItemSlot, INV};
 use crate::player::{self, Player};
 use crate::registry;
 use tr_core::World;
 
-/// One crafting recipe: `Recipe.createItem` + `requiredItem[]` +
-/// `requiredTile` (`Recipe.cs:13`). Const-constructible (slice fields) so the
-/// table is a static.
+/// `Recipe.maxRequirements` (`Recipe.cs:16775`).
+pub(crate) const MAX_REQUIREMENTS: usize = 15;
+
+/// One crafting recipe: `createItem` + `requiredItem[]` + `requiredTile` +
+/// the environment flags (`Recipe.cs:72-100`).
+#[derive(Default)]
 pub(crate) struct Recipe {
     /// `(item id, stack)` — `createItem`.
     pub(crate) create: (u16, u32),
-    /// `(item id, count)` pairs — `requiredItem[]`.
-    pub(crate) required: &'static [(u16, u32)],
-    /// Station tile ids the player must stand near (`requiredTile`);
-    /// empty = craftable by hand.
+    /// `requiredItem[]` — see [`Requirement`].
+    pub(crate) required: &'static [Requirement],
+    /// Station tile ids the player must stand near (`requiredTile`,
+    /// `SetCraftingStation`); empty = craftable by hand.
     pub(crate) stations: &'static [u16],
+    /// `needWater` (`:82`): `player.adjWaterSource`.
+    pub(crate) need_water: bool,
+    /// `needHoney` (`:80`): `player.adjHoney`.
+    pub(crate) need_honey: bool,
+    /// `needLava` (`:84`): `player.adjLava`.
+    pub(crate) need_lava: bool,
+    /// `needSnowBiome` (`:90`): `player.ZoneSnow`.
+    pub(crate) need_snow: bool,
+    /// `needGraveyardBiome` (`:92`): `player.ZoneGraveyard`.
+    pub(crate) need_graveyard: bool,
+    /// `alchemy` (`:88`) — auto-set by `AddRecipe` iff `requiredTile == 13`
+    /// (`:16722-16726`); gates the 1/3 ingredient discount at craft time
+    /// (`GetIngredientCraftingDiscount`, `:214-228`).
+    pub(crate) alchemy: bool,
 }
 
-/// The subset recipe table. Every entry cites its `Recipe.cs` registration;
-/// group recipes (`RequireGroup(RecipeGroups.Wood)` / `(IronBar)`,
-/// `Recipe.cs:610-616` / `:4738`) are expanded to concrete ids (Wood → 9,
-/// Iron Bar → 22) — the deviation is recorded in `docs/ANALYSIS.md`.
-pub(crate) static RECIPES: &[Recipe] = &[
-    // Recipe.cs:610-615 — Torch x3: 1 Gel + 1 Wood, by hand.
-    Recipe {
-        create: (8, 3),
-        required: &[(23, 1), (9, 1)],
-        stations: &[],
+/// The zero recipe the static entries inherit the unset fields from.
+const BASE: Recipe = Recipe {
+    create: (0, 0),
+    required: &[],
+    stations: &[],
+    need_water: false,
+    need_honey: false,
+    need_lava: false,
+    need_snow: false,
+    need_graveyard: false,
+    alchemy: false,
+};
+
+/// One `requiredItem` entry: the authored item id + stack, with the accepted
+/// recipe group (`RequireGroup`, `Recipe.cs:143-153`) or [`NO_GROUP`]. At
+/// lookup time an entry whose item belongs to the group's members substitutes
+/// the whole member set (`CreateRequiredItemQuickLookups`,
+/// `Recipe.cs:15162-15191`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Requirement {
+    /// The authored `requiredItem[].type`.
+    pub(crate) item: u16,
+    /// `requiredItem[].stack`.
+    pub(crate) stack: u32,
+    /// The accepted group id, or [`NO_GROUP`].
+    pub(crate) group: u16,
+}
+
+/// No accepted group (a plain item requirement).
+pub(crate) const NO_GROUP: u16 = u16::MAX;
+
+/// The `ID/RecipeGroups.cs` field ids (the `RegisteredId` = registration
+/// order, `Recipe.cs:497-533`).
+pub(crate) struct RecipeGroups;
+impl RecipeGroups {
+    pub(crate) const BIRDS: u16 = 0;
+    pub(crate) const SCORPIONS: u16 = 1;
+    pub(crate) const SQUIRRELS: u16 = 2;
+    pub(crate) const BUGS: u16 = 3;
+    pub(crate) const DUCKS: u16 = 4;
+    pub(crate) const BUTTERFLIES: u16 = 5;
+    pub(crate) const FIREFLIES: u16 = 6;
+    pub(crate) const SNAILS: u16 = 7;
+    pub(crate) const DRAGONFLIES: u16 = 8;
+    pub(crate) const TURTLES: u16 = 9;
+    pub(crate) const MACAWS: u16 = 10;
+    pub(crate) const COCKATIELS: u16 = 11;
+    pub(crate) const CLOUD_BALLOONS: u16 = 12;
+    pub(crate) const BLIZZARD_BALLOONS: u16 = 13;
+    pub(crate) const SANDSTORM_BALLOONS: u16 = 14;
+    pub(crate) const CRITTER_GUIDES: u16 = 15;
+    pub(crate) const NATURE_GUIDES: u16 = 16;
+    pub(crate) const SEASHELLS: u16 = 17;
+    pub(crate) const FRUIT: u16 = 18;
+    pub(crate) const BALLOONS: u16 = 19;
+    pub(crate) const COBALT_BAR: u16 = 20;
+    pub(crate) const MYTHRIL_BAR: u16 = 21;
+    pub(crate) const ADAMANTITE_BAR: u16 = 22;
+    pub(crate) const GEM_CRITTER: u16 = 23;
+    pub(crate) const MAGIC_MIRROR: u16 = 24;
+    pub(crate) const WOOD: u16 = 25;
+    pub(crate) const STONE: u16 = 26;
+    pub(crate) const SAND: u16 = 27;
+    pub(crate) const IRON_BAR: u16 = 28;
+    pub(crate) const SILVER_BAR: u16 = 29;
+    pub(crate) const GOLD_BAR: u16 = 30;
+    pub(crate) const FRAGMENT: u16 = 31;
+    pub(crate) const PRESSURE_PLATE: u16 = 32;
+    pub(crate) const JELLYFISH: u16 = 33;
+}
+
+/// `RecipeGroup` (`RecipeGroup.cs:9-27`) — `SetupRecipeGroups`
+/// (`Recipe.cs:497-533`) verbatim; `id` is the registration order (the C#
+/// `RegisteredId`), `icon` is `Items[0]` (`GetPlaceholderItemType`),
+/// `members` is `ValidItems`/`Items`.
+pub(crate) struct RecipeGroupDef {
+    pub(crate) id: u16,
+    pub(crate) name: &'static str,
+    pub(crate) icon: u16,
+    pub(crate) members: &'static [u16],
+}
+
+/// All 34 registered groups, verbatim (`Recipe.cs:499-533`). The registration
+/// order is the id; member lists quote the C# call sites.
+pub(crate) static GROUPS: &[RecipeGroupDef] = &[
+    RecipeGroupDef { id: 0, name: "Birds", icon: 2015, members: &[2015, 2016, 2017] },
+    RecipeGroupDef { id: 1, name: "Scorpions", icon: 2157, members: &[2157, 2156] },
+    RecipeGroupDef { id: 2, name: "Squirrels", icon: 2018, members: &[2018, 3563] },
+    RecipeGroupDef { id: 3, name: "Bugs", icon: 3194, members: &[3194, 3192, 3193] },
+    RecipeGroupDef { id: 4, name: "Ducks", icon: 2123, members: &[2123, 2122] },
+    RecipeGroupDef {
+        id: 5,
+        name: "Butterflies",
+        icon: 1998,
+        members: &[1998, 2001, 1994, 1995, 1996, 1999, 1997, 2000],
     },
-    // Recipe.cs:4751-4754 — Work Bench: 10 Wood, by hand.
-    Recipe {
-        create: (36, 1),
-        required: &[(9, 10)],
-        stations: &[],
+    RecipeGroupDef { id: 6, name: "Fireflies", icon: 1992, members: &[1992, 2004] },
+    RecipeGroupDef { id: 7, name: "Snails", icon: 2006, members: &[2006, 2007] },
+    RecipeGroupDef {
+        id: 8,
+        name: "Dragonflies",
+        icon: 4334,
+        members: &[4334, 4335, 4336, 4338, 4339, 4337],
     },
-    // Recipe.cs:4722-4726 — Wooden Door: 6 Wood, at a work bench.
-    Recipe {
-        create: (25, 1),
-        required: &[(9, 6)],
-        stations: &[18],
+    RecipeGroupDef { id: 9, name: "Turtles", icon: 4464, members: &[4464, 4465] },
+    RecipeGroupDef { id: 10, name: "Macaws", icon: 5212, members: &[5212, 5300] },
+    RecipeGroupDef { id: 11, name: "Cockatiels", icon: 5312, members: &[5312, 5313] },
+    RecipeGroupDef { id: 12, name: "CloudBalloons", icon: 399, members: &[399, 1250] },
+    RecipeGroupDef { id: 13, name: "BlizzardBalloons", icon: 1163, members: &[1163, 1251] },
+    RecipeGroupDef { id: 14, name: "SandstormBalloons", icon: 983, members: &[983, 1252] },
+    RecipeGroupDef { id: 15, name: "CritterGuides", icon: 4767, members: &[4767, 5453] },
+    RecipeGroupDef { id: 16, name: "NatureGuides", icon: 5309, members: &[5309, 5454] },
+    RecipeGroupDef { id: 17, name: "Seashells", icon: 2625, members: &[2625, 2626] },
+    RecipeGroupDef {
+        id: 18,
+        name: "Fruit",
+        icon: 4009,
+        members: &[
+            4009, 4282, 4283, 4284, 4285, 4286, 4287, 4288, 4289, 4290, 4291, 4292, 4293, 4294,
+            4295, 4296, 4297, 5277, 5278,
+        ],
     },
-    // Recipe.cs:4727-4731 — Wooden Chair: 4 Wood, at a work bench.
-    Recipe {
-        create: (34, 1),
-        required: &[(9, 4)],
-        stations: &[18],
+    RecipeGroupDef { id: 19, name: "Balloons", icon: 3738, members: &[3738, 3736, 3737] },
+    RecipeGroupDef { id: 20, name: "CobaltBar", icon: 381, members: &[381, 1184] },
+    RecipeGroupDef { id: 21, name: "MythrilBar", icon: 382, members: &[382, 1191] },
+    RecipeGroupDef { id: 22, name: "AdamantiteBar", icon: 391, members: &[391, 1198] },
+    RecipeGroupDef {
+        id: 23,
+        name: "GemCritter",
+        icon: 4838,
+        members: &[
+            4838, 4844, 4843, 4841, 4842, 4840, 4839, 4831, 4837, 4836, 4834, 4835, 4833, 4832,
+        ],
     },
-    // Recipe.cs:4732-4739 — Chest: 8 Wood + 2 Iron Bar, at a work bench
-    // (`RequireGroup(RecipeGroups.IronBar)` expanded to Iron Bar 22).
-    Recipe {
-        create: (48, 1),
-        required: &[(9, 8), (22, 2)],
-        stations: &[18],
+    RecipeGroupDef { id: 24, name: "MagicMirror", icon: 50, members: &[50, 3199] },
+    RecipeGroupDef {
+        id: RecipeGroups::WOOD,
+        name: "Wood",
+        icon: 9,
+        members: &[9, 619, 620, 621, 911, 1729, 2504, 2503, 5215],
     },
-    // Recipe.cs:4746-4750 — Wooden Table: 8 Wood, at a work bench.
-    Recipe {
-        create: (32, 1),
-        required: &[(9, 8)],
-        stations: &[18],
+    RecipeGroupDef {
+        id: RecipeGroups::STONE,
+        name: "Stone",
+        icon: 3,
+        members: &[3, 61, 836, 409],
     },
-    // Recipe.cs:4568-4572 — Stone Wall: 1 Stone, at a work bench.
-    Recipe {
-        create: (26, 1),
-        required: &[(3, 1)],
-        stations: &[18],
+    RecipeGroupDef {
+        id: RecipeGroups::SAND,
+        name: "Sand",
+        icon: 169,
+        members: &[169, 408, 1246, 370, 3272, 3338, 3274, 3275],
     },
-    // Recipe.cs:4521-4524 — Dirt Wall: 1 Dirt, at a work bench.
-    Recipe {
-        create: (30, 1),
-        required: &[(2, 1)],
-        stations: &[18],
+    RecipeGroupDef { id: RecipeGroups::IRON_BAR, name: "IronBar", icon: 22, members: &[22, 704] },
+    RecipeGroupDef {
+        id: RecipeGroups::SILVER_BAR,
+        name: "SilverBar",
+        icon: 21,
+        members: &[21, 705],
     },
-    // Recipe.cs:9606-9614 — Furnace: 20 Stone + 4 Wood + 3 Torch, at a work bench.
-    Recipe {
-        create: (33, 1),
-        required: &[(3, 20), (9, 4), (8, 3)],
-        stations: &[18],
+    RecipeGroupDef { id: RecipeGroups::GOLD_BAR, name: "GoldBar", icon: 19, members: &[19, 706] },
+    RecipeGroupDef { id: 31, name: "Fragment", icon: 3458, members: &[3458, 3456, 3457, 3459] },
+    RecipeGroupDef {
+        id: 32,
+        name: "PressurePlate",
+        icon: 542,
+        members: &[542, 852, 543, 541, 1151, 529, 853, 4261],
     },
-    // Recipe.cs:9817-9820 — Iron Bar: 3 Iron Ore, at a furnace.
-    Recipe {
-        create: (22, 1),
-        required: &[(11, 3)],
-        stations: &[17],
-    },
-    // Recipe.cs:9822-9826 — Iron Anvil: 5 Iron Bar, at a work bench.
-    Recipe {
-        create: (35, 1),
-        required: &[(22, 5)],
-        stations: &[18],
-    },
+    RecipeGroupDef { id: 33, name: "Jellyfish", icon: 2436, members: &[2436, 2437, 2438] },
 ];
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+/// `RecipeGroup.recipeGroups[id]` (`RecipeGroup.cs:69-73`).
+pub(crate) fn group(id: u16) -> Option<&'static RecipeGroupDef> {
+    GROUPS.get(id as usize)
+}
 
-    #[test]
-    fn test_dw_1_1_table_integrity() {
-        // Every create/required item id resolves in the registry; counts are
-        // positive; no duplicate create ids.
-        assert!(!RECIPES.is_empty());
-        let mut seen = Vec::new();
-        for r in RECIPES {
-            assert!(registry::get(r.create.0).is_some(), "create id {}", r.create.0);
-            assert!(r.create.1 > 0);
-            assert!(!r.required.is_empty(), "recipe {:?}", r.create);
-            for (id, count) in r.required {
-                assert!(
-                    registry::get(*id).is_some(),
-                    "required id {id} for create {}",
-                    r.create.0
-                );
-                assert!(*count > 0);
+impl Requirement {
+    /// A plain item entry.
+    pub(crate) const fn item(item: u16, stack: u32) -> Self {
+        Self { item, stack, group: NO_GROUP }
+    }
+
+    /// A group entry: the authored member item + the group it may draw from.
+    pub(crate) const fn group(item: u16, group: u16, stack: u32) -> Self {
+        Self { item, stack, group }
+    }
+
+    /// `RequiredItemEntry.Matches` (`Recipe.cs:36-43`): the authored item, or
+    /// any member of the accepted group.
+    pub(crate) fn matches(&self, kind: u16) -> bool {
+        if self.group != NO_GROUP {
+            if let Some(g) = group(self.group) {
+                return g.members.contains(&kind);
             }
-            assert!(!seen.contains(&r.create.0), "duplicate create {}", r.create.0);
-            seen.push(r.create.0);
+        }
+        self.item == kind
+    }
+}
+
+/// `Recipe.TileCountsAs` (`Recipe.SetupTileInheritance`, `Recipe.cs:559-571`):
+/// `(tile, countsAs)` — standing near `tile` also satisfies a `countsAs`
+/// station requirement (`Player.SetAdjTile`'s recursion, `Player.cs:35643-35659`).
+pub(crate) static TILE_COUNTS_AS: &[(u16, u16)] = &[
+    (96, 215),
+    (17, 215),
+    (302, 17),
+    (77, 17),
+    (133, 77),
+    (134, 16),
+    (355, 13),
+    (699, 13),
+    (304, 86),
+];
+
+/// `TileID.Sets.CountsAsWaterForCrafting` (`TileID.cs:553`): the sink (172)
+/// and the water fountain (207) count as water sources.
+pub(crate) const COUNTS_AS_WATER: [u16; 2] = [172, 207];
+
+/// Does standing near `kind` satisfy a `required` station? `kind` itself, or
+/// its `TileCountsAs` chain reaching `required`.
+fn satisfies_station(required: u16, kind: u16) -> bool {
+    let mut cur = kind;
+    loop {
+        if cur == required {
+            return true;
+        }
+        match TILE_COUNTS_AS.iter().find(|(a, _)| *a == cur) {
+            Some(&(_, parent)) => cur = parent,
+            None => return false,
         }
     }
+}
 
-    #[test]
-    fn test_dw_1_2_workbench_reference_recipe() {
-        // `Recipe.cs:4751-4754`: 10x Wood -> Work Bench, no station.
-        let wb = RECIPES
-            .iter()
-            .find(|r| r.create.0 == 36)
-            .expect("work bench recipe");
-        assert_eq!(wb.create, (36, 1));
-        assert_eq!(wb.required, &[(9, 10)]);
-        assert!(wb.stations.is_empty());
-    }
-
-    #[test]
-    fn torch_recipe_expands_the_wood_group() {
-        // `Recipe.cs:610-615`: 1 Gel + 1 Wood -> 3 Torches. The original
-        // requires `RecipeGroup(Wood)`; the subset expansion pins Wood (9).
-        let torch = RECIPES.iter().find(|r| r.create.0 == 8).unwrap();
-        assert_eq!(torch.create, (8, 3));
-        assert_eq!(torch.required, &[(23, 1), (9, 1)]);
-        assert!(torch.stations.is_empty());
-    }
-
-    #[test]
-    fn test_dw_2_3_furniture_recipes_match_recipe_cs() {
-        // Door :4722-4726, chair :4727-4731, chest :4732-4739, table
-        // :4746-4750 — all at a work bench (18). The chest's
-        // `RequireGroup(RecipeGroups.IronBar)` expands to Iron Bar (22).
-        let door = RECIPES.iter().find(|r| r.create.0 == 25).unwrap();
-        assert_eq!(door.required, &[(9, 6)]);
-        assert_eq!(door.stations, &[18]);
-        let chair = RECIPES.iter().find(|r| r.create.0 == 34).unwrap();
-        assert_eq!(chair.required, &[(9, 4)]);
-        assert_eq!(chair.stations, &[18]);
-        let chest = RECIPES.iter().find(|r| r.create.0 == 48).unwrap();
-        assert_eq!(chest.required, &[(9, 8), (22, 2)]);
-        assert_eq!(chest.stations, &[18]);
-        let table = RECIPES.iter().find(|r| r.create.0 == 32).unwrap();
-        assert_eq!(table.required, &[(9, 8)]);
-        assert_eq!(table.stations, &[18]);
-    }
+/// The `Player.AdjTiles` result (`Player.cs:35661-35699`): the active tile
+/// kinds in the reach region plus the liquid-source flags.
+pub(crate) struct Adjacent {
+    pub(crate) tiles: Vec<u16>,
+    /// `player.adjWaterSource` — `tile.liquid > 200` water (or a
+    /// `CountsAsWaterForCrafting` tile).
+    pub(crate) water: bool,
+    /// `player.adjHoney` — `tile.liquid > 200` honey.
+    pub(crate) honey: bool,
+    /// `player.adjLava` — `tile.liquid > 200` lava.
+    pub(crate) lava: bool,
+    /// `player.alchemyTable` — the alchemy-table tiles
+    /// (`Player.SetAdjTile`, `Player.cs:35647-35649`).
+    pub(crate) alchemy_table: bool,
 }
 
 /// `Player.AdjTiles` (`Player.cs:35661`) with `TileReachCheckSettings.Simple`
 /// (`TileReachCheckSettings.cs:81-86`: reach X 5 / Y 3, `GetRanges` clamped by
 /// `TileReachLimit = 20`; region math `:45-54`): the active tile kinds around
-/// the player hitbox. Liquids/water-source flags are not modelled.
-pub(crate) fn adjacent_tiles(world: &World, player: &Player) -> Vec<u16> {
+/// the player hitbox and the liquid flags (the same region — the vanilla has
+/// no separate liquid radius; threshold `tile.liquid > 200`, `:35688-35693`).
+pub(crate) fn scan_adjacent(world: &World, player: &Player) -> Adjacent {
     const REACH_X: i32 = 5;
     const REACH_Y: i32 = 3;
     let lx = (player.x / 16.0).floor() as i32 - REACH_X;
     let hx = ((player.x + player::WIDTH as f32) / 16.0).ceil() as i32 - 1 + REACH_X;
     let ly = (player.y / 16.0).floor() as i32 - REACH_Y;
     let hy = ((player.y + player::HEIGHT as f32) / 16.0).ceil() as i32 - 1 + REACH_Y;
-    let mut out = Vec::new();
+    let mut adj =
+        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false };
     for i in lx.max(0)..=hx.min(world.width as i32 - 1) {
         for j in ly.max(0)..=hy.min(world.height as i32 - 1) {
             if let Some(t) = world.tile(i, j) {
-                if t.active() && !out.contains(&t.kind) {
-                    out.push(t.kind);
+                if t.active() {
+                    if !adj.tiles.contains(&t.kind) {
+                        adj.tiles.push(t.kind);
+                    }
+                    // `Player.SetAdjTile` (`Player.cs:35646-35649`).
+                    if t.kind == 355 || t.kind == 699 {
+                        adj.alchemy_table = true;
+                    }
                 }
+                // `TileID.Sets.CountsAsWaterForCrafting` (`:35685-35687`).
+                if t.active() && COUNTS_AS_WATER.contains(&t.kind) {
+                    adj.water = true;
+                }
+                if t.liquid > 200 {
+                    match t.liquid_kind() {
+                        tr_core::tile::LiquidKind::Water => adj.water = true,
+                        tr_core::tile::LiquidKind::Honey => adj.honey = true,
+                        tr_core::tile::LiquidKind::Lava => adj.lava = true,
+                        tr_core::tile::LiquidKind::Shimmer => {}
+                    }
+                }
+            }
+        }
+    }
+    adj
+}
+
+/// The `player.ZoneSnow` / `player.ZoneGraveyard` pair
+/// (`Player.cs:16705/16709` copy the `SceneMetrics` zone flags).
+#[derive(Clone, Copy, Default)]
+pub(crate) struct Zones {
+    pub(crate) snow: bool,
+    pub(crate) graveyard: bool,
+}
+
+/// One world chest's item store (`Main.chest[]`, `Chest.item`). The port's
+/// chest UI/storage owns filling it (`M3-CHEST-UI`); the world save skips the
+/// chest section (`M6-SAVE-2`), so this is in-memory only.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct WorldChest {
+    /// The chest tile's top-left `(x, y)`.
+    pub(crate) tile: (i32, i32),
+    /// `(item id, stack)` stacks, `Chest.maxItems` = 40 at most.
+    pub(crate) slots: Vec<(u16, u32)>,
+}
+
+/// `Main.rand.Next(3) == 0` against the crafting stream — the port's
+/// per-consumer RNG convention (vanilla rolls the shared `Main.rand`).
+pub(crate) fn next_rand3(rng: &mut u64) -> bool {
+    *rng = rng.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *rng;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    (z ^ (z >> 31)) % 3 == 0
+}
+
+/// `Recipe.GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): one free unit
+/// per 1/3 roll while the recipe brews at an alchemy table.
+fn ingredient_discount(alchemy: bool, alchemy_table: bool, stack: u32, rng: &mut u64) -> u32 {
+    if !alchemy || !alchemy_table {
+        return 0;
+    }
+    (0..stack).filter(|_| next_rand3(rng)).count() as u32
+}
+
+/// `NearbyChests.GetChestsInRangeOf`'s default range (`NearbyChests.cs:14`).
+pub(crate) const CHEST_RANGE_PX: f32 = 600.0;
+
+/// The world chest tiles the range scan counts (`GetChestsInRangeOf` walks
+/// `Main.chest[]` — the port scans the tile kinds instead): the chest (21)
+/// and the gold chest (341).
+pub(crate) const CHEST_TILES: [u16; 2] = [21, 341];
+
+/// The tile chests whose center is within [`CHEST_RANGE_PX`] of the player's
+/// feet (`GetChestsInRangeOf(player.position)`, `Recipe.cs:395`), in raster
+/// order (the vanilla iterates `Main.chest[]`'s instance order; the port has
+/// no instance registry — the deviation is recorded in `docs/ANALYSIS.md`).
+/// `Chest.IsLockedOrInUse` (`Chest.cs:178-188`) passes for every chest — the
+/// port has no chest locking (`M3-CHEST-UI`'s) and no other players browsing.
+pub(crate) fn chests_in_range(
+    world: &World,
+    player: &Player,
+    chests: &[WorldChest],
+    from_nearby: bool,
+) -> Vec<usize> {
+    let mut out = Vec::new();
+    if !from_nearby {
+        return out;
+    }
+    let px = player.x;
+    let py = player.y;
+    let reach = (CHEST_RANGE_PX / 16.0).floor() as i32 + 1;
+    let lx = ((px / 16.0).floor() as i32 - reach).max(0);
+    let hx = (((px + player::WIDTH as f32) / 16.0).ceil() as i32 + reach)
+        .min(world.width as i32 - 1);
+    let ly = ((py / 16.0).floor() as i32 - reach).max(0);
+    let hy = (((py + player::HEIGHT as f32) / 16.0).ceil() as i32 + reach)
+        .min(world.height as i32 - 1);
+    for i in lx..=hx {
+        for j in ly..=hy {
+            let Some(t) = world.tile(i, j) else { continue };
+            if !t.active() || !CHEST_TILES.contains(&t.kind) {
+                continue;
+            }
+            let cx = i as f32 * 16.0 + 16.0;
+            let cy = j as f32 * 16.0 + 16.0;
+            let dx = cx - px;
+            let dy = cy - py;
+            if dx * dx + dy * dy > CHEST_RANGE_PX * CHEST_RANGE_PX {
+                continue;
+            }
+            if chests.iter().any(|c| c.tile == (i, j)) {
+                out.push(
+                    chests
+                        .iter()
+                        .position(|c| c.tile == (i, j))
+                        .expect("found above"),
+                );
             }
         }
     }
     out
 }
 
+/// `Recipe.CollectItems` (`Recipe.cs:418-433`): the plain stack sums. The
+/// group folding is per requirement here (`Requirement::matches` semantics) —
+/// the C# folds every group into a fake id first
+/// (`AddFakeCountsForItemGroups`, `Recipe.cs:409-416`); both give the same
+/// per-requirement totals.
+pub(crate) fn collect_owned(
+    inv: &[ItemSlot; INV],
+    chests: &[WorldChest],
+    in_range: &[usize],
+) -> HashMap<u16, u32> {
+    let mut owned: HashMap<u16, u32> = HashMap::new();
+    for slot in inv.iter() {
+        if slot.count > 0 {
+            *owned.entry(slot.kind).or_insert(0) += slot.count;
+        }
+    }
+    for &i in in_range {
+        for (kind, count) in &chests[i].slots {
+            if *count > 0 {
+                *owned.entry(*kind).or_insert(0) += count;
+            }
+        }
+    }
+    owned
+}
+
+/// `Recipe.PlayerMeetsEnvironmentConditions` (`Recipe.cs:322-358`): the
+/// stations (with the `TileCountsAs` inheritance), the liquid flags and the
+/// biome zones. `needTorchGodsFavor`/`needMechdusa` have no port systems (the
+/// torch-god event, the getfixedboi seed) — no subset recipe sets them.
+pub(crate) fn meets_environment(recipe: &Recipe, adj: &Adjacent, zones: &Zones) -> bool {
+    recipe
+        .stations
+        .iter()
+        .all(|&t| adj.tiles.iter().any(|&k| satisfies_station(t, k)))
+        && (!recipe.need_water || adj.water)
+        && (!recipe.need_honey || adj.honey)
+        && (!recipe.need_lava || adj.lava)
+        && (!recipe.need_snow || zones.snow)
+        && (!recipe.need_graveyard || zones.graveyard)
+}
+
+/// `Recipe.CollectedEnoughItemsToCraft` (`Recipe.cs:275-283`) /
+/// `HowManyTimesCanRecipeBeCrafted` (`:290-311`): every requirement's folded
+/// count reaches its stack.
+pub(crate) fn craftable(
+    recipe: &Recipe,
+    owned: &HashMap<u16, u32>,
+    adj: &Adjacent,
+    zones: &Zones,
+) -> bool {
+    meets_environment(recipe, adj, zones)
+        && recipe.required.iter().all(|req| {
+            let have = if req.group != NO_GROUP {
+                group(req.group)
+                    .map(|g| g.members.iter().map(|m| owned.get(m).copied().unwrap_or(0)).sum())
+                    .unwrap_or(0)
+            } else {
+                owned.get(&req.item).copied().unwrap_or(0)
+            };
+            have >= req.stack
+        })
+}
+
+/// The panel's recipe list — `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`):
+/// environment × enough-ingredients. The port's older "any ingredient
+/// present" partial list is gone; the classic pane shows craftable rows only.
+pub(crate) fn available(
+    inv: &[ItemSlot; INV],
+    chests: &[WorldChest],
+    in_range: &[usize],
+    adj: &Adjacent,
+    zones: &Zones,
+) -> Vec<usize> {
+    let owned = collect_owned(inv, chests, in_range);
+    RECIPES
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| craftable(r, &owned, adj, zones))
+        .map(|(i, _)| i)
+        .collect()
+}
+
 /// Total count of one item kind across the whole inventory.
 fn count_kind(inv: &[ItemSlot; INV], kind: u16) -> u32 {
-    inv.iter()
-        .filter(|s| s.kind == kind)
-        .map(|s| s.count)
-        .sum()
+    inv.iter().filter(|s| s.kind == kind).map(|s| s.count).sum()
 }
 
 /// `CraftingRequests.ConsumeItemsFrom` (`CraftingRequests.cs:244-290`): one
 /// pass in slot-index order — partial decrement when `stack > toConsume`,
 /// otherwise the slot is cleared entirely.
-fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, mut to_consume: u32) {
-    if to_consume == 0 {
+fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, to_consume: &mut u32) {
+    if *to_consume == 0 {
         return;
     }
     for slot in inv.iter_mut() {
-        if to_consume == 0 {
+        if *to_consume == 0 {
             break;
         }
         if slot.kind == kind && slot.count > 0 {
-            if slot.count > to_consume {
-                slot.count -= to_consume;
-                to_consume = 0;
+            if slot.count > *to_consume {
+                slot.count -= *to_consume;
+                *to_consume = 0;
             } else {
-                to_consume -= slot.count;
+                *to_consume -= slot.count;
                 *slot = crate::item::EMPTY_SLOT;
             }
         }
     }
 }
 
-/// All requirements met: every ingredient counted across the inventory and
-/// every station tile adjacent to the player.
-pub(crate) fn can_craft(inv: &[ItemSlot; INV], recipe: &Recipe, adj: &[u16]) -> bool {
-    recipe
-        .required
-        .iter()
-        .all(|(id, count)| count_kind(inv, *id) >= *count)
-        && recipe.stations.iter().all(|t| adj.contains(t))
+/// One drain pass over one chest's slots (`ConsumeItemsFrom`'s chest half,
+/// `CraftingRequests.cs:262-290`): the same partial-stack-then-clear shape,
+/// matching `RequiredItemEntry.Matches` (any group member).
+fn consume_chest(chest: &mut WorldChest, req: &Requirement, to_consume: &mut u32) {
+    if *to_consume == 0 {
+        return;
+    }
+    let mut i = 0;
+    while i < chest.slots.len() && *to_consume > 0 {
+        let (kind, count) = chest.slots[i];
+        if count > 0 && req.matches(kind) {
+            if count > *to_consume {
+                chest.slots[i].1 -= *to_consume;
+                *to_consume = 0;
+            } else {
+                *to_consume -= count;
+                chest.slots.remove(i);
+                continue;
+            }
+        }
+        i += 1;
+    }
 }
 
-/// Consume the ingredients (single pass, `ConsumeItemsFrom` semantics) and
-/// return the created `(item id, stack)`. Giving the result to the inventory
-/// (or dropping it when full — vanilla drops, `Item.giveItem`) is the
-/// caller's duty; the full-inventory case still crafts, like the original.
+/// All requirements met: the ingredients (groups fold their members) counted
+/// across the inventory and the in-range chests, plus the environment.
+pub(crate) fn can_craft(
+    inv: &[ItemSlot; INV],
+    chests: &[WorldChest],
+    in_range: &[usize],
+    recipe: &Recipe,
+    adj: &Adjacent,
+    zones: &Zones,
+) -> bool {
+    let owned = collect_owned(inv, chests, in_range);
+    craftable(recipe, &owned, adj, zones)
+}
+
+/// `CraftingRequests.CraftItem`'s drain (`CraftingRequests.cs:97-121`,
+/// `Consume :218-254`): the inventory first, then each chest in collection
+/// order, one `ConsumeItemsFrom`-shaped pass per container matching
+/// `RequiredItemEntry.Matches` (any group member for a group entry).
 pub(crate) fn try_craft(
     inv: &mut [ItemSlot; INV],
+    chests: &mut [WorldChest],
+    in_range: &[usize],
     recipe: &Recipe,
-    adj: &[u16],
+    adj: &Adjacent,
+    zones: &Zones,
+    rng: &mut u64,
 ) -> Option<(u16, u32)> {
-    if !can_craft(inv, recipe, adj) {
+    if !can_craft(inv, chests, in_range, recipe, adj, zones) {
         return None;
     }
-    for (id, count) in recipe.required {
-        consume_kind(inv, *id, *count);
+    for req in recipe.required {
+        // `GetIngredientsForOneCraft` (`Recipe.cs:196-212`): the discount
+        // comes off the consumed stack (availability counts full stacks).
+        let discount =
+            ingredient_discount(recipe.alchemy, adj.alchemy_table, req.stack, rng);
+        let mut to_consume = req.stack - discount;
+        // The inventory pass (`Main.LocalPlayer.inventory`, 58 slots). A
+        // group entry drains whichever member the slots hold first.
+        if req.group != NO_GROUP {
+            if let Some(g) = group(req.group) {
+                for m in g.members {
+                    if to_consume == 0 {
+                        break;
+                    }
+                    consume_kind(inv, *m, &mut to_consume);
+                }
+            }
+        } else {
+            consume_kind(inv, req.item, &mut to_consume);
+        }
+        // The chest passes (`foreach (Chest chest in Recipe._recipeChests)`).
+        for &i in in_range {
+            if to_consume == 0 {
+                break;
+            }
+            consume_chest(&mut chests[i], req, &mut to_consume);
+        }
+        debug_assert_eq!(to_consume, 0, "craftable checked the totals");
     }
     Some(recipe.create)
 }
 
+/// The subset recipe table. Every entry cites its `Recipe.cs` registration;
+/// group requirements carry the accepted group (`RequireGroup`) instead of
+/// the old concrete-id expansion.
+pub(crate) static RECIPES: &[Recipe] = &[
+    // Recipe.cs:610-615 — Torch x3: 1 Gel + 1 Wood (RecipeGroups.Wood), by hand.
+    Recipe {
+        create: (8, 3),
+        required: &[
+            Requirement::item(23, 1),
+            Requirement::group(9, RecipeGroups::WOOD, 1),
+        ],
+        ..BASE
+    },
+    // Recipe.cs:4751-4754 — Work Bench: 10 Wood, by hand.
+    Recipe {
+        create: (36, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 10)],
+        ..BASE
+    },
+    // Recipe.cs:4722-4726 — Wooden Door: 6 Wood, at a work bench.
+    Recipe {
+        create: (25, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 6)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:4727-4731 — Wooden Chair: 4 Wood, at a work bench.
+    Recipe {
+        create: (34, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 4)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:4732-4739 — Chest: 8 Wood + 2 Iron Bar
+    // (`RequireGroup(RecipeGroups.IronBar)`), at a work bench.
+    Recipe {
+        create: (48, 1),
+        required: &[
+            Requirement::group(9, RecipeGroups::WOOD, 8),
+            Requirement::group(22, RecipeGroups::IRON_BAR, 2),
+        ],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:4746-4750 — Wooden Table: 8 Wood, at a work bench.
+    Recipe {
+        create: (32, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:4568-4572 — Stone Wall: 1 Stone
+    // (`RequireGroup(RecipeGroups.Stone)`), at a work bench.
+    Recipe {
+        create: (26, 1),
+        required: &[Requirement::group(3, RecipeGroups::STONE, 1)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:4521-4524 — Dirt Wall: 1 Dirt, at a work bench.
+    Recipe {
+        create: (30, 1),
+        required: &[Requirement::item(2, 1)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:9606-9614 — Furnace: 20 Stone + 4 Wood + 3 Torch, at a work bench.
+    Recipe {
+        create: (33, 1),
+        required: &[
+            Requirement::group(3, RecipeGroups::STONE, 20),
+            Requirement::group(9, RecipeGroups::WOOD, 4),
+            Requirement::item(8, 3),
+        ],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:9817-9820 — Iron Bar: 3 Iron Ore, at a furnace.
+    Recipe {
+        create: (22, 1),
+        required: &[Requirement::item(11, 3)],
+        stations: &[17],
+        ..BASE
+    },
+    // Recipe.cs:9822-9826 — Iron Anvil: 5 Iron Bar, at a work bench.
+    Recipe {
+        create: (35, 1),
+        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 5)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:3114-3119 — Glass: 2 Sand (`RequireGroup(RecipeGroups.Sand)`),
+    // at a furnace.
+    Recipe {
+        create: (170, 1),
+        required: &[Requirement::group(169, RecipeGroups::SAND, 2)],
+        stations: &[17],
+        ..BASE
+    },
+    // Recipe.cs:1559-1563 — Bottled Water: 1 Bottle, needWater.
+    Recipe {
+        create: (126, 1),
+        required: &[Requirement::item(31, 1)],
+        need_water: true,
+        ..BASE
+    },
+    // Recipe.cs:1564-1568 — Bottled Honey: 1 Bottle, needHoney.
+    Recipe {
+        create: (1134, 1),
+        required: &[Requirement::item(31, 1)],
+        need_honey: true,
+        ..BASE
+    },
+    // Recipe.cs:2299-2302 — Wet Bomb: 1 Dry Bomb, needWater.
+    Recipe {
+        create: (4824, 1),
+        required: &[Requirement::item(4827, 1)],
+        need_water: true,
+        ..BASE
+    },
+    // Recipe.cs:2303-2306 — Lava Bomb: 1 Dry Bomb, needLava.
+    Recipe {
+        create: (4825, 1),
+        required: &[Requirement::item(4827, 1)],
+        need_lava: true,
+        ..BASE
+    },
+    // Recipe.cs:2307-2310 — Honey Bomb: 1 Dry Bomb, needHoney.
+    Recipe {
+        create: (4826, 1),
+        required: &[Requirement::item(4827, 1)],
+        need_honey: true,
+        ..BASE
+    },
+    // Recipe.cs:7687-7692 — Snow Cloud Block: 1 Cloud, at a Sky Mill,
+    // needSnowBiome.
+    Recipe {
+        create: (3756, 1),
+        required: &[Requirement::item(751, 1)],
+        stations: &[305],
+        need_snow: true,
+        ..BASE
+    },
+    // Recipe.cs:2645-2651 — Wood Shelf x2: 1 Wood, at a Bone Welder,
+    // needGraveyardBiome.
+    Recipe {
+        create: (1389, 2),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 1)],
+        stations: &[300],
+        need_graveyard: true,
+        ..BASE
+    },
+    // Recipe.cs:1586-1597 — Lesser Healing Potion x2: 1 Mushroom + 2 Gel +
+    // 2 Bottle, at a placed bottle (`AddRecipe` auto-sets `alchemy`,
+    // `:16722-16726` — the CRAFT-3 discount).
+    Recipe {
+        create: (28, 2),
+        required: &[
+            Requirement::item(5, 1),
+            Requirement::item(23, 2),
+            Requirement::item(31, 2),
+        ],
+        stations: &[13],
+        alchemy: true,
+        ..BASE
+    },
+    // Recipe.cs:1606-1611 — Healing Potion: 2 Lesser Healing Potion +
+    // 1 Glowing Mushroom, at a placed bottle.
+    Recipe {
+        create: (188, 1),
+        required: &[Requirement::item(28, 2), Requirement::item(183, 1)],
+        stations: &[13],
+        alchemy: true,
+        ..BASE
+    },
+];
+
 #[cfg(test)]
-mod craft_actions_tests {
+mod tests {
     use super::*;
-    use crate::item::{slot_for_pickup, ItemSlot, INV};
-    use crate::player::Player;
-    use tr_core::tile::FLAG_ACTIVE;
-    use tr_core::World;
+    use crate::item::slot_for_pickup;
 
     fn inv_with(entries: &[(u16, u32)]) -> [ItemSlot; INV] {
         let mut inv = [crate::item::EMPTY_SLOT; INV];
@@ -276,81 +841,423 @@ mod craft_actions_tests {
         RECIPES.iter().find(|r| r.create.0 == create).unwrap()
     }
 
-    fn world_with_station(x: i32, y: i32) -> World {
-        let mut w = World::new("t".into(), 40, 40);
+    fn dry_adj() -> Adjacent {
+        Adjacent { tiles: Vec::new(), water: false, honey: false, lava: false, alchemy_table: false }
+    }
+
+    fn world_with_station(kind: u16, x: i32, y: i32) -> World {
+        let mut w = World::new("t".into(), 120, 120);
         let i = w.index(x, y);
-        w.tiles[i].kind = 18; // WorkBench tile
-        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].kind = kind;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         w
     }
 
     #[test]
-    fn test_dw_2_1_can_craft_cases() {
-        // Work Bench (10x Wood, by hand): enough wood -> true.
-        let inv = inv_with(&[(9, 10)]);
+    fn test_dw_1_1_table_integrity() {
+        // Every create/required item id resolves in the registry; counts are
+        // positive; group entries' authored items are group members; no
+        // duplicate create ids; the maxRequirements cap.
+        assert!(!RECIPES.is_empty());
+        let mut seen = Vec::new();
+        for r in RECIPES {
+            assert!(registry::get(r.create.0).is_some(), "create id {}", r.create.0);
+            assert!(r.create.1 > 0);
+            assert!(
+                !r.required.is_empty() && r.required.len() <= MAX_REQUIREMENTS,
+                "recipe {:?}",
+                r.create
+            );
+            for req in r.required {
+                assert!(registry::get(req.item).is_some(), "required id {}", req.item);
+                assert!(req.stack > 0);
+                if req.group != NO_GROUP {
+                    let g = group(req.group).expect("registered group");
+                    assert!(
+                        g.members.contains(&req.item),
+                        "{} is not a {} member",
+                        req.item,
+                        g.name
+                    );
+                }
+            }
+            assert!(!seen.contains(&r.create.0), "duplicate create {}", r.create.0);
+            seen.push(r.create.0);
+        }
+    }
+
+    #[test]
+    fn the_group_table_is_the_setuprecipegroups_order() {
+        // `Recipe.cs:499-533`: 34 groups, ids 0..33 in registration order;
+        // the spot checks quote the call sites.
+        assert_eq!(GROUPS.len(), 34);
+        let wood = group(RecipeGroups::WOOD).unwrap();
+        assert_eq!(wood.name, "Wood");
+        assert_eq!(wood.icon, 9);
+        assert_eq!(wood.members, &[9, 619, 620, 621, 911, 1729, 2504, 2503, 5215]);
+        let iron = group(RecipeGroups::IRON_BAR).unwrap();
+        assert_eq!(iron.members, &[22, 704]);
+        let sand = group(RecipeGroups::SAND).unwrap();
+        assert_eq!(sand.members, &[169, 408, 1246, 370, 3272, 3338, 3274, 3275]);
+        // `Registration order = id` (`nextRecipeGroupIndex++`).
+        GROUPS.iter().enumerate().for_each(|(i, g)| assert_eq!(g.id, i as u16));
+    }
+
+    #[test]
+    fn requirement_matches_any_group_member() {
+        // `RequiredItemEntry.Matches` (`Recipe.cs:36-43`).
+        let req = Requirement::group(9, RecipeGroups::WOOD, 10);
+        assert!(req.matches(9));
+        assert!(req.matches(619), "Rich Mahogany");
+        assert!(req.matches(2503), "Palm Wood");
+        assert!(!req.matches(3), "Stone is not wood");
+        let plain = Requirement::item(23, 1);
+        assert!(plain.matches(23));
+        assert!(!plain.matches(9));
+    }
+
+    #[test]
+    fn station_inheritance_walks_the_counts_as_chain() {
+        // `Recipe.SetupTileInheritance` (`Recipe.cs:559-571`) +
+        // `Player.SetAdjTile`'s recursion: near a work bench (17) satisfies a
+        // sawmill (215) requirement; the 302→17→215 walk covers three hops.
+        assert!(satisfies_station(17, 17));
+        assert!(satisfies_station(215, 17));
+        assert!(satisfies_station(215, 302));
+        assert!(satisfies_station(215, 77));
+        assert!(satisfies_station(215, 133));
+        assert!(!satisfies_station(17, 215), "the parent does not satisfy the child");
+        assert!(!satisfies_station(300, 17));
+    }
+
+    #[test]
+    fn test_dw_1_2_workbench_reference_recipe() {
+        // `Recipe.cs:4751-4754`: 10x Wood -> Work Bench, no station — now a
+        // group requirement (any wood works).
         let wb = recipe_by_create(36);
-        assert!(can_craft(&inv, wb, &[]));
+        assert_eq!(wb.create, (36, 1));
+        assert_eq!(wb.required.len(), 1);
+        assert_eq!(wb.required[0].stack, 10);
+        assert_eq!(wb.required[0].group, RecipeGroups::WOOD);
+        assert!(wb.stations.is_empty());
+    }
+
+    #[test]
+    fn test_dw_2_1_can_craft_cases() {
+        // Work Bench (10x wood, by hand): enough wood -> true.
+        let zones = Zones::default();
+        let adj = dry_adj();
+        let wb = recipe_by_create(36);
+        let inv = inv_with(&[(9, 10)]);
+        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
+        // Rich Mahogany (619) also counts — the group substitute.
+        let inv = inv_with(&[(619, 10)]);
+        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
+        // 5 wood + 5 palm wood: the group fold reaches 10.
+        let inv = inv_with(&[(9, 5), (2503, 5)]);
+        assert!(can_craft(&inv, &[], &[], wb, &adj, &zones));
         // Not enough wood -> false.
         let inv = inv_with(&[(9, 9)]);
-        assert!(!can_craft(&inv, wb, &[]));
-        // Torch needs Gel + Wood: only wood -> false; both -> true (by hand).
-        let torch = recipe_by_create(8);
+        assert!(!can_craft(&inv, &[], &[], wb, &adj, &zones));
+    }
+
+    #[test]
+    fn the_environment_gates_the_liquid_and_biome_recipes() {
+        // `PlayerMeetsEnvironmentConditions` (`Recipe.cs:322-358`).
+        let zones = Zones::default();
+        let mut adj = dry_adj();
+        let inv = inv_with(&[(31, 1)]);
+        let water = recipe_by_create(126);
+        assert!(!can_craft(&inv, &[], &[], water, &adj, &zones), "needWater");
+        adj.water = true;
+        assert!(can_craft(&inv, &[], &[], water, &adj, &zones));
+        // The honey bottle needs honey, not water.
+        let honey = recipe_by_create(1134);
+        assert!(!can_craft(&inv, &[], &[], honey, &adj, &zones));
+        adj.honey = true;
+        assert!(can_craft(&inv, &[], &[], honey, &adj, &zones));
+        // The lava bomb: lava only.
+        let lava_bomb = recipe_by_create(4825);
+        let inv = inv_with(&[(4827, 1)]);
+        adj.honey = false;
+        assert!(!can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
+        adj.lava = true;
+        assert!(can_craft(&inv, &[], &[], lava_bomb, &adj, &zones));
+        // The snow cloud: the Sky Mill + the snow zone, both required.
+        let snow = recipe_by_create(3756);
+        let mut snow_adj = Adjacent { tiles: vec![305], water: false, honey: false, lava: false, alchemy_table: false };
+        let inv = inv_with(&[(751, 1)]);
+        assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no snow zone");
+        let zones = Zones { snow: true, graveyard: false };
+        assert!(can_craft(&inv, &[], &[], snow, &snow_adj, &zones));
+        snow_adj.tiles = vec![18];
+        assert!(!can_craft(&inv, &[], &[], snow, &snow_adj, &zones), "no Sky Mill");
+        // The graveyard shelf: the Bone Welder (300) + the graveyard zone.
+        let shelf = recipe_by_create(1389);
+        let gy_adj = Adjacent { tiles: vec![300], water: false, honey: false, lava: false, alchemy_table: false };
         let inv = inv_with(&[(9, 1)]);
-        assert!(!can_craft(&inv, torch, &[]));
-        let inv = inv_with(&[(9, 1), (23, 1)]);
-        assert!(can_craft(&inv, torch, &[]));
+        let zones = Zones { snow: false, graveyard: false };
+        assert!(!can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
+        let zones = Zones { snow: false, graveyard: true };
+        assert!(can_craft(&inv, &[], &[], shelf, &gy_adj, &zones));
+    }
+
+    #[test]
+    fn scan_adjacent_reads_liquids_and_the_water_tiles() {
+        // `Player.cs:35685-35693`: liquid > 200 by type + the sink/fountain
+        // tiles count as water.
+        let mut w = World::new("t".into(), 40, 40);
+        let mut p = Player::spawn(&w);
+        p.x = 20.0 * 16.0;
+        p.y = 20.0 * 16.0;
+        let adj = scan_adjacent(&w, &p);
+        assert!(!adj.water && !adj.honey && !adj.lava);
+        // Shallow water (liquid <= 200) does not count.
+        let i = w.index(20, 20);
+        w.tiles[i].liquid = 100;
+        let adj = scan_adjacent(&w, &p);
+        assert!(!adj.water, "liquid > 200 only");
+        w.tiles[i].liquid = 220;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.water);
+        w.tiles[i].liquid = 0;
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Lava);
+        w.tiles[i].liquid = 220;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.lava && !adj.water);
+        // The sink tile (172) counts as a water source while dry.
+        w.tiles[i].liquid = 0;
+        w.tiles[i].clear_liquid_kind();
+        w.tiles[i].kind = 172;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.water, "CountsAsWaterForCrafting");
+    }
+
+    #[test]
+    fn the_chest_range_scan_finds_tile_chests_in_600px() {
+        // `NearbyChests.GetChestsInRangeOf` (`NearbyChests.cs:10-31`): the
+        // chest center within 600 px of the player's feet.
+        let mut w = World::new("t".into(), 120, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 40.0 * 16.0;
+        p.y = 40.0 * 16.0;
+        for (x, y) in [(45, 45), (42, 40), (80, 80)] {
+            let i = w.index(x, y);
+            w.tiles[i].kind = 21;
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let chests = vec![
+            WorldChest { tile: (45, 45), slots: vec![(9, 20)] },
+            WorldChest { tile: (42, 40), slots: Vec::new() },
+        ];
+        let found = chests_in_range(&w, &p, &chests, true);
+        assert_eq!(found.len(), 2, "the far chest (80,80) is out of 600 px");
+        assert!(found.iter().any(|&i| chests[i].tile == (45, 45)));
+        // The toggle off: an empty list (`Player.Settings.CraftFromNearbyChests`).
+        assert!(chests_in_range(&w, &p, &chests, false).is_empty());
+    }
+
+    #[test]
+    fn the_chest_ingredients_count_and_drain() {
+        let mut rng = 1u64;
+        // `CollectItemsFromChests` + `Consume` (`CraftingRequests.cs:218-254`):
+        // the chest stacks count toward the recipe and drain after the
+        // inventory.
+        let mut w = world_with_station(21, 33, 33);
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 6), (619, 4)] }];
+        let in_range = chests_in_range(&w, &p, &chests, true);
+        // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
+        let mut inv = inv_with(&[(9, 4)]);
+        let adj = dry_adj();
+        let zones = Zones::default();
+        assert!(can_craft(&inv, &chests, &in_range, recipe_by_create(36), &adj, &zones));
+        // The drain takes the inventory first, then the chest.
+        
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones, &mut rng),
+            Some((36, 1))
+        );
+        assert_eq!(count_kind(&inv, 9), 0, "the inventory drained first");
+        let chest = &chests[0];
+        assert_eq!(chest.slots.len(), 1, "6 wood consumed from the chest");
+        assert_eq!(chest.slots[0], (619, 4), "the mahogany stays");
+    }
+
+    #[test]
+    fn the_toggle_off_ignores_the_chests() {
+        // `CraftFromNearbyChests` off: the chest stacks don't count
+        // (`Recipe.cs:386-398`).
+        let mut w = world_with_station(21, 33, 33);
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 20)] }];
+        let inv = inv_with(&[(9, 4)]);
+        let adj = dry_adj();
+        let zones = Zones::default();
+        let wb = recipe_by_create(36);
+        let owned_off = collect_owned(&inv, &chests, &chests_in_range(&w, &p, &chests, false));
+        assert!(!craftable(wb, &owned_off, &adj, &zones));
+        let owned_on = collect_owned(&inv, &chests, &chests_in_range(&w, &p, &chests, true));
+        assert!(craftable(wb, &owned_on, &adj, &zones));
+    }
+
+    #[test]
+    fn available_is_the_update_recipe_list_composition() {
+        // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): environment x
+        // enough-ingredients — no partial rows.
+        let mut w = world_with_station(18, 31, 32);
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.tiles.contains(&18), "the work bench adjacent");
+        let zones = Zones::default();
+        // 16 wood: the work bench (10) is craftable, the door (6) too.
+        let inv = inv_with(&[(9, 16)]);
+        let av = available(&inv, &[], &[], &adj, &zones);
+        assert!(av.iter().any(|&i| RECIPES[i].create.0 == 36));
+        assert!(av.iter().any(|&i| RECIPES[i].create.0 == 25));
+        // The water bottle is not: no water, no bottle.
+        assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 126));
+        // 9 wood: the bench drops off the list.
+        let inv = inv_with(&[(9, 9)]);
+        let av = available(&inv, &[], &[], &adj, &zones);
+        assert!(!av.iter().any(|&i| RECIPES[i].create.0 == 36));
+    }
+
+    #[test]
+    fn addrecipe_sets_alchemy_on_the_tile_13_recipes() {
+        // `AddRecipe` (`Recipe.cs:16722-16726`): `requiredTile == 13` ⇒
+        // `alchemy = true` — the discount gate.
+        for r in RECIPES {
+            if r.stations.contains(&13) {
+                assert!(r.alchemy, "recipe {:?}", r.create);
+            }
+        }
+        // And the two subset potions are there.
+        assert!(recipe_by_create(28).alchemy && recipe_by_create(28).stations == &[13]);
+        assert!(recipe_by_create(188).alchemy && recipe_by_create(188).stations == &[13]);
+    }
+
+    #[test]
+    fn the_alchemy_table_discounts_a_third_of_the_units() {
+        // `GetIngredientCraftingDiscount` (`Recipe.cs:214-228`): while the
+        // recipe brews at an alchemy table, each unit survives on a 1/3 roll.
+        let mut w = world_with_station(13, 30, 32); // the placed bottle
+        let i = w.index(32, 32);
+        w.tiles[i].kind = 355; // the alchemy table next to it
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.alchemy_table, "the alchemy table is adjacent");
+        // Near the table the bottle requirement is satisfied too
+        // (`TileCountsAs` 355->13).
+        assert!(adj.tiles.iter().any(|&k| satisfies_station(13, k)));
+        let zones = Zones::default();
+        let lhp = recipe_by_create(28);
+        let mut chests = Vec::new();
+        // Generous stock: 9 mushroom, 18 gel, 18 bottles.
+        let mut inv = inv_with(&[(5, 9), (23, 18), (31, 18)]);
+        let mut rng = 7u64;
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], lhp, &adj, &zones, &mut rng),
+            Some((28, 2))
+        );
+        // The consumed amounts are the stacks minus the rolled-off units —
+        // recompute the expectation from the same stream state.
+        let mut expect_rng = 7u64;
+        let discount = |stack: u32, rng: &mut u64| {
+            ingredient_discount(true, true, stack, rng)
+        };
+        let d1 = discount(1, &mut expect_rng);
+        let d2 = discount(2, &mut expect_rng);
+        let d3 = discount(2, &mut expect_rng);
+        assert!(d1 + d2 + d3 > 0, "the seed rolls at least one free unit");
+        assert_eq!(count_kind(&inv, 5), 9 - (1 - d1));
+        assert_eq!(count_kind(&inv, 23), 18 - (2 - d2));
+        assert_eq!(count_kind(&inv, 31), 18 - (2 - d3));
+        // The bottle without the alchemy table: every unit drains.
+        let bottle_only = Adjacent {
+            tiles: vec![13],
+            water: false,
+            honey: false,
+            lava: false,
+            alchemy_table: false,
+        };
+        let mut inv = inv_with(&[(5, 1), (23, 2), (31, 2)]);
+        let mut rng = 7u64;
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &[], lhp, &bottle_only, &zones, &mut rng),
+            Some((28, 2))
+        );
+        assert_eq!(count_kind(&inv, 5), 0);
+        assert_eq!(count_kind(&inv, 23), 0);
+        assert_eq!(count_kind(&inv, 31), 0);
     }
 
     #[test]
     fn test_dw_2_2_try_craft_consumes_and_returns() {
+        let mut rng = 1u64;
         // Wood spread across three slots (4 + 4 + 2): a 10x-wood recipe
         // consumes all three, exact amounts.
         let mut inv = inv_with(&[(9, 4)]);
         inv[1] = ItemSlot { kind: 9, name: "Wood", count: 4 };
         inv[2] = ItemSlot { kind: 9, name: "Wood", count: 2 };
         let wb = recipe_by_create(36);
-        assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
+        let adj = dry_adj();
+        let zones = Zones::default();
+        let mut chests = Vec::new();
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
         assert_eq!(count_kind(&inv, 9), 0);
-        // The created stack is the caller's to give.
-        assert_eq!(wb.create, (36, 1));
     }
 
     #[test]
-    fn test_dw_2_3_adjacent_tiles_semantics() {
-        let w = world_with_station(18, 18);
+    fn test_dw_2_3_scan_adjacent_semantics() {
+        let w = world_with_station(18, 18, 18);
         let mut p = Player::spawn(&w);
         p.x = 20.0 * 16.0; // tile 20: region x 15..=26, y 17..=18+
         p.y = 20.0 * 16.0;
-        let adj = adjacent_tiles(&w, &p);
-        assert!(adj.contains(&18), "work bench adjacent: {:?}", adj);
+        let adj = scan_adjacent(&w, &p);
+        assert!(adj.tiles.contains(&18), "work bench adjacent: {:?}", adj.tiles);
         // Far away: the station is out of the region.
-        let w2 = world_with_station(35, 30);
-        let adj2 = adjacent_tiles(&w2, &p);
-        assert!(!adj2.contains(&18), "{:?}", adj2);
+        let w2 = world_with_station(18, 100, 100);
+        let adj2 = scan_adjacent(&w2, &p);
+        assert!(!adj2.tiles.contains(&18), "{:?}", adj2.tiles);
     }
 
     #[test]
     fn test_dw_2_4_station_gate_and_dirty_inputs() {
         // Iron Bar requires a furnace adjacent: without one, no craft even
         // with the ingredient present.
+        let zones = Zones::default();
+        let adj = dry_adj();
         let inv = inv_with(&[(11, 3)]);
         let bar = recipe_by_create(22);
-        assert!(!can_craft(&inv, bar, &[]));
-        assert!(can_craft(&inv, bar, &[17]));
+        assert!(!can_craft(&inv, &[], &[], bar, &adj, &zones));
+        let furnace = Adjacent { tiles: vec![17], water: false, honey: false, lava: false, alchemy_table: false };
+        assert!(can_craft(&inv, &[], &[], bar, &furnace, &zones));
         // Empty inventory: cannot craft anything.
         let inv = [crate::item::EMPTY_SLOT; INV];
-        assert!(!can_craft(&inv, recipe_by_create(36), &[]));
+        assert!(!can_craft(&inv, &[], &[], recipe_by_create(36), &adj, &zones));
         // Two different ingredients at once (torch: gel + wood).
         let mut inv = inv_with(&[(23, 1)]);
         let torch = recipe_by_create(8);
-        assert!(!can_craft(&inv, torch, &[]));
+        assert!(!can_craft(&inv, &[], &[], torch, &adj, &zones));
         slot_for_pickup(&mut inv, 9);
         inv.iter_mut().find(|s| s.kind == 9).unwrap().count = 1;
-        assert!(can_craft(&inv, torch, &[]));
+        assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
     }
 
     #[test]
     fn test_dw_2_5_full_inventory_still_crafts() {
+        let mut rng = 1u64;
         // Fill every slot with stone, keep 10 wood in the first slot: the
         // work bench still crafts (the result-drop duty is the caller's, like
         // vanilla `Item.giveItem` dropping on the ground).
@@ -359,42 +1266,33 @@ mod craft_actions_tests {
             *slot = ItemSlot { kind: 3, name: "Stone Block", count: 999 };
         }
         let wb = recipe_by_create(36);
-        assert_eq!(try_craft(&mut inv, wb, &[]), Some((36, 1)));
+        let adj = dry_adj();
+        let zones = Zones::default();
+        let mut chests = Vec::new();
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], wb, &adj, &zones, &mut rng), Some((36, 1)));
     }
 
     #[test]
     fn furniture_recipe_crafts_and_consumes() {
+        let mut rng = 1u64;
         // 16 wood -> work bench (by hand) leaves 6, exactly a door — which
-        // then needs the bench standing next to the player.
+        // then needs the bench standing next to the player. The chest needs
+        // the iron bar too: wood alone is refused.
+        let zones = Zones::default();
+        let adj = dry_adj();
+        let mut chests = Vec::new();
         let mut inv = inv_with(&[(9, 16)]);
-        assert_eq!(
-            try_craft(&mut inv, recipe_by_create(36), &[]),
-            Some((36, 1))
-        );
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], recipe_by_create(36), &adj, &zones, &mut rng), Some((36, 1)));
         assert_eq!(count_kind(&inv, 9), 6);
         let door = recipe_by_create(25);
-        assert!(!can_craft(&inv, door, &[]), "no station adjacent yet");
-        assert_eq!(try_craft(&mut inv, door, &[18]), Some((25, 1)));
+        let bench = Adjacent { tiles: vec![18], water: false, honey: false, lava: false, alchemy_table: false };
+        assert!(!can_craft(&inv, &[], &[], door, &adj, &zones), "no station adjacent yet");
+        assert_eq!(try_craft(&mut inv, &mut chests, &[], door, &bench, &zones, &mut rng), Some((25, 1)));
         assert_eq!(count_kind(&inv, 9), 0);
-        // The chest needs the iron bar too: wood alone is refused.
-        let mut inv = inv_with(&[(9, 8)]);
-        assert!(!can_craft(&inv, recipe_by_create(48), &[18]));
-        let mut inv = inv_with(&[(9, 8), (22, 2)]);
-        assert!(can_craft(&inv, recipe_by_create(48), &[18]));
+        // Rich Mahogany satisfies the chest's wood group too.
+        let mut inv = inv_with(&[(619, 8)]);
+        assert!(!can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones));
+        let mut inv = inv_with(&[(619, 8), (704, 2)]);
+        assert!(can_craft(&inv, &[], &[], recipe_by_create(48), &bench, &zones), "Lead Bar is IronBar");
     }
-}
-
-/// The panel's recipe list: every station adjacent and at least one
-/// ingredient in the inventory (vanilla shows partial recipes; the craftable
-/// subset is what `can_craft` approves).
-pub(crate) fn available(inv: &[ItemSlot; INV], adj: &[u16]) -> Vec<usize> {
-    RECIPES
-        .iter()
-        .enumerate()
-        .filter(|(_, r)| {
-            r.stations.iter().all(|t| adj.contains(t))
-                && r.required.iter().any(|(id, _)| count_kind(inv, *id) > 0)
-        })
-        .map(|(i, _)| i)
-        .collect()
 }

@@ -300,6 +300,38 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The swimmers: the ctor plants the feet on the column surface —
+        // the net state overwrites the position below.
+        crate::npc::NpcKind::Goldfish | crate::npc::NpcKind::Piranha | crate::npc::NpcKind::Shark => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // The worm segments: the net spawns each link standalone (the chain
+        // links rebuild through the init — the head; a lone body/tail dies
+        // finding no leader — the net-chain sync lands with the netglue
+        // worm work).
+        crate::npc::NpcKind::DevourerHead
+        | crate::npc::NpcKind::DevourerBody
+        | crate::npc::NpcKind::DevourerTail
+        | crate::npc::NpcKind::GiantWormHead
+        | crate::npc::NpcKind::GiantWormBody
+        | crate::npc::NpcKind::GiantWormTail
+        | crate::npc::NpcKind::EaterOfWorldsHead
+        | crate::npc::NpcKind::EaterOfWorldsBody
+        | crate::npc::NpcKind::EaterOfWorldsTail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        // The casters/spheres: the ctor only seeds the stats — the net
+        // state overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::GoblinSorcerer
+        | crate::npc::NpcKind::Tim
+        | crate::npc::NpcKind::DarkCaster
+        | crate::npc::NpcKind::FireImp
+        | crate::npc::NpcKind::ChaosBall
+        | crate::npc::NpcKind::BurningSphere
+        | crate::npc::NpcKind::WaterSphere => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::CaveBat
         | crate::npc::NpcKind::JungleBat
         | crate::npc::NpcKind::Hellbat

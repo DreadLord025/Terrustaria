@@ -21,6 +21,7 @@ mod temple;
 mod caves;
 mod liquids;
 mod living_trees;
+mod mini_biomes;
 mod noise;
 mod surface;
 mod terrain;
@@ -75,6 +76,12 @@ pub(crate) const TILE_SILVER: u16 = 9;
 pub(crate) const TILE_ASH: u16 = 57;
 pub(crate) const TILE_ICE: u16 = 161;
 pub(crate) const TILE_HELLSTONE: u16 = 58;
+/// The alternate pre-hardmode ores (`TileID.cs`: the tin 166, the lead
+/// 167, the tungsten 168, the platinum 169).
+pub(crate) const TILE_TIN: u16 = 166;
+pub(crate) const TILE_LEAD: u16 = 167;
+pub(crate) const TILE_TUNGSTEN: u16 = 168;
+pub(crate) const TILE_PLATINUM: u16 = 169;
 pub(crate) const WALL_STONE: u16 = 1;
 pub(crate) const WALL_DIRT: u16 = 2;
 pub(crate) const WALL_SANDSTONE: u16 = 187;
@@ -163,6 +170,18 @@ pub fn generate(opts: &GenOptions) -> World {
     // The temple: the last big structure (the C#  pass
     // runs after the jungle passes).
     let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
+    // The micro-biomes (the cave houses / the campsites / the spike pits /
+    // the sword shrines) run after the big structures.
+    mini_biomes::pass_cave_houses(&mut world, layers.rock_layer, &mut srng);
+    mini_biomes::pass_campsites(&mut world, &mut srng);
+    mini_biomes::pass_spike_pits(&mut world, &spans, layers.rock_layer, &mut srng);
+    mini_biomes::pass_sword_shrines(
+        &mut world,
+        &map.heights,
+        layers.rock_layer,
+        (map.desert_start, map.desert_end),
+        &mut srng,
+    );
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -434,7 +453,10 @@ mod tests {
         assert!(count(70) > 50, "the mushroom grass ({})", count(70));
         assert!(count(368) > 300, "the granite ({})", count(368));
         assert!(count(367) > 300, "the marble ({})", count(367));
-        assert!(count(41) > 200, "the dungeon brick ({})", count(41));
+        // The dungeon colour rides the roll (the blue 41 / the green 43 /
+        // the pink 44 — one per world).
+        let dungeon = count(41) + count(43) + count(44);
+        assert!(dungeon > 200, "the dungeon brick ({dungeon})");
         // The crimson flavour swaps the evil tile set.
         let c = generate(&GenOptions {
             seed: 77,
@@ -483,6 +505,58 @@ mod tests {
         assert!(count(137) >= 3, "the dart traps ({})", count(137));
         assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
         assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
+    }
+
+    #[test]
+    fn the_micro_biomes_place_the_content() {
+        // The 4200-world carries the cave houses (the wood frames 27 + the
+        // platforms 19 + the chests), the campsites (the tents 196-199),
+        // the spike pits (the stone blobs in the jungle) and the sword
+        // shrines (the real sword tile 187, breaks into the item 989).
+        let w = generate(&GenOptions {
+            seed: 44,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(27) > 100, "the cabin wood frames ({})", count(27));
+        assert!(count(19) > 20, "the cabin platforms ({})", count(19));
+        assert!(count(196) + count(197) + count(198) + count(199) > 30, "the tents");
+        assert!(count(187) >= 2, "the sword shrines ({})", count(187));
+    }
+
+    #[test]
+    fn the_ore_pools_roll_one_alternate_per_pair() {
+        // The world rolls one kind per metal pair (the copper 7 / the tin
+        // 166, the iron 6 / the lead 167, the silver 9 / the tungsten 168,
+        // the gold 8 / the platinum 169) — the rolled kinds' veins exist in
+        // the stone band, the other pair's kinds are absent.
+        let w = generate(&GenOptions {
+            seed: 66,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        for (a, b) in [(7u16, 166u16), (6, 167), (9, 168), (8, 169)] {
+            let (ca, cb) = (count(a), count(b));
+            assert!(
+                (ca > 100 && cb == 0) || (cb > 100 && ca == 0),
+                "the pair {a}/{b}: {ca} vs {cb}"
+            );
+        }
+        // The gems in the stone band (the amethyst 63 .. the diamond 68).
+        let gems: usize = (63..=68)
+            .map(|k| w.tiles.iter().filter(|t| t.active() && t.kind == k).count())
+            .sum();
+        assert!(gems > 40, "the gem veins ({gems})");
     }
 
     #[test]

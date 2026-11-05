@@ -7,11 +7,11 @@ use crate::npc_buffs::NpcBuffs;
 use crate::npc_ai::HoverParams;
 use crate::player::{Player, collides_rect};
 
-const GRAVITY: f32 = 0.4;
-const MAX_FALL: f32 = 8.0;
+pub(crate) const GRAVITY: f32 = 0.4;
+pub(crate) const MAX_FALL: f32 = 8.0;
 
 /// `Collision.WetCollision` (simplified): any water tile overlapping the body.
-fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     let x0 = (x / TILE_PX).floor() as i32;
     let x1 = ((x + w - 0.01) / TILE_PX).floor() as i32;
     let y0 = (y / TILE_PX).floor() as i32;
@@ -58,6 +58,57 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
+    /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
+    /// 18x38, 40 HP).
+    GoblinSorcerer,
+    /// `NPCID.Tim` (45) — the deep-cavern caster (`aiStyle 8`, `NPC.cs:9322`:
+    /// 18x40, 200 HP, value 5000).
+    Tim,
+    /// `NPCID.DarkCaster` (32) — the dungeon caster (`aiStyle 8`,
+    /// `NPC.cs:9121`: 18x40, 50 HP).
+    DarkCaster,
+    /// `NPCID.FireImp` (24) — the underworld caster (`aiStyle 8`,
+    /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune).
+    FireImp,
+    /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
+    /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
+    /// folds here (identical stats and name, `NPC.cs:17398`).
+    ChaosBall,
+    /// `NPCID.BurningSphere` (25) — the Fire Imp's sphere (`aiStyle 9`,
+    /// `NPC.cs:9093`).
+    BurningSphere,
+    /// `NPCID.WaterSphere` (33) — the Dark Caster's sphere (`aiStyle 9`,
+    /// `NPC.cs:9135`).
+    WaterSphere,
+    /// `NPCID.Goldfish` (55) — the passive water critter (`aiStyle 16`,
+    /// `NPC.cs:9460`: 20x18, 5 HP, damage 0, the flag25 exclusion).
+    Goldfish,
+    /// `NPCID.Piranha` (58) — the jungle/deep-water fish (`aiStyle 16`,
+    /// `NPC.cs:9502`: 18x20, 30 HP).
+    Piranha,
+    /// `NPCID.Shark` (65) — the ocean fish (`aiStyle 16`, `NPC.cs:9610`:
+    /// 100x24, 300 HP).
+    Shark,
+    /// `NPCID.DevourerHead` (7) — the corruption worm's head (`aiStyle 6`,
+    /// `NPC.cs:8763`). The body 8 and the tail 9 chain behind it.
+    DevourerHead,
+    /// `NPCID.DevourerBody` (8) — the middle segments (`NPC.cs:8792`).
+    DevourerBody,
+    /// `NPCID.DevourerTail` (9) — the tail segment (`NPC.cs:8821`).
+    DevourerTail,
+    /// `NPCID.GiantWormHead` (10) — the cavern worm's head (`NPC.cs:8850`).
+    GiantWormHead,
+    /// `NPCID.GiantWormBody` (11) — the middle segments (`NPC.cs:8867`).
+    GiantWormBody,
+    /// `NPCID.GiantWormTail` (12) — the tail segment (`NPC.cs:8885`).
+    GiantWormTail,
+    /// `NPCID.EaterofWorldsHead` (13) — the boss worm's head (`NPC.cs:8903`);
+    /// the natural spawn waits for the orb-break summon work.
+    EaterOfWorldsHead,
+    /// `NPCID.EaterofWorldsBody` (14) — the middle segments (`NPC.cs:8923`).
+    EaterOfWorldsBody,
+    /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
+    EaterOfWorldsTail,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -239,6 +290,25 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 12,
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
+            NpcKind::GoblinSorcerer => 15,
+            NpcKind::Tim => 16,
+            NpcKind::DarkCaster => 17,
+            NpcKind::FireImp => 18,
+            NpcKind::ChaosBall => 19,
+            NpcKind::BurningSphere => 20,
+            NpcKind::WaterSphere => 21,
+            NpcKind::Goldfish => 22,
+            NpcKind::Piranha => 23,
+            NpcKind::Shark => 24,
+            NpcKind::DevourerHead => 25,
+            NpcKind::DevourerBody => 26,
+            NpcKind::DevourerTail => 27,
+            NpcKind::GiantWormHead => 28,
+            NpcKind::GiantWormBody => 29,
+            NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead => 31,
+            NpcKind::EaterOfWorldsBody => 32,
+            NpcKind::EaterOfWorldsTail => 33,
         }
     }
 
@@ -259,8 +329,86 @@ impl NpcKind {
             12 => NpcKind::EaterOfSouls,
             13 => NpcKind::Hornet,
             14 => NpcKind::MeteorHead,
+            15 => NpcKind::GoblinSorcerer,
+            16 => NpcKind::Tim,
+            17 => NpcKind::DarkCaster,
+            18 => NpcKind::FireImp,
+            19 => NpcKind::ChaosBall,
+            20 => NpcKind::BurningSphere,
+            21 => NpcKind::WaterSphere,
+            22 => NpcKind::Goldfish,
+            23 => NpcKind::Piranha,
+            24 => NpcKind::Shark,
+            25 => NpcKind::DevourerHead,
+            26 => NpcKind::DevourerBody,
+            27 => NpcKind::DevourerTail,
+            28 => NpcKind::GiantWormHead,
+            29 => NpcKind::GiantWormBody,
+            30 => NpcKind::GiantWormTail,
+            31 => NpcKind::EaterOfWorldsHead,
+            32 => NpcKind::EaterOfWorldsBody,
+            33 => NpcKind::EaterOfWorldsTail,
             _ => return None,
         })
+    }
+
+    /// The worm family role (`AI_006`'s type groups): the head digs, the
+    /// body links, the tail ends (`:51393`'s body list, `:51436`'s
+    /// head/mid list).
+    pub fn is_worm(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerTail
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormTail
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::EaterOfWorldsTail
+        )
+    }
+
+    /// The head kinds (`:51436`'s list minus the unported families).
+    pub fn is_worm_head(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead | NpcKind::GiantWormHead | NpcKind::EaterOfWorldsHead
+        )
+    }
+
+    /// The mid-body kinds that spawn another of themselves while the
+    /// budget holds (`:51350`'s list).
+    pub fn is_worm_mid(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerBody | NpcKind::GiantWormBody | NpcKind::EaterOfWorldsBody
+        )
+    }
+
+    /// The next segment's kind down the chain (`type + 1` in the vanilla
+    /// spawns, `:51347`/`:51357`).
+    pub fn worm_next(self) -> NpcKind {
+        match self {
+            NpcKind::DevourerHead => NpcKind::DevourerBody,
+            NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
+            NpcKind::GiantWormHead => NpcKind::GiantWormBody,
+            NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
+            NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
+            _ => NpcKind::EaterOfWorldsTail,
+        }
+    }
+
+    /// The head's dig tunables — `num45` (the max speed) and `num46` (the
+    /// steering accel) per family (`:51670-51706`).
+    pub fn worm_tunables(self) -> (f32, f32) {
+        match self {
+            NpcKind::DevourerHead => (9.0, 0.1),
+            NpcKind::GiantWormHead => (6.0, 0.05),
+            NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            _ => (8.0, 0.07),
+        }
     }
 
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
@@ -286,6 +434,32 @@ impl NpcKind {
             NpcKind::EaterOfSouls => (30.0, 30.0),
             NpcKind::Hornet => (34.0, 32.0),
             NpcKind::MeteorHead => (22.0, 22.0),
+            // The casters: `SetDefaults` case 29 is 18x38, the cases
+            // 45/32/24 18x40 (`NPC.cs:8951`/`:9322`/`:9121`/`:9078`).
+            NpcKind::GoblinSorcerer => (18.0, 38.0),
+            NpcKind::Tim => (18.0, 40.0),
+            NpcKind::DarkCaster => (18.0, 40.0),
+            NpcKind::FireImp => (18.0, 40.0),
+            // The spheres: the cases 30/25/33 are 16x16.
+            NpcKind::ChaosBall => (16.0, 16.0),
+            NpcKind::BurningSphere => (16.0, 16.0),
+            NpcKind::WaterSphere => (16.0, 16.0),
+            // The swimmers: `SetDefaults` cases 55/58/65 (`NPC.cs:9460`/
+            // `:9502`/`:9610`).
+            NpcKind::Goldfish => (20.0, 18.0),
+            NpcKind::Piranha => (18.0, 20.0),
+            NpcKind::Shark => (100.0, 24.0),
+            // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
+            // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail => (22.0, 22.0),
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => {
+                (14.0, 14.0)
+            }
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -312,6 +486,25 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 40,
             NpcKind::Hornet => 48,
             NpcKind::MeteorHead => 26,
+            // The casters: `SetDefaults` cases 29/45/32/24.
+            NpcKind::GoblinSorcerer => 40,
+            NpcKind::Tim => 200,
+            NpcKind::DarkCaster => 50,
+            NpcKind::FireImp => 70,
+            // The spheres: 1 HP.
+            NpcKind::ChaosBall => 1,
+            NpcKind::BurningSphere => 1,
+            NpcKind::WaterSphere => 1,
+            // The swimmers: `SetDefaults` cases 55/58/65.
+            NpcKind::Goldfish => 5,
+            NpcKind::Piranha => 30,
+            NpcKind::Shark => 300,
+            // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 150,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -334,6 +527,29 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 22,
             NpcKind::Hornet => 26,
             NpcKind::MeteorHead => 40,
+            // The casters: `SetDefaults` damage 20/20/20/30.
+            NpcKind::GoblinSorcerer => 20,
+            NpcKind::Tim => 20,
+            NpcKind::DarkCaster => 20,
+            NpcKind::FireImp => 30,
+            // The spheres: damage 20/30/20.
+            NpcKind::ChaosBall => 20,
+            NpcKind::BurningSphere => 30,
+            NpcKind::WaterSphere => 20,
+            // The swimmers: damage 0/25/40 — the Goldfish never hurts.
+            NpcKind::Goldfish => 0,
+            NpcKind::Piranha => 25,
+            NpcKind::Shark => 40,
+            // The worms: the head hits hardest, the tail softest
+            // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
+            NpcKind::DevourerHead => 31,
+            NpcKind::DevourerBody => 16,
+            NpcKind::DevourerTail => 13,
+            NpcKind::GiantWormHead => 8,
+            NpcKind::GiantWormBody | NpcKind::GiantWormTail => 4,
+            NpcKind::EaterOfWorldsHead => 22,
+            NpcKind::EaterOfWorldsBody => 13,
+            NpcKind::EaterOfWorldsTail => 11,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -387,6 +603,32 @@ pub struct Npc {
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
     /// world-file persistence lands with M6-SAVE-1's NPC sections.
     pub home: Option<(i32, i32)>,
+    /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
+    /// 100/200/300 shot triggers, the 650 teleport threshold).
+    pub caster_counter: i32,
+    /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
+    /// `num88` after a teleport; the shoot fires at the params' tick).
+    pub cast_windup: i32,
+    /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
+    /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
+    pub swim_phase: f32,
+    /// The worm chain id (`AI_006`): every segment of one worm shares it;
+    /// 0 = not a worm.
+    pub worm_id: u32,
+    /// The segment's index down the chain — 0 = the head (`ai[1] == 0`'s
+    /// leader), the tail = the last.
+    pub seg_index: u32,
+    /// `ai[2]`: the remaining segment budget this link passes down (the
+    /// head rolls the total, each link decrements).
+    pub worm_left: u32,
+    /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
+    /// link spawns its child on the first worm pass.
+    pub worm_inited: bool,
+    /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
+    /// shoot tick (`AI_008`), resolved by the world sim after the update
+    /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
+    /// the (kind, bottom-centre x, bottom-centre y) spawn point.
+    pub wants_sphere: Option<(NpcKind, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
 }
@@ -467,6 +709,43 @@ impl Npc {
             return None;
         }
         Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+    }
+
+    /// Spawns a caster standing on the found ground tile (`SpawnNPC`'s
+    /// `Bottom = (x * 16 + 8, y * 16)` semantics, `NPC.cs:4934`): the feet
+    /// on the ground tile's top, the X centred on the tile.
+    pub fn spawn_caster(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = ground_y as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
+    }
+
+    /// Spawns a worm head standing on the found ground tile (`SpawnNPC`'s
+    /// `Bottom` placement — the chain assembles from the head's first worm
+    /// pass: each link spawns its child at the parent's bottom-centre,
+    /// `NPC.cs:51347`).
+    pub fn spawn_worm_head(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Self {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = ground_y as f32 * TILE_PX - h;
+        Self::new(kind, x, y, 1, 0.0)
+    }
+
+    /// Spawns a swimmer standing on the found ground tile inside its water
+    /// column (`SpawnNPC`'s `Bottom = (x*16+8, y*16)` — the same placement
+    /// the casters ride).
+    pub fn spawn_swimmer(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Option<Self> {
+        Self::spawn_caster(world, x_tile, ground_y, kind)
     }
 
     /// Spawns a cave flyer hanging in the open air of the cave layer (the
@@ -579,6 +858,14 @@ impl Npc {
             burn: 0.0,
             wants_minion: false,
             home: None,
+            caster_counter: 0,
+            cast_windup: 0,
+            wants_sphere: None,
+            swim_phase: 0.0,
+            worm_id: 0,
+            seg_index: 0,
+            worm_left: 0,
+            worm_inited: false,
             wet_x: 0.0,
         }
     }
@@ -623,6 +910,31 @@ impl Npc {
             NpcKind::EaterOfSouls => 0.5,
             NpcKind::Hornet => 0.5,
             NpcKind::MeteorHead => 0.4,
+            // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
+            NpcKind::GoblinSorcerer => 0.6,
+            NpcKind::Tim => 0.6,
+            NpcKind::DarkCaster => 0.6,
+            NpcKind::FireImp => 0.5,
+            // The spheres: 0 (the knockback passes through).
+            NpcKind::ChaosBall => 0.0,
+            NpcKind::BurningSphere => 0.0,
+            NpcKind::WaterSphere => 0.0,
+            // The swimmers: the Goldfish 0.5 (`:9471`), the Shark 0.7
+            // (`:9622`), the Piranha no row — the `SetDefaults` head's 1f
+            // reset (`:8533`).
+            NpcKind::Goldfish => 0.5,
+            NpcKind::Piranha => 1.0,
+            NpcKind::Shark => 0.7,
+            // The worms: knockBackResist 0 (`:8763` family-wide).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -654,6 +966,29 @@ impl Npc {
             NpcKind::EaterOfSouls => 8,
             NpcKind::Hornet => 12,
             NpcKind::MeteorHead => 6,
+            // The casters: `SetDefaults` defense 2/4/2/16.
+            NpcKind::GoblinSorcerer => 2,
+            NpcKind::Tim => 4,
+            NpcKind::DarkCaster => 2,
+            NpcKind::FireImp => 16,
+            // The spheres: defense 0.
+            NpcKind::ChaosBall => 0,
+            NpcKind::BurningSphere => 0,
+            NpcKind::WaterSphere => 0,
+            // The swimmers: defense 0/2/2.
+            NpcKind::Goldfish => 0,
+            NpcKind::Piranha => 2,
+            NpcKind::Shark => 2,
+            // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
+            NpcKind::DevourerHead => 2,
+            NpcKind::DevourerBody => 6,
+            NpcKind::DevourerTail => 10,
+            NpcKind::GiantWormHead => 0,
+            NpcKind::GiantWormBody => 4,
+            NpcKind::GiantWormTail => 6,
+            NpcKind::EaterOfWorldsHead => 2,
+            NpcKind::EaterOfWorldsBody => 4,
+            NpcKind::EaterOfWorldsTail => 8,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -683,6 +1018,28 @@ impl Npc {
             NpcKind::EaterOfSouls => 150.0,
             NpcKind::Hornet => 200.0,
             NpcKind::MeteorHead => 250.0,
+            // The casters: `SetDefaults` value 200/5000/140/350.
+            NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::Tim => 5000.0,
+            NpcKind::DarkCaster => 140.0,
+            NpcKind::FireImp => 350.0,
+            // The spheres carry no value.
+            NpcKind::ChaosBall => 0.0,
+            NpcKind::BurningSphere => 0.0,
+            NpcKind::WaterSphere => 0.0,
+            // The swimmers: the Piranha 50 (`:9514`), the Shark 400
+            // (`:9621`), the Goldfish no row (the catch item 261 rides the
+            // critter-catch work).
+            NpcKind::Goldfish => 0.0,
+            NpcKind::Piranha => 50.0,
+            NpcKind::Shark => 400.0,
+            // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
+            // 40, `:8903`'s 800 — the body/tail rows carry the same value).
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 40.0,
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 800.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -772,6 +1129,16 @@ impl Npc {
     }
 
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
+        // The deterministic scratch stream — the tests and every
+        // non-caster kind never consume it (only the caster teleport
+        // search draws `rand01`).
+        let mut scratch = 0u64;
+        self.update_rng(world, player, dt, &mut scratch);
+    }
+
+    /// The real step with the caller's RNG stream — the caster teleport
+    /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
+    pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut u64) {
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
@@ -801,6 +1168,26 @@ impl Npc {
                 self.update_hover(world, player, HoverParams::METEOR_HEAD)
             }
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
+            | NpcKind::FireImp => self.update_caster(world, player, rng),
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
+                self.update_sphere(world, player)
+            }
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
+                self.update_swimmer(world, player, rng)
+            }
+            // The worms: the movement runs in the world sim's worm pass
+            // (the chain needs the sibling segments; `AI_006` reads
+            // `Main.npc` the same way).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => {}
         }
         self.find_frame();
         self.contact(player);
@@ -988,6 +1375,76 @@ impl Npc {
                     };
                 }
             }
+            // The casters (`FindFrame`'s case 29/32/45 group,
+            // `NPC.cs:77019-77054`): the pose machine — row 0 stands, row 1
+            // is the cast windup (`ai[1] > 0`), row 2 airborne. The Dark
+            // Caster's Skeletron pose (`localAI[3]`, `:77050-77053`) rides
+            // the skeleton-head work.
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+                self.frame = if self.vy != 0.0 {
+                    2
+                } else if self.cast_windup > 0 {
+                    1
+                } else {
+                    0
+                };
+            }
+            // The Fire Imp (`NPC.cs:76979-77017`): the 10-frame strip —
+            // rows 0..3 walk (5 steps each), the cast pose snaps to row 4
+            // and advances to the held row 9.
+            NpcKind::FireImp => {
+                self.frame_counter += 1.0;
+                if self.cast_windup > 0 {
+                    if self.frame < 4 {
+                        self.frame = 4;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 9 {
+                        self.frame = 9;
+                    }
+                } else {
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // The spheres: `Main.npcFrameCount` 30/25/33 = 1.
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {}
+            // The swimmers: the plain flap cycles over `Main.npcFrameCount`
+            // 55/58 = 6, 65 = 4 (`Main.cs:67082`).
+            NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
+                let count = match self.kind {
+                    NpcKind::Shark => 4,
+                    _ => 6,
+                };
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= count {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // The worms: `Main.npcFrameCount` 7..15 = 1 (`Main.cs:67082`).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => {}
             NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
@@ -1384,6 +1841,129 @@ impl Npc {
         }
     }
 
+    /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
+    /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
+    /// `wants_sphere`: the Goblin Sorcerer → the Chaos Ball 30 (`:21238`),
+    /// Tim → its ChaosBallTim clone 665 (`:21242`, folded into `ChaosBall`
+    /// — identical stats and name), the Dark Caster → the Water Sphere 33
+    /// (`:21246`), the Fire Imp → the Burning Sphere 25 at `ai[1] == 10`
+    /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
+    /// semantics (`:80771`).
+    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (pcx, pcy) = player.center();
+        let params = match self.kind {
+            NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
+            _ => crate::npc_ai::CasterParams::STANDARD,
+        };
+        let mut phase = crate::npc_ai::CasterPhase {
+            counter: self.caster_counter,
+            windup: self.cast_windup,
+        };
+        let shot = crate::npc_ai::caster_cycle(self, world, pcx, pcy, rng, params, &mut phase);
+        self.caster_counter = phase.counter;
+        self.cast_windup = phase.windup;
+        if shot {
+            let (w, _) = self.size();
+            let (sx, sy) = match self.kind {
+                // `:21238`/`:21242`/`:21246`: `(pos.X + width/2, pos.Y - 8)`.
+                NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+                    (self.x + w * 0.5, self.y - 8.0)
+                }
+                // `:21171`: `(pos.X + width/2 + direction*8, pos.Y + 20)`.
+                NpcKind::FireImp => {
+                    (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0)
+                }
+                _ => return,
+            };
+            let sphere = match self.kind {
+                NpcKind::GoblinSorcerer | NpcKind::Tim => NpcKind::ChaosBall,
+                NpcKind::DarkCaster => NpcKind::WaterSphere,
+                NpcKind::FireImp => NpcKind::BurningSphere,
+                _ => return,
+            };
+            self.wants_sphere = Some((sphere, sx, sy));
+        }
+    }
+
+    /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
+    /// core, `:21404-21429`): the one-shot launch, then the straight fly
+    /// through the tiles (`noGravity`/`noTileCollide`).
+    fn update_sphere(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::sphere_step(self, pcx, pcy, world);
+    }
+
+    /// `AI_016` through the framework's `swim_step` (`NPC.cs`'s aiStyle 16
+    /// block): the wet path rides the machine — `flag25` folds the kind
+    /// gate (`:23701`'s Goldfish exclusion), the player's `wet`/alive and
+    /// the `CanHit` stand-in; the dry path is the beached flop (`:23963-
+    /// 23989`: the Shark's `velocity.X *= 0.94` snap, the others' random
+    /// jump through `Main.rand`).
+    fn update_swimmer(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let params = match self.kind {
+            NpcKind::Shark => crate::npc_ai::SwimParams::SHARK,
+            NpcKind::Piranha => crate::npc_ai::SwimParams::PIRANHA,
+            _ => crate::npc_ai::SwimParams::GOLDFISH,
+        };
+        if is_wet(world, self.x, self.y, w, h) {
+            let (pcx, pcy) = player.center();
+            let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+            // `flag25` (`:23701-23707`): the kind gate + the player wet +
+            // alive + `Collision.CanHit`.
+            let aggro_ok = params.aggro
+                && player.wet
+                && !player.dead
+                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy));
+            crate::npc_ai::swim_step(self, world, pcx, pcy, aggro_ok, params);
+        } else {
+            // The beached flop (`:23963-23989`).
+            if self.kind == NpcKind::Shark {
+                // `:23967-23974`: the Shark's stand decay.
+                if self.vy == 0.0 {
+                    self.vx *= 0.94;
+                    if self.vx > -0.2 && self.vx < 0.2 {
+                        self.vx = 0.0;
+                    }
+                }
+            } else {
+                // `:23975-23981`: the random jump (`Next(-50,-20)*0.1`,
+                // `Next(-20,20)*0.1`, the direction coin).
+                self.vy = -(crate::app::frame::rand01(rng) * 2.9 + 2.1);
+                self.vx = (crate::app::frame::rand01(rng) * 39.0 - 20.0) * 0.1;
+                self.facing = if crate::app::frame::rand01(rng) < 0.5 {
+                    1
+                } else {
+                    -1
+                };
+            }
+            // `:23983-23988`: the gravity + the sink phase.
+            self.vy = (self.vy + 0.3).min(10.0);
+            self.swim_phase = 1.0;
+            // The generic tile integration (`UpdateCollision`): the flop
+            // stops at the walls (the wet path's bounce flips ride the wet
+            // branch only).
+            let nx = self.x + self.vx;
+            if !collides_rect(world, nx, self.y, w, h) {
+                self.x = nx;
+            } else {
+                self.vx = 0.0;
+            }
+            let ny = self.y + self.vy;
+            if !collides_rect(world, self.x, ny, w, h) {
+                self.y = ny;
+                self.on_ground = false;
+            } else if self.vy > 0.0 {
+                let ty = ((ny + h) / TILE_PX).floor() as i32;
+                self.y = ty as f32 * TILE_PX - h;
+                self.vy = 0.0;
+                self.on_ground = true;
+            } else {
+                self.vy = 0.0;
+            }
+        }
+    }
+
     fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
@@ -1415,14 +1995,18 @@ impl Npc {
                 player.hurt_cd = player.hurt_cd.max(4.0 / 60.0);
                 return;
             }
-            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact).
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact);
+            // the 0-damage kinds (the Goldfish) never hurt either (the
+            // vanilla `damage > 0` gate).
             if self.kind != NpcKind::Guide {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
                     self.kind.contact_damage()
                 };
-                player.hurt(dmg, cx);
+                if dmg > 0 {
+                    player.hurt(dmg, cx);
+                }
             }
         }
     }
@@ -1453,6 +2037,25 @@ impl Npc {
             NpcKind::EaterOfSouls => 12,
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
+            NpcKind::GoblinSorcerer => 15,
+            NpcKind::Tim => 16,
+            NpcKind::DarkCaster => 17,
+            NpcKind::FireImp => 18,
+            NpcKind::ChaosBall => 19,
+            NpcKind::BurningSphere => 20,
+            NpcKind::WaterSphere => 21,
+            NpcKind::Goldfish => 22,
+            NpcKind::Piranha => 23,
+            NpcKind::Shark => 24,
+            NpcKind::DevourerHead => 25,
+            NpcKind::DevourerBody => 26,
+            NpcKind::DevourerTail => 27,
+            NpcKind::GiantWormHead => 28,
+            NpcKind::GiantWormBody => 29,
+            NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead => 31,
+            NpcKind::EaterOfWorldsBody => 32,
+            NpcKind::EaterOfWorldsTail => 33,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -1623,6 +2226,44 @@ mod tests {
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The test ground: dirt from y = 120 in a 200x200 world with a carved
+    /// pit (x 60..140, y 125..134) — the caster tests' arena. The pit
+    /// matters: on a flat surface every floor-level spot sits inside the
+    /// player's ±5-tile telefrag rect (the vanilla casters legitimately
+    /// fail to teleport there), so the search needs a floor outside the
+    /// rect's y window.
+    fn ground_air() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 60..140 {
+            for y in 125..135 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// The player parked on the surface at column 100 (the tests' fixed
+    /// reference — `Player::spawn`'s world-spawn default rides the unset
+    /// `spawn_x/spawn_y`).
+    fn surface_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = 100.0 * TILE_PX;
+        p.y = 116.0 * TILE_PX;
+        p
+    }
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -1949,4 +2590,460 @@ mod tests {
             "one 32-step cycle covers frames 0..=3"
         );
     }
+    #[test]
+    fn the_caster_teleports_and_shoots() {
+        // `AI_008` (`NPC.cs:20817-21278`): the 500 counter init, the
+        // teleport attempt at 650 (the spot ≥ 5 tiles from the player —
+        // the telefrag gate), then the counter resets and the 100 trigger
+        // winds the 30-tick shot that fires at `ai[1] == 25`.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let pc = player.center();
+        let mut tim = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        tim.hp = tim.max_hp;
+        let start = (tim.x, tim.y);
+        let mut rng = 7u64;
+        let mut teleported = false;
+        let mut shot = false;
+        let _ = start;
+        for _ in 0..400 {
+            let (px, py) = (tim.x, tim.y);
+            tim.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some((kind, sx, sy)) = tim.wants_sphere {
+                assert_eq!(kind, NpcKind::ChaosBall);
+                // The Chaos Ball spawn point: Tim's bottom-centre, 8 px
+                // above the top (`:21242`'s NewNPC(x + w/2, y - 8) with the
+                // `Bottom` semantics).
+                let (tw, _) = tim.size();
+                assert!((sx - (tim.x + tw * 0.5)).abs() < 0.01);
+                assert!((sy - (tim.y - 8.0)).abs() < 0.01);
+                shot = true;
+                break;
+            }
+            if !teleported {
+                // The teleport is a per-tick jump (the gravity fall moves
+                // at most MAX_FALL = 8 px a tick, the stand decay < 1).
+                let jumped = (tim.x - px).abs() + (tim.y - py).abs() > 16.0;
+                if jumped {
+                    teleported = true;
+                    // The teleport respected the ±5-tile telefrag gate.
+                    let dcx = ((tim.x + tim.size().0 * 0.5) - pc.0).abs();
+                    let dcy = ((tim.y + tim.size().1 * 0.5) - pc.1).abs();
+                    assert!(
+                        dcx > 70.0 || dcy > 70.0,
+                        "the telefrag gate held ({dcx}x{dcy})"
+                    );
+                    // The feet rest on a solid floor.
+                    let floor = w
+                        .tile(
+                            (tim.x / 16.0) as i32,
+                            ((tim.y + tim.size().1) / 16.0) as i32,
+                        )
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                    assert!(floor, "the teleport landed the feet on a solid floor");
+                }
+            }
+        }
+        assert!(teleported, "the caster never teleported");
+        assert!(shot, "Tim never fired the Chaos Ball");
+        // The post-teleport windup (20) never crosses the shoot tick (25)
+        // — the shot came from the 100/200/300 trigger's 30-tick windup.
+    }
+
+    #[test]
+    fn the_fire_imp_shoots_at_its_tick() {
+        // The Fire Imp's shoot tick is `ai[1] == 10` (`:21166`) — 20 ticks
+        // after the 30-tick windup, 15 after the standard casters'.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let mut imp = Npc::new(NpcKind::FireImp, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        imp.hp = imp.max_hp;
+        let mut rng = 11u64;
+        let mut shot = false;
+        for _ in 0..400 {
+            imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some((kind, _, _)) = imp.wants_sphere {
+                assert_eq!(kind, NpcKind::BurningSphere);
+                shot = true;
+                break;
+            }
+        }
+        assert!(shot, "the Fire Imp never fired the Burning Sphere");
+    }
+
+    #[test]
+    fn the_sphere_launches_once_and_flies_straight() {
+        // `AI_009` (`NPC.cs:21404-21429`): the velocity points at the
+        // player once (the speed 6 for the Chaos Ball, 5 for the Burning
+        // Sphere), then the ball flies straight through the tiles.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let (pcx, _) = player.center();
+        // The ball sits up-left of the player: the launch aims right/down.
+        let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.05, "the launch speed is 6 ({speed})");
+        assert!(ball.vx > 0.0 && ball.vy > 0.0, "the ball dives at the player");
+        let v = (ball.vx, ball.vy);
+        // The straight fly: the velocity never re-aims and the dirt passes
+        // through (the floor line sits at y = 120*16).
+        for _ in 0..100 {
+            ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(ball.vx, v.0);
+        assert_eq!(ball.vy, v.1);
+        assert!(ball.x > pcx, "the ball crossed the player's column");
+        assert!(ball.y > 120.0 * 16.0, "the ball flew through the floor line");
+        // The Burning Sphere's speed is 5 (`:21395-21399`).
+        let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (sphere.vx * sphere.vx + sphere.vy * sphere.vy).sqrt();
+        assert!((speed - 5.0).abs() < 0.05, "the burning sphere speed is 5");
+    }
+
+    #[test]
+    fn the_casters_spawn_stand_and_map() {
+        // `spawn_caster` plants the feet on the ground tile (`SpawnNPC`'s
+        // `Bottom = (x*16+8, y*16)`), the stats ride the verified
+        // `SetDefaults` rows, and the bestiary entries round-trip.
+        let mut w = ground_air();
+        let imp = Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp)
+            .expect("the imp spawns on the ground");
+        assert_eq!(imp.size(), (18.0, 40.0));
+        assert_eq!(imp.max_hp, 70);
+        assert!((imp.y - (120.0 * 16.0 - 40.0)).abs() < 0.01);
+        let sorcerer = Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer)
+            .expect("the sorcerer spawns");
+        assert_eq!(sorcerer.size(), (18.0, 38.0));
+        assert_eq!(sorcerer.max_hp, 40);
+        let tim = Npc::new(NpcKind::Tim, 0.0, 0.0, 1, 0.0);
+        assert_eq!(tim.max_hp, 200);
+        assert_eq!(tim.value(), 5000.0);
+        for (kind, net) in [
+            (NpcKind::GoblinSorcerer, 29),
+            (NpcKind::Tim, 45),
+            (NpcKind::DarkCaster, 32),
+            (NpcKind::FireImp, 24),
+            (NpcKind::ChaosBall, 30),
+            (NpcKind::BurningSphere, 25),
+            (NpcKind::WaterSphere, 33),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
+    /// The swim arena: the ground from y = 120 with a water pool (x
+    /// 60..140, y 118..134 liquid-filled, the floor at 135) and a dry pit
+    /// for the flop tests.
+    fn water_pool() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 60..140 {
+            for y in 118..135 {
+                let i = w.index(x, y);
+                // The water tile: no block (`active()` false — kind 0 is
+                // DIRT and an active dirt tile is solid), just the liquid.
+                w.tiles[i] = Tile::default();
+                w.tiles[i].liquid = 255;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_swimmer_bobs_idly_in_water() {
+        // `AI_016`'s idle machine (`NPC.cs:23848-23960`): the X drift to
+        // the 1-px cap with the wall flip, the ±0.3 vertical bob through
+        // `ai[0]`, the 0.95 damping.
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = false;
+        // The goldfish floats mid-pool: the idle bob never chases.
+        let mut fish = Npc::new(NpcKind::Goldfish, 90.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut rng = 3u64;
+        let mut rose = false;
+        let mut sank = false;
+        for _ in 0..600 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if fish.swim_phase == -1.0 {
+                rose = true;
+            }
+            if fish.swim_phase == 1.0 {
+                sank = true;
+            }
+            // The idle drift's fixed point is 2.0 (x*0.95 + 0.1 = x) — the
+            // 1.0 in `num258` is the damping THRESHOLD, not a cap
+            // (`:23905-23914`).
+            assert!(fish.vx.abs() <= 2.01, "the idle X drift ({})", fish.vx);
+        }
+        assert!(rose && sank, "the bob cycled both ways (rose {rose} sank {sank})");
+        // The fish stayed inside the pool's water column.
+        assert!(fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0, "the pool held");
+    }
+
+    #[test]
+    fn the_shark_chases_the_wet_player() {
+        // The chase (`:23766-23845`): `ai[0] = 0`, the accel to the 5/3
+        // caps while `flag25` holds (the player wet + the line clear).
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = true;
+        // The shark mid-pool, the player in the water at the pool's edge.
+        player.x = 100.0 * 16.0;
+        player.y = 128.0 * 16.0;
+        let mut shark = Npc::new(NpcKind::Shark, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        shark.hp = shark.max_hp;
+        let mut rng = 5u64;
+        let start = shark.x;
+        for _ in 0..120 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(shark.swim_phase, 0.0, "the chase phase set");
+        assert!(shark.x > start + 10.0, "the shark closed in");
+        let speed = (shark.vx * shark.vx + shark.vy * shark.vy).sqrt();
+        assert!(speed > 1.0, "the chase reached speed ({speed})");
+    }
+
+    #[test]
+    fn the_goldfish_never_chases() {
+        // The flag25 exclusion (`:23701`): the Goldfish ignores the wet
+        // player in the line of sight — the phase never hits the chase's 0
+        // and the speed stays idle.
+        let w = water_pool();
+        let mut player = surface_player(&w);
+        player.wet = true;
+        player.x = 100.0 * 16.0;
+        player.y = 128.0 * 16.0;
+        let mut fish = Npc::new(NpcKind::Goldfish, 70.0 * 16.0, 124.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut rng = 9u64;
+        for _ in 0..300 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert!(fish.vx.abs() <= 2.01, "the goldfish stayed idle");
+        }
+        assert!(fish.swim_phase != 0.0, "the chase phase never set");
+    }
+
+    #[test]
+    fn the_beached_fish_flops() {
+        // The dry path (`:23963-23989`): the gravity pulls the fish down;
+        // the Shark's stand decay holds it still on the ground.
+        let mut w = water_pool();
+        // A dry pocket inside the pool column: x 80..100, y 118..134 air.
+        for x in 80..100 {
+            for y in 118..135 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+        let mut player = surface_player(&w);
+        let mut shark = Npc::new(NpcKind::Shark, 90.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        shark.hp = shark.max_hp;
+        let mut rng = 13u64;
+        for _ in 0..200 {
+            shark.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        // The beached shark rests on the pocket floor (y = 135*16 - 24).
+        let feet = shark.y + shark.size().1;
+        assert!(
+            (feet - 135.0 * 16.0).abs() < 1.0,
+            "the shark beached on the floor ({feet})"
+        );
+        assert!(shark.vx.abs() < 0.2, "the stand decay held ({})", shark.vx);
+        // The goldfish flops randomly out of water (the jump impulse).
+        let mut fish = Npc::new(NpcKind::Goldfish, 95.0 * 16.0, 120.0 * 16.0, 1, 0.0);
+        fish.hp = fish.max_hp;
+        let mut jumped = false;
+        for _ in 0..60 {
+            fish.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if fish.vy < -1.0 {
+                jumped = true;
+            }
+        }
+        assert!(jumped, "the flopping goldfish jumped");
+    }
+
+    #[test]
+    fn the_swimmers_spawn_and_map() {
+        // `spawn_swimmer` plants the feet on the pool floor; the stats ride
+        // the verified `SetDefaults` rows; the bestiary entries round-trip.
+        let w = water_pool();
+        let shark = Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark)
+            .expect("the shark spawns in the pool");
+        assert_eq!(shark.size(), (100.0, 24.0));
+        assert_eq!(shark.max_hp, 300);
+        assert!((shark.y - (135.0 * 16.0 - 24.0)).abs() < 0.01);
+        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish)
+            .expect("the goldfish spawns");
+        assert_eq!(fish.size(), (20.0, 18.0));
+        assert_eq!(fish.max_hp, 5);
+        assert_eq!(fish.knock_back_resist(), 0.5);
+        let piranha = Npc::new(NpcKind::Piranha, 0.0, 0.0, 1, 0.0);
+        assert_eq!(piranha.max_hp, 30);
+        assert_eq!(NpcKind::Piranha.contact_damage(), 25);
+        assert_eq!(piranha.knock_back_resist(), 1.0);
+        for (kind, net) in [
+            (NpcKind::Goldfish, 55),
+            (NpcKind::Piranha, 58),
+            (NpcKind::Shark, 65),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
+    #[test]
+    fn the_worm_chain_assembles_and_trails() {
+        // `AI_006` (`NPC.cs:51305-51368`): the head rolls the budget and
+        // spawns the chain front to back; the followers ride the rigid
+        // trail at the width distance (`:51867-51922`).
+        let mut w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::GiantWormHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 3u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // The chain: the head + the bodies + the tail; the Giant Worm's
+        // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
+        assert!(npcs.len() >= 6 && npcs.len() <= 8, "the chain length {}", npcs.len());
+        assert_eq!(npcs[0].kind, NpcKind::GiantWormHead);
+        assert_eq!(npcs[0].worm_left, npcs.len() as u32 - 2);
+        assert_eq!(npcs[0].worm_id, 1);
+        for (i, seg) in npcs.iter().enumerate() {
+            assert_eq!(seg.worm_id, 1, "the chain id shared");
+            assert_eq!(seg.seg_index, i as u32, "the indices run front to back");
+        }
+        assert_eq!(npcs[1].kind, NpcKind::GiantWormBody);
+        assert_eq!(npcs.last().unwrap().kind, NpcKind::GiantWormTail);
+        // The trail: the second segment sits one width behind the head.
+        let (lw, lh) = npcs[1].size();
+        let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + npcs[0].size().0 * 0.5);
+        let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!(
+            (dist - lw).abs() < 0.5,
+            "the rigid trail distance ({dist} vs {lw})"
+        );
+        // The second pass: the chain holds (the inited links spawn nothing).
+        let len_before = npcs.len();
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs.len(), len_before, "the chain is stable");
+    }
+
+    #[test]
+    fn the_worm_chain_dies_with_the_head() {
+        // `:51425-51433`: the leader gone — the link dies; the whole tail
+        // falls in one pass.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
+        // The head dies: the chain falls.
+        npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        for seg in &npcs {
+            assert!(seg.hp <= 0, "the segment followed the head down");
+        }
+    }
+
+    #[test]
+    fn the_worm_head_digs_and_stumbles() {
+        // The head machine (`:51923-52051`): inside the solid the velocity
+        // aims at the tile-snapped player at `num45`; in the open air the
+        // gravity pulls.
+        let mut w = ground_air();
+        // The head deep in the dirt, the player above.
+        let mut head = Npc::spawn_worm_head(&w, 40, 150, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 1;
+        let mut npcs = vec![head];
+        let mut rng = 11u64;
+        let mut next_id = 1u32;
+        // The player parked above the dirt.
+        let pc = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        let h0 = &npcs[0];
+        // The dig: the velocity magnitude rides num45 (9 for the Devourer).
+        let speed = (h0.vx * h0.vx + h0.vy * h0.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.1, "the dig speed ({speed})");
+        assert!(h0.vy < 0.0, "the head digs up toward the player");
+        // The air stumble: the head in the open cavern falls.
+        let mut w2 = ground_air();
+        for x in 30..50 {
+            for y in 130..160 {
+                let i = w2.index(x, y);
+                w2.tiles[i] = Tile::default();
+            }
+        }
+        w2.compute_column_surface();
+        let mut flyer = Npc::spawn_worm_head(&w2, 40, 140, NpcKind::GiantWormHead);
+        flyer.hp = flyer.max_hp;
+        flyer.worm_inited = true;
+        flyer.worm_id = 2;
+        let mut npcs2 = vec![flyer];
+        let pc2 = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(
+            &w2,
+            Some(pc2),
+            &mut npcs2,
+            &mut rng,
+            &mut next_id,
+        );
+        let f0 = &npcs2[0];
+        assert!(f0.vy > 0.0, "the open-air head falls (+0.11 gravity)");
+    }
+
+    #[test]
+    fn the_worms_spawn_and_map() {
+        // The stats ride the verified `SetDefaults` rows; the bestiary
+        // entries fold the body/tail credits onto the head ids.
+        let w = ground_air();
+        let head = Npc::spawn_worm_head(&w, 40, 130, NpcKind::DevourerHead);
+        assert_eq!(head.size(), (22.0, 22.0));
+        assert_eq!(head.max_hp, 100);
+        assert_eq!(NpcKind::DevourerHead.contact_damage(), 31);
+        assert_eq!(NpcKind::DevourerTail.contact_damage(), 13);
+        assert_eq!(head.knock_back_resist(), 0.0);
+        let gw = Npc::spawn_worm_head(&w, 50, 130, NpcKind::GiantWormHead);
+        assert_eq!(gw.size(), (14.0, 14.0));
+        assert_eq!(gw.max_hp, 30);
+        let eow = Npc::new(NpcKind::EaterOfWorldsHead, 0.0, 0.0, 1, 0.0);
+        assert_eq!(eow.size(), (38.0, 38.0));
+        assert_eq!(eow.max_hp, 150);
+        for (kind, net) in [
+            (NpcKind::DevourerHead, 7),
+            (NpcKind::DevourerBody, 7),
+            (NpcKind::DevourerTail, 7),
+            (NpcKind::GiantWormHead, 10),
+            (NpcKind::GiantWormBody, 10),
+            (NpcKind::GiantWormTail, 10),
+            (NpcKind::EaterOfWorldsHead, 13),
+            (NpcKind::EaterOfWorldsBody, 13),
+            (NpcKind::EaterOfWorldsTail, 13),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
 }

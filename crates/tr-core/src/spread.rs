@@ -321,6 +321,255 @@ pub fn hard_update_world(
     }
 }
 
+/// `GERunner`'s hallow (good) map (`WorldGen.cs:76169-76290`): the hallowed
+/// grass 109, the pearlstone 117, the hallowed sand 116, the hallowed ice
+/// 164, the hallowed sandstone 403, the hallowed hardened sand 402 — and
+/// the purify arm (the corrupt/crimson jungle grass 661/662 → the jungle
+/// grass 60).
+fn convert_tile_hallow(kind: u16) -> Option<u16> {
+    Some(match kind {
+        2 => 109,
+        1 | 25 | 203 => 117,
+        53 | 123 | 112 | 234 => 116,
+        161 | 163 | 200 => 164,
+        396 => 403,
+        397 => 402,
+        23 | 199 => 109,
+        661 | 662 => 60,
+        _ => return None,
+    })
+}
+
+/// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
+/// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
+/// hallowed stone wall 28.
+fn convert_wall_hallow(wall: u16) -> Option<u16> {
+    Some(match wall {
+        187 => 222,
+        3 | 83 => 28,
+        _ => return None,
+    })
+}
+
+/// `WorldGen.GERunner` (`WorldGen.cs:76169-76330`): the V-shaped strip
+/// walker — the position starts at the sky `(i, 0)`, moves with the
+/// velocity `(speedX, 5f)` per step, converting the Manhattan disc of the
+/// radius `num2 · 0.5` (`num2 = Next(200, 250) · maxTilesX/4200`, the rim
+/// wobble `Next(-10, 11) · 0.015`) around it. `good` runs the hallow map,
+/// the evil side runs `Convert`'s map by the world's flavour.
+pub fn gerunner(
+    world: &mut World,
+    x: i32,
+    speed_x: f64,
+    good: bool,
+    corruption: bool,
+    rng: &mut FastRandom,
+) {
+    let scale = world.width as f64 / 4200.0;
+    let num2 = (rng.next_range(200, 250) as f64) * scale;
+    let mut px = x as f64;
+    let mut py = 0.0;
+    let mut vx = speed_x;
+    let vy = 5.0;
+    let bottom = world.height - 10;
+    let mut steps = 0;
+    while py < bottom as f64 && steps < world.height * 2 {
+        steps += 1;
+        let radius = num2 * 0.5;
+        for m in (px - radius) as i32..=(px + radius) as i32 {
+            for n in (py - radius) as i32..=(py + radius) as i32 {
+                if m < 2 || n < 2 || m >= world.width - 2 || n >= world.height - 5 {
+                    continue;
+                }
+                let manhattan = ((m as f64 - px).abs() + (n as f64 - py).abs()) as f64;
+                let wobble = 1.0 + (rng.next_range(-10, 11) as f64) * 0.015;
+                if manhattan >= radius * wobble {
+                    continue;
+                }
+                let (kind, wall) = match world.tile(m, n) {
+                    Some(t) => (t.kind, t.wall),
+                    None => continue,
+                };
+                if good {
+                    if let Some(new_kind) = convert_tile_hallow(kind) {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = new_kind;
+                        }
+                    }
+                    if let Some(new_wall) = convert_wall_hallow(wall) {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.wall = new_wall;
+                        }
+                    }
+                } else {
+                    if let Some(new_kind) = convert_tile(kind, corruption) {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.kind = new_kind;
+                            t.frame_x = 0;
+                            t.frame_y = 0;
+                        }
+                    }
+                    if let Some(new_wall) = convert_wall(wall, corruption) {
+                        if let Some(t) = world.tile_mut(m, n) {
+                            t.wall = new_wall;
+                        }
+                    }
+                }
+            }
+        }
+        px += vx;
+        py += vy;
+    }
+}
+
+/// `WorldGen.initializeHardMode`'s runner half (`WorldGen.cs:31660-31666`):
+/// the hallow V on one side and the evil V on the other (the C# `GERunner(
+/// num3, 0, 3·num5, 5f)` good + `GERunner(num4, 0, −3·num5, 5f, good:
+/// false)`); the start xs sit ±`maxTilesX/7` off the middle.
+pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut FastRandom) {
+    let offset = world.width / 7;
+    // `num5 = ±1` (`WorldGen.cs:31585-31590`) — the velocity `3·num5` gives
+    // the 3:5 V slope verbatim.
+    let speed = 3.0;
+    // The hallow runner: the east side heading further east.
+    gerunner(world, world.width / 2 + offset, speed, true, corruption, rng);
+    // The evil runner: the west side heading further west.
+    gerunner(world, world.width / 2 - offset, -speed, false, corruption, rng);
+}
+
+#[cfg(test)]
+mod runner_tests {
+    use super::*;
+    use crate::tile::{FLAG_ACTIVE, Tile};
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 800, 600);
+        w.rock_layer = 300.0;
+        // The ground band: the grass over the stone.
+        for x in 0..800 {
+            for y in 300..340 {
+                put(&mut w, x, y, if y == 300 { 2 } else { 1 });
+            }
+            for y in 340..600 {
+                put(&mut w, x, y, 1);
+            }
+        }
+        w
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    #[test]
+    fn the_hallow_map_is_verbatim() {
+        // `GERunner`'s good arms (`WorldGen.cs:76262-76290`): the hallowed
+        // grass 109, the pearlstone 117, the hallowed sand 116, the
+        // hallowed ice 164, 403, 402 — and the purify arm (661/662 → 60).
+        assert_eq!(convert_tile_hallow(2), Some(109));
+        assert_eq!(convert_tile_hallow(1), Some(117));
+        assert_eq!(convert_tile_hallow(25), Some(117));
+        assert_eq!(convert_tile_hallow(203), Some(117));
+        assert_eq!(convert_tile_hallow(53), Some(116));
+        assert_eq!(convert_tile_hallow(112), Some(116));
+        assert_eq!(convert_tile_hallow(234), Some(116));
+        assert_eq!(convert_tile_hallow(161), Some(164));
+        assert_eq!(convert_tile_hallow(163), Some(164));
+        assert_eq!(convert_tile_hallow(396), Some(403));
+        assert_eq!(convert_tile_hallow(397), Some(402));
+        assert_eq!(convert_tile_hallow(23), Some(109));
+        assert_eq!(convert_tile_hallow(199), Some(109));
+        assert_eq!(convert_tile_hallow(661), Some(60), "the purify arm");
+        assert_eq!(convert_tile_hallow(662), Some(60));
+        assert_eq!(convert_tile_hallow(211), None);
+        // The walls: 187 → 222, 3/83 → 28.
+        assert_eq!(convert_wall_hallow(187), Some(222));
+        assert_eq!(convert_wall_hallow(3), Some(28));
+        assert_eq!(convert_wall_hallow(83), Some(28));
+    }
+
+    #[test]
+    fn the_gerunner_carves_the_v_strip() {
+        let mut w = world();
+        let mut rng = FastRandom::new(9);
+        gerunner(&mut w, 400, 2.0, true, false, &mut rng);
+        // The strip: the hallowed grass/pearlstone along the V from the
+        // sky to the bottom.
+        let hallowed = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && matches!(t.kind, 109 | 117))
+            .count();
+        assert!(hallowed > 300, "the hallowed tiles ({hallowed})");
+        // The V spans the ground band's full depth: the hallowed tiles at
+        // the top (300-340) and at the bottom (560-599) of the band.
+        let top = (300..340).any(|y| {
+            (0..800).any(|x| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        let bottom = (560..600).any(|y| {
+            (0..800).any(|x| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && matches!(t.kind, 109 | 117))
+            })
+        });
+        assert!(top, "the V top");
+        assert!(bottom, "the V bottom");
+    }
+
+    #[test]
+    fn the_evil_runner_uses_the_flavour() {
+        // The evil runner with the corruption: the grass → the corrupt
+        // grass 23, the stone → the ebonstone 25.
+        let mut w = world();
+        let mut rng = FastRandom::new(10);
+        gerunner(&mut w, 400, -2.0, false, true, &mut rng);
+        let corrupt = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && matches!(t.kind, 23 | 25))
+            .count();
+        assert!(corrupt > 300, "the corrupted tiles ({corrupt})");
+    }
+
+    #[test]
+    fn initialize_hard_mode_runs_both_runners() {
+        // The corruption world (the crimson world swaps the evil kinds).
+        let mut w = world();
+        let mut rng = FastRandom::new(11);
+        initialize_hard_mode(&mut w, true, &mut rng);
+        let hallowed = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && matches!(t.kind, 109 | 117 | 116 | 164))
+            .count();
+        let corrupt = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && matches!(t.kind, 23 | 25 | 112))
+            .count();
+        assert!(hallowed > 200, "the hallow V ({hallowed})");
+        assert!(corrupt > 200, "the evil V ({corrupt})");
+        // The crimson world: the evil kinds swap (199/203/234).
+        let mut w2 = world();
+        let mut rng = FastRandom::new(11);
+        initialize_hard_mode(&mut w2, false, &mut rng);
+        let crimson = w2
+            .tiles
+            .iter()
+            .filter(|t| t.active() && matches!(t.kind, 199 | 203 | 234))
+            .count();
+        assert!(crimson > 200, "the crimson V ({crimson})");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
