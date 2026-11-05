@@ -2630,6 +2630,70 @@ Deviations:
   or sets the vampire-slime `ai[1] = 9` in the roster), ichor → M2-BUFF-4,
   and the presentation half — combat text, dust and the buff-bar HUD icons.
 
+## Luck value (M2-BUFF-6)
+
+`crates/tr-app/src/luck.rs` holds the full `RecalculateLuck` formula
+(`Player.cs:29137-29164`) in `LuckState`, the three `Main.dayRate` decay
+timers (`:18103-18110` coinLuck ×0.9999^dayRate floored <0.25, `:18836-18854`
+ladyBugLuckTimeLeft draining to 0 from either sign, `:29166-29182`
+brokenMirrorBadLuckTime driving the −0.25 flag), the torch-luck scan
+(`TryRecalculatingTorchLuck`/`UpdateTorchLuck_ConsumeCountersAndCalculate`
+`:17731-18088` — one tile row per player tick, style `frameY/22`,
+`frameX<66` unsnuffed, the 13-verdict biome table, `torchLuck` floored at 0),
+the coin tiers (`:18115-18153` incl. the duplicated unreachable
+`>24900 → 0.175` branch, kept verbatim), the ladybug windows
+(`NPC.cs:81566-81652`: kill 400 px linear / nearby 800 px `(1−d/800)^6`,
+gold ×2, extremes win) and the buff-driven inputs (257 tier by remaining
+time `:10285-10301`, 120 stinky `:10276-10280`, 383 kite tier
+`buffTime/10800` clamp 0..3 `:9920-9924`). `update_luck` runs at the C#
+`UpdateLuck` position (`Player.cs:25645` → `:29041`, after the buff effects);
+the value is **never clamped** — the −0.7/1.0 caps are UI-only
+(`NormalizedLuck`, `:4107-4122`). Consumers wired: the gel drop rules and
+`drop_money` read `player.luck()` (`CommonDrop.cs:36`, `NPC.cs:79622`), the
+melee `DamageVar` passes the raw value (`Player.cs:44342`), and
+`start_rain`'s coin gate reads it as `GetPlayerWithHighestLuck().luck`
+(`Main.cs:64668`).
+
+Deviations, all deliberate:
+- **Absent writers are neutral-default inputs, terms stay live**: lantern
+  night (`LanternNight.LanternsUp` — M4-EVENT-4), the garden gnome
+  (tile-567 SceneMetrics count, M4), `usedGalaxyPearl` (item 5340), the
+  broken-mirror writer (projectile 1085 / item 5577), the accessory bonus
+  (clover 5574-5576 / horseshoe 158 / lucky coin 855 — M3-EQUIP) and the
+  kite items (`IsAKite`) all default to 0/false; `RecalculateLuck` applies
+  every term in the original order so those tasks only fill the inputs.
+- **`usedGalaxyPearl` is not persisted** — the C# writes it to the player
+  file (`Player.cs:54784/:55258`); the port has no player-file writer yet.
+- **The ladybug/coin writers have no live caller** — the ladybug NPC
+  (604/605) and gold critters are the M4 critter row, the town NPCs the M6
+  row; the setters (`on_lady_bug_killed/nearby`, `on_town_npc_death`,
+  `add_coin_luck`) are unit-tested callables. `on_lady_bug_killed` returns
+  the raw `ladyBugRainTime` add for the future `rain.rs` writer instead of
+  touching `Main.ladyBugRainBoost` (the C# applies the 18000 cap at the
+  add site, `NPC.cs:81568-81572`).
+- **The Torch God event is out** — the `happyFunTorchTime` /
+  `torchGodCooldown` head of the scan and the `:18066-18086` trigger tail
+  are not ported; the `nearbyTorches` counter still runs.
+- **The temple zone is unmodelled** — the skip gate
+  `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
+- **`ZoneLihzhardTemple`-free torch inputs** — the zones ride a per-tick
+  `SceneMetrics::zones()` snapshot on the player (the `auras()` pattern),
+  refreshed beside `p.auras` in `world_sim/player.rs`.
+- **No kite-luck reset** — the C# never zeroes `kiteLuckLevel` (assigned
+  only inside the buff-383 branch, `:9920-9924`); the port matches:
+  stale-until-recomputed.
+- **Net-only halves skipped** — `luckNeedsSync`, packet 134
+  (`NetMessage.cs:1557-1568`), the `oldLuckPotion` diff and the buff-120
+  `talkNPC = -1` dialogue half (host-authoritative single player).
+- **The first lucky branches diverge the streams C#-faithfully** — with
+  luck 0 every wired consumer stays byte-identical to its pre-wiring plain
+  roll; at luck > 0 the hit branches consume their extra draws exactly as
+  the C# branch shape implies (pinned by `test_DW_3_4`'s luck-1.0 stream
+  replay and the luck-0 equality tests).
+- **C# float widening quirks preserved** — the coin tier compare
+  `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
+  widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
 ## Projectile pool (M4-PROJ-1)
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
