@@ -187,7 +187,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
-        if app.attack_cd <= 0.0 && throw_ready {
+        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
             // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
             // `item.mana * manaCost` (the multiplier is the 1f base — the
             // accessories fold out); a failed check blocks the use. The pay
@@ -208,6 +208,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     p.mana,
                     false,
                 );
+            }
+            // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
+            // rides the use start.
+            if let Some(d) = registry::get(held.kind) {
+                app.reuse_delay = d.reuse_delay as f32 / 60.0;
             }
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
@@ -258,8 +263,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
         return;
     }
+    if app.reuse_delay > 0.0 {
+        app.reuse_delay = (app.reuse_delay - dt).max(0.0);
+    }
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    if app.mine_down && app.attack_cd <= 0.0 && !app.inventory_open {
+    if app.mine_down && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && !app.inventory_open {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let reach2 = 4.0 * TILE_PX;
@@ -456,6 +464,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         .map(|d| d.use_time as f32 / 60.0)
         .filter(|t| *t > 0.0)
         .unwrap_or(swing_secs);
+    // `Player.channel` (`Item.cs:52960-52965` sets it; `Player.cs:43576`'s
+    // `if (!this.channel)` guards the animation decrement): while the
+    // button is held the item's animation HOLDS instead of ending — the
+    // channel persists until the release.
+    let channels = timings.is_some_and(|d| d.channel) && app.mine_down && !held_weapon;
+    if channels && app.swing <= 0.0 {
+        // The hold: the animation stays at the last frame.
+        app.swing = 0.2;
+        app.attack_cd = app.attack_cd.max(0.2);
+    }
     let swing_over = app.swing <= 0.0;
     let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
     let starting = swing_over && reuse_ready;
