@@ -101,6 +101,7 @@ pub(crate) struct NpcAssets {
     pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
+    pub(crate) merchant: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -139,6 +140,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
+        merchant: sky_tex(atlas, "NPC_17", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -274,8 +276,13 @@ pub(crate) fn draw_player(
     let head_armor = registry::get(head_kind).map_or(-1, |d| d.head_slot);
     let body_armor = registry::get(body_kind).map_or(-1, |d| d.body_slot);
     let leg_armor = registry::get(legs_kind).map_or(-1, |d| d.leg_slot);
+    // `PlayerDrawSet.cs:343-347` + `GetSittingOffsetInfo`
+    // (`PlayerSittingHelper.cs:14-31`): the sitting body draws shifted up by
+    // the seat adjustment (-4 px; the index-0 posOffset is zero). The
+    // sliced-leg sit pose is the render follow-up.
+    let sit_shift = if player.sitting { -4.0 } else { 0.0 };
     let state = PlayerCompositeState {
-        origin: [player.x - 10.0, player.y - 10.0],
+        origin: [player.x - 10.0, player.y - 10.0 + sit_shift],
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,
@@ -594,6 +601,13 @@ pub(crate) fn draw_npcs(
             // `Main.npcFrameCount[22]` = 3 rows of the same 38x48 shape).
             NpcKind::Guide => (
                 assets.guide.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Merchant: the same humanoid shape over NPC_17.
+            NpcKind::Merchant => (
+                assets.merchant.as_ref(),
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],

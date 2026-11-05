@@ -36,6 +36,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // dial arm (`Player.cs:32642`/:32652, `SoundEngine.PlaySound(SoundID.Item4,
     // ...)`); the legacy Item track, like `Item_1` above.
     ("Item_4", 2),
+    // `SoundEngine.PlaySound(7)` — the craft grant (`CraftingEffects.cs:51`,
+    // `SpawnEffects_BeforeGrantingItem` ← `OnCraft`); `SoundID.Grab = 7`
+    // (`SoundID.cs`), the `Grab.xnb` cue.
+    ("Grab", 7),
 ];
 
 fn sound_type(cue: &str) -> u32 {
@@ -1252,6 +1256,15 @@ mod tests {
         // Item track as `Item_1`.
         assert_eq!(sound_type("Item_4"), 2);
     }
+
+    #[test]
+    fn the_cue_table_carries_the_legacy_ids() {
+        // `CraftingEffects.cs:51` — `SoundEngine.PlaySound(7)`, `SoundID.Grab`
+        // (`SoundID.cs`); the grant sound rides the legacy type 7.
+        assert_eq!(sound_type("Grab"), 7);
+        // Every cue's asset name is its table name (`Sounds/{name}.xnb`).
+        assert!(SFX_CUES.iter().any(|(n, _)| *n == "Grab"));
+    }
 }
 
 /// `Main.cs:11528-11546`: the rain track's weather factor — `Some` while the
@@ -1284,3 +1297,5 @@ fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
     let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
     Some(v)
 }
+
+

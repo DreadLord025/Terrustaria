@@ -4008,6 +4008,59 @@ Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
 follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
 swapping is out; the ore walls (`wallType`) are out.
 
+## The furniture logic (M1.4-TO-3)
+
+The registry grew from the wooden set (10/11/14/15/18/21) to the common
+furniture family — `tileobject.rs`: the candle (33, StyleOnTable1x1 —
+`AnchorBottom = Table`), the candelabra (100, Style2x2+Table), the
+chandelier (34, 3x3 hanging — `AnchorTop (SolidTile|SolidSide, 1, 1)` +
+`AnchorBottom Empty`, the ceiling-anchor path), the hanging lantern (42,
+Style1x2Top + the platform alternate), the lamp (93, Style1xX), the
+bookcase (101, Style3x4), the piano (87)/dresser (88) (Style3x2 — the
+dresser with the chest's invalid-anchor tiles + `LavaDeath=false`), the
+sink (172, Style2x2+18px), the grandfather clock (104, Style2xX h5), the
+bed (79)/bathtub (90) (Style4x2 + the `PlaceRight` alternates with
+`Style = 1` + the bed's `CoordinatePaddingFix (0,-2)`). The table's
+sub-tile styles 13 (Obsidian, lava-safe) / 25 (Dynasty, 3x1) resolve
+through `get_tile_data`'s sub-tile walk (the row's "3x3/6x3 + styles 13/25"
+gap — the vanilla has no 3x3/6x3 furniture kinds; the row's ids were stale:
+torches 4 (not 8), tables 14 (not 19), beds 79, pianos 87, clocks 104).
+
+The kill checks: `CheckOnTable1x1` (:45237), `Check1xX` (:37788), `Check2xX`
+(:37993), `Check3x4` (:50076), `Check1x2Top` (:46706), `Check4x2`
+(:47408), `Check2x2` (:48397), `Check3x3` (:53059) ported per-shape;
+`Check3x2` (:49187) parametrized over 14/87/88. The per-cell scans set
+`flag` and CONTINUE (no early break — an early break loses the sweep's cell
+list and leaves the remainder alive). The `Check*` closing `TileFrame`
+rings exist per-check in vanilla — only `Check3x2` (:49841-49849),
+`Check3x4` (:50161-50168) and `Check4x2` (:47499-47506) close with one; the
+port walks the ring for exactly those (with a depth cap), so a neighbouring
+piece whose anchor died inside a sweep reaches its own `Check*`; the other
+checks' remainders float until a later break — the vanilla deferred-pop
+semantics (DW-3-1's guard test pins it).
+
+The interactions (`edit::interact_at`'s `Interaction` arms): the candle
+lit-toggle (33/49 — `frameX ± 18`, `Player.cs:32378-32390`; the flame
+overlay and the light emission follow the frame), the chair sit (15 —
+`PlayerSittingHelper.SitDown`'s seat decode `PlayerSittingHelper.cs:163-182`
++ `:317-319`; the player's bottom snaps to the seat, the facing flips with
+`frameX`, `UpdateSitting` stands up on any control input or the chair going
+away, the regen reads the `sitting_or_sleeping` flag `:19232-19236`), the
+bed (79 — the bottom half sets/removes the spawn through `CheckSpawn`
+(:54533-54590: the bed above, the 3x3 free, `StartRoomCheck` via the
+housing module) with the "Spawn point set!/removed!" texts; the top half is
+consumed-but-inert — the sleep state is not ported), the grandfather clock
+(104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
+
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
+render follow-up — the sitting player draws standing, shifted -4 px
+(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+multiplayer seat-stack manager is out (one player); the chest/dresser
+inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
+metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
+the style-0 wooden slice places. The DrawYOffset fields are preview-only
+(`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
 ## Micro-biomes (M1.4-WGEN-8)
 
 The micro-biome decorators over the finished world:
@@ -4053,3 +4106,118 @@ world (`TileID.cs`: the copper 7 / the tin 166, the iron 6 / the lead
 
 Deviations: the TileRunner-strength bands (the C#'s vein shapes carry the
 depth-dependent strengths) are the follow-up; the ore walls are out.
+
+## Progression recipe batch (M3-CRAFT-4)
+
+The first progression batch over the group-enabled table (20 recipes with
+the `Recipe.cs` registrations):
+
+- **The wooden tools** (the work bench 18): the sword 24 = 7 Wood (the
+  group `:6800-6806`), the hammer 196 = 8 Wood (`:6810-6814`), the bow 39
+  = 10 Wood (`:6815-6818`), the arrow 40 ×25 = 1 Wood + 1 Stone
+  (`:2077-2082`); the platform 94 ×2 = 1 Wood by hand (`:2376-2378`).
+- **The bars** (the furnace 17): the copper 20 = 3 Copper Ore 12
+  (`:9652-9656`), the silver 21 = 4 Silver Ore 14 (`:10076-10080`), the
+  gold 19 = 4 Gold Ore 13 (`:10236-10240`) — the ore item ids are the
+  vanilla pair (the iron 11 already in the table).
+- **The metal armor** (the anvil 16): the copper set (the helmet 89 = 12
+  bars `:9708-9712`, the chainmail 80 = 20 `:9714-9717`, the greaves 76 =
+  16 `:9718-9721`), the iron set via the iron-bar group (the helmet 90 =
+  15, the chainmail 81 = 25, the greaves 77 = 20, `:9882-9895`), the
+  silver set (91/82/78 = 15/25/20, `:10127-10140`), the gold set
+  (92/83/79 = 20/30/25, `:10287-10300`).
+
+Deviations: the iron armor requirements author the iron bar 22 with the
+accepted IRON_BAR group (the C#'s `RequireGroup` shape — the group
+members 22/704 both accepted); the remaining ~1950 C# rows wait for the
+SetupRecipes generator.
+
+## Craft grant sound + the utility batch (M3-CRAFT-5)
+
+The craft sound: `CraftingEffects.SpawnEffects_BeforeGrantingItem` fires
+`SoundEngine.PlaySound(7)` before the result enters the inventory
+(`CraftingEffects.cs:51`, called from `OnCraft` — the grant happens once
+per successful craft, not per ingredient consumed). Legacy id 7 = Grab
+(`SoundID.cs`), the `Sounds/Grab.xnb` cue — the port adds the
+`("Grab", 7)` cue to `SFX_CUES` and fires `audio.play("Grab")` at the
+successful `try_craft` in `handle_crafting_clicks` (the 2D `play`, no
+attenuation — the C# passes no position).
+
+The utility batch (7 recipes, each verified against its `SetupRecipes`
+row; `ItemID.cs` resolves the ids — the wiki-familiar ids are wrong in
+several places):
+
+- **Chain 85 ×15** = 1 Iron Bar (the group), at the anvil 16 — 1.4.5.8
+  makes **15** per bar (the older 10-stack is the stale number).
+- **Sawmill 363** = 10 Wood (the group) + 2 Iron Bar (the group) + 1
+  Chain, at the work bench 18.
+- **Loom 332** = 12 Wood (the group), at the sawmill 106.
+- **Sign 171** = 6 Wood (the group), at the work bench 18.
+- **Cooking Pot 345** = 10 Iron Bar (the group) + 2 Wood (the group), at
+  the anvil 16.
+- **Bowl 356** = 2 Clay Block 133, at the furnace 17 (the glass is NOT
+  the ingredient — that is the pre-1.4 recipe).
+- **Gold Candle 105** = 1 Gold Bar 19 + 1 Torch 8, at the work bench 18.
+
+The anvil 16 and the sawmill 106 enter the station list for the first
+time — `scan_adjacent` collects every active tile kind, so the new
+stations needed no engine change. The chain/sawmill pair makes the
+station chain craftable end-to-end from the vanilla iron bar.
+
+Deviations: the platinum candle variant waits for the platinum-bar rows
+(the generator batch); the cauldron 1791/piano 333 skip (the cauldron
+crafts at the cooking-pot tile, the piano needs bone + book).
+
+## The full SetupRecipes table (M3-CRAFT-6)
+
+`tools/gen_recipes.py` reads the decompiled `Terraria/Recipe.cs`
+`SetupRecipes` and emits `crates/tr-app/src/recipes_gen.rs` - the whole
+table as ONE `&[Recipe, ...]` expression spliced via
+`include!` into `RECIPES`. 2764 rows in the C# registration order
+(= the UI listing order):
+
+- the main body (2475 `AddRecipe` calls) + the 35 `Add*Furniture`
+  helpers spliced at their call positions + the `AddCritterStatueRecipe`
+  rows (50 Stone + 5 critter at tile 283, needGraveyardBiome);
+- the `for` loops (`<=` and `<` forms), the `int[,] array` colour table,
+  the `ItemID.Sets.TextureCopyLoad[i]` lookups, the shared locals
+  (`int type = 3234;`) and the `(int)((float)num * 2.5f)` casts are all
+  expanded/evaluated;
+- 284 derived reverse rows: `CreateReversePlatformRecipes` +
+  `CreateReverseWallRecipes` (`Recipe.cs:16648-16694`) flip every
+  single-ingredient recipe whose result is a placed platform
+  (`TileID.Sets.Platforms` {19, 427, 435-439}) or a placed wall
+  (`createWall > 0`, the ingredient not a wall) and insert it right
+  after the source with `notDecraftable` - the port carries that exact
+  flag as `Recipe.not_decraftable` (the craft direction ignores it).
+
+Findings the hand table had wrong (the generator is the truth now):
+
+- The C# authors the work bench, the doors, the chairs, the tables and
+  the furniture with the **plain item 9** - no `RequireGroup(Wood)` on
+  those rows. Rich Mahogany does NOT craft a work bench. The group
+  substitution only lives where the row says so (the torch, the arrow,
+  the chest's iron bars, ...).
+- The iron armor rows author the plain bar 22 (not the IRON_BAR group).
+- `RequireGroup` binds to a slot by membership
+  (`CreateRequiredItemQuickLookups`, `:15162-15191`): a group whose
+  members do not contain the authored item stays unbound and the row
+  requires the exact item (the Lesion furniture rows: item 3955 is not
+  in the Wood group - they require lesion wood exactly).
+- `corruption`/`crimson` never gate crafting - they only feed
+  `ItemID.Sets.IsCraftedCorruption/Crimson` for the decrafting UI
+  (`:15252-15257`); the port ignores them.
+- 1.4.5.8's Chain craft makes 15 per bar (the C# `createItem.stack`)
+  and the arrow crafts at the work bench - both differ from the older
+  wiki/hand-table expectations.
+
+The generator validates every create/ingredient id against the port's
+`itemdata.rs` and every group against the port group table - the run
+reports 0 warnings and 1 skipped row (the `needTorchGodsFavor` gate; no
+port system). `--check` mode pins the generated file to the sources.
+
+Deviations: `needMechdusa` never fires in 1.4.5.8's setup body (the
+flag exists, no row sets it); the deco/shimmer variant rows
+(`AddCustomShimmerResult`) keep their craft direction and drop the
+shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
+rule (`AddRecipe`, `:16720-16724`).
