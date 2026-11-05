@@ -1415,6 +1415,7 @@ pub(crate) mod front_flow_tests {
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
             wind: tr_core::wind::Wind::new(1),
+            world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo: 1.0,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),

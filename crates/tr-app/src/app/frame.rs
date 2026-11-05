@@ -300,6 +300,11 @@ impl App {
             self.update_wiring(dt);
             self.update_tile_entities(dt);
             self.update_growth(dt);
+            // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
+            // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
+            // thunder arm once, the wind walk ×`Main.dayRate`, then
+            // `Sandstorm.UpdateTime` (`Main.cs:64966`).
+            crate::world_sim::weather::update_world_tick(self, dt);
             self.update_rain(dt, screen);
             // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
             // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
@@ -710,11 +715,12 @@ impl App {
                     scratch.waterfall_lights.clear();
                 }
 
-                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind walk
-                // runs in `UpdateWeather`; the sway counters advance per frame,
+                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
+                // itself lives on the shared world tick now
+                // (`world_sim::weather::update_world_tick`, ×`Main.dayRate`,
+                // `Main.cs:17228-17231`); the sway counters stay per frame,
                 // faster with stronger wind.
                 wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
-                wind.update(rain.is_raining());
                 // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
                 // the leaf frequency are screenshotable at a chosen strength.
                 if let Ok(v) = std::env::var("TR_WIND_FORCE") {

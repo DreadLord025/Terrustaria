@@ -328,6 +328,11 @@ pub(crate) struct App {
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
+    /// The shared 60 Hz world tick (M1.4-BG-22): the dayRate cluster — the
+    /// `UpdateWeather` thunder arm, the ×dayRate wind walk,
+    /// `Sandstorm.UpdateTime` — steps on this accumulator in
+    /// `world_sim::weather::update_world_tick` (`Main.cs:17228-17231`).
+    pub(crate) world_tick_step: FixedStepper,
     /// `Main.atmo` (`Main.cs:2503`): the atmosphere density
     /// `UpdateAtmosphereTransparencyToSkyColor` derives per draw
     /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
@@ -1436,6 +1441,7 @@ impl App {
             ambient_lavafall,
             ambient_counter,
             wind,
+            world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             grapple: None,

@@ -140,7 +140,9 @@ impl Rain {
         Self::with_forced(seed, forced, start_calm)
     }
 
-    fn with_forced(seed: u64, forced: Option<f32>, start_calm: bool) -> Self {
+    /// The injectable constructor (a test hook, not a behaviour — the
+    /// world-tick tests pin `max_raining` through it; scene_scan precedent).
+    pub(crate) fn with_forced(seed: u64, forced: Option<f32>, start_calm: bool) -> Self {
         let rng = (seed ^ 0x2545_F491_4F6C_DD1D).wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
         let wind = (((rng >> 40) & 0xFFFF) as f32 / 65535.0 - 0.5) * 0.7;
         let timer = if start_calm {
@@ -239,11 +241,9 @@ impl Rain {
         lo + (self.next_u64() % (hi.saturating_sub(lo).max(1) as u64)) as u32
     }
 
-    /// Fixed 60 Hz stepping, independent of frame rate. `weather` carries
-    /// the cross-system inputs the vanilla lightning chain reads from Main
-    /// statics (`Main.IsItStorming`, `windSpeedTarget`, `maxRaining`, the
-    /// atmosphere factor, the rock-layer depth gate, the graveyard
-    /// intensity, `shimmerAlpha`).
+    /// Fixed 60 Hz stepping, independent of frame rate. The drop sim and the
+    /// event schedule only — the lightning chain moved onto the shared world
+    /// tick (`thunder_step`, driven by `world_sim::weather::update_world_tick`).
     pub fn update(
         &mut self,
         world: &World,
@@ -252,21 +252,20 @@ impl Rain {
         zoom: f32,
         dt: f32,
         snow_biome: bool,
-        weather: ThunderInputs,
     ) {
         self.snow_mode = snow_biome;
         let step = 1.0 / TICKS_PER_SEC;
         let mut acc = self.accum + dt.min(0.25);
         let mut steps = 0;
         while acc >= step && steps < 12 {
-            self.tick(world, camera, screen, zoom, weather);
+            self.tick(world, camera, screen, zoom);
             acc -= step;
             steps += 1;
         }
         self.accum = acc.min(step * 12.0);
     }
 
-    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32, weather: ThunderInputs) {
+    fn tick(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
         if let Some(f) = self.forced {
             self.intensity = f;
             self.target = f;
@@ -299,10 +298,45 @@ impl Rain {
         let delta = (target - self.cloud_bg).clamp(-0.005, 0.005);
         self.cloud_bg = (self.cloud_bg + delta).clamp(0.0, 1.0);
 
-        // `Main.UpdateWeather`'s lightning chain (`Main.cs:58737-58829`): the
-        // thunder-sound delay counts down; the flash rises via
-        // `lightningSpeed` and decays via `lightningDecay`; at delay 0 the
-        // storming roll re-arms with the rain/wind tier multipliers.
+        // The lightning chain (`Main.UpdateWeather`'s
+        // `currentDayRateIteration == 0` arm) is stepped once per world tick —
+        // `thunder_step`, called from `world_sim::weather::update_world_tick`
+        // — not here with the drop sim.
+
+        // Each tick advances the drops at the original 60 Hz velocity.
+        self.update_drops(world, camera, screen, zoom);
+        self.update_snow(world, camera, screen, zoom);
+        if self.snow_mode {
+            // Vanilla suppresses rain drops in a snow biome and lets the ambient
+            // snow dust carry the weather instead.
+            if rain_zone(world, camera) {
+                self.spawn_snow(world, camera, screen, zoom);
+            }
+        } else if self.intensity > 0.01 && rain_zone(world, camera) {
+            self.spawn(world, camera, screen, zoom);
+        }
+        for s in &mut self.splashes {
+            s.pos += s.vel;
+            s.vel.y += 0.12;
+            s.life -= 1.0 / TICKS_PER_SEC;
+        }
+        self.splashes.retain(|s| s.life > 0.0);
+        // The generic `Dust.Update` fade (`alpha -= 25` per tick from 254).
+        for s in &mut self.sparkles {
+            s.alpha -= 25.0 / 255.0;
+        }
+        self.sparkles.retain(|s| s.alpha > 0.0);
+    }
+
+    /// `Main.UpdateWeather`'s lightning chain (`Main.cs:58737-58829`) — the
+    /// `currentDayRateIteration == 0` arm vanilla runs ONCE per `Main.Update`
+    /// (`Main.cs:17228-17231`), so the world tick calls this once per 60 Hz
+    /// step, never per dayRate iteration. The thunder-sound delay counts
+    /// down; the flash rises via `lightningSpeed` and decays via
+    /// `lightningDecay`; at delay 0 the storming roll re-arms with the
+    /// rain/wind tier multipliers. `weather` carries the cross-system inputs
+    /// the vanilla reads from Main statics.
+    pub(crate) fn thunder_step(&mut self, weather: ThunderInputs) {
         if self.thunder_delay > 0 {
             self.thunder_delay -= 1;
             if self.thunder_delay == 0 {
@@ -324,10 +358,7 @@ impl Rain {
             if self.flash < 0.0 {
                 self.flash = 0.0;
             }
-        } else if self.thunder_delay <= 0
-            && weather.above_rock_layer
-            && weather.atmo >= 1.0
-        {
+        } else if self.thunder_delay <= 0 && weather.above_rock_layer && weather.atmo >= 1.0 {
             // `:58784-58829`: the storming roll. The tier multipliers shrink
             // the delay window with heavier rain and stronger wind targets.
             if weather.storming {
@@ -357,48 +388,24 @@ impl Rain {
                     num3 *= 0.8;
                     num4 *= 0.95;
                 }
-                let num5 = self
-                    .range(num3 as u32, num4 as u32) as f32
+                let num5 = self.range(num3 as u32, num4 as u32) as f32
                     * ((1.0 - weather.max_raining + 1.0) / 2.0)
                     * ((1.0 - weather.wind_target + 1.0) / 2.0);
                 if self.range(0, num5.max(1.0) as u32) == 0 {
                     self.new_lightning(weather.shimmer_alpha);
                 }
-            } else if weather.graveyard_intensity >= 0.9
-                && self.range(0, 120) == 0
-            {
+            } else if weather.graveyard_intensity >= 0.9 && self.range(0, 120) == 0 {
                 // `:58830-58833`: the graveyard lightning.
                 self.new_lightning(weather.shimmer_alpha);
             }
         }
-
-        // Each tick advances the drops at the original 60 Hz velocity.
-        self.update_drops(world, camera, screen, zoom);
-        self.update_snow(world, camera, screen, zoom);
-        if self.snow_mode {
-            // Vanilla suppresses rain drops in a snow biome and lets the ambient
-            // snow dust carry the weather instead.
-            if rain_zone(world, camera) {
-                self.spawn_snow(world, camera, screen, zoom);
-            }
-        } else if self.intensity > 0.01 && rain_zone(world, camera) {
-            self.spawn(world, camera, screen, zoom);
-        }
-        for s in &mut self.splashes {
-            s.pos += s.vel;
-            s.vel.y += 0.12;
-            s.life -= 1.0 / TICKS_PER_SEC;
-        }
-        self.splashes.retain(|s| s.life > 0.0);
-        // The generic `Dust.Update` fade (`alpha -= 25` per tick from 254).
-        for s in &mut self.sparkles {
-            s.alpha -= 25.0 / 255.0;
-        }
-        self.sparkles.retain(|s| s.alpha > 0.0);
     }
 
     /// Takes a batch of `WaterfallManager.TrySparkling` spawns (world pixels).
-    pub fn spawn_sparkles(&mut self, spawns: impl IntoIterator<Item = tr_core::waterfall::SparkleSpawn>) {
+    pub fn spawn_sparkles(
+        &mut self,
+        spawns: impl IntoIterator<Item = tr_core::waterfall::SparkleSpawn>,
+    ) {
         for s in spawns {
             if self.sparkles.len() >= 256 {
                 break;
@@ -691,7 +698,7 @@ mod tests {
     fn run(rain: &mut Rain, w: &World, n: usize) {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..n {
-            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false, ThunderInputs::default());
+            rain.update(w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, false);
         }
     }
 
@@ -720,7 +727,7 @@ mod tests {
         let mut rain = Rain::with_forced(17, Some(1.0), false);
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         for _ in 0..120 {
-            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true, ThunderInputs::default());
+            rain.update(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 1.0 / 60.0, true);
         }
         assert_eq!(rain.drop_count(), 0, "no rain drops while snowing");
         assert!(rain.snow_count() > 50, "snow {}", rain.snow_count());
@@ -733,12 +740,12 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..60 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true, ThunderInputs::default());
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, true);
         }
         let snow = rain.snow_count();
         assert!(snow > 0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
         }
         assert_eq!(rain.snow_count(), 0, "flakes should leave the view");
         assert!(rain.drop_count() > 0);
@@ -751,15 +758,17 @@ mod tests {
         let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
         let screen = Vec2::new(1600.0, 200.0);
         for _ in 0..600 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
+            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false);
         }
         assert!(rain.cloud_bg() > 0.5, "cloud deck {}", rain.cloud_bg());
         rain.flash = 1.0;
         rain.lightning_decay = 0.05; // `NewLightning`'s upper decay rate.
-        rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
+        // The flash rise/decay lives in the lightning chain — `thunder_step`,
+        // once per world tick since M1.4-BG-22 — not in the drop sim's tick.
+        rain.thunder_step(ThunderInputs::default());
         assert!(rain.flash < 1.0 && rain.flash > 0.7);
         for _ in 0..30 {
-            rain.update(&w, camera, screen, 1.0, 1.0 / 60.0, false, ThunderInputs::default());
+            rain.thunder_step(ThunderInputs::default());
         }
         assert_eq!(rain.flash, 0.0, "flash must decay to zero");
     }
@@ -818,5 +827,24 @@ mod tests {
         let mut rain = Rain::with_forced(5, Some(1.0), false);
         run(&mut rain, &w, 120);
         assert_eq!(rain.drop_count(), 0);
+    }
+
+    #[test]
+    fn test_DW_1_1_thunder_arm_runs_once_per_tick_not_per_day_rate_iteration() {
+        // `Main.UpdateWeather`'s lightning chain sits in the
+        // `currentDayRateIteration == 0` arm (`Main.cs:58739`), so a dial
+        // fast-forward (dayRate 60) must advance it once per world tick —
+        // here 3 → 2, not 3 → 0 with a re-arm.
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.fast_forward_to_dawn = true; // `day_rate()` = 60
+        app.rain.thunder_delay = 3;
+        crate::world_sim::weather::update_world_tick(&mut app, 1.0 / 60.0);
+        assert_eq!(app.rain.thunder_delay, 2, "one decrement per world tick");
+        // The flash decay rides the same once-per-tick cadence.
+        app.rain.lightning_decay = 0.05;
+        app.rain.flash = 1.0;
+        crate::world_sim::weather::update_world_tick(&mut app, 1.0 / 60.0);
+        assert!(app.rain.flash < 1.0, "the decay ran exactly once per tick");
     }
 }
