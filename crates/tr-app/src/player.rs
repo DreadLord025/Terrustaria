@@ -211,6 +211,10 @@ pub struct Player {
     /// The WellFed melee speed add (`meleeSpeed +=`, `:11937`) — rides the
     /// swing pacing until the per-item meleeSpeed lands (M3-ITEM).
     pub melee_speed_bonus: f32,
+    /// `Player.statDefense` — the armor pieces' defense + the set bonus
+    /// (M3-EQUIP-2); the buff arms' `statDefense` adds join as their
+    /// systems land.
+    pub stat_defense: i32,
     pub slow: bool,
     pub chilled: bool,
     pub frozen: bool,
@@ -426,6 +430,7 @@ impl Player {
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
+            stat_defense: 0,
             well_fed: false,
             pick_speed_bonus: 0.0,
             melee_speed_bonus: 0.0,
@@ -665,6 +670,9 @@ impl Player {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
+        // `Player.Hurt`'s defense reduction (the classic
+        // `damage - statDefense * 0.5`, floored at 1 — M3-EQUIP-2).
+        let amount = tr_core::armor_sets::reduce_damage(amount, self.stat_defense);
         self.hp = (self.hp - amount).max(0);
         // `Player.Hurt`'s immunity window (`Player.cs:38385`): 40 ticks
         // for normal damage (no long-invincibility source yet), 20 when
@@ -2375,6 +2383,24 @@ mod tests {
         p.update_survival();
         assert_eq!(p.hp, 0);
         assert_eq!(p.dot_death, Some(DotDeath::Burned));
+    }
+
+    #[test]
+    fn the_defense_reduces_the_hurt_damage() {
+        // `Player.Hurt`'s classic reduction: the damage minus
+        // `statDefense * 0.5`, floored at 1 (M3-EQUIP-2).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.hurt_cd = 0.0;
+        p.stat_defense = 20; // 10 damage reduction
+        p.hp = 100;
+        p.hurt(20, 0.0);
+        assert_eq!(p.hp, 90, "20 - 20*0.5 = 10 taken");
+        // The floor: a huge defense leaves 1.
+        p.hurt_cd = 0.0;
+        p.hp = 100;
+        p.stat_defense = 400;
+        p.hurt(20, 0.0);
+        assert_eq!(p.hp, 99);
     }
 
     #[test]
