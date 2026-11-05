@@ -929,7 +929,7 @@ pub(crate) fn nactive(tile: &Tile) -> bool {
 }
 
 /// `Tile.blockType` (`Tile.cs:202-214`): 0 flat, 1 half brick, 2..=5 slopes.
-fn block_type(tile: &Tile) -> i32 {
+pub(crate) fn block_type(tile: &Tile) -> i32 {
     if tile.half_brick() {
         return 1;
     }
@@ -997,7 +997,7 @@ fn not_really_solid(kind: u16) -> bool {
     NOT_REALLY_SOLID.contains(&kind)
 }
 
-fn is_table(kind: u16) -> bool {
+pub(crate) fn is_table(kind: u16) -> bool {
     TILE_TABLE.contains(&kind)
 }
 

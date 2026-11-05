@@ -239,12 +239,12 @@ struct CheckPlan {
 /// `Check*` routine for the cell's registry kind and returns its destruction
 /// plan. Cell routines: 10 → `CheckDoorClosed` (:86432), 11 →
 /// `CheckDoorOpen` (:86339), 14/186/187 → `Check3x2` (:49187, dispatch
-/// :85980-85988), 15 → `Check1x2` (:43335), 18 → `Check2x1` (:46973), 21 →
-/// `CheckChest` (:57923, via `TileID.Sets.BasicChest` :85616-85619), 27 →
-/// `CheckSunflower` (:85639), 28 → `CheckPot` (:85643), 185 → `CheckPile`
-/// (:85275), 82/83/84 → `CheckAlch` (the `Main.tileAlch` default arm,
-/// :85830-85832). Tile 78 routes here through the registry gateway but has no
-/// arm yet — `CheckOnTable1x1` (:43503-43546) is outside this phase's scope.
+/// :85980-85988), 15 → `Check1x2` (:43335), 18 → `Check2x1` (:46973), 78 →
+/// `CheckOnTable1x1` (:43503, the 13/33/49/50/78/174/372/646/707 group at
+/// :85604-85614), 21 → `CheckChest` (:57923, via `TileID.Sets.BasicChest`
+/// :85616-85619), 27 → `CheckSunflower` (:85639), 28 → `CheckPot` (:85643),
+/// 185 → `CheckPile` (:85275), 82/83/84 → `CheckAlch` (the `Main.tileAlch`
+/// default arm, :85830-85832).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -253,6 +253,7 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         14 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
+        78 => check_on_table_1x1(world, x, y),
         21 => check_chest(world, x, y),
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
@@ -932,6 +933,88 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
     Some(CheckPlan {
         drop: None,
         cells: killable_cells(world, &region, kind),
+        pot_event: None,
+    })
+}
+
+/// `WorldGen.AnchorValid(tile, AnchorType.Table)` (`WorldGen.cs:51841-51871`)
+/// reduced to the Table bit: `nactive`, then the platform-frame arm (the flat
+/// platform segments — `PlatformFrameWidth()` is tile 19's full width 18,
+/// `TileObjectData.cs:5121-5124`/`2127-2139`), the solid-top arm, or the plain
+/// tile-table arm (`blockType() == 0`, [`crate::tileobject::block_type`]).
+fn anchor_valid_table(below: &Tile) -> bool {
+    if !crate::tileobject::nactive(below) {
+        return false;
+    }
+    if td::SET_PLATFORMS.has(below.kind) {
+        let seg = i32::from(below.frame_x) / 18;
+        return (!below.half_brick() && (0..=7).contains(&seg))
+            || (12..=16).contains(&seg)
+            || (25..=26).contains(&seg);
+    }
+    if td::TILE_SOLID.has(below.kind) && td::TILE_SOLID_TOP.has(below.kind) {
+        return true;
+    }
+    crate::tileobject::is_table(below.kind)
+        && crate::tileobject::block_type(below) == 0
+}
+
+/// `WorldGen.CheckOnTable1x1` (`WorldGen.cs:43503-43546`) for the clay pot
+/// (dispatch group 13/33/49/50/78/174/372/646/707 — :85604-85614; 78 is the
+/// only group member the registry carries). The support cell below decides:
+/// a top slope kills unless the platform corner rule holds (:43513-43515 —
+/// `blockType` 3/slope 2 leans on an active flat platform at `x - 1`,
+/// `blockType` 2/slope 1 on one at `x + 1`), a half brick kills
+/// (:43525-43528), the table anchors survive before the type test
+/// (:43530-43532), and — the type-78 exception, :43534-43540 — any
+/// `SolidTileAllowBottomSlope` below carries the pot; the group's
+/// unconditional kill (:43541-43543) is the non-78 path. The kill is the
+/// single cell; no `Item.NewItem` runs here — the pot's 222 comes from the
+/// per-cell `KillTile_GetItemDrops` `case 78` (:64711-64713), resolved
+/// app-side through `registry::tile_drop` (phase 3), so the record carries
+/// `item: None`.
+fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    // `Tile tile = Main.tile[x, y + 1]` — an uninitialised support cell
+    // returns without a kill (:43505-43508). The 1x1 object is its own
+    // origin: no frame reconstruction.
+    let below = *world.tile(x, y + 1)?;
+    let kill = if below.top_slope() {
+        // :43510-43524 — every top slope kills unless the platform corner
+        // rule holds (a valid partner: an active platform with
+        // `blockType() == 0`).
+        let corner = |world: &World, dx: i32, slope: u8| {
+            below.slope() == slope
+                && world.tile(x + dx, y + 1).is_some_and(|n| {
+                    n.active()
+                        && crate::tileobject::block_type(n) == 0
+                        && td::SET_PLATFORMS.has(n.kind)
+                })
+        };
+        !(corner(world, -1, 2) || corner(world, 1, 1))
+    } else if below.half_brick() {
+        true // :43525-43528
+    } else {
+        // :43530-43532 — the table anchors survive before the type test.
+        if anchor_valid_table(&below)
+            || (below.active() && crate::tileobject::is_table(below.kind))
+        {
+            return None;
+        }
+        // :43534-43540 — the type-78 exception.
+        !solid_tile_allow_bottom_slope(world, x, y + 1)
+    };
+    if !kill {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &[(x, y)], kind),
         pot_event: None,
     })
 }
@@ -3808,5 +3891,153 @@ mod tests {
         }
         assert_eq!(kill.object_drops.len(), 1);
         assert_eq!(kill.object_drops[0].tile_kind, 14);
+    }
+
+    // ---- DW-2.6: the clay pot (78) — CheckOnTable1x1 -----------------------
+
+    /// A 1x1 clay pot at (10, 19) on the stone floor — frames (0, 0), the
+    /// single-cell origin (the arm reads no frames).
+    fn clay_pot_world() -> World {
+        let mut w = object_world();
+        set_object_cell(&mut w, 10, 19, 78, 0, 0);
+        w
+    }
+
+    /// Sets a trigger stone at (9, 19) and kills it: the break's
+    /// `SquareTileFrame` pass frames the pot's cell (its 3x3 covers
+    /// x 8..=10, y 18..=20) without touching the configured support row at
+    /// (10, 20).
+    fn pot_trigger(w: &mut World) {
+        set_active(w, 9, 19, 1);
+        trigger_at(w, 9, 19);
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_support_break_kills() {
+        // `CheckOnTable1x1` (`WorldGen.cs:43503-43546`): mining the block
+        // under the pot leaves air below — no slope, no half brick, no table
+        // anchor and `SolidTileAllowBottomSlope` false (:43534-43540) — the
+        // pot dies. The drop record is per-cell (`KillTile_GetItemDrops`
+        // case 78 → 222, :64711-64713; resolved through `registry::tile_drop`
+        // in phase 3, so `item` is `None`).
+        let mut w = clay_pot_world();
+        let kill = trigger_at(&mut w, 10, 20);
+        assert_eq!(kill.kind, 1, "the floor block is the hit cell");
+        assert_all_gone(&w, &[(10, 19)]);
+        assert_eq!(
+            kill.object_drops,
+            vec![ObjectDrop {
+                tile_kind: 78,
+                x: 10,
+                y: 19,
+                item: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_survives_on_plain_solid_ground() {
+        // :43534-43540 — the pot stands on ANY `SolidTileAllowBottomSlope`
+        // below (the stone floor): a cascade pass over a neighbouring cell
+        // leaves it standing.
+        let mut w = clay_pot_world();
+        trigger_at(&mut w, 9, 20);
+        assert!(
+            w.tile(10, 19).unwrap().active(),
+            "pot survives on solid ground"
+        );
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_half_brick_below_kills() {
+        // :43525-43528 — the half-brick arm runs before the table anchors
+        // and the type-78 arm (the C# order: topSlope → halfBrick → anchors
+        // → 78).
+        let mut w = clay_pot_world();
+        let floor = w.index(10, 20);
+        w.tiles[floor].flags |= crate::tile::FLAG_HALF_BRICK;
+        trigger_at(&mut w, 9, 20);
+        assert!(!w.tile(10, 19).unwrap().active(), "half brick below kills");
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_top_slope_below_kills_unless_platform_corner() {
+        // :43510-43524 — a top slope below kills (:43519-43521 for
+        // non-platforms) unless the sloped platform has its corner partner:
+        // `blockType` 3 (slope 2) needs the active flat platform at `x - 1`,
+        // `blockType` 2 (slope 1) at `x + 1` (:43513-43515). A bottom slope
+        // is no top slope and falls through to the solid arm — the pot
+        // stands (:43534-43540).
+        let platform_below = |slope: u8| {
+            let mut w = clay_pot_world();
+            set_object_cell(&mut w, 10, 20, 19, 0, 0); // platform below the pot
+            w.tile_mut(10, 20).unwrap().set_slope(slope);
+            w
+        };
+        // Stone slope 2 — a top slope on a non-platform kills.
+        let mut w = clay_pot_world();
+        w.tile_mut(10, 20).unwrap().set_slope(2);
+        pot_trigger(&mut w);
+        assert!(!w.tile(10, 19).unwrap().active(), "top slope kills");
+
+        // Sloped platform without the corner partner (stone at x - 1) kills.
+        let mut w = platform_below(2);
+        pot_trigger(&mut w);
+        assert!(
+            !w.tile(10, 19).unwrap().active(),
+            "cornerless platform slope kills"
+        );
+
+        // Sloped platform with the flat platform at `x - 1` holds the pot.
+        let mut w = platform_below(2);
+        set_object_cell(&mut w, 9, 20, 19, 0, 0);
+        pot_trigger(&mut w);
+        assert!(
+            w.tile(10, 19).unwrap().active(),
+            "platform corner partner holds"
+        );
+
+        // A bottom slope (3) is not a top slope — `SolidTileAllowBottomSlope`
+        // carries the pot.
+        let mut w = clay_pot_world();
+        w.tile_mut(10, 20).unwrap().set_slope(3);
+        pot_trigger(&mut w);
+        assert!(w.tile(10, 19).unwrap().active(), "bottom slope holds");
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_stands_on_a_platform() {
+        // :43534-43540 — a platform is solidTop, so `SolidTileAllowBottomSlope`
+        // carries the pot (the `AnchorValid` platform arm :51857-51863 reaches
+        // the same verdict for the flat segments).
+        let mut w = clay_pot_world();
+        set_object_cell(&mut w, 10, 20, 19, 0, 0);
+        pot_trigger(&mut w);
+        assert!(w.tile(10, 19).unwrap().active(), "pot stands on a platform");
+    }
+
+    #[test]
+    fn test_DW_2_6_pot_survives_on_a_table_even_actuated() {
+        // :43530-43532 — the anchors survive before the type test
+        // (`AnchorValid(…, AnchorType.Table)` :51841-51871 or the plain
+        // `tile.active() && Main.tileTable[...]` arm). A table tile (87 —
+        // `Main.tileTable` `Main.cs:8053`, not in the registry) under the pot
+        // holds it, and the actuated twin still does: the plain disjunct
+        // reads `active()`, not `nactive()` — the `nactive` gate (:51844)
+        // only silences the anchor arms, and the disjunct keeps the pot.
+        let mut w = clay_pot_world();
+        set_object_cell(&mut w, 10, 20, 87, 0, 0);
+        pot_trigger(&mut w);
+        assert!(w.tile(10, 19).unwrap().active(), "pot stands on a table");
+
+        let mut w = clay_pot_world();
+        set_object_cell(&mut w, 10, 20, 87, 0, 0);
+        let below = w.index(10, 20);
+        w.tiles[below].flags |= crate::tile::FLAG_INACTIVE;
+        pot_trigger(&mut w);
+        assert!(
+            w.tile(10, 19).unwrap().active(),
+            "actuated table still holds the pot"
+        );
     }
 }
