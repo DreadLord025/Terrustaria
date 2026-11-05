@@ -434,6 +434,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if tool_hammer <= 0 {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else if tile.active() && tile.kind == 26 {
+            // The demon/crimson altar (`KillTile`'s case 26): the hammer
+            // smash runs the hardmode ore tier (`WorldGen.cs:48920+`) —
+            // the hammer-power gate (≥ 80) and the WoF prerequisite are
+            // the follow-ups; the port smashes in hardmode.
+            if app.mine_timer >= 0.35 && app.world.hard_mode {
+                app.mine_timer = 0.0;
+                let altars = app.world.altars_smashed;
+                let mut rng = app.growth_rng;
+                rng.next_seed_in_place();
+                let ore = tr_core::ores::smash_altar(
+                    &mut app.world,
+                    &mut app.ore_tiers,
+                    altars,
+                    &mut rng,
+                );
+                app.world.altars_smashed += 1;
+                app.audio
+                    .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+                app.request_edit(tx, ty, 2, 0);
+                let _ = ore;
+                app.world_key = None;
+            }
         } else {
             let hardness = (if tile.wall == 1 { 0.7 } else { 0.35 })
                 * 35.0
