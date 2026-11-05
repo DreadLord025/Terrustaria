@@ -145,6 +145,7 @@ pub fn draw_hud(
     kill_tracker: &tr_core::bestiary::KillTracker,
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
+    shop: Option<(&[u16], f32)>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -213,6 +214,27 @@ pub fn draw_hud(
         // `Main.DrawGuideCraftText(73, 331 + num50)` (`Main.cs:41694`); the guide
         // slot cannot be opened in the port yet, so the empty label is drawn.
         chrome::draw_guide_text(r, lookups, 73.0, 331.0 + (screen.y - 600.0) / 2.0, None);
+        // The shop row (`Main.DrawShop`): the stock's names and the
+        // happiness-adjusted prices in a text column above the inventory
+        // grid (the vanilla draws the item slots at (406, 258+); the slot
+        // frames land with the slot-work pass).
+        if let Some((stock, mood)) = shop {
+            text::hud_text(r, lookups, 40.0, 34.0, 0.85, [1.0; 4], "Shop");
+            for (i, id) in stock.iter().enumerate().take(10) {
+                let y = 50.0 + i as f32 * 16.0;
+                let def = &crate::itemdata::ITEMS[*id as usize];
+                let price = crate::shop::buy_price(*id, mood);
+                text::hud_text(
+                    r,
+                    lookups,
+                    40.0,
+                    y,
+                    0.85,
+                    [1.0; 4],
+                    &format!("{} - {} copper", def.name, price),
+                );
+            }
+        }
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.
