@@ -3576,3 +3576,28 @@ conversion covers the natural-wall slice (the C#'s tables span the brick
 walls too); the remix `ChlorophyteDefense` conversion is out (no remix
 worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
 unconditionally).
+
+## Lihzahrd temple (M1.4-WGEN-6)
+
+The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
+temple, the last big generation structure:
+
+- **The placement** (`:15840-15848`): the y between the rock layer and
+  `maxTilesY − 600` (the port clamps to the height), the x under the
+  jungle band's deep half (`dungeonSide`'s opposite in the C#).
+- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
+  Lihzahrd brick (226) with the unsafe walls (87), the carved central
+  hall + the side rooms with the safe walls (112), the brick pillars
+  inside the hall.
+- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
+  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
+  room at the hall's west end.
+- **The traps**: the dart traps (137, the case-137 wiring variants the
+  wiring trip fires — the trap frameY selects the variant) embedded in
+  the hall's brick walls every 12 columns.
+- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+
+Deviations: the C#'s multi-room crawl with the doors
+(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
+summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
+are the follow-ups; the box + 3-room shape approximates the C#'s crawl.

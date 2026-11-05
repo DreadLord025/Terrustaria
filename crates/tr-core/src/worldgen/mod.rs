@@ -17,6 +17,7 @@ mod biome_detail;
 mod islands;
 mod biomes;
 mod structures;
+mod temple;
 mod caves;
 mod liquids;
 mod living_trees;
@@ -156,6 +157,9 @@ pub fn generate(opts: &GenOptions) -> World {
     structures::pass_pots(&mut world, &mut srng);
     structures::pass_beehives(&mut world, &spans, layers.rock_layer, &mut srng);
     structures::pass_hell_forts(&mut world, layers.hell_top, &mut srng);
+    // The temple: the last big structure (the C#  pass
+    // runs after the jungle passes).
+    let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -448,6 +452,34 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    #[test]
+    fn the_temple_buries_in_the_jungle_cavern() {
+        // The 4200-world carries the temple: the Lihzahrd brick (226) box,
+        // the altar (237), the dart traps (137) and the temple walls
+        // (87/112).
+        let w = generate(&GenOptions {
+            seed: 88,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let walls = |wall: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.wall == wall)
+                .count()
+        };
+        assert!(count(226) > 800, "the temple brick ({})", count(226));
+        assert!(count(237) == 6, "the altar tiles ({})", count(237));
+        assert!(count(137) >= 3, "the dart traps ({})", count(137));
+        assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
+        assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
     }
 
     #[test]
