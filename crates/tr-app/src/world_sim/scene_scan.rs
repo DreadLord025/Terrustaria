@@ -247,14 +247,17 @@ fn apply_scene_forces(
 }
 
 /// The per-frame scene update (`Main.Update`'s tail, in the source order):
-/// the TR_ pins, `Sandstorm.UpdateTime` (`Main.cs:64966`), the
+/// the TR_ pins, the `Sandstorm.EmitDust` (`Main.cs:17247`), the
 /// `SceneMetrics.Scan` (`Main.cs:62560`), `SceneState.Update`
 /// (`Main.cs:17816`) and the `ApplyVisuals` driver. Runs while a world is
 /// live, regardless of `TR_POST` — the C# update runs unconditionally and the
 /// driver output is simply unconsumed without the post pipeline.
 ///
-/// The wind is read one frame behind (`frame.rs` advances it inside the draw
-/// block) — a fixed, deterministic lag on a seconds-scale input.
+/// `Sandstorm.UpdateTime` (`Main.cs:64966`) and the wind walk moved onto the
+/// shared 60 Hz world tick (M1.4-BG-22, `world_sim::weather::update_world_tick`,
+/// which `frame()` runs before `update_rain`/this scan): the wind and the
+/// sandstorm state read here are same-frame fresh, no longer the one-draw-frame
+/// lag the old draw-block wind tick produced.
 pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     let App {
         world,
@@ -273,13 +276,30 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         ..
     } = app;
     // The TR_ pins re-read per frame (idempotent; the parse glue of phase 1).
+    // The world tick earlier this frame gates its sandstorm arm on
+    // `forced_severity` too, so the pin holds from the first tick.
     apply_scene_forces_from_env(scene_state, sandstorm);
-    // `Sandstorm.UpdateTime` (`Main.cs:64966`); while the TR_SANDSTORM pin
-    // holds, the state machine is frozen (the periodic intention roll would
-    // fight the pin — phase 1's glue doc).
-    if scene_state.forced_severity.is_none() {
-        sandstorm.update_time(1, wind.speed_current);
-    }
+    // `Sandstorm.EmitDust` (`Main.cs:17247`): the flying sand spawns off the
+    // stored `SceneMetrics` (vanilla's last-scan persistence) and ticks the
+    // `Dust` 268 AI, ahead of this frame's rescan.
+    let show = sandstorm.show_sandstorm_visuals(
+        app.scene_metrics.zone_sandstorm,
+        tr_core::scene::is_desert_bg_style(*bg_style),
+        *bg_delay,
+    );
+    let player_vy = player.as_ref().map(|p| p.vy).unwrap_or(0.0);
+    app.sand.emit_dust(
+        &app.scene_metrics,
+        sandstorm.severity,
+        show,
+        wind.speed_current,
+        *camera,
+        screen,
+        *zoom,
+        world,
+    );
+    app.sand
+        .tick(show, player_vy, *camera, screen, *zoom, world);
     // `Main.UpdateSceneMetrics` (`Main.cs:62560`): the scan center is the
     // local player's center; headless shots (TR_NOPLAYER) stand in the camera.
     let center = player

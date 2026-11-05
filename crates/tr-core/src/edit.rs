@@ -65,9 +65,13 @@ pub struct HerbEvent {
 /// tile 185 (`WorldGen.cs:47130-47245`), keyed on the origin cell's `frameX`
 /// (the right cell's when the origin already died). The app resolves the
 /// `genRand` coin/ore counts (phase 3); a `Check*`-level `Item.NewItem`, so it
-/// is not `noItem`-gated.
+/// is not `noItem`-gated. `kind` disambiguates the two pile loot blocks:
+/// 185's 2x1 coin/ore table (`Check2x1`, `WorldGen.cs:47130-47245`) and
+/// 187's sword-in-stone roll (`Check3x2`'s `case 187`,
+/// `WorldGen.cs:49828-49839`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub struct PileLootEvent {
+    pub kind: u16,
     pub frame_x: i32,
     pub x: i32,
     pub y: i32,
@@ -206,8 +210,9 @@ fn square_tile_frame(
             }
             // The herb event stands for the killed cell's `KillTile_DropItems`
             // roll (`WorldGen.cs:63860-63864`), so it carries the same
-            // `noItem` gate; the pile loot block is a `Check2x1`-level
-            // `Item.NewItem` and is not gated (:47130-47245).
+            // `noItem` gate; the pile loot blocks are `Check2x1`/`Check3x2`
+            // -level `Item.NewItem` calls and are not gated (:47130-47245,
+            // :49828-49839).
             if let Some(herb) = plan.herb_event {
                 kill.herb_events.push(herb);
             }
@@ -587,8 +592,26 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         return None;
     }
     // The drop is the table's alone (`GetItemDrop_Tables(style)`,
-    // :49424-49426 — the slice covers style 0 → 32); the piles' case group
-    // is empty.
+    // :49424-49426 — the slice covers style 0 → 32); the piles' per-cell
+    // case group is empty (:65759-65815) and `Check3x2`'s destroy switch
+    // carries the pile specials — for 187 the sword-in-stone styles roll
+    // the Enchanted Sword (:49828-49839), resolved app-side like the 2x1
+    // coin table.
+    let pile_event = if kind == 187 {
+        // `int frameX = Main.tile[i, j].frameX;` (:49443) — the CHECKED
+        // cell's frameX (a survivor of the pile; the dispatch never runs on
+        // the dead cell). The 54-wide style stride puts every cell of a
+        // style in one 54 bucket, so the 918..=970 gate selects exactly the
+        // sword-in-stone style whichever cell was checked.
+        Some(PileLootEvent {
+            kind: 187,
+            frame_x,
+            x: ox,
+            y: oy,
+        })
+    } else {
+        None
+    };
     Some(CheckPlan {
         drop: (kind == 14).then(|| ObjectDrop {
             tile_kind: 14,
@@ -599,7 +622,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         cells: killable_cells(world, &region, kind),
         pot_event: None,
         herb_event: None,
-        pile_event: None,
+        pile_event,
     })
 }
 
@@ -1051,6 +1074,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
             .map(|c| i32::from(c.frame_x))
             .unwrap_or(0);
         Some(PileLootEvent {
+            kind: 185,
             frame_x,
             x: ox,
             y,
@@ -1475,15 +1499,30 @@ pub enum TileInteraction {
     DoorBlocked {
         object_drops: Vec<ObjectDrop>,
     },
+    /// The dial branch fired: `Main.Sundialing()`/`Moondialing()` armed the
+    /// fast-forward (`Main.cs:6178-6180`/:6192-6194, SP branch). `sundial`
+    /// picks which dial — the cue is the same `SoundID.Item4` for both
+    /// (`Player.cs:32642`/:32652).
+    DialStarted {
+        sundial: bool,
+    },
+    /// The dial branch ran but the gate refused (already fast-forwarding to
+    /// that target or the cooldown is running, `Player.cs:32638`/:32648).
+    /// Vanilla still consumes the click (`flag2 = true`, `:32637`); no state
+    /// changes and no sound plays. No object drops — the dial arms kill no
+    /// tiles.
+    DialRefused,
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
 /// `Player.LookForTileInteractions` (`Player.cs:31937`) →
 /// `TileInteractionsCheck` (`:32031`, active tiles only) →
 /// `TileInteractionsUse` (`:32118`), whose type chain routes tile 10/11
-/// through the door branch (`:32835-32865`). The port dispatches on the
+/// through the door branch (`:32835-32865`) and tiles 356/663 through the
+/// dial branches (`:32636-32653`). The port dispatches the doors on the
 /// registry def's `interaction` tag instead of a type chain (Decision #3) so
-/// chests/signs can join as data later. `direction` is `Player.direction`
+/// chests/signs can join as data later; the dials keep the C# kind-literal
+/// shape (see the arm below). `direction` is `Player.direction`
 /// (`:32841`), `cell_blocked` the entity half of `Collision.EmptyTile`
 /// (`Collision.cs:1359`, called with `ignoreTiles: true` — the door ops port
 /// the tile half themselves and delegate entities to the caller).
@@ -1500,6 +1539,13 @@ pub fn interact_at(
     };
     if !t.active() {
         return TileInteraction::None;
+    }
+    // The dial branches (`Player.cs:32636-32653`): the C# chain tests
+    // `Main.tile[myX, myY].type` literals here. The port's registry has no
+    // defs for 356/663 (they place through the legacy single-tile route), so
+    // this arm reads the kind the same way, before the registry lookup.
+    if t.kind == 356 || t.kind == 663 {
+        return dial_interaction(world, t.kind == 356);
     }
     // The port routes on the registry def's `interaction` tag (Decision #3)
     // where the C# chain tests `Main.tile[myX, myY].type` literals
@@ -1544,6 +1590,39 @@ pub fn interact_at(
             }
         }
     }
+}
+
+/// The dial use-trigger (`Player.cs:32636-32653`): the click is consumed
+/// unconditionally (`flag2 = true`, `:32637`); the arm fires only under the
+/// compound gate `!fastForwardTimeToX && cooldown == 0` (`:32638`/:32648 —
+/// the `netMode == 1` disjunct is the net client's, not ported). On fire,
+/// `Main.Sundialing()`/`Moondialing()` (`Main.cs:6169-6196`, SP branch) arm
+/// the fast-forward and start the 8-day cooldown; a refused click changes
+/// nothing and plays no sound. `sundial` selects the dial (356) over the
+/// moondial (663).
+fn dial_interaction(world: &mut World, sundial: bool) -> TileInteraction {
+    let (already_ff, cooling) = if sundial {
+        (
+            world.fast_forward_to_dawn,
+            world.sundial_cooldown != 0, // `Main.sundialCooldown == 0`, `:32638`
+        )
+    } else {
+        (
+            world.fast_forward_to_dusk,
+            world.moondial_cooldown != 0, // `Main.moondialCooldown == 0`, `:32648`
+        )
+    };
+    if already_ff || cooling {
+        // Refused: the gate at `:32638`/:32648 is false — the click was still
+        // consumed, but no dial arms and no sound plays.
+        return TileInteraction::DialRefused;
+    }
+    if sundial {
+        world.sundialing(); // Main.Sundialing, Main.cs:6169-6181
+    } else {
+        world.moondialing(); // Main.Moondialing, Main.cs:6184-6196
+    }
+    TileInteraction::DialStarted { sundial }
 }
 
 /// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): turns the closed door
@@ -4363,6 +4442,7 @@ mod tests {
         assert_eq!(
             kill.pile_events,
             vec![PileLootEvent {
+                kind: 185,
                 frame_x: 576,
                 x: 10,
                 y: 19
@@ -4379,5 +4459,145 @@ mod tests {
         let kill = kill_tile(&mut w, 10, 20, false).unwrap();
         assert_eq!(kill.object_drops.len(), 1);
         assert!(kill.pile_events.is_empty());
+    }
+
+    // ---- Phase 2 (M1.4-BG-21): the dial triggers (356/663) -----------------
+
+    /// Plan-assumption check: the dials have no registry def, so
+    /// `place_item_tile` takes the legacy single-tile route and the placed
+    /// tile is a plain active 356/663 — exactly the shape `interact_at`'s
+    /// dial arm reads (`Player.cs:32636`/`:32646`).
+    #[test]
+    fn dial_tiles_place_through_the_legacy_route() {
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 10, 19, 356, 0, 1));
+        let sundial = *w.tile(10, 19).unwrap();
+        assert!(sundial.active() && sundial.kind == 356);
+        assert!(place_item_tile(&mut w, 14, 19, 663, 0, 1));
+        let moondial = *w.tile(14, 19).unwrap();
+        assert!(moondial.active() && moondial.kind == 663);
+    }
+
+    #[test]
+    fn dw_2_1_lmb_sundial_arms_fast_forward_with_cooldown() {
+        // `Player.cs:32636-32645`: the click on tile 356 fires
+        // `Main.Sundialing()` (SP branch, `Main.cs:6178-6180`) — the
+        // FF-to-dawn flag arms and the 8-day cooldown starts.
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 356);
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::DialStarted { sundial } => assert!(sundial),
+            other => panic!("expected DialStarted, got {other:?}"),
+        }
+        assert!(w.fast_forward_to_dawn);
+        assert!(!w.fast_forward_to_dusk);
+        assert_eq!(w.sundial_cooldown, 8);
+        assert_eq!(w.moondial_cooldown, 0);
+    }
+
+    #[test]
+    fn dw_2_2_retrigger_while_dialing_is_consumed_without_effect() {
+        // `Player.cs:32637-32638`: the second click while
+        // `fastForwardTimeToDawn` runs is still consumed (`flag2`) but the
+        // gate refuses — no state change, no cue.
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 356);
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::DialStarted { .. }
+        ));
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::DialRefused => {}
+            other => panic!("expected DialRefused, got {other:?}"),
+        }
+        assert!(w.fast_forward_to_dawn, "the first dial still runs");
+        assert_eq!(w.sundial_cooldown, 8, "the cooldown did not restart");
+    }
+
+    #[test]
+    fn dw_2_3_cooldown_blocks_the_dial_without_cue() {
+        // `Player.cs:32638`: `Main.sundialCooldown == 0` is the gate's other
+        // conjunct — a running cooldown refuses the dial (consumed silently,
+        // no cue since `SoundID.Item4` sits behind the gate).
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 356);
+        w.sundial_cooldown = 3;
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::DialRefused => {}
+            other => panic!("expected DialRefused, got {other:?}"),
+        }
+        assert!(!w.fast_forward_to_dawn);
+        assert_eq!(w.sundial_cooldown, 3, "the cooldown did not reset");
+    }
+
+    #[test]
+    fn dw_2_4_moondial_mirrors_sundial() {
+        // `Player.cs:32646-32653` + `Main.Moondialing` (`Main.cs:6184-6196`):
+        // tile 663 arms the FF-to-dusk and its own 8-day cooldown.
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 663);
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::DialStarted { sundial } => assert!(!sundial),
+            other => panic!("expected DialStarted, got {other:?}"),
+        }
+        assert!(w.fast_forward_to_dusk);
+        assert!(!w.fast_forward_to_dawn);
+        assert_eq!(w.moondial_cooldown, 8);
+        assert_eq!(w.sundial_cooldown, 0);
+
+        // The refused mirror: a re-click mid-dial is consumed, changes
+        // nothing (`:32648`).
+        match interact_at(&mut w, 10, 19, 1, &blocked) {
+            TileInteraction::DialRefused => {}
+            other => panic!("expected DialRefused, got {other:?}"),
+        }
+        assert!(w.fast_forward_to_dusk);
+        assert_eq!(w.moondial_cooldown, 8);
+    }
+
+    #[test]
+    fn dw_2_6_adjacent_non_dial_tile_has_no_interaction() {
+        // Dirty check: the dispatcher routes on the clicked cell's own kind —
+        // a stone tile beside the dial, the floor under it and plain air all
+        // fall through as `None` with no dial state touched.
+        let mut w = object_world();
+        set_active(&mut w, 10, 19, 356);
+        set_active(&mut w, 11, 19, 1); // stone next to the sundial
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        for (x, y) in [(11i32, 19i32), (10, 20), (12, 19)] {
+            assert!(
+                matches!(
+                    interact_at(&mut w, x, y, 1, &blocked),
+                    TileInteraction::None
+                ),
+                "({x}, {y}) has no interaction"
+            );
+        }
+        assert!(!w.fast_forward_to_dawn && !w.fast_forward_to_dusk);
+        assert_eq!(w.sundial_cooldown, 0);
+        assert_eq!(w.moondial_cooldown, 0);
+    }
+
+    #[test]
+    fn inactive_dial_tile_has_no_interaction() {
+        // `TileInteractionsCheck` gates on active tiles only
+        // (`Player.cs:32031-32041`): an inactive dial cell is invisible to
+        // the use path.
+        let mut w = object_world();
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 356,
+            ..Default::default()
+        }; // no FLAG_ACTIVE
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::None
+        ));
+        assert!(!w.fast_forward_to_dawn);
     }
 }

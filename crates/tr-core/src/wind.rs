@@ -17,8 +17,8 @@
 //!   pause, the creative-power freeze and Lantern Night are folded into
 //!   [`Wind::frozen`]; when frozen only the current speed still eases towards
 //!   the target, exactly as in `UpdateWeather`.
-//! * `update(raining)` thresholds `Main.maxRaining` to 1.0/0.0. Use
-//!   [`Wind::update_rain`] to pass the real 0..1 intensity.
+//! * [`Wind::update_rain`] takes the real 0..1 `Main.maxRaining` intensity
+//!   (`Main.cs:58832`); the world tick feeds it per dayRate iteration.
 //! * `world_surface` defaults to +infinity, which is treated as "not
 //!   configured yet": the altitude gate in `GetWindCycle` is skipped until the
 //!   caller supplies `Main.worldSurface`.
@@ -89,8 +89,10 @@ pub struct Wind {
     pub speed_current: f32,
     /// `Main.windSpeedTarget`.
     pub speed_target: f32,
-    /// `Main.windCounter`: ticks until the next target random walk.
-    counter: i32,
+    /// `Main.windCounter`: ticks until the next target random walk. Public
+    /// so the world-tick tests (tr-app) can arm it — a fresh walk only fires
+    /// after the seeded 900..2701 window otherwise.
+    pub counter: i32,
     /// `Main.extremeWindCounter`: ticks until the next target re-roll.
     extreme_counter: i32,
     rng: Rng,
@@ -142,12 +144,6 @@ impl Wind {
         }
     }
 
-    /// One 60 Hz `UpdateWeather` tick. `raining` is `Main.maxRaining != 0`.
-    #[inline]
-    pub fn update(&mut self, raining: bool) {
-        self.update_rain(if raining { 1.0 } else { 0.0 });
-    }
-
     /// `Main.UpdateWindyDayState` (`Main.cs:12990-13027`): the sticky
     /// windy-day / storm music flags. `cloud_alpha` is `Main.cloudAlpha`,
     /// `time` is `Main.time`, `day_time` is `Main.dayTime`. Inside the
@@ -192,6 +188,8 @@ impl Wind {
     }
 
     /// One 60 Hz `UpdateWeather` tick with the real `Main.maxRaining` value.
+    /// The world tick (`world_sim::weather::update_world_tick`) calls this
+    /// `Main.dayRate` times per step — `Main.cs:17228-17231`.
     ///
     /// `Main.cs:58830-58849`:
     /// ```text
@@ -460,7 +458,7 @@ mod tests {
     fn dry_wind_stays_within_08() {
         let mut wind = Wind::new(0x5EED);
         for _ in 0..200_000 {
-            wind.update(false);
+            wind.update_rain(0.0);
             assert!(
                 wind.speed_current.abs() <= 0.8 + 1e-5,
                 "current {}",
@@ -479,7 +477,7 @@ mod tests {
         let mut wind = Wind::new(0xBADF00D);
         for tick in 0..200_000 {
             let raining = tick % 2400 < 600;
-            wind.update(raining);
+            wind.update_rain(if raining { 1.0 } else { 0.0 });
             assert!(wind.speed_target.abs() <= 0.8 + 1e-5);
             assert!(
                 wind.speed_current.abs() <= MAX_RAIN_CURRENT + 1e-4,
@@ -502,9 +500,9 @@ mod tests {
         }
         wet_negative.speed_target = -0.4;
         for _ in 0..20_000 {
-            dry.update(false);
-            wet.update(true);
-            wet_negative.update(true);
+            dry.update_rain(0.0);
+            wet.update_rain(1.0);
+            wet_negative.update_rain(1.0);
         }
         let expected = 0.4 * (1.0 + 5.0 / 9.0);
         assert!((dry.speed_current - 0.4).abs() < 1e-5);
@@ -644,13 +642,94 @@ mod tests {
         let mut b = Wind::new(0xDEAD_BEEF);
         for tick in 0..50_000 {
             let raining = (tick / 300) % 5 == 0;
-            a.update(raining);
-            b.update(raining);
+            let rain_value = if raining { 1.0 } else { 0.0 };
+            a.update_rain(rain_value);
+            b.update_rain(rain_value);
             assert_eq!(a.speed_current.to_bits(), b.speed_current.to_bits());
             assert_eq!(a.speed_target.to_bits(), b.speed_target.to_bits());
             assert_eq!(a.wind_counter(), b.wind_counter());
             assert_eq!(a.extreme_wind_counter(), b.extreme_wind_counter());
         }
+    }
+
+    // --- UpdateWindyDayState (Main.cs:12990-13027) ---
+    // (Rescued 2026-11-05, M1.4-BG-22: these three tests had been pasted
+    // INSIDE `advance_vine_counter`'s body — nested fn items compile but the
+    // test harness never collects them, so they silently never ran.)
+
+    #[test]
+    fn windy_day_holds_inside_the_band_and_flips_at_the_boundaries() {
+        let mut w = Wind::new(1);
+        // Clear day, inside the time window: target in [0.34, 0.4) holds the
+        // previous value (`Main.cs:13007-13012`).
+        w.speed_target = 0.36;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.happy_windy_day); // started false, held
+        w.happy_windy_day = true;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(w.happy_windy_day); // still held
+
+        // At >= 0.4 it turns on; below 0.34 it turns off.
+        w.speed_target = 0.4;
+        w.happy_windy_day = false;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(w.happy_windy_day);
+        w.speed_target = 0.339999;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.happy_windy_day);
+
+        // Outside the time window or at night it is false regardless
+        // (`Main.cs:13000-13005`).
+        w.speed_target = 0.8;
+        w.update_windy_day_state(0.0, 10000.0, true);
+        assert!(!w.happy_windy_day);
+        w.update_windy_day_state(0.0, 20000.0, false);
+        assert!(!w.happy_windy_day);
+    }
+
+    #[test]
+    fn storm_holds_inside_the_band_and_any_rain_kills_windy_day() {
+        let mut w = Wind::new(1);
+        // The hold/turn-on bands gate on |windSpeedTarget| too
+        // (`Main.cs:13013-13020`); pin it inside the storm band — the seeded
+        // `Wind::new(1)` target is not, and this test never ran while it sat
+        // inside `advance_vine_counter`, so the assumption went unvalidated.
+        w.speed_target = 0.45;
+        // Raining: windy-day is false (`Main.cs:13025-13027`) and the storm
+        // flag holds inside rain [0.4, 0.5) x wind [0.34, 0.4)
+        // (`Main.cs:13013-13020`).
+        w.storming = true;
+        w.happy_windy_day = true;
+        w.update_windy_day_state(0.45, 20000.0, true);
+        assert!(w.storming); // held
+        assert!(!w.happy_windy_day);
+        // Rain >= 0.5 with wind >= 0.4 turns the storm on.
+        w.storming = false;
+        w.update_windy_day_state(0.5, 20000.0, true);
+        assert!(w.storming);
+        // Interior band edge: rain 0.5 but wind 0.39 -> held (started false).
+        w.storming = false;
+        w.speed_target = 0.39;
+        w.update_windy_day_state(0.5, 20000.0, true);
+        assert!(!w.storming);
+        // Rain < 0.4 clears it.
+        w.storming = true;
+        w.update_windy_day_state(0.39, 20000.0, true);
+        assert!(!w.storming);
+        // Fully clear sky always clears the storm flag (`:12992-12994`).
+        w.storming = true;
+        w.update_windy_day_state(0.0, 20000.0, true);
+        assert!(!w.storming);
+    }
+
+    #[test]
+    fn too_windy_for_butterflies_is_a_pure_target_threshold() {
+        // `NPC.TooWindyForButterflies` = |windSpeedTarget| >= 0.4 (NPC.cs:6885).
+        let mut w = Wind::new(1);
+        w.speed_target = 0.399999;
+        assert!(!w.too_windy_for_butterflies());
+        w.speed_target = -0.4;
+        assert!(w.too_windy_for_butterflies());
     }
 }
 
@@ -728,79 +807,6 @@ pub fn advance_sunflower_counter(counter: &mut f32, wind_speed: f32) {
 pub fn advance_vine_counter(counter: &mut f32, wind_speed: f32) {
     let num = visual_wind_amount(wind_speed);
     *counter += 1.0 / 120.0 + 1.0 / 120.0 * num * 0.400_000_005_960_464_5;
-
-    // --- UpdateWindyDayState (Main.cs:12990-13027) ---
-
-    #[test]
-    fn windy_day_holds_inside_the_band_and_flips_at_the_boundaries() {
-        let mut w = Wind::new(1);
-        // Clear day, inside the time window: target in [0.34, 0.4) holds the
-        // previous value (`Main.cs:13007-13012`).
-        w.speed_target = 0.36;
-        w.update_windy_day_state(0.0, 20000.0, true);
-        assert!(!w.happy_windy_day); // started false, held
-        w.happy_windy_day = true;
-        w.update_windy_day_state(0.0, 20000.0, true);
-        assert!(w.happy_windy_day); // still held
-
-        // At >= 0.4 it turns on; below 0.34 it turns off.
-        w.speed_target = 0.4;
-        w.happy_windy_day = false;
-        w.update_windy_day_state(0.0, 20000.0, true);
-        assert!(w.happy_windy_day);
-        w.speed_target = 0.339999;
-        w.update_windy_day_state(0.0, 20000.0, true);
-        assert!(!w.happy_windy_day);
-
-        // Outside the time window or at night it is false regardless
-        // (`Main.cs:13000-13005`).
-        w.speed_target = 0.8;
-        w.update_windy_day_state(0.0, 10000.0, true);
-        assert!(!w.happy_windy_day);
-        w.update_windy_day_state(0.0, 20000.0, false);
-        assert!(!w.happy_windy_day);
-    }
-
-    #[test]
-    fn storm_holds_inside_the_band_and_any_rain_kills_windy_day() {
-        let mut w = Wind::new(1);
-        // Raining: windy-day is false (`Main.cs:13025-13027`) and the storm
-        // flag holds inside rain [0.4, 0.5) x wind [0.34, 0.4)
-        // (`Main.cs:13013-13020`).
-        w.storming = true;
-        w.happy_windy_day = true;
-        w.update_windy_day_state(0.45, 20000.0, true);
-        assert!(w.storming); // held
-        assert!(!w.happy_windy_day);
-        // Rain >= 0.5 with wind >= 0.4 turns the storm on.
-        w.storming = false;
-        w.update_windy_day_state(0.5, 20000.0, true);
-        assert!(w.storming);
-        // Interior band edge: rain 0.5 but wind 0.39 -> held (started false).
-        w.storming = false;
-        w.speed_target = 0.39;
-        w.update_windy_day_state(0.5, 20000.0, true);
-        assert!(!w.storming);
-        // Rain < 0.4 clears it.
-        w.storming = true;
-        w.update_windy_day_state(0.39, 20000.0, true);
-        assert!(!w.storming);
-        // Fully clear sky always clears the storm flag (`:12992-12994`).
-        w.storming = true;
-        w.update_windy_day_state(0.0, 20000.0, true);
-        assert!(!w.storming);
-    }
-
-    #[test]
-    fn too_windy_for_butterflies_is_a_pure_target_threshold() {
-        // `NPC.TooWindyForButterflies` = |windSpeedTarget| >= 0.4 (NPC.cs:6885).
-        let mut w = Wind::new(1);
-        w.speed_target = 0.399999;
-        assert!(!w.too_windy_for_butterflies());
-        w.speed_target = -0.4;
-        assert!(w.too_windy_for_butterflies());
-    }
-
 }
 
 #[cfg(test)]

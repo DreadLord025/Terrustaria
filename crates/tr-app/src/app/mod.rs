@@ -36,17 +36,18 @@ use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
+use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
-use crate::achievements;
-use crate::chat;
-use crate::emotes;
+use crate::craft;
 use crate::audio;
 use crate::banners;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
+use crate::chat;
+use crate::emotes;
 use crate::inv;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
@@ -130,6 +131,9 @@ pub(crate) struct App {
     pub(crate) npcs: Vec<Npc>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
+    /// The worm chain id counter (`AI_006`'s chain identity) — the head
+    /// takes the next id, the segments share it.
+    pub(crate) next_worm_id: u32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -164,12 +168,22 @@ pub(crate) struct App {
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
+    /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
+    /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
+    pub(crate) reuse_delay: f32,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1).
     pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
     pub(crate) crafting_open: bool,
+    /// The world chest item stores (`Main.chest[]`'s `Chest.item`) the
+    /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
+    /// `M6-SAVE-2`) — in-memory for now.
+    pub(crate) world_chests: Vec<craft::WorldChest>,
+    /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
+    /// alchemy discount rolls.
+    pub(crate) craft_rng: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -306,8 +320,16 @@ pub(crate) struct App {
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
+    /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) growth_step: FixedStepper,
+    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
+    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
+    /// The saved hardmode ore tiers (`SavedOreTiers`, the altar smashes).
+    pub(crate) ore_tiers: tr_core::ores::SavedOreTiers,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
+    pub(crate) sand: crate::sand::Sand,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -319,6 +341,11 @@ pub(crate) struct App {
     /// Global wind (`Main.windSpeedCurrent`/`windSpeedTarget`/`windCounter`,
     /// `tr-core/src/wind.rs`) plus the `TileDrawing.Update` sway counters.
     pub(crate) wind: tr_core::wind::Wind,
+    /// The shared 60 Hz world tick (M1.4-BG-22): the dayRate cluster — the
+    /// `UpdateWeather` thunder arm, the ×dayRate wind walk,
+    /// `Sandstorm.UpdateTime` — steps on this accumulator in
+    /// `world_sim::weather::update_world_tick` (`Main.cs:17228-17231`).
+    pub(crate) world_tick_step: FixedStepper,
     /// `Main.atmo` (`Main.cs:2503`): the atmosphere density
     /// `UpdateAtmosphereTransparencyToSkyColor` derives per draw
     /// (`Main.cs:61983`, formula `:63185-63199`); the ambient-sky creatures
@@ -567,6 +594,11 @@ impl App {
     /// fire the wire trips (M7-TE-2).
     pub(crate) fn update_tile_entities(&mut self, dt: f32) {
         world_sim::tile_entities::update_tile_entities(self, dt);
+    }
+
+    /// The world-growth pass (`UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) fn update_growth(&mut self, dt: f32) {
+        world_sim::growth::update_growth(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1186,6 +1218,7 @@ impl App {
             renderer: None,
             post: None,
             noise_tex: None,
+            sand: crate::sand::Sand::new(1),
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -1220,6 +1253,7 @@ impl App {
             npcs,
             npc_assets,
             npc_timer: 6.0,
+            next_worm_id: 1,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1320,11 +1354,14 @@ impl App {
             },
             banners: banners::BannerSystem::default(),
             town_look_timer: 0.0,
+            reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
+            world_chests: Vec::new(),
+            craft_rng: 1,
             menu: menu_state,
             front: None,
             front_backup: None,
@@ -1423,14 +1460,18 @@ impl App {
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
+            ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain,
-        ambient_waterfall,
-        ambient_lavafall,
-        ambient_counter,
+            ambient_waterfall,
+            ambient_lavafall,
+            ambient_counter,
             wind,
+            world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
-        grapple: None,
+            grapple: None,
             ambience: {
                 let mut ambience = crate::ambience::Ambience::new();
                 if let Some((ty, seed)) = ambience_pin {
@@ -1619,6 +1660,15 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     {
         world.time = t;
         world.day_time = t < 54000.0;
+    }
+    // `TR_SUNDIAL=1`/`TR_MOONDIAL=1`: arm the dial fast-forwards at start
+    // (BG-21's screenshot pins). The flags only — `sundialing()` would also
+    // start the 8-day cooldown and mute the dial glow the shot pair needs.
+    if std::env::var("TR_SUNDIAL").is_ok() {
+        world.fast_forward_to_dawn = true;
+    }
+    if std::env::var("TR_MOONDIAL").is_ok() {
+        world.fast_forward_to_dusk = true;
     }
     // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
     // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,
@@ -1947,6 +1997,15 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                     op.y,
                     object_drops.len()
                 ),
+                edit::TileInteraction::DialStarted { sundial } => log::info!(
+                    "TR_TOGGLE {},{} -> {} started",
+                    op.x,
+                    op.y,
+                    if sundial { "sundial" } else { "moondial" }
+                ),
+                edit::TileInteraction::DialRefused => {
+                    log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
+                }
             }
         }
     }
@@ -2307,6 +2366,11 @@ mod tr_hooks {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// Serializes env-var mutation across the binary's parallel test threads:
+    /// `load_world`'s pins are process-global reads, so any test that sets or
+    /// removes a `TR_*` variable must hold this lock for the whole call.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16
     /// (a 3-tall opening at rows 17..=19), deep enough inside the world for
     /// `CanPlace`'s 5-tile edge margin (`TileObject.cs:215`).
@@ -2500,5 +2564,60 @@ mod tr_hooks {
         w.frame_important = vec![false; td::TILE_COUNT];
         apply_tr_tiles(&mut w, &parse_tr_tiles("1000,1000,4,4;-5,-5,4,4"));
         assert_eq!(w.revision, 0, "nothing touched -> no revision bump");
+    }
+
+    /// DW-1.6: `TR_SUNDIAL=1`/`TR_MOONDIAL=1` arm the dial fast-forwards at
+    /// load (the pin block next to `TR_TIME` in `load_world`), flags only —
+    /// the pins must not route through `sundialing()`/`moondialing()`, whose
+    /// 8-day cooldown would mute the dial glow the screenshot pairs need.
+    #[test]
+    fn dw_1_6_load_world_pins_arm_dial_fast_forwards() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // A minimal `.trwld` through the real save path — `load_world` reads
+        // a file (the scratch-file pattern of persist.rs's tests).
+        let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
+        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+
+        // Edition 2024: env mutation is `unsafe` (a parallel reader could
+        // observe a half-update); the ENV_LOCK above is that serialization.
+        unsafe { std::env::set_var("TR_SUNDIAL", "1") };
+        unsafe { std::env::set_var("TR_MOONDIAL", "1") };
+        let world = load_world(&path).expect("scratch world loads");
+        unsafe { std::env::remove_var("TR_SUNDIAL") };
+        unsafe { std::env::remove_var("TR_MOONDIAL") };
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            world.fast_forward_to_dawn,
+            "TR_SUNDIAL arms the dawn fast-forward"
+        );
+        assert!(
+            world.fast_forward_to_dusk,
+            "TR_MOONDIAL arms the dusk fast-forward"
+        );
+        assert_eq!(
+            (world.sundial_cooldown, world.moondial_cooldown),
+            (0, 0),
+            "the pins set flags only, no cooldown"
+        );
+    }
+
+    /// DW-1.6 (control): without the pins, the same scratch world loads with
+    /// both fast-forward flags clear and cooldowns 0 — the arm is env-driven,
+    /// not a `load_world` default.
+    #[test]
+    fn dw_1_6_absent_pins_leave_dial_flags_clear() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::remove_var("TR_SUNDIAL") };
+        unsafe { std::env::remove_var("TR_MOONDIAL") };
+
+        let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
+        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+        let world = load_world(&path).expect("scratch world loads");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
+        assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));
     }
 }

@@ -110,10 +110,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.edit_target = Some((tx, ty));
     let held = app.inventory[app.selected];
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
-    // `Player.CanUseItem`'s fed gate + the food consumption (`:14353`):
-    // a food item (buff 26/206/207) eats on the use press while NOT
-    // wellFed — the buff rides the slot system, the count decrements, and
-    // the swing plays (`useStyle 9`'s eating animation).
+    // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
+    // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
+    // (`ApplyPotionDelay` + `ApplyLifeAndOrMana`) and the magic weapons'
+    // mana pay (`CheckMana`).
     if app.mine_down && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| {
@@ -146,6 +146,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 return;
             }
         }
+        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
+        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
+        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
+        // clamps to max, the count decrements.
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.potion && d.heal_life > 0
+        }) {
+            let Some(def) = def else { unreachable!() };
+            let sick = player
+                .buffs
+                .find_buff_index(21)
+                .is_some();
+            if !sick {
+                let heal = def.heal_life;
+                if let Some(p) = app.player.as_mut() {
+                    p.hp = (p.hp + heal).min(p.max_hp);
+                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                    // rides `Item.potionDelay` = 3600 (60 s).
+                    p.buffs.add_buff(21, 3600);
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
     }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
     if app.mine_down && held_weapon && !app.inventory_open {
@@ -154,7 +188,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
-        if app.attack_cd <= 0.0 && throw_ready {
+        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+            // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
+            // `item.mana * manaCost` (the multiplier is the 1f base — the
+            // accessories fold out); a failed check blocks the use. The pay
+            // resets the mana regen delay (`apply_mana_regen_delay`).
+            let mana_cost = registry::get(held.kind).map(|d| d.mana).unwrap_or(0);
+            // The mutable player borrow covers the whole throw (the mana
+            // pay + the reads the block makes through it).
+            let Some(p) = app.player.as_mut() else { unreachable!() };
+            if mana_cost > 0 {
+                // `Player.CheckMana`'s pay arm: a failed check blocks the use.
+                if p.mana < mana_cost {
+                    return;
+                }
+                p.mana -= mana_cost;
+                crate::regen::apply_mana_regen_delay(
+                    &mut p.regen,
+                    p.mana_max,
+                    p.mana,
+                    false,
+                );
+            }
+            // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
+            // rides the use start.
+            if let Some(d) = registry::get(held.kind) {
+                app.reuse_delay = d.reuse_delay as f32 / 60.0;
+            }
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
             // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
@@ -164,19 +224,19 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // knockback.
             let def = registry::get(held.kind);
             if let (Some(proj), Some(def)) = (registry::projectile(held.kind), def) {
-                let (pcx, pcy) = player.center();
+                let (pcx, pcy) = p.center();
                 let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
                 if dir != Vec2::ZERO {
                     let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
                     let raw =
-                        def.damage as f32 * player.weapon_damage_multiplier(class);
+                        def.damage as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
                     let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
                     let crit =
-                        tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                        tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit);
                     let slot = app.projectiles.spawn_with_data(
                         proj,
                         spawn.x,
@@ -204,8 +264,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
         return;
     }
+    if app.reuse_delay > 0.0 {
+        app.reuse_delay = (app.reuse_delay - dt).max(0.0);
+    }
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    if app.mine_down && app.attack_cd <= 0.0 && !app.inventory_open {
+    if app.mine_down && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && !app.inventory_open {
         let ax = world_pos.x;
         let ay = world_pos.y;
         let reach2 = 4.0 * TILE_PX;
@@ -243,6 +306,40 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 n.hurt(dmg, pcx, 5.5, crit);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
+                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing = app.swing_max;
+                app.attack_cd = app.swing_max;
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+                return;
+            }
+        }
+        // The healing potions (`Player.cs:42756`'s `item.potion` arm +
+        // `ApplyPotionDelay`/`ApplyLifeAndOrMana`): the Potion Sickness buff
+        // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
+        // clamps to max, the count decrements.
+        let def = registry::get(held.kind);
+        if def.is_some_and(|d| {
+            d.potion && d.heal_life > 0
+        }) {
+            let Some(def) = def else { unreachable!() };
+            let sick = player
+                .buffs
+                .find_buff_index(21)
+                .is_some();
+            if !sick {
+                let heal = def.heal_life;
+                if let Some(p) = app.player.as_mut() {
+                    p.hp = (p.hp + heal).min(p.max_hp);
+                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                    // rides `Item.potionDelay` = 3600 (60 s).
+                    p.buffs.add_buff(21, 3600);
+                }
+                app.inventory[app.selected].count =
+                    app.inventory[app.selected].count.saturating_sub(1);
+                if app.inventory[app.selected].count == 0 {
+                    app.inventory[app.selected].kind = 0;
+                }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
                 app.attack_cd = app.swing_max;
@@ -338,6 +435,29 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if tool_hammer <= 0 {
             app.mine_target = None;
             app.mine_timer = 0.0;
+        } else if tile.active() && tile.kind == 26 {
+            // The demon/crimson altar (`KillTile`'s case 26): the hammer
+            // smash runs the hardmode ore tier (`WorldGen.cs:48920+`) —
+            // the hammer-power gate (≥ 80) and the WoF prerequisite are
+            // the follow-ups; the port smashes in hardmode.
+            if app.mine_timer >= 0.35 && app.world.hard_mode {
+                app.mine_timer = 0.0;
+                let altars = app.world.altars_smashed;
+                let mut rng = app.growth_rng;
+                rng.next_seed_in_place();
+                let ore = tr_core::ores::smash_altar(
+                    &mut app.world,
+                    &mut app.ore_tiers,
+                    altars,
+                    &mut rng,
+                );
+                app.world.altars_smashed += 1;
+                app.audio
+                    .play_at("Dig_1", tx as f32 * TILE_PX, ty as f32 * TILE_PX, 1.0);
+                app.request_edit(tx, ty, 2, 0);
+                let _ = ore;
+                app.world_key = None;
+            }
         } else {
             let hardness = (if tile.wall == 1 { 0.7 } else { 0.35 })
                 * 35.0
@@ -368,6 +488,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         .map(|d| d.use_time as f32 / 60.0)
         .filter(|t| *t > 0.0)
         .unwrap_or(swing_secs);
+    // `Player.channel` (`Item.cs:52960-52965` sets it; `Player.cs:43576`'s
+    // `if (!this.channel)` guards the animation decrement): while the
+    // button is held the item's animation HOLDS instead of ending — the
+    // channel persists until the release.
+    let channels = timings.is_some_and(|d| d.channel) && app.mine_down && !held_weapon;
+    if channels && app.swing <= 0.0 {
+        // The hold: the animation stays at the last frame.
+        app.swing = 0.2;
+        app.attack_cd = app.attack_cd.max(0.2);
+    }
     let swing_over = app.swing <= 0.0;
     let reuse_ready = auto_reuse || (app.place_released && !app.place_prev_down);
     let starting = swing_over && reuse_ready;
@@ -694,8 +824,17 @@ fn break_drop_events(
             events.push((id, count.max(1) as u32, herb.x, herb.y));
         }
     }
-    // The broken 2x1 piles' loot block (`genRand` counts — the seeded stream).
+    // The broken piles' loot blocks: 185's 2x1 coin/ore table on the seeded
+    // stream (`genRand` counts, `WorldGen.cs:47142-47245`), 187's
+    // sword-in-stone roll on the item stream (`Main.rand.Next(30)`,
+    // `:49828-49839`).
     for pile in &kill.pile_events {
+        if pile.kind == 187 {
+            if let Some(id) = sword_pile_roll(pile.frame_x, main_rng) {
+                events.push((id, 1, pile.x, pile.y));
+            }
+            continue;
+        }
         let mut gen_stream =
             tr_core::tile_light::FastRandom::new(crate::app::next_rand(main_rng.0));
         for (id, count) in pile_loot(pile.frame_x, &mut gen_stream) {
@@ -703,6 +842,21 @@ fn break_drop_events(
         }
     }
     (events, portals)
+}
+
+/// `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`): only the
+/// sword-in-stone styles (origin `frameX` 918..=970) drop anything —
+/// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
+/// Enchanted Sword 989. Every other 187 frame sits in the empty
+/// `GetItemDrops` group (:65759-65815).
+fn sword_pile_roll(
+    frame_x: i32,
+    rng: &mut super::npcs::LootRng<'_>,
+) -> Option<u16> {
+    if !(918..=970).contains(&frame_x) {
+        return None;
+    }
+    Some(if rng.next_range(0, 30) == 0 { 4144 } else { 989 })
 }
 
 /// The per-cell slice of `KillTile_GetItemDrops` (`WorldGen.cs:63964-66092`)
@@ -1693,9 +1847,10 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
 }
 
 /// The App-free half of [`interact_tile`]: maps the dispatcher result to the
-/// door cue and the drop spawns. `None` = no interaction (fall-through to the
-/// place path); a blocked door yields drops without a cue (vanilla plays
-/// `PlaySound(8/:9)` only on the success paths).
+/// door/dial cue and the drop spawns. `None` = no interaction (fall-through
+/// to the place path); a blocked door or a refused dial yields no cue
+/// (vanilla plays `PlaySound(8/:9)`/`SoundID.Item4` only on the fired paths),
+/// while the click still counts as consumed.
 fn interaction_events(
     result: edit::TileInteraction,
 ) -> Option<(Option<&'static str>, Vec<(u16, i32, i32)>)> {
@@ -1704,6 +1859,13 @@ fn interaction_events(
         edit::TileInteraction::DoorOpened { object_drops } => (Some("Door_Opened"), object_drops),
         edit::TileInteraction::DoorClosed { object_drops } => (Some("Door_Closed"), object_drops),
         edit::TileInteraction::DoorBlocked { object_drops } => (None, object_drops),
+        // `SoundID.Item4` on both dial arms (`Player.cs:32642`/:32652); the
+        // key is the vanilla asset name (see `audio::SFX_CUES`). The dials
+        // kill no tiles, so there are never drops.
+        edit::TileInteraction::DialStarted { .. } => (Some("Item_4"), Vec::new()),
+        // The refused gate (`Player.cs:32638`): still consumed (`flag2 = true`,
+        // `:32637`) — no cue, no drops, no state change.
+        edit::TileInteraction::DialRefused => (None, Vec::new()),
     };
     let events = object_drops
         .iter()
@@ -2038,6 +2200,26 @@ mod tests {
     }
 
     #[test]
+    fn dw_2_1_interaction_events_map_dial_results_to_cue() {
+        use edit::TileInteraction;
+        // The fired dial plays `SoundID.Item4` and spawns no drops — the
+        // dial arms kill no tiles (`Player.cs:32642`/:32652).
+        let (cue, events) =
+            interaction_events(TileInteraction::DialStarted { sundial: true }).unwrap();
+        assert_eq!(cue, Some("Item_4"));
+        assert!(events.is_empty());
+        let (cue, events) =
+            interaction_events(TileInteraction::DialStarted { sundial: false }).unwrap();
+        assert_eq!(cue, Some("Item_4"));
+        assert!(events.is_empty());
+        // The refused gate stays consumed-but-silent (`flag2 = true`,
+        // `Player.cs:32637`; no `PlaySound` behind the `:32638`/:32648 gate).
+        let (cue, events) = interaction_events(TileInteraction::DialRefused).unwrap();
+        assert_eq!(cue, None);
+        assert!(events.is_empty());
+    }
+
+    #[test]
     fn test_DW_4_3_cell_blocked_by_entity() {
         // The entity half of `Collision.EmptyTile(ignoreTiles: true)`
         // (`Collision.cs:1359-1378`): strict rectangle overlap against the
@@ -2367,6 +2549,28 @@ mod tests {
         w.frame_important[28] = true;
     }
 
+    /// A synthetic 3x2 tile-187 pile: `frameX = 18*dx + 54*style`, `frameY =
+    /// 18*dy` (`Main.cs:7415-7417` frame-important). Style 17 is the
+    /// sword-in-stone family (`WorldGen.cs:49828-49839`'s 918..=970 gate).
+    fn set_large_pile_187(w: &mut World, x: i32, y: i32, style: i32) {
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                let i = w.index(x + dx, y + dy);
+                w.tiles[i] = Tile {
+                    kind: 187,
+                    frame_x: (dx * 18 + style * 54) as i16,
+                    frame_y: (dy * 18) as i16,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        if w.frame_important.len() <= 187 {
+            w.frame_important.resize(td::TILE_COUNT, false);
+        }
+        w.frame_important[187] = true;
+    }
+
     /// The resolver harness: `gen_seed` seeds the `genRand` stream, `seed`
     /// the `Main.rand` stream; depth bands per `WorldGen`'s scales in
     /// [`pot_ctx`] (surface 200, rock 400, underworld 800).
@@ -2588,6 +2792,44 @@ mod tests {
                 it.kind
             );
         }
+    }
+
+    // DW-3.3 (merge fix): `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`)
+    // — the sword-in-stone styles (origin frameX 918..=970) drop exactly one
+    // sword: `Main.rand.Next(30) == 0` mints the Terragrim 4144, else the
+    // Enchanted Sword 989. Regular 187 frames drop nothing (the empty
+    // `GetItemDrops` group :65813-65815).
+    #[test]
+    fn test_DW_3_3_sword_shrine_pile_drops_one_sword() {
+        let mut w = object_world();
+        set_large_pile_187(&mut w, 10, 18, 17);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        for dy in 0..2i32 {
+            for dx in 0..3i32 {
+                assert!(
+                    !app.world.tile(10 + dx, 18 + dy).unwrap().active(),
+                    "pile cell ({},{}) gone",
+                    10 + dx,
+                    18 + dy
+                );
+            }
+        }
+        assert_eq!(app.items.len(), 1, "exactly one sword drop");
+        assert!(
+            matches!(app.items[0].kind, 989 | 4144),
+            "the Enchanted Sword or the 1/30 Terragrim, got {}",
+            app.items[0].kind
+        );
+    }
+
+    #[test]
+    fn test_DW_3_3_regular_187_pile_drops_nothing() {
+        let mut w = object_world();
+        set_large_pile_187(&mut w, 10, 18, 0);
+        let mut app = break_app(w, 0x5EED);
+        break_tile(&mut app, 10, 18);
+        assert!(app.items.is_empty(), "no drop outside the sword frames");
     }
 
     // DW-3.3: the branch order on fixed seeds — each branch isolated by

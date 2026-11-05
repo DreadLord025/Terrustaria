@@ -66,9 +66,11 @@ pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
         27 => Some(63),
         // The loot pot / herbs / piles drop nothing per-cell (the empty case
         // group `WorldGen.cs:65759-65815` — 28, 82, 185, 186, 187); the pot's
-        // loot is `SpawnThingsFromPot` (:57011-57014) and the herbs' rolls ride
-        // the RNG resolver (:65674-65698), both app-side. Without these arms
-        // the `by_tile` fallback leaks the seed item 307 for tile 82.
+        // loot is `SpawnThingsFromPot` (:57011-57014), the herbs' rolls ride
+        // the RNG resolver (:65674-65698) and 187's sword-in-stone special
+        // rides the `Check3x2` pile event (:49828-49839) — all app-side.
+        // Without these arms the `by_tile` fallback leaks the seed item 307
+        // for tile 82.
         28 | 82 | 83 | 84 | 185 | 186 | 187 => None,
         _ => by_tile(tile),
     }

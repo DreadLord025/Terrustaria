@@ -135,6 +135,195 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: true,
         name: "Guide",
     },
+    BestiaryEntryDef {
+        credit_id: "Skeleton",
+        net_id: 21,
+        kind: NpcKind::Skeleton,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeleton",
+    },
+    BestiaryEntryDef {
+        credit_id: "UndeadMiner",
+        net_id: 44,
+        kind: NpcKind::UndeadMiner,
+        variant: None,
+        quick_unlock: false,
+        name: "Undead Miner",
+    },
+    BestiaryEntryDef {
+        credit_id: "CaveBat",
+        net_id: 49,
+        kind: NpcKind::CaveBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Cave Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "JungleBat",
+        net_id: 51,
+        kind: NpcKind::JungleBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Hellbat",
+        net_id: 60,
+        kind: NpcKind::Hellbat,
+        variant: None,
+        quick_unlock: false,
+        name: "Hellbat",
+    },
+    BestiaryEntryDef {
+        credit_id: "VoodooDemon",
+        net_id: 66,
+        kind: NpcKind::VoodooDemon,
+        variant: None,
+        quick_unlock: false,
+        name: "Voodoo Demon",
+    },
+    BestiaryEntryDef {
+        credit_id: "EaterofSouls",
+        net_id: 6,
+        kind: NpcKind::EaterOfSouls,
+        variant: None,
+        quick_unlock: false,
+        name: "Eater of Souls",
+    },
+    BestiaryEntryDef {
+        credit_id: "Hornet",
+        net_id: 42,
+        kind: NpcKind::Hornet,
+        variant: None,
+        quick_unlock: false,
+        name: "Hornet",
+    },
+    BestiaryEntryDef {
+        credit_id: "MeteorHead",
+        net_id: 23,
+        kind: NpcKind::MeteorHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Meteor Head",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinSorcerer",
+        net_id: 29,
+        kind: NpcKind::GoblinSorcerer,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Sorcerer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Tim",
+        net_id: 45,
+        kind: NpcKind::Tim,
+        variant: None,
+        quick_unlock: false,
+        name: "Tim",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkCaster",
+        net_id: 32,
+        kind: NpcKind::DarkCaster,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Caster",
+    },
+    BestiaryEntryDef {
+        credit_id: "FireImp",
+        net_id: 24,
+        kind: NpcKind::FireImp,
+        variant: None,
+        quick_unlock: false,
+        name: "Fire Imp",
+    },
+    // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
+    // clone 665 (the port folds it — identical stats and name).
+    BestiaryEntryDef {
+        credit_id: "ChaosBall",
+        net_id: 30,
+        kind: NpcKind::ChaosBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Chaos Ball",
+    },
+    BestiaryEntryDef {
+        credit_id: "BurningSphere",
+        net_id: 25,
+        kind: NpcKind::BurningSphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Burning Sphere",
+    },
+    BestiaryEntryDef {
+        credit_id: "WaterSphere",
+        net_id: 33,
+        kind: NpcKind::WaterSphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Sphere",
+    },
+    BestiaryEntryDef {
+        credit_id: "Goldfish",
+        net_id: 55,
+        kind: NpcKind::Goldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Piranha",
+        net_id: 58,
+        kind: NpcKind::Piranha,
+        variant: None,
+        quick_unlock: false,
+        name: "Piranha",
+    },
+    BestiaryEntryDef {
+        credit_id: "Shark",
+        net_id: 65,
+        kind: NpcKind::Shark,
+        variant: None,
+        quick_unlock: false,
+        name: "Shark",
+    },
+    BestiaryEntryDef {
+        credit_id: "DevourerHead",
+        net_id: 7,
+        kind: NpcKind::DevourerHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Devourer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantWormHead",
+        net_id: 10,
+        kind: NpcKind::GiantWormHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Worm",
+    },
+    // The worm segments fold onto the head's entry (`entry_for_npc`'s
+    // mapping): the vanilla credits the whole worm to the head's bestiary
+    // id — one entry per credit.
+    BestiaryEntryDef {
+        credit_id: "Merchant",
+        net_id: 17,
+        kind: NpcKind::Merchant,
+        variant: None,
+        quick_unlock: false,
+        name: "Merchant",
+    },
+    BestiaryEntryDef {
+        credit_id: "EaterofWorldsHead",
+        net_id: 13,
+        kind: NpcKind::EaterOfWorldsHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Eater of Worlds",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -153,6 +342,14 @@ pub fn unlock_state(entry: &BestiaryEntryDef, kills: &KillTracker) -> UnlockStat
 /// `IsNPCValidForBestiaryKillCredit` stand-in (every ported kind has an
 /// entry, so the lookup never fails).
 pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryEntryDef {
+    // The worm segments fold onto the head's entry (the vanilla credits the
+    // whole worm to the head's bestiary id — one entry per credit).
+    let kind = match kind {
+        NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
+        NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
+        NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        other => other,
+    };
     ENTRIES
         .iter()
         .find(|e| {

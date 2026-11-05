@@ -20,12 +20,12 @@ use crate::craft;
 use crate::item::{self};
 use crate::map;
 use crate::npc::{self, NpcKind};
+use crate::player;
 use crate::render::bg::cave_parallax;
 use crate::render::debug::{capture_frame, draw_debug};
 use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
-use crate::player;
 use crate::sound;
 use crate::ui;
 use crate::ui::text::{hud_text, hud_text_width};
@@ -195,12 +195,7 @@ impl App {
             // 19 → track 93, outranking the others) and the generic `boss`
             // slot 1 → 5 (no other ported kind carries `NPC.boss`).
             let (sw, sh) = self.screen_size();
-            let screen_rect = [
-                self.camera.x - sw * 0.5,
-                self.camera.y - sh * 0.5,
-                sw,
-                sh,
-            ];
+            let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
             let mut king_near = false;
             let mut generic_boss_near = false;
             for n in &self.npcs {
@@ -237,8 +232,7 @@ impl App {
                 boss_music,
                 clock: self.world.time,
                 eclipse: self.world.eclipse
-                    && self.camera.y
-                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                 shimmer: self.scene_metrics.zone_shimmer,
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
@@ -276,8 +270,7 @@ impl App {
                     .is_some_and(|t| t.wall == 87),
                 dungeon: self.scene_metrics.zone_dungeon,
                 mushroom_bg: self.bg_style == 9
-                    && self.camera.y
-                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                 corrupt: self.scene_metrics.zone_corrupt,
                 crimson: self.scene_metrics.zone_crimson,
                 blood_leads_evil: self.scene_metrics.blood_tile_count
@@ -306,6 +299,12 @@ impl App {
             self.update_waterfalls(dt, screen);
             self.update_wiring(dt);
             self.update_tile_entities(dt);
+            self.update_growth(dt);
+            // M1.4-BG-22: the shared 60 Hz world tick — `Main.Update`'s
+            // dayRate cluster (`Main.cs:17228-17231`): the `UpdateWeather`
+            // thunder arm once, the wind walk ×`Main.dayRate`, then
+            // `Sandstorm.UpdateTime` (`Main.cs:64966`).
+            crate::world_sim::weather::update_world_tick(self, dt);
             self.update_rain(dt, screen);
             // M1.4-BG-18 phase 3: `Main.UpdateSceneMetrics` + `Main.SceneState.
             // Update` (`Main.cs:62560,17816`) — the scan, the fades and the
@@ -348,14 +347,14 @@ impl App {
                     zone_crimson: self.scene_metrics.zone_crimson,
                     zone_jungle: self.scene_metrics.zone_jungle,
                     player_center: self.player.as_ref().map_or(self.camera, |p| {
-                        Vec2::new(
-                            p.x + player::WIDTH * 0.5,
-                            p.y + player::HEIGHT * 0.5,
-                        )
+                        Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
                     }),
                     // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
                     player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
-                    day_rate: 1,
+                    // `SkyManager.Update`'s `max(1, dayRate)` loop
+                    // (`SkyManager.cs:24-46`) rides `Main.dayRate`
+                    // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
+                    day_rate: self.world.day_rate(),
                 };
                 ambience.update(dt, &ctx, ambience_rng);
             }
@@ -453,6 +452,7 @@ impl App {
                 liquids,
                 waterfall,
                 rain,
+                sand,
                 liquid_alpha,
                 wind,
                 tree_wind_counter,
@@ -590,8 +590,11 @@ impl App {
                     // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
                     shimmer_darken: self.scene_state.shimmer_darken,
                     shimmer_alpha: 0.0,
-                    sundial_cooldown: 0,
-                    moondial_cooldown: 0,
+                    // `Main.sundialCooldown`/`Main.moondialCooldown`
+                    // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
+                    // mute the dial light while one ticks (0..=8, u8 on World).
+                    sundial_cooldown: i32::from(world.sundial_cooldown),
+                    moondial_cooldown: i32::from(world.moondial_cooldown),
                     // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
                     // every cage stays in mode 0.
                     cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
@@ -676,10 +679,7 @@ impl App {
                     // along for the loop pan.
                     let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
                     let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
-                    let cam_c = Vec2::new(
-                        camera.x + screen.x * 0.5 - screen.x * 0.5,
-                        camera.y,
-                    );
+                    let cam_c = Vec2::new(camera.x + screen.x * 0.5 - screen.x * 0.5, camera.y);
                     let _ = cam_c;
                     for q in &scratch.waterfall_quads {
                         let (fx, fy) = (q.pos[0], q.pos[1]);
@@ -688,8 +688,7 @@ impl App {
                         if dx >= screen.x * 2.0 || dy >= screen.y * 2.0 {
                             continue;
                         }
-                        let strength =
-                            1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
+                        let strength = 1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
                         if strength <= 0.0 {
                             continue;
                         }
@@ -718,11 +717,12 @@ impl App {
                     scratch.waterfall_lights.clear();
                 }
 
-                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind walk
-                // runs in `UpdateWeather`; the sway counters advance per frame,
+                // `TileDrawing.Update` (`TileDrawing.cs:367-375`): the wind WALK
+                // itself lives on the shared world tick now
+                // (`world_sim::weather::update_world_tick`, ×`Main.dayRate`,
+                // `Main.cs:17228-17231`); the sway counters stay per frame,
                 // faster with stronger wind.
                 wind.sway_enabled = settings.tiles_sway && std::env::var_os("TR_NO_WIND").is_none();
-                wind.update(rain.is_raining());
                 // `TR_WIND_FORCE=<speed>`: pin `windSpeedCurrent` so the sway and
                 // the leaf frequency are screenshotable at a chosen strength.
                 if let Ok(v) = std::env::var("TR_WIND_FORCE") {
@@ -933,8 +933,9 @@ impl App {
 
                 // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
                 // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                // UI range like the rain. `TR_NO_WIND` is the A/B switch for the
-                // whole wind feature, spawns included.
+                // world-effect range like the rain (world content — under the map
+                // batches and the interface). `TR_NO_WIND` is the A/B switch for
+                // the whole wind feature, spawns included.
                 let wind_ab_on = std::env::var_os("TR_NO_WIND").is_none();
                 let drained: Vec<_> = leaf_spawns.drain(..).collect();
                 for s in drained.into_iter().take_while(|_| wind_ab_on) {
@@ -949,6 +950,10 @@ impl App {
                 crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
 
                 rain.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                // `Main.DrawDust`'s 268 entries: the flying sand, the same
+                // world-effect range as the rain (`Main.DrawRain`'s draw call
+                // site — world content, under the map batches and the UI).
+                sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
                 );
@@ -957,14 +962,7 @@ impl App {
                 // over-wire entities (the port draws it before the
                 // projectiles, matching `DrawCachedProjsOverWiresUI`).
                 crate::render::wires::draw_wires(
-                    renderer,
-                    world,
-                    light,
-                    &style,
-                    draw_cam,
-                    *zoom,
-                    screen,
-                    anim_time,
+                    renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
@@ -1053,11 +1051,40 @@ impl App {
                     }
                 } else if menu.is_none() && !no_hud() && !fullscreen_map {
                     let craft_available = if self.crafting_open {
-                        let adj = player
+                        // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
+                        // owned counts fold the inventory and the in-range
+                        // chests; the environment reads the adjacency scan
+                        // and the zone flags.
+                        let (adj, in_range) = player
                             .as_ref()
-                            .map(|p| craft::adjacent_tiles(world, p))
-                            .unwrap_or_default();
-                        craft::available(inventory, &adj)
+                            .map(|p| {
+                                (
+                                    craft::scan_adjacent(world, p),
+                                    craft::chests_in_range(
+                                        world,
+                                        p,
+                                        &self.world_chests,
+                                        settings.craft_from_nearby_chests,
+                                    ),
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                (
+                                    craft::Adjacent {
+                                        tiles: Vec::new(),
+                                        water: false,
+                                        honey: false,
+                                        lava: false,
+                                        alchemy_table: false,
+                                    },
+                                    Vec::new(),
+                                )
+                            });
+                        let zones = craft::Zones {
+                            snow: self.scene_metrics.zone_snow,
+                            graveyard: self.scene_metrics.zone_graveyard,
+                        };
+                        craft::available(inventory, &self.world_chests, &in_range, &adj, &zones)
                     } else {
                         Vec::new()
                     };
@@ -1205,12 +1232,18 @@ impl App {
                 // (DW-2.1).
                 if let Some(post) = post.as_mut() {
                     let scene = post.scene_view(gpu);
-                    stats = renderer.render(
+                    // The vanilla order puts the filters between the world draw
+                    // and `DrawMap`/`DrawInterface` (`Main.DoDraw`): the world
+                    // and the world-effect ranges render into the post target,
+                    // the filter chain lands on the screen, then the map
+                    // batches and the interface draw over the filtered frame.
+                    let now_secs = now.elapsed().as_secs_f32();
+                    stats = renderer.render_world_fx(
                         gpu,
                         scene,
                         draw_cam.to_array(),
                         *zoom,
-                        now.elapsed().as_secs_f32(),
+                        now_secs,
                         wgpu::Color {
                             r: 0.045,
                             g: 0.055,
@@ -1257,6 +1290,11 @@ impl App {
                             water_mask: water_mask.as_ref().and_then(|m| m.texture()),
                         },
                     );
+                    let ui_stats =
+                        renderer.render_map_ui(gpu, &view, draw_cam.to_array(), *zoom, now_secs);
+                    stats.instances += ui_stats.instances;
+                    stats.draw_calls += ui_stats.draw_calls;
+                    stats.uploaded_bytes += ui_stats.uploaded_bytes;
                 } else {
                     stats = renderer.render(
                         gpu,
