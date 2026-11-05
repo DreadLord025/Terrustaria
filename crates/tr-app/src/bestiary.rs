@@ -183,6 +183,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Voodoo Demon",
     },
+    BestiaryEntryDef {
+        credit_id: "EaterofSouls",
+        net_id: 6,
+        kind: NpcKind::EaterOfSouls,
+        variant: None,
+        quick_unlock: false,
+        name: "Eater of Souls",
+    },
+    BestiaryEntryDef {
+        credit_id: "Hornet",
+        net_id: 42,
+        kind: NpcKind::Hornet,
+        variant: None,
+        quick_unlock: false,
+        name: "Hornet",
+    },
+    BestiaryEntryDef {
+        credit_id: "MeteorHead",
+        net_id: 23,
+        kind: NpcKind::MeteorHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Meteor Head",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -107,6 +107,9 @@ pub(crate) struct NpcAssets {
     pub(crate) jungle_bat: Option<BgTex>,
     pub(crate) hellbat: Option<BgTex>,
     pub(crate) voodoo_demon: Option<BgTex>,
+    pub(crate) eater_of_souls: Option<BgTex>,
+    pub(crate) hornet: Option<BgTex>,
+    pub(crate) meteor_head: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -123,6 +126,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         jungle_bat: sky_tex(atlas, "NPC_51", None),
         hellbat: sky_tex(atlas, "NPC_60", None),
         voodoo_demon: sky_tex(atlas, "NPC_66", None),
+        eater_of_souls: sky_tex(atlas, "NPC_6", None),
+        hornet: sky_tex(atlas, "NPC_42", None),
+        meteor_head: sky_tex(atlas, "NPC_23", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -570,6 +576,25 @@ pub(crate) fn draw_npcs(
                 [n.x - 10.0, n.y - 5.0],
             ),
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
+                let tex = match n.kind {
+                    NpcKind::Hornet => assets.hornet.as_ref(),
+                    NpcKind::MeteorHead => assets.meteor_head.as_ref(),
+                    _ => assets.eater_of_souls.as_ref(),
+                };
+                let frames = match n.kind {
+                    NpcKind::Hornet => 3.0,
+                    _ => 2.0,
+                };
+                let fh = tex.map_or(30.0, |t| t.h / frames);
+                let (bw, bh) = n.size();
+                (
+                    tex,
+                    fh,
+                    [bw + 4.0, bh],
+                    [n.x - 2.0, n.y - 2.0],
+                )
+            }
             NpcKind::CaveBat
             | NpcKind::JungleBat
             | NpcKind::Hellbat

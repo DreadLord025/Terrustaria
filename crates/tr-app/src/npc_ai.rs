@@ -152,6 +152,105 @@ pub fn flyer_step(
     }
 }
 
+/// The hover tunables — `AI_005_EaterOfSouls`'s per-kind `num`/`num2`
+/// pairs (`NPC.cs:50294-50330`: the max speed / the acceleration).
+#[derive(Clone, Copy, Debug)]
+pub struct HoverParams {
+    /// `num` — the desired speed (the target vector scaled to it).
+    pub max_speed: f32,
+    /// `num2` — the velocity approach per tick.
+    pub accel: f32,
+}
+
+impl HoverParams {
+    /// The Eater of Souls (`NPC.cs:50304-50305`: num 4, num2 0.02).
+    pub const EATER_OF_SOULS: Self = Self {
+        max_speed: 4.0,
+        accel: 0.02,
+    };
+    /// The Hornet (`NPC.cs:50322-50323`: num 3.25, num2 0.018).
+    pub const HORNET: Self = Self {
+        max_speed: 3.25,
+        accel: 0.018,
+    };
+    /// The Meteor Head (`NPC.cs:50328-50329`: num 1, num2 0.03).
+    pub const METEOR_HEAD: Self = Self {
+        max_speed: 1.0,
+        accel: 0.03,
+    };
+}
+
+/// `AI_005_EaterOfSouls`'s fly core (`NPC.cs:50392-50370`): the desired
+/// velocity = the normalized target vector × max_speed; the velocity
+/// approaches it by `accel` per tick with the double-add on the sign flips;
+/// the vertical damping (`:50355-50360`) caps the climb/dive when the
+/// target is far above/below.
+pub fn hover_step(
+    npc: &mut Npc,
+    world: &World,
+    target_x: f32,
+    target_y: f32,
+    params: HoverParams,
+) {
+    let (w, h) = (npc_size_w(npc), npc_size_h(npc));
+    let (cx, cy) = (npc.x + w * 0.5, npc.y + h * 0.5);
+    let mut dx = target_x - cx;
+    let mut dy = target_y - cy;
+    let dist = (dx * dx + dy * dy).sqrt();
+    if dist != 0.0 {
+        let scale = params.max_speed / dist;
+        dx *= scale;
+        dy *= scale;
+    } else {
+        dx = npc.vx;
+        dy = npc.vy;
+    }
+    // The approach with the double-add on the sign flips (`:50371-50377`).
+    if npc.vx < dx {
+        npc.vx += params.accel;
+        if dx > 0.0 && npc.vx < 0.0 {
+            npc.vx += params.accel;
+        }
+    } else if npc.vx > dx {
+        npc.vx -= params.accel;
+        if dx < 0.0 && npc.vx > 0.0 {
+            npc.vx -= params.accel;
+        }
+    }
+    if npc.vy < dy {
+        npc.vy += params.accel;
+        if dy > 0.0 && npc.vy < 0.0 {
+            npc.vy += params.accel;
+        }
+    } else if npc.vy > dy {
+        npc.vy -= params.accel;
+        if dy < 0.0 && npc.vy > 0.0 {
+            npc.vy -= params.accel;
+        }
+    }
+    // The vertical damping (`:50355-50360`): the target 300+ px below
+    // damps the climb, 80 px above damps the dive (×0.97).
+    if target_y - cy > 300.0 && npc.vy < 0.0 {
+        npc.vy *= 0.97;
+    }
+    if target_y - cy < 80.0 && npc.vy > 0.0 {
+        npc.vy *= 0.97;
+    }
+    let nx = npc.x + npc.vx;
+    if !crate::player::collides_rect(world, nx, npc.y, w, h) {
+        npc.x = nx;
+    } else {
+        npc.vx = -npc.vx * 0.5;
+    }
+    let ny = npc.y + npc.vy;
+    if !crate::player::collides_rect(world, npc.x, ny, w, h) {
+        npc.y = ny;
+    } else {
+        npc.vy = -npc.vy * 0.5;
+    }
+    npc.facing = if target_x >= cx { 1 } else { -1 };
+}
+
 fn npc_size_w(npc: &Npc) -> f32 {
     npc.size().0
 }

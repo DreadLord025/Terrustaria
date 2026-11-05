@@ -657,6 +657,22 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         rng.next(2); // the big/small variant roll consumed
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
     }
+    // The corruption hover: the Eater of Souls (`NPC.cs`'s corruption arm
+    // `Next(6) == 0 → 6` — the port's evil-zone flag gates it).
+    if ctx.flags.zone_evil && rng.next(6) == 0 {
+        if let Some(n) =
+            Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::EaterOfSouls)
+        {
+            return Some(n);
+        }
+    }
+    // The jungle hover: the Hornet (`NPC.cs`'s jungle arm `Next(4) == 0 →
+    // 42` — the port's jungle-zone flag gates it).
+    if ctx.flags.zone_jungle && rng.next(4) == 0 {
+        if let Some(n) = Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::Hornet) {
+            return Some(n);
+        }
+    }
     // The Cave Bat: the cave-air flyer — `NPC.cs:5233`'s `else → 49` arm;
     // the port's cadence `Next(30)` documents the cave-air rarity (the
     // vanilla's bat rolls sit in the cave-air chain's arms).

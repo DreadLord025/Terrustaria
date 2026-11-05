@@ -230,6 +230,9 @@ pub fn load_world_images(
         "NPC_21",
         "NPC_44",
         "NPC_49",
+        "NPC_6",
+        "NPC_42",
+        "NPC_23",
         "NPC_51",
         "NPC_60",
         "NPC_66",
@@ -1014,11 +1017,11 @@ pub struct Lookups {
     pub ui_bestiary_stat_defense: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_knockback: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_copper: Option<tr_render::SheetRect>,
-    /// The twelve NPC portrait sheets — `[slime, demon eye, wandering eye,
+    /// The fifteen NPC portrait sheets — `[slime, demon eye, wandering eye,
     /// zombie, king slime, guide, skeleton, undead miner, cave bat, jungle
-    /// bat, hellbat, voodoo demon]`, the `NpcAssets` set restated for the UI
-    /// draws.
-    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 12],
+    /// bat, hellbat, voodoo demon, eater of souls, hornet, meteor head]`,
+    /// the `NpcAssets` set restated for the UI draws.
+    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 15],
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
@@ -1245,6 +1248,9 @@ impl Lookups {
                 atlas.sheet("NPC_51").copied(),
                 atlas.sheet("NPC_60").copied(),
                 atlas.sheet("NPC_66").copied(),
+                atlas.sheet("NPC_6").copied(),
+                atlas.sheet("NPC_42").copied(),
+                atlas.sheet("NPC_23").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
