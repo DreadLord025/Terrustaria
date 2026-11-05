@@ -13,6 +13,7 @@
 //! order and every RNG draw are part of the world contract; `deterministic_for_seed`
 //! pins them.
 
+mod biome_detail;
 mod biomes;
 mod structures;
 mod caves;
@@ -134,6 +135,12 @@ pub fn generate(opts: &GenOptions) -> World {
     // scatter last) ---------------------------------------------------------
     // The structures run on their own stream — the shared  feeds the
     // living-tree/tree passes after this point and must not shift.
+    // The detail passes (the ocean caves run with the caves' timing, the
+    // plants/vines after the biomes; the fragile ice after the liquids).
+    let mut drng = Rng(opts.seed ^ 0x5DEE_CE66_D1A4_9B5F);
+    biome_detail::pass_ocean_caves(&mut world, &map.heights, map.beach, &mut drng);
+    biome_detail::pass_fragile_ice(&mut world, width * 2 / 3, &mut drng);
+    biome_detail::pass_underground_jungle_trees(&mut world, &spans, layers.rock_layer, &mut drng);
     let mut srng = Rng(opts.seed ^ 0x9E37_79B9_7F4A_7C15);
     let shrine_spots = structures::pass_jungle_shrines(&mut world, &spans, layers.rock_layer, &mut srng);
     structures::pass_chests(&mut world, &shrine_spots, &mut srng);
@@ -146,6 +153,8 @@ pub fn generate(opts: &GenOptions) -> World {
         &mut srng,
     );
     structures::pass_pots(&mut world, &mut srng);
+    biome_detail::pass_mushroom_and_jungle_plants(&mut world);
+    biome_detail::pass_vines(&mut world, &mut drng);
 
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
@@ -281,6 +290,13 @@ mod tests {
         for x in start..end {
             let top = w.surface_of(x);
             let t = w.tile(x, top).unwrap();
+            // The pyramid entrances open the desert surface (vanilla
+            // `Pyramid` carves into the dunes) — the air columns skip. The
+            // living trees grow on sand too (`GrowLivingTree` gates only the
+            // anchor air, not the soil) — their columns skip.
+            if !t.active() || matches!(t.kind, 191 | 192) {
+                continue;
+            }
             assert!(
                 t.kind == TILE_SAND,
                 "desert surface at x{x} is kind {}",

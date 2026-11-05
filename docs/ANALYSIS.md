@@ -3421,3 +3421,42 @@ tree placements to empty results on the small worlds.
 Deviations: the chest inventories ride the storage task (the C#
 `Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
 piles and the graveyards are the follow-ups; the layouts are shape-level.
+
+## Biome detail passes (M1.4-WGEN-3)
+
+The decorator passes over the finished biomes — the ocean caves, the
+fragile ice, the underground jungle trees, the mushroom/jungle plants and
+the vines — ride their own `drng` stream (the shared worldgen stream stays
+reserved for the biome + tree passes; the stream discipline bit in
+WGEN-2's review: consuming it early shifted the living-tree placements to
+empty results on the small worlds).
+
+- **The ocean caves** (`OceanCaves`, `WorldGen.cs:15167-15191`): one
+  winding shaft per ocean side at the `Next(3)` gate, the first-active
+  surface scan, the walkable carve down past the sea floor into the
+  terminal bubble room (the C# `oceanCave`'s winding shaft shape is
+  approximated).
+- **The fragile ice** (`FragileIceOverIceBiomeWater`, `:16667-16690`): the
+  ice band's water tiles break their skin — the 1-3 wide holes at 1/4 per
+  tile (the C# `MakeWateryIceThing`'s open-pocket shape).
+- **The underground jungle trees** (`UndergroundJungleTrees`,
+  `:17840-17856`): the `Next(10)` per column over the mud band, the 5-8
+  tall trunks (the tile 5) with the leaf balls (the tile 6), rooted in the
+  mud with the two-row clearance.
+- **The plants** (`GlowingMushroomPlantsUndergroundAndJunglePlants`,
+  `:20122-20158`): the glowing mushrooms (71) on the free mushroom-grass
+  cells below the surface (the C#'s triple tree retry collapses to the
+  plant placement in the port — the mushroom trees are the tile-71 stands),
+  the jungle plants (61) on every free jungle-grass cell.
+- **The vines** (`ActionVines` + the grass-growth vine arms): the
+  overhangs hang the jungle vines 62 (the cap 20), the regular vines 52
+  (12) and the mushroom vines 528 (12) at the 1/3 gate.
+- The desert test learned two vanilla-legitimate exceptions: the pyramid
+  entrances open the surface (`Pyramid` carves into the dunes) and the
+  living trees grow on sand (`GrowLivingTree` gates only the anchor air,
+  not the soil).
+
+Deviations: the hallowed/crimson vine arms wait for the hallow
+(M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
+`GrowUndergroundTree` canvas are approximated; the mushroom trees are the
+tile-71 stands (the full tree generator = the follow-up).
