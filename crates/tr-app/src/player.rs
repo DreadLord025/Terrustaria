@@ -299,6 +299,14 @@ pub struct Player {
     /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
     /// `RecalculateLuck` (`Player.cs:29137-29164`).
     pub luck_state: LuckState,
+    /// The `Player.ZoneSnow`-family flags the torch-luck table reads
+    /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
+    /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
+    pub zones: tr_core::scene::Zones,
+    /// The held torch's place style — `inventory[selectedItem].createTile == 4`
+    /// (`:17917-17920`), refreshed per tick from `app.inventory[app.selected]`;
+    /// `None` when nothing torch-like is held.
+    pub held_torch_style: Option<u8>,
     /// `Player.fallStart` (`Player.cs:2882`): the tile row the fall started on,
     /// int-truncated like the original's `(int)(position.Y / 16f)`.
     fall_start: i32,
@@ -488,6 +496,8 @@ impl Player {
             regen: RegenState::default(),
             dot_death: None,
             luck_state: LuckState::default(),
+            zones: tr_core::scene::Zones::default(),
+            held_torch_style: None,
             fall_start: (sy / TILE_PX) as i32,
             extra_fall: 0,
             no_fall_dmg: false,
@@ -2166,8 +2176,18 @@ impl Player {
         let day_rate = world.day_rate();
         self.luck_state.update_lady_bug_decay(day_rate);
         self.luck_state.update_coin_decay(day_rate);
-        // `TryRecalculatingTorchLuck` + the diff check sit here
-        // (`Player.cs:29126-29130`) — phase 2.
+        // `TryRecalculatingTorchLuck` + the diff check (`Player.cs:29126-29130`
+        // — the diff half is net-only): `Main.myPlayer`-only in the C#, which
+        // is the port's single player.
+        let center = self.center();
+        crate::luck::torch_scan_step(
+            &mut self.luck_state,
+            world,
+            center,
+            self.dead,
+            self.held_torch_style,
+            self.zones,
+        );
         self.luck_state.update_broken_mirror_decay(day_rate);
         self.luck_state.recalculate_luck();
     }
