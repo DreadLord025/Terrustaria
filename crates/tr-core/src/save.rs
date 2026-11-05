@@ -8,14 +8,15 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 
 use crate::tile::Tile;
 use crate::world::World;
 
 const MAGIC: &[u8; 8] = b"TRWLD01\0";
-/// v2 added `moon_type`/`moon_phase`; v1 files still load with 0/0.
-const VERSION: u32 = 3;
+/// v2 added `moon_type`/`moon_phase`; v1 files still load with 0/0. v3 added
+/// the sparse paint/coating extras; v4 appended the two dial cooldown bytes.
+pub const VERSION: u32 = 4;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -142,6 +143,11 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
         w.write_all(&idx.to_le_bytes())?;
         w.write_all(&[byte])?;
     }
+    // v4: the dial cooldowns (`Main.sundialCooldown`/`Main.moondialCooldown`,
+    // `Main.cs:2161`/`:2165`); 0..=8 each. The fast-forward flags stay
+    // runtime-only — the C# `.wld` has written `fastForwardTimeToDusk` since
+    // v264, but the request is transient by nature.
+    w.write_all(&[world.sundial_cooldown, world.moondial_cooldown])?;
     Ok(())
 }
 
@@ -229,6 +235,12 @@ pub fn parse(data: &[u8]) -> Result<World> {
             }
             world.set_extras_at(idx, byte);
         }
+    }
+    // v4: the dial cooldowns; a v3 file (and older) loads with the 0s from
+    // `World::new`.
+    if version >= 4 {
+        world.sundial_cooldown = r.u8()?;
+        world.moondial_cooldown = r.u8()?;
     }
     world.revision = 0;
     Ok(world)
@@ -368,5 +380,45 @@ mod tests {
         assert!(back.invisible_block(3, 0), "the Echo bit rides bit 5");
         assert!(!back.invisible_wall(3, 0));
         assert!(!back.invisible_block(7, 7), "the zero byte collapses");
+    }
+
+    #[test]
+    fn dw_1_4_dial_cooldowns_round_trip_v4() {
+        // DW-1.4: the v4 tail carries both cooldown bytes (`Main.cs:2161`/`:2165`).
+        let mut w = World::new("Test".into(), 32, 32);
+        w.sundial_cooldown = 5;
+        w.moondial_cooldown = 8;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        assert_eq!(&buf[8..12], &[4, 0, 0, 0], "the writer emits v4");
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.sundial_cooldown, 5);
+        assert_eq!(back.moondial_cooldown, 8);
+    }
+
+    #[test]
+    fn dw_1_4_v3_loads_zero_cooldowns() {
+        // DW-1.4: a pristine v3 file (the v4 stream stripped of its 2-byte
+        // tail, version field restored) loads with both cooldowns at 0.
+        let mut w = World::new("Test".into(), 32, 32);
+        w.sundial_cooldown = 7;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        buf.truncate(buf.len() - 2);
+        buf[8..12].copy_from_slice(&3u32.to_le_bytes());
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.sundial_cooldown, 0);
+        assert_eq!(back.moondial_cooldown, 0);
+    }
+
+    #[test]
+    fn dw_1_4_version_above_4_rejected() {
+        // DW-1.4 (dirty): the existing loader rejects a version above the
+        // current one (`save.rs` version gate).
+        let w = World::new("Test".into(), 32, 32);
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        buf[8..12].copy_from_slice(&5u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 5 is unsupported");
     }
 }

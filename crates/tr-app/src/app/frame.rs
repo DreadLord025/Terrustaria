@@ -20,12 +20,12 @@ use crate::craft;
 use crate::item::{self};
 use crate::map;
 use crate::npc::{self, NpcKind};
+use crate::player;
 use crate::render::bg::cave_parallax;
 use crate::render::debug::{capture_frame, draw_debug};
 use crate::render::entities::draw_player_map_icon;
 use crate::render::sky::{color_of_the_skies, draw_sky, tile_color};
 use crate::render::tiles::draw_tiles;
-use crate::player;
 use crate::sound;
 use crate::ui;
 use crate::ui::text::{hud_text, hud_text_width};
@@ -195,12 +195,7 @@ impl App {
             // 19 → track 93, outranking the others) and the generic `boss`
             // slot 1 → 5 (no other ported kind carries `NPC.boss`).
             let (sw, sh) = self.screen_size();
-            let screen_rect = [
-                self.camera.x - sw * 0.5,
-                self.camera.y - sh * 0.5,
-                sw,
-                sh,
-            ];
+            let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
             let mut king_near = false;
             let mut generic_boss_near = false;
             for n in &self.npcs {
@@ -237,8 +232,7 @@ impl App {
                 boss_music,
                 clock: self.world.time,
                 eclipse: self.world.eclipse
-                    && self.camera.y
-                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                 shimmer: self.scene_metrics.zone_shimmer,
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —
@@ -276,8 +270,7 @@ impl App {
                     .is_some_and(|t| t.wall == 87),
                 dungeon: self.scene_metrics.zone_dungeon,
                 mushroom_bg: self.bg_style == 9
-                    && self.camera.y
-                        < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+                    && self.camera.y < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
                 corrupt: self.scene_metrics.zone_corrupt,
                 crimson: self.scene_metrics.zone_crimson,
                 blood_leads_evil: self.scene_metrics.blood_tile_count
@@ -348,14 +341,14 @@ impl App {
                     zone_crimson: self.scene_metrics.zone_crimson,
                     zone_jungle: self.scene_metrics.zone_jungle,
                     player_center: self.player.as_ref().map_or(self.camera, |p| {
-                        Vec2::new(
-                            p.x + player::WIDTH * 0.5,
-                            p.y + player::HEIGHT * 0.5,
-                        )
+                        Vec2::new(p.x + player::WIDTH * 0.5, p.y + player::HEIGHT * 0.5)
                     }),
                     // `plr.position.Y` is the hitbox TOP (`AmbienceServer.cs:191`).
                     player_y: self.player.as_ref().map_or(self.camera.y, |p| p.y),
-                    day_rate: 1,
+                    // `SkyManager.Update`'s `max(1, dayRate)` loop
+                    // (`SkyManager.cs:24-46`) rides `Main.dayRate`
+                    // (`Main.cs:6199-6206`): 60 while a dial fast-forwards.
+                    day_rate: self.world.day_rate(),
                 };
                 ambience.update(dt, &ctx, ambience_rng);
             }
@@ -588,8 +581,11 @@ impl App {
                     // `Main.shimmerDarken` (SceneState.UpdateShimmer ramps).
                     shimmer_darken: self.scene_state.shimmer_darken,
                     shimmer_alpha: 0.0,
-                    sundial_cooldown: 0,
-                    moondial_cooldown: 0,
+                    // `Main.sundialCooldown`/`Main.moondialCooldown`
+                    // (`Main.cs:2161`/`:2165`): the scanner and the glow pass
+                    // mute the dial light while one ticks (0..=8, u8 on World).
+                    sundial_cooldown: i32::from(world.sundial_cooldown),
+                    moondial_cooldown: i32::from(world.moondial_cooldown),
                     // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
                     // every cage stays in mode 0.
                     cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
@@ -674,10 +670,7 @@ impl App {
                     // along for the loop pan.
                     let mut wfs: [f32; 3] = [0.0, 0.0, 0.0];
                     let mut lfs: [f32; 3] = [0.0, 0.0, 0.0];
-                    let cam_c = Vec2::new(
-                        camera.x + screen.x * 0.5 - screen.x * 0.5,
-                        camera.y,
-                    );
+                    let cam_c = Vec2::new(camera.x + screen.x * 0.5 - screen.x * 0.5, camera.y);
                     let _ = cam_c;
                     for q in &scratch.waterfall_quads {
                         let (fx, fy) = (q.pos[0], q.pos[1]);
@@ -686,8 +679,7 @@ impl App {
                         if dx >= screen.x * 2.0 || dy >= screen.y * 2.0 {
                             continue;
                         }
-                        let strength =
-                            1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
+                        let strength = 1.0 - (dx * dx + dy * dy).sqrt() / (screen.x * 0.75);
                         if strength <= 0.0 {
                             continue;
                         }
@@ -941,14 +933,7 @@ impl App {
                 // over-wire entities (the port draws it before the
                 // projectiles, matching `DrawCachedProjsOverWiresUI`).
                 crate::render::wires::draw_wires(
-                    renderer,
-                    world,
-                    light,
-                    &style,
-                    draw_cam,
-                    *zoom,
-                    screen,
-                    anim_time,
+                    renderer, world, light, &style, draw_cam, *zoom, screen, anim_time,
                 );
                 for p in projectiles.slots().iter().filter(|p| p.active) {
                     p.draw(renderer, lookups, light, draw_cam, *zoom, screen);
