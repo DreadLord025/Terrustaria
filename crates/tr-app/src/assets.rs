@@ -240,6 +240,9 @@ pub fn load_world_images(
         "NPC_30",
         "NPC_25",
         "NPC_33",
+        "NPC_55",
+        "NPC_58",
+        "NPC_65",
         "NPC_51",
         "NPC_60",
         "NPC_66",
@@ -1029,8 +1032,8 @@ pub struct Lookups {
     /// slime, guide, skeleton, undead miner, cave bat, jungle bat, hellbat,
     /// voodoo demon, eater of souls, hornet, meteor head, goblin sorcerer,
     /// tim, dark caster, fire imp, chaos ball, burning sphere, water
-    /// sphere]`.
-    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 22],
+    /// sphere, goldfish, piranha, shark]`.
+    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 25],
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
@@ -1267,6 +1270,9 @@ impl Lookups {
                 atlas.sheet("NPC_30").copied(),
                 atlas.sheet("NPC_25").copied(),
                 atlas.sheet("NPC_33").copied(),
+                atlas.sheet("NPC_55").copied(),
+                atlas.sheet("NPC_58").copied(),
+                atlas.sheet("NPC_65").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

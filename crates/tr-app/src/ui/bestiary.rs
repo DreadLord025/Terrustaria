@@ -316,6 +316,9 @@ fn portrait_data(
         NpcKind::ChaosBall => 19,
         NpcKind::BurningSphere => 20,
         NpcKind::WaterSphere => 21,
+        NpcKind::Goldfish => 22,
+        NpcKind::Piranha => 23,
+        NpcKind::Shark => 24,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -366,6 +369,9 @@ fn portrait_data(
         (NpcKind::ChaosBall, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::BurningSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::WaterSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::Goldfish, _) => (sheet_i, 18.0, 20.0, 18.0, white),
+        (NpcKind::Piranha, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::Shark, _) => (sheet_i, 24.0, 100.0, 24.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

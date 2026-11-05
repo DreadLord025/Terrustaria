@@ -300,6 +300,11 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The swimmers: the ctor plants the feet on the column surface —
+        // the net state overwrites the position below.
+        crate::npc::NpcKind::Goldfish | crate::npc::NpcKind::Piranha | crate::npc::NpcKind::Shark => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
         // The casters/spheres: the ctor only seeds the stats — the net
         // state overwrites the position below (the hover arm's shape).
         crate::npc::NpcKind::GoblinSorcerer

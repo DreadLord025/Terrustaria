@@ -265,6 +265,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Water Sphere",
     },
+    BestiaryEntryDef {
+        credit_id: "Goldfish",
+        net_id: 55,
+        kind: NpcKind::Goldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Piranha",
+        net_id: 58,
+        kind: NpcKind::Piranha,
+        variant: None,
+        quick_unlock: false,
+        name: "Piranha",
+    },
+    BestiaryEntryDef {
+        credit_id: "Shark",
+        net_id: 65,
+        kind: NpcKind::Shark,
+        variant: None,
+        quick_unlock: false,
+        name: "Shark",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
