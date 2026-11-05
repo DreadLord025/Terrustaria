@@ -816,6 +816,152 @@ pub(crate) static RECIPES: &[Recipe] = &[
         alchemy: true,
         ..BASE
     },
+    // --- The progression batch (the wooden tools, the bars, the metal
+    // armor) — every entry cites its Recipe.cs registration.
+    // Recipe.cs:6800-6806 — Wooden Sword: 7 Wood (the group), at a work
+    // bench.
+    Recipe {
+        create: (24, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 7)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:6810-6814 — Wooden Hammer: 8 Wood, at a work bench.
+    Recipe {
+        create: (196, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 8)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:6815-6818 — Wooden Bow: 10 Wood, at a work bench.
+    Recipe {
+        create: (39, 1),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 10)],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:2077-2082 — Wooden Arrow x25: 1 Wood + 1 Stone, at a work
+    // bench.
+    Recipe {
+        create: (40, 25),
+        required: &[
+            Requirement::group(9, RecipeGroups::WOOD, 1),
+            Requirement::group(3, RecipeGroups::STONE, 1),
+        ],
+        stations: &[18],
+        ..BASE
+    },
+    // Recipe.cs:2376-2378 — Wood Platform x2: 1 Wood, by hand.
+    Recipe {
+        create: (94, 2),
+        required: &[Requirement::group(9, RecipeGroups::WOOD, 1)],
+        ..BASE
+    },
+    // Recipe.cs:9652-9656 — Copper Bar: 3 Copper Ore, at a furnace.
+    Recipe {
+        create: (20, 1),
+        required: &[Requirement::item(12, 3)],
+        stations: &[17],
+        ..BASE
+    },
+    // Recipe.cs:10076-10080 — Silver Bar: 4 Silver Ore, at a furnace.
+    Recipe {
+        create: (21, 1),
+        required: &[Requirement::item(14, 4)],
+        stations: &[17],
+        ..BASE
+    },
+    // Recipe.cs:10236-10240 — Gold Bar: 4 Gold Ore, at a furnace.
+    Recipe {
+        create: (19, 1),
+        required: &[Requirement::item(13, 4)],
+        stations: &[17],
+        ..BASE
+    },
+    // Recipe.cs:9708-9712 — Copper Helmet: 12 Copper Bar, at an anvil.
+    Recipe {
+        create: (89, 1),
+        required: &[Requirement::item(20, 12)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:9714-9717 — Copper Chainmail: 20 Copper Bar, at an anvil.
+    Recipe {
+        create: (80, 1),
+        required: &[Requirement::item(20, 20)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:9718-9721 — Copper Greaves: 16 Copper Bar, at an anvil.
+    Recipe {
+        create: (76, 1),
+        required: &[Requirement::item(20, 16)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:9882-9885 — Iron Helmet: 15 Iron Bar, at an anvil.
+    Recipe {
+        create: (90, 1),
+        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 15)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:9887-9890 — Iron Chainmail: 25 Iron Bar, at an anvil.
+    Recipe {
+        create: (81, 1),
+        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 25)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:9892-9895 — Iron Greaves: 20 Iron Bar, at an anvil.
+    Recipe {
+        create: (77, 1),
+        required: &[Requirement::group(22, RecipeGroups::IRON_BAR, 20)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10127-10130 — Silver Helmet: 15 Silver Bar, at an anvil.
+    Recipe {
+        create: (91, 1),
+        required: &[Requirement::item(21, 15)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10132-10135 — Silver Chainmail: 25 Silver Bar, at an anvil.
+    Recipe {
+        create: (82, 1),
+        required: &[Requirement::item(21, 25)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10137-10140 — Silver Greaves: 20 Silver Bar, at an anvil.
+    Recipe {
+        create: (78, 1),
+        required: &[Requirement::item(21, 20)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10287-10290 — Gold Helmet: 20 Gold Bar, at an anvil.
+    Recipe {
+        create: (92, 1),
+        required: &[Requirement::item(19, 20)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10292-10295 — Gold Chainmail: 30 Gold Bar, at an anvil.
+    Recipe {
+        create: (83, 1),
+        required: &[Requirement::item(19, 30)],
+        stations: &[16],
+        ..BASE
+    },
+    // Recipe.cs:10297-10300 — Gold Greaves: 25 Gold Bar, at an anvil.
+    Recipe {
+        create: (79, 1),
+        required: &[Requirement::item(19, 25)],
+        stations: &[16],
+        ..BASE
+    },
 ];
 
 #[cfg(test)]
@@ -851,6 +997,47 @@ mod tests {
         w.tiles[i].kind = kind;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         w
+    }
+
+    #[test]
+    fn the_progression_batch_registers_verbatim() {
+        // The C# anchors: the wooden tools (the workbench), the bars (the
+        // furnace), the metal armor (the anvil).
+        let sword = recipe_by_create(24);
+        assert_eq!(sword.stations, &[18]);
+        assert_eq!(sword.required.len(), 1);
+        assert_eq!(sword.required[0].stack, 7);
+        assert_eq!(sword.required[0].group, RecipeGroups::WOOD);
+        let hammer = recipe_by_create(196);
+        assert_eq!(hammer.required[0].stack, 8);
+        let bow = recipe_by_create(39);
+        assert_eq!(bow.required[0].stack, 10);
+        let arrow = recipe_by_create(40);
+        assert_eq!(arrow.create.1, 25);
+        assert_eq!(arrow.required.len(), 2);
+        let platform = recipe_by_create(94);
+        assert_eq!(platform.create.1, 2);
+        assert!(platform.stations.is_empty(), "by hand");
+        // The bars at the furnace.
+        for (bar, ore, stack) in [(20u16, 12u16, 3u32), (21, 14, 4), (19, 13, 4)] {
+            let r = recipe_by_create(bar);
+            assert_eq!(r.stations, &[17]);
+            assert_eq!(r.required[0].item, ore);
+            assert_eq!(r.required[0].stack, stack);
+        }
+        // The armor at the anvil: the copper (the plain bars), the iron
+        // (the iron-bar group), the silver/gold (the plain bars).
+        let copper_helm = recipe_by_create(89);
+        assert_eq!(copper_helm.stations, &[16]);
+        assert_eq!(copper_helm.required[0].stack, 12);
+        let iron_helm = recipe_by_create(90);
+        assert_eq!(iron_helm.required[0].group, RecipeGroups::IRON_BAR);
+        assert_eq!(iron_helm.required[0].stack, 15);
+        let gold_greaves = recipe_by_create(79);
+        assert_eq!(gold_greaves.required[0].stack, 25);
+        // The counts: 20 progression entries + the pre-existing table.
+        let total = RECIPES.len();
+        assert!(total >= 38, "the table grew ({total})");
     }
 
     #[test]
