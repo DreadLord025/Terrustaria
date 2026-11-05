@@ -3259,10 +3259,10 @@ Harness notes: (1) the seed-1 desert band's ground sits ~4 tiles below
 `world_surface` (361), so a standing player loses
 `IsSurfaceForAtmospherics` (`ZoneSandstorm` dies with it) — verify desert
 shots with `TR_NOPLAYER` + `TR_CAM=<x,y>` (the scan then centres on the
-camera above the line); (2) the `TR_POST` pass covers the whole composite
-including the UI, so with an active storm the map panel shows the pass's
-noise — vanilla draws the UI after the filters; the world/UI split is a
-BG-18 follow-up.
+camera above the line); (2) fixed since: the `TR_POST` pass used to cover
+the whole composite including the UI (the map panel showed the filter's
+noise under an active storm) — the draw now splits per the vanilla order
+(see "World-effect draw range" below).
 
 Verification: 7 sand tests (the gates, the budget, the weighted colours,
 the scale hold/fade, the sine, the bottom death, seed determinism);
@@ -3386,3 +3386,26 @@ C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
 jungle shrines, the temple, the pyramids and the biome chests are the
 follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
 tiny worlds collapse the evil band and guard every range.
+
+## World-effect draw range (FIX-FX-under-ui)
+
+The weather particles (rain drops/snow/splashes/sparkles, leaf gores, the
+sandstorm dust) rendered in the UI sprite range, which draws **after** the
+map batches — so the rain streaks and the sand specks painted over the
+minimap, the fullscreen map and the HUD. Vanilla draws them as world
+content: the world, then `DrawMap`, then `DrawInterface`.
+
+Fix: `SpriteRenderer` gained an `fx` range — the UI camera transform
+(screen-space, so the G6-cached world range stays cacheable — the moving
+particles must not ride it), drawn between `world` and `map_back` — and
+the post path splits: `render_world_fx` (background + world + fx, cleared)
+feeds the filter chain, `apply_filters` lands on the screen, then
+`render_map_ui` (the map batches + the interface, loaded, no clear) draws
+over the filtered frame. The vanilla filter position is exactly there —
+the filters cover the world, never the map or the HUD.
+
+`Rain::draw` (drops, snow, splashes, sparkles, the lightning flash),
+`foliage::draw_leaves` and `Sand::draw` push the `fx` range now.
+Verification: rain/sand/leaf shots with the fullscreen map and the
+minimap — no particle over either; the sandstorm filter no longer paints
+the minimap (the twins SHA256-equal); the workspace suite 1261/0.
