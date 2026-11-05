@@ -23,7 +23,13 @@ pub(crate) const TILE_LEAVES: u16 = 192;
 pub(crate) const WALL_LIVING_WOOD: u16 = 244;
 
 /// The "Living Trees" pass (`WorldGen.cs:15476-15715`).
-pub(crate) fn plant_living_trees(world: &mut World, rng: &mut Rng, surface: &[i32], beach: i32) {
+pub(crate) fn plant_living_trees(
+    world: &mut World,
+    rng: &mut Rng,
+    surface: &[i32],
+    beach: i32,
+    desert: (i32, i32),
+) {
     // `WorldGen.cs:15482-15492`: the count scales with the world width.
     let num3 = world.width as f64 / 4200.0;
     let mut count = rng.range(0, (2.0 * num3) as i32 + 1);
@@ -32,6 +38,8 @@ pub(crate) fn plant_living_trees(world: &mut World, rng: &mut Rng, surface: &[i3
     }
     // `WorldGen.cs:15482`: the spawn-area exclusion half-width.
     let exclusion = 200;
+    #[cfg(test)]
+    let mut placed_trees = 0u32;
     let half = world.width / 2;
     for _ in 0..count {
         // `WorldGen.cs:15543-15546`: the anchor attempts, up to maxTilesX/2.
@@ -43,17 +51,20 @@ pub(crate) fn plant_living_trees(world: &mut World, rng: &mut Rng, surface: &[i3
             if x > half - exclusion && x < half + exclusion {
                 continue;
             }
-            // `WorldGen.cs:15546`: scan down to the first active tile.
+            // `WorldGen.cs:15546`: scan down to the first active tile. The
+            // port starts at the height-map row — the sky carries the
+            // floating islands now, and the C#'s from-zero scan (empty C#
+            // skies) would anchor on the island discs.
             let column_top = surface[x as usize];
-            let mut y: i32 = 0;
-            while y <= column_top
+            let mut y: i32 = column_top;
+            while y <= column_top + 20
                 && world
                     .tile(x, y)
                     .is_none_or(|t| !t.active())
             {
                 y += 1;
             }
-            if y > column_top {
+            if y > column_top + 20 {
                 continue;
             }
             // The vanilla gates the anchor behind `j >= worldSurface → continue`
@@ -66,7 +77,28 @@ pub(crate) fn plant_living_trees(world: &mut World, rng: &mut Rng, surface: &[i3
             {
                 continue;
             }
-            // `WorldGen.cs:15549-15552`: the anchor sits in the air tile above
+            // The desert band grows no living trees (the vanilla dunes stay
+            // bare — the C# dunes pass runs after the living trees and
+            // overwrites their sand columns).
+            if x >= desert.0 && x < desert.1 {
+                continue;
+            }
+            // `WorldGen.cs:15546`: scan down to the first active tile. The
+            // port starts at the height-map row — the sky carries the
+            // floating islands now, and the C#'s from-zero scan (empty C#
+            // skies) would anchor on the island discs.
+            let column_top = surface[x as usize];
+            let mut y: i32 = column_top;
+            while y <= column_top + 20
+                && world
+                    .tile(x, y)
+                    .is_none_or(|t| !t.active())
+            {
+                y += 1;
+            }
+            if y > column_top + 20 {
+                continue;
+            }            // `WorldGen.cs:15549-15552`: the anchor sits in the air tile above
             // the ground, one more step up if the ground is dirt.
             let mut anchor_y = y as i32 - 1;
             if world
@@ -79,15 +111,18 @@ pub(crate) fn plant_living_trees(world: &mut World, rng: &mut Rng, surface: &[i3
             if nearby_living(world, x, anchor_y, 10) {
                 continue;
             }
+            // `WorldGen.cs:15553-15555`: `flag = GrowLivingTree(...)` inside
+            // the anchor-attempt loop — the clearance failures (the islands
+            // in the port's sky) retry the next candidate.
+            if !grow_living_tree(world, rng, x, anchor_y, false) {
+                continue;
+            }
             anchor = Some((x, anchor_y));
             break;
         }
         let Some((x, y)) = anchor else {
             continue;
         };
-        if !grow_living_tree(world, rng, x, y, false) {
-            continue;
-        }
         // `WorldGen.cs:15611-15701`: the patch trees step outward from the
         // anchor, `Next(4)` attempts per side, `Next(13, 31)` tiles apart.
         for side in [-1i32, 1] {

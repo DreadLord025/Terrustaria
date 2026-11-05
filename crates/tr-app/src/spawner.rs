@@ -99,6 +99,9 @@ pub struct SpawnContext<'a> {
     /// `player.statLifeMax` — `playerHasStartingHealth`'s gate
     /// (`NPC.cs:415`: `<= 100`) halves the torch-zombie denominator.
     pub player_life_max: i32,
+    /// The scene centre below `Main.UnderworldLayer` (`M6-MUSIC-1`'s
+    /// depth band) — the bat-layer selection reads it.
+    pub underworld_for_bats: bool,
     pub flags: SpawnFlags,
 }
 
@@ -654,6 +657,22 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         rng.next(2); // the big/small variant roll consumed
         return Npc::spawn_cave_walker(ctx.world, x, NpcKind::Skeleton);
     }
+    // The corruption hover: the Eater of Souls (`NPC.cs`'s corruption arm
+    // `Next(6) == 0 → 6` — the port's evil-zone flag gates it).
+    if ctx.flags.zone_evil && rng.next(6) == 0 {
+        if let Some(n) =
+            Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::EaterOfSouls)
+        {
+            return Some(n);
+        }
+    }
+    // The jungle hover: the Hornet (`NPC.cs`'s jungle arm `Next(4) == 0 →
+    // 42` — the port's jungle-zone flag gates it).
+    if ctx.flags.zone_jungle && rng.next(4) == 0 {
+        if let Some(n) = Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::Hornet) {
+            return Some(n);
+        }
+    }
     // The Cave Bat: the cave-air flyer — `NPC.cs:5233`'s `else → 49` arm;
     // the port's cadence `Next(30)` documents the cave-air rarity (the
     // vanilla's bat rolls sit in the cave-air chain's arms).
@@ -663,7 +682,10 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         // The vanilla bat spawn hangs the bat at the spawn tile; when the
         // tile is solid (the deep-scan picked a ground tile), walk up to the
         // nearest open air (the cave ceiling) like the scan's descent
-        // mirrored.
+        // mirrored. The kind rides the layer: the jungle bats in the jungle
+        // zone (`ZoneJungle`'s arm, `NPC.cs` the jungle spawns), the
+        // hellbats in the underworld (`NPC.cs:5196` region), else the cave
+        // bats.
         let mut bat_y = y / 16 - 1;
         for _ in 0..10 {
             if !ctx
@@ -676,7 +698,14 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
             }
             bat_y -= 1;
         }
-        if let Some(n) = Npc::spawn_cave_flyer(ctx.world, x, bat_y) {
+        let kind = if ctx.flags.zone_jungle {
+            NpcKind::JungleBat
+        } else if ctx.underworld_for_bats {
+            NpcKind::Hellbat
+        } else {
+            NpcKind::CaveBat
+        };
+        if let Some(n) = Npc::spawn_cave_flyer(ctx.world, x, bat_y, kind) {
             return Some(n);
         }
         // A blocked air tile falls through to the slime arm.
@@ -735,6 +764,7 @@ mod tests {
             town_npcs: 0,
             day_time: day,
             player_life_max: 100,
+            underworld_for_bats: false,
             flags: SpawnFlags::default(),
         }
     }
@@ -1042,6 +1072,19 @@ mod tests {
         assert!(kinds.contains(&NpcKind::Skeleton), "no skeleton in the sweep");
         assert!(kinds.contains(&NpcKind::UndeadMiner), "no miner in the sweep");
         assert!(kinds.contains(&NpcKind::CaveBat), "no bat in the sweep");
+        // The underworld flag flips the bat kind to the hellbat.
+        let mut cu = ctx(&w, 350.0 * 16.0, true);
+        cu.underworld_for_bats = true;
+        let mut hellbats = 0;
+        for seed in 1..6000u64 {
+            let mut rng = FastRandom::new(seed);
+            if let Some(n) = spawn_npc_at(&cu, &mut rng, 210, 350 * 16) {
+                if n.kind == NpcKind::Hellbat {
+                    hellbats += 1;
+                }
+            }
+        }
+        assert!(hellbats > 0, "no hellbat in the underworld sweep");
     }
 
     #[test]
@@ -1064,6 +1107,7 @@ mod tests {
             town_npcs: 0,
             day_time: day,
             player_life_max: 100,
+            underworld_for_bats: false,
             flags: SpawnFlags::default(),
         }
     }
@@ -1235,6 +1279,7 @@ mod tests {
                     town_npcs: 0,
                     day_time: false,
                     player_life_max: 100,
+                    underworld_for_bats: false,
                     flags: SpawnFlags {
                         moon_event: true,
                         ..SpawnFlags::default()

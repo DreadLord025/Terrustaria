@@ -3538,3 +3538,121 @@ recipes re-authored as group entries — the old "Wood → 9 / IronBar → 22"
 expansion deviation is retired. Out: the alchemy discount (M3-CRAFT-3),
 the torch-god/mechdusa flags (no systems), the guide-item mode
 (`CollectGuideRecipes`), the `SendData(32)` chest syncs (multiplayer).
+## Floating islands (M1.4-WGEN-4)
+
+The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
+islands over the 10-90 % band:
+
+- **The placement** (`:12975-13033`): the x avoids the spawn ±150 and the
+  ±180 spacing from the placed islands; the y = `Next(90, worldSurface −
+  100)` — `worldSurface = surface_max + 25` carries the ground margin, so
+  the disc bottoms stay ~75+ tiles over the deepest terrain column. The
+  open-sky clearance scans the ±75-vertical window (the C# `:13015-13028`).
+- **The island body** (`CloudIsland`, `:78132-78540`): the elliptical
+  cloud disc (the tile 189) with the ragged boundary (the C#'s
+  `Next(80, 120) · 0.01` wobble on the rim cells), the grass cap 2 rows
+  on the top surface. Every third island is a `CloudLake` sky lake — the
+  rain-cloud (196) bowl sunk 3 deep with the water inside.
+- **The houses** (`FloatingIslandHouses`, `:17862+`): the planks-9 box on
+  the island's top with the cloud-wall (73) interior and the chest.
+- **The living-tree interaction**: the islands occupy the sky the C#'s
+  empty skies don't — the living-tree anchor scan starts at the
+  height-map row (not from y=0, which anchored on the island discs), and
+  the grow rides the anchor-attempt loop (`:15553-15555` — the clearance
+  failures retry the next candidate; the port's original structure wasted
+  the whole tree on one failed clearance). The desert test skips the sky
+  columns wholesale (the islands legitimately hang over the dunes; the
+  dirt caps read as the surface via `surface_of`).
+
+Deviations: the snow/desert cloud-island variants
+(`SnowCloudIsland`/`DesertCloudIsland`) and the house furniture sets are
+the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
+
+## Hives & hell forts (M1.4-WGEN-5)
+
+- **The beehives** (`Beehives` + `BeeLarvaInBeehives`, `WorldGen.cs:
+  15927-16000`): 1-8 hive domes in the underground jungle band (the count
+  scales `maxTilesX / 4200` like the C#'s `Next(5·num, 8·num)`), the
+  hive-block (225) shells with the honey pockets (the liquid 2) carved in
+  the cores, roughly half carrying the larva (231) — `AddBeeLarva`'s
+  3×4 clear with the hive base row (`:32050-32068`).
+- **The hell forts** (`HellFort`, `:32683+`): the obsidian-brick (75 /
+  the wall 14) boxes in the hell layer — the shell with the two carved
+  room floors, the lava pool strips on the floors and the chests. The C#'s
+  multi-room layout with the doors (`HellFort_AttemptToPlaceDoor`) is
+  approximated by the two-floor shape.
+
+Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
+port's blob dome (the shape-level port); the Queen Bee summon from the
+larva and the fort doors = the follow-ups.
+
+## Biome spread (M5-SPREAD-2)
+
+`hardUpdateWorld`'s infection arms (`WorldGen.cs:69645-69860`) — the
+living world's evil/crimson/chlorophyte evolution:
+
+- **The spread sets** (`TileID.cs:580/:589`): the corruption {23, 661, 25,
+  112, 398, 400, 163, 32, 636, 24} and the crimson {199, 662, 203, 234,
+  399, 401, 200, 352, 205, 201} — the corrupt grass, the ebonstone/
+  crimstone, the ebonsand/crimsand, the hardened sand, the sandstone, the
+  ice and the thorn kinds.
+- **The Convert map** (`Convert`, `:55139-55205`): the grass family (2,
+  477, 60, 69) → the corrupt grass 23 / the crimson grass 199 (the jungle
+  grass 60 → 662 in the crimson), the stone + the moss → the ebonstone 25
+  / the crimstone 203, the sand 53 → the ebonsand 112 / the crimsand 234,
+  the ice 161 → the purple 163 / the red 200, the hardened sand 397 →
+  398/399, the sandstone 396 → 400/401. The natural walls convert too —
+  the stone wall 1 → the ebonstone wall 3 / the crimson wall 192, the
+  dirt wall 2 → 69/193 (the natural-wall slice of the C#'s
+  `WallID.Sets.Conversion` tables).
+- **The spread loop** (`:69696-69860`): the ±3 random target, the
+  chlorophyte defence (`nearbyChlorophyte` within 5 → the loop breaks —
+  `ChlorophyteDefense` itself converts only in the remix worlds,
+  `:69456-69460`), the sunflower (27) suppression within 2 tiles
+  (`CountNearBlocksTypes(i, j, 2, 1, 27)`), and the conversions with the
+  `Next(2) == 0` re-roll chain (the spreading tile walks the ±3 window
+  converting until the roll fails).
+- **The chlorophyte** (`:69646-69685`): the 211 chlorophyte + the 346
+  chlorophyte-jungle-grass sources grow into the mud (59) and the jungle
+  grass (60) via `Convert(..., 8)`, gated by `CanChlorophyteGrow`
+  (`:69464-69500` — the chlorophyte count in the radius-35 box ≤ 40 (the
+  box ×1.5 and the count cap /2 above the rock layer) and ≤ 130 in the
+  radius-85 box) plus the ±6 random re-scan.
+- **The gates**: the post-PlantBoss worlds halve the spread (`Next(2) !=
+  0`, `:69688-69691`); `AllowedToSpreadInfections` (the creative
+  spread-stop power) freezes it.
+- **The app call**: the spread rides the growth pass's underground picks
+  (`world_sim/growth.rs`) — one `hard_update_world` per tick on a random
+  cavern-layer column.
+
+Deviations: the thorn bushes (32/352) spread by the set membership but
+grow no bush tiles (the plant placement = the follow-up); the wall
+conversion covers the natural-wall slice (the C#'s tables span the brick
+walls too); the remix `ChlorophyteDefense` conversion is out (no remix
+worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
+unconditionally).
+
+## Lihzahrd temple (M1.4-WGEN-6)
+
+The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
+temple, the last big generation structure:
+
+- **The placement** (`:15840-15848`): the y between the rock layer and
+  `maxTilesY − 600` (the port clamps to the height), the x under the
+  jungle band's deep half (`dungeonSide`'s opposite in the C#).
+- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
+  Lihzahrd brick (226) with the unsafe walls (87), the carved central
+  hall + the side rooms with the safe walls (112), the brick pillars
+  inside the hall.
+- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
+  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
+  room at the hall's west end.
+- **The traps**: the dart traps (137, the case-137 wiring variants the
+  wiring trip fires — the trap frameY selects the variant) embedded in
+  the hall's brick walls every 12 columns.
+- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+
+Deviations: the C#'s multi-room crawl with the doors
+(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
+summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
+are the follow-ups; the box + 3-room shape approximates the C#'s crawl.

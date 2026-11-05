@@ -303,6 +303,12 @@ fn portrait_data(
         NpcKind::Skeleton => 6,
         NpcKind::UndeadMiner => 7,
         NpcKind::CaveBat => 8,
+        NpcKind::JungleBat => 9,
+        NpcKind::Hellbat => 10,
+        NpcKind::VoodooDemon => 11,
+        NpcKind::EaterOfSouls => 12,
+        NpcKind::Hornet => 13,
+        NpcKind::MeteorHead => 14,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -338,6 +344,12 @@ fn portrait_data(
             (sheet_i, 48.0, 38.0, 48.0, white)
         }
         (NpcKind::CaveBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
+        (NpcKind::JungleBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
+        (NpcKind::Hellbat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
+        (NpcKind::VoodooDemon, _) => (sheet_i, 18.0, 26.0, 18.0, white),
+        (NpcKind::EaterOfSouls, _) => (sheet_i, 30.0, 30.0, 30.0, white),
+        (NpcKind::Hornet, _) => (sheet_i, 32.0, 34.0, 32.0, white),
+        (NpcKind::MeteorHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
