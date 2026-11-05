@@ -2386,4 +2386,119 @@ mod tr_hooks {
         );
         assert_eq!(w.tile(10, 18).unwrap().frame_y, closed_frame);
     }
+
+    #[test]
+    fn tr_tiles_parsing_kinds_frames_and_clear_groups() {
+        // The TR_TILES dev hook parses fixture writes: 5 tokens `x,y,kind,fx,fy`
+        // place one tile with explicit frames (negative frames are meaningful —
+        // `-1` is "must be computed"), 4 tokens `x,y,w,h` are the clear
+        // rectangle carrying the kind −1 sentinel.
+        let ops = parse_tr_tiles("5,6,82,0,18;7,8,82,18,-1");
+        assert_eq!(ops.len(), 2, "groups split on ';'");
+        assert_eq!(
+            (ops[0].x, ops[0].y, ops[0].kind, ops[0].fx, ops[0].fy, ops[0].w, ops[0].h),
+            (5, 6, 82, 0, 18, 1, 1)
+        );
+        assert_eq!(
+            (ops[1].x, ops[1].y, ops[1].kind, ops[1].fx, ops[1].fy),
+            (7, 8, 82, 18, -1)
+        );
+        let clear = parse_tr_tiles("10,10,3,2");
+        assert_eq!(clear.len(), 1);
+        assert_eq!(
+            (clear[0].x, clear[0].y, clear[0].w, clear[0].h, clear[0].kind),
+            (10, 10, 3, 2, -1)
+        );
+        assert_eq!((clear[0].fx, clear[0].fy), (0, 0));
+        // Both forms mix freely in one fixture string.
+        let mixed = parse_tr_tiles("5,6,82,0,18;0,0,3,2");
+        assert_eq!(mixed.len(), 2);
+        assert_eq!(mixed[0].kind, 82);
+        assert_eq!(mixed[1].kind, -1);
+    }
+
+    #[test]
+    fn tr_tiles_parsing_skips_malformed_groups() {
+        // The fixture is one env value; a malformed group must be dropped whole
+        // without aborting the well-formed ones around it.
+        assert!(parse_tr_tiles("").is_empty(), "the empty string places nothing");
+        assert!(parse_tr_tiles("1,2").is_empty(), "2 tokens is not a form");
+        assert!(parse_tr_tiles("1,2,3").is_empty(), "3 tokens is not a form");
+        assert!(parse_tr_tiles("1,2,3,4,5,6").is_empty(), "6 tokens is not a form");
+        assert!(parse_tr_tiles("x,y,82,0,18").is_empty(), "non-numeric coords");
+        assert!(parse_tr_tiles("1,2,82,0,z").is_empty(), "non-numeric frames");
+        assert_eq!(parse_tr_tiles("1,2,3;5,6,82,0,18").len(), 1);
+    }
+
+    #[test]
+    fn tr_tiles_apply_writes_kind_frames_and_marks_frame_important() {
+        // The dev harness stages the render scene by direct world writes: the
+        // exact kind and frames land at the one cell with FLAG_ACTIVE, the
+        // frame_important mark keeps the written frames alive through the
+        // post-hook re-frame, and the edit bumps the world revision.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        // A lived-in cell: the write form must replace it wholesale (wall drops).
+        let i = w.index(5, 6);
+        w.tiles[i] = Tile {
+            kind: 1,
+            wall: 5,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let rev_before = w.revision;
+        apply_tr_tiles(&mut w, &parse_tr_tiles("5,6,82,0,18"));
+        let t = w.tile(5, 6).unwrap();
+        assert_eq!(t.kind, 82);
+        assert_eq!((t.frame_x, t.frame_y), (0, 18));
+        assert!(t.active(), "the fixture cell renders");
+        assert_eq!(t.wall, 0, "the write replaces the whole cell");
+        assert!(w.frame_important[82], "the written kind is marked frame-important");
+        assert!(!w.frame_important[1], "only the written kind is marked");
+        assert!(w.revision > rev_before, "a write bumps the world revision");
+        assert!(!w.tile(6, 6).unwrap().active(), "the write stays 1x1");
+    }
+
+    #[test]
+    fn tr_tiles_apply_clear_resets_cells_to_default() {
+        // The clear form wipes the whole rectangle to a blank stage cell —
+        // the default Tile: no kind, no wall, nothing active — so the fixture
+        // stages a clean scene on lived-in terrain.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 10..13 {
+            for y in 10..12 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    wall: 5,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let rev_before = w.revision;
+        apply_tr_tiles(&mut w, &parse_tr_tiles("10,10,3,2"));
+        for x in 10..13 {
+            for y in 10..12 {
+                assert_eq!(
+                    *w.tile(x, y).unwrap(),
+                    Tile::default(),
+                    "the clear resets {x},{y} to the default cell"
+                );
+            }
+        }
+        assert!(w.revision > rev_before, "a clear bumps the world revision");
+        assert!(!w.tile(9, 10).unwrap().active(), "the clear stays inside w*h");
+    }
+
+    #[test]
+    fn tr_tiles_apply_out_of_bounds_writes_nothing() {
+        // Groups that fall outside the world are skipped cell by cell; nothing
+        // is touched, so the revision stays exactly where it was.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        apply_tr_tiles(&mut w, &parse_tr_tiles("1000,1000,4,4;-5,-5,4,4"));
+        assert_eq!(w.revision, 0, "nothing touched -> no revision bump");
+    }
 }
