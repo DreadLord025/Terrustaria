@@ -237,6 +237,9 @@ pub struct Player {
     pub on_ground: bool,
     /// 1 = right, -1 = left.
     pub facing: i32,
+    /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
+    /// chair-sit state; the player's bottom is snapped to the seat.
+    pub sitting: bool,
     /// `Player.legFrame.Y / 56`: the current leg animation row (0..=19), driven by
     /// `PlayerFrame()`.
     pub leg_frame: u32,
@@ -463,6 +466,7 @@ impl Player {
             shimmer_wet: false,
             liquid_step: 1.0,
             in_water: false,
+            sitting: false,
             control_left: false,
             control_right: false,
             control_jump: false,
@@ -541,6 +545,62 @@ impl Player {
     }
 
     /// Moves the player to a pixel position without changing health or breath.
+    /// `PlayerSittingHelper.SitDown` (`PlayerSittingHelper.cs:104-142`): the
+    /// bottom snaps to the seat, the facing flips to the chair's, the
+    /// velocity zeroes; a repeat click at the same seat stands up
+    /// (`:119-123`). The grapple/mount teardown stands in for
+    /// `RemoveAllGrapplingHooks`/`mount.TryDismount`.
+    pub fn sit_down(&mut self, seat_x: f32, seat_y: f32, direction: i32) {
+        let bottom_x = self.x + WIDTH as f32 * 0.5;
+        let bottom_y = self.y + HEIGHT as f32;
+        if self.sitting && (bottom_x - seat_x).abs() < 0.01 && (bottom_y - seat_y).abs() < 0.01 {
+            self.sit_up();
+            return;
+        }
+        self.grappling_active = false;
+        self.x = seat_x - WIDTH as f32 * 0.5;
+        self.y = seat_y - HEIGHT as f32;
+        self.facing = direction;
+        self.sitting = true;
+        self.vx = 0.0;
+        self.vy = 0.0;
+    }
+
+    /// `PlayerSittingHelper.SitUp` (`:144-155`).
+    pub fn sit_up(&mut self) {
+        self.sitting = false;
+    }
+
+    /// `PlayerSittingHelper.UpdateSitting` (`:47-102`): any control input,
+    /// a direction change, or the chair going away stands the player up.
+    /// The seat-stack cap (`Main.sittingManager`, 2 per tile) is the
+    /// multiplayer seat registry — the port has one player.
+    pub fn update_sitting(&mut self, world: &World) {
+        if !self.sitting {
+            return;
+        }
+        if self.control_left
+            || self.control_right
+            || self.control_jump
+            || self.control_down
+        {
+            self.sit_up();
+            return;
+        }
+        // `TryGetSittingBlock` (`:33-45`): the tile at the bottom - 2 px must
+        // still decode as a sit-able chair.
+        let bx = self.x + WIDTH as f32 * 0.5;
+        let by = self.y + HEIGHT as f32 - 2.0;
+        let tx = (bx / 16.0).floor() as i32;
+        let ty = (by / 16.0).floor() as i32;
+        let chair_gone = world
+            .tile(tx, ty)
+            .is_none_or(|t| !t.active() || t.kind != 15);
+        if chair_gone {
+            self.sit_up();
+        }
+    }
+
     /// Used by the `TR_XY` debug hook and future teleport effects.
     pub fn teleport(&mut self, x: f32, y: f32) {
         self.x = x;
@@ -794,6 +854,9 @@ impl Player {
         // The run keys ride on the player like the C#'s `controlLeft`/`controlRight`
         // (input struct → fields early in `Player.Update`).
         self.control_left = input.left;
+        // `PlayerSittingHelper.UpdateSitting` (`Player.cs`'s update call): the
+        // stand-up gates run before the movement applies.
+        self.update_sitting(world);
         self.control_right = input.right;
         self.control_jump = input.jump;
         self.control_down = input.down;
@@ -2144,6 +2207,7 @@ impl Player {
                 dot_fast_lane: dots.fast_lane,
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
+                sitting_or_sleeping: self.sitting,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {

@@ -158,6 +158,18 @@ pub enum Interaction {
     None,
     /// Closed door (tile 10) and open door (tile 11).
     Door,
+    /// The lit toggle — the candle family (33/49/174/372/646,
+    /// `Player.cs:32378-32390`): `frameX += (frameX > 0) ? -18 : 18`.
+    Candle,
+    /// The chair sit (tile 15, `Player.cs:32313-32321` →
+    /// `PlayerSittingHelper.SitDown`).
+    Chair,
+    /// The bed (tile 79, `Player.cs:32654-32692`): the top half sleeps, the
+    /// bottom half sets the spawn point.
+    Bed,
+    /// The grandfather clock (tile 104, `Player.cs:32725-32759`): the time
+    /// text.
+    Clock,
 }
 
 /// `Terraria.DataStructures.PlacementHook` (`PlacementHook.cs:3-15`). The
@@ -285,6 +297,18 @@ pub const TABLE: &[TileObjectDef] = &[
     SMALL_PILES,
     LARGE_PILES,
     LARGE_PILES2,
+    CANDLE,
+    CANDELABRA,
+    CHANDELIER,
+    HANGING_LANTERN,
+    LAMP,
+    BOOKCASE,
+    PIANO,
+    DRESSER,
+    SINK,
+    GRANDFATHER_CLOCK,
+    BED,
+    BATHTUB,
 ];
 
 /// `Main.tileAlch` (`Main.cs:7806-7808`): the three herb-stage tiles the legacy
@@ -530,6 +554,7 @@ const CHAIR_BASE: TileObjectDef = TileObjectDef {
     style_horizontal: true,
     direction: TileObjectDirection::PlaceLeft,
     frame_important: true, // `Main.cs:7649`
+    interaction: Interaction::Chair,
     ..base_def()
 };
 
@@ -874,6 +899,249 @@ const LARGE_PILES2: TileObjectDef = TileObjectDef {
     ..LARGE_PILES_BASE
 };
 
+// -- candle (33) + water candle (49) — `TileObjectData.cs:2334-2358` ---------
+
+/// `StyleOnTable1x1` (`:2325-2334`): 1x1 on a table surface, heights {20}.
+/// The water candle (49) shares the def (`:2351-2357` — heights {20},
+/// `DrawYOffset -4`; the draw case covers the offset).
+const CANDLE: TileObjectDef = TileObjectDef {
+    kind: 33,
+    width: 1,
+    height: 1,
+    anchor_bottom: AnchorData::new(anchor_type::TABLE, 1, 0),
+    coordinate_heights: &[20],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    frame_important: true,
+    interaction: Interaction::Candle,
+    ..base_def()
+};
+
+// -- candelabra (100) — `TileObjectData.cs:3600-3606` ------------------------
+// Style2x2 (`:3451-3461`) + `StyleWrapLimitVisualOverride 56` (draw-only),
+// `StyleLineSkip 2`, `DrawYOffset 2` (preview-only). Sub-tiles 25/42/40 are
+// the metal/lava variants — the style-0 wooden slice only.
+const CANDELABRA: TileObjectDef = TileObjectDef {
+    kind: 100,
+    width: 2,
+    height: 2,
+    origin: Point16::new(0, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS | anchor_type::TABLE, 2, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    style_line_skip: 2,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- chandelier (34) — `TileObjectData.cs:3139-3160` -------------------------
+// `Style3x3` (`:3095-3106`: 3x3, origin (1,2), AnchorBottom SWTSS 3) hangs:
+// the origin moves to the top-centre cell, the bottom anchor empties, and the
+// top anchor takes one solid/side tile in the centre column (checkStart 1).
+const CHANDELIER: TileObjectDef = TileObjectDef {
+    kind: 34,
+    width: 3,
+    height: 3,
+    origin: Point16::new(1, 0),
+    anchor_top: AnchorData::new(anchor_type::SOLID_TILE | anchor_type::SOLID_SIDE, 1, 1),
+    anchor_bottom: AnchorData::EMPTY,
+    coordinate_heights: &[16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: false,
+    style_wrap_limit: 37,
+    style_line_skip: 2,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- hanging lantern (42) — `TileObjectData.cs:2441-2461` --------------------
+// `Style1x2Top` (`:2432-2441`: 1x2, origin (0,0), `AnchorTop = SolidTile |
+// SolidSide | PlanterBox`) + the platform alternate (`addAlternate(0)`,
+// `DrawYOffset -10` preview-only).
+const HANGING_LANTERN: TileObjectDef = TileObjectDef {
+    kind: 42,
+    width: 1,
+    height: 2,
+    origin: Point16::new(0, 0),
+    anchor_top: AnchorData::new(
+        anchor_type::SOLID_TILE | anchor_type::SOLID_SIDE | anchor_type::PLANTER_BOX,
+        1,
+        0,
+    ),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    frame_important: true,
+    alternates: &[TileObjectDef {
+        anchor_top: AnchorData::new(anchor_type::PLATFORM, 1, 0),
+        ..base_def()
+    }],
+    ..base_def()
+};
+
+// -- lamp (93) — `TileObjectData.cs:2403-2418` -------------------------------
+// `Style1xX` (`:2392-2403`: 1x3, origin (0,2), AnchorBottom SWTSS 1);
+// `StyleWrapLimitVisualOverride 37` is draw-only. Sub-tiles 23/42/40 are the
+// metal variants.
+const LAMP: TileObjectDef = TileObjectDef {
+    kind: 93,
+    width: 1,
+    height: 3,
+    origin: Point16::new(0, 2),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 1, 0),
+    coordinate_heights: &[16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- bookcase (101) — `TileObjectData.cs:3384-3400` --------------------------
+// `Style3x4` (`:3384-3393`): 3x4, origin (1,3), AnchorBottom SWTSS 3.
+const BOOKCASE: TileObjectDef = TileObjectDef {
+    kind: 101,
+    width: 3,
+    height: 4,
+    origin: Point16::new(1, 3),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- piano (87) — `TileObjectData.cs:3240-3249` ------------------------------
+// `Style3x2` (the table's preset, `:3179-3191`) with the default heights.
+const PIANO: TileObjectDef = TileObjectDef {
+    kind: 87,
+    width: 3,
+    height: 2,
+    origin: Point16::new(1, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- dresser (88) — `TileObjectData.cs:3199-3209` ----------------------------
+// Style3x2 + the chest's invalid-anchor tiles + `LavaDeath = false`
+// (the placement hooks are the M3-CHEST-UI seam).
+const DRESSER: TileObjectDef = TileObjectDef {
+    kind: 88,
+    width: 3,
+    height: 2,
+    origin: Point16::new(1, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    anchor_invalid_tiles: CHEST_ANCHOR_INVALID,
+    lava_placement: LiquidPlacement::Allowed,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- sink (172) — `TileObjectData.cs:3577-3583` ------------------------------
+// Style2x2 + the 18px bottom row (`StyleWrapLimitVisualOverride 53` is
+// draw-only).
+const SINK: TileObjectDef = TileObjectDef {
+    kind: 172,
+    width: 2,
+    height: 2,
+    origin: Point16::new(0, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
+    coordinate_heights: &[16, 18],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    ..base_def()
+};
+
+// -- grandfather clock (104) — `TileObjectData.cs:3024-3035` -----------------
+// `Style2xX` (`:2861-2870`: 2x3, origin (1,2), AnchorBottom SWTSS 2,
+// horizontal) grown to 5 tall with the origin moved to the top-left cell and
+// `DrawYOffset 2` (preview-only).
+const GRANDFATHER_CLOCK: TileObjectDef = TileObjectDef {
+    kind: 104,
+    width: 2,
+    height: 5,
+    origin: Point16::new(0, 4),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
+    coordinate_heights: &[16, 16, 16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    interaction: Interaction::Clock,
+    ..base_def()
+};
+
+// -- bed (79) — `TileObjectData.cs:2606-2645` --------------------------------
+// `Style4x2` (`:2555-2568`: 4x2, origin (1,1), AnchorBottom SWTSS 4,
+// `PlaceLeft` + the `PlaceRight` alternate, `StyleMultiplier/WrapLimit 2`) +
+// the 18px bottom row + `CoordinatePaddingFix (0, -2)`. Sub-tiles 8/42/56-64
+// are the other bed colours.
+const BED_BASE: TileObjectDef = TileObjectDef {
+    width: 4,
+    height: 2,
+    origin: Point16::new(1, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 4, 0),
+    coordinate_heights: &[16, 18],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    coordinate_padding_fix: Point16::new(0, -2),
+    direction: TileObjectDirection::PlaceLeft,
+    style_horizontal: true,
+    style_wrap_limit: 2,
+    style_multiplier: 2,
+    frame_important: true,
+    interaction: Interaction::Bed,
+    ..base_def()
+};
+const BED: TileObjectDef = TileObjectDef {
+    kind: 79,
+    alternates: &[TileObjectDef {
+        direction: TileObjectDirection::PlaceRight,
+        style: 1, // `addAlternate(1)` (`TileObjectData.cs:2567`)
+        ..BED_BASE
+    }],
+    ..BED_BASE
+};
+
+// -- bathtub (90) — `TileObjectData.cs:2568-2605` ----------------------------
+// `Style4x2` verbatim (heights {16,16}, no padding fix).
+const BATHTUB: TileObjectDef = TileObjectDef {
+    kind: 90,
+    width: 4,
+    height: 2,
+    origin: Point16::new(1, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 4, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    direction: TileObjectDirection::PlaceLeft,
+    style_horizontal: true,
+    style_wrap_limit: 2,
+    style_multiplier: 2,
+    frame_important: true,
+    alternates: &[TileObjectDef {
+        direction: TileObjectDirection::PlaceRight,
+        style: 1, // `addAlternate(1)`
+        ..base_def()
+    }],
+    ..base_def()
+};
+
 /// `TileObjectData.GetTileData(type)` — the tile's base definition
 /// (`TileObjectData.cs:5126-5194` without the sub-tile/alternate walk).
 pub fn def_for_tile(kind: u16) -> Option<&'static TileObjectDef> {
@@ -1015,6 +1283,10 @@ pub fn is_vine(kind: u16) -> bool {
 
 fn not_really_solid(kind: u16) -> bool {
     NOT_REALLY_SOLID.contains(&kind)
+}
+
+pub(crate) fn is_tile_table(kind: u16) -> bool {
+    is_table(kind)
 }
 
 pub(crate) fn is_table(kind: u16) -> bool {

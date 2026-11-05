@@ -169,6 +169,9 @@ impl App {
         if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind) {
             self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
+        // `SoundEngine.PlaySound(7)` — the grant sound
+        // (`CraftingEffects.SpawnEffects_BeforeGrantingItem`, `CraftingEffects.cs:51`).
+        self.audio.play("Grab");
         // `AchievementsHelper.NotifyItemCraft` — the station craft feeds the
         // ItemCraftCondition rows (BENCHED).
         let _ = self

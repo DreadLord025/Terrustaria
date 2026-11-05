@@ -215,3 +215,28 @@ mod tests {
         assert_eq!(buy_price(88, 0.89), 35600);
     }
 }
+
+#[cfg(test)]
+mod town5_tests {
+    use super::*;
+
+    #[test]
+    fn the_buy_price_matches_the_happiness_multiplier() {
+        // The round trip: the Mining Helmet's 40000 base rides the mood.
+        assert_eq!(buy_price(88, 1.5), 60000);
+        assert_eq!(buy_price(88, 0.89), 35600);
+    }
+
+    #[test]
+    fn the_stock_conditions_cover_the_merchant_gates() {
+        // The night row (282 = the Glowstick) opens only at night; the
+        // hardmode rows stay constants-off in the default flags.
+        let flags = ShopFlags {
+            night: true,
+            ..ShopFlags::default()
+        };
+        let stock = resolve_stock(1, &flags, &[]);
+        assert!(stock.contains(&282));
+        assert!(!stock.contains(&188));
+    }
+}

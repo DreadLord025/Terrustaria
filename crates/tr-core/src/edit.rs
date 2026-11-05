@@ -91,6 +91,13 @@ pub struct TileKill {
     pub pile_events: Vec<PileLootEvent>,
 }
 
+// The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
+// sweep → the ring → `square_tile_frame` — the vanilla terminates through
+// the objects dying; the cap guards the port's pathologies).
+thread_local! {
+    static RING_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
 /// `SquareTileFrame`'s `TileFrame` visit order (`WorldGen.cs:80185-80196`):
 /// row-major over the 3x3 neighbourhood, self last of its row.
 const SQUARE_FRAME_ORDER: [(i32, i32); 9] = [
@@ -245,6 +252,35 @@ fn square_tile_frame(
         } else {
             kill_plan_cells(world, &plan.cells, no_item, destroy_object, kill);
         }
+        // The `Check*` tail's `TileFrame` ring (`WorldGen.cs:49841-49849`,
+        // :50161-50168, :47499-47506): walked with `destroyObject` reset so a
+        // neighbouring piece whose anchor died inside this sweep reaches its
+        // own `Check*`. The port caps the recursion depth — the vanilla's
+        // ring is a bounded per-check walk and the port's sweep re-enters
+        // through `kill_tile_cascading`, so the cap only guards the
+        // pathological nests.
+        if let Some(((rx0, ry0), (rx1, ry1))) = plan.ring {
+            RING_DEPTH.with(|d| {
+                let depth = d.get();
+                if depth < 8 {
+                    d.set(depth + 1);
+                    let (mid_y, mid_x) = ((ry0 + ry1) / 2, (rx0 + rx1) / 2);
+                    for (mx, my) in [
+                        (rx0, ry0),
+                        (rx1, ry0),
+                        (rx0, ry1),
+                        (rx1, ry1),
+                        (mid_x, ry0),
+                        (mid_x, ry1),
+                        (rx0, mid_y),
+                        (rx1, mid_y),
+                    ] {
+                        square_tile_frame(world, mx, my, no_item, destroy_object, kill);
+                    }
+                    d.set(depth);
+                }
+            });
+        }
     }
 }
 
@@ -327,34 +363,476 @@ struct CheckPlan {
     pot_event: Option<PotEvent>,
     herb_event: Option<HerbEvent>,
     pile_event: Option<PileLootEvent>,
+    /// The `Check*` tail's `TileFrame` ring — only the checks that CLOSE with
+    /// one in C# (`Check3x2` `WorldGen.cs:49841-49849`, `Check3x4`
+    /// :50161-50168, `Check4x2` :47499-47506; the others — CheckOnTable1x1,
+    /// Check1xX, Check2xX, Check1x2Top, Check2x2, Check3x3, CheckChest — have
+    /// no tail, so their remainders float until a later break, the vanilla
+    /// deferred-pop semantics).
+    ring: Option<((i32, i32), (i32, i32))>,
 }
 
 /// The `TileFrameImportant` object dispatch (`WorldGen.cs:84962`): runs the
 /// `Check*` routine for the cell's registry kind and returns its destruction
 /// plan. Cell routines: 10 → `CheckDoorClosed` (:86432), 11 →
-/// `CheckDoorOpen` (:86339), 14/186/187 → `Check3x2` (:49187, dispatch
-/// :85980-85988), 15 → `Check1x2` (:43335), 18 → `Check2x1` (:46973), 78 →
-/// `CheckOnTable1x1` (:43503, the 13/33/49/50/78/174/372/646/707 group at
-/// :85604-85614), 21 → `CheckChest` (:57923, via `TileID.Sets.BasicChest`
-/// :85616-85619), 27 → `CheckSunflower` (:85639), 28 → `CheckPot` (:85643),
-/// 185 → `CheckPile` (:85275), 82/83/84 → `CheckAlch` (the `Main.tileAlch`
-/// default arm, :85830-85832).
+/// `CheckDoorOpen` (:86339), 13/33/49/78 → `CheckOnTable1x1` (:43503, the
+/// 13/33/49/50/78/174/372/646/707 group at :85604-85614), 14/87/88/186/187 →
+/// `Check3x2` (:49187, dispatch :85980-85989), 15 → `Check1x2` (:43335),
+/// 18 → `Check2x1` (:46973), 21 → `CheckChest` (:57923, via
+/// `TileID.Sets.BasicChest` :85616-85619), 27 → `CheckSunflower` (:85639),
+/// 28 → `CheckPot` (:85643), 34 → `Check3x3` (:53059), 42 → `Check1x2Top`
+/// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
+/// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
+/// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
+/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
         10 => check_door_closed(world, x, y),
         11 => check_door_open(world, x, y),
-        14 | 186 | 187 => check_3x2(world, x, y, kind),
+        13 | 33 | 49 | 78 => check_on_table_1x1(world, x, y),
+        14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
-        78 => check_on_table_1x1(world, x, y),
         21 => check_chest(world, x, y),
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
+        34 => check_chandelier(world, x, y),
+        42 => check_lantern(world, x, y),
+        79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
+        93 => check_lamp(world, x, y),
+        100 | 172 => check_candelabra_sink(world, x, y),
+        101 => check_bookcase(world, x, y),
+        104 => check_clock(world, x, y),
         185 => check_pile(world, x, y),
         _ => None,
     }
+}
+
+/// `WorldGen.Check1xX` (`WorldGen.cs:37788-37878`) for the lamp (93): three
+/// cells with the style-row frames and a solid floor below.
+fn check_lamp(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let height = 3; // the lamppost's 6 waits for its registry entry
+    let frame_x = world.tile(x, y)?.frame_x;
+    let mut num2 = world.tile(x, y)?.frame_y as i32;
+    let mut style_row = 0i32;
+    while num2 >= 18 * height {
+        num2 -= 18 * height;
+        style_row += 1;
+    }
+    let oy = y - num2 / 18;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(height as usize);
+    for l in oy..oy + height {
+        region.push((x, l));
+        // The C# scan sets `flag` and CONTINUES (`WorldGen.cs:37809-37827`).
+        let broken_cell = world.tile(x, l).is_none_or(|c| {
+            !c.active()
+                || c.kind != kind
+                || c.frame_y != ((l - oy) * 18 + style_row * height * 18) as i16
+                || c.frame_x != frame_x
+        });
+        if broken_cell {
+            broken = true;
+        }
+    }
+    if !solid_tile_allow_bottom_slope(world, x, oy + height) {
+        broken = true;
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_lamp).
+    })
+}
+
+/// `WorldGen.Check2xX` (`WorldGen.cs:37993-38147`) for the grandfather clock
+/// (104): the 2-wide column pair, five cells tall, the style column from
+/// `frameX % 36`, and the two solid floor tiles below.
+fn check_clock(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let t = world.tile(x, y)?;
+    let frame_x = t.frame_x;
+    let mut ox = x;
+    if frame_x % 36 == 18 {
+        ox -= 1;
+    }
+    let mut num3 = world.tile(ox, y)?.frame_y as i32 / 18;
+    let height = 5;
+    let mut style_offset = 0i32;
+    while num3 >= height {
+        num3 -= height;
+        style_offset += height * 18;
+    }
+    let oy = y - num3;
+    let top_frame_x = world.tile(ox, y)?.frame_x;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(10);
+    for l in oy..oy + height {
+        for (dx, fx) in [(0i32, top_frame_x), (1, top_frame_x + 18)] {
+            let k = ox + dx;
+            region.push((k, l));
+            // The C# scan sets `flag` and CONTINUES — no early break, or the
+            // sweep's cell list loses the rest of the row
+            // (`WorldGen.cs:38003-38040`).
+            let broken_cell = world.tile(k, l).is_none_or(|c| {
+                !c.active()
+                    || c.kind != kind
+                    || c.frame_y != ((l - oy) * 18 + style_offset) as i16
+                    || c.frame_x != fx
+            });
+            if broken_cell {
+                broken = true;
+            }
+        }
+    }
+    if !solid_tile_allow_bottom_slope(world, ox, oy + height)
+        || !solid_tile_allow_bottom_slope(world, ox + 1, oy + height)
+    {
+        broken = true;
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_clock).
+    })
+}
+
+/// `WorldGen.Check3x4` (`WorldGen.cs:50076-50162`) for the bookcase (101).
+fn check_bookcase(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let t = world.tile(x, y)?;
+    let mut style_col = t.frame_x as i32 / 18;
+    let mut style_row = t.frame_y as i32 / 18;
+    let mut sx = 0i32;
+    let mut sy = 0i32;
+    while style_col >= 3 {
+        style_col -= 3;
+        sx += 1;
+    }
+    while style_row >= 4 {
+        style_row -= 4;
+        sy += 1;
+    }
+    let ox = x - style_col;
+    let oy = y - style_row;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(12);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 4 {
+            region.push((k, l));
+            let expected = (
+                (sx * 54 + (k - ox) * 18) as i16,
+                (sy * 72 + (l - oy) * 18) as i16,
+            );
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+        if !solid_tile_allow_bottom_slope(world, k, oy + 4) {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: Some(region_ring(&region)),
+    })
+}
+
+/// `WorldGen.Check1x2Top` (`WorldGen.cs:46706-46776`) for the hanging lantern
+/// (42): the two cells carry the style-row frames and the tile ABOVE is a
+/// solid (or a platform — the placement alternate's anchor).
+fn check_lantern(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let mut num2 = world.tile(x, y)?.frame_y as i32 / 18;
+    let mut style_row = 0i32;
+    while num2 >= 2 {
+        num2 -= 2;
+        style_row += 1;
+    }
+    let oy = y - num2;
+    let top_frame = (style_row * 36) as i16;
+    let mut broken = false;
+    let mut region = vec![(x, oy), (x, oy + 1)];
+    let top = world.tile(x, oy);
+    let bot = world.tile(x, oy + 1);
+    if !top.is_some_and(|c| c.active() && c.kind == kind && c.frame_y == top_frame)
+        || !bot.is_some_and(|c| c.active() && c.kind == kind && c.frame_y == top_frame + 18)
+    {
+        broken = true;
+    }
+    // The anchor: solid above; the platform flag mirrors the placement
+    // alternate (`flag4`, `WorldGen.cs:46752-46756` — the rope branch is the
+    // Dead-Cells jar's, not the lantern's).
+    let above = world.tile(x, oy - 1);
+    let platform_ok = above.is_some_and(|a| {
+        a.active() && (td::SET_PLATFORMS.has(a.kind) || a.kind == 380)
+    });
+    let solid_ok = above.is_some_and(|a| {
+        (a.active() || a.has_any_liquid()) && td::TILE_SOLID.has(a.kind) && !td::TILE_SOLID_TOP.has(a.kind)
+    });
+    if !platform_ok && !solid_ok {
+        broken = true;
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_lantern).
+    })
+}
+
+/// `WorldGen.Check4x2` (`WorldGen.cs:47408-47500`) for the bed (79) and the
+/// bathtub (90): the four cells carry the style frames (the second style
+/// column continues at frameX 72) and the floor row is solid-or-platform.
+fn check_bed_bathtub(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let t = world.tile(x, y)?;
+    let frame_x = t.frame_x as i32;
+    let mut ox = x + frame_x / 18 * -1;
+    if (kind == 79 || kind == 90) && frame_x >= 72 {
+        ox += 4;
+    }
+    let mut num2 = t.frame_y as i32 / 18;
+    let mut style_row = 0i32;
+    while num2 > 1 {
+        num2 -= 2;
+        style_row += 1;
+    }
+    let oy = y - num2;
+    let second_col = frame_x >= 72;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(8);
+    for k in ox..ox + 4 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            let fx = if second_col { (k - ox + 4) * 18 } else { (k - ox) * 18 };
+            let expected = (fx as i16, ((l - oy) * 18 + style_row * 36) as i16);
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+        // `SolidTileAllowBottomSlope` or a platform (`:47456-47463`).
+        let floor = world.tile(k, oy + 2);
+        let floor_ok = floor.is_some_and(|f| {
+            solid_tile_allow_bottom_slope(world, k, oy + 2)
+                || (f.active() && td::SET_PLATFORMS.has(f.kind))
+        });
+        if !floor_ok {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: Some(region_ring(&region)),
+    })
+}
+
+/// `WorldGen.Check2x2`'s default branch (`WorldGen.cs:48397-48470`) for the
+/// candelabra (100) and the sink (172): the 2x2 cells with the style frames
+/// (the sink's full height is 38) and the solid-or-table floor without
+/// half-bricks.
+fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let t = world.tile(x, y)?;
+    let full = if kind == 172 { 38 } else { 36 };
+    let mut num = 0i32;
+    let mut ox = x - t.frame_x as i32 / 18;
+    if ox < x - 1 {
+        ox += 2;
+        num = 36;
+    }
+    let mut num4 = t.frame_y as i32;
+    let mut style_row = 0i32;
+    while num4 >= full {
+        num4 -= full;
+        style_row += 1;
+    }
+    let oy = y - num4 / 18;
+    let mut broken = false;
+    let mut region = Vec::with_capacity(4);
+    for k in ox..ox + 2 {
+        for l in oy..oy + 2 {
+            region.push((k, l));
+            let expected = (
+                ((k - ox) * 18 + num) as i16,
+                ((l - oy) * 18 + style_row * full) as i16,
+            );
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+        // `:48447-48456`: solid or `Main.tileTable`, no half-bricks.
+        let floor = world.tile(k, oy + 2);
+        let floor_ok = floor.is_some_and(|f| {
+            f.active() && (td::TILE_SOLID.has(f.kind) || crate::tileobject::is_tile_table(f.kind))
+        }) && !floor.is_some_and(|f| f.half_brick());
+        if !floor_ok {
+            broken = true;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+    })
+}
+
+/// `WorldGen.Check3x3`'s else branch (`WorldGen.cs:53059-53145`) for the
+/// chandelier (34): the nine cells carry the style frames and the ceiling
+/// tile above the middle column is a solid non-solid-top.
+fn check_chandelier(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let kind = world.tile(x, y)?.kind;
+    let t = world.tile(x, y)?;
+    let mut style_col = t.frame_x as i32 / 18;
+    let mut sx = 0i32;
+    while style_col >= 3 {
+        style_col -= 3;
+        sx += 1;
+    }
+    let ox = x - style_col;
+    let style_x = 54 * sx;
+    let style_row = t.frame_y as i32 / 54;
+    let oy = y - (t.frame_y as i32 % 54 / 18);
+    let mut broken = false;
+    let mut region = Vec::with_capacity(9);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 3 {
+            region.push((k, l));
+            let expected = (
+                ((k - ox) * 18 + style_x) as i16,
+                ((l - oy) * 18 + style_row * 54) as i16,
+            );
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+    }
+    // `:53117-53124`: the ceiling anchor above the origin column.
+    let ceil = world.tile(ox + 1, oy - 1);
+    let ceil_ok = ceil.is_some_and(|c| {
+        (c.active() || c.has_any_liquid()) && td::TILE_SOLID.has(c.kind) && !td::TILE_SOLID_TOP.has(c.kind)
+    });
+    if !ceil_ok {
+        broken = true;
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_chandelier).
+    })
+}
+
+/// The `Check*` tail's `TileFrame` ring: the piece's bbox expanded by one.
+fn region_ring(region: &[(i32, i32)]) -> ((i32, i32), (i32, i32)) {
+    let (mut x0, mut y0) = (i32::MAX, i32::MAX);
+    let (mut x1, mut y1) = (i32::MIN, i32::MIN);
+    for (x, y) in region {
+        x0 = x0.min(*x);
+        y0 = y0.min(*y);
+        x1 = x1.max(*x);
+        y1 = y1.max(*y);
+    }
+    (x0 - 1, y0 - 1);
+    (x1 + 1, y1 + 1);
+    ((x0 - 1, y0 - 1), (x1 + 1, y1 + 1))
 }
 
 /// Cells of `region` that are active and of `kind` — the cell guard shared by
@@ -402,6 +880,8 @@ fn check_door_closed(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_door_closed).
     })
 }
 
@@ -449,26 +929,31 @@ fn check_door_open(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_door_open).
     })
 }
 
-/// `WorldGen.Check3x2` (`WorldGen.cs:49187-49430`) for the wooden table
-/// (type 14) and the large piles (186/187 — dispatch `WorldGen.cs:85980-85988`):
-/// origin from `frameY % 36 / 18` and `frameX / 18` mod 3 (:49199-49209 — the
-/// hardcoded 36 is the `Style3x2` full height; styles are horizontal, so
-/// `frameY` encodes the row), every cell must be active of `kind` with the
-/// expected frames (:49219-49226), and the per-column support judge branches
-/// on the kind (:49280-49373): 186/187 refuse `SolidTileAllowBottomSlope`
-/// failures, Boulders (`InvalidTileForPilesOrSpeleothems` :38979-38994, set
-/// `TileID.cs:504`) and each style's ground family; the table keeps the
-/// default `SolidTileAllowBottomSlope` arm (the trailing `else if`,
-/// :49396-49399). Table style 25 spans a single row (`flag2`, :49223-49229).
+/// `WorldGen.Check3x2` (`WorldGen.cs:49187-49430`) for the table family —
+/// 14 tables, 87 pianos, 88 dressers — and the large piles (186/187 —
+/// dispatch `WorldGen.cs:85980-85989`): origin from `frameY % 36 / 18` and
+/// `frameX / 18` mod 3 (:49199-49209 — the hardcoded 36 is the `Style3x2`
+/// full height; the family's styles are horizontal with `StyleWrapLimit = 0`,
+/// so `frameY` only ever encodes the row), every cell must be active of
+/// `kind` with the expected frames (:49219-49226), and the per-column support
+/// judge branches on the kind (:49280-49373): 186/187 refuse
+/// `SolidTileAllowBottomSlope` failures, Boulders
+/// (`InvalidTileForPilesOrSpeleothems` :38979-38994, set `TileID.cs:504`) and
+/// each style's ground family; the table keeps the default
+/// `SolidTileAllowBottomSlope` arm (the trailing `else if`, :49396-49399).
+/// Table style 25 spans a single row (`flag2`, :49223-49229).
 /// The 187→186 conversion (:49379-49393) runs before the early return: an
 /// intact snowy 187 over non-dirt ground becomes a 186 (`frameX -= 378` on
 /// all six cells) and survives — the kill loop below then matches zero cells
-/// of `kind`. Drop: only the table carries one (`GetItemDrop_Tables(style)`,
-/// :49424-49426, 32x32 at the trigger cell; style 0 → 32 :42194); the piles'
-/// case group is empty (:65759+).
+/// of `kind`. Drop: only the table family carries one —
+/// `GetItemDrop_Tables(style)` for 14 (:49434, 32x32 at the trigger cell;
+/// style 0 → 32 :42194), `GetItemDrop_Pianos/Dressers(style)` for 87/88
+/// (:49693-49696); the piles' case group is empty (:65759+).
 fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
     let frame_x = t.frame_x as i32;
@@ -591,8 +1076,9 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
     if !broken {
         return None;
     }
-    // The drop is the table's alone (`GetItemDrop_Tables(style)`,
-    // :49424-49426 — the slice covers style 0 → 32); the piles' per-cell
+    // The drop is the table family's alone (`GetItemDrop_Tables(style)` for
+    // 14, `GetItemDrop_Pianos/Dressers(style)` for 87/88 — the slices cover
+    // style 0 → 32); the piles' per-cell
     // case group is empty (:65759-65815) and `Check3x2`'s destroy switch
     // carries the pile specials — for 187 the sword-in-stone styles roll
     // the Enchanted Sword (:49828-49839), resolved app-side like the 2x1
@@ -613,8 +1099,8 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         None
     };
     Some(CheckPlan {
-        drop: (kind == 14).then(|| ObjectDrop {
-            tile_kind: 14,
+        drop: (kind == 14 || kind == 87 || kind == 88).then(|| ObjectDrop {
+            tile_kind: kind,
             x,
             y,
             item: None,
@@ -623,6 +1109,7 @@ fn check_3x2(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> 
         pot_event: None,
         herb_event: None,
         pile_event,
+        ring: Some(region_ring(&region)),
     })
 }
 
@@ -661,6 +1148,8 @@ fn check_chair(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_chair).
     })
 }
 
@@ -698,6 +1187,8 @@ fn check_bench(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_bench).
     })
 }
 
@@ -751,6 +1242,8 @@ fn check_chest(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s check_chest).
     })
 }
 
@@ -856,6 +1349,7 @@ fn check_sunflower(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
     })
 }
 
@@ -922,6 +1416,7 @@ fn check_pot(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: Some(PotEvent { style, x, y }),
         herb_event: None,
         pile_event: None,
+        ring: None,
     })
 }
 
@@ -946,6 +1441,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             pot_event: None,
             herb_event: None,
             pile_event: None,
+            ring: None,
         });
     }
     // :46904-46913 — only 185 carries the ground rules (the echo 649 is out
@@ -978,6 +1474,7 @@ fn check_pile(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
     })
 }
 
@@ -1088,6 +1585,7 @@ fn check_pile_2x1(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckP
         pot_event: None,
         herb_event: None,
         pile_event,
+        ring: None,
     })
 }
 
@@ -1113,9 +1611,10 @@ fn anchor_valid_table(below: &Tile) -> bool {
         && crate::tileobject::block_type(below) == 0
 }
 
-/// `WorldGen.CheckOnTable1x1` (`WorldGen.cs:43503-43546`) for the clay pot
-/// (dispatch group 13/33/49/50/78/174/372/646/707 — :85604-85614; 78 is the
-/// only group member the registry carries). The support cell below decides:
+/// `WorldGen.CheckOnTable1x1` (`WorldGen.cs:43503-43546`) — the dispatch
+/// group 13/33/49/50/78/174/372/646/707 (:85604-85614); the registry carries
+/// 13 the placed bottle, 33/49 the candles and 78 the clay pot. The support
+/// cell below decides:
 /// a top slope kills unless the platform corner rule holds (:43513-43515 —
 /// `blockType` 3/slope 2 leans on an active flat platform at `x - 1`,
 /// `blockType` 2/slope 1 on one at `x + 1`), a half brick kills
@@ -1155,8 +1654,9 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         {
             return None;
         }
-        // :43534-43540 — the type-78 exception.
-        !solid_tile_allow_bottom_slope(world, x, y + 1)
+        // :43534-43543 — the group's unconditional kill, with the type-78
+        // exception: any `SolidTileAllowBottomSlope` support carries the pot.
+        !(kind == 78 && solid_tile_allow_bottom_slope(world, x, y + 1))
     };
     if !kill {
         return None;
@@ -1172,6 +1672,7 @@ fn check_on_table_1x1(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         pot_event: None,
         herb_event: None,
         pile_event: None,
+        ring: None,
     })
 }
 
@@ -1249,6 +1750,7 @@ fn check_alch(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
             y,
         }),
         pile_event: None,
+        ring: None,
     })
 }
 
@@ -1506,6 +2008,33 @@ pub enum TileInteraction {
     DialStarted {
         sundial: bool,
     },
+    /// The candle lit-toggle ran (`Player.cs:32378-32390`): `frameX +=
+    /// (frameX > 0) ? -18 : 18`. No sound; the flame overlay and the light
+    /// emission follow the frame.
+    CandleToggled,
+    /// The chair sit decoded (`PlayerSittingHelper.GetSittingTargetInfo`'s
+    /// case 15, `PlayerSittingHelper.cs:163-182`): the seat world position is
+    /// the chair's bottom-centre shifted `targetDirection * 6` px, the
+    /// facing flips with `frameX`.
+    ChairSit {
+        seat_x: f32,
+        seat_y: f32,
+        direction: i32,
+    },
+    /// The bed branch (`Player.cs:32654-32692`). `set_spawn` picks the half:
+    /// the bottom side (`IsHoveringOverABottomSideOfABed`) runs
+    /// `FindSpawn`/`CheckSpawn`/`ChangeSpawn`; the top half is
+    /// `sleeping.StartSleeping` — the sleep state itself is not ported yet,
+    /// so the click is consumed and inert (documented in ANALYSIS).
+    BedInteract {
+        set_spawn: bool,
+        spawn_x: i32,
+        spawn_y: i32,
+    },
+    /// The grandfather clock's time read (`Player.cs:32725-32759`).
+    ClockRead {
+        text: String,
+    },
     /// The dial branch ran but the gate refused (already fast-forwarding to
     /// that target or the cooldown is running, `Player.cs:32638`/:32648).
     /// Vanilla still consumes the click (`flag2 = true`, `:32637`); no state
@@ -1554,6 +2083,82 @@ pub fn interact_at(
         return TileInteraction::None;
     };
     match def.interaction {
+        crate::tileobject::Interaction::Candle => {
+            // `Player.cs:32378-32390`: `num27 = (frameX > 0) ? -18 : 18;
+            // tile.frameX += num27` — the lit/unlit toggle, no sound.
+            if let Some(mt) = world.tile_mut(i, j) {
+                if mt.frame_x > 0 {
+                    mt.frame_x -= 18;
+                } else {
+                    mt.frame_x += 18;
+                }
+            }
+            TileInteraction::CandleToggled
+        }
+        crate::tileobject::Interaction::Chair => {
+            // `Player.cs:32313-32321` + `PlayerSittingHelper.SitDown`'s
+            // target decode (case 15, `PlayerSittingHelper.cs:163-182`).
+            // The range gate (`IsWithinSnappngRangeToTile(myX, myY, 40)`)
+            // is the caller's — the click distance is already smart-gated.
+            chair_sit_target(world, i, j)
+        }
+        crate::tileobject::Interaction::Bed => {
+            // `Player.cs:32654-32692`: the frame decode finds the bed's
+            // spawn cell; the bottom half sets/removes the spawn, the top
+            // half starts sleeping (the sleep state is not ported — the
+            // click stays consumed, `flag2 = true` at `:32655`).
+            let frame_x = t.frame_x as i32;
+            let mut num36 = i + frame_x / 18 * -1;
+            if frame_x < 72 {
+                num36 += 2;
+            } else {
+                num36 += 4 + 1;
+            }
+            let mut num38 = t.frame_y as i32 / 18;
+            while num38 > 1 {
+                num38 -= 2;
+            }
+            let num37 = j - num38 + 2;
+            let bottom_side = {
+                let flip = frame_x / 72 == 1;
+                let mut flag2 = frame_x % 72 < 36;
+                if flip {
+                    flag2 = !flag2;
+                }
+                flag2
+            };
+            TileInteraction::BedInteract {
+                set_spawn: bottom_side,
+                spawn_x: num36,
+                spawn_y: num37,
+            }
+        }
+        crate::tileobject::Interaction::Clock => {
+            // `Player.cs:32725-32759`: the in-game time, `h:mm AM/PM`.
+            let mut num44 = world.time;
+            if !world.day_time {
+                num44 += 54000.0;
+            }
+            num44 = num44 / 86400.0 * 24.0 - 7.5 - 12.0;
+            if num44 < 0.0 {
+                num44 += 24.0;
+            }
+            let mut am_pm = "AM";
+            if num44 >= 12.0 {
+                am_pm = "PM";
+            }
+            let mut num45 = num44 as i32;
+            let num46 = ((num44 - num45 as f64) * 60.0) as i32;
+            if num45 > 12 {
+                num45 -= 12;
+            }
+            if num45 == 0 {
+                num45 = 12;
+            }
+            TileInteraction::ClockRead {
+                text: format!("{num45}:{num46:02} {am_pm}"),
+            }
+        }
         crate::tileobject::Interaction::None => TileInteraction::None,
         crate::tileobject::Interaction::Door => {
             let mut drops = Vec::new();
@@ -1589,6 +2194,32 @@ pub fn interact_at(
                 }
             }
         }
+    }
+}
+
+/// `PlayerSittingHelper.GetSittingTargetInfo`'s chair case
+/// (`PlayerSittingHelper.cs:163-182` + the tail `:317-319`): the seat is the
+/// chair's bottom cell centre shifted `direction * 6` px; the facing is -1
+/// on the left-facing frame (`frameX == 0`) and 1 otherwise; the clicked
+/// bottom cell (`frameY % 40 != 0`) reads the row above.
+fn chair_sit_target(world: &World, x: i32, y: i32) -> TileInteraction {
+    let t = world.tile(x, y).expect("interact_at checked the tile");
+    let mut num = x;
+    let mut num2 = y;
+    let mut target_direction = -1i32;
+    if t.frame_x != 0 {
+        target_direction = 1;
+    }
+    if t.frame_y % 40 != 0 {
+        num2 -= 1;
+    }
+    // `playerSittingPosition = new Point(num, num2 + 1).ToWorldCoordinates(8, 16)
+    //  .X += targetDirection * 6` — the bottom-centre of the cell below the
+    // chair's seat row.
+    TileInteraction::ChairSit {
+        seat_x: num as f32 * 16.0 + 8.0 + target_direction as f32 * 6.0,
+        seat_y: (num2 + 1) as f32 * 16.0 + 16.0,
+        direction: target_direction,
     }
 }
 
@@ -2130,6 +2761,225 @@ mod tests {
         assert_eq!(w.tile(15, 18).unwrap().frame_x, 18);
         assert_eq!(w.tile(14, 19).unwrap().frame_y, 18);
         assert!(w.tile(15, 19).unwrap().active() && w.tile(15, 19).unwrap().kind == 21);
+    }
+
+    #[test]
+    fn the_furniture_family_places_on_their_anchors() {
+        // The `TileObjectData` verbatim data (see `tileobject.rs`): each kind
+        // fills its footprint with the style-0 frames.
+        // Piano 87 (3x2, origin (1,1)) at (10, 19): rows 18-19, x 9-11.
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 10, 19, 87, 0, 1));
+        for x in 9..=11 {
+            for y in 18..=19 {
+                let t = w.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 87, "piano {x},{y}");
+            }
+        }
+        // Dresser 88 (3x2), sink 172 (2x2, origin (0,1)), candelabra 100
+        // (2x2), bookcase 101 (3x4, origin (1,3)), lamp 93 (1x3, origin
+        // (0,2)), clock 104 (2x5, origin (0,4)) — the footprints fill.
+        let cases: &[(u16, i32, i32, usize, usize)] = &[
+            (88, 10, 19, 3, 2),
+            (172, 10, 19, 2, 2),
+            (100, 10, 19, 2, 2),
+            (101, 10, 19, 3, 4),
+            (93, 10, 19, 1, 3),
+            (104, 10, 19, 2, 5),
+        ];
+        for &(kind, tx, ty, w_, h) in cases {
+            let mut w = object_world();
+            assert!(place_item_tile(&mut w, tx, ty, kind, 0, 1), "place {kind}");
+            let def = crate::tileobject::def_for_tile(kind).unwrap();
+            let ox = tx - def.origin.x;
+            let oy = ty - def.origin.y;
+            for x in ox..ox + w_ as i32 {
+                for y in oy..oy + h as i32 {
+                    let t = w.tile(x, y).unwrap();
+                    assert!(
+                        t.active() && t.kind == kind,
+                        "kind {kind} cell {x},{y}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_bed_places_with_the_facing_alternate() {
+        // `Style4x2` (`TileObjectData.cs:2555-2568`): facing left = the base
+        // (frames 0/18/36/54), facing right = the `PlaceRight` alternate —
+        // the second style column continues at frameX 72 (`Check4x2`'s
+        // `frameX >= 72` branch, `WorldGen.cs:47416-47420`).
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 11, 19, 79, 0, -1));
+        // The origin (1, 1): the cells span x 10-13, rows 18-19; the frames
+        // are the column strides 0/18/36/54.
+        assert_eq!(w.tile(10, 18).unwrap().frame_x, 0);
+        assert_eq!(w.tile(13, 19).unwrap().frame_x, 54);
+        let mut w2 = object_world();
+        assert!(place_item_tile(&mut w2, 11, 19, 79, 0, 1));
+        // The `PlaceRight` alternate = style 1: the second style column
+        // starts at frameX `CoordinateFullWidth` = 72 (`Check4x2`'s
+        // `frameX >= 72` branch, `WorldGen.cs:47416-47420`).
+        assert_eq!(w2.tile(10, 18).unwrap().frame_x, 72);
+        assert_eq!(w2.tile(13, 19).unwrap().frame_x, 72 + 54);
+        // The bottom row is 18 tall (`coordinate_heights [16, 18]`).
+        assert_eq!(w2.tile(10, 19).unwrap().frame_y, 18);
+    }
+
+    #[test]
+    fn the_candle_places_on_a_table_only() {
+        // `StyleOnTable1x1` (`TileObjectData.cs:2325-2334`): the anchor is
+        // `Table` — a bare floor refuses, a placed table accepts.
+        let mut w = object_world();
+        assert!(!place_item_tile(&mut w, 10, 19, 33, 0, 1));
+        assert!(place_item_tile(&mut w, 10, 19, 14, 0, 1)); // the table
+        assert!(place_item_tile(&mut w, 11, 17, 33, 0, 1)); // on its top
+        assert!(w.tile(11, 17).unwrap().active() && w.tile(11, 17).unwrap().kind == 33);
+    }
+
+    #[test]
+    fn the_chandelier_hangs_from_the_ceiling() {
+        // `TileObjectData.cs:3139-3160`: `AnchorTop = (SolidTile | SolidSide,
+        // 1, 1)` + `AnchorBottom Empty` — the doorway world's stone ceiling
+        // at y = 16 carries the middle column.
+        let mut w = doorway_world();
+        assert!(place_item_tile(&mut w, 11, 17, 34, 0, 1));
+        for x in 10..=12 {
+            for y in 17..=19 {
+                let t = w.tile(x, y).unwrap();
+                assert!(t.active() && t.kind == 34, "chandelier {x},{y}");
+            }
+        }
+        // The lantern (42, `Style1x2Top`) hangs the same way, 1x2.
+        let mut w2 = doorway_world();
+        assert!(place_item_tile(&mut w2, 10, 17, 42, 0, 1));
+        assert!(w2.tile(10, 17).unwrap().kind == 42 && w2.tile(10, 18).unwrap().kind == 42);
+    }
+
+    #[test]
+    fn the_candle_toggle_flips_the_lit_frame() {
+        // `Player.cs:32378-32390`: `frameX += (frameX > 0) ? -18 : 18`.
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 10, 19, 14, 0, 1));
+        assert!(place_item_tile(&mut w, 11, 17, 33, 0, 1));
+        assert_eq!(w.tile(11, 17).unwrap().frame_x, 0);
+        let blocked = |_: i32, _: i32| false;
+        let hit = interact_at(&mut w, 11, 17, 1, &blocked);
+        assert!(matches!(hit, TileInteraction::CandleToggled));
+        assert_eq!(w.tile(11, 17).unwrap().frame_x, 18);
+        let hit = interact_at(&mut w, 11, 17, 1, &blocked);
+        assert!(matches!(hit, TileInteraction::CandleToggled));
+        assert_eq!(w.tile(11, 17).unwrap().frame_x, 0);
+    }
+
+    #[test]
+    fn the_chair_sit_decodes_the_seat() {
+        // `PlayerSittingHelper.cs:163-182` + `:317-319`: the seat is the
+        // chair's bottom cell centre shifted `direction * 6`; the facing is
+        // -1 on the left-facing frame (frameX == 0).
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 10, 19, 15, 0, -1)); // the left style
+        let blocked = |_: i32, _: i32| false;
+        // Clicking the chair's bottom cell (y 19; the top is 18).
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        let TileInteraction::ChairSit {
+            seat_x,
+            seat_y,
+            direction,
+        } = hit
+        else {
+            panic!("not a chair sit");
+        };
+        assert!((seat_x - (10.0 * 16.0 + 8.0 - 6.0)).abs() < 0.01, "{seat_x}");
+        assert!((seat_y - (19.0 * 16.0 + 16.0)).abs() < 0.01, "{seat_y}");
+        assert_eq!(direction, -1);
+        // The right-facing chair flips both.
+        let mut w2 = object_world();
+        assert!(place_item_tile(&mut w2, 10, 19, 15, 0, 1));
+        let hit = interact_at(&mut w2, 10, 19, 1, &blocked);
+        let TileInteraction::ChairSit { seat_x, direction, .. } = hit else {
+            panic!("not a chair sit");
+        };
+        assert!((seat_x - (10.0 * 16.0 + 8.0 + 6.0)).abs() < 0.01);
+        assert_eq!(direction, 1);
+    }
+
+    #[test]
+    fn the_bed_decodes_the_spawn_cell_and_the_halves() {
+        // `Player.cs:32657-32668`: the left-facing bed at (11, 19) spans
+        // x 9-12; the bottom half (`frameX % 72 < 36`) targets the spawn cell
+        // `x + 2`, the top half sleeps.
+        let mut w = object_world();
+        assert!(place_item_tile(&mut w, 11, 19, 79, 0, -1));
+        let blocked = |_: i32, _: i32| false;
+        // The bottom-left cell (9, 19): frameX 0 → the bottom side; the spawn
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        let TileInteraction::BedInteract {
+            set_spawn,
+            spawn_x,
+            spawn_y,
+        } = hit
+        else {
+            panic!("not a bed interact");
+        };
+        // The bottom half (`frameX % 72 < 36`): the spawn cell decodes to
+        // `myX - frameX/18 + 2 = 12`, the floor row `myY - 1 + 2 = 20`.
+        assert!(set_spawn);
+        assert_eq!(spawn_x, 12);
+        assert_eq!(spawn_y, 20);
+        // The sleep half: the RIGHT columns (frameX >= 36 — the vanilla keys
+        // the halves on frameX only, `IsHoveringOverABottomSideOfABed`).
+        let hit = interact_at(&mut w, 12, 18, 1, &blocked);
+        let TileInteraction::BedInteract { set_spawn, .. } = hit else {
+            panic!("not a bed interact");
+        };
+        assert!(!set_spawn);
+    }
+
+    #[test]
+    fn the_clock_reads_the_time() {
+        // `Player.cs:32725-32759`: noon (time 27000, day) → 12:00 PM.
+        let mut w = object_world();
+        w.time = 27000.0;
+        w.day_time = true;
+        assert!(place_item_tile(&mut w, 10, 19, 104, 0, 1));
+        let blocked = |_: i32, _: i32| false;
+        let hit = interact_at(&mut w, 10, 19, 1, &blocked);
+        let TileInteraction::ClockRead { text } = hit else {
+            panic!("not a clock read");
+        };
+        assert_eq!(text, "12:00 PM");
+    }
+
+    #[test]
+    fn the_kill_cascade_takes_the_whole_piece() {
+        // Breaking the floor under one column destroys the entire object and
+        // yields its drop — the `Check*` routines' shared shape.
+        for (kind, tx, ty) in [(87u16, 10i32, 19i32), (101, 10, 19), (104, 10, 19), (79, 11, 19)] {
+            let mut w = object_world();
+            assert!(place_item_tile(&mut w, tx, ty, kind, 0, 1), "place {kind}");
+            let def = crate::tileobject::def_for_tile(kind).unwrap();
+            let ox = tx - def.origin.x;
+            let oy = ty - def.origin.y;
+            // `kill_tile` on one of the piece's cells runs its `Check*`
+            // routine (`WorldGen.KillTile`'s object dispatch) — the whole
+            // piece sweeps.
+            kill_tile(&mut w, ox, oy + def.height - 1, true);
+            let mut alive = 0;
+            for x in ox..ox + def.width {
+                for y in oy..oy + def.height {
+                    if w
+                        .tile(x, y)
+                        .is_some_and(|t| t.active() && t.kind == kind)
+                    {
+                        alive += 1;
+                    }
+                }
+            }
+            assert_eq!(alive, 0, "kind {kind} fully destroyed");
+        }
     }
 
     #[test]
@@ -4281,18 +5131,38 @@ mod tests {
     fn test_DW_2_6_pot_survives_on_a_table_even_actuated() {
         // :43530-43532 — the anchors survive before the type test
         // (`AnchorValid(…, AnchorType.Table)` :51841-51871 or the plain
-        // `tile.active() && Main.tileTable[...]` arm). A table tile (87 —
-        // `Main.tileTable` `Main.cs:8053`, not in the registry) under the pot
-        // holds it, and the actuated twin still does: the plain disjunct
-        // reads `active()`, not `nactive()` — the `nactive` gate (:51844)
-        // only silences the anchor arms, and the disjunct keeps the pot.
+        // `tile.active() && Main.tileTable[...]` arm). An intact registry
+        // table (14, style 0) under the pot holds it, and the actuated twin
+        // still does: the plain disjunct reads `active()`, not `nactive()` —
+        // the `nactive` gate (:51844) only silences the anchor arms, and the
+        // disjunct keeps the pot. (The pre-registry fixture — a lone tile-87
+        // cell — died with the furniture registry work: 87/88 are registered
+        // and `TileFrameImportant` (:85980-85989) routes them to `Check3x2`,
+        // so a lone piano cell collapses under the pot exactly like the C#.)
+        let table_under_pot = |w: &mut World| {
+            for dy in 0..2i32 {
+                for dx in 0..3i32 {
+                    set_object_cell(
+                        w,
+                        9 + dx,
+                        20 + dy,
+                        14,
+                        (dx * 18) as i16,
+                        (dy * 18) as i16,
+                    );
+                }
+            }
+            for dx in 0..3i32 {
+                set_active(w, 9 + dx, 22, 1); // the table's support row
+            }
+        };
         let mut w = clay_pot_world();
-        set_object_cell(&mut w, 10, 20, 87, 0, 0);
+        table_under_pot(&mut w);
         pot_trigger(&mut w);
         assert!(w.tile(10, 19).unwrap().active(), "pot stands on a table");
 
         let mut w = clay_pot_world();
-        set_object_cell(&mut w, 10, 20, 87, 0, 0);
+        table_under_pot(&mut w);
         let below = w.index(10, 20);
         w.tiles[below].flags |= crate::tile::FLAG_INACTIVE;
         pot_trigger(&mut w);

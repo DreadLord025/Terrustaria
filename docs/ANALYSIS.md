@@ -4080,4 +4080,105 @@ the `Recipe.cs` registrations):
 Deviations: the iron armor requirements author the iron bar 22 with the
 accepted IRON_BAR group (the C#'s `RequireGroup` shape — the group
 members 22/704 both accepted); the remaining ~1950 C# rows wait for the
-SetupRecipes generator; the craft sound is the follow-up.
+SetupRecipes generator.
+
+## Craft grant sound + the utility batch (M3-CRAFT-5)
+
+The craft sound: `CraftingEffects.SpawnEffects_BeforeGrantingItem` fires
+`SoundEngine.PlaySound(7)` before the result enters the inventory
+(`CraftingEffects.cs:51`, called from `OnCraft` — the grant happens once
+per successful craft, not per ingredient consumed). Legacy id 7 = Grab
+(`SoundID.cs`), the `Sounds/Grab.xnb` cue — the port adds the
+`("Grab", 7)` cue to `SFX_CUES` and fires `audio.play("Grab")` at the
+successful `try_craft` in `handle_crafting_clicks` (the 2D `play`, no
+attenuation — the C# passes no position).
+
+The utility batch (7 recipes, each verified against its `SetupRecipes`
+row; `ItemID.cs` resolves the ids — the wiki-familiar ids are wrong in
+several places):
+
+- **Chain 85 ×15** = 1 Iron Bar (the group), at the anvil 16 — 1.4.5.8
+  makes **15** per bar (the older 10-stack is the stale number).
+- **Sawmill 363** = 10 Wood (the group) + 2 Iron Bar (the group) + 1
+  Chain, at the work bench 18.
+- **Loom 332** = 12 Wood (the group), at the sawmill 106.
+- **Sign 171** = 6 Wood (the group), at the work bench 18.
+- **Cooking Pot 345** = 10 Iron Bar (the group) + 2 Wood (the group), at
+  the anvil 16.
+- **Bowl 356** = 2 Clay Block 133, at the furnace 17 (the glass is NOT
+  the ingredient — that is the pre-1.4 recipe).
+- **Gold Candle 105** = 1 Gold Bar 19 + 1 Torch 8, at the work bench 18.
+
+The anvil 16 and the sawmill 106 enter the station list for the first
+time — `scan_adjacent` collects every active tile kind, so the new
+stations needed no engine change. The chain/sawmill pair makes the
+station chain craftable end-to-end from the vanilla iron bar.
+
+Deviations: the platinum candle variant waits for the platinum-bar rows
+(the generator batch); the cauldron 1791/piano 333 skip (the cauldron
+crafts at the cooking-pot tile, the piano needs bone + book).
+### M1.4-TO-4 merge sync (2026-11-06)
+
+- The M4-TOWN furniture merge registered the piano 87, which re-routed the
+  DW-2.6 actuated-table fixture: a lone tile-87 cell is now a registry kind
+  (`check_3x2`), so the fixture stages an intact style-0 registry table (14)
+  with its own support row; the pinned semantics (the `CheckOnTable1x1`
+  anchor disjunct reads `active()`, not `nactive()`) are unchanged.
+- The M1.4-WGEN-10 `tile_drop(187) -> 989` arm and this task's empty-group
+  `None` were reconciled onto `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`):
+  only the sword-in-stone styles (frameX 918..=970) drop — 1/30 Terragrim 4144
+  else the Enchanted Sword 989 on the `Main.rand` stream; the rest stay in the
+  empty `GetItemDrops` group.
+
+## The furniture logic (M1.4-TO-3)
+
+The registry grew from the wooden set (10/11/14/15/18/21) to the common
+furniture family — `tileobject.rs`: the candle (33, StyleOnTable1x1 —
+`AnchorBottom = Table`), the candelabra (100, Style2x2+Table), the
+chandelier (34, 3x3 hanging — `AnchorTop (SolidTile|SolidSide, 1, 1)` +
+`AnchorBottom Empty`, the ceiling-anchor path), the hanging lantern (42,
+Style1x2Top + the platform alternate), the lamp (93, Style1xX), the
+bookcase (101, Style3x4), the piano (87)/dresser (88) (Style3x2 — the
+dresser with the chest's invalid-anchor tiles + `LavaDeath=false`), the
+sink (172, Style2x2+18px), the grandfather clock (104, Style2xX h5), the
+bed (79)/bathtub (90) (Style4x2 + the `PlaceRight` alternates with
+`Style = 1` + the bed's `CoordinatePaddingFix (0,-2)`). The table's
+sub-tile styles 13 (Obsidian, lava-safe) / 25 (Dynasty, 3x1) resolve
+through `get_tile_data`'s sub-tile walk (the row's "3x3/6x3 + styles 13/25"
+gap — the vanilla has no 3x3/6x3 furniture kinds; the row's ids were stale:
+torches 4 (not 8), tables 14 (not 19), beds 79, pianos 87, clocks 104).
+
+The kill checks: `CheckOnTable1x1` (:45237), `Check1xX` (:37788), `Check2xX`
+(:37993), `Check3x4` (:50076), `Check1x2Top` (:46706), `Check4x2`
+(:47408), `Check2x2` (:48397), `Check3x3` (:53059) ported per-shape;
+`Check3x2` (:49187) parametrized over 14/87/88. The per-cell scans set
+`flag` and CONTINUE (no early break — an early break loses the sweep's cell
+list and leaves the remainder alive). The `Check*` closing `TileFrame`
+rings exist per-check in vanilla — only `Check3x2` (:49841-49849),
+`Check3x4` (:50161-50168) and `Check4x2` (:47499-47506) close with one; the
+port walks the ring for exactly those (with a depth cap), so a neighbouring
+piece whose anchor died inside a sweep reaches its own `Check*`; the other
+checks' remainders float until a later break — the vanilla deferred-pop
+semantics (DW-3-1's guard test pins it).
+
+The interactions (`edit::interact_at`'s `Interaction` arms): the candle
+lit-toggle (33/49 — `frameX ± 18`, `Player.cs:32378-32390`; the flame
+overlay and the light emission follow the frame), the chair sit (15 —
+`PlayerSittingHelper.SitDown`'s seat decode `PlayerSittingHelper.cs:163-182`
++ `:317-319`; the player's bottom snaps to the seat, the facing flips with
+`frameX`, `UpdateSitting` stands up on any control input or the chair going
+away, the regen reads the `sitting_or_sleeping` flag `:19232-19236`), the
+bed (79 — the bottom half sets/removes the spawn through `CheckSpawn`
+(:54533-54590: the bed above, the 3x3 free, `StartRoomCheck` via the
+housing module) with the "Spawn point set!/removed!" texts; the top half is
+consumed-but-inert — the sleep state is not ported), the grandfather clock
+(104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
+
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
+render follow-up — the sitting player draws standing, shifted -4 px
+(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+multiplayer seat-stack manager is out (one player); the chest/dresser
+inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
+metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
+the style-0 wooden slice places. The DrawYOffset fields are preview-only
+(`TileObject.cs:864` — the only consumer), so the deferral is invisible.
