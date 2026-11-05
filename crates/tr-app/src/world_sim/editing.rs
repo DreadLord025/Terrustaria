@@ -776,9 +776,10 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
 }
 
 /// The App-free half of [`interact_tile`]: maps the dispatcher result to the
-/// door cue and the drop spawns. `None` = no interaction (fall-through to the
-/// place path); a blocked door yields drops without a cue (vanilla plays
-/// `PlaySound(8/:9)` only on the success paths).
+/// door/dial cue and the drop spawns. `None` = no interaction (fall-through
+/// to the place path); a blocked door or a refused dial yields no cue
+/// (vanilla plays `PlaySound(8/:9)`/`SoundID.Item4` only on the fired paths),
+/// while the click still counts as consumed.
 fn interaction_events(
     result: edit::TileInteraction,
 ) -> Option<(Option<&'static str>, Vec<(u16, i32, i32)>)> {
@@ -787,6 +788,13 @@ fn interaction_events(
         edit::TileInteraction::DoorOpened { object_drops } => (Some("Door_Opened"), object_drops),
         edit::TileInteraction::DoorClosed { object_drops } => (Some("Door_Closed"), object_drops),
         edit::TileInteraction::DoorBlocked { object_drops } => (None, object_drops),
+        // `SoundID.Item4` on both dial arms (`Player.cs:32642`/:32652); the
+        // key is the vanilla asset name (see `audio::SFX_CUES`). The dials
+        // kill no tiles, so there are never drops.
+        edit::TileInteraction::DialStarted { .. } => (Some("Item_4"), Vec::new()),
+        // The refused gate (`Player.cs:32638`): still consumed (`flag2 = true`,
+        // `:32637`) — no cue, no drops, no state change.
+        edit::TileInteraction::DialRefused => (None, Vec::new()),
     };
     let events = object_drops
         .iter()
@@ -1069,6 +1077,26 @@ mod tests {
         .unwrap();
         assert_eq!(cue, None);
         assert_eq!(events, vec![(32, 10, 17)]);
+    }
+
+    #[test]
+    fn dw_2_1_interaction_events_map_dial_results_to_cue() {
+        use edit::TileInteraction;
+        // The fired dial plays `SoundID.Item4` and spawns no drops — the
+        // dial arms kill no tiles (`Player.cs:32642`/:32652).
+        let (cue, events) =
+            interaction_events(TileInteraction::DialStarted { sundial: true }).unwrap();
+        assert_eq!(cue, Some("Item_4"));
+        assert!(events.is_empty());
+        let (cue, events) =
+            interaction_events(TileInteraction::DialStarted { sundial: false }).unwrap();
+        assert_eq!(cue, Some("Item_4"));
+        assert!(events.is_empty());
+        // The refused gate stays consumed-but-silent (`flag2 = true`,
+        // `Player.cs:32637`; no `PlaySound` behind the `:32638`/:32648 gate).
+        let (cue, events) = interaction_events(TileInteraction::DialRefused).unwrap();
+        assert_eq!(cue, None);
+        assert!(events.is_empty());
     }
 
     #[test]

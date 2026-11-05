@@ -962,9 +962,10 @@ Deviations, all deliberate:
   `AmbientSky.Spawn` has no case (`AmbientSky.cs:1394-1480`) — ported as-is.
 - **The scheduler pool pins `_spawnConditions` declaration order**; the C#
   enumerates a `Dictionary`, whose order is implementation-defined.
-- **dayRate is the constant 1** until BG-21 lands; the `max(1, dayRate)` shape
-  is in place at both sites (the scheduler timer decrement and the entity
-  update repetition, `SkyManager.cs:24-46`).
+- **dayRate** landed with BG-21 (ANALYSIS "Sundial/moondial fast-forward
+  (M1.4-BG-21)"): the `max(1, dayRate)` shape at both sites (the scheduler timer
+  decrement and the entity update repetition, `SkyManager.cs:24-46`) now consumes
+  the real rate — 60 while a dial fast-forwards, 1 otherwise.
 - Screenshot harness: `TR_AMBIENCE=<SkyEntityType>[,seed]` queues one forced
   spawn with a pinned seed at load (the `ForceEntitySpawn` path) — test-only.
 
@@ -3200,6 +3201,80 @@ generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
 `NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
 styles are M2-DEATH polish.
 
+## Sundial/moondial fast-forward (M1.4-BG-21)
+
+`M1.4-BG-21` ports the dial fast-forward and the `dayRate` plumbing. `World`
+carries the dial state: `fast_forward_to_dawn`/`fast_forward_to_dusk` and the
+u8 cooldowns saved in TRWLD v4 (`Main.sundialCooldown`/`moondialCooldown`,
+`Main.cs:2161/2165`); the port's save keeps only the cooldown bytes, while
+vanilla persists the FF flags too since v264 (`WorldFile.cs:1342`, read gate
+`:2451-2455`) — here they are transient by nature (see deviations).
+`is_fast_forwarding`/`day_rate` port `IsFastForwardingTime`/`UpdateTimeRate`
+(`Main.cs:6160-6167`, `:6199-6206`): 60 while a dial runs, 1 otherwise.
+`clock.rs::advance_time` applies the full `dt·60·dayRate` add before the
+boundary checks (`Main.cs:64962-64964`); the transition arms port
+`UpdateTime_StartDay`/`UpdateTime_StartNight` — the dial's flag clears, its own
+cooldown decrements once (saturating at 0), `time = 0.0`, the day half flips,
+and `moonPhase` advances at dawn (`Main.cs:65368-65372` + `65382`/`:65393` +
+`:65394-65401` for day, `65213-65220` + `65357-65358` for night). The triggers:
+`interact_at` dispatches `DialStarted`/`DialRefused` for tiles 356/663 behind
+the C# gate `!fastForward && cooldown == 0` with the click consumed always
+(`Player.cs:32636-32653`; the SP arms `Main.cs:6169-6196` — the
+`SendData(51)` client branches are MP), and `hit_wire_single` decodes the
+2×3 anchor and runs the same gate (`Wiring.cs:1137-1175`); the cue is
+`SoundID.Item4`. Consumers: the `LightParams`/`FlameEnv` cooldowns mute the
+dial glow while cooling (the scanner's kind 356/663 light arms), and
+`AmbienceCtx.day_rate` feeds the BG-19 sky scheduler its real rate.
+
+Deviations, all deliberate:
+
+- **Weather and the other dayRate consumers do not scale.** Vanilla runs
+  `UpdateWeather` dayRate× per frame (`Main.cs:17228`) and divides several
+  denominators by dayRate — the rain chance (`Main.cs:64898-64914`), the cloud
+  alpha lerp, the sandstorm tick, stars, the invasion delay, luck — so in
+  vanilla a fast-forward also rushes the weather. The port's weather/wind/rain
+  code is frozen by WEATHER-1 and stays 1×; a follow-up row sits in the ROADMAP
+  catalog (M1.4-BG-22).
+- **Scaled add, not a 60-iteration loop; one boundary per call.** The port
+  keeps the C# shape — one `time += dt·60·dayRate` add per call, then one
+  boundary check (`Main.cs:64964`, `:65137`, `:65148`) — instead of replaying
+  `UpdateTime` 60×, which would light every transition RNG roll 60×. The dt
+  clamp (0.1 s) caps the add at 360, below the 32400 night length, so one call
+  crosses at most one boundary (pinned by
+  `boundary_max_add_crosses_at_most_one_boundary` in `clock.rs`).
+- **The `>=` boundary quirk (pre-existing, now dial-relevant).** The port's
+  boundary checks are `time >= 54000/32400` while C# checks
+  `time > 32400.0`/`> 54000.0` (`Main.cs:65137`, `:65148`) — an add landing
+  exactly on the boundary fires one tick earlier here. The dawn-crossing
+  screenshot pair below arms exactly this case.
+- **The transition discards the overshoot** (`time = 0.0`, `Main.cs:65357-65358`
+  and `:65382`) — replacing the former wrap-the-overshoot-into-the-new-half
+  carry; vanilla restarts each half at 0 the same way.
+- **No transition event rolls.** Blood moon at dusk (`Main.cs:65342-65351`) and
+  solar eclipse at dawn (`:65419-65430`) roll from `Main.rand` and force-reset
+  both cooldowns when they fire (`:65350-65351`, `:65422-65423`); the rolls are
+  M4 territory, the arms carry citation hooks, and the force-resets stay
+  unreachable until then.
+- **The dials render as plain tiles.** They have no `TileObjectData` def in the
+  port's registry (the trigger arms are literal kinds 356/663, the same shape
+  `place_item_tile`'s legacy route produces), so a placed dial is a single
+  active cell drawing its sheet's default frame instead of the C# 3×2 framed
+  object (`Wiring.cs:1139` decodes `frameX % 36 / 18` from that object layout).
+  The cooldown-gated glow is the faithful part; the registry def is a
+  tiledata-registry follow-up, render code untouched by this task.
+
+Determinism/proven pairs (pristine `.trwld` copies per run, pointer park, zoom
+2.0, `TR_NOHUD`/`TR_NO_BG`): a `TR_DAY=0.25` night shot with both dials placed
+by `TR_FILL` — the cooldown-0 glow lighting the ground around them —
+SHA256-equal double run (`695bab0a…`); and `TR_TIME=32340` + `TR_SUNDIAL=1`
+arming the fast-forward from a day-half time (`app/mod.rs:1603` maps it to
+`day_time`, so the add is read only by the `>= 54000` dusk check) — with the
+shot dt pinned to 1/60 (`frame.rs:48-49`) each frame adds 60 ticks, landing
+dusk exactly on `time` = 54000 at frame 361 (`clock.rs:26`) and, 540 frames
+later (the 32400-tick night), dawn exactly on `time` = 32400 at frame 901
+(`clock.rs:39`) — both boundary-exact, the `>=` case above — with the
+frame-3600 capture showing the new morning (the dial cleared at dawn, the
+rate back to 1), SHA256-equal double run (`fca1e1d0…`).
 ## Sandstorm (M1.4-WEATHER-2)
 
 The research corrected the row: the severity machine, the SceneState
@@ -3483,6 +3558,61 @@ Deviations: the hallowed/crimson vine arms wait for the hallow
 `GrowUndergroundTree` canvas are approximated; the mushroom trees are the
 tile-71 stands (the full tree generator = the follow-up).
 
+## Crafting groups, environment, chests (M3-CRAFT-2)
+
+The research corrected the row: 1.4.5.8 has **no Condition-object system** —
+the recipe environment inputs are hardcoded bool fields on `Recipe`
+(`needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome/
+needTorchGodsFavor/needMechdusa`, `Recipe.cs:72-100`), checked by
+`PlayerMeetsEnvironmentConditions` (`:322-358`); there is no
+`DataStructures/Condition.cs` and no `AddCondition` (that name lives on
+achievements only). The liquid proximity rides the same 5×3 tile region as
+the stations (`Player.AdjTiles`, `Player.cs:35661-35699`): `tile.liquid > 200`
+by type plus the `CountsAsWaterForCrafting` tiles {172 sink, 207 fountain}.
+
+The group system (`Recipe.SetupRecipeGroups`, `Recipe.cs:499-533`): 34
+groups, the registration order is the id; an ingredient whose item belongs
+to an accepted group substitutes the whole member set
+(`CreateRequiredItemQuickLookups`, `:15162-15191`) and the C# folds the
+members into a fake item id (`1000000 + index`,
+`AddFakeCountsForItemGroups :409-416`). The port carries the accepted group
+on the `Requirement` directly — the same totals without the fake-id
+indirection. `Requirement::matches` reproduces `RequiredItemEntry.Matches`
+(`:36-43`), so the drain (`CraftingRequests.Consume :218-254`) takes any
+member by slot order: the inventory first, then each chest in collection
+order, `ConsumeItemsFrom`'s partial-stack-then-clear shape (the port's
+`consume_kind`/`consume_chest`).
+
+The nearby chests are real 1.4.5 vanilla:
+`Recipe.CollectItemsFromChests` (`:375-407`) = the open container + the
+void bag + (with `Player.Settings.CraftFromNearbyChests`, default true,
+`Player.cs:406`) the container projectiles/banks in a ±39-tile rect and the
+world chests within 600 px of the player's feet
+(`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
+the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
+gated by the new `craft_from_nearby_chests` setting wired to the panel's
+nearby-chests toggle. Deviations: the store's population is M3-CHEST-UI's
+(the chest tiles place with no inventories yet), the save/persistence is
+M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
+passes for every chest (no chest locking); the scan order is raster (the
+vanilla iterates `Main.chest[]`'s instance order — the port has no instance
+registry); the group drain walks members in the group's registration order
+when the inventory pass runs per-member (the vanilla drains one flat pass
+matching `Matches` — the same totals, a different slot walk).
+
+`available` now implements `UpdateRecipeList`'s composition
+(`Recipe.cs:230-259`): environment × enough-ingredients — the port's older
+"station adjacent and any ingredient present" partial list is gone (the
+classic pane shows craftable rows only). Station requirements inherit
+`Recipe.TileCountsAs` (`:559-571`): near a work bench (17) satisfies a
+sawmill (215) requirement, the chain walks 302→17→215. The 8 new subset
+recipes exercise every ported flag: Bottled Water/Honey, the
+Wet/Lava/Honey Bomb trio, Snow Cloud Block (Sky Mill + snow), Wood Shelf
+(Bone Welder + graveyard), Glass (the Sand group); the 11 pre-existing
+recipes re-authored as group entries — the old "Wood → 9 / IronBar → 22"
+expansion deviation is retired. Out: the alchemy discount (M3-CRAFT-3),
+the torch-god/mechdusa flags (no systems), the guide-item mode
+(`CollectGuideRecipes`), the `SendData(32)` chest syncs (multiplayer).
 ## Floating islands (M1.4-WGEN-4)
 
 The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
@@ -3530,3 +3660,127 @@ the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
 Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
 port's blob dome (the shape-level port); the Queen Bee summon from the
 larva and the fort doors = the follow-ups.
+
+## Biome spread (M5-SPREAD-2)
+
+`hardUpdateWorld`'s infection arms (`WorldGen.cs:69645-69860`) — the
+living world's evil/crimson/chlorophyte evolution:
+
+- **The spread sets** (`TileID.cs:580/:589`): the corruption {23, 661, 25,
+  112, 398, 400, 163, 32, 636, 24} and the crimson {199, 662, 203, 234,
+  399, 401, 200, 352, 205, 201} — the corrupt grass, the ebonstone/
+  crimstone, the ebonsand/crimsand, the hardened sand, the sandstone, the
+  ice and the thorn kinds.
+- **The Convert map** (`Convert`, `:55139-55205`): the grass family (2,
+  477, 60, 69) → the corrupt grass 23 / the crimson grass 199 (the jungle
+  grass 60 → 662 in the crimson), the stone + the moss → the ebonstone 25
+  / the crimstone 203, the sand 53 → the ebonsand 112 / the crimsand 234,
+  the ice 161 → the purple 163 / the red 200, the hardened sand 397 →
+  398/399, the sandstone 396 → 400/401. The natural walls convert too —
+  the stone wall 1 → the ebonstone wall 3 / the crimson wall 192, the
+  dirt wall 2 → 69/193 (the natural-wall slice of the C#'s
+  `WallID.Sets.Conversion` tables).
+- **The spread loop** (`:69696-69860`): the ±3 random target, the
+  chlorophyte defence (`nearbyChlorophyte` within 5 → the loop breaks —
+  `ChlorophyteDefense` itself converts only in the remix worlds,
+  `:69456-69460`), the sunflower (27) suppression within 2 tiles
+  (`CountNearBlocksTypes(i, j, 2, 1, 27)`), and the conversions with the
+  `Next(2) == 0` re-roll chain (the spreading tile walks the ±3 window
+  converting until the roll fails).
+- **The chlorophyte** (`:69646-69685`): the 211 chlorophyte + the 346
+  chlorophyte-jungle-grass sources grow into the mud (59) and the jungle
+  grass (60) via `Convert(..., 8)`, gated by `CanChlorophyteGrow`
+  (`:69464-69500` — the chlorophyte count in the radius-35 box ≤ 40 (the
+  box ×1.5 and the count cap /2 above the rock layer) and ≤ 130 in the
+  radius-85 box) plus the ±6 random re-scan.
+- **The gates**: the post-PlantBoss worlds halve the spread (`Next(2) !=
+  0`, `:69688-69691`); `AllowedToSpreadInfections` (the creative
+  spread-stop power) freezes it.
+- **The app call**: the spread rides the growth pass's underground picks
+  (`world_sim/growth.rs`) — one `hard_update_world` per tick on a random
+  cavern-layer column.
+
+Deviations: the thorn bushes (32/352) spread by the set membership but
+grow no bush tiles (the plant placement = the follow-up); the wall
+conversion covers the natural-wall slice (the C#'s tables span the brick
+walls too); the remix `ChlorophyteDefense` conversion is out (no remix
+worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
+unconditionally).
+
+## Lihzahrd temple (M1.4-WGEN-6)
+
+The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
+temple, the last big generation structure:
+
+- **The placement** (`:15840-15848`): the y between the rock layer and
+  `maxTilesY − 600` (the port clamps to the height), the x under the
+  jungle band's deep half (`dungeonSide`'s opposite in the C#).
+- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
+  Lihzahrd brick (226) with the unsafe walls (87), the carved central
+  hall + the side rooms with the safe walls (112), the brick pillars
+  inside the hall.
+- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
+  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
+  room at the hall's west end.
+- **The traps**: the dart traps (137, the case-137 wiring variants the
+  wiring trip fires — the trap frameY selects the variant) embedded in
+  the hall's brick walls every 12 columns.
+- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+
+Deviations: the C#'s multi-room crawl with the doors
+(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
+summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
+are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+
+## Polish passes (M1.4-WGEN-7)
+
+The worldgen rounding-out:
+
+- **The dungeon colour** (`pass_dungeon`): the brick roll (the blue 41 /
+  the green 43 / the pink 44) now drives the walls too (7/8/9) — the
+  port's walls were pinned to the blue 7.
+- **The ice shell** (the fill): the snow band's underground is the ice
+  (161) from the surface to the rock layer (the `IceBiome` shape — the
+  port's fill previously kept the dirt under the snow surface, leaving
+  the ice-biome decorators nothing to sit on).
+- **The exposed gems** (`ExposedGemsInIceBiome`, `WorldGen.cs:20697-20735`):
+  `maxTilesX · 0.25` attempts — the y between `(worldSurface +
+  rockLayer) / 2` and the lava line, the x in the snow band, the anchor
+  tile from the snow/ice family (147/161/162/224); the gem patch (the
+  tile 178) fills the `Next(1, 4)`-half-sized rectangle of the free
+  cells, the styles weighted `Next(12)`: <3 → 0 (the amethyst), <6 → 1,
+  <8 → 2, <10 → 3, ≥11 → 5 (the diamond), else 4.
+
+Deviations: the gem torches (the ice biome's torch placements) and the
+ice-cave water pools are the follow-ups; the ice shell's dirt pockets
+ride the cave pass's blob machinery.
+
+## Hardmode switch (M5-HARDFORCE)
+
+The generation half of the hardmode switch — `WorldGen.StartHardmode` →
+`initializeHardMode` (`WorldGen.cs:31570-31697`):
+
+- **The runners** (`GERunner`, `:76169-76330`): the V-shaped strip walker —
+  the position starts at the sky, the velocity `(3·num5, 5f)` per step
+  with `num5 = ±1` (`:31585-31590` — the 3:5 slope verbatim), each step
+  converting the Manhattan disc of the radius `Next(200, 250) · scale ·
+  0.5` with the rim wobble `Next(-10, 11) · 0.015`.
+- **The hallow map** (the good runner): the hallowed grass 109 (from the
+  grass 2 and the corrupt/crimson grass 23/199), the pearlstone 117 (from
+  the stone 1 / the ebonstone 25 / the crimstone 203), the hallowed sand
+  116 (from all the sands 53/123/112/234), the hallowed ice 164 (from
+  161/163/200), the hallowed sandstone 403 and the hardened 402 — plus
+  the purify arm: the corrupt/crimson jungle grass 661/662 revert to the
+  jungle grass 60 (the hallow and the evil cancel on the jungle). The
+  walls: the sandstone wall 187 → 222, the ebonstone/crimstone walls
+  3/83 → the hallowed stone wall 28.
+- **The evil runner** reuses `Convert`'s map by the world's flavour (the
+  corruption or the crimson — `initialize_hard_mode(corruption)`).
+- **The app trigger**: `TR_HARDMODE=1` (the env dev hook) sets
+  `World.hard_mode` and runs `initialize_hard_mode` once — the WoF kill
+  rides the M4-NPC families.
+
+Deviations: the wall-lining pass (the 25·scale cave cavities lined with
+the hallowed walls 200-203, `:31668-31697`) is the follow-up; the altar
+ore drops (the adamantite/etc.) and the WoF summon/kill are the
+M4-NPC/M4-LOOT tasks; the remix jungle-V arm is out (no remix worlds).

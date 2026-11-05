@@ -1327,6 +1327,7 @@ pub(crate) mod front_flow_tests {
             hotbar_scales: [0.75; HOTBAR],
             inventory_open: false,
             crafting_open: false,
+            world_chests: Vec::new(),
             menu: None,
             front,
             front_backup: None,

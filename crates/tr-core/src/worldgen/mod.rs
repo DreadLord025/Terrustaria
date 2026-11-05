@@ -17,6 +17,7 @@ mod biome_detail;
 mod islands;
 mod biomes;
 mod structures;
+mod temple;
 mod caves;
 mod liquids;
 mod living_trees;
@@ -72,6 +73,7 @@ pub(crate) const TILE_COPPER: u16 = 7;
 pub(crate) const TILE_GOLD: u16 = 8;
 pub(crate) const TILE_SILVER: u16 = 9;
 pub(crate) const TILE_ASH: u16 = 57;
+pub(crate) const TILE_ICE: u16 = 161;
 pub(crate) const TILE_HELLSTONE: u16 = 58;
 pub(crate) const WALL_STONE: u16 = 1;
 pub(crate) const WALL_DIRT: u16 = 2;
@@ -142,6 +144,8 @@ pub fn generate(opts: &GenOptions) -> World {
     biome_detail::pass_ocean_caves(&mut world, &map.heights, map.beach, &mut drng);
     biome_detail::pass_fragile_ice(&mut world, width * 2 / 3, &mut drng);
     biome_detail::pass_underground_jungle_trees(&mut world, &spans, layers.rock_layer, &mut drng);
+    // The exposed gems in the ice biome (`ExposedGemsInIceBiome`).
+    biome_detail::pass_exposed_gems(&mut world, width * 2 / 3, layers.rock_layer, &mut drng);
     let mut srng = Rng(opts.seed ^ 0x9E37_79B9_7F4A_7C15);
     let shrine_spots = structures::pass_jungle_shrines(&mut world, &spans, layers.rock_layer, &mut srng);
     structures::pass_chests(&mut world, &shrine_spots, &mut srng);
@@ -156,6 +160,9 @@ pub fn generate(opts: &GenOptions) -> World {
     structures::pass_pots(&mut world, &mut srng);
     structures::pass_beehives(&mut world, &spans, layers.rock_layer, &mut srng);
     structures::pass_hell_forts(&mut world, layers.hell_top, &mut srng);
+    // The temple: the last big structure (the C#  pass
+    // runs after the jungle passes).
+    let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
     biome_detail::pass_mushroom_and_jungle_plants(&mut world);
     biome_detail::pass_vines(&mut world, &mut drng);
     // The floating islands (`FloatingIslands` — the C# order places them
@@ -448,6 +455,78 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    #[test]
+    fn the_temple_buries_in_the_jungle_cavern() {
+        // The 4200-world carries the temple: the Lihzahrd brick (226) box,
+        // the altar (237), the dart traps (137) and the temple walls
+        // (87/112).
+        let w = generate(&GenOptions {
+            seed: 88,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let walls = |wall: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.wall == wall)
+                .count()
+        };
+        assert!(count(226) > 800, "the temple brick ({})", count(226));
+        assert!(count(237) == 6, "the altar tiles ({})", count(237));
+        assert!(count(137) >= 3, "the dart traps ({})", count(137));
+        assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
+        assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
+    }
+
+    #[test]
+    fn the_gems_and_dungeon_colours_place() {
+        // The ice biome carries the exposed gem tiles (178) with the six
+        // weighted styles; the dungeon brick + the walls match the colour
+        // roll (the blue 41/7, the green 43/8, the pink 44/9).
+        let w = generate(&GenOptions {
+            seed: 33,
+            ..Default::default()
+        });
+        let gems = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 178)
+            .count();
+        assert!(gems > 20, "the exposed gems ({gems})");
+        // The styles spread across the weighted bands (the amethyst 0 is
+        // the most common, the diamond 5 the rarest).
+        let mut styles = [0u32; 6];
+        for t in &w.tiles {
+            if t.active() && t.kind == 178 {
+                styles[(t.frame_x / 18) as usize] += 1;
+            }
+        }
+        assert!(styles[0] > 0, "the amethyst band ({:?})", styles);
+        // The dungeon: one brick colour present, the others absent; the
+        // walls match the brick.
+        let bricks = [(41u16, 7u16), (43, 8), (44, 9)];
+        let present: Vec<usize> = (0..3)
+            .filter(|i| {
+                w.tiles
+                    .iter()
+                    .any(|t| t.active() && t.kind == bricks[*i].0)
+            })
+            .collect();
+        assert_eq!(present.len(), 1, "one dungeon colour ({:?})", present);
+        let bi = present[0];
+        let wall_count = w
+            .tiles
+            .iter()
+            .filter(|t| t.wall == bricks[bi].1)
+            .count();
+        assert!(wall_count > 200, "the dungeon walls ({wall_count})");
     }
 
     #[test]

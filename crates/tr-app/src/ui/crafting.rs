@@ -252,6 +252,14 @@ fn toggle_hover(mouse_pos: Vec2, x: f32, y: f32) -> bool {
     (mouse_pos.x - x).abs() < 15.0 && (mouse_pos.y - y).abs() < 15.0
 }
 
+/// The click test for the `DrawCraftFromNearbyChestsToggle` button
+/// (`CraftingUI.cs:336-355`): the same ±15 px square on the layout's
+/// `nearby_toggle` position.
+pub(crate) fn nearby_toggle_hit(screen: Vec2, mouse_pos: Vec2) -> bool {
+    let l = layout(screen, 0.0, false);
+    toggle_hover(mouse_pos, l.nearby_toggle[0], l.nearby_toggle[1])
+}
+
 /// The empty recipe slot: `Main.guideItem` / `recipe.createItem` carry no data in
 /// P3, so every slot draws the empty `Inventory_Back18` background.
 fn empty_slot() -> ItemSlot {
