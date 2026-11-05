@@ -109,7 +109,10 @@ pub struct Rain {
     /// TR_NO_WEATHER: the port's scheduler switch — with it the C#-shaped rolls
     /// never run (the retired session schedule honoured the same switch).
     calm: bool,
-    /// `Main.windSpeedCurrent`: -1..1.
+    /// Drop/snow drift velocity, set once at seed time. Vanilla reads the live
+    /// `Main.windSpeedCurrent` per tick (`Cloud.cs`-style drift is unported);
+    /// the retired session schedule was its last writer (`Main.cs:58830-58950`
+    /// feeds `Wind` directly now).
     wind: f32,
     /// `Main.cloudBGAlpha`: storm cloud-bank opacity, 0..1.
     cloud_bg: f32,
