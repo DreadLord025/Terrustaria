@@ -7,8 +7,8 @@
 
 use super::noise::Noise;
 use super::{
-    TILE_ASH, TILE_DIRT, TILE_GRASS, TILE_HARDENED_SAND, TILE_SAND, TILE_SANDSTONE, TILE_SNOW,
-    TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
+    TILE_ASH, TILE_DIRT, TILE_GRASS, TILE_HARDENED_SAND, TILE_ICE, TILE_SAND, TILE_SANDSTONE,
+    TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
 };
 use crate::tile::{FLAG_ACTIVE, Tile};
 use crate::world::World;
@@ -207,6 +207,10 @@ pub(crate) fn fill_terrain(
                     } else {
                         TILE_GRASS
                     };
+                } else if x >= snow_start && y < rock_layer as i32 {
+                    // The `IceBiome` pass (`WorldGen.cs`): the snow band's
+                    // underground is the ice shell down to the rock layer.
+                    tile.kind = TILE_ICE;
                 } else if y < top + dirt_depth {
                     tile.kind = if desert { TILE_SAND } else { TILE_DIRT };
                 } else if desert && y < top + dirt_depth + 14 {

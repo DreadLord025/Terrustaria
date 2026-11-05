@@ -49,6 +49,19 @@ pub struct World {
     /// `Main.moonPhase` (0..7): the current-moon row in the sheet; advances one
     /// step each time night turns into day (`Main.cs:19982`).
     pub moon_phase: u8,
+    /// `Main.sundialCooldown` (`Main.cs:2161`): ticks down once per dawn until
+    /// the sundial may fast-forward again (0..=8). Saved in TRWLD v4.
+    pub sundial_cooldown: u8,
+    /// `Main.moondialCooldown` (`Main.cs:2165`): ticks down once per dusk
+    /// (0..=8). Saved in TRWLD v4.
+    pub moondial_cooldown: u8,
+    /// `Main.fastForwardTimeToDawn` (`Main.cs:2159`): the sundial's fast-forward
+    /// request, consumed by the next dawn transition. Runtime-only, not saved
+    /// (the C# has written it to `.wld` since v264, but it is transient).
+    pub fast_forward_to_dawn: bool,
+    /// `Main.fastForwardTimeToDusk` (`Main.cs:2163`): the moondial's
+    /// fast-forward request, consumed by the next dusk transition. Runtime-only.
+    pub fast_forward_to_dusk: bool,
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
     /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
     /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); it is not
@@ -103,6 +116,10 @@ impl World {
             day_time: true,
             moon_type: 0,
             moon_phase: 0,
+            sundial_cooldown: 0,
+            moondial_cooldown: 0,
+            fast_forward_to_dawn: false,
+            fast_forward_to_dusk: false,
             hell_back_style: 0,
             column_surface: Vec::new(),
             chunks_x: 0,
@@ -117,6 +134,46 @@ impl World {
             snow_moon: false,
             hard_mode: false,
             butterfly_chance: 0,
+        }
+    }
+
+    /// `Main.IsFastForwardingTime` (`Main.cs:6160-6167`): a dial fast-forward is
+    /// armed.
+    pub fn is_fast_forwarding(&self) -> bool {
+        // C# shape: `if (!fastForwardTimeToDawn) return fastForwardTimeToDusk; return true;`
+        self.fast_forward_to_dawn || self.fast_forward_to_dusk
+    }
+
+    /// `Main.UpdateTimeRate`'s fast-forward arm (`Main.cs:6199-6206`): 60 while a
+    /// dial is fast-forwarding, 1 otherwise. The sleeping/creative-power branches
+    /// are not ported.
+    pub fn day_rate(&self) -> i32 {
+        // `Main.cs:6200-6203`: `if (IsFastForwardingTime()) { dayRate = 60; return; }`
+        // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
+        if self.is_fast_forwarding() { 60 } else { 1 }
+    }
+
+    /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the
+    /// fast-forward to dawn and start the 8-day cooldown. The `netMode == 1`
+    /// message branch is not ported.
+    pub fn sundialing(&mut self) {
+        if self.sundial_cooldown == 0 {
+            // `Main.cs:6177-6179`: `fastForwardTimeToDawn = true;
+            // sundialCooldown = 8;` (the SP arm; `SendData(7)` is net-only).
+            self.fast_forward_to_dawn = true;
+            self.sundial_cooldown = 8;
+        }
+    }
+
+    /// `Main.Moondialing` (`Main.cs:6184-6196`), single-player branch: arm the
+    /// fast-forward to dusk and start the 8-day cooldown. The `netMode == 1`
+    /// message branch is not ported.
+    pub fn moondialing(&mut self) {
+        if self.moondial_cooldown == 0 {
+            // `Main.cs:6192-6194`: `fastForwardTimeToDusk = true;
+            // moondialCooldown = 8;` (the SP arm).
+            self.fast_forward_to_dusk = true;
+            self.moondial_cooldown = 8;
         }
     }
 
@@ -391,5 +448,25 @@ mod tests {
         assert!(!w.snow_moon);
         assert!(!w.hard_mode);
         assert_eq!(w.butterfly_chance, 0);
+    }
+
+    #[test]
+    fn dialing_arms_ff_and_starts_cooldown_when_ready() {
+        // `Main.Sundialing`'s SP arm (`Main.cs:6169-6181`): cooldown 0 arms the
+        // fast-forward and starts the 8-day cooldown.
+        let mut w = World::new("t".into(), 8, 8);
+        w.sundialing();
+        assert!(w.fast_forward_to_dawn);
+        assert_eq!(w.sundial_cooldown, 8);
+        // A running cooldown gates the re-arm (`Main.cs:6170`).
+        w.fast_forward_to_dawn = false;
+        w.sundialing();
+        assert!(!w.fast_forward_to_dawn, "cooldown 8 blocks the re-arm");
+        assert_eq!(w.sundial_cooldown, 8);
+        // `Main.Moondialing` mirrors it (`Main.cs:6184-6196`).
+        let mut w = World::new("t".into(), 8, 8);
+        w.moondialing();
+        assert!(w.fast_forward_to_dusk);
+        assert_eq!(w.moondial_cooldown, 8);
     }
 }

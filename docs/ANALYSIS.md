@@ -962,9 +962,10 @@ Deviations, all deliberate:
   `AmbientSky.Spawn` has no case (`AmbientSky.cs:1394-1480`) — ported as-is.
 - **The scheduler pool pins `_spawnConditions` declaration order**; the C#
   enumerates a `Dictionary`, whose order is implementation-defined.
-- **dayRate is the constant 1** until BG-21 lands; the `max(1, dayRate)` shape
-  is in place at both sites (the scheduler timer decrement and the entity
-  update repetition, `SkyManager.cs:24-46`).
+- **dayRate** landed with BG-21 (ANALYSIS "Sundial/moondial fast-forward
+  (M1.4-BG-21)"): the `max(1, dayRate)` shape at both sites (the scheduler timer
+  decrement and the entity update repetition, `SkyManager.cs:24-46`) now consumes
+  the real rate — 60 while a dial fast-forwards, 1 otherwise.
 - Screenshot harness: `TR_AMBIENCE=<SkyEntityType>[,seed]` queues one forced
   spawn with a pinned seed at load (the `ForceEntitySpawn` path) — test-only.
 
@@ -3200,6 +3201,80 @@ generates no remix worlds); the NPC-home list feeds from M4-TOWN (the
 `NetTeleportPylonModule` are P4-UI/MP scope; `player.Teleport`'s dust and
 styles are M2-DEATH polish.
 
+## Sundial/moondial fast-forward (M1.4-BG-21)
+
+`M1.4-BG-21` ports the dial fast-forward and the `dayRate` plumbing. `World`
+carries the dial state: `fast_forward_to_dawn`/`fast_forward_to_dusk` and the
+u8 cooldowns saved in TRWLD v4 (`Main.sundialCooldown`/`moondialCooldown`,
+`Main.cs:2161/2165`); the port's save keeps only the cooldown bytes, while
+vanilla persists the FF flags too since v264 (`WorldFile.cs:1342`, read gate
+`:2451-2455`) — here they are transient by nature (see deviations).
+`is_fast_forwarding`/`day_rate` port `IsFastForwardingTime`/`UpdateTimeRate`
+(`Main.cs:6160-6167`, `:6199-6206`): 60 while a dial runs, 1 otherwise.
+`clock.rs::advance_time` applies the full `dt·60·dayRate` add before the
+boundary checks (`Main.cs:64962-64964`); the transition arms port
+`UpdateTime_StartDay`/`UpdateTime_StartNight` — the dial's flag clears, its own
+cooldown decrements once (saturating at 0), `time = 0.0`, the day half flips,
+and `moonPhase` advances at dawn (`Main.cs:65368-65372` + `65382`/`:65393` +
+`:65394-65401` for day, `65213-65220` + `65357-65358` for night). The triggers:
+`interact_at` dispatches `DialStarted`/`DialRefused` for tiles 356/663 behind
+the C# gate `!fastForward && cooldown == 0` with the click consumed always
+(`Player.cs:32636-32653`; the SP arms `Main.cs:6169-6196` — the
+`SendData(51)` client branches are MP), and `hit_wire_single` decodes the
+2×3 anchor and runs the same gate (`Wiring.cs:1137-1175`); the cue is
+`SoundID.Item4`. Consumers: the `LightParams`/`FlameEnv` cooldowns mute the
+dial glow while cooling (the scanner's kind 356/663 light arms), and
+`AmbienceCtx.day_rate` feeds the BG-19 sky scheduler its real rate.
+
+Deviations, all deliberate:
+
+- **Weather and the other dayRate consumers do not scale.** Vanilla runs
+  `UpdateWeather` dayRate× per frame (`Main.cs:17228`) and divides several
+  denominators by dayRate — the rain chance (`Main.cs:64898-64914`), the cloud
+  alpha lerp, the sandstorm tick, stars, the invasion delay, luck — so in
+  vanilla a fast-forward also rushes the weather. The port's weather/wind/rain
+  code is frozen by WEATHER-1 and stays 1×; a follow-up row sits in the ROADMAP
+  catalog (M1.4-BG-22).
+- **Scaled add, not a 60-iteration loop; one boundary per call.** The port
+  keeps the C# shape — one `time += dt·60·dayRate` add per call, then one
+  boundary check (`Main.cs:64964`, `:65137`, `:65148`) — instead of replaying
+  `UpdateTime` 60×, which would light every transition RNG roll 60×. The dt
+  clamp (0.1 s) caps the add at 360, below the 32400 night length, so one call
+  crosses at most one boundary (pinned by
+  `boundary_max_add_crosses_at_most_one_boundary` in `clock.rs`).
+- **The `>=` boundary quirk (pre-existing, now dial-relevant).** The port's
+  boundary checks are `time >= 54000/32400` while C# checks
+  `time > 32400.0`/`> 54000.0` (`Main.cs:65137`, `:65148`) — an add landing
+  exactly on the boundary fires one tick earlier here. The dawn-crossing
+  screenshot pair below arms exactly this case.
+- **The transition discards the overshoot** (`time = 0.0`, `Main.cs:65357-65358`
+  and `:65382`) — replacing the former wrap-the-overshoot-into-the-new-half
+  carry; vanilla restarts each half at 0 the same way.
+- **No transition event rolls.** Blood moon at dusk (`Main.cs:65342-65351`) and
+  solar eclipse at dawn (`:65419-65430`) roll from `Main.rand` and force-reset
+  both cooldowns when they fire (`:65350-65351`, `:65422-65423`); the rolls are
+  M4 territory, the arms carry citation hooks, and the force-resets stay
+  unreachable until then.
+- **The dials render as plain tiles.** They have no `TileObjectData` def in the
+  port's registry (the trigger arms are literal kinds 356/663, the same shape
+  `place_item_tile`'s legacy route produces), so a placed dial is a single
+  active cell drawing its sheet's default frame instead of the C# 3×2 framed
+  object (`Wiring.cs:1139` decodes `frameX % 36 / 18` from that object layout).
+  The cooldown-gated glow is the faithful part; the registry def is a
+  tiledata-registry follow-up, render code untouched by this task.
+
+Determinism/proven pairs (pristine `.trwld` copies per run, pointer park, zoom
+2.0, `TR_NOHUD`/`TR_NO_BG`): a `TR_DAY=0.25` night shot with both dials placed
+by `TR_FILL` — the cooldown-0 glow lighting the ground around them —
+SHA256-equal double run (`695bab0a…`); and `TR_TIME=32340` + `TR_SUNDIAL=1`
+arming the fast-forward from a day-half time (`app/mod.rs:1603` maps it to
+`day_time`, so the add is read only by the `>= 54000` dusk check) — with the
+shot dt pinned to 1/60 (`frame.rs:48-49`) each frame adds 60 ticks, landing
+dusk exactly on `time` = 54000 at frame 361 (`clock.rs:26`) and, 540 frames
+later (the 32400-tick night), dawn exactly on `time` = 32400 at frame 901
+(`clock.rs:39`) — both boundary-exact, the `>=` case above — with the
+frame-3600 capture showing the new morning (the dial cleared at dawn, the
+rate back to 1), SHA256-equal double run (`fca1e1d0…`).
 ## Sandstorm (M1.4-WEATHER-2)
 
 The research corrected the row: the severity machine, the SceneState
@@ -3656,3 +3731,26 @@ Deviations: the C#'s multi-room crawl with the doors
 (`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
 summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
 are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+
+## Polish passes (M1.4-WGEN-7)
+
+The worldgen rounding-out:
+
+- **The dungeon colour** (`pass_dungeon`): the brick roll (the blue 41 /
+  the green 43 / the pink 44) now drives the walls too (7/8/9) — the
+  port's walls were pinned to the blue 7.
+- **The ice shell** (the fill): the snow band's underground is the ice
+  (161) from the surface to the rock layer (the `IceBiome` shape — the
+  port's fill previously kept the dirt under the snow surface, leaving
+  the ice-biome decorators nothing to sit on).
+- **The exposed gems** (`ExposedGemsInIceBiome`, `WorldGen.cs:20697-20735`):
+  `maxTilesX · 0.25` attempts — the y between `(worldSurface +
+  rockLayer) / 2` and the lava line, the x in the snow band, the anchor
+  tile from the snow/ice family (147/161/162/224); the gem patch (the
+  tile 178) fills the `Next(1, 4)`-half-sized rectangle of the free
+  cells, the styles weighted `Next(12)`: <3 → 0 (the amethyst), <6 → 1,
+  <8 → 2, <10 → 3, ≥11 → 5 (the diamond), else 4.
+
+Deviations: the gem torches (the ice biome's torch placements) and the
+ice-cave water pools are the follow-ups; the ice shell's dirt pockets
+ride the cave pass's blob machinery.

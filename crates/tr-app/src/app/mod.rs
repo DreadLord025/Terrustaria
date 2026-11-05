@@ -36,18 +36,18 @@ use tr_render::{Atlas, Gpu, SpriteRenderer};
 use winit::keyboard::KeyCode;
 use winit::window::Window;
 
+use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
-use crate::achievements;
-use crate::chat;
 use crate::craft;
-use crate::emotes;
 use crate::audio;
 use crate::banners;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
+use crate::chat;
+use crate::emotes;
 use crate::inv;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
 use crate::map;
@@ -1438,13 +1438,13 @@ impl App {
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
             rain,
-        ambient_waterfall,
-        ambient_lavafall,
-        ambient_counter,
+            ambient_waterfall,
+            ambient_lavafall,
+            ambient_counter,
             wind,
             atmo,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
-        grapple: None,
+            grapple: None,
             ambience: {
                 let mut ambience = crate::ambience::Ambience::new();
                 if let Some((ty, seed)) = ambience_pin {
@@ -1625,6 +1625,15 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     {
         world.time = t;
         world.day_time = t < 54000.0;
+    }
+    // `TR_SUNDIAL=1`/`TR_MOONDIAL=1`: arm the dial fast-forwards at start
+    // (BG-21's screenshot pins). The flags only — `sundialing()` would also
+    // start the 8-day cooldown and mute the dial glow the shot pair needs.
+    if std::env::var("TR_SUNDIAL").is_ok() {
+        world.fast_forward_to_dawn = true;
+    }
+    if std::env::var("TR_MOONDIAL").is_ok() {
+        world.fast_forward_to_dusk = true;
     }
     // `TR_ECHO=tx,ty,w,h`: echo-coat a rectangle — the `invisibleBlock` +
     // `invisibleWall` bits (`WorldGen.paintCoatTile` case 2 / `paintCoatWall`,
@@ -1854,6 +1863,15 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                     op.y,
                     object_drops.len()
                 ),
+                edit::TileInteraction::DialStarted { sundial } => log::info!(
+                    "TR_TOGGLE {},{} -> {} started",
+                    op.x,
+                    op.y,
+                    if sundial { "sundial" } else { "moondial" }
+                ),
+                edit::TileInteraction::DialRefused => {
+                    log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
+                }
             }
         }
     }
@@ -2214,6 +2232,11 @@ mod tr_hooks {
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 
+    /// Serializes env-var mutation across the binary's parallel test threads:
+    /// `load_world`'s pins are process-global reads, so any test that sets or
+    /// removes a `TR_*` variable must hold this lock for the whole call.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     /// The core `edit.rs` doorway fixture: stone floor y = 20, ceiling y = 16
     /// (a 3-tall opening at rows 17..=19), deep enough inside the world for
     /// `CanPlace`'s 5-tile edge margin (`TileObject.cs:215`).
@@ -2292,5 +2315,60 @@ mod tr_hooks {
             "the second press closes it again"
         );
         assert_eq!(w.tile(10, 18).unwrap().frame_y, closed_frame);
+    }
+
+    /// DW-1.6: `TR_SUNDIAL=1`/`TR_MOONDIAL=1` arm the dial fast-forwards at
+    /// load (the pin block next to `TR_TIME` in `load_world`), flags only —
+    /// the pins must not route through `sundialing()`/`moondialing()`, whose
+    /// 8-day cooldown would mute the dial glow the screenshot pairs need.
+    #[test]
+    fn dw_1_6_load_world_pins_arm_dial_fast_forwards() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+
+        // A minimal `.trwld` through the real save path — `load_world` reads
+        // a file (the scratch-file pattern of persist.rs's tests).
+        let path = std::env::temp_dir().join("tr-dw-1-6-pins.trwld");
+        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+
+        // Edition 2024: env mutation is `unsafe` (a parallel reader could
+        // observe a half-update); the ENV_LOCK above is that serialization.
+        unsafe { std::env::set_var("TR_SUNDIAL", "1") };
+        unsafe { std::env::set_var("TR_MOONDIAL", "1") };
+        let world = load_world(&path).expect("scratch world loads");
+        unsafe { std::env::remove_var("TR_SUNDIAL") };
+        unsafe { std::env::remove_var("TR_MOONDIAL") };
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            world.fast_forward_to_dawn,
+            "TR_SUNDIAL arms the dawn fast-forward"
+        );
+        assert!(
+            world.fast_forward_to_dusk,
+            "TR_MOONDIAL arms the dusk fast-forward"
+        );
+        assert_eq!(
+            (world.sundial_cooldown, world.moondial_cooldown),
+            (0, 0),
+            "the pins set flags only, no cooldown"
+        );
+    }
+
+    /// DW-1.6 (control): without the pins, the same scratch world loads with
+    /// both fast-forward flags clear and cooldowns 0 — the arm is env-driven,
+    /// not a `load_world` default.
+    #[test]
+    fn dw_1_6_absent_pins_leave_dial_flags_clear() {
+        let _env = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::remove_var("TR_SUNDIAL") };
+        unsafe { std::env::remove_var("TR_MOONDIAL") };
+
+        let path = std::env::temp_dir().join("tr-dw-1-6-clear.trwld");
+        save::save(&path, &World::new("pins".into(), 32, 32)).unwrap();
+        let world = load_world(&path).expect("scratch world loads");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
+        assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));
     }
 }

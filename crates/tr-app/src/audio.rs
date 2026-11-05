@@ -32,6 +32,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // and `CloseDoor` (`:31906`).
     ("Door_Opened", 8),
     ("Door_Closed", 9),
+    // `SoundID.Item4 = new LegacySoundStyle(2, 4)` (`SoundID.cs:1387`) — the
+    // dial arm (`Player.cs:32642`/:32652, `SoundEngine.PlaySound(SoundID.Item4,
+    // ...)`); the legacy Item track, like `Item_1` above.
+    ("Item_4", 2),
 ];
 
 fn sound_type(cue: &str) -> u32 {
@@ -1239,6 +1243,14 @@ mod tests {
         e.shadow_candle = true;
         m.decide_new_music(e);
         assert_ne!(m.new_music, 46);
+    }
+
+    #[test]
+    fn dw_2_1_item4_cue_maps_to_the_item_legacy_track() {
+        // `SoundID.Item4 = new LegacySoundStyle(2, 4)` (`SoundID.cs:1387`) —
+        // the dial arm's cue (`Player.cs:32642`/:32652), the same legacy
+        // Item track as `Item_1`.
+        assert_eq!(sound_type("Item_4"), 2);
     }
 }
 

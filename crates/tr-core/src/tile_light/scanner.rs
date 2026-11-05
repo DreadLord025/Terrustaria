@@ -21,7 +21,7 @@
 //! sequence, which only the firing group consumes) is identical to the flat match.
 
 use super::palette::{
-    hsl_to_rgb, paint_color, shimmer_base_color, torch_color, FastRandom, CAGE_FRAMES,
+    CAGE_FRAMES, FastRandom, hsl_to_rgb, paint_color, shimmer_base_color, torch_color,
 };
 use crate::lighting::LightParams;
 use crate::tile::*;
@@ -1237,5 +1237,19 @@ mod tests {
         let c = lit(&tile(215, 54, 0), 5, 5, &p);
         assert!(c[1] > c[0] && c[2] < c[1], "green campfire {c:?}");
         close(lit(&tile(215, 0, 36), 5, 5, &p), [0.0; 3]);
+    }
+
+    #[test]
+    fn dw_1_5_dial_light_needs_zero_cooldown() {
+        // DW-1.5 (`TileLightScanner.cs:373-389` via `misc_lights`): the dial
+        // seeds only fire at cooldown 0; while one ticks the tile is dark.
+        let p = LightParams::default();
+        close(lit(&tile(356, 0, 0), 5, 5, &p), [0.45, 0.25, 0.0]);
+        close(lit(&tile(663, 0, 0), 5, 5, &p), [0.0, 0.25, 0.45]);
+        let mut p = LightParams::default();
+        p.sundial_cooldown = 8;
+        p.moondial_cooldown = 8;
+        close(lit(&tile(356, 0, 0), 5, 5, &p), [0.0; 3]);
+        close(lit(&tile(663, 0, 0), 5, 5, &p), [0.0; 3]);
     }
 }

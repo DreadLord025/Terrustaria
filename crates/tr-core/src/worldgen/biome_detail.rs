@@ -305,4 +305,71 @@ pub(crate) fn pass_vines(world: &mut World, rng: &mut super::Rng) {
     }
 }
 
+/// `ExposedGemsInIceBiome` (`WorldGen.cs:20697-20735`): `maxTilesX · 0.25`
+/// attempts — the y between `(worldSurface + rockLayer) / 2` and the lava
+/// line, the x in the snow band, the anchor tile from the snow/ice family
+/// (147/161/162/224); the gem patch (the tile 178, the styles 0-5 weighted
+/// `Next(12)`: <3 → 0, <6 → 1, <8 → 2, <10 → 3, ≥11 → 5, else 4) fills the
+/// `Next(1,4)`-half-sized rectangle of the free cells.
+pub(crate) fn pass_exposed_gems(
+    world: &mut World,
+    snow_start: i32,
+    rock_layer: f64,
+    rng: &mut super::Rng,
+) {
+    let attempts = (world.width as f64 * 0.25) as i32;
+    let y_lo = ((world.world_surface + rock_layer) / 2.0) as i32;
+    let y_hi = (world.height - 170).min(world.height - 2);
+    if y_hi <= y_lo {
+        return;
+    }
+    for _ in 0..attempts {
+        let y = rng.range(y_lo, y_hi);
+        // The snow band's span at this row: the port's snow band is the
+        // eastern third (the fill's `snow_start`), the gems scan inside it.
+        let x = rng.range(snow_start.max(40), world.width - 40);
+        let Some(t) = world.tile(x, y) else {
+            continue;
+        };
+        if !t.active() || !matches!(t.kind, 147 | 161 | 162 | 224) {
+            continue;
+        }
+        // The patch rectangle: the `Next(1, 4)` half-sizes.
+        let left = rng.range(1, 4);
+        let right = rng.range(1, 4);
+        let up = rng.range(1, 4);
+        let down = rng.range(1, 4);
+        // The style weights (`:20718-20724`).
+        let roll = rng.range(0, 12);
+        let style = if roll < 3 {
+            0
+        } else if roll < 6 {
+            1
+        } else if roll < 8 {
+            2
+        } else if roll < 10 {
+            3
+        } else if roll >= 11 {
+            5
+        } else {
+            4
+        };
+        for px in (x - left)..(x + right) {
+            for py in (y - up)..(y + down) {
+                if px < 40 || py < 40 || px >= world.width - 40 || py >= world.height - 40 {
+                    continue;
+                }
+                if world.tile(px, py).is_some_and(|t| !t.active()) {
+                    let i = world.index(px, py);
+                    let t = &mut world.tiles[i];
+                    t.kind = 178;
+                    t.frame_x = (style * 18) as i16;
+                    t.frame_y = 0;
+                    t.flags |= FLAG_ACTIVE;
+                }
+            }
+        }
+    }
+}
+
 const _: (u16, u16, u16) = (TILE_SNOW, TILE_STONE, TILE_DIRT);

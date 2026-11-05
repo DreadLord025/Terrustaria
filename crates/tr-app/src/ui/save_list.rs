@@ -126,8 +126,8 @@ pub fn list_worlds(worlds_dir: &Path, fake_count: usize) -> Vec<WorldEntry> {
     for i in 1..=fake_count {
         out.push(WorldEntry {
             name: format!("World {i}"),
-            difficulty: 0,                      // Classic (`WorldFileData.cs:53` default)
-            size_id: 1,                         // Medium, `Main.cs:50994`'s 6400 default
+            difficulty: 0, // Classic (`WorldFileData.cs:53` default)
+            size_id: 1,    // Medium, `Main.cs:50994`'s 6400 default
             is_favorite: false,
             valid: true,
             has_been_played: false,
@@ -174,8 +174,8 @@ fn world_entry(path: &Path) -> WorldEntry {
 fn read_header(path: &Path) -> (Option<String>, i32, bool) {
     use std::io::Read;
     let mut raw = Vec::new();
-    let read = std::fs::File::open(path)
-        .and_then(|f| f.take(HEADER_READ_CAP).read_to_end(&mut raw));
+    let read =
+        std::fs::File::open(path).and_then(|f| f.take(HEADER_READ_CAP).read_to_end(&mut raw));
     if read.is_err() {
         return (None, 1, false);
     }
@@ -184,13 +184,14 @@ fn read_header(path: &Path) -> (Option<String>, i32, bool) {
     if r.take(8) != Some(MAGIC.as_slice()) {
         return (None, 1, false);
     }
-    // version: 0 or beyond the writer's is unsupported (`save.rs:131-134`);
+    // version: 0 or beyond the writer's is unsupported (`save.rs:131-134`,
+    // the current writer's `save::VERSION` — BG-21's v4 cooldown tail included);
     // vanilla refuses later versions the same way (`WorldFile.cs:190-194`,
     // `StatusID.LaterVersion`).
     let Some(version) = r.u32() else {
         return (None, 1, false);
     };
-    if version == 0 || version > 3 {
+    if version == 0 || version > tr_core::save::VERSION {
         return (None, 1, false);
     }
     // seed (`save.rs:135`) — not needed for the listing.
@@ -238,9 +239,9 @@ pub fn list_players(
     for i in 1..=fake_count {
         out.push(PlayerEntry {
             name: format!("Player {i}"),
-            difficulty: 0,   // `Player.cs:1654` (fresh `byte difficulty` = 0)
-            life_max: 100,   // `Player.cs:1924`
-            mana_max: 20,    // `Player.cs:56075`
+            difficulty: 0, // `Player.cs:1654` (fresh `byte difficulty` = 0)
+            life_max: 100, // `Player.cs:1924`
+            mana_max: 20,  // `Player.cs:56075`
             is_favorite: false,
             playable: true,
             deletable: true,
@@ -276,7 +277,10 @@ pub fn list_players(
             }
         }
     }
-    if session.as_ref().is_some_and(|s| disk.iter().any(|d| d.name == s.name)) {
+    if session
+        .as_ref()
+        .is_some_and(|s| disk.iter().any(|d| d.name == s.name))
+    {
         session = None;
     }
     if let Some(session) = session {
@@ -486,7 +490,10 @@ mod tests {
         assert!(alpha.valid);
         assert_eq!(alpha.name, "Alpha");
         assert_eq!(alpha.size_id, size_bucket(64));
-        assert_eq!(alpha.path.as_deref(), Some(dir.join("alpha.trwld").as_path()));
+        assert_eq!(
+            alpha.path.as_deref(),
+            Some(dir.join("alpha.trwld").as_path())
+        );
         assert_eq!(alpha.difficulty, 0, "the port writes no GameMode");
         let beta = &worlds[1];
         assert!(!beta.valid, "garbage fails the header reader");
@@ -546,9 +553,12 @@ mod tests {
             is_favorite: false,
             playable: true,
             deletable: false,
-                  path: None,
+            path: None,
         };
-        assert_eq!(list_players(None, Some(session.clone()), 0), vec![session.clone()]);
+        assert_eq!(
+            list_players(None, Some(session.clone()), 0),
+            vec![session.clone()]
+        );
         // `fake_count > 0` prepends `Player 1..n`, deletable per the plan.
         let fakes = list_players(None, None, 2);
         assert_eq!(
@@ -673,7 +683,10 @@ mod tests {
         erase_player(Some(&plr)).unwrap();
         assert!(!plr.exists());
         assert!(!dir.join("bob.plr.bak").exists());
-        assert!(!dir.join("bob").exists(), "the sibling directory is removed");
+        assert!(
+            !dir.join("bob").exists(),
+            "the sibling directory is removed"
+        );
         // Missing files are already gone -> still Ok.
         erase_player(Some(&plr)).unwrap();
         // The session/fake entries are dropped in memory only.
@@ -753,13 +766,7 @@ mod tests {
         ];
         sort_worlds(&mut worlds, false);
         assert!(worlds[0].path.is_none());
-        assert_eq!(
-            worlds[1].path.as_deref(),
-            Some(Path::new("saves/a.trwld"))
-        );
-        assert_eq!(
-            worlds[2].path.as_deref(),
-            Some(Path::new("saves/z.trwld"))
-        );
+        assert_eq!(worlds[1].path.as_deref(), Some(Path::new("saves/a.trwld")));
+        assert_eq!(worlds[2].path.as_deref(), Some(Path::new("saves/z.trwld")));
     }
 }
