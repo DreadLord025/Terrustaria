@@ -3989,3 +3989,28 @@ world (`TileID.cs`: the copper 7 / the tin 166, the iron 6 / the lead
 
 Deviations: the TileRunner-strength bands (the C#'s vein shapes carry the
 depth-dependent strengths) are the follow-up; the ore walls are out.
+
+## Progression recipe batch (M3-CRAFT-4)
+
+The first progression batch over the group-enabled table (20 recipes with
+the `Recipe.cs` registrations):
+
+- **The wooden tools** (the work bench 18): the sword 24 = 7 Wood (the
+  group `:6800-6806`), the hammer 196 = 8 Wood (`:6810-6814`), the bow 39
+  = 10 Wood (`:6815-6818`), the arrow 40 ×25 = 1 Wood + 1 Stone
+  (`:2077-2082`); the platform 94 ×2 = 1 Wood by hand (`:2376-2378`).
+- **The bars** (the furnace 17): the copper 20 = 3 Copper Ore 12
+  (`:9652-9656`), the silver 21 = 4 Silver Ore 14 (`:10076-10080`), the
+  gold 19 = 4 Gold Ore 13 (`:10236-10240`) — the ore item ids are the
+  vanilla pair (the iron 11 already in the table).
+- **The metal armor** (the anvil 16): the copper set (the helmet 89 = 12
+  bars `:9708-9712`, the chainmail 80 = 20 `:9714-9717`, the greaves 76 =
+  16 `:9718-9721`), the iron set via the iron-bar group (the helmet 90 =
+  15, the chainmail 81 = 25, the greaves 77 = 20, `:9882-9895`), the
+  silver set (91/82/78 = 15/25/20, `:10127-10140`), the gold set
+  (92/83/79 = 20/30/25, `:10287-10300`).
+
+Deviations: the iron armor requirements author the iron bar 22 with the
+accepted IRON_BAR group (the C#'s `RequireGroup` shape — the group
+members 22/704 both accepted); the remaining ~1950 C# rows wait for the
+SetupRecipes generator; the craft sound is the follow-up.
