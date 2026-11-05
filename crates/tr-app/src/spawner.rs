@@ -721,6 +721,19 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     // exclusive in vanilla; the port keeps the exclusivity inside one
     // section.
     let underworld_depth = (y as f64 / 16.0) > ctx.world.height as f64 - 190.0;
+    // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
+    // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
+    // (`:1286`); `CanSpawnDevourer` is the custom-seed gate — true in the
+    // port; the hardmode 98/99 split waits for the hardmode worm pass).
+    if ctx.flags.zone_evil && rng.next(65) == 0 {
+        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::DevourerHead));
+    }
+    // The Giant Worm: the cavern roll (`NPC.cs:4815-4832`:
+    // `underGround && !noWorms && Next(50) == 0 && !ZoneSnow` — the port
+    // approximates the snow gate with the snow-floor tiles 147/161).
+    if !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
+        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::GiantWormHead));
+    }
     // The Tim: the deep-cavern roll (`:5014`): `(remixWorld ||
     // spawnTileY > (rockLayer + maxTilesY) / 2.0) && (Next(200) == 0 ||
     // (offensiveToTim && Next(50) == 0)) → 45` — non-underworld depth
@@ -1556,6 +1569,43 @@ mod tests {
         }
         assert!(sharks > 0, "the ocean sweep never rolled the Shark");
         assert!(sharks < 3000, "the ocean roll is gated");
+    }
+
+    #[test]
+    fn the_cavern_rolls_worm_heads() {
+        // The worm arms: the Devourer `ZoneCorrupt && Next(65) == 0`
+        // (`:3701-3710`), the Giant Worm `underGround && Next(50) == 0`
+        // (`:4815-4832`) — the sweeps produce the heads, the non-evil dirt
+        // never rolls the Devourer.
+        let mut w = ground_tall();
+        // The evil cavern pocket: the corruption zone + a carved air pocket
+        // so the head lands.
+        let mut c = ctx(&w, 350.0 * 16.0, false);
+        c.flags.zone_evil = true;
+        let mut devourers = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+                devourers += 1;
+            }
+        }
+        assert!(devourers > 0, "the corruption sweep never rolled the Devourer");
+        // The plain dirt never rolls the Devourer (the zone gate).
+        let c_plain = ctx(&w, 350.0 * 16.0, false);
+        let mut devourers = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+                devourers += 1;
+            }
+        }
+        assert_eq!(devourers, 0, "the plain cavern never rolls the Devourer");
+        // The Giant Worm: the same depth without the corruption.
+        let mut worms = 0;
+        for seed in 1..6000u64 {
+            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::GiantWormHead, _))) {
+                worms += 1;
+            }
+        }
+        assert!(worms > 0, "the cavern sweep never rolled the Giant Worm");
     }
 
 }

@@ -89,6 +89,26 @@ pub enum NpcKind {
     /// `NPCID.Shark` (65) — the ocean fish (`aiStyle 16`, `NPC.cs:9610`:
     /// 100x24, 300 HP).
     Shark,
+    /// `NPCID.DevourerHead` (7) — the corruption worm's head (`aiStyle 6`,
+    /// `NPC.cs:8763`). The body 8 and the tail 9 chain behind it.
+    DevourerHead,
+    /// `NPCID.DevourerBody` (8) — the middle segments (`NPC.cs:8792`).
+    DevourerBody,
+    /// `NPCID.DevourerTail` (9) — the tail segment (`NPC.cs:8821`).
+    DevourerTail,
+    /// `NPCID.GiantWormHead` (10) — the cavern worm's head (`NPC.cs:8850`).
+    GiantWormHead,
+    /// `NPCID.GiantWormBody` (11) — the middle segments (`NPC.cs:8867`).
+    GiantWormBody,
+    /// `NPCID.GiantWormTail` (12) — the tail segment (`NPC.cs:8885`).
+    GiantWormTail,
+    /// `NPCID.EaterofWorldsHead` (13) — the boss worm's head (`NPC.cs:8903`);
+    /// the natural spawn waits for the orb-break summon work.
+    EaterOfWorldsHead,
+    /// `NPCID.EaterofWorldsBody` (14) — the middle segments (`NPC.cs:8923`).
+    EaterOfWorldsBody,
+    /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
+    EaterOfWorldsTail,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -280,6 +300,15 @@ impl NpcKind {
             NpcKind::Goldfish => 22,
             NpcKind::Piranha => 23,
             NpcKind::Shark => 24,
+            NpcKind::DevourerHead => 25,
+            NpcKind::DevourerBody => 26,
+            NpcKind::DevourerTail => 27,
+            NpcKind::GiantWormHead => 28,
+            NpcKind::GiantWormBody => 29,
+            NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead => 31,
+            NpcKind::EaterOfWorldsBody => 32,
+            NpcKind::EaterOfWorldsTail => 33,
         }
     }
 
@@ -310,8 +339,76 @@ impl NpcKind {
             22 => NpcKind::Goldfish,
             23 => NpcKind::Piranha,
             24 => NpcKind::Shark,
+            25 => NpcKind::DevourerHead,
+            26 => NpcKind::DevourerBody,
+            27 => NpcKind::DevourerTail,
+            28 => NpcKind::GiantWormHead,
+            29 => NpcKind::GiantWormBody,
+            30 => NpcKind::GiantWormTail,
+            31 => NpcKind::EaterOfWorldsHead,
+            32 => NpcKind::EaterOfWorldsBody,
+            33 => NpcKind::EaterOfWorldsTail,
             _ => return None,
         })
+    }
+
+    /// The worm family role (`AI_006`'s type groups): the head digs, the
+    /// body links, the tail ends (`:51393`'s body list, `:51436`'s
+    /// head/mid list).
+    pub fn is_worm(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerTail
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormTail
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::EaterOfWorldsTail
+        )
+    }
+
+    /// The head kinds (`:51436`'s list minus the unported families).
+    pub fn is_worm_head(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerHead | NpcKind::GiantWormHead | NpcKind::EaterOfWorldsHead
+        )
+    }
+
+    /// The mid-body kinds that spawn another of themselves while the
+    /// budget holds (`:51350`'s list).
+    pub fn is_worm_mid(self) -> bool {
+        matches!(
+            self,
+            NpcKind::DevourerBody | NpcKind::GiantWormBody | NpcKind::EaterOfWorldsBody
+        )
+    }
+
+    /// The next segment's kind down the chain (`type + 1` in the vanilla
+    /// spawns, `:51347`/`:51357`).
+    pub fn worm_next(self) -> NpcKind {
+        match self {
+            NpcKind::DevourerHead => NpcKind::DevourerBody,
+            NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
+            NpcKind::GiantWormHead => NpcKind::GiantWormBody,
+            NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
+            NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
+            _ => NpcKind::EaterOfWorldsTail,
+        }
+    }
+
+    /// The head's dig tunables — `num45` (the max speed) and `num46` (the
+    /// steering accel) per family (`:51670-51706`).
+    pub fn worm_tunables(self) -> (f32, f32) {
+        match self {
+            NpcKind::DevourerHead => (9.0, 0.1),
+            NpcKind::GiantWormHead => (6.0, 0.05),
+            NpcKind::EaterOfWorldsHead => (10.0, 0.07),
+            _ => (8.0, 0.07),
+        }
     }
 
     /// The vanilla hitboxes: blue slime 24x18 (`NPC.cs:8568-8569`), demon eye
@@ -352,6 +449,17 @@ impl NpcKind {
             NpcKind::Goldfish => (20.0, 18.0),
             NpcKind::Piranha => (18.0, 20.0),
             NpcKind::Shark => (100.0, 24.0),
+            // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
+            // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail => (22.0, 22.0),
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => {
+                (14.0, 14.0)
+            }
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -391,6 +499,12 @@ impl NpcKind {
             NpcKind::Goldfish => 5,
             NpcKind::Piranha => 30,
             NpcKind::Shark => 300,
+            // The worms: the segment HP per family (`:8763`/`:8850`/`:8903`).
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 100,
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 150,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -426,6 +540,16 @@ impl NpcKind {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 25,
             NpcKind::Shark => 40,
+            // The worms: the head hits hardest, the tail softest
+            // (`:8763`'s 31/16/13, `:8850`'s 8/4/4, `:8903`'s 22/13/11).
+            NpcKind::DevourerHead => 31,
+            NpcKind::DevourerBody => 16,
+            NpcKind::DevourerTail => 13,
+            NpcKind::GiantWormHead => 8,
+            NpcKind::GiantWormBody | NpcKind::GiantWormTail => 4,
+            NpcKind::EaterOfWorldsHead => 22,
+            NpcKind::EaterOfWorldsBody => 13,
+            NpcKind::EaterOfWorldsTail => 11,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -488,6 +612,18 @@ pub struct Npc {
     /// `ai[0]` for the swimmers (`AI_016`): the vertical bob phase — 0 the
     /// chase start, −1 rising, 1 sinking (`:23752`/`:23758`/`:23850`).
     pub swim_phase: f32,
+    /// The worm chain id (`AI_006`): every segment of one worm shares it;
+    /// 0 = not a worm.
+    pub worm_id: u32,
+    /// The segment's index down the chain — 0 = the head (`ai[1] == 0`'s
+    /// leader), the tail = the last.
+    pub seg_index: u32,
+    /// `ai[2]`: the remaining segment budget this link passes down (the
+    /// head rolls the total, each link decrements).
+    pub worm_left: u32,
+    /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
+    /// link spawns its child on the first worm pass.
+    pub worm_inited: bool,
     /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
@@ -592,6 +728,17 @@ impl Npc {
             if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
             0.0,
         ))
+    }
+
+    /// Spawns a worm head standing on the found ground tile (`SpawnNPC`'s
+    /// `Bottom` placement — the chain assembles from the head's first worm
+    /// pass: each link spawns its child at the parent's bottom-centre,
+    /// `NPC.cs:51347`).
+    pub fn spawn_worm_head(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Self {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = ground_y as f32 * TILE_PX - h;
+        Self::new(kind, x, y, 1, 0.0)
     }
 
     /// Spawns a swimmer standing on the found ground tile inside its water
@@ -715,6 +862,10 @@ impl Npc {
             cast_windup: 0,
             wants_sphere: None,
             swim_phase: 0.0,
+            worm_id: 0,
+            seg_index: 0,
+            worm_left: 0,
+            worm_inited: false,
             wet_x: 0.0,
         }
     }
@@ -774,6 +925,16 @@ impl Npc {
             NpcKind::Goldfish => 0.5,
             NpcKind::Piranha => 1.0,
             NpcKind::Shark => 0.7,
+            // The worms: knockBackResist 0 (`:8763` family-wide).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -818,6 +979,16 @@ impl Npc {
             NpcKind::Goldfish => 0,
             NpcKind::Piranha => 2,
             NpcKind::Shark => 2,
+            // The worms: the head 2/0/2, the body 6/4/4, the tail 10/6/8.
+            NpcKind::DevourerHead => 2,
+            NpcKind::DevourerBody => 6,
+            NpcKind::DevourerTail => 10,
+            NpcKind::GiantWormHead => 0,
+            NpcKind::GiantWormBody => 4,
+            NpcKind::GiantWormTail => 6,
+            NpcKind::EaterOfWorldsHead => 2,
+            NpcKind::EaterOfWorldsBody => 4,
+            NpcKind::EaterOfWorldsTail => 8,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -862,6 +1033,13 @@ impl Npc {
             NpcKind::Goldfish => 0.0,
             NpcKind::Piranha => 50.0,
             NpcKind::Shark => 400.0,
+            // The worms: the per-segment coin value (`:8763`'s 140, `:8850`'s
+            // 40, `:8903`'s 800 — the body/tail rows carry the same value).
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => 140.0,
+            NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => 40.0,
+            NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => 800.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -998,6 +1176,18 @@ impl Npc {
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
+            // The worms: the movement runs in the world sim's worm pass
+            // (the chain needs the sibling segments; `AI_006` reads
+            // `Main.npc` the same way).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => {}
         }
         self.find_frame();
         self.contact(player);
@@ -1245,6 +1435,16 @@ impl Npc {
                     };
                 }
             }
+            // The worms: `Main.npcFrameCount` 7..15 = 1 (`Main.cs:67082`).
+            NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail => {}
             NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
@@ -1847,6 +2047,15 @@ impl Npc {
             NpcKind::Goldfish => 22,
             NpcKind::Piranha => 23,
             NpcKind::Shark => 24,
+            NpcKind::DevourerHead => 25,
+            NpcKind::DevourerBody => 26,
+            NpcKind::DevourerTail => 27,
+            NpcKind::GiantWormHead => 28,
+            NpcKind::GiantWormBody => 29,
+            NpcKind::GiantWormTail => 30,
+            NpcKind::EaterOfWorldsHead => 31,
+            NpcKind::EaterOfWorldsBody => 32,
+            NpcKind::EaterOfWorldsTail => 33,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -2691,6 +2900,146 @@ mod tests {
             (NpcKind::Goldfish, 55),
             (NpcKind::Piranha, 58),
             (NpcKind::Shark, 65),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
+    #[test]
+    fn the_worm_chain_assembles_and_trails() {
+        // `AI_006` (`NPC.cs:51305-51368`): the head rolls the budget and
+        // spawns the chain front to back; the followers ride the rigid
+        // trail at the width distance (`:51867-51922`).
+        let mut w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::GiantWormHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 3u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // The chain: the head + the bodies + the tail; the Giant Worm's
+        // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
+        assert!(npcs.len() >= 6 && npcs.len() <= 8, "the chain length {}", npcs.len());
+        assert_eq!(npcs[0].kind, NpcKind::GiantWormHead);
+        assert_eq!(npcs[0].worm_left, npcs.len() as u32 - 2);
+        assert_eq!(npcs[0].worm_id, 1);
+        for (i, seg) in npcs.iter().enumerate() {
+            assert_eq!(seg.worm_id, 1, "the chain id shared");
+            assert_eq!(seg.seg_index, i as u32, "the indices run front to back");
+        }
+        assert_eq!(npcs[1].kind, NpcKind::GiantWormBody);
+        assert_eq!(npcs.last().unwrap().kind, NpcKind::GiantWormTail);
+        // The trail: the second segment sits one width behind the head.
+        let (lw, lh) = npcs[1].size();
+        let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + npcs[0].size().0 * 0.5);
+        let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!(
+            (dist - lw).abs() < 0.5,
+            "the rigid trail distance ({dist} vs {lw})"
+        );
+        // The second pass: the chain holds (the inited links spawn nothing).
+        let len_before = npcs.len();
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(npcs.len(), len_before, "the chain is stable");
+    }
+
+    #[test]
+    fn the_worm_chain_dies_with_the_head() {
+        // `:51425-51433`: the leader gone — the link dies; the whole tail
+        // falls in one pass.
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 125, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        let mut npcs = vec![head];
+        let mut rng = 7u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
+        // The head dies: the chain falls.
+        npcs[0].hp = 0;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        for seg in &npcs {
+            assert!(seg.hp <= 0, "the segment followed the head down");
+        }
+    }
+
+    #[test]
+    fn the_worm_head_digs_and_stumbles() {
+        // The head machine (`:51923-52051`): inside the solid the velocity
+        // aims at the tile-snapped player at `num45`; in the open air the
+        // gravity pulls.
+        let mut w = ground_air();
+        // The head deep in the dirt, the player above.
+        let mut head = Npc::spawn_worm_head(&w, 40, 150, NpcKind::DevourerHead);
+        head.hp = head.max_hp;
+        head.worm_inited = true;
+        head.worm_id = 1;
+        let mut npcs = vec![head];
+        let mut rng = 11u64;
+        let mut next_id = 1u32;
+        // The player parked above the dirt.
+        let pc = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
+        let h0 = &npcs[0];
+        // The dig: the velocity magnitude rides num45 (9 for the Devourer).
+        let speed = (h0.vx * h0.vx + h0.vy * h0.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.1, "the dig speed ({speed})");
+        assert!(h0.vy < 0.0, "the head digs up toward the player");
+        // The air stumble: the head in the open cavern falls.
+        let mut w2 = ground_air();
+        for x in 30..50 {
+            for y in 130..160 {
+                let i = w2.index(x, y);
+                w2.tiles[i] = Tile::default();
+            }
+        }
+        w2.compute_column_surface();
+        let mut flyer = Npc::spawn_worm_head(&w2, 40, 140, NpcKind::GiantWormHead);
+        flyer.hp = flyer.max_hp;
+        flyer.worm_inited = true;
+        flyer.worm_id = 2;
+        let mut npcs2 = vec![flyer];
+        let pc2 = (100.0 * 16.0, 116.0 * 16.0);
+        crate::world_sim::npcs::update_worms_in(
+            &w2,
+            Some(pc2),
+            &mut npcs2,
+            &mut rng,
+            &mut next_id,
+        );
+        let f0 = &npcs2[0];
+        assert!(f0.vy > 0.0, "the open-air head falls (+0.11 gravity)");
+    }
+
+    #[test]
+    fn the_worms_spawn_and_map() {
+        // The stats ride the verified `SetDefaults` rows; the bestiary
+        // entries fold the body/tail credits onto the head ids.
+        let w = ground_air();
+        let head = Npc::spawn_worm_head(&w, 40, 130, NpcKind::DevourerHead);
+        assert_eq!(head.size(), (22.0, 22.0));
+        assert_eq!(head.max_hp, 100);
+        assert_eq!(NpcKind::DevourerHead.contact_damage(), 31);
+        assert_eq!(NpcKind::DevourerTail.contact_damage(), 13);
+        assert_eq!(head.knock_back_resist(), 0.0);
+        let gw = Npc::spawn_worm_head(&w, 50, 130, NpcKind::GiantWormHead);
+        assert_eq!(gw.size(), (14.0, 14.0));
+        assert_eq!(gw.max_hp, 30);
+        let eow = Npc::new(NpcKind::EaterOfWorldsHead, 0.0, 0.0, 1, 0.0);
+        assert_eq!(eow.size(), (38.0, 38.0));
+        assert_eq!(eow.max_hp, 150);
+        for (kind, net) in [
+            (NpcKind::DevourerHead, 7),
+            (NpcKind::DevourerBody, 7),
+            (NpcKind::DevourerTail, 7),
+            (NpcKind::GiantWormHead, 10),
+            (NpcKind::GiantWormBody, 10),
+            (NpcKind::GiantWormTail, 10),
+            (NpcKind::EaterOfWorldsHead, 13),
+            (NpcKind::EaterOfWorldsBody, 13),
+            (NpcKind::EaterOfWorldsTail, 13),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);

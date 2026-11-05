@@ -1317,6 +1317,7 @@ pub(crate) mod front_flow_tests {
             npcs: Vec::new(),
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
+            next_worm_id: 1,
             npc_rng: 0,
             spawn_no_cycle: false,
             attack_cd: 0.0,

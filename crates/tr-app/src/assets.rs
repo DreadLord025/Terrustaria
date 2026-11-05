@@ -243,6 +243,15 @@ pub fn load_world_images(
         "NPC_55",
         "NPC_58",
         "NPC_65",
+        "NPC_7",
+        "NPC_8",
+        "NPC_9",
+        "NPC_10",
+        "NPC_11",
+        "NPC_12",
+        "NPC_13",
+        "NPC_14",
+        "NPC_15",
         "NPC_51",
         "NPC_60",
         "NPC_66",
@@ -1032,8 +1041,9 @@ pub struct Lookups {
     /// slime, guide, skeleton, undead miner, cave bat, jungle bat, hellbat,
     /// voodoo demon, eater of souls, hornet, meteor head, goblin sorcerer,
     /// tim, dark caster, fire imp, chaos ball, burning sphere, water
-    /// sphere, goldfish, piranha, shark]`.
-    pub bestiary_npc_sheets: [Option<tr_render::SheetRect>; 25],
+    /// sphere, goldfish, piranha, shark, the Devourer's three, the Giant
+    /// Worm's three, the Eater of Worlds' three]`.
+    pub bestiary_npc_sheets: Vec<Option<tr_render::SheetRect>>,
     /// `UI/SearchCancel`: the search-bar cancel button (`UIWrappedSearchBar.cs:145`).
     pub ui_search_cancel: Option<tr_render::SheetRect>,
     /// `Images/Text_Back`: the chat input strip (`Main.cs:40947-40976`).
@@ -1247,7 +1257,7 @@ impl Lookups {
             ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
             ui_bestiary_stat_knockback: atlas.sheet("UI/Bestiary/Stat_Knockback").copied(),
             ui_bestiary_stat_copper: atlas.sheet("UI/Bestiary/Stat_Copper").copied(),
-            bestiary_npc_sheets: [
+            bestiary_npc_sheets: vec![
                 atlas.sheet("NPC_1").copied(),
                 atlas.sheet("NPC_2").copied(),
                 atlas.sheet("NPC_133").copied(),
@@ -1273,6 +1283,15 @@ impl Lookups {
                 atlas.sheet("NPC_55").copied(),
                 atlas.sheet("NPC_58").copied(),
                 atlas.sheet("NPC_65").copied(),
+                atlas.sheet("NPC_7").copied(),
+                atlas.sheet("NPC_8").copied(),
+                atlas.sheet("NPC_9").copied(),
+                atlas.sheet("NPC_10").copied(),
+                atlas.sheet("NPC_11").copied(),
+                atlas.sheet("NPC_12").copied(),
+                atlas.sheet("NPC_13").copied(),
+                atlas.sheet("NPC_14").copied(),
+                atlas.sheet("NPC_15").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

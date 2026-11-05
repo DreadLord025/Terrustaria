@@ -131,6 +131,9 @@ pub(crate) struct App {
     pub(crate) npcs: Vec<Npc>,
     pub(crate) npc_assets: NpcAssets,
     pub(crate) npc_timer: f32,
+    /// The worm chain id counter (`AI_006`'s chain identity) — the head
+    /// takes the next id, the segments share it.
+    pub(crate) next_worm_id: u32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -1235,6 +1238,7 @@ impl App {
             npcs,
             npc_assets,
             npc_timer: 6.0,
+            next_worm_id: 1,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,

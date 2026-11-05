@@ -38,6 +38,202 @@ pub(crate) fn black_slime_darkness_touch(
     }
 }
 
+/// `AI_006_Worms` (`NPC.cs:50963-52090`) — the chain pass. The vanilla runs
+/// it inside each NPC's `Update` against the `Main.npc` slots; the port runs
+/// it here against the `Vec` (the slot order = the Vec order = the spawn
+/// order, so the head moves before its followers exactly like the original).
+/// The head digs (`flag3`'s solid-overlap scan switches the direct aim), the
+/// followers ride the rigid trail (`:51867-51922`), a missing leader kills
+/// the link (the chain death, `:51425-51433`). The EoW middle-segment split
+/// (`:51511-51518`'s `Transform`) is deferred: a middle kill takes the tail
+/// with it (the chain-death rule), the split lands with the boss-summon
+/// work.
+pub(crate) fn update_worms(app: &mut App) {
+    let mut rng = app.item_rng;
+    let world = &app.world;
+    let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
+    update_worms_in(world, player, &mut app.npcs, &mut rng, &mut app.next_worm_id);
+}
+
+/// The worm pass's core — the pieces the tests drive directly (the world,
+/// the player centre, the Vec, the RNG stream, the id counter).
+pub(crate) fn update_worms_in(
+    world: &tr_core::World,
+    player: Option<(f32, f32)>,
+    npcs: &mut Vec<Npc>,
+    mut rng: &mut u64,
+    next_worm_id: &mut u32,
+) {
+    // The init loop: the links spawn their children (the chain assembles
+    // front to back — the Vec order visits the head, then each child as it
+    // lands).
+    // The `while` (not the `for 0..len`) — the pushes extend the Vec and
+    // the new links init in the same pass.
+    let mut i = 0usize;
+    while i < npcs.len() {
+        if npcs[i].worm_inited || npcs[i].hp <= 0 || !npcs[i].kind.is_worm() {
+            i += 1;
+            continue;
+        }
+        // The chain identity: an id-less head takes the next id (the
+        // segments share it — the vanilla's `ai[1]`/`ai[3]` slot links).
+        if npcs[i].worm_id == 0 {
+            npcs[i].worm_id = *next_worm_id;
+            *next_worm_id += 1;
+        }
+        npcs[i].worm_inited = true;
+        let kind = npcs[i].kind;
+        // The tails (9/12/15) sit outside the chain-spawn lists
+        // (`:51393`/`:51436`) — they end the chain.
+        if !kind.is_worm_head() && !kind.is_worm_mid() {
+            i += 1;
+            continue;
+        }
+        let total = if kind.is_worm_head() {
+            match kind {
+                // `:51310`'s `Next(8, 13)` / `:51313`'s `Next(4, 7)` — the
+                // inclusive-low exclusive-high C# ranges.
+                NpcKind::DevourerHead => {
+                    8 + (crate::app::frame::rand01(&mut rng) * 5.0) as u32
+                }
+                NpcKind::GiantWormHead => {
+                    4 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
+                }
+                // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
+                // the difficulty work).
+                _ => 65,
+            }
+        } else {
+            npcs[i].worm_left
+        };
+        if kind.is_worm_head() {
+            npcs[i].worm_left = total;
+        }
+        // The child kind: the head spawns `type + 1`; the mid body spawns
+        // itself while the budget holds, else the tail (`:51347-51358`).
+        let child_kind = if kind.is_worm_head() {
+            kind.worm_next()
+        } else if npcs[i].worm_left > 0 {
+            kind
+        } else {
+            kind.worm_next()
+        };
+        let (w, h) = npcs[i].size();
+        let mut child = Npc::new(
+            child_kind,
+            npcs[i].x + w * 0.5 - child_kind.size().0 * 0.5,
+            npcs[i].y + h,
+            1,
+            0.0,
+        );
+        child.worm_id = npcs[i].worm_id;
+        child.seg_index = npcs[i].seg_index + 1;
+        child.worm_left = npcs[i].worm_left.saturating_sub(1);
+        child.hp = child.max_hp;
+        npcs.push(child);
+        i += 1;
+    }
+    // The follower trail (`:51867-51922`) + the chain death
+    // (`:51425-51433`).
+    for i in 0..npcs.len() {
+        if !npcs[i].kind.is_worm() || npcs[i].seg_index == 0 || npcs[i].hp <= 0 {
+            continue;
+        }
+        let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+        let Some(leader) = npcs
+            .iter()
+            .find(|n| n.worm_id == wid && n.seg_index == seg - 1 && n.hp > 0)
+        else {
+            npcs[i].hp = 0;
+            continue;
+        };
+        let (lw, lh) = npcs[i].size();
+        let dx = leader.x + leader.size().0 * 0.5 - (npcs[i].x + lw * 0.5);
+        let dy = leader.y + leader.size().1 * 0.5 - (npcs[i].y + lh * 0.5);
+        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        let num62 = (len - lw) / len;
+        npcs[i].vx = 0.0;
+        npcs[i].vy = 0.0;
+        npcs[i].x += dx * num62;
+        npcs[i].y += dy * num62;
+        npcs[i].rotation = dy.atan2(dx) + 1.57;
+    }
+    // The heads: the dig/air machine (`:51923-52051`).
+    let Some((pcx, pcy)) = player else { return };
+    for i in 0..npcs.len() {
+        if !npcs[i].kind.is_worm_head() || npcs[i].hp <= 0 {
+            continue;
+        }
+        worm_head_step(&mut npcs[i], world, pcx, pcy, rng);
+    }
+}
+
+/// The head's per-tick machine (`AI_006`'s `ai[1] == 0` branch). `flag3`
+/// (the dig mode) = any tile in the body rect is solid or liquid-heavy
+/// (`:51580`'s count rule). In the open air the head stumbles: the gravity
+/// `+0.11` (the cap `num45`), the horizontal steering (`:51940-51972`); in
+/// the ground it flies straight at the tile-snapped player (`:51997-52002`).
+/// `noTileCollide` is family-wide — no collision blocks the head.
+fn worm_head_step(
+    npc: &mut Npc,
+    world: &tr_core::World,
+    pcx: f32,
+    pcy: f32,
+    _rng: &mut u64,
+) {
+    let (w, h) = npc.size();
+    // `flag3`: the dig-mode scan (`:51575-51597`).
+    let mut flag3 = false;
+    let x0 = (npc.x / TILE_PX) as i32;
+    let x1 = ((npc.x + w) / TILE_PX) as i32 + 1;
+    let y0 = (npc.y / TILE_PX) as i32;
+    let y1 = ((npc.y + h) / TILE_PX) as i32 + 1;
+    for ty in y0..=y1 {
+        for tx in x0..=x1 {
+            if world.tile(tx, ty).is_some_and(|t| {
+                t.active() && (tr_core::tiledata::TILE_SOLID.has(t.kind) || t.liquid > 64)
+            }) {
+                flag3 = true;
+            }
+        }
+    }
+    let (num45, num46) = npc.kind.worm_tunables();
+    if !flag3 {
+        // The air stumble (`:51927-51973`).
+        npc.vy = (npc.vy + 0.11).min(num45);
+        if (npc.vx.abs() + npc.vy.abs()) < num45 * 0.4 {
+            npc.vx += npc.facing as f32 * num46 * 1.1;
+        } else if npc.vy == num45 {
+            let target_vx = pcx - (npc.x + w * 0.5);
+            if npc.vx < target_vx {
+                npc.vx += num46;
+            } else if npc.vx > target_vx {
+                npc.vx -= num46;
+            }
+        } else if npc.vy > 4.0 {
+            npc.vx -= npc.vx.signum() * num46 * 0.9;
+        }
+        npc.facing = if pcx >= npc.x + w * 0.5 { 1 } else { -1 };
+    } else {
+        // The dig (`:51974-52002`): the tile-snapped aim at the max speed.
+        let mut dx = (((pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
+        let mut dy = (((pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
+        let len = (dx * dx + dy * dy).sqrt().max(0.001);
+        let num67 = num45 / len;
+        dx *= num67;
+        dy *= num67;
+        npc.vx = dx;
+        npc.vy = dy;
+    }
+    // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
+    npc.x += npc.vx;
+    npc.y += npc.vy;
+    // The off-world guard (the framework shape).
+    if npc.y > world.height as f32 * TILE_PX + 200.0 {
+        npc.hp = 0;
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     app.npc_timer -= dt;
@@ -55,6 +251,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
+    // The worm pass (`AI_006`): the chain movement after the per-NPC step
+    // (the vanilla interleaves it in the slot order; the port's pass reads
+    // the same spawn order).
+    update_worms(app);
     // `EmoteBubble.UpdateAll` (`EmoteBubble.cs:46-63`): the bubble lifetimes
     // tick on the world update.
     app.emotes.update_all();
