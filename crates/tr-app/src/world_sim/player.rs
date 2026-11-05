@@ -59,6 +59,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
         p.auras = app.scene_metrics.auras();
+            // `Player.statDefense` (`Player.UpdateEquips`): the equipped
+            // pieces' defense plus the set bonus (M3-EQUIP-2).
+            let armor_kinds: Vec<i32> = app
+                .equip
+                .armor
+                .iter()
+                .map(|slot| slot.kind as i32)
+                .collect();
+            let piece_def: i32 = app
+                .equip
+                .armor
+                .iter()
+                .filter(|slot| slot.kind != 0)
+                .filter_map(|slot| crate::registry::get(slot.kind))
+                .map(|d| d.defense as i32)
+                .sum();
+            let set = tr_core::armor_sets::set_bonus_defense(
+                armor_kinds.first().copied().unwrap_or(0),
+                armor_kinds.get(1).copied().unwrap_or(0),
+                armor_kinds.get(2).copied().unwrap_or(0),
+            );
+            p.stat_defense = piece_def + set;
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no

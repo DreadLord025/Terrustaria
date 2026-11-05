@@ -164,6 +164,9 @@ pub(crate) struct App {
     /// The homeless town NPCs' look-for-home timer (`lookForHomeTimeout`'s
     /// stand-in; M4-TOWN-1).
     pub(crate) town_look_timer: f32,
+    /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
+    /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
+    pub(crate) reuse_delay: f32,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1).
     pub(crate) achievements: achievements::AchievementManager,
     /// The modern crafting panel, open alongside the inventory
@@ -306,8 +309,14 @@ pub(crate) struct App {
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
+    /// The world-growth pass (`WorldGen.UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) growth_step: FixedStepper,
+    /// The growth stream (the `Main.rand` rolls inside `UpdateWorld`).
+    pub(crate) growth_rng: tr_core::tile_light::FastRandom,
     /// Weather and raindrops (`Rain.MakeRain` / `Rain.Update`).
     pub(crate) rain: Rain,
+    /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
+    pub(crate) sand: crate::sand::Sand,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -557,6 +566,11 @@ impl App {
     /// fire the wire trips (M7-TE-2).
     pub(crate) fn update_tile_entities(&mut self, dt: f32) {
         world_sim::tile_entities::update_tile_entities(self, dt);
+    }
+
+    /// The world-growth pass (`UpdateWorld`'s rate loops, M7-GROWTH-1).
+    pub(crate) fn update_growth(&mut self, dt: f32) {
+        world_sim::growth::update_growth(self, dt);
     }
 
     /// `Main.GetPreferredBGStyleForPlayer`: the surface background style wanted by
@@ -1176,6 +1190,7 @@ impl App {
             renderer: None,
             post: None,
             noise_tex: None,
+            sand: crate::sand::Sand::new(1),
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -1310,6 +1325,7 @@ impl App {
             },
             banners: banners::BannerSystem::default(),
             town_look_timer: 0.0,
+            reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern).
@@ -1413,6 +1429,8 @@ impl App {
             wiring: tr_core::wiring::Wiring::new(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_step: FixedStepper::new(1.0 / 60.0, 8),
+            growth_rng: tr_core::tile_light::FastRandom::new(world_seed ^ 0x2545_F491_4F6C_DD1D),
             rain,
             ambient_waterfall,
             ambient_lavafall,

@@ -4,6 +4,7 @@
 use tr_core::{TILE_PX, World};
 
 use crate::npc_buffs::NpcBuffs;
+use crate::npc_ai::HoverParams;
 use crate::player::{Player, collides_rect};
 
 const GRAVITY: f32 = 0.4;
@@ -37,6 +38,26 @@ pub enum NpcKind {
     /// `NPCID.Guide` (22) — the first town NPC (`aiStyle 7`): the port's
     /// walker is the zombie machine minus the chase (the town NPC wanders).
     Guide,
+    /// `NPCID.Skeleton` (21) — the cave walker (`aiStyle 3`, the 15-frame
+    /// humanoid strip).
+    Skeleton,
+    /// `NPCID.UndeadMiner` (44) — the rare cave walker (`aiStyle 3`).
+    UndeadMiner,
+    /// `NPCID.CaveBat` (49) — the cave flyer (`aiStyle 14`, the erratic
+    /// flight, 5 frames).
+    CaveBat,
+    /// `NPCID.JungleBat` (51) — the jungle flyer (`aiStyle 14`).
+    JungleBat,
+    /// `NPCID.Hellbat` (60) — the underworld flyer (`aiStyle 14`).
+    Hellbat,
+    /// `NPCID.VoodooDemon` (66) — the underworld flyer (`aiStyle 14`).
+    VoodooDemon,
+    /// `NPCID.EaterofSouls` (6) — the corruption hover (`aiStyle 5`).
+    EaterOfSouls,
+    /// `NPCID.Hornet` (42) — the jungle hover (`aiStyle 5`).
+    Hornet,
+    /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
+    MeteorHead,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -209,6 +230,15 @@ impl NpcKind {
             NpcKind::Zombie => 3,
             NpcKind::KingSlime => 4,
             NpcKind::Guide => 5,
+            NpcKind::Skeleton => 6,
+            NpcKind::UndeadMiner => 7,
+            NpcKind::CaveBat => 8,
+            NpcKind::JungleBat => 9,
+            NpcKind::Hellbat => 10,
+            NpcKind::VoodooDemon => 11,
+            NpcKind::EaterOfSouls => 12,
+            NpcKind::Hornet => 13,
+            NpcKind::MeteorHead => 14,
         }
     }
 
@@ -220,6 +250,15 @@ impl NpcKind {
             3 => NpcKind::Zombie,
             4 => NpcKind::KingSlime,
             5 => NpcKind::Guide,
+            6 => NpcKind::Skeleton,
+            7 => NpcKind::UndeadMiner,
+            8 => NpcKind::CaveBat,
+            9 => NpcKind::JungleBat,
+            10 => NpcKind::Hellbat,
+            11 => NpcKind::VoodooDemon,
+            12 => NpcKind::EaterOfSouls,
+            13 => NpcKind::Hornet,
+            14 => NpcKind::MeteorHead,
             _ => return None,
         })
     }
@@ -233,6 +272,21 @@ impl NpcKind {
             NpcKind::Zombie => (18.0, 40.0),
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
+            // The skeleton humanoids ride the zombie's 18x40 frame
+            // (`SetDefaults` case 21/44: width 18, height 40).
+            NpcKind::Skeleton => (18.0, 40.0),
+            NpcKind::UndeadMiner => (18.0, 40.0),
+            // `SetDefaults` case 49: width 22, height 18.
+            // The bat family shares the Cave Bat's 22x18 frame
+            // (`SetDefaults` cases 51/60/66: width 22, height 18).
+            NpcKind::JungleBat => (22.0, 18.0),
+            NpcKind::Hellbat => (22.0, 18.0),
+            NpcKind::VoodooDemon => (22.0, 18.0),
+            // `SetDefaults` case 6: 30x30; case 42: 34x32; case 23: 22x22.
+            NpcKind::EaterOfSouls => (30.0, 30.0),
+            NpcKind::Hornet => (34.0, 32.0),
+            NpcKind::MeteorHead => (22.0, 22.0),
+            NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
     }
@@ -245,6 +299,19 @@ impl NpcKind {
             NpcKind::Zombie => 45,
             // `NPC.SetDefaults` case 22 (`NPC.cs:8815`): 250 HP.
             NpcKind::Guide => 250,
+            // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
+            // the Cave Bat 16.
+            NpcKind::Skeleton => 60,
+            NpcKind::UndeadMiner => 70,
+            NpcKind::CaveBat => 16,
+            // `SetDefaults` case 51: 34; case 60: 46; case 66: 140.
+            NpcKind::JungleBat => 34,
+            NpcKind::Hellbat => 46,
+            NpcKind::VoodooDemon => 140,
+            // `SetDefaults` case 6: 40; case 42: 48; case 23: 26.
+            NpcKind::EaterOfSouls => 40,
+            NpcKind::Hornet => 48,
+            NpcKind::MeteorHead => 26,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -255,6 +322,18 @@ impl NpcKind {
             NpcKind::DemonEye => 18,     // case 2
             NpcKind::WanderingEye => 40, // case 133
             NpcKind::Zombie => 14,
+            // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
+            NpcKind::Skeleton => 20,
+            NpcKind::UndeadMiner => 22,
+            NpcKind::CaveBat => 13,
+            // `SetDefaults` case 51: damage 20; case 60: 35; case 66: 32.
+            NpcKind::JungleBat => 20,
+            NpcKind::Hellbat => 35,
+            NpcKind::VoodooDemon => 32,
+            // `SetDefaults` case 6: damage 22; case 42: 26; case 23: 40.
+            NpcKind::EaterOfSouls => 22,
+            NpcKind::Hornet => 26,
+            NpcKind::MeteorHead => 40,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -371,6 +450,63 @@ impl Npc {
     }
 
     /// Zombies walk on the surface and burn away at dawn.
+    /// Spawns a cave walker at the cavern layer's surface (the vanilla
+    /// cave spawns pick the open-air tiles below the rock layer).
+    pub fn spawn_cave_walker(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
+        let top = world.surface_of(x_tile);
+        if top >= world.height - 2 {
+            return None;
+        }
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = top as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+    }
+
+    /// Spawns a cave flyer hanging in the open air of the cave layer (the
+    /// vanilla bat spawn picks the open tiles below the rock layer — the
+    /// `SpawnAnNPC` cave arm, `NPC.cs:5233`).
+    /// Spawns a hover in the open air of its layer (`NPC.NewNPC`).
+    pub fn spawn_hover(world: &World, x_tile: i32, y_tile: i32, kind: NpcKind) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = y_tile as f32 * TILE_PX;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        if world.tile(x_tile, y_tile).is_some_and(|t| t.active()) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, 1, 0.0))
+    }
+
+    pub fn spawn_cave_flyer(
+        world: &World,
+        x_tile: i32,
+        y_tile: i32,
+        kind: NpcKind,
+    ) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = y_tile as f32 * TILE_PX;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        if world.tile(x_tile, y_tile).is_some_and(|t| t.active()) {
+            return None;
+        }
+        if !world.in_bounds(x_tile, (y / TILE_PX) as i32 + 1) {
+            return None;
+        }
+        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+    }
+
     /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
     /// world-gen arrival).
     pub fn spawn_guide(world: &World, x_tile: i32) -> Option<Self> {
@@ -419,7 +555,7 @@ impl Npc {
         Some(Self::new(NpcKind::DemonEye, x, y, 1, 0.0))
     }
 
-    fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
+    pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
             slime: SlimeVariant::Blue,
@@ -475,6 +611,18 @@ impl Npc {
             NpcKind::DemonEye => 0.8,
             NpcKind::WanderingEye => 0.8,
             NpcKind::Zombie => 0.5,
+            // `SetDefaults` case 21/44: 0.5; case 49: 0.8.
+            NpcKind::Skeleton => 0.5,
+            NpcKind::UndeadMiner => 0.5,
+            NpcKind::CaveBat => 0.8,
+            // `SetDefaults` case 51/60/66: knockBackResist 0.8.
+            NpcKind::JungleBat => 0.8,
+            NpcKind::Hellbat => 0.8,
+            NpcKind::VoodooDemon => 0.8,
+            // `SetDefaults` case 6: 0.5; case 42: 0.5; case 23: 0.4.
+            NpcKind::EaterOfSouls => 0.5,
+            NpcKind::Hornet => 0.5,
+            NpcKind::MeteorHead => 0.4,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -494,6 +642,18 @@ impl Npc {
             NpcKind::DemonEye => 2,
             NpcKind::WanderingEye => 20,
             NpcKind::Zombie => 6,
+            // `SetDefaults` case 21: defense 8; case 44: 9; case 49: 2.
+            NpcKind::Skeleton => 8,
+            NpcKind::UndeadMiner => 9,
+            NpcKind::CaveBat => 2,
+            // `SetDefaults` case 51: defense 4; case 60: 8; case 66: 8.
+            NpcKind::JungleBat => 4,
+            NpcKind::Hellbat => 8,
+            NpcKind::VoodooDemon => 8,
+            // `SetDefaults` case 6: defense 8; case 42: 12; case 23: 6.
+            NpcKind::EaterOfSouls => 8,
+            NpcKind::Hornet => 12,
+            NpcKind::MeteorHead => 6,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -511,6 +671,18 @@ impl Npc {
             NpcKind::DemonEye => 75.0,
             NpcKind::WanderingEye => 500.0,
             NpcKind::Zombie => 60.0,
+            // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
+            NpcKind::Skeleton => 100.0,
+            NpcKind::UndeadMiner => 200.0,
+            NpcKind::CaveBat => 60.0,
+            // `SetDefaults` case 51: value 80; case 60: 120; case 66: 300.
+            NpcKind::JungleBat => 80.0,
+            NpcKind::Hellbat => 120.0,
+            NpcKind::VoodooDemon => 300.0,
+            // `SetDefaults` case 6: value 150; case 42: 200; case 23: 250.
+            NpcKind::EaterOfSouls => 150.0,
+            NpcKind::Hornet => 200.0,
+            NpcKind::MeteorHead => 250.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -615,6 +787,19 @@ impl Npc {
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
             NpcKind::Guide => self.update_guide(world, dt),
+            NpcKind::Skeleton => self.update_skeleton(world, player, dt),
+            NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
+            NpcKind::EaterOfSouls => {
+                self.update_hover(world, player, HoverParams::EATER_OF_SOULS)
+            }
+            NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
+            NpcKind::MeteorHead => {
+                self.update_hover(world, player, HoverParams::METEOR_HEAD)
+            }
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
         self.find_frame();
@@ -741,6 +926,66 @@ impl Npc {
                         // here — the restart tick keeps frame 1.
                         self.frame_counter = 0.0;
                     }
+                }
+            }
+            NpcKind::Skeleton | NpcKind::UndeadMiner => {
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        // The original leaves `frame.Y` on its previous value
+                        // here — the restart tick keeps frame 1.
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
+            // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
+            // The hovers: the plain flap cycles (`Main.npcFrameCount[6] = 2`,
+            // `[42] = 3`, `[23] = 2`, `Main.cs:67082`).
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
+                let count = match self.kind {
+                    NpcKind::Hornet => 3,
+                    _ => 2,
+                };
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= count {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 5 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
                 }
             }
             NpcKind::Guide => {
@@ -1050,6 +1295,95 @@ impl Npc {
         }
     }
 
+    /// `AI_003_Fighters` for the skeleton family (`NPC.cs:10586+`): the
+    /// cave walkers chase the player through the framework's walker step
+    /// with the vanilla-cited tunables — the 15-frame strip rides the same
+    /// accumulator (the frame wraps over `Main.npcFrameCount[21] = 15`,
+    /// `Main.cs:67082`).
+    fn update_skeleton(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                // `NPC.cs` case 21: velocity.X target ~0.8 (the skeleton is
+                // a faster zombie), the jump -6.2, the aggro the zombie's
+                // 80x40-tile window.
+                speed: 0.8,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The frame: the same accumulator as the zombie's, wrapping over
+        // the 15-frame strip.
+        self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = (self.frame + 1) % 15;
+        }
+    }
+
+    /// `AI_014_Bats`' core (`NPC.cs` case 49's aiStyle): the erratic flight
+    /// through the framework's flyer step with the direction perturbation
+    /// on the aiTimer (the vanilla randomizes velocity.X/Y every ~30 ticks
+    /// toward the player).
+    fn update_cave_bat(&mut self, world: &World, player: &mut Player, _dt: f32) {
+        let (pcx, pcy) = player.center();
+        let (cx, cy) = self.center();
+        // The vanilla: `AI_014`'s velocity reroll rides `ai[1]` counting to
+        // 30 (`NPC.cs` case 49's AI block) — the deterministic hash stands
+        // in for `Main.rand` (the shared streams' order).
+        self.anim += 1.0;
+        if self.anim % 30.0 < 1.0 {
+            let jitter = ((self.x as i32).wrapping_mul(0x4982_2D4Eu32 as i32) >> 24) & 0x7;
+            self.vx = if jitter % 2 == 0 { 1.2 } else { -1.2 };
+            self.vy = if jitter < 4 { -0.8 } else { 0.8 };
+        }
+        crate::npc_ai::flyer_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::FlyerParams {
+                accel: 0.15,
+                max_speed: 2.5,
+            },
+        );
+        let _ = (cx, cy);
+        // The 5-frame flap (`Main.npcFrameCount[49] = 5`).
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 4.0 {
+            self.frame_counter = 0.0;
+            self.frame = (self.frame + 1) % 5;
+        }
+    }
+
+    /// `AI_005_EaterOfSouls`'s hover core through the framework's
+    /// `hover_step` — the no-gravity fly toward the player with the vanilla
+    /// tunables; the 2-frame/3-frame flaps ride the anim clock.
+    fn update_hover(&mut self, world: &World, player: &Player, params: HoverParams) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::hover_step(self, world, pcx, pcy, params);
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            let count = match self.kind {
+                NpcKind::Hornet => 3,
+                _ => 2,
+            };
+            self.frame = if self.frame + 1 >= count {
+                0
+            } else {
+                self.frame + 1
+            };
+        }
+    }
+
     fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
@@ -1110,6 +1444,15 @@ impl Npc {
             NpcKind::Zombie => 3,
             NpcKind::KingSlime => 4,
             NpcKind::Guide => 5,
+            NpcKind::Skeleton => 6,
+            NpcKind::UndeadMiner => 7,
+            NpcKind::CaveBat => 8,
+            NpcKind::JungleBat => 9,
+            NpcKind::Hellbat => 10,
+            NpcKind::VoodooDemon => 11,
+            NpcKind::EaterOfSouls => 12,
+            NpcKind::Hornet => 13,
+            NpcKind::MeteorHead => 14,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -1133,6 +1476,151 @@ pub fn render_key(npcs: &[Npc]) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_hover_kinds_spawn_fly_and_map() {
+        // The Eater of Souls (6)/Hornet (42)/Meteor Head (23): the hovers
+        // spawn in the open air, fly via the hover machine, the bestiary
+        // entries round-trip.
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 60..800 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let eos = Npc::spawn_hover(&w, 20, 30, NpcKind::EaterOfSouls)
+            .expect("the eater spawns in the open air");
+        assert_eq!(eos.max_hp, 40);
+        assert_eq!(eos.size(), (30.0, 30.0));
+        let hornet = Npc::spawn_hover(&w, 24, 30, NpcKind::Hornet).expect("the hornet spawns");
+        assert_eq!(hornet.max_hp, 48);
+        let meteor = Npc::spawn_hover(&w, 28, 30, NpcKind::MeteorHead)
+            .expect("the meteor head spawns");
+        assert_eq!(meteor.max_hp, 26);
+        // The bestiary entries round-trip.
+        let e = crate::bestiary::entry_for_npc(NpcKind::EaterOfSouls, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 6);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Hornet, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 42);
+        let e = crate::bestiary::entry_for_npc(NpcKind::MeteorHead, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 23);
+    }
+
+    #[test]
+    fn the_hover_chases_the_target() {
+        // The hover machine: the Eater of Souls homes to the target over
+        // time (the vanilla num 4 / num2 0.02 pair).
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut npc = Npc::new(NpcKind::EaterOfSouls, 90.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        let target = (60.0 * 16.0, 100.0 * 16.0);
+        for _ in 0..200 {
+            crate::npc_ai::hover_step(
+                &mut npc,
+                &w,
+                target.0,
+                target.1,
+                crate::npc_ai::HoverParams::EATER_OF_SOULS,
+            );
+        }
+        let dist = ((npc.x - target.0) / 16.0).abs();
+        assert!(dist < 20.0, "the hover homed (dist {dist} tiles)");
+    }
+
+
+    #[test]
+    fn the_cave_walker_spawn_and_the_bestiary_map() {
+        // The Skeleton (21)/Undead Miner (44): the cave walkers spawn on
+        // the ground, the bestiary entries round-trip via entry_for_npc.
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 40..800 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let sk = Npc::spawn_cave_walker(&w, 20, NpcKind::Skeleton).expect("the skeleton spawns");
+        assert_eq!(sk.kind, NpcKind::Skeleton);
+        assert_eq!(sk.max_hp, 60);
+        let um = Npc::spawn_cave_walker(&w, 24, NpcKind::UndeadMiner).expect("the miner spawns");
+        assert_eq!(um.max_hp, 70);
+        // The bestiary credit ids map.
+        let e = crate::bestiary::entry_for_npc(NpcKind::Skeleton, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 21);
+        let e = crate::bestiary::entry_for_npc(NpcKind::UndeadMiner, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 44);
+    }
+
+    #[test]
+    fn the_cave_bat_spawn_flies_and_bites() {
+        // The Cave Bat (49): spawns in the cave air (the open tile), flies
+        // via the flyer machine, the contact bites for 13.
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 60..800 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut bat = Npc::spawn_cave_flyer(&w, 20, 30, NpcKind::CaveBat)
+            .expect("the bat spawns in the open air");
+        assert_eq!(bat.kind, NpcKind::CaveBat);
+        assert_eq!(bat.max_hp, 16);
+        assert_eq!(bat.size(), (22.0, 18.0));
+        // The jungle/hellbat/voodoo variants: the same frame, the vanilla stats.
+        let jb = Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat)
+            .expect("the jungle bat spawns");
+        assert_eq!(jb.max_hp, 34);
+        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat)
+            .expect("the hellbat spawns");
+        assert_eq!(hb.max_hp, 46);
+        let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
+            .expect("the voodoo demon spawns");
+        assert_eq!(vd.max_hp, 140);
+        // The contact: an overlapping player takes 13 (the vanilla dmg).
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = bat.x;
+        player.y = bat.y;
+        player.hurt_cd = 0.0;
+        bat.contact(&mut player);
+        assert!(player.hp < player.max_hp, "the bat bit for its contact dmg");
+        // The bestiary entry maps.
+        let e = crate::bestiary::entry_for_npc(NpcKind::CaveBat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 49);
+        let e = crate::bestiary::entry_for_npc(NpcKind::JungleBat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 51);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Hellbat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 60);
+        let e = crate::bestiary::entry_for_npc(NpcKind::VoodooDemon, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 66);
+    }
+
+
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
 

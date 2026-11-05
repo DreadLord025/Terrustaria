@@ -318,6 +318,22 @@ pub fn update_mana_regen(state: &mut RegenState, in_: &RegenInputs, mana: &mut i
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_mana_spend_resets_the_regen_delay() {
+        // `Player.CheckMana`'s pay arm + `ApplyManaRegenerationDelay`
+        // (`Player.cs:19380-19397`): the spend re-arms the delay from the
+        // REMAINING mana (the emptier bar waits longer).
+        let mut st = RegenState::default();
+        apply_mana_regen_delay(&mut st, 100, 100, false);
+        let full = st.mana_regen_delay;
+        apply_mana_regen_delay(&mut st, 100, 10, false);
+        let empty = st.mana_regen_delay;
+        assert!(empty > full, "full {full} vs empty {empty}");
+        // The mana-flower cap (20) rides the buff flag.
+        apply_mana_regen_delay(&mut st, 100, 0, true);
+        assert!(st.mana_regen_delay <= 20.0);
+    }
+
     use super::*;
 
     fn inputs(max_life: i32, max_mana: i32) -> RegenInputs {

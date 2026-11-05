@@ -159,6 +159,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // King Slime: `{ 50, [20, 31] }` (`NPCID.cs:6386-6392`).
         // The Guide: no immunities (the town NPCs have no data rows).
         NpcKind::Guide => &[],
+        // The skeleton family/ the cave bat: no immunity data rows.
+        NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
+        NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
+        // The hovers: the Eater of Souls has no immunity row (the Hornet's
+        // venom-immunity rides the hornet projectile set — folded out).
+        NpcKind::EaterOfSouls | NpcKind::MeteorHead => &[],
+        NpcKind::Hornet => &[20],
         NpcKind::KingSlime => &[20, 31],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }

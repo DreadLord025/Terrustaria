@@ -556,8 +556,9 @@ impl Rain {
         }
     }
 
-    /// Draw in the always-rebuilt UI range (screen space), so the cached world instance
-    /// range (G6) is unaffected by the moving drops.
+    /// Draw in the always-rebuilt world-effect range (screen space, under the
+    /// map batches and the interface), so the cached world instance range (G6)
+    /// is unaffected by the moving drops.
     pub fn draw(
         &self,
         r: &mut SpriteRenderer,
@@ -575,7 +576,7 @@ impl Rain {
             return;
         }
         if self.flash > 0.01 {
-            r.push_ui_rect(
+            r.push_fx_rect(
                 [0.0, 0.0],
                 [screen.x, screen.y],
                 [1.0, 0.98, 0.9, self.flash * 0.38],
@@ -592,7 +593,7 @@ impl Rain {
                 continue;
             };
             let c = light_at(light, d.pos);
-            r.push_ui_sprite_rot(
+            r.push_fx_sprite_rot(
                 to_screen(d.pos),
                 [DROP_W * d.scale * zoom, DROP_H * d.scale * zoom],
                 uv,
@@ -607,7 +608,7 @@ impl Rain {
             let c = light_at(light, s.pos);
             let shade = [c[0] * 0.92 + 0.12, c[1] * 0.95 + 0.12, c[2] + 0.14];
             let a = (s.scale * 0.75).clamp(0.35, 0.9);
-            r.push_ui_sprite_rot(
+            r.push_fx_sprite_rot(
                 to_screen(s.pos),
                 [8.0 * s.scale * zoom, 8.0 * s.scale * zoom],
                 uv,
@@ -621,7 +622,7 @@ impl Rain {
             };
             let c = light_at(light, s.pos);
             let a = (s.life / SPLASH_LIFE).clamp(0.0, 1.0) * 0.8;
-            r.push_ui_sprite_rot(
+            r.push_fx_sprite_rot(
                 to_screen(s.pos),
                 [8.0 * 0.6 * zoom, 8.0 * 0.6 * zoom],
                 uv,
@@ -636,7 +637,7 @@ impl Rain {
                 continue;
             };
             let c = light_at(light, s.pos);
-            r.push_ui_sprite_rot(
+            r.push_fx_sprite_rot(
                 to_screen(s.pos),
                 [8.0 * 0.5 * zoom, 8.0 * 0.5 * zoom],
                 uv,
@@ -656,7 +657,7 @@ fn rain_zone(world: &World, camera: Vec2) -> bool {
 }
 
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
-fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
+pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
     if light.w <= 0 || light.h <= 0 {
         return [1.0; 3];
     }

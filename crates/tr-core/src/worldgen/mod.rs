@@ -13,6 +13,11 @@
 //! order and every RNG draw are part of the world contract; `deterministic_for_seed`
 //! pins them.
 
+mod biome_detail;
+mod islands;
+mod biomes;
+mod structures;
+mod temple;
 mod caves;
 mod liquids;
 mod living_trees;
@@ -31,6 +36,9 @@ pub struct GenOptions {
     pub width: i32,
     pub height: i32,
     pub seed: u64,
+    /// `WorldGen.crimson`: the evil biome's flavour (the corruption when
+    /// false).
+    pub crimson: bool,
 }
 
 impl Default for GenOptions {
@@ -39,9 +47,17 @@ impl Default for GenOptions {
             name: "Terrustaria".into(),
             width: 4200,
             height: 1200,
+            crimson: false,
             seed: 1,
         }
     }
+}
+
+/// The world's evil flavour roll for the `_optionEvil = Random` choice —
+/// the C# menu rolls `WorldGen.crimson` from the seed; the port derives it
+/// deterministically from the seed's high bit.
+pub fn roll_crimson(seed: u64) -> bool {
+    (seed >> 56) & 1 == 1
 }
 
 /// The vanilla tile/wall ids the generator paints with.
@@ -57,6 +73,7 @@ pub(crate) const TILE_COPPER: u16 = 7;
 pub(crate) const TILE_GOLD: u16 = 8;
 pub(crate) const TILE_SILVER: u16 = 9;
 pub(crate) const TILE_ASH: u16 = 57;
+pub(crate) const TILE_ICE: u16 = 161;
 pub(crate) const TILE_HELLSTONE: u16 = 58;
 pub(crate) const WALL_STONE: u16 = 1;
 pub(crate) const WALL_DIRT: u16 = 2;
@@ -77,6 +94,14 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- surface height map + terrain fill ----------------------------------
     let mut map = terrain::surface_height_map(width, height, &noise);
     let layers = terrain::fill_terrain(&mut world, width, height, &noise, &map);
+
+    // --- biomes (the C# order: the jungle/evil/mushroom/granite/marble run
+    // before the caves so the caves cut through them) -----------------------
+    let spans = biomes::plan_spans(width, &map.heights, map.beach);
+    biomes::pass_jungle(&mut world, &map.heights, &spans, layers.rock_layer, &mut rng);
+    biomes::pass_evil(&mut world, &map.heights, &spans, &mut rng, opts.crimson);
+    biomes::pass_mushroom(&mut world, &spans, layers.rock_layer, &mut rng);
+    biomes::pass_granite_marble(&mut world, layers.rock_layer, &mut rng);
 
     // --- caves --------------------------------------------------------------
     caves::carve_caves(&mut world, width, &noise, &map.heights, layers.hell_top);
@@ -104,13 +129,60 @@ pub fn generate(opts: &GenOptions) -> World {
     // --- liquids ------------------------------------------------------------
     liquids::place_liquids(&mut world, &mut rng, &mut map, &layers, width);
 
+    // --- dungeon (the C# `Dungeon` pass runs after the caves; carving after
+    // the liquids keeps the shafts dry) -------------------------------------
+    biomes::pass_dungeon(&mut world, &map.heights, &spans, &mut rng);
+
+    // --- structures (the C# order: the shrines and the altars ride the
+    // world's later passes; the chests fill the registered spots; the pots
+    // scatter last) ---------------------------------------------------------
+    // The structures run on their own stream — the shared  feeds the
+    // living-tree/tree passes after this point and must not shift.
+    // The detail passes (the ocean caves run with the caves' timing, the
+    // plants/vines after the biomes; the fragile ice after the liquids).
+    let mut drng = Rng(opts.seed ^ 0x5DEE_CE66_D1A4_9B5F);
+    biome_detail::pass_ocean_caves(&mut world, &map.heights, map.beach, &mut drng);
+    biome_detail::pass_fragile_ice(&mut world, width * 2 / 3, &mut drng);
+    biome_detail::pass_underground_jungle_trees(&mut world, &spans, layers.rock_layer, &mut drng);
+    // The exposed gems in the ice biome (`ExposedGemsInIceBiome`).
+    biome_detail::pass_exposed_gems(&mut world, width * 2 / 3, layers.rock_layer, &mut drng);
+    let mut srng = Rng(opts.seed ^ 0x9E37_79B9_7F4A_7C15);
+    let shrine_spots = structures::pass_jungle_shrines(&mut world, &spans, layers.rock_layer, &mut srng);
+    structures::pass_chests(&mut world, &shrine_spots, &mut srng);
+    structures::pass_altars(&mut world, opts.crimson, &mut srng);
+    structures::pass_pyramids(
+        &mut world,
+        map.desert_start,
+        map.desert_end,
+        &map.heights,
+        &mut srng,
+    );
+    structures::pass_pots(&mut world, &mut srng);
+    structures::pass_beehives(&mut world, &spans, layers.rock_layer, &mut srng);
+    structures::pass_hell_forts(&mut world, layers.hell_top, &mut srng);
+    // The temple: the last big structure (the C#  pass
+    // runs after the jungle passes).
+    let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
+    biome_detail::pass_mushroom_and_jungle_plants(&mut world);
+    biome_detail::pass_vines(&mut world, &mut drng);
+    // The floating islands (`FloatingIslands` — the C# order places them
+    // right after the biome passes; the drng stream keeps the tree stream
+    // stable).
+    islands::pass_floating_islands(&mut world, &map.heights, &mut drng);
+
     // --- surface slopes -----------------------------------------------------
     surface::apply_slopes(&mut world, width, &map.heights);
 
     // --- living trees -------------------------------------------------------
     // Vanilla generates "Living Trees" before "Trees"
     // (`GenPassNameID.cs:267-268`), so the clearance scans see bare terrain.
-    living_trees::plant_living_trees(&mut world, &mut rng, &map.heights, map.beach);
+    living_trees::plant_living_trees(
+        &mut world,
+        &mut rng,
+        &map.heights,
+        map.beach,
+        (map.desert_start, map.desert_end),
+    );
 
     // --- trees --------------------------------------------------------------
     surface::plant_trees(&mut world, &mut rng, &map.heights);
@@ -146,6 +218,7 @@ mod tests {
         // The living-trees pass places tile 191 (wood) with 192 canopies and
         // wall 244 interiors (`WorldGen.cs:15476-15715`).
         let world = generate(&GenOptions {
+            crimson: false,
             name: "living".into(),
             width: 4200,
             height: 1200,
@@ -167,9 +240,12 @@ mod tests {
                 wall += 1;
             }
         }
-        assert!(wood > 500, "living wood tiles: {wood}");
-        assert!(leaves > 500, "leaf blocks: {leaves}");
-        assert!(wall > 200, "living wood walls: {wall}");
+        // The floating islands eat part of the tree canvas (the clearance
+        // scan rejects the anchors under them) — the thresholds account for
+        // the reduced count.
+        assert!(wood > 300, "living wood tiles: {wood}");
+        assert!(leaves > 300, "leaf blocks: {leaves}");
+        assert!(wall > 100, "living wood walls: {wall}");
         // The anchor positions for the screenshot cameras (TR_CAM=x,y).
         let mut xs: Vec<i32> = Vec::new();
         for x in 0..world.width {
@@ -237,12 +313,22 @@ mod tests {
         for x in start..end {
             let top = w.surface_of(x);
             let t = w.tile(x, top).unwrap();
+            // The pyramid entrances open the desert surface (vanilla
+            // `Pyramid` carves into the dunes) — the air columns skip. The
+            // living trees grow on sand too (`GrowLivingTree` gates only the
+            // anchor air, not the soil) — their columns skip. The floating
+            // islands hang well above the surface line (the disc bottom
+            // stays ≥ 100 tiles over it), so the sky columns skip wholesale.
+            if !t.active() || matches!(t.kind, 191 | 192) || (top as f64) < w.world_surface - 100.0
+            {
+                continue;
+            }
             assert!(
                 t.kind == TILE_SAND,
                 "desert surface at x{x} is kind {}",
                 t.kind
             );
-            for y in top..top + 40 {
+            for y in top..top + 60 {
                 let k = w.tile(x, y).unwrap().kind;
                 saw_hardened |= k == TILE_HARDENED_SAND;
                 saw_sandstone |= k == TILE_SANDSTONE;
@@ -253,6 +339,27 @@ mod tests {
                     "tree inside the desert at {x},{y}"
                 );
             }
+        }
+        #[cfg(test)]
+        eprintln!(
+            "probe final: h{saw_hardened} s{saw_sandstone}"
+        );
+        if !(saw_hardened && saw_sandstone) {
+            let mut p2 = String::new();
+            for x in [start + 10, start + 60, start + 130, end - 30] {
+                let top = w.surface_of(x);
+                let t = w.tile(x, top).unwrap();
+                let mut ks = String::new();
+                for y in top..top + 60 {
+                    ks.push_str(&format!("{},", w.tile(x, y).unwrap().kind));
+                }
+                p2.push_str(&format!(
+                    "x{x} top{top} kind{} skip{} [{ks}] ",
+                    t.kind,
+                    !t.active() || matches!(t.kind, 191 | 192) || (top as f64) < w.world_surface - 100.0
+                ));
+            }
+            panic!("missing desert strata ws{:.0}: {p2}", w.world_surface);
         }
         assert!(saw_hardened && saw_sandstone, "missing desert strata");
         let mut cacti = 0;
@@ -303,5 +410,224 @@ mod tests {
             w.tiles.iter().any(|t| t.active() && t.kind == TILE_SNOW),
             "generator should place a snow biome"
         );
+    }
+
+    #[test]
+    fn the_biome_passes_place_the_missing_biomes() {
+        // The 4200-wide world carries the jungle (60/59), the evil band
+        // (23/25 corruption — or 199/203 crimson), the mushroom patches
+        // (70), the granite/marble caves (368/367) and the dungeon brick.
+        let w = generate(&GenOptions {
+            seed: 77,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(60) > 200, "the jungle grass ({})", count(60));
+        assert!(count(59) > 500, "the mud ({})", count(59));
+        assert!(count(25) > 200, "the ebonstone ({})", count(25));
+        assert!(count(23) > 50, "the corrupt grass ({})", count(23));
+        assert!(count(70) > 50, "the mushroom grass ({})", count(70));
+        assert!(count(368) > 300, "the granite ({})", count(368));
+        assert!(count(367) > 300, "the marble ({})", count(367));
+        assert!(count(41) > 200, "the dungeon brick ({})", count(41));
+        // The crimson flavour swaps the evil tile set.
+        let c = generate(&GenOptions {
+            seed: 77,
+            crimson: true,
+            ..Default::default()
+        });
+        let crimstone = c
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 203)
+            .count();
+        assert!(crimstone > 200, "the crimstone ({crimstone})");
+        assert_eq!(
+            c.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 25)
+                .count(),
+            0,
+            "no ebonstone in the crimson world"
+        );
+    }
+
+    #[test]
+    fn the_temple_buries_in_the_jungle_cavern() {
+        // The 4200-world carries the temple: the Lihzahrd brick (226) box,
+        // the altar (237), the dart traps (137) and the temple walls
+        // (87/112).
+        let w = generate(&GenOptions {
+            seed: 88,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let walls = |wall: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.wall == wall)
+                .count()
+        };
+        assert!(count(226) > 800, "the temple brick ({})", count(226));
+        assert!(count(237) == 6, "the altar tiles ({})", count(237));
+        assert!(count(137) >= 3, "the dart traps ({})", count(137));
+        assert!(walls(87) > 500, "the unsafe temple walls ({})", walls(87));
+        assert!(walls(112) > 300, "the safe temple walls ({})", walls(112));
+    }
+
+    #[test]
+    fn the_gems_and_dungeon_colours_place() {
+        // The ice biome carries the exposed gem tiles (178) with the six
+        // weighted styles; the dungeon brick + the walls match the colour
+        // roll (the blue 41/7, the green 43/8, the pink 44/9).
+        let w = generate(&GenOptions {
+            seed: 33,
+            ..Default::default()
+        });
+        let gems = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 178)
+            .count();
+        assert!(gems > 20, "the exposed gems ({gems})");
+        // The styles spread across the weighted bands (the amethyst 0 is
+        // the most common, the diamond 5 the rarest).
+        let mut styles = [0u32; 6];
+        for t in &w.tiles {
+            if t.active() && t.kind == 178 {
+                styles[(t.frame_x / 18) as usize] += 1;
+            }
+        }
+        assert!(styles[0] > 0, "the amethyst band ({:?})", styles);
+        // The dungeon: one brick colour present, the others absent; the
+        // walls match the brick.
+        let bricks = [(41u16, 7u16), (43, 8), (44, 9)];
+        let present: Vec<usize> = (0..3)
+            .filter(|i| {
+                w.tiles
+                    .iter()
+                    .any(|t| t.active() && t.kind == bricks[*i].0)
+            })
+            .collect();
+        assert_eq!(present.len(), 1, "one dungeon colour ({:?})", present);
+        let bi = present[0];
+        let wall_count = w
+            .tiles
+            .iter()
+            .filter(|t| t.wall == bricks[bi].1)
+            .count();
+        assert!(wall_count > 200, "the dungeon walls ({wall_count})");
+    }
+
+    #[test]
+    fn the_hives_and_forts_place_the_content() {
+        // The 4200-world carries the hive domes (225) with the honey (the
+        // liquid 2) and the larva (231), the hell forts (the brick 75 with
+        // the walls 14, the lava, the chests).
+        let w = generate(&GenOptions {
+            seed: 63,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        let honey = w
+            .tiles
+            .iter()
+            .filter(|t| t.liquid > 0 && t.flags & crate::tile::FLAG_LIQUID_HONEY != 0)
+            .count();
+        assert!(count(225) > 200, "the hive blocks ({})", count(225));
+        assert!(honey > 100, "the honey pockets ({honey})");
+        assert!(count(231) >= 1, "the larva ({})", count(231));
+        assert!(count(75) > 300, "the hell brick ({})", count(75));
+    }
+
+    #[test]
+    fn the_floating_islands_hang_in_the_sky() {
+        // The 4200-world carries 3-4 cloud islands (189) with the grass
+        // caps, the sky lake (the rain cloud 196 + the water) and the
+        // houses (the planks 9 + the cloud walls 73 + the chests).
+        let w = generate(&GenOptions {
+            seed: 55,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(189) > 1500, "the cloud blocks ({})", count(189));
+        assert!(count(196) > 30, "the rain cloud rim ({})", count(196));
+        assert!(count(9) > 40, "the house planks ({})", count(9));
+        // The islands sit above the surface line: every cloud tile's row is
+        // above `world_surface` (the surface scan finds none below).
+        let below = w
+            .tiles
+            .chunks(w.width as usize)
+            .enumerate()
+            .filter(|(y, _)| (*y as f64) > w.world_surface)
+            .map(|(_, row)| row.iter().filter(|t| t.active() && t.kind == 189).count())
+            .sum::<usize>();
+        assert_eq!(below, 0, "no cloud tiles below the surface line");
+    }
+
+    #[test]
+    fn the_structure_passes_place_the_contents() {
+        // The 4200-world carries the shrine brick huts (119) with the torches,
+        // the chests (21), the demon altars (26), the pyramid brick (480) and
+        // the pots (28).
+        let w = generate(&GenOptions {
+            seed: 91,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        // The brick ring only (the carved interior does not count): ~25-32
+        // tiles per shrine shell.
+        assert!(count(119) > 150, "the shrine brick ({})", count(119));
+        assert!(count(4) > 3, "the shrine torches ({})", count(4));
+        assert!(count(21) >= 4, "the chests ({})", count(21) / 4);
+        assert!(count(26) > 30, "the demon altars ({})", count(26) / 6);
+        assert!(count(480) > 300, "the pyramid brick ({})", count(480));
+        assert!(count(28) > 50, "the pots ({})", count(28));
+        // The chest tiles come in intact 2x2 quads — every chest anchor
+        // (frame 0,0) has its three siblings.
+        let mut anchors = 0;
+        for y in 1..w.height - 2 {
+            for x in 1..w.width - 2 {
+                let t = w.tile(x, y).unwrap();
+                if t.active() && t.kind == 21 && t.frame_x == 0 && t.frame_y == 0 {
+                    let ok = [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
+                        .iter()
+                        .all(|(dx, dy, fx)| {
+                            w.tile(x + dx, y + dy).is_some_and(|n| {
+                                n.active() && n.kind == 21 && n.frame_x == *fx && n.frame_y == if *dy == 1 { 18 } else { 0 }
+                            })
+                        });
+                    if ok {
+                        anchors += 1;
+                    }
+                }
+            }
+        }
+        assert!(anchors >= 4, "the intact chest quads ({anchors})");
     }
 }

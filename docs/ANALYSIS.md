@@ -3275,3 +3275,427 @@ later (the 32400-tick night), dawn exactly on `time` = 32400 at frame 901
 (`clock.rs:39`) — both boundary-exact, the `>=` case above — with the
 frame-3600 capture showing the new morning (the dial cleared at dawn, the
 rate back to 1), SHA256-equal double run (`fca1e1d0…`).
+## Sandstorm (M1.4-WEATHER-2)
+
+The research corrected the row: the severity machine, the SceneState
+filters, the music-40 ladder, the zone gate and the bgDelay tracking
+already landed (BG-18 / WEATHER-1), and the `SandstormSky` sky tint is
+**dead code in 1.4.5.8** — registered (`ScreenEffectInitializer.cs:71`)
+but never activated anywhere, so `_opacity` stays 0 and the quad never
+draws. Documented out; the visible sky wash is the SceneState
+filter/overlay pair.
+
+The task's real delta is `Sandstorm.EmitDust` (`Main.cs:17247`) — the
+flying sand, in `crates/tr-app/src/sand.rs`:
+
+* the budget: `1000*(screenWidth/1920)*(gfxQuality*0.5+0.5) +
+  1000*screenWidth/1920*0.1 − Dust.SandStormCount` per tick, `20*Severity`
+  spawn attempts behind the `Next(num6/4)` gate (`Next(0)` rolls 0 — XNA),
+  the windward screen-edge rolls (both `Next(3)`s always evaluate, C# `&&`
+  order), the off-screen-x y-spread, the wall gate (`tile.wall != 0` skips),
+  and the cluster shuffler: `Next(maxValue)` re-rolls the position by
+  `RandomVector2(±10) + velocity*-1.1` and spawns again until the roll hits
+  or the budget dies (a rejected `NewDust` slot still burns budget and
+  still feeds the shuffle its velocity — `EmitDust` sets the properties on
+  the returned index blindly);
+* the four sand-family weighted colours (`53/396/397` desert,
+  `112/400/398` crimson, `234/401/399` jungle, `116/403/402` snow;
+  `WeightedRandom` falls through to the first entry on a zero total);
+* the dust-268 AI (`Dust.cs:1789-1818` + the generic tail): the move,
+  the `1.0050251` speed-up, the scale drift (`+0.01`, `−0.05` without
+  `ShowSandstormVisuals`), the spawn-`fadeIn` one-off `+0.03` then the
+  generic `−0.01` (with the storm on the three cancel and the scale holds
+  at ~0.94; without it the net `−0.05`/tick fades the orphans out in ~17
+  ticks), the player-fall parallax (`vel.y` lerps toward the player's fall,
+  `pos.y += vy*0.2`), the solid damp (`scale*0.9`, `vel*0.25`, the spawn
+  `fadeIn` keeps the first tick damp-free) vs the sine fall
+  `sin(x*0.0043982295)*2+3`, the off-bottom and `scale<0.1` deaths, and
+  the black-light kill at draw (`Main.cs:39015-39017`);
+* the draw: the shared `Dust` sheet's second band — `dust.frame` maps type
+  268 to x = 10*268−2000, y = 60+10*rand(3) (`Dust.cs:177-182`), the sheet
+  the atlas already loads — at `10*scale` px with the light base pass plus
+  the `GetColor` overlay (`colour + light − 255` per channel, floored at
+  0, skipped when every channel is 0).
+
+`update_scene` runs emit+tick after `Sandstorm.UpdateTime` and ahead of
+the rescan (the vanilla call order), spawning off the stored
+`SceneMetrics` (vanilla's last-scan persistence); the draw rides the
+frame's UI-range batch next to the rain.
+
+Deviations: the RNG is the module's own splitmix stream (the port's
+per-consumer convention — vanilla rolls the shared `Main.rand`); the
+`NewDust` initial-velocity rolls are not consumed (`EmitDust` overwrites
+both components); `gfxQuality`/`dCount` pinned `1.0`/`0` — no pool-pressure
+governor, the budget and the deaths bound the population; the multiplayer
+`SendData(7)` tail is MP scope; the spawn multipliers stay out (no
+spawner depth); the WindPushed buff is M2-BUFF-4.
+
+Harness notes: (1) the seed-1 desert band's ground sits ~4 tiles below
+`world_surface` (361), so a standing player loses
+`IsSurfaceForAtmospherics` (`ZoneSandstorm` dies with it) — verify desert
+shots with `TR_NOPLAYER` + `TR_CAM=<x,y>` (the scan then centres on the
+camera above the line); (2) fixed since: the `TR_POST` pass used to cover
+the whole composite including the UI (the map panel showed the filter's
+noise under an active storm) — the draw now splits per the vanilla order
+(see "World-effect draw range" below).
+
+Verification: 7 sand tests (the gates, the budget, the weighted colours,
+the scale hold/fade, the sine, the bottom death, seed determinism);
+`TR_SANDSTORM=1` desert twins SHA256-equal (two runs byte-identical,
+a third run in a fresh dir matched and one earlier run raced — the known
+first-run gotcha), the off-pin A/B clean.
+## Fishing engine (M7-FISH-1)
+
+The rule core of the fishing system — the power, the pond and the rolls —
+without the content (the tables, the bobber flight, the rods):
+
+- **The power** (`Player.cs:42197-42300`): `bait + pole + fishingSkill`
+  plus the situational +5s (the 25 fishing buff, `canFloatInWater && wet`,
+  sitting — the sitting bonus rides `PlayerSittingHelper`), scaled by
+  `Fishing_GetPowerMultiplier` (`:42233-42263`): the rain ×1.2, the
+  background clouds ×1.1, the early-morning/late-afternoon daylight
+  (`time < 5400 || time > 48600`) ×1.3, the midday (`16200..37800`) ×0.8,
+  the mid-night (`6480..25920`) ×0.8, the moon phases (the full ×1.1, the
+  gibbous pair ×1.05, the crescent pair ×0.95, the new ×0.9) and the
+  blood moon ×1.1.
+- **The pond** (`GetFishingPondState`/`GetFishingPondWidth`,
+  `Projectile.cs:21576-21642`): the liquid span along the bobber's row
+  (the solids and the 10-tile world margins bound it), then the columns
+  down to the floor; the honey pond counts ×1.5; the lava/honey flags
+  ride the tiles.
+- **The attempt gates** (`FishingCheck`/`TryBuildFishingContext`,
+  `:20583-20760`): the hard 75-tile floor, the chum bonuses (+11/+6/+3
+  for 1/2/3+ chums), `waterNeededToFish = 300 × atmo` with the
+  atmosphere `(y - (60 + 10·num²)) / (worldSurface / 6)` (`num =
+  maxTilesX / 4200`) clamped 0.25..1, the quality scaling
+  (`level × quality` when the pond is short) and the depth ladder
+  (0 space / 1 surface / 3 underground / 2 cavern with the 50 % re-roll
+  to the surface / 4 underworld). The junk roll: both `Next(50) > level`
+  and the pond below the need (`:20743`).
+- **The rolls**: the bite accumulator (`AI_061` `:53821-53847` —
+  `Next(300) < level` adds `Next(1,3)`, `+= level/30`, `+= Next(1,3)`,
+  `Next(60)==0` adds 60; past 660 the `FishingCheck` fires), the hit roll
+  `(level + 75) / 2` of 100 (`:20587-20591`) and the drop levels
+  (`:21512-21574` — the 150/300/1050/2250/4500 ÷ level windows with the
+  mins 2/3/4/5/6 and the crate percentage `Next(100) < 10 [+15 potion]`).
+
+Deviations: the drop tables (`GameContent/FishDropRules/*` — the 10-file
+populator), the bobber projectile's flight (`AI_061`'s water-line states),
+the rod/bait items (`Item.fishingPole`/`bait` — the registry growth) and
+the quest fish are M7-FISH-2; the chum bonuses take the count from the
+caller (the chum projectile book is FISH-2); the RNG rides `FastRandom`.
+
+## Growth ticks (M7-GROWTH-1)
+
+`WorldGen.UpdateWorld`'s rate-driven tile picks (`WorldGen.cs:71540-71632`)
+with the two growth families the port's content exercises:
+
+- **The rates** (`GetWorldUpdateRate` `:72020-72030`): `min(dayRate, 24)`
+  (0 while frozen); `dayRate` = the time rate ×5 while every player sleeps
+  (`Main.cs:6210-6220`). The overground loop
+  `maxX·maxY · 3e-5 · rate` (×1.5 raining), the underground
+  `maxX·maxY · 1.5e-5 · rate`. Each overground pick rolls the alch-seed
+  gate `Next(num7·100) == 0` → skip, `num7 = Lerp(151, 151·2.8,
+  clamp(maxTilesX/4200 − 1, 0, 1))` — the small worlds roll 1/15100, the
+  large 1/42280.
+- **`GrowAlch`** (`:45777-45890`): the herb lifecycle over the tileAlch
+  set {82, 83, 84}. The 82 sprout blooms on the generic `Next(50) == 0`
+  (the frame 108 needing the extra `Next(2)`) — **the day/night/rain/
+  depth cue arms are the chain's fallbacks**, not the only path (the
+  stage-0 sprout blooms at night through the generic arm). The wrong
+  liquid kills the herb unless the stage matches (the lava keeps the
+  stage-5 shape, the water the 1/4 stages).
+- **The crystal shards** (`hardUpdateWorld`'s arm, `:69603-69643`): the
+  `CanGrowCrystalShards` stones {117, 116, 164, 402, 403} below the rock
+  layer roll `Next(5)`, pick a neighbour — **the C#'s `default` case
+  resolves `num3 = +1` for both switch values 2 and 3**, so the shards
+  never grow upward — need the cell empty, keep the radius-6 density
+  under 2 and place tile 129 with the style `Next(18)` (the big shards
+  `18 + Next(6)` at 1/50).
+- **The app pass** (`world_sim/growth.rs`): the 60 Hz `growth_step` after
+  the TE pass, the `growth_rng` stream seeded from the world seed, the
+  rain state from `rain.is_raining()`.
+
+Deviations: the vines/moss (the grass-growth pass `:74269+`), the
+tree/cactus growth and the biome spread are M7-GROWTH-2; the
+notTheBees/remix loop variants are skipped (no such seeds); the
+`hardUpdateWorld` shards run unconditionally in the port (the hardmode
+gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
+
+## Biome passes (M1.4-WGEN-1)
+
+The overworld biomes the compact generator lacked — the jungle, the evil
+band, the glowing mushroom patches, the granite/marble caves and the
+dungeon — land as `worldgen/biomes.rs` in the C# pass order (before the
+caves, so the caves cut through them; the dungeon carves after the
+liquids to keep its shafts dry):
+
+- **The jungle** (`JunglePass` + `MudCavesToJungleGrass`): the west-edge
+  band (`beach + 40 .. width/3`) converts the dirt/stone surface band to
+  the mud (59) with the jungle grass (60) on top and the mud walls (64)
+  down to the rock layer, plus the leaky mud blobs past the band edges;
+  the surface dips every ~40 columns carve the shallow water pockets
+  (`SurfaceWaterInJungle`'s shape).
+- **The evil band** (`CorruptionAndCrimson`): the stone+grass band east of
+  spawn converts to the evil set — the corruption (the corrupt grass 23 /
+  the ebonstone 25 / the walls 3) or the crimson (199/203/192) by
+  `GenOptions.crimson`, fed from the UI's `_optionEvil` (the Random choice
+  rolls from the seed's high bit, `roll_crimson`). The chasms: 3-4
+  wandering widening shafts with the evil-stone sheaths, cut down past the
+  rock layer.
+- **The mushroom patches** (`GlowingMushroomPatches`): 1-2 domes in the
+  cavern layer near the jungle — the mud cores with the mushroom grass
+  (70) shells and the mushroom walls (74).
+- **The granite/marble caves** (`Granite`/`Marble`): 1-2 blob caves each
+  in the stone (the granite 368 / the marble 367, the walls 180/178).
+- **The dungeon** (`Dungeon` + `DungeonCrawler`): the entrance tower at
+  the snow side, the carved shaft, and 3 corridor levels stepping to the
+  bottom with the brick lining (41/43/44 by the world's dungeon roll) and
+  the dungeon walls (7).
+- The tree placement grew the soil set (the jungle/corrupt/crimson/
+  mushroom grasses grow trees like the forest grass).
+
+Deviations: the port reproduces the vanilla SHAPES with its own
+deterministic noise/blob machinery — the exact tile-level layouts of the
+C# `ShapeRunner`/`ShapeFloodFill`/`DungeonCrawler` chains are not 1:1; the
+jungle shrines, the temple, the pyramids and the biome chests are the
+follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE); the
+tiny worlds collapse the evil band and guard every range.
+
+## World-effect draw range (FIX-FX-under-ui)
+
+The weather particles (rain drops/snow/splashes/sparkles, leaf gores, the
+sandstorm dust) rendered in the UI sprite range, which draws **after** the
+map batches — so the rain streaks and the sand specks painted over the
+minimap, the fullscreen map and the HUD. Vanilla draws them as world
+content: the world, then `DrawMap`, then `DrawInterface`.
+
+Fix: `SpriteRenderer` gained an `fx` range — the UI camera transform
+(screen-space, so the G6-cached world range stays cacheable — the moving
+particles must not ride it), drawn between `world` and `map_back` — and
+the post path splits: `render_world_fx` (background + world + fx, cleared)
+feeds the filter chain, `apply_filters` lands on the screen, then
+`render_map_ui` (the map batches + the interface, loaded, no clear) draws
+over the filtered frame. The vanilla filter position is exactly there —
+the filters cover the world, never the map or the HUD.
+
+`Rain::draw` (drops, snow, splashes, sparkles, the lightning flash),
+`foliage::draw_leaves` and `Sand::draw` push the `fx` range now.
+Verification: rain/sand/leaf shots with the fullscreen map and the
+minimap — no particle over either; the sandstorm filter no longer paints
+the minimap (the twins SHA256-equal); the workspace suite 1261/0.
+## Structures (M1.4-WGEN-2)
+
+The structure passes ride their own RNG stream (`opts.seed ^
+0x9E37_79B9_7F4A_7C15`) — the shared worldgen stream feeds the
+living-tree/tree passes after them, and consuming it early shifted the
+tree placements to empty results on the small worlds.
+
+- **The jungle shrines** (`JungleShrines`, `WorldGen.cs:15977-16140`):
+  7-12 hut rings of the brick 119 (`GenVars.jungleHut`'s first pick,
+  `:11319`) in the underground jungle — the carved interiors carry the
+  shrine walls (24) and a torch (the tile 4, the style 3), the mud
+  pillars fill under the floor (`:16092-16106`) and the sloped brick caps
+  close the top (`:16108-16120`). The C# retry loop (`num4`, `:15991`)
+  maps to 8 attempts per shrine — the caves carve the mud band before
+  this pass, so most raw spots miss. The net brick is the shell ring
+  only (~25-32 tiles per shrine — the interior does not count).
+- **The chests** (`ChestsInJungleShrines` + the cavern scatter): the
+  shrine spots take the chests first (`place_chest` writes the intact
+  2×2 tile-21 quads with the frame corners), then the cave floors
+  scatter `maxTilesX / 40` more.
+- **The altars** (`DemonAndCrimsonAltars`, `:15750-15800`): the count
+  `tiles × 3.3e-6` (the small worlds clamp the 281-tile ocean margins),
+  the 3×2 tile 26 with the style frames, the middle-10 % exclusion; the
+  body may carve the loose cells (`Place3x2`'s free placement).
+- **The pyramids** (`DunesAndPyramidLocations`, `:15367+`): 1-2 stepped
+  hulls of the sandstone brick 480 over the desert surface with the base
+  chambers, the entrance tunnels and a chest.
+- **The pots** (`PotsGraveyardsAndBoulderPiles`, `:17996+`): the pot 28
+  with the 7 styles, scattered with a 20-row seat scan (the point draws
+  rarely hit the cave floors — the C#'s denser caves accept more).
+
+Deviations: the chest inventories ride the storage task (the C#
+`Chest.CreateChest` book); the multi-chamber pyramid crawl, the boulder
+piles and the graveyards are the follow-ups; the layouts are shape-level.
+
+## Biome detail passes (M1.4-WGEN-3)
+
+The decorator passes over the finished biomes — the ocean caves, the
+fragile ice, the underground jungle trees, the mushroom/jungle plants and
+the vines — ride their own `drng` stream (the shared worldgen stream stays
+reserved for the biome + tree passes; the stream discipline bit in
+WGEN-2's review: consuming it early shifted the living-tree placements to
+empty results on the small worlds).
+
+- **The ocean caves** (`OceanCaves`, `WorldGen.cs:15167-15191`): one
+  winding shaft per ocean side at the `Next(3)` gate, the first-active
+  surface scan, the walkable carve down past the sea floor into the
+  terminal bubble room (the C# `oceanCave`'s winding shaft shape is
+  approximated).
+- **The fragile ice** (`FragileIceOverIceBiomeWater`, `:16667-16690`): the
+  ice band's water tiles break their skin — the 1-3 wide holes at 1/4 per
+  tile (the C# `MakeWateryIceThing`'s open-pocket shape).
+- **The underground jungle trees** (`UndergroundJungleTrees`,
+  `:17840-17856`): the `Next(10)` per column over the mud band, the 5-8
+  tall trunks (the tile 5) with the leaf balls (the tile 6), rooted in the
+  mud with the two-row clearance.
+- **The plants** (`GlowingMushroomPlantsUndergroundAndJunglePlants`,
+  `:20122-20158`): the glowing mushrooms (71) on the free mushroom-grass
+  cells below the surface (the C#'s triple tree retry collapses to the
+  plant placement in the port — the mushroom trees are the tile-71 stands),
+  the jungle plants (61) on every free jungle-grass cell.
+- **The vines** (`ActionVines` + the grass-growth vine arms): the
+  overhangs hang the jungle vines 62 (the cap 20), the regular vines 52
+  (12) and the mushroom vines 528 (12) at the 1/3 gate.
+- The desert test learned two vanilla-legitimate exceptions: the pyramid
+  entrances open the surface (`Pyramid` carves into the dunes) and the
+  living trees grow on sand (`GrowLivingTree` gates only the anchor air,
+  not the soil).
+
+Deviations: the hallowed/crimson vine arms wait for the hallow
+(M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
+`GrowUndergroundTree` canvas are approximated; the mushroom trees are the
+tile-71 stands (the full tree generator = the follow-up).
+
+## Floating islands (M1.4-WGEN-4)
+
+The `FloatingIslands` pass (`WorldGen.cs:12924-13133`) — the classic sky
+islands over the 10-90 % band:
+
+- **The placement** (`:12975-13033`): the x avoids the spawn ±150 and the
+  ±180 spacing from the placed islands; the y = `Next(90, worldSurface −
+  100)` — `worldSurface = surface_max + 25` carries the ground margin, so
+  the disc bottoms stay ~75+ tiles over the deepest terrain column. The
+  open-sky clearance scans the ±75-vertical window (the C# `:13015-13028`).
+- **The island body** (`CloudIsland`, `:78132-78540`): the elliptical
+  cloud disc (the tile 189) with the ragged boundary (the C#'s
+  `Next(80, 120) · 0.01` wobble on the rim cells), the grass cap 2 rows
+  on the top surface. Every third island is a `CloudLake` sky lake — the
+  rain-cloud (196) bowl sunk 3 deep with the water inside.
+- **The houses** (`FloatingIslandHouses`, `:17862+`): the planks-9 box on
+  the island's top with the cloud-wall (73) interior and the chest.
+- **The living-tree interaction**: the islands occupy the sky the C#'s
+  empty skies don't — the living-tree anchor scan starts at the
+  height-map row (not from y=0, which anchored on the island discs), and
+  the grow rides the anchor-attempt loop (`:15553-15555` — the clearance
+  failures retry the next candidate; the port's original structure wasted
+  the whole tree on one failed clearance). The desert test skips the sky
+  columns wholesale (the islands legitimately hang over the dunes; the
+  dirt caps read as the surface via `surface_of`).
+
+Deviations: the snow/desert cloud-island variants
+(`SnowCloudIsland`/`DesertCloudIsland`) and the house furniture sets are
+the follow-ups; the disc shape approximates the C#'s shrinking-ring walk.
+
+## Hives & hell forts (M1.4-WGEN-5)
+
+- **The beehives** (`Beehives` + `BeeLarvaInBeehives`, `WorldGen.cs:
+  15927-16000`): 1-8 hive domes in the underground jungle band (the count
+  scales `maxTilesX / 4200` like the C#'s `Next(5·num, 8·num)`), the
+  hive-block (225) shells with the honey pockets (the liquid 2) carved in
+  the cores, roughly half carrying the larva (231) — `AddBeeLarva`'s
+  3×4 clear with the hive base row (`:32050-32068`).
+- **The hell forts** (`HellFort`, `:32683+`): the obsidian-brick (75 /
+  the wall 14) boxes in the hell layer — the shell with the two carved
+  room floors, the lava pool strips on the floors and the chests. The C#'s
+  multi-room layout with the doors (`HellFort_AttemptToPlaceDoor`) is
+  approximated by the two-floor shape.
+
+Deviations: the HiveBiome/HoneyPatchBiome placement machinery is the
+port's blob dome (the shape-level port); the Queen Bee summon from the
+larva and the fort doors = the follow-ups.
+
+## Biome spread (M5-SPREAD-2)
+
+`hardUpdateWorld`'s infection arms (`WorldGen.cs:69645-69860`) — the
+living world's evil/crimson/chlorophyte evolution:
+
+- **The spread sets** (`TileID.cs:580/:589`): the corruption {23, 661, 25,
+  112, 398, 400, 163, 32, 636, 24} and the crimson {199, 662, 203, 234,
+  399, 401, 200, 352, 205, 201} — the corrupt grass, the ebonstone/
+  crimstone, the ebonsand/crimsand, the hardened sand, the sandstone, the
+  ice and the thorn kinds.
+- **The Convert map** (`Convert`, `:55139-55205`): the grass family (2,
+  477, 60, 69) → the corrupt grass 23 / the crimson grass 199 (the jungle
+  grass 60 → 662 in the crimson), the stone + the moss → the ebonstone 25
+  / the crimstone 203, the sand 53 → the ebonsand 112 / the crimsand 234,
+  the ice 161 → the purple 163 / the red 200, the hardened sand 397 →
+  398/399, the sandstone 396 → 400/401. The natural walls convert too —
+  the stone wall 1 → the ebonstone wall 3 / the crimson wall 192, the
+  dirt wall 2 → 69/193 (the natural-wall slice of the C#'s
+  `WallID.Sets.Conversion` tables).
+- **The spread loop** (`:69696-69860`): the ±3 random target, the
+  chlorophyte defence (`nearbyChlorophyte` within 5 → the loop breaks —
+  `ChlorophyteDefense` itself converts only in the remix worlds,
+  `:69456-69460`), the sunflower (27) suppression within 2 tiles
+  (`CountNearBlocksTypes(i, j, 2, 1, 27)`), and the conversions with the
+  `Next(2) == 0` re-roll chain (the spreading tile walks the ±3 window
+  converting until the roll fails).
+- **The chlorophyte** (`:69646-69685`): the 211 chlorophyte + the 346
+  chlorophyte-jungle-grass sources grow into the mud (59) and the jungle
+  grass (60) via `Convert(..., 8)`, gated by `CanChlorophyteGrow`
+  (`:69464-69500` — the chlorophyte count in the radius-35 box ≤ 40 (the
+  box ×1.5 and the count cap /2 above the rock layer) and ≤ 130 in the
+  radius-85 box) plus the ±6 random re-scan.
+- **The gates**: the post-PlantBoss worlds halve the spread (`Next(2) !=
+  0`, `:69688-69691`); `AllowedToSpreadInfections` (the creative
+  spread-stop power) freezes it.
+- **The app call**: the spread rides the growth pass's underground picks
+  (`world_sim/growth.rs`) — one `hard_update_world` per tick on a random
+  cavern-layer column.
+
+Deviations: the thorn bushes (32/352) spread by the set membership but
+grow no bush tiles (the plant placement = the follow-up); the wall
+conversion covers the natural-wall slice (the C#'s tables span the brick
+walls too); the remix `ChlorophyteDefense` conversion is out (no remix
+worlds); the hardmode gate waits for M5-HARDFORCE (the port spreads
+unconditionally).
+
+## Lihzahrd temple (M1.4-WGEN-6)
+
+The `LihzahrdTemple` pass (`WorldGen.cs:15834+`) — the buried jungle
+temple, the last big generation structure:
+
+- **The placement** (`:15840-15848`): the y between the rock layer and
+  `maxTilesY − 600` (the port clamps to the height), the x under the
+  jungle band's deep half (`dungeonSide`'s opposite in the C#).
+- **The box** (`LihzahrdTemple`'s brick fill): the outer shell of the
+  Lihzahrd brick (226) with the unsafe walls (87), the carved central
+  hall + the side rooms with the safe walls (112), the brick pillars
+  inside the hall.
+- **The altar** (`AddLihzahrdAltar`, `:32071-32100`): the 3×2 altar (237)
+  with the frames `i·18/j·18` and the 3-wide brick base row in the altar
+  room at the hall's west end.
+- **The traps**: the dart traps (137, the case-137 wiring variants the
+  wiring trip fires — the trap frameY selects the variant) embedded in
+  the hall's brick walls every 12 columns.
+- **The chests**: the corners of the hall (`place_chest`'s intact quads).
+
+Deviations: the C#'s multi-room crawl with the doors
+(`HellFort_AttemptToPlaceDoor`-style), the teleporter pads and the Golem
+summon (the altar interaction needs the Plantera downed — M5-HARDFORCE)
+are the follow-ups; the box + 3-room shape approximates the C#'s crawl.
+
+## Polish passes (M1.4-WGEN-7)
+
+The worldgen rounding-out:
+
+- **The dungeon colour** (`pass_dungeon`): the brick roll (the blue 41 /
+  the green 43 / the pink 44) now drives the walls too (7/8/9) — the
+  port's walls were pinned to the blue 7.
+- **The ice shell** (the fill): the snow band's underground is the ice
+  (161) from the surface to the rock layer (the `IceBiome` shape — the
+  port's fill previously kept the dirt under the snow surface, leaving
+  the ice-biome decorators nothing to sit on).
+- **The exposed gems** (`ExposedGemsInIceBiome`, `WorldGen.cs:20697-20735`):
+  `maxTilesX · 0.25` attempts — the y between `(worldSurface +
+  rockLayer) / 2` and the lava line, the x in the snow band, the anchor
+  tile from the snow/ice family (147/161/162/224); the gem patch (the
+  tile 178) fills the `Next(1, 4)`-half-sized rectangle of the free
+  cells, the styles weighted `Next(12)`: <3 → 0 (the amethyst), <6 → 1,
+  <8 → 2, <10 → 3, ≥11 → 5 (the diamond), else 4.
+
+Deviations: the gem torches (the ice biome's torch placements) and the
+ice-cave water pools are the follow-ups; the ice shell's dirt pockets
+ride the cave pass's blob machinery.

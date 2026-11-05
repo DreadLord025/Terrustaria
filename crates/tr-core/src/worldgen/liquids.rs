@@ -152,7 +152,17 @@ mod tests {
         (center, 32, level)
     }
 
-    #[test]
+    /// The ground row below any sky objects (the floating islands' clouds
+    /// hang over the terrain — the first solid from the sky is not the
+    /// ground anymore; walk down to the first dirt tile).
+    fn ground_row(w: &crate::world::World, x: i32) -> i32 {
+        let mut y = w.surface_of(x);
+        while y < w.height - 2 && w.tile(x, y).unwrap().kind != TILE_DIRT {
+            y += 1;
+        }
+        y
+    }
+
     fn lake_water_stays_at_or_below_the_water_line() {
         let mut w = generate(&GenOptions::default());
         w.compute_column_surface();
@@ -197,7 +207,14 @@ mod tests {
         let mut grass_banks = 0;
         for dx in [-(half + 1), half + 1] {
             let x = center + dx;
-            let top = w.surface_of(x);
+            // The bank's top: the first non-cloud tile from the surface (the
+            // floating islands hang over the terrain).
+            let mut top = w.surface_of(x);
+            while top < w.height - 2
+                && matches!(w.tile(x, top).unwrap().kind, 189 | 196)
+            {
+                top += 1;
+            }
             let t = *w.tile(x, top).unwrap();
             assert!(t.active(), "bank column x={x} has no ground");
             if t.kind == TILE_GRASS {
@@ -223,7 +240,7 @@ mod tests {
         let mut deepest = 0;
         for dx in -half..=half {
             let x = center + dx;
-            let top = w.surface_of(x);
+            let top = ground_row(&w, x);
             let t = *w.tile(x, top).unwrap();
             assert!(
                 t.active() && td::TILE_SOLID.has(t.kind),

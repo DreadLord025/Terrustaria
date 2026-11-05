@@ -206,6 +206,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
+                underworld_for_bats: (app.camera.y / 16.0) as i32
+                    > app.world.height - 200,
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);

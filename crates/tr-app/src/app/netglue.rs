@@ -293,6 +293,21 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::EaterOfSouls | crate::npc::NpcKind::Hornet | crate::npc::NpcKind::MeteorHead => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::CaveBat
+        | crate::npc::NpcKind::JungleBat
+        | crate::npc::NpcKind::Hellbat
+        | crate::npc::NpcKind::VoodooDemon => {
+            // The net spawn hangs the bat at the net Y (the cave air).
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
     };
     npc.x = n.x;

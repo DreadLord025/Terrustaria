@@ -101,6 +101,15 @@ pub(crate) struct NpcAssets {
     pub(crate) wandering_eye: Option<BgTex>,
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
+    pub(crate) skeleton: Option<BgTex>,
+    pub(crate) undead_miner: Option<BgTex>,
+    pub(crate) cave_bat: Option<BgTex>,
+    pub(crate) jungle_bat: Option<BgTex>,
+    pub(crate) hellbat: Option<BgTex>,
+    pub(crate) voodoo_demon: Option<BgTex>,
+    pub(crate) eater_of_souls: Option<BgTex>,
+    pub(crate) hornet: Option<BgTex>,
+    pub(crate) meteor_head: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -111,6 +120,15 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         wandering_eye: sky_tex(atlas, "NPC_133", None),
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
+        skeleton: sky_tex(atlas, "NPC_21", None),
+        undead_miner: sky_tex(atlas, "NPC_44", None),
+        cave_bat: sky_tex(atlas, "NPC_49", None),
+        jungle_bat: sky_tex(atlas, "NPC_51", None),
+        hellbat: sky_tex(atlas, "NPC_60", None),
+        voodoo_demon: sky_tex(atlas, "NPC_66", None),
+        eater_of_souls: sky_tex(atlas, "NPC_6", None),
+        hornet: sky_tex(atlas, "NPC_42", None),
+        meteor_head: sky_tex(atlas, "NPC_23", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -541,6 +559,55 @@ pub(crate) fn draw_npcs(
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
+            ),
+            // The skeleton family: the same humanoid frame shape — the
+            // strip's frame height rides the sheet (15 frames).
+            NpcKind::Skeleton | NpcKind::UndeadMiner => (
+                if n.kind == NpcKind::Skeleton {
+                    assets.skeleton.as_ref()
+                } else {
+                    assets.undead_miner.as_ref()
+                },
+                assets
+                    .skeleton
+                    .as_ref()
+                    .map_or(48.0, |t| t.h / 15.0),
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Cave Bat: the 5-frame flap over the 22x18 frames.
+            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
+                let tex = match n.kind {
+                    NpcKind::Hornet => assets.hornet.as_ref(),
+                    NpcKind::MeteorHead => assets.meteor_head.as_ref(),
+                    _ => assets.eater_of_souls.as_ref(),
+                };
+                let frames = match n.kind {
+                    NpcKind::Hornet => 3.0,
+                    _ => 2.0,
+                };
+                let fh = tex.map_or(30.0, |t| t.h / frames);
+                let (bw, bh) = n.size();
+                (
+                    tex,
+                    fh,
+                    [bw + 4.0, bh],
+                    [n.x - 2.0, n.y - 2.0],
+                )
+            }
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => (
+                match n.kind {
+                    NpcKind::JungleBat => assets.jungle_bat.as_ref(),
+                    NpcKind::Hellbat => assets.hellbat.as_ref(),
+                    NpcKind::VoodooDemon => assets.voodoo_demon.as_ref(),
+                    _ => assets.cave_bat.as_ref(),
+                },
+                assets.cave_bat.as_ref().map_or(18.0, |t| t.h / 5.0),
+                [26.0, 18.0],
+                [n.x - 12.0, n.y - 9.0],
             ),
             NpcKind::KingSlime => (
                 assets.king_slime.as_ref(),
