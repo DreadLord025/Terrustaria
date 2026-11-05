@@ -1103,6 +1103,8 @@ impl App {
                         &self.kill_tracker,
                         &mut self.chat,
                         &self.emotes,
+                        self.shop_npc
+                            .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

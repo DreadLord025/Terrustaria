@@ -34,6 +34,9 @@ pub struct World {
     pub frame_important: Vec<bool>,
     /// Y of the first solid tile at the center of the map (approx. spawn altitude).
     pub spawn_y: i32,
+    /// The bed spawn override (`Player.SpawnX/SpawnY`, `Player.cs:54635`'s
+    /// `ChangeSpawn`) — `None` = the generated spawn (`RemoveSpawn` clears).
+    pub bed_spawn: Option<(i32, i32)>,
     /// Spawn point from the save header (tile coordinates).
     pub spawn_x: i32,
     /// `Main.worldSurface`: below this row the sun does not reach the surface.
@@ -112,6 +115,7 @@ impl World {
             tile_entities: crate::tile_entities::TileEntities::default(),
             frame_important: Vec::new(),
             spawn_y: height / 4,
+            bed_spawn: None,
             spawn_x: width / 2,
             world_surface: height as f64 * 0.25,
             rock_layer: height as f64 * 0.45,

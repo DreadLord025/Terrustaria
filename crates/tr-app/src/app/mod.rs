@@ -134,6 +134,17 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
+    /// the mood captured at the open).
+    pub(crate) shop_npc: Option<usize>,
+    /// The stock captured at the open (`Chest.item[]`).
+    pub(crate) shop_stock: Vec<u16>,
+    /// The happiness multiplier captured at the open
+    /// (`currentShoppingSettings.PriceAdjustment`).
+    pub(crate) shop_mood: f32,
+    /// The closed shop — the state cleared (`Main.npcShop = -1`'s
+    /// equivalent).
+    pub(crate) shop_closed_flag: bool,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -639,6 +650,54 @@ impl App {
 
     pub(crate) fn update_npcs(&mut self, dt: f32) {
         world_sim::npcs::update_npcs(self, dt);
+        // The shop closes when the seller leaves (the NPC's death/retreat
+        // invalidates the index).
+        if let Some(i) = self.shop_npc {
+            if self.npcs.get(i).map(|n| n.hp > 0) != Some(true) {
+                self.close_shop();
+            }
+        } else if self.shop_closed_flag {
+            self.shop_closed_flag = false;
+        }
+    }
+
+    /// `Player.BuyItem`'s shape: the purse covers the price → deduct and
+    /// deposit the item through the pickup stack (`Player.PickupItem`'s
+    /// slot_for_pickup). Returns false when the purse is short or the slot
+    /// is out of range.
+    pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
+        let Some(item) = self.shop_stock.get(slot).copied() else {
+            return false;
+        };
+        let price = crate::shop::buy_price(item, self.shop_mood) as u64;
+        if self.coins < price {
+            return false;
+        }
+        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item) {
+            Some(i) => i,
+            None => return false,
+        };
+        // `Player.PickupItem`'s deposit: the stack merge on the same kind,
+        // else the fresh slot.
+        let sl = &mut self.inventory[idx];
+        if sl.kind == item && sl.count > 0 {
+            sl.count += 1;
+        } else {
+            *sl = crate::item::ItemSlot {
+                kind: item,
+                name: crate::itemdata::ITEMS[item as usize].name,
+                count: 1,
+            };
+        }
+        self.coins -= price;
+        true
+    }
+
+    /// `Main.SetNPCShopIndex(-1)`'s equivalent.
+    pub(crate) fn close_shop(&mut self) {
+        self.shop_npc = None;
+        self.shop_stock.clear();
+        self.shop_mood = 1.0;
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -1244,6 +1303,10 @@ impl App {
             npc_assets,
             npc_timer: 6.0,
             next_worm_id: 1,
+            shop_npc: None,
+            shop_stock: Vec::new(),
+            shop_mood: 1.0,
+            shop_closed_flag: false,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1888,6 +1951,21 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 ),
                 edit::TileInteraction::DialRefused => {
                     log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
+                }
+                edit::TileInteraction::CandleToggled => {
+                    log::info!("TR_TOGGLE {},{} -> candle toggled", op.x, op.y)
+                }
+                edit::TileInteraction::ChairSit { .. } => {
+                    log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
+                }
+                edit::TileInteraction::BedInteract { set_spawn, .. } => log::info!(
+                    "TR_TOGGLE {},{} -> bed ({})",
+                    op.x,
+                    op.y,
+                    if set_spawn { "spawn half" } else { "sleep half" }
+                ),
+                edit::TileInteraction::ClockRead { text } => {
+                    log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
                 }
             }
         }

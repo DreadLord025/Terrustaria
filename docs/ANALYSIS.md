@@ -3944,6 +3944,59 @@ Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
 follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
 swapping is out; the ore walls (`wallType`) are out.
 
+## The furniture logic (M1.4-TO-3)
+
+The registry grew from the wooden set (10/11/14/15/18/21) to the common
+furniture family — `tileobject.rs`: the candle (33, StyleOnTable1x1 —
+`AnchorBottom = Table`), the candelabra (100, Style2x2+Table), the
+chandelier (34, 3x3 hanging — `AnchorTop (SolidTile|SolidSide, 1, 1)` +
+`AnchorBottom Empty`, the ceiling-anchor path), the hanging lantern (42,
+Style1x2Top + the platform alternate), the lamp (93, Style1xX), the
+bookcase (101, Style3x4), the piano (87)/dresser (88) (Style3x2 — the
+dresser with the chest's invalid-anchor tiles + `LavaDeath=false`), the
+sink (172, Style2x2+18px), the grandfather clock (104, Style2xX h5), the
+bed (79)/bathtub (90) (Style4x2 + the `PlaceRight` alternates with
+`Style = 1` + the bed's `CoordinatePaddingFix (0,-2)`). The table's
+sub-tile styles 13 (Obsidian, lava-safe) / 25 (Dynasty, 3x1) resolve
+through `get_tile_data`'s sub-tile walk (the row's "3x3/6x3 + styles 13/25"
+gap — the vanilla has no 3x3/6x3 furniture kinds; the row's ids were stale:
+torches 4 (not 8), tables 14 (not 19), beds 79, pianos 87, clocks 104).
+
+The kill checks: `CheckOnTable1x1` (:45237), `Check1xX` (:37788), `Check2xX`
+(:37993), `Check3x4` (:50076), `Check1x2Top` (:46706), `Check4x2`
+(:47408), `Check2x2` (:48397), `Check3x3` (:53059) ported per-shape;
+`Check3x2` (:49187) parametrized over 14/87/88. The per-cell scans set
+`flag` and CONTINUE (no early break — an early break loses the sweep's cell
+list and leaves the remainder alive). The `Check*` closing `TileFrame`
+rings exist per-check in vanilla — only `Check3x2` (:49841-49849),
+`Check3x4` (:50161-50168) and `Check4x2` (:47499-47506) close with one; the
+port walks the ring for exactly those (with a depth cap), so a neighbouring
+piece whose anchor died inside a sweep reaches its own `Check*`; the other
+checks' remainders float until a later break — the vanilla deferred-pop
+semantics (DW-3-1's guard test pins it).
+
+The interactions (`edit::interact_at`'s `Interaction` arms): the candle
+lit-toggle (33/49 — `frameX ± 18`, `Player.cs:32378-32390`; the flame
+overlay and the light emission follow the frame), the chair sit (15 —
+`PlayerSittingHelper.SitDown`'s seat decode `PlayerSittingHelper.cs:163-182`
++ `:317-319`; the player's bottom snaps to the seat, the facing flips with
+`frameX`, `UpdateSitting` stands up on any control input or the chair going
+away, the regen reads the `sitting_or_sleeping` flag `:19232-19236`), the
+bed (79 — the bottom half sets/removes the spawn through `CheckSpawn`
+(:54533-54590: the bed above, the 3x3 free, `StartRoomCheck` via the
+housing module) with the "Spawn point set!/removed!" texts; the top half is
+consumed-but-inert — the sleep state is not ported), the grandfather clock
+(104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
+
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
+render follow-up — the sitting player draws standing, shifted -4 px
+(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+multiplayer seat-stack manager is out (one player); the chest/dresser
+inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
+metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
+the style-0 wooden slice places. The DrawYOffset fields are preview-only
+(`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
 ## Micro-biomes (M1.4-WGEN-8)
 
 The micro-biome decorators over the finished world:
@@ -4050,6 +4103,7 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
+<<<<<<< HEAD
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
@@ -4104,3 +4158,5 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
+=======
+>>>>>>> origin/main
