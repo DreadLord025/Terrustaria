@@ -41,6 +41,7 @@ use crate::app::netglue::compressed_world;
 use crate::assets;
 use crate::achievements;
 use crate::chat;
+use crate::craft;
 use crate::emotes;
 use crate::audio;
 use crate::banners;
@@ -173,6 +174,10 @@ pub(crate) struct App {
     /// (`NewCraftingUI`, `Main.cs:41706-41709`); `TR_NOCRAFT=1` hides it,
     /// `TR_CRAFT=1` forces it on.
     pub(crate) crafting_open: bool,
+    /// The world chest item stores (`Main.chest[]`'s `Chest.item`) the
+    /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
+    /// `M6-SAVE-2`) — in-memory for now.
+    pub(crate) world_chests: Vec<craft::WorldChest>,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -1331,6 +1336,7 @@ impl App {
             // (the `TR_INV` presence pattern).
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
+            world_chests: Vec::new(),
             menu: menu_state,
             front: None,
             front_backup: None,

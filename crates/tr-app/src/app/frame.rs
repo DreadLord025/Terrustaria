@@ -1044,11 +1044,39 @@ impl App {
                     }
                 } else if menu.is_none() && !no_hud() && !fullscreen_map {
                     let craft_available = if self.crafting_open {
-                        let adj = player
+                        // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
+                        // owned counts fold the inventory and the in-range
+                        // chests; the environment reads the adjacency scan
+                        // and the zone flags.
+                        let (adj, in_range) = player
                             .as_ref()
-                            .map(|p| craft::adjacent_tiles(world, p))
-                            .unwrap_or_default();
-                        craft::available(inventory, &adj)
+                            .map(|p| {
+                                (
+                                    craft::scan_adjacent(world, p),
+                                    craft::chests_in_range(
+                                        world,
+                                        p,
+                                        &self.world_chests,
+                                        settings.craft_from_nearby_chests,
+                                    ),
+                                )
+                            })
+                            .unwrap_or_else(|| {
+                                (
+                                    craft::Adjacent {
+                                        tiles: Vec::new(),
+                                        water: false,
+                                        honey: false,
+                                        lava: false,
+                                    },
+                                    Vec::new(),
+                                )
+                            });
+                        let zones = craft::Zones {
+                            snow: self.scene_metrics.zone_snow,
+                            graveyard: self.scene_metrics.zone_graveyard,
+                        };
+                        craft::available(inventory, &self.world_chests, &in_range, &adj, &zones)
                     } else {
                         Vec::new()
                     };

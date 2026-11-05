@@ -3482,3 +3482,59 @@ Deviations: the hallowed/crimson vine arms wait for the hallow
 (M5-HARDFORCE); the C# `oceanCave`'s exact winding shape and the
 `GrowUndergroundTree` canvas are approximated; the mushroom trees are the
 tile-71 stands (the full tree generator = the follow-up).
+
+## Crafting groups, environment, chests (M3-CRAFT-2)
+
+The research corrected the row: 1.4.5.8 has **no Condition-object system** —
+the recipe environment inputs are hardcoded bool fields on `Recipe`
+(`needWater/needHoney/needLava/needSnowBiome/needGraveyardBiome/
+needTorchGodsFavor/needMechdusa`, `Recipe.cs:72-100`), checked by
+`PlayerMeetsEnvironmentConditions` (`:322-358`); there is no
+`DataStructures/Condition.cs` and no `AddCondition` (that name lives on
+achievements only). The liquid proximity rides the same 5×3 tile region as
+the stations (`Player.AdjTiles`, `Player.cs:35661-35699`): `tile.liquid > 200`
+by type plus the `CountsAsWaterForCrafting` tiles {172 sink, 207 fountain}.
+
+The group system (`Recipe.SetupRecipeGroups`, `Recipe.cs:499-533`): 34
+groups, the registration order is the id; an ingredient whose item belongs
+to an accepted group substitutes the whole member set
+(`CreateRequiredItemQuickLookups`, `:15162-15191`) and the C# folds the
+members into a fake item id (`1000000 + index`,
+`AddFakeCountsForItemGroups :409-416`). The port carries the accepted group
+on the `Requirement` directly — the same totals without the fake-id
+indirection. `Requirement::matches` reproduces `RequiredItemEntry.Matches`
+(`:36-43`), so the drain (`CraftingRequests.Consume :218-254`) takes any
+member by slot order: the inventory first, then each chest in collection
+order, `ConsumeItemsFrom`'s partial-stack-then-clear shape (the port's
+`consume_kind`/`consume_chest`).
+
+The nearby chests are real 1.4.5 vanilla:
+`Recipe.CollectItemsFromChests` (`:375-407`) = the open container + the
+void bag + (with `Player.Settings.CraftFromNearbyChests`, default true,
+`Player.cs:406`) the container projectiles/banks in a ±39-tile rect and the
+world chests within 600 px of the player's feet
+(`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
+the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
+gated by the new `craft_from_nearby_chests` setting wired to the panel's
+nearby-chests toggle. Deviations: the store's population is M3-CHEST-UI's
+(the chest tiles place with no inventories yet), the save/persistence is
+M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
+passes for every chest (no chest locking); the scan order is raster (the
+vanilla iterates `Main.chest[]`'s instance order — the port has no instance
+registry); the group drain walks members in the group's registration order
+when the inventory pass runs per-member (the vanilla drains one flat pass
+matching `Matches` — the same totals, a different slot walk).
+
+`available` now implements `UpdateRecipeList`'s composition
+(`Recipe.cs:230-259`): environment × enough-ingredients — the port's older
+"station adjacent and any ingredient present" partial list is gone (the
+classic pane shows craftable rows only). Station requirements inherit
+`Recipe.TileCountsAs` (`:559-571`): near a work bench (17) satisfies a
+sawmill (215) requirement, the chain walks 302→17→215. The 8 new subset
+recipes exercise every ported flag: Bottled Water/Honey, the
+Wet/Lava/Honey Bomb trio, Snow Cloud Block (Sky Mill + snow), Wood Shelf
+(Bone Welder + graveyard), Glass (the Sand group); the 11 pre-existing
+recipes re-authored as group entries — the old "Wood → 9 / IronBar → 22"
+expansion deviation is retired. Out: the alchemy discount (M3-CRAFT-3),
+the torch-god/mechdusa flags (no systems), the guide-item mode
+(`CollectGuideRecipes`), the `SendData(32)` chest syncs (multiplayer).

@@ -55,6 +55,10 @@ pub struct Settings {
     pub miners_wobble: bool,
     /// `Main.SettingsEnabled_TilesSwayInWind`.
     pub tiles_sway: bool,
+    /// `Player.Settings.CraftFromNearbyChests` (`Player.cs:360`), defaulted
+    /// true (`Player.cs:406`): the crafting pulls ingredients from the world
+    /// chests in range.
+    pub craft_from_nearby_chests: bool,
     /// `Main.GameZoomTarget` (`Zoom`): 1.0..=2.0, only changed in the settings UI.
     pub zoom: f32,
     /// `Main.musicVolume`.
@@ -189,6 +193,7 @@ impl Default for Settings {
             blood: true,
             miners_wobble: true,
             tiles_sway: true,
+            craft_from_nearby_chests: true,
             zoom: 1.0,
             music_volume: 0.75,
             sound_volume: 0.75,
