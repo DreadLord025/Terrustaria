@@ -1839,6 +1839,15 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                     op.y,
                     object_drops.len()
                 ),
+                edit::TileInteraction::DialStarted { sundial } => log::info!(
+                    "TR_TOGGLE {},{} -> {} started",
+                    op.x,
+                    op.y,
+                    if sundial { "sundial" } else { "moondial" }
+                ),
+                edit::TileInteraction::DialRefused => {
+                    log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
+                }
             }
         }
     }
