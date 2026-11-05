@@ -2356,6 +2356,73 @@ pixel-bearing in the break scene, the Guide spawns off-frame): all four
 hashes and the 910 px footprint are byte-identical, so the shot evidence
 carries over as-is.
 
+M1.4-TO-4 (herbs/pots/alch/sunflower/piles, 2026-11-05) extends the umbrella in
+four layers. The registry slice grows by 27/28/78/82-84/185-187 (`tileobject.rs`,
+every def citing its `TileObjectData.cs` builder chain; `TILE_ALCH = {82,83,84}` =
+`Main.cs:7806-7808`; the planter box 380 stays out of the registry, as in C#);
+placement ports `PlaceAlch` (`WorldGen.cs:45380-45479` — the per-style soil sets,
+the liquid rules, `type=82, frameX=18*style, frameY=0`) as the seed branch of
+`place_item_tile`, with the planter box at `:60226-60230` (`frameY=18*style`).
+The KillTile cascade gains the per-type arms — `check_alch` (`:45972-46092`),
+`check_sunflower` (`:53729-53792`), `check_pot` (`:56797-57016`), `check_pile` +
+its 2x1 variant (`:46875-46971`), `check_3x2` for 186/187 (the Boulder refusal
+`:38979-38994`, the 187→186 conversion `:49379-49393`) and `check_on_table_1x1`
+for the clay pot (`:43503-43546`) — and the drop layer ports the herb harvest
+matrix (`:65674-65698`, `IsAlchemyPlantHarvestable` `:66143-66174`), the full
+`SpawnThingsFromPot` roll order (`:57089-57811`) and the harvest click
+(`AdjustPlants`/`TryReplantingHerbs`, `Player.cs:41260-41293` / `:45824-45830`).
+Deviations and seams:
+
+- The RNG seam (owner decision 2026-11-05): the C# two-stream split survives, but
+  neither stream is vanilla's — the event's `genRand` is a `FastRandom` seeded by
+  ONE `item_rng` throw per event (a broken pot, a killed herb), and every
+  `Main.rand` roll spends `item_rng` directly; the roll order is C# 1:1. This is
+  the `CloseDoor` pinned-0 precedent (above) generalised: no free-running runtime
+  stream exists, so a repeated seed reproduces the drops byte-for-byte.
+- The special-world flags have no port state: `DropCtx` hardcodes
+  `expert_mode: false` / `dont_starve: false` (`drop_ctx`; the tests flip them),
+  the tenthAnniversary/getGood/remix/vampireSeed branches skip WITHOUT consuming
+  rolls (the C# `&&` short-circuit keeps the streams aligned), the boss-downed
+  coin multipliers ×1.1 read all-false, and the pot luck is 0 (one
+  `Main.rand.Next(range)` per `Luck.RollLuck`).
+- The Coin Portal (518) is a roll without a projectile: the luck roll is spent
+  and the break returns as in C#, but `spawn_with_data` declines kind 518 (no
+  projectile family ported yet) — the portal pixels wait for the M4-PROJ
+  families.
+- The pot gore shards (`Gore.NewGore` `:56878-56953`) are deferred — the port has
+  no general gore mechanism (only the leaf `LeafGore`); the genRand style rolls
+  (25-33) have no counterpart, and the per-event `FastRandom` re-seed keeps the
+  loot rolls independent of the skip.
+- The echo tiles 653/647-650 and BeachPiles 324 are deferred (owner decision
+  2026-11-05); `CheckPot`'s only item drop IS the echo 653 (`:56955-57009`), so
+  the port's `check_pot` returns no `drop` and the pot loot rides the event only.
+- The sunflower `RandomStyleRange` roll (`Main.rand.Next(3)`, `TileObject.cs:787`)
+  is not wired to placement: an item-placed sunflower always resolves style 0
+  (the documented follow-up in the module doc).
+- The replant anchor 579 (`RockGolemHead`) is carried text-for-text from
+  `Player.cs:45826` — nothing in the ported game plants on 579; the decompile's
+  condition is kept verbatim.
+- The coin-shrink roulettes run on `Main.rand` in C# (not `genRand`, `:57751+`) —
+  the plan text was imprecise; the port matches the source.
+- The core kill contract grew additively: `ObjectDrop.item`, `TileKill.events`/
+  `herb_events`/`pile_events` and the `HerbEvent`/`PileLootEvent` types (the new
+  fields ride the existing `TileKill`, no signature broke) — outside phase 3's
+  original file scope, a discovery decision.
+- The `destroyObject` guard is per-check like the C#: only the multi-tile checks
+  carry the entry guard (`Check1x2`/`2x1`/`3x2`/`Sunflower`/`Pot`/`Chest`/the door
+  pair); `CheckAlch`, `CheckOnTable1x1` and `CheckPile`'s 1x1 body run unguarded,
+  and their nested kills pass the flag through unchanged.
+
+Verification (M1.4-TO-4, batch review 2026-11-05, HEAD `f9dd9f8`): the workspace
+suite is green (`test result: ok` ×7 — 789+16+499+19 passed, 0 failed, 1 ignored,
+`--skip migrates_version_2_kinds_to_item_ids`); the deterministic `TR_SHOT` scene
+(`TR_TILES` staging 27/28/78/82-84/185-187/380 on a platform) gives SHA256-equal
+double-run pairs at zooms 1.0/1.5/2.0 (`f2072783…`, `9e8f5e6d…`, `cd0502a5…`;
+commit `9ec6f2e`), and the sway pair (`TR_SHOT_FRAME` 60 vs 480 at
+`TR_WIND_FORCE=0.8`) differs in the flower zone; unit tests carry the geometry
+(`test_DW_1_2_herb_pot_pile_geometry_matches_csharp`), the cascade scenarios and
+the pot-loot roll order (fixed-seed `item_rng`).
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime

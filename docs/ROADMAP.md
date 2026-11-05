@@ -150,8 +150,10 @@ referenced here exist in the catalog.
 -4 herbs/alch/pots; TILE-DRAW-1/2/3/4/5 as before; TILE-DRAW-6 vines/moss/cactus arms.
   **Landed (2026-11-03, `M1.4-TO-tile-objects`):** the TileObjectData registry + wooden-set
   placement (10/11/14/15/18/21), the KillTile per-type cascade (Check1x2/2x1/3x2/Door/Chest),
-  the world interaction hook and OpenDoor/CloseDoor; remaining: -4 herbs/alch/pots,
-  gemspark/glow, the full-registry generator.
+  the world interaction hook and OpenDoor/CloseDoor. **Landed (2026-11-05, `M1.4-TO-4-herbs-pots`):**
+  the registry slice 27/28/78/82-84/185-187, the seed `PlaceAlch` branch + the planter box,
+  the cascade arms for the new kinds (the per-check `destroyObject` guard), the drops/pot-loot
+  RNG seam; remaining: gemspark/glow, the full-registry generator.
 
 ## 3. Liquids & waterfalls
 
@@ -1254,7 +1256,7 @@ section in brackets before starting a row.
 | ✅ M1.4-TO-1 | `M1.4-TO-1-doors` | doors open/close + CheckDoor — landed with the umbrella (closed/open door registry entries, the CheckDoor cascade, OpenDoor/CloseDoor behind `interact_at`, door sounds; net message 19 not wired) [2] |
 | 🟡 M1.4-TO-2 | `M1.4-TO-2-chests` | chest tiles + CheckChest + locking — the cascade + chest placement landed with the umbrella; the chest stays a pure tile object (indices/item storage/locking = the M3-CHEST-UI seam) [2][13] |
 | 🟡 M1.4-TO-3 | `M1.4-TO-3-furniture` | Check3x2/3x3/6x3 family + anchors — Check1x2/2x1/3x2 + table/chair/workbench placement landed; the 3x3/6x3 furniture and the table sub-tile styles 13/25 wait for the full-registry generator [2] |
-| 🔄 M1.4-TO-4 | `M1.4-TO-4-herbs-pots` | herbs/pots/alch/sunflower/piles [2][20] |
+| ✅ M1.4-TO-4 | `M1.4-TO-4-herbs-pots` | herbs/pots/alch/sunflower/piles — done 2026-11-05: the registry slice 27/28/78/82-84/185-187 (+`TILE_ALCH` = {82,83,84}), the seed `PlaceAlch` branch (per-style soil sets, the liquid rules, `frameX=18*style`) + the planter box 380 (`frameY=18*style`, out of the registry as in C#), the KillTile cascade arms `check_alch`/`check_sunflower`/`check_pot`/`check_pile`(2x1)/`check_3x2`(187→186, the Boulder refusal)/`check_on_table_1x1`(78) with the per-check `destroyObject` guard (only the multi-tile checks guard, 1:1), the drop layer — `tile_drop` (78→222, 380→3215+frameY/18, 27→63; 82/28/185-187 → None per-cell), the herb harvest matrix (Staff of Regrowth, `IsAlchemyPlantHarvestable`), the full `SpawnThingsFromPot` roll order on the RNG seam (one `item_rng` throw per event seeds the `FastRandom` = C# `genRand`; `Main.rand` rolls = `item_rng`), the seed-route tileCut rule + the staff replant (78/380/579), the sunflower sway pass + the (−1,−1) frame guard; remaining: echo tiles 653/647-650 + BeachPiles 324 deferred (owner), the pot gore shards deferred (no gore mechanism — ANALYSIS), the sunflower `RandomStyleRange` roll unwired (item sunflowers always style 0 — follow-up); growth ticks + self-seeding = M7-GROWTH-1; deviations in ANALYSIS "Tile objects (M1.4-TO)" [2][20] |
 | ✅ M1.4-TO-5 | `M1.4-TO-5-frame-important-break` | ungate LMB breaking of frame_important tiles — done 2026-11-04: the `!important` mining-branch gate removed (the former `world_sim/editing.rs:204-210`/`:213` at claim time — deleted by the fix; the old `:158-165` citation had drifted after the M2 merges), doors/chests/furniture reach `break_tile` with the full KillTile cascade + the object drop, cactus 80 and non-frame-important tiles unchanged; CanKillTile refusals stay unported (→ M1.4-TO-6); from the M1.4-TO plan (Notes) / ANALYSIS "Tile objects (M1.4-TO)" [2] |
 | M1.4-TO-6 | `M1.4-TO-6-cankilltile-refusals` | port the three `CanKillTile` refusals next to `WALL_UNBREAKABLE` (`tr-core/src/edit.rs:469`) — locked door type 10 (`WorldGen.cs:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`), the tile under a container (`:62259-62270`) — visible through LMB since TO-5 ungated the break [2] |
 
