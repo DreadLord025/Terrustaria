@@ -300,6 +300,18 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The casters/spheres: the ctor only seeds the stats — the net
+        // state overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::GoblinSorcerer
+        | crate::npc::NpcKind::Tim
+        | crate::npc::NpcKind::DarkCaster
+        | crate::npc::NpcKind::FireImp
+        | crate::npc::NpcKind::ChaosBall
+        | crate::npc::NpcKind::BurningSphere
+        | crate::npc::NpcKind::WaterSphere => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::CaveBat
         | crate::npc::NpcKind::JungleBat
         | crate::npc::NpcKind::Hellbat

@@ -309,6 +309,13 @@ fn portrait_data(
         NpcKind::EaterOfSouls => 12,
         NpcKind::Hornet => 13,
         NpcKind::MeteorHead => 14,
+        NpcKind::GoblinSorcerer => 15,
+        NpcKind::Tim => 16,
+        NpcKind::DarkCaster => 17,
+        NpcKind::FireImp => 18,
+        NpcKind::ChaosBall => 19,
+        NpcKind::BurningSphere => 20,
+        NpcKind::WaterSphere => 21,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -350,6 +357,15 @@ fn portrait_data(
         (NpcKind::EaterOfSouls, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::Hornet, _) => (sheet_i, 32.0, 34.0, 32.0, white),
         (NpcKind::MeteorHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        // The casters ride the 38x48 humanoid frame box; the spheres the
+        // 16x16 sheet.
+        (NpcKind::GoblinSorcerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Tim, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::DarkCaster, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::FireImp, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::ChaosBall, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::BurningSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
+        (NpcKind::WaterSphere, _) => (sheet_i, 16.0, 16.0, 16.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
