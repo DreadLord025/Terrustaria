@@ -7,8 +7,8 @@ use crate::npc_buffs::NpcBuffs;
 use crate::npc_ai::HoverParams;
 use crate::player::{Player, collides_rect};
 
-const GRAVITY: f32 = 0.4;
-const MAX_FALL: f32 = 8.0;
+pub(crate) const GRAVITY: f32 = 0.4;
+pub(crate) const MAX_FALL: f32 = 8.0;
 
 /// `Collision.WetCollision` (simplified): any water tile overlapping the body.
 fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
@@ -58,6 +58,28 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
+    /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
+    /// 18x38, 40 HP).
+    GoblinSorcerer,
+    /// `NPCID.Tim` (45) — the deep-cavern caster (`aiStyle 8`, `NPC.cs:9322`:
+    /// 18x40, 200 HP, value 5000).
+    Tim,
+    /// `NPCID.DarkCaster` (32) — the dungeon caster (`aiStyle 8`,
+    /// `NPC.cs:9121`: 18x40, 50 HP).
+    DarkCaster,
+    /// `NPCID.FireImp` (24) — the underworld caster (`aiStyle 8`,
+    /// `NPC.cs:9078`: 18x40, 70 HP, lava-immune).
+    FireImp,
+    /// `NPCID.ChaosBall` (30) — the caster's sphere (`aiStyle 9`, 16x16,
+    /// 1 HP, `noGravity`/`noTileCollide`). Tim's `ChaosBallTim` clone 665
+    /// folds here (identical stats and name, `NPC.cs:17398`).
+    ChaosBall,
+    /// `NPCID.BurningSphere` (25) — the Fire Imp's sphere (`aiStyle 9`,
+    /// `NPC.cs:9093`).
+    BurningSphere,
+    /// `NPCID.WaterSphere` (33) — the Dark Caster's sphere (`aiStyle 9`,
+    /// `NPC.cs:9135`).
+    WaterSphere,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -239,6 +261,13 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 12,
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
+            NpcKind::GoblinSorcerer => 15,
+            NpcKind::Tim => 16,
+            NpcKind::DarkCaster => 17,
+            NpcKind::FireImp => 18,
+            NpcKind::ChaosBall => 19,
+            NpcKind::BurningSphere => 20,
+            NpcKind::WaterSphere => 21,
         }
     }
 
@@ -259,6 +288,13 @@ impl NpcKind {
             12 => NpcKind::EaterOfSouls,
             13 => NpcKind::Hornet,
             14 => NpcKind::MeteorHead,
+            15 => NpcKind::GoblinSorcerer,
+            16 => NpcKind::Tim,
+            17 => NpcKind::DarkCaster,
+            18 => NpcKind::FireImp,
+            19 => NpcKind::ChaosBall,
+            20 => NpcKind::BurningSphere,
+            21 => NpcKind::WaterSphere,
             _ => return None,
         })
     }
@@ -286,6 +322,16 @@ impl NpcKind {
             NpcKind::EaterOfSouls => (30.0, 30.0),
             NpcKind::Hornet => (34.0, 32.0),
             NpcKind::MeteorHead => (22.0, 22.0),
+            // The casters: `SetDefaults` case 29 is 18x38, the cases
+            // 45/32/24 18x40 (`NPC.cs:8951`/`:9322`/`:9121`/`:9078`).
+            NpcKind::GoblinSorcerer => (18.0, 38.0),
+            NpcKind::Tim => (18.0, 40.0),
+            NpcKind::DarkCaster => (18.0, 40.0),
+            NpcKind::FireImp => (18.0, 40.0),
+            // The spheres: the cases 30/25/33 are 16x16.
+            NpcKind::ChaosBall => (16.0, 16.0),
+            NpcKind::BurningSphere => (16.0, 16.0),
+            NpcKind::WaterSphere => (16.0, 16.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -312,6 +358,15 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 40,
             NpcKind::Hornet => 48,
             NpcKind::MeteorHead => 26,
+            // The casters: `SetDefaults` cases 29/45/32/24.
+            NpcKind::GoblinSorcerer => 40,
+            NpcKind::Tim => 200,
+            NpcKind::DarkCaster => 50,
+            NpcKind::FireImp => 70,
+            // The spheres: 1 HP.
+            NpcKind::ChaosBall => 1,
+            NpcKind::BurningSphere => 1,
+            NpcKind::WaterSphere => 1,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -334,6 +389,15 @@ impl NpcKind {
             NpcKind::EaterOfSouls => 22,
             NpcKind::Hornet => 26,
             NpcKind::MeteorHead => 40,
+            // The casters: `SetDefaults` damage 20/20/20/30.
+            NpcKind::GoblinSorcerer => 20,
+            NpcKind::Tim => 20,
+            NpcKind::DarkCaster => 20,
+            NpcKind::FireImp => 30,
+            // The spheres: damage 20/30/20.
+            NpcKind::ChaosBall => 20,
+            NpcKind::BurningSphere => 30,
+            NpcKind::WaterSphere => 20,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -387,6 +451,17 @@ pub struct Npc {
     /// homeless (`NPC.homeless` inverted). The in-memory state — the
     /// world-file persistence lands with M6-SAVE-1's NPC sections.
     pub home: Option<(i32, i32)>,
+    /// `ai[0]`: the caster's cycle counter (`AI_008`'s 500 init, the
+    /// 100/200/300 shot triggers, the 650 teleport threshold).
+    pub caster_counter: i32,
+    /// `ai[1]`: the caster's windup countdown (30 from a shot trigger,
+    /// `num88` after a teleport; the shoot fires at the params' tick).
+    pub cast_windup: i32,
+    /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
+    /// shoot tick (`AI_008`), resolved by the world sim after the update
+    /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
+    /// the (kind, bottom-centre x, bottom-centre y) spawn point.
+    pub wants_sphere: Option<(NpcKind, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
 }
@@ -467,6 +542,25 @@ impl Npc {
             return None;
         }
         Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+    }
+
+    /// Spawns a caster standing on the found ground tile (`SpawnNPC`'s
+    /// `Bottom = (x * 16 + 8, y * 16)` semantics, `NPC.cs:4934`): the feet
+    /// on the ground tile's top, the X centred on the tile.
+    pub fn spawn_caster(world: &World, x_tile: i32, ground_y: i32, kind: NpcKind) -> Option<Self> {
+        let (w, h) = kind.size();
+        let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
+        let y = ground_y as f32 * TILE_PX - h;
+        if collides_rect(world, x, y, w, h) {
+            return None;
+        }
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
     }
 
     /// Spawns a cave flyer hanging in the open air of the cave layer (the
@@ -579,6 +673,9 @@ impl Npc {
             burn: 0.0,
             wants_minion: false,
             home: None,
+            caster_counter: 0,
+            cast_windup: 0,
+            wants_sphere: None,
             wet_x: 0.0,
         }
     }
@@ -623,6 +720,15 @@ impl Npc {
             NpcKind::EaterOfSouls => 0.5,
             NpcKind::Hornet => 0.5,
             NpcKind::MeteorHead => 0.4,
+            // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
+            NpcKind::GoblinSorcerer => 0.6,
+            NpcKind::Tim => 0.6,
+            NpcKind::DarkCaster => 0.6,
+            NpcKind::FireImp => 0.5,
+            // The spheres: 0 (the knockback passes through).
+            NpcKind::ChaosBall => 0.0,
+            NpcKind::BurningSphere => 0.0,
+            NpcKind::WaterSphere => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -654,6 +760,15 @@ impl Npc {
             NpcKind::EaterOfSouls => 8,
             NpcKind::Hornet => 12,
             NpcKind::MeteorHead => 6,
+            // The casters: `SetDefaults` defense 2/4/2/16.
+            NpcKind::GoblinSorcerer => 2,
+            NpcKind::Tim => 4,
+            NpcKind::DarkCaster => 2,
+            NpcKind::FireImp => 16,
+            // The spheres: defense 0.
+            NpcKind::ChaosBall => 0,
+            NpcKind::BurningSphere => 0,
+            NpcKind::WaterSphere => 0,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -683,6 +798,15 @@ impl Npc {
             NpcKind::EaterOfSouls => 150.0,
             NpcKind::Hornet => 200.0,
             NpcKind::MeteorHead => 250.0,
+            // The casters: `SetDefaults` value 200/5000/140/350.
+            NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::Tim => 5000.0,
+            NpcKind::DarkCaster => 140.0,
+            NpcKind::FireImp => 350.0,
+            // The spheres carry no value.
+            NpcKind::ChaosBall => 0.0,
+            NpcKind::BurningSphere => 0.0,
+            NpcKind::WaterSphere => 0.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -772,6 +896,16 @@ impl Npc {
     }
 
     pub fn update(&mut self, world: &World, player: &mut Player, dt: f32) {
+        // The deterministic scratch stream — the tests and every
+        // non-caster kind never consume it (only the caster teleport
+        // search draws `rand01`).
+        let mut scratch = 0u64;
+        self.update_rng(world, player, dt, &mut scratch);
+    }
+
+    /// The real step with the caller's RNG stream — the caster teleport
+    /// search draws from it where the C# hits `Main.rand` (`NPC.cs:18948`).
+    pub fn update_rng(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut u64) {
         // `NPC.Update`'s buff block (`NPC.cs:90373-90377`): timer decrement →
         // clear expired → ApplyDOTs, before the AI — DoT damage lands ahead of
         // the frame's movement, exactly like the original.
@@ -801,6 +935,11 @@ impl Npc {
                 self.update_hover(world, player, HoverParams::METEOR_HEAD)
             }
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
+            | NpcKind::FireImp => self.update_caster(world, player, rng),
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
+                self.update_sphere(world, player)
+            }
         }
         self.find_frame();
         self.contact(player);
@@ -988,6 +1127,49 @@ impl Npc {
                     };
                 }
             }
+            // The casters (`FindFrame`'s case 29/32/45 group,
+            // `NPC.cs:77019-77054`): the pose machine — row 0 stands, row 1
+            // is the cast windup (`ai[1] > 0`), row 2 airborne. The Dark
+            // Caster's Skeletron pose (`localAI[3]`, `:77050-77053`) rides
+            // the skeleton-head work.
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+                self.frame = if self.vy != 0.0 {
+                    2
+                } else if self.cast_windup > 0 {
+                    1
+                } else {
+                    0
+                };
+            }
+            // The Fire Imp (`NPC.cs:76979-77017`): the 10-frame strip —
+            // rows 0..3 walk (5 steps each), the cast pose snaps to row 4
+            // and advances to the held row 9.
+            NpcKind::FireImp => {
+                self.frame_counter += 1.0;
+                if self.cast_windup > 0 {
+                    if self.frame < 4 {
+                        self.frame = 4;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 9 {
+                        self.frame = 9;
+                    }
+                } else {
+                    if self.frame_counter > 5.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 3 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // The spheres: `Main.npcFrameCount` 30/25/33 = 1.
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {}
             NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
@@ -1384,6 +1566,58 @@ impl Npc {
         }
     }
 
+    /// `AI_008` through the framework's `caster_cycle` (`NPC.cs`'s aiStyle
+    /// 8 block, `:20817-21278`). The shoot tick spawns the sphere through
+    /// `wants_sphere`: the Goblin Sorcerer → the Chaos Ball 30 (`:21238`),
+    /// Tim → its ChaosBallTim clone 665 (`:21242`, folded into `ChaosBall`
+    /// — identical stats and name), the Dark Caster → the Water Sphere 33
+    /// (`:21246`), the Fire Imp → the Burning Sphere 25 at `ai[1] == 10`
+    /// (`:21164-21173`). The spawn point keeps `NPC.NewNPC`'s `Bottom`
+    /// semantics (`:80771`).
+    fn update_caster(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (pcx, pcy) = player.center();
+        let params = match self.kind {
+            NpcKind::FireImp => crate::npc_ai::CasterParams::FIRE_IMP,
+            _ => crate::npc_ai::CasterParams::STANDARD,
+        };
+        let mut phase = crate::npc_ai::CasterPhase {
+            counter: self.caster_counter,
+            windup: self.cast_windup,
+        };
+        let shot = crate::npc_ai::caster_cycle(self, world, pcx, pcy, rng, params, &mut phase);
+        self.caster_counter = phase.counter;
+        self.cast_windup = phase.windup;
+        if shot {
+            let (w, _) = self.size();
+            let (sx, sy) = match self.kind {
+                // `:21238`/`:21242`/`:21246`: `(pos.X + width/2, pos.Y - 8)`.
+                NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+                    (self.x + w * 0.5, self.y - 8.0)
+                }
+                // `:21171`: `(pos.X + width/2 + direction*8, pos.Y + 20)`.
+                NpcKind::FireImp => {
+                    (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0)
+                }
+                _ => return,
+            };
+            let sphere = match self.kind {
+                NpcKind::GoblinSorcerer | NpcKind::Tim => NpcKind::ChaosBall,
+                NpcKind::DarkCaster => NpcKind::WaterSphere,
+                NpcKind::FireImp => NpcKind::BurningSphere,
+                _ => return,
+            };
+            self.wants_sphere = Some((sphere, sx, sy));
+        }
+    }
+
+    /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
+    /// core, `:21404-21429`): the one-shot launch, then the straight fly
+    /// through the tiles (`noGravity`/`noTileCollide`).
+    fn update_sphere(&mut self, world: &World, player: &Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::sphere_step(self, pcx, pcy, world);
+    }
+
     fn contact(&mut self, player: &mut Player) {
         let (w, h) = self.size();
         if self.x < player.x + crate::player::WIDTH
@@ -1453,6 +1687,13 @@ impl Npc {
             NpcKind::EaterOfSouls => 12,
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
+            NpcKind::GoblinSorcerer => 15,
+            NpcKind::Tim => 16,
+            NpcKind::DarkCaster => 17,
+            NpcKind::FireImp => 18,
+            NpcKind::ChaosBall => 19,
+            NpcKind::BurningSphere => 20,
+            NpcKind::WaterSphere => 21,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -1623,6 +1864,44 @@ mod tests {
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    /// The test ground: dirt from y = 120 in a 200x200 world with a carved
+    /// pit (x 60..140, y 125..134) — the caster tests' arena. The pit
+    /// matters: on a flat surface every floor-level spot sits inside the
+    /// player's ±5-tile telefrag rect (the vanilla casters legitimately
+    /// fail to teleport there), so the search needs a floor outside the
+    /// rect's y window.
+    fn ground_air() -> World {
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 120..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 60..140 {
+            for y in 125..135 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    /// The player parked on the surface at column 100 (the tests' fixed
+    /// reference — `Player::spawn`'s world-spawn default rides the unset
+    /// `spawn_x/spawn_y`).
+    fn surface_player(w: &World) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = 100.0 * TILE_PX;
+        p.y = 116.0 * TILE_PX;
+        p
+    }
 
     fn ground() -> World {
         let mut w = World::new("t".into(), 64, 64);
@@ -1949,4 +2228,148 @@ mod tests {
             "one 32-step cycle covers frames 0..=3"
         );
     }
+    #[test]
+    fn the_caster_teleports_and_shoots() {
+        // `AI_008` (`NPC.cs:20817-21278`): the 500 counter init, the
+        // teleport attempt at 650 (the spot ≥ 5 tiles from the player —
+        // the telefrag gate), then the counter resets and the 100 trigger
+        // winds the 30-tick shot that fires at `ai[1] == 25`.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let pc = player.center();
+        let mut tim = Npc::new(NpcKind::Tim, 40.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        tim.hp = tim.max_hp;
+        let start = (tim.x, tim.y);
+        let mut rng = 7u64;
+        let mut teleported = false;
+        let mut shot = false;
+        let _ = start;
+        for _ in 0..400 {
+            let (px, py) = (tim.x, tim.y);
+            tim.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some((kind, sx, sy)) = tim.wants_sphere {
+                assert_eq!(kind, NpcKind::ChaosBall);
+                // The Chaos Ball spawn point: Tim's bottom-centre, 8 px
+                // above the top (`:21242`'s NewNPC(x + w/2, y - 8) with the
+                // `Bottom` semantics).
+                let (tw, _) = tim.size();
+                assert!((sx - (tim.x + tw * 0.5)).abs() < 0.01);
+                assert!((sy - (tim.y - 8.0)).abs() < 0.01);
+                shot = true;
+                break;
+            }
+            if !teleported {
+                // The teleport is a per-tick jump (the gravity fall moves
+                // at most MAX_FALL = 8 px a tick, the stand decay < 1).
+                let jumped = (tim.x - px).abs() + (tim.y - py).abs() > 16.0;
+                if jumped {
+                    teleported = true;
+                    // The teleport respected the ±5-tile telefrag gate.
+                    let dcx = ((tim.x + tim.size().0 * 0.5) - pc.0).abs();
+                    let dcy = ((tim.y + tim.size().1 * 0.5) - pc.1).abs();
+                    assert!(
+                        dcx > 70.0 || dcy > 70.0,
+                        "the telefrag gate held ({dcx}x{dcy})"
+                    );
+                    // The feet rest on a solid floor.
+                    let floor = w
+                        .tile(
+                            (tim.x / 16.0) as i32,
+                            ((tim.y + tim.size().1) / 16.0) as i32,
+                        )
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                    assert!(floor, "the teleport landed the feet on a solid floor");
+                }
+            }
+        }
+        assert!(teleported, "the caster never teleported");
+        assert!(shot, "Tim never fired the Chaos Ball");
+        // The post-teleport windup (20) never crosses the shoot tick (25)
+        // — the shot came from the 100/200/300 trigger's 30-tick windup.
+    }
+
+    #[test]
+    fn the_fire_imp_shoots_at_its_tick() {
+        // The Fire Imp's shoot tick is `ai[1] == 10` (`:21166`) — 20 ticks
+        // after the 30-tick windup, 15 after the standard casters'.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let mut imp = Npc::new(NpcKind::FireImp, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        imp.hp = imp.max_hp;
+        let mut rng = 11u64;
+        let mut shot = false;
+        for _ in 0..400 {
+            imp.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some((kind, _, _)) = imp.wants_sphere {
+                assert_eq!(kind, NpcKind::BurningSphere);
+                shot = true;
+                break;
+            }
+        }
+        assert!(shot, "the Fire Imp never fired the Burning Sphere");
+    }
+
+    #[test]
+    fn the_sphere_launches_once_and_flies_straight() {
+        // `AI_009` (`NPC.cs:21404-21429`): the velocity points at the
+        // player once (the speed 6 for the Chaos Ball, 5 for the Burning
+        // Sphere), then the ball flies straight through the tiles.
+        let mut w = ground_air();
+        let mut player = surface_player(&w);
+        let (pcx, _) = player.center();
+        // The ball sits up-left of the player: the launch aims right/down.
+        let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.05, "the launch speed is 6 ({speed})");
+        assert!(ball.vx > 0.0 && ball.vy > 0.0, "the ball dives at the player");
+        let v = (ball.vx, ball.vy);
+        // The straight fly: the velocity never re-aims and the dirt passes
+        // through (the floor line sits at y = 120*16).
+        for _ in 0..100 {
+            ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert_eq!(ball.vx, v.0);
+        assert_eq!(ball.vy, v.1);
+        assert!(ball.x > pcx, "the ball crossed the player's column");
+        assert!(ball.y > 120.0 * 16.0, "the ball flew through the floor line");
+        // The Burning Sphere's speed is 5 (`:21395-21399`).
+        let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (sphere.vx * sphere.vx + sphere.vy * sphere.vy).sqrt();
+        assert!((speed - 5.0).abs() < 0.05, "the burning sphere speed is 5");
+    }
+
+    #[test]
+    fn the_casters_spawn_stand_and_map() {
+        // `spawn_caster` plants the feet on the ground tile (`SpawnNPC`'s
+        // `Bottom = (x*16+8, y*16)`), the stats ride the verified
+        // `SetDefaults` rows, and the bestiary entries round-trip.
+        let mut w = ground_air();
+        let imp = Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp)
+            .expect("the imp spawns on the ground");
+        assert_eq!(imp.size(), (18.0, 40.0));
+        assert_eq!(imp.max_hp, 70);
+        assert!((imp.y - (120.0 * 16.0 - 40.0)).abs() < 0.01);
+        let sorcerer = Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer)
+            .expect("the sorcerer spawns");
+        assert_eq!(sorcerer.size(), (18.0, 38.0));
+        assert_eq!(sorcerer.max_hp, 40);
+        let tim = Npc::new(NpcKind::Tim, 0.0, 0.0, 1, 0.0);
+        assert_eq!(tim.max_hp, 200);
+        assert_eq!(tim.value(), 5000.0);
+        for (kind, net) in [
+            (NpcKind::GoblinSorcerer, 29),
+            (NpcKind::Tim, 45),
+            (NpcKind::DarkCaster, 32),
+            (NpcKind::FireImp, 24),
+            (NpcKind::ChaosBall, 30),
+            (NpcKind::BurningSphere, 25),
+            (NpcKind::WaterSphere, 33),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+
 }

@@ -110,6 +110,13 @@ pub(crate) struct NpcAssets {
     pub(crate) eater_of_souls: Option<BgTex>,
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
+    pub(crate) goblin_sorcerer: Option<BgTex>,
+    pub(crate) tim: Option<BgTex>,
+    pub(crate) dark_caster: Option<BgTex>,
+    pub(crate) fire_imp: Option<BgTex>,
+    pub(crate) chaos_ball: Option<BgTex>,
+    pub(crate) burning_sphere: Option<BgTex>,
+    pub(crate) water_sphere: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -129,6 +136,13 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eater_of_souls: sky_tex(atlas, "NPC_6", None),
         hornet: sky_tex(atlas, "NPC_42", None),
         meteor_head: sky_tex(atlas, "NPC_23", None),
+        goblin_sorcerer: sky_tex(atlas, "NPC_29", None),
+        tim: sky_tex(atlas, "NPC_45", None),
+        dark_caster: sky_tex(atlas, "NPC_32", None),
+        fire_imp: sky_tex(atlas, "NPC_24", None),
+        chaos_ball: sky_tex(atlas, "NPC_30", None),
+        burning_sphere: sky_tex(atlas, "NPC_25", None),
+        water_sphere: sky_tex(atlas, "NPC_33", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -576,6 +590,44 @@ pub(crate) fn draw_npcs(
                 [n.x - 10.0, n.y - 5.0],
             ),
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
+            // The casters: the humanoid sheets — the sorcerer's strip is 3
+            // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
+            // `Main.cs:67082`), the display box the zombie's 38x48 shape.
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::GoblinSorcerer => (assets.goblin_sorcerer.as_ref(), 3.0),
+                    NpcKind::Tim => (assets.tim.as_ref(), 3.0),
+                    _ => (assets.dark_caster.as_ref(), 6.0),
+                };
+                (
+                    tex,
+                    tex.map_or(48.0, |t| t.h / frames),
+                    [38.0, 48.0],
+                    [n.x - 10.0, n.y - 5.0],
+                )
+            }
+            // The Fire Imp: the 10-frame strip (`Main.npcFrameCount[24]`).
+            NpcKind::FireImp => (
+                assets.fire_imp.as_ref(),
+                assets.fire_imp.as_ref().map_or(48.0, |t| t.h / 10.0),
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The spheres: the single-frame 16x16 sheets.
+            NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
+                let tex = match n.kind {
+                    NpcKind::ChaosBall => assets.chaos_ball.as_ref(),
+                    NpcKind::BurningSphere => assets.burning_sphere.as_ref(),
+                    _ => assets.water_sphere.as_ref(),
+                };
+                let (bw, bh) = n.size();
+                (
+                    tex,
+                    tex.map_or(16.0, |t| t.h),
+                    [bw + 4.0, bh],
+                    [n.x - 2.0, n.y - 2.0],
+                )
+            }
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 let tex = match n.kind {
                     NpcKind::Hornet => assets.hornet.as_ref(),

@@ -49,7 +49,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_step.tick(dt.min(0.25), |step| {
         if let Some(player) = player {
             for n in npcs.iter_mut() {
-                n.update(world, player, step);
+                n.update_rng(world, player, step, &mut app.item_rng);
                 black_slime_darkness_touch(n, player, &mut app.item_rng);
             }
         }
@@ -118,6 +118,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
+    // The casters' sphere spawn requests (`AI_008`'s `NPC.NewNPC` at the
+    // shoot tick, `NPC.cs:21238`+): the update pass set `wants_sphere`,
+    // this pass resolves it — the same borrow-safe shape as the minion
+    // block below.
+    let mut spheres = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some((kind, sx, sy)) = n.wants_sphere.take() {
+            // `NPC.NewNPC`'s `Bottom = (X, Y)` (`NPC.cs:80771`): the payload
+            // is the sphere's bottom-centre.
+            let (w, h) = kind.size();
+            let mut ball = Npc::new(kind, sx - w * 0.5, sy - h, 1, 0.0);
+            ball.hp = ball.max_hp;
+            spheres.push(ball);
+        }
+    }
+    app.npcs.append(&mut spheres);
+
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {

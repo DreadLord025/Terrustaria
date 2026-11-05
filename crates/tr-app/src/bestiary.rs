@@ -207,6 +207,64 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Meteor Head",
     },
+    BestiaryEntryDef {
+        credit_id: "GoblinSorcerer",
+        net_id: 29,
+        kind: NpcKind::GoblinSorcerer,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Sorcerer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Tim",
+        net_id: 45,
+        kind: NpcKind::Tim,
+        variant: None,
+        quick_unlock: false,
+        name: "Tim",
+    },
+    BestiaryEntryDef {
+        credit_id: "DarkCaster",
+        net_id: 32,
+        kind: NpcKind::DarkCaster,
+        variant: None,
+        quick_unlock: false,
+        name: "Dark Caster",
+    },
+    BestiaryEntryDef {
+        credit_id: "FireImp",
+        net_id: 24,
+        kind: NpcKind::FireImp,
+        variant: None,
+        quick_unlock: false,
+        name: "Fire Imp",
+    },
+    // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
+    // clone 665 (the port folds it — identical stats and name).
+    BestiaryEntryDef {
+        credit_id: "ChaosBall",
+        net_id: 30,
+        kind: NpcKind::ChaosBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Chaos Ball",
+    },
+    BestiaryEntryDef {
+        credit_id: "BurningSphere",
+        net_id: 25,
+        kind: NpcKind::BurningSphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Burning Sphere",
+    },
+    BestiaryEntryDef {
+        credit_id: "WaterSphere",
+        net_id: 33,
+        kind: NpcKind::WaterSphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Water Sphere",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

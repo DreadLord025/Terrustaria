@@ -494,8 +494,11 @@ pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc>
         if !post_check_chosen_spawn_tile(ctx.world, num, j, ground_y) {
             continue;
         }
-        // `SpawnAnNPC` default selection for the implemented kinds.
-        return spawn_npc_at(ctx, rng, num, j);
+        // `SpawnAnNPC` default selection for the implemented kinds. `y`
+        // converts to pixels at the boundary (`spawn_npc_at`'s `y` is
+        // pixels — the `Main.worldSurface` comparisons run on the tile
+        // coordinate through `y / 16`).
+        return spawn_npc_at(ctx, rng, num, j * 16);
     }
     None
 }
@@ -642,6 +645,31 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         return spawn_basic_slime(ctx, rng, x, false);
     }
     // ---- the deep-cavern rolls (`NPC.cs:5060-5150`'s cavern arms) ----
+    // The depth gates: `NPC.cs:4869`'s `spawnTileY > maxTilesY - 190`
+    // underworld branch precedes the `:5005+` cavern branch — mutually
+    // exclusive in vanilla; the port keeps the exclusivity inside one
+    // section.
+    let underworld_depth = (y as f64 / 16.0) > ctx.world.height as f64 - 190.0;
+    // The Tim: the deep-cavern roll (`:5014`): `(remixWorld ||
+    // spawnTileY > (rockLayer + maxTilesY) / 2.0) && (Next(200) == 0 ||
+    // (offensiveToTim && Next(50) == 0)) → 45` — non-underworld depth
+    // only. The port gates the depth alone: the offensiveToTim accessory
+    // rows (`NPC.cs:418`, the M3-EQUIP-3 work) stay constants-off, so the
+    // Next(50) never runs.
+    if !underworld_depth
+        && (y as f64 / 16.0) > (ctx.world.rock_layer + ctx.world.height as f64) / 2.0
+        && rng.next(200) == 0
+    {
+        return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::Tim);
+    }
+    // The Fire Imp: the underworld arm (`:4891-4893`'s `Next(14) == 0 →
+    // 24`); the lava-critter Next(8) and Demon Next(40) arms ahead of it
+    // are unmodelled (constants-off, consume nothing), and a missed imp
+    // roll falls through to the cavern arms (the vanilla's remaining
+    // underworld arms map to the port's closest kinds there).
+    if underworld_depth && rng.next(14) == 0 {
+        return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::FireImp);
+    }
     // The Undead Miner: `Next(20) == 0 → 44` (`:5060` region — the rare
     // cave miner).
     if rng.next(20) == 0 {
@@ -1304,4 +1332,74 @@ mod tests {
         // And the seed changes the sequence (the stream is not constant).
         assert_ne!(a, run(0x0FED_CBA9_8765_4321));
     }
+    /// Carves an air pocket (x 200..220) whose floor tile sits at
+    /// `floor_y` — `spawn_caster` plants the feet on it, so the pocket
+    /// must clear the 2.5-tile body above.
+    fn carve_pocket(w: &mut World, floor_y: i32) {
+        for x in 200..220 {
+            for y in (floor_y - 6)..floor_y {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile::default();
+            }
+        }
+        w.compute_column_surface();
+    }
+
+    #[test]
+    fn the_depth_bands_split_tim_and_fire_imp() {
+        // The depth gates (`NPC.cs:4869`'s underworld branch vs `:5014`'s
+        // cavern roll): the underworld depth never rolls Tim; the
+        // deep-cavern depth (below the (rock+height)/2 gate, above the
+        // underworld line) never rolls the imp; each rolls its own caster.
+        // ground_tall's bands touch (both at 510), so a taller world
+        // separates them: rock 320, height 900 → the Tim gate 610, the
+        // underworld line 710.
+        let mut w = World::new("t".into(), 400, 900);
+        for x in 0..400 {
+            for y in 300..900 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.world_surface = 310.0;
+        w.rock_layer = 320.0;
+        w.spawn_x = 200;
+        w.spawn_y = 296;
+        // The underworld pocket: the floor at 720 (past the 710 line =
+        // height 900 - 190).
+        carve_pocket(&mut w, 720);
+        let c_hell = ctx(&w, 720.0 * 16.0, false);
+        let mut tims = 0;
+        let mut imps = 0;
+        for seed in 1..3000u64 {
+            match outcome_at(&c_hell, seed, 720 * 16) {
+                Some((NpcKind::Tim, _)) => tims += 1,
+                Some((NpcKind::FireImp, _)) => imps += 1,
+                _ => {}
+            }
+        }
+        assert_eq!(tims, 0, "the underworld depth never rolls Tim");
+        assert!(imps > 0, "the underworld pocket never rolled the Fire Imp");
+        // The deep-cavern pocket: the floor at 640 (past the 610 gate,
+        // above the 710 underworld line).
+        carve_pocket(&mut w, 640);
+        let c_deep = ctx(&w, 640.0 * 16.0, false);
+        let mut tims = 0;
+        let mut imps = 0;
+        for seed in 1..3000u64 {
+            match outcome_at(&c_deep, seed, 640 * 16) {
+                Some((NpcKind::Tim, _)) => tims += 1,
+                Some((NpcKind::FireImp, _)) => imps += 1,
+                _ => {}
+            }
+        }
+        assert!(tims > 0, "the deep-cavern sweep never rolled Tim");
+        assert_eq!(imps, 0, "the deep-cavern depth never rolls the Fire Imp");
+    }
+
 }
+

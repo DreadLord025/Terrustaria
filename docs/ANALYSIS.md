@@ -3775,3 +3775,32 @@ placed-bottle potions: Lesser Healing Potion ×2 (1 Mushroom + 2 Gel +
 1 Glowing Mushroom, `:1606-1611`). The 1/3 rolls consume stream state, so
 the discount depends on every prior craft — the documented determinism
 caveat mirrors the vanilla (Main.rand's shared stream).
+## Hardmode switch (M5-HARDFORCE)
+
+The generation half of the hardmode switch — `WorldGen.StartHardmode` →
+`initializeHardMode` (`WorldGen.cs:31570-31697`):
+
+- **The runners** (`GERunner`, `:76169-76330`): the V-shaped strip walker —
+  the position starts at the sky, the velocity `(3·num5, 5f)` per step
+  with `num5 = ±1` (`:31585-31590` — the 3:5 slope verbatim), each step
+  converting the Manhattan disc of the radius `Next(200, 250) · scale ·
+  0.5` with the rim wobble `Next(-10, 11) · 0.015`.
+- **The hallow map** (the good runner): the hallowed grass 109 (from the
+  grass 2 and the corrupt/crimson grass 23/199), the pearlstone 117 (from
+  the stone 1 / the ebonstone 25 / the crimstone 203), the hallowed sand
+  116 (from all the sands 53/123/112/234), the hallowed ice 164 (from
+  161/163/200), the hallowed sandstone 403 and the hardened 402 — plus
+  the purify arm: the corrupt/crimson jungle grass 661/662 revert to the
+  jungle grass 60 (the hallow and the evil cancel on the jungle). The
+  walls: the sandstone wall 187 → 222, the ebonstone/crimstone walls
+  3/83 → the hallowed stone wall 28.
+- **The evil runner** reuses `Convert`'s map by the world's flavour (the
+  corruption or the crimson — `initialize_hard_mode(corruption)`).
+- **The app trigger**: `TR_HARDMODE=1` (the env dev hook) sets
+  `World.hard_mode` and runs `initialize_hard_mode` once — the WoF kill
+  rides the M4-NPC families.
+
+Deviations: the wall-lining pass (the 25·scale cave cavities lined with
+the hallowed walls 200-203, `:31668-31697`) is the follow-up; the altar
+ore drops (the adamantite/etc.) and the WoF summon/kill are the
+M4-NPC/M4-LOOT tasks; the remix jungle-V arm is out (no remix worlds).
