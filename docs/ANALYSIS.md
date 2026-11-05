@@ -3836,3 +3836,32 @@ switch (`WorldGen.cs:48920-49090`):
 Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
 follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
 swapping is out; the ore walls (`wallType`) are out.
+
+## Micro-biomes (M1.4-WGEN-8)
+
+The micro-biome decorators over the finished world:
+
+- **The cave houses** (`CaveHouseBiome`, `:34-92`): 8-12 wood-framed
+  cabins in the underground dirt/stone band — the 25-tile chest/wire
+  exclusion scan (`:38-52`), the wood-frame box (the tile 27), the carved
+  interior with the wood walls (9), the platform row (19), the torches and
+  the chest (`place_chest`'s quads). The C#'s `HouseBuilder` chest
+  variants (the ice/jungle/granite/marble/mushroom/desert chances) resolve
+  to the plain gold chest — the port's chests hold no inventories yet.
+- **The desert campsites** (`CampsiteBiome`, `:9-55`): the disc of the
+  radius `Next(6, 10)` with the solid-count gate (the solid cells within 5
+  of the total), the tent tiles (196 + `Next(4)`) replacing the sand
+  family {53, 396, 397, 404}.
+- **The jungle spike pits** (`SpikePitBiome`, `:10-57`): the shrinking
+  stone circles offset down (the C#'s 4+4+4 circle walk with the blotch
+  modifiers), the carved hollows — the spike tile placement is the
+  follow-up (the jungle spikes = the wiring trap family).
+- **The sword shrines** (`EnchantedSwordBiome`, `:19-113`): the 1-wide
+  shaft down from the surface into the buried 7×5 chamber with the sword
+  tile (197 — the C#'s sword sprite tile; the breakable item drop = the
+  follow-up).
+
+Deviations: the HouseBuilder room variants (the biome walls, the furniture
+sets) are the shape-level approximation; the spike tiles and the sword
+item drop are the follow-ups; the structure-map exclusions are the
+per-pass neighbour scans.
