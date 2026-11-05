@@ -159,6 +159,30 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Cave Bat",
     },
+    BestiaryEntryDef {
+        credit_id: "JungleBat",
+        net_id: 51,
+        kind: NpcKind::JungleBat,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Bat",
+    },
+    BestiaryEntryDef {
+        credit_id: "Hellbat",
+        net_id: 60,
+        kind: NpcKind::Hellbat,
+        variant: None,
+        quick_unlock: false,
+        name: "Hellbat",
+    },
+    BestiaryEntryDef {
+        credit_id: "VoodooDemon",
+        net_id: 66,
+        kind: NpcKind::VoodooDemon,
+        variant: None,
+        quick_unlock: false,
+        name: "Voodoo Demon",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

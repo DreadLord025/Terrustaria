@@ -104,6 +104,9 @@ pub(crate) struct NpcAssets {
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
+    pub(crate) jungle_bat: Option<BgTex>,
+    pub(crate) hellbat: Option<BgTex>,
+    pub(crate) voodoo_demon: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
 }
 
@@ -117,6 +120,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
+        jungle_bat: sky_tex(atlas, "NPC_51", None),
+        hellbat: sky_tex(atlas, "NPC_60", None),
+        voodoo_demon: sky_tex(atlas, "NPC_66", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
     }
 }
@@ -564,8 +570,16 @@ pub(crate) fn draw_npcs(
                 [n.x - 10.0, n.y - 5.0],
             ),
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
-            NpcKind::CaveBat => (
-                assets.cave_bat.as_ref(),
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => (
+                match n.kind {
+                    NpcKind::JungleBat => assets.jungle_bat.as_ref(),
+                    NpcKind::Hellbat => assets.hellbat.as_ref(),
+                    NpcKind::VoodooDemon => assets.voodoo_demon.as_ref(),
+                    _ => assets.cave_bat.as_ref(),
+                },
                 assets.cave_bat.as_ref().map_or(18.0, |t| t.h / 5.0),
                 [26.0, 18.0],
                 [n.x - 12.0, n.y - 9.0],

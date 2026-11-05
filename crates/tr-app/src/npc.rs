@@ -45,6 +45,12 @@ pub enum NpcKind {
     /// `NPCID.CaveBat` (49) — the cave flyer (`aiStyle 14`, the erratic
     /// flight, 5 frames).
     CaveBat,
+    /// `NPCID.JungleBat` (51) — the jungle flyer (`aiStyle 14`).
+    JungleBat,
+    /// `NPCID.Hellbat` (60) — the underworld flyer (`aiStyle 14`).
+    Hellbat,
+    /// `NPCID.VoodooDemon` (66) — the underworld flyer (`aiStyle 14`).
+    VoodooDemon,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -220,6 +226,9 @@ impl NpcKind {
             NpcKind::Skeleton => 6,
             NpcKind::UndeadMiner => 7,
             NpcKind::CaveBat => 8,
+            NpcKind::JungleBat => 9,
+            NpcKind::Hellbat => 10,
+            NpcKind::VoodooDemon => 11,
         }
     }
 
@@ -234,6 +243,9 @@ impl NpcKind {
             6 => NpcKind::Skeleton,
             7 => NpcKind::UndeadMiner,
             8 => NpcKind::CaveBat,
+            9 => NpcKind::JungleBat,
+            10 => NpcKind::Hellbat,
+            11 => NpcKind::VoodooDemon,
             _ => return None,
         })
     }
@@ -252,6 +264,11 @@ impl NpcKind {
             NpcKind::Skeleton => (18.0, 40.0),
             NpcKind::UndeadMiner => (18.0, 40.0),
             // `SetDefaults` case 49: width 22, height 18.
+            // The bat family shares the Cave Bat's 22x18 frame
+            // (`SetDefaults` cases 51/60/66: width 22, height 18).
+            NpcKind::JungleBat => (22.0, 18.0),
+            NpcKind::Hellbat => (22.0, 18.0),
+            NpcKind::VoodooDemon => (22.0, 18.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
         }
@@ -270,6 +287,10 @@ impl NpcKind {
             NpcKind::Skeleton => 60,
             NpcKind::UndeadMiner => 70,
             NpcKind::CaveBat => 16,
+            // `SetDefaults` case 51: 34; case 60: 46; case 66: 140.
+            NpcKind::JungleBat => 34,
+            NpcKind::Hellbat => 46,
+            NpcKind::VoodooDemon => 140,
             NpcKind::KingSlime => 2000,
         }
     }
@@ -284,6 +305,10 @@ impl NpcKind {
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
             NpcKind::CaveBat => 13,
+            // `SetDefaults` case 51: damage 20; case 60: 35; case 66: 32.
+            NpcKind::JungleBat => 20,
+            NpcKind::Hellbat => 35,
+            NpcKind::VoodooDemon => 32,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
         }
@@ -422,8 +447,13 @@ impl Npc {
     /// Spawns a cave flyer hanging in the open air of the cave layer (the
     /// vanilla bat spawn picks the open tiles below the rock layer — the
     /// `SpawnAnNPC` cave arm, `NPC.cs:5233`).
-    pub fn spawn_cave_flyer(world: &World, x_tile: i32, y_tile: i32) -> Option<Self> {
-        let (w, h) = NpcKind::CaveBat.size();
+    pub fn spawn_cave_flyer(
+        world: &World,
+        x_tile: i32,
+        y_tile: i32,
+        kind: NpcKind,
+    ) -> Option<Self> {
+        let (w, h) = kind.size();
         let x = x_tile as f32 * TILE_PX + 8.0 - w * 0.5;
         let y = y_tile as f32 * TILE_PX;
         if collides_rect(world, x, y, w, h) {
@@ -435,7 +465,7 @@ impl Npc {
         if !world.in_bounds(x_tile, (y / TILE_PX) as i32 + 1) {
             return None;
         }
-        Some(Self::new(NpcKind::CaveBat, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
     }
 
     /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
@@ -546,6 +576,10 @@ impl Npc {
             NpcKind::Skeleton => 0.5,
             NpcKind::UndeadMiner => 0.5,
             NpcKind::CaveBat => 0.8,
+            // `SetDefaults` case 51/60/66: knockBackResist 0.8.
+            NpcKind::JungleBat => 0.8,
+            NpcKind::Hellbat => 0.8,
+            NpcKind::VoodooDemon => 0.8,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
             NpcKind::KingSlime => 0.0,
@@ -569,6 +603,10 @@ impl Npc {
             NpcKind::Skeleton => 8,
             NpcKind::UndeadMiner => 9,
             NpcKind::CaveBat => 2,
+            // `SetDefaults` case 51: defense 4; case 60: 8; case 66: 8.
+            NpcKind::JungleBat => 4,
+            NpcKind::Hellbat => 8,
+            NpcKind::VoodooDemon => 8,
             NpcKind::Guide => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
@@ -590,6 +628,10 @@ impl Npc {
             NpcKind::Skeleton => 100.0,
             NpcKind::UndeadMiner => 200.0,
             NpcKind::CaveBat => 60.0,
+            // `SetDefaults` case 51: value 80; case 60: 120; case 66: 300.
+            NpcKind::JungleBat => 80.0,
+            NpcKind::Hellbat => 120.0,
+            NpcKind::VoodooDemon => 300.0,
             NpcKind::Guide => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
@@ -696,7 +738,10 @@ impl Npc {
             NpcKind::Guide => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
-            NpcKind::CaveBat => self.update_cave_bat(world, player, dt),
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
         }
         self.find_frame();
@@ -854,7 +899,10 @@ impl Npc {
             }
             // Case 49 — Cave Bat (`AI_014_Bats`): the plain flap over the
             // 5-frame strip (`Main.npcFrameCount[49] = 5`, `Main.cs:67082`).
-            NpcKind::CaveBat => {
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 4.0 {
                     self.frame_counter = 0.0;
@@ -1303,6 +1351,9 @@ impl Npc {
             NpcKind::Skeleton => 6,
             NpcKind::UndeadMiner => 7,
             NpcKind::CaveBat => 8,
+            NpcKind::JungleBat => 9,
+            NpcKind::Hellbat => 10,
+            NpcKind::VoodooDemon => 11,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -1370,10 +1421,21 @@ mod tests {
             }
         }
         w.compute_column_surface();
-        let mut bat = Npc::spawn_cave_flyer(&w, 20, 30).expect("the bat spawns in the open air");
+        let mut bat = Npc::spawn_cave_flyer(&w, 20, 30, NpcKind::CaveBat)
+            .expect("the bat spawns in the open air");
         assert_eq!(bat.kind, NpcKind::CaveBat);
         assert_eq!(bat.max_hp, 16);
         assert_eq!(bat.size(), (22.0, 18.0));
+        // The jungle/hellbat/voodoo variants: the same frame, the vanilla stats.
+        let jb = Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat)
+            .expect("the jungle bat spawns");
+        assert_eq!(jb.max_hp, 34);
+        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat)
+            .expect("the hellbat spawns");
+        assert_eq!(hb.max_hp, 46);
+        let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
+            .expect("the voodoo demon spawns");
+        assert_eq!(vd.max_hp, 140);
         // The contact: an overlapping player takes 13 (the vanilla dmg).
         let mut player = crate::player::Player::spawn(&w);
         player.x = bat.x;
@@ -1384,6 +1446,12 @@ mod tests {
         // The bestiary entry maps.
         let e = crate::bestiary::entry_for_npc(NpcKind::CaveBat, SlimeVariant::Blue);
         assert_eq!(e.net_id, 49);
+        let e = crate::bestiary::entry_for_npc(NpcKind::JungleBat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 51);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Hellbat, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 60);
+        let e = crate::bestiary::entry_for_npc(NpcKind::VoodooDemon, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 66);
     }
 
 
