@@ -1952,6 +1952,21 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::DialRefused => {
                     log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
                 }
+                edit::TileInteraction::CandleToggled => {
+                    log::info!("TR_TOGGLE {},{} -> candle toggled", op.x, op.y)
+                }
+                edit::TileInteraction::ChairSit { .. } => {
+                    log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
+                }
+                edit::TileInteraction::BedInteract { set_spawn, .. } => log::info!(
+                    "TR_TOGGLE {},{} -> bed ({})",
+                    op.x,
+                    op.y,
+                    if set_spawn { "spawn half" } else { "sleep half" }
+                ),
+                edit::TileInteraction::ClockRead { text } => {
+                    log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
+                }
             }
         }
     }
