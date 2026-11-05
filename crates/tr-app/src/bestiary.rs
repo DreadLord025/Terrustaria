@@ -309,6 +309,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     // mapping): the vanilla credits the whole worm to the head's bestiary
     // id — one entry per credit.
     BestiaryEntryDef {
+        credit_id: "Merchant",
+        net_id: 17,
+        kind: NpcKind::Merchant,
+        variant: None,
+        quick_unlock: false,
+        name: "Merchant",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

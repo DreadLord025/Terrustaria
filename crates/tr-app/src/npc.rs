@@ -109,6 +109,10 @@ pub enum NpcKind {
     EaterOfWorldsBody,
     /// `NPCID.EaterofWorldsTail` (15) — the tail segment (`NPC.cs:8943`).
     EaterOfWorldsTail,
+    /// `NPCID.Merchant` (17) — the second town NPC (`NPC.cs:8980`: 18x40,
+    /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's
+    /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`).
+    Merchant,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -309,6 +313,7 @@ impl NpcKind {
             NpcKind::EaterOfWorldsHead => 31,
             NpcKind::EaterOfWorldsBody => 32,
             NpcKind::EaterOfWorldsTail => 33,
+            NpcKind::Merchant => 34,
         }
     }
 
@@ -348,6 +353,7 @@ impl NpcKind {
             31 => NpcKind::EaterOfWorldsHead,
             32 => NpcKind::EaterOfWorldsBody,
             33 => NpcKind::EaterOfWorldsTail,
+            34 => NpcKind::Merchant,
             _ => return None,
         })
     }
@@ -420,6 +426,7 @@ impl NpcKind {
             NpcKind::Zombie => (18.0, 40.0),
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
+            NpcKind::Merchant => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -473,6 +480,8 @@ impl NpcKind {
             NpcKind::Zombie => 45,
             // `NPC.SetDefaults` case 22 (`NPC.cs:8815`): 250 HP.
             NpcKind::Guide => 250,
+            // `SetDefaults` case 17 (`NPC.cs:8989`): 250 HP.
+            NpcKind::Merchant => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -515,6 +524,9 @@ impl NpcKind {
             NpcKind::DemonEye => 18,     // case 2
             NpcKind::WanderingEye => 40, // case 133
             NpcKind::Zombie => 14,
+            // `SetDefaults` case 17: damage 10 — the town NPCs never hurt
+            // (the contact gate skips them).
+            NpcKind::Merchant => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -788,6 +800,17 @@ impl Npc {
 
     /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
     /// world-gen arrival).
+    /// The town spawn ctor — the Guide and the Merchant share every stat
+    /// (250 HP / 10 dmg / 15 def / 0.5 kb / 18x40), so one body serves both
+    /// (`SetDefaults` cases 17/22).
+    pub fn spawn_town(world: &World, x_tile: i32, kind: NpcKind) -> Option<Self> {
+        let mut npc = Self::spawn_guide(world, x_tile)?;
+        npc.kind = kind;
+        npc.max_hp = kind.max_hp();
+        npc.hp = npc.max_hp;
+        Some(npc)
+    }
+
     pub fn spawn_guide(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);
         if top >= world.height - 2 {
@@ -937,6 +960,8 @@ impl Npc {
             | NpcKind::EaterOfWorldsTail => 0.0,
             // The town NPCs barely knock (`NPC.SetDefaults` 22: 0.5).
             NpcKind::Guide => 0.5,
+            // `SetDefaults` case 17: knockBackResist 0.5.
+            NpcKind::Merchant => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -990,6 +1015,8 @@ impl Npc {
             NpcKind::EaterOfWorldsBody => 4,
             NpcKind::EaterOfWorldsTail => 8,
             NpcKind::Guide => 15,
+            // `SetDefaults` case 17: defense 15.
+            NpcKind::Merchant => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1041,6 +1068,8 @@ impl Npc {
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 800.0,
             NpcKind::Guide => 0.0,
+            // The town NPCs carry no coin value.
+            NpcKind::Merchant => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1153,7 +1182,7 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
-            NpcKind::Guide => self.update_guide(world, dt),
+            NpcKind::Guide | NpcKind::Merchant => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1445,6 +1474,35 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            // The Merchant: the town wander rides the Guide's 3-frame
+            // humanoid machine (`Main.npcFrameCount[17]` = 3,
+            // `Main.cs:67082`; the vanilla FindFrame's town machine,
+            // `NPC.cs:68632+`).
+            NpcKind::Merchant => {
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Guide => {
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
@@ -2056,6 +2114,7 @@ impl Npc {
             NpcKind::EaterOfWorldsHead => 31,
             NpcKind::EaterOfWorldsBody => 32,
             NpcKind::EaterOfWorldsTail => 33,
+            NpcKind::Merchant => 34,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3044,6 +3103,38 @@ mod tests {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
         }
+    }
+
+    #[test]
+    fn the_merchant_arrives_on_50_silver() {
+        // `SpawnAllowed_Merchant` (`NPC.cs:7175-7219`): the copper total
+        // >= 5000 — the silver x100, the gold x10000, the platinum
+        // x1000000.
+        use crate::spawner::spawn_allowed_merchant;
+        assert!(!spawn_allowed_merchant(&[(71, 4999)]), "49.99 silver waits");
+        assert!(spawn_allowed_merchant(&[(71, 5000)]), "50 silver arrives");
+        assert!(spawn_allowed_merchant(&[(72, 50)]), "the gold counts x100");
+        assert!(spawn_allowed_merchant(&[(73, 1)]), "the gold coin alone is 10000");
+        assert!(spawn_allowed_merchant(&[(74, 1)]), "the platinum alone clears");
+        assert!(!spawn_allowed_merchant(&[(72, 49)]), "49 gold = 4900 waits");
+        assert!(!spawn_allowed_merchant(&[]), "the empty inventory waits");
+        // The mixed stacks accumulate.
+        assert!(spawn_allowed_merchant(&[(71, 1000), (72, 41)]), "10 silver + 41 gold");
+    }
+
+    #[test]
+    fn the_merchant_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 17; the town ctor swaps the
+        // kind on the Guide's body; the bestiary entry round-trips.
+        let w = ground_air();
+        let m = Npc::spawn_town(&w, 60, NpcKind::Merchant).expect("the merchant spawns");
+        assert_eq!(m.size(), (18.0, 40.0));
+        assert_eq!(m.max_hp, 250);
+        assert_eq!(m.kind, NpcKind::Merchant);
+        assert_eq!(m.knock_back_resist(), 0.5);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Merchant, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 17);
+        assert_eq!(e.credit_id, "Merchant");
     }
 
 }

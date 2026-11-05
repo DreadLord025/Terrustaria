@@ -278,6 +278,33 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The town-NPC arrival (`NPC.SpawnAllowed_Merchant`, `NPC.cs:7175`):
+    // the money condition + the absence check — the port's cadence rides
+    // the 2-second town pass (the vanilla checks through UpdateWorld; the
+    // dawn-gating lands with the clock events).
+    if app.town_look_timer == 0.0 {
+        if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
+            let inv: Vec<(u16, u32)> = app
+                .inventory
+                .iter()
+                .filter(|s| s.kind != 0 && s.count > 0)
+                .map(|s| (s.kind, s.count))
+                .collect();
+            if crate::spawner::spawn_allowed_merchant(&inv) {
+                if let Some(player) = app.player.as_ref() {
+                    let xt = ((player.x / TILE_PX) as i32 + 6).clamp(2, app.world.width - 3);
+                    if let Some(mut m) = Npc::spawn_town(&app.world, xt, NpcKind::Merchant) {
+                        m.home = crate::town::quick_find_home(
+                            &app.world,
+                            xt,
+                            (m.y / TILE_PX) as i32,
+                        );
+                        app.npcs.push(m);
+                    }
+                }
+            }
+        }
+    }
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     for npc in &dead {

@@ -328,6 +328,7 @@ fn portrait_data(
         NpcKind::EaterOfWorldsHead => 31,
         NpcKind::EaterOfWorldsBody => 32,
         NpcKind::EaterOfWorldsTail => 33,
+        NpcKind::Merchant => 34,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -391,6 +392,7 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsHead, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
+        (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
