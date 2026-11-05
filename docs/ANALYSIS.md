@@ -650,9 +650,13 @@ ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
 `1 + 2*cloudAlpha`), falling at 2–5 px/tick with a per-flake sine sway and the storm wind.
 Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
 
-First-pass simplifications: a session-local random weather schedule instead of a saved
-`rainTime`/`maxRaining` pair, no lightning bolt geometry or thunder audio, and no wind
-gusts affecting the world (only the rain/snow drift).
+First-pass simplifications, as updated by later tasks: the session-local weather
+schedule is **retired** — M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
+and the `UpdateTime` start/stop rolls on the shared 60 Hz world tick (see "dayRate
+consumers (M1.4-BG-22)" below); the wind-gusts gap was closed by WEATHER-1 (the
+"gusts" ARE vanilla's `extremeWindCounter` tiered re-rolls plus the proportional
+easing, already ported). Still first-pass: no lightning bolt geometry and no thunder
+audio — the flash rides WEATHER-1's tiered thunder chain, not a bolt mesh.
 
 ## Biomes
 
@@ -3228,13 +3232,13 @@ dial glow while cooling (the scanner's kind 356/663 light arms), and
 
 Deviations, all deliberate:
 
-- **Weather and the other dayRate consumers do not scale.** Vanilla runs
-  `UpdateWeather` dayRate× per frame (`Main.cs:17228`) and divides several
-  denominators by dayRate — the rain chance (`Main.cs:64898-64914`), the cloud
-  alpha lerp, the sandstorm tick, stars, the invasion delay, luck — so in
-  vanilla a fast-forward also rushes the weather. The port's weather/wind/rain
-  code is frozen by WEATHER-1 and stays 1×; a follow-up row sits in the ROADMAP
-  catalog (M1.4-BG-22).
+- **The dayRate consumers scale — via M1.4-BG-22.** Vanilla runs `UpdateWeather`
+  dayRate× per frame (`Main.cs:17228`) and divides several denominators by dayRate —
+  the rain chance (`Main.cs:64898-64914`), the cloud alpha lerp, the sandstorm tick,
+  stars, the invasion delay, luck — so in vanilla a fast-forward also rushes the
+  weather. Landed the same day on the shared 60 Hz world tick (the weather cluster,
+  the real rain rolls, sandstorm); see "dayRate consumers (M1.4-BG-22)" below —
+  growth deliberately stays 1× (the growth-trap note there).
 - **Scaled add, not a 60-iteration loop; one boundary per call.** The port
   keeps the C# shape — one `time += dt·60·dayRate` add per call, then one
   boundary check (`Main.cs:64964`, `:65137`, `:65148`) — instead of replaying
@@ -3275,6 +3279,109 @@ later (the 32400-tick night), dawn exactly on `time` = 32400 at frame 901
 (`clock.rs:39`) — both boundary-exact, the `>=` case above — with the
 frame-3600 capture showing the new morning (the dial cleared at dawn, the
 rate back to 1), SHA256-equal double run (`fca1e1d0…`).
+
+## dayRate consumers (M1.4-BG-22)
+
+`M1.4-BG-22` scales the weather cluster the way vanilla does while a dial
+fast-forwards. One shared 60 Hz accumulator (`FixedStepper` `App.world_tick_step`,
+60 Hz, cap 8) drives `world_sim/weather.rs::update_world_tick`; `frame()` calls it
+once per drawn frame with the raw dt — after `update_growth`, before `update_rain` —
+replacing the draw-block wind tick (which also means headless sessions tick now; the
+old draw-block path never ran without a gpu). Per tick, the exact C# `Main.Update`
+order (`Main.cs:17228-17231`): the `UpdateWeather` thunder arm ONCE (`:58739`'s
+`currentDayRateIteration == 0` — the tiered WEATHER-1 chain, never per iteration),
+then `for _ in 0..day_rate()` × `wind.update_rain(max_raining())` (`:58830-58950`;
+`num8`'s real `5/9·maxRaining` boost at `:58832` — the binary `Wind::update(raining)`
+wrapper is deleted), then `Rain::update_time` (`:64833-64949`), then
+`Sandstorm.UpdateTime` with `day_rate` as its first argument (`:64966`, moved out of
+`scene_scan`; the TR_SANDSTORM pin freezes the arm exactly as before). One
+accumulator pins the order and keeps the consumers in lockstep — vanilla runs the
+cluster inside one `Main.Update` sequence, and per-system accumulators would let rain
+rolls fire between wind steps. Driving off the clock path (`advance_time`) is out for
+the same reason BG-21 chose the scaled add: the clock advances per drawn frame with
+dt scaling, while discrete chance rolls cannot dt-scale.
+
+The rain state machine replaces the WEATHER-1 session schedule — a deliberate
+behaviour change at all rates (the retirement note in "Rain and weather" above).
+`Rain` now carries `rain_time`/`lady_bug_rain_boost` (`Main.rainTime`/`ladyBugRainBoost`,
+`:64874`/`:64833-64836`); while raining it drains `rainTime` by `dayRate` and rolls
+the strength change (`:64864-64888`), and when not it rolls the ×5.75/×4.25/ladybug
+start arms with the `86400/max(1, dayRate)` denominators (`:64892`) — no `dayTime`
+gate on the start branch (only the slime roll is day-gated, `:64925`).
+`StartRain`/`ChangeRain`/`StopRain` (`:64644-64740`) port the `rainTime` bonus ladder
+(`Next(3..8)` arms, `:64679-64702`) and the strength ladder (`num5`, `:64703-64719`)
+verbatim; `RollLuck(25)` consumes the Rain stream through the loot engine's
+`roll_luck` (`:64668` — luck 0 today, plain semantics), and the coin-rain value roll
+(`Next(75,151)·100·100 ×maxTilesX/4200`, `:64670-64673`) is consumed but not stored —
+coin projectiles are unported. The cloud-alpha ramps (`cloudAlpha` and the
+`cloudBGAlpha` stand-in) scale by `max(1, day_rate)` (`:61902-61906`,
+`:13187/13205` shapes).
+
+RNG stays per-consumer (the WEATHER-2 convention): Rain's splitmix is the single
+rain-consumer stream (the thunder tiers, the `update_time` rolls, the
+Start/Change/Stop ladders); wind keeps its xorshift64 (the high-32 modulo, the
+WEATHER-1 fix) and walks it `day_rate` times per tick; sand.rs keeps its own splitmix
+(vanilla's `Sandstorm` rolls the shared `Main.rand`). Iteration cardinality is a pure
+function of the dial flags — `day_rate()` is 60|1 — so the 60× FF stream consumption
+is deterministic and replayable; vanilla's stream alignment was already surrendered
+by the per-consumer convention.
+
+Deviations, all deliberate:
+
+- **The growth trap.** `Main.desiredWorldTilesUpdateRate = 1` during a fast-forward
+  (`Main.cs:6204`) — vanilla deliberately does NOT scale tile growth with dayRate,
+  and `WorldGen.GetWorldUpdateRate` (`WorldGen.cs:72020-72028`) only clamps it at 24
+  and freeze-gates it. `world_sim/growth.rs:18` passes the literal `1`; never feed it
+  `day_rate()`.
+- **The `numClouds` stand-in is pinned at 100** (`NUM_CLOUDS_STAND_IN`, matching
+  `render/sky.rs` `make_clouds`' static `num_clouds = 100.0`): with exactly 100 the
+  `numClouds > 150`/`> 100` ChangeRain bands are dead and only the storm gate
+  (`cloudBGActive >= 1f` → `cloud_bg >= 1.0`) reaches the heavy bands; the same
+  `cloud_bg` stand-in reads the ×4.25 start arm (`:64916`). The live cloud-count
+  system (`Main.cs:58952-59036`) is unported — revisit both with the
+  weather-completion row.
+- **`Rain.wind` (the drop drift) is static now.** The retired session schedule was
+  its last writer; vanilla's drops read the live `Main.windSpeedCurrent` per tick
+  (`:58830-58950` feeds `Wind` directly). The field stays seed-time-fixed until a
+  consumer re-homes it.
+- **`thunder_inputs`/`any_player_120` snapshot once per frame.** Vanilla reads the
+  Main statics live inside `UpdateWeather` and scans all 255 players for
+  `statLifeMax >= 120` (`:64899`); the port gathers the cross-system inputs and the
+  one-player `max_hp >= 120` bool once per `update_world_tick` call. Bounded — every
+  input is frame-stable (wind speed/target, maxRaining, the scene-state alphas) —
+  and documented at the gather site.
+- **`gameMenu ×20` on the cloud lerp is out** (`:61906-61909`) — the port has no
+  menu-side cloud-lerp path; the ramps run only in-world.
+- **`IsRainingForever` persistence is out** (no save field; the `StartRain`/
+  `ChangeRain` gates and the `max(val, 0.1f)` floor skip it, cited inline) —
+  creative-power territory.
+- **FreezeRain/LanternNight/slimeRain gates resolve to the ported values** — the
+  powers do not exist yet, so the `!FreezeRainPower.Enabled`/`!LanternsUp`/
+  `!slimeRain` conjuncts are all false (the C# shape with the absent systems'
+  values); the `forced` rain pin keeps precedence over `update_time`.
+- **Documented out** (unported counterparts — nothing to scale): stars
+  (`Star.cs:175-209`, the starfall loop `WorldGen.cs:71832-71856` with the
+  `RollLuck(15)` target scan), the invasion `invasionX` walk
+  (`Main.cs:64366-64396`, M4-EVENT-1), the luck decay timers (`Player.cs:18107`
+  coinLuck, `:18840` ladyBugLuckTimeLeft, `:29172` brokenMirrorBadLuckTime —
+  M2-BUFF-6), the cloud entities + the `cloudBGX` drift (`Cloud.cs:391-411`,
+  `Main.cs:59360-59422`), the `updateCloudLayer` trigger (`Main.cs:13174-13230`),
+  the slime-rain rolls (`Main.cs:64925-64949`, M4 events), the travel/homeless rolls
+  (`Main.cs:65017-65060`), the tax timer (`Main.cs:64997-65000`), the bucket fill
+  (`WorldItem.cs:548-571`), the Deerclops rain-night spawn arm (`Main.cs:65123`,
+  behind the `!IsFastForwardingTime()` gate at `:65067`), the cultist/mystic timers
+  (`CultistRitual.cs:27/32`, `MysticLogFairiesEvent.cs:48/85`), and the fallen-star
+  projectile's `ai[0]` clock (`Projectile.cs:53101`).
+
+Determinism/proven pairs: the dry-day dayRate=1 screenshot pair is SHA256-equal
+old-vs-new (`347d1457…` — with nothing raining, the wind/cloud-alpha/sandstorm
+shapes are byte-identical to the pre-change binary); the per-consumer streams keep
+the port's determinism (iteration counts are pure functions of the dial flags, so a
+FF run replays exactly); the dial-FF (`TR_TIME=32340` + `TR_SUNDIAL=1`) and zoom
+1.0/2.0 pairs follow the standing double-run SHA256 rule. Rain pairs are
+new-binary double-runs only — the schedule retirement is a deliberate behaviour
+change at all rates.
+
 ## Sandstorm (M1.4-WEATHER-2)
 
 The research corrected the row: the severity machine, the SceneState
