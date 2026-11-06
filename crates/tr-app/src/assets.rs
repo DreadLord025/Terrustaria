@@ -207,6 +207,27 @@ pub fn load_world_images(
         "Player_0_11",
         "Player_0_12",
         "Player_Hair_1",
+        // The mount sheets of the M2-MOUNT-1 ground set (`MountData`
+        // back/front textures, `Mount.cs:696-2567`): the named `Mount_*`
+        // sheets plus the `Extra_*` files the C# binds through
+        // `TextureAssets.Extra[...]` (horses 161-163, pogo 164, WoF goat
+        // 169, Queen Slime 204) and Rudolph's three-part strip.
+        "Rudolph_0",
+        "Rudolph_1",
+        "Rudolph_2",
+        "Mount_Bunny",
+        "Mount_Slime",
+        "Mount_Scutlix",
+        "Mount_ScutlixEyes",
+        "Mount_ScutlixEyeGlow",
+        "Mount_Unicorn",
+        "Mount_Basilisk",
+        "Extra_161",
+        "Extra_162",
+        "Extra_163",
+        "Extra_164",
+        "Extra_169",
+        "Extra_204",
         // Armor sheets, slots 1..4 = copper/iron/silver/gold. `AssetInitializer.cs:
         // 165-185` indexes the texture arrays by the armor slot itself, so the file
         // number equals the slot: `Armor_Head_{n}`, `Armor_Legs_{n}` and the
@@ -255,6 +276,7 @@ pub fn load_world_images(
         "NPC_4",
         "NPC_222",
         "NPC_35",
+        "NPC_113",
         "NPC_8",
         "NPC_9",
         "NPC_10",
@@ -1316,6 +1338,7 @@ impl Lookups {
                 atlas.sheet("NPC_222").copied(),
                 atlas.sheet("NPC_35").copied(),
                 atlas.sheet("NPC_5").copied(),
+                atlas.sheet("NPC_113").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

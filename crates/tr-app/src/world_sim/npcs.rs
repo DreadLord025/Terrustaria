@@ -100,7 +100,7 @@ fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         false,
     );
     let flags = crate::shop::ShopFlags {
-        hard_mode: false,
+        hard_mode: app.world.hard_mode,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
@@ -495,6 +495,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+            NpcKind::WallOfFlesh => {
+                // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
+                // WorldGen.cs:31707): `Main.hardMode = true` — the
+                // hardmode shop rows and the ores ride the flag.
+                app.world.hard_mode = true;
+            }
             _ => {}
         }
         spawn_coins(app, &npc);

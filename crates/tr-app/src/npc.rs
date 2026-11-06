@@ -159,6 +159,10 @@ pub enum NpcKind {
     /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity,
     /// noTileCollide).
     ServantOfCthulhu,
+    /// `NPCID.WallofFlesh` (113) — the underworld wall (`NPC.cs:10342`:
+    /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
+    /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
+    WallOfFlesh,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -371,6 +375,7 @@ impl NpcKind {
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
             NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
         }
     }
 
@@ -422,6 +427,7 @@ impl NpcKind {
             43 => NpcKind::QueenBee,
             44 => NpcKind::SkeletronHead,
             45 => NpcKind::ServantOfCthulhu,
+            46 => NpcKind::WallOfFlesh,
             _ => return None,
         })
     }
@@ -508,6 +514,8 @@ impl NpcKind {
             NpcKind::QueenBee => (66.0, 66.0),
             // `SetDefaults` case 35 (`NPC.cs:9168`): 80x102.
             NpcKind::SkeletronHead => (80.0, 102.0),
+            // `SetDefaults` case 113 (`NPC.cs:10344`): 100x100 x1.2 = 120.
+            NpcKind::WallOfFlesh => (120.0, 120.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -586,6 +594,8 @@ impl NpcKind {
             NpcKind::QueenBee => 3400,
             // `SetDefaults` case 35 (`NPC.cs:9172`): 4400 HP.
             NpcKind::SkeletronHead => 4400,
+            // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
+            NpcKind::WallOfFlesh => 8000,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -644,6 +654,7 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
+            NpcKind::WallOfFlesh => 50,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1143,6 +1154,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
+            NpcKind::WallOfFlesh => 0.0,
             NpcKind::KingSlime => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
@@ -1215,6 +1227,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
+            NpcKind::WallOfFlesh => 12,
             NpcKind::KingSlime => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
@@ -1283,6 +1296,7 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
             NpcKind::SkeletronHead => 50000.0,
+            NpcKind::WallOfFlesh => 80000.0,
             NpcKind::KingSlime => 10_000.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
@@ -1409,6 +1423,7 @@ impl Npc {
             | NpcKind::Clothier => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
+            NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1721,6 +1736,9 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::WallOfFlesh => {
+                // `Main.npcFrameCount[113]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::SkeletronHead => {
                 // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
             }
@@ -2839,6 +2857,36 @@ impl Npc {
         }
     }
 
+    /// `AI_027`'s WoF v1 (`NPC.cs`'s aiStyle 27 machine): the wall slides
+    /// HORIZONTALLY across the underworld toward the player's side (the
+    /// vanilla locks the vertical drift to keep the wall level) at the
+    /// accelerating pace; the off-edge despawn (`AI_027`'s end-of-world
+    /// check). The Hungrys (114/115) and the eye/mouth mirrors = the
+    /// follow-ups.
+    fn update_wof(&mut self, world: &World, player: &Player) {
+        let (pcx, _) = player.center();
+        // The slide: accelerate toward the player's side, cap at 4.5
+        // (the vanilla's speed band ~2..5 scaled by the progress).
+        let dir = if pcx >= self.x + self.size().0 * 0.5 {
+            1
+        } else {
+            -1
+        };
+        self.vx += dir as f32 * 0.02;
+        if self.vx.abs() > 4.5 {
+            self.vx = 4.5 * self.vx.signum();
+        }
+        // The vertical: pin to the spawn level (the wall stays level).
+        self.vy = 0.0;
+        self.facing = dir;
+        self.x += self.vx;
+        self.y += self.vy;
+        // The off-edge despawn (the wall crosses the world and despawns).
+        if self.x < -2000.0 || self.x > world.width as f32 * TILE_PX + 2000.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -3037,6 +3085,7 @@ impl Npc {
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
             NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4506,7 +4555,39 @@ mod tests {
         let _ = (&w, &mut sk);
     }
 
+    #[test]
+    fn the_wof_slides_toward_the_player() {
+        // `AI_027`'s v1: the horizontal slide toward the player's side,
+        // the vertical pinned; the off-edge despawn.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut wof = Npc::new(NpcKind::WallOfFlesh, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        wof.hp = wof.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..120 {
+            wof.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(wof.vx > 0.0, "the wall slides right toward the player");
+        assert!(wof.vy == 0.0, "the wall stays level");
+        assert!(wof.x > 60.0 * 16.0, "the wall advanced");
+    }
+
+    #[test]
+    fn the_wof_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::WallOfFlesh, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 113);
+        assert_eq!(e.credit_id, "WallofFlesh");
+        let mut wof = Npc::new(NpcKind::WallOfFlesh, 0.0, 0.0, 1, 0.0);
+        assert_eq!(wof.size(), (120.0, 120.0));
+        assert_eq!(wof.max_hp, 8000);
+        let _ = (&w, &mut wof);
+    }
+
 }
+
 
 
 

@@ -1147,6 +1147,30 @@ impl App {
                 p.dash_type = d.clamp(0, 6);
             }
         }
+        // `TR_MOUNT=<id|name>` pins a mount (the granting saddle items are
+        // real items now — this stands in for the `miscEquips[3]` slot and
+        // for tests/screenshots).
+        if let Ok(v) = std::env::var("TR_MOUNT") {
+            if let Some(p) = player.as_mut() {
+                let name = v.trim().to_ascii_lowercase();
+                let id = name.parse::<i32>().ok().or_else(|| match name.as_str() {
+                    "rudolph" => Some(0),
+                    "bunny" => Some(1),
+                    "slime" => Some(3),
+                    "scutlix" => Some(9),
+                    "unicorn" => Some(10),
+                    "basilisk" => Some(14),
+                    "horse" | "painted_horse" => Some(40),
+                    "majestic_horse" => Some(41),
+                    "dark_horse" => Some(42),
+                    "pogo" | "pogo_stick" => Some(43),
+                    "wofgoat" | "goat" => Some(47),
+                    "queenslime" => Some(50),
+                    _ => None,
+                });
+                p.pinned_mount = id;
+            }
+        }
         // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
         // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
         // BlizzardinaBottle 987, FartinaJar 1724, TsunamiInABottle 3201) and

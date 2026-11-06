@@ -45,6 +45,11 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
+    /// strips (`MountData.backTexture`) and the front strips
+    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
+    pub(crate) mount_back: [Option<BgTex>; 12],
+    pub(crate) mount_front: [Option<BgTex>; 12],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -85,6 +90,30 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // The mount strips resolve by the rows' own sheet names (`Mount.cs:
+        // 696-2567`); a missing file stays `None` and the draw skips it.
+        mount_back: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.back_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.back_sheet, None)
+                    }
+                })
+        }),
+        mount_front: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.front_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.front_sheet, None)
+                    }
+                })
+        }),
     }
 }
 
@@ -112,6 +141,7 @@ pub(crate) struct NpcAssets {
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
+    pub(crate) wof: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -165,6 +195,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
+        wof: sky_tex(atlas, "NPC_113", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -338,6 +369,18 @@ pub(crate) fn draw_player(
             player.facing as f32,
         ),
         back_arm: CompositeArmState::DISABLED,
+        // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
+        // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
+        mount: if player.mount.is_active() {
+            player.mount.data().map(|d| super::player_layers::MountDraw {
+                id: d.id,
+                frame: player.mount.frame(),
+                player_offset: player.mount.player_offset(),
+                is_idle: player.mount.is_at_idle(),
+            })
+        } else {
+            None
+        },
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
@@ -713,6 +756,13 @@ pub(crate) fn draw_npcs(
                 assets.skeletron_head.as_ref(),
                 assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
                 [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The WoF: the single-frame sheet over the 120x120 hitbox.
+            NpcKind::WallOfFlesh => (
+                assets.wof.as_ref(),
+                assets.wof.as_ref().map_or(120.0, |t| t.h),
+                [120.0, 120.0],
                 [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the

@@ -269,6 +269,31 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyF => {
+                                // The WoF debug spawn (the Voodoo Doll
+                                // sacrifice = the follow-up). The wall
+                                // spawns at the underworld depth.
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 - 25)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::WallOfFlesh,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 + 5) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Wall of Flesh spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyS => {
                                 // The Skeletron debug spawn (the Old Man's
                                 // curse dialog = the follow-up).
