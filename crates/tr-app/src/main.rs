@@ -9,6 +9,7 @@ mod bestiary;
 mod biome;
 mod buffs;
 mod chat;
+mod chest;
 mod collision;
 mod death;
 mod emotes;
