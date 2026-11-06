@@ -2,7 +2,7 @@
 //! `BestiaryDatabase`'s rows (`BestiaryDatabaseNPCsPopulator.cs` builds one
 //! entry per NPC net id; the port has the same twelve).
 
-use tr_core::bestiary::{get_unlock_state_by_kill_count, KillTracker, UnlockState};
+use tr_core::bestiary::{KillTracker, UnlockState, get_unlock_state_by_kill_count};
 
 use crate::npc::{NpcKind, SlimeVariant};
 
@@ -485,6 +485,46 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Brain of Cthulhu",
     },
     BestiaryEntryDef {
+        credit_id: "GoblinPeon",
+        net_id: 26,
+        kind: NpcKind::GoblinPeon,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Peon",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinThief",
+        net_id: 27,
+        kind: NpcKind::GoblinThief,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Thief",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinWarrior",
+        net_id: 28,
+        kind: NpcKind::GoblinWarrior,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Warrior",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinArcher",
+        net_id: 111,
+        kind: NpcKind::GoblinArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinTinkerer",
+        net_id: 107,
+        kind: NpcKind::GoblinTinkerer,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Tinkerer",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,
@@ -521,10 +561,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
     ENTRIES
         .iter()
         .find(|e| {
-            e.kind == kind && match (e.variant, kind) {
-                (Some(v), NpcKind::Slime) => v == variant,
-                _ => true,
-            }
+            e.kind == kind
+                && match (e.variant, kind) {
+                    (Some(v), NpcKind::Slime) => v == variant,
+                    _ => true,
+                }
         })
         .expect("every ported NPC kind has a bestiary entry")
 }

@@ -2520,6 +2520,19 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The lava burn (M1.5-ITEM-lava-burn)
+
+`CheckLavaDeath`'s non-doll arm: the drops touching lava vanish
+(`TurnToAirAndSync`) unless `ItemID.Sets.IsLavaImmuneRegardlessOfRarity`
+(the 18-row set — the obsidian family, the Fireblossom, the
+Hellstone-bar rows — rides the port's `LAVA_IMMUNE` const) or the item's
+rarity clears the `rare 0/-1` gate. The rare drops keep their loot:
+the rarity gate is the whole reason the mid-game items survive the hell
+pools. The voodoo arm rides the same lava read; the burn lands inside
+the drops pass before the pickup (a drop in lava vanishes the same tick
+it would be collected — the C# runs `CheckLavaDeath` before the pickup
+chain too, `WorldItem.cs:405-425`).
+
 ## The voodoo sacrifice (M4-BOSS-6c)
 
 The gameplay hardmode gate: the dropped Guide Voodoo Doll (267) touching

@@ -3,8 +3,8 @@
 
 use tr_core::{TILE_PX, World};
 
-use crate::npc_buffs::NpcBuffs;
 use crate::npc_ai::HoverParams;
+use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
 pub(crate) const GRAVITY: f32 = 0.4;
@@ -197,6 +197,22 @@ pub enum NpcKind {
     /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
     /// 30x30, dmg 20, def 10, 100 HP).
     Creeper,
+    /// `NPCID.GoblinPeon` (26) — x0.9, dmg 12, def 4, 60 HP.
+    GoblinPeon,
+    /// `NPCID.GoblinThief` (27) — x0.95, dmg 20, def 6, 80 HP.
+    GoblinThief,
+    /// `NPCID.GoblinWarrior` (28) — x1.1, dmg 25, def 8, 110 HP.
+    GoblinWarrior,
+    /// `NPCID.GoblinArcher` (111) — x0.95, dmg 20, def 6, 80 HP.
+    GoblinArcher,
+    /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
+    /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
+    /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
+    BoundGoblin,
+    /// `NPCID.GoblinTinkerer` (107) — the freed Tinkerer (`SetDefaults`
+    /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP,
+    /// def 15, kb 0.5).
+    GoblinTinkerer,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -420,6 +436,12 @@ impl NpcKind {
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 56,
+            NpcKind::GoblinPeon => 57,
+            NpcKind::GoblinThief => 58,
+            NpcKind::GoblinWarrior => 59,
+            NpcKind::GoblinArcher => 60,
+            NpcKind::BoundGoblin => 61,
+            NpcKind::GoblinTinkerer => 62,
         }
     }
 
@@ -482,6 +504,12 @@ impl NpcKind {
             54 => NpcKind::Plantera,
             55 => NpcKind::BrainOfCthulhu,
             56 => NpcKind::Creeper,
+            57 => NpcKind::GoblinPeon,
+            58 => NpcKind::GoblinThief,
+            59 => NpcKind::GoblinWarrior,
+            60 => NpcKind::GoblinArcher,
+            61 => NpcKind::BoundGoblin,
+            62 => NpcKind::GoblinTinkerer,
             _ => return None,
         })
     }
@@ -601,6 +629,15 @@ impl NpcKind {
             NpcKind::BrainOfCthulhu => (160.0, 110.0),
             // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
             NpcKind::Creeper => (30.0, 30.0),
+            // The goblins: 18x38 x the scale.
+            NpcKind::GoblinPeon => (16.0, 34.0),
+            NpcKind::GoblinThief => (17.0, 36.0),
+            NpcKind::GoblinWarrior => (20.0, 42.0),
+            NpcKind::GoblinArcher => (17.0, 36.0),
+            // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
+            // (`:10274-10275`).
+            NpcKind::BoundGoblin => (18.0, 34.0),
+            NpcKind::GoblinTinkerer => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -632,9 +669,7 @@ impl NpcKind {
             NpcKind::Shark => (100.0, 24.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
-            NpcKind::DevourerHead
-            | NpcKind::DevourerBody
-            | NpcKind::DevourerTail => (22.0, 22.0),
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => {
                 (14.0, 14.0)
             }
@@ -700,6 +735,14 @@ impl NpcKind {
             // `SetDefaults` cases 266/267.
             NpcKind::BrainOfCthulhu => 1250,
             NpcKind::Creeper => 100,
+            // The goblins.
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinThief => 80,
+            NpcKind::GoblinWarrior => 110,
+            NpcKind::GoblinArcher => 80,
+            // 250 HP both (`:10255`, `:10280`).
+            NpcKind::BoundGoblin => 250,
+            NpcKind::GoblinTinkerer => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -770,6 +813,14 @@ impl NpcKind {
             NpcKind::Plantera => 50,
             NpcKind::BrainOfCthulhu => 30,
             NpcKind::Creeper => 20,
+            NpcKind::GoblinPeon => 12,
+            NpcKind::GoblinThief => 20,
+            NpcKind::GoblinWarrior => 25,
+            NpcKind::GoblinArcher => 20,
+            // The `friendly` pair (`:10246`/`:10272`) — the contact gate
+            // excludes them; 0 stands for the vanilla's unused dmg 10.
+            NpcKind::BoundGoblin => 0,
+            NpcKind::GoblinTinkerer => 0,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1027,7 +1078,13 @@ impl Npc {
         if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
             return None;
         }
-        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
     }
 
     /// Spawns a caster standing on the found ground tile (`SpawnNPC`'s
@@ -1102,7 +1159,13 @@ impl Npc {
         if !world.in_bounds(x_tile, (y / TILE_PX) as i32 + 1) {
             return None;
         }
-        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
     }
 
     /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
@@ -1296,6 +1359,12 @@ impl Npc {
             NpcKind::Plantera => 0.0,
             NpcKind::BrainOfCthulhu => 0.45,
             NpcKind::Creeper => 0.8,
+            NpcKind::GoblinPeon => 0.8,
+            NpcKind::GoblinThief => 0.7,
+            NpcKind::GoblinWarrior => 0.5,
+            NpcKind::GoblinArcher => 0.7,
+            NpcKind::BoundGoblin => 0.5,
+            NpcKind::GoblinTinkerer => 0.5,
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
@@ -1381,6 +1450,13 @@ impl Npc {
             NpcKind::Plantera => 14,
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
+            NpcKind::GoblinPeon => 4,
+            NpcKind::GoblinThief => 6,
+            NpcKind::GoblinWarrior => 8,
+            NpcKind::GoblinArcher => 6,
+            // def 15 both (`:10254`, `:10279`).
+            NpcKind::BoundGoblin => 15,
+            NpcKind::GoblinTinkerer => 15,
             NpcKind::KingSlime => 10,
             // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
             // per-tick tiers ride `defense_override`.
@@ -1462,6 +1538,12 @@ impl Npc {
             NpcKind::Plantera => 150000.0,
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
+            NpcKind::GoblinPeon => 100.0,
+            NpcKind::GoblinThief => 200.0,
+            NpcKind::GoblinWarrior => 150.0,
+            NpcKind::GoblinArcher => 200.0,
+            NpcKind::BoundGoblin => 0.0,
+            NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
             // The hungry/leech rows carry no value line.
             NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
@@ -1587,7 +1669,8 @@ impl Npc {
             | NpcKind::Demolitionist
             | NpcKind::Painter
             | NpcKind::WitchDoctor
-            | NpcKind::Clothier => self.update_guide(world, dt),
+            | NpcKind::Clothier
+            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
@@ -1595,33 +1678,33 @@ impl Npc {
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
-            NpcKind::Retinazer | NpcKind::Spazmatism => {
-                self.update_twin(world, player)
-            }
+            NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player),
             NpcKind::Creeper => {}
+            // aiStyle 0 (`:10252`): the bound stand still until the talk.
+            NpcKind::BoundGoblin => {}
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => self.update_goblin(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
-            NpcKind::EaterOfSouls => {
-                self.update_hover(world, player, HoverParams::EATER_OF_SOULS)
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                self.update_cave_bat(world, player, dt)
             }
+            NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
-            NpcKind::MeteorHead => {
-                self.update_hover(world, player, HoverParams::METEOR_HEAD)
-            }
+            NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
             }
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
-            | NpcKind::FireImp => self.update_caster(world, player, rng),
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
+                self.update_caster(world, player, rng)
+            }
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
                 self.update_sphere(world, player)
             }
@@ -1669,7 +1752,11 @@ impl Npc {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 3 { 0 } else { self.frame + 1 };
+                    self.frame = if self.frame + 1 >= 3 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
                 }
             }
             NpcKind::LeechHead | NpcKind::LeechBody => {
@@ -1696,14 +1783,22 @@ impl Npc {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 6 { 0 } else { self.frame + 1 };
+                    self.frame = if self.frame + 1 >= 6 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
                 }
             }
             NpcKind::ServantOfCthulhu => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
-                    self.frame = if self.frame + 1 >= 2 { 0 } else { self.frame + 1 };
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
                 }
             }
             // Case 50 — King Slime (`NPC.cs:73380-73414`): airborne snaps to
@@ -1843,10 +1938,7 @@ impl Npc {
                     };
                 }
             }
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => {
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 4.0 {
                     self.frame_counter = 0.0;
@@ -1927,6 +2019,68 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => {
+                // The goblins: the walker 3-frame machine (aiStyle 3).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::GoblinTinkerer => {
+                // The town 3-frame machine (`Main.npcFrameCount[107]`,
+                // aiStyle 7's FindFrame — the Guide's arm).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::BoundGoblin => {
+                // The tied pose: the single frame holds (`aiStyle 0` runs
+                // no FindFrame cycle).
+                self.frame_counter = 0.0;
+                self.frame = 0;
+            }
             NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
                 // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
             }
@@ -2935,9 +3089,7 @@ impl Npc {
                     (self.x + w * 0.5, self.y - 8.0)
                 }
                 // `:21171`: `(pos.X + width/2 + direction*8, pos.Y + 20)`.
-                NpcKind::FireImp => {
-                    (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0)
-                }
+                NpcKind::FireImp => (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0),
                 _ => return,
             };
             let sphere = match self.kind {
@@ -2949,7 +3101,6 @@ impl Npc {
             self.wants_sphere = Some((sphere, sx, sy));
         }
     }
-
 
     /// `AI_043`'s Queen Bee v1 (`NPC.cs:30190+`) — the EoC's cycle shape
     /// with the bee's numbers: the hover (the ±0.07 accels, the 8 cap),
@@ -3372,7 +3523,6 @@ impl Npc {
         self.y += self.vy;
     }
 
-
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
@@ -3595,6 +3745,26 @@ impl Npc {
         }
     }
 
+    /// The Goblin AI (`AI_003`'s walker family): the goblins chase the
+    /// player and jump the obstacles (the same machine as the zombie).
+    fn update_goblin(&mut self, world: &World, player: &mut Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -3723,12 +3893,13 @@ impl Npc {
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
                     | NpcKind::EyeOfCthulhu
+                    | NpcKind::BoundGoblin
+                    | NpcKind::GoblinTinkerer
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
-                    self
-                        .damage_override
+                    self.damage_override
                         .unwrap_or_else(|| self.kind.contact_damage())
                 };
                 if dmg > 0 {
@@ -3805,7 +3976,13 @@ impl Npc {
             NpcKind::Spazmatism => 53,
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
-            NpcKind::Creeper => 56,
+            NpcKind::Creeper => 53,
+            NpcKind::GoblinPeon => 54,
+            NpcKind::GoblinThief => 55,
+            NpcKind::GoblinWarrior => 56,
+            NpcKind::GoblinArcher => 57,
+            NpcKind::BoundGoblin => 58,
+            NpcKind::GoblinTinkerer => 59,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3852,8 +4029,8 @@ mod tests {
         assert_eq!(eos.size(), (30.0, 30.0));
         let hornet = Npc::spawn_hover(&w, 24, 30, NpcKind::Hornet).expect("the hornet spawns");
         assert_eq!(hornet.max_hp, 48);
-        let meteor = Npc::spawn_hover(&w, 28, 30, NpcKind::MeteorHead)
-            .expect("the meteor head spawns");
+        let meteor =
+            Npc::spawn_hover(&w, 28, 30, NpcKind::MeteorHead).expect("the meteor head spawns");
         assert_eq!(meteor.max_hp, 26);
         // The bestiary entries round-trip.
         let e = crate::bestiary::entry_for_npc(NpcKind::EaterOfSouls, SlimeVariant::Blue);
@@ -3894,7 +4071,6 @@ mod tests {
         let dist = ((npc.x - target.0) / 16.0).abs();
         assert!(dist < 20.0, "the hover homed (dist {dist} tiles)");
     }
-
 
     #[test]
     fn the_cave_walker_spawn_and_the_bestiary_map() {
@@ -3946,11 +4122,10 @@ mod tests {
         assert_eq!(bat.max_hp, 16);
         assert_eq!(bat.size(), (22.0, 18.0));
         // The jungle/hellbat/voodoo variants: the same frame, the vanilla stats.
-        let jb = Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat)
-            .expect("the jungle bat spawns");
+        let jb =
+            Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat).expect("the jungle bat spawns");
         assert_eq!(jb.max_hp, 34);
-        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat)
-            .expect("the hellbat spawns");
+        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat).expect("the hellbat spawns");
         assert_eq!(hb.max_hp, 46);
         let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
             .expect("the voodoo demon spawns");
@@ -3972,7 +4147,6 @@ mod tests {
         let e = crate::bestiary::entry_for_npc(NpcKind::VoodooDemon, SlimeVariant::Blue);
         assert_eq!(e.net_id, 66);
     }
-
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
@@ -4433,8 +4607,14 @@ mod tests {
         let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
-        assert!((speed - 6.0).abs() < 0.05, "the launch speed is 6 ({speed})");
-        assert!(ball.vx > 0.0 && ball.vy > 0.0, "the ball dives at the player");
+        assert!(
+            (speed - 6.0).abs() < 0.05,
+            "the launch speed is 6 ({speed})"
+        );
+        assert!(
+            ball.vx > 0.0 && ball.vy > 0.0,
+            "the ball dives at the player"
+        );
         let v = (ball.vx, ball.vy);
         // The straight fly: the velocity never re-aims and the dirt passes
         // through (the floor line sits at y = 120*16).
@@ -4444,7 +4624,10 @@ mod tests {
         assert_eq!(ball.vx, v.0);
         assert_eq!(ball.vy, v.1);
         assert!(ball.x > pcx, "the ball crossed the player's column");
-        assert!(ball.y > 120.0 * 16.0, "the ball flew through the floor line");
+        assert!(
+            ball.y > 120.0 * 16.0,
+            "the ball flew through the floor line"
+        );
         // The Burning Sphere's speed is 5 (`:21395-21399`).
         let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
@@ -4458,13 +4641,13 @@ mod tests {
         // `Bottom = (x*16+8, y*16)`), the stats ride the verified
         // `SetDefaults` rows, and the bestiary entries round-trip.
         let mut w = ground_air();
-        let imp = Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp)
-            .expect("the imp spawns on the ground");
+        let imp =
+            Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp).expect("the imp spawns on the ground");
         assert_eq!(imp.size(), (18.0, 40.0));
         assert_eq!(imp.max_hp, 70);
         assert!((imp.y - (120.0 * 16.0 - 40.0)).abs() < 0.01);
-        let sorcerer = Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer)
-            .expect("the sorcerer spawns");
+        let sorcerer =
+            Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer).expect("the sorcerer spawns");
         assert_eq!(sorcerer.size(), (18.0, 38.0));
         assert_eq!(sorcerer.max_hp, 40);
         let tim = Npc::new(NpcKind::Tim, 0.0, 0.0, 1, 0.0);
@@ -4539,9 +4722,15 @@ mod tests {
             // (`:23905-23914`).
             assert!(fish.vx.abs() <= 2.01, "the idle X drift ({})", fish.vx);
         }
-        assert!(rose && sank, "the bob cycled both ways (rose {rose} sank {sank})");
+        assert!(
+            rose && sank,
+            "the bob cycled both ways (rose {rose} sank {sank})"
+        );
         // The fish stayed inside the pool's water column.
-        assert!(fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0, "the pool held");
+        assert!(
+            fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0,
+            "the pool held"
+        );
     }
 
     #[test]
@@ -4632,13 +4821,12 @@ mod tests {
         // `spawn_swimmer` plants the feet on the pool floor; the stats ride
         // the verified `SetDefaults` rows; the bestiary entries round-trip.
         let w = water_pool();
-        let shark = Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark)
-            .expect("the shark spawns in the pool");
+        let shark =
+            Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark).expect("the shark spawns in the pool");
         assert_eq!(shark.size(), (100.0, 24.0));
         assert_eq!(shark.max_hp, 300);
         assert!((shark.y - (135.0 * 16.0 - 24.0)).abs() < 0.01);
-        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish)
-            .expect("the goldfish spawns");
+        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish).expect("the goldfish spawns");
         assert_eq!(fish.size(), (20.0, 18.0));
         assert_eq!(fish.max_hp, 5);
         assert_eq!(fish.knock_back_resist(), 0.5);
@@ -4670,7 +4858,11 @@ mod tests {
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + the bodies + the tail; the Giant Worm's
         // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
-        assert!(npcs.len() >= 6 && npcs.len() <= 8, "the chain length {}", npcs.len());
+        assert!(
+            npcs.len() >= 6 && npcs.len() <= 8,
+            "the chain length {}",
+            npcs.len()
+        );
         assert_eq!(npcs[0].kind, NpcKind::GiantWormHead);
         assert_eq!(npcs[0].worm_left, npcs.len() as u32 - 2);
         assert_eq!(npcs[0].worm_id, 1);
@@ -4752,13 +4944,7 @@ mod tests {
         flyer.worm_id = 2;
         let mut npcs2 = vec![flyer];
         let pc2 = (100.0 * 16.0, 116.0 * 16.0);
-        crate::world_sim::npcs::update_worms_in(
-            &w2,
-            Some(pc2),
-            &mut npcs2,
-            &mut rng,
-            &mut next_id,
-        );
+        crate::world_sim::npcs::update_worms_in(&w2, Some(pc2), &mut npcs2, &mut rng, &mut next_id);
         let f0 = &npcs2[0];
         assert!(f0.vy > 0.0, "the open-air head falls (+0.11 gravity)");
     }
@@ -4805,12 +4991,21 @@ mod tests {
         assert!(!spawn_allowed_merchant(&[(71, 4999)]), "49.99 silver waits");
         assert!(spawn_allowed_merchant(&[(71, 5000)]), "50 silver arrives");
         assert!(spawn_allowed_merchant(&[(72, 50)]), "the gold counts x100");
-        assert!(spawn_allowed_merchant(&[(73, 1)]), "the gold coin alone is 10000");
-        assert!(spawn_allowed_merchant(&[(74, 1)]), "the platinum alone clears");
+        assert!(
+            spawn_allowed_merchant(&[(73, 1)]),
+            "the gold coin alone is 10000"
+        );
+        assert!(
+            spawn_allowed_merchant(&[(74, 1)]),
+            "the platinum alone clears"
+        );
         assert!(!spawn_allowed_merchant(&[(72, 49)]), "49 gold = 4900 waits");
         assert!(!spawn_allowed_merchant(&[]), "the empty inventory waits");
         // The mixed stacks accumulate.
-        assert!(spawn_allowed_merchant(&[(71, 1000), (72, 41)]), "10 silver + 41 gold");
+        assert!(
+            spawn_allowed_merchant(&[(71, 1000), (72, 41)]),
+            "10 silver + 41 gold"
+        );
     }
 
     #[test]
@@ -4929,7 +5124,10 @@ mod tests {
         assert!(spawn_allowed_demolitionist(&[168]), "the grenade arrives");
         assert!(spawn_allowed_demolitionist(&[166]), "the bomb arrives");
         assert!(spawn_allowed_demolitionist(&[157]), "the dynamite arrives");
-        assert!(!spawn_allowed_demolitionist(&[97, 8]), "the bullets don't count");
+        assert!(
+            !spawn_allowed_demolitionist(&[97, 8]),
+            "the bullets don't count"
+        );
         assert!(!spawn_allowed_demolitionist(&[]), "the empty waits");
     }
 
@@ -4994,8 +5192,7 @@ mod tests {
         for _ in 0..60 {
             player.update(&w, crate::player::PlayerInput::default());
         }
-        let mut eye =
-            Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
         assert_eq!(eye.hp, 2800);
         assert_eq!(eye.defense(), 12);
         // The hover: the velocity steers toward the 200-px-above point.
@@ -5046,8 +5243,7 @@ mod tests {
         for _ in 0..60 {
             player.update(&w, crate::player::PlayerInput::default());
         }
-        let mut eye =
-            Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
         let start_y = eye.y;
         for _ in 0..30 {
             eye.update(&w, &mut player, 1.0 / 60.0);
@@ -5066,8 +5262,7 @@ mod tests {
             player.update(&w, crate::player::PlayerInput::default());
         }
         let (pcx, pcy) = player.center();
-        let mut eye =
-            Npc::spawn_eye_of_cthulhu(&w, pcx, pcy).unwrap();
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, pcx, pcy).unwrap();
         // Re-anchor the eye below the player: the spawn put it 600 px above;
         // the burst condition reads `self.y + h < player.y` (the eye ABOVE
         // the player) — flip the positions: put the EYE high and the PLAYER
@@ -5077,10 +5272,7 @@ mod tests {
         for _ in 0..130 {
             eye.update(&w, &mut player, 1.0 / 60.0);
         }
-        assert!(
-            eye.wants_servant.is_some(),
-            "the servant burst request"
-        );
+        assert!(eye.wants_servant.is_some(), "the servant burst request");
         let (sx, sy, svx, svy) = eye.wants_servant.unwrap();
         assert!(svx != 0.0 || svy != 0.0, "the launch velocity");
         // The world sim resolves the request into a real servant.
@@ -5106,8 +5298,7 @@ mod tests {
         // The stats ride `SetDefaults` case 228 (the town twin); the
         // bestiary entry round-trips; the prefs ride Register(228).
         let w = ground_air();
-        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor)
-            .expect("the witch doctor spawns");
+        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor).expect("the witch doctor spawns");
         assert_eq!(n.size(), (18.0, 40.0));
         assert_eq!(n.max_hp, 250);
         let e = crate::bestiary::entry_for_npc(NpcKind::WitchDoctor, SlimeVariant::Blue);
@@ -5165,7 +5356,10 @@ mod tests {
         for _ in 0..600 {
             eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
-        assert!(eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0, "the charge phase armed");
+        assert!(
+            eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0,
+            "the charge phase armed"
+        );
         // The charge: the velocity 6 toward the player.
         eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
@@ -5312,7 +5506,13 @@ mod tests {
         // locks to the sign.
         let mut w = ground_air();
         w.day_time = false;
-        let mut eoc_wall = Npc::new(NpcKind::WallOfFlesh, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            40.0 * TILE_PX,
+            580.0 * TILE_PX,
+            1,
+            0.0,
+        );
         eoc_wall.hp = eoc_wall.max_hp;
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
@@ -5326,7 +5526,10 @@ mod tests {
         }
         assert!(eoc_wall.x > start_x, "the slide advances");
         let speed = eoc_wall.vx;
-        assert!((speed - 1.5).abs() < 0.01, "full hp slides at 1.5 ({speed})");
+        assert!(
+            (speed - 1.5).abs() < 0.01,
+            "full hp slides at 1.5 ({speed})"
+        );
         // The hp thresholds: 0.75 → 1.75, below-0.5 → 2.15 (the C#
         // compares `<` — the exact half keeps the 0.25 tier).
         eoc_wall.hp = eoc_wall.max_hp / 2 - 1;
@@ -5344,8 +5547,13 @@ mod tests {
         let mut w = ground_air();
         w.day_time = false;
         let mut player = surface_player(&w);
-        let mut eoc_wall =
-            Npc::new(NpcKind::WallOfFlesh, 60.0 * TILE_PX, 580.0 * TILE_PX, -1, 0.0);
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            60.0 * TILE_PX,
+            580.0 * TILE_PX,
+            -1,
+            0.0,
+        );
         eoc_wall.hp = eoc_wall.max_hp;
         eoc_wall.x = 100.0; // inside the 160 kill line
         eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
@@ -5361,8 +5569,13 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        let mut eoc_wall =
-            Npc::new(NpcKind::WallOfFlesh, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            40.0 * TILE_PX,
+            580.0 * TILE_PX,
+            1,
+            0.0,
+        );
         eoc_wall.hp = eoc_wall.max_hp;
         player.hp = 0;
         for _ in 0..200 {
@@ -5589,22 +5802,79 @@ mod tests {
         assert_eq!(e.net_id, 267);
     }
 
+    #[test]
+    fn the_goblin_kinds_spawn_and_maps() {
+        // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
+        // round-trip + the bestiary rows.
+        let w = ground_air();
+        let peon = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinPeon).expect("the peon spawns");
+        assert_eq!(peon.max_hp, 60);
+        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
+        let warrior =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinWarrior).expect("the warrior spawns");
+        assert_eq!(warrior.max_hp, 110);
+        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        for (kind, net) in [
+            (NpcKind::GoblinPeon, 26),
+            (NpcKind::GoblinThief, 27),
+            (NpcKind::GoblinWarrior, 28),
+            (NpcKind::GoblinArcher, 111),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+    #[test]
+    fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
+        // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
+        // the 250/15/0.5 pair, the 18x34 vs 18x40 bodies, the kind<->u16
+        // round-trip, the bestiary row and the shop map.
+        assert_eq!(NpcKind::BoundGoblin.max_hp(), 250);
+        assert_eq!(NpcKind::GoblinTinkerer.max_hp(), 250);
+        let t = Npc::new(NpcKind::GoblinTinkerer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(t.defense(), 15);
+        assert_eq!(t.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::BoundGoblin.contact_damage(), 0);
+        assert_eq!(NpcKind::BoundGoblin.size(), (18.0, 34.0));
+        assert_eq!(NpcKind::GoblinTinkerer.size(), (18.0, 40.0));
+        for (kind, v) in [(NpcKind::BoundGoblin, 61), (NpcKind::GoblinTinkerer, 62)] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GoblinTinkerer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 107);
+        // The shop map (`NPCInteractions.cs:488-498`): the Tinkerer's
+        // shop 6; the Guide has none.
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::GoblinTinkerer),
+            Some(6)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Merchant),
+            Some(1)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Guide),
+            None
+        );
+        // The stock (`Chest.cs:1989-2003`): the 7 rows in order, no gating.
+        let ids = crate::shop::resolve_stock(6, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(ids, vec![128, 486, 398, 84, 407, 161, 5324]);
+    }
+
+    #[test]
+    fn the_bound_goblin_rescues_into_tinkerer() {
+        // `AI_000_TransformBoundNPC` (`NPC.cs:44884-44896`): the talk
+        // swaps 105 -> 107, the freed stats restore, `savedGoblin` raises.
+        let mut w = ground_air();
+        let mut n = Npc::new(NpcKind::BoundGoblin, 20.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        n.max_hp = 250;
+        n.hp = 250;
+        assert_eq!(w.saved_goblin, false);
+        crate::world_sim::npcs::rescue_bound_goblin(&mut n, &mut w);
+        assert_eq!(n.kind, NpcKind::GoblinTinkerer);
+        assert_eq!(n.max_hp, 250);
+        assert_eq!(n.hp, 250);
+        assert_eq!(w.saved_goblin, true);
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
