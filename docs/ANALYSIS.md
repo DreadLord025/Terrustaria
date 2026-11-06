@@ -4358,4 +4358,15 @@ rides never read it — M2-MOUNT-3 adds the key); the base-cart dismount
 cannot be geometrically blocked (52→42 bottom-anchored shrink,
 `Collision.cs:2505-2510`; `DontDismountWhenCCed` excludes carts,
 `MountID.cs:47`) — the `CanDismountWithResult` space check is ported 1:1
-and unit-tested at the growth direction instead.
+and unit-tested at the growth direction instead. Batch-review (3-4)
+verified-equivalent notes, applied forward: the `sparks_one` side-roll
+ternary is transcribed inverted vs `DelegateMethods.cs` (the two arms
+swapped; the per-roll distribution is identical, so the RNG stream
+position is unchanged); the spark draw anchors the 8×8 dust frame at
+its top-left where the C# centres it with origin (4,4) — a 4·zoom px
+offset shared with the existing sand-dust baseline; the below-view
+spark death check is tighter than the C# screen-reject at zoom > 1
+(the emitter has no camera at tick time — the camera is taken at the
+per-frame tick); the `itemAnimation == 0` gate at `Player.cs:19868` is
+omitted (the port has no item-animation field; the gate is dead for a
+riding player in every reachable state).
