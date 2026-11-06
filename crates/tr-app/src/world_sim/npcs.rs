@@ -352,7 +352,16 @@ pub(crate) fn update_worms_in(
     // The follower trail (`:51867-51922`) + the chain death
     // (`:51425-51433`).
     for i in 0..npcs.len() {
-        if !npcs[i].kind.is_worm() || npcs[i].seg_index == 0 || npcs[i].hp <= 0 {
+        if !npcs[i].kind.is_worm() || npcs[i].hp <= 0 {
+            continue;
+        }
+        // The heads don't trail — the split heads keep their seg_index
+        // (`Transform(13)` keeps the NPC identity), so the skip keys on
+        // the KIND; the Destroyer's same-kind links are "heads" that
+        // still trail (`worm_next() == kind` marks the same-kind chain).
+        if npcs[i].seg_index == 0
+            || (npcs[i].kind.is_worm_head() && npcs[i].kind.worm_next() != npcs[i].kind)
+        {
             continue;
         }
         let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
@@ -360,7 +369,20 @@ pub(crate) fn update_worms_in(
             .iter()
             .find(|n| n.worm_id == wid && n.seg_index == seg - 1 && n.hp > 0)
         else {
-            npcs[i].hp = 0;
+            // `NPC.cs:51507-51511`'s split: the orphaned MIDDLE link
+            // becomes its own worm's head (`Transform(13, ai[0])`); the
+            // TAIL with a dead leader dies silently (`:51488-51502`'s
+            // `life = 0` arms); the mech worm's same-kind chain keeps the
+            // port's whole-tail death.
+            if npcs[i].kind.is_worm_mid() && npcs[i].kind.worm_next() != npcs[i].kind {
+                npcs[i].kind = match npcs[i].kind {
+                    NpcKind::DevourerBody => NpcKind::DevourerHead,
+                    NpcKind::GiantWormBody => NpcKind::GiantWormHead,
+                    _ => NpcKind::EaterOfWorldsHead,
+                };
+            } else {
+                npcs[i].hp = 0;
+            }
             continue;
         };
         let (lw, lh) = npcs[i].size();
@@ -373,6 +395,29 @@ pub(crate) fn update_worms_in(
         npcs[i].x += dx * num62;
         npcs[i].y += dy * num62;
         npcs[i].rotation = dy.atan2(dx) + 1.57;
+    }
+    // The followerless mid becomes the tail (`NPC.cs:51513-51519`'s
+    // `Transform(15, 0f, ai[1])`): the chain's front end closes when the
+    // link behind died. The classic families only — the mech worm's
+    // same-kind chain has no mid/tail kinds to swap to.
+    for i in 0..npcs.len() {
+        if !npcs[i].kind.is_worm_mid()
+            || npcs[i].hp <= 0
+            || npcs[i].kind.worm_next() == npcs[i].kind
+        {
+            continue;
+        }
+        let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
+        let follower_alive = npcs
+            .iter()
+            .any(|n| n.worm_id == wid && n.seg_index == seg + 1 && n.hp > 0);
+        if !follower_alive {
+            npcs[i].kind = match npcs[i].kind {
+                NpcKind::DevourerBody => NpcKind::DevourerTail,
+                NpcKind::GiantWormBody => NpcKind::GiantWormTail,
+                _ => NpcKind::EaterOfWorldsTail,
+            };
+        }
     }
     // The heads: the dig/air machine (`:51923-52051`).
     let Some((pcx, pcy)) = player else { return };
@@ -598,11 +643,7 @@ fn invasion_warning(app: &mut App) {
     } else {
         "The goblin army has arrived!"
     };
-    crate::chat::broadcast_death_text(
-        &mut app.chat,
-        text,
-        crate::chat::COLOR_COMMAND,
-    );
+    crate::chat::broadcast_death_text(&mut app.chat, text, crate::chat::COLOR_COMMAND);
 }
 
 /// `Main.UpdateInvasion` (`Main.cs:64328-64386`): the defeat flag ride at
@@ -737,7 +778,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // (the item-path flag) stays synced for the panel/kill paths.
     if app.world.invasion_arm_pending {
         app.world.invasion_arm_pending = false;
-        let qualified = app.player.as_ref().map(|p| p.max_hp >= 200).unwrap_or(false);
+        let qualified = app
+            .player
+            .as_ref()
+            .map(|p| p.max_hp >= 200)
+            .unwrap_or(false);
         if qualified && !app.world.invasion_goblins {
             let num = 1; // the session player (the multiplayer count folds)
             app.world.invasion_size = 80 + 40 * num;
@@ -747,7 +792,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // (`:64502-64510`) — the deterministic hash stands in for `Main.rand`
             // (the roll rides the item stream's order).
             let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
-            app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+            app.world.invasion_x = if roll == 0 {
+                0.0
+            } else {
+                app.world.width as f64
+            };
             start_invasion(&mut app.world, num);
             // The march state rides the World fields (the app-level pass
             // reads them in `update_invasion_state`).
@@ -803,9 +852,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // far enough off-screen; the port culls it above the player's view).
     let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
     if app.world.day_time {
-        npcs.retain(|n| {
-            !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y)
-        });
+        npcs.retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
         app.npcs
             .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
     }
@@ -1201,18 +1248,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
-            let kind = invasion_spawn_pick(
-                &mut app.item_rng,
-                app.world.hard_mode,
-                summoner_alive,
-            );
+            let kind = invasion_spawn_pick(&mut app.item_rng, app.world.hard_mode, summoner_alive);
             invasion_pick = Some((kind, ix, iy));
         }
         if invasion_pick.is_none() {
-        let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
-        app.spawn_no_cycle = false; // the latch is consumed by one call
-        spawned = spawn;
-        let _ = suppressed;
+            let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
+            app.spawn_no_cycle = false; // the latch is consumed by one call
+            spawned = spawn;
+            let _ = suppressed;
         }
     }
     // The invasion spawn resolves after the tick: the C# decrements the
@@ -1223,7 +1266,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             kind,
             px - 600.0,
             py - 400.0,
-            if px > app.world.invasion_x as f32 { -1 } else { 1 },
+            if px > app.world.invasion_x as f32 {
+                -1
+            } else {
+                1
+            },
             0.0,
         );
         inv.hp = inv.max_hp;
@@ -1601,7 +1648,7 @@ mod invasion_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// A surface world (the invasion fights at the spawn's surface band).
     fn surface_world() -> World {
@@ -1613,7 +1660,10 @@ mod invasion_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -1688,7 +1738,10 @@ mod invasion_tests {
         app.world.invasion_warn = 1;
         update_invasion_state(&mut app);
         assert_eq!(app.world.invasion_warn, 3600, "the warn rearm");
-        assert!(app.chat.messages.len() > chat_before, "the approaching line");
+        assert!(
+            app.chat.messages.len() > chat_before,
+            "the approaching line"
+        );
     }
 
     #[test]
@@ -1764,10 +1817,65 @@ mod invasion_tests {
         assert!(saw_summoner, "the hardmode summoner roll");
         let mut rng = 7u64;
         for _ in 0..200 {
-            assert!(!matches!(
-                invasion_spawn_pick(&mut rng, true, true),
-                NpcKind::GoblinSummoner
-            ), "the alive summoner blocks the roll");
+            assert!(
+                !matches!(
+                    invasion_spawn_pick(&mut rng, true, true),
+                    NpcKind::GoblinSummoner
+                ),
+                "the alive summoner blocks the roll"
+            );
         }
+    }
+    #[test]
+    fn the_eow_middle_split_lives_as_a_new_head() {
+        // `NPC.cs:51507-51519`: killing a worm's middle splits it — the
+        // orphaned body becomes its own head (`Transform(13)`), the link
+        // ahead of the gap closes as a tail (`Transform(15)`), the tail
+        // with a dead leader dies silently.
+        let world = World::new("t".into(), 64, 800);
+        let mut npcs = Vec::new();
+        let mut head = Npc::new(NpcKind::EaterOfWorldsHead, 100.0, 100.0, 1, 0.0);
+        head.hp = head.max_hp;
+        head.worm_id = 7;
+        head.seg_index = 0;
+        head.worm_inited = true;
+        npcs.push(head);
+        for seg in 1..4 {
+            let mut b = Npc::new(
+                NpcKind::EaterOfWorldsBody,
+                100.0,
+                100.0 + seg as f32 * 20.0,
+                1,
+                0.0,
+            );
+            b.hp = b.max_hp;
+            b.worm_id = 7;
+            b.seg_index = seg;
+            b.worm_inited = true;
+            npcs.push(b);
+        }
+        // The head dies -> the first orphan (seg 1) becomes the head; the
+        // links behind stay alive following it.
+        npcs[0].hp = 0;
+        let mut rng = 1u64;
+        let mut next_id = 99u32;
+        update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(
+            npcs[1].kind,
+            NpcKind::EaterOfWorldsHead,
+            "the orphan becomes the head"
+        );
+        assert!(npcs[1].hp > 0);
+        assert!(npcs[2].hp > 0 && npcs[3].hp > 0, "the back part lives");
+        // The last link dies -> the mid ahead of the gap closes as the
+        // tail.
+        npcs[3].hp = 0;
+        update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
+        assert_eq!(
+            npcs[2].kind,
+            NpcKind::EaterOfWorldsTail,
+            "the front closes as a tail"
+        );
+        assert!(npcs[2].hp > 0);
     }
 }
