@@ -302,6 +302,8 @@ fn portrait_data(
         NpcKind::WanderingEye => 2,
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
+        NpcKind::EyeOfCthulhu => 41,
+        NpcKind::ServantOfCthulhu => 42,
         NpcKind::Guide => 5,
         NpcKind::Skeleton => 6,
         NpcKind::UndeadMiner => 7,
@@ -362,6 +364,15 @@ fn portrait_data(
                 ],
             )
         }
+        // The eye: the 6-frame sheet's frame height rides the sheet
+        // (the 100x110 frames).
+        (NpcKind::EyeOfCthulhu, _) => {
+            let h = lookups.bestiary_npc_sheets[41]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::ServantOfCthulhu, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         (NpcKind::Slime, None) => (sheet_i, 26.0, 32.0, 26.0, white),
         (NpcKind::DemonEye, _) => (sheet_i, 24.0, 38.0, 24.0, white),
         (NpcKind::WanderingEye, _) => {

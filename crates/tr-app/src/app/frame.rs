@@ -203,6 +203,7 @@ impl App {
             let (sw, sh) = self.screen_size();
             let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
             let mut king_near = false;
+            let mut eoc_near = false;
             let mut generic_boss_near = false;
             for n in &self.npcs {
                 if n.hp <= 0 {
@@ -219,13 +220,18 @@ impl App {
                 if n.kind == NpcKind::KingSlime {
                     king_near = true;
                 }
+                if n.kind == NpcKind::EyeOfCthulhu {
+                    eoc_near = true;
+                }
                 // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
             }
             let boss_music = if king_near {
                 Some(93) // MusicID.KingSlime (flag19, `:12596`)
+            } else if eoc_near {
+                Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
             } else {
                 // No other ported kind sets `boss` — the generic slot stays
-                // out until a second boss lands.
+                // out until a third boss lands.
                 None
             };
             let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
@@ -981,7 +987,13 @@ impl App {
 
                 let boss = npcs
                     .iter()
-                    .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                    .find(
+                        |n| {
+                            (n.kind == NpcKind::KingSlime
+                                || n.kind == NpcKind::EyeOfCthulhu)
+                                && n.hp > 0
+                        },
+                    )
                     .map(|n| (n.hp, n.max_hp));
                 // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
                 // returns early after `DrawMap`, before `DrawInterface` (`62432`), so

@@ -143,7 +143,8 @@ pub enum NpcKind {
     Clothier,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
-    /// death sets `downed_eoc` and opens the Dryad's arrival).
+    /// death sets `downed_eoc` and opens the Dryad's arrival). The full
+    /// aiStyle-4 phase machine rides M4-BOSS-2b.
     EyeOfCthulhu,
     /// `NPCID.QueenBee` (222) — the jungle boss (`NPC.cs:11855-11872`:
     /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
@@ -153,6 +154,11 @@ pub enum NpcKind {
     /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
     /// sets `downed_skeletron` and opens the Clothier's arrival).
     SkeletronHead,
+    /// `NPCID.ServantofCthulhu` (5) — the EoC minion (`NPC.cs:8717-8727`:
+    /// 20×20, aiStyle 5 (the generic hover, num 5 / num2 0.03
+    /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity,
+    /// noTileCollide).
+    ServantOfCthulhu,
     /// `NPCID.WallofFlesh` (113) — the underworld wall (`NPC.cs:10342`:
     /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
     /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
@@ -372,8 +378,9 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
-            NpcKind::WallOfFlesh => 45,
-            NpcKind::TheDestroyer => 46,
+            NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
+            NpcKind::TheDestroyer => 47,
         }
     }
 
@@ -424,8 +431,9 @@ impl NpcKind {
             42 => NpcKind::EyeOfCthulhu,
             43 => NpcKind::QueenBee,
             44 => NpcKind::SkeletronHead,
-            45 => NpcKind::WallOfFlesh,
-            46 => NpcKind::TheDestroyer,
+            45 => NpcKind::ServantOfCthulhu,
+            46 => NpcKind::WallOfFlesh,
+            47 => NpcKind::TheDestroyer,
             _ => return None,
         })
     }
@@ -570,6 +578,9 @@ impl NpcKind {
             | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
+            // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
+            NpcKind::EyeOfCthulhu => (100.0, 110.0),
+            NpcKind::ServantOfCthulhu => (20.0, 20.0),
         }
     }
 
@@ -641,6 +652,9 @@ impl NpcKind {
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 150,
             NpcKind::KingSlime => 2000,
+            // `NPC.cs:8710` (the eye) / `:8722` (the servant).
+            NpcKind::EyeOfCthulhu => 2800,
+            NpcKind::ServantOfCthulhu => 8,
         }
     }
 
@@ -702,6 +716,9 @@ impl NpcKind {
             NpcKind::EaterOfWorldsTail => 11,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
+            // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).
+            NpcKind::EyeOfCthulhu => 15,
+            NpcKind::ServantOfCthulhu => 12,
         }
     }
 }
@@ -781,6 +798,19 @@ pub struct Npc {
     pub wants_sphere: Option<(NpcKind, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
+    /// `NPC.ai[0..4]` — the EoC phase machine's state
+    /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
+    /// `ai[3]` the dash/servant counter; `AI()`'s aiStyle-4 block).
+    pub ai: [f32; 4],
+    /// The servant spawn request — the `NPC.NewNPC(..., 5)` calls in the
+    /// aiStyle-4 block (`NPC.cs:4598`/`:4651` of the AI()), resolved by the
+    /// world sim after the update pass (the `wants_sphere` shape; the payload
+    /// is the (x, y, vx, vy) spawn state).
+    pub wants_servant: Option<(f32, f32, f32, f32)>,
+    /// `this.defense = 0` — the AI's per-frame stat override (the EoC's
+    /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
+    /// makes it negative).
+    pub defense_override: Option<i32>,
 }
 
 impl Npc {
@@ -839,6 +869,41 @@ impl Npc {
         let mut npc = Self::new(NpcKind::KingSlime, x, y, -1, 1.2);
         npc.hp = npc.max_hp;
         Some(npc)
+    }
+
+    /// `NPC.SpawnOnPlayer(plr, 4)` (`NPC.cs:80475+`): the boss spawn scan
+    /// looks for open space around the player's tile; the flying,
+    /// no-tile-collide eye only needs an in-bounds spot above the player —
+    /// the AI flies to the target from wherever it appears (the tile-scan
+    /// fidelity is the M4-BOSS polish follow-up).
+    pub fn spawn_eye_of_cthulhu(world: &World, player_x: f32, player_y: f32) -> Option<Self> {
+        let (w, h) = NpcKind::EyeOfCthulhu.size();
+        // SpawnBoss' tile-anchored position: the player's centre column,
+        // one screen above (the vanilla scan prefers off-screen space).
+        let x = player_x - w * 0.5;
+        // Clamped into the world: near the surface the 600-px lift would
+        // leave it; the AI flies to the target from wherever it appears.
+        let y = (player_y - 600.0 - h * 0.5).max(16.0);
+        if x < 0.0
+            || y < 0.0
+            || x + w > world.width as f32 * TILE_PX
+            || y + h > world.height as f32 * TILE_PX
+        {
+            return None;
+        }
+        let mut npc = Self::new(NpcKind::EyeOfCthulhu, x, y, -1, 0.0);
+        npc.hp = npc.max_hp;
+        Some(npc)
+    }
+
+    /// The aiStyle-4 block's `NPC.NewNPC(..., 5)` minion spawn
+    /// (`NPC.cs:4598` of the AI()): the servant appears 10 px out along the
+    /// aim and inherits the launch velocity (`vector3.X/Y`).
+    pub fn spawn_servant_of_cthulhu(x: f32, y: f32, vx: f32, vy: f32) -> Self {
+        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - 10.0, y - 10.0, 1, 0.0);
+        npc.vx = vx;
+        npc.vy = vy;
+        npc
     }
 
     /// Zombies walk on the surface and burn away at dawn.
@@ -1028,6 +1093,9 @@ impl Npc {
             worm_left: 0,
             worm_inited: false,
             wet_x: 0.0,
+            ai: [0.0; 4],
+            wants_servant: None,
+            defense_override: None,
         }
     }
 
@@ -1113,6 +1181,10 @@ impl Npc {
             NpcKind::WallOfFlesh => 0.0,
             NpcKind::TheDestroyer => 0.0,
             NpcKind::KingSlime => 0.0,
+            // The eye/servant blocks set no knockBackResist — the
+            // SetDefaults head's default applies.
+            NpcKind::EyeOfCthulhu => 1.0,
+            NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1122,6 +1194,9 @@ impl Npc {
     /// King Slime 10; the slime variants ride their `SetDefaultsFromNetId`
     /// lines).
     pub fn defense(&self) -> i32 {
+        if let Some(d) = self.defense_override {
+            return d;
+        }
         if self.kind == NpcKind::Slime {
             return self.slime.stats().defense;
         }
@@ -1180,6 +1255,10 @@ impl Npc {
             NpcKind::WallOfFlesh => 12,
             NpcKind::TheDestroyer => 0,
             NpcKind::KingSlime => 10,
+            // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
+            // final phase) / `:8721` (the servant 0).
+            NpcKind::EyeOfCthulhu => 12,
+            NpcKind::ServantOfCthulhu => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1246,6 +1325,9 @@ impl Npc {
             NpcKind::WallOfFlesh => 80000.0,
             NpcKind::TheDestroyer => 120000.0,
             NpcKind::KingSlime => 10_000.0,
+            // `NPC.cs:8713` (the eye value 30000); the servant has no row.
+            NpcKind::EyeOfCthulhu => 30_000.0,
+            NpcKind::ServantOfCthulhu => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1366,7 +1448,6 @@ impl Npc {
             | NpcKind::Painter
             | NpcKind::WitchDoctor
             | NpcKind::Clothier => self.update_guide(world, dt),
-            NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
@@ -1385,6 +1466,10 @@ impl Npc {
                 self.update_hover(world, player, HoverParams::METEOR_HEAD)
             }
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
+            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
+            NpcKind::ServantOfCthulhu => {
+                self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
+            }
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
             | NpcKind::FireImp => self.update_caster(world, player, rng),
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
@@ -1439,6 +1524,23 @@ impl Npc {
                     } else {
                         self.frame + 1
                     };
+                }
+            }
+            // Case 4/5 — the eye and the servant (`NPC.cs:67247-67256`): the
+            // counter ticks with the motion class, the frame wraps over the
+            // 6-frame (the eye) / 2-frame (the servant) strip.
+            NpcKind::EyeOfCthulhu => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 6 { 0 } else { self.frame + 1 };
+                }
+            }
+            NpcKind::ServantOfCthulhu => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 { 0 } else { self.frame + 1 };
                 }
             }
             // Case 50 — King Slime (`NPC.cs:73380-73414`): airborne snaps to
@@ -2105,6 +2207,307 @@ impl Npc {
     /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
     /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
     /// reported through `spawn_minion` so the app can add them to its NPC list.
+    /// `AI()`'s aiStyle-4 block — the Eye of Cthulhu's phase machine
+    /// (`NPC.cs`'s aiStyle-4 `if` in `AI()`, 841 C# lines). The state:
+    /// `ai[0]` the phase (0 the hover, 1/2 the spins, 3 the final),
+    /// `ai[1]` the sub-state, `ai[2]` the timer, `ai[3]` the dash/servant
+    /// counter. The expert-mode and `getGoodWorld` branches are out (the
+    /// port has neither difficulty flag) — the classic path is verbatim,
+    /// the skips carry the C# cites. The movement integrates directly
+    /// (`noTileCollide` + `noGravity`).
+    fn update_eye_of_cthulhu(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let dead = player.hp <= 0;
+        // `num6`: the aim angle — `Math.Atan2(y: bottom - 59 - target.Y - h/2,
+        // x: center.X - target.X - w/2) + 1.57` wrapped to 2π.
+        let mut num6 = (self.y + h - 59.0 - pcy).atan2(self.x + w * 0.5 - pcx) + 1.57;
+        if num6 < 0.0 {
+            num6 += 6.283;
+        } else if num6 > 6.283 {
+            num6 -= 6.283;
+        }
+        // `num7`: the turn rate by the state (the C# num7 table).
+        let mut num7 = 0.0;
+        if self.ai[0] == 0.0 && self.ai[1] == 0.0 {
+            num7 = 0.02;
+        }
+        if self.ai[0] == 0.0 && self.ai[1] == 2.0 && self.ai[2] > 40.0 {
+            num7 = 0.05;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 0.0 {
+            num7 = 0.05;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 2.0 && self.ai[2] > 40.0 {
+            num7 = 0.08;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 4.0 && self.ai[2] > 20.0 {
+            num7 = 0.15;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 5.0 {
+            num7 = 0.05;
+        }
+        if self.rotation < num6 {
+            if num6 - self.rotation > 3.1415 {
+                self.rotation -= num7;
+            } else {
+                self.rotation += num7;
+            }
+        } else if self.rotation > num6 {
+            if self.rotation - num6 > 3.1415 {
+                self.rotation += num7;
+            } else {
+                self.rotation -= num7;
+            }
+        }
+        if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
+            self.rotation = num6;
+        }
+        if self.rotation < 0.0 {
+            self.rotation += 6.283;
+        } else if self.rotation > 6.283 {
+            self.rotation -= 6.283;
+        }
+        if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
+            self.rotation = num6;
+        }
+        // `Main.IsItDay() | dead`: the climb-away
+        // (`velocity.Y -= 0.04f; EncourageDespawn(10)` — the removal rides
+        // the world sim's distance cull).
+        if world.day_time || dead {
+            self.vy -= 0.04;
+            self.integrate_no_tile_collide();
+            return;
+        }
+        if self.ai[0] == 0.0 {
+            if self.ai[1] == 0.0 {
+                // The hover: 5 speed, 0.04 accel toward 200 px above the
+                // player (`num9`/`num10` classic).
+                let cx = self.x + w * 0.5;
+                let cy = self.y + h * 0.5;
+                let num11 = pcx - cx;
+                let num12 = pcy - 200.0 - cy;
+                let num14 = (num11 * num11 + num12 * num12).sqrt();
+                let num13 = if num14 != 0.0 { 5.0 / num14 } else { 0.0 };
+                let (dx, dy) = (num11 * num13, num12 * num13);
+                if self.vx < dx {
+                    self.vx += 0.04;
+                    if self.vx < 0.0 && dx > 0.0 {
+                        self.vx += 0.04;
+                    }
+                } else if self.vx > dx {
+                    self.vx -= 0.04;
+                    if self.vx > 0.0 && dx < 0.0 {
+                        self.vx -= 0.04;
+                    }
+                }
+                if self.vy < dy {
+                    self.vy += 0.04;
+                    if self.vy < 0.0 && dy > 0.0 {
+                        self.vy += 0.04;
+                    }
+                } else if self.vy > dy {
+                    self.vy -= 0.04;
+                    if self.vy > 0.0 && dy < 0.0 {
+                        self.vy -= 0.04;
+                    }
+                }
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 600.0 {
+                    self.ai[1] = 1.0;
+                    self.ai[2] = 0.0;
+                    self.ai[3] = 0.0;
+                } else if (self.y + h < player.y && num14 < 500.0) && !dead {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 110.0 {
+                        // The servant burst (the `NPC.NewNPC(..., 5)` arm).
+                        self.ai[3] = 0.0;
+                        self.rotation = num6;
+                        let num18 = pcx - cx;
+                        let num19 = pcy - cy;
+                        let num20 = 5.0 / (num18 * num18 + num19 * num19).sqrt();
+                        let (vx, vy) = (num18 * num20, num19 * num20);
+                        self.wants_servant = Some((cx + vx * 10.0, cy + vy * 10.0, vx, vy));
+                    }
+                }
+            } else if self.ai[1] == 1.0 {
+                // The dash wind-up: the velocity locks onto the target
+                // (6 speed classic).
+                self.rotation = num6;
+                let cx = self.x + w * 0.5;
+                let cy = self.y + h * 0.5;
+                let num23 = pcx - cx;
+                let num24 = pcy - cy;
+                let num25 = 6.0 / (num23 * num23 + num24 * num24).sqrt();
+                self.vx = num23 * num25;
+                self.vy = num24 * num25;
+                self.ai[1] = 2.0;
+            } else if self.ai[1] == 2.0 {
+                // The dash flight: 40 free ticks, then the 0.98 damp; the
+                // chain resets at 150.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 40.0 {
+                    self.vx *= 0.98;
+                    self.vy *= 0.98;
+                    if self.vx.abs() < 0.1 {
+                        self.vx = 0.0;
+                    }
+                    if self.vy.abs() < 0.1 {
+                        self.vy = 0.0;
+                    }
+                } else {
+                    self.rotation = self.vy.atan2(self.vx) - 1.57;
+                }
+                if self.ai[2] >= 150.0 {
+                    self.ai[3] += 1.0;
+                    self.ai[2] = 0.0;
+                    self.rotation = num6;
+                    if self.ai[3] >= 3.0 {
+                        self.ai[1] = 0.0;
+                        self.ai[3] = 0.0;
+                    } else {
+                        self.ai[1] = 1.0;
+                    }
+                }
+            }
+            if (self.hp as f32) < self.max_hp as f32 * 0.5 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+            self.integrate_no_tile_collide();
+            return;
+        }
+        if self.ai[0] == 1.0 || self.ai[0] == 2.0 {
+            // The spin: `ai[2]` ramps to 0.5 while phase 1 (or the
+            // getGood half-spin `ai[3] == 1`), rotation spins, `ai[1]`
+            // counts to 100 → the next phase (the classic path; the
+            // expert servant bursts and the `reflectsProjectiles` flag
+            // are the getGood/expert arms).
+            if self.ai[0] == 1.0 || self.ai[3] == 1.0 {
+                self.ai[2] += 0.005;
+                if self.ai[2] > 0.5 {
+                    self.ai[2] = 0.5;
+                }
+            } else {
+                self.ai[2] -= 0.005;
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+            }
+            self.rotation += self.ai[2];
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 100.0 {
+                if self.ai[3] == 1.0 {
+                    self.ai[3] = 0.0;
+                    self.ai[1] = 0.0;
+                } else {
+                    self.ai[0] += 1.0;
+                    self.ai[1] = 0.0;
+                    if self.ai[0] != 3.0 {
+                        self.ai[2] = 0.0;
+                    }
+                }
+            }
+            self.vx *= 0.98;
+            self.vy *= 0.98;
+            if self.vx.abs() < 0.1 {
+                self.vx = 0.0;
+            }
+            if self.vy.abs() < 0.1 {
+                self.vy = 0.0;
+            }
+            self.integrate_no_tile_collide();
+            return;
+        }
+        // Phase 3: `this.defense = 0` and the faster dash machine (6.8
+        // speed, 130-tick chains; the expert rage sub-states
+        // `ai[1] = 3/4/5` are out with the flag2/flag3 gates).
+        self.defense_override = Some(0);
+        if self.ai[1] == 0.0 {
+            // The hover at 120 px above (6 speed, 0.07 accel).
+            let cx = self.x + w * 0.5;
+            let cy = self.y + h * 0.5;
+            let num39 = pcx - cx;
+            let num40 = pcy - 120.0 - cy;
+            let num41 = (num39 * num39 + num40 * num40).sqrt();
+            let num42 = if num41 != 0.0 { 6.0 / num41 } else { 0.0 };
+            let (dx, dy) = (num39 * num42, num40 * num42);
+            if self.vx < dx {
+                self.vx += 0.07;
+                if self.vx < 0.0 && dx > 0.0 {
+                    self.vx += 0.07;
+                }
+            } else if self.vx > dx {
+                self.vx -= 0.07;
+                if self.vx > 0.0 && dx < 0.0 {
+                    self.vx -= 0.07;
+                }
+            }
+            if self.vy < dy {
+                self.vy += 0.07;
+                if self.vy < 0.0 && dy > 0.0 {
+                    self.vy += 0.07;
+                }
+            } else if self.vy > dy {
+                self.vy -= 0.07;
+                if self.vy > 0.0 && dy < 0.0 {
+                    self.vy -= 0.07;
+                }
+            }
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 200.0 {
+                self.ai[1] = 1.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        } else if self.ai[1] == 1.0 {
+            self.rotation = num6;
+            let cx = self.x + w * 0.5;
+            let cy = self.y + h * 0.5;
+            let num43 = pcx - cx;
+            let num44 = pcy - cy;
+            let num45 = 6.8 / (num43 * num43 + num44 * num44).sqrt();
+            self.vx = num43 * num45;
+            self.vy = num44 * num45;
+            self.ai[1] = 2.0;
+        } else if self.ai[1] == 2.0 {
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 40.0 {
+                self.vx *= 0.97;
+                self.vy *= 0.97;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+            } else {
+                self.rotation = self.vy.atan2(self.vx) - 1.57;
+            }
+            if self.ai[2] >= 130.0 {
+                self.ai[3] += 1.0;
+                self.ai[2] = 0.0;
+                self.rotation = num6;
+                if self.ai[3] >= 3.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[3] = 0.0;
+                } else {
+                    self.ai[1] = 1.0;
+                }
+            }
+        }
+        self.integrate_no_tile_collide();
+    }
+
+    /// `noTileCollide` + `noGravity` movement: the raw integration, no
+    /// tile interaction (`SetDefaults` cases 4/5 set both flags).
+    fn integrate_no_tile_collide(&mut self) {
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_king_slime(&mut self, world: &World, player: &mut Player, dt: f32) {
         let (w, h) = NpcKind::KingSlime.size();
         let (pcx, pcy) = player.center();
@@ -2354,94 +2757,6 @@ impl Npc {
         }
     }
 
-    /// `AI_004`'s EoC machine (`NPC.cs:19960-20700`) — the v1 phase
-    /// cycle without the Servant spawns and the <50% transformation (the
-    /// follow-ups): the hover accelerations toward the target (`ai[0]==0`'s
-    /// num10/num12 pair), the charge cycle (`ai[1]` 0→1→2 — the aim, the
-    /// velocity = the direct delta × 6, the 40-tick decel ×0.98), the day
-    /// flee (`Main.IsItDay() | dead` → the rise 0.04, `:20100` region).
-    fn update_eoc(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        // The day flee (`:20100`'s `Main.IsItDay() | dead` arm): the boss
-        // rises away and despawns off-world (the framework's guard).
-        if world.day_time {
-            self.vy -= 0.04;
-            self.x += self.vx;
-            self.y += self.vy;
-            if self.y < -500.0 {
-                self.hp = 0;
-            }
-            return;
-        }
-        // The hover target: above the player (the vanilla's
-        // `vector = target.Center - (0, num12)` offset — the num12
-        // accelerations seek the offset point).
-        let hover_y = pcy - 300.0;
-        // `ai[0]==0 && ai[1]==0` — the hover phase (the counter counts
-        // within it; the cast_windup selects the phase).
-        if self.cast_windup == 0 {
-            // The X: toward the player (num10 = 0.05? the vanilla's
-            // num10/num11 pair — the X accel to the player's X).
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.07;
-            if self.vx.abs() > 8.0 {
-                self.vx = 8.0 * self.vx.signum();
-            }
-            // The Y: toward the hover point (num10 = 0.05, the cap 8).
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.07;
-            if self.vy.abs() > 8.0 {
-                self.vy = 8.0 * self.vy.signum();
-            }
-            // `:20131-20144`: the charge timer — 600 ticks (the expert
-            // 0.35x) then the charge phase.
-            self.caster_counter += 1;
-            if self.caster_counter >= 600 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            // `ai[1]==1` (`:20196-20216`): the aim + the direct velocity.
-            self.rotation = self.vy.atan2(self.vx);
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 6.0;
-            self.vy = dy / d * 6.0;
-            self.cast_windup = 2;
-        } else {
-            // `ai[1]==2` (`:20217-20245`): the charge flies; after 40
-            // ticks the decel ×0.98 to the stop, then the hover resets.
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
-            }
-        }
-        // The rotation tracks the motion (the vanilla's eye spin — the
-        // port's hover arms set it on the charge only).
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        // `noTileCollide` — the direct integration (`:90495-90498`).
-        self.x += self.vx;
-        self.y += self.vy;
-        // The off-world guard.
-        if self.y > world.height as f32 * TILE_PX + 400.0 {
-            self.hp = 0;
-        }
-    }
 
     /// `AI_043`'s Queen Bee v1 (`NPC.cs:30190+`) — the EoC's cycle shape
     /// with the bee's numbers: the hover (the ±0.07 accels, the 8 cap),
@@ -2800,8 +3115,9 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
-            NpcKind::WallOfFlesh => 45,
-            NpcKind::TheDestroyer => 46,
+            NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
+            NpcKind::TheDestroyer => 47,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3978,8 +4294,114 @@ mod tests {
             assert!(stock.contains(&id), "the paint row {id} missing");
         }
     }
+    #[test]
+    fn eoc_hovers_dashes_and_phases() {
+        // The aiStyle-4 machine: the hover (ai[0]=0) approaches 200 px above
+        // the player, the dash chain (ai[1]=1→2×3) fires at 600 ticks, the
+        // spin phase (ai[0]=1/2) at <50% hp, the final (ai[0]=3) zeroes the
+        // defense.
+        let mut w = ground();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut eye =
+            Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        assert_eq!(eye.hp, 2800);
+        assert_eq!(eye.defense(), 12);
+        // The hover: the velocity steers toward the 200-px-above point.
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        eye.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(eye.ai[0], 0.0);
+        assert_eq!(eye.ai[1], 0.0);
+        assert!(eye.vy != 0.0 || eye.vx != 0.0, "the hover steers");
+        // 600 hover ticks flip to the dash chain.
+        for _ in 0..600 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(
+            eye.ai[1] == 1.0 || eye.ai[1] == 2.0,
+            "the dash chain runs (the wind-up is instantaneous)"
+        );
+        // The dash locks the velocity onto the target, then the flight
+        // counts to 150 and returns to the hover after 3 dashes — the
+        // machine cycles (the second hover's 600-tick arm may be mid-chain
+        // at the probe point).
+        for _ in 0..600 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(
+            eye.ai[3] <= 3.0 && eye.ai[0] == 0.0,
+            "the machine cycles inside phase 0"
+        );
+        // The half-hp spin phase: the rotation ramps, then the final phase.
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        eye.hp = 1000;
+        for _ in 0..4 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(eye.ai[0], 1.0, "phase 1 at <50% hp");
+        // The spin counts 100 ticks per phase → phase 2 → phase 3.
+        for _ in 0..300 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(eye.ai[0], 3.0, "the final phase");
+        assert_eq!(eye.defense(), 0, "the final phase zeroes the defense");
+    }
 
     #[test]
+    fn eoc_climbs_away_at_dawn() {
+        // `Main.IsItDay() | dead`: `velocity.Y -= 0.04` per tick.
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut eye =
+            Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        let start_y = eye.y;
+        for _ in 0..30 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(eye.y < start_y, "the dawn climb");
+    }
+
+    #[test]
+    fn eoc_bursts_servants_when_below_the_player() {
+        // The hover arm's servant burst: the eye below the player within
+        // 500 px counts `ai[3]` to 110 and requests the spawn.
+        let mut w = ground();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let (pcx, pcy) = player.center();
+        let mut eye =
+            Npc::spawn_eye_of_cthulhu(&w, pcx, pcy).unwrap();
+        // Re-anchor the eye below the player: the spawn put it 600 px above;
+        // the burst condition reads `self.y + h < player.y` (the eye ABOVE
+        // the player) — flip the positions: put the EYE high and the PLAYER
+        // below by moving the eye down and the player's Y under it.
+        eye.y = pcy - 300.0 - 110.0;
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        for _ in 0..130 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(
+            eye.wants_servant.is_some(),
+            "the servant burst request"
+        );
+        let (sx, sy, svx, svy) = eye.wants_servant.unwrap();
+        assert!(svx != 0.0 || svy != 0.0, "the launch velocity");
+        // The world sim resolves the request into a real servant.
+        let mut servant = Npc::spawn_servant_of_cthulhu(sx, sy, svx, svy);
+        assert_eq!(servant.max_hp, 8);
+        assert_eq!(servant.kind, NpcKind::ServantOfCthulhu);
+        servant.update(&w, &mut player, 1.0 / 60.0);
+        assert!(servant.hp > 0);
+    }
     fn the_witch_doctor_arrival_gate_and_shop() {
         // The arrival: the downedQueenBee gate (constants-off in the port).
         assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
@@ -4049,11 +4471,13 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        // The hover phase: 600 ticks moves the boss toward the hover point.
+        // The hover phase: 600 ticks move the boss toward the hover point,
+        // then the dash chain arms (`ai[1]` = 1, the wind-up — the full
+        // aiStyle-4 machine's state, not the v1 `cast_windup` latch).
         for _ in 0..600 {
             eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
-        assert!(eoc.cast_windup == 1, "the charge phase armed");
+        assert!(eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0, "the charge phase armed");
         // The charge: the velocity 6 toward the player.
         eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();

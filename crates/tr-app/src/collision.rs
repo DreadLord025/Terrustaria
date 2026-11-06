@@ -6,7 +6,7 @@
 
 use tr_core::tile::Tile;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
 /// `Main.tileSolid[type] || (Main.tileSolidTop[type] && frameY == 0)` — and
 /// the C#'s every solid test carries `!tile.inActive()`
@@ -131,7 +131,9 @@ pub fn tile_collision(
                 if s == 1 && pos[1] + height - vel[0].abs() <= ry + rh && pos[0] >= rx {
                     flag3 = true;
                 }
-                if s == 2 && pos[1] + height - vel[0].abs() <= ry + rh && pos[0] + width <= rx + TILE_PX
+                if s == 2
+                    && pos[1] + height - vel[0].abs() <= ry + rh
+                    && pos[0] + width <= rx + TILE_PX
                 {
                     flag3 = true;
                 }
@@ -188,7 +190,11 @@ pub fn tile_collision(
             }
         }
     }
-    TileCollision { vel: result, up, down }
+    TileCollision {
+        vel: result,
+        up,
+        down,
+    }
 }
 
 pub struct SlopeCollision {
@@ -547,6 +553,36 @@ pub fn step_down(
     }
 }
 
+/// `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2545`):
+/// resize the box keeping its bottom center. The shrink path (`num <= 0`)
+/// is pure geometry and always fits; the grow/widen paths probe tile
+/// clearance in 16 px steps (`TileCollisionInStepsOf16`) — not reachable
+/// from the mount code (the only caller shrinks the hitbox back to 20x42),
+/// so they return `None` until a consumer appears.
+pub fn try_changing_size_from_bottom_center(
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    target_w: f32,
+    target_h: f32,
+) -> Option<(f32, f32, f32, f32)> {
+    let num = target_h - h;
+    if num > 0.0 {
+        // `:2490-2508`: the grow path — `TileCollisionInStepsOf16` both ways.
+        return None;
+    }
+    // `:2509-2513`: `Offset(0, -num); Height = targetHeight` — the bottom
+    // stays anchored, the top drops to the new height.
+    let ny = y - num;
+    let num6 = target_w - w;
+    if num6 != 0.0 {
+        // `:2514-2545`: the widen/narrow paths probe clearance too.
+        return None;
+    }
+    Some((x, ny, w, target_h))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -577,15 +613,34 @@ mod tests {
         }
         // The 40 px body sits above the floor (the bottom at 316 < 320) and
         // moves 5 px down into row 20 — the landing clamps the velocity.
-        let solid_hit = tile_collision(&w, [8.0 * 16.0, 276.0], [0.0, 5.0], 20.0, 40.0, false, false);
+        let solid_hit = tile_collision(
+            &w,
+            [8.0 * 16.0, 276.0],
+            [0.0, 5.0],
+            20.0,
+            40.0,
+            false,
+            false,
+        );
         assert!(solid_hit.down, "the active floor stops the body");
         assert!(solid_hit.vel[1] < 5.0, "the velocity clamped to the floor");
         for x in 8..12 {
             let i = w.index(x, 20);
             w.tiles[i].flags |= tr_core::tile::FLAG_INACTIVE;
         }
-        let actuated_pass = tile_collision(&w, [8.0 * 16.0, 276.0], [0.0, 5.0], 20.0, 40.0, false, false);
-        assert!(!actuated_pass.down, "the actuated row does not stop the body");
+        let actuated_pass = tile_collision(
+            &w,
+            [8.0 * 16.0, 276.0],
+            [0.0, 5.0],
+            20.0,
+            40.0,
+            false,
+            false,
+        );
+        assert!(
+            !actuated_pass.down,
+            "the actuated row does not stop the body"
+        );
         assert_eq!(actuated_pass.vel[1], 5.0, "the velocity kept falling");
     }
 }

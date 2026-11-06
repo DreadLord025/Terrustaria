@@ -106,6 +106,7 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -155,6 +156,7 @@ impl World {
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
+
             altars_smashed: 0,
             butterfly_chance: 0,
         }
