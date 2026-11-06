@@ -323,6 +323,135 @@ fn worm_head_step(
     }
 }
 
+/// `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:681-763`): the
+/// Guide Voodoo Doll (267) that touches lava is consumed, strikes every
+/// town NPC dead (the Guide first, then the stack's remainder across the
+/// other town NPCs) and calls `NPC.SpawnWOF` at the drop's position.
+pub(crate) fn voodoo_doll_lava_death(app: &mut App, pos: Vec2, stack: u32) {
+    let mut num = stack.max(1) as i32;
+    // The Guide first (`Main.npc[i].type == 22`'s loop, `:702-718`): the
+    // `StrikeNPCNoInteraction(9999, 10f, -direction)` — the port kills
+    // outright (the death pass picks the kill credit up).
+    for n in app.npcs.iter_mut() {
+        if n.kind == NpcKind::Guide && n.hp > 0 {
+            n.hp = 0;
+            num -= 1;
+        }
+    }
+    // The remainder across the other town NPCs (`isLikeATownNPC`'s list,
+    // `:730-753` — the random `List` walk; the port walks the spawn order).
+    if num > 0 {
+        for n in app.npcs.iter_mut() {
+            if num <= 0 {
+                break;
+            }
+            if matches!(
+                n.kind,
+                NpcKind::Merchant
+                    | NpcKind::Dryad
+                    | NpcKind::Nurse
+                    | NpcKind::ArmsDealer
+                    | NpcKind::Demolitionist
+                    | NpcKind::Painter
+                    | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
+            ) && n.hp > 0
+            {
+                n.hp = 0;
+                num -= 1;
+            }
+        }
+    }
+    spawn_wof_at(app, pos);
+}
+
+/// `NPC.SpawnWOF` (`NPC.cs:80315-80378`): the underworld gates (the depth
+/// `maxTilesY - 205`, no living wall), the 1200-px player-clearance scan
+/// (`num2` steps 16 px away from the world's centre side), the free-row
+/// search (`SolidTile || liquid >= 100` blocked, expanding `num6` up/down
+/// 1000 steps), the `UnderworldLayer+10..+80` row clamp and the spawn +
+/// the `Announcement.HasAwoken` broadcast.
+pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
+    let world = &app.world;
+    let underworld = world.height as i32 - 200; // `Main.UnderworldLayer`
+    // The gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and the wall.
+    if (pos.y / TILE_PX) < (world.height as f32 - 205.0)
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
+    {
+        return false;
+    }
+    // The player-clearance scan: step 16 px away from the world centre's
+    // side while a player sits within 1200 px (`:80322-80346`).
+    let mut num2 = pos.x as i32;
+    let num = if (pos.x / TILE_PX) > world.width as f32 / 2.0 { -1 } else { 1 };
+    let mut target_player = 0usize;
+    let mut flag = false;
+    while !flag {
+        flag = true;
+        if let Some(p) = app.player.as_ref() {
+            if p.x > (num2 - 1200) as f32 && p.x < (num2 + 1200) as f32 {
+                num2 -= num * 16;
+                flag = false;
+                target_player = 0;
+            }
+        }
+        let _ = target_player;
+    }
+    // The free-row search at the doll's column.
+    let num4 = (num2 / 16).clamp(1, world.width as i32 - 2);
+    let mut num5 = (pos.y / TILE_PX) as i32;
+    let solid_like = |x: i32, y: i32| -> bool {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+            || world.tile(x, y).is_some_and(|t| t.liquid >= 100)
+    };
+    if !world.in_bounds(num4, num5) || solid_like(num4, num5) {
+        let mut num6 = 0;
+        let mut num7 = 1000;
+        while num7 > 0 {
+            num7 -= 1;
+            let up_ok = world.in_bounds(num4, num5 - num6)
+                && !solid_like(num4, num5 - num6)
+                && world
+                    .tile(num4, num5 - num6)
+                    .is_some_and(|t| t.liquid < 100);
+            if up_ok {
+                num5 -= num6;
+                break;
+            }
+            let down_ok = world.in_bounds(num4, num5 + num6)
+                && !solid_like(num4, num5 + num6)
+                && world
+                    .tile(num4, num5 + num6)
+                    .is_some_and(|t| t.liquid < 100);
+            if down_ok {
+                num5 += num6;
+                break;
+            }
+            num6 += 1;
+        }
+    }
+    // The row clamp to the underworld band.
+    let num8 = underworld + 10;
+    let num9 = num8 + 70;
+    num5 = num5.clamp(num8, num9);
+    let mut boss = Npc::new(NpcKind::WallOfFlesh, num2 as f32, num5 as f32 * TILE_PX, 1, 0.0);
+    boss.hp = boss.max_hp;
+    app.npcs.push(boss);
+    // `ChatHelper.BroadcastChatMessage("Announcement.HasAwoken", ...)`
+    // (`:80378`) — the literal stands in for the localization key.
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "The Wall of Flesh has awoken!",
+        crate::chat::COLOR_COMMAND,
+    );
+    true
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     app.npc_timer -= dt;
@@ -991,4 +1120,123 @@ mod tests {
         spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
     }
+
+#[cfg(test)]
+mod voodoo_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
+    use tr_core::world::World;
+
+    /// A hell world: the stone floor at row `hell_floor`, the lava pool on
+    /// top of it, the underworld band below (`maxTilesY - 200`).
+    fn hell_world() -> World {
+        let mut w = World::new("hell".into(), 400, 700);
+        for x in 0..w.width {
+            for y in 500..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        // The lava pool at the drop site (rows 498-499, columns 190-210).
+        for x in 190..210 {
+            for y in 498..500 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+                w.tiles[i].liquid = 255;
+                w.tiles[i].set_liquid_kind(LiquidKind::Lava);
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_voodoo_doll_sacrifice_kills_the_guide_and_spawns_the_wall() {
+        // `VoodooDollLavaDeath` + `SpawnWOF`: the doll in the underworld
+        // lava kills the Guide (9999) and spawns the wall at the
+        // player-clearance x inside the band rows.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 200.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        let player_x = player.x;
+        app.player = Some(player);
+        let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+        crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 1);
+        // The Guide died.
+        assert!(app
+            .npcs
+            .iter()
+            .all(|n| n.kind != NpcKind::Guide || n.hp <= 0));
+        // The wall spawned inside the underworld band.
+        let wall = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::WallOfFlesh)
+            .expect("the wall spawned");
+        let band_top = (app.world.height as i32 - 200 + 10) as f32 * TILE_PX;
+        let band_bottom = (app.world.height as i32 - 200 + 80) as f32 * TILE_PX;
+        assert!(
+            wall.y >= band_top && wall.y <= band_bottom,
+            "the wall row clamped into the band ({})",
+            wall.y
+        );
+        // The clearance: the spawn x sits at least 1200 px from the player.
+        let dx = (wall.x - player_x).abs();
+        assert!(dx >= 1200.0, "the spawn cleared the player ({dx})");
+    }
+
+    #[test]
+    fn the_wall_spawn_refuses_outside_the_underworld_and_while_alive() {
+        // `SpawnWOF`'s gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and
+        // the living wall.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 200.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        app.player = Some(player);
+        // The surface position: refused.
+        let surface = Vec2::new(200.0 * TILE_PX, 120.0 * TILE_PX);
+        assert!(!crate::world_sim::npcs::spawn_wof_at(&mut app, surface));
+        // A living wall blocks the second spawn.
+        let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+        assert!(crate::world_sim::npcs::spawn_wof_at(&mut app, pos));
+        assert!(!crate::world_sim::npcs::spawn_wof_at(&mut app, pos), "one wall only");
+    }
+
+    #[test]
+    fn the_doll_reminder_kills_a_second_town_npc() {
+        // The stack remainder: a doll stack of 2 kills the Guide AND one
+        // more town NPC (`num` walks the town list, `:730-753`).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 200.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        app.player = Some(player);
+        let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+        guide.hp = guide.max_hp;
+        app.npcs.push(guide);
+        let mut merchant = Npc::new(NpcKind::Merchant, 204.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+        merchant.hp = merchant.max_hp;
+        app.npcs.push(merchant);
+        let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+        crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 2);
+        assert!(app.npcs.iter().all(|n| n.kind != NpcKind::Guide || n.hp <= 0));
+        assert!(app
+            .npcs
+            .iter()
+            .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0));
+    }
+}
+
 }

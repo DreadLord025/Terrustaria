@@ -42,6 +42,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let coins = &mut app.coins;
     let inventory = &mut app.inventory;
     let audio = &mut app.audio;
+    let mut voodoo: Option<(Vec2, u32)> = None;
     app.item_step.tick(dt.min(0.25), |step| {
         let player_center = player.as_ref().map(|p| Vec2::new(p.center().0, p.center().1));
         // `AchievementsHelper.NotifyItemPickup`'s registry handle.
@@ -49,6 +50,24 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
+            // `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:418-421`,
+            // `:681-763`): the doll in lava is consumed and the sacrifice
+            // runs (the resolve rides the post-tick pass — the closure holds
+            // the items borrow).
+            if drop.kind == 267 {
+                let tx = (drop.center().x / TILE_PX) as i32;
+                let ty = (drop.center().y / TILE_PX) as i32;
+                let in_lava = world
+                    .tile(tx, ty)
+                    .is_some_and(|t| {
+                        t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
+                    });
+                if in_lava {
+                    voodoo = Some((drop.center(), drop.count));
+                    items.swap_remove(i);
+                    continue;
+                }
+            }
             if drop.update(world, player_center, step) {
                 if registry::is_coin(drop.kind) {
                     *coins = (*coins).saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
@@ -75,6 +94,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         }
     });
     app.item_step.cap_backlog();
+    // The voodoo sacrifice resolves after the items borrow drops (the
+    // spawn/kill pass takes `app` wholesale).
+    if let Some((pos, stack)) = voodoo {
+        crate::world_sim::npcs::voodoo_doll_lava_death(app, pos, stack);
+    }
 }
 
 /// Spawns the drop left by a broken tile, with a small random pop like
