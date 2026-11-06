@@ -39,6 +39,54 @@ fn no_cache() -> bool {
 }
 
 impl App {
+    /// `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`), ticked
+    /// per drawn frame before the interface handlers read it: the idle reset,
+    /// then the `stackDelay` decay ladder (30/25/20/15/10/5 frames keyed on
+    /// the current delay 7..3) that bottoms the delay at 2 and grows
+    /// `superFastStack` once the tries pass 10 (~2 s of holding).
+    pub(crate) fn tick_stack_split(&mut self) {
+        if self.stack_split == 0 {
+            self.times_tried_to_fast_stack = 0;
+            self.stack_counter = 0;
+            self.stack_delay = 7;
+            self.super_fast_stack = 0;
+            return;
+        }
+        self.stack_counter += 1;
+        let step = match self.stack_delay {
+            7 => 30,
+            6 => 25,
+            5 => 20,
+            4 => 15,
+            3 => 10,
+            _ => 5,
+        };
+        if self.stack_counter >= step {
+            self.stack_delay -= 1;
+            if self.stack_delay < 2 {
+                self.stack_delay = 2;
+                self.super_fast_stack += 1;
+            }
+            if self.times_tried_to_fast_stack < 10 {
+                self.super_fast_stack = 0;
+            }
+            self.times_tried_to_fast_stack += 1;
+            self.stack_counter = 0;
+        }
+    }
+
+    /// `Main.cs:62466-62473` — the stack-split decay after the interface's
+    /// MouseUI pass: no mouse button held resets the split, then one tick
+    /// comes off.
+    pub(crate) fn decay_stack_split(&mut self) {
+        if !self.mine_down && !self.place_down {
+            self.stack_split = 0;
+        }
+        if self.stack_split > 0 {
+            self.stack_split -= 1;
+        }
+    }
+
     pub(crate) fn frame(&mut self) {
         let now = Instant::now();
         // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
@@ -171,13 +219,23 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
+            // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
+            // ticked before the interface handlers read the state.
+            self.tick_stack_split();
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
             self.handle_bestiary_clicks();
-            if !self.handle_crafting_clicks() {
+            // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
+            // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
+            // and inventory handlers and consumes the press when a chest
+            // slot, the shift transfer or a chest tile took it.
+            if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
                 self.handle_inventory_clicks();
             }
+            // `Main.cs:62466-62473` — the stack-split decay, after the
+            // interface's MouseUI pass.
+            self.decay_stack_split();
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
                 if *scale < target {

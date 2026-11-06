@@ -211,6 +211,29 @@ pub(crate) struct App {
     pub(crate) chest_button_scales: [f32; ui::chest::BUTTON_COUNT],
     /// `ChestUI.ButtonHovered` (`ChestUI.cs:50`).
     pub(crate) chest_button_hovered: [bool; ui::chest::BUTTON_COUNT],
+    /// `Main.stackSplit` (`Main.cs:1693`): the slot stack-split's repeat
+    /// cooldown — 0 idle, >1 gating the next transfer (`ItemSlot.cs:1700`).
+    /// Ticked per drawn frame by `app::frame` (the Main.cs:61781-61807
+    /// accelerator + the :62466-62473 decay).
+    pub(crate) stack_split: i32,
+    /// `Main.stackDelay` (`Main.cs:1694`): the repeat delay between
+    /// right-click transfers, decaying 7 → 2 by the accelerator ladder.
+    pub(crate) stack_delay: i32,
+    /// `Main.stackCounter` (`Main.cs:1695`): frames toward the next
+    /// `stackDelay` decay step.
+    pub(crate) stack_counter: i32,
+    /// `Main.superFastStack` (`Main.cs:1696`): extra items per frame once the
+    /// delay bottoms out (~2 s of holding).
+    pub(crate) super_fast_stack: i32,
+    /// `Main.timesTriedToFastStack` (`Main.cs:1697`).
+    pub(crate) times_tried_to_fast_stack: i32,
+    /// `Main.cursorOverride` (`Main.cs:2047`): the hovered slot's
+    /// alternate-click cursor — 8 = transfer from the chest, 9 = transfer to
+    /// it (`ItemSlot.cs:213-218`) — or −1. Reset per interface frame
+    /// (`Main.cs:44941`), set by the chest hover evaluation (`ItemSlot.cs:
+    /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
+    /// phase-4 file scope excludes assets.rs/cursor.rs).
+    pub(crate) cursor_override: i32,
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
@@ -1589,6 +1612,15 @@ impl App {
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
+            // `Main.stackSplit`'s cluster — the C# statics start at 0
+            // (`Main.cs:1693-1697`); the first idle tick installs the
+            // `stackDelay` 7 (`Main.cs:61781-61807`).
+            stack_split: 0,
+            stack_delay: 0,
+            stack_counter: 0,
+            super_fast_stack: 0,
+            times_tried_to_fast_stack: 0,
+            cursor_override: -1,
             craft_rng: 1,
             menu: menu_state,
             front: None,

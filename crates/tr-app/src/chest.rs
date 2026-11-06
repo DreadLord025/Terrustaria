@@ -24,8 +24,9 @@
 use glam::Vec2;
 
 use crate::app::App;
-use crate::item::EMPTY_SLOT;
+use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemSlot};
 use crate::player;
+use crate::registry;
 use tr_core::{TILE_PX, World};
 
 /// One chest slot: `(item kind, stack)` — the C# `Chest.item[]` entry minus
@@ -648,6 +649,301 @@ fn in_interaction_range_to_multi_tile_hitbox(app: &App, p: &player::Player) -> b
     let ly = (p.y / 16.0) as i32 - 3;
     let hy = ((p.y + p.height) / 16.0).ceil() as i32 - 1 + 3;
     (lx..=hx).contains(&tx) && (ly..=hy).contains(&ty)
+}
+
+// --- Slot interactions (M3-CHEST-UI phase 4) --------------------------------
+//
+// The chest-side click helpers: the shift transfers (`ItemSlot.OverrideLeftClick`
+// cursor 8/9, `ItemSlot.cs:800-850`), `ChestUI.TryPlacingInChest`
+// (`ChestUI.cs:1209-1289`) and the favorite context tables (`ItemSlot.cs:
+// 386-394`). The per-slot click dispatch itself lives in `app/clicks.rs`
+// (`handle_chest_clicks`); the right-click stack-split's timing state is
+// `Main.stackSplit`'s cluster (`Main.cs:1693-1697`), ticked by `app/frame.rs`.
+// Out: the bank containers (M3-STORE-1 — `GetCurrentContainer`'s chest < -1
+// arms and the bank-only `IsBlockedFromTransferIntoChest`, `ChestUI.cs:
+// 1291-1302`), the net messages 32/38 (`:1247`/:1258/:1283, `ItemSlot.cs:808`),
+// `DoCoins`' roll-over (`Player.cs:39567-39569` — unported everywhere), the
+// cursor-override texture draw (see `App.cursor_override`).
+
+/// Reads chest slot `slot` of the store entry `idx` with the implicit-air
+/// encoding (decision #4): positions beyond `slots.len()` answer `(0, 0)`,
+/// the C#'s air `Chest.item[i]` entries. `None` for a missing/removed entry.
+pub(crate) fn chest_slot(chests: &[WorldChest], idx: usize, slot: usize) -> Option<ChestSlot> {
+    chest_slots(chests, idx).map(|slots| slots.get(slot).copied().unwrap_or((0, 0)))
+}
+
+/// Writes chest slot `slot` of the entry `idx`, extending with airs first when
+/// the position is past the stored length (decision #4). The written value is
+/// normalized to air — the C#'s `SetDefaults(0)` / `new Item()` writes
+/// (`ItemSlot.cs:976-979`, `ChestUI.cs:1244/:1278`) — so the store never holds
+/// a half-air slot. `false` for a missing/removed entry.
+pub(crate) fn set_chest_slot(
+    chests: &mut [WorldChest],
+    idx: usize,
+    slot: usize,
+    value: ChestSlot,
+) -> bool {
+    let Some(chest) = chests.get_mut(idx).filter(|c| !is_removed(c)) else {
+        return false;
+    };
+    let value = if value.0 == 0 || value.1 == 0 {
+        (0, 0)
+    } else {
+        value
+    };
+    if slot >= chest.slots.len() {
+        chest.slots.resize(slot + 1, (0, 0));
+    }
+    chest.slots[slot] = value;
+    true
+}
+
+/// `ItemSlot.canFavoriteAt` (`ItemSlot.cs:386-394`): only the inventory
+/// contexts 0/1/2/32 can favorite — a chest slot (3) cannot, so its items
+/// never carry the flag and the cursor-3 favorite arm never fires on them.
+pub(crate) fn can_favorite_at(context: i32) -> bool {
+    matches!(context, 0 | 1 | 2 | 32)
+}
+
+/// `ItemSlot.retainFavoriteOnMoveAt` (`ItemSlot.cs:390-394`): the contexts
+/// whose `MouseItemSwap` keeps the favorite flag (`:1255-1263` — every other
+/// context clears it on both sides). Context 3 is not in the table, so
+/// moving an item out of a chest clears `favorited` — the port's `ItemSlot`
+/// carries no favorite field yet (item.rs:52-57), so the clear is a no-op
+/// with this citation until M7-UI-2 lands the flag.
+pub(crate) fn retain_favorite_on_move_at(context: i32) -> bool {
+    matches!(context, 0 | 1 | 2 | 32 | 5)
+}
+
+/// `Player.ItemSpace(item).CanTakeItemToPersonalInventory`
+/// (`Player.cs:39153-39197`) for the shift-out cursor: any grid slot accepts
+/// the item (`CanItemSlotAcceptPickup`, `:39220-39232` — empty, or a
+/// same-kind partial stack), or the ungated same-kind merge scan over the
+/// ammo slots (`:39185-39191`). The `IsAPickup`/`uniqueStack` sets, the
+/// `ammo > 0` FillAmmo arm (`:39175-39184`) and the Cofveve void scan
+/// (`:39192-39195`) have no port counterparts yet.
+pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
+    if kind == 0 {
+        return false;
+    }
+    let max = registry::max_stack(kind);
+    if app
+        .inventory
+        .iter()
+        .any(|s| s.count == 0 || (s.kind == kind && s.count < max))
+    {
+        return true;
+    }
+    app.equip
+        .ammo
+        .iter()
+        .any(|s| s.count > 0 && s.kind == kind && s.count < max)
+}
+
+/// `ChestUI.TryPlacingInChest` (`ChestUI.cs:1209-1289`) — the shift-in
+/// transfer from inventory `slot` into the open chest: a stack-merge pass
+/// over every partial same-kind chest slot, then the whole remainder into the
+/// first empty slot. The return mirrors the C#'s `flag2`: only the
+/// `just_check` branches set it (`:1234-1237`/:1271-1274), so the real pass
+/// always answers false — its only caller ignores the value
+/// (`ItemSlot.cs:846`) — and mutates without playing a cue for the probe.
+/// The bank containers (`chest < -1`) are M3-STORE-1;
+/// `IsBlockedFromTransferIntoChest` (`:1291-1302`) is a bank-only rule —
+/// noted for STORE-1.
+pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool) -> bool {
+    if app.chest < 0 {
+        return false; // `GetCurrentContainer`'s world-chest arm (`:1213`)
+    }
+    let item = app.inventory[slot];
+    if item.kind == 0 || item.count == 0 {
+        return false; // an air item never merges and never fills (`item.maxStack` 0)
+    }
+    let chest = app.chest as usize;
+    let kind = item.kind;
+    let max = registry::max_stack(kind);
+    let mut stack = item.count;
+    let mut placeable = false;
+    // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
+    if max > 1 {
+        for i in 0..DEFAULT_MAX_ITEMS as usize {
+            let Some(s) = chest_slot(&app.world_chests, chest, i) else {
+                break;
+            };
+            // `:1225` — a full, air (an air slot's maxStack 0 fails
+            // `stack >= maxStack`) or alien-kind slot skips.
+            if s.0 == 0 || s.1 >= registry::max_stack(s.0) || s.0 != kind {
+                continue;
+            }
+            let slot_max = registry::max_stack(s.0);
+            // `:1229-1233` — the amount, capped by the slot's room.
+            let mut num = stack;
+            if stack + s.1 > slot_max {
+                num = slot_max - s.1;
+            }
+            if just_check {
+                placeable = placeable || num > 0; // `:1234-1237`
+                break;
+            }
+            // `:1239-1241` — the merge, sound 7. (The `:1251-1255`
+            // `item2[i].type == 0` re-clone arm is dead behind the `:1225`
+            // skip: a non-skipped slot already carries the transferring kind.)
+            set_chest_slot(&mut app.world_chests, chest, i, (kind, s.1 + num));
+            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1241`)
+            stack -= num;
+            if stack == 0 {
+                break; // `:1242-1249` — `SetDefaults(0)`
+            }
+        }
+    }
+    // The empty-slot pass (`ChestUI.cs:1262-1287`) — one slot takes the whole
+    // remainder.
+    if stack > 0 {
+        for j in 0..DEFAULT_MAX_ITEMS as usize {
+            let Some(s) = chest_slot(&app.world_chests, chest, j) else {
+                break;
+            };
+            if s.1 != 0 {
+                continue; // `:1267`
+            }
+            if just_check {
+                placeable = true; // `:1271-1274`
+                break;
+            }
+            app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1276`)
+            set_chest_slot(&mut app.world_chests, chest, j, (kind, stack));
+            stack = 0; // `:1277-1278` — `item.Clone()` + `SetDefaults(0)`
+            break;
+        }
+    }
+    if !just_check {
+        // The drained slot's remainder — air when fully moved
+        // (`:1244`/:1278's `SetDefaults(0)` write-through).
+        app.inventory[slot] = if stack == 0 {
+            EMPTY_SLOT
+        } else {
+            ItemSlot {
+                kind,
+                name: registry::name(kind),
+                count: stack,
+            }
+        };
+    }
+    placeable
+}
+
+/// The shift-out transfer of one chest slot into the player's inventory —
+/// the cursor-8 arm of `ItemSlot.OverrideLeftClick` (`ItemSlot.cs:800-812`):
+/// `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`.
+/// `GetItemSettings.QuickTransferFromSlot` (`GetItemSettings.cs:58`) is
+/// NoText-only. The remainder stays in the chest slot. Out: the
+/// `FitsAmmoSlot`/`FillAmmo` pre-pass (`Player.cs:39345-39352` — no
+/// ammo-accept registry yet), `DoCoins` (`:39567-39569`), the void vault
+/// (`:39395-39398`).
+pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
+    /// `GetItem_FillIntoOccupiedSlot`'s merge step (`Player.cs:39485-39524`):
+    /// as much of `remainder` as the same-kind partial slot accepts.
+    fn merge_into(s: &mut ItemSlot, kind: u16, max: u32, remainder: &mut u32) -> u32 {
+        if s.count > 0 && s.kind == kind && s.count < max && *remainder > 0 {
+            let moved = (max - s.count).min(*remainder);
+            s.count += moved;
+            *remainder -= moved;
+            moved
+        } else {
+            0
+        }
+    }
+
+    /// `GetItem_FillEmptyInventorySlot` (`Player.cs:39551-39578`): one empty
+    /// slot takes the whole remainder.
+    fn fill_empty(s: &mut ItemSlot, kind: u16, remainder: &mut u32) -> bool {
+        if s.count == 0 && *remainder > 0 {
+            *s = ItemSlot {
+                kind,
+                name: registry::name(kind),
+                count: *remainder,
+            };
+            *remainder = 0;
+            true
+        } else {
+            false
+        }
+    }
+
+    if app.chest < 0 {
+        return;
+    }
+    let chest_idx = app.chest as usize;
+    let Some((kind, stack)) = chest_slot(&app.world_chests, chest_idx, chest_slot_idx) else {
+        return;
+    };
+    if kind == 0 || stack == 0 {
+        return;
+    }
+    let max = registry::max_stack(kind);
+    let is_coin = registry::is_coin(kind); // `Item.IsACoin` (`Item.cs:373-383`)
+    let mut remainder = stack;
+    let App {
+        inventory,
+        equip,
+        audio,
+        world_chests,
+        ..
+    } = app;
+    // The occupied-slot pass (`Player.cs:39353-39364`): coins start at the C#
+    // coin slots 50-53 (the `num2 = -4` arm, `:39340-39343`), then the grid.
+    // `:39444` — `IsACoin ? 38 : 7` per accepted slot; the port's coin cue is
+    // "Coin_0" (the drop-pickup precedent).
+    if is_coin {
+        for s in equip.coins.iter_mut() {
+            if merge_into(s, kind, max, &mut remainder) > 0 {
+                audio.play("Coin_0");
+            }
+            if remainder == 0 {
+                break;
+            }
+        }
+    }
+    for s in inventory[..INV].iter_mut() {
+        if merge_into(s, kind, max, &mut remainder) > 0 {
+            audio.play("Grab"); // `:39444` — the non-coin arm
+        }
+        if remainder == 0 {
+            break;
+        }
+    }
+    // The empty-slot passes (`Player.cs:39365-39394`): the hotbar-first arm
+    // for usable kinds (`useStyle != 0`, `:39365-39374`), then the
+    // non-favorited REVERSE scan (`:39387-39394`; chest items cannot be
+    // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
+    // forward arm `:39375-39384` is unreachable here). Coins scan the coin
+    // slots descending first (`num = 54`).
+    if remainder > 0 && crate::item::use_style(kind) != 0 {
+        for s in inventory[..HOTBAR].iter_mut() {
+            if fill_empty(s, kind, &mut remainder) {
+                audio.play("Grab"); // `:39559`
+                break;
+            }
+        }
+    }
+    if remainder > 0 && is_coin {
+        for s in equip.coins.iter_mut().rev() {
+            if fill_empty(s, kind, &mut remainder) {
+                audio.play("Coin_0"); // `:39559`
+                break;
+            }
+        }
+    }
+    if remainder > 0 {
+        for s in inventory[..INV].iter_mut().rev() {
+            if fill_empty(s, kind, &mut remainder) {
+                audio.play("Grab"); // `:39559`
+                break;
+            }
+        }
+    }
+    // `:800-812`'s `inv[slot] = ...` — the unplaced remainder stays in the
+    // chest slot.
+    set_chest_slot(world_chests, chest_idx, chest_slot_idx, (kind, remainder));
 }
 
 #[cfg(test)]
@@ -1315,5 +1611,67 @@ mod tests {
         assert!(!unlock_chest(&mut w, 119, 10, true));
         assert!(!lock_chest(&mut w, 119, 10, true));
         assert_eq!(w.tile(119, 10).unwrap().frame_x, 72, "unchanged");
+    }
+
+    // --- Phase 4: the slot-interaction helpers -------------------------------
+
+    /// DW-4.4 — `ItemSlot.canFavoriteAt` (`ItemSlot.cs:386-394`): only the
+    /// inventory contexts 0/1/2/32 can favorite — a chest slot (3) can never
+    /// carry the flag, so the cursor-3 favorite arm never fires on it.
+    #[test]
+    fn dw_4_4_can_favorite_at_excludes_chest_context() {
+        assert!(can_favorite_at(0));
+        assert!(can_favorite_at(1));
+        assert!(can_favorite_at(2));
+        assert!(can_favorite_at(32));
+        assert!(!can_favorite_at(3), "chest slots cannot be favorited");
+        assert!(!can_favorite_at(5));
+        assert!(!can_favorite_at(13));
+    }
+
+    /// DW-4.4 — `ItemSlot.retainFavoriteOnMoveAt` (`ItemSlot.cs:390-394`):
+    /// moving out of a chest (3) clears the favorite (`MouseItemSwap`,
+    /// `ItemSlot.cs:1255-1263`). The port's `ItemSlot` carries no favorite
+    /// field yet (item.rs:52-57), so the clear itself is a no-op with the
+    /// citation — the tables are the ported rule, M7-UI-2 consumes them.
+    #[test]
+    fn dw_4_4_retain_favorite_on_move_excludes_chest_context() {
+        for ctx in [0, 1, 2, 32, 5] {
+            assert!(retain_favorite_on_move_at(ctx), "ctx {ctx} retains");
+        }
+        assert!(
+            !retain_favorite_on_move_at(3),
+            "a chest move clears the favorite"
+        );
+        assert!(!retain_favorite_on_move_at(4));
+    }
+
+    /// The implicit-air slot helpers (decision #4): reads past the stored
+    /// length answer air, writes extend with airs first and normalize
+    /// half-air values to air, and a removed/missing entry refuses.
+    #[test]
+    fn chest_slot_read_write_with_implicit_air() {
+        let mut chests: Vec<WorldChest> = Vec::new();
+        let idx = create_chest(&mut chests, 10, 18);
+        assert_eq!(
+            chest_slot(&chests, idx, 5),
+            Some((0, 0)),
+            "beyond len is air"
+        );
+        assert!(set_chest_slot(&mut chests, idx, 35, (9, 3)));
+        assert_eq!(chests[idx].slots.len(), 36, "extended with airs first");
+        assert_eq!(chests[idx].slots[34], (0, 0), "the extension filled air");
+        assert_eq!(chest_slot(&chests, idx, 35), Some((9, 3)));
+        // Half-air values normalize to air (the `SetDefaults(0)` writes).
+        assert!(set_chest_slot(&mut chests, idx, 35, (9, 0)));
+        assert_eq!(chest_slot(&chests, idx, 35), Some((0, 0)));
+        assert!(set_chest_slot(&mut chests, idx, 36, (0, 7)));
+        assert_eq!(chest_slot(&chests, idx, 36), Some((0, 0)));
+        assert!(chests[idx].is_empty(), "the writes left pure air");
+        // A removed or out-of-range entry refuses both directions.
+        remove_chest(&mut chests, idx);
+        assert_eq!(chest_slot(&chests, idx, 0), None);
+        assert!(!set_chest_slot(&mut chests, idx, 0, (9, 1)));
+        assert_eq!(chest_slot(&chests, 9, 0), None);
     }
 }
