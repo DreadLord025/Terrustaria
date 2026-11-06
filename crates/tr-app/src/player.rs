@@ -1529,12 +1529,51 @@ impl Player {
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
 
-        self.update_frames();
+        self.update_frames(world);
 
         // `Player.cs:27618-27635`: the release flags recompute at the end of
         // the tick — the double-tap reads the press edges against them.
         self.right_prev = input.right;
         self.left_prev = input.left;
+    }
+
+    /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
+    /// still air/fly, a 4px-down tile probe snapping shut pulls the frame to
+    /// the grounded set on the touchdown tick (the C# re-probes
+    /// `TileCollision` with `UnitY * gravDir * 4`).
+    fn try_landing(&mut self, world: &World) {
+        if !matches!(
+            self.mount.frame_state(),
+            crate::mount::FRAME_FLYING | crate::mount::FRAME_IN_AIR
+        ) {
+            return;
+        }
+        // The `!controlUp && !controlDown && !controlJump` gate — the port
+        // has no controlUp input yet.
+        if self.control_down || self.control_jump {
+            return;
+        }
+        let probe = collision::tile_collision(
+            world,
+            [self.x, self.y],
+            [0.0, 4.0],
+            WIDTH,
+            self.height,
+            false,
+            false,
+        );
+        if probe.vel[1] == 0.0 {
+            // `GetIntendedGroundedFrame` (`Mount.cs:4547-4560`).
+            let state = if self.vx == 0.0
+                || ((self.slippy || self.slippy2) && !self.control_left && !self.control_right)
+            {
+                crate::mount::FRAME_STANDING
+            } else {
+                crate::mount::FRAME_RUNNING
+            };
+            self.mount
+                .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+        }
     }
 
     /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
@@ -1548,7 +1587,57 @@ impl Player {
     /// The wings/mount/pulley/hold-style branches of the original are not modelled yet,
     /// and item-use body frames are applied by the app via [`Player::apply_item_use_frame`]
     /// while a swing is active.
-    fn update_frames(&mut self) {
+    fn update_frames(&mut self, world: &World) {
+        // `Player.cs:36148-36217`: while mounted, the mount owns the leg
+        // frames and runs its own animator — the unmounted logic below is
+        // gated off exactly like the original's `flag7`.
+        if self.mount.is_active() {
+            // `:36150-36161`: the leg frames force to row 6 (the rows 0
+            // carve-out is for 23/45/48 — no rows here).
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 6;
+            // `:36155-36216`: the state selection.
+            if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
+                if self.mount.fly_time() > 0
+                    && self.jump == 0
+                    && self.control_jump
+                    && !self.mount.can_hover()
+                {
+                    // `:36199-36200`: `TryBeginningFlight` only fires for
+                    // hover mounts (`Mount.cs:4537` — none in this table);
+                    // the Rudolph dust trail is a visual seam.
+                    self.mount
+                        .update_frame(crate::mount::FRAME_FLYING, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.try_landing(world);
+                } else if self.wet {
+                    // `:36203-36206`: the swim state (the ground mounts'
+                    // swim sets reuse their in-air frames).
+                    self.mount
+                        .update_frame(crate::mount::FRAME_SWIMMING, self.vx, self.vy, self.just_jumped, self.control_down);
+                } else {
+                    // `:36207-36212`: plain air.
+                    self.mount
+                        .update_frame(crate::mount::FRAME_IN_AIR, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.try_landing(world);
+                }
+            } else {
+                // `:36216` -> `GetIntendedGroundedFrame` (`Mount.cs:4547-4560`):
+                // the hooks-grapple arm cannot fire (no rows in CanUseHooks);
+                // the `windPushed` term has no port counterpart.
+                let state = if self.vx == 0.0
+                    || ((self.slippy || self.slippy2) && !self.control_left && !self.control_right)
+                {
+                    crate::mount::FRAME_STANDING
+                } else {
+                    crate::mount::FRAME_RUNNING
+                };
+                self.mount
+                    .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+            }
+            // `:36488`: the body frame locks to the mount's row.
+            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
+            return;
+        }
         if self.vy != 0.0 {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 5;
@@ -5596,4 +5685,116 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert_eq!(p.mount.kind(), 10, "the pin re-equipped after the clear");
     }
+
+    // -- M2-MOUNT-1 phase 4: the frame animator ------------------------------
+
+    #[test]
+    fn the_queen_slime_run_counter_advances_at_half_speed() {
+        // DW-4.1 — `Mount.cs:4277-4279` (type 50: `|vx| * 0.5`) with the
+        // 16-tick delay and the 5-frame wrap (`:2194-2244` row).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(50, false);
+        p.vx = 4.0;
+        // 2.0 per tick, one crossing per tick — 8 ticks per frame; the first
+        // crossing lands on tick 9, the second on 17.
+        for _ in 0..17 {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_RUNNING);
+        assert_eq!(p.mount.frame(), 2, "two steps in 17 ticks");
+        // crossings at 25/33/41: the fourth step exits the 5-frame band...
+        for _ in 0..(8 * 3) {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.mount.frame(), 0, "wrapped back into the running band");
+    }
+
+    #[test]
+    fn the_rudolph_idle_pick_is_deterministic_and_reaches_the_idle_band() {
+        // DW-4.2 — the idle timer (`Mount.cs:4145-4181`) through the
+        // splitmix stand-in: same tick sequence, same picks.
+        let w = ground_world();
+        let mut a = Player::spawn(&w);
+        let mut b = Player::spawn(&w);
+        a.set_mount(0, false);
+        b.set_mount(0, false);
+        let mut reached_idle = false;
+        for tick in 0..2500 {
+            a.update_frames(&w);
+            b.update_frames(&w);
+            assert_eq!(a.mount.frame(), b.mount.frame(), "tick {tick}: same pick");
+            assert!(a.mount.frame() != 1, "standing still never runs");
+            if a.mount.frame() >= 2 && a.mount.frame() <= 5 {
+                reached_idle = true;
+            }
+        }
+        assert!(reached_idle, "the idle band (frames 2-5) was reached");
+    }
+
+    #[test]
+    fn the_air_state_picks_the_in_air_row_and_rudolph_reaches_fly_frames() {
+        // DW-4.3 — `Player.cs:36155-36216`: the in-air row right after the
+        // jump, then the flying band while the budget lasts.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(1, false); // Bunny: in-air start row 5
+        let press = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, press);
+        let release = PlayerInput::default();
+        p.update(&w, release);
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_IN_AIR);
+        assert_eq!(p.mount.frame(), 5, "the bunny's in-air row");
+        // Rudolph: the ground refill arms the budget, the held jump after the
+        // jump budget runs out switches to the flying band (start row 6).
+        p.dismount(false);
+        p.set_mount(0, false);
+        for _ in 0..240 {
+            p.update(&w, release); // settle back down; rest ticks refill
+            if p.on_ground && p.mount.fly_time() > 0 {
+                break;
+            }
+        }
+        assert!(p.on_ground && p.mount.fly_time() > 0, "the refill armed");
+        p.update(&w, press); // the ground jump
+        for _ in 0..30 {
+            p.update(&w, press); // hold: the jump budget (17) runs out
+        }
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_FLYING, "fly time drives state 3");
+        assert!((6..=11).contains(&p.mount.frame()), "the flying band");
+    }
+
+    #[test]
+    fn the_walking_grace_stays_inert_for_the_ground_rows() {
+        // DW-4.4 — `Mount.cs:3620-3631`: every ground row carries
+        // `walkingGraceTimeMax = 0`, so the grace never blocks the air state
+        // and never goes negative.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(1, false);
+        let press = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, press);
+        let mut airborne_ticks = 0;
+        for _ in 0..40 {
+            p.update(&w, press);
+            assert_eq!(p.mount.running_grace_time(), 0, "max 0 -> always 0");
+            if p.vy != 0.0 {
+                airborne_ticks += 1;
+                assert_eq!(
+                    p.mount.frame_state(),
+                    crate::mount::FRAME_IN_AIR,
+                    "the grace never blocks the air state"
+                );
+            }
+        }
+        assert!(airborne_ticks > 10, "the hop stayed airborne");
+    }
+
+
 }

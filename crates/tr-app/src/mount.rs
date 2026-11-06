@@ -836,6 +836,11 @@ pub(crate) struct MountState {
     test_additive: Option<bool>,
     #[cfg(test)]
     test_dismounts_on_item_use: Option<bool>,
+    /// The splitmix64 stream behind the idle-pick stand-in (see
+    /// [`MountState::update_frame`]); deliberately NOT reset by
+    /// [`MountState::reset`] — the vanilla `Main.rand` it stands in for is
+    /// global (`Mount.cs:675-694` never touches it either).
+    idle_rng: u64,
 }
 
 impl Default for MountState {
@@ -869,10 +874,30 @@ impl Default for MountState {
             test_additive: None,
             #[cfg(test)]
             test_dismounts_on_item_use: None,
+            idle_rng: IDLE_RNG_SEED,
         };
         state.reset();
         state
     }
+}
+
+/// The seed of the animator's private splitmix64 stream. The vanilla idle
+/// pick reads `Main.rand.Next(900, 1500)` (`Mount.cs:4165`); the port-wide
+/// `Main.rand` sequence is not reproduced (docs/ANALYSIS.md "the port-wide
+/// RNG deviation"), so the animator owns a deterministic stand-in instead —
+/// the same tick sequence always picks the same idle delays.
+const IDLE_RNG_SEED: u64 = 0x5EED_C0FF_EE12_3456;
+
+fn idle_next(state: &mut u64) -> u64 {
+    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z = *state;
+    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+    z ^ (z >> 31)
+}
+
+fn idle_range(state: &mut u64, lo: i32, hi: i32) -> i32 {
+    lo + (idle_next(state) % (hi - lo) as u64) as i32
 }
 
 impl MountState {
@@ -912,6 +937,166 @@ impl MountState {
 
     pub(crate) fn frame_state(&self) -> i32 {
         self.frame_state
+    }
+
+    /// `Mount.RunningGraceTime` (:403).
+    pub(crate) fn running_grace_time(&self) -> i32 {
+        self.walking_grace_time_left
+    }
+
+    /// `Mount.UpdateFrame` (`Mount.cs:3581-4506`) — the ground subset: the
+    /// head (state change, the idle timer, the walking grace) plus cases 0-4
+    /// (standing/idle, running, in-air, flying, swimming). Case 5 (dashing)
+    /// waits for the dash mounts (M2-MOUNT-4) — the state selector below
+    /// never emits it for this table. The per-type extras of
+    /// `:3637-4142` (drill rotation, bee wings, chillet dust) have no rows
+    /// in this table yet.
+    pub(crate) fn update_frame(&mut self, state: i32, vx: f32, vy: f32, just_jumped: bool, control_down: bool) {
+        let Some(row) = self.data() else { return };
+        // `:3583-3611`: a state change resets the counter (the exceptions for
+        // types 48/56/61/55 reference rows outside this table).
+        if self.frame_state != state {
+            self.frame_state = state;
+            self.frame_counter = 0.0;
+        }
+        // `:3612-3615`: any non-standing state clears the idle timer.
+        if state != FRAME_STANDING {
+            self.idle_time = 0;
+        }
+        // `:3620-3631`: the walking grace — full on any rest tick, decays in
+        // the air, zeroed by a jump or a held downward fall.
+        if vy == 0.0 {
+            self.walking_grace_time_left = row.walking_grace_time_max;
+        } else if self.walking_grace_time_left > 0 {
+            self.walking_grace_time_left -= 1;
+        }
+        if just_jumped || (control_down && vy > 0.0) {
+            self.walking_grace_time_left = 0;
+        }
+        // `:3632-3636`: `emitsLight` — no row in this table sets it.
+        match state {
+            FRAME_STANDING => {
+                // `:4145-4181`: the idle timer. The per-type ranges (17:
+                // 120-300, 2: 600-900, 55: 120-420) reference rows outside
+                // this table; the base pick is `Main.rand.Next(900, 1500)`
+                // through the stand-in stream.
+                if row.idle.count != 0 && self.idle_time == 0 {
+                    self.idle_time_next = idle_range(&mut self.idle_rng, 900, 1500);
+                }
+                if row.idle.count != 0 {
+                    self.idle_time += 1;
+                }
+                self.frame_counter += 1.0;
+                if row.idle.count != 0 && self.idle_time >= self.idle_time_next {
+                    // `:4198-4214`: the idle band; type 55's rat table is
+                    // outside this set.
+                    let num33 = ((self.idle_time - self.idle_time_next) as f32
+                        / row.idle.delay as f32) as i32;
+                    if num33 >= row.idle.count {
+                        if row.idle.loops {
+                            // `:4208-4211`: loop back (the chillet re-pick
+                            // `Main.rand.Next(20)` is outside this set).
+                            self.idle_time = self.idle_time_next;
+                            self.frame = row.idle.start;
+                        } else {
+                            // `:4212-4217`: back to standing.
+                            self.frame_counter = 0.0;
+                            self.frame = row.standing.start;
+                            self.idle_time = 0;
+                        }
+                    } else {
+                        self.frame = row.idle.start + num33;
+                        // `:4222-4236`: the out-of-range guards.
+                        if self.frame < row.idle.start
+                            || self.frame >= row.idle.start + row.idle.count
+                        {
+                            self.frame = if row.idle.loops {
+                                row.idle.start
+                            } else {
+                                row.standing.start
+                            };
+                        }
+                    }
+                } else {
+                    // `:4242-4250`: the standing loop.
+                    if self.frame_counter > row.standing.delay as f32 {
+                        self.frame_counter -= row.standing.delay as f32;
+                        self.frame += 1;
+                    }
+                    if self.frame < row.standing.start
+                        || self.frame >= row.standing.start + row.standing.count
+                    {
+                        self.frame = row.standing.start;
+                    }
+                }
+            }
+            FRAME_RUNNING => {
+                // `:4262-4321`: the counter speed — the Queen Slime (50)
+                // half-speed override fires here; the 9/46/44/48/55/56 arms
+                // reference rows outside this table.
+                let num25 = if self.kind == 50 {
+                    vx.abs() * 0.5
+                } else {
+                    vx.abs()
+                };
+                self.frame_counter += num25;
+                // `num25 >= 0` always holds without the Scutlix flipDraw
+                // reversal (`:4299-4320`'s negative branch).
+                if self.frame_counter > row.running.delay as f32 {
+                    self.frame_counter -= row.running.delay as f32;
+                    self.frame += 1;
+                }
+                if self.frame < row.running.start
+                    || self.frame >= row.running.start + row.running.count
+                {
+                    self.frame = row.running.start;
+                }
+            }
+            FRAME_IN_AIR => {
+                // `:4347-4373`: one step per in-air delay (the 56/61 speed
+                // and the 62-65/4/52/55 specials are outside this set).
+                self.frame_counter += 1.0;
+                if self.frame_counter > row.in_air.delay as f32 {
+                    self.frame_counter -= row.in_air.delay as f32;
+                    self.frame += 1;
+                }
+                if self.frame < row.in_air.start
+                    || self.frame >= row.in_air.start + row.in_air.count
+                {
+                    self.frame = row.in_air.start;
+                }
+            }
+            FRAME_FLYING => {
+                // `:4323-4345`: the flight loop (the 56/61 speed clamp and
+                // the 54 budget shortcut are outside this set).
+                self.frame_counter += 1.0;
+                if self.frame_counter > row.flying.delay as f32 {
+                    self.frame_counter -= row.flying.delay as f32;
+                    self.frame += 1;
+                }
+                if self.frame < row.flying.start
+                    || self.frame >= row.flying.start + row.flying.count
+                {
+                    self.frame = row.flying.start;
+                }
+            }
+            FRAME_SWIMMING => {
+                // `:4460-4475`: the swim loop paces on the speed average.
+                self.frame_counter += (vx.abs() + vy.abs()) / 2.0;
+                if self.frame_counter > row.swim.delay as f32 {
+                    self.frame_counter -= row.swim.delay as f32;
+                    self.frame += 1;
+                }
+                if self.frame < row.swim.start
+                    || self.frame >= row.swim.start + row.swim.count
+                {
+                    self.frame = row.swim.start;
+                }
+            }
+            _ => {
+                // `:4476-4505` (dashing) waits for the dash mounts.
+            }
+        }
     }
 
     pub(crate) fn fly_time(&self) -> i32 {
