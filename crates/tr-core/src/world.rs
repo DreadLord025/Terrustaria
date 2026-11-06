@@ -109,6 +109,11 @@ pub struct World {
     /// `NPC.savedGoblin` — the rescue flag (`AI_007_TownEntities_
     /// UpdateSavedStates` case 107, `NPC.cs:52944-52946`).
     pub saved_goblin: bool,
+    /// The Brain of Cthulhu's anchor (`NPC.crimsonBoss`'s centre) — the
+    /// Creepers' orbit reads it (the WoF's write-through shape).
+    pub brain_present: bool,
+    pub brain_x: f32,
+    pub brain_y: f32,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -188,6 +193,9 @@ impl World {
             invasion_size: 0,
 
             saved_goblin: false,
+            brain_present: false,
+            brain_x: 0.0,
+            brain_y: 0.0,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,

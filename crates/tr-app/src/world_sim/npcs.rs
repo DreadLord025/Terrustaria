@@ -180,6 +180,69 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     true
 }
 
+/// The Brain of Cthulhu's per-tick state pass — the World anchor write,
+/// the swarm init, the shield, and the brainless despawn (see the block
+/// comment inside).
+pub(crate) fn update_brain_state(app: &mut App) {
+    // The Brain of Cthulhu state (`AI_054` + AI_055's `crimsonBoss`
+    // reads): the World carries the brain's centre anchor for the
+    // Creepers' orbit (the WoF's write-through shape); the shield = the
+    // Creepers alive (`SetDefaults`' `dontTakeDamage = true` holds until
+    // the dash arm clears it — the dash only begins after the Creepers
+    // die, so the roster check is the operative gate); the swarm init
+    // (`localAI[0]` 0 -> 1, `:32374-32385`) spawns the 20 Creepers once,
+    // at the brain's centre plus the body scatter; the brainless
+    // Creepers deactivate (`NPC.crimsonBoss < 0` -> `active = false`).
+    let brain = app
+        .npcs
+        .iter()
+        .find(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+        .cloned();
+    if let Some(brain) = brain {
+        let (bw, bh) = brain.size();
+        app.world.brain_present = true;
+        app.world.brain_x = brain.x + bw * 0.5;
+        app.world.brain_y = brain.y + bh * 0.5;
+        if !brain.swarm_done {
+            let (cw, ch) = NpcKind::Creeper.size();
+            let mut swarm = Vec::new();
+            for _ in 0..20 {
+                let sx = brain.x + bw * 0.5 + (rand01(&mut app.item_rng) * 2.0 - 1.0) * bw as f32;
+                let sy = brain.y + bh * 0.5 + (rand01(&mut app.item_rng) * 2.0 - 1.0) * bh as f32;
+                let svx = (rand01(&mut app.item_rng) * 61.0 - 30.0) * 0.1;
+                let svy = (rand01(&mut app.item_rng) * 61.0 - 30.0) * 0.1;
+                let mut c = Npc::new(NpcKind::Creeper, sx - cw * 0.5, sy - ch * 0.5, 1, 0.0);
+                c.hp = c.max_hp;
+                c.vx = svx;
+                c.vy = svy;
+                swarm.push(c);
+            }
+            app.npcs.append(&mut swarm);
+            if let Some(b) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+            {
+                b.swarm_done = true;
+            }
+        }
+        let creepers_alive = app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::Creeper && n.hp > 0);
+        if let Some(b) = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+        {
+            b.dont_take_damage = creepers_alive;
+        }
+    } else {
+        app.world.brain_present = false;
+        app.npcs.retain(|n| n.kind != NpcKind::Creeper);
+    }
+}
+
 pub(crate) fn update_worms(app: &mut App) {
     let mut rng = app.item_rng;
     let world = &app.world;
@@ -937,6 +1000,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    update_brain_state(app);
     // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
     // block): the update pass set `wants_servant`, this pass resolves it —
     // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).
