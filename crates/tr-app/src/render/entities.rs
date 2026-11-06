@@ -113,6 +113,7 @@ pub(crate) struct NpcAssets {
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) wof: Option<BgTex>,
+    pub(crate) destroyer: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -163,6 +164,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
         wof: sky_tex(atlas, "NPC_113", None),
+        destroyer: sky_tex(atlas, "NPC_134", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -716,6 +718,13 @@ pub(crate) fn draw_npcs(
                 assets.wof.as_ref(),
                 assets.wof.as_ref().map_or(120.0, |t| t.h),
                 [120.0, 120.0],
+                [n.x, n.y],
+            ),
+            // The Destroyer: the single-frame 48x48 sheet.
+            NpcKind::TheDestroyer => (
+                assets.destroyer.as_ref(),
+                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
+                [48.0, 48.0],
                 [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the

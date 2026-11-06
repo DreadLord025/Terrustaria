@@ -157,6 +157,10 @@ pub enum NpcKind {
     /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
     /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
     WallOfFlesh,
+    /// `NPCID.TheDestroyer` (134) — the mechanical worm (`NPC.cs:10659`:
+    /// 38x38 x1.25, dmg 70, def 0, 8000 HP — the shared pool; the all-
+    /// same-type segments ride the chain engine).
+    TheDestroyer,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -369,6 +373,7 @@ impl NpcKind {
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
             NpcKind::WallOfFlesh => 45,
+            NpcKind::TheDestroyer => 46,
         }
     }
 
@@ -420,6 +425,7 @@ impl NpcKind {
             43 => NpcKind::QueenBee,
             44 => NpcKind::SkeletronHead,
             45 => NpcKind::WallOfFlesh,
+            46 => NpcKind::TheDestroyer,
             _ => return None,
         })
     }
@@ -439,29 +445,41 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::EaterOfWorldsTail
+                | NpcKind::TheDestroyer
         )
     }
 
-    /// The head kinds (`:51436`'s list minus the unported families).
+    /// The Destroyer: the head of its own same-kind chain (`AI_037`).
     pub fn is_worm_head(self) -> bool {
         matches!(
             self,
-            NpcKind::DevourerHead | NpcKind::GiantWormHead | NpcKind::EaterOfWorldsHead
+            NpcKind::DevourerHead
+                | NpcKind::GiantWormHead
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The mid-body kinds that spawn another of themselves while the
-    /// budget holds (`:51350`'s list).
+    /// budget holds (`:51350`'s list plus the Destroyer's same-kind
+    /// chain).
     pub fn is_worm_mid(self) -> bool {
         matches!(
             self,
-            NpcKind::DevourerBody | NpcKind::GiantWormBody | NpcKind::EaterOfWorldsBody
+            NpcKind::DevourerBody
+                | NpcKind::GiantWormBody
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The next segment's kind down the chain (`type + 1` in the vanilla
     /// spawns, `:51347`/`:51357`).
     pub fn worm_next(self) -> NpcKind {
+        if self == NpcKind::TheDestroyer {
+            // The same-kind chain: every segment IS the head type.
+            return self;
+        }
         match self {
             NpcKind::DevourerHead => NpcKind::DevourerBody,
             NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
@@ -508,6 +526,8 @@ impl NpcKind {
             NpcKind::SkeletronHead => (80.0, 102.0),
             // `SetDefaults` case 113 (`NPC.cs:10344`): 100x100 x1.2 = 120.
             NpcKind::WallOfFlesh => (120.0, 120.0),
+            // `SetDefaults` case 134 (`NPC.cs:10662`): 38x38 x1.25.
+            NpcKind::TheDestroyer => (48.0, 48.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -585,6 +605,9 @@ impl NpcKind {
             NpcKind::SkeletronHead => 4400,
             // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
             NpcKind::WallOfFlesh => 8000,
+            // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
+            // vanilla's realLife pool — the v1 carries the per-segment HP).
+            NpcKind::TheDestroyer => 8000,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -641,6 +664,7 @@ impl NpcKind {
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
+            NpcKind::TheDestroyer => 70,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1087,6 +1111,7 @@ impl Npc {
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
+            NpcKind::TheDestroyer => 0.0,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1153,6 +1178,7 @@ impl Npc {
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
+            NpcKind::TheDestroyer => 0,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1218,6 +1244,7 @@ impl Npc {
             NpcKind::QueenBee => 50000.0,
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
+            NpcKind::TheDestroyer => 120000.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1343,6 +1370,7 @@ impl Npc {
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
+            NpcKind::TheDestroyer => {}
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1634,6 +1662,9 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::TheDestroyer => {
+                // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::WallOfFlesh => {
                 // `Main.npcFrameCount[113]` = 1 (`Main.cs:67082`).
             }
@@ -2770,6 +2801,7 @@ impl Npc {
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
             NpcKind::WallOfFlesh => 45,
+            NpcKind::TheDestroyer => 46,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4162,7 +4194,47 @@ mod tests {
         let _ = (&w, &mut wof);
     }
 
+    #[test]
+    fn the_destroyer_chain_assembles_same_kind() {
+        // `AI_037`: the all-same-type chain — the head spawns the
+        // Destroyer segments through the worm pass (the 80 budget).
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 130, NpcKind::TheDestroyer);
+        head.hp = head.max_hp;
+        head.worm_left = 80;
+        let mut npcs = vec![head];
+        let mut rng = 3u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // The chain: the head + 80 segments = 81 (the same-kind stop).
+        assert_eq!(npcs.len(), 81, "the destroyer chain length {}", npcs.len());
+        for seg in &npcs {
+            assert_eq!(seg.kind, NpcKind::TheDestroyer);
+        }
+        // The trail: the second segment trails the head.
+        let (lw, lh) = npcs[1].size();
+        let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + lw * 0.5);
+        let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!((dist - lw).abs() < 0.5, "the rigid trail ({dist})");
+    }
+
+    #[test]
+    fn the_destroyer_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::TheDestroyer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 134);
+        assert_eq!(e.credit_id, "TheDestroyer");
+        let mut d = Npc::new(NpcKind::TheDestroyer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(d.size(), (48.0, 48.0));
+        assert_eq!(d.max_hp, 8000);
+        assert_eq!(d.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::TheDestroyer.contact_damage(), 70);
+        let _ = (&w, &mut d);
+    }
+
 }
+
 
 
 

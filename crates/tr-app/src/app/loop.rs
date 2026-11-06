@@ -269,6 +269,32 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyD => {
+                                // The Destroyer debug spawn (the Mechanical
+                                // Worm item = the follow-up): the head —
+                                // the 80-segment same-kind chain assembles
+                                // through the worm pass.
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::TheDestroyer && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 18)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut head = Npc::spawn_worm_head(
+                                            &self.world,
+                                            xt,
+                                            (p.y / TILE_PX) as i32 - 6,
+                                            NpcKind::TheDestroyer,
+                                        );
+                                        head.hp = head.max_hp;
+                                        head.worm_left = 80;
+                                        log::info!("The Destroyer spawned");
+                                        self.npcs.push(head);
+                                    }
+                                }
+                            }
                             KeyCode::KeyF => {
                                 // The WoF debug spawn (the Voodoo Doll
                                 // sacrifice = the follow-up). The wall

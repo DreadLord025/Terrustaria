@@ -161,7 +161,10 @@ pub(crate) fn update_worms_in(
             i += 1;
             continue;
         }
-        let total = if kind.is_worm_head() {
+        // The budget roll only at the chain start (the same-kind chains —
+        // the Destroyer — keep the head kind down the chain; the re-roll
+        // would refill every child's budget and never terminate).
+        let total = if kind.is_worm_head() && npcs[i].seg_index == 0 {
             match kind {
                 // `:51310`'s `Next(8, 13)` / `:51313`'s `Next(4, 7)` — the
                 // inclusive-low exclusive-high C# ranges.
@@ -172,7 +175,9 @@ pub(crate) fn update_worms_in(
                     4 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
                 }
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
-                // the difficulty work).
+                // the difficulty work); the Destroyer's ~80 segments
+                // (`AI_037`'s ai[2] roll).
+                NpcKind::TheDestroyer => 80,
                 _ => 65,
             }
         } else {
@@ -181,14 +186,22 @@ pub(crate) fn update_worms_in(
         if kind.is_worm_head() {
             npcs[i].worm_left = total;
         }
-        // The child kind: the head spawns `type + 1`; the mid body spawns
-        // itself while the budget holds, else the tail (`:51347-51358`).
-        let child_kind = if kind.is_worm_head() {
-            kind.worm_next()
+        // The child kind: the chain START (seg_index 0) spawns `type + 1`
+        // (itself for the same-kind chains); the mid bodies spawn
+        // themselves while the budget holds; the empty budget spawns the
+        // tail when the next kind differs, else ends (the Destroyer).
+        let child_kind = if npcs[i].seg_index == 0 {
+            Some(kind.worm_next())
         } else if npcs[i].worm_left > 0 {
-            kind
+            Some(kind)
+        } else if kind.worm_next() != kind {
+            Some(kind.worm_next())
         } else {
-            kind.worm_next()
+            None
+        };
+        let Some(child_kind) = child_kind else {
+            i += 1;
+            continue;
         };
         let (w, h) = npcs[i].size();
         let mut child = Npc::new(
@@ -485,6 +498,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
+            NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,

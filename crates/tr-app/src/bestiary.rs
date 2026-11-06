@@ -405,6 +405,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Wall of Flesh",
     },
     BestiaryEntryDef {
+        credit_id: "TheDestroyer",
+        net_id: 134,
+        kind: NpcKind::TheDestroyer,
+        variant: None,
+        quick_unlock: false,
+        name: "The Destroyer",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,
