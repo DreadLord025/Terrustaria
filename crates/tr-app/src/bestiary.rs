@@ -381,6 +381,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Eye of Cthulhu",
     },
     BestiaryEntryDef {
+        credit_id: "QueenBee",
+        net_id: 222,
+        kind: NpcKind::QueenBee,
+        variant: None,
+        quick_unlock: false,
+        name: "Queen Bee",
+    },
+    BestiaryEntryDef {
+        credit_id: "SkeletronHead",
+        net_id: 35,
+        kind: NpcKind::SkeletronHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeletron",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

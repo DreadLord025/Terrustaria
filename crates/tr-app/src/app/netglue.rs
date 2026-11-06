@@ -305,6 +305,10 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        crate::npc::NpcKind::QueenBee | crate::npc::NpcKind::SkeletronHead => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }

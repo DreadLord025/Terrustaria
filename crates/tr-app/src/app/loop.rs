@@ -269,6 +269,54 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyS => {
+                                // The Skeletron debug spawn (the Old Man's
+                                // curse dialog = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 14)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::SkeletronHead,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Skeletron spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyQ => {
+                                // The Queen Bee debug spawn (the Abeemination
+                                // item = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 10)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::QueenBee,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Queen Bee spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyW => {
                                 // The EoW debug spawn (the Worm Food item +
                                 // the orb breaks = the follow-ups): the
