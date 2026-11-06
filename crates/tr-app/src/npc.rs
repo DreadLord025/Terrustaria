@@ -137,6 +137,10 @@ pub enum NpcKind {
     /// town twin; the shop index 16; the arrival rides the downedQueenBee
     /// gate — constants-off until the boss-downed tracking).
     WitchDoctor,
+    /// `NPCID.Clothier` (54) — the tailor (`NPC.cs:9446`: the town twin;
+    /// the shop index 5; the arrival rides the downedSkeletron gate —
+    /// constants-off).
+    Clothier,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -344,6 +348,7 @@ impl NpcKind {
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
             NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
         }
     }
 
@@ -390,6 +395,7 @@ impl NpcKind {
             38 => NpcKind::Demolitionist,
             39 => NpcKind::Painter,
             40 => NpcKind::WitchDoctor,
+            41 => NpcKind::Clothier,
             _ => return None,
         })
     }
@@ -469,6 +475,7 @@ impl NpcKind {
             NpcKind::Demolitionist => (18.0, 40.0),
             NpcKind::Painter => (18.0, 40.0),
             NpcKind::WitchDoctor => (18.0, 40.0),
+            NpcKind::Clothier => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -536,6 +543,8 @@ impl NpcKind {
             NpcKind::Painter => 250,
             // `SetDefaults` case 228 (`NPC.cs:11950`): 250 HP.
             NpcKind::WitchDoctor => 250,
+            // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
+            NpcKind::Clothier => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -587,6 +596,7 @@ impl NpcKind {
             NpcKind::Demolitionist => 10,
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
+            NpcKind::Clothier => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1028,6 +1038,7 @@ impl Npc {
             NpcKind::Demolitionist => 0.5,
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
+            NpcKind::Clothier => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1089,6 +1100,7 @@ impl Npc {
             NpcKind::Demolitionist => 15,
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
+            NpcKind::Clothier => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1148,6 +1160,7 @@ impl Npc {
             NpcKind::Demolitionist => 0.0,
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
+            NpcKind::Clothier => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1267,7 +1280,8 @@ impl Npc {
             | NpcKind::ArmsDealer
             | NpcKind::Demolitionist
             | NpcKind::Painter
-            | NpcKind::WitchDoctor => self.update_guide(world, dt),
+            | NpcKind::WitchDoctor
+            | NpcKind::Clothier => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1559,6 +1573,33 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::Clothier => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[54]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::WitchDoctor => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[228]` = 3, `Main.cs:67082`).
@@ -2315,6 +2356,7 @@ impl Npc {
                     | NpcKind::Demolitionist
                     | NpcKind::Painter
                     | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2380,6 +2422,7 @@ impl Npc {
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
             NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3586,7 +3629,38 @@ mod tests {
         assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
     }
 
+    #[test]
+    fn the_clothier_arrival_gate_and_shop() {
+        // The arrival: the downedSkeletron gate (constants-off in the
+        // port).
+        assert!(!crate::spawner::spawn_allowed_clothier(false));
+        assert!(crate::spawner::spawn_allowed_clothier(true));
+        // The shop index 5: the always-on rows.
+        let stock = crate::shop::resolve_stock(5, &crate::shop::ShopFlags::default(), &[]);
+        for id in [254, 981, 269, 270, 271] {
+            assert!(stock.contains(&id), "the clothier row {id} missing");
+        }
+        assert!(!stock.contains(&242), "the day row leaks");
+    }
+
+    #[test]
+    fn the_clothier_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 54 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(54).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Clothier).expect("the clothier spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Clothier, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 54);
+        assert_eq!(e.credit_id, "Clothier");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Clothier);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
 }
+
 
 
 

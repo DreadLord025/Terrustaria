@@ -108,6 +108,7 @@ pub(crate) struct NpcAssets {
     pub(crate) demolitionist: Option<BgTex>,
     pub(crate) painter: Option<BgTex>,
     pub(crate) witch_doctor: Option<BgTex>,
+    pub(crate) clothier: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -153,6 +154,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         demolitionist: sky_tex(atlas, "NPC_38", None),
         painter: sky_tex(atlas, "NPC_227", None),
         witch_doctor: sky_tex(atlas, "NPC_228", None),
+        clothier: sky_tex(atlas, "NPC_54", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -662,6 +664,13 @@ pub(crate) fn draw_npcs(
             // The Witch Doctor: the same humanoid shape over NPC_228.
             NpcKind::WitchDoctor => (
                 assets.witch_doctor.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Clothier: the same humanoid shape over NPC_54.
+            NpcKind::Clothier => (
+                assets.clothier.as_ref(),
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],

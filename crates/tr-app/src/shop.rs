@@ -145,6 +145,17 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             row(1430, StockWhen::Always),
             row(986, StockWhen::Always),
         ],
+        // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
+        // 242; the moon-phase hats; the full set in the tail — the v1
+        // carries the always-on rows (the moon-phase and the clown rows
+        // land with their flags).
+        5 => vec![
+            row(254, StockWhen::Always),
+            row(981, StockWhen::Always),
+            row(269, StockWhen::Always),
+            row(270, StockWhen::Always),
+            row(271, StockWhen::Always),
+        ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
         // branch, the base rows, the flower-seed moon-phase pairs. The
         // crimson variants (2886/2171/4508), the graveyard/underworld/
