@@ -191,7 +191,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if app.inventory[app.selected].count == 0 {
                     app.inventory[app.selected].kind = 0;
                 }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -224,7 +224,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if app.inventory[app.selected].count == 0 {
                 app.inventory[app.selected].kind = 0;
             }
-            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
             app.attack_cd = app.swing_max;
@@ -233,7 +233,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         }
     }
-    let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
+    // The held item's prefixed stats (`Item.Prefix`'s application on a
+    // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
+    // cost, the throw damage and the crit all read the instance values.
+    let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
     let held_use_ammo =
         registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down && held_weapon && !app.inventory_open {
@@ -255,7 +259,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // (`ItemCheck_TryStartUse` sets the timers before
             // `ItemCheck_Shoot`'s `canShoot` gate). The shot itself fires at
             // `ItemTimeIsZero` (the fire block below).
-            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
             app.item_time = registry::get(held.kind)
@@ -271,7 +275,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // `item.mana * manaCost` (the multiplier is the 1f base — the
             // accessories fold out); a failed check blocks the use. The pay
             // resets the mana regen delay (`apply_mana_regen_delay`).
-            let mana_cost = registry::get(held.kind).map(|d| d.mana).unwrap_or(0);
+            let mana_cost = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
             let Some(p) = app.player.as_mut() else {
@@ -287,9 +291,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
             // rides the use start.
-            if let Some(d) = registry::get(held.kind) {
-                app.reuse_delay = d.reuse_delay as f32 / 60.0;
-            }
+            app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
             // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
@@ -304,7 +306,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if dir != Vec2::ZERO {
                     let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
-                    let raw = def.damage as f32 * p.weapon_damage_multiplier(class);
+                    let (fx_dmg, fx_spd, fx_kb) = held_fx
+                        .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
+                            (s.damage, s.shoot_speed, s.knock_back)
+                        });
+                    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
@@ -315,10 +321,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         proj,
                         spawn.x,
                         spawn.y,
-                        dir.x * def.shoot_speed,
-                        dir.y * def.shoot_speed,
+                        dir.x * fx_spd,
+                        dir.y * fx_spd,
                         raw as i32,
-                        def.knock_back,
+                        fx_kb,
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
@@ -330,7 +336,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
                     // matches so the throw repeats only when the swing is over.
-                    app.swing_max = crate::item::use_animation_secs(held.kind);
+                    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
@@ -381,9 +387,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 } else {
                     registry::DamageClass::Melee
                 };
-                let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
+                let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
                 let raw = if held_weapon {
-                    registry::damage(held.kind) as f32
+                    held_fx
+                        .map_or(registry::damage(held.kind), |s| s.damage) as f32
                         * app
                             .player
                             .as_ref()
@@ -413,7 +420,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 n.hurt(dmg, pcx, 5.5, crit);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -447,7 +454,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if app.inventory[app.selected].count == 0 {
                     app.inventory[app.selected].kind = 0;
                 }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -526,7 +533,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_timer = 0.0;
         } else {
             if app.swing <= 0.0 {
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
             }
@@ -572,7 +579,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
         // No block in the cell: mining it removes the exposed wall.
         if app.swing <= 0.0 {
-            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
         }
@@ -725,15 +732,24 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         };
         let class = weapon_def.class;
+        let (w_dmg, w_spd, w_kb, w_crit) = held_fx.map_or(
+            (
+                weapon_def.damage,
+                weapon_def.shoot_speed,
+                weapon_def.knock_back,
+                weapon_def.crit,
+            ),
+            |s| (s.damage, s.shoot_speed, s.knock_back, s.crit),
+        );
         if let Some(p) = app.player.as_mut() {
-            let weapon_damage = weapon_def.damage as f32
+            let weapon_damage = w_dmg as f32
                 * p.weapon_damage_multiplier(class);
             let mut damage = weapon_damage;
             if ammo_def.damage > 0 {
                 damage += ammo_def.damage as f32
                     * p.weapon_damage_multiplier(class);
             }
-            let speed = weapon_def.shoot_speed + ammo_def.shoot_speed;
+            let speed = w_spd + ammo_def.shoot_speed;
             let (pcx, pcy) = p.center();
             let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
             if dir == Vec2::ZERO {
@@ -741,9 +757,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
             let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
             let crit = {
-                let item_crit = weapon_def.crit;
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit)
+                tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + w_crit)
             };
             let slot = app.projectiles.spawn_with_data(
                 proj,
@@ -752,7 +767,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 dir.x * speed,
                 dir.y * speed,
                 damage as i32,
-                weapon_def.knock_back,
+                w_kb,
             );
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
@@ -2423,6 +2438,7 @@ mod tests {
             kind,
             name: "",
             count,
+            prefix: 0,
         }
     }
     /// The App-free [`break_drop_events`] harness for the record tests: a
@@ -2756,6 +2772,7 @@ mod tests {
             kind: 435,
             name: "Cobalt Repeater",
             count: 1,
+            prefix: 0,
         };
         app.mine_down = true;
         app
@@ -2771,11 +2788,13 @@ mod tests {
             kind: 40,
             name: "Wooden Arrow",
             count: 7,
+            prefix: 0,
         };
         app.inventory[20] = crate::item::ItemSlot {
             kind: 40,
             name: "Wooden Arrow",
             count: 99,
+            prefix: 0,
         };
         let mut inv = app.inventory;
         let mut equip = std::mem::take(&mut app.equip);
@@ -2822,6 +2841,7 @@ mod tests {
             kind: 40,
             name: "Wooden Arrow",
             count: 7,
+            prefix: 0,
         };
         let (sw, sh) = app.screen_size();
         // The cursor 80 px right of the screen centre: within the reach, the
@@ -4245,7 +4265,7 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
         app.inventory[app.selected].kind = 0;
     }
     let held = app.inventory[app.selected];
-    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
     app.swing = app.swing_max;
     app.attack_cd = app.swing_max;
     app.mine_target = None;
@@ -4271,7 +4291,7 @@ mod loot_summon_tests {
         app.player = Some(player);
         app.world.day_time = true;
         app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1, prefix: 0 };
         assert!(
             !use_suspicious_looking_eye(&mut app),
             "day refuses"
@@ -4284,7 +4304,7 @@ mod loot_summon_tests {
             .iter()
             .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0));
         app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1, prefix: 0 };
         assert!(
             !use_suspicious_looking_eye(&mut app),
             "SummonItemCheck refuses while alive"

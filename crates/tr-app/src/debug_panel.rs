@@ -295,12 +295,12 @@ pub fn handle_click(app: &mut App, mouse: Vec2) -> bool {
 }
 
 fn give_item(app: &mut App, item: u16, count: u32) -> bool {
-    let idx = match crate::item::slot_for_pickup(&mut app.inventory, item) {
+    let idx = match crate::item::slot_for_pickup(&mut app.inventory, item, 0) {
         Some(i) => i, None => return false,
     };
     let sl = &mut app.inventory[idx];
     if sl.kind == item && sl.count > 0 { sl.count += count; } else {
-        *sl = ItemSlot { kind: item, name: crate::itemdata::ITEMS[item as usize].name, count };
+        *sl = ItemSlot { kind: item, name: crate::itemdata::ITEMS[item as usize].name, count, prefix: 0 };
     }
     true
 }

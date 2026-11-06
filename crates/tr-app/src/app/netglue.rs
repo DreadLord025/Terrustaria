@@ -145,7 +145,7 @@ impl App {
                     .iter()
                     .map(|it| {
                         let mut d =
-                            item::ItemDrop::new(it.item, it.count, it.x, it.y, 0.0, 0.0, 0.0);
+                            item::ItemDrop::new(it.item, it.count, 0, it.x, it.y, 0.0, 0.0, 0.0);
                         d.age = 60.0;
                         d
                     })

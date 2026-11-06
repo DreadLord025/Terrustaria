@@ -35,6 +35,20 @@ pub(crate) fn use_animation_secs(kind: u16) -> f32 {
     ticks as f32 / 60.0
 }
 
+/// The prefix-aware variant: `Item.Prefix` scales `useAnimation` (`spd`),
+/// and the swing paces off the prefixed value (`Player.cs:4449-4451` reads
+/// the instance). Falls back to the raw kind when the prefix is absent.
+pub(crate) fn use_animation_secs_of(kind: u16, prefix: u16) -> f32 {
+    if prefix == 0 {
+        return use_animation_secs(kind);
+    }
+    crate::prefix::prefixed_stats(kind, prefix)
+        .map(|s| s.use_animation)
+        .filter(|t| *t > 0)
+        .map(|t| t as f32 / 60.0)
+        .unwrap_or_else(|| use_animation_secs(kind))
+}
+
 /// `Item.useStyle` of the kind (`Item.SetDefaults`; the
 /// `ItemUseStyleID.cs` constants — 1 Swing, 2 EatFood, 3 Thrust, 4 HoldUp,
 /// 5 Shoot, 6 DrinkLong, 7 DrinkOld, 8 GolfPlay, 9 DrinkLiquid, 10 Hidden,
@@ -54,6 +68,10 @@ pub(crate) struct ItemSlot {
     pub(crate) kind: u16,
     pub(crate) name: &'static str,
     pub(crate) count: u32,
+    /// The rolled prefix (`Item.prefix`, `Item.cs:504`'s field); 0 = none.
+    /// Two slots stack only when both match (`Item.CanStack`,
+    /// `Item.cs:49865-49871`: same type AND same prefix).
+    pub(crate) prefix: u16,
 }
 
 /// `Item.MAX_STACK` for the blocks and items we model.
@@ -63,29 +81,38 @@ pub(crate) const EMPTY_SLOT: ItemSlot = ItemSlot {
     kind: 0,
     name: "",
     count: 0,
+    prefix: 0,
 };
 
 /// `Player.PickupItem`: stack into the hotbar first, then an empty hotbar slot,
-/// then the storage rows.
-pub(crate) fn slot_for_pickup(inventory: &mut [ItemSlot; INV], kind: u16) -> Option<usize> {
+/// then the storage rows. The stacking rule is `Item.CanStack`
+/// (`Item.cs:49865-49871`): same kind AND same prefix — a prefixed drop never
+/// merges into an unprefixed stack.
+pub(crate) fn slot_for_pickup(
+    inventory: &mut [ItemSlot; INV],
+    kind: u16,
+    prefix: u16,
+) -> Option<usize> {
     for range in [0..HOTBAR, HOTBAR..INV] {
-        if let Some(i) = range
-            .clone()
-            .find(|&i| inventory[i].count > 0 && inventory[i].kind == kind)
-        {
+        if let Some(i) = range.clone().find(|&i| {
+            inventory[i].count > 0 && inventory[i].kind == kind && inventory[i].prefix == prefix
+        }) {
             return Some(i);
         }
     }
     for range in [0..HOTBAR, HOTBAR..INV] {
         if let Some(i) = range.clone().find(|&i| {
             inventory[i].count == 0
-                || (inventory[i].kind == kind && inventory[i].count < registry::max_stack(kind))
+                || (inventory[i].kind == kind
+                    && inventory[i].prefix == prefix
+                    && inventory[i].count < registry::max_stack(kind))
         }) {
             if inventory[i].count == 0 {
                 inventory[i] = ItemSlot {
                     kind,
                     name: registry::name(kind),
                     count: 0,
+                    prefix,
                 };
             }
             return Some(i);
@@ -105,6 +132,9 @@ const PICKUP_DELAY: f32 = 0.35;
 pub struct ItemDrop {
     pub kind: u16,
     pub count: u32,
+    /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
+    /// `Item.cs:49730`); 0 = none.
+    pub prefix: u16,
     /// Top-left of the 14x14 item box, world pixels.
     pub pos: Vec2,
     pub vel: Vec2,
@@ -114,10 +144,20 @@ pub struct ItemDrop {
 }
 
 impl ItemDrop {
-    pub fn new(kind: u16, count: u32, x: f32, y: f32, vx: f32, vy: f32, phase: f32) -> Self {
+    pub fn new(
+        kind: u16,
+        count: u32,
+        prefix: u16,
+        x: f32,
+        y: f32,
+        vx: f32,
+        vy: f32,
+        phase: f32,
+    ) -> Self {
         Self {
             kind,
             count,
+            prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
             age: 0.0,
@@ -233,18 +273,16 @@ mod tests {
 
     #[test]
     fn pickup_prefers_stacks_then_empty_slots() {
-        let mut inv: [ItemSlot; INV] = std::array::from_fn(|_| ItemSlot {
-            kind: 0,
-            name: "",
-            count: 0,
-        });
+        let mut inv: [ItemSlot; INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inv[0] = ItemSlot {
             kind: 3,
             name: "Stone Block",
             count: 4,
+            prefix: 0,
         };
-        assert_eq!(slot_for_pickup(&mut inv, 3), Some(0));
-        assert_eq!(slot_for_pickup(&mut inv, 12), Some(1));
+        assert_eq!(slot_for_pickup(&mut inv, 3, 0), Some(0));
+        assert_eq!(slot_for_pickup(&mut inv, 12, 0), Some(1));
         assert_eq!(inv[1].kind, 12);
         assert_eq!(inv[1].name, "Copper Ore");
         assert_eq!(inv[1].count, 0);
@@ -252,7 +290,7 @@ mod tests {
             slot.count = 1;
         }
         assert_eq!(
-            slot_for_pickup(&mut inv, 53),
+            slot_for_pickup(&mut inv, 53, 0),
             None,
             "full hotbar must refuse"
         );
@@ -298,7 +336,7 @@ mod tests {
     #[test]
     fn drops_fall_and_rest_on_the_ground() {
         let w = ground();
-        let mut it = ItemDrop::new(2, 1, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
         for _ in 0..240 {
             assert!(!it.update(&w, None, 1.0 / 60.0));
         }
@@ -320,7 +358,7 @@ mod tests {
             };
             w.tiles[i].flags |= FLAG_ACTIVE;
         }
-        let mut it = ItemDrop::new(2, 1, 10.0 * TILE_PX, 19.0 * TILE_PX, 6.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 19.0 * TILE_PX, 6.0, 0.0, 0.0);
         for _ in 0..120 {
             it.update(&w, None, 1.0 / 60.0);
         }
@@ -331,7 +369,7 @@ mod tests {
     fn magnet_collects_a_drop_next_to_the_player() {
         let w = ground();
         let player = Vec2::new(16.0 * TILE_PX, 20.0 * TILE_PX - 21.0);
-        let mut it = ItemDrop::new(12, 3, 16.0 * TILE_PX + 8.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let mut it = ItemDrop::new(12, 3, 0, 16.0 * TILE_PX + 8.0, 19.0 * TILE_PX, 0.0, 0.0, 0.0);
         let mut collected = false;
         for _ in 0..240 {
             if it.update(&w, Some(player), 1.0 / 60.0) {
