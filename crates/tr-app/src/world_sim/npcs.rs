@@ -54,6 +54,26 @@ pub(crate) fn black_slime_darkness_touch(
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+    // The town dispatch: the Merchant opens the shop, the Nurse heals (the
+    // vanilla's dialog-button pair — the port collapses them onto the
+    // right-click).
+    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+        n.hp > 0
+            && n.kind == NpcKind::Nurse
+            && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+    }) else {
+        return try_open_merchant_shop_at_cursor(app, world_pos);
+    };
+    app.nurse_heal(nurse_idx)
+}
+
+fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
         n.hp > 0
             && n.kind == NpcKind::Merchant
@@ -334,6 +354,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the money condition + the absence check — the port's cadence rides
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
+    if app.town_look_timer == 0.0 {
+        if let Some(player) = app.player.as_ref() {
+            if player.max_hp > 100
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant)
+            {
+                // The Nurse arrives when the life maximum grew past 100
+                // (`SpawnAllowed_Nurse`) — the port gates her behind the
+                // Merchant's absence (the vanilla arrival picks one town
+                // NPC per pass).
+                let xt = ((player.x / TILE_PX) as i32 - 6).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Nurse) {
+                    n.home = crate::town::quick_find_home(
+                        &app.world,
+                        xt,
+                        (n.y / TILE_PX) as i32,
+                    );
+                    app.npcs.push(n);
+                }
+            }
+        }
+    }
     if app.town_look_timer == 0.0 {
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app

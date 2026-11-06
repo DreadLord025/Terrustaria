@@ -73,6 +73,18 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Ocean,
             },
         ],
+        // `Register(18)` (`PersonalityDatabasePopulator.cs:132-136`): the
+        // Nurse likes the Hallow, dislikes the Snow.
+        NpcKind::Nurse => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Hallow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Snow,
+            },
+        ],
         // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
         // Dryad likes the Jungle, dislikes the Desert.
         NpcKind::Dryad => &[

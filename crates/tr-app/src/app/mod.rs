@@ -710,6 +710,59 @@ impl App {
         self.shop_mood = 1.0;
     }
 
+    /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
+    /// plus the removable debuffs x100, multiplied by the happiness
+    /// adjustment. The boss-progression/expert/discount multipliers sit
+    /// constants-off (the downed tracking lands with the boss work).
+    pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
+        let Some(player) = self.player.as_ref() else {
+            return 0;
+        };
+        let missing = player.max_hp - player.hp;
+        let debuffs = player
+            .buffs
+            .active_types()
+            .iter()
+            .filter(|t| crate::buffs::is_debuff(**t))
+            .count() as i32;
+        let npc = &self.npcs[nurse_idx];
+        let mood = crate::happiness::process_mood(
+            &self.world,
+            &self.npcs,
+            npc,
+            player.center(),
+            false,
+        );
+        nurse_heal_cost_for(missing, debuffs, mood.multiplier)
+    }
+
+    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
+    /// → the life to full + the removable debuffs cleared. Returns false
+    /// when the purse is short or there is nothing to heal.
+    pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
+        let cost = self.nurse_heal_cost(nurse_idx);
+        if cost <= 0 || self.coins < cost as u64 {
+            return false;
+        }
+        let Some(player) = self.player.as_mut() else {
+            return false;
+        };
+        player.hp = player.max_hp;
+        // The removable debuffs clear (`DoNurseHeal`'s removal block).
+        let types: Vec<i32> = player
+            .buffs
+            .active_types()
+            .iter()
+            .copied()
+            .filter(|t| crate::buffs::is_debuff(*t))
+            .collect();
+        for t in types {
+            player.buffs.clear_buff(t);
+        }
+        self.coins -= cost as u64;
+        true
+    }
+
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
         world_sim::editing::update_editing(self, dt, screen);
     }
@@ -2701,4 +2754,12 @@ mod tr_hooks {
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
         assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));
     }
+}
+
+/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the
+/// missing life plus the removable debuffs x100, times the happiness
+/// adjustment. The boss-progression/expert/discount multipliers sit
+/// constants-off.
+pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
+    ((missing + debuff_count * 100) as f32 * mood) as i32
 }

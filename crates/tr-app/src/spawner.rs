@@ -476,6 +476,13 @@ pub fn spawn_allowed_dryad(downed_boss1: bool) -> bool {
     downed_boss1
 }
 
+/// `NPC.SpawnAllowed_Nurse` (`NPC.cs:7158-7171`): any player's
+/// `statLifeMax / 20 > 5` — the life maximum grew past the base 100 (the
+/// first Life Crystal).
+pub fn spawn_allowed_nurse(life_max: i32) -> bool {
+    life_max / 20 > 5
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
