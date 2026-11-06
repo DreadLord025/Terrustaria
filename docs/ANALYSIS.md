@@ -2520,6 +2520,42 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The lava burn (M1.5-ITEM-lava-burn)
+
+`CheckLavaDeath`'s non-doll arm: the drops touching lava vanish
+(`TurnToAirAndSync`) unless `ItemID.Sets.IsLavaImmuneRegardlessOfRarity`
+(the 18-row set — the obsidian family, the Fireblossom, the
+Hellstone-bar rows — rides the port's `LAVA_IMMUNE` const) or the item's
+rarity clears the `rare 0/-1` gate. The rare drops keep their loot:
+the rarity gate is the whole reason the mid-game items survive the hell
+pools. The voodoo arm rides the same lava read; the burn lands inside
+the drops pass before the pickup (a drop in lava vanishes the same tick
+it would be collected — the C# runs `CheckLavaDeath` before the pickup
+chain too, `WorldItem.cs:405-425`).
+
+## The voodoo sacrifice (M4-BOSS-6c)
+
+The gameplay hardmode gate: the dropped Guide Voodoo Doll (267) touching
+lava (`WorldItem.CheckLavaDeath`'s arm — `lavaWet` → `VoodooDollLavaDeath`)
+is consumed and strikes the town NPCs dead — the Guide FIRST
+(`StrikeNPCNoInteraction(9999)` → the port kills outright; the death pass
+picks the kill credit up), then the stack's remainder across the other
+town NPCs (the C# `isLikeATownNPC` list walks a shuffled copy; the port
+walks the spawn order). `NPC.SpawnWOF` ports the gates (the depth
+`maxTilesY - 205`, one living wall), the 1200-px player-clearance scan
+(the spawn x steps 16 px away from the world centre's side while a player
+sits within 1200 px), the free-row search (the solid/liquid>=100 blocker,
+the ±1000-step expand), the `UnderworldLayer+10..+80` row clamp and the
+`Announcement.HasAwoken` broadcast (the literal stands in for the
+localization key).
+
+The borrow shape: the items pass (`update_items`) reads the tile under
+each drop inside its tick closure and collects the lava-hit doll; the
+sacrifice resolves AFTER the tick (the spawn/kill pass takes `app`
+wholesale). The doll items never burn silently — the non-doll lava
+consumption (`rare 0/-1` items without the lava-immunity set) is the
+follow-up.
+
 ## The Wall of Flesh + the Hungry + the Leeches (M4-BOSS-6b)
 
 The aiStyle-27 machine (`npc.rs::update_wof`, the classic path
@@ -4458,8 +4494,9 @@ not ported — `Collision.cs:3220`), the Shark Tooth's `armorPenetration`
 (the NPC-defense consumer is M4's), the Band of Starpower (no grant site
 in this decompile's equip pass — do not invent; the real-vanilla +20 max
 mana is absent here), the wings' `wingSlot` grant (no `ItemDef` field —
-M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
-`GrantPrefixBenefits`), the vanity slots (the vanilla grants the
+M3-EQUIP-4's plumbing; M3-PREFIX's `GrantPrefixBenefits` landed — the
+62-80 accessory prefixes ride the `equipped_prefix` snapshot in the
+grant pass), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
 ### M1.4-TO-4 merge sync (2026-11-06)
@@ -4623,6 +4660,51 @@ PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
 positions ride the generic centre anchor (the C# positions them via the
 composite arms' stretch-dependent offsets — the arms carry the pose; the
 item offset differences are sub-10px polish for the render pass).
+
+## The ammo system (M3-ITEM-3)
+
+`Player.PickAmmo` (`Player.cs:53458-53676`): the pick order is
+`AmmoSlotOrder_Default` (`:57141-57144`) — the coin slots 50-53, the ammo
+slots 54-57, the main grid 0-53; the first slot whose item's `ammo` field
+matches the weapon's `useAmmo` and whose stack is positive wins (the
+vanilla's `ammoCyclingMode` defaults to None — no cycling). The drain
+lives INSIDE `PickAmmo` (`:53667-53672`: `if (!flag &&
+item.consumable) { item.stack--; TurnToAir at 0 }`) — `flag` starts as
+the `dontConsume` argument (`ItemID.Sets.gunProj`, only 4 endgame items —
+`ItemID.cs:1327`) and the not-consume rolls set it.
+
+The port: `crates/tr-app/src/ammo.rs` — `pick` returns an `AmmoSource`
+enum (Coin/Ammo/Grid) over `equip.coins` → `equip.ammo` →
+`App.inventory`; `drain` decrements and clears; `not_consume` ports the
+rolls for the shooters the registry carries (the Minishark 1/3, the
+Megashark 1/2, the Gatligator 1/2, the Candy Corn Rifle 1/3, the Chain
+Gun 2/3 and the SDMG 2/3 — the code's `Next(3) != 0` is verbatim even
+where the wiki disagrees).
+
+The shooter wire (world_sim/editing.rs): the shooters (`useAmmo > 0`)
+skip the melee-hit and throw arms; on the press the use starts (the
+swing + `item_time` + `shot_fired = false`); the shot fires at
+`ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
+`itemAnimation > 0 && ItemTimeIsZero` gate) — `PickAmmo` → the
+not-consume roll → the drain → the projectile = the ammo's `Item.shoot`,
+the damage = the weapon's + the ammo's through the class multiplier
+(`:53541-53546`), the speed = the weapon's + the ammo's `shootSpeed`
+(`:53544`). No ammo → a dry swing (the use plays, nothing spawns).
+
+The reach gate's player borrow was restructured: the old single `&app.player`
+borrow spanned the whole `update_editing` body and blocked the shooter's
+mutable `App` access — the reach check became `player_in_reach` via
+`is_some_and` (the borrow ends at the statement) and the food/potion/melee
+arms re-borrow through `app.player`.
+
+Deviations: the specific-pair table (`PickAmmo_TryFindingSpecificMatches`,
+`Player.cs:53448`) waits for its combo items; the ammo-cycling modes are
+M3-STORE-2's; the accessory ammo saves (the magic quiver, the ammo box,
+the ammo potion, the Chlorophyte 80%) wait for their accessories/buffs;
+the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
+first-8-ticks window) have no port volley state — every shot is the
+first, so those items consume every shot (documented); the gunProj
+`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).
 ## Minecart riding (M2-PHYS-7)
 
 The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf

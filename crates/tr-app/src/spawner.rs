@@ -103,6 +103,9 @@ pub struct SpawnContext<'a> {
     /// depth band) — the bat-layer selection reads it.
     pub underworld_for_bats: bool,
     pub flags: SpawnFlags,
+    /// The bound-Tinkerer roll gate: `downedGoblins && !savedGoblin &&
+    /// !AnyNPCs(105/107)` — the world_sim pass computes it.
+    pub bound_goblin_ok: bool,
 }
 
 /// Result of `GetSpawnRate`: frames between spawn rolls and the concurrent cap.
@@ -487,13 +490,11 @@ pub fn spawn_allowed_nurse(life_max: i32) -> bool {
 /// whose `ammo == Bullet(97)` or `useAmmo == Bullet` — the itemdata's
 /// `ammo`/`use_ammo` rows answer.
 pub fn spawn_allowed_arms_dealer(inventory_ids: &[u16]) -> bool {
-    inventory_ids
-        .iter()
-        .any(|id| {
-            crate::itemdata::ITEMS
-                .get(*id as usize)
-                .is_some_and(|d| d.ammo == 97 || d.use_ammo == 97)
-        })
+    inventory_ids.iter().any(|id| {
+        crate::itemdata::ITEMS
+            .get(*id as usize)
+            .is_some_and(|d| d.ammo == 97 || d.use_ammo == 97)
+    })
 }
 
 /// `NPC.SpawnAllowed_Demolitionist` (`NPC.cs:7067-7091`): any inventory
@@ -503,9 +504,7 @@ pub fn spawn_allowed_arms_dealer(inventory_ids: &[u16]) -> bool {
 /// full sweep grows with the data pass).
 pub fn spawn_allowed_demolitionist(inventory_ids: &[u16]) -> bool {
     const BOMBS: [u16; 6] = [168, 166, 157, 2896, 2897, 2350];
-    inventory_ids
-        .iter()
-        .any(|id| BOMBS.contains(id))
+    inventory_ids.iter().any(|id| BOMBS.contains(id))
 }
 
 /// The Painter's arrival: the vanilla `CheckForNPCsToSpawn`'s town-count
@@ -628,18 +627,14 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     // comparisons run on the tile coordinate — NPC.cs:4846's `spawnTileY <
     // Main.worldSurface`).
     let surface = (y as f64) <= ctx.world.world_surface * 16.0;
-    let tile_kind = ctx
-        .world
-        .tile(x, y / 16)
-        .map(|t| t.kind)
-        .unwrap_or(0);
+    let tile_kind = ctx.world.tile(x, y / 16).map(|t| t.kind).unwrap_or(0);
     // ---- the water ladder (`NPC.cs:1795-2082`'s arms in the vanilla
     // order; `waterTile` = the two tiles above the ground are WATER,
     // `:1057`'s `liquidType() == 0`) ----
     let water_above = |dy: i32| {
-        ctx.world.tile(x, y / 16 + dy).is_some_and(|t| {
-            t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water
-        })
+        ctx.world
+            .tile(x, y / 16 + dy)
+            .is_some_and(|t| t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Water)
     };
     if water_above(-1) && water_above(-2) {
         // The ocean arm (`:1795`): `isOcean` = the x-edge within
@@ -659,12 +654,7 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
             // The mud-critter scan (`:1932`'s `tileType == 60 &&
             // surfaceSpawn && day && Next(3) == 0` → 616/612/613/608) is
             // unmodelled — the roll consumes where the vanilla's gate hits.
-            if tile_kind == 60
-                && surface
-                && y / 16 > 50
-                && rng.next(3) == 0
-                && ctx.day_time
-            {
+            if tile_kind == 60 && surface && y / 16 > 50 && rng.next(3) == 0 && ctx.day_time {
                 let _ = rng.next(5);
             }
             return Npc::spawn_swimmer(ctx.world, x, y / 16, NpcKind::Piranha);
@@ -801,18 +791,41 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     // exclusive in vanilla; the port keeps the exclusivity inside one
     // section.
     let underworld_depth = (y as f64 / 16.0) > ctx.world.height as f64 - 190.0;
+    // The bound Goblin Tinkerer (`NPC.cs:2084-2088`'s ladder arm): after
+    // the army falls, one tied goblin waits in the cavern rock —
+    // `RollLuck(20) == 0` per spawn tick, `deeperThanRockLayer`, below the
+    // `maxTilesY - 210` underworld floor, once per save (the rescue raises
+    // `savedGoblin`).
+    if ctx.bound_goblin_ok
+        && !underworld_depth
+        && (y as f64 / 16.0) > ctx.world.rock_layer
+        && (y as f64 / 16.0) < ctx.world.height as f64 - 210.0
+        && rng.next(20) == 0
+    {
+        return Npc::spawn_caster(ctx.world, x, y / 16, NpcKind::BoundGoblin);
+    }
     // The Devourer: the corruption-cavern roll (`NPC.cs:3701-3710`:
     // `ZoneCorrupt && Next(maxValue) == 0` with the `maxValue = 65`
     // (`:1286`); `CanSpawnDevourer` is the custom-seed gate — true in the
     // port; the hardmode 98/99 split waits for the hardmode worm pass).
     if ctx.flags.zone_evil && rng.next(65) == 0 {
-        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::DevourerHead));
+        return Some(Npc::spawn_worm_head(
+            ctx.world,
+            x,
+            y / 16,
+            NpcKind::DevourerHead,
+        ));
     }
     // The Giant Worm: the cavern roll (`NPC.cs:4815-4832`:
     // `underGround && !noWorms && Next(50) == 0 && !ZoneSnow` — the port
     // approximates the snow gate with the snow-floor tiles 147/161).
     if !matches!(tile_kind, 147 | 161) && rng.next(50) == 0 {
-        return Some(Npc::spawn_worm_head(ctx.world, x, y / 16, NpcKind::GiantWormHead));
+        return Some(Npc::spawn_worm_head(
+            ctx.world,
+            x,
+            y / 16,
+            NpcKind::GiantWormHead,
+        ));
     }
     // The Tim: the deep-cavern roll (`:5014`): `(remixWorld ||
     // spawnTileY > (rockLayer + maxTilesY) / 2.0) && (Next(200) == 0 ||
@@ -852,9 +865,7 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
     // The corruption hover: the Eater of Souls (`NPC.cs`'s corruption arm
     // `Next(6) == 0 → 6` — the port's evil-zone flag gates it).
     if ctx.flags.zone_evil && rng.next(6) == 0 {
-        if let Some(n) =
-            Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::EaterOfSouls)
-        {
+        if let Some(n) = Npc::spawn_hover(ctx.world, x, y / 16 - 2, NpcKind::EaterOfSouls) {
             return Some(n);
         }
     }
@@ -880,10 +891,7 @@ fn spawn_npc_at(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, y: i32) -> Opt
         // bats.
         let mut bat_y = y / 16 - 1;
         for _ in 0..10 {
-            if !ctx
-                .world
-                .tile(x, bat_y)
-                .is_some_and(|t| t.active())
+            if !ctx.world.tile(x, bat_y).is_some_and(|t| t.active())
                 && !ctx.world.tile(x, bat_y - 1).is_some_and(|t| t.active())
             {
                 break;
@@ -916,7 +924,12 @@ fn is_ices_snow(kind: u16) -> bool {
     matches!(kind, 147 | 161 | 163 | 164 | 200)
 }
 
-fn spawn_basic_slime(ctx: &SpawnContext, rng: &mut FastRandom, x: i32, surface: bool) -> Option<Npc> {
+fn spawn_basic_slime(
+    ctx: &SpawnContext,
+    rng: &mut FastRandom,
+    x: i32,
+    surface: bool,
+) -> Option<Npc> {
     let dist = (x - ctx.world.spawn_x).abs();
     let variant = if surface {
         if rng.next(3) == 0 || dist < 200 {
@@ -958,6 +971,7 @@ mod tests {
             player_life_max: 100,
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
+            bound_goblin_ok: false,
         }
     }
 
@@ -1168,7 +1182,10 @@ mod tests {
                 .count()
         };
         let (eyes0, eyes4) = (count(&c0), count(&c4));
-        assert!(eyes0 > 0 && eyes4 > eyes0, "phase 0: {eyes0}, phase 4: {eyes4}");
+        assert!(
+            eyes0 > 0 && eyes4 > eyes0,
+            "phase 0: {eyes0}, phase 4: {eyes4}"
+        );
     }
 
     #[test]
@@ -1261,8 +1278,14 @@ mod tests {
                 kinds.push(n.kind);
             }
         }
-        assert!(kinds.contains(&NpcKind::Skeleton), "no skeleton in the sweep");
-        assert!(kinds.contains(&NpcKind::UndeadMiner), "no miner in the sweep");
+        assert!(
+            kinds.contains(&NpcKind::Skeleton),
+            "no skeleton in the sweep"
+        );
+        assert!(
+            kinds.contains(&NpcKind::UndeadMiner),
+            "no miner in the sweep"
+        );
         assert!(kinds.contains(&NpcKind::CaveBat), "no bat in the sweep");
         // The underworld flag flips the bat kind to the hellbat.
         let mut cu = ctx(&w, 350.0 * 16.0, true);
@@ -1301,6 +1324,7 @@ mod tests {
             player_life_max: 100,
             underworld_for_bats: false,
             flags: SpawnFlags::default(),
+            bound_goblin_ok: false,
         }
     }
 
@@ -1430,12 +1454,14 @@ mod tests {
         let mut rng = FastRandom::new(0xDEAD_BEEF);
         // A latched call is fully suppressed — no rate roll, no spawn — and
         // reports that it was consumed (`NPC.cs:80171-80174`).
-        let (spawned, suppressed) = spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, true);
+        let (spawned, suppressed) =
+            spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, true);
         assert!(suppressed);
         assert!(spawned.is_none());
         // The next call runs the normal pipeline (the default rate 600 makes
         // a spawn vanishingly unlikely here, but the latch must be clear).
-        let (spawned, suppressed) = spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, false);
+        let (spawned, suppressed) =
+            spawn_npc_call(Some(ctx(&w, 20.0 * TILE_PX, true)), &mut rng, false);
         assert!(!suppressed);
         assert!(spawned.is_none());
     }
@@ -1476,6 +1502,7 @@ mod tests {
                         moon_event: true,
                         ..SpawnFlags::default()
                     },
+                    bound_goblin_ok: false,
                 };
                 let (spawned, _) = spawn_npc_call(Some(ctx), &mut rng, false);
                 decisions.push(spawned.map(|n| (n.kind as u8, n.x.to_bits())));
@@ -1664,16 +1691,25 @@ mod tests {
         c.flags.zone_evil = true;
         let mut devourers = 0;
         for seed in 1..6000u64 {
-            if matches!(outcome_at(&c, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+            if matches!(
+                outcome_at(&c, seed, 350 * 16),
+                Some((NpcKind::DevourerHead, _))
+            ) {
                 devourers += 1;
             }
         }
-        assert!(devourers > 0, "the corruption sweep never rolled the Devourer");
+        assert!(
+            devourers > 0,
+            "the corruption sweep never rolled the Devourer"
+        );
         // The plain dirt never rolls the Devourer (the zone gate).
         let c_plain = ctx(&w, 350.0 * 16.0, false);
         let mut devourers = 0;
         for seed in 1..6000u64 {
-            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::DevourerHead, _))) {
+            if matches!(
+                outcome_at(&c_plain, seed, 350 * 16),
+                Some((NpcKind::DevourerHead, _))
+            ) {
                 devourers += 1;
             }
         }
@@ -1681,15 +1717,13 @@ mod tests {
         // The Giant Worm: the same depth without the corruption.
         let mut worms = 0;
         for seed in 1..6000u64 {
-            if matches!(outcome_at(&c_plain, seed, 350 * 16), Some((NpcKind::GiantWormHead, _))) {
+            if matches!(
+                outcome_at(&c_plain, seed, 350 * 16),
+                Some((NpcKind::GiantWormHead, _))
+            ) {
                 worms += 1;
             }
         }
         assert!(worms > 0, "the cavern sweep never rolled the Giant Worm");
     }
-
 }
-
-
-
-

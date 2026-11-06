@@ -136,6 +136,14 @@ pub(crate) struct App {
     pub(crate) next_worm_id: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
+    /// module; delete the field + the module + the call sites to remove).
+    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// The favorited inventory slots (`Item.favorited`'s port — the slot
+    /// indices, not the per-item flag; the v1 tracks the slot positions).
+    pub(crate) favorite_slots: Vec<usize>,
+    /// The Goblin Army spawn cadence (the 2-second invasion pass).
+    pub(crate) invasion_spawn_timer: f32,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -411,6 +419,9 @@ pub(crate) struct App {
     /// The aim angle (the mouse direction, radians) the shooting/throwing
     /// styles read — `Player.itemRotation`'s source for useStyle 5.
     pub(crate) swing_aim: f32,
+    /// The shot-fired latch of the current swing (`ItemTimeIsZero` fires
+    /// once per use — the refire waits for the next `TryStartUse`).
+    pub(crate) shot_fired: bool,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -710,7 +721,7 @@ impl App {
         if self.coins < price {
             return false;
         }
-        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item) {
+        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item, 0) {
             Some(i) => i,
             None => return false,
         };
@@ -724,6 +735,7 @@ impl App {
                 kind: item,
                 name: crate::itemdata::ITEMS[item as usize].name,
                 count: 1,
+                prefix: 0,
             };
         }
         self.coins -= price;
@@ -740,6 +752,32 @@ impl App {
         };
         self.world.day_time = day;
         self.world.time = time;
+        true
+    }
+
+    /// The favorite toggle on an inventory slot (`Item.favorited`'s
+    /// right-click toggle).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+        if idx >= crate::item::INV {
+            return;
+        }
+        if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
+            self.favorite_slots.remove(pos);
+        } else {
+            self.favorite_slots.push(idx);
+        }
+    }
+
+    pub(crate) fn is_favorite(&self, idx: usize) -> bool {
+        self.favorite_slots.contains(&idx)
+    }
+
+    /// The trash swap: the held item goes to the trash, the old trash
+    /// returns. The favorited held items can't be trashed.
+    pub(crate) fn trash_swap(&mut self) -> bool {
+        let old = self.equip.trash;
+        self.equip.trash = self.mouse_item;
+        self.mouse_item = old;
         true
     }
 
@@ -1078,21 +1116,25 @@ impl App {
                 kind: 2, // ItemID.DirtBlock
                 name: registry::name(2),
                 count: 50,
+                prefix: 0,
             },
             1 => ItemSlot {
                 kind: 3, // ItemID.StoneBlock
                 name: registry::name(3),
                 count: 50,
+                prefix: 0,
             },
             2 => ItemSlot {
                 kind: 8, // ItemID.Torch
                 name: registry::name(8),
                 count: 99,
+                prefix: 0,
             },
             3 => ItemSlot {
                 kind: 42, // ItemID.Shuriken
                 name: registry::name(42),
                 count: 99,
+                prefix: 0,
             },
             // The vanilla starter tools (`Player.cs:54356-54360`'s copper
             // trio) plus the copper hammer — the port has no shop yet, so
@@ -1102,26 +1144,31 @@ impl App {
                 kind: 3509, // ItemID.CopperPickaxe
                 name: registry::name(3509),
                 count: 1,
+                prefix: 0,
             },
             5 => ItemSlot {
                 kind: 3506, // ItemID.CopperAxe
                 name: registry::name(3506),
                 count: 1,
+                prefix: 0,
             },
             6 => ItemSlot {
                 kind: 3505, // ItemID.CopperHammer
                 name: registry::name(3505),
                 count: 1,
+                prefix: 0,
             },
             7 => ItemSlot {
                 kind: 3507, // ItemID.CopperShortsword
                 name: registry::name(3507),
                 count: 1,
+                prefix: 0,
             },
             _ => ItemSlot {
                 kind: 0,
                 name: "",
                 count: 0,
+                prefix: 0,
             },
         });
         if world_path.extension().is_some_and(|e| e == "trwld") {
@@ -1140,6 +1187,7 @@ impl App {
                             kind: *kind,
                             name: registry::name(*kind),
                             count: *count,
+                            prefix: 0, // the M6-SAVE sidecar carries (kind, count)
                         };
                     }
                 }
@@ -1437,6 +1485,9 @@ impl App {
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            debug_panel: crate::debug_panel::DebugPanel::new(),
+            favorite_slots: Vec::new(),
+            invasion_spawn_timer: 0.0,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1453,6 +1504,7 @@ impl App {
                             kind,
                             name: registry::name(kind),
                             count: 1,
+                            prefix: 0,
                         };
                     }
                 }
@@ -1465,6 +1517,9 @@ impl App {
                             kind,
                             name: registry::name(kind),
                             count: 1,
+                            // The sidecar v6 persists kinds only — a restored
+                            // dye is prefixless.
+                            prefix: 0,
                         };
                     }
                 }
@@ -1485,6 +1540,7 @@ impl App {
                                 kind,
                                 name: registry::name(kind),
                                 count: 1,
+                                prefix: 0,
                             };
                         }
                     }
@@ -1500,6 +1556,7 @@ impl App {
                                 kind,
                                 name: registry::name(kind),
                                 count: 1,
+                                prefix: 0,
                             };
                         }
                     }
@@ -1512,6 +1569,7 @@ impl App {
                         kind: dmount,
                         name: registry::name(dmount),
                         count: 1,
+                        prefix: 0,
                     };
                 }
                 equip
@@ -1712,6 +1770,7 @@ impl App {
             swing: 0.0,
             swing_style: 0,
             swing_aim: 0.0,
+            shot_fired: false,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,

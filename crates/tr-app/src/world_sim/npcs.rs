@@ -6,7 +6,7 @@ use glam::Vec2;
 use tr_core::TILE_PX;
 
 use crate::achievements;
-use crate::app::{rand01, App};
+use crate::app::{App, rand01};
 use crate::item::ItemDrop;
 use crate::npc::{Npc, NpcKind, SlimeVariant};
 use crate::regen::DotDeath;
@@ -54,51 +54,106 @@ pub(crate) fn black_slime_darkness_touch(
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
-    // The town dispatch: the Merchant opens the shop, the Nurse heals (the
-    // vanilla's dialog-button pair — the port collapses them onto the
-    // right-click).
+    // The bound-goblin rescue (`NPC.cs:19824-19840`'s `talkNPC` trigger +
+    // `AI_000_TransformBoundNPC` `:44884-44896`): the talk transforms 105
+    // → 107 in place and raises `savedGoblin` — the port falls through to
+    // the shop open (the vanilla opens the dialog, the player then picks
+    // Shop; the ПКМ-collapse matches the Nurse treatment).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::BoundGoblin && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
+    }
+    // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
+    // — the port collapses them onto the right-click).
     let Some(nurse_idx) = app.npcs.iter().position(|n| {
-        n.hp > 0
-            && n.kind == NpcKind::Nurse
-            && {
-                let (w, h) = n.size();
-                world_pos.x >= n.x
-                    && world_pos.x < n.x + w
-                    && world_pos.y >= n.y
-                    && world_pos.y < n.y + h
-            }
+        n.hp > 0 && n.kind == NpcKind::Nurse && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
     }) else {
-        return try_open_merchant_shop_at_cursor(app, world_pos);
+        return try_open_town_shop_at_cursor(app, world_pos);
     };
     app.nurse_heal(nurse_idx)
 }
 
-fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+/// `Main.CanStartInvasion` (`Main.cs:64414-64432`): no active invasion
+/// (the port's `invasion_goblins` covers `invasionType`), and at least one
+/// qualifying player — the 200-life gate (`statLifeMax >= 200`); the
+/// multiplayer count folds to the session player. The item path passes
+/// `ignoreDelay: true`, so the `invasionDelay` scouting arm folds out.
+pub(crate) fn can_start_invasion(world: &tr_core::World, player_life_max: i32) -> bool {
+    !world.invasion_goblins && player_life_max >= 200
+}
+
+/// `Main.StartInvasion(1)` (`Main.cs:64435-64460`): the goblin type, the
+/// size `80 + 40 x the qualifying players` (the CanStart gate guarantees
+/// >= 1); the active-invasion early return holds (`invasionType != 0`).
+pub(crate) fn start_invasion(world: &mut tr_core::World, qualifying_players: i32) {
+    if world.invasion_goblins {
+        return;
+    }
+    world.invasion_goblins = true;
+    world.invasion_size = 80 + 40 * qualifying_players.max(1);
+}
+
+/// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
+/// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
+/// vanilla indices). `None` = no shop (the Guide).
+pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
+    Some(match kind {
+        NpcKind::Merchant => 1,
+        NpcKind::ArmsDealer => 2,
+        NpcKind::Dryad => 3,
+        NpcKind::Demolitionist => 4,
+        NpcKind::Clothier => 5,
+        NpcKind::GoblinTinkerer => 6,
+        NpcKind::Painter => 15,
+        NpcKind::WitchDoctor => 16,
+        _ => return None,
+    })
+}
+
+/// The talk-rescue (`AI_000_TransformBoundNPC`, `NPC.cs:44884-44896`): the
+/// bound goblin transforms into the Tinkerer in place — the freed 18x40
+/// stats restore (`SetDefaults` 107, `:10271-10283`), `savedGoblin`
+/// raises (`:52944-52946`) and the tied state never returns.
+pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::GoblinTinkerer;
+    n.max_hp = NpcKind::GoblinTinkerer.max_hp();
+    n.hp = n.max_hp;
+    world.saved_goblin = true;
+}
+
+fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
-        n.hp > 0
-            && n.kind == NpcKind::Merchant
-            && {
-                let (w, h) = n.size();
-                world_pos.x >= n.x
-                    && world_pos.x < n.x + w
-                    && world_pos.y >= n.y
-                    && world_pos.y < n.y + h
-            }
+        n.hp > 0 && shop_index_for_kind(n.kind).is_some() && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
     }) else {
         return false;
     };
+    let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
     let (pcx, pcy) = app
         .player
         .as_ref()
         .map(|p| p.center())
         .unwrap_or((0.0, 0.0));
-    let mood = crate::happiness::process_mood(
-        &app.world,
-        &app.npcs,
-        &app.npcs[idx],
-        (pcx, pcy),
-        false,
-    );
+    let mood =
+        crate::happiness::process_mood(&app.world, &app.npcs, &app.npcs[idx], (pcx, pcy), false);
     let flags = crate::shop::ShopFlags {
         hard_mode: app.world.hard_mode,
         night: !app.world.day_time,
@@ -114,7 +169,7 @@ fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock(1, &flags, &inv_ids);
+    app.shop_stock = crate::shop::resolve_stock(shop, &flags, &inv_ids);
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     true
@@ -124,7 +179,13 @@ pub(crate) fn update_worms(app: &mut App) {
     let mut rng = app.item_rng;
     let world = &app.world;
     let player = app.player.as_ref().map(|p| (p.center().0, p.center().1));
-    update_worms_in(world, player, &mut app.npcs, &mut rng, &mut app.next_worm_id);
+    update_worms_in(
+        world,
+        player,
+        &mut app.npcs,
+        &mut rng,
+        &mut app.next_worm_id,
+    );
 }
 
 /// The worm pass's core — the pieces the tests drive directly (the world,
@@ -168,16 +229,10 @@ pub(crate) fn update_worms_in(
             match kind {
                 // `:51310`'s `Next(8, 13)` / `:51313`'s `Next(4, 7)` — the
                 // inclusive-low exclusive-high C# ranges.
-                NpcKind::DevourerHead => {
-                    8 + (crate::app::frame::rand01(&mut rng) * 5.0) as u32
-                }
-                NpcKind::GiantWormHead => {
-                    4 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
-                }
+                NpcKind::DevourerHead => 8 + (crate::app::frame::rand01(&mut rng) * 5.0) as u32,
+                NpcKind::GiantWormHead => 4 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32,
                 // The leech head: `Next(3, 6)` (`AI_006`'s type-117 branch).
-                NpcKind::LeechHead => {
-                    3 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
-                }
+                NpcKind::LeechHead => 3 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32,
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
                 // the difficulty work); the Destroyer's ~80 segments
                 // (`AI_037`'s ai[2] roll).
@@ -263,13 +318,7 @@ pub(crate) fn update_worms_in(
 /// `+0.11` (the cap `num45`), the horizontal steering (`:51940-51972`); in
 /// the ground it flies straight at the tile-snapped player (`:51997-52002`).
 /// `noTileCollide` is family-wide — no collision blocks the head.
-fn worm_head_step(
-    npc: &mut Npc,
-    world: &tr_core::World,
-    pcx: f32,
-    pcy: f32,
-    _rng: &mut u64,
-) {
+fn worm_head_step(npc: &mut Npc, world: &tr_core::World, pcx: f32, pcy: f32, _rng: &mut u64) {
     let (w, h) = npc.size();
     // `flag3`: the dig-mode scan (`:51575-51597`).
     let mut flag3 = false;
@@ -323,6 +372,145 @@ fn worm_head_step(
     }
 }
 
+/// `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:681-763`): the
+/// Guide Voodoo Doll (267) that touches lava is consumed, strikes every
+/// town NPC dead (the Guide first, then the stack's remainder across the
+/// other town NPCs) and calls `NPC.SpawnWOF` at the drop's position.
+pub(crate) fn voodoo_doll_lava_death(app: &mut App, pos: Vec2, stack: u32) {
+    let mut num = stack.max(1) as i32;
+    // The Guide first (`Main.npc[i].type == 22`'s loop, `:702-718`): the
+    // `StrikeNPCNoInteraction(9999, 10f, -direction)` — the port kills
+    // outright (the death pass picks the kill credit up).
+    for n in app.npcs.iter_mut() {
+        if n.kind == NpcKind::Guide && n.hp > 0 {
+            n.hp = 0;
+            num -= 1;
+        }
+    }
+    // The remainder across the other town NPCs (`isLikeATownNPC`'s list,
+    // `:730-753` — the random `List` walk; the port walks the spawn order).
+    if num > 0 {
+        for n in app.npcs.iter_mut() {
+            if num <= 0 {
+                break;
+            }
+            if matches!(
+                n.kind,
+                NpcKind::Merchant
+                    | NpcKind::Dryad
+                    | NpcKind::Nurse
+                    | NpcKind::ArmsDealer
+                    | NpcKind::Demolitionist
+                    | NpcKind::Painter
+                    | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
+            ) && n.hp > 0
+            {
+                n.hp = 0;
+                num -= 1;
+            }
+        }
+    }
+    spawn_wof_at(app, pos);
+}
+
+/// `NPC.SpawnWOF` (`NPC.cs:80315-80378`): the underworld gates (the depth
+/// `maxTilesY - 205`, no living wall), the 1200-px player-clearance scan
+/// (`num2` steps 16 px away from the world's centre side), the free-row
+/// search (`SolidTile || liquid >= 100` blocked, expanding `num6` up/down
+/// 1000 steps), the `UnderworldLayer+10..+80` row clamp and the spawn +
+/// the `Announcement.HasAwoken` broadcast.
+pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
+    let world = &app.world;
+    let underworld = world.height as i32 - 200; // `Main.UnderworldLayer`
+    // The gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and the wall.
+    if (pos.y / TILE_PX) < (world.height as f32 - 205.0)
+        || app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
+    {
+        return false;
+    }
+    // The player-clearance scan: step 16 px away from the world centre's
+    // side while a player sits within 1200 px (`:80322-80346`).
+    let mut num2 = pos.x as i32;
+    let num = if (pos.x / TILE_PX) > world.width as f32 / 2.0 {
+        -1
+    } else {
+        1
+    };
+    let mut target_player = 0usize;
+    let mut flag = false;
+    while !flag {
+        flag = true;
+        if let Some(p) = app.player.as_ref() {
+            if p.x > (num2 - 1200) as f32 && p.x < (num2 + 1200) as f32 {
+                num2 -= num * 16;
+                flag = false;
+                target_player = 0;
+            }
+        }
+        let _ = target_player;
+    }
+    // The free-row search at the doll's column.
+    let num4 = (num2 / 16).clamp(1, world.width as i32 - 2);
+    let mut num5 = (pos.y / TILE_PX) as i32;
+    let solid_like = |x: i32, y: i32| -> bool {
+        world
+            .tile(x, y)
+            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+            || world.tile(x, y).is_some_and(|t| t.liquid >= 100)
+    };
+    if !world.in_bounds(num4, num5) || solid_like(num4, num5) {
+        let mut num6 = 0;
+        let mut num7 = 1000;
+        while num7 > 0 {
+            num7 -= 1;
+            let up_ok = world.in_bounds(num4, num5 - num6)
+                && !solid_like(num4, num5 - num6)
+                && world
+                    .tile(num4, num5 - num6)
+                    .is_some_and(|t| t.liquid < 100);
+            if up_ok {
+                num5 -= num6;
+                break;
+            }
+            let down_ok = world.in_bounds(num4, num5 + num6)
+                && !solid_like(num4, num5 + num6)
+                && world
+                    .tile(num4, num5 + num6)
+                    .is_some_and(|t| t.liquid < 100);
+            if down_ok {
+                num5 += num6;
+                break;
+            }
+            num6 += 1;
+        }
+    }
+    // The row clamp to the underworld band.
+    let num8 = underworld + 10;
+    let num9 = num8 + 70;
+    num5 = num5.clamp(num8, num9);
+    let mut boss = Npc::new(
+        NpcKind::WallOfFlesh,
+        num2 as f32,
+        num5 as f32 * TILE_PX,
+        1,
+        0.0,
+    );
+    boss.hp = boss.max_hp;
+    app.npcs.push(boss);
+    // `ChatHelper.BroadcastChatMessage("Announcement.HasAwoken", ...)`
+    // (`:80378`) — the literal stands in for the localization key.
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        "The Wall of Flesh has awoken!",
+        crate::chat::COLOR_COMMAND,
+    );
+    true
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     app.npc_timer -= dt;
@@ -345,9 +533,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // far enough off-screen; the port culls it above the player's view).
     let player_y = app.player.as_ref().map(|p| p.y).unwrap_or(0.0);
     if app.world.day_time {
-        app.npcs.retain(|n| {
-            !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y)
-        });
+        app.npcs
+            .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
     }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
@@ -376,47 +563,64 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The Goblin Army invasion (`NPC.cs:444+`, `invasionType = 1`): while
+    // `invasionSize` lasts, an invader walks in near the player every 2 s
+    // (the vanilla cadence rides `UpdateWorld`; the port's timer). The kind
+    // mix is deterministic off the roster length (the vanilla rolls the
+    // spawn RNG).
+    if app.world.invasion_goblins && app.world.invasion_size > 0 {
+        app.invasion_spawn_timer += dt;
+        if app.invasion_spawn_timer >= 2.0 {
+            app.invasion_spawn_timer = 0.0;
+            if let Some(player) = app.player.as_ref() {
+                let kinds = [
+                    NpcKind::GoblinPeon,
+                    NpcKind::GoblinPeon,
+                    NpcKind::GoblinThief,
+                    NpcKind::GoblinWarrior,
+                    NpcKind::GoblinArcher,
+                ];
+                let kind = kinds[app.npcs.len() % kinds.len()];
+                let dx = if app.npcs.len() % 2 == 0 { 20 } else { -20 };
+                let xt = ((player.x / TILE_PX) as i32 + dx).clamp(2, app.world.width - 3);
+                if let Some(n) = Npc::spawn_cave_walker(&app.world, xt, kind) {
+                    app.npcs.push(n);
+                }
+            }
+        }
+    }
     // The town-NPC arrival (`NPC.SpawnAllowed_Merchant`, `NPC.cs:7175`):
     // the money condition + the absence check — the port's cadence rides
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
         // The Clothier: the downedSkeletron gate.
-        if app.world.downed_skeletron
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier)
-        {
+        if app.world.downed_skeletron && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
                 if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Clothier) {
-                    n.home =
-                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
                     app.npcs.push(n);
                 }
             }
         }
         // The Witch Doctor: the downedQueenBee gate.
-        if app.world.downed_queen_bee
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor)
-        {
+        if app.world.downed_queen_bee && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 - 9).clamp(2, app.world.width - 3);
                 if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::WitchDoctor) {
-                    n.home =
-                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
                     app.npcs.push(n);
                 }
             }
         }
         // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
         // downedBoss1 — the port's downed_eoc).
-        if app.world.downed_eoc
-            && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad)
-        {
+        if app.world.downed_eoc && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad) {
             if let Some(player) = app.player.as_ref() {
                 let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
                 if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Dryad) {
-                    n.home =
-                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
                     app.npcs.push(n);
                 }
             }
@@ -432,11 +636,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // NPC per pass).
                 let xt = ((player.x / TILE_PX) as i32 - 6).clamp(2, app.world.width - 3);
                 if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Nurse) {
-                    n.home = crate::town::quick_find_home(
-                        &app.world,
-                        xt,
-                        (n.y / TILE_PX) as i32,
-                    );
+                    n.home = crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
                     app.npcs.push(n);
                 }
             }
@@ -454,11 +654,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if let Some(player) = app.player.as_ref() {
                     let xt = ((player.x / TILE_PX) as i32 + 6).clamp(2, app.world.width - 3);
                     if let Some(mut m) = Npc::spawn_town(&app.world, xt, NpcKind::Merchant) {
-                        m.home = crate::town::quick_find_home(
-                            &app.world,
-                            xt,
-                            (m.y / TILE_PX) as i32,
-                        );
+                        m.home =
+                            crate::town::quick_find_home(&app.world, xt, (m.y / TILE_PX) as i32);
                         app.npcs.push(m);
                     }
                 }
@@ -484,15 +681,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `BannerSystem.AddNPCKillBy` (M2-BUFF-8): the milestone spawns the
         // banner item at the death spot and announces the tally in the
         // Command color.
-        if let Some((banner, text)) =
-            app.banners
-                .add_npc_kill_by(entry.net_id, &app.player_name)
-        {
-            crate::chat::broadcast_death_text(
-                &mut app.chat,
-                &text,
-                crate::chat::COLOR_COMMAND,
-            );
+        if let Some((banner, text)) = app.banners.add_npc_kill_by(entry.net_id, &app.player_name) {
+            crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_COMMAND);
             let item = tr_core::bestiary::banner_to_item(banner);
             crate::world_sim::items::spawn_item_drop(
                 app,
@@ -537,6 +727,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
             NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
+            // The invasion death bookkeeping (`NPC.VanillaKillCount`): each
+            // fallen invader drains `invasionSize`; the last kill raises
+            // `downedGoblins` (the Tinkerer's gate).
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => {
+                if app.world.invasion_goblins {
+                    app.world.invasion_size -= 1;
+                    if app.world.invasion_size <= 0 {
+                        app.world.invasion_goblins = false;
+                        app.world.downed_goblins = true;
+                    }
+                }
+            }
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
@@ -613,13 +818,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if wof.wants_hungry {
             let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
             for i in 0..11 {
-                let mut hungry = Npc::new(
-                    NpcKind::Hungry,
-                    wof.x,
-                    mid,
-                    wof.facing,
-                    0.0,
-                );
+                let mut hungry = Npc::new(NpcKind::Hungry, wof.x, mid, wof.facing, 0.0);
                 hungry.hp = hungry.max_hp;
                 hungry.ai[0] = i as f32 * 0.1 - 0.05;
                 app.npcs.push(hungry);
@@ -691,11 +890,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             drop(player);
             // `Player.KillMe`'s chat broadcast: `{name} {text}` in the Death
             // color (`ChatColors.cs`); the ported monitor rides the App.
-            crate::chat::broadcast_death(
-                &mut app.chat,
-                &app.player_name,
-                &death_text,
-            );
+            crate::chat::broadcast_death(&mut app.chat, &app.player_name, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
                 player.start_death(&app.world, boss_near, false);
@@ -752,8 +947,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 town_npcs: 0, // no town NPCs yet (M4-TOWN)
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
-                underworld_for_bats: (app.camera.y / 16.0) as i32
-                    > app.world.height - 200,
+                underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
+                // `NPC.cs:2084`'s guards: the army downed, the rescue not
+                // yet raised, and nobody bound/freed on the map.
+                bound_goblin_ok: app.world.downed_goblins
+                    && !app.world.saved_goblin
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
+                    }),
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);
@@ -822,6 +1023,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             app.items.push(ItemDrop::new(
                 req.item as u16,
                 req.stack as u32,
+                crate::prefix::roll_prefix(req.item as u16, -1, &mut app.item_rng),
                 x,
                 y,
                 vx,
@@ -876,6 +1078,7 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         app.items.push(ItemDrop::new(
             req.item as u16,
             req.stack as u32,
+            0,
             x,
             y,
             vx,
@@ -910,9 +1113,8 @@ mod tests {
         let mut player = crate::player::Player::spawn(&world);
         let px = player.x;
         let py = player.y;
-        let mut black =
-            Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Black)
-                .expect("the surface spawns a black slime");
+        let mut black = Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Black)
+            .expect("the surface spawns a black slime");
         black.x = px;
         black.y = py;
         // The first rand01 of seed 1 — under the 0.25 gate?
@@ -934,8 +1136,8 @@ mod tests {
         assert!(!player2.buffs.active_types().contains(&22));
         // The stream advances only when the touch rolls (a blue slime skips
         // the roll entirely — the same seed stays put).
-        let blue = Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Blue)
-            .unwrap();
+        let blue =
+            Npc::spawn_slime_variant(&world, (px / 16.0) as i32, SlimeVariant::Blue).unwrap();
         let mut untouched = 7u64;
         black_slime_darkness_touch(&blue, &mut player, &mut untouched);
         assert_eq!(untouched, 7);
@@ -990,5 +1192,138 @@ mod tests {
         spawn_coins(&mut a, &npc);
         spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
+    }
+
+    #[cfg(test)]
+    mod voodoo_tests {
+        use super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use crate::npc::Npc;
+        use tr_core::tile::{FLAG_ACTIVE, LiquidKind, Tile};
+        use tr_core::world::World;
+
+        /// A hell world: the stone floor at row `hell_floor`, the lava pool on
+        /// top of it, the underworld band below (`maxTilesY - 200`).
+        fn hell_world() -> World {
+            let mut w = World::new("hell".into(), 400, 700);
+            for x in 0..w.width {
+                for y in 500..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            // The lava pool at the drop site (rows 498-499, columns 190-210).
+            for x in 190..210 {
+                for y in 498..500 {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                    w.tiles[i].liquid = 255;
+                    w.tiles[i].set_liquid_kind(LiquidKind::Lava);
+                }
+            }
+            w.compute_column_surface();
+            w
+        }
+
+        #[test]
+        fn the_voodoo_doll_sacrifice_kills_the_guide_and_spawns_the_wall() {
+            // `VoodooDollLavaDeath` + `SpawnWOF`: the doll in the underworld
+            // lava kills the Guide (9999) and spawns the wall at the
+            // player-clearance x inside the band rows.
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = hell_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 200.0 * TILE_PX;
+            player.y = 496.0 * TILE_PX;
+            let player_x = player.x;
+            app.player = Some(player);
+            let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+            guide.hp = guide.max_hp;
+            app.npcs.push(guide);
+            let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+            crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 1);
+            // The Guide died.
+            assert!(
+                app.npcs
+                    .iter()
+                    .all(|n| n.kind != NpcKind::Guide || n.hp <= 0)
+            );
+            // The wall spawned inside the underworld band.
+            let wall = app
+                .npcs
+                .iter()
+                .find(|n| n.kind == NpcKind::WallOfFlesh)
+                .expect("the wall spawned");
+            let band_top = (app.world.height as i32 - 200 + 10) as f32 * TILE_PX;
+            let band_bottom = (app.world.height as i32 - 200 + 80) as f32 * TILE_PX;
+            assert!(
+                wall.y >= band_top && wall.y <= band_bottom,
+                "the wall row clamped into the band ({})",
+                wall.y
+            );
+            // The clearance: the spawn x sits at least 1200 px from the player.
+            let dx = (wall.x - player_x).abs();
+            assert!(dx >= 1200.0, "the spawn cleared the player ({dx})");
+        }
+
+        #[test]
+        fn the_wall_spawn_refuses_outside_the_underworld_and_while_alive() {
+            // `SpawnWOF`'s gates: the depth (`pos.Y / 16 < maxTilesY - 205`) and
+            // the living wall.
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = hell_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 200.0 * TILE_PX;
+            player.y = 496.0 * TILE_PX;
+            app.player = Some(player);
+            // The surface position: refused.
+            let surface = Vec2::new(200.0 * TILE_PX, 120.0 * TILE_PX);
+            assert!(!crate::world_sim::npcs::spawn_wof_at(&mut app, surface));
+            // A living wall blocks the second spawn.
+            let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+            assert!(crate::world_sim::npcs::spawn_wof_at(&mut app, pos));
+            assert!(
+                !crate::world_sim::npcs::spawn_wof_at(&mut app, pos),
+                "one wall only"
+            );
+        }
+
+        #[test]
+        fn the_doll_reminder_kills_a_second_town_npc() {
+            // The stack remainder: a doll stack of 2 kills the Guide AND one
+            // more town NPC (`num` walks the town list, `:730-753`).
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = hell_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 200.0 * TILE_PX;
+            player.y = 496.0 * TILE_PX;
+            app.player = Some(player);
+            let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+            guide.hp = guide.max_hp;
+            app.npcs.push(guide);
+            let mut merchant =
+                Npc::new(NpcKind::Merchant, 204.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
+            merchant.hp = merchant.max_hp;
+            app.npcs.push(merchant);
+            let pos = Vec2::new(200.0 * TILE_PX, 498.5 * TILE_PX);
+            crate::world_sim::npcs::voodoo_doll_lava_death(&mut app, pos, 2);
+            assert!(
+                app.npcs
+                    .iter()
+                    .all(|n| n.kind != NpcKind::Guide || n.hp <= 0)
+            );
+            assert!(
+                app.npcs
+                    .iter()
+                    .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0)
+            );
+        }
     }
 }

@@ -166,7 +166,7 @@ impl App {
             // without the full set does nothing (`Main.cs:42250` hover only).
             return false;
         };
-        if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind) {
+        if let Some(i) = crate::item::slot_for_pickup(&mut self.inventory, kind, 0) {
             self.inventory[i].count = (self.inventory[i].count + count).min(crate::registry::max_stack(kind));
         }
         // `SoundEngine.PlaySound(7)` — the grant sound
@@ -326,6 +326,7 @@ impl App {
                     kind: target.kind,
                     name: target.name,
                     count: take,
+                    prefix: target.prefix,
                 };
                 target.count -= take;
                 if target.count == 0 {
@@ -337,6 +338,7 @@ impl App {
                 kind: held.kind,
                 name: held.name,
                 count: 1,
+                prefix: held.prefix,
             };
             held.count -= 1;
             if held.count == 0 {

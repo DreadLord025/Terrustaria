@@ -26,7 +26,7 @@ fn drop_gems(app: &mut App, x: f32, y: f32) {
         let vy = -1.5 - crate::app::rand01(&mut rng_state);
         let phase = crate::app::rand01(&mut rng_state) * std::f32::consts::TAU;
         app.items.push(crate::item::ItemDrop::new(
-            slot.kind, slot.count, x, y, vx, vy, phase,
+            slot.kind, slot.count, slot.prefix, x, y, vx, vy, phase,
         ));
         // The dropped stack leaves the inventory (`TryDroppingSingleItem`).
         // The slot identity matters (gems are stackable), so the caller's
@@ -70,6 +70,7 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) {
         app.items.push(crate::item::ItemDrop::new(
             coin_item,
             count as u32,
+            0,
             x,
             y,
             vx,
@@ -87,6 +88,7 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) {
         app.items.push(crate::item::ItemDrop::new(
             71,
             rest as u32,
+            0,
             x,
             y,
             vx,

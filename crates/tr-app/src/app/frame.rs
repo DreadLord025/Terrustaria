@@ -1246,6 +1246,18 @@ impl App {
                         rain.drop_count(),
                         rain.snow_count(),
                     );
+
+                }
+
+                // The debug cheat-sheet panel (the self-contained
+                // debug_panel.rs) — independent of F1.
+                if self.debug_panel.open {
+                    crate::debug_panel::draw(
+                        renderer, lookups, screen,
+                        &self.debug_panel,
+                        npcs,
+                        world,
+                    );
                 }
 
                 let frame = match gpu.surface.get_current_texture() {

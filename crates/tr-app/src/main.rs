@@ -1,5 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
+
+mod ammo;
 mod app;
 mod assets;
 mod achievements;
@@ -10,6 +12,7 @@ mod biome;
 mod buffs;
 mod chat;
 mod collision;
+mod debug_panel;
 mod death;
 mod dye;
 mod emotes;
@@ -35,6 +38,7 @@ mod creative_sacrifices;
 mod happiness;
 mod player;
 mod player_file;
+mod prefix;
 mod projectile;
 mod rain;
 mod regen;

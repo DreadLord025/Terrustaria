@@ -145,6 +145,12 @@ pub(crate) struct NpcAssets {
     pub(crate) plantera: Option<BgTex>,
     pub(crate) brain: Option<BgTex>,
     pub(crate) creeper: Option<BgTex>,
+    pub(crate) goblin_peon: Option<BgTex>,
+    pub(crate) goblin_thief: Option<BgTex>,
+    pub(crate) goblin_warrior: Option<BgTex>,
+    pub(crate) goblin_archer: Option<BgTex>,
+    pub(crate) bound_goblin: Option<BgTex>,
+    pub(crate) goblin_tinkerer: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -210,6 +216,12 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         plantera: sky_tex(atlas, "NPC_262", None),
         brain: sky_tex(atlas, "NPC_266", None),
         creeper: sky_tex(atlas, "NPC_267", None),
+        goblin_peon: sky_tex(atlas, "NPC_26", None),
+        goblin_thief: sky_tex(atlas, "NPC_27", None),
+        goblin_warrior: sky_tex(atlas, "NPC_28", None),
+        goblin_archer: sky_tex(atlas, "NPC_111", None),
+        bound_goblin: sky_tex(atlas, "NPC_105", None),
+        goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -860,6 +872,39 @@ pub(crate) fn draw_npcs(
                 [30.0, 30.0],
                 [n.x, n.y],
             ),
+            // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
+            NpcKind::GoblinTinkerer => (
+                assets.goblin_tinkerer.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The bound goblin: the single tied frame over NPC_105.
+            NpcKind::BoundGoblin => (
+                assets.bound_goblin.as_ref(),
+                assets.bound_goblin.as_ref().map_or(48.0, |t| t.h),
+                [34.0, 54.0],
+                [n.x - 8.0, n.y - 10.0],
+            ),
+            // The goblins: the 3-frame humanoid sheets (the vanilla
+            // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => {
+                let tex = match n.kind {
+                    NpcKind::GoblinPeon => assets.goblin_peon.as_ref(),
+                    NpcKind::GoblinThief => assets.goblin_thief.as_ref(),
+                    NpcKind::GoblinWarrior => assets.goblin_warrior.as_ref(),
+                    _ => assets.goblin_archer.as_ref(),
+                };
+                (
+                    tex,
+                    tex.map_or(48.0, |t| t.h / 3.0),
+                    [38.0, 48.0],
+                    [n.x - 10.0, n.y - 5.0],
+                )
+            }
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => (
@@ -1031,7 +1076,7 @@ pub(crate) fn draw_npcs(
         } else {
             base
         };
-        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
+        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
         if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0 {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
