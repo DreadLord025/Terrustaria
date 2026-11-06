@@ -4255,9 +4255,16 @@ fn summon_item_check(app: &App, item: u16) -> bool {
         560 => NpcKind::KingSlime,
         1133 => NpcKind::QueenBee,
         1331 => NpcKind::BrainOfCthulhu,
+        // 544 refuses while EITHER twin lives (`:42168-42169`'s 125/126
+        // pair); 556 rides the Destroyer 134, 557 the Prime 127.
+        544 => NpcKind::Retinazer,
+        556 => NpcKind::TheDestroyer,
+        557 => NpcKind::SkeletronPrime,
         _ => return true,
     };
-    !app.npcs.iter().any(|n| n.hp > 0 && n.kind == boss)
+    !app.npcs
+        .iter()
+        .any(|n| n.hp > 0 && (n.kind == boss || (item == 544 && n.kind == NpcKind::Spazmatism)))
 }
 
 /// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
@@ -4273,17 +4280,20 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 /// follow-up).
 pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
     let item = app.inventory[app.selected].kind;
-    if !matches!(item, 70 | 560 | 1133 | 1331) {
+    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557) {
         return false;
     }
     if !summon_item_check(app, item) {
         return false;
     }
     // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
-    // 560/1133 run ungated).
+    // 560/1133 run ungated). The mech trio swaps the biome for the clock:
+    // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
+    // variant's DisabledBossSummonVariant folds out (no variant system).
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
         1331 => app.scene_metrics.zone_crimson,
+        544 | 556 | 557 => !app.world.day_time,
         _ => true,
     };
     if !zone_ok {
@@ -4313,6 +4323,29 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         }
         1133 => {
             let mut b = Npc::new(NpcKind::QueenBee, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+        // The mech trio (`:43838-43876`): the Eye spawns BOTH eyes
+        // (SpawnOnPlayer(125) + SpawnOnPlayer(126)); the Worm rides the
+        // 80-budget chain; the Skull lands as the Prime. The port pushes
+        // the pair through the one returned boss + the direct list push.
+        544 => {
+            let mut a = Npc::new(NpcKind::Retinazer, px, py, 1, 0.0);
+            a.hp = a.max_hp;
+            let mut b = Npc::new(NpcKind::Spazmatism, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            app.npcs.push(a);
+            Some(b)
+        }
+        556 => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::TheDestroyer);
+            h.hp = h.max_hp;
+            h.worm_left = 80;
+            Some(h)
+        }
+        557 => {
+            let mut b = Npc::new(NpcKind::SkeletronPrime, px, py, 1, 0.0);
             b.hp = b.max_hp;
             Some(b)
         }
@@ -4466,6 +4499,77 @@ mod loot_summon_tests {
             app.npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+        );
+    }
+
+    #[test]
+    fn the_mech_summons_night_gated_pair_and_refusals() {
+        // `ItemCheck_UseBossSpawners`' mech arms (`Player.cs:43838-43876`):
+        // day refuses free; night summons — the Eye spawns BOTH eyes, the
+        // Worm the 80-budget chain, the Skull the Prime; the living-boss
+        // refusal rides `SummonItemCheck`'s 125/126 pair.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 544,
+            name: "Mechanical Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "day refuses");
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.world.day_time = false;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        // Either twin living refuses the re-summon (`:42168-42169`).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 544,
+            name: "Mechanical Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the living twins refuse");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Mechanical Worm rides the chain engine.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 556,
+            name: "Mechanical Worm".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::TheDestroyer)
+            .expect("the destroyer head");
+        assert_eq!(head.worm_left, 80, "the mech worm budget");
+        // The Mechanical Skull lands the Prime.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 557,
+            name: "Mechanical Skull".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
         );
     }
     #[test]
