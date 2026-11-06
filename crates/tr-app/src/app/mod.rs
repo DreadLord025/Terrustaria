@@ -134,6 +134,8 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
+    pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -700,6 +702,19 @@ impl App {
             };
         }
         self.coins -= price;
+        true
+    }
+
+    /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
+    /// (`CreativePowers.cs:769-860`): the clock jumps to the target — the
+    /// (dayTime, time) pair from `button_target`. The boundary events (the
+    /// moon-phase roll, the event rolls) land with their tasks.
+    pub(crate) fn set_time_of_day(&mut self, id: crate::creative::PowerId) -> bool {
+        let Some((day, time)) = self.creative_powers.button_target(id) else {
+            return false;
+        };
+        self.world.day_time = day;
+        self.world.time = time;
         true
     }
 
@@ -1373,6 +1388,7 @@ impl App {
             shop_stock: Vec::new(),
             shop_mood: 1.0,
             shop_closed_flag: false,
+            creative_powers: crate::creative::CreativePowers::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
