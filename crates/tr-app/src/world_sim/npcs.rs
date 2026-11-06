@@ -323,6 +323,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
+    // The eye's climb-away despawn (`EncourageDespawn(10)` from the
+    // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
+    // far enough off-screen; the port culls it above the player's view).
+    let player_y = app.player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    if app.world.day_time {
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y)
+        });
+    }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
     // the same spawn order).
@@ -402,6 +411,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     for npc in &dead {
+        if npc.kind == NpcKind::EyeOfCthulhu {
+            // `NPC.downedBoss1 = true` (`NPC.cs`'s boss-kill flag set in the
+            // `checkDead` chain; the loot flags read it).
+            app.world.downed_boss1 = true;
+        }
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
         // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
         // constants-on — every death the port produces today is a player
@@ -456,6 +470,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
+    // block): the update pass set `wants_servant`, this pass resolves it —
+    // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).
+    let mut servants = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some((sx, sy, svx, svy)) = n.wants_servant.take() {
+            servants.push(Npc::spawn_servant_of_cthulhu(sx, sy, svx, svy));
+        }
+    }
+    app.npcs.append(&mut servants);
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
@@ -590,6 +614,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_snow: zones.zone_snow,
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
+            downed_eoc: app.world.downed_boss1,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {

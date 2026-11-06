@@ -136,6 +136,10 @@ pub(crate) struct NpcAssets {
     pub(crate) eow_body: Option<BgTex>,
     pub(crate) eow_tail: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
+    /// `NPC_4.xnb` — the Eye of Cthulhu sheet (6 frames of 100×110).
+    pub(crate) eye_of_cthulhu: Option<BgTex>,
+    /// `NPC_5.xnb` — the Servant of Cthulhu sheet (2 frames of 20×20).
+    pub(crate) servant_of_cthulhu: Option<BgTex>,
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -180,6 +184,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eow_body: sky_tex(atlas, "NPC_14", None),
         eow_tail: sky_tex(atlas, "NPC_15", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
+        eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
+        servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
     }
 }
 
@@ -797,6 +803,27 @@ pub(crate) fn draw_npcs(
                 120.0,
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
+            ),
+            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
+            // frame == the hitbox (the `Main.DrawNPC` anchor).
+            NpcKind::EyeOfCthulhu => (
+                assets.eye_of_cthulhu.as_ref(),
+                assets
+                    .eye_of_cthulhu
+                    .as_ref()
+                    .map_or(110.0, |t| t.h / 6.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
+            NpcKind::ServantOfCthulhu => (
+                assets.servant_of_cthulhu.as_ref(),
+                assets
+                    .servant_of_cthulhu
+                    .as_ref()
+                    .map_or(20.0, |t| t.h / 2.0),
+                [20.0, 20.0],
+                [n.x, n.y],
             ),
         };
         let Some(tex) = tex else {

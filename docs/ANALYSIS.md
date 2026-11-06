@@ -2520,6 +2520,46 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Eye of Cthulhu (M4-BOSS-1)
+
+The first boss lands through the aiStyle-4 block's classic path
+(`npc.rs::update_eye_of_cthulhu`; the 841-line C# `if (this.aiStyle == 4)`
+in `AI()`). The machine state rides the new `Npc.ai[0..4]` (the phase /
+the sub-state / the timer / the dash-servant counter):
+
+- **Phase 0** — the hover at 200 px above the player (5 speed, 0.04
+  accel); `ai[2]` counts to 600 unconditionally and flips into the 3×
+  dash chain (`ai[1] = 1→2` at 6 speed, 150-tick flights, the 0.98 damp
+  after 40 ticks); while the eye is above + within 500 px the servant
+  counter `ai[3]` reaches 110 and requests the servant spawn (10 px out
+  along the aim, the launch velocity inherited — the
+  `wants_servant` → the world-sim resolve).
+- **Phases 1/2** — the spins: the rotation ramps `ai[2]` 0.005→0.5
+  rad/tick while `ai[1]` counts to 100, then the phase increments (the
+  getGood expert servant bursts + `reflectsProjectiles` are out).
+- **Phase 3** — the final: `defense_override = 0` (the new `Npc` field
+  the damage path reads), the faster machine (6.8 dashes, 130-tick
+  chains).
+
+Deviations: the expert rage arms (`flag2/flag3` at 12%/4% hp, the
+`ai[1] = 3/4/5` spread-dash sub-states, the ×1.5 turn rate) are out with
+the port's missing difficulty flags (the skips carry the C# cites);
+`EncourageDespawn(10)`'s off-screen counter becomes the distance cull
+(the dawn climb `velocity.Y -= 0.04` + the sim's removal above the
+player); `SpawnOnPlayer`'s tile scan simplifies to the clamped
+600-px-above position (the boss flies to the target from wherever it
+appears); `WorldGen.spawnEye` (the natural night spawn) is not modeled —
+the Suspicious Looking Eye (43) is the only summon path.
+
+The summon rides the new boss-spawner arm
+(`editing.rs::use_suspicious_looking_eye` — the night gate, the
+`SummonItemCheck` aliveness refusal, the roar cue `("Roar_0", 15)` =
+`SoundID.Roar` 15, the consumption + the swing timers) — hoisted before
+the editing fn's `player` borrow (the arm takes `app` wholesale). The
+kill sets `World.downed_boss1`, fed into the loot flags (the `Cond::`
+gates read it); the boss bar and the `MusicID.Boss1` (5) music extend
+the King Slime hooks (the 93-then-5 ladder order kept).
+
 ## The full drop database (M4-LOOT-2)
 
 `tools/gen_loot.py` reads the decompiled

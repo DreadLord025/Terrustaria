@@ -347,6 +347,12 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
+        // The eye and the servant: the ctor seeds the stats — the net state
+        // overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::EyeOfCthulhu | crate::npc::NpcKind::ServantOfCthulhu => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     };
     npc.x = n.x;
     npc.y = n.y;

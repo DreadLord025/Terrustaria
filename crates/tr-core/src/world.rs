@@ -97,6 +97,9 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+    /// `NPC.downedBoss1` — the Eye of Cthulhu kill flag (runtime-only; the
+    /// save persistence lands with M6-SAVE-1's flags section).
+    pub downed_boss1: bool,
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -140,6 +143,7 @@ impl World {
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
+            downed_boss1: false,
             altars_smashed: 0,
             butterfly_chance: 0,
         }

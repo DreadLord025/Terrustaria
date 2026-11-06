@@ -9,7 +9,7 @@ use tr_core::{TILE_PX, World, edit};
 use crate::app::App;
 use crate::item::ItemSlot;
 use tr_core::loot::DropRng;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::projectile::Projectile;
 use crate::achievements;
@@ -85,6 +85,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
+    }
+    // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
+    // `Player.cs:43742-43771`) fire before the world-editing gates — the C#
+    // runs them in the item-use tick, not the cursor path; the eye arm takes
+    // `app` wholesale (before the fn's `player` borrow).
+    if app.mine_down && !app.inventory_open {
+        let held = app.inventory[app.selected];
+        if held.kind == 43 && held.count > 0 && use_suspicious_looking_eye(app) {
+            return;
+        }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
     let tx = (world_pos.x / TILE_PX).floor() as i32;
@@ -3808,3 +3818,99 @@ mod tests {
         assert_eq!(drops[0].0, 313);
         assert_eq!(drops[1].0, 307);
     }}
+
+/// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
+/// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
+/// = 15), then `NPC.SpawnOnPlayer(onWhichPlayer, 4)`. The
+/// `SummonItemCheck` (`Player.cs:42162-42176`) refuses while an EoC is
+/// already alive; `ApplyItemTime`'s re-fire guard rides the swing timers
+/// (the food/potion arms' shape).
+pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
+    let eye_alive = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0);
+    if app.world.day_time || eye_alive {
+        return false;
+    }
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = player.center();
+    let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
+        return false;
+    };
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    app.npcs.push(eye);
+    true
+}
+
+#[cfg(test)]
+mod loot_summon_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn the_suspicious_eye_summons_only_at_night_and_once() {
+        // `ItemCheck_UseBossSpawners`' gates: day → refused; night → the
+        // roar + the spawn + the consumption; alive → refused
+        // (`SummonItemCheck`).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = true;
+        app.inventory[app.selected] =
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+        assert!(
+            !use_suspicious_looking_eye(&mut app),
+            "day refuses"
+        );
+        app.world.day_time = false;
+        assert!(use_suspicious_looking_eye(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 0, "the use consumed");
+        assert!(app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0));
+        app.inventory[app.selected] =
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+        assert!(
+            !use_suspicious_looking_eye(&mut app),
+            "SummonItemCheck refuses while alive"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    #[test]
+    fn the_eoc_kill_sets_the_downed_flag() {
+        // `NPC.downedBoss1 = true` rides the death pass; the loot resolves
+        // against the full database (the executor skips the unregistered
+        // items).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = false;
+        let mut eye =
+            crate::npc::Npc::spawn_eye_of_cthulhu(&app.world, 64.0, 64.0).unwrap();
+        eye.hp = 0;
+        app.npcs.push(eye);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_boss1);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::EyeOfCthulhu));
+    }
+}

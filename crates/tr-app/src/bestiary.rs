@@ -118,6 +118,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "King Slime",
     },
     BestiaryEntryDef {
+        credit_id: "EyeofCthulhu",
+        net_id: 4,
+        kind: NpcKind::EyeOfCthulhu,
+        variant: None,
+        quick_unlock: true,
+        name: "Eye of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "ServantofCthulhu",
+        net_id: 5,
+        kind: NpcKind::ServantOfCthulhu,
+        variant: None,
+        quick_unlock: false,
+        name: "Servant of Cthulhu",
+    },
+    BestiaryEntryDef {
         credit_id: "WanderingEye",
         net_id: 133,
         kind: NpcKind::WanderingEye,
