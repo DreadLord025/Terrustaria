@@ -1317,7 +1317,7 @@ section in brackets before starting a row.
 | M3-EQUIP-4 | `M3-EQUIP-4-dye-slots` | dye plumbing [11][12] |
 | M3-PREFIX | `M3-PREFIX` | roll engine + tables [11] |
 | M3-REFORGE-1 | `M3-REFORGE-1-goblin` | reforge UI + cost + best-tier [11] |
-| M3-CHEST-UI | `M3-CHEST-UI` | chest UI + world chests [13][23] |
+| 🔄 M3-CHEST-UI | `M3-CHEST-UI` | chest UI + world chests [13][23] |
 | M3-STORE-1 | `M3-STORE-1-banks` | piggy/safe/defender/void [13] |
 | M3-STORE-2 | `M3-STORE-2-quick-stack` | loot all/deposit/quick stack/restock [13] |
 | M3-STORE-3 | `M3-STORE-3-trash-favorites` | trash + favorites rules [13] |
