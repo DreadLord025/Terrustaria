@@ -163,23 +163,32 @@ pub enum NpcKind {
     /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
     /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
     WallOfFlesh,
-    /// `NPCID.TheDestroyer` (134) — the mechanical worm (`NPC.cs:10659`:
-    /// 38x38 x1.25, dmg 70, def 0, 8000 HP — the shared pool; the all-
-    /// same-type segments ride the chain engine).
+    /// `NPCID.TheHungry` (115) — the wall's minion (`NPC.cs:10363+`:
+    /// 30×30, aiStyle 29, dmg 30, def 10, 240 HP, noGravity,
+    /// noTileCollide). The AI anchors to the wall's draw band
+    /// (`Main.wofNPCIndex`/`wofDrawArea*` → the World fields) and reads the
+    /// wall's hp for the damage/defense tiers.
+    Hungry,
+    /// `NPCID.LeechHead` (117) — the tongue-phase worm head
+    /// (`NPC.cs`: 14×14, aiStyle 6 (the worm engine), dmg 26, def 2,
+    /// 60 HP, noGravity/noTileCollide, behindTiles).
+    LeechHead,
+    /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
+    /// aiStyle 6, dmg 22, def 6, 60 HP).
+    LeechBody,
+    /// `NPCID.TheDestroyer` (134) — the mech worm (`NPC.cs:10659+`,
+    /// the same-kind chain; M4-BOSS-7).
     TheDestroyer,
-    /// `NPCID.SkeletronPrime` (127) — the mechanical skull
-    /// (`NPC.cs:10556-10574`: 80x102, dmg 47, def 24, 28000 HP; the death
-    /// sets `downed_mech_boss3`).
+    /// `NPCID.SkeletronPrime` (127) — the mech skull (`NPC.cs:10556+`,
+    /// M4-BOSS-8).
     SkeletronPrime,
-    /// `NPCID.Retinazer` (125) — the Twins' laser eye (`NPC.cs:10522`:
-    /// 100x110, dmg 45, def 10, 20000 HP).
+    /// `NPCID.Retinazer` (125) — the Twins' laser eye (`NPC.cs:10522+`,
+    /// M4-BOSS-9).
     Retinazer,
-    /// `NPCID.Spazmatism` (126) — the Twins' cursed-flame eye
-    /// (`NPC.cs:10537`: 100x110, dmg 50, def 10, 23000 HP).
+    /// `NPCID.Spazmatism` (126) — the Twins' cursed eye (M4-BOSS-9).
     Spazmatism,
-    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379`:
-    /// 86x86, dmg 50, def 14, 30000 HP; the death sets
-    /// `downed_plant_boss` — the temple/Golem gate).
+    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379+`,
+    /// M4-BOSS-10).
     Plantera,
     /// `NPCID.BrainofCthulhu` (266) — the crimson boss (`NPC.cs:12438`:
     /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1;
@@ -401,13 +410,16 @@ impl NpcKind {
             NpcKind::SkeletronHead => 44,
             NpcKind::ServantOfCthulhu => 45,
             NpcKind::WallOfFlesh => 46,
-            NpcKind::TheDestroyer => 47,
-            NpcKind::SkeletronPrime => 48,
-            NpcKind::Retinazer => 49,
-            NpcKind::Spazmatism => 50,
-            NpcKind::Plantera => 51,
-            NpcKind::BrainOfCthulhu => 52,
-            NpcKind::Creeper => 53,
+            NpcKind::Hungry => 47,
+            NpcKind::LeechHead => 48,
+            NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
+            NpcKind::BrainOfCthulhu => 55,
+            NpcKind::Creeper => 56,
         }
     }
 
@@ -460,13 +472,16 @@ impl NpcKind {
             44 => NpcKind::SkeletronHead,
             45 => NpcKind::ServantOfCthulhu,
             46 => NpcKind::WallOfFlesh,
-            47 => NpcKind::TheDestroyer,
-            48 => NpcKind::SkeletronPrime,
-            49 => NpcKind::Retinazer,
-            50 => NpcKind::Spazmatism,
-            51 => NpcKind::Plantera,
-            52 => NpcKind::BrainOfCthulhu,
-            53 => NpcKind::Creeper,
+            47 => NpcKind::Hungry,
+            48 => NpcKind::LeechHead,
+            49 => NpcKind::LeechBody,
+            50 => NpcKind::TheDestroyer,
+            51 => NpcKind::SkeletronPrime,
+            52 => NpcKind::Retinazer,
+            53 => NpcKind::Spazmatism,
+            54 => NpcKind::Plantera,
+            55 => NpcKind::BrainOfCthulhu,
+            56 => NpcKind::Creeper,
             _ => return None,
         })
     }
@@ -486,6 +501,8 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::EaterOfWorldsTail
+                | NpcKind::LeechHead
+                | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
         )
     }
@@ -497,6 +514,7 @@ impl NpcKind {
             NpcKind::DevourerHead
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
+                | NpcKind::LeechHead
                 | NpcKind::TheDestroyer
         )
     }
@@ -510,6 +528,7 @@ impl NpcKind {
             NpcKind::DevourerBody
                 | NpcKind::GiantWormBody
                 | NpcKind::EaterOfWorldsBody
+                | NpcKind::LeechBody
                 | NpcKind::TheDestroyer
         )
     }
@@ -527,6 +546,8 @@ impl NpcKind {
             NpcKind::GiantWormHead => NpcKind::GiantWormBody,
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
+            NpcKind::LeechHead => NpcKind::LeechBody,
+            NpcKind::LeechBody => NpcKind::LeechBody,
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -625,6 +646,9 @@ impl NpcKind {
             // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             NpcKind::ServantOfCthulhu => (20.0, 20.0),
+            // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
+            NpcKind::Hungry => (30.0, 30.0),
+            NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
         }
     }
 
@@ -660,6 +684,9 @@ impl NpcKind {
             NpcKind::SkeletronHead => 4400,
             // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
             NpcKind::WallOfFlesh => 8000,
+            // `NPC.cs`'s 115 (240) / 117-118 (60).
+            NpcKind::Hungry => 240,
+            NpcKind::LeechHead | NpcKind::LeechBody => 60,
             // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
             // vanilla's realLife pool — the v1 carries the per-segment HP).
             NpcKind::TheDestroyer => 8000,
@@ -732,6 +759,10 @@ impl NpcKind {
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
+            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22).
+            NpcKind::Hungry => 30,
+            NpcKind::LeechHead => 26,
+            NpcKind::LeechBody => 22,
             NpcKind::TheDestroyer => 70,
             NpcKind::SkeletronPrime => 47,
             NpcKind::Retinazer => 45,
@@ -851,6 +882,19 @@ pub struct Npc {
     /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
     /// link spawns its child on the first worm pass.
     pub worm_inited: bool,
+    /// The WoF's Leech-head spawn request (the tongue-phase
+    /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
+    pub wants_leech: bool,
+    /// The WoF's Hungry init request (`localAI[0]` 1 → 2's 11 spawns).
+    pub wants_hungry: bool,
+    /// The AI's per-tick contact-damage override (the Hungry's
+    /// damage tiers, `aiStyle 29`'s `num388`).
+    pub damage_override: Option<i32>,
+    /// The WoF's draw-band scan targets (`AI_027`'s bottom/top walks) —
+    /// the world sim eases `World.wof_draw_*` toward them (the AI holds
+    /// `&World`, so the band state lives on the sim side).
+    pub wof_bottom_target: f32,
+    pub wof_top_target: f32,
     /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
@@ -1152,6 +1196,11 @@ impl Npc {
             seg_index: 0,
             worm_left: 0,
             worm_inited: false,
+            wants_leech: false,
+            wants_hungry: false,
+            damage_override: None,
+            wof_bottom_target: -1.0,
+            wof_top_target: -1.0,
             wet_x: 0.0,
             ai: [0.0; 4],
             wants_servant: None,
@@ -1251,6 +1300,8 @@ impl Npc {
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
+            // 115/117/118: knockBackResist 0.
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
             NpcKind::EyeOfCthulhu => 1.0,
@@ -1331,6 +1382,11 @@ impl Npc {
             NpcKind::BrainOfCthulhu => 14,
             NpcKind::Creeper => 10,
             NpcKind::KingSlime => 10,
+            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
+            // per-tick tiers ride `defense_override`.
+            NpcKind::Hungry => 10,
+            NpcKind::LeechHead => 2,
+            NpcKind::LeechBody => 6,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
             NpcKind::EyeOfCthulhu => 12,
@@ -1407,6 +1463,8 @@ impl Npc {
             NpcKind::BrainOfCthulhu => 50000.0,
             NpcKind::Creeper => 0.0,
             NpcKind::KingSlime => 10_000.0,
+            // The hungry/leech rows carry no value line.
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
             NpcKind::ServantOfCthulhu => 0.0,
@@ -1533,6 +1591,8 @@ impl Npc {
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
+            NpcKind::Hungry => self.update_hungry(world, player),
+            // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::TheDestroyer => {}
             NpcKind::SkeletronPrime => self.update_prime(world, player),
             NpcKind::Retinazer | NpcKind::Spazmatism => {
@@ -1559,6 +1619,7 @@ impl Npc {
             NpcKind::ServantOfCthulhu => {
                 self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
             }
+            // The leeches ride the worm pass (aiStyle 6 — the chain move).
             NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
             | NpcKind::FireImp => self.update_caster(world, player, rng),
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
@@ -1578,7 +1639,9 @@ impl Npc {
             | NpcKind::GiantWormTail
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
-            | NpcKind::EaterOfWorldsTail => {}
+            | NpcKind::EaterOfWorldsTail
+            | NpcKind::LeechHead
+            | NpcKind::LeechBody => {}
         }
         self.find_frame();
         self.contact(player);
@@ -1601,6 +1664,17 @@ impl Npc {
             0
         };
         match self.kind {
+            // The hungry (3 frames) / the leech segments (1).
+            NpcKind::Hungry => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 3 { 0 } else { self.frame + 1 };
+                }
+            }
+            NpcKind::LeechHead | NpcKind::LeechBody => {
+                self.frame = 0;
+            }
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
             // per step, again when moving and a third time while attacking; at
             // 8.0 the frame advances and wraps over the 2-frame strip.
@@ -3007,35 +3081,297 @@ impl Npc {
         }
     }
 
-    /// `AI_027`'s WoF v1 (`NPC.cs`'s aiStyle 27 machine): the wall slides
-    /// HORIZONTALLY across the underworld toward the player's side (the
-    /// vanilla locks the vertical drift to keep the wall level) at the
-    /// accelerating pace; the off-edge despawn (`AI_027`'s end-of-world
-    /// check). The Hungrys (114/115) and the eye/mouth mirrors = the
-    /// follow-ups.
+    /// `AI()`'s aiStyle-27 block — the Wall of Flesh's machine
+    /// (`NPC.cs:25635-26050`, the 416-line `else if (this.aiStyle == 27)`).
+    /// The classic path verbatim: the off-edge kill, the tongue timer
+    /// (`ai[1]`/`ai[2]` → the Leech spawns), the underworld draw-band scan
+    /// (`Main.wofDrawArea*` → the World fields) with the Y pinning, the
+    /// slide speed by the hp thresholds, the direction lock, the
+    /// dead-player abandonment (the `localAI[1]` timer folded into
+    /// `ai[0]`), the init Hungry spawns (`localAI[0]` → `ai[3]`).
+    /// The expert-mode burst block and the `getGoodWorld` spawn are out
+    /// (no difficulty flags); the wall's eye/mouth mirrors (114) are the
+    /// render-machinery follow-up, so the init spawns the 11 Hungries
+    /// only; the roar sound rides `localAI[3]`'s cosmetic timer — skipped.
     fn update_wof(&mut self, world: &World, player: &Player) {
-        let (pcx, _) = player.center();
-        // The slide: accelerate toward the player's side, cap at 4.5
-        // (the vanilla's speed band ~2..5 scaled by the progress).
-        let dir = if pcx >= self.x + self.size().0 * 0.5 {
-            1
-        } else {
-            -1
-        };
-        self.vx += dir as f32 * 0.02;
-        if self.vx.abs() > 4.5 {
-            self.vx = 4.5 * self.vx.signum();
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        // The world-edge kill (`position.X < 160 || > (maxTilesX - 10) * 16`).
+        if self.x < 160.0 || self.x > (world.width as f32 - 10.0) * TILE_PX {
+            self.hp = 0;
+            return;
         }
-        // The vertical: pin to the spawn level (the wall stays level).
+        // The tongue timer (`ai[1]` with the hp-ratio bonuses; 2700 → the
+        // phase machine `ai[2]`).
+        self.ai[1] += 1.0;
+        if self.ai[2] == 0.0 {
+            if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
+                self.ai[1] += 1.0;
+            }
+            if (self.hp as f64) < (self.max_hp as f64) * 0.2 {
+                self.ai[1] += 1.0;
+            }
+            if self.ai[1] > 2700.0 {
+                self.ai[2] = 1.0;
+            }
+        }
+        if self.ai[2] > 0.0 && self.ai[1] > 60.0 {
+            let mut num344 = 3;
+            if (self.hp as f64) < (self.max_hp as f64) * 0.3 {
+                num344 += 1;
+            }
+            self.ai[2] += 1.0;
+            self.ai[1] = 0.0;
+            if self.ai[2] > num344 as f32 {
+                self.ai[2] = 0.0;
+            }
+            // The Leech head spawn (`NPC.CountNPCS(117) < 10` — the count
+            // check rides the sim resolve; the worm pass grows the chain).
+            self.wants_leech = true;
+        }
+        // The underworld draw-band scan (`num346` = UnderworldLayer + 10,
+        // `num347` = +70): the bottom walk finds 15 solid/liquid tiles down
+        // the wall's column span, the top walk mirrors it; the areas ease
+        // 1 px per tick toward the found rows and clamp to a 160 px band.
+        // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
+        let underworld_layer = world.height as i32 - 200;
+        let num346 = underworld_layer + 10;
+        let num347 = num346 + 70;
+        let num348 = (self.x / TILE_PX) as i32;
+        let num349 = ((self.x + w) / TILE_PX) as i32;
+        let num350 = ((self.y + h * 0.5) / TILE_PX) as i32;
+        // The `WorldGen.SolidTile` analog (the active + the solid set).
+        let solid_tile = |x: i32, y: i32| -> bool {
+            world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        // The bottom: start at +7, walk down until 15 solid/liquid tiles.
+        let mut num351 = 0;
+        let mut num352 = num350 + 7;
+        while num351 < 15 && num352 > underworld_layer {
+            num352 += 1;
+            if num352 > world.height as i32 - 10 {
+                num352 = world.height as i32 - 10;
+                break;
+            }
+            if num352 < num346 {
+                continue;
+            }
+            for num353 in num348..=num349 {
+                if solid_tile(num353, num352) {
+                    num351 += 1;
+                }
+            }
+        }
+        num352 += 4;
+        let bottom_target = num352 as f32 * TILE_PX;
+        self.wof_bottom_target = bottom_target;
+        // The top: start at -7, walk up.
+        num351 = 0;
+        num352 = num350 - 7;
+        while num351 < 15 && num352 < world.height as i32 - 10 {
+            num352 -= 1;
+            if num352 <= 10 {
+                num352 = 10;
+                break;
+            }
+            if num352 > num347 {
+                continue;
+            }
+            if num352 < num346 {
+                num352 = num346;
+                break;
+            }
+            for num354 in num348..=num349 {
+                // The liquid counts toward the band like the solid
+                // (`SolidTile || liquid > 0`, `:25747`'s inner test).
+                let liquid = world.tile(num354, num352).is_some_and(|t| t.liquid > 0);
+                if solid_tile(num354, num352) || liquid {
+                    num351 += 1;
+                }
+            }
+        }
+        num352 -= 4;
+        let top_target = num352 as f32 * TILE_PX;
+        self.wof_top_target = top_target;
+        // The band lives on the World (the sim eases toward the targets);
+        // the Y pinning rides the CURRENT band midpoint.
+        let num355 = (world.wof_draw_bottom + world.wof_draw_top) / 2.0 - h / 2.0;
         self.vy = 0.0;
-        self.facing = dir;
+        self.y = num355;
+        // The slide speed by the hp thresholds (the classic rows; the
+        // expert/getGood arms are out).
+        let mut num356 = 1.5f32;
+        if (self.hp as f64) < (self.max_hp as f64) * 0.75 {
+            num356 += 0.25;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
+            num356 += 0.4;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.25 {
+            num356 += 0.5;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.1 {
+            num356 += 0.6;
+        }
+        // The direction: locked to the sign, never damped (the wall slides
+        // at the full speed toward its side).
+        if self.vx == 0.0 {
+            self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
+            self.vx = self.facing as f32;
+        }
+        if self.vx < 0.0 {
+            self.vx = -num356;
+            self.facing = -1;
+        } else {
+            self.vx = num356;
+            self.facing = 1;
+        }
+        // The dead-player abandonment (`localAI[1]` += 1/180 → the wall
+        // kills itself at 1; the recovery −1/30; folded into `ai[0]`).
+        if player.hp <= 0 {
+            self.ai[0] += 1.0 / 180.0;
+            if self.ai[0] >= 1.0 {
+                self.hp = 0;
+                return;
+            }
+        } else {
+            self.ai[0] = (self.ai[0] - 1.0 / 30.0).clamp(0.0, 1.0);
+        }
+        self.facing = self.vx.signum() as i32;
+        // The rotation: the eye aims at the player when the player crosses
+        // the wall's plane (`:25992-26010`).
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let num361 = pcx - cx;
+        let num362 = pcy - cy;
+        if self.facing > 0 {
+            if pcx > self.x + w * 0.5 {
+                self.rotation = (-num362).atan2(-num361) + 3.14;
+            } else {
+                self.rotation = 0.0;
+            }
+        } else if pcx < self.x + w * 0.5 {
+            self.rotation = num362.atan2(num361) + 3.14;
+        } else {
+            self.rotation = 0.0;
+        }
+        // The Hungry init (`localAI[0] == 1 → 2`): the 11 Hungries along
+        // the band (`ai[0] = i * 0.1 - 0.05`); the mirrors (114) are the
+        // render follow-up. The request resolves in the world sim.
+        if self.ai[3] == 0.0 {
+            self.ai[3] = 1.0;
+            self.wants_hungry = true;
+        }
+        // `noTileCollide` + `noGravity`: the raw integration.
         self.x += self.vx;
         self.y += self.vy;
-        // The off-edge despawn (the wall crosses the world and despawns).
-        if self.x < -2000.0 || self.x > world.width as f32 * TILE_PX + 2000.0 {
-            self.hp = 0;
-        }
     }
+
+    /// `AI()`'s aiStyle-29 block — the Hungry's machine
+    /// (`NPC.cs:26054-26210`): the anchor = the wall's x + the draw-band
+    /// row at `ai[0]`, the chase toward the player clamped to `num387`
+    /// from the anchor (300/500/700 by the wall's hp), the defense/damage
+    /// tiers (30/20 by the hp), the 4-speed cap, the justHit recoil
+    /// (`ai[1] = 10`, folded onto `hurt_cd > 0`). The wall's death
+    /// (`wof_present` off) deactivates the minion. The expert arms are out.
+    fn update_hungry(&mut self, world: &World, player: &Player) {
+        if !world.wof_present {
+            self.hp = 0;
+            return;
+        }
+        // `justHit → ai[1] = 10` (the recoil pause; the hurt cooldown
+        // stands in for the flag).
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = 10.0;
+        }
+        // The tiers by the wall's hp (`num388` the damage, the defense,
+        // `num387` the leash radius).
+        let mut num387 = 300.0f32;
+        let mut num388 = 0;
+        if (world.wof_hp_ratio as f64) < 0.5 {
+            num388 = 60;
+            self.defense_override = Some(30);
+            num387 = 700.0;
+        } else if (world.wof_hp_ratio as f64) < 0.75 {
+            num388 = 45;
+            self.defense_override = Some(20);
+            num387 = 500.0;
+        } else {
+            self.defense_override = None;
+        }
+        if num388 > 0 {
+            self.damage_override = Some(num388);
+        } else {
+            self.damage_override = None;
+        }
+        // The dive cycle: after 100 ticks the leash grows ×1.3, resetting
+        // at 200.
+        self.ai[2] += 1.0;
+        if self.ai[2] > 100.0 {
+            num387 = (num387 * 1.3) as i32 as f32;
+            if self.ai[2] > 200.0 {
+                self.ai[2] = 0.0;
+            }
+        }
+        // The anchor: the wall's x, the band row at `ai[0]`.
+        let num389 = world.wof_x;
+        let num390 = world.wof_draw_bottom - world.wof_draw_top;
+        let y2 = world.wof_draw_top + num390 * self.ai[0];
+        let (pcx, pcy) = player.center();
+        let (w, h) = self.size();
+        let mut num391 = pcx - w * 0.5 - num389;
+        let mut num392 = pcy - h * 0.5 - y2;
+        let mut num393 = (num391 * num391 + num392 * num392).sqrt();
+        if self.ai[1] == 0.0 {
+            if num393 > num387 {
+                num393 = num387 / num393;
+                num391 *= num393;
+                num392 *= num393;
+            }
+            // The approach with the double-add on the sign flips
+            // (0.1 accel, the ×2.5 flip bonus).
+            if self.x < num389 + num391 {
+                self.vx += 0.1;
+                if self.vx < 0.0 && num391 > 0.0 {
+                    self.vx += 0.25;
+                }
+            } else if self.x > num389 + num391 {
+                self.vx -= 0.1;
+                if self.vx > 0.0 && num391 < 0.0 {
+                    self.vx -= 0.25;
+                }
+            }
+            if self.y < y2 + num392 {
+                self.vy += 0.1;
+                if self.vy < 0.0 && num392 > 0.0 {
+                    self.vy += 0.25;
+                }
+            } else if self.y > y2 + num392 {
+                self.vy -= 0.1;
+                if self.vy > 0.0 && num392 < 0.0 {
+                    self.vy -= 0.25;
+                }
+            }
+            // The speed cap 4.
+            self.vx = self.vx.clamp(-4.0, 4.0);
+            self.vy = self.vy.clamp(-4.0, 4.0);
+        } else if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // The rotation toward the player.
+        if num391 > 0.0 {
+            self.rotation = num392.atan2(num391);
+        }
+        if num391 < 0.0 {
+            self.rotation = num392.atan2(num391);
+        }
+        // `noTileCollide` + `noGravity`: the raw integration.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
 
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
@@ -3391,7 +3727,9 @@ impl Npc {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
-                    self.kind.contact_damage()
+                    self
+                        .damage_override
+                        .unwrap_or_else(|| self.kind.contact_damage())
                 };
                 if dmg > 0 {
                     player.hurt(dmg, cx);
@@ -3458,13 +3796,16 @@ impl Npc {
             NpcKind::SkeletronHead => 44,
             NpcKind::ServantOfCthulhu => 45,
             NpcKind::WallOfFlesh => 46,
-            NpcKind::TheDestroyer => 47,
-            NpcKind::SkeletronPrime => 48,
-            NpcKind::Retinazer => 49,
-            NpcKind::Spazmatism => 50,
-            NpcKind::Plantera => 51,
-            NpcKind::BrainOfCthulhu => 52,
-            NpcKind::Creeper => 53,
+            NpcKind::Hungry => 47,
+            NpcKind::LeechHead => 48,
+            NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
+            NpcKind::BrainOfCthulhu => 55,
+            NpcKind::Creeper => 56,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4963,6 +5304,128 @@ mod tests {
         assert_eq!(wof.size(), (120.0, 120.0));
         assert_eq!(wof.max_hp, 8000);
         let _ = (&w, &mut wof);
+    }
+    #[test]
+    fn wof_slides_with_the_hp_speed_tiers_and_pins_y() {
+        // AI_027: the wall slides at 1.5 (+0.25/0.4/0.5/0.6 by the hp
+        // thresholds), the Y rides the draw-band midpoint, the direction
+        // locks to the sign.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut eoc_wall = Npc::new(NpcKind::WallOfFlesh, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        eoc_wall.hp = eoc_wall.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The direction locks from the standstill.
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc_wall.vx > 0.0, "the slide locks onto the player's side");
+        let start_x = eoc_wall.x;
+        for _ in 0..60 {
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(eoc_wall.x > start_x, "the slide advances");
+        let speed = eoc_wall.vx;
+        assert!((speed - 1.5).abs() < 0.01, "full hp slides at 1.5 ({speed})");
+        // The hp thresholds: 0.75 → 1.75, below-0.5 → 2.15 (the C#
+        // compares `<` — the exact half keeps the 0.25 tier).
+        eoc_wall.hp = eoc_wall.max_hp / 2 - 1;
+        eoc_wall.vx = 0.0;
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!((eoc_wall.vx - 2.15).abs() < 0.01, "half hp slides at 2.15");
+        // The Y pinning: the wall rides the band's midpoint (vy forced 0;
+        // the band starts unset (-1) — the first tick's scan pins it).
+        assert_eq!(eoc_wall.vy, 0.0);
+    }
+
+    #[test]
+    fn wof_dies_crossing_the_world_edge() {
+        // `position.X < 160 || > (maxTilesX - 10) * 16` → `active = false`.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        let mut eoc_wall =
+            Npc::new(NpcKind::WallOfFlesh, 60.0 * TILE_PX, 580.0 * TILE_PX, -1, 0.0);
+        eoc_wall.hp = eoc_wall.max_hp;
+        eoc_wall.x = 100.0; // inside the 160 kill line
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc_wall.hp <= 0, "the edge crossing kills the wall");
+    }
+
+    #[test]
+    fn wof_abandons_when_the_player_stays_dead() {
+        // The `localAI[1]` timer (folded into `ai[0]`): 180 ticks dead →
+        // the wall kills itself; the recovery drains at 1/30.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut eoc_wall =
+            Npc::new(NpcKind::WallOfFlesh, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        eoc_wall.hp = eoc_wall.max_hp;
+        player.hp = 0;
+        for _ in 0..200 {
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            if eoc_wall.hp <= 0 {
+                break;
+            }
+        }
+        assert!(eoc_wall.hp <= 0, "the abandoned wall dies");
+    }
+
+    #[test]
+    fn the_hungry_anchors_to_the_band_and_tiers_by_the_wall_hp() {
+        // aiStyle 29: the anchor = the wall's x + the band row at `ai[0]`;
+        // the leash 300/500/700 and the defense/damage tiers by the wall's
+        // hp; the wall's death deactivates the minion.
+        let mut w = ground_air();
+        w.day_time = false;
+        w.wof_present = true;
+        w.wof_hp_ratio = 1.0;
+        w.wof_x = 40.0 * TILE_PX;
+        w.wof_draw_top = 580.0 * TILE_PX;
+        w.wof_draw_bottom = 600.0 * TILE_PX;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut hungry = Npc::new(NpcKind::Hungry, 40.0 * TILE_PX, 590.0 * TILE_PX, 1, 0.0);
+        hungry.hp = hungry.max_hp;
+        hungry.ai[0] = 0.45;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(hungry.hp > 0, "the wall is alive");
+        assert_eq!(hungry.defense(), 10, "full-hp wall keeps the base defense");
+        // The wall's hp drops: the defense tier 20 (75%) then 30 (50%).
+        w.wof_hp_ratio = 0.6;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(hungry.defense(), 20);
+        w.wof_hp_ratio = 0.4;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(hungry.defense(), 30);
+        assert_eq!(hungry.damage_override, Some(60));
+        // The wall dies → the minion deactivates.
+        w.wof_present = false;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(hungry.hp <= 0, "the hungry dies with the wall");
+    }
+
+    #[test]
+    fn the_leech_head_grows_the_chain() {
+        // The leech head rides the worm pass: the init rolls the 3..5
+        // budget (`AI_006`'s `Next(3, 6)`), the links chain via
+        // `worm_next`.
+        let w = ground_air();
+        let mut leech = Npc::new(NpcKind::LeechHead, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        leech.hp = leech.max_hp;
+        assert!(leech.kind.is_worm() && leech.kind.is_worm_head());
+        assert_eq!(leech.kind.worm_next(), NpcKind::LeechBody);
+        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechBody);
+        assert_eq!(leech.max_hp, 60);
+        assert_eq!(leech.defense(), 2);
+        let mut body = Npc::new(NpcKind::LeechBody, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        assert_eq!(body.max_hp, 60);
+        assert_eq!(body.defense(), 6);
+        assert_eq!(body.kind.contact_damage(), 22);
     }
 
     #[test]

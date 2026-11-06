@@ -126,6 +126,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Eye of Cthulhu",
     },
     BestiaryEntryDef {
+        credit_id: "TheHungry",
+        net_id: 115,
+        kind: NpcKind::Hungry,
+        variant: None,
+        quick_unlock: false,
+        name: "The Hungry",
+    },
+    BestiaryEntryDef {
+        credit_id: "LeechHead",
+        net_id: 117,
+        kind: NpcKind::LeechHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Leech",
+    },
+    BestiaryEntryDef {
         credit_id: "ServantofCthulhu",
         net_id: 5,
         kind: NpcKind::ServantOfCthulhu,
