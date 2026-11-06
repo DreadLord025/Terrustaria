@@ -2520,6 +2520,29 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The voodoo sacrifice (M4-BOSS-6c)
+
+The gameplay hardmode gate: the dropped Guide Voodoo Doll (267) touching
+lava (`WorldItem.CheckLavaDeath`'s arm — `lavaWet` → `VoodooDollLavaDeath`)
+is consumed and strikes the town NPCs dead — the Guide FIRST
+(`StrikeNPCNoInteraction(9999)` → the port kills outright; the death pass
+picks the kill credit up), then the stack's remainder across the other
+town NPCs (the C# `isLikeATownNPC` list walks a shuffled copy; the port
+walks the spawn order). `NPC.SpawnWOF` ports the gates (the depth
+`maxTilesY - 205`, one living wall), the 1200-px player-clearance scan
+(the spawn x steps 16 px away from the world centre's side while a player
+sits within 1200 px), the free-row search (the solid/liquid>=100 blocker,
+the ±1000-step expand), the `UnderworldLayer+10..+80` row clamp and the
+`Announcement.HasAwoken` broadcast (the literal stands in for the
+localization key).
+
+The borrow shape: the items pass (`update_items`) reads the tile under
+each drop inside its tick closure and collects the lava-hit doll; the
+sacrifice resolves AFTER the tick (the spawn/kill pass takes `app`
+wholesale). The doll items never burn silently — the non-doll lava
+consumption (`rare 0/-1` items without the lava-immunity set) is the
+follow-up.
+
 ## The Wall of Flesh + the Hungry + the Leeches (M4-BOSS-6b)
 
 The aiStyle-27 machine (`npc.rs::update_wof`, the classic path
