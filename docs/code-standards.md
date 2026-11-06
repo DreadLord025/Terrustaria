@@ -1,5 +1,5 @@
-<!-- base-commit: 38f5585 -->
-<!-- generated: 2026-11-05 -->
+<!-- base-commit: 958096d -->
+<!-- generated: 2026-11-06 -->
 
 # Code Standards — Terraria-Rust
 
@@ -19,9 +19,12 @@ guess wrong. Authoritative maps: `docs/ARCHITECTURE.md` (modules), `docs/PORT_MA
   `itemdata.rs` is regenerated the same way — item fixes go through the generator, not the file.
 - **No god-files.** Extend the matching module (`render/sky.rs` for sky things), don't grow
   `main.rs` or a new catch-all. A second copy of a mechanic → extract a shared helper/trait.
+  A self-contained movement subsystem is a crate-root leaf module (`grapple.rs`), not a
+  section inside `player.rs`.
 - **No ad-hoc RNG in sim code.** Don't call `rand`/`rand01` inline where the C# has a named
-  stream; route through the streams the app already owns (`item_rng`, `LootRng`) or document
-  a pinned value as an ANALYSIS deviation (the `CloseDoor genRand.Next(3)` → 0 precedent).
+  stream; route through the streams the app already owns (`item_rng`, per-consumer named
+  u64 streams, `frame.rs:1413/:1421`) or document a pinned value as an ANALYSIS deviation
+  (the `CloseDoor genRand.Next(3)` → 0 precedent).
 - **No behaviour drift in "refactors".** RNG streams, frame-cache keys (`WorldFrameKey`),
   fixed-step order are frozen; optimisations must be pixel/state-identical and benchmarked
   (`TR_BENCH`/`TR_STATS`).
@@ -30,7 +33,7 @@ guess wrong. Authoritative maps: `docs/ARCHITECTURE.md` (modules), `docs/PORT_MA
 
 ## Code Examples
 
-DO — port with citation + descriptive Rust name (`crates/tr-app/src/render/sky.rs:119-130`):
+DO — port with citation + descriptive Rust name (`crates/tr-app/src/render/sky.rs:226-238`):
 ```rust
 /// `Cloud.GetParallax` (`Cloud.cs:318-338`): the per-cloud fraction of the
 /// camera's X movement, from its scale bucket.
@@ -63,14 +66,14 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
 
 ## Error Handling
 
-- I/O and file parsing use `anyhow` with `bail!`/`Context` (`crates/tr-core/src/save.rs:11,58,139`):
+- I/O and file parsing use `anyhow` with `bail!`/`Context` (`crates/tr-core/src/save.rs:178,182`):
   `bail!("not a TRWLD save")`.
 - `unwrap()`/`panic!` only where the invariant is local and provable (test code,
-  `save.rs:88-89` run-length bookkeeping) — never on user/network input paths.
+  run-length bookkeeping in `save.rs`) — never on user/network input paths.
 - Sim/core lookups return `Option` (`world.tile(x, y)?` in `edit.rs` arms); an absent cell
   is a normal state, not an error.
 - Render code returns plain values; `Option` guards stand in for missing sheets and an
-  empty field draws nothing (`sky.rs` `Option<BgTex>` pattern, `sky.rs:239-289`).
+  empty field draws nothing (`sky.rs` `Option<BgTex>` pattern).
 
 ## Imports & Dependency Direction
 
@@ -85,14 +88,21 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
 ## Testing Patterns
 
 - `#[cfg(test)] mod tests` at the bottom of the same file (`framing.rs:1243`,
-  `loot.rs:1122`, `sky.rs:1086`); no separate test crate.
+  `loot.rs:1123`, `sky.rs:1275`); no separate test crate.
 - Tests port the C# recipe and say so in the name/body: `stars_follow_the_spawn_recipe`,
-  `common_drop_gate_and_stack_range` (`sky.rs:1140`, `loot.rs:1138`).
+  `common_drop_gate_and_stack_range` (`sky.rs`, `loot.rs` tests).
+- Movement features are tested through the Player tick: build a world with
+  `test_world_helpers::ground()` (`crates/tr-app/src/test_world_helpers.rs:9`) or
+  `ground_world()` (`player.rs` tests), `Player::spawn(&w)`, warm up ~120 ticks, then
+  drive `p.update(&w, PlayerInput { .. })` loops and assert velocities/latches — the
+  grapple tests (`player.rs:3247+`) are the model; every test's doc comment cites the C# lines.
 - Editing/cascade tests share the fixtures in `world_sim/editing.rs`: `object_world()`
-  (40×40, stone floor), `mining_app()`, `mine_frames()`; a cascade test drives the app and
-  asserts cells + drops (`editing.rs:1046-1069`).
+  (40×40, stone floor), `mining_app()`, `mine_frames()`.
 - RNG-dependent logic is tested on a seeded `FastRandom` with the C# call order in the
-  comment (`loot.rs:1138-1149` — "both consume the same FastRandom stream").
+  comment (`loot.rs` tests — "both consume the same FastRandom stream").
+- In-development features get a deterministic `TR_<FEATURE>` env pin for screenshots and
+  tests: `TR_HOOK` parse (`world_sim/player.rs:51-56`), `TR_DASH`/`TR_BOOTS`/`TR_WINGS`
+  on Player fields (`player.rs` ~341-384), `TR_JUMPS` on the ExtraJump type.
 - Visual work is verified with deterministic env pins (`TR_SHOT`, `TR_CAM`, `TR_DAY`,
   `TR_NOPLAYER`, `TR_NO_BG`, `TR_UI`, `TR_DEBUG=0`, `TR_STORM`, `TR_XY`) +
   `tools/pixel_diff.py`; two identical runs must be SHA256-equal.
@@ -106,7 +116,7 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
   comment instead. C#-shorthand like `num2` never survives the port.
 - Types/enums `PascalCase`, functions `snake_case`, constants `SCREAMING_SNAKE`.
 - Ported per-type check functions keep the C# verb so the cascade reads like the source:
-  `check_door_closed`, `check_chest` → new ones as `check_sunflower`, `check_pot`, `check_alch`.
+  `check_door_closed`, `check_chest` → new ones as `check_sunflower`, `check_pot`.
 - Modules: one concept per file under `render/` (draw passes), `world_sim/`
   (fixed-step systems), `ui/` (screens/panels).
 
@@ -115,7 +125,11 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
 - New system → extend the module map in `docs/ARCHITECTURE.md`; a genuinely new concern
   gets a new module file next to its peers (`render/ambience.rs` beside `render/sky.rs`,
   `falling.rs`/`loot.rs`/`tileobject.rs` beside their tr-core peers), registered as
-  `pub(crate) mod` in the folder's `mod.rs`.
+  `pub(crate) mod` in the folder's `mod.rs`. New `world_sim/` systems join as a module
+  plus one `FixedStepper` tick in the original C# call order (`ARCHITECTURE.md:314`).
+- A movement subsystem that owns state + spec tables + its own AI is a crate-root leaf
+  beside its peers: `grapple.rs` (state struct, spec table, latch/pull math, app driver
+  in `world_sim/player.rs:142-167`); rain/sand show the same shape for particle systems.
 - Multi-tile tile objects: geometry/styles in `tr-core/src/tileobject.rs` (`TABLE`),
   kill-behaviour arms in `tr-core/src/edit.rs` (`check_object`), the app-side drop map in
   `tr-app/src/registry.rs` (`tile_drop`), hooks in `tr-app/src/world_sim/editing.rs`.
@@ -133,13 +147,18 @@ deviations (wind drift, overlap rejection) listed in `docs/ANALYSIS.md`.
   (`tr-core/tile_light/palette.rs:20`) is the **exact C# `UnifiedRandom` stream** — use it
   when the C# stream must be replayed; (2) the drop engine (`tr-core/src/loot.rs`) is
   RNG-generic — it takes `&mut dyn DropRng` and returns `DropRequest`s, never touching
-  world state; the app drives it from `App.item_rng` (`world_seed ^ 0x5DEECE66…`,
-  `app/mod.rs:1437`); (3) worldgen uses the xorshift stream; (4) a pinned constant is the
-  last resort and must be recorded in ANALYSIS. Determinism is a hard invariant.
+  world state; the app drives it from `App.item_rng`; (3) other per-consumer visual/sim
+  randomness uses named u64 streams through `next_rand`/`rand01`
+  (`crates/tr-app/src/app/frame.rs:1413/:1421`) — one stream per consumer (crafting,
+  growth, scheduler; `rain.rs` owns its own with `StreamReplay` for replay); (4) worldgen
+  uses the xorshift stream; (5) a pinned constant is the last resort and must be recorded
+  in ANALYSIS. Determinism is a hard invariant.
 - Time: 60 Hz fixed step (`FixedStepper`), one update per draw, accumulator clamped 3×.
 
 ## Exemplar Files
 
+- `crates/tr-app/src/grapple.rs` — self-contained movement subsystem: state struct, spec
+  table, latch/pull math, integration flag on Player, tests through the Player tick.
 - `crates/tr-core/src/tileobject.rs` — data-only registry (new objects = one entry),
   `can_place`/`place` engine reading only the table, geometry tests.
 - `crates/tr-core/src/loot.rs` — RNG-generic engine, C#-ordered rolls, seeded tests;

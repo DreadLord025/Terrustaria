@@ -54,6 +54,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .and_then(|v| v.parse::<i32>().ok())
             .unwrap_or(13)
     });
+    // `TR_CART` pins the minecart mount (the granting item, QuickMount and the
+    // TrackHook paths are M2-MOUNT-3) — mounted idempotently like the
+    // `TR_HOOK` parse above, so a dismount re-mounts on the next tick.
+    static CART_PIN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let cart_pin = *CART_PIN.get_or_init(|| std::env::var("TR_CART").is_ok());
     if let Some(p) = app.player.as_mut() {
         // The `Player.SceneMetrics` snapshot (`Main.SceneMetrics` is the
         // global the source reads): the frame's `update_scene` scan feeds
@@ -131,7 +136,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // CanUseHooks set dismounts before the hook fires — every row in this
         // table (the set is {54, 57-60}).
         if hook_edge && !p.dead && p.mount.is_active() {
-            p.try_dismount();
+            p.try_dismount(&app.world);
         }
         if hook_edge && !p.dead {
             let center = Vec2::new(
@@ -196,8 +201,27 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
         p.swing_aim = app.swing_aim;
         let step = 1.0 / 60.0;
+        if cart_pin && !p.cart_mounted {
+            p.mount_cart();
+        }
         app.player_step.tick(dt, |_| {
-            p.update_with_grapple(&app.world, input, grapple_for_tick)
+            p.update_with_grapple(&app.world, input, grapple_for_tick);
+            // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
+            // (`Minecart.cs:1281-1288`): the pressure-track trip fires
+            // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of
+            // scope — local only).
+            if let Some((i, j)) = p.take_switch_trip() {
+                app.wiring.hit_switch(&mut app.world, i, j);
+            }
+            // The wheel-spark drain: the tick queued fully-rolled dust-213
+            // particles (`Minecart.WheelSparks` → `DelegateMethods.Minecart.Sparks`)
+            // and the C# sound sites' cues; the pool is the App's `Main.dust`
+            // stand-in and the cues go straight out.
+            let sparks = p.take_cart_sparks();
+            app.minecart_sparks.spawn(sparks);
+            for cue in p.take_cart_sounds() {
+                app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
+            }
         });
         app.player_step.drop_backlog();
         // The jump-off consumed the hook (`RemoveAllGrapplingHooks`).
@@ -215,5 +239,154 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
     }
     if map_open {
         app.update_map_input();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+    use tr_core::tile::FLAG_ACTIVE;
+    use tr_core::wiring::WireColor;
+    use tr_core::{Tile, World};
+
+    /// Review probe (Phase 2 gate fix 2) — the `update_player` wiring
+    /// consumption (`Player.cs:28237-28241` + `Minecart.HitTrackSwitch`,
+    /// `Minecart.cs:1281-1288`): riding across a pressure track fires
+    /// `Wiring::hit_switch` at the magnet tile exactly once per pass. The
+    /// seeded red line flips the lamp once — a second trip would flip it
+    /// back. The `TR_CART` env-pin half stays screenshot-covered like
+    /// `TR_HOOK` (a same-process env test is order-fragile with `OnceLock`).
+    #[test]
+    fn update_player_trips_the_pressure_track_through_wiring() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A 32x32 ride world: a straight rail on row 12 with the pressure
+        // tile (frame 21, `_trackType == 1`) at x 14; a red wire on its own
+        // tile runs down to a lamp (422) — the trip's flood flips it to 421.
+        app.world = World::new("cart".into(), 32, 32);
+        for x in 4..=24 {
+            let i = app.world.index(x, 12);
+            app.world.tiles[i] = Tile {
+                kind: 314,
+                frame_x: if x == 14 { 21 } else { 1 },
+                frame_y: -1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        app.world.wires.set(14, 12, WireColor::Red, true);
+        // The wire line below the rail row (the cart's body never reaches it),
+        // mirroring the `wiring.rs` flood fixtures (kind-419 carriers).
+        for y in 13..=14 {
+            let i = app.world.index(14, y);
+            app.world.tiles[i] = Tile {
+                kind: 419,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+            app.world.wires.set(14, y, WireColor::Red, true);
+        }
+        let i = app.world.index(14, 15);
+        app.world.tiles[i] = Tile {
+            kind: 422,
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        app.world.wires.set(14, 15, WireColor::Red, true);
+        // Mount and seat the cart five tiles left of the pressure tile, on
+        // the frame-1 rail line (`row * 16 + 6`).
+        let mut p = Player::spawn(&app.world);
+        p.mount_cart();
+        p.x = 10.0 * 16.0 + 8.0 - 10.0;
+        p.y = 12.0 * 16.0 + 6.0 - 52.0;
+        p.prev_x = p.x;
+        p.prev_y = p.y;
+        p.vx = 6.0;
+        app.player = Some(p);
+        // Hold right: the ride crosses the pressure tile and keeps going.
+        app.keys.insert(KeyCode::KeyD);
+        for _ in 0..20 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        let lamp = app.world.tile(14, 15).unwrap().kind;
+        assert_eq!(lamp, 421, "the trip fired once through app.wiring");
+        assert!(
+            app.player
+                .as_ref()
+                .is_some_and(|p| p.cart_mounted && p.on_track),
+            "the ride survived the pass"
+        );
+    }
+
+    /// DW-3.1 — the `world_sim` drain: the tick's queued spark particles land
+    /// in the App's `minecart::Sparks` pool (the `Main.dust` stand-in) and the
+    /// queued cues go out through `app.audio.play_at` (a silent no-op without
+    /// an output device) — both pendings end up empty.
+    #[test]
+    fn update_player_drains_cart_sparks_into_the_pool() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A straight rail on row 12 (frame 1) — the ride fixture.
+        app.world = World::new("cart".into(), 64, 32);
+        for x in 4..=56 {
+            let i = app.world.index(x, 12);
+            app.world.tiles[i] = Tile {
+                kind: 314,
+                frame_x: 1,
+                frame_y: -1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut p = Player::spawn(&app.world);
+        p.mount_cart();
+        p.x = 12.0 * 16.0 + 8.0 - 10.0;
+        p.y = 12.0 * 16.0 + 6.0 - 52.0;
+        p.prev_x = p.x;
+        p.prev_y = p.y;
+        p.vx = 12.0;
+        // An all-gates-pass stream seed: the braking tick queues 3 sparks.
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        app.player = Some(p);
+        // The settle tick brings the previous tick's `onTrack` up.
+        for _ in 0..2 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        // Brake: hold left.
+        app.keys.insert(KeyCode::KeyA);
+        update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_mut().unwrap();
+        assert!(
+            p.take_cart_sparks().is_empty(),
+            "the drain emptied the queue"
+        );
+        assert!(p.take_cart_sounds().is_empty(), "the cues went out");
+        assert_eq!(app.minecart_sparks.count(), 3, "the pool holds the sparks");
+    }
+
+    /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
+    /// exactly `want` sparks — the gate rolls interleave with the 14-roll
+    /// sparks (the rain.rs seed-search idiom, run against the same emitter
+    /// constants the tick passes).
+    fn seed_with_spark_count(vel_x: f32, want: usize) -> u64 {
+        for s in 1u64.. {
+            let mut sparks = Vec::new();
+            let mut rng = s;
+            crate::minecart::rolling_wheel_sparks(
+                &mut Vec::new(),
+                &mut sparks,
+                &mut rng,
+                glam::Vec2::new(100.0, 200.0),
+                20,
+                52,
+                glam::Vec2::new(vel_x, 0.0),
+                13.0,
+                0.0,
+            );
+            if sparks.len() == want {
+                return s;
+            }
+        }
+        unreachable!()
     }
 }
