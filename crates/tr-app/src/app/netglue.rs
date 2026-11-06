@@ -348,6 +348,11 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         // The casters/spheres: the ctor only seeds the stats — the net
         // state overwrites the position below (the hover arm's shape).
         crate::npc::NpcKind::GoblinSorcerer
+        | crate::npc::NpcKind::GoblinThief
+        | crate::npc::NpcKind::GoblinWarrior
+        | crate::npc::NpcKind::GoblinArcher
+        | crate::npc::NpcKind::GoblinPeon
+        | crate::npc::NpcKind::GoblinSummoner
         | crate::npc::NpcKind::Tim
         | crate::npc::NpcKind::DarkCaster
         | crate::npc::NpcKind::FireImp
