@@ -2375,8 +2375,9 @@ hashes and the 910 px footprint are byte-identical, so the shot evidence
 carries over as-is.
 
 Verification (M1.4-TO-6): the workspace suite is green (`test result: ok` ×7:
-902+16+569+19 passed, 0 failed, `--skip
-migrates_version_2_kinds_to_item_ids`); the
+910+16+569+19 passed, 0 failed, `--skip
+migrates_version_2_kinds_to_item_ids`; the claim-time `7c39dee` read
+902+16+569+19 before the M3-EQUIP-3 sync-merge); the
 refusals are unit-covered in `tr-core/src/edit.rs`
 (`the_container_family_above_refuses_can_kill_tile` — all seven ids plus the
 same-kind control, `the_locked_door_refuses_can_kill_tile` — the 594/646 rows
