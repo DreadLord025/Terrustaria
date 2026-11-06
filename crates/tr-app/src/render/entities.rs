@@ -319,7 +319,11 @@ pub(crate) fn push_layers(
 ) -> u32 {
     let mut quads = 0;
     for s in layers {
-        if s.rotation != 0.0 {
+        if s.dye != 0 {
+            // `DrawData.shader` ≠ 0 — the layer draws through its dye pass
+            // (`PlayerDrawHelper.SetShaderForData`, `PlayerDrawHelper.cs:29-60`).
+            r.push_sprite_dye(s.pos, s.size, s.uv, s.color, s.rotation, s.dye);
+        } else if s.rotation != 0.0 {
             r.push_sprite_rot(s.pos, s.size, s.uv, s.color, s.rotation);
         } else {
             r.push_sprite(
@@ -418,6 +422,12 @@ pub(crate) fn draw_player(
         } else {
             None
         },
+        // `UpdateDyes`' cache (`Player.cs:9587-9614`): the per-layer dye the
+        // builders stamp onto the armor/mount pieces (`apply_dye`).
+        c_head: player.c_head,
+        c_body: player.c_body,
+        c_legs: player.c_legs,
+        c_mount: player.c_mount,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }

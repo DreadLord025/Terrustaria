@@ -4817,3 +4817,67 @@ spark death check is tighter than the C# screen-reject at zoom > 1
 per-frame tick); the `itemAnimation == 0` gate at `Player.cs:19868` is
 omitted (the port has no item-animation field; the gate is dead for a
 riding player in every reachable state).
+
+## The dye plumbing (M3-EQUIP-4)
+
+The vanilla chain: `Player.dye[10]` mirrors the first ten armor slots
+(`Player.cs:1490`, the pair `dye[i] ↔ armor[i]` / `armor[i+10]`), the tick
+refills the `c*` cache in `UpdateDyes` (`:9587-9614`, right after
+`ResetEffects`, before `UpdateEquips`), and the draw applies one shader pass
+per draw entry — `DrawData.shader` → `PlayerDrawHelper.SetShaderForData`
+(`PlayerDrawHelper.cs:29-60`) → `GameShaders.Armor.Apply`. The port: the
+registry (`dye.rs`, the 120 `BindShader` bindings of
+`DyeInitializer.LoadArmorDyes` + `LoadBasicColorDyes` verbatim with their
+1-based ids), the tick cache (`Player.c_head/c_body/c_legs` + the misc five;
+`snapshots` filled from `App.equip` next to `equipped`), and the render
+channel (`SpriteInstance.dye` → a 48-row uniform table uploaded once — the
+C# bakes the parameters at `BindShader` time too). The layer→cache mapping
+(`apply_dye`): helmet=`cHead`, the composite torso/shoulder/arm armor
+=`cBody`, the armor legs=`cLegs`, the mount strips=`cMount`
+(`Mount.currentShader`, `PlayerDrawSet.cs:432-437`).
+
+**HLSL reconstruction (the .fx bytecode is not in the decompile —
+`Main.Assets["PixelShader"]`, `Main.cs:10804`):** the port implements two
+cores in `sprite.wgsl` — `colored` = dye color × texel luminance (the same
+shape as the tile-paint `paint_recolor`), `gradient` = vertical
+uColor→uSecondaryColor lerp (uColor at the top) then the wash. The C#
+colors are constants (the item's own color is never read —
+`DyeInitializer.cs:16-140`). Deviations: `ArmorColoredAndBlack` and
+`ArmorColoredAndSilverTrim` ride the `colored` core (their dark/trim masks
+are inside the unavailable HLSL), the `ArmorBrightness*` family likewise;
+every other pass (rainbow/flame/ocean/noise/reflective/team/void/hades/
+wisp/... — 48 of the 120 bindings) renders **plain** until its pass is
+ported; `uSaturation` is folded on the CPU — for every binding either the
+color is already fully saturated or the value is the 1.0 default (pinned
+by `dye::tests::vanilla_dye_colors_are_saturated`; the brown bright
+variants are the only S<1 colors and bind with the default). The plain
+path is byte-identical: `dye == 0` returns the texel untouched (empty-dye
+screenshot SHA256-equal to the baseline; two dyed runs SHA256-equal; the
+diff vs the baseline is confined to the player's bbox).
+
+**Cache scope:** `UpdateItemDye`'s ~27 accessory effect-slot fields
+(`handOnSlot→cHandOn`, `backSlot→cBackpack/cTail/cBack`, ...) are not
+ported — the port's `ItemDef` has no effect-slot fields and the accessory
+visuals are not drawn yet; the `wearsRobe → cLegs = cBody` rule
+(`:9596-9599`) waits for robes. The misc five mirror `:9600-9604`; only
+`cMount` has a draw consumer today. Hair dyes are the separate legacy CPU
+channel (`GameShaders.Hair.GetColor` → the vertex `colorHair`) — out of
+this task. Loadouts (`GetEffectiveDye`'s shared-dye lookup, `:5742-5764`)
+don't exist in the port — the slot itself is the source.
+
+**Persistence:** sidecar v6 writes the ten dye kinds on their own line
+after the bestiary kills (the vanilla order keeps dye straight after the
+armor, `Player.cs:54818-54822`, `type, prefix, favorited` without a
+stack); the port persists kinds only (the slot model carries no
+prefix/favorited) and restores each as a single stack. The v4/v5 files
+load unchanged. `miscEquips`/`miscDyes` stay unpersisted (they already
+were).
+
+**Slot interaction:** the click equipping (the `ItemSlot` case-2 swap
+paths, `DyeSwap`'s round-robin with the per-frame counter) stays with the
+inventory-interaction task, together with the armor equipping — the C#
+handles armor and dye in one click path, so a dye-only branch would be an
+asymmetric invention. Testability: `TR_DYE=k1,k2,...` fills the dye slots
+positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
+stands in for `miscDyes[3]`; the UI dye column (context 12) already
+renders the slots.

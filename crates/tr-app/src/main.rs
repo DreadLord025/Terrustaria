@@ -14,6 +14,7 @@ mod chat;
 mod collision;
 mod debug_panel;
 mod death;
+mod dye;
 mod emotes;
 mod inv;
 mod luck;

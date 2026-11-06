@@ -201,6 +201,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
         }
+        // `Player.dye`/`miscDyes`' kinds snapshot — `UpdateDyes`' input
+        // through `GetEffectiveDye` (`Player.cs:5742-5764`; no loadouts in
+        // the port, the slot itself is the source).
+        for i in 0..10 {
+            p.dye_slots[i] = app.equip.dye[i].kind;
+        }
+        for i in 0..5 {
+            p.misc_dye_slots[i] = app.equip.misc_dyes[i].kind;
+        }
         p.swing_aim = app.swing_aim;
         let step = 1.0 / 60.0;
         if cart_pin && !p.cart_mounted {
