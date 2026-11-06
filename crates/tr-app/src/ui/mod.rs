@@ -118,6 +118,28 @@ impl Default for UiPulse {
 /// `map_style` is `Main.mapStyle` (`Main.cs:66750`), driving the map-style icon
 /// row's active tint (`Main.cs:41083-41086`).
 #[allow(clippy::too_many_arguments)]
+/// The death screen's text block — `Main.DrawDeathText`'s shape
+/// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
+/// centered 60 px above the screen's midpoint) and the softcore
+/// "Dropped coins: X" line 50 px lower (the small `MouseText` font). The
+/// alpha rides the death-screen fade — the port draws at the fixed
+/// full-bright (the respawn timer's fade lands with the death-screen pass).
+pub(crate) fn draw_death_screen(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    death_text: &str,
+    lost_coins: u64,
+    lost_coin_string: &str,
+) {
+    let color = [1.0, 1.0, 1.0, 1.0];
+    text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
+    if lost_coins > 0 {
+        let line = format!("Dropped coins: {lost_coin_string}");
+        text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
+    }
+}
+
 pub fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,

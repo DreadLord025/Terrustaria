@@ -226,3 +226,48 @@ pub(crate) fn large_text_width(r: &SpriteRenderer, lookups: &assets::Lookups, te
         None => r.text_width(text, 1.0),
     }
 }
+
+/// The death screen's centered line through the Death font —
+/// `Main.DrawDeathText`'s `DrawString(DeathText, ...)` shape
+/// (`Main.cs:45330-45341`): the text centered at the screen's midpoint X at
+/// the given Y, the death-tint alpha applied by the caller.
+pub(crate) fn draw_death_string(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen_x: f32,
+    y: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let w = match &lookups.death_font {
+        Some(f) => font_width(f, text, 1.0),
+        None => r.text_width(text, 1.0),
+    };
+    let x = screen_x / 2.0 - w / 2.0;
+    draw_border_string(
+        r,
+        lookups,
+        BorderFont::Death,
+        x,
+        y,
+        1.0,
+        &[[1.0, 1.0]],
+        color,
+        text,
+    );
+}
+
+/// The death screen's small "Dropped coins" line — the `MouseText` font
+/// (`Main.cs:45336-45338`), centered like the big line above.
+pub(crate) fn draw_dropped_coins(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen_x: f32,
+    y: f32,
+    color: [f32; 4],
+    text: &str,
+) {
+    let w = hud_text_width(r, lookups, text, 1.0);
+    let x = screen_x / 2.0 - w / 2.0;
+    border_string(r, lookups, x, y, color, text);
+}
