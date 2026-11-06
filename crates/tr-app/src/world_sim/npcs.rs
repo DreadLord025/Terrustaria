@@ -103,7 +103,12 @@ pub(crate) fn start_invasion(world: &mut tr_core::World, qualifying_players: i32
         return;
     }
     world.invasion_goblins = true;
+    // `Main.invasionType = 1` + the march/warn state (`:64455-64510`) —
+    // the morning-roll resolve and the item path share the state.
+    world.invasion_type = 1;
+    world.invasion_warn = 0;
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    world.invasion_size_start = world.invasion_size;
 }
 
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
@@ -511,37 +516,9 @@ pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
     true
 }
 
-/// `Main.CanStartInvasion` (`Main.cs:64468-64480`): no active invasion, no
-/// delay, and a player with 200+ max hp.
-pub(crate) fn can_start_invasion(world: &World, players: &[&crate::player::Player]) -> bool {
-    if world.invasion_type != 0 {
-        return false;
-    }
-    if world.invasion_delay != 0 {
-        return false;
-    }
-    players.iter().any(|p| p.max_hp >= 200)
-}
-
 /// `Main.StartInvasion` (`Main.cs:64482-64511`): the army size 80 + 40 per
 /// qualified player, the march column on the world's far side (the random
 /// 0/maxTilesX roll; the marauder's `invasionX` double is f64 on the World).
-pub(crate) fn start_invasion(app: &mut App, _players: &[&crate::player::Player]) {
-    let num = app.player.as_ref().map(|p| (p.max_hp >= 200) as usize).unwrap_or(0);
-    if app.world.invasion_type != 0 || app.world.invasion_delay != 0 || num == 0 {
-        return;
-    }
-    app.world.invasion_type = 1;
-    app.world.invasion_size = 80 + 40 * num as i32;
-    app.world.invasion_size_start = app.world.invasion_size;
-    app.world.invasion_warn = 0;
-    // `if (Main.rand.Next(2) == 0) invasionX = 0; else invasionX = maxTilesX;`
-    // (`:64502-64510`) — the deterministic hash stands in for `Main.rand`
-    // (the roll rides the item stream's order).
-    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
-    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
-}
-
 /// `Main.InvasionWarning` (`Main.cs:64400-64415`) for the goblin slice —
 /// the literal en strings stand in for the `Lang.misc[0..3]` keys.
 fn invasion_warning(app: &mut App) {
@@ -688,14 +665,25 @@ fn invasion_spawn_pick(rng: &mut u64, hard_mode: bool, summoner_alive: bool) -> 
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
-    // the morning roll's pending flag + the players' life-max gate.
+    // the morning roll's pending flag + the players' life-max gate. The
+    // march state (the type/x/warn) rides the World — `invasion_goblins`
+    // (the item-path flag) stays synced for the panel/kill paths.
     if app.world.invasion_arm_pending {
         app.world.invasion_arm_pending = false;
         let qualified = app.player.as_ref().map(|p| p.max_hp >= 200).unwrap_or(false);
-        if qualified {
-            // `CanStartInvasion`'s players gate: the single-player slice
-            // (the `start_invasion` re-reads the roster off `app`).
-            start_invasion(app, &[]);
+        if qualified && !app.world.invasion_goblins {
+            let num = 1; // the session player (the multiplayer count folds)
+            app.world.invasion_size = 80 + 40 * num;
+            app.world.invasion_size_start = app.world.invasion_size;
+            app.world.invasion_warn = 0;
+            // `if (Main.rand.Next(2) == 0) invasionX = 0; else invasionX = maxTilesX;`
+            // (`:64502-64510`) — the deterministic hash stands in for `Main.rand`
+            // (the roll rides the item stream's order).
+            let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+            app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+            start_invasion(&mut app.world, num);
+            // The march state rides the World fields (the app-level pass
+            // reads them in `update_invasion_state`).
         }
     }
     // `Main.UpdateInvasion` (`Main.cs:64328-64386`): the per-tick state
@@ -1594,7 +1582,7 @@ mod invasion_tests {
         player.x = 150.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        start_invasion(&mut app, &[]);
+        start_invasion(&mut app.world, 1);
         assert_eq!(app.world.invasion_type, 1);
         assert_eq!(app.world.invasion_size, 120);
         assert_eq!(app.world.invasion_size_start, 120);
@@ -1604,7 +1592,7 @@ mod invasion_tests {
             app.world.invasion_x
         );
         // The second call refuses (the invasion is active).
-        start_invasion(&mut app, &[]);
+        start_invasion(&mut app.world, 1);
         assert_eq!(app.world.invasion_type, 1);
     }
 
