@@ -115,6 +115,18 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             row(1783, StockWhen::PlayerHasItem(1782)),
             row(1785, StockWhen::PlayerHasItem(1784)),
         ],
+        // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
+        // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
+        // painting row (num6) rides the moon-pair pass.
+        15 => vec![
+            row(1071, StockWhen::Always),
+            row(1072, StockWhen::Always),
+            row(1100, StockWhen::Always),
+            row(1097, StockWhen::Always),
+            row(1099, StockWhen::Always),
+            row(1098, StockWhen::Always),
+            row(1966, StockWhen::Always),
+        ],
         // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
         // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
         // downedBoss1/slimeKing night gate (constants-off); the hardmode

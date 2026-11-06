@@ -508,6 +508,13 @@ pub fn spawn_allowed_demolitionist(inventory_ids: &[u16]) -> bool {
         .any(|id| BOMBS.contains(id))
 }
 
+/// The Painter's arrival: the vanilla `CheckForNPCsToSpawn`'s town-count
+/// rule — at least 2 OTHER town NPCs present (the wiki-standard count; the
+/// exact roll cadence rides the arrival work).
+pub fn spawn_allowed_painter(town_count_excluding: usize) -> bool {
+    town_count_excluding >= 2
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 

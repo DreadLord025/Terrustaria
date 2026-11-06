@@ -130,6 +130,9 @@ pub enum NpcKind {
     /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` — the bombs in the
     /// inventory).
     Demolitionist,
+    /// `NPCID.Painter` (227) — the paint seller (`NPC.cs:11925`: the town
+    /// twin; the shop index 15; the arrival = at least 2 other town NPCs).
+    Painter,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -335,6 +338,7 @@ impl NpcKind {
             NpcKind::Nurse => 36,
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
+            NpcKind::Painter => 39,
         }
     }
 
@@ -379,6 +383,7 @@ impl NpcKind {
             36 => NpcKind::Nurse,
             37 => NpcKind::ArmsDealer,
             38 => NpcKind::Demolitionist,
+            39 => NpcKind::Painter,
             _ => return None,
         })
     }
@@ -456,6 +461,7 @@ impl NpcKind {
             NpcKind::Nurse => (18.0, 40.0),
             NpcKind::ArmsDealer => (18.0, 40.0),
             NpcKind::Demolitionist => (18.0, 40.0),
+            NpcKind::Painter => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -519,6 +525,8 @@ impl NpcKind {
             NpcKind::ArmsDealer => 250,
             // `SetDefaults` case 38 (`NPC.cs:9019` region): 250 HP.
             NpcKind::Demolitionist => 250,
+            // `SetDefaults` case 227 (`NPC.cs:11933`): 250 HP.
+            NpcKind::Painter => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -568,6 +576,7 @@ impl NpcKind {
             NpcKind::Nurse => 10,
             NpcKind::ArmsDealer => 10,
             NpcKind::Demolitionist => 10,
+            NpcKind::Painter => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1007,6 +1016,7 @@ impl Npc {
             NpcKind::Nurse => 0.5,
             NpcKind::ArmsDealer => 0.5,
             NpcKind::Demolitionist => 0.5,
+            NpcKind::Painter => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1066,6 +1076,7 @@ impl Npc {
             NpcKind::Nurse => 15,
             NpcKind::ArmsDealer => 15,
             NpcKind::Demolitionist => 15,
+            NpcKind::Painter => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1123,6 +1134,7 @@ impl Npc {
             NpcKind::Nurse => 0.0,
             NpcKind::ArmsDealer => 0.0,
             NpcKind::Demolitionist => 0.0,
+            NpcKind::Painter => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1240,7 +1252,8 @@ impl Npc {
             | NpcKind::Dryad
             | NpcKind::Nurse
             | NpcKind::ArmsDealer
-            | NpcKind::Demolitionist => self.update_guide(world, dt),
+            | NpcKind::Demolitionist
+            | NpcKind::Painter => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1532,6 +1545,33 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::Painter => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[227]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Demolitionist => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[38]` = 3, `Main.cs:67082`).
@@ -2232,6 +2272,7 @@ impl Npc {
                     | NpcKind::Nurse
                     | NpcKind::ArmsDealer
                     | NpcKind::Demolitionist
+                    | NpcKind::Painter
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2295,6 +2336,7 @@ impl Npc {
             NpcKind::Nurse => 36,
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
+            NpcKind::Painter => 39,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3442,7 +3484,38 @@ mod tests {
         assert!(!stock.contains(&265), "the hardmode row leaks");
     }
 
+    #[test]
+    fn the_painter_arrives_with_two_neighbors() {
+        // The town-count rule: at least 2 OTHER town NPCs present.
+        use crate::spawner::spawn_allowed_painter;
+        assert!(!spawn_allowed_painter(0));
+        assert!(!spawn_allowed_painter(1));
+        assert!(spawn_allowed_painter(2), "two neighbors open the gate");
+    }
+
+    #[test]
+    fn the_painter_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 227 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(227); the
+        // shop index 15 carries the paints.
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Painter).expect("the painter spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Painter, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 227);
+        assert_eq!(e.credit_id, "Painter");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Painter);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Jungle);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Forest);
+        let stock = crate::shop::resolve_stock(15, &crate::shop::ShopFlags::default(), &[]);
+        for id in [1071, 1072, 1100, 1097, 1099, 1098, 1966] {
+            assert!(stock.contains(&id), "the paint row {id} missing");
+        }
+    }
+
 }
+
 
 
 
