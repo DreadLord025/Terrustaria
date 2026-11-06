@@ -100,6 +100,21 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             // `:1480-1482`'s HasItem(3107) → 3108 row lands with the
             // inventory-scan pass.
         ],
+        // The Arms Dealer (`Chest.cs:1484-1567`): the Musket Balls 97, the
+        // Flintlock 95?/98 rows always; the PlayerHasItem rows; the
+        // silver-tier flip (4915/278), the downedBoss2/night Minishark-ish
+        // 47, the night 324, the hardmode 534/1432/2177 and the graveyard
+        // 4703 sit constants-off.
+        2 => vec![
+            row(97, StockWhen::Always),
+            row(95, StockWhen::Always),
+            row(98, StockWhen::Always),
+            row(1261, StockWhen::PlayerHasItem(1258)),
+            row(1836, StockWhen::PlayerHasItem(1835)),
+            row(3108, StockWhen::PlayerHasItem(3107)),
+            row(1783, StockWhen::PlayerHasItem(1782)),
+            row(1785, StockWhen::PlayerHasItem(1784)),
+        ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
         // branch, the base rows, the flower-seed moon-phase pairs. The
         // crimson variants (2886/2171/4508), the graveyard/underworld/

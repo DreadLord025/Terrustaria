@@ -483,6 +483,19 @@ pub fn spawn_allowed_nurse(life_max: i32) -> bool {
     life_max / 20 > 5
 }
 
+/// `NPC.SpawnAllowed_ArmsDealer` (`NPC.cs:7092-7116`): any inventory item
+/// whose `ammo == Bullet(97)` or `useAmmo == Bullet` — the itemdata's
+/// `ammo`/`use_ammo` rows answer.
+pub fn spawn_allowed_arms_dealer(inventory_ids: &[u16]) -> bool {
+    inventory_ids
+        .iter()
+        .any(|id| {
+            crate::itemdata::ITEMS
+                .get(*id as usize)
+                .is_some_and(|d| d.ammo == 97 || d.use_ammo == 97)
+        })
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 

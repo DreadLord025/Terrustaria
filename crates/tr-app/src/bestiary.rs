@@ -333,6 +333,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Nurse",
     },
     BestiaryEntryDef {
+        credit_id: "ArmsDealer",
+        net_id: 19,
+        kind: NpcKind::ArmsDealer,
+        variant: None,
+        quick_unlock: false,
+        name: "Arms Dealer",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

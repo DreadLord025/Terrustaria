@@ -121,6 +121,10 @@ pub enum NpcKind {
     /// twin; no shop — the heal interaction rides the right-click; the
     /// arrival `SpawnAllowed_Nurse`, `NPC.cs:7158`).
     Nurse,
+    /// `NPCID.ArmsDealer` (19) — the ammo seller (`NPC.cs:9008`: the town
+    /// twin; the shop index 2; the arrival `SpawnAllowed_ArmsDealer`,
+    /// `NPC.cs:7092` — the bullets in the inventory).
+    ArmsDealer,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -324,6 +328,7 @@ impl NpcKind {
             NpcKind::Merchant => 34,
             NpcKind::Dryad => 35,
             NpcKind::Nurse => 36,
+            NpcKind::ArmsDealer => 37,
         }
     }
 
@@ -366,6 +371,7 @@ impl NpcKind {
             34 => NpcKind::Merchant,
             35 => NpcKind::Dryad,
             36 => NpcKind::Nurse,
+            37 => NpcKind::ArmsDealer,
             _ => return None,
         })
     }
@@ -441,6 +447,7 @@ impl NpcKind {
             NpcKind::Merchant => (18.0, 40.0),
             NpcKind::Dryad => (18.0, 40.0),
             NpcKind::Nurse => (18.0, 40.0),
+            NpcKind::ArmsDealer => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -500,6 +507,8 @@ impl NpcKind {
             NpcKind::Dryad => 250,
             // `SetDefaults` case 18 (`NPC.cs:9002` region): 250 HP.
             NpcKind::Nurse => 250,
+            // `SetDefaults` case 19 (`NPC.cs:9016`): 250 HP.
+            NpcKind::ArmsDealer => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -547,6 +556,7 @@ impl NpcKind {
             NpcKind::Merchant => 10,
             NpcKind::Dryad => 10,
             NpcKind::Nurse => 10,
+            NpcKind::ArmsDealer => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -984,6 +994,7 @@ impl Npc {
             NpcKind::Merchant => 0.5,
             NpcKind::Dryad => 0.5,
             NpcKind::Nurse => 0.5,
+            NpcKind::ArmsDealer => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1041,6 +1052,7 @@ impl Npc {
             NpcKind::Merchant => 15,
             NpcKind::Dryad => 15,
             NpcKind::Nurse => 15,
+            NpcKind::ArmsDealer => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1096,6 +1108,7 @@ impl Npc {
             NpcKind::Merchant => 0.0,
             NpcKind::Dryad => 0.0,
             NpcKind::Nurse => 0.0,
+            NpcKind::ArmsDealer => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1208,9 +1221,11 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
-            NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse => {
-                self.update_guide(world, dt)
-            }
+            NpcKind::Guide
+            | NpcKind::Merchant
+            | NpcKind::Dryad
+            | NpcKind::Nurse
+            | NpcKind::ArmsDealer => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1502,6 +1517,33 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::ArmsDealer => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[19]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Nurse => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[18]` = 3, `Main.cs:67082`).
@@ -2142,7 +2184,11 @@ impl Npc {
             // reached the hurt path until this).
             if !matches!(
                 self.kind,
-                NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad | NpcKind::Nurse
+                NpcKind::Guide
+                    | NpcKind::Merchant
+                    | NpcKind::Dryad
+                    | NpcKind::Nurse
+                    | NpcKind::ArmsDealer
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2204,6 +2250,7 @@ impl Npc {
             NpcKind::Merchant => 34,
             NpcKind::Dryad => 35,
             NpcKind::Nurse => 36,
+            NpcKind::ArmsDealer => 37,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3286,6 +3333,39 @@ mod tests {
         assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5), 210);
     }
 
+    #[test]
+    fn the_arms_dealer_arrives_on_bullets() {
+        // `SpawnAllowed_ArmsDealer` (`NPC.cs:7092-7116`): any inventory
+        // item with ammo == Bullet(97) or useAmmo == Bullet — the Musket
+        // Ball 97's own row answers.
+        use crate::spawner::spawn_allowed_arms_dealer;
+        assert!(spawn_allowed_arms_dealer(&[97]), "the musket balls arrive");
+        assert!(!spawn_allowed_arms_dealer(&[8, 28]), "the torches don't");
+        assert!(!spawn_allowed_arms_dealer(&[]), "the empty waits");
+    }
+
+    #[test]
+    fn the_arms_dealer_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 19 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(19).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::ArmsDealer).expect("the dealer spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::ArmsDealer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 19);
+        assert_eq!(e.credit_id, "ArmsDealer");
+        let prefs = crate::happiness::biome_preferences(NpcKind::ArmsDealer);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Desert);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Snow);
+        // The shop index 2: the base rows + the PlayerHasItem gates.
+        let stock = crate::shop::resolve_stock(2, &crate::shop::ShopFlags::default(), &[1258]);
+        assert!(stock.contains(&97) && stock.contains(&95) && stock.contains(&98));
+        assert!(stock.contains(&1261), "the has-item row opens");
+        assert!(!stock.contains(&1836), "the other has-item row stays shut");
+    }
+
 }
+
 
 
