@@ -581,9 +581,11 @@ mod tests {
         let rect = grid_rect(&panel);
         let (cols, rows) = grid_metrics(&rect);
         assert!(cols * rows >= crate::bestiary::ENTRIES.len());
-        // The first cell's centre hits entry 0.
-        let first_x = rect[0] + (rect[2] - cols as f32 * CELL) * 0.5 + CELL * 0.5;
-        let first_y = rect[1] + (rect[3] - rows as f32 * CELL) * 0.5 + CELL * 0.5;
+        // The first cell's centre hits entry 0 — the probe rides
+        // `card_at`'s own lattice (the raw CELL grid, no insets) so the
+        // overflow rows keep the hit.
+        let first_x = rect[0] + CELL * 0.5;
+        let first_y = rect[1] + CELL * 0.5;
         assert_eq!(card_at(screen, Vec2::new(first_x, first_y)), Some(0));
         // The Back panel sits inside the container above the bottom edge.
         let back = back_rect(&panel);
