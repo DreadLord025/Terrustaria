@@ -487,16 +487,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef {
         credit_id: "GoblinThief",
         net_id: 26,
-        credit_id: "GoblinPeon",
-        net_id: 26,
-        kind: NpcKind::GoblinPeon,
-        variant: None,
-        quick_unlock: false,
-        name: "Goblin Peon",
-    },
-    BestiaryEntryDef {
-        credit_id: "GoblinThief",
-        net_id: 27,
         kind: NpcKind::GoblinThief,
         variant: None,
         quick_unlock: false,
@@ -505,7 +495,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef {
         credit_id: "GoblinWarrior",
         net_id: 27,
-        net_id: 28,
         kind: NpcKind::GoblinWarrior,
         variant: None,
         quick_unlock: false,
@@ -514,7 +503,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     BestiaryEntryDef {
         credit_id: "GoblinArcher",
         net_id: 28,
-        net_id: 111,
         kind: NpcKind::GoblinArcher,
         variant: None,
         quick_unlock: false,
@@ -535,6 +523,8 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Goblin Summoner",
+    },
+    BestiaryEntryDef {
         credit_id: "GoblinTinkerer",
         net_id: 107,
         kind: NpcKind::GoblinTinkerer,

@@ -546,6 +546,8 @@ fn invasion_warning(app: &mut App) {
 /// progression event 10), the march toward `spawnTileX` by
 /// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
 pub(crate) fn update_invasion_state(app: &mut App) {
+    // `invasion_goblins` rides the type (the debug panel's flag reads it).
+    app.world.invasion_goblins = app.world.invasion_type == 1;
     if app.world.invasion_type <= 0 {
         return;
     }
@@ -755,32 +757,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
-    // The Goblin Army invasion (`NPC.cs:444+`, `invasionType = 1`): while
-    // `invasionSize` lasts, an invader walks in near the player every 2 s
-    // (the vanilla cadence rides `UpdateWorld`; the port's timer). The kind
-    // mix is deterministic off the roster length (the vanilla rolls the
-    // spawn RNG).
-    if app.world.invasion_goblins && app.world.invasion_size > 0 {
-        app.invasion_spawn_timer += dt;
-        if app.invasion_spawn_timer >= 2.0 {
-            app.invasion_spawn_timer = 0.0;
-            if let Some(player) = app.player.as_ref() {
-                let kinds = [
-                    NpcKind::GoblinPeon,
-                    NpcKind::GoblinPeon,
-                    NpcKind::GoblinThief,
-                    NpcKind::GoblinWarrior,
-                    NpcKind::GoblinArcher,
-                ];
-                let kind = kinds[app.npcs.len() % kinds.len()];
-                let dx = if app.npcs.len() % 2 == 0 { 20 } else { -20 };
-                let xt = ((player.x / TILE_PX) as i32 + dx).clamp(2, app.world.width - 3);
-                if let Some(n) = Npc::spawn_cave_walker(&app.world, xt, kind) {
-                    app.npcs.push(n);
-                }
-            }
-        }
-    }
     // The town-NPC arrival (`NPC.SpawnAllowed_Merchant`, `NPC.cs:7175`):
     // the money condition + the absence check — the port's cadence rides
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
@@ -924,21 +900,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
             NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
-            // The invasion death bookkeeping (`NPC.VanillaKillCount`): each
-            // fallen invader drains `invasionSize`; the last kill raises
-            // `downedGoblins` (the Tinkerer's gate).
-            NpcKind::GoblinPeon
-            | NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher => {
-                if app.world.invasion_goblins {
-                    app.world.invasion_size -= 1;
-                    if app.world.invasion_size <= 0 {
-                        app.world.invasion_goblins = false;
-                        app.world.downed_goblins = true;
-                    }
-                }
-            }
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
@@ -1729,6 +1690,4 @@ mod invasion_tests {
             ), "the alive summoner blocks the roll");
         }
     }
-}
-
 }

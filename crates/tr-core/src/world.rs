@@ -121,13 +121,10 @@ pub struct World {
     /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
     /// corruption orb arms the morning invasion rolls.
     pub shadow_orb_smashed: bool,
-    /// `NPC.downedGoblins` (`NPC.cs:6335`): the defeated Goblin Army.
-    pub downed_goblins: bool,
     /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
     pub invasion_type: i32,
-    /// `Main.invasionSize`/`invasionSizeStart` (`Main.cs:64456`): the
-    /// remaining/initial invasion points.
-    pub invasion_size: i32,
+    /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
+    /// points (`invasion_size` rides the Goblin Army block's field).
     pub invasion_size_start: i32,
     /// `Main.invasionX` (`Main.cs:64475`'s assign): the marching column
     /// (the tile X the army stands at).
@@ -189,7 +186,7 @@ impl World {
             downed_plant_boss: false,
             invasion_goblins: false,
             invasion_size: 0,
-            downed_goblins: false,
+
             saved_goblin: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
@@ -213,7 +210,6 @@ impl World {
             shadow_orb_smashed: false,
             downed_goblins: false,
             invasion_type: 0,
-            invasion_size: 0,
             invasion_size_start: 0,
             invasion_x: 0.0,
             invasion_warn: 0,

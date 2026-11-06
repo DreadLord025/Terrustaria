@@ -215,14 +215,6 @@ pub enum NpcKind {
     /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
     /// 30x30, dmg 20, def 10, 100 HP).
     Creeper,
-    /// `NPCID.GoblinPeon` (26) — x0.9, dmg 12, def 4, 60 HP.
-    GoblinPeon,
-    /// `NPCID.GoblinThief` (27) — x0.95, dmg 20, def 6, 80 HP.
-    GoblinThief,
-    /// `NPCID.GoblinWarrior` (28) — x1.1, dmg 25, def 8, 110 HP.
-    GoblinWarrior,
-    /// `NPCID.GoblinArcher` (111) — x0.95, dmg 20, def 6, 80 HP.
-    GoblinArcher,
     /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
     /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
     /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
@@ -459,12 +451,8 @@ impl NpcKind {
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 56,
-            NpcKind::GoblinPeon => 57,
-            NpcKind::GoblinThief => 58,
-            NpcKind::GoblinWarrior => 59,
-            NpcKind::GoblinArcher => 60,
-            NpcKind::BoundGoblin => 61,
-            NpcKind::GoblinTinkerer => 62,
+            NpcKind::BoundGoblin => 63,
+            NpcKind::GoblinTinkerer => 64,
         }
     }
 
@@ -532,12 +520,8 @@ impl NpcKind {
             54 => NpcKind::Plantera,
             55 => NpcKind::BrainOfCthulhu,
             56 => NpcKind::Creeper,
-            57 => NpcKind::GoblinPeon,
-            58 => NpcKind::GoblinThief,
-            59 => NpcKind::GoblinWarrior,
-            60 => NpcKind::GoblinArcher,
-            61 => NpcKind::BoundGoblin,
-            62 => NpcKind::GoblinTinkerer,
+            63 => NpcKind::BoundGoblin,
+            64 => NpcKind::GoblinTinkerer,
             _ => return None,
         })
     }
@@ -657,11 +641,12 @@ impl NpcKind {
             NpcKind::BrainOfCthulhu => (160.0, 110.0),
             // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
             NpcKind::Creeper => (30.0, 30.0),
-            // The goblins: 18x38 x the scale.
-            NpcKind::GoblinPeon => (16.0, 34.0),
-            NpcKind::GoblinThief => (17.0, 36.0),
-            NpcKind::GoblinWarrior => (20.0, 42.0),
-            NpcKind::GoblinArcher => (17.0, 36.0),
+            // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/111/29/471).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -770,10 +755,6 @@ impl NpcKind {
             NpcKind::BrainOfCthulhu => 1250,
             NpcKind::Creeper => 100,
             // The goblins.
-            NpcKind::GoblinPeon => 60,
-            NpcKind::GoblinThief => 80,
-            NpcKind::GoblinWarrior => 110,
-            NpcKind::GoblinArcher => 80,
             // 250 HP both (`:10255`, `:10280`).
             NpcKind::BoundGoblin => 250,
             NpcKind::GoblinTinkerer => 250,
@@ -853,10 +834,6 @@ impl NpcKind {
             NpcKind::Plantera => 50,
             NpcKind::BrainOfCthulhu => 30,
             NpcKind::Creeper => 20,
-            NpcKind::GoblinPeon => 12,
-            NpcKind::GoblinThief => 20,
-            NpcKind::GoblinWarrior => 25,
-            NpcKind::GoblinArcher => 20,
             // The `friendly` pair (`:10246`/`:10272`) — the contact gate
             // excludes them; 0 stands for the vanilla's unused dmg 10.
             NpcKind::BoundGoblin => 0,
@@ -1766,8 +1743,6 @@ impl Npc {
             | NpcKind::JungleBat
             | NpcKind::Hellbat
             | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
-            NpcKind::EaterOfSouls => {
-                self.update_hover(world, player, HoverParams::EATER_OF_SOULS)
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -5911,20 +5886,21 @@ mod tests {
     #[test]
     fn the_goblin_kinds_spawn_and_maps() {
         // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
-        // round-trip + the bestiary rows.
+        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
+        // the Warrior 27, the Archer 28, the Peon 111).
         let w = ground_air();
-        let peon = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinPeon).expect("the peon spawns");
-        assert_eq!(peon.max_hp, 60);
-        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
-        let warrior =
-            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinWarrior).expect("the warrior spawns");
-        assert_eq!(warrior.max_hp, 110);
-        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
+        assert_eq!(thief.max_hp, 60);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        let archer =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        assert_eq!(archer.max_hp, 110);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
         for (kind, net) in [
-            (NpcKind::GoblinPeon, 26),
-            (NpcKind::GoblinThief, 27),
-            (NpcKind::GoblinWarrior, 28),
-            (NpcKind::GoblinArcher, 111),
+            (NpcKind::GoblinThief, 26),
+            (NpcKind::GoblinWarrior, 27),
+            (NpcKind::GoblinArcher, 28),
+            (NpcKind::GoblinPeon, 111),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
@@ -5943,7 +5919,7 @@ mod tests {
         assert_eq!(NpcKind::BoundGoblin.contact_damage(), 0);
         assert_eq!(NpcKind::BoundGoblin.size(), (18.0, 34.0));
         assert_eq!(NpcKind::GoblinTinkerer.size(), (18.0, 40.0));
-        for (kind, v) in [(NpcKind::BoundGoblin, 61), (NpcKind::GoblinTinkerer, 62)] {
+        for (kind, v) in [(NpcKind::BoundGoblin, 63), (NpcKind::GoblinTinkerer, 64)] {
             assert_eq!(kind.to_u16(), v);
             assert_eq!(NpcKind::from_u16(v), Some(kind));
         }
