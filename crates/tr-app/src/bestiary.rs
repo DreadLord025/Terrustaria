@@ -397,6 +397,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Skeletron",
     },
     BestiaryEntryDef {
+        credit_id: "WallofFlesh",
+        net_id: 113,
+        kind: NpcKind::WallOfFlesh,
+        variant: None,
+        quick_unlock: false,
+        name: "Wall of Flesh",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,
