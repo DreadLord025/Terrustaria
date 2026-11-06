@@ -171,6 +171,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
         NpcKind::WallOfFlesh => &[],
+        NpcKind::TheDestroyer => &[],
+        NpcKind::SkeletronPrime => &[],
+        NpcKind::Retinazer => &[],
+        NpcKind::Spazmatism => &[],
+        NpcKind::Plantera => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],

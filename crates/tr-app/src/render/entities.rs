@@ -142,6 +142,11 @@ pub(crate) struct NpcAssets {
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) wof: Option<BgTex>,
+    pub(crate) destroyer: Option<BgTex>,
+    pub(crate) prime: Option<BgTex>,
+    pub(crate) retinazer: Option<BgTex>,
+    pub(crate) spazmatism: Option<BgTex>,
+    pub(crate) plantera: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -200,6 +205,11 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
         wof: sky_tex(atlas, "NPC_113", None),
+        destroyer: sky_tex(atlas, "NPC_134", None),
+        prime: sky_tex(atlas, "NPC_127", None),
+        retinazer: sky_tex(atlas, "NPC_125", None),
+        spazmatism: sky_tex(atlas, "NPC_126", None),
+        plantera: sky_tex(atlas, "NPC_262", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -783,6 +793,41 @@ pub(crate) fn draw_npcs(
                 assets.leech.as_ref(),
                 assets.leech.as_ref().map_or(14.0, |t| t.h),
                 [14.0, 14.0],
+                [n.x, n.y],
+            ),
+            // The Destroyer: the single-frame 48x48 sheet.
+            NpcKind::TheDestroyer => (
+                assets.destroyer.as_ref(),
+                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
+                [48.0, 48.0],
+                [n.x, n.y],
+            ),
+            // The Prime: the single-frame 80x102 sheet.
+            NpcKind::SkeletronPrime => (
+                assets.prime.as_ref(),
+                assets.prime.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The Twins: the 2-frame 100x110 sheets.
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                let tex = if n.kind == NpcKind::Retinazer {
+                    assets.retinazer.as_ref()
+                } else {
+                    assets.spazmatism.as_ref()
+                };
+                (
+                    tex,
+                    tex.map_or(110.0, |t| t.h / 2.0),
+                    [100.0, 110.0],
+                    [n.x, n.y],
+                )
+            }
+            // The Plantera: the 5-frame 86x86 sheet.
+            NpcKind::Plantera => (
+                assets.plantera.as_ref(),
+                assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
+                [86.0, 86.0],
                 [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the

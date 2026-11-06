@@ -187,6 +187,13 @@ impl App {
                 }
             }
             self.update_player(dt);
+            // `Dust.UpdateDust` (`Main.cs`'s dust pass — after the world
+            // update, once per frame): the minecart sparks ride the same
+            // per-frame slot the rain/sand dust get in
+            // `world_sim::scene_scan::update_scene`.
+            let (sw, sh) = self.screen_size();
+            self.minecart_sparks
+                .tick(self.camera, Vec2::new(sw, sh), self.zoom);
             let hp = self.player.as_ref().map_or(0, |p| p.hp);
             if hp < self.last_hp {
                 self.audio.play("Player_Hit_0");
@@ -470,6 +477,7 @@ impl App {
                 waterfall,
                 rain,
                 sand,
+                minecart_sparks,
                 liquid_alpha,
                 wind,
                 tree_wind_counter,
@@ -971,6 +979,10 @@ impl App {
                 // world-effect range as the rain (`Main.DrawRain`'s draw call
                 // site — world content, under the map batches and the UI).
                 sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                // The type-213 wheel sparks — `Main.DrawDust`'s generic
+                // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
+                // world-content range as the rain/sand dust.
+                minecart_sparks.draw(renderer, lookups, draw_cam, *zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
                 );

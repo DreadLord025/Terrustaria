@@ -4411,8 +4411,6 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
-<<<<<<< HEAD
->>>>>>> origin/main
 
 ## The accessory effect flags (M3-EQUIP-3)
 
@@ -4464,7 +4462,6 @@ M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
 `GrantPrefixBenefits`), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
-=======
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -4584,7 +4581,6 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
->>>>>>> origin/main
 
 ## The use styles + body dispatch (M3-ITEM-2)
 
@@ -4627,3 +4623,72 @@ PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
 positions ride the generic centre anchor (the C# positions them via the
 composite arms' stretch-dependent offsets — the arms carry the pose; the
 item offset differences are sub-10px polish for the render pass).
+## Minecart riding (M2-PHYS-7)
+
+The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf
+`crates/tr-app/src/minecart.rs` (the `grapple.rs` pattern) with the ride
+integrated into the fixed step at the exact C# tick order:
+
+- **The track state machine** — the 36-frame decode tables
+  (`Minecart.cs:103-547`: the per-frame side connections, the
+  `_tileHeight[frame][8]` 2-px sub-columns with the −1..−4 sentinels
+  (bumper / bouncy / ramp / open end), `_trackType` (pressure = frames
+  20-23, booster = 30-35) and `_boostLeft`); `track_collision`
+  (`Minecart.cs:562-941`: the bottom-center magnet marched in 2-px steps,
+  the OnFront/OnBack ambiguity resolved by followDown/followUp, the Y snap
+  rounded to 2 decimals `:935`, X never moved here); `on_track`/
+  `get_on_track`/`track_rotation` (`:1200-1265`).
+- **The ride** — the `TR_CART` env pin mounts (`world_sim/player.rs`);
+  the tick slots follow `Player.cs:26623-28161` — the cart stats 13/13/0.04
+  with jump 15/5.15 (`Mount.cs:2747-2799`), boost ±4 applied next tick
+  pre-input and clamped (`:19818-19833`), input accel gated on
+  `velocity.Y == 0` (`:19849`), the coast clamp + friction 0.04 on-track /
+  0.2 off with the direction-key dismount (`:26665-26681`), the jump nudge
+  −0.001 (`:20672-20675`), the `cartRampTime` gravity freeze
+  (`:27352-27359`), `TrackCollision` before the integration (X moves in
+  `DryCollision`), `TileCollision` at `height − 10` on rails
+  (`:23596-23603`), fall damage zeroed on rails (`:25311-25314`), the
+  switch/pressure trip → `Wiring::hit_switch` (local; net 59 = MP).
+- **Sparks + sounds** — the dust-213 emitter (`DelegateMethods.cs:223-242`
+  with the `Dust.NewDust` internal rolls, 14 rolls per spark) queued on the
+  Player's named `spark_rng` stream (`world.seed ^ 0x0CA4_75B1_A5E5_DD1D`),
+  drained by `world_sim` into the App-owned `Sparks` pool (tick + draw in
+  `app/frame.rs`, the rain/sand pattern); the rolling thresholds 33/66 % of
+  `maxRunSpeed` (`Player.cs:19868-19958`) and the landing 10-spark burst
+  (`Minecart.cs:809-813`); Item53/55/56 registered in `SFX_CUES`.
+
+Deviations: no `minecartDelay`/`MinecartObjectiveCheck` in 1.4.5.8 (grep
+zero hits — 1.4.4-era mechanics, not ported; off-track dismount = key
+release, not a timer); carts are NOT in the mount `JumpHeight`/`JumpSpeed`
+scaling cases in this decompile — fixed 15/5.15 (verified
+`Mount.cs:2809-2858`; the |vx| scaling cases are bunny/slime types 0/1);
+the rolling-spark gate is **direction-opposite** (`Player.cs:19868`: the
+left arm's gate is `velocity.X >= 0f`, `:19926`: the right arm's is
+`velocity.X <= 0f`) — sparks + Item55 fire while braking a same-sign roll
+or at rest, not while accelerating forward; the spark pool caps at 500 and
+drops new sparks when full with the C# pool-pressure rolls pinned off (the
+6000-slot `Main.dust` never reaches pressure at ≤13 sparks/tick — the
+sand.rs precedent); the sound-cue availability risk the plan flagged did
+not materialise — `Item_53/55/56.xnb` exist and load through the
+`SFX_CUES` rows (no silent-cue deviation); the rail sprite does not
+render — the port's tile renderer treats `frame_x/frame_y` as pixel sheet
+coords and skips `frame_y < 0` (`render/tiles.rs:147-159`) while tile
+314's frames are the 0..35 track INDICES (`Minecart.cs:1632-1650`) —
+pre-existing frame semantics; the track sprite draw is M2-MOUNT-1/3 work;
+`followUp` is pinned false (the port's input has no up bit; single-rail
+rides never read it — M2-MOUNT-3 adds the key); the base-cart dismount
+cannot be geometrically blocked (52→42 bottom-anchored shrink,
+`Collision.cs:2505-2510`; `DontDismountWhenCCed` excludes carts,
+`MountID.cs:47`) — the `CanDismountWithResult` space check is ported 1:1
+and unit-tested at the growth direction instead. Batch-review (3-4)
+verified-equivalent notes, applied forward: the `sparks_one` side-roll
+ternary is transcribed inverted vs `DelegateMethods.cs` (the two arms
+swapped; the per-roll distribution is identical, so the RNG stream
+position is unchanged); the spark draw anchors the 8×8 dust frame at
+its top-left where the C# centres it with origin (4,4) — a 4·zoom px
+offset shared with the existing sand-dust baseline; the below-view
+spark death check is tighter than the C# screen-reject at zoom > 1
+(the emitter has no camera at tick time — the camera is taken at the
+per-frame tick); the `itemAnimation == 0` gate at `Player.cs:19868` is
+omitted (the port has no item-animation field; the gate is dead for a
+riding player in every reachable state).

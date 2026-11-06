@@ -89,14 +89,12 @@ pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
-    // The lattice matches the draw's centred placement (`:219-220`'s
-    // `(rect - rows*CELL) * 0.5` offsets) — the uncentred math missed the
-    // cards once the rows overflowed the panel.
-    let off_x = (rect[2] - cols as f32 * CELL) * 0.5;
-    let off_y = (rect[3] - rows as f32 * CELL) * 0.5;
-    let cx = ((mouse.x - rect[0] - off_x) / CELL) as usize;
-    let cy = ((mouse.y - rect[1] - off_y) / CELL) as usize;
-    if cx >= cols || cy >= rows || mouse.x - rect[0] < off_x || mouse.y - rect[1] < off_y {
+    // `GetEntriesToShow`'s raw CELL lattice (the space divided by 72 — no
+    // insets): the draw and the hit-test share it, so the overflow rows
+    // keep the hits.
+    let cx = ((mouse.x - rect[0]) / CELL) as usize;
+    let cy = ((mouse.y - rect[1]) / CELL) as usize;
+    if cx >= cols || cy >= rows {
         return None;
     }
     let idx = cy * cols + cx;
@@ -218,8 +216,8 @@ fn draw_grid(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2, tracker: &
     {
         let col = idx % cols;
         let row = idx / cols;
-        let x = rect[0] + col as f32 * CELL + (rect[2] - cols as f32 * CELL) * 0.5;
-        let y = rect[1] + row as f32 * CELL + (rect[3] - rows as f32 * CELL) * 0.5;
+        let x = rect[0] + col as f32 * CELL;
+        let y = rect[1] + row as f32 * CELL;
         let cell = [x, y, CELL, CELL];
         let hover = card_at(screen, mouse) == Some(idx);
         draw_card(r, lookups, cell, entry, tracker, idx, hover);
@@ -350,6 +348,15 @@ fn portrait_data(
         NpcKind::Hungry => 48,
         NpcKind::LeechHead => 49,
         NpcKind::LeechBody => 50,
+        NpcKind::EyeOfCthulhu => 42,
+        NpcKind::QueenBee => 43,
+        NpcKind::SkeletronHead => 44,
+        NpcKind::WallOfFlesh => 45,
+        NpcKind::TheDestroyer => 46,
+        NpcKind::SkeletronPrime => 47,
+        NpcKind::Retinazer => 48,
+        NpcKind::Spazmatism => 49,
+        NpcKind::Plantera => 50,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -444,6 +451,11 @@ fn portrait_data(
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
+        (NpcKind::TheDestroyer, _) => (sheet_i, 48.0, 48.0, 48.0, white),
+        (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
@@ -594,9 +606,11 @@ mod tests {
         let rect = grid_rect(&panel);
         let (cols, rows) = grid_metrics(&rect);
         assert!(cols * rows >= crate::bestiary::ENTRIES.len());
-        // The first cell's centre hits entry 0.
-        let first_x = rect[0] + (rect[2] - cols as f32 * CELL) * 0.5 + CELL * 0.5;
-        let first_y = rect[1] + (rect[3] - rows as f32 * CELL) * 0.5 + CELL * 0.5;
+        // The first cell's centre hits entry 0 — the probe rides
+        // `card_at`'s own lattice (the raw CELL grid, no insets) so the
+        // overflow rows keep the hit.
+        let first_x = rect[0] + CELL * 0.5;
+        let first_y = rect[1] + CELL * 0.5;
         assert_eq!(card_at(screen, Vec2::new(first_x, first_y)), Some(0));
         // The Back panel sits inside the container above the bottom edge.
         let back = back_rect(&panel);

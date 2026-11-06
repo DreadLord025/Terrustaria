@@ -269,6 +269,109 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyG => {
+                                // The Plantera debug spawn.
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::Plantera && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 12)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::Plantera,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Plantera spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyT => {
+                                // The Twins debug spawn (the Mechanical
+                                // Eyes item = the follow-up): the pair of
+                                // eyes at the offset points.
+                                let twins_alive = self.npcs.iter().any(|n| {
+                                    matches!(n.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+                                        && n.hp > 0
+                                });
+                                if !twins_alive {
+                                    if let Some(p) = &self.player {
+                                        for (kind, dx) in [
+                                            (NpcKind::Retinazer, -14),
+                                            (NpcKind::Spazmatism, 14),
+                                        ] {
+                                            let xt = ((p.x / TILE_PX) as i32 + dx)
+                                                .clamp(2, self.world.width - 3);
+                                            let mut boss = Npc::new(
+                                                kind,
+                                                xt as f32 * TILE_PX,
+                                                ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                                1,
+                                                0.0,
+                                            );
+                                            boss.hp = boss.max_hp;
+                                            self.npcs.push(boss);
+                                        }
+                                        log::info!("The Twins spawned");
+                                    }
+                                }
+                            }
+                            KeyCode::KeyP => {
+                                // The Prime debug spawn (the Mechanical
+                                // Skull item = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 16)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::SkeletronPrime,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Skeletron Prime spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyD => {
+                                // The Destroyer debug spawn (the Mechanical
+                                // Worm item = the follow-up): the head —
+                                // the 80-segment same-kind chain assembles
+                                // through the worm pass.
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::TheDestroyer && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 18)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut head = Npc::spawn_worm_head(
+                                            &self.world,
+                                            xt,
+                                            (p.y / TILE_PX) as i32 - 6,
+                                            NpcKind::TheDestroyer,
+                                        );
+                                        head.hp = head.max_hp;
+                                        head.worm_left = 80;
+                                        log::info!("The Destroyer spawned");
+                                        self.npcs.push(head);
+                                    }
+                                }
+                            }
                             KeyCode::KeyF => {
                                 // The WoF debug spawn (the Voodoo Doll
                                 // sacrifice = the follow-up). The wall

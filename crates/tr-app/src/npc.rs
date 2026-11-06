@@ -176,6 +176,20 @@ pub enum NpcKind {
     /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
     /// aiStyle 6, dmg 22, def 6, 60 HP).
     LeechBody,
+    /// `NPCID.TheDestroyer` (134) — the mech worm (`NPC.cs:10659+`,
+    /// the same-kind chain; M4-BOSS-7).
+    TheDestroyer,
+    /// `NPCID.SkeletronPrime` (127) — the mech skull (`NPC.cs:10556+`,
+    /// M4-BOSS-8).
+    SkeletronPrime,
+    /// `NPCID.Retinazer` (125) — the Twins' laser eye (`NPC.cs:10522+`,
+    /// M4-BOSS-9).
+    Retinazer,
+    /// `NPCID.Spazmatism` (126) — the Twins' cursed eye (M4-BOSS-9).
+    Spazmatism,
+    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379+`,
+    /// M4-BOSS-10).
+    Plantera,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -392,6 +406,11 @@ impl NpcKind {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
         }
     }
 
@@ -447,6 +466,11 @@ impl NpcKind {
             47 => NpcKind::Hungry,
             48 => NpcKind::LeechHead,
             49 => NpcKind::LeechBody,
+            50 => NpcKind::TheDestroyer,
+            51 => NpcKind::SkeletronPrime,
+            52 => NpcKind::Retinazer,
+            53 => NpcKind::Spazmatism,
+            54 => NpcKind::Plantera,
             _ => return None,
         })
     }
@@ -468,10 +492,11 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsTail
                 | NpcKind::LeechHead
                 | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
         )
     }
 
-    /// The head kinds (`:51436`'s list minus the unported families).
+    /// The Destroyer: the head of its own same-kind chain (`AI_037`).
     pub fn is_worm_head(self) -> bool {
         matches!(
             self,
@@ -479,11 +504,13 @@ impl NpcKind {
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The mid-body kinds that spawn another of themselves while the
-    /// budget holds (`:51350`'s list).
+    /// budget holds (`:51350`'s list plus the Destroyer's same-kind
+    /// chain).
     pub fn is_worm_mid(self) -> bool {
         matches!(
             self,
@@ -491,12 +518,17 @@ impl NpcKind {
                 | NpcKind::GiantWormBody
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The next segment's kind down the chain (`type + 1` in the vanilla
     /// spawns, `:51347`/`:51357`).
     pub fn worm_next(self) -> NpcKind {
+        if self == NpcKind::TheDestroyer {
+            // The same-kind chain: every segment IS the head type.
+            return self;
+        }
         match self {
             NpcKind::DevourerHead => NpcKind::DevourerBody,
             NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
@@ -545,6 +577,15 @@ impl NpcKind {
             NpcKind::SkeletronHead => (80.0, 102.0),
             // `SetDefaults` case 113 (`NPC.cs:10344`): 100x100 x1.2 = 120.
             NpcKind::WallOfFlesh => (120.0, 120.0),
+            // `SetDefaults` case 134 (`NPC.cs:10662`): 38x38 x1.25.
+            NpcKind::TheDestroyer => (48.0, 48.0),
+            // `SetDefaults` case 127 (`NPC.cs:10558`): 80x102.
+            NpcKind::SkeletronPrime => (80.0, 102.0),
+            // The Twins: `SetDefaults` cases 125/126 are 100x110.
+            NpcKind::Retinazer => (100.0, 110.0),
+            NpcKind::Spazmatism => (100.0, 110.0),
+            // `SetDefaults` case 262 (`NPC.cs:12381`): 86x86.
+            NpcKind::Plantera => (86.0, 86.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -631,6 +672,16 @@ impl NpcKind {
             // `NPC.cs`'s 115 (240) / 117-118 (60).
             NpcKind::Hungry => 240,
             NpcKind::LeechHead | NpcKind::LeechBody => 60,
+            // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
+            // vanilla's realLife pool — the v1 carries the per-segment HP).
+            NpcKind::TheDestroyer => 8000,
+            // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
+            NpcKind::SkeletronPrime => 28000,
+            // `SetDefaults` cases 125/126.
+            NpcKind::Retinazer => 20000,
+            NpcKind::Spazmatism => 23000,
+            // `SetDefaults` case 262 (`NPC.cs:12385`): 30000 HP.
+            NpcKind::Plantera => 30000,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -694,6 +745,11 @@ impl NpcKind {
             NpcKind::Hungry => 30,
             NpcKind::LeechHead => 26,
             NpcKind::LeechBody => 22,
+            NpcKind::TheDestroyer => 70,
+            NpcKind::SkeletronPrime => 47,
+            NpcKind::Retinazer => 45,
+            NpcKind::Spazmatism => 50,
+            NpcKind::Plantera => 50,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1212,6 +1268,15 @@ impl Npc {
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
+            NpcKind::TheDestroyer => 0.0,
+            // `SetDefaults` case 127: knockBackResist 0.
+            NpcKind::SkeletronPrime => 0.0,
+            NpcKind::Retinazer => 0.0,
+            NpcKind::Spazmatism => 0.0,
+            NpcKind::Plantera => 0.0,
+            NpcKind::SkeletronPrime => 0.0,
+            NpcKind::Retinazer => 0.0,
+            NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
             // 115/117/118: knockBackResist 0.
             NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
@@ -1287,6 +1352,11 @@ impl Npc {
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
+            NpcKind::TheDestroyer => 0,
+            NpcKind::SkeletronPrime => 24,
+            NpcKind::Retinazer => 10,
+            NpcKind::Spazmatism => 10,
+            NpcKind::Plantera => 14,
             NpcKind::KingSlime => 10,
             // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
             // per-tick tiers ride `defense_override`.
@@ -1361,6 +1431,11 @@ impl Npc {
             NpcKind::QueenBee => 50000.0,
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
+            NpcKind::TheDestroyer => 120000.0,
+            NpcKind::SkeletronPrime => 120000.0,
+            NpcKind::Retinazer => 120000.0,
+            NpcKind::Spazmatism => 120000.0,
+            NpcKind::Plantera => 150000.0,
             NpcKind::KingSlime => 10_000.0,
             // The hungry/leech rows carry no value line.
             NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
@@ -1492,6 +1567,12 @@ impl Npc {
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::Hungry => self.update_hungry(world, player),
             // The leeches ride the worm pass (aiStyle 6 — the chain move).
+            NpcKind::TheDestroyer => {}
+            NpcKind::SkeletronPrime => self.update_prime(world, player),
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                self.update_twin(world, player)
+            }
+            NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1818,6 +1899,36 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::Plantera => {
+                // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 5 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                // `Main.npcFrameCount[125/126]` = 2 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::SkeletronPrime => {
+                // `Main.npcFrameCount[127]` = 1 (`Main.cs:67082`).
+            }
+            NpcKind::TheDestroyer => {
+                // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::WallOfFlesh => {
                 // `Main.npcFrameCount[113]` = 1 (`Main.cs:67082`).
             }
@@ -3231,6 +3342,181 @@ impl Npc {
     }
 
 
+    /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
+    /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
+    /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
+    /// x 9), the decel (the 40 ticks x0.98). The 4 limbs = the follow-ups.
+    fn update_prime(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 280.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.12;
+            if self.vx.abs() > 9.0 {
+                self.vx = 9.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.12;
+            if self.vy.abs() > 9.0 {
+                self.vy = 9.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 9.0;
+            self.vy = dy / d * 9.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_030`/`AI_031`'s Twins v1 (`NPC.cs`'s aiStyle 30/31 machines) —
+    /// the EoC cycle shape per eye: the hover (the ±0.09, the 8.5 cap),
+    /// the charge (the 480-tick cycle, the direct velocity x 8.5), the
+    /// decel (the 40 ticks x0.98). The laser/spit phases and the second-
+    /// form transformations = the follow-ups.
+    fn update_twin(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 270.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.09;
+            if self.vx.abs() > 8.5 {
+                self.vx = 8.5 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.09;
+            if self.vy.abs() > 8.5 {
+                self.vy = 8.5 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 8.5;
+            self.vy = dy / d * 8.5;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
+    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
+    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
+    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
+    /// rage = the follow-ups.
+    fn update_plantera(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 250.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.1;
+            if self.vx.abs() > 8.0 {
+                self.vx = 8.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.1;
+            if self.vy.abs() > 8.0 {
+                self.vy = 8.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 7.5;
+            self.vy = dy / d * 7.5;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
 
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
@@ -3436,6 +3722,11 @@ impl Npc {
             NpcKind::Hungry => 47,
             NpcKind::LeechHead => 48,
             NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -5058,4 +5349,151 @@ mod tests {
         assert_eq!(body.kind.contact_damage(), 22);
     }
 
+    #[test]
+    fn the_destroyer_chain_assembles_same_kind() {
+        // `AI_037`: the all-same-type chain — the head spawns the
+        // Destroyer segments through the worm pass (the 80 budget).
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 130, NpcKind::TheDestroyer);
+        head.hp = head.max_hp;
+        head.worm_left = 80;
+        let mut npcs = vec![head];
+        let mut rng = 3u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // The chain: the head + 80 segments = 81 (the same-kind stop).
+        assert_eq!(npcs.len(), 81, "the destroyer chain length {}", npcs.len());
+        for seg in &npcs {
+            assert_eq!(seg.kind, NpcKind::TheDestroyer);
+        }
+        // The trail: the second segment trails the head.
+        let (lw, lh) = npcs[1].size();
+        let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + lw * 0.5);
+        let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!((dist - lw).abs() < 0.5, "the rigid trail ({dist})");
+    }
+
+    #[test]
+    fn the_destroyer_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::TheDestroyer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 134);
+        assert_eq!(e.credit_id, "TheDestroyer");
+        let mut d = Npc::new(NpcKind::TheDestroyer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(d.size(), (48.0, 48.0));
+        assert_eq!(d.max_hp, 8000);
+        assert_eq!(d.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::TheDestroyer.contact_damage(), 70);
+        let _ = (&w, &mut d);
+    }
+
+    #[test]
+    fn the_prime_cycles() {
+        // `AI_032`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 9) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pr.hp = pr.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pr.cast_windup == 1, "the charge phase armed");
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_prime_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletronPrime, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 127);
+        assert_eq!(e.credit_id, "SkeletronPrime");
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 0.0, 0.0, 1, 0.0);
+        assert_eq!(pr.size(), (80.0, 102.0));
+        assert_eq!(pr.max_hp, 28000);
+        assert_eq!(pr.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::SkeletronPrime.contact_damage(), 47);
+        let _ = (&w, &mut pr);
+    }
+
+    #[test]
+    fn the_twin_cycles_and_maps() {
+        // `AI_030/031`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 8.5) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut ret = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        ret.hp = ret.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(ret.cast_windup == 1, "the charge phase armed");
+        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (ret.vx * ret.vx + ret.vy * ret.vy).sqrt();
+        assert!((speed - 8.5).abs() < 0.1, "the charge speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(ret.size(), (100.0, 110.0));
+        assert_eq!(ret.max_hp, 20000);
+        let spaz = Npc::new(NpcKind::Spazmatism, 0.0, 0.0, 1, 0.0);
+        assert_eq!(spaz.max_hp, 23000);
+        assert_eq!(NpcKind::Spazmatism.contact_damage(), 50);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Retinazer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 125);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Spazmatism, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 126);
+    }
+
+    #[test]
+    fn the_plantera_cycles_and_maps() {
+        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 7.5) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pl.hp = pl.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pl.cast_windup == 1, "the charge phase armed");
+        pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
+        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(pl.size(), (86.0, 86.0));
+        assert_eq!(pl.max_hp, 30000);
+        assert_eq!(NpcKind::Plantera.contact_damage(), 50);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Plantera, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 262);
+        assert_eq!(e.credit_id, "Plantera");
+    }
+
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
