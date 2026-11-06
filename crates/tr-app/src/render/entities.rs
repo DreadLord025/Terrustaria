@@ -182,6 +182,10 @@ pub(crate) struct NpcAssets {
     pub(crate) eye_of_cthulhu: Option<BgTex>,
     /// `NPC_5.xnb` — the Servant of Cthulhu sheet (2 frames of 20×20).
     pub(crate) servant_of_cthulhu: Option<BgTex>,
+    /// `NPC_115.xnb` — the Hungry sheet (3 frames).
+    pub(crate) hungry: Option<BgTex>,
+    /// `NPC_117.xnb`/`NPC_118.xnb` — the Leech segments (1 frame).
+    pub(crate) leech: Option<BgTex>,
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -241,6 +245,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         king_slime: sky_tex(atlas, "NPC_50", None),
         eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
         servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
+        hungry: sky_tex(atlas, "NPC_115", None),
+        leech: sky_tex(atlas, "NPC_117", None),
     }
 }
 
@@ -777,6 +783,20 @@ pub(crate) fn draw_npcs(
                 assets.wof.as_ref(),
                 assets.wof.as_ref().map_or(120.0, |t| t.h),
                 [120.0, 120.0],
+                [n.x, n.y],
+            ),
+            // The hungry: `Main.npcFrameCount[115] = 3` frames of 30×30; the
+            // leech segments: 1 frame of 14×14.
+            NpcKind::Hungry => (
+                assets.hungry.as_ref(),
+                assets.hungry.as_ref().map_or(30.0, |t| t.h / 3.0),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            NpcKind::LeechHead | NpcKind::LeechBody => (
+                assets.leech.as_ref(),
+                assets.leech.as_ref().map_or(14.0, |t| t.h),
+                [14.0, 14.0],
                 [n.x, n.y],
             ),
             // The Destroyer: the single-frame 48x48 sheet.
