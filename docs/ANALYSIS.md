@@ -2793,6 +2793,74 @@ Deviations, all deliberate:
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
 
+## Mounts framework (M2-MOUNT-1)
+
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
+exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
+the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
+`:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
+`abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
+`Item.mountType` assignments `Item.cs:20779+`; `BuffID.Sets.MountType` as the inverse of
+each row's `buff`), and the frame animator (`UpdateFrame` `Mount.cs:3581-4506`, states
+0-4; the dash case 5 waits for M2-MOUNT-4). The per-tick block lives in `player.rs`
+(`update_mount` — the vanilla `Player.cs:26623-26688` with the `UpdateEffects` head
+`Mount.cs:4795-4803`/`:4949-4981` and the `UpdateJumpHeight` merge `:19619-19631`),
+wired at the verified tick points: the merge insertion before `HorizontalMovement`, the
+jump statics, the flight section (the `ResetFlightTime` refill `:26776-26781` + the
+mount flight thrust `:26962-27015`), the fall-damage addendum (`:25301-25367` — the
+`extraFall` threshold, the `FallDamage` multiplier, the bunny nullify `:25315-25318`,
+the `CanFly` zero) and the CC dismount (`:26799-26812`). The buff is the source of
+truth: `SetMount` adds the 3600-tick buff, the buff tick re-affirms the mount and holds
+`buffTime = 10` (`:9881-9884` — the M2-BUFF-1 deferral), and a missing buff dismounts.
+Equip paths: the saddle item use (`Player.cs:42768-42771` + the `CanMount` space gate
+`Mount.cs:6581-6604`), the quick-mount key (`QuickMount` `:6045-6100`, wired to the
+`controlMount` bind edge) and the `TR_MOUNT=<id|name>` pin (the `pinned_*` stand-in
+pattern). A grapple fire dismounts (`QuickGrapple` `:6334-6337`). Draw:
+`DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront` order
+(`PlayerDrawLayers.cs:211`/`:2912`) with the `Mount.Draw` frame math (`frameH =
+textureHeight/totalFrames`, `Height -= 2` `:5722`, the center-anchored position
+`:5554-5561`, the `xOffset*direction` mirror) in `render/player_layers.rs`; Rudolph
+hides its front strip while idle (`:5520-5523`). The hitbox grows to `42 + heightBoost`
+bottom-anchored (`:6264-6277`) and restores through the shrink path of
+`Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
+
+Deviations:
+- **Partial table (12 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
+  table where vanilla fills every row; the remaining categories land with
+  M2-MOUNT-2/3/4.
+- **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
+  has no multiplayer surface.
+- **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
+  has no port counterpart (the port has no gravDir field).
+- **Idle-pick RNG stand-in** — `Main.rand.Next(900, 1500)` (`Mount.cs:4165`) runs on the
+  animator's own splitmix64 stream (the port-wide `Main.rand` deviation pattern); the
+  same tick sequence always picks the same delays.
+- **No dust/sounds** — `DoSpawnDust`/`DoFailedDismountDust` and the equip/dis mount
+  sounds wait for the particle/audio tasks.
+- **FailedNoSpace unreachable** — every ground row's `heightBoost >= 0` makes the
+  dismount probe a bottom-anchored shrink (always fits), so `QuickMount`'s 3-fail force
+  + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
+  `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
+  until a consumer appears.
+- **Cart/ability branches reserved** — the OnTrack/roller-skate/Fishron/drill arms of
+  the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
+  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+- **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
+  and the slime stomp (`:20533-20560`) wait for M2-MOUNT-4 with the other mount combat.
+- **Queen Slime draw** — the render-target swap and the extra passes (`Mount.cs:5536-5544`,
+  `:5840-5953`) are not ported; the row draws its base `Extra_204` frames. The WoF
+  goat's `GlowMask[284]` glow pass has no content file (`GlowMask_284` does not exist
+  in `assets/Content/Images`), so the row draws without the glow.
+- **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
+  quick-mount scan walks the inventory only.
+
+Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
+(the table constants, the set/dismount guards, the merge modes, the jump/fall
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
+animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+`TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
+
 ## Projectile pool (M4-PROJ-1)
 
 `crates/tr-app/src/projectile.rs` now hosts the `Main.projectile[1000]` engine:
