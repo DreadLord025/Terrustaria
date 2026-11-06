@@ -3824,7 +3824,23 @@ mod tests {
         let _ = (&w, &mut eoc);
     }
 
+    #[test]
+    fn the_eow_chain_is_boss_wired() {
+        // The EoW kinds exist from M4-NPC-2; the boss wire: the head's
+        // death flag rides the sim's dead loop (the match arm) — this
+        // test pins the downed_eow default + the head's spawn.
+        let w = ground_air();
+        let head = Npc::spawn_worm_head(&w, 60, 130, NpcKind::EaterOfWorldsHead);
+        assert!(head.worm_inited == false, "the chain assembles in the pass");
+        assert_eq!(head.max_hp, 150);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::EaterOfWorldsHead, SlimeVariant::Blue).net_id,
+            13
+        );
+    }
+
 }
+
 
 
 
