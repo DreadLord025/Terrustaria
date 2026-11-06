@@ -52,6 +52,7 @@ const TAB_H: f32 = 20.0;
 const ROW_H: f32 = 22.0;
 const ICON: f32 = 18.0;
 const PAD: f32 = 6.0;
+const TITLE_H: f32 = 18.0;
 const FILTER_H: f32 = 18.0;
 
 fn panel_rect(pos: Vec2) -> [f32; 4] {
@@ -61,9 +62,9 @@ fn panel_rect(pos: Vec2) -> [f32; 4] {
 fn content_rect(panel: &[f32; 4]) -> [f32; 4] {
     [
         panel[0] + PAD,
-        panel[1] + TAB_H + FILTER_H + PAD,
+        panel[1] + TITLE_H + TAB_H + FILTER_H + PAD,
         panel[2] - PAD * 2.0,
-        panel[3] - TAB_H - FILTER_H - PAD * 2.0,
+        panel[3] - TITLE_H - TAB_H - FILTER_H - PAD * 2.0,
     ]
 }
 
@@ -162,14 +163,15 @@ pub fn draw(
     let pn = panel_rect(panel.pos);
     let ct = content_rect(&pn);
 
-    // The title bar.
+    // The title bar (the drag zone) — above the tabs.
     txt(r, lookups, pn[0] + PAD, pn[1] + 2.0, 0.9, C, "DEBUG [F3]");
 
-    // The tabs.
+    // The tabs — below the title.
+    let tab_y = pn[1] + TITLE_H;
     let tw = PW / TABS.len() as f32;
     for (i, (label, tab)) in TABS.iter().enumerate() {
         let c = if panel.tab == *tab { G } else { GR };
-        txt(r, lookups, pn[0] + i as f32 * tw + 4.0, pn[1] + TAB_H - 14.0, 0.75, c, label);
+        txt(r, lookups, pn[0] + i as f32 * tw + 4.0, tab_y + 2.0, 0.75, c, label);
     }
 
     // The filter field.
@@ -250,16 +252,17 @@ pub fn handle_click(app: &mut App, mouse: Vec2) -> bool {
     let pn = panel_rect(app.debug_panel.pos);
     if !pt_in(mouse, pn) { return false; }
 
-    // The title-bar drag: the top 20 px above the tabs.
-    if mouse.y < pn[1] + 20.0 && mouse.y >= pn[1] {
+    // The title-bar drag: the top TITLE_H pixels only.
+    if mouse.y < pn[1] + TITLE_H && mouse.y >= pn[1] {
         app.debug_panel.drag_offset = Some(Vec2::new(mouse.x - pn[0], mouse.y - pn[1]));
         return true;
     }
 
-    // The tabs.
+    // The tabs — below the title bar.
+    let tab_y = pn[1] + TITLE_H;
     let tw = PW / TABS.len() as f32;
     for (i, (_, tab)) in TABS.iter().enumerate() {
-        let tr = [pn[0] + i as f32 * tw, pn[1], tw, TAB_H];
+        let tr = [pn[0] + i as f32 * tw, tab_y, tw, TAB_H];
         if pt_in(mouse, tr) { app.debug_panel.tab = *tab; app.debug_panel.scroll = 0.0; return true; }
     }
 
