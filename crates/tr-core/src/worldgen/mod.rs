@@ -27,6 +27,7 @@ mod mini_biomes;
 mod noise;
 mod surface;
 mod terrain;
+mod world_hash;
 
 use self::noise::{Noise, Rng};
 use crate::tiledata as td;
