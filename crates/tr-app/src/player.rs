@@ -914,12 +914,12 @@ impl Player {
 
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
-    pub fn start_death(&mut self, boss_near: bool, expert: bool) {
+    pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
-        let _ = self.dismount(true);
+        let _ = self.dismount(world, true);
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -1215,7 +1215,7 @@ impl Player {
                 .data()
                 .is_some_and(|d| self.buffs.find_buff_index(d.buff).is_none())
         {
-            self.try_dismount();
+            self.try_dismount(world);
         }
         self.blind = false;
         self.weak_stacks = 0;
@@ -1664,7 +1664,7 @@ impl Player {
         // plain gravity takes over (the port's CC input zeroing and the
         // flight gate below already cover the rest of that branch).
         if !grappling && self.cced() && self.mount.is_active() {
-            self.try_dismount();
+            self.try_dismount(world);
         }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
@@ -2689,7 +2689,7 @@ impl Player {
     /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
     /// and the hitbox restore. `ignore_effect` stands in for the spawn dust
     /// (`:6167-6170` — no dust system yet).
-    pub fn dismount(&mut self, ignore_effect: bool) -> bool {
+    pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
         let Some(buff) = self.mount.dismount() else {
             return false;
         };
@@ -2697,17 +2697,16 @@ impl Player {
         self.clear_buff_type(buff);
         // `:6176-6193`: the restore — the 20x42 box from the bottom center;
         // on failure the Y patch accepts the overlap (the collision step
-        // resolves it next tick, as in the original).
-        if let Some((_, ny, _, nh)) = collision::try_changing_size_from_bottom_center(
-            self.x,
-            self.y,
-            WIDTH,
-            self.height,
-            WIDTH,
-            HEIGHT,
+        // resolves it next tick, as in the original). The resize goes through
+        // the single `TryChangingSizeFromBottomCenter` port (world-aware).
+        if let Some([_, ny]) = collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [WIDTH, self.height],
+            [WIDTH, HEIGHT],
         ) {
             self.y = ny;
-            self.height = nh;
+            self.height = HEIGHT;
         } else {
             self.y += self.height;
             self.height = HEIGHT;
@@ -2720,8 +2719,8 @@ impl Player {
     /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
     /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
     /// dismount runs; Phase 3's quick-mount counts the failures.
-    pub fn try_dismount(&mut self) -> bool {
-        self.dismount(false)
+    pub fn try_dismount(&mut self, world: &World) -> bool {
+        self.dismount(world, false)
     }
 
     /// `Mount.CanMount` (`Mount.cs:6581-6604`): the grown box must fit in
@@ -2758,7 +2757,7 @@ impl Player {
         inventory: &[crate::item::ItemSlot],
     ) -> Option<u16> {
         if self.mount.is_active() {
-            self.try_dismount();
+            self.try_dismount(world);
             return None;
         }
         // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
@@ -3936,8 +3935,9 @@ mod tests {
 
     #[test]
     fn update_dead_counts_down_and_revives_at_zero() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         assert!(p.dead);
         assert_eq!(p.respawn_timer, 600);
         // 600 ticks of the dead state (no jump) -> the timer drains to 0 and
@@ -3960,8 +3960,9 @@ mod tests {
         // Player.respawnTimerMax = 3600 (Player.cs:57109): a boss-near expert
         // death (1800) halved by nothing still clamps; the clamp matters for
         // the >3600 totals (the FTW x2 stays out). A forced high timer holds.
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(true, true);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
         p.update_dead(false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
@@ -3970,8 +3971,9 @@ mod tests {
 
     #[test]
     fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
@@ -3986,8 +3988,9 @@ mod tests {
 
     #[test]
     fn the_skip_is_blocked_while_a_boss_hinders() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         for _ in 0..95 {
             p.update_dead(false, false, false);
         }
@@ -3999,8 +4002,9 @@ mod tests {
     fn the_jump_edge_is_required_for_the_skip() {
         // Holding jump through the lockout does not skip on expiry; a fresh
         // press does (the JustBecameTrue semantics of PlayerInput.Triggers).
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         for _ in 0..95 {
             p.update_dead(true, false, false);
         }
@@ -6918,7 +6922,7 @@ mod tests {
         p.full_rotation = 0.5;
         p.full_rotation_origin = (10.0, 52.0);
         p.track_boost = 2.0;
-        p.dismount();
+        p.cart_dismount();
         assert!(!p.cart_mounted);
         assert!(!p.cart_flip);
         assert_eq!(p.last_boost, (0, 0));
@@ -7003,7 +7007,7 @@ mod tests {
         p.update_mount();
         assert_eq!(p.jump_height, 10);
         assert_eq!(p.jump_speed, 8.01);
-        p.dismount(false);
+        p.dismount(&w, false);
         p.set_mount(0, false); // Rudolph, type 0
         p.vx = 4.0;
         p.update_mount();
@@ -7058,7 +7062,7 @@ mod tests {
         }
         assert_eq!(p.hp, 100, "the bunny nullifies the fall");
         // Rudolph can fly — `CanFly` zeroes the fall distance too
-        p.dismount(false);
+        p.dismount(&w, false);
         p.set_mount(0, false);
         p.y = 25.0 * TILE_PX;
         p.fall_start = 25;
@@ -7071,7 +7075,7 @@ mod tests {
         }
         assert_eq!(p.hp, 100, "the flying mount zeroes the fall");
         // Unicorn — 0.2x: (32 - 25) * 10 = 70 -> 14
-        p.dismount(false);
+        p.dismount(&w, false);
         p.set_mount(10, false);
         p.y = 25.0 * TILE_PX;
         p.fall_start = 25;
@@ -7125,7 +7129,7 @@ mod tests {
             p.buffs.find_buff_index(162).is_some(),
             "the mount buff added (:6226)"
         );
-        assert!(p.dismount(false));
+        assert!(p.dismount(&w, false));
         assert_eq!(p.height, HEIGHT);
         assert!((p.y - y_before).abs() < 0.01, "the restore returns the top");
         assert!(
@@ -7244,7 +7248,7 @@ mod tests {
         let same = crate::mount::mount_type_of_item(3260) == Some(p.mount.kind());
         assert!(same, "Blessed Apple is the Unicorn's own saddle");
         // a different item dismounts through the vanilla gate
-        assert!(p.try_dismount());
+        assert!(p.try_dismount(&w));
         assert!(!p.mount.is_active());
     }
 
@@ -7386,7 +7390,7 @@ mod tests {
         assert_eq!(p.mount.frame(), 5, "the bunny's in-air row");
         // Rudolph: the ground refill arms the budget, the held jump after the
         // jump budget runs out switches to the flying band (start row 6).
-        p.dismount(false);
+        p.dismount(&w, false);
         p.set_mount(0, false);
         for _ in 0..240 {
             p.update(&w, release); // settle back down; rest ticks refill

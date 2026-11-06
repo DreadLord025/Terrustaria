@@ -568,7 +568,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             );
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
-                player.start_death(boss_near, false);
+                player.start_death(&app.world, boss_near, false);
             }
             log::info!("player died; the respawn timer is running");
         }

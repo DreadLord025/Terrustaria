@@ -136,7 +136,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // CanUseHooks set dismounts before the hook fires — every row in this
         // table (the set is {54, 57-60}).
         if hook_edge && !p.dead && p.mount.is_active() {
-            p.try_dismount();
+            p.try_dismount(&app.world);
         }
         if hook_edge && !p.dead {
             let center = Vec2::new(
