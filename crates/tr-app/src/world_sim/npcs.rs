@@ -3,7 +3,7 @@
 //! `Spawner.SpawnNPC` ambient spawn attempt.
 
 use glam::Vec2;
-use tr_core::TILE_PX;
+use tr_core::{TILE_PX, World};
 
 use crate::achievements;
 use crate::app::{App, rand01};
@@ -103,7 +103,12 @@ pub(crate) fn start_invasion(world: &mut tr_core::World, qualifying_players: i32
         return;
     }
     world.invasion_goblins = true;
+    // `Main.invasionType = 1` + the march/warn state (`:64455-64510`) —
+    // the morning-roll resolve and the item path share the state.
+    world.invasion_type = 1;
+    world.invasion_warn = 0;
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    world.invasion_size_start = world.invasion_size;
 }
 
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
@@ -511,14 +516,208 @@ pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
     true
 }
 
+/// `Main.StartInvasion` (`Main.cs:64482-64511`): the army size 80 + 40 per
+/// qualified player, the march column on the world's far side (the random
+/// 0/maxTilesX roll; the marauder's `invasionX` double is f64 on the World).
+/// `Main.InvasionWarning` (`Main.cs:64400-64415`) for the goblin slice —
+/// the literal en strings stand in for the `Lang.misc[0..3]` keys.
+fn invasion_warning(app: &mut App) {
+    let text = if app.world.invasion_size <= 0 {
+        "The goblin army has been defeated!"
+    } else if app.world.invasion_x < app.world.spawn_x as f64 {
+        "Goblins are approaching from the west!"
+    } else if app.world.invasion_x > app.world.spawn_x as f64 {
+        "Goblins are approaching from the east!"
+    } else {
+        "The goblin army has arrived!"
+    };
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        text,
+        crate::chat::COLOR_COMMAND,
+    );
+}
+
+/// `Main.UpdateInvasion` (`Main.cs:64328-64386`): the defeat flag ride at
+/// `size <= 0` (`SetEventFlagCleared(ref downedGoblins, 0)` + the
+/// progression event 10), the march toward `spawnTileX` by
+/// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
+pub(crate) fn update_invasion_state(app: &mut App) {
+    // `invasion_goblins` rides the type (the debug panel's flag reads it).
+    app.world.invasion_goblins = app.world.invasion_type == 1;
+    if app.world.invasion_type <= 0 {
+        return;
+    }
+    if app.world.invasion_size <= 0 {
+        // `SetEventFlagCleared(ref NPC.downedGoblins, 0)` +
+        // `AchievementsHelper.NotifyProgressionEvent(10)` — the port's
+        // achievement engine has no progression-kind rows yet (the
+        // flag-set state carries the defeat).
+        app.world.downed_goblins = true;
+        invasion_warning(app);
+        app.world.invasion_type = 0;
+        app.world.invasion_delay = 0;
+        return;
+    }
+    if app.world.invasion_x == app.world.spawn_x as f64 {
+        return;
+    }
+    let num = app.world.day_rate().max(1) as f64;
+    if app.world.invasion_x > app.world.spawn_x as f64 {
+        app.world.invasion_x -= num;
+        if app.world.invasion_x <= app.world.spawn_x as f64 {
+            app.world.invasion_x = app.world.spawn_x as f64;
+            invasion_warning(app);
+        } else {
+            app.world.invasion_warn -= 1;
+        }
+    } else if app.world.invasion_x < app.world.spawn_x as f64 {
+        app.world.invasion_x += num;
+        if app.world.invasion_x >= app.world.spawn_x as f64 {
+            app.world.invasion_x = app.world.spawn_x as f64;
+            invasion_warning(app);
+        } else {
+            app.world.invasion_warn -= 1;
+        }
+    }
+    if app.world.invasion_warn <= 0 {
+        app.world.invasion_warn = 3600;
+        invasion_warning(app);
+    }
+}
+
+/// `NPC.GetNPCInvasionGroup` (`NPC.cs:78297-78330`) for the goblin group
+/// (1): the kinds 26/27/28/29/111/471/472.
+fn npc_invasion_group(kind: NpcKind) -> i32 {
+    match kind {
+        NpcKind::GoblinThief
+        | NpcKind::GoblinWarrior
+        | NpcKind::GoblinArcher
+        | NpcKind::GoblinPeon
+        | NpcKind::GoblinSorcerer
+        | NpcKind::GoblinSummoner => 1,
+        _ => 0,
+    }
+}
+
+/// The kill-credit block (`NPC.cs:78236-78279`): the group matches the
+/// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
+/// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
+/// group + 3, 0)`.
+fn report_invasion_kill(app: &mut App, kind: NpcKind) {
+    let group = npc_invasion_group(kind);
+    if group <= 0 || group != app.world.invasion_type {
+        return;
+    }
+    let num9 = match kind {
+        NpcKind::GoblinSummoner => 10,
+        _ => 1,
+    };
+    app.world.invasion_size = (app.world.invasion_size - num9).max(0);
+    // `ReportInvasionProgress` (`Main.cs:47687-47694`): the display timer
+    // state rides the UI pass (the fields land with the progress-bar slice).
+    let _ = app.world.invasion_size_start;
+}
+
+/// `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) for the
+/// single-player slice: the surface band (`position.Y < worldSurface*16 +
+/// sHeight` OR `spawnTileY > worldSurface`), the ±3000 px window around
+/// `invasionX` (the town-NPC fallback needs the town roster — the wall at
+/// ±5 tiles around maxTilesX/2 lands with the town work).
+pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player_x: f32) -> bool {
+    if world.invasion_type <= 0 || world.invasion_delay != 0 || world.invasion_size <= 0 {
+        return false;
+    }
+    // `position.Y < Main.worldSurface * 16.0 + NPC.sHeight` — the px-space
+    // compare (`NPC.sHeight` = 200).
+    if player_y < (world.world_surface * 16.0 + 200.0) as f32
+        || (world.spawn_y as f32) > world.world_surface as f32
+    {
+        let num = 3000.0;
+        let inv_px = (world.invasion_x * 16.0) as f32;
+        if player_x > inv_px - num && player_x < inv_px + num {
+            return true;
+        }
+    }
+    false
+}
+
+/// The invasion spawn table (`NPC.cs:1419-1450`, `invasionType == 1`):
+/// hardmode's Summoner 1/30 (no living ones), the Sorcerer 1/9, the Thief
+/// 1/5, the Peon 1/3, the Warrior 1/3, else the Archer.
+fn invasion_spawn_pick(rng: &mut u64, hard_mode: bool, summoner_alive: bool) -> NpcKind {
+    if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
+        return NpcKind::GoblinSummoner;
+    }
+    let r = crate::app::frame::rand01(rng);
+    if r < 1.0 / 9.0 {
+        NpcKind::GoblinSorcerer
+    } else if r < 1.0 / 9.0 + 1.0 / 5.0 {
+        NpcKind::GoblinThief
+    } else if r < 1.0 / 9.0 + 1.0 / 5.0 + 1.0 / 3.0 {
+        NpcKind::GoblinPeon
+    } else if r < 1.0 / 9.0 + 1.0 / 5.0 + 2.0 / 3.0 {
+        NpcKind::GoblinWarrior
+    } else {
+        NpcKind::GoblinArcher
+    }
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
+    // the morning roll's pending flag + the players' life-max gate. The
+    // march state (the type/x/warn) rides the World — `invasion_goblins`
+    // (the item-path flag) stays synced for the panel/kill paths.
+    if app.world.invasion_arm_pending {
+        app.world.invasion_arm_pending = false;
+        let qualified = app.player.as_ref().map(|p| p.max_hp >= 200).unwrap_or(false);
+        if qualified && !app.world.invasion_goblins {
+            let num = 1; // the session player (the multiplayer count folds)
+            app.world.invasion_size = 80 + 40 * num;
+            app.world.invasion_size_start = app.world.invasion_size;
+            app.world.invasion_warn = 0;
+            // `if (Main.rand.Next(2) == 0) invasionX = 0; else invasionX = maxTilesX;`
+            // (`:64502-64510`) — the deterministic hash stands in for `Main.rand`
+            // (the roll rides the item stream's order).
+            let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+            app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+            start_invasion(&mut app.world, num);
+            // The march state rides the World fields (the app-level pass
+            // reads them in `update_invasion_state`).
+        }
+    }
+    // `Main.UpdateInvasion` (`Main.cs:64328-64386`): the per-tick state
+    // machine before the spawn pass (the C# calls it from `UpdateAudio`'s
+    // family each update).
+    update_invasion_state(app);
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
     // enemies move faster on high-refresh displays.
+    // The invasion spawn inputs captured before the npc_step split borrows
+    // (`ShouldSpawnInvasionEnemies` + the table pick read only the world /
+    // the player pos / the summoner-alive flag).
+    let inv_input = {
+        let w = &app.world;
+        let p = app.player.as_ref();
+        if let Some(p) = p {
+            if should_spawn_invasion_enemies(w, p.y, p.x) {
+                let summoner_alive = app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::GoblinSummoner && n.hp > 0);
+                Some((p.x, p.y, summoner_alive))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
     let world = &app.world;
     let player = &mut app.player;
     let npcs = &mut app.npcs;
+    let mut invasion_pick: Option<(NpcKind, f32, f32)> = None;
     app.npc_step.tick(dt.min(0.25), |step| {
         if let Some(player) = player {
             for n in npcs.iter_mut() {
@@ -531,8 +730,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // The eye's climb-away despawn (`EncourageDespawn(10)` from the
     // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
     // far enough off-screen; the port culls it above the player's view).
-    let player_y = app.player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    let player_y = player.as_ref().map(|p| p.y).unwrap_or(0.0);
     if app.world.day_time {
+        npcs.retain(|n| {
+            !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y)
+        });
         app.npcs
             .retain(|n| !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y));
     }
@@ -560,32 +762,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // `MoveTownNPC`'s success arm (`WorldGen.cs:4848-4854`):
                 // the home assigns, the homeless flag clears.
                 n.home = Some((hx, hy));
-            }
-        }
-    }
-    // The Goblin Army invasion (`NPC.cs:444+`, `invasionType = 1`): while
-    // `invasionSize` lasts, an invader walks in near the player every 2 s
-    // (the vanilla cadence rides `UpdateWorld`; the port's timer). The kind
-    // mix is deterministic off the roster length (the vanilla rolls the
-    // spawn RNG).
-    if app.world.invasion_goblins && app.world.invasion_size > 0 {
-        app.invasion_spawn_timer += dt;
-        if app.invasion_spawn_timer >= 2.0 {
-            app.invasion_spawn_timer = 0.0;
-            if let Some(player) = app.player.as_ref() {
-                let kinds = [
-                    NpcKind::GoblinPeon,
-                    NpcKind::GoblinPeon,
-                    NpcKind::GoblinThief,
-                    NpcKind::GoblinWarrior,
-                    NpcKind::GoblinArcher,
-                ];
-                let kind = kinds[app.npcs.len() % kinds.len()];
-                let dx = if app.npcs.len() % 2 == 0 { 20 } else { -20 };
-                let xt = ((player.x / TILE_PX) as i32 + dx).clamp(2, app.world.width - 3);
-                if let Some(n) = Npc::spawn_cave_walker(&app.world, xt, kind) {
-                    app.npcs.push(n);
-                }
             }
         }
     }
@@ -664,6 +840,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
+    // The invasion kill credit (`NPC.cs:78236-78279`): the group match
+    // drains the army's points and reports the progress.
+    for npc in &dead {
+        report_invasion_kill(app, npc.kind);
+    }
     for npc in &dead {
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
         // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
@@ -727,21 +908,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // The Brain: the vanilla shares `downedBoss2` with the EoW —
             // the port's `downed_eow` covers the shared flag.
             NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
-            // The invasion death bookkeeping (`NPC.VanillaKillCount`): each
-            // fallen invader drains `invasionSize`; the last kill raises
-            // `downedGoblins` (the Tinkerer's gate).
-            NpcKind::GoblinPeon
-            | NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher => {
-                if app.world.invasion_goblins {
-                    app.world.invasion_size -= 1;
-                    if app.world.invasion_size <= 0 {
-                        app.world.invasion_goblins = false;
-                        app.world.downed_goblins = true;
-                    }
-                }
-            }
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
@@ -958,10 +1124,40 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);
+        // `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) — the
+        // invasion table overrides the natural roll (`NPC.cs`'s
+        // `this.invaders` branch ahead of the normal picks). The pick rides
+        // the local (the closure's borrows don't reach the spawn resolve).
+        if let Some((ix, iy, summoner_alive)) = inv_input {
+            let kind = invasion_spawn_pick(
+                &mut app.item_rng,
+                app.world.hard_mode,
+                summoner_alive,
+            );
+            invasion_pick = Some((kind, ix, iy));
+        }
+        if invasion_pick.is_none() {
         let (spawn, suppressed) = spawner::spawn_npc_call(ctx, &mut rng, app.spawn_no_cycle);
         app.spawn_no_cycle = false; // the latch is consumed by one call
         spawned = spawn;
         let _ = suppressed;
+        }
+    }
+    // The invasion spawn resolves after the tick: the C# decrements the
+    // size at the KILL (`report_invasion_kill`), the spawn only places the
+    // NPC.
+    if let Some((kind, px, py)) = invasion_pick {
+        let mut inv = Npc::new(
+            kind,
+            px - 600.0,
+            py - 400.0,
+            if px > app.world.invasion_x as f32 { -1 } else { 1 },
+            0.0,
+        );
+        inv.hp = inv.max_hp;
+        let ty = ((inv.y / TILE_PX) as i32).clamp(2, app.world.height - 3);
+        inv.y = ty as f32 * TILE_PX;
+        spawned = Some(inv);
     }
     if let Some(n) = spawned {
         app.npcs.push(n);
@@ -1324,6 +1520,182 @@ mod tests {
                     .iter()
                     .all(|n| n.kind != NpcKind::Merchant || n.hp <= 0)
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    /// A surface world (the invasion fights at the spawn's surface band).
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        // The surface band: the floor at row 120 rides the world's
+        // `worldSurface` (the default height*0.25 = 50 puts the surface
+        // band at px 1000 — below the floor's row 120*16 = 1920).
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_morning_roll_arms_the_invasion() {
+        // `UpdateTime_StartDay`'s roll: the smashed orb + the pre-defeat 1/3
+        // roll arms the pending flag; without the orb the roll is inert.
+        let mut w = surface_world();
+        w.shadow_orb_smashed = true;
+        w.roll_morning_invasion(0.2);
+        assert!(w.invasion_arm_pending, "the pre-defeat 1/3 roll arms");
+        w.invasion_arm_pending = false;
+        w.roll_morning_invasion(0.9);
+        assert!(!w.invasion_arm_pending, "the high roll passes");
+        // The post-defeat tiers: hardmode 1/60.
+        w.downed_goblins = true;
+        w.roll_morning_invasion(0.01);
+        assert!(w.invasion_arm_pending, "the hardmode 1/60 roll arms");
+        // Without the orb nothing arms.
+        w.shadow_orb_smashed = false;
+        w.invasion_arm_pending = false;
+        w.roll_morning_invasion(0.0);
+        assert!(!w.invasion_arm_pending, "no orb — no invasion");
+    }
+
+    #[test]
+    fn start_invasion_sizes_the_army_and_picks_the_side() {
+        // `StartInvasion`: size = 80 + 40/qualified-player; the march X is
+        // 0 or maxTilesX (the deterministic roll).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        start_invasion(&mut app.world, 1);
+        assert_eq!(app.world.invasion_type, 1);
+        assert_eq!(app.world.invasion_size, 120);
+        assert_eq!(app.world.invasion_size_start, 120);
+        assert!(
+            app.world.invasion_x == 0.0 || app.world.invasion_x == 300.0,
+            "the side roll ({})",
+            app.world.invasion_x
+        );
+        // The second call refuses (the invasion is active).
+        start_invasion(&mut app.world, 1);
+        assert_eq!(app.world.invasion_type, 1);
+    }
+
+    #[test]
+    fn the_army_marches_and_warns() {
+        // `UpdateInvasion`: the march toward spawnTileX by dayRate, the
+        // arrival broadcast, the 3600-tick warn timer.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.spawn_x = 150;
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 120;
+        app.world.invasion_size_start = 120;
+        app.world.invasion_x = 0.0;
+        app.world.invasion_warn = 0;
+        // The march: invasionX advances by dayRate (1) per call.
+        let chat_before = app.chat.messages.len();
+        update_invasion_state(&mut app);
+        assert!(app.world.invasion_x > 0.0, "the march advances");
+        // The warn timer: 3600 → the approaching broadcasts.
+        app.world.invasion_warn = 1;
+        update_invasion_state(&mut app);
+        assert_eq!(app.world.invasion_warn, 3600, "the warn rearm");
+        assert!(app.chat.messages.len() > chat_before, "the approaching line");
+    }
+
+    #[test]
+    fn the_kill_credit_drains_and_defeats() {
+        // `NPC.cs:78236-78279`: the goblin kill drains 1 point (the
+        // Summoner 10), the group + active-type match; at size 0 the
+        // downedGoblins flag sets and the invasion clears.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 2;
+        app.world.invasion_size_start = 120;
+        report_invasion_kill(&mut app, NpcKind::GoblinThief);
+        assert_eq!(app.world.invasion_size, 1);
+        assert!(!app.world.downed_goblins);
+        report_invasion_kill(&mut app, NpcKind::GoblinSummoner);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_goblins, "the defeat flag");
+        assert_eq!(app.world.invasion_type, 0, "the invasion cleared");
+        // The non-goblin kill doesn't drain.
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 5;
+        report_invasion_kill(&mut app, NpcKind::Zombie);
+        assert_eq!(app.world.invasion_size, 5);
+    }
+
+    #[test]
+    fn the_invasion_spawn_window_and_table() {
+        // `ShouldSpawnInvasionEnemies`: the surface band + the ±3000 px
+        // window around invasionX; the table picks the goblin kinds.
+        let mut w = surface_world();
+        w.invasion_type = 1;
+        w.invasion_size = 120;
+        assert!(
+            should_spawn_invasion_enemies(&w, 110.0 * TILE_PX, 20.0 * TILE_PX),
+            "the window near invasionX 0"
+        );
+        assert!(
+            !should_spawn_invasion_enemies(&w, 110.0 * TILE_PX, 250.0 * TILE_PX),
+            "far from invasionX"
+        );
+        // The underground band: no invasion spawns.
+        assert!(
+            !should_spawn_invasion_enemies(&w, 400.0 * TILE_PX, 20.0 * TILE_PX),
+            "the cave band refuses"
+        );
+        // The table: the picks are always goblins.
+        let mut rng = 7u64;
+        for _ in 0..40 {
+            let kind = invasion_spawn_pick(&mut rng, false, false);
+            assert!(matches!(
+                kind,
+                NpcKind::GoblinSorcerer
+                    | NpcKind::GoblinThief
+                    | NpcKind::GoblinPeon
+                    | NpcKind::GoblinWarrior
+                    | NpcKind::GoblinArcher
+            ));
+        }
+        // The hardmode summoner: only when none alive.
+        let mut rng = 3u64;
+        let mut saw_summoner = false;
+        for _ in 0..200 {
+            if matches!(
+                invasion_spawn_pick(&mut rng, true, false),
+                NpcKind::GoblinSummoner
+            ) {
+                saw_summoner = true;
+                break;
+            }
+        }
+        assert!(saw_summoner, "the hardmode summoner roll");
+        let mut rng = 7u64;
+        for _ in 0..200 {
+            assert!(!matches!(
+                invasion_spawn_pick(&mut rng, true, true),
+                NpcKind::GoblinSummoner
+            ), "the alive summoner blocks the roll");
         }
     }
 }

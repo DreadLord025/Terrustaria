@@ -118,6 +118,26 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+    /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
+    /// corruption orb arms the morning invasion rolls.
+    pub shadow_orb_smashed: bool,
+    /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    pub invasion_type: i32,
+    /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
+    /// points (`invasion_size` rides the Goblin Army block's field).
+    pub invasion_size_start: i32,
+    /// `Main.invasionX` (`Main.cs:64475`'s assign): the marching column
+    /// (the tile X the army stands at).
+    pub invasion_x: f64,
+    /// `Main.invasionWarn` (`Main.cs:64422`'s 3600): the ticks between the
+    /// approaching broadcasts.
+    pub invasion_warn: i32,
+    /// `Main.invasionDelay` (`UpdateTime_StartDay`'s decrement): the armed
+    /// days before the invasion may start.
+    pub invasion_delay: i32,
+    /// The morning roll's `StartInvasion` request — the app resolves it
+    /// wholesale (the players' life-max gate + the size/position assign).
+    pub invasion_arm_pending: bool,
     /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs`'s statics): the WoF's
     /// underworld draw band, written by the wall's AI_027 scan and read by
     /// the Hungry's anchor (`aiStyle 29`). Runtime-only.
@@ -166,7 +186,7 @@ impl World {
             downed_plant_boss: false,
             invasion_goblins: false,
             invasion_size: 0,
-            downed_goblins: false,
+
             saved_goblin: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
@@ -187,6 +207,14 @@ impl World {
             hard_mode: false,
 
             altars_smashed: 0,
+            shadow_orb_smashed: false,
+            downed_goblins: false,
+            invasion_type: 0,
+            invasion_size_start: 0,
+            invasion_x: 0.0,
+            invasion_warn: 0,
+            invasion_delay: 0,
+            invasion_arm_pending: false,
             wof_draw_top: -1.0,
             wof_draw_bottom: -1.0,
             wof_present: false,
@@ -210,6 +238,25 @@ impl World {
         // `Main.cs:6200-6203`: `if (IsFastForwardingTime()) { dayRate = 60; return; }`
         // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
         if self.is_fast_forwarding() { 60 } else { 1 }
+    }
+
+    /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the
+    /// smashed orb arms the goblin rolls — 1/3 before the first defeat,
+    /// 1/30 (hardmode) / 1/30-1/60 (the classic) after. `rng01` is the
+    /// deterministic day-roll (the caller's stream).
+    pub fn roll_morning_invasion(&mut self, rng01: f64) {
+        if !self.shadow_orb_smashed {
+            return;
+        }
+        if !self.downed_goblins {
+            if rng01 < 1.0 / 3.0 {
+                self.invasion_delay = 0;
+                self.invasion_arm_pending = true;
+            }
+        } else if rng01 < if self.hard_mode { 1.0 / 60.0 } else { 1.0 / 30.0 } {
+            self.invasion_delay = 0;
+            self.invasion_arm_pending = true;
+        }
     }
 
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the

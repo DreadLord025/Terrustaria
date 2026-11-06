@@ -145,10 +145,6 @@ pub(crate) struct NpcAssets {
     pub(crate) plantera: Option<BgTex>,
     pub(crate) brain: Option<BgTex>,
     pub(crate) creeper: Option<BgTex>,
-    pub(crate) goblin_peon: Option<BgTex>,
-    pub(crate) goblin_thief: Option<BgTex>,
-    pub(crate) goblin_warrior: Option<BgTex>,
-    pub(crate) goblin_archer: Option<BgTex>,
     pub(crate) bound_goblin: Option<BgTex>,
     pub(crate) goblin_tinkerer: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
@@ -161,6 +157,15 @@ pub(crate) struct NpcAssets {
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
     pub(crate) goblin_sorcerer: Option<BgTex>,
+    /// `NPC_26/27/28/111` — the invasion fighters (16/21-frame humanoid
+    /// strips; the port renders the 16-frame family shape the zombie arm
+    /// walks).
+    pub(crate) goblin_thief: Option<BgTex>,
+    pub(crate) goblin_warrior: Option<BgTex>,
+    pub(crate) goblin_archer: Option<BgTex>,
+    pub(crate) goblin_peon: Option<BgTex>,
+    /// `NPC_471` — the Goblin Summoner (20 frames).
+    pub(crate) goblin_summoner: Option<BgTex>,
     pub(crate) tim: Option<BgTex>,
     pub(crate) dark_caster: Option<BgTex>,
     pub(crate) fire_imp: Option<BgTex>,
@@ -216,10 +221,6 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         plantera: sky_tex(atlas, "NPC_262", None),
         brain: sky_tex(atlas, "NPC_266", None),
         creeper: sky_tex(atlas, "NPC_267", None),
-        goblin_peon: sky_tex(atlas, "NPC_26", None),
-        goblin_thief: sky_tex(atlas, "NPC_27", None),
-        goblin_warrior: sky_tex(atlas, "NPC_28", None),
-        goblin_archer: sky_tex(atlas, "NPC_111", None),
         bound_goblin: sky_tex(atlas, "NPC_105", None),
         goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
@@ -232,6 +233,11 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         hornet: sky_tex(atlas, "NPC_42", None),
         meteor_head: sky_tex(atlas, "NPC_23", None),
         goblin_sorcerer: sky_tex(atlas, "NPC_29", None),
+        goblin_thief: sky_tex(atlas, "NPC_26", None),
+        goblin_warrior: sky_tex(atlas, "NPC_27", None),
+        goblin_archer: sky_tex(atlas, "NPC_28", None),
+        goblin_peon: sky_tex(atlas, "NPC_111", None),
+        goblin_summoner: sky_tex(atlas, "NPC_471", None),
         tim: sky_tex(atlas, "NPC_45", None),
         dark_caster: sky_tex(atlas, "NPC_32", None),
         fire_imp: sky_tex(atlas, "NPC_24", None),
@@ -917,6 +923,28 @@ pub(crate) fn draw_npcs(
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
             ),
+            // The goblin army's fighters: the humanoid strips (the 16-frame
+            // family 26/27/28/111, the summoner's 20) — the frame height
+            // rides each sheet, the display box the zombie's 38x48 shape.
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::GoblinThief => (assets.goblin_thief.as_ref(), 16.0),
+                    NpcKind::GoblinWarrior => (assets.goblin_warrior.as_ref(), 16.0),
+                    NpcKind::GoblinArcher => (assets.goblin_archer.as_ref(), 16.0),
+                    NpcKind::GoblinPeon => (assets.goblin_peon.as_ref(), 21.0),
+                    _ => (assets.goblin_summoner.as_ref(), 20.0),
+                };
+                (
+                    tex,
+                    tex.map_or(48.0, |t| t.h / frames),
+                    [38.0, 48.0],
+                    [n.x - 10.0, n.y - 5.0],
+                )
+            }
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
             // The casters: the humanoid sheets — the sorcerer's strip is 3
             // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
