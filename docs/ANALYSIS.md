@@ -2520,6 +2520,55 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The full drop database (M4-LOOT-2)
+
+`tools/gen_loot.py` reads the decompiled
+`GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` and emits
+`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1421
+net-id registrations over the 643 C# register sites** in the C# order.
+The C# `RegisterToNPC(type)` expands to the type itself + the negative
+net-id family (`PrepareNPCNetIDsByTypeDictionary` over `NPCID.NetIdMap`
+- e.g. the type-1 slime family = `-3..-10`); the removal wrappers
+(`RemoveFromMultipleNPCs(RegisterToMultipleNPCs(...), ids)`) compute the
+net id set minus the removals, keeping the tough-slime gel split. The
+negative-id dedupe mirrors `TrimDuplicateRulesForNegativeIDs`.
+
+The engine grew the pieces the registrations need:
+
+- **`LootFlags` + `LootNpc`** - the world/event snapshot the conditions
+  read (the downed bosses 1/2/3/any/plantera/plant-boss, the seasons,
+  the special seeds, `NPC.waveNumber` + the pumpkin/frost moon formulas
+  verbatim, the closest player's zones, the pirate-map/soul depth bands,
+  the npc's `value`/`lifeMax`/`damage`/`defense`/`boss`/
+  `SpawnedFromStatue`); `spawn_loot` fills it from
+  `World.hard_mode`/`day_time` + the scene zones + the dying npc.
+- **`Cond`** - the data-driven enum porting ~50 `Conditions.*` gates;
+  the yoyo gates and the moon trophy tables carry their exact formulas.
+- **`LeadingConditionRule`** (`LeadingConditionRule.cs`: the condition
+  rides `CanDrop`, `TryDroppingItem` always `Success`), the free
+  functions `chain_on_success`/`chain_on_failed_roll` (the C#
+  extension methods; the `self: Box<Self>` receivers do not erase across
+  `dyn`), `DropPerPlayerOnThePlayer`, `OneFromRulesRule`, the luck
+  variants (`NotScalingWithLuck`/`ScalingWithOnlyBadLuck` flags on
+  `CommonDrop`, the OneFromOptions pair), and the
+  `Food`/`StatusImmunityItem`/`MasterModeCommonDrop`/
+  `MasterModeDropOnAllPlayers`/`BossBagByCondition` factories (all
+  compositions of the M4-LOOT-1 rules, exactly as `ItemDropRule.cs`
+  composes them).
+- **The global entries** - `RegisterToGlobal` (the biome keys, the
+  souls, the goodie bags, the kite drops) resolve before every NPC's
+  own rules (`GetRulesForNPCID(includeGlobalDrops = true)`).
+
+Findings: `corruption`/`crimson` recipe-style flags do not exist here -
+the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
+which read `WorldGen.crimson` (the WORLD type). The skipped rows
+(13, warned): the NamedNPC localization gates, the RedHat legendary
+gate, the MechBossSpawners/SlimeBody/StatueMimic/
+FromOptionsWithoutRepeats rule classes (each needs its own event state).
+The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
+resolve - the executor drops only registry-known items, so they surface
+as the registry scale-up work.
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`

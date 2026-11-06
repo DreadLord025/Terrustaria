@@ -18,6 +18,7 @@ mod wiring_stub;
 mod item;
 mod itemdata;
 mod loot_db;
+mod loot_db_gen;
 mod map;
 mod menu;
 mod net;
