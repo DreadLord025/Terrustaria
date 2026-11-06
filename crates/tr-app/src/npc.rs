@@ -145,6 +145,10 @@ pub enum NpcKind {
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
     /// death sets `downed_eoc` and opens the Dryad's arrival).
     EyeOfCthulhu,
+    /// `NPCID.QueenBee` (222) — the jungle boss (`NPC.cs:11855-11872`:
+    /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
+    /// and opens the Witch Doctor's arrival).
+    QueenBee,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -354,6 +358,7 @@ impl NpcKind {
             NpcKind::WitchDoctor => 40,
             NpcKind::Clothier => 41,
             NpcKind::EyeOfCthulhu => 42,
+            NpcKind::QueenBee => 43,
         }
     }
 
@@ -402,6 +407,7 @@ impl NpcKind {
             40 => NpcKind::WitchDoctor,
             41 => NpcKind::Clothier,
             42 => NpcKind::EyeOfCthulhu,
+            43 => NpcKind::QueenBee,
             _ => return None,
         })
     }
@@ -484,6 +490,8 @@ impl NpcKind {
             NpcKind::Clothier => (18.0, 40.0),
             // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
+            // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
+            NpcKind::QueenBee => (66.0, 66.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -555,6 +563,8 @@ impl NpcKind {
             NpcKind::Clothier => 250,
             // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
             NpcKind::EyeOfCthulhu => 2800,
+            // `SetDefaults` case 222 (`NPC.cs:11862`): 3400 HP.
+            NpcKind::QueenBee => 3400,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -608,6 +618,7 @@ impl NpcKind {
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
             NpcKind::EyeOfCthulhu => 15,
+            NpcKind::QueenBee => 30,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1051,6 +1062,7 @@ impl Npc {
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
+            NpcKind::QueenBee => 0.0,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1114,6 +1126,7 @@ impl Npc {
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
             NpcKind::EyeOfCthulhu => 12,
+            NpcKind::QueenBee => 8,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1176,6 +1189,7 @@ impl Npc {
             NpcKind::Clothier => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
+            NpcKind::QueenBee => 50000.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1298,6 +1312,7 @@ impl Npc {
             | NpcKind::WitchDoctor
             | NpcKind::Clothier => self.update_guide(world, dt),
             NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
+            NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1589,6 +1604,18 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::QueenBee => {
+                // `Main.npcFrameCount[222]` = 2 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
             NpcKind::EyeOfCthulhu => {
                 // `Main.npcFrameCount[4]` = 2 (`Main.cs:67082`): the pupil
                 // blink over the 8-step accumulator (the AI_004 hover's
@@ -2349,6 +2376,77 @@ impl Npc {
         }
     }
 
+    /// `AI_043`'s Queen Bee v1 (`NPC.cs:30190+`) — the EoC's cycle shape
+    /// with the bee's numbers: the hover (the ±0.07 accels, the 8 cap),
+    /// the charge (the 480-tick cycle, the direct velocity x 7), the decel
+    /// (the 40 ticks, x0.98), the flee (`ai[0]==5`'s world-edge drift —
+    /// the v1 rises away). The Servant bees and the enraged-outside-the-
+    /// jungle state = the follow-ups.
+    fn update_queen_bee(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The flee: rise away (the vanilla's `ai[0]==5` drift — the v1
+        // rises, the off-world guard despawns).
+        if self.cast_windup == 3 {
+            self.vy -= 0.04;
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.y < -500.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        let hover_y = pcy - 260.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 7.0 {
+                self.vx = 7.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 7.0 {
+                self.vy = 7.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 7.0;
+            self.vy = dy / d * 7.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -2544,6 +2642,7 @@ impl Npc {
             NpcKind::WitchDoctor => 40,
             NpcKind::Clothier => 41,
             NpcKind::EyeOfCthulhu => 42,
+            NpcKind::QueenBee => 43,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3839,7 +3938,41 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_queen_bee_cycles_and_flees() {
+        // `AI_043`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 7) → the decel; the flee phase rises away.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut qb = Npc::new(NpcKind::QueenBee, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        qb.hp = qb.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(qb.cast_windup == 1, "the charge phase armed");
+        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (qb.vx * qb.vx + qb.vy * qb.vy).sqrt();
+        assert!((speed - 7.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_queen_bee_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::QueenBee, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 222);
+        assert_eq!(e.credit_id, "QueenBee");
+        let mut qb = Npc::new(NpcKind::QueenBee, 0.0, 0.0, 1, 0.0);
+        assert_eq!(qb.size(), (66.0, 66.0));
+        assert_eq!(qb.max_hp, 3400);
+        assert_eq!(qb.knock_back_resist(), 0.0);
+        let _ = (&w, &mut qb);
+    }
+
 }
+
 
 
 
