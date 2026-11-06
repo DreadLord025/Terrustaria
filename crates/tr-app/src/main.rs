@@ -10,6 +10,7 @@ mod biome;
 mod buffs;
 mod chat;
 mod collision;
+mod debug_panel;
 mod death;
 mod emotes;
 mod inv;
