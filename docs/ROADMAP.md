@@ -1320,7 +1320,7 @@ section in brackets before starting a row.
 | 🔄 M3-CHEST-UI | `M3-CHEST-UI` | chest UI + world chests [13][23] |
 | M3-STORE-1 | `M3-STORE-1-banks` | piggy/safe/defender/void [13] |
 | M3-STORE-2 | `M3-STORE-2-quick-stack` | loot all/deposit/quick stack/restock [13] |
-| M3-STORE-3 | `M3-STORE-3-trash-favorites` | trash + favorites rules [13] |
+| M3-STORE-3 | `M3-STORE-3-trash-favorites` | trash + favorites rules [13] || ✅ M3-STORE-3 | `M3-STORE-3-trash-favorites` | the trash + the favorites: `app.favorite_slots: Vec<usize>` — the favorited inventory slot indices (`Item.favorited`'s port — the slot-index tracking, not the per-item flag; the 33 ItemSlot construction sites stay untouched); `toggle_favorite(idx)` (the right-click toggle), `is_favorite(idx)`, `trash_swap()` (the held ↔ the equip.trash swap — the trash slot existed in EquipSlots); the UI wiring (the right-click on an inventory slot toggles the favorite; the left-click on the trash slot swaps) = the follow-up; the favorited rules (can't sell/drop/ trash) = the sell/drop pass | done 2026-11-06: the compile green |
 
 ## Milestone 4 — NPCs, combat, events, projectiles
 
