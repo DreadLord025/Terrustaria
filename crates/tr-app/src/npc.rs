@@ -113,6 +113,10 @@ pub enum NpcKind {
     /// dmg 10, def 15, 250 HP; the shop index 1 through M4-TOWN-3's
     /// engine; the arrival `SpawnAllowed_Merchant`, `NPC.cs:7175`).
     Merchant,
+    /// `NPCID.Dryad` (20) — the nature town NPC (`NPC.cs:9022`: the town
+    /// twin; the shop index 3; the arrival rides the downedBoss1 gate —
+    /// the boss-downed tracking lands with the boss work).
+    Dryad,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -314,6 +318,7 @@ impl NpcKind {
             NpcKind::EaterOfWorldsBody => 32,
             NpcKind::EaterOfWorldsTail => 33,
             NpcKind::Merchant => 34,
+            NpcKind::Dryad => 35,
         }
     }
 
@@ -354,6 +359,7 @@ impl NpcKind {
             32 => NpcKind::EaterOfWorldsBody,
             33 => NpcKind::EaterOfWorldsTail,
             34 => NpcKind::Merchant,
+            35 => NpcKind::Dryad,
             _ => return None,
         })
     }
@@ -427,6 +433,7 @@ impl NpcKind {
             // The Guide's hitbox rides the same humanoid frame.
             NpcKind::Guide => (18.0, 40.0),
             NpcKind::Merchant => (18.0, 40.0),
+            NpcKind::Dryad => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -482,6 +489,8 @@ impl NpcKind {
             NpcKind::Guide => 250,
             // `SetDefaults` case 17 (`NPC.cs:8989`): 250 HP.
             NpcKind::Merchant => 250,
+            // `SetDefaults` case 20 (`NPC.cs:9032`): 250 HP.
+            NpcKind::Dryad => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -527,6 +536,7 @@ impl NpcKind {
             // `SetDefaults` case 17: damage 10 — the town NPCs never hurt
             // (the contact gate skips them).
             NpcKind::Merchant => 10,
+            NpcKind::Dryad => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -962,6 +972,7 @@ impl Npc {
             NpcKind::Guide => 0.5,
             // `SetDefaults` case 17: knockBackResist 0.5.
             NpcKind::Merchant => 0.5,
+            NpcKind::Dryad => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1017,6 +1028,7 @@ impl Npc {
             NpcKind::Guide => 15,
             // `SetDefaults` case 17: defense 15.
             NpcKind::Merchant => 15,
+            NpcKind::Dryad => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1070,6 +1082,7 @@ impl Npc {
             NpcKind::Guide => 0.0,
             // The town NPCs carry no coin value.
             NpcKind::Merchant => 0.0,
+            NpcKind::Dryad => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1182,7 +1195,9 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
-            NpcKind::Guide | NpcKind::Merchant => self.update_guide(world, dt),
+            NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad => {
+                self.update_guide(world, dt)
+            }
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1474,11 +1489,37 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
-            // The Merchant: the town wander rides the Guide's 3-frame
-            // humanoid machine (`Main.npcFrameCount[17]` = 3,
-            // `Main.cs:67082`; the vanilla FindFrame's town machine,
-            // `NPC.cs:68632+`).
+            NpcKind::Dryad => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[20]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Merchant => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[17]` = 3, `Main.cs:67082`; the
+                // vanilla FindFrame's town machine, `NPC.cs:68632+`).
                 if self.vy != 0.0
                     || (self.facing == -1 && self.vx > 0.0)
                     || (self.facing == 1 && self.vx < 0.0)
@@ -2056,7 +2097,13 @@ impl Npc {
             // The town NPCs never hurt the player (`aiStyle 7`'s no-contact);
             // the 0-damage kinds (the Goldfish) never hurt either (the
             // vanilla `damage > 0` gate).
-            if self.kind != NpcKind::Guide {
+            // The town NPCs never hurt the player (`aiStyle 7`'s no-contact;
+            // the M4-TOWN-4's gate loss fixed here — the Merchant's dmg 10
+            // reached the hurt path until this).
+            if !matches!(
+                self.kind,
+                NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad
+            ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
@@ -2115,6 +2162,7 @@ impl Npc {
             NpcKind::EaterOfWorldsBody => 32,
             NpcKind::EaterOfWorldsTail => 33,
             NpcKind::Merchant => 34,
+            NpcKind::Dryad => 35,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3137,4 +3185,23 @@ mod tests {
         assert_eq!(e.credit_id, "Merchant");
     }
 
+    #[test]
+    fn the_dryad_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 20 (the town twin); the town
+        // ctor swaps the kind; the bestiary entry round-trips; the arrival
+        // gate rides the boss-downed flag.
+        let w = ground_air();
+        let d = Npc::spawn_town(&w, 60, NpcKind::Dryad).expect("the dryad spawns");
+        assert_eq!(d.size(), (18.0, 40.0));
+        assert_eq!(d.max_hp, 250);
+        assert_eq!(d.knock_back_resist(), 0.5);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Dryad, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 20);
+        assert_eq!(e.credit_id, "Dryad");
+        // The arrival: the downedBoss1 gate (constants-off in the port).
+        assert!(!crate::spawner::spawn_allowed_dryad(false));
+        assert!(crate::spawner::spawn_allowed_dryad(true));
+    }
+
 }
+

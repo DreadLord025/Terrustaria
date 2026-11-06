@@ -73,10 +73,13 @@ fn grid_rect(panel: &[f32; 4]) -> [f32; 4] {
 /// `UIBestiaryEntryGrid.GetEntriesToShow` (`:95-100`): the cells per
 /// row/column are the space divided by 72.
 fn grid_metrics(rect: &[f32; 4]) -> (usize, usize) {
-    (
-        ((rect[2] / CELL) as usize).max(1),
-        ((rect[3] / CELL) as usize).max(1),
-    )
+    let cols = ((rect[2] / CELL) as usize).max(1);
+    let rows = ((rect[3] / CELL) as usize).max(1);
+    // The rows grow with the entry count — the vanilla's bestiary scrolls
+    // (`UIBestiaryGrid`'s scroll bars land with the UI-scroll work); the
+    // fixed rows clipped the roster at the town-NPC growth.
+    let need = (crate::bestiary::ENTRIES.len() + cols - 1) / cols;
+    (cols, rows.max(need))
 }
 
 /// The entry index under the cursor (the grid's per-cell centre placement
@@ -329,6 +332,7 @@ fn portrait_data(
         NpcKind::EaterOfWorldsBody => 32,
         NpcKind::EaterOfWorldsTail => 33,
         NpcKind::Merchant => 34,
+        NpcKind::Dryad => 35,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -393,6 +397,7 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

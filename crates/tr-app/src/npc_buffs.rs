@@ -160,6 +160,7 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // The Guide: no immunities (the town NPCs have no data rows).
         NpcKind::Guide => &[],
         NpcKind::Merchant => &[],
+        NpcKind::Dryad => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],

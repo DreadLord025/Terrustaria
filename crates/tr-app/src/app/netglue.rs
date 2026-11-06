@@ -293,7 +293,9 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
-        crate::npc::NpcKind::Merchant => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Merchant | crate::npc::NpcKind::Dryad => {
+            crate::npc::Npc::spawn_guide(world, tx)?
+        }
         crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }

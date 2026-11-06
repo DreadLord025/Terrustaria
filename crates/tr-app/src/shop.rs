@@ -43,6 +43,17 @@ pub enum StockWhen {
     /// `:1468-1475`'s inventory scan — the item appears when the player
     /// carries `0` (the Flower Boots 930 → the 931/1614 rows).
     PlayerHasItem(u16),
+    /// The blood-moon corruption rows (`Chest.cs:1570-1593`'s else branch —
+    /// the crimson variants ride the world's crimson flag, constants-off).
+    BloodMoonCorruption,
+    /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
+    /// metrics' underworld flag reaches the shop call.
+    ZoneUnderworld,
+    /// `ZoneGlowshroom` (`:1713`) — constants-off like the underworld.
+    ZoneGlowshroom,
+    /// The moon-phase pairs (`:1740+`'s `moonPhase / 2` switches): the row
+    /// appears when `moon_phase / 2 == n` (the non-hardmode pairs).
+    MoonPhasePair(u8),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -89,6 +100,54 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             // `:1480-1482`'s HasItem(3107) → 3108 row lands with the
             // inventory-scan pass.
         ],
+        // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
+        // branch, the base rows, the flower-seed moon-phase pairs. The
+        // crimson variants (2886/2171/4508), the graveyard/underworld/
+        // glowshroom rows and the halloween rows sit constants-off.
+        3 => vec![
+            row(67, StockWhen::BloodMoonCorruption),
+            row(59, StockWhen::BloodMoonCorruption),
+            row(4504, StockWhen::BloodMoonCorruption),
+            row(66, StockWhen::Always),
+            row(62, StockWhen::Always),
+            row(63, StockWhen::Always),
+            row(745, StockWhen::Always),
+            row(27, StockWhen::Always),
+            row(5309, StockWhen::Always),
+            row(114, StockWhen::Always),
+            row(1828, StockWhen::Always),
+            row(747, StockWhen::Always),
+            row(746, StockWhen::HardMode),
+            row(369, StockWhen::HardMode),
+            row(4505, StockWhen::HardMode),
+            row(5214, StockWhen::ZoneUnderworld),
+            row(194, StockWhen::ZoneGlowshroom),
+            row(3215, StockWhen::Always),
+            row(3216, StockWhen::Always),
+            row(3219, StockWhen::Always),
+            // `:1656-1661`'s 3217/3218 crimson split rides the world flag.
+            row(3217, StockWhen::Always),
+            row(3220, StockWhen::Always),
+            row(3221, StockWhen::Always),
+            row(3222, StockWhen::Always),
+            row(4047, StockWhen::Always),
+            row(4045, StockWhen::Always),
+            row(4044, StockWhen::Always),
+            row(4043, StockWhen::Always),
+            row(4042, StockWhen::Always),
+            row(4046, StockWhen::Always),
+            row(4041, StockWhen::Always),
+            row(4241, StockWhen::Always),
+            row(4048, StockWhen::Always),
+            row(4430, StockWhen::MoonPhasePair(0)),
+            row(4431, StockWhen::MoonPhasePair(0)),
+            row(4433, StockWhen::MoonPhasePair(1)),
+            row(4434, StockWhen::MoonPhasePair(1)),
+            row(4436, StockWhen::MoonPhasePair(2)),
+            row(4437, StockWhen::MoonPhasePair(2)),
+            row(4439, StockWhen::MoonPhasePair(3)),
+            row(4440, StockWhen::MoonPhasePair(3)),
+        ],
         _ => Vec::new(),
     }
 }
@@ -105,6 +164,16 @@ pub fn resolve_stock(
     flags: &ShopFlags,
     inventory_ids: &[u16],
 ) -> Vec<u16> {
+    resolve_stock_moon(shop_index, flags, inventory_ids, 0)
+}
+
+/// The moon-phase-aware twin — `Main.moonPhase` rides the world clock.
+pub fn resolve_stock_moon(
+    shop_index: u32,
+    flags: &ShopFlags,
+    inventory_ids: &[u16],
+    moon_phase: u32,
+) -> Vec<u16> {
     setup_shop(shop_index, inventory_ids)
         .into_iter()
         .filter(|e| match e.when {
@@ -119,6 +188,9 @@ pub fn resolve_stock(
             StockWhen::ZoneSnow => flags.zone_snow,
             StockWhen::ZoneJungle => flags.zone_jungle,
             StockWhen::PlayerHasItem(id) => inventory_ids.contains(&id),
+            StockWhen::BloodMoonCorruption => flags.blood_moon,
+            StockWhen::ZoneUnderworld | StockWhen::ZoneGlowshroom => false,
+            StockWhen::MoonPhasePair(n) => moon_phase / 2 == n as u32,
         })
         .map(|e| e.item)
         .collect()
@@ -239,4 +311,38 @@ mod town5_tests {
         assert!(stock.contains(&282));
         assert!(!stock.contains(&188));
     }
+    #[test]
+    fn the_dryad_stock_rides_the_moon_and_the_blood_moon() {
+        // `Chest.cs:1568-1745`: the base rows always; the corruption seeds
+        // only under the blood moon; the flower-seed pairs by `moonPhase/2`.
+        let base = resolve_stock_moon(3, &ShopFlags::default(), &[], 0);
+        for id in [66, 62, 63, 745, 27, 5309, 114, 1828, 747, 3215, 4047] {
+            assert!(base.contains(&id), "the base row {id} missing");
+        }
+        assert!(!base.contains(&67), "the blood-moon row leaked");
+        assert!(base.contains(&4430) && base.contains(&4431), "the pair 0 rows");
+        assert!(!base.contains(&4433), "the pair 1 rows leaked at phase 0");
+        // The phase 4 (the pair 2): 4436/4437.
+        let p4 = resolve_stock_moon(3, &ShopFlags::default(), &[], 4);
+        assert!(p4.contains(&4436) && !p4.contains(&4430), "the pair 2 rows");
+        // The blood moon: the corruption seeds.
+        let bm = resolve_stock_moon(
+            3,
+            &ShopFlags {
+                blood_moon: true,
+                ..ShopFlags::default()
+            },
+            &[],
+            0,
+        );
+        for id in [67, 59, 4504] {
+            assert!(bm.contains(&id), "the blood-moon row {id} missing");
+        }
+        // The hardmode rows stay out (the constants-off gates).
+        assert!(!base.contains(&746));
+        // The unknown index stays empty.
+        assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
+    }
+
 }
+

@@ -468,6 +468,14 @@ pub fn spawn_allowed_merchant(inventory: &[(u16, u32)]) -> bool {
     false
 }
 
+/// The Dryad's arrival gate: the vanilla rides `NPC.downedBoss1` (the Eye
+/// of Cthulhu defeated) inside `CheckForNPCsToSpawn` — the port's
+/// boss-downed tracking is constants-off, so the flag passes in and the
+/// town pass feeds `false` until the boss work lands.
+pub fn spawn_allowed_dryad(downed_boss1: bool) -> bool {
+    downed_boss1
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 
