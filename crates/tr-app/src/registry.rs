@@ -41,12 +41,14 @@ pub fn max_stack(id: u16) -> u32 {
 /// `GetItemDrop_Workbenches`/`GetItemDrop_Chests`) — for 10/14/15/18/21 it
 /// equals `by_tile` (the placing item), and the open door (11, which no item
 /// places) drops the closed-door item (`GetDoorItem(0)` = 25).
-pub fn tile_drop(tile: u16) -> Option<u16> {
+///
+/// `frame_y` feeds the planter-box drop `3215 + frameY / 18`
+/// (`KillTile_GetItemDrops`, `WorldGen.cs:65211-65213`); record/interaction
+/// call sites pass 0 (tile 380 never dies through a `Check*` record — the
+/// inline merge block `WorldGen.cs:85296-85367` never kills it).
+pub fn tile_drop(tile: u16, frame_y: i16) -> Option<u16> {
     match tile {
         2 => Some(2),
-        // The sword shrine's real sword (`KillTile_GetItemDrops`: the tile
-        // 187 breaks into the Enchanted Sword 989).
-        187 => Some(989),
         11 => Some(25),
         // The world cactus 80 drops the Cactus item even though the item
         // places the CactusBlock 188, not 80 (`KillTile_GetItemDrops`,
@@ -54,6 +56,22 @@ pub fn tile_drop(tile: u16) -> Option<u16> {
         // generated item table only carries the 276→188 placement, so the
         // reverse `by_tile` lookup misses 80.
         80 => Some(276),
+        // `case 78: dropItem = 222;` (`WorldGen.cs:64711-64713`).
+        78 => Some(222),
+        // `case 380: dropItem = 3215 + tileCache.frameY / 18;` (:65211-65213).
+        380 => Some((3215 + i32::from(frame_y) / 18) as u16),
+        // The sunflower's per-cell case is in the empty group (:65759+); 63 is
+        // what the cascade's `CheckSunflower` record spawns
+        // (`Item.NewItem(…, 63)`, `WorldGen.cs:53787-53791`).
+        27 => Some(63),
+        // The loot pot / herbs / piles drop nothing per-cell (the empty case
+        // group `WorldGen.cs:65759-65815` — 28, 82, 185, 186, 187); the pot's
+        // loot is `SpawnThingsFromPot` (:57011-57014), the herbs' rolls ride
+        // the RNG resolver (:65674-65698) and 187's sword-in-stone special
+        // rides the `Check3x2` pile event (:49828-49839) — all app-side.
+        // Without these arms the `by_tile` fallback leaks the seed item 307
+        // for tile 82.
+        28 | 82 | 83 | 84 | 185 | 186 | 187 => None,
         _ => by_tile(tile),
     }
 }
@@ -306,14 +324,37 @@ mod tests {
         // `GetItemDrop_Chests(0, false)` = 48 (:41677-41681). The open door
         // (11) has no placing item and needs the explicit row — it drops the
         // closed-door item (`CheckDoorOpen` → `DropDoorItem` :86415).
-        assert_eq!(tile_drop(10), Some(25));
-        assert_eq!(tile_drop(11), Some(25));
-        assert_eq!(tile_drop(14), Some(32));
-        assert_eq!(tile_drop(15), Some(34));
-        assert_eq!(tile_drop(18), Some(36));
-        assert_eq!(tile_drop(21), Some(48));
+        assert_eq!(tile_drop(10, 0), Some(25));
+        assert_eq!(tile_drop(11, 0), Some(25));
+        assert_eq!(tile_drop(14, 0), Some(32));
+        assert_eq!(tile_drop(15, 0), Some(34));
+        assert_eq!(tile_drop(18, 0), Some(36));
+        assert_eq!(tile_drop(21, 0), Some(48));
         // Non-object kinds keep their existing rows.
-        assert_eq!(tile_drop(2), Some(2), "grass drops dirt");
-        assert_eq!(tile_drop(1), Some(3), "stone drops via its item");
+        assert_eq!(tile_drop(2, 0), Some(2), "grass drops dirt");
+        assert_eq!(tile_drop(1, 0), Some(3), "stone drops via its item");
+    }
+
+    // DW-3.1: the phase-3 tile_drop rows (`KillTile_GetItemDrops`).
+    #[test]
+    fn test_DW_3_1_tile_drop_map() {
+        // `case 78: dropItem = 222;` (`WorldGen.cs:64711-64713`).
+        assert_eq!(tile_drop(78, 0), Some(222));
+        // `case 380: dropItem = 3215 + tileCache.frameY / 18;` (:65211-65213) —
+        // the style rows 0..7 of the planter boxes.
+        for style in 0..8 {
+            assert_eq!(tile_drop(380, (18 * style) as i16), Some((3215 + style) as u16), "style {style}");
+        }
+        // The sunflower's item is the cascade record's (CheckSunflower's
+        // `Item.NewItem(…, 63)`, :53787-53791).
+        assert_eq!(tile_drop(27, 0), Some(63));
+        // The empty per-cell case group (:65759-65815): 28/82/185/186/187 and
+        // the herb stages (their rolls ride the RNG resolver) drop nothing —
+        // and the `by_tile` fallback no longer leaks the seed 307 for 82.
+        for tile in [28, 82, 83, 84, 185, 186, 187] {
+            assert_eq!(tile_drop(tile, 0), None, "tile {tile}");
+        }
+        assert_eq!(tile_drop(82, 0), None, "by_tile(82) must not yield 307");
+        assert_eq!(by_tile(82), Some(307), "the fallback itself is intact");
     }
 }

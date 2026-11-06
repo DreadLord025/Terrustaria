@@ -36,6 +36,7 @@ an agent needs before touching code.
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
 | Liquids: flow sim, draw cache, waterfalls | `tr-core/src/liquid.rs`, `liquid_draw.rs`, `waterfall/` |
+| Tile objects: the registry, placement, the KillTile cascade | `tr-core/src/tileobject.rs`, `tr-core/src/edit.rs`; the drop resolution in `world_sim/editing.rs` |
 | World generation | `tr-core/src/worldgen/` |
 | Saves: `.trwld`, `.wld`, `.map`, binary primitives | `tr-core/src/{save,wld}.rs`, `map/file.rs`, `binio.rs`; sidecars in `persist.rs` + `app/saveglue.rs` |
 | Multiplayer | `net.rs`, `app/netglue.rs` |
@@ -123,9 +124,21 @@ an agent needs before touching code.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
+- `tileobject.rs` — the `TileObjectData` registry as flat const data (approach A; a
+  full-registry generator is the follow-up): per-kind `TileObjectDef`s with geometry/
+  anchors/styles, `TileObject.CanPlace`/`Place` (`can_place`/`place`) and the shared
+  tile sets (`TILE_CUT`, `TILE_TABLE`, `IS_A_DRIP_TILE`, `IS_VINE`). See
+  `ANALYSIS.md#tile-objects-m14-to`.
 - `edit.rs` — single-tile break/place: preserves the wall, bumps the revision, marks the
   chunk, recomputes the column surface and re-frames a 5×5 neighbourhood
-  (`framing::reframe_area`), so edits do not need a full-world framing pass.
+  (`framing::reframe_area`), so edits do not need a full-world framing pass. Placement
+  routes the registry kinds (`place_item_tile`, incl. the seed `PlaceAlch` branch and the
+  planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
+  doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
+  `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
+  events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
+  the app's break sources — the mining tick, `break_tile`, the replicated break and
+  explosions.
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
@@ -195,7 +208,8 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `app/frame.rs`: `sky.rs` (the sky gradient, stars, sun/moon arc, clouds, the
   `DrawSurfaceBG` biome layer stack and its cross-fade), `bg.rs` (the `Main.DrawBackground`
   family: surface transition, dirt sheet, underworld black box, rock, magma — with the
-  shared `PassPrologue`), `tiles.rs` (the tile/wall/slope loop), `liquids.rs` (the two
+  shared `PassPrologue`), `tiles.rs` (the tile/wall/slope loop + the sunflower's
+  special sway pass and its own wind counter), `liquids.rs` (the two
   `Main.DrawLiquid(bg)` passes), `entities.rs` (player/NPC sprite composition, held item,
   the map head icon), `foliage.rs` (tree canopies/branches), `debug.rs` (the overlay and
   the screenshot capture).

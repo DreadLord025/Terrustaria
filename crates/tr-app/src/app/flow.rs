@@ -1430,6 +1430,8 @@ pub(crate) mod front_flow_tests {
             ambience_rng: 1,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
+            sunflower_wind_counter: 0.0,
+            sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),

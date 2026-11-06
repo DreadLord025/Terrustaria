@@ -54,6 +54,26 @@ pub(crate) fn black_slime_darkness_touch(
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+    // The town dispatch: the Merchant opens the shop, the Nurse heals (the
+    // vanilla's dialog-button pair — the port collapses them onto the
+    // right-click).
+    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+        n.hp > 0
+            && n.kind == NpcKind::Nurse
+            && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+    }) else {
+        return try_open_merchant_shop_at_cursor(app, world_pos);
+    };
+    app.nurse_heal(nurse_idx)
+}
+
+fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
         n.hp > 0
             && n.kind == NpcKind::Merchant
@@ -335,6 +355,28 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        if let Some(player) = app.player.as_ref() {
+            if player.max_hp > 100
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant)
+            {
+                // The Nurse arrives when the life maximum grew past 100
+                // (`SpawnAllowed_Nurse`) — the port gates her behind the
+                // Merchant's absence (the vanilla arrival picks one town
+                // NPC per pass).
+                let xt = ((player.x / TILE_PX) as i32 - 6).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Nurse) {
+                    n.home = crate::town::quick_find_home(
+                        &app.world,
+                        xt,
+                        (n.y / TILE_PX) as i32,
+                    );
+                    app.npcs.push(n);
+                }
+            }
+        }
+    }
+    if app.town_look_timer == 0.0 {
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
                 .inventory
@@ -389,6 +431,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             crate::world_sim::items::spawn_item_drop(
                 app,
                 item as u16,
+                1,
                 (npc.x / 16.0) as i32,
                 (npc.y / 16.0) as i32,
             );
@@ -532,9 +575,11 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
     let mut rng_state = app.item_rng;
     let mut loot_rng = LootRng(&mut rng_state);
     let zones = &app.scene_metrics;
-    let info = tr_core::loot::DropAttemptInfo {
+    // The drop rules read the killer's luck (`info.player.RollLuck`,
+    // `CommonDrop.cs:36` — the port's single player).
+    let mut info = tr_core::loot::DropAttemptInfo {
         rng: &mut loot_rng,
-        luck: 0.0,
+        luck: app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         is_expert: false,
         is_master: false,
         active_players: 1,
@@ -607,7 +652,10 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
     tr_core::loot::drop_money(
         &mut loot_rng,
         npc.value(),
-        0.0,   // Player.luck: the buff engine lands with M2-BUFF-2
+        // `NPCLoot_DropMoney` reads `closestPlayer.luck` (`NPC.cs:79622`) —
+        // the port's single player; the `|luck|` double-roll gate lives in
+        // `drop_money` (`loot.rs:316-318`).
+        app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         false, // Midas
         false, // Main.bloodMoon
         0.0,   // NPC.extraValue (master-mode bump, not modelled)
@@ -694,5 +742,46 @@ mod tests {
         assert_eq!(dot_death_text(None), "was slain...");
         assert_eq!(dot_death_text(Some(DotDeath::Poison)), "was poisoned.");
         assert_eq!(dot_death_text(Some(DotDeath::Burned)), "was burned.");
+    }
+
+    #[test]
+    fn spawn_gel_and_coins_ride_the_player_luck() {
+        // DW-3.1 — the drop rules read the killer's luck (`CommonDrop.cs:36`
+        // through `info.luck`) and `NPCLoot_DropMoney` reads
+        // `closestPlayer.luck` (`NPC.cs:79622`): at luck 1.0 both hit
+        // branches always fire, so the item stream lands elsewhere than at
+        // luck 0, while luck 0 stays byte-identical to the pre-wiring plain
+        // rolls (the double-roll math itself is loot.rs-tested).
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut a = flow_app(None, vec![], vec![]);
+        // A floor row gives the spawner a surface (flow_app's world is bare;
+        // y 5 keeps top < height - 2 on the 8-tall world).
+        for x in 0..a.world.width {
+            let i = a.world.index(x, 5);
+            a.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            a.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let npc = Npc::spawn_slime_variant(
+            &a.world,
+            (a.player.as_ref().unwrap().x / 16.0) as i32,
+            SlimeVariant::Blue,
+        )
+        .expect("the surface spawns a blue slime");
+
+        let start = a.item_rng;
+        spawn_coins(&mut a, &npc);
+        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        let state_0 = a.item_rng;
+
+        a.item_rng = start;
+        a.player.as_mut().unwrap().luck_state.luck = 1.0;
+        spawn_coins(&mut a, &npc);
+        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
     }
 }

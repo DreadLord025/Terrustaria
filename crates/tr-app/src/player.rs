@@ -16,6 +16,7 @@ use glam::Vec2;
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
+use crate::luck::LuckState;
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -237,9 +238,25 @@ pub struct Player {
     pub on_ground: bool,
     /// 1 = right, -1 = left.
     pub facing: i32,
+    /// The equipped item kinds — `Player.armor[0..20]`'s kinds snapshot the
+    /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
+    /// from `App.equip` per tick.
+    pub equipped: [u16; 20],
+    /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
+    /// granting equipment, re-applied by the accessory pass every tick (the
+    /// vanilla `ResetEffects` clears the flags and the grants re-set them).
+    pub pinned_jumps: [bool; 9],
+    pub pinned_balloon: bool,
+    pub pinned_rocket_boots: i32,
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
+    /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
+    /// (`Player.cs:15025-15028`); the Hurt gate reads it.
+    pub no_knockback: bool,
+    /// The accessory-granted `Player.lifeRegen` base (`Player.cs:13122`'s
+    /// `lifeRegen += armorPiece.lifeRegen` - the Band's `Item.lifeRegen = 2`).
+    accessory_life_regen: i32,
     /// `Player.legFrame.Y / 56`: the current leg animation row (0..=19), driven by
     /// `PlayerFrame()`.
     pub leg_frame: u32,
@@ -296,6 +313,19 @@ pub struct Player {
     /// (`Player.cs:19319-19334,19361-19384`) rides with the player until the
     /// death pipeline (world_sim) resolves the epitaph text and clears it.
     pub dot_death: Option<DotDeath>,
+    /// The luck value + its decay timers (`Player.luck`/`coinLuck`/
+    /// `ladyBugLuckTimeLeft`/`torchLuck`/`luckPotion`/`kiteLuckLevel`/…,
+    /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
+    /// `RecalculateLuck` (`Player.cs:29137-29164`).
+    pub luck_state: LuckState,
+    /// The `Player.ZoneSnow`-family flags the torch-luck table reads
+    /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
+    /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
+    pub zones: tr_core::scene::Zones,
+    /// The held torch's place style — `inventory[selectedItem].createTile == 4`
+    /// (`:17917-17920`), refreshed per tick from `app.inventory[app.selected]`;
+    /// `None` when nothing torch-like is held.
+    pub held_torch_style: Option<u8>,
     /// `Player.fallStart` (`Player.cs:2882`): the tile row the fall started on,
     /// int-truncated like the original's `(int)(position.Y / 16f)`.
     fall_start: i32,
@@ -467,6 +497,12 @@ impl Player {
             liquid_step: 1.0,
             in_water: false,
             sitting: false,
+            no_knockback: false,
+            accessory_life_regen: 0,
+            equipped: [0; 20],
+            pinned_jumps: [false; 9],
+            pinned_balloon: false,
+            pinned_rocket_boots: 0,
             control_left: false,
             control_right: false,
             control_jump: false,
@@ -485,6 +521,9 @@ impl Player {
             breath_cd: 0,
             regen: RegenState::default(),
             dot_death: None,
+            luck_state: LuckState::default(),
+            zones: tr_core::scene::Zones::default(),
+            held_torch_style: None,
             fall_start: (sy / TILE_PX) as i32,
             extra_fall: 0,
             no_fall_dmg: false,
@@ -599,6 +638,19 @@ impl Player {
         if chair_gone {
             self.sit_up();
         }
+    }
+
+    /// The test/inspection reads for the private speed fields.
+    pub(crate) fn acc_run_speed_value(&self) -> f32 {
+        self.acc_run_speed
+    }
+
+    pub(crate) fn max_run_speed_value(&self) -> f32 {
+        self.max_run_speed
+    }
+
+    pub(crate) fn accessory_life_regen_value(&self) -> i32 {
+        self.accessory_life_regen
     }
 
     /// Used by the `TR_XY` debug hook and future teleport effects.
@@ -726,7 +778,7 @@ impl Player {
     /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
-    fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+    pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -740,7 +792,7 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
-        if knock_back {
+        if knock_back && !self.no_knockback {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
             } else {
@@ -911,6 +963,12 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
+        // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
+        // re-derived in the buff scan below (the potion/kite/stinky arms).
+        self.luck_state.stinky = false;
+        self.luck_state.equipment_based_luck_bonus = 0.0;
+        self.luck_state.luck_potion = 0;
         // `ResetEffects`' crit bases (`Player.cs:18640+`): the per-slot adds
         // (the fed tiers, the accessory states) stack on top per tick.
         self.melee_crit = 4;
@@ -975,6 +1033,34 @@ impl Player {
                     self.pick_speed_bonus += 0.15;
                 }
                 149 => self.webbed = true, // `BuffID.Webbed`
+                // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
+                // dialogue half is not ported; the luck −0.25 flag is.
+                120 => self.luck_state.stinky = true,
+                // `:10285-10301`: buff 257 (Lucky) — the potion tier by
+                // *remaining* time; `RecalculateLuck` weights it
+                // `(int)luckPotion · 0.1` (max +0.3).
+                257 => {
+                    if let Some(i) = self.buffs.find_buff_index(257) {
+                        let t = self.buffs.buff_time[i];
+                        self.luck_state.luck_potion = if t > 36_000 {
+                            3
+                        } else if t > 18_000 {
+                            2
+                        } else {
+                            1
+                        };
+                    }
+                }
+                // `:9920-9924`: buff 383 (Kite) — the tier is
+                // `buffTime / 10800` clamped 0..3, assigned only while the
+                // buff is active: the C# never zeroes the field, so it stays
+                // stale after expiry (no `kiteLuckLevel = 0` exists).
+                383 => {
+                    if let Some(i) = self.buffs.find_buff_index(383) {
+                        self.luck_state.kite_luck_level =
+                            (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                    }
+                }
                 _ => {}
             }
         }
@@ -991,6 +1077,66 @@ impl Player {
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
         self.move_speed *= self.strongest_move_speed_debuff;
+        // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
+        // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
+        // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :14602-14604):
+        // the flags reset, then the equipped kinds re-set them per tick.
+        self.jump_boost = false;
+        self.no_fall_dmg = false;
+        self.ice_skate = false;
+        self.desert_boots = false;
+        self.rocket_boots = 0;
+        self.no_knockback = false;
+        self.has_jump_options = [false; 9];
+        self.accessory_life_regen = 0;
+        for slot in &self.equipped[3..10] {
+            match *slot {
+                // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
+                53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
+                857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
+                987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
+                1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
+                3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
+                // The balloons (`:14806/:15093-15101`, :14820 - the combos
+                // carry their bottle's option + jumpBoost; the horseshoe
+                // balloons add noFallDmg + the luck flag):
+                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                    self.jump_boost = true;
+                }
+                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
+                // Flurry variant `:15013-15016`):
+                54 | 1579 => self.acc_run_speed = 6.0,
+                // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
+                128 => self.rocket_boots = 1,
+                // The Ice Skates (`:15089-15092`).
+                950 => self.ice_skate = true,
+                // The Aglet / the Anklet of the Wind (`:15114-15121`).
+                285 => self.move_speed += 0.05,
+                212 => self.move_speed += 0.1,
+                // `Player.cs:15029-15033` + the horseshoe balloons: the fall
+                // damage immunity.
+                158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
+                // `Player.cs:15025-15028` - the Cobalt Shield.
+                156 => self.no_knockback = true,
+                // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
+                // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
+                49 => self.accessory_life_regen = 2,
+                _ => {}
+            }
+        }
+        // The debug pins stand in for the granting equipment - re-applied
+        // after the clear (the vanilla: the grants re-set per tick).
+        for i in 0..9 {
+            if self.pinned_jumps[i] {
+                self.has_jump_options[i] = true;
+            }
+        }
+        if self.pinned_balloon {
+            self.jump_boost = true;
+        }
+        if self.pinned_rocket_boots > self.rocket_boots {
+            self.rocket_boots = self.pinned_rocket_boots;
+        }
         // `Player.UpdateBuffs`' scene-buff grants (`Player.cs:25525-25555`):
         // the 2-tick indicator buffs refresh from the scan; the effect cases
         // above read the previous tick's grant, exactly like the source.
@@ -1012,6 +1158,10 @@ impl Player {
         if self.auras.sunflower {
             self.buffs.add_buff(146, 2);
         }
+        // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
+        // decay timers + `RecalculateLuck`, after the buff effects derived
+        // stinky/luckPotion/kiteLuckLevel above and before movement.
+        self.update_luck(world);
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
         self.acc_run_speed *= self.strongest_move_speed_debuff;
@@ -2166,6 +2316,76 @@ impl Player {
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
     }
 
+    /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
+    /// (`Luck.RollLuck(this.luck, range)`, `Player.cs:18188`; `DamageVar`
+    /// `:44342`; `NPCLoot_DropMoney` `NPC.cs:79622`). Never clamped — the
+    /// −0.7/1.0 caps are UI-only (`NormalizedLuck`, `:4107-4122`).
+    pub fn luck(&self) -> f32 {
+        self.luck_state.luck
+    }
+
+    /// `Player.UpdateLuck` → `UpdateLuckFactors` (`Player.cs:29041-29135`),
+    /// called from the post-buff-effects position (`:25645`): the ladybug and
+    /// coin decays run for every player, the torch scan + the broken-mirror
+    /// decay for `Main.myPlayer` only (the port's single player). The torch
+    /// slot fills with the 1-row-per-tick scan in the M2-BUFF-6 phase 2; the
+    /// `luckNeedsSync` tail is net-only.
+    fn update_luck(&mut self, world: &World) {
+        let day_rate = world.day_rate();
+        self.luck_state.update_lady_bug_decay(day_rate);
+        self.luck_state.update_coin_decay(day_rate);
+        // `TryRecalculatingTorchLuck` + the diff check (`Player.cs:29126-29130`
+        // — the diff half is net-only): `Main.myPlayer`-only in the C#, which
+        // is the port's single player.
+        let center = self.center();
+        crate::luck::torch_scan_step(
+            &mut self.luck_state,
+            world,
+            center,
+            self.dead,
+            self.held_torch_style,
+            self.zones,
+        );
+        self.luck_state.update_broken_mirror_decay(day_rate);
+        self.luck_state.recalculate_luck();
+    }
+
+    /// `Player.AddCoinLuck` (`Player.cs:18090-18101`): the shimmer-coin feed
+    /// (`WorldItem.cs:1692-1716` is its only C# caller; the coin-shimmer chain
+    /// is unported — the callable is unit-tested per the plan). The
+    /// `luckNeedsSync` tail is net-only.
+    pub fn add_coin_luck(&mut self, coin_position: (f32, f32), coin_amount: i32) {
+        let (cx, cy) = self.center();
+        let dist = ((coin_position.0 - cx).powi(2) + (coin_position.1 - cy).powi(2)).sqrt();
+        if !self.dead && dist < 1000.0 {
+            self.luck_state.coin_luck += coin_amount as f32;
+            if self.luck_state.coin_luck > 1_000_000.0 {
+                self.luck_state.coin_luck = 1_000_000.0;
+            }
+        }
+    }
+
+    /// `NPC.LadyBugKilled`'s player half (`NPC.cs:81566-81598`) — see
+    /// `luck::on_lady_bug_killed`; returns the `ladyBugRainBoost` add for the
+    /// future Rain writer (the critter row, M4).
+    pub fn on_lady_bug_killed(&mut self, position: (f32, f32), gold: bool) -> i32 {
+        let (cx, cy) = self.center();
+        crate::luck::on_lady_bug_killed(&mut self.luck_state, position, (cx, cy), self.dead, gold)
+    }
+
+    /// `NPC.LadyBugLuck`'s player half (`NPC.cs:81600-81626`) — see
+    /// `luck::on_lady_bug_nearby`; the `releaseOwner == 255` wild-only gate
+    /// stays with the NPC (M4 critter row).
+    pub fn on_lady_bug_nearby(&mut self, position: (f32, f32), gold: bool) {
+        let (cx, cy) = self.center();
+        crate::luck::on_lady_bug_nearby(&mut self.luck_state, position, (cx, cy), gold);
+    }
+
+    /// `NPC.NPCLuck` (`NPC.cs:81628-81652`) — see `luck::on_town_npc_death`.
+    pub fn on_town_npc_death(&mut self, npc_type: i32) {
+        crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
+    }
+
     fn update_survival(&mut self) {
         // The Wet-buff effects and the DoT derivation are the flag sources the
         // C#'s `UpdateBuffs` chain leaves behind for `UpdateLifeRegen`
@@ -2208,6 +2428,7 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting,
+                extra_regen: self.accessory_life_regen,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -2765,7 +2986,7 @@ mod tests {
     fn ice_skates_raise_the_top_speed() {
         let ice = floor_world(161);
         let mut p = Player::spawn(&ice);
-        p.ice_skate = true;
+        p.equipped[3] = 950; // the Ice Skates (`Player.cs:15089-15092`)
         let input = PlayerInput {
             right: true,
             ..Default::default()
@@ -3069,6 +3290,7 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
+        p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
         // Jump and release midair: the arming.
@@ -3106,6 +3328,7 @@ mod tests {
         p.has_wings = true;
         p.wing_time_max = 100;
         p.wing_time = 0.0;
+        p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
         // Airborne with both: the conversion consumed the fuel.
@@ -3285,14 +3508,143 @@ mod tests {
         );
     }
 
-    /// Arms the Cloud + Sandstorm options on a settled player.
+    /// Places `kind` in the accessory slot 0 (= `armor[3]`), runs the tick's
+    /// reset + grant pass by calling `update`, then reports the flags.
+    fn player_with_accessory(kind: u16) -> Player {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = kind;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        p
+    }
+
+    #[test]
+    fn the_accessory_grants_arm_the_jumps() {
+        // `ApplyEquipFunctional`'s bottle grants (`Player.cs:14997-15001`,
+        // :14793-14811): the bottles arm their jump options; the reset clears
+        // and the pass re-arms every tick.
+        let p = player_with_accessory(53);
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        let p = player_with_accessory(857);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        let p = player_with_accessory(987);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        let p = player_with_accessory(1724);
+        assert!(p.has_jump_options[ExtraJump::Fart.index()]);
+        let p = player_with_accessory(3201);
+        assert!(p.has_jump_options[ExtraJump::Sail.index()]);
+        // No accessory: nothing armed.
+        let p = player_with_accessory(0);
+        assert!(p.has_jump_options.iter().all(|&b| !b));
+    }
+
+    #[test]
+    fn the_hermes_boots_lift_the_acceleration_gate() {
+        // `Player.cs:15005-15008`: `accRunSpeed = 6f` — the base reset (3.0)
+        // is lifted, the debuff multiplier still applies afterwards.
+        let p = player_with_accessory(54);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4, "{}", p.acc_run_speed_value());
+        // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
+        // acceleration window (the continuation to accRunSpeed).
+        assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_horseshoe_and_the_shield_grant_their_flags() {
+        // `Player.cs:15029-15033` (noFallDmg) + `:15025-15028` (noKnockback).
+        let p = player_with_accessory(158);
+        assert!(p.no_fall_dmg);
+        let p = player_with_accessory(156);
+        assert!(p.no_knockback);
+        let w = ground_world();
+
+        // The hurt gate: no knockback while the shield is on (the player
+        // settles first so the vy assert reads the hurt, not the spawn fall).
+        let mut p = player_with_accessory(156);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let from = p.x + 100.0;
+        assert!(p.hurt_inner(10, from, true));
+        assert_eq!(p.vx, 0.0, "the shield eats the knockback");
+        // Without the shield: the knockback lands.
+        let mut p = player_with_accessory(0);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let from = p.x + 100.0;
+        assert!(p.hurt_inner(10, from, true));
+        assert!(p.vx != 0.0);
+    }
+
+    #[test]
+    fn the_balloon_lifts_the_jump_statics() {
+        // `UpdateJumpHeight` (`Player.cs:19589-19593`): jumpBoost floors
+        // jumpHeight 20 / jumpSpeed 6.51 — the Cloud Balloon's grant
+        // (`Player.cs:15093-15101`).
+        let p = player_with_accessory(399);
+        assert!(p.jump_boost);
+        let w = ground_world();
+        let mut q = Player::spawn(&w);
+        q.update(&w, PlayerInput::default());
+        assert!(q.jump_height < p.jump_height || q.jump_speed < p.jump_speed);
+    }
+
+    #[test]
+    fn the_ice_skates_and_the_boots_feed_the_floor_modifiers() {
+        // `Player.cs:15089-15092` (iceSkate) — the consumer at the port's
+        // HorizontalMovement (player.rs's `if self.ice_skate`).
+        let p = player_with_accessory(950);
+        assert!(p.ice_skate);
+        let p = player_with_accessory(54);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_rocket_boots_tier_applies() {
+        // `Player.cs:15021-15024`: `rocketBoots = 1`.
+        let p = player_with_accessory(128);
+        assert_eq!(p.rocket_boots, 1);
+    }
+
+    #[test]
+    fn the_band_feeds_the_regen_base() {
+        // `Player.cs:13122` (`lifeRegen += armorPiece.lifeRegen`, the Band's
+        // `Item.lifeRegen = 2` — `Item.cs:1974`): the regen input carries it.
+        let p = player_with_accessory(49);
+        assert_eq!(p.accessory_life_regen_value(), 2);
+    }
+
+    #[test]
+    fn the_pins_survive_the_tick_clear() {
+        // The TR_JUMPS/TR_BOOTS pins stand in for the granting equipment: the
+        // pass clears the flags and re-applies the pins (the vanilla: the
+        // grants re-set per tick after ResetEffects).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.pinned_jumps[ExtraJump::Cloud.index()] = true;
+        p.pinned_rocket_boots = 3;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert_eq!(p.rocket_boots, 3);
+        assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+    }
+
+    /// Arms the Cloud + Sandstorm options on a settled player — through the
+    /// pins (the grant pass clears the direct sets every tick; the pins are
+    /// the stand-in for the granting equipment).
     fn settled_with_jumps(w: &World, opts: &[ExtraJump]) -> Player {
         let mut p = Player::spawn(w);
+        for j in opts {
+            p.pinned_jumps[j.index()] = true;
+        }
         for _ in 0..120 {
             p.update(w, PlayerInput::default());
         }
         for j in opts {
-            p.has_jump_options[j.index()] = true;
             p.can_jump_again[j.index()] = true;
         }
         p
@@ -3391,8 +3743,9 @@ mod tests {
         );
         p.update(&w, PlayerInput::default());
         assert!(p.vy != 0.0 || !p.on_ground);
-        // The accessory vanishes mid-air.
-        p.has_jump_options[ExtraJump::Cloud.index()] = false;
+        // The accessory vanishes mid-air (`UpdateEquips`' next pass sees no
+        // granting equipment — the pin is the stand-in and it clears).
+        p.pinned_jumps[ExtraJump::Cloud.index()] = false;
         p.update(&w, PlayerInput::default());
         assert!(
             !p.can_jump_again[ExtraJump::Cloud.index()],
@@ -4020,6 +4373,94 @@ mod tests {
         p.max_hp = 1000;
         p.hp = 1000;
         p
+    }
+
+    // — M2-BUFF-6 (phase 1): the luck value + the buff-driven inputs —
+
+    #[test]
+    fn buff_257_tiers_follow_the_remaining_time() {
+        // DW-1.3 — `Player.cs:10285-10301`: `>36000 → 3, >18000 → 2, else 1`,
+        // read after `UpdateBuffs`' timer head decremented the slot.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 36_002);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 3);
+
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 36_001);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 2, "36000 → not > 36000");
+
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 18_001);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 1, "18000 → not > 18000");
+    }
+
+    #[test]
+    fn buff_383_tier_is_stale_after_expiry_never_zeroed() {
+        // DW-1.3 — `Player.cs:9920-9924`: tier = buffTime/10800 clamp 0..3,
+        // assigned only while the buff is active; no `kiteLuckLevel = 0`
+        // exists in the C#, so the field keeps its last value after expiry.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(383, 32_401);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.kite_luck_level, 3, "32400/10800");
+
+        p.buffs.clear_buff(383);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.kite_luck_level, 3, "stale-until-recomputed");
+    }
+
+    #[test]
+    fn buff_120_sets_stinky_and_the_reset_clears_it() {
+        // DW-1.3 — `Player.cs:10276-10280` sets it, `ResetEffects` `:18732`
+        // clears it every frame; RecalculateLuck weights it −0.25.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(120, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.luck_state.stinky);
+        assert!((p.luck() + 0.25).abs() < 1e-6);
+
+        p.buffs.clear_buff(120);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(!p.luck_state.stinky);
+        assert_eq!(p.luck(), 0.0);
+    }
+
+    #[test]
+    fn one_tick_order_decay_then_recalculate() {
+        // DW-1.4 — `UpdateLuckFactors` (`Player.cs:29121`) drains the ladybug
+        // timer before `RecalculateLuck` reads it, in the same tick the buff
+        // scan derived the potion tier; `p.luck()` is the consumer seam.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 20_002); // 20_001 after the timer head → tier 2
+        p.luck_state.lady_bug_luck_time_left = -10_800;
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 2);
+        assert_eq!(p.luck_state.lady_bug_luck_time_left, -10_799, "dayRate 1");
+        let want = (10_799.0f32 / -10_800.0) * 0.2 + 2.0f32 * 0.1;
+        assert!((p.luck() - want).abs() < 1e-6, "{} vs {want}", p.luck());
+    }
+
+    #[test]
+    fn add_coin_luck_caps_at_a_million_within_a_thousand_px() {
+        // DW-1.1 — `Player.AddCoinLuck` (`Player.cs:18090-18101`): `!dead`,
+        // within 1000 px of the center, capped at 1 000 000 copper
+        // equivalents (the shimmer feed is the only C# writer; unported).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.add_coin_luck((p.x + 500.0, p.y), 999_000);
+        assert_eq!(p.luck_state.coin_luck, 999_000.0);
+        p.add_coin_luck((p.x + 500.0, p.y), 1_000_000);
+        assert_eq!(p.luck_state.coin_luck, 1_000_000.0, "capped");
+
+        p.luck_state.coin_luck = 100.0;
+        p.add_coin_luck((p.x + 1200.0, p.y), 5);
+        assert_eq!(p.luck_state.coin_luck, 100.0, "out of range");
+
+        p.dead = true;
+        p.add_coin_luck((p.x, p.y), 5);
+        assert_eq!(p.luck_state.coin_luck, 100.0, "dead bails");
     }
 
     #[test]
