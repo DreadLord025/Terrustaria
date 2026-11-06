@@ -551,6 +551,37 @@ mod tests {
     }
 
     #[test]
+    fn test_DW_4_1_sunflower_sway_counter() {
+        // `TileDrawing.Update`'s sunflower counter
+        // (`TileDrawing.cs:374`): `counter += 1/420 + 1/420 * num * 5`
+        // with `num = GetLerpValue(0.08, 1.2, |wind|, clamped)`.
+        let cases = [
+            (0.0_f32, 0.0_f32),
+            (0.08, 0.0),
+            (0.5, (0.5 - 0.08) / 1.12),
+            (1.2, 1.0),
+            (2.0, 1.0),
+        ];
+        for (wind_speed, num) in cases {
+            let mut counter = 0.0_f32;
+            advance_sunflower_counter(&mut counter, wind_speed);
+            let expected = 1.0 / 420.0 + 1.0 / 420.0 * num * 5.0;
+            assert!(
+                (counter - expected).abs() < 1e-7,
+                "speed {wind_speed}: {counter} != {expected}"
+            );
+        }
+
+        // 420 ticks at full sway add 420 * (6/420) = 6 — the flower's cycle is
+        // six times slower than the grass one at the same wind.
+        let mut counter = 0.0_f32;
+        for _ in 0..420 {
+            advance_sunflower_counter(&mut counter, 1.2);
+        }
+        assert!((counter - 6.0).abs() < 1e-4);
+    }
+
+    #[test]
     fn cycle_stays_within_source_bounds() {
         let mut wind = Wind::new(11);
         for speed in [-0.8_f32, -0.5, -0.2, 0.0, 0.2, 0.5, 0.8] {

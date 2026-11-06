@@ -2361,6 +2361,73 @@ pixel-bearing in the break scene, the Guide spawns off-frame): all four
 hashes and the 910 px footprint are byte-identical, so the shot evidence
 carries over as-is.
 
+M1.4-TO-4 (herbs/pots/alch/sunflower/piles, 2026-11-05) extends the umbrella in
+four layers. The registry slice grows by 27/28/78/82-84/185-187 (`tileobject.rs`,
+every def citing its `TileObjectData.cs` builder chain; `TILE_ALCH = {82,83,84}` =
+`Main.cs:7806-7808`; the planter box 380 stays out of the registry, as in C#);
+placement ports `PlaceAlch` (`WorldGen.cs:45380-45479` — the per-style soil sets,
+the liquid rules, `type=82, frameX=18*style, frameY=0`) as the seed branch of
+`place_item_tile`, with the planter box at `:60226-60230` (`frameY=18*style`).
+The KillTile cascade gains the per-type arms — `check_alch` (`:45972-46092`),
+`check_sunflower` (`:53729-53792`), `check_pot` (`:56797-57016`), `check_pile` +
+its 2x1 variant (`:46875-46971`), `check_3x2` for 186/187 (the Boulder refusal
+`:38979-38994`, the 187→186 conversion `:49379-49393`) and `check_on_table_1x1`
+for the clay pot (`:43503-43546`) — and the drop layer ports the herb harvest
+matrix (`:65674-65698`, `IsAlchemyPlantHarvestable` `:66143-66174`), the full
+`SpawnThingsFromPot` roll order (`:57089-57811`) and the harvest click
+(`AdjustPlants`/`TryReplantingHerbs`, `Player.cs:41260-41293` / `:45824-45830`).
+Deviations and seams:
+
+- The RNG seam (owner decision 2026-11-05): the C# two-stream split survives, but
+  neither stream is vanilla's — the event's `genRand` is a `FastRandom` seeded by
+  ONE `item_rng` throw per event (a broken pot, a killed herb), and every
+  `Main.rand` roll spends `item_rng` directly; the roll order is C# 1:1. This is
+  the `CloseDoor` pinned-0 precedent (above) generalised: no free-running runtime
+  stream exists, so a repeated seed reproduces the drops byte-for-byte.
+- The special-world flags have no port state: `DropCtx` hardcodes
+  `expert_mode: false` / `dont_starve: false` (`drop_ctx`; the tests flip them),
+  the tenthAnniversary/getGood/remix/vampireSeed branches skip WITHOUT consuming
+  rolls (the C# `&&` short-circuit keeps the streams aligned), the boss-downed
+  coin multipliers ×1.1 read all-false, and the pot luck is 0 (one
+  `Main.rand.Next(range)` per `Luck.RollLuck`).
+- The Coin Portal (518) is a roll without a projectile: the luck roll is spent
+  and the break returns as in C#, but `spawn_with_data` declines kind 518 (no
+  projectile family ported yet) — the portal pixels wait for the M4-PROJ
+  families.
+- The pot gore shards (`Gore.NewGore` `:56878-56953`) are deferred — the port has
+  no general gore mechanism (only the leaf `LeafGore`); the genRand style rolls
+  (25-33) have no counterpart, and the per-event `FastRandom` re-seed keeps the
+  loot rolls independent of the skip.
+- The echo tiles 653/647-650 and BeachPiles 324 are deferred (owner decision
+  2026-11-05); `CheckPot`'s only item drop IS the echo 653 (`:56955-57009`), so
+  the port's `check_pot` returns no `drop` and the pot loot rides the event only.
+- The sunflower `RandomStyleRange` roll (`Main.rand.Next(3)`, `TileObject.cs:787`)
+  is not wired to placement: an item-placed sunflower always resolves style 0
+  (the documented follow-up in the module doc).
+- The replant anchor 579 (`RockGolemHead`) is carried text-for-text from
+  `Player.cs:45826` — nothing in the ported game plants on 579; the decompile's
+  condition is kept verbatim.
+- The coin-shrink roulettes run on `Main.rand` in C# (not `genRand`, `:57751+`) —
+  the plan text was imprecise; the port matches the source.
+- The core kill contract grew additively: `ObjectDrop.item`, `TileKill.events`/
+  `herb_events`/`pile_events` and the `HerbEvent`/`PileLootEvent` types (the new
+  fields ride the existing `TileKill`, no signature broke) — outside phase 3's
+  original file scope, a discovery decision.
+- The `destroyObject` guard is per-check like the C#: only the multi-tile checks
+  carry the entry guard (`Check1x2`/`2x1`/`3x2`/`Sunflower`/`Pot`/`Chest`/the door
+  pair); `CheckAlch`, `CheckOnTable1x1` and `CheckPile`'s 1x1 body run unguarded,
+  and their nested kills pass the flag through unchanged.
+
+Verification (M1.4-TO-4, batch review 2026-11-05, HEAD `f9dd9f8`): the workspace
+suite is green (`test result: ok` ×7 — 789+16+499+19 passed, 0 failed, 1 ignored,
+`--skip migrates_version_2_kinds_to_item_ids`); the deterministic `TR_SHOT` scene
+(`TR_TILES` staging 27/28/78/82-84/185-187/380 on a platform) gives SHA256-equal
+double-run pairs at zooms 1.0/1.5/2.0 (`f2072783…`, `9e8f5e6d…`, `cd0502a5…`;
+commit `9ec6f2e`), and the sway pair (`TR_SHOT_FRAME` 60 vs 480 at
+`TR_WIND_FORCE=0.8`) differs in the flower zone; unit tests carry the geometry
+(`test_DW_1_2_herb_pot_pile_geometry_matches_csharp`), the cascade scenarios and
+the pot-loot roll order (fixed-seed `item_rng`).
+
 ## Slime variants and the demon-eye family (M4-NPC-1-slimes-eyes)
 
 - The four hand-tuned NPC stats moved to the `SetDefaults` values: blue slime
@@ -4008,59 +4075,6 @@ Deviations: the hammer-power gate (≥ 80) and the WoF prerequisite are the
 follow-ups (the port gates on `World.hard_mode`); the drunk-world tier
 swapping is out; the ore walls (`wallType`) are out.
 
-## The furniture logic (M1.4-TO-3)
-
-The registry grew from the wooden set (10/11/14/15/18/21) to the common
-furniture family — `tileobject.rs`: the candle (33, StyleOnTable1x1 —
-`AnchorBottom = Table`), the candelabra (100, Style2x2+Table), the
-chandelier (34, 3x3 hanging — `AnchorTop (SolidTile|SolidSide, 1, 1)` +
-`AnchorBottom Empty`, the ceiling-anchor path), the hanging lantern (42,
-Style1x2Top + the platform alternate), the lamp (93, Style1xX), the
-bookcase (101, Style3x4), the piano (87)/dresser (88) (Style3x2 — the
-dresser with the chest's invalid-anchor tiles + `LavaDeath=false`), the
-sink (172, Style2x2+18px), the grandfather clock (104, Style2xX h5), the
-bed (79)/bathtub (90) (Style4x2 + the `PlaceRight` alternates with
-`Style = 1` + the bed's `CoordinatePaddingFix (0,-2)`). The table's
-sub-tile styles 13 (Obsidian, lava-safe) / 25 (Dynasty, 3x1) resolve
-through `get_tile_data`'s sub-tile walk (the row's "3x3/6x3 + styles 13/25"
-gap — the vanilla has no 3x3/6x3 furniture kinds; the row's ids were stale:
-torches 4 (not 8), tables 14 (not 19), beds 79, pianos 87, clocks 104).
-
-The kill checks: `CheckOnTable1x1` (:45237), `Check1xX` (:37788), `Check2xX`
-(:37993), `Check3x4` (:50076), `Check1x2Top` (:46706), `Check4x2`
-(:47408), `Check2x2` (:48397), `Check3x3` (:53059) ported per-shape;
-`Check3x2` (:49187) parametrized over 14/87/88. The per-cell scans set
-`flag` and CONTINUE (no early break — an early break loses the sweep's cell
-list and leaves the remainder alive). The `Check*` closing `TileFrame`
-rings exist per-check in vanilla — only `Check3x2` (:49841-49849),
-`Check3x4` (:50161-50168) and `Check4x2` (:47499-47506) close with one; the
-port walks the ring for exactly those (with a depth cap), so a neighbouring
-piece whose anchor died inside a sweep reaches its own `Check*`; the other
-checks' remainders float until a later break — the vanilla deferred-pop
-semantics (DW-3-1's guard test pins it).
-
-The interactions (`edit::interact_at`'s `Interaction` arms): the candle
-lit-toggle (33/49 — `frameX ± 18`, `Player.cs:32378-32390`; the flame
-overlay and the light emission follow the frame), the chair sit (15 —
-`PlayerSittingHelper.SitDown`'s seat decode `PlayerSittingHelper.cs:163-182`
-+ `:317-319`; the player's bottom snaps to the seat, the facing flips with
-`frameX`, `UpdateSitting` stands up on any control input or the chair going
-away, the regen reads the `sitting_or_sleeping` flag `:19232-19236`), the
-bed (79 — the bottom half sets/removes the spawn through `CheckSpawn`
-(:54533-54590: the bed above, the 3x3 free, `StartRoomCheck` via the
-housing module) with the "Spawn point set!/removed!" texts; the top half is
-consumed-but-inert — the sleep state is not ported), the grandfather clock
-(104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
-
-Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
-render follow-up — the sitting player draws standing, shifted -4 px
-(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
-multiplayer seat-stack manager is out (one player); the chest/dresser
-inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
-metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
-the style-0 wooden slice places. The DrawYOffset fields are preview-only
-(`TileObject.cs:864` — the only consumer), so the deferral is invisible.
-
 ## Micro-biomes (M1.4-WGEN-8)
 
 The micro-biome decorators over the finished world:
@@ -4167,6 +4181,71 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
+### M1.4-TO-4 merge sync (2026-11-06)
+
+- The M4-TOWN furniture merge registered the piano 87, which re-routed the
+  DW-2.6 actuated-table fixture: a lone tile-87 cell is now a registry kind
+  (`check_3x2`), so the fixture stages an intact style-0 registry table (14)
+  with its own support row; the pinned semantics (the `CheckOnTable1x1`
+  anchor disjunct reads `active()`, not `nactive()`) are unchanged.
+- The M1.4-WGEN-10 `tile_drop(187) -> 989` arm and this task's empty-group
+  `None` were reconciled onto `Check3x2`'s `case 187` (`WorldGen.cs:49828-49839`):
+  only the sword-in-stone styles (frameX 918..=970) drop — 1/30 Terragrim 4144
+  else the Enchanted Sword 989 on the `Main.rand` stream; the rest stay in the
+  empty `GetItemDrops` group.
+
+## The furniture logic (M1.4-TO-3)
+
+The registry grew from the wooden set (10/11/14/15/18/21) to the common
+furniture family — `tileobject.rs`: the candle (33, StyleOnTable1x1 —
+`AnchorBottom = Table`), the candelabra (100, Style2x2+Table), the
+chandelier (34, 3x3 hanging — `AnchorTop (SolidTile|SolidSide, 1, 1)` +
+`AnchorBottom Empty`, the ceiling-anchor path), the hanging lantern (42,
+Style1x2Top + the platform alternate), the lamp (93, Style1xX), the
+bookcase (101, Style3x4), the piano (87)/dresser (88) (Style3x2 — the
+dresser with the chest's invalid-anchor tiles + `LavaDeath=false`), the
+sink (172, Style2x2+18px), the grandfather clock (104, Style2xX h5), the
+bed (79)/bathtub (90) (Style4x2 + the `PlaceRight` alternates with
+`Style = 1` + the bed's `CoordinatePaddingFix (0,-2)`). The table's
+sub-tile styles 13 (Obsidian, lava-safe) / 25 (Dynasty, 3x1) resolve
+through `get_tile_data`'s sub-tile walk (the row's "3x3/6x3 + styles 13/25"
+gap — the vanilla has no 3x3/6x3 furniture kinds; the row's ids were stale:
+torches 4 (not 8), tables 14 (not 19), beds 79, pianos 87, clocks 104).
+
+The kill checks: `CheckOnTable1x1` (:45237), `Check1xX` (:37788), `Check2xX`
+(:37993), `Check3x4` (:50076), `Check1x2Top` (:46706), `Check4x2`
+(:47408), `Check2x2` (:48397), `Check3x3` (:53059) ported per-shape;
+`Check3x2` (:49187) parametrized over 14/87/88. The per-cell scans set
+`flag` and CONTINUE (no early break — an early break loses the sweep's cell
+list and leaves the remainder alive). The `Check*` closing `TileFrame`
+rings exist per-check in vanilla — only `Check3x2` (:49841-49849),
+`Check3x4` (:50161-50168) and `Check4x2` (:47499-47506) close with one; the
+port walks the ring for exactly those (with a depth cap), so a neighbouring
+piece whose anchor died inside a sweep reaches its own `Check*`; the other
+checks' remainders float until a later break — the vanilla deferred-pop
+semantics (DW-3-1's guard test pins it).
+
+The interactions (`edit::interact_at`'s `Interaction` arms): the candle
+lit-toggle (33/49 — `frameX ± 18`, `Player.cs:32378-32390`; the flame
+overlay and the light emission follow the frame), the chair sit (15 —
+`PlayerSittingHelper.SitDown`'s seat decode `PlayerSittingHelper.cs:163-182`
++ `:317-319`; the player's bottom snaps to the seat, the facing flips with
+`frameX`, `UpdateSitting` stands up on any control input or the chair going
+away, the regen reads the `sitting_or_sleeping` flag `:19232-19236`), the
+bed (79 — the bottom half sets/removes the spawn through `CheckSpawn`
+(:54533-54590: the bed above, the 3x3 free, `StartRoomCheck` via the
+housing module) with the "Spawn point set!/removed!" texts; the top half is
+consumed-but-inert — the sleep state is not ported), the grandfather clock
+(104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
+
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
+render follow-up — the sitting player draws standing, shifted -4 px
+(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+multiplayer seat-stack manager is out (one player); the chest/dresser
+inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
+metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
+the style-0 wooden slice places. The DrawYOffset fields are preview-only
+(`TileObject.cs:864` — the only consumer), so the deferral is invisible.
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
