@@ -417,6 +417,9 @@ pub(crate) struct App {
     /// The aim angle (the mouse direction, radians) the shooting/throwing
     /// styles read — `Player.itemRotation`'s source for useStyle 5.
     pub(crate) swing_aim: f32,
+    /// The shot-fired latch of the current swing (`ItemTimeIsZero` fires
+    /// once per use — the refire waits for the next `TryStartUse`).
+    pub(crate) shot_fired: bool,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -1696,6 +1699,7 @@ impl App {
             swing: 0.0,
             swing_style: 0,
             swing_aim: 0.0,
+            shot_fired: false,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,
