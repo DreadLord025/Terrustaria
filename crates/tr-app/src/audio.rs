@@ -40,6 +40,17 @@ const SFX_CUES: &[(&str, u32)] = &[
     // `SpawnEffects_BeforeGrantingItem` ← `OnCraft`); `SoundID.Grab = 7`
     // (`SoundID.cs`), the `Grab.xnb` cue.
     ("Grab", 7),
+    // The chest-open click's menu cues (`Player.cs:33242/:33237/:33251` —
+    // open 10 / close 11 / re-open 12; the per-tick range close plays 11 at
+    // `:31082`/:31088): `SoundID.MenuOpen/MenuClose/MenuTick = 10/11/12`
+    // (`SoundID.cs:42/44/46`).
+    ("Menu_Open", 10),
+    ("Menu_Close", 11),
+    ("Menu_Tick", 12),
+    // `SoundEngine.PlaySound(22, X*16, Y*16)` — `Chest.Unlock`/`Chest.Lock`
+    // (`Chest.cs:408`/:482); `SoundID.Unlock = 22` (`SoundID.cs:66`), the
+    // positional `Unlock.xnb` cue.
+    ("Unlock", 22),
 ];
 
 fn sound_type(cue: &str) -> u32 {
@@ -1264,6 +1275,22 @@ mod tests {
         assert_eq!(sound_type("Grab"), 7);
         // Every cue's asset name is its table name (`Sounds/{name}.xnb`).
         assert!(SFX_CUES.iter().any(|(n, _)| *n == "Grab"));
+    }
+
+    #[test]
+    fn the_chest_cue_table_carries_the_legacy_menu_and_unlock_ids() {
+        // The chest open path's menu cues — open 10 (`Player.cs:33242`),
+        // close 11 (`:33237`, the tick close `:31082`/:31088), re-open 12
+        // (`:33251`) — and `Chest.Unlock`/`Chest.Lock`'s positional unlock
+        // (`Chest.cs:408`/:482): `SoundID.MenuOpen/MenuClose/MenuTick = 10/
+        // 11/12` and `SoundID.Unlock = 22` (`SoundID.cs:42/:44/:46/:66`).
+        assert_eq!(sound_type("Menu_Open"), 10);
+        assert_eq!(sound_type("Menu_Close"), 11);
+        assert_eq!(sound_type("Menu_Tick"), 12);
+        assert_eq!(sound_type("Unlock"), 22);
+        for name in ["Menu_Open", "Menu_Close", "Menu_Tick", "Unlock"] {
+            assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
     }
 }
 

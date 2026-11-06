@@ -194,6 +194,13 @@ pub(crate) struct App {
     /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
     /// `M6-SAVE-2`) — in-memory for now.
     pub(crate) world_chests: Vec<craft::WorldChest>,
+    /// `Player.chest` (`Player.cs:2876`): the open world chest's store index,
+    /// `-1` = none. The bank values −2..−5 land with M3-STORE-1.
+    pub(crate) chest: i32,
+    /// `Player.chestX`/`chestY` (`Player.cs:2878`/:2880): the open chest's
+    /// tile origin (the 2×2's top-left).
+    pub(crate) chest_x: i32,
+    pub(crate) chest_y: i32,
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
@@ -1526,6 +1533,9 @@ impl App {
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
             world_chests: Vec::new(),
+            chest: -1,
+            chest_x: 0,
+            chest_y: 0,
             craft_rng: 1,
             menu: menu_state,
             front: None,

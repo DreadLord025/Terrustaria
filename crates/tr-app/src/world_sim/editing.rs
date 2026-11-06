@@ -583,6 +583,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     {
         return;
     }
+    if app.place_down && !app.place_prev_down && !app.inventory_open && crate::chest::try_open_chest_at_cursor(app, world_pos) { return; }
     if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
     }
