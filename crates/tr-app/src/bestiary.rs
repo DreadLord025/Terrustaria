@@ -429,6 +429,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Skeletron Prime",
     },
     BestiaryEntryDef {
+        credit_id: "Retinazer",
+        net_id: 125,
+        kind: NpcKind::Retinazer,
+        variant: None,
+        quick_unlock: false,
+        name: "Retinazer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Spazmatism",
+        net_id: 126,
+        kind: NpcKind::Spazmatism,
+        variant: None,
+        quick_unlock: false,
+        name: "Spazmatism",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

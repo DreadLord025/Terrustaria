@@ -347,6 +347,8 @@ fn portrait_data(
         NpcKind::WallOfFlesh => 45,
         NpcKind::TheDestroyer => 46,
         NpcKind::SkeletronPrime => 47,
+        NpcKind::Retinazer => 48,
+        NpcKind::Spazmatism => 49,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -433,6 +435,8 @@ fn portrait_data(
         (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
         (NpcKind::TheDestroyer, _) => (sheet_i, 48.0, 48.0, 48.0, white),
         (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

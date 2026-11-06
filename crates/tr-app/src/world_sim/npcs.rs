@@ -509,6 +509,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
             NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
             NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
+            // The Twins: the flag when BOTH eyes are dead (the vanilla
+            // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
+            NpcKind::Retinazer => {
+                if !app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
+                {
+                    app.world.downed_mech_boss2 = true;
+                }
+            }
+            NpcKind::Spazmatism => {
+                if !app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
+                {
+                    app.world.downed_mech_boss2 = true;
+                }
+            }
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,

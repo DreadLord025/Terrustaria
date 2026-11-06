@@ -98,6 +98,7 @@ pub struct World {
     pub downed_queen_bee: bool,
     pub downed_mech_boss1: bool,
     pub downed_mech_boss3: bool,
+    pub downed_mech_boss2: bool,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -141,6 +142,7 @@ impl World {
             downed_queen_bee: false,
         downed_mech_boss1: false,
         downed_mech_boss3: false,
+        downed_mech_boss2: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,

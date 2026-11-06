@@ -269,6 +269,36 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyT => {
+                                // The Twins debug spawn (the Mechanical
+                                // Eyes item = the follow-up): the pair of
+                                // eyes at the offset points.
+                                let twins_alive = self.npcs.iter().any(|n| {
+                                    matches!(n.kind, NpcKind::Retinazer | NpcKind::Spazmatism)
+                                        && n.hp > 0
+                                });
+                                if !twins_alive {
+                                    if let Some(p) = &self.player {
+                                        for (kind, dx) in [
+                                            (NpcKind::Retinazer, -14),
+                                            (NpcKind::Spazmatism, 14),
+                                        ] {
+                                            let xt = ((p.x / TILE_PX) as i32 + dx)
+                                                .clamp(2, self.world.width - 3);
+                                            let mut boss = Npc::new(
+                                                kind,
+                                                xt as f32 * TILE_PX,
+                                                ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                                1,
+                                                0.0,
+                                            );
+                                            boss.hp = boss.max_hp;
+                                            self.npcs.push(boss);
+                                        }
+                                        log::info!("The Twins spawned");
+                                    }
+                                }
+                            }
                             KeyCode::KeyP => {
                                 // The Prime debug spawn (the Mechanical
                                 // Skull item = the follow-up).
