@@ -1,5 +1,7 @@
 //! Terraria-Rust: Vulkan renderer prototype for a native reimplementation.
 
+
+mod ammo;
 mod app;
 mod assets;
 mod achievements;

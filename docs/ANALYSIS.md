@@ -4478,3 +4478,48 @@ PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
 positions ride the generic centre anchor (the C# positions them via the
 composite arms' stretch-dependent offsets — the arms carry the pose; the
 item offset differences are sub-10px polish for the render pass).
+
+## The ammo system (M3-ITEM-3)
+
+`Player.PickAmmo` (`Player.cs:53458-53676`): the pick order is
+`AmmoSlotOrder_Default` (`:57141-57144`) — the coin slots 50-53, the ammo
+slots 54-57, the main grid 0-53; the first slot whose item's `ammo` field
+matches the weapon's `useAmmo` and whose stack is positive wins (the
+vanilla's `ammoCyclingMode` defaults to None — no cycling). The drain
+lives INSIDE `PickAmmo` (`:53667-53672`: `if (!flag &&
+item.consumable) { item.stack--; TurnToAir at 0 }`) — `flag` starts as
+the `dontConsume` argument (`ItemID.Sets.gunProj`, only 4 endgame items —
+`ItemID.cs:1327`) and the not-consume rolls set it.
+
+The port: `crates/tr-app/src/ammo.rs` — `pick` returns an `AmmoSource`
+enum (Coin/Ammo/Grid) over `equip.coins` → `equip.ammo` →
+`App.inventory`; `drain` decrements and clears; `not_consume` ports the
+rolls for the shooters the registry carries (the Minishark 1/3, the
+Megashark 1/2, the Gatligator 1/2, the Candy Corn Rifle 1/3, the Chain
+Gun 2/3 and the SDMG 2/3 — the code's `Next(3) != 0` is verbatim even
+where the wiki disagrees).
+
+The shooter wire (world_sim/editing.rs): the shooters (`useAmmo > 0`)
+skip the melee-hit and throw arms; on the press the use starts (the
+swing + `item_time` + `shot_fired = false`); the shot fires at
+`ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
+`itemAnimation > 0 && ItemTimeIsZero` gate) — `PickAmmo` → the
+not-consume roll → the drain → the projectile = the ammo's `Item.shoot`,
+the damage = the weapon's + the ammo's through the class multiplier
+(`:53541-53546`), the speed = the weapon's + the ammo's `shootSpeed`
+(`:53544`). No ammo → a dry swing (the use plays, nothing spawns).
+
+The reach gate's player borrow was restructured: the old single `&app.player`
+borrow spanned the whole `update_editing` body and blocked the shooter's
+mutable `App` access — the reach check became `player_in_reach` via
+`is_some_and` (the borrow ends at the statement) and the food/potion/melee
+arms re-borrow through `app.player`.
+
+Deviations: the specific-pair table (`PickAmmo_TryFindingSpecificMatches`,
+`Player.cs:53448`) waits for its combo items; the ammo-cycling modes are
+M3-STORE-2's; the accessory ammo saves (the magic quiver, the ammo box,
+the ammo potion, the Chlorophyte 80%) wait for their accessories/buffs;
+the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
+first-8-ticks window) have no port volley state — every shot is the
+first, so those items consume every shot (documented); the gunProj
+`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).

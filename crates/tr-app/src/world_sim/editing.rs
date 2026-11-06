@@ -36,6 +36,10 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
 }
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
+    #[cfg(test)]
+    if std::env::var("AMMO_TRACE").is_ok() {
+        eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
+    }
     app.swing = (app.swing - dt).max(0.0);
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
@@ -127,22 +131,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.edit_target = None;
         return;
     }
-    let Some(player) = &app.player else {
-        app.edit_target = None;
-        return;
-    };
-    let (pcx, pcy) = player.center();
-    let dx = tx as f32 * TILE_PX + 8.0 - pcx;
-    let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-    let reach = 6.0 * TILE_PX;
-    if dx * dx + dy * dy > reach * reach {
+    // The reach gate: the borrow ends at the statement (the arms below
+    // re-borrow `app.player` individually, and the shooters' swing start
+    // mutates `app` after the gate).
+    let player_in_reach = app
+        .player
+        .as_ref()
+        .is_some_and(|p| {
+            let (pcx, pcy) = p.center();
+            let dx = tx as f32 * TILE_PX + 8.0 - pcx;
+            let dy = ty as f32 * TILE_PX + 8.0 - pcy;
+            let reach = 6.0 * TILE_PX;
+            dx * dx + dy * dy <= reach * reach
+        });
+    if !player_in_reach {
         app.edit_target = None;
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
     }
     app.edit_target = Some((tx, ty));
+    #[cfg(test)]
+    if std::env::var("AMMO_TRACE").is_ok() {
+        eprintln!("[trace] past the reach gate");
+    }
     let held = app.inventory[app.selected];
+    #[cfg(test)]
+    eprintln!("[flow-dbg] reached: kind={} mine_down={}", held.kind, app.mine_down);
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
     // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
@@ -156,7 +171,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let Some(def) = def else { unreachable!() };
             // The sim-context player borrow is immutable; the fed flag was
             // derived by this tick's scan, so the gate reads it directly.
-            let can_eat = !player.well_fed;
+            let can_eat = !app.player.as_ref().is_some_and(|p| p.well_fed);
             if can_eat {
                 let time = if def.buff_time > 0 {
                     def.buff_time
@@ -190,41 +205,66 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             d.potion && d.heal_life > 0
         }) {
             let Some(def) = def else { unreachable!() };
-            let sick = player
-                .buffs
-                .find_buff_index(21)
+            let sick = app
+                .player
+                .as_ref()
+                .and_then(|p| p.buffs.find_buff_index(21))
                 .is_some();
-            if !sick {
-                let heal = def.heal_life;
-                if let Some(p) = app.player.as_mut() {
-                    p.hp = (p.hp + heal).min(p.max_hp);
-                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                    // rides `Item.potionDelay` = 3600 (60 s).
-                    p.buffs.add_buff(21, 3600);
-                }
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                if app.inventory[app.selected].count == 0 {
-                    app.inventory[app.selected].kind = 0;
-                }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
-                app.attack_cd = app.swing_max;
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
+            let heal = def.heal_life;
+            if let Some(p) = app.player.as_mut() {
+                p.hp = (p.hp + heal).min(p.max_hp);
+                // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                // rides `Item.potionDelay` = 3600 (60 s).
+                p.buffs.add_buff(21, 3600);
             }
+            app.inventory[app.selected].count =
+                app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+            return;
         }
     }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
+    let held_use_ammo =
+        registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
-        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+        // The ammo shooters take the shooter path below — the throw's
+        // `Item.projectile` is the ammo's projectile for them, and the shot
+        // fires at `ItemTimeIsZero` mid-swing, not on the press.
+        #[cfg(test)]
+        eprintln!(
+            "[shooter-dbg] mine_down={} held_weapon={} cd={} reuse={} ready={throw_ready}",
+            app.mine_down, held_weapon, app.attack_cd, app.reuse_delay
+        );
+        if held_use_ammo > 0 && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+            // The shooter's use start — regardless of the ammo
+            // (`ItemCheck_TryStartUse` sets the timers before
+            // `ItemCheck_Shoot`'s `canShoot` gate). The shot itself fires at
+            // `ItemTimeIsZero` (the fire block below).
+            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.item_time = registry::get(held.kind)
+                .map(|d| d.use_time as f32 / 60.0)
+                .filter(|t| *t > 0.0)
+                .unwrap_or(app.swing_max);
+            app.attack_cd = app.swing_max;
+            app.shot_fired = false;
+            app.world_key = None;
+        }
+        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
             // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
             // `item.mana * manaCost` (the multiplier is the 1f base — the
             // accessories fold out); a failed check blocks the use. The pay
@@ -299,15 +339,35 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
             }
         }
-        return;
+
+        // The ammo shooters fall through to the fire block below — the
+        // vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
+        // mining/placing arms return.
+        if held_use_ammo == 0 {
+            return;
+        }
     }
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    if app.mine_down && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && !app.inventory_open {
+    // The ammo shooters skip it — they fire their `useAmmo` projectile
+    // instead (`Player.ItemCheck_Shoot`'s gate, `Player.cs:47069-47075`).
+    let held_use_ammo =
+        registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    if app.mine_down
+        && held_use_ammo == 0
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+        && !app.inventory_open
+    {
         let ax = world_pos.x;
         let ay = world_pos.y;
+        let (pcx, pcy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
@@ -325,17 +385,25 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 };
                 let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
                 let raw = if held_weapon {
-                    registry::damage(held.kind) as f32 * player.weapon_damage_multiplier(class)
+                    registry::damage(held.kind) as f32
+                        * app
+                            .player
+                            .as_ref()
+                            .map(|p| p.weapon_damage_multiplier(class))
+                            .unwrap_or(1.0)
                 } else {
                     15.0
                 };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
-                let luck = player.luck();
+                let (luck, class_crit) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.luck(), p.class_crit(class)))
+                    .unwrap_or((0.0, 0));
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                let crit =
-                    tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
                 let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
@@ -365,9 +433,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             d.potion && d.heal_life > 0
         }) {
             let Some(def) = def else { unreachable!() };
-            let sick = player
-                .buffs
-                .find_buff_index(21)
+            let sick = app
+                .player
+                .as_ref()
+                .and_then(|p| p.buffs.find_buff_index(21))
                 .is_some();
             if !sick {
                 let heal = def.heal_life;
@@ -572,6 +641,96 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
+    }
+    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+        return;
+    }
+    // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
+    // `ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
+    // `itemAnimation > 0 && ItemTimeIsZero` gate). `PickAmmo`
+    // (`Player.cs:53458-53676`) picks the ammo, fuses the damage/speed and
+    // drains it through the not-consume rolls; `canShoot = false` (no
+    // matching ammo) fires nothing but the swing still played.
+    // The swing decay and `item_time`'s decrement share this tick — the shot
+    // fires on the tick `item_time` hits zero (`ItemTimeIsZero`,
+    // `Player.cs:43544`), gated by `swing_max > 0` (a swing was started) and
+    // the latch.
+    if held_weapon
+        && held_use_ammo > 0
+        && app.item_time <= 0.0
+        && app.swing_max > 0.0
+        && !app.shot_fired
+    {
+        app.shot_fired = true;
+        let Some(src) = crate::ammo::pick(&app.inventory, &app.equip, held_use_ammo) else {
+            // `canShoot = false` (`Player.cs:53462-53466`): the use plays
+            // out dry — no shot, no drain.
+            return;
+        };
+        let ammo_kind = crate::ammo::slot(src, &app.inventory, &app.equip).kind;
+        let Some(ammo_def) = registry::get(ammo_kind) else {
+            return;
+        };
+        // `Player.cs:53667-53672`: the drain behind the not-consume rolls.
+        if !crate::ammo::not_consume(held.kind, &mut app.item_rng) {
+            let mut equip = std::mem::take(&mut app.equip);
+            let mut inv = app.inventory;
+            let drained = crate::ammo::drain(src, &mut inv, &mut equip);
+            app.inventory = inv;
+            app.equip = equip;
+            if !drained {
+                return;
+            }
+        }
+        // `Player.cs:53473-53480`: the projectile is the ammo's own
+        // `Item.shoot` (`item.shoot > 0 → projToShoot = item.shoot`); the
+        // specific-pair table (`PickAmmo_TryFindingSpecificMatches`) waits
+        // for its combos.
+        let Some(proj) = ammo_def.projectile else {
+            return;
+        };
+        // `Player.cs:53541-53546` + `:13121-13122`: the damage = the weapon
+        // damage plus the ammo's `Item.damage` through the weapon's class
+        // multiplier; the speed = the weapon's `shootSpeed` plus the ammo's.
+        let Some(weapon_def) = registry::get(held.kind) else {
+            return;
+        };
+        let class = weapon_def.class;
+        if let Some(p) = app.player.as_mut() {
+            let weapon_damage = weapon_def.damage as f32
+                * p.weapon_damage_multiplier(class);
+            let mut damage = weapon_damage;
+            if ammo_def.damage > 0 {
+                damage += ammo_def.damage as f32
+                    * p.weapon_damage_multiplier(class);
+            }
+            let speed = weapon_def.shoot_speed + ammo_def.shoot_speed;
+            let (pcx, pcy) = p.center();
+            let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+            if dir == Vec2::ZERO {
+                return;
+            }
+            let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+            let crit = {
+                let item_crit = weapon_def.crit;
+                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + item_crit)
+            };
+            let slot = app.projectiles.spawn_with_data(
+                proj,
+                spawn.x,
+                spawn.y,
+                dir.x * speed,
+                dir.y * speed,
+                damage as i32,
+                weapon_def.knock_back,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+            app.audio
+                .play_at("Item_1", pcx, pcy, 1.0);
+        }
     }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
         let used = if held_wall {
@@ -2522,6 +2681,120 @@ mod tests {
     /// main (pick 40, `tr_core::tool`); the axe test swaps in the Iron Axe;
     /// the pick carries no projectile so the weapon branch falls through, and
     /// `flow_app`'s NPC list is empty so the melee branch does too.
+    /// The shooter rig: the Wooden Bow held, the arrows in the ammo slots
+    /// (and optionally the grid), the cursor to the right of the player.
+    fn held_use_ammo_dbg(app: &App) -> i32 {
+        crate::registry::get(app.inventory[app.selected].kind)
+            .map_or(0, |d| d.use_ammo)
+    }
+
+    fn shooter_app() -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        // The Cobalt Repeater (auto_reuse, useAmmo 40, shoot 15): the press
+        // fires without the release edge (`Player.cs`'s autoReuse gate).
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 435,
+            name: "Cobalt Repeater",
+            count: 1,
+        };
+        app.mine_down = true;
+        app
+    }
+
+    #[test]
+    fn the_bow_pulls_ammo_from_the_ammo_slots_first() {
+        // `AmmoSlotOrder_Default` (`Player.cs:57141`): the ammo slots 54-57
+        // precede the grid — the bow fires the ammo-slot stack, not the
+        // grid's.
+        let mut app = shooter_app();
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 7,
+        };
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 99,
+        };
+        let mut inv = app.inventory;
+        let mut equip = std::mem::take(&mut app.equip);
+        let pick = crate::ammo::pick(&inv, &equip, 40).unwrap();
+        assert_eq!(pick, crate::ammo::AmmoSource::Ammo(0));
+        crate::ammo::drain(pick, &mut inv, &mut equip);
+        app.inventory = inv;
+        app.equip = equip;
+        assert_eq!(app.equip.ammo[0].count, 6, "the ammo slot drained");
+        assert_eq!(app.inventory[20].count, 99, "the grid untouched");
+    }
+
+    #[test]
+    fn the_bow_without_ammo_plays_a_dry_swing() {
+        // `canShoot = false` (`Player.cs:53462-53466`): no ammo — the use
+        // plays out (the swing starts) but nothing spawns and nothing drains.
+        let mut app = shooter_app();
+        let before = app.inventory[app.selected].count;
+        // The swing start runs through the mine_down pass; the cursor sits
+        // 80 px right of the screen centre (within the 6-tile reach).
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        // The swing started (the timers set).
+        assert!(app.swing > 0.0, "the swing plays");
+        assert_eq!(app.swing_style, 5, "the bow's useStyle is Shoot");
+        // The fire tick: no ammo — no shot, no drain.
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert!(app.projectiles.slots().iter().all(|p| !p.active));
+        assert_eq!(app.inventory[app.selected].count, before);
+    }
+
+    #[test]
+    fn the_bow_with_arrows_fires_and_drains() {
+        // `ItemCheck_Shoot` (`Player.cs:47056+`): the projectile = the ammo's
+        // `Item.shoot` (the Wooden Arrow's 1), the damage = the weapon's
+        // + the ammo's through the class multiplier, the speed = the
+        // weapon's + the ammo's `shootSpeed`.
+        let mut app = shooter_app();
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 7,
+        };
+        let (sw, sh) = app.screen_size();
+        // The cursor 80 px right of the screen centre: within the reach, the
+        // aim direction +x.
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        let screen = Vec2::new(sw, sh);
+        // The swing start + the fire tick.
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(fired.len(), 1, "one arrow");
+        assert_eq!(fired[0].kind, 1, "the ammo's Item.shoot — the WoodenArrowFriendly");
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        assert_eq!(app.equip.ammo[0].count, 6, "the arrow drained");
+    }
+
     fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;

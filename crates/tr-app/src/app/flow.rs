@@ -1441,6 +1441,7 @@ pub(crate) mod front_flow_tests {
             swing: 0.0,
             swing_style: 0,
             swing_aim: 0.0,
+            shot_fired: false,
             swing_max: 0.0,
             coins: 0,
             projectiles: crate::projectile::ProjectilePool::new(),
