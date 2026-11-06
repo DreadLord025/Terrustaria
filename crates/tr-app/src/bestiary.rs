@@ -421,6 +421,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "The Destroyer",
     },
     BestiaryEntryDef {
+        credit_id: "SkeletronPrime",
+        net_id: 127,
+        kind: NpcKind::SkeletronPrime,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeletron Prime",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

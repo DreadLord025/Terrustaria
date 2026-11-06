@@ -508,6 +508,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
             NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
+            NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,

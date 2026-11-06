@@ -167,6 +167,10 @@ pub enum NpcKind {
     /// 38x38 x1.25, dmg 70, def 0, 8000 HP — the shared pool; the all-
     /// same-type segments ride the chain engine).
     TheDestroyer,
+    /// `NPCID.SkeletronPrime` (127) — the mechanical skull
+    /// (`NPC.cs:10556-10574`: 80x102, dmg 47, def 24, 28000 HP; the death
+    /// sets `downed_mech_boss3`).
+    SkeletronPrime,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -381,6 +385,7 @@ impl NpcKind {
             NpcKind::ServantOfCthulhu => 45,
             NpcKind::WallOfFlesh => 46,
             NpcKind::TheDestroyer => 47,
+            NpcKind::SkeletronPrime => 48,
         }
     }
 
@@ -434,6 +439,7 @@ impl NpcKind {
             45 => NpcKind::ServantOfCthulhu,
             46 => NpcKind::WallOfFlesh,
             47 => NpcKind::TheDestroyer,
+            48 => NpcKind::SkeletronPrime,
             _ => return None,
         })
     }
@@ -536,6 +542,8 @@ impl NpcKind {
             NpcKind::WallOfFlesh => (120.0, 120.0),
             // `SetDefaults` case 134 (`NPC.cs:10662`): 38x38 x1.25.
             NpcKind::TheDestroyer => (48.0, 48.0),
+            // `SetDefaults` case 127 (`NPC.cs:10558`): 80x102.
+            NpcKind::SkeletronPrime => (80.0, 102.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -619,6 +627,8 @@ impl NpcKind {
             // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
             // vanilla's realLife pool — the v1 carries the per-segment HP).
             NpcKind::TheDestroyer => 8000,
+            // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
+            NpcKind::SkeletronPrime => 28000,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -679,6 +689,7 @@ impl NpcKind {
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
             NpcKind::TheDestroyer => 70,
+            NpcKind::SkeletronPrime => 47,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1180,6 +1191,9 @@ impl Npc {
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
             NpcKind::TheDestroyer => 0.0,
+            // `SetDefaults` case 127: knockBackResist 0.
+            NpcKind::SkeletronPrime => 0.0,
+            NpcKind::SkeletronPrime => 0.0,
             NpcKind::KingSlime => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
@@ -1254,6 +1268,7 @@ impl Npc {
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
             NpcKind::TheDestroyer => 0,
+            NpcKind::SkeletronPrime => 24,
             NpcKind::KingSlime => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
@@ -1324,6 +1339,7 @@ impl Npc {
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
             NpcKind::TheDestroyer => 120000.0,
+            NpcKind::SkeletronPrime => 120000.0,
             NpcKind::KingSlime => 10_000.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
@@ -1452,6 +1468,7 @@ impl Npc {
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
             NpcKind::TheDestroyer => {}
+            NpcKind::SkeletronPrime => self.update_prime(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1764,6 +1781,9 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::SkeletronPrime => {
+                // `Main.npcFrameCount[127]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::TheDestroyer => {
                 // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
             }
@@ -2918,6 +2938,64 @@ impl Npc {
         }
     }
 
+    /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
+    /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
+    /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
+    /// x 9), the decel (the 40 ticks x0.98). The 4 limbs = the follow-ups.
+    fn update_prime(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 280.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.12;
+            if self.vx.abs() > 9.0 {
+                self.vx = 9.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.12;
+            if self.vy.abs() > 9.0 {
+                self.vy = 9.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 9.0;
+            self.vy = dy / d * 9.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -3118,6 +3196,7 @@ impl Npc {
             NpcKind::ServantOfCthulhu => 45,
             NpcKind::WallOfFlesh => 46,
             NpcKind::TheDestroyer => 47,
+            NpcKind::SkeletronPrime => 48,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4657,7 +4736,42 @@ mod tests {
         let _ = (&w, &mut d);
     }
 
+    #[test]
+    fn the_prime_cycles() {
+        // `AI_032`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 9) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pr.hp = pr.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pr.cast_windup == 1, "the charge phase armed");
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_prime_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletronPrime, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 127);
+        assert_eq!(e.credit_id, "SkeletronPrime");
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 0.0, 0.0, 1, 0.0);
+        assert_eq!(pr.size(), (80.0, 102.0));
+        assert_eq!(pr.max_hp, 28000);
+        assert_eq!(pr.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::SkeletronPrime.contact_damage(), 47);
+        let _ = (&w, &mut pr);
+    }
+
 }
+
 
 
 

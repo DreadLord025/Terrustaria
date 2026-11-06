@@ -269,6 +269,30 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyP => {
+                                // The Prime debug spawn (the Mechanical
+                                // Skull item = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 16)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::SkeletronPrime,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Skeletron Prime spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyD => {
                                 // The Destroyer debug spawn (the Mechanical
                                 // Worm item = the follow-up): the head —
