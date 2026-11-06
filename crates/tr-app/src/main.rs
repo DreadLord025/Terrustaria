@@ -11,6 +11,7 @@ mod buffs;
 mod chat;
 mod collision;
 mod death;
+mod dye;
 mod emotes;
 mod inv;
 mod luck;
