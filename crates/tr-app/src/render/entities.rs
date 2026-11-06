@@ -102,6 +102,7 @@ pub(crate) struct NpcAssets {
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
     pub(crate) merchant: Option<BgTex>,
+    pub(crate) dryad: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -141,6 +142,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
         merchant: sky_tex(atlas, "NPC_17", None),
+        dryad: sky_tex(atlas, "NPC_20", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -608,6 +610,13 @@ pub(crate) fn draw_npcs(
             // The Merchant: the same humanoid shape over NPC_17.
             NpcKind::Merchant => (
                 assets.merchant.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Dryad: the same humanoid shape over NPC_20.
+            NpcKind::Dryad => (
+                assets.dryad.as_ref(),
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],

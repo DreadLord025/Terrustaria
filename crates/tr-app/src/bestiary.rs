@@ -317,6 +317,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Merchant",
     },
     BestiaryEntryDef {
+        credit_id: "Dryad",
+        net_id: 20,
+        kind: NpcKind::Dryad,
+        variant: None,
+        quick_unlock: false,
+        name: "Dryad",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

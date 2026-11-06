@@ -73,6 +73,18 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Ocean,
             },
         ],
+        // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
+        // Dryad likes the Jungle, dislikes the Desert.
+        NpcKind::Dryad => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Jungle,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Desert,
+            },
+        ],
         _ => &[],
     }
 }
@@ -411,4 +423,20 @@ mod tests {
         assert!((mood.multiplier - 0.94).abs() < 0.001, "the multiplier {}", mood.multiplier);
         assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
     }
+    #[test]
+    fn the_dryad_judges_the_jungle_and_the_desert() {
+        // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
+        // Like Jungle / Dislike Desert rows ride the home anchor's biome.
+        assert_eq!(biome_preferences(NpcKind::Dryad).len(), 2);
+        assert_eq!(
+            biome_preferences(NpcKind::Dryad)[0].biome,
+            BiomeKind::Jungle
+        );
+        assert_eq!(
+            biome_preferences(NpcKind::Dryad)[1].biome,
+            BiomeKind::Desert
+        );
+    }
+
 }
+
