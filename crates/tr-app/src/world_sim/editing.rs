@@ -137,6 +137,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 361 && held.count > 0 && use_goblin_battle_standard(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' pre-hardmode summons
+        // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
+        // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
+        // keeps its own fn above).
+        if held.count > 0 && use_boss_summon_item(app) {
+            return;
+        }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
     let tx = (world_pos.x / TILE_PX).floor() as i32;
@@ -245,8 +252,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // cost, the throw damage and the crit all read the instance values.
     let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
     let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
-    let held_use_ammo =
-        registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
@@ -391,8 +397,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 };
                 let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
                 let raw = if held_weapon {
-                    held_fx
-                        .map_or(registry::damage(held.kind), |s| s.damage) as f32
+                    held_fx.map_or(registry::damage(held.kind), |s| s.damage) as f32
                         * app
                             .player
                             .as_ref()
@@ -744,8 +749,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             |s| (s.damage, s.shoot_speed, s.knock_back, s.crit),
         );
         if let Some(p) = app.player.as_mut() {
-            let weapon_damage = w_dmg as f32
-                * p.weapon_damage_multiplier(class);
+            let weapon_damage = w_dmg as f32 * p.weapon_damage_multiplier(class);
             let mut damage = weapon_damage;
             if ammo_def.damage > 0 {
                 damage += ammo_def.damage as f32 * p.weapon_damage_multiplier(class);
@@ -4242,6 +4246,100 @@ mod tests {
 /// `SummonItemCheck` (`Player.cs:42162-42176`) refuses while an EoC is
 /// already alive; `ApplyItemTime`'s re-fire guard rides the swing timers
 /// (the food/potion arms' shape).
+/// `SummonItemCheck` (`Player.cs:42162-42179`): the item's own boss
+/// living anywhere refuses the use — the pre-hardmode summon pairs.
+fn summon_item_check(app: &App, item: u16) -> bool {
+    let boss = match item {
+        43 => NpcKind::EyeOfCthulhu,
+        70 => NpcKind::EaterOfWorldsHead,
+        560 => NpcKind::KingSlime,
+        1133 => NpcKind::QueenBee,
+        1331 => NpcKind::BrainOfCthulhu,
+        _ => return true,
+    };
+    !app.npcs.iter().any(|n| n.hp > 0 && n.kind == boss)
+}
+
+/// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
+/// `Player.cs:43751-43900`): the Worm Food 70 (`ZoneCorrupt` -> the EoW
+/// head 13), the Slime Crown 560 (ungated -> the King 50), the
+/// Abeemination 1133 (ungated -> the Queen Bee 222; the vanilla's
+/// Item173 sound rides the roar — the port's bank holds the one), the
+/// Bloody Spine 1331 (`ZoneCrimson` -> the Brain 266). The mech trio
+/// 544/556/557 and the later
+/// 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts the boss at
+/// the player; the EoW rides the worm engine (the chain assembles in the
+/// worm pass); the Brain arrives alone (the Creepers' orbit = the
+/// follow-up).
+pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
+    let item = app.inventory[app.selected].kind;
+    if !matches!(item, 70 | 560 | 1133 | 1331) {
+        return false;
+    }
+    if !summon_item_check(app, item) {
+        return false;
+    }
+    // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
+    // 560/1133 run ungated).
+    let zone_ok = match item {
+        70 => app.scene_metrics.zone_corrupt,
+        1331 => app.scene_metrics.zone_crimson,
+        _ => true,
+    };
+    if !zone_ok {
+        return false;
+    }
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((0.0, 0.0));
+    let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+    let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+    let boss = match item {
+        70 => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+            h.hp = h.max_hp;
+            h.worm_left = 65;
+            Some(h)
+        }
+        560 => {
+            // SpawnOnPlayer's at-the-player semantics — the surface scan of
+            // spawn_king_slime refuses the deep/indoor spawns the vanilla
+            // allows.
+            let mut k = Npc::new(NpcKind::KingSlime, px, py, 1, 0.0);
+            k.hp = k.max_hp;
+            Some(k)
+        }
+        1133 => {
+            let mut b = Npc::new(NpcKind::QueenBee, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+        _ => {
+            let mut b = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+    };
+    let Some(boss) = boss else {
+        return false;
+    };
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.npcs.push(boss);
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 /// The Goblin Battle Standard (`Player.ItemCheck_UseEventItems`,
 /// `Player.cs:43920-43940`): the use through `CanStartInvasion(1,
 /// ignoreDelay: true)` — the refusal leaves the stack intact — then
@@ -4306,6 +4404,71 @@ mod loot_summon_tests {
     use crate::app::flow::front_flow_tests::flow_app;
 
     #[test]
+    fn the_boss_summon_items_gate_and_consume() {
+        // `ItemCheck_UseBossSpawners` (`Player.cs:43751-43900`): the
+        // ungated crown/abee, the corruption/crimson gates, the
+        // SummonItemCheck refusal, the stack pay.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        // The Worm Food outside the corruption refuses free.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 70,
+            name: "Worm Food".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the corruption gate holds");
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.scene_metrics.zone_corrupt = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        // The Bloody Spine under the corruption refuses (the crimson gate).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the crimson gate holds");
+        app.scene_metrics.zone_crimson = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+        );
+        // The re-summon refuses while the boss lives (`SummonItemCheck`).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the living brain refuses");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The ungated Slime Crown: the first use summons the king.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 560,
+            name: "Slime Crown".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+        );
+    }
+    #[test]
     fn the_battle_standard_gates_and_sizing() {
         // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
         // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
@@ -4357,21 +4520,27 @@ mod loot_summon_tests {
         player.y = 64.0;
         app.player = Some(player);
         app.world.day_time = true;
-        app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1, prefix: 0 };
-        assert!(
-            !use_suspicious_looking_eye(&mut app),
-            "day refuses"
-        );
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_suspicious_looking_eye(&mut app), "day refuses");
         app.world.day_time = false;
         assert!(use_suspicious_looking_eye(&mut app));
         assert_eq!(app.inventory[app.selected].count, 0, "the use consumed");
-        assert!(app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0));
-        app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1, prefix: 0 };
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
+        );
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
         assert!(
             !use_suspicious_looking_eye(&mut app),
             "SummonItemCheck refuses while alive"
