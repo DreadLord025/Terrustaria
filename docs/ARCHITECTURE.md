@@ -32,6 +32,7 @@ an agent needs before touching code.
 | Underground backgrounds (`Main.DrawBackground` family) | `render/bg.rs` |
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
 | Player physics / collision | `player.rs`, `collision.rs`; the 60 Hz tick in `world_sim/player.rs` |
+| Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
 | NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
 | Lighting and tile light seeding | `tr-core/src/lighting/`, `tr-core/src/tile_light/` |
@@ -227,7 +228,8 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `world_select.rs`, `char_creation.rs`, `world_creation.rs`, `keyboard.rs`,
   `save_list.rs`. Shared: `text.rs`, `panel.rs`, `color.rs`, `sliders.rs`, `resources.rs`.
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
-  `collision.rs` (`Collision.cs` port), `npc.rs`, `spawner.rs`, `projectile.rs`,
+  `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
+  wheel sparks), `npc.rs`, `spawner.rs`, `projectile.rs`,
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,
