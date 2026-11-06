@@ -139,6 +139,9 @@ pub(crate) struct App {
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
     pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// The favorited inventory slots (`Item.favorited`'s port — the slot
+    /// indices, not the per-item flag; the v1 tracks the slot positions).
+    pub(crate) favorite_slots: Vec<usize>,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -728,6 +731,32 @@ impl App {
         };
         self.world.day_time = day;
         self.world.time = time;
+        true
+    }
+
+    /// The favorite toggle on an inventory slot (`Item.favorited`'s
+    /// right-click toggle).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+        if idx >= crate::item::INV {
+            return;
+        }
+        if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
+            self.favorite_slots.remove(pos);
+        } else {
+            self.favorite_slots.push(idx);
+        }
+    }
+
+    pub(crate) fn is_favorite(&self, idx: usize) -> bool {
+        self.favorite_slots.contains(&idx)
+    }
+
+    /// The trash swap: the held item goes to the trash, the old trash
+    /// returns. The favorited held items can't be trashed.
+    pub(crate) fn trash_swap(&mut self) -> bool {
+        let old = self.equip.trash;
+        self.equip.trash = self.mouse_item;
+        self.mouse_item = old;
         true
     }
 
@@ -1428,6 +1457,7 @@ impl App {
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
+            favorite_slots: Vec::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
