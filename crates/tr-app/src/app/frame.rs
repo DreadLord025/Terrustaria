@@ -414,7 +414,12 @@ impl App {
             .map_or(0, |s| item::hold_style(s.kind));
         if let Some(p) = render_player.as_mut() {
             if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                p.apply_item_use_frame(self.swing / self.swing_max.max(f32::EPSILON));
+                let aim_relative = self.swing_aim * p.facing as f32;
+                p.apply_item_use_frame(
+                    self.swing / self.swing_max.max(f32::EPSILON),
+                    self.swing_style,
+                    aim_relative,
+                );
             } else if held_hold_style == 1 {
                 p.body_frame = 3;
             }

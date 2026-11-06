@@ -107,6 +107,11 @@ pub(crate) struct NpcAssets {
     pub(crate) arms_dealer: Option<BgTex>,
     pub(crate) demolitionist: Option<BgTex>,
     pub(crate) painter: Option<BgTex>,
+    pub(crate) witch_doctor: Option<BgTex>,
+    pub(crate) clothier: Option<BgTex>,
+    pub(crate) eoc: Option<BgTex>,
+    pub(crate) queen_bee: Option<BgTex>,
+    pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -155,6 +160,11 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         arms_dealer: sky_tex(atlas, "NPC_19", None),
         demolitionist: sky_tex(atlas, "NPC_38", None),
         painter: sky_tex(atlas, "NPC_227", None),
+        witch_doctor: sky_tex(atlas, "NPC_228", None),
+        clothier: sky_tex(atlas, "NPC_54", None),
+        eoc: sky_tex(atlas, "NPC_4", None),
+        queen_bee: sky_tex(atlas, "NPC_222", None),
+        skeletron_head: sky_tex(atlas, "NPC_35", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -307,10 +317,13 @@ pub(crate) fn draw_player(
         gfx_off_y: player.gfx_off_y,
         swing,
         hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
-        use_style: 1,
+        // The held item's real useStyle (`Item.useStyle` — the per-style
+        // body rows and the held-item draw both read it).
+        use_style: held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
         item_uv: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
+        aim: player.swing_aim,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
@@ -319,7 +332,11 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
-        front_arm: swing_stand_in(1, swing, player.facing as f32),
+        front_arm: swing_stand_in(
+            held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
+            swing,
+            player.facing as f32,
+        ),
         back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
@@ -662,6 +679,41 @@ pub(crate) fn draw_npcs(
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Witch Doctor: the same humanoid shape over NPC_228.
+            NpcKind::WitchDoctor => (
+                assets.witch_doctor.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Clothier: the same humanoid shape over NPC_54.
+            NpcKind::Clothier => (
+                assets.clothier.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
+            NpcKind::EyeOfCthulhu => (
+                assets.eoc.as_ref(),
+                assets.eoc.as_ref().map_or(110.0, |t| t.h / 2.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The Queen Bee: the 2-frame 66x66 sheet.
+            NpcKind::QueenBee => (
+                assets.queen_bee.as_ref(),
+                assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
+                [66.0, 66.0],
+                [n.x, n.y],
+            ),
+            // The Skeletron head: the single-frame 80x102 sheet.
+            NpcKind::SkeletronHead => (
+                assets.skeletron_head.as_ref(),
+                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).

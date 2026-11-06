@@ -176,6 +176,8 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) hold_style: u8,
     /// Vanilla `useStyle` stand-in: 1 = swing (default), 8 = thrust, 9 = bow.
     pub(crate) use_style: u8,
+    /// `Player.itemRotation`'s source for useStyle 5 — the aim angle.
+    pub(crate) aim: f32,
     /// The held item's atlas quad and frame size, `None` = empty hand.
     pub(crate) item_uv: Option<[f32; 4]>,
     pub(crate) item_size: [f32; 2],
@@ -565,8 +567,69 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
 /// `itemRotation`/`itemLocation`), so the arm pose rides the bodyFrame thirds
 /// through `front_arm_cell` and the item swings by `itemRotation`. Styles that
 /// do enable it (5/9/11) arrive with the bow/thrown-item tasks.
-pub(crate) fn swing_stand_in(_use_style: u8, _swing: f32, _facing: f32) -> CompositeArmState {
-    CompositeArmState::DISABLED
+pub(crate) fn swing_stand_in(use_style: u8, swing: f32, facing: f32) -> CompositeArmState {
+    // The per-style composite arms (`ApplyItemDrawData`'s
+    // `SetCompositeArmFront/Back` calls): style 1 never enables them
+    // (`Player.cs:50686-50953`), styles 2/11/13 do.
+    let progress = 1.0 - swing; // itemAnimationMax - itemAnimation, normalized
+    let stretch = |p: f32| {
+        if p <= 0.25 {
+            CompositeStretch::Full
+        } else if p <= 0.5 {
+            CompositeStretch::ThreeQuarters
+        } else if p <= 0.75 {
+            CompositeStretch::Quarter
+        } else {
+            CompositeStretch::None
+        }
+    };
+    match use_style {
+        // `Player.cs:50936-50956` (EatFood): both arms at -pi/2 * dir, the
+        // stretch walking Full -> None as the use runs out.
+        2 => {
+            let st = stretch(progress);
+            CompositeArmState {
+                enabled: true,
+                stretch: st,
+                rotation: -std::f32::consts::FRAC_PI_2 * facing,
+            }
+        }
+        // `Player.cs:51006-51007` (MowTheLawn): the front arm Quarter at
+        // -pi/4 * dir, the back arm Full at -pi/16.
+        11 => CompositeArmState {
+            enabled: true,
+            stretch: {
+                let p = progress * 2.0;
+                if p <= 0.25 {
+                    CompositeStretch::Full
+                } else if p <= 0.5 {
+                    CompositeStretch::ThreeQuarters
+                } else if p <= 0.75 {
+                    CompositeStretch::Quarter
+                } else {
+                    CompositeStretch::None
+                }
+            },
+            rotation: -std::f32::consts::FRAC_PI_4 * facing,
+        },
+        // `Player.cs:51195` (Rapier): the front arm at the item rotation
+        // minus pi/2 * dir, the stretch by the swing thirds.
+        13 => {
+            let st = if progress <= 0.33 {
+                CompositeStretch::Full
+            } else if progress <= 0.66 {
+                CompositeStretch::ThreeQuarters
+            } else {
+                CompositeStretch::Quarter
+            };
+            CompositeArmState {
+                enabled: true,
+                stretch: st,
+                rotation: -std::f32::consts::FRAC_PI_2 * facing,
+            }
+        }
+        _ => CompositeArmState::DISABLED,
+    }
 }
 
 /// One arm composite pass: skin(7) + sleeve(13) + shirt(6) at one cell
@@ -808,9 +871,59 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
         ];
         rotation = 0.0;
     } else {
-        rotation = item_rotation(s.swing, dir);
-        let loc = item_location(s.swing, dir, s.origin[0] + 20.0, s.origin[1] + 10.0, w, h);
-        anchor = [loc[0], loc[1] + s.gfx_off_y];
+        // The per-style held-item placement — `Player.ItemDraw`'s
+        // useStyle branches (`Player.cs:50686-51243`): 1's arc, 3's thrust,
+        // 4's hold-up, 5's aim. Styles 2/7/9/11/13 pin the item near the
+        // hand and let the composite arms carry the pose.
+        match s.use_style {
+            // `:51065-51088` — HoldUp: rotation 0, the item beside the
+            // shoulder (`width*0.5 - 9` right of centre, mid-height + 4).
+            4 => {
+                rotation = 0.0;
+                anchor = [
+                    s.origin[0] + 20.0 + (w * 0.5 - 9.0) * dir,
+                    s.origin[1] + 10.0 + s.gfx_off_y + h * 0.5 + 4.0,
+                ];
+            }
+            // `:51091-51136` — Shoot: the rotation is the aim
+            // (`Player.itemRotation`); the generic anchor centres the item
+            // `direction * -2` off the body and half-height above the
+            // centre. The staffs (Item.staff) anchor at the MountedCenter +
+            // `rotation.ToRotationVector2() * 6` — the port's staff set is
+            // empty, so the generic arm only.
+            5 => {
+                rotation = s.aim;
+                anchor = [
+                    s.origin[0] + 20.0 - dir * 2.0,
+                    s.origin[1] + 10.0 + s.gfx_off_y - h * 0.5 + 16.0,
+                ];
+            }
+            // `:51031-51064` — Thrust: the first third tucks the item
+            // offscreen (`itemLocation = -1000`), then rotation `0.8 * dir`
+            // with the X-thrust by the swing progress.
+            3 => {
+                if s.swing > 2.0 / 3.0 {
+                    anchor = [-1000.0, -1000.0];
+                    rotation = -1.3 * dir;
+                } else {
+                    rotation = 0.8 * dir;
+                    let num14 = (s.swing * w * dir * 1.2 - 10.0 * dir)
+                        .clamp(if dir < 0.0 { -8.0 } else { f32::MIN }, if dir > 0.0 { 8.0 } else { f32::MAX });
+                    anchor = [
+                        s.origin[0] + 20.0 + (w * 0.5 - 4.0) * dir - num14,
+                        s.origin[1] + 10.0 + s.gfx_off_y + 24.0,
+                    ];
+                }
+            }
+            // The default arc — useStyle 1 (`:50686-50935`): the port's
+            // `item_rotation`/`item_location` pair is the third-walk + the
+            // `(anim/max - 0.5) * -dir * 3.5 - dir * 0.3` rotation.
+            _ => {
+                rotation = item_rotation(s.swing, dir);
+                let loc = item_location(s.swing, dir, s.origin[0] + 20.0, s.origin[1] + 10.0, w, h);
+                anchor = [loc[0], loc[1] + s.gfx_off_y];
+            }
+        }
     }
     // `:3161`: `(width*0.5 - width*0.5*direction, height)`; useStyle tweaks.
     let mut origin = [w * 0.5 - w * 0.5 * dir, h];
@@ -1158,6 +1271,7 @@ mod tests {
             facing: 1.0,
             swing: 0.0,
             use_style: 1,
+        aim: 0.0,
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],

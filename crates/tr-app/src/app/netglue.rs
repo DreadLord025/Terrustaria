@@ -298,7 +298,17 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::Nurse
         | crate::npc::NpcKind::ArmsDealer
         | crate::npc::NpcKind::Demolitionist
-        | crate::npc::NpcKind::Painter => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::Painter
+        | crate::npc::NpcKind::WitchDoctor
+        | crate::npc::NpcKind::Clothier => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::EyeOfCthulhu => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::QueenBee | crate::npc::NpcKind::SkeletronHead => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }

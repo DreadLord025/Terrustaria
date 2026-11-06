@@ -4476,3 +4476,45 @@ flag exists, no row sets it); the deco/shimmer variant rows
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
 >>>>>>> origin/main
+
+## The use styles + body dispatch (M3-ITEM-2)
+
+The `ItemUseStyleID.cs` constants: Swing 1, EatFood 2, Thrust 3, HoldUp 4,
+Shoot 5, DrinkLong 6, DrinkOld 7, GolfPlay 8, DrinkLiquid 9, Hidden 10,
+MowTheLawn 11, Guitar 12, Rapier 13, RaiseLamp 14, HoldOrb 15, PlaySound
+16. The body dispatch = `PlayerFrame`'s per-style chain
+(`Player.cs:36307-36444`); the held-item draw = `ItemDraw`'s per-style
+branches (`:50686-51243`).
+
+The port: `apply_item_use_frame(remaining, use_style, aim_relative)` ports
+the chain verbatim — the quirks preserved: style 3's both branches are row
+3 (the else is dead code in C#), style 5 reads `itemRotation *
+direction` (the aim) for rows 2/3/4 with the gravDir mirrors dead, style
+13 mirrors style 1, style 6's `num20 = progress * 6` clamps at 1 and the
+row flips at 0.5 (progress > 1/12), style 9/8 pin row 0. The real
+useStyle flows: `item::use_style(kind)` from the ItemDef, carried at the
+swing start (`start_swing_extras` — the `Player.ApplyItemAnimation` tail
+:4449-4451 with the 7 route sites) and per tick for the aim
+(`swing_aim` = the mouse angle, updated while a style-5 swing runs).
+
+The held-item draw: `use_style` in the composite state (was hardcoded 1)
+with the per-style branches — style 4 (rotation 0 + the
+beside-shoulder anchor), style 3 (the first third tucks the item
+offscreen — the vanilla `itemLocation = -1000` — then the `0.8 * dir`
+rotation with the X-thrust clamp ±8), style 5 (the rotation = the aim +
+the centre anchor). The composite arms: `swing_stand_in` grew the real
+per-style states — style 2's both arms −π/2 with the stretch Full→None
+over the quarters (`Player.cs:50953-50954`), style 11's front Quarter
+−π/4 + back Full −π/16 (`:51006-51007`), style 13's front at −π/2 by
+thirds (`:51195`); the others stay DISABLED (style 1 never calls
+`SetCompositeArm` in vanilla — `:50686-50953`).
+
+Deviations: the gravDir −1 mirrors are dead (no flipped gravity); style
+5's staff anchor (`Item.staff`) and loot special cases are out (no staff
+items in the port's registry subset); the display-doll/claw sub-branches
+(`:50689-50723`) are display-doll-only; styles 10/14/15/16 have no ported
+items yet (Hidden is the remote-only, RaiseLamp/HoldOrb are M4's,
+PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
+positions ride the generic centre anchor (the C# positions them via the
+composite arms' stretch-dependent offsets — the arms carry the pose; the
+item offset differences are sub-10px polish for the render pass).

@@ -88,6 +88,14 @@ pub struct World {
     pub eclipse: bool,
     /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub blood_moon: bool,
+    /// The downed-boss flags (`NPC.downed*` statics, `NPC.cs:6340-6380`):
+    /// the world-persistent boss states. The save wire rides the .wld
+    /// flags block (M6-SAVE's world sections).
+    pub downed_slime_king: bool,
+    pub downed_eoc: bool,
+    pub downed_eow: bool,
+    pub downed_skeletron: bool,
+    pub downed_queen_bee: bool,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -97,9 +105,7 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
-    /// `NPC.downedBoss1` — the Eye of Cthulhu kill flag (runtime-only; the
-    /// save persistence lands with M6-SAVE-1's flags section).
-    pub downed_boss1: bool,
+
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -126,6 +132,11 @@ impl World {
             day_time: true,
             moon_type: 0,
             moon_phase: 0,
+            downed_slime_king: false,
+            downed_eoc: false,
+            downed_eow: false,
+            downed_skeletron: false,
+            downed_queen_bee: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -143,7 +154,7 @@ impl World {
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
-            downed_boss1: false,
+
             altars_smashed: 0,
             butterfly_chance: 0,
         }
@@ -480,5 +491,20 @@ mod tests {
         w.moondialing();
         assert!(w.fast_forward_to_dusk);
         assert_eq!(w.moondial_cooldown, 8);
+    }
+}
+
+#[cfg(test)]
+mod boss_tests {
+    use super::*;
+
+    #[test]
+    fn the_downed_flags_default_false() {
+        let w = World::new("t".into(), 100, 100);
+        assert!(!w.downed_slime_king);
+        assert!(!w.downed_eoc);
+        assert!(!w.downed_eow);
+        assert!(!w.downed_skeletron);
+        assert!(!w.downed_queen_bee);
     }
 }

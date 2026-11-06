@@ -133,11 +133,27 @@ pub enum NpcKind {
     /// `NPCID.Painter` (227) — the paint seller (`NPC.cs:11925`: the town
     /// twin; the shop index 15; the arrival = at least 2 other town NPCs).
     Painter,
-    /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8705-8716`: 100×110,
-    /// aiStyle 4, damage 15, defense 12, lifeMax 2800, noGravity,
-    /// noTileCollide, `boss`, value 30000). The summon = the Suspicious
-    /// Looking Eye (43) at night (`Player.cs:43759-43771`).
+    /// `NPCID.WitchDoctor` (228) — the jungle shaman (`NPC.cs:11942`: the
+    /// town twin; the shop index 16; the arrival rides the downedQueenBee
+    /// gate — constants-off until the boss-downed tracking).
+    WitchDoctor,
+    /// `NPCID.Clothier` (54) — the tailor (`NPC.cs:9446`: the town twin;
+    /// the shop index 5; the arrival rides the downedSkeletron gate —
+    /// constants-off).
+    Clothier,
+    /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
+    /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
+    /// death sets `downed_eoc` and opens the Dryad's arrival). The full
+    /// aiStyle-4 phase machine rides M4-BOSS-2b.
     EyeOfCthulhu,
+    /// `NPCID.QueenBee` (222) — the jungle boss (`NPC.cs:11855-11872`:
+    /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
+    /// and opens the Witch Doctor's arrival).
+    QueenBee,
+    /// `NPCID.SkeletronHead` (35) — the dungeon gatekeeper
+    /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
+    /// sets `downed_skeletron` and opens the Clothier's arrival).
+    SkeletronHead,
     /// `NPCID.ServantofCthulhu` (5) — the EoC minion (`NPC.cs:8717-8727`:
     /// 20×20, aiStyle 5 (the generic hover, num 5 / num2 0.03
     /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity,
@@ -349,8 +365,12 @@ impl NpcKind {
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
-            NpcKind::EyeOfCthulhu => 40,
-            NpcKind::ServantOfCthulhu => 41,
+            NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
+            NpcKind::QueenBee => 43,
+            NpcKind::SkeletronHead => 44,
+            NpcKind::ServantOfCthulhu => 45,
         }
     }
 
@@ -396,8 +416,12 @@ impl NpcKind {
             37 => NpcKind::ArmsDealer,
             38 => NpcKind::Demolitionist,
             39 => NpcKind::Painter,
-            40 => NpcKind::EyeOfCthulhu,
-            41 => NpcKind::ServantOfCthulhu,
+            40 => NpcKind::WitchDoctor,
+            41 => NpcKind::Clothier,
+            42 => NpcKind::EyeOfCthulhu,
+            43 => NpcKind::QueenBee,
+            44 => NpcKind::SkeletronHead,
+            45 => NpcKind::ServantOfCthulhu,
             _ => return None,
         })
     }
@@ -476,6 +500,14 @@ impl NpcKind {
             NpcKind::ArmsDealer => (18.0, 40.0),
             NpcKind::Demolitionist => (18.0, 40.0),
             NpcKind::Painter => (18.0, 40.0),
+            NpcKind::WitchDoctor => (18.0, 40.0),
+            NpcKind::Clothier => (18.0, 40.0),
+            // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
+            NpcKind::EyeOfCthulhu => (100.0, 110.0),
+            // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
+            NpcKind::QueenBee => (66.0, 66.0),
+            // `SetDefaults` case 35 (`NPC.cs:9168`): 80x102.
+            NpcKind::SkeletronHead => (80.0, 102.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -544,6 +576,16 @@ impl NpcKind {
             NpcKind::Demolitionist => 250,
             // `SetDefaults` case 227 (`NPC.cs:11933`): 250 HP.
             NpcKind::Painter => 250,
+            // `SetDefaults` case 228 (`NPC.cs:11950`): 250 HP.
+            NpcKind::WitchDoctor => 250,
+            // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
+            NpcKind::Clothier => 250,
+            // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
+            NpcKind::EyeOfCthulhu => 2800,
+            // `SetDefaults` case 222 (`NPC.cs:11862`): 3400 HP.
+            NpcKind::QueenBee => 3400,
+            // `SetDefaults` case 35 (`NPC.cs:9172`): 4400 HP.
+            NpcKind::SkeletronHead => 4400,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -597,6 +639,11 @@ impl NpcKind {
             NpcKind::ArmsDealer => 10,
             NpcKind::Demolitionist => 10,
             NpcKind::Painter => 10,
+            NpcKind::WitchDoctor => 10,
+            NpcKind::Clothier => 10,
+            NpcKind::EyeOfCthulhu => 15,
+            NpcKind::QueenBee => 30,
+            NpcKind::SkeletronHead => 32,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1091,6 +1138,11 @@ impl Npc {
             NpcKind::ArmsDealer => 0.5,
             NpcKind::Demolitionist => 0.5,
             NpcKind::Painter => 0.5,
+            NpcKind::WitchDoctor => 0.5,
+            NpcKind::Clothier => 0.5,
+            NpcKind::EyeOfCthulhu => 0.0,
+            NpcKind::QueenBee => 0.0,
+            NpcKind::SkeletronHead => 0.0,
             NpcKind::KingSlime => 0.0,
             // The eye/servant blocks set no knockBackResist — the
             // SetDefaults head's default applies.
@@ -1158,6 +1210,11 @@ impl Npc {
             NpcKind::ArmsDealer => 15,
             NpcKind::Demolitionist => 15,
             NpcKind::Painter => 15,
+            NpcKind::WitchDoctor => 15,
+            NpcKind::Clothier => 15,
+            NpcKind::EyeOfCthulhu => 12,
+            NpcKind::QueenBee => 8,
+            NpcKind::SkeletronHead => 10,
             NpcKind::KingSlime => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
@@ -1220,6 +1277,12 @@ impl Npc {
             NpcKind::ArmsDealer => 0.0,
             NpcKind::Demolitionist => 0.0,
             NpcKind::Painter => 0.0,
+            NpcKind::WitchDoctor => 0.0,
+            NpcKind::Clothier => 0.0,
+            // `SetDefaults` case 4: value 30000 (the coin drop).
+            NpcKind::EyeOfCthulhu => 30000.0,
+            NpcKind::QueenBee => 50000.0,
+            NpcKind::SkeletronHead => 50000.0,
             NpcKind::KingSlime => 10_000.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
@@ -1341,7 +1404,11 @@ impl Npc {
             | NpcKind::Nurse
             | NpcKind::ArmsDealer
             | NpcKind::Demolitionist
-            | NpcKind::Painter => self.update_guide(world, dt),
+            | NpcKind::Painter
+            | NpcKind::WitchDoctor
+            | NpcKind::Clothier => self.update_guide(world, dt),
+            NpcKind::QueenBee => self.update_queen_bee(world, player),
+            NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1654,6 +1721,89 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::SkeletronHead => {
+                // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
+            }
+            NpcKind::QueenBee => {
+                // `Main.npcFrameCount[222]` = 2 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::EyeOfCthulhu => {
+                // `Main.npcFrameCount[4]` = 2 (`Main.cs:67082`): the pupil
+                // blink over the 8-step accumulator (the AI_004 hover's
+                // frame machine, `NPC.cs:73800+`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::Clothier => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[54]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::WitchDoctor => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[228]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Painter => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[227]` = 3, `Main.cs:67082`).
@@ -2558,6 +2708,137 @@ impl Npc {
         }
     }
 
+
+    /// `AI_043`'s Queen Bee v1 (`NPC.cs:30190+`) — the EoC's cycle shape
+    /// with the bee's numbers: the hover (the ±0.07 accels, the 8 cap),
+    /// the charge (the 480-tick cycle, the direct velocity x 7), the decel
+    /// (the 40 ticks, x0.98), the flee (`ai[0]==5`'s world-edge drift —
+    /// the v1 rises away). The Servant bees and the enraged-outside-the-
+    /// jungle state = the follow-ups.
+    fn update_queen_bee(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The flee: rise away (the vanilla's `ai[0]==5` drift — the v1
+        // rises, the off-world guard despawns).
+        if self.cast_windup == 3 {
+            self.vy -= 0.04;
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.y < -500.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        let hover_y = pcy - 260.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 7.0 {
+                self.vx = 7.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 7.0 {
+                self.vy = 7.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 7.0;
+            self.vy = dy / d * 7.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_011`'s Skeletron head v1 (`NPC.cs`'s aiStyle 11 machine) — the
+    /// EoC's cycle shape with the skull's numbers: the hover (the ±0.07,
+    /// the 7 cap), the charge (the 480-tick cycle, the direct velocity
+    /// x 8), the decel (the 40 ticks x0.98). The spinning hands (the
+    /// separate NPCs 36) = the follow-ups.
+    fn update_skeletron(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 280.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 7.0 {
+                self.vx = 7.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 7.0 {
+                self.vy = 7.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 8.0;
+            self.vy = dy / d * 8.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -2683,6 +2964,9 @@ impl Npc {
                     | NpcKind::ArmsDealer
                     | NpcKind::Demolitionist
                     | NpcKind::Painter
+                    | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
+                    | NpcKind::EyeOfCthulhu
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2747,8 +3031,12 @@ impl Npc {
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
-            NpcKind::EyeOfCthulhu => 40,
-            NpcKind::ServantOfCthulhu => 41,
+            NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
+            NpcKind::QueenBee => 43,
+            NpcKind::SkeletronHead => 44,
+            NpcKind::ServantOfCthulhu => 45,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4033,4 +4321,201 @@ mod tests {
         servant.update(&w, &mut player, 1.0 / 60.0);
         assert!(servant.hp > 0);
     }
+    fn the_witch_doctor_arrival_gate_and_shop() {
+        // The arrival: the downedQueenBee gate (constants-off in the port).
+        assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
+        assert!(crate::spawner::spawn_allowed_witch_doctor(true));
+        // The shop index 16: the Blowgun and the Flask always; the
+        // conditionals constants-off.
+        let stock = crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[]);
+        assert!(stock.contains(&1430) && stock.contains(&986));
+        assert!(!stock.contains(&1158), "the night row leaks");
+    }
+
+    #[test]
+    fn the_witch_doctor_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 228 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(228).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor)
+            .expect("the witch doctor spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::WitchDoctor, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 228);
+        assert_eq!(e.credit_id, "WitchDoctor");
+        let prefs = crate::happiness::biome_preferences(NpcKind::WitchDoctor);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Jungle);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
+    #[test]
+    fn the_clothier_arrival_gate_and_shop() {
+        // The arrival: the downedSkeletron gate (constants-off in the
+        // port).
+        assert!(!crate::spawner::spawn_allowed_clothier(false));
+        assert!(crate::spawner::spawn_allowed_clothier(true));
+        // The shop index 5: the always-on rows.
+        let stock = crate::shop::resolve_stock(5, &crate::shop::ShopFlags::default(), &[]);
+        for id in [254, 981, 269, 270, 271] {
+            assert!(stock.contains(&id), "the clothier row {id} missing");
+        }
+        assert!(!stock.contains(&242), "the day row leaks");
+    }
+
+    #[test]
+    fn the_clothier_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 54 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(54).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Clothier).expect("the clothier spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Clothier, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 54);
+        assert_eq!(e.credit_id, "Clothier");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Clothier);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
+    #[test]
+    fn the_eoc_charges_on_cycle() {
+        // `AI_004`'s v1 cycle: the hover 600 ticks → the charge (the
+        // direct velocity 6) → the 40-tick decel → the hover reset.
+        let mut w = ground_air();
+        w.day_time = false; // The boss fights at night (the day = the flee).
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hover phase: 600 ticks move the boss toward the hover point,
+        // then the dash chain arms (`ai[1]` = 1, the wind-up — the full
+        // aiStyle-4 machine's state, not the v1 `cast_windup` latch).
+        for _ in 0..600 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0, "the charge phase armed");
+        // The charge: the velocity 6 toward the player.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the charge speed ({speed})");
+        // The day flee: the boss rises.
+        let mut w2 = ground_air();
+        w2.day_time = true;
+        let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc2.hp = eoc2.max_hp;
+        eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc2.vy < 0.0, "the day flee rises");
+    }
+
+    #[test]
+    fn the_eoc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 4; the bestiary entry
+        // round-trips.
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::EyeOfCthulhu, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 4);
+        assert_eq!(e.credit_id, "EyeofCthulhu");
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 0.0, 0.0, 1, 0.0);
+        assert_eq!(eoc.size(), (100.0, 110.0));
+        assert_eq!(eoc.max_hp, 2800);
+        assert_eq!(eoc.knock_back_resist(), 0.0);
+        let _ = (&w, &mut eoc);
+    }
+
+    #[test]
+    fn the_eow_chain_is_boss_wired() {
+        // The EoW kinds exist from M4-NPC-2; the boss wire: the head's
+        // death flag rides the sim's dead loop (the match arm) — this
+        // test pins the downed_eow default + the head's spawn.
+        let w = ground_air();
+        let head = Npc::spawn_worm_head(&w, 60, 130, NpcKind::EaterOfWorldsHead);
+        assert!(head.worm_inited == false, "the chain assembles in the pass");
+        assert_eq!(head.max_hp, 150);
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::EaterOfWorldsHead, SlimeVariant::Blue).net_id,
+            13
+        );
+    }
+
+    #[test]
+    fn the_queen_bee_cycles_and_flees() {
+        // `AI_043`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 7) → the decel; the flee phase rises away.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut qb = Npc::new(NpcKind::QueenBee, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        qb.hp = qb.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(qb.cast_windup == 1, "the charge phase armed");
+        qb.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (qb.vx * qb.vx + qb.vy * qb.vy).sqrt();
+        assert!((speed - 7.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_queen_bee_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::QueenBee, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 222);
+        assert_eq!(e.credit_id, "QueenBee");
+        let mut qb = Npc::new(NpcKind::QueenBee, 0.0, 0.0, 1, 0.0);
+        assert_eq!(qb.size(), (66.0, 66.0));
+        assert_eq!(qb.max_hp, 3400);
+        assert_eq!(qb.knock_back_resist(), 0.0);
+        let _ = (&w, &mut qb);
+    }
+
+    #[test]
+    fn the_skeletron_cycles() {
+        // `AI_011`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 8) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        sk.hp = sk.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(sk.cast_windup == 1, "the charge phase armed");
+        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_skeletron_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletronHead, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 35);
+        assert_eq!(e.credit_id, "SkeletronHead");
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 0.0, 0.0, 1, 0.0);
+        assert_eq!(sk.size(), (80.0, 102.0));
+        assert_eq!(sk.max_hp, 4400);
+        assert_eq!(sk.knock_back_resist(), 0.0);
+        let _ = (&w, &mut sk);
+    }
+
 }
+
+
+
+
+
+
+
+
+
+
+
+

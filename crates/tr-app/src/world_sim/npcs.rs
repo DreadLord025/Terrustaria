@@ -364,6 +364,46 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Clothier: the downedSkeletron gate.
+        if app.world.downed_skeletron
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Clothier) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Witch Doctor: the downedQueenBee gate.
+        if app.world.downed_queen_bee
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::WitchDoctor) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
+        // downedBoss1 — the port's downed_eoc).
+        if app.world.downed_eoc
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Dryad) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         if let Some(player) = app.player.as_ref() {
             if player.max_hp > 100
                 && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
@@ -411,11 +451,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     for npc in &dead {
-        if npc.kind == NpcKind::EyeOfCthulhu {
-            // `NPC.downedBoss1 = true` (`NPC.cs`'s boss-kill flag set in the
-            // `checkDead` chain; the loot flags read it).
-            app.world.downed_boss1 = true;
-        }
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
         // (`NPC.cs:78835-78847`); the `GetWereThereAnyInteractions` gate is
         // constants-on — every death the port produces today is a player
@@ -449,6 +484,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 (npc.x / 16.0) as i32,
                 (npc.y / 16.0) as i32,
             );
+        }
+        // `NPC.checkDead`'s boss arms (`NPC.cs:79416`'s
+        // `SetEventFlagCleared`): the boss deaths set the world's downed
+        // flags. The player-kill gate rides the same kill path as the
+        // bestiary credit above.
+        match npc.kind {
+            NpcKind::KingSlime => app.world.downed_slime_king = true,
+            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+            NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
+            NpcKind::QueenBee => app.world.downed_queen_bee = true,
+            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+            _ => {}
         }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
@@ -614,7 +661,7 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             zone_snow: zones.zone_snow,
             zone_corrupt: zones.zone_corrupt,
             zone_crimson: zones.zone_crimson,
-            downed_eoc: app.world.downed_boss1,
+            downed_eoc: app.world.downed_eoc,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {

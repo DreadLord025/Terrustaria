@@ -240,6 +240,104 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyE => {
+                                // The EoC debug spawn (the vanilla's
+                                // Suspicious Looking Eye + the night roll
+                                // land with the boss-item work).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 15)
+                                            .clamp(2, self.world.width - 3);
+                                        let (w2, h2) = NpcKind::EyeOfCthulhu.size();
+                                        let mut boss = Npc::new(
+                                            NpcKind::EyeOfCthulhu,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 20) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        boss.caster_counter = 0;
+                                        boss.cast_windup = 0;
+                                        let _ = (w2, h2);
+                                        log::info!("Eye of Cthulhu spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyS => {
+                                // The Skeletron debug spawn (the Old Man's
+                                // curse dialog = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 14)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::SkeletronHead,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Skeletron spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyQ => {
+                                // The Queen Bee debug spawn (the Abeemination
+                                // item = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 10)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::QueenBee,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Queen Bee spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
+                            KeyCode::KeyW => {
+                                // The EoW debug spawn (the Worm Food item +
+                                // the orb breaks = the follow-ups): the
+                                // head in the air — the chain assembles
+                                // through the worm pass.
+                                if !app_has_eow(self) {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 12)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut head = Npc::spawn_worm_head(
+                                            &self.world,
+                                            xt,
+                                            (p.y / TILE_PX) as i32 - 8,
+                                            NpcKind::EaterOfWorldsHead,
+                                        );
+                                        head.hp = head.max_hp;
+                                        log::info!("Eater of Worlds spawned");
+                                        self.npcs.push(head);
+                                    }
+                                }
+                            }
                             KeyCode::KeyB => {
                                 if !self
                                     .npcs
@@ -390,4 +488,15 @@ impl ApplicationHandler for App {
             w.request_redraw();
         }
     }
+}
+
+/// The EoW presence check for the debug spawn (any active segment).
+fn app_has_eow(app: &App) -> bool {
+    app.npcs
+        .iter()
+        .any(|n| n.kind.is_worm() && n.worm_id != 0 && n.hp > 0)
+        && app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
 }
