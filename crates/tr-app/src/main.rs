@@ -20,6 +20,7 @@ mod itemdata;
 mod loot_db;
 mod map;
 mod menu;
+mod minecart;
 mod net;
 mod npc;
 mod npc_ai;
