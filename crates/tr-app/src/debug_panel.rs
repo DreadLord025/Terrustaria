@@ -1,13 +1,14 @@
-//! The debug cheat-sheet panel — the self-contained debug UI. Only this
-//! module calls the App/Npc/World methods; nothing references it back
-//! (delete this file + the `mod` line + the call sites to remove).
+//! The debug cheat-sheet panel v2 — the visual selection with the item/NPC
+//! icons from the atlas. The scrollable lists show the icon + the name for
+//! every entry; the click selects/gives. The self-contained module (delete
+//! this file + the mod line + the call sites to remove).
 //!
-//! Open/close: F3. The tabs: Player / Items / NPCs / Bosses / World.
+//! Open/close: F3. The tabs: Items / NPCs / Bosses / World.
 
 use crate::app::App;
+use crate::assets::Lookups;
 use crate::item::ItemSlot;
 use crate::npc::{Npc, NpcKind};
-use crate::assets::Lookups;
 use glam::Vec2;
 use tr_core::TILE_PX;
 use tr_render::SpriteRenderer;
@@ -15,22 +16,29 @@ use tr_render::SpriteRenderer;
 // ---- The state ----
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Tab { Player, Items, Npcs, Bosses, World }
+pub enum Tab { Items, Npcs, Bosses, World }
 
-const TABS: [(&str, Tab); 5] = [
-    ("Player", Tab::Player), ("Items", Tab::Items), ("NPCs", Tab::Npcs),
+const TABS: [(&str, Tab); 4] = [
+    ("Items", Tab::Items), ("NPCs", Tab::Npcs),
     ("Bosses", Tab::Bosses), ("World", Tab::World),
 ];
 
 pub struct DebugPanel {
     pub open: bool,
     pub tab: Tab,
-    pub item_id: String,
+    /// The scroll offset in rows for the current tab.
+    pub scroll: f32,
+    /// The search/filter text (the typed characters filter the list).
+    pub filter: String,
+    /// The panel's top-left corner (the draggable position).
+    pub pos: Vec2,
+    /// The drag offset (the cursor minus the panel origin during the drag).
+    pub drag_offset: Option<Vec2>,
 }
 
 impl DebugPanel {
     pub fn new() -> Self {
-        Self { open: false, tab: Tab::Player, item_id: String::new() }
+        Self { open: false, tab: Tab::Items, scroll: 0.0, filter: String::new(), pos: Vec2::new(900.0, 60.0), drag_offset: None }
     }
 }
 impl Default for DebugPanel {
@@ -38,30 +46,32 @@ impl Default for DebugPanel {
 }
 
 // ---- The layout ----
-const PW: f32 = 260.0;
-const PH: f32 = 380.0;
+const PW: f32 = 320.0;
+const PH: f32 = 440.0;
 const TAB_H: f32 = 20.0;
-const ROW_H: f32 = 20.0;
-const PAD: f32 = 8.0;
+const ROW_H: f32 = 22.0;
+const ICON: f32 = 18.0;
+const PAD: f32 = 6.0;
+const FILTER_H: f32 = 18.0;
 
-fn panel_rect(screen: Vec2) -> [f32; 4] {
-    [screen.x - PW - 4.0, 4.0, PW, PH.min(screen.y - 8.0)]
+fn panel_rect(pos: Vec2) -> [f32; 4] {
+    [pos.x, pos.y, PW, PH]
 }
 
 fn content_rect(panel: &[f32; 4]) -> [f32; 4] {
-    [panel[0] + PAD, panel[1] + TAB_H + PAD, panel[2] - PAD * 2.0, panel[3] - TAB_H - PAD * 2.0]
+    [
+        panel[0] + PAD,
+        panel[1] + TAB_H + FILTER_H + PAD,
+        panel[2] - PAD * 2.0,
+        panel[3] - TAB_H - FILTER_H - PAD * 2.0,
+    ]
 }
 
 fn pt_in(p: Vec2, r: [f32; 4]) -> bool {
     p.x >= r[0] && p.x <= r[0] + r[2] && p.y >= r[1] && p.y <= r[1] + r[3]
 }
 
-fn row_y(content: &[f32; 4], row: usize) -> f32 {
-    content[1] + row as f32 * ROW_H
-}
-
-// ---- The draw ----
-
+// ---- The colours ----
 const W: [f32; 4] = [1.0; 4];
 const G: [f32; 4] = [0.4, 1.0, 0.4, 1.0];
 const R: [f32; 4] = [1.0, 0.4, 0.4, 1.0];
@@ -73,21 +83,86 @@ fn txt(r: &mut SpriteRenderer, l: &Lookups, x: f32, y: f32, s: f32, c: [f32; 4],
     crate::ui::text::hud_text(r, l, x, y, s, c, t);
 }
 
-/// The panel draw (called from the frame pass where the borrows allow it).
+/// Draws the item/NPC icon from the atlas (the 18x18 thumbnail).
+fn icon(r: &mut SpriteRenderer, sheet_name: &str, x: f32, y: f32, size: f32) {
+    if let Some(uv) = r.uv(sheet_name, 0.0, 0.0, 100.0, 100.0) {
+        r.push_sprite([x, y], [size, size], uv, [1.0; 4]);
+    }
+}
+
+// ---- The data lists ----
+
+/// All the item names/ids from the registry (the lazily built index).
+fn all_items() -> Vec<(u16, &'static str)> {
+    crate::itemdata::ITEMS
+        .iter()
+        .filter(|d| d.id > 0 && !d.name.is_empty())
+        .map(|d| (d.id, d.name))
+        .collect()
+}
+
+fn filtered_items(filter: &str) -> Vec<(u16, &'static str)> {
+    let all = all_items();
+    if filter.is_empty() {
+        return all;
+    }
+    let f = filter.to_lowercase();
+    all.into_iter()
+        .filter(|(_, name)| name.to_lowercase().contains(&f))
+        .collect()
+}
+
+const NPC_LIST: [(NpcKind, &str, &str); 18] = [
+    (NpcKind::Slime, "Blue Slime", "NPC_1"),
+    (NpcKind::Zombie, "Zombie", "NPC_3"),
+    (NpcKind::DemonEye, "Demon Eye", "NPC_2"),
+    (NpcKind::Skeleton, "Skeleton", "NPC_21"),
+    (NpcKind::CaveBat, "Cave Bat", "NPC_49"),
+    (NpcKind::UndeadMiner, "Undead Miner", "NPC_44"),
+    (NpcKind::DevourerHead, "Devourer", "NPC_7"),
+    (NpcKind::GiantWormHead, "Giant Worm", "NPC_10"),
+    (NpcKind::EaterOfSouls, "Eater of Souls", "NPC_6"),
+    (NpcKind::Hornet, "Hornet", "NPC_42"),
+    (NpcKind::MeteorHead, "Meteor Head", "NPC_23"),
+    (NpcKind::GoblinSorcerer, "Goblin Sorc.", "NPC_29"),
+    (NpcKind::Tim, "Tim", "NPC_45"),
+    (NpcKind::DarkCaster, "Dark Caster", "NPC_32"),
+    (NpcKind::FireImp, "Fire Imp", "NPC_24"),
+    (NpcKind::Piranha, "Piranha", "NPC_58"),
+    (NpcKind::Goldfish, "Goldfish", "NPC_55"),
+    (NpcKind::Shark, "Shark", "NPC_65"),
+];
+
+const BOSS_LIST: [(NpcKind, &str, &str); 12] = [
+    (NpcKind::KingSlime, "King Slime", "NPC_50"),
+    (NpcKind::EyeOfCthulhu, "Eye of Cthulhu", "NPC_4"),
+    (NpcKind::BrainOfCthulhu, "Brain of Cthulhu", "NPC_266"),
+    (NpcKind::EaterOfWorldsHead, "Eater of Worlds", "NPC_13"),
+    (NpcKind::QueenBee, "Queen Bee", "NPC_222"),
+    (NpcKind::SkeletronHead, "Skeletron", "NPC_35"),
+    (NpcKind::WallOfFlesh, "Wall of Flesh", "NPC_113"),
+    (NpcKind::TheDestroyer, "The Destroyer", "NPC_134"),
+    (NpcKind::Retinazer, "Retinazer", "NPC_125"),
+    (NpcKind::Spazmatism, "Spazmatism", "NPC_126"),
+    (NpcKind::SkeletronPrime, "Skeletron Prime", "NPC_127"),
+    (NpcKind::Plantera, "Plantera", "NPC_262"),
+];
+
+// ---- The draw ----
+
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     panel: &DebugPanel,
-    player: Option<&crate::player::Player>,
     npcs: &[Npc],
     world: &tr_core::World,
-    coins: u64,
-    mana: i32,
 ) {
     if !panel.open { return; }
-    let pn = panel_rect(screen);
+    let pn = panel_rect(panel.pos);
     let ct = content_rect(&pn);
+
+    // The title bar.
     txt(r, lookups, pn[0] + PAD, pn[1] + 2.0, 0.9, C, "DEBUG [F3]");
 
     // The tabs.
@@ -97,61 +172,57 @@ pub fn draw(
         txt(r, lookups, pn[0] + i as f32 * tw + 4.0, pn[1] + TAB_H - 14.0, 0.75, c, label);
     }
 
+    // The filter field.
+    txt(r, lookups, ct[0], ct[1], 0.75, C, &format!("Search: {}", panel.filter));
+
+    // The visible rows.
+    let list_top = ct[1] + FILTER_H;
+    let visible = ((ct[1] + ct[3] - list_top) / ROW_H) as usize;
+    let scroll_row = panel.scroll as usize;
+
     match panel.tab {
-        Tab::Player => {
-            if let Some(p) = player {
-                txt(r, lookups, ct[0], row_y(&ct, 0), 0.8, W, &format!("HP {}/{}", p.hp, p.max_hp));
-                txt(r, lookups, ct[0] + 80.0, row_y(&ct, 0), 0.8, C, &format!("MP {}", mana));
-                txt(r, lookups, ct[0], row_y(&ct, 1), 0.8, Y, &format!("Coins {}", coins));
-                for (i, label) in ["Respawn", "Heal Full", "Mana Full", "+100 HP", "Godmode", "+100 Coins"].iter().enumerate() {
-                    txt(r, lookups, ct[0], row_y(&ct, i + 2), 0.8, G, label);
-                }
-            } else {
-                txt(r, lookups, ct[0], row_y(&ct, 0), 0.8, R, "no player");
-            }
-        }
         Tab::Items => {
-            txt(r, lookups, ct[0], row_y(&ct, 0), 0.8, C, &format!("ID: {}", panel.item_id));
-            txt(r, lookups, ct[0], row_y(&ct, 1), 0.7, GR, "Enter = spawn, Backspace = del");
-            const QI: [(u16, &str); 8] = [
-                (8, "Torch"), (110, "Iron Pick"), (122, "Iron Sword"),
-                (188, "Heal Potion"), (97, "Musket Ball"), (168, "Grenade"),
-                (75, "Copper Coin"), (5309, "Herb Bag"),
-            ];
-            for (i, (id, label)) in QI.iter().enumerate() {
-                txt(r, lookups, ct[0], row_y(&ct, i + 2), 0.75, G, &format!("{} ({})", label, id));
+            let items = filtered_items(&panel.filter);
+            let total = items.len();
+            for vi in 0..visible {
+                let idx = scroll_row + vi;
+                if idx >= total { break; }
+                let (id, name) = items[idx];
+                let y = list_top + vi as f32 * ROW_H;
+                // The icon.
+                icon(r, &format!("Item_{}", id), ct[0], y, ICON);
+                // The name.
+                txt(r, lookups, ct[0] + ICON + 4.0, y + 2.0, 0.7, W,
+                    &format!("{} [{}]", name, id));
             }
+            // The scroll indicator.
+            txt(r, lookups, pn[0] + PW - 50.0, pn[1] + 2.0, 0.6, GR,
+                &format!("{}/{}", scroll_row + 1, total));
         }
         Tab::Npcs => {
-            const SN: [(NpcKind, &str); 14] = [
-                (NpcKind::Slime, "Blue Slime"), (NpcKind::Zombie, "Zombie"),
-                (NpcKind::DemonEye, "Demon Eye"), (NpcKind::Skeleton, "Skeleton"),
-                (NpcKind::CaveBat, "Cave Bat"), (NpcKind::UndeadMiner, "Und. Miner"),
-                (NpcKind::DevourerHead, "Devourer"), (NpcKind::GiantWormHead, "Giant Worm"),
-                (NpcKind::EaterOfSouls, "Eater of Souls"), (NpcKind::Hornet, "Hornet"),
-                (NpcKind::MeteorHead, "Meteor Head"), (NpcKind::GoblinSorcerer, "Goblin Sorc."),
-                (NpcKind::Tim, "Tim"), (NpcKind::FireImp, "Fire Imp"),
-            ];
-            for (i, (kind, label)) in SN.iter().enumerate() {
-                let count = npcs.iter().filter(|n| n.kind == *kind && n.hp > 0).count();
-                let c = if count > 0 { Y } else { GR };
-                txt(r, lookups, ct[0], row_y(&ct, i), 0.75, c, &format!("{} [{}]", label, count));
+            for vi in 0..visible {
+                let idx = scroll_row + vi;
+                if idx >= NPC_LIST.len() { break; }
+                let (kind, name, tex) = NPC_LIST[idx];
+                let y = list_top + vi as f32 * ROW_H;
+                icon(r, tex, ct[0], y, ICON);
+                let count = npcs.iter().filter(|n| n.kind == kind && n.hp > 0).count();
+                let c = if count > 0 { Y } else { W };
+                txt(r, lookups, ct[0] + ICON + 4.0, y + 2.0, 0.7, c,
+                    &format!("{} [{}]", name, count));
             }
         }
         Tab::Bosses => {
-            const BL: [(NpcKind, &str); 12] = [
-                (NpcKind::KingSlime, "King Slime"), (NpcKind::EyeOfCthulhu, "Eye of Cthulhu"),
-                (NpcKind::BrainOfCthulhu, "Brain of Cthulhu"), (NpcKind::EaterOfWorldsHead, "Eater of Worlds"),
-                (NpcKind::QueenBee, "Queen Bee"), (NpcKind::SkeletronHead, "Skeletron"),
-                (NpcKind::WallOfFlesh, "Wall of Flesh"), (NpcKind::TheDestroyer, "The Destroyer"),
-                (NpcKind::Retinazer, "Retinazer"), (NpcKind::Spazmatism, "Spazmatism"),
-                (NpcKind::SkeletronPrime, "Skeletron Prime"), (NpcKind::Plantera, "Plantera"),
-            ];
-            for (i, (kind, label)) in BL.iter().enumerate() {
-                let alive = npcs.iter().any(|n| n.kind == *kind && n.hp > 0);
+            for vi in 0..visible {
+                let idx = scroll_row + vi;
+                if idx >= BOSS_LIST.len() { break; }
+                let (kind, name, tex) = BOSS_LIST[idx];
+                let y = list_top + vi as f32 * ROW_H;
+                icon(r, tex, ct[0], y, ICON);
+                let alive = npcs.iter().any(|n| n.kind == kind && n.hp > 0);
                 let c = if alive { R } else { G };
-                txt(r, lookups, ct[0], row_y(&ct, i), 0.75, c,
-                    &format!("{}{}", label, if alive { " [LIVE]" } else { "" }));
+                txt(r, lookups, ct[0] + ICON + 4.0, y + 2.0, 0.7, c,
+                    &format!("{}{}", name, if alive { " [LIVE]" } else { "" }));
             }
         }
         Tab::World => {
@@ -165,7 +236,7 @@ pub fn draw(
                 ("Kill All NPCs", R),
             ];
             for (i, (label, c)) in rows.iter().enumerate() {
-                txt(r, lookups, ct[0], row_y(&ct, i), 0.75, *c, label);
+                txt(r, lookups, ct[0], list_top + i as f32 * ROW_H, 0.75, *c, label);
             }
         }
     }
@@ -176,25 +247,45 @@ pub fn draw(
 pub fn handle_click(app: &mut App, mouse: Vec2) -> bool {
     if !app.debug_panel.open { return false; }
     let screen = Vec2::new(1280.0, 720.0);
-    let pn = panel_rect(screen);
+    let pn = panel_rect(app.debug_panel.pos);
     if !pt_in(mouse, pn) { return false; }
+
+    // The title-bar drag: the top 20 px above the tabs.
+    if mouse.y < pn[1] + 20.0 && mouse.y >= pn[1] {
+        app.debug_panel.drag_offset = Some(Vec2::new(mouse.x - pn[0], mouse.y - pn[1]));
+        return true;
+    }
 
     // The tabs.
     let tw = PW / TABS.len() as f32;
     for (i, (_, tab)) in TABS.iter().enumerate() {
         let tr = [pn[0] + i as f32 * tw, pn[1], tw, TAB_H];
-        if pt_in(mouse, tr) { app.debug_panel.tab = *tab; return true; }
+        if pt_in(mouse, tr) { app.debug_panel.tab = *tab; app.debug_panel.scroll = 0.0; return true; }
     }
 
     let ct = content_rect(&pn);
-    if mouse.y < ct[1] { return true; }
-    let row = ((mouse.y - ct[1]) / ROW_H) as usize;
+    if mouse.y < ct[1] + FILTER_H { return true; }
+    let list_top = ct[1] + FILTER_H;
+    let row = ((mouse.y - list_top) / ROW_H) as usize;
+    let idx = app.debug_panel.scroll as usize + row;
 
     match app.debug_panel.tab {
-        Tab::Player => player_click(app, row),
-        Tab::Items => items_click(app, row),
-        Tab::Npcs => npc_click(app, row),
-        Tab::Bosses => boss_click(app, row),
+        Tab::Items => {
+            let items = filtered_items(&app.debug_panel.filter);
+            if let Some((id, _)) = items.get(idx) {
+                give_item(app, *id, 1);
+            }
+        }
+        Tab::Npcs => {
+            if let Some((kind, _, _)) = NPC_LIST.get(idx) {
+                spawn_npc(app, *kind);
+            }
+        }
+        Tab::Bosses => {
+            if let Some((kind, _, _)) = BOSS_LIST.get(idx) {
+                spawn_boss(app, *kind);
+            }
+        }
         Tab::World => world_click(app, row),
     }
     true
@@ -211,101 +302,68 @@ fn give_item(app: &mut App, item: u16, count: u32) -> bool {
     true
 }
 
-fn spawn_x(app: &App, dx: i32) -> i32 {
-    app.player.as_ref()
-        .map(|p| ((p.x / TILE_PX) as i32 + dx).clamp(2, app.world.width - 3))
-        .unwrap_or(60)
+fn spawn_npc(app: &mut App, kind: NpcKind) {
+    let x = app.player.as_ref()
+        .map(|p| ((p.x / TILE_PX) as i32 + 8).clamp(2, app.world.width - 3))
+        .unwrap_or(60);
+    let y = app.player.as_ref()
+        .map(|p| ((p.y / TILE_PX) as i32 - 3).clamp(2, app.world.height - 3))
+        .unwrap_or(60);
+    let npc = match kind {
+        NpcKind::Slime => Npc::spawn_slime(&app.world, x),
+        NpcKind::Zombie => Npc::spawn_zombie(&app.world, x),
+        NpcKind::DemonEye => Npc::spawn_eye(&app.world, x),
+        NpcKind::Skeleton | NpcKind::UndeadMiner => Npc::spawn_cave_walker(&app.world, x, kind),
+        NpcKind::CaveBat => Npc::spawn_cave_flyer(&app.world, x, y, kind),
+        NpcKind::DevourerHead | NpcKind::GiantWormHead => {
+            let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
+            h.hp = h.max_hp;
+            Some(h)
+        }
+        NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
+            Npc::spawn_hover(&app.world, x, y, kind)
+        }
+        NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
+            Npc::spawn_caster(&app.world, x, y, kind)
+        }
+        NpcKind::Piranha | NpcKind::Goldfish | NpcKind::Shark => {
+            Npc::spawn_swimmer(&app.world, x, y, kind)
+        }
+        _ => None,
+    };
+    if let Some(n) = npc { app.npcs.push(n); }
 }
 
-fn spawn_y(app: &App, dy: i32) -> i32 {
-    app.player.as_ref()
-        .map(|p| ((p.y / TILE_PX) as i32 + dy).clamp(2, app.world.height - 3))
-        .unwrap_or(60)
-}
-
-fn simple_boss(kind: NpcKind, x: f32, y: f32) -> Option<Npc> {
-    let mut b = Npc::new(kind, x, y, 1, 0.0);
-    b.hp = b.max_hp;
-    Some(b)
-}
-
-fn worm_boss(world: &tr_core::World, x: i32, y: i32, kind: NpcKind, segments: u32) -> Option<Npc> {
-    let mut head = Npc::spawn_worm_head(world, x, y, kind);
-    head.hp = head.max_hp;
-    head.worm_left = segments;
-    Some(head)
-}
-
-fn player_click(app: &mut App, row: usize) {
-    match row {
-        2 => { if let Some(p) = app.player.as_mut() { p.respawn(); } }
-        3 => { if let Some(p) = app.player.as_mut() { p.hp = p.max_hp; } }
-        4 => { if let Some(p) = app.player.as_mut() { p.mana = p.mana_max; } }
-        5 => { if let Some(p) = app.player.as_mut() { p.hp = (p.hp + 100).min(p.max_hp); } }
-        6 => { if let Some(p) = app.player.as_mut() { p.hp = p.max_hp; } }
-        7 => { app.coins += 10000; }
-        _ => {}
-    }
-}
-
-fn items_click(app: &mut App, row: usize) {
-    if row < 2 { return; }
-    const QI: [u16; 8] = [8, 110, 122, 188, 97, 168, 75, 5309];
-    if let Some(id) = QI.get(row - 2) { give_item(app, *id, 1); }
-}
-
-fn npc_click(app: &mut App, row: usize) {
-    const SN: [(NpcKind, i32); 14] = [
-        (NpcKind::Slime, 8), (NpcKind::Zombie, 8), (NpcKind::DemonEye, 8),
-        (NpcKind::Skeleton, 8), (NpcKind::CaveBat, 8), (NpcKind::UndeadMiner, 8),
-        (NpcKind::DevourerHead, 8), (NpcKind::GiantWormHead, 8),
-        (NpcKind::EaterOfSouls, 8), (NpcKind::Hornet, 8), (NpcKind::MeteorHead, 8),
-        (NpcKind::GoblinSorcerer, 8), (NpcKind::Tim, 8), (NpcKind::FireImp, 8),
-    ];
-    if let Some((kind, dx)) = SN.get(row) {
-        let x = spawn_x(app, *dx);
-        let y = spawn_y(app, -3);
-        let npc = match kind {
-            NpcKind::Slime => Npc::spawn_slime(&app.world, x),
-            NpcKind::Zombie => Npc::spawn_zombie(&app.world, x),
-            NpcKind::DemonEye => Npc::spawn_eye(&app.world, x),
-            NpcKind::Skeleton | NpcKind::UndeadMiner => Npc::spawn_cave_walker(&app.world, x, *kind),
-            NpcKind::CaveBat => Npc::spawn_cave_flyer(&app.world, x, y, *kind),
-            NpcKind::DevourerHead | NpcKind::GiantWormHead => {
-                let mut h = Npc::spawn_worm_head(&app.world, x, y, *kind);
-                h.hp = h.max_hp;
-                Some(h)
-            }
-            NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
-                Npc::spawn_hover(&app.world, x, y, *kind)
-            }
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
-                Npc::spawn_caster(&app.world, x, y, *kind)
-            }
-            _ => None,
-        };
-        if let Some(n) = npc { app.npcs.push(n); }
-    }
-}
-
-fn boss_click(app: &mut App, row: usize) {
-    let x = spawn_x(app, 12);
-    let y = spawn_y(app, -12);
+fn spawn_boss(app: &mut App, kind: NpcKind) {
+    let x = app.player.as_ref()
+        .map(|p| ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3))
+        .unwrap_or(60);
+    let y = app.player.as_ref()
+        .map(|p| ((p.y / TILE_PX) as i32 - 12).clamp(2, app.world.height - 3))
+        .unwrap_or(60);
     let x_px = x as f32 * TILE_PX;
     let y_px = y as f32 * TILE_PX;
-    let boss = match row {
-        0 => Npc::spawn_king_slime(&app.world, x),
-        1 => simple_boss(NpcKind::EyeOfCthulhu, x_px, y_px),
-        2 => simple_boss(NpcKind::BrainOfCthulhu, x_px, y_px),
-        3 => worm_boss(&app.world, x, y, NpcKind::EaterOfWorldsHead, 65),
-        4 => simple_boss(NpcKind::QueenBee, x_px, y_px),
-        5 => simple_boss(NpcKind::SkeletronHead, x_px, y_px),
-        6 => simple_boss(NpcKind::WallOfFlesh, x_px, y_px),
-        7 => worm_boss(&app.world, x, y, NpcKind::TheDestroyer, 80),
-        8 => simple_boss(NpcKind::Retinazer, x_px - 200.0, y_px),
-        9 => simple_boss(NpcKind::Spazmatism, x_px + 200.0, y_px),
-        10 => simple_boss(NpcKind::SkeletronPrime, x_px, y_px),
-        11 => simple_boss(NpcKind::Plantera, x_px, y_px),
+    let boss = match kind {
+        NpcKind::KingSlime => Npc::spawn_king_slime(&app.world, x),
+        NpcKind::EyeOfCthulhu | NpcKind::BrainOfCthulhu | NpcKind::QueenBee
+        | NpcKind::SkeletronHead | NpcKind::WallOfFlesh | NpcKind::Retinazer
+        | NpcKind::Spazmatism | NpcKind::SkeletronPrime | NpcKind::Plantera => {
+            let mut b = Npc::new(kind, x_px, y_px, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+        NpcKind::EaterOfWorldsHead => {
+            let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
+            h.hp = h.max_hp;
+            h.worm_left = 65;
+            Some(h)
+        }
+        NpcKind::TheDestroyer => {
+            let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
+            h.hp = h.max_hp;
+            h.worm_left = 80;
+            Some(h)
+        }
         _ => None,
     };
     if let Some(b) = boss { app.npcs.push(b); }
@@ -334,26 +392,68 @@ pub fn handle_key(app: &mut App, code: winit::keyboard::KeyCode) -> bool {
         return true;
     }
     if !app.debug_panel.open { return false; }
-    if app.debug_panel.tab == Tab::Items {
-        let digit = match code {
-            KeyCode::Digit0 => Some('0'), KeyCode::Digit1 => Some('1'),
-            KeyCode::Digit2 => Some('2'), KeyCode::Digit3 => Some('3'),
-            KeyCode::Digit4 => Some('4'), KeyCode::Digit5 => Some('5'),
-            KeyCode::Digit6 => Some('6'), KeyCode::Digit7 => Some('7'),
-            KeyCode::Digit8 => Some('8'), KeyCode::Digit9 => Some('9'),
-            KeyCode::Backspace => { app.debug_panel.item_id.pop(); return true; }
-            KeyCode::Enter => {
-                if let Ok(id) = app.debug_panel.item_id.parse::<u16>() {
-                    give_item(app, id, 1);
-                }
-                return true;
-            }
-            _ => None,
-        };
-        if let Some(d) = digit {
-            if app.debug_panel.item_id.len() < 5 { app.debug_panel.item_id.push(d); }
-            return true;
-        }
+    // The filter field: the letter/digit keys filter the list.
+    if let Some(c) = key_char(code) {
+        app.debug_panel.filter.push(c);
+        app.debug_panel.scroll = 0.0;
+        return true;
+    }
+    if code == KeyCode::Backspace {
+        app.debug_panel.filter.pop();
+        app.debug_panel.scroll = 0.0;
+        return true;
+    }
+    false
+}
+
+fn key_char(code: winit::keyboard::KeyCode) -> Option<char> {
+    use winit::keyboard::KeyCode;
+    match code {
+        KeyCode::KeyA => Some('a'), KeyCode::KeyB => Some('b'),
+        KeyCode::KeyC => Some('c'), KeyCode::KeyD => Some('d'),
+        KeyCode::KeyE => Some('e'), KeyCode::KeyF => Some('f'),
+        KeyCode::KeyG => Some('g'), KeyCode::KeyH => Some('h'),
+        KeyCode::KeyI => Some('i'), KeyCode::KeyJ => Some('j'),
+        KeyCode::KeyK => Some('k'), KeyCode::KeyL => Some('l'),
+        KeyCode::KeyM => Some('m'), KeyCode::KeyN => Some('n'),
+        KeyCode::KeyO => Some('o'), KeyCode::KeyP => Some('p'),
+        KeyCode::KeyQ => Some('q'), KeyCode::KeyR => Some('r'),
+        KeyCode::KeyS => Some('s'), KeyCode::KeyT => Some('t'),
+        KeyCode::KeyU => Some('u'), KeyCode::KeyV => Some('v'),
+        KeyCode::KeyW => Some('w'), KeyCode::KeyX => Some('x'),
+        KeyCode::KeyY => Some('y'), KeyCode::KeyZ => Some('z'),
+        KeyCode::Digit0 => Some('0'), KeyCode::Digit1 => Some('1'),
+        KeyCode::Digit2 => Some('2'), KeyCode::Digit3 => Some('3'),
+        KeyCode::Digit4 => Some('4'), KeyCode::Digit5 => Some('5'),
+        KeyCode::Digit6 => Some('6'), KeyCode::Digit7 => Some('7'),
+        KeyCode::Digit8 => Some('8'), KeyCode::Digit9 => Some('9'),
+        KeyCode::Space => Some(' '),
+        _ => None,
+    }
+}
+
+pub fn handle_scroll(app: &mut App, delta: f32) -> bool {
+    if !app.debug_panel.open { return false; }
+    app.debug_panel.scroll = (app.debug_panel.scroll - delta * 3.0).max(0.0);
+    true
+}
+
+/// The drag move: updates the panel's position while dragging.
+pub fn handle_drag(app: &mut App, mouse: Vec2) -> bool {
+    if !app.debug_panel.open {
+        return false;
+    }
+    if let Some(offset) = app.debug_panel.drag_offset {
+        app.debug_panel.pos = Vec2::new(mouse.x - offset.x, mouse.y - offset.y);
+        return true;
+    }
+    false
+}
+
+/// The drag end (the mouse release).
+pub fn end_drag(app: &mut App) -> bool {
+    if app.debug_panel.drag_offset.take().is_some() {
+        return true;
     }
     false
 }

@@ -207,8 +207,6 @@ impl ApplicationHandler for App {
                             }
                             KeyCode::F1 => self.debug = !self.debug,
                             KeyCode::F3 => {
-                                // The debug cheat-sheet panel (the
-                                // self-contained debug_panel.rs).
                                 crate::debug_panel::handle_key(self, KeyCode::F3);
                             }
                             KeyCode::F2 => {
@@ -318,6 +316,9 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        if !pressed {
+                            crate::debug_panel::end_drag(self);
+                        }
                         self.mine_down = pressed;
                         if pressed {
                             self.ui_left_press = true;
@@ -338,6 +339,11 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
+                // The debug panel's drag (the title-bar drag moves the
+                // panel).
+                if crate::debug_panel::handle_drag(self, p) {
+                    // The drag consumed the move.
+                }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
                 if mouse_pin().is_none() && !deterministic_pointer_park() {

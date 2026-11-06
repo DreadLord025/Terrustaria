@@ -1253,11 +1253,8 @@ impl App {
                         crate::debug_panel::draw(
                             renderer, lookups, screen,
                             &self.debug_panel,
-                            player.as_ref(),
                             npcs,
                             world,
-                            self.coins,
-                            0,
                         );
                     }
                 }
