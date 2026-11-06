@@ -269,6 +269,27 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyW => {
+                                // The EoW debug spawn (the Worm Food item +
+                                // the orb breaks = the follow-ups): the
+                                // head in the air — the chain assembles
+                                // through the worm pass.
+                                if !app_has_eow(self) {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 12)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut head = Npc::spawn_worm_head(
+                                            &self.world,
+                                            xt,
+                                            (p.y / TILE_PX) as i32 - 8,
+                                            NpcKind::EaterOfWorldsHead,
+                                        );
+                                        head.hp = head.max_hp;
+                                        log::info!("Eater of Worlds spawned");
+                                        self.npcs.push(head);
+                                    }
+                                }
+                            }
                             KeyCode::KeyB => {
                                 if !self
                                     .npcs
@@ -419,4 +440,15 @@ impl ApplicationHandler for App {
             w.request_redraw();
         }
     }
+}
+
+/// The EoW presence check for the debug spawn (any active segment).
+fn app_has_eow(app: &App) -> bool {
+    app.npcs
+        .iter()
+        .any(|n| n.kind.is_worm() && n.worm_id != 0 && n.hp > 0)
+        && app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
 }

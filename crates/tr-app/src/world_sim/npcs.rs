@@ -457,6 +457,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         match npc.kind {
             NpcKind::KingSlime => app.world.downed_slime_king = true,
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+            NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             _ => {}
         }
         spawn_coins(app, &npc);
