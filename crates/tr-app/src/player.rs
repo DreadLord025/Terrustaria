@@ -238,9 +238,25 @@ pub struct Player {
     pub on_ground: bool,
     /// 1 = right, -1 = left.
     pub facing: i32,
+    /// The equipped item kinds — `Player.armor[0..20]`'s kinds snapshot the
+    /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
+    /// from `App.equip` per tick.
+    pub equipped: [u16; 20],
+    /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
+    /// granting equipment, re-applied by the accessory pass every tick (the
+    /// vanilla `ResetEffects` clears the flags and the grants re-set them).
+    pub pinned_jumps: [bool; 9],
+    pub pinned_balloon: bool,
+    pub pinned_rocket_boots: i32,
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
+    /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
+    /// (`Player.cs:15025-15028`); the Hurt gate reads it.
+    pub no_knockback: bool,
+    /// The accessory-granted `Player.lifeRegen` base (`Player.cs:13122`'s
+    /// `lifeRegen += armorPiece.lifeRegen` - the Band's `Item.lifeRegen = 2`).
+    accessory_life_regen: i32,
     /// `Player.legFrame.Y / 56`: the current leg animation row (0..=19), driven by
     /// `PlayerFrame()`.
     pub leg_frame: u32,
@@ -481,6 +497,12 @@ impl Player {
             liquid_step: 1.0,
             in_water: false,
             sitting: false,
+            no_knockback: false,
+            accessory_life_regen: 0,
+            equipped: [0; 20],
+            pinned_jumps: [false; 9],
+            pinned_balloon: false,
+            pinned_rocket_boots: 0,
             control_left: false,
             control_right: false,
             control_jump: false,
@@ -618,6 +640,19 @@ impl Player {
         }
     }
 
+    /// The test/inspection reads for the private speed fields.
+    pub(crate) fn acc_run_speed_value(&self) -> f32 {
+        self.acc_run_speed
+    }
+
+    pub(crate) fn max_run_speed_value(&self) -> f32 {
+        self.max_run_speed
+    }
+
+    pub(crate) fn accessory_life_regen_value(&self) -> i32 {
+        self.accessory_life_regen
+    }
+
     /// Used by the `TR_XY` debug hook and future teleport effects.
     pub fn teleport(&mut self, x: f32, y: f32) {
         self.x = x;
@@ -743,7 +778,7 @@ impl Player {
     /// `hitDirection != 0` gate (`Player.cs:38519`): the fall-damage and
     /// petrify calls pass hitDirection 0 and skip the knock entirely (the
     /// fallStart reset inside that branch rides with it).
-    fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
+    pub(crate) fn hurt_inner(&mut self, amount: i32, from_x: f32, knock_back: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
@@ -757,7 +792,7 @@ impl Player {
         self.hurt_cd = tr_core::damage::iframes_for(amount, false, false) as f32 / 60.0;
         // `Player.Hurt` resets the natural-ramp timer (`Player.cs:38395`).
         self.regen.life_regen_time = 0.0;
-        if knock_back {
+        if knock_back && !self.no_knockback {
             let dir = if self.x + WIDTH * 0.5 >= from_x {
                 1.0
             } else {
@@ -1042,6 +1077,66 @@ impl Player {
             self.vy = if self.vy != 0.0 { 1e-6 } else { 0.0 };
         }
         self.move_speed *= self.strongest_move_speed_debuff;
+        // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
+        // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
+        // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :14602-14604):
+        // the flags reset, then the equipped kinds re-set them per tick.
+        self.jump_boost = false;
+        self.no_fall_dmg = false;
+        self.ice_skate = false;
+        self.desert_boots = false;
+        self.rocket_boots = 0;
+        self.no_knockback = false;
+        self.has_jump_options = [false; 9];
+        self.accessory_life_regen = 0;
+        for slot in &self.equipped[3..10] {
+            match *slot {
+                // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
+                53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
+                857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
+                987 => self.has_jump_options[ExtraJump::Blizzard.index()] = true,
+                1724 => self.has_jump_options[ExtraJump::Fart.index()] = true,
+                3201 => self.has_jump_options[ExtraJump::Sail.index()] = true,
+                // The balloons (`:14806/:15093-15101`, :14820 - the combos
+                // carry their bottle's option + jumpBoost; the horseshoe
+                // balloons add noFallDmg + the luck flag):
+                399 | 983 | 1163 | 1164 | 1250 | 1251 | 1252 | 3241 | 3250 | 3251 | 3252 => {
+                    self.jump_boost = true;
+                }
+                // The boots (`:15005-15008` Hermes - `accRunSpeed = 6f`; the
+                // Flurry variant `:15013-15016`):
+                54 | 1579 => self.acc_run_speed = 6.0,
+                // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
+                128 => self.rocket_boots = 1,
+                // The Ice Skates (`:15089-15092`).
+                950 => self.ice_skate = true,
+                // The Aglet / the Anklet of the Wind (`:15114-15121`).
+                285 => self.move_speed += 0.05,
+                212 => self.move_speed += 0.1,
+                // `Player.cs:15029-15033` + the horseshoe balloons: the fall
+                // damage immunity.
+                158 | 1250 | 1251 | 1252 | 3250 | 3251 | 3252 => self.no_fall_dmg = true,
+                // `Player.cs:15025-15028` - the Cobalt Shield.
+                156 => self.no_knockback = true,
+                // `UpdateLifeRegen`'s `lifeRegen` base (the Band's
+                // `Item.lifeRegen = 2`, `Item.cs:1974` -> `Player.cs:13122`).
+                49 => self.accessory_life_regen = 2,
+                _ => {}
+            }
+        }
+        // The debug pins stand in for the granting equipment - re-applied
+        // after the clear (the vanilla: the grants re-set per tick).
+        for i in 0..9 {
+            if self.pinned_jumps[i] {
+                self.has_jump_options[i] = true;
+            }
+        }
+        if self.pinned_balloon {
+            self.jump_boost = true;
+        }
+        if self.pinned_rocket_boots > self.rocket_boots {
+            self.rocket_boots = self.pinned_rocket_boots;
+        }
         // `Player.UpdateBuffs`' scene-buff grants (`Player.cs:25525-25555`):
         // the 2-tick indicator buffs refresh from the scan; the effect cases
         // above read the previous tick's grant, exactly like the source.
@@ -2333,6 +2428,7 @@ impl Player {
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
                 sitting_or_sleeping: self.sitting,
+                extra_regen: self.accessory_life_regen,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {
@@ -2890,7 +2986,7 @@ mod tests {
     fn ice_skates_raise_the_top_speed() {
         let ice = floor_world(161);
         let mut p = Player::spawn(&ice);
-        p.ice_skate = true;
+        p.equipped[3] = 950; // the Ice Skates (`Player.cs:15089-15092`)
         let input = PlayerInput {
             right: true,
             ..Default::default()
@@ -3194,6 +3290,7 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
+        p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
         // Jump and release midair: the arming.
@@ -3231,6 +3328,7 @@ mod tests {
         p.has_wings = true;
         p.wing_time_max = 100;
         p.wing_time = 0.0;
+        p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
         // Airborne with both: the conversion consumed the fuel.
@@ -3410,14 +3508,143 @@ mod tests {
         );
     }
 
-    /// Arms the Cloud + Sandstorm options on a settled player.
+    /// Places `kind` in the accessory slot 0 (= `armor[3]`), runs the tick's
+    /// reset + grant pass by calling `update`, then reports the flags.
+    fn player_with_accessory(kind: u16) -> Player {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = kind;
+        for _ in 0..2 {
+            p.update(&w, PlayerInput::default());
+        }
+        p
+    }
+
+    #[test]
+    fn the_accessory_grants_arm_the_jumps() {
+        // `ApplyEquipFunctional`'s bottle grants (`Player.cs:14997-15001`,
+        // :14793-14811): the bottles arm their jump options; the reset clears
+        // and the pass re-arms every tick.
+        let p = player_with_accessory(53);
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        let p = player_with_accessory(857);
+        assert!(p.has_jump_options[ExtraJump::Sandstorm.index()]);
+        let p = player_with_accessory(987);
+        assert!(p.has_jump_options[ExtraJump::Blizzard.index()]);
+        let p = player_with_accessory(1724);
+        assert!(p.has_jump_options[ExtraJump::Fart.index()]);
+        let p = player_with_accessory(3201);
+        assert!(p.has_jump_options[ExtraJump::Sail.index()]);
+        // No accessory: nothing armed.
+        let p = player_with_accessory(0);
+        assert!(p.has_jump_options.iter().all(|&b| !b));
+    }
+
+    #[test]
+    fn the_hermes_boots_lift_the_acceleration_gate() {
+        // `Player.cs:15005-15008`: `accRunSpeed = 6f` — the base reset (3.0)
+        // is lifted, the debuff multiplier still applies afterwards.
+        let p = player_with_accessory(54);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4, "{}", p.acc_run_speed_value());
+        // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
+        // acceleration window (the continuation to accRunSpeed).
+        assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_horseshoe_and_the_shield_grant_their_flags() {
+        // `Player.cs:15029-15033` (noFallDmg) + `:15025-15028` (noKnockback).
+        let p = player_with_accessory(158);
+        assert!(p.no_fall_dmg);
+        let p = player_with_accessory(156);
+        assert!(p.no_knockback);
+        let w = ground_world();
+
+        // The hurt gate: no knockback while the shield is on (the player
+        // settles first so the vy assert reads the hurt, not the spawn fall).
+        let mut p = player_with_accessory(156);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let from = p.x + 100.0;
+        assert!(p.hurt_inner(10, from, true));
+        assert_eq!(p.vx, 0.0, "the shield eats the knockback");
+        // Without the shield: the knockback lands.
+        let mut p = player_with_accessory(0);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        let from = p.x + 100.0;
+        assert!(p.hurt_inner(10, from, true));
+        assert!(p.vx != 0.0);
+    }
+
+    #[test]
+    fn the_balloon_lifts_the_jump_statics() {
+        // `UpdateJumpHeight` (`Player.cs:19589-19593`): jumpBoost floors
+        // jumpHeight 20 / jumpSpeed 6.51 — the Cloud Balloon's grant
+        // (`Player.cs:15093-15101`).
+        let p = player_with_accessory(399);
+        assert!(p.jump_boost);
+        let w = ground_world();
+        let mut q = Player::spawn(&w);
+        q.update(&w, PlayerInput::default());
+        assert!(q.jump_height < p.jump_height || q.jump_speed < p.jump_speed);
+    }
+
+    #[test]
+    fn the_ice_skates_and_the_boots_feed_the_floor_modifiers() {
+        // `Player.cs:15089-15092` (iceSkate) — the consumer at the port's
+        // HorizontalMovement (player.rs's `if self.ice_skate`).
+        let p = player_with_accessory(950);
+        assert!(p.ice_skate);
+        let p = player_with_accessory(54);
+        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_rocket_boots_tier_applies() {
+        // `Player.cs:15021-15024`: `rocketBoots = 1`.
+        let p = player_with_accessory(128);
+        assert_eq!(p.rocket_boots, 1);
+    }
+
+    #[test]
+    fn the_band_feeds_the_regen_base() {
+        // `Player.cs:13122` (`lifeRegen += armorPiece.lifeRegen`, the Band's
+        // `Item.lifeRegen = 2` — `Item.cs:1974`): the regen input carries it.
+        let p = player_with_accessory(49);
+        assert_eq!(p.accessory_life_regen_value(), 2);
+    }
+
+    #[test]
+    fn the_pins_survive_the_tick_clear() {
+        // The TR_JUMPS/TR_BOOTS pins stand in for the granting equipment: the
+        // pass clears the flags and re-applies the pins (the vanilla: the
+        // grants re-set per tick after ResetEffects).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.pinned_jumps[ExtraJump::Cloud.index()] = true;
+        p.pinned_rocket_boots = 3;
+        p.update(&w, PlayerInput::default());
+        assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
+        assert_eq!(p.rocket_boots, 3);
+        assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+    }
+
+    /// Arms the Cloud + Sandstorm options on a settled player — through the
+    /// pins (the grant pass clears the direct sets every tick; the pins are
+    /// the stand-in for the granting equipment).
     fn settled_with_jumps(w: &World, opts: &[ExtraJump]) -> Player {
         let mut p = Player::spawn(w);
+        for j in opts {
+            p.pinned_jumps[j.index()] = true;
+        }
         for _ in 0..120 {
             p.update(w, PlayerInput::default());
         }
         for j in opts {
-            p.has_jump_options[j.index()] = true;
             p.can_jump_again[j.index()] = true;
         }
         p
@@ -3516,8 +3743,9 @@ mod tests {
         );
         p.update(&w, PlayerInput::default());
         assert!(p.vy != 0.0 || !p.on_ground);
-        // The accessory vanishes mid-air.
-        p.has_jump_options[ExtraJump::Cloud.index()] = false;
+        // The accessory vanishes mid-air (`UpdateEquips`' next pass sees no
+        // granting equipment — the pin is the stand-in and it clears).
+        p.pinned_jumps[ExtraJump::Cloud.index()] = false;
         p.update(&w, PlayerInput::default());
         assert!(
             !p.can_jump_again[ExtraJump::Cloud.index()],

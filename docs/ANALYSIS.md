@@ -4212,6 +4212,60 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
+<<<<<<< HEAD
+>>>>>>> origin/main
+
+## The accessory effect flags (M3-EQUIP-3)
+
+The vanilla chain: `Player.Update` → `ResetEffects` (`Player.cs:25491`) →
+`UpdateEquips` (`:25633`) → for the slots 0..9
+(`UpdateEquips_CanItemGrantBenefits`, `:12869-12890` — the slots 0/1/2
+require the head/body/leg items, the slots 3..9 require `Item.accessory`):
+`GrantPrefixBenefits` + `GrantArmorBenefits` (all the slots), and
+`ApplyEquipFunctional` (the slots 3..9). The grants are the literal
+`type == N` chains — no `Item.UpdateEquip` virtual exists in this
+decompile. The consumers run later in the same tick (the movement
+`:26688`, the jumps `:26744`, the fall damage in `Update`), so the
+same-tick grants are visible.
+
+The port: `Player.equipped: [u16; 20]` (the kinds snapshot filled from
+`App.equip.armor` per tick in world_sim/player.rs), and the grant pass
+inside the update's reset block — the flags clear then the equipped kinds
+re-set them, exactly the `ResetEffects` → `UpdateEquips` → consumers
+order. The grants (the verbatim sites): the bottles arm their
+`has_jump_options` (`:14997-15001`, :14793-14811), the balloons set
+`jump_boost` (the horseshoe balloons + `noFallDmg`), Hermes/Flurry
+`acc_run_speed = 6.0` (the vanilla leaves `maxRunSpeed` — the boots widen
+the acceleration window; the continuation covers the top speed), the
+Rocket Boots `rocket_boots = 1`, the Ice Skates `ice_skate`, the Aglet /
+Anklet `move_speed += 0.05 / 0.1`, the Lucky Horseshoe `no_fall_dmg`, the
+Cobalt Shield `no_knockback` (a new field gating `Hurt`'s knockback — the
+vanilla `Player.cs:38519`), the Band of Regeneration → the
+`UpdateLifeRegen` base via the new `accessory_life_regen` → the regen's
+`extra_regen` input.
+
+The generic `Item`-stat-driven grants (`Player.cs:13121-13122`:
+`statDefense += armorPiece.defense; lifeRegen += armorPiece.lifeRegen`)
+ride the port's existing flows: the defense via the M3-EQUIP-2 block (the
+whole `equip.armor` array's `ItemDef.defense` sums — the Shackle's +1 and
+the Cobalt Shield's +1 already flowed), the lifeRegen via the id-keyed
+`accessory_life_regen` (the port's `ItemDef` has no `lifeRegen` field).
+
+The debug pins (`TR_JUMPS`/`TR_BOOTS`/`balloon`/`TR_WINGS`/`TR_DASH`)
+moved to the `pinned_*` fields re-applied after the flag clear — the
+vanilla's grants re-set per tick too, so the pins remain the equipment
+stand-ins.
+
+Deviations: the Obsidian Skull's `fireWalk` (the hot-tile touch damage is
+not ported — `Collision.cs:3220`), the Shark Tooth's `armorPenetration`
+(the NPC-defense consumer is M4's), the Band of Starpower (no grant site
+in this decompile's equip pass — do not invent; the real-vanilla +20 max
+mana is absent here), the wings' `wingSlot` grant (no `ItemDef` field —
+M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
+`GrantPrefixBenefits`), the vanity slots (the vanilla grants the
+functional 0..9 only), the balloon combos beyond the id list (the
+exclusive-combination items land as their ids appear).
+=======
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -4331,3 +4385,4 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
+>>>>>>> origin/main

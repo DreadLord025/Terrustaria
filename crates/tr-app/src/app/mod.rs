@@ -1082,10 +1082,12 @@ impl App {
             if let Some(p) = player.as_mut() {
                 for name in list.split(',') {
                     if name.trim().eq_ignore_ascii_case("balloon") {
+                        p.pinned_balloon = true;
                         p.jump_boost = true;
                         continue;
                     }
                     if let Some(j) = crate::player::ExtraJump::parse_name(name) {
+                        p.pinned_jumps[j.index()] = true;
                         p.has_jump_options[j.index()] = true;
                         p.can_jump_again[j.index()] = true;
                     }
@@ -1111,6 +1113,7 @@ impl App {
             .and_then(|v| v.parse::<i32>().ok())
         {
             if let Some(p) = player.as_mut() {
+                p.pinned_rocket_boots = b.clamp(0, 5);
                 p.rocket_boots = b.clamp(0, 5);
             }
         }
