@@ -2278,14 +2278,27 @@ cites its builder chain. Deviations and seams:
   the object drop. Cactus 80 keeps its old path (`check_object`
   `_ => None`, the per-cell drop); the visible remainder is the missing
   `CanKillTile` refusals (next bullet, M1.4-TO-6).
-- `CanKillTile` refusals are not ported (owner decision 2026-11-04): C#
-  `CanKillTile` (`WorldGen.cs:62219-62326`) refuses a locked door type 10
-  (`:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`) and the
-  tile under a container (`:62259-62270`); the port's `remove_tile` gates
-  only `active` + the wall (wall 350 via `WALL_UNBREAKABLE`,
-  `edit.rs:469`). With the LMB gate gone the gaps are visible through mining
-  — a locked door breaks free, a stocked chest breaks with its contents;
-  tracked as M1.4-TO-6 so the 1:1 fix is not lost.
+- `CanKillTile` refusals landed 2026-11-06 (M1.4-TO-6): C# `CanKillTile`
+  (`WorldGen.cs:62219-62326`) refuses a locked door type 10 (`:62290-62295` —
+  the already-ported `IsLockedDoor` frames, `:69191-69197`), a chest 21/467/88
+  holding items (`:62311-62323` — the app's chest store answers
+  `CanDestroyChest`, `Chest.cs:609-623`; the store stays empty until
+  M3-CHEST-UI) and the tile under a container {21,26,72,77,88,467,488}
+  (`:62259-62270`); `edit::can_kill_tile` (`edit.rs:1798`) ports the three
+  and gates the mining tick (`damage = 0`, `Player.cs:53830-53833`),
+  `break_tile`, the replicated break (`apply_edit` kind 0) and the bomb
+  explosions. Deviations: the C# `out bool blockDamaged` flavour collapses
+  into one bool (the 2-arg overload discards it, `:62213-62217`); the same
+  C# function's tree-trunk/palm/cactus anchors (`:62247-62257`,
+  `:62271-62281`), the boulder scan (`:62283-62287`) and the teleporter 235
+  (`:62297-62310`) stay unported; `kill_tile`'s body and the cascade's
+  re-entries are not re-checked (the C# `KillTile` entry duplicates the
+  refusals through `CheckTileBreakability` `:62377-62461` — the port chokes
+  the outer break sources instead, one query shared by all of them); the
+  per-tick `KillTile(fail: true)` sound/dust of a refused pick
+  (`Player.cs:53822-53831`) has no ported path, so the refusal is silent;
+  explosion/replication pass `|_, _| false` for the chest store (not
+  reachable without the app — unobservable while the store is empty).
 - The mining break carries no net messages: vanilla syncs the break/fail
   with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
   SP port has no replication for it (the same seam as the door message 19
@@ -2360,6 +2373,25 @@ training dummy; M4-TOWN-1: the Guide + the housing move-in — neither
 pixel-bearing in the break scene, the Guide spawns off-frame): all four
 hashes and the 910 px footprint are byte-identical, so the shot evidence
 carries over as-is.
+
+Verification (M1.4-TO-6): the workspace suite is green (`test result: ok` ×7:
+910+16+569+19 passed, 0 failed, `--skip
+migrates_version_2_kinds_to_item_ids`; the claim-time `7c39dee` read
+902+16+569+19 before the M3-EQUIP-3 sync-merge); the
+refusals are unit-covered in `tr-core/src/edit.rs`
+(`the_container_family_above_refuses_can_kill_tile` — all seven ids plus the
+same-kind control, `the_locked_door_refuses_can_kill_tile` — the 594/646 rows
+and the `frameX >= 54` escape, `the_stocked_chest_and_dresser_refuse_can_kill_tile`
+— the `frameX / 18 % wide` anchor math for 21/467/88,
+`can_kill_tile_contract_head_refuses_air_inactive_and_wall_350`,
+`kill_tile_itself_stays_ungated` — the Design-A split) and in
+`world_sim/editing.rs` (`the_support_under_a_chest_refuses_the_mining_break`,
+`a_stocked_chest_refuses_the_mining_break_until_emptied` — the DW-1.1 chest
+first refuses, then breaks after `world_chests.clear()`,
+`the_locked_door_refuses_the_break`). No shot re-take: the refusals only
+remove effects — a refused break renders the pre-existing no-break frame, and
+the non-refused path's pixel footprint is unchanged; determinism is carried by
+the suite.
 
 M1.4-TO-4 (herbs/pots/alch/sunflower/piles, 2026-11-05) extends the umbrella in
 four layers. The registry slice grows by 27/28/78/82-84/185-187 (`tileobject.rs`,
@@ -2487,6 +2519,95 @@ the pot-loot roll order (fixed-seed `item_rng`).
   (the Bladed Glove request is produced and then skipped until its item data
   registers), green/baby nothing. The executor drops only registry-known
   items.
+
+## The Eye of Cthulhu (M4-BOSS-1)
+
+The first boss lands through the aiStyle-4 block's classic path
+(`npc.rs::update_eye_of_cthulhu`; the 841-line C# `if (this.aiStyle == 4)`
+in `AI()`). The machine state rides the new `Npc.ai[0..4]` (the phase /
+the sub-state / the timer / the dash-servant counter):
+
+- **Phase 0** — the hover at 200 px above the player (5 speed, 0.04
+  accel); `ai[2]` counts to 600 unconditionally and flips into the 3×
+  dash chain (`ai[1] = 1→2` at 6 speed, 150-tick flights, the 0.98 damp
+  after 40 ticks); while the eye is above + within 500 px the servant
+  counter `ai[3]` reaches 110 and requests the servant spawn (10 px out
+  along the aim, the launch velocity inherited — the
+  `wants_servant` → the world-sim resolve).
+- **Phases 1/2** — the spins: the rotation ramps `ai[2]` 0.005→0.5
+  rad/tick while `ai[1]` counts to 100, then the phase increments (the
+  getGood expert servant bursts + `reflectsProjectiles` are out).
+- **Phase 3** — the final: `defense_override = 0` (the new `Npc` field
+  the damage path reads), the faster machine (6.8 dashes, 130-tick
+  chains).
+
+Deviations: the expert rage arms (`flag2/flag3` at 12%/4% hp, the
+`ai[1] = 3/4/5` spread-dash sub-states, the ×1.5 turn rate) are out with
+the port's missing difficulty flags (the skips carry the C# cites);
+`EncourageDespawn(10)`'s off-screen counter becomes the distance cull
+(the dawn climb `velocity.Y -= 0.04` + the sim's removal above the
+player); `SpawnOnPlayer`'s tile scan simplifies to the clamped
+600-px-above position (the boss flies to the target from wherever it
+appears); `WorldGen.spawnEye` (the natural night spawn) is not modeled —
+the Suspicious Looking Eye (43) is the only summon path.
+
+The summon rides the new boss-spawner arm
+(`editing.rs::use_suspicious_looking_eye` — the night gate, the
+`SummonItemCheck` aliveness refusal, the roar cue `("Roar_0", 15)` =
+`SoundID.Roar` 15, the consumption + the swing timers) — hoisted before
+the editing fn's `player` borrow (the arm takes `app` wholesale). The
+kill sets `World.downed_boss1`, fed into the loot flags (the `Cond::`
+gates read it); the boss bar and the `MusicID.Boss1` (5) music extend
+the King Slime hooks (the 93-then-5 ladder order kept).
+
+## The full drop database (M4-LOOT-2)
+
+`tools/gen_loot.py` reads the decompiled
+`GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` and emits
+`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1421
+net-id registrations over the 643 C# register sites** in the C# order.
+The C# `RegisterToNPC(type)` expands to the type itself + the negative
+net-id family (`PrepareNPCNetIDsByTypeDictionary` over `NPCID.NetIdMap`
+- e.g. the type-1 slime family = `-3..-10`); the removal wrappers
+(`RemoveFromMultipleNPCs(RegisterToMultipleNPCs(...), ids)`) compute the
+net id set minus the removals, keeping the tough-slime gel split. The
+negative-id dedupe mirrors `TrimDuplicateRulesForNegativeIDs`.
+
+The engine grew the pieces the registrations need:
+
+- **`LootFlags` + `LootNpc`** - the world/event snapshot the conditions
+  read (the downed bosses 1/2/3/any/plantera/plant-boss, the seasons,
+  the special seeds, `NPC.waveNumber` + the pumpkin/frost moon formulas
+  verbatim, the closest player's zones, the pirate-map/soul depth bands,
+  the npc's `value`/`lifeMax`/`damage`/`defense`/`boss`/
+  `SpawnedFromStatue`); `spawn_loot` fills it from
+  `World.hard_mode`/`day_time` + the scene zones + the dying npc.
+- **`Cond`** - the data-driven enum porting ~50 `Conditions.*` gates;
+  the yoyo gates and the moon trophy tables carry their exact formulas.
+- **`LeadingConditionRule`** (`LeadingConditionRule.cs`: the condition
+  rides `CanDrop`, `TryDroppingItem` always `Success`), the free
+  functions `chain_on_success`/`chain_on_failed_roll` (the C#
+  extension methods; the `self: Box<Self>` receivers do not erase across
+  `dyn`), `DropPerPlayerOnThePlayer`, `OneFromRulesRule`, the luck
+  variants (`NotScalingWithLuck`/`ScalingWithOnlyBadLuck` flags on
+  `CommonDrop`, the OneFromOptions pair), and the
+  `Food`/`StatusImmunityItem`/`MasterModeCommonDrop`/
+  `MasterModeDropOnAllPlayers`/`BossBagByCondition` factories (all
+  compositions of the M4-LOOT-1 rules, exactly as `ItemDropRule.cs`
+  composes them).
+- **The global entries** - `RegisterToGlobal` (the biome keys, the
+  souls, the goodie bags, the kite drops) resolve before every NPC's
+  own rules (`GetRulesForNPCID(includeGlobalDrops = true)`).
+
+Findings: `corruption`/`crimson` recipe-style flags do not exist here -
+the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
+which read `WorldGen.crimson` (the WORLD type). The skipped rows
+(13, warned): the NamedNPC localization gates, the RedHat legendary
+gate, the MechBossSpawners/SlimeBody/StatueMimic/
+FromOptionsWithoutRepeats rule classes (each needs its own event state).
+The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
+resolve - the executor drops only registry-known items, so they surface
+as the registry scale-up work.
 
 ## Buff slots (M2-BUFF-1)
 
@@ -2760,6 +2881,74 @@ Deviations, all deliberate:
 - **C# float widening quirks preserved** — the coin tier compare
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
+## Mounts framework (M2-MOUNT-1)
+
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
+exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
+the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
+`:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
+`abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
+`Item.mountType` assignments `Item.cs:20779+`; `BuffID.Sets.MountType` as the inverse of
+each row's `buff`), and the frame animator (`UpdateFrame` `Mount.cs:3581-4506`, states
+0-4; the dash case 5 waits for M2-MOUNT-4). The per-tick block lives in `player.rs`
+(`update_mount` — the vanilla `Player.cs:26623-26688` with the `UpdateEffects` head
+`Mount.cs:4795-4803`/`:4949-4981` and the `UpdateJumpHeight` merge `:19619-19631`),
+wired at the verified tick points: the merge insertion before `HorizontalMovement`, the
+jump statics, the flight section (the `ResetFlightTime` refill `:26776-26781` + the
+mount flight thrust `:26962-27015`), the fall-damage addendum (`:25301-25367` — the
+`extraFall` threshold, the `FallDamage` multiplier, the bunny nullify `:25315-25318`,
+the `CanFly` zero) and the CC dismount (`:26799-26812`). The buff is the source of
+truth: `SetMount` adds the 3600-tick buff, the buff tick re-affirms the mount and holds
+`buffTime = 10` (`:9881-9884` — the M2-BUFF-1 deferral), and a missing buff dismounts.
+Equip paths: the saddle item use (`Player.cs:42768-42771` + the `CanMount` space gate
+`Mount.cs:6581-6604`), the quick-mount key (`QuickMount` `:6045-6100`, wired to the
+`controlMount` bind edge) and the `TR_MOUNT=<id|name>` pin (the `pinned_*` stand-in
+pattern). A grapple fire dismounts (`QuickGrapple` `:6334-6337`). Draw:
+`DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront` order
+(`PlayerDrawLayers.cs:211`/`:2912`) with the `Mount.Draw` frame math (`frameH =
+textureHeight/totalFrames`, `Height -= 2` `:5722`, the center-anchored position
+`:5554-5561`, the `xOffset*direction` mirror) in `render/player_layers.rs`; Rudolph
+hides its front strip while idle (`:5520-5523`). The hitbox grows to `42 + heightBoost`
+bottom-anchored (`:6264-6277`) and restores through the shrink path of
+`Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
+
+Deviations:
+- **Partial table (12 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
+  table where vanilla fills every row; the remaining categories land with
+  M2-MOUNT-2/3/4.
+- **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
+  has no multiplayer surface.
+- **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
+  has no port counterpart (the port has no gravDir field).
+- **Idle-pick RNG stand-in** — `Main.rand.Next(900, 1500)` (`Mount.cs:4165`) runs on the
+  animator's own splitmix64 stream (the port-wide `Main.rand` deviation pattern); the
+  same tick sequence always picks the same delays.
+- **No dust/sounds** — `DoSpawnDust`/`DoFailedDismountDust` and the equip/dis mount
+  sounds wait for the particle/audio tasks.
+- **FailedNoSpace unreachable** — every ground row's `heightBoost >= 0` makes the
+  dismount probe a bottom-anchored shrink (always fits), so `QuickMount`'s 3-fail force
+  + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
+  `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
+  until a consumer appears.
+- **Cart/ability branches reserved** — the OnTrack/roller-skate/Fishron/drill arms of
+  the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
+  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+- **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
+  and the slime stomp (`:20533-20560`) wait for M2-MOUNT-4 with the other mount combat.
+- **Queen Slime draw** — the render-target swap and the extra passes (`Mount.cs:5536-5544`,
+  `:5840-5953`) are not ported; the row draws its base `Extra_204` frames. The WoF
+  goat's `GlowMask[284]` glow pass has no content file (`GlowMask_284` does not exist
+  in `assets/Content/Images`), so the row draws without the glow.
+- **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
+  quick-mount scan walks the inventory only.
+
+Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
+(the table constants, the set/dismount guards, the merge modes, the jump/fall
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
+animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+`TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
 
 ## Projectile pool (M4-PROJ-1)
 
@@ -4181,6 +4370,57 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
+
+## The accessory effect flags (M3-EQUIP-3)
+
+The vanilla chain: `Player.Update` → `ResetEffects` (`Player.cs:25491`) →
+`UpdateEquips` (`:25633`) → for the slots 0..9
+(`UpdateEquips_CanItemGrantBenefits`, `:12869-12890` — the slots 0/1/2
+require the head/body/leg items, the slots 3..9 require `Item.accessory`):
+`GrantPrefixBenefits` + `GrantArmorBenefits` (all the slots), and
+`ApplyEquipFunctional` (the slots 3..9). The grants are the literal
+`type == N` chains — no `Item.UpdateEquip` virtual exists in this
+decompile. The consumers run later in the same tick (the movement
+`:26688`, the jumps `:26744`, the fall damage in `Update`), so the
+same-tick grants are visible.
+
+The port: `Player.equipped: [u16; 20]` (the kinds snapshot filled from
+`App.equip.armor` per tick in world_sim/player.rs), and the grant pass
+inside the update's reset block — the flags clear then the equipped kinds
+re-set them, exactly the `ResetEffects` → `UpdateEquips` → consumers
+order. The grants (the verbatim sites): the bottles arm their
+`has_jump_options` (`:14997-15001`, :14793-14811), the balloons set
+`jump_boost` (the horseshoe balloons + `noFallDmg`), Hermes/Flurry
+`acc_run_speed = 6.0` (the vanilla leaves `maxRunSpeed` — the boots widen
+the acceleration window; the continuation covers the top speed), the
+Rocket Boots `rocket_boots = 1`, the Ice Skates `ice_skate`, the Aglet /
+Anklet `move_speed += 0.05 / 0.1`, the Lucky Horseshoe `no_fall_dmg`, the
+Cobalt Shield `no_knockback` (a new field gating `Hurt`'s knockback — the
+vanilla `Player.cs:38519`), the Band of Regeneration → the
+`UpdateLifeRegen` base via the new `accessory_life_regen` → the regen's
+`extra_regen` input.
+
+The generic `Item`-stat-driven grants (`Player.cs:13121-13122`:
+`statDefense += armorPiece.defense; lifeRegen += armorPiece.lifeRegen`)
+ride the port's existing flows: the defense via the M3-EQUIP-2 block (the
+whole `equip.armor` array's `ItemDef.defense` sums — the Shackle's +1 and
+the Cobalt Shield's +1 already flowed), the lifeRegen via the id-keyed
+`accessory_life_regen` (the port's `ItemDef` has no `lifeRegen` field).
+
+The debug pins (`TR_JUMPS`/`TR_BOOTS`/`balloon`/`TR_WINGS`/`TR_DASH`)
+moved to the `pinned_*` fields re-applied after the flag clear — the
+vanilla's grants re-set per tick too, so the pins remain the equipment
+stand-ins.
+
+Deviations: the Obsidian Skull's `fireWalk` (the hot-tile touch damage is
+not ported — `Collision.cs:3220`), the Shark Tooth's `armorPenetration`
+(the NPC-defense consumer is M4's), the Band of Starpower (no grant site
+in this decompile's equip pass — do not invent; the real-vanilla +20 max
+mana is absent here), the wings' `wingSlot` grant (no `ItemDef` field —
+M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
+`GrantPrefixBenefits`), the vanity slots (the vanilla grants the
+functional 0..9 only), the balloon combos beyond the id list (the
+exclusive-combination items land as their ids appear).
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -4301,6 +4541,47 @@ flag exists, no row sets it); the deco/shimmer variant rows
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
 
+## The use styles + body dispatch (M3-ITEM-2)
+
+The `ItemUseStyleID.cs` constants: Swing 1, EatFood 2, Thrust 3, HoldUp 4,
+Shoot 5, DrinkLong 6, DrinkOld 7, GolfPlay 8, DrinkLiquid 9, Hidden 10,
+MowTheLawn 11, Guitar 12, Rapier 13, RaiseLamp 14, HoldOrb 15, PlaySound
+16. The body dispatch = `PlayerFrame`'s per-style chain
+(`Player.cs:36307-36444`); the held-item draw = `ItemDraw`'s per-style
+branches (`:50686-51243`).
+
+The port: `apply_item_use_frame(remaining, use_style, aim_relative)` ports
+the chain verbatim — the quirks preserved: style 3's both branches are row
+3 (the else is dead code in C#), style 5 reads `itemRotation *
+direction` (the aim) for rows 2/3/4 with the gravDir mirrors dead, style
+13 mirrors style 1, style 6's `num20 = progress * 6` clamps at 1 and the
+row flips at 0.5 (progress > 1/12), style 9/8 pin row 0. The real
+useStyle flows: `item::use_style(kind)` from the ItemDef, carried at the
+swing start (`start_swing_extras` — the `Player.ApplyItemAnimation` tail
+:4449-4451 with the 7 route sites) and per tick for the aim
+(`swing_aim` = the mouse angle, updated while a style-5 swing runs).
+
+The held-item draw: `use_style` in the composite state (was hardcoded 1)
+with the per-style branches — style 4 (rotation 0 + the
+beside-shoulder anchor), style 3 (the first third tucks the item
+offscreen — the vanilla `itemLocation = -1000` — then the `0.8 * dir`
+rotation with the X-thrust clamp ±8), style 5 (the rotation = the aim +
+the centre anchor). The composite arms: `swing_stand_in` grew the real
+per-style states — style 2's both arms −π/2 with the stretch Full→None
+over the quarters (`Player.cs:50953-50954`), style 11's front Quarter
+−π/4 + back Full −π/16 (`:51006-51007`), style 13's front at −π/2 by
+thirds (`:51195`); the others stay DISABLED (style 1 never calls
+`SetCompositeArm` in vanilla — `:50686-50953`).
+
+Deviations: the gravDir −1 mirrors are dead (no flipped gravity); style
+5's staff anchor (`Item.staff`) and loot special cases are out (no staff
+items in the port's registry subset); the display-doll/claw sub-branches
+(`:50689-50723`) are display-doll-only; styles 10/14/15/16 have no ported
+items yet (Hidden is the remote-only, RaiseLamp/HoldOrb are M4's,
+PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
+positions ride the generic centre anchor (the C# positions them via the
+composite arms' stretch-dependent offsets — the arms carry the pose; the
+item offset differences are sub-10px polish for the render pass).
 ## Minecart riding (M2-PHYS-7)
 
 The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf

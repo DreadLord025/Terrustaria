@@ -47,6 +47,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_53", 2),
     ("Item_55", 2),
     ("Item_56", 2),
+    // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
+    // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
+    // cue family).
+    ("Roar_0", 15),
 ];
 
 fn sound_type(cue: &str) -> u32 {

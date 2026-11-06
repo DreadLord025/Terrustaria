@@ -45,6 +45,11 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
+    /// strips (`MountData.backTexture`) and the front strips
+    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
+    pub(crate) mount_back: [Option<BgTex>; 12],
+    pub(crate) mount_front: [Option<BgTex>; 12],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -85,6 +90,30 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // The mount strips resolve by the rows' own sheet names (`Mount.cs:
+        // 696-2567`); a missing file stays `None` and the draw skips it.
+        mount_back: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.back_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.back_sheet, None)
+                    }
+                })
+        }),
+        mount_front: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.front_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.front_sheet, None)
+                    }
+                })
+        }),
     }
 }
 
@@ -102,6 +131,17 @@ pub(crate) struct NpcAssets {
     pub(crate) zombie: Option<BgTex>,
     pub(crate) guide: Option<BgTex>,
     pub(crate) merchant: Option<BgTex>,
+    pub(crate) dryad: Option<BgTex>,
+    pub(crate) nurse: Option<BgTex>,
+    pub(crate) arms_dealer: Option<BgTex>,
+    pub(crate) demolitionist: Option<BgTex>,
+    pub(crate) painter: Option<BgTex>,
+    pub(crate) witch_doctor: Option<BgTex>,
+    pub(crate) clothier: Option<BgTex>,
+    pub(crate) eoc: Option<BgTex>,
+    pub(crate) queen_bee: Option<BgTex>,
+    pub(crate) skeletron_head: Option<BgTex>,
+    pub(crate) wof: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -131,6 +171,10 @@ pub(crate) struct NpcAssets {
     pub(crate) eow_body: Option<BgTex>,
     pub(crate) eow_tail: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
+    /// `NPC_4.xnb` — the Eye of Cthulhu sheet (6 frames of 100×110).
+    pub(crate) eye_of_cthulhu: Option<BgTex>,
+    /// `NPC_5.xnb` — the Servant of Cthulhu sheet (2 frames of 20×20).
+    pub(crate) servant_of_cthulhu: Option<BgTex>,
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -141,6 +185,17 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         zombie: sky_tex(atlas, "NPC_3", None),
         guide: sky_tex(atlas, "NPC_22", None),
         merchant: sky_tex(atlas, "NPC_17", None),
+        dryad: sky_tex(atlas, "NPC_20", None),
+        nurse: sky_tex(atlas, "NPC_18", None),
+        arms_dealer: sky_tex(atlas, "NPC_19", None),
+        demolitionist: sky_tex(atlas, "NPC_38", None),
+        painter: sky_tex(atlas, "NPC_227", None),
+        witch_doctor: sky_tex(atlas, "NPC_228", None),
+        clothier: sky_tex(atlas, "NPC_54", None),
+        eoc: sky_tex(atlas, "NPC_4", None),
+        queen_bee: sky_tex(atlas, "NPC_222", None),
+        skeletron_head: sky_tex(atlas, "NPC_35", None),
+        wof: sky_tex(atlas, "NPC_113", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -170,6 +225,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eow_body: sky_tex(atlas, "NPC_14", None),
         eow_tail: sky_tex(atlas, "NPC_15", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
+        eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
+        servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
     }
 }
 
@@ -291,10 +348,13 @@ pub(crate) fn draw_player(
         gfx_off_y: player.gfx_off_y,
         swing,
         hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
-        use_style: 1,
+        // The held item's real useStyle (`Item.useStyle` — the per-style
+        // body rows and the held-item draw both read it).
+        use_style: held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
         item_uv: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
+        aim: player.swing_aim,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
@@ -303,8 +363,24 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
-        front_arm: swing_stand_in(1, swing, player.facing as f32),
+        front_arm: swing_stand_in(
+            held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
+            swing,
+            player.facing as f32,
+        ),
         back_arm: CompositeArmState::DISABLED,
+        // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
+        // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
+        mount: if player.mount.is_active() {
+            player.mount.data().map(|d| super::player_layers::MountDraw {
+                id: d.id,
+                frame: player.mount.frame(),
+                player_offset: player.mount.player_offset(),
+                is_idle: player.mount.is_at_idle(),
+            })
+        } else {
+            None
+        },
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
@@ -612,6 +688,83 @@ pub(crate) fn draw_npcs(
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
             ),
+            // The Dryad: the same humanoid shape over NPC_20.
+            NpcKind::Dryad => (
+                assets.dryad.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Nurse: the same humanoid shape over NPC_18.
+            NpcKind::Nurse => (
+                assets.nurse.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Arms Dealer: the same humanoid shape over NPC_19.
+            NpcKind::ArmsDealer => (
+                assets.arms_dealer.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Demolitionist: the same humanoid shape over NPC_38.
+            NpcKind::Demolitionist => (
+                assets.demolitionist.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Painter: the same humanoid shape over NPC_227.
+            NpcKind::Painter => (
+                assets.painter.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Witch Doctor: the same humanoid shape over NPC_228.
+            NpcKind::WitchDoctor => (
+                assets.witch_doctor.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The Clothier: the same humanoid shape over NPC_54.
+            NpcKind::Clothier => (
+                assets.clothier.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
+            NpcKind::EyeOfCthulhu => (
+                assets.eoc.as_ref(),
+                assets.eoc.as_ref().map_or(110.0, |t| t.h / 2.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The Queen Bee: the 2-frame 66x66 sheet.
+            NpcKind::QueenBee => (
+                assets.queen_bee.as_ref(),
+                assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
+                [66.0, 66.0],
+                [n.x, n.y],
+            ),
+            // The Skeletron head: the single-frame 80x102 sheet.
+            NpcKind::SkeletronHead => (
+                assets.skeletron_head.as_ref(),
+                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The WoF: the single-frame sheet over the 120x120 hitbox.
+            NpcKind::WallOfFlesh => (
+                assets.wof.as_ref(),
+                assets.wof.as_ref().map_or(120.0, |t| t.h),
+                [120.0, 120.0],
+                [n.x, n.y],
+            ),
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => (
@@ -752,6 +905,27 @@ pub(crate) fn draw_npcs(
                 120.0,
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
+            ),
+            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
+            // frame == the hitbox (the `Main.DrawNPC` anchor).
+            NpcKind::EyeOfCthulhu => (
+                assets.eye_of_cthulhu.as_ref(),
+                assets
+                    .eye_of_cthulhu
+                    .as_ref()
+                    .map_or(110.0, |t| t.h / 6.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
+            NpcKind::ServantOfCthulhu => (
+                assets.servant_of_cthulhu.as_ref(),
+                assets
+                    .servant_of_cthulhu
+                    .as_ref()
+                    .map_or(20.0, |t| t.h / 2.0),
+                [20.0, 20.0],
+                [n.x, n.y],
             ),
         };
         let Some(tex) = tex else {

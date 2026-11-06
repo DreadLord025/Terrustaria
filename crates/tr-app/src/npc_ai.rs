@@ -173,6 +173,11 @@ impl HoverParams {
         max_speed: 3.25,
         accel: 0.018,
     };
+    /// The Servant of Cthulhu (`NPC.cs:50299-50301`: num 5, num2 0.03).
+    pub const SERVANT_OF_CTHULHU: Self = Self {
+        max_speed: 5.0,
+        accel: 0.03,
+    };
     /// The Meteor Head (`NPC.cs:50328-50329`: num 1, num2 0.03).
     pub const METEOR_HEAD: Self = Self {
         max_speed: 1.0,

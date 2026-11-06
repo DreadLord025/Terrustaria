@@ -73,10 +73,13 @@ fn grid_rect(panel: &[f32; 4]) -> [f32; 4] {
 /// `UIBestiaryEntryGrid.GetEntriesToShow` (`:95-100`): the cells per
 /// row/column are the space divided by 72.
 fn grid_metrics(rect: &[f32; 4]) -> (usize, usize) {
-    (
-        ((rect[2] / CELL) as usize).max(1),
-        ((rect[3] / CELL) as usize).max(1),
-    )
+    let cols = ((rect[2] / CELL) as usize).max(1);
+    let rows = ((rect[3] / CELL) as usize).max(1);
+    // The rows grow with the entry count — the vanilla's bestiary scrolls
+    // (`UIBestiaryGrid`'s scroll bars land with the UI-scroll work); the
+    // fixed rows clipped the roster at the town-NPC growth.
+    let need = (crate::bestiary::ENTRIES.len() + cols - 1) / cols;
+    (cols, rows.max(need))
 }
 
 /// The entry index under the cursor (the grid's per-cell centre placement
@@ -299,6 +302,8 @@ fn portrait_data(
         NpcKind::WanderingEye => 2,
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
+        NpcKind::EyeOfCthulhu => 41,
+        NpcKind::ServantOfCthulhu => 42,
         NpcKind::Guide => 5,
         NpcKind::Skeleton => 6,
         NpcKind::UndeadMiner => 7,
@@ -329,6 +334,17 @@ fn portrait_data(
         NpcKind::EaterOfWorldsBody => 32,
         NpcKind::EaterOfWorldsTail => 33,
         NpcKind::Merchant => 34,
+        NpcKind::Dryad => 35,
+        NpcKind::Nurse => 36,
+        NpcKind::ArmsDealer => 37,
+        NpcKind::Demolitionist => 38,
+        NpcKind::Painter => 39,
+        NpcKind::WitchDoctor => 40,
+        NpcKind::Clothier => 41,
+        NpcKind::EyeOfCthulhu => 42,
+        NpcKind::QueenBee => 43,
+        NpcKind::SkeletronHead => 44,
+        NpcKind::WallOfFlesh => 45,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -347,6 +363,15 @@ fn portrait_data(
                 ],
             )
         }
+        // The eye: the 6-frame sheet's frame height rides the sheet
+        // (the 100x110 frames).
+        (NpcKind::EyeOfCthulhu, _) => {
+            let h = lookups.bestiary_npc_sheets[41]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::ServantOfCthulhu, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         (NpcKind::Slime, None) => (sheet_i, 26.0, 32.0, 26.0, white),
         (NpcKind::DemonEye, _) => (sheet_i, 24.0, 38.0, 24.0, white),
         (NpcKind::WanderingEye, _) => {
@@ -393,6 +418,17 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsBody, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Nurse, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::ArmsDealer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Demolitionist, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Painter, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
+        (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

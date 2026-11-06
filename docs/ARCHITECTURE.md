@@ -31,7 +31,7 @@ an agent needs before touching code.
 | Sky, sun/moon, clouds, surface background stack | `render/sky.rs`; style transitions in `biome.rs` |
 | Underground backgrounds (`Main.DrawBackground` family) | `render/bg.rs` |
 | Tile/wall pass, liquids draw, entities, tree foliage, debug overlay | `render/{tiles,liquids,entities,foliage,debug}.rs` |
-| Player physics / collision | `player.rs`, `collision.rs`; the 60 Hz tick in `world_sim/player.rs` |
+| Player physics / collision | `player.rs`, `collision.rs`, `mount.rs` (the mount data table + state); the 60 Hz tick in `world_sim/player.rs` |
 | Minecart riding (rails/boost/ramp/sparks) | `minecart.rs` (the track state machine + the spark pool), the ride seams in `player.rs` / `world_sim/player.rs`, the pool tick/draw in `app/frame.rs` |
 | NPCs, spawning, projectiles | `npc.rs`, `npc_buffs.rs` (NPC buff storage + the DoT tick), `spawner.rs`, `projectile.rs` (+ `world_sim/{npcs,projectiles}.rs`) |
 | Items, drops, inventory slots | `item.rs`, `itemdata.rs` (generated — 6196 rows), `registry.rs` (accessor surface), `variants.rs` (ItemVariants), `inv.rs`; drop tick in `world_sim/items.rs` |
@@ -137,7 +137,9 @@ an agent needs before touching code.
   planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
   doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
   `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
-  events out to the app.
+  events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
+  the app's break sources — the mining tick, `break_tile`, the replicated break and
+  explosions.
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from
@@ -229,7 +231,8 @@ PNGs plus all 32 tree canopy/branch styles and the 42 cloud textures in parallel
   `save_list.rs`. Shared: `text.rs`, `panel.rs`, `color.rs`, `sliders.rs`, `resources.rs`.
 - Leaf modules kept at the crate root: `player.rs` (the physics body and draw state),
   `collision.rs` (`Collision.cs` port), `minecart.rs` (the track state machine +
-  wheel sparks), `npc.rs`, `spawner.rs`, `projectile.rs`,
+  wheel sparks), `mount.rs` (the `MountData` ground table, the `MountState` core, the
+  animator), `npc.rs`, `spawner.rs`, `projectile.rs`,
   `item.rs` (drops + `ItemSlot`/`HOTBAR`/`INV`), `biome.rs` (the camera-following
   biome probes and `Main.CalculateWaterStyle`/`DrawBG` style transitions), `rain.rs`,
   `map.rs`, `net.rs`, `persist.rs`, `settings.rs`, `registry.rs`, `assets.rs`,

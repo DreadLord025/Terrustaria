@@ -73,6 +73,90 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Ocean,
             },
         ],
+        // `Register(54)` (`PersonalityDatabasePopulator.cs:122-126`): the
+        // Clothier likes the Underground, dislikes the Hallow.
+        NpcKind::Clothier => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Underground,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Hallow,
+            },
+        ],
+        // `Register(228)` (`PersonalityDatabasePopulator.cs:87-91`): the
+        // Witch Doctor likes the Jungle, dislikes the Hallow.
+        NpcKind::WitchDoctor => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Jungle,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Hallow,
+            },
+        ],
+        // `Register(227)` (`PersonalityDatabasePopulator.cs:92-96`): the
+        // Painter likes the Jungle, dislikes the Forest.
+        NpcKind::Painter => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Jungle,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Forest,
+            },
+        ],
+        // `Register(38)` (`PersonalityDatabasePopulator.cs:112-116`): the
+        // Demolitionist likes the Underground, dislikes the Ocean.
+        NpcKind::Demolitionist => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Underground,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Ocean,
+            },
+        ],
+        // `Register(19)` (`PersonalityDatabasePopulator.cs:72-76`): the
+        // Arms Dealer likes the Desert, dislikes the Snow.
+        NpcKind::ArmsDealer => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Desert,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Snow,
+            },
+        ],
+        // `Register(18)` (`PersonalityDatabasePopulator.cs:132-136`): the
+        // Nurse likes the Hallow, dislikes the Snow.
+        NpcKind::Nurse => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Hallow,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Snow,
+            },
+        ],
+        // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
+        // Dryad likes the Jungle, dislikes the Desert.
+        NpcKind::Dryad => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Jungle,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Desert,
+            },
+        ],
         _ => &[],
     }
 }
@@ -411,4 +495,20 @@ mod tests {
         assert!((mood.multiplier - 0.94).abs() < 0.001, "the multiplier {}", mood.multiplier);
         assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
     }
+    #[test]
+    fn the_dryad_judges_the_jungle_and_the_desert() {
+        // `Register(20)` (`PersonalityDatabasePopulator.cs:82-86`): the
+        // Like Jungle / Dislike Desert rows ride the home anchor's biome.
+        assert_eq!(biome_preferences(NpcKind::Dryad).len(), 2);
+        assert_eq!(
+            biome_preferences(NpcKind::Dryad)[0].biome,
+            BiomeKind::Jungle
+        );
+        assert_eq!(
+            biome_preferences(NpcKind::Dryad)[1].biome,
+            BiomeKind::Desert
+        );
+    }
+
 }
+

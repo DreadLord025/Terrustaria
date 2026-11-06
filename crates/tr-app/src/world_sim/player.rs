@@ -132,6 +132,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         static HOOK_PREV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
         let hook_edge =
             input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
+        // CanUseHooks set dismounts before the hook fires — every row in this
+        // table (the set is {54, 57-60}).
+        if hook_edge && !p.dead && p.mount.is_active() {
+            p.try_dismount();
+        }
         if hook_edge && !p.dead {
             let center = Vec2::new(
                 p.x + crate::player::WIDTH * 0.5,
@@ -143,6 +149,24 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 mouse_world,
                 16.0,
             ));
+        }
+        // The quick-mount key: the `controlMount` press edge (the menu's
+        // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
+        // (`Player.cs:24888-24893` -> `:6045-6100`).
+        static MOUNT_PREV: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        let mount_key = app.keys.contains(&KeyCode::KeyR);
+        let mount_edge =
+            mount_key && !MOUNT_PREV.swap(mount_key, std::sync::atomic::Ordering::Relaxed);
+        if mount_edge && !map_open {
+            if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
+                // `ItemCheck_TryStartUse`'s animation (the saddle's
+                // `useAnimation` — 20 ticks on every row).
+                let secs = crate::item::use_animation_secs(kind);
+                app.swing_max = app.swing_max.max(secs);
+                app.swing = secs;
+                app.attack_cd = app.attack_cd.max(secs);
+            }
         }
         // The hook AI tick (`AI_007_GrapplingHooks`): the flight, the tile
         // latch, the retract; the attached hook feeds the pull.
@@ -169,6 +193,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         let grapple_for_tick = grapple_snapshot
             .filter(|(_, _, attached)| *attached)
             .map(|(pos, hook_type, _)| (pos, hook_type));
+        // `Player.armor`'s kinds snapshot: the update's grant pass reads the
+        // equipped kinds (`UpdateEquips`, `Player.cs:12892` — the loop runs
+        // inside `Player.Update` on the vanilla's own array).
+        for i in 0..20 {
+            p.equipped[i] = app.equip.armor[i].kind;
+        }
+        p.swing_aim = app.swing_aim;
         let step = 1.0 / 60.0;
         if cart_pin && !p.cart_mounted {
             p.mount_cart();

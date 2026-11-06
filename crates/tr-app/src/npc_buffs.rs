@@ -160,6 +160,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // The Guide: no immunities (the town NPCs have no data rows).
         NpcKind::Guide => &[],
         NpcKind::Merchant => &[],
+        NpcKind::Dryad => &[],
+        NpcKind::Nurse => &[],
+        NpcKind::ArmsDealer => &[],
+        NpcKind::Demolitionist => &[],
+        NpcKind::Painter => &[],
+        NpcKind::WitchDoctor => &[],
+        NpcKind::Clothier => &[],
+        NpcKind::EyeOfCthulhu => &[],
+        NpcKind::QueenBee => &[],
+        NpcKind::SkeletronHead => &[],
+        NpcKind::WallOfFlesh => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
@@ -184,6 +195,8 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
         NpcKind::KingSlime => &[20, 31],
+        // The eye and the servant: no `DebuffImmunitySets` rows.
+        NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

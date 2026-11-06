@@ -293,7 +293,22 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         }
         crate::npc::NpcKind::Zombie => crate::npc::Npc::spawn_zombie(world, tx)?,
         crate::npc::NpcKind::Guide => crate::npc::Npc::spawn_guide(world, tx)?,
-        crate::npc::NpcKind::Merchant => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::Merchant
+        | crate::npc::NpcKind::Dryad
+        | crate::npc::NpcKind::Nurse
+        | crate::npc::NpcKind::ArmsDealer
+        | crate::npc::NpcKind::Demolitionist
+        | crate::npc::NpcKind::Painter
+        | crate::npc::NpcKind::WitchDoctor
+        | crate::npc::NpcKind::Clothier => crate::npc::Npc::spawn_guide(world, tx)?,
+        crate::npc::NpcKind::EyeOfCthulhu => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::QueenBee | crate::npc::NpcKind::SkeletronHead | crate::npc::NpcKind::WallOfFlesh => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
         crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
@@ -342,6 +357,12 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
+        // The eye and the servant: the ctor seeds the stats — the net state
+        // overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::EyeOfCthulhu | crate::npc::NpcKind::ServantOfCthulhu => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     };
     npc.x = n.x;
     npc.y = n.y;

@@ -62,7 +62,13 @@ impl App {
             self.pan_camera(dt);
         }
         if !time_frozen() {
-            advance_time(&mut self.world, dt);
+            // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
+            // `:1441`): the powers' multiplier folds into the clock tick
+            // (the freeze stops the advance entirely).
+            let rate = self.creative_powers.time_rate();
+            if rate > 0.0 {
+                advance_time(&mut self.world, dt * rate);
+            }
         }
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
         // every 600000 ms (10 minutes); the player/map save rides along.
@@ -204,6 +210,7 @@ impl App {
             let (sw, sh) = self.screen_size();
             let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
             let mut king_near = false;
+            let mut eoc_near = false;
             let mut generic_boss_near = false;
             for n in &self.npcs {
                 if n.hp <= 0 {
@@ -220,13 +227,18 @@ impl App {
                 if n.kind == NpcKind::KingSlime {
                     king_near = true;
                 }
+                if n.kind == NpcKind::EyeOfCthulhu {
+                    eoc_near = true;
+                }
                 // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
             }
             let boss_music = if king_near {
                 Some(93) // MusicID.KingSlime (flag19, `:12596`)
+            } else if eoc_near {
+                Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
             } else {
                 // No other ported kind sets `boss` — the generic slot stays
-                // out until a second boss lands.
+                // out until a third boss lands.
                 None
             };
             let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
@@ -409,7 +421,12 @@ impl App {
             .map_or(0, |s| item::hold_style(s.kind));
         if let Some(p) = render_player.as_mut() {
             if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                p.apply_item_use_frame(self.swing / self.swing_max.max(f32::EPSILON));
+                let aim_relative = self.swing_aim * p.facing as f32;
+                p.apply_item_use_frame(
+                    self.swing / self.swing_max.max(f32::EPSILON),
+                    self.swing_style,
+                    aim_relative,
+                );
             } else if held_hold_style == 1 {
                 p.body_frame = 3;
             }
@@ -982,7 +999,13 @@ impl App {
 
                 let boss = npcs
                     .iter()
-                    .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                    .find(
+                        |n| {
+                            (n.kind == NpcKind::KingSlime
+                                || n.kind == NpcKind::EyeOfCthulhu)
+                                && n.hp > 0
+                        },
+                    )
                     .map(|n| (n.hp, n.max_hp));
                 // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
                 // returns early after `DrawMap`, before `DrawInterface` (`62432`), so

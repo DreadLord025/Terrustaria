@@ -54,6 +54,26 @@ pub(crate) fn black_slime_darkness_touch(
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+    // The town dispatch: the Merchant opens the shop, the Nurse heals (the
+    // vanilla's dialog-button pair — the port collapses them onto the
+    // right-click).
+    let Some(nurse_idx) = app.npcs.iter().position(|n| {
+        n.hp > 0
+            && n.kind == NpcKind::Nurse
+            && {
+                let (w, h) = n.size();
+                world_pos.x >= n.x
+                    && world_pos.x < n.x + w
+                    && world_pos.y >= n.y
+                    && world_pos.y < n.y + h
+            }
+    }) else {
+        return try_open_merchant_shop_at_cursor(app, world_pos);
+    };
+    app.nurse_heal(nurse_idx)
+}
+
+fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
         n.hp > 0
             && n.kind == NpcKind::Merchant
@@ -80,7 +100,7 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         false,
     );
     let flags = crate::shop::ShopFlags {
-        hard_mode: false,
+        hard_mode: app.world.hard_mode,
         night: !app.world.day_time,
         blood_moon: app.world.blood_moon,
         zone_snow: app.scene_metrics.zone_snow,
@@ -303,6 +323,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     });
     app.npc_step.cap_backlog();
+    // The eye's climb-away despawn (`EncourageDespawn(10)` from the
+    // aiStyle-4 day/dead arm — `EncourageDespawn` despawns once the NPC is
+    // far enough off-screen; the port culls it above the player's view).
+    let player_y = app.player.as_ref().map(|p| p.y).unwrap_or(0.0);
+    if app.world.day_time {
+        app.npcs.retain(|n| {
+            !(n.kind == NpcKind::EyeOfCthulhu && n.y + 2000.0 < player_y)
+        });
+    }
     // The worm pass (`AI_006`): the chain movement after the per-NPC step
     // (the vanilla interleaves it in the slot order; the port's pass reads
     // the same spawn order).
@@ -334,6 +363,68 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the money condition + the absence check — the port's cadence rides
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
+    if app.town_look_timer == 0.0 {
+        // The Clothier: the downedSkeletron gate.
+        if app.world.downed_skeletron
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Clothier) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Witch Doctor: the downedQueenBee gate.
+        if app.world.downed_queen_bee
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 - 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::WitchDoctor) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
+        // downedBoss1 — the port's downed_eoc).
+        if app.world.downed_eoc
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Dryad) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
+        if let Some(player) = app.player.as_ref() {
+            if player.max_hp > 100
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
+                && !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant)
+            {
+                // The Nurse arrives when the life maximum grew past 100
+                // (`SpawnAllowed_Nurse`) — the port gates her behind the
+                // Merchant's absence (the vanilla arrival picks one town
+                // NPC per pass).
+                let xt = ((player.x / TILE_PX) as i32 - 6).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Nurse) {
+                    n.home = crate::town::quick_find_home(
+                        &app.world,
+                        xt,
+                        (n.y / TILE_PX) as i32,
+                    );
+                    app.npcs.push(n);
+                }
+            }
+        }
+    }
     if app.town_look_timer == 0.0 {
         if !app.npcs.iter().any(|n| n.kind == NpcKind::Merchant) {
             let inv: Vec<(u16, u32)> = app
@@ -394,8 +485,26 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 (npc.y / 16.0) as i32,
             );
         }
+        // `NPC.checkDead`'s boss arms (`NPC.cs:79416`'s
+        // `SetEventFlagCleared`): the boss deaths set the world's downed
+        // flags. The player-kill gate rides the same kill path as the
+        // bestiary credit above.
+        match npc.kind {
+            NpcKind::KingSlime => app.world.downed_slime_king = true,
+            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
+            NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
+            NpcKind::QueenBee => app.world.downed_queen_bee = true,
+            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
+            NpcKind::WallOfFlesh => {
+                // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
+                // WorldGen.cs:31707): `Main.hardMode = true` — the
+                // hardmode shop rows and the ores ride the flag.
+                app.world.hard_mode = true;
+            }
+            _ => {}
+        }
         spawn_coins(app, &npc);
-        spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(app, &npc);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
     // The casters' sphere spawn requests (`AI_008`'s `NPC.NewNPC` at the
@@ -414,6 +523,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut spheres);
+    // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
+    // block): the update pass set `wants_servant`, this pass resolves it —
+    // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).
+    let mut servants = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some((sx, sy, svx, svy)) = n.wants_servant.take() {
+            servants.push(Npc::spawn_servant_of_cthulhu(sx, sy, svx, svy));
+        }
+    }
+    app.npcs.append(&mut servants);
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
@@ -519,29 +638,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer = 1.0 / 60.0;
 }
 
-/// The slime gel loot through the rule engine
-/// (`ItemDropResolver.TryDropping` + the `ItemDropDatabase.cs:1072-1082`
-/// registrations): the dead slime's vanilla net id resolves its registered
-/// rules; the executor skips requests for items the registry does not model
-/// (the Bladed Glove until its item data lands).
-fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) {
-    if kind != NpcKind::Slime {
-        return;
-    }
-    let net_id = match slime {
-        SlimeVariant::Blue => crate::loot_db::BLUE_SLIME,
-        SlimeVariant::Green => crate::loot_db::GREEN_SLIME,
-        SlimeVariant::Pinky => crate::loot_db::PINKY,
-        SlimeVariant::Baby => crate::loot_db::BABY_SLIME,
-        SlimeVariant::Black => crate::loot_db::BLACK_SLIME,
-        SlimeVariant::Purple => crate::loot_db::PURPLE_SLIME,
-        SlimeVariant::Red => crate::loot_db::RED_SLIME,
-        SlimeVariant::Yellow => crate::loot_db::YELLOW_SLIME,
-    };
+/// The full NPC loot through the rule engine
+/// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
+/// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
+/// rules; the executor skips requests for items the registry does not model.
+fn spawn_loot(app: &mut App, npc: &Npc) {
+    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+    let net_id = entry.net_id;
+    let x = npc.x;
+    let y = npc.y;
     // The drop rolls ride the app's item stream (`rand01`), so the gel keeps
     // its slot in the deterministic order.
     let mut rng_state = app.item_rng;
     let mut loot_rng = LootRng(&mut rng_state);
+    let zones = &app.scene_metrics;
     // The drop rules read the killer's luck (`info.player.RollLuck`,
     // `CommonDrop.cs:36` — the port's single player).
     let mut info = tr_core::loot::DropAttemptInfo {
@@ -551,14 +661,28 @@ fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) 
         is_master: false,
         active_players: 1,
         extra_gel: false,
+        flags: tr_core::loot::LootFlags {
+            hard_mode: app.world.hard_mode,
+            day_time: app.world.day_time,
+            zone_snow: zones.zone_snow,
+            zone_corrupt: zones.zone_corrupt,
+            zone_crimson: zones.zone_crimson,
+            downed_eoc: app.world.downed_eoc,
+            ..Default::default()
+        },
+        npc: tr_core::loot::LootNpc {
+            kind: if net_id < 0 { 1 } else { net_id },
+            value: 1.0,
+            life_max: npc.max_hp,
+            friendly: false,
+            spawned_from_statue: npc.spawned_from_statue,
+            is_boss: npc.kind == NpcKind::KingSlime,
+            has_player_target: true,
+            ..Default::default()
+        },
     };
     let mut out = Vec::new();
-    tr_core::loot::try_dropping(
-        crate::loot_db::slime_database(),
-        net_id,
-        &mut info,
-        &mut out,
-    );
+    tr_core::loot::try_dropping(crate::loot_db::database(), net_id, &mut info, &mut out);
     app.item_rng = rng_state;
     for req in out {
         if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
@@ -728,13 +852,13 @@ mod tests {
 
         let start = a.item_rng;
         spawn_coins(&mut a, &npc);
-        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(&mut a, &npc);
         let state_0 = a.item_rng;
 
         a.item_rng = start;
         a.player.as_mut().unwrap().luck_state.luck = 1.0;
         spawn_coins(&mut a, &npc);
-        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
     }
 }

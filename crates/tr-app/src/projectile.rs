@@ -990,6 +990,13 @@ impl ProjectilePool {
                 if !t.active() || !can_explode_tile(t.kind, t.frame_y as i32 / 18) {
                     continue;
                 }
+                // The `KillTile` entry refuses the same three `CanKillTile`
+                // cases (`CheckTileBreakability`, `WorldGen.cs:63537-63545`
+                // — the container-above scan → 2, the locked door → 1); no
+                // chest store is reachable here, so that case passes.
+                if !tr_core::edit::can_kill_tile(world, tx, ty, |_, _| false) {
+                    continue;
+                }
                 // `WorldGen.KillTile(i, j)` — the default drops stay on (the
                 // C# passes no `noItem`).
                 let _ = tr_core::edit::kill_tile(world, tx, ty, false);

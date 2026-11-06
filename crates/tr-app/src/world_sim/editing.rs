@@ -4,21 +4,55 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World, edit};
+use tr_core::{edit, World, TILE_PX};
 
+use crate::achievements;
 use crate::app::App;
 use crate::item::ItemSlot;
 use tr_core::loot::DropRng;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::projectile::Projectile;
-use crate::achievements;
 use crate::registry;
 
 use super::items::spawn_item_drop;
 
+/// The `Player.ApplyItemAnimation` tail (`Player.cs:4449-4451`): the swing
+/// carries the item's `useStyle` and the current aim angle — the per-style
+/// body dispatch and the held-item draw read both.
+pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
+    app.swing_style = crate::item::use_style(held_kind);
+    let (sw, sh) = app.screen_size();
+    let mouse_world = Vec2::new(
+        app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+        app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+    );
+    let (cx, cy) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((app.camera.x, app.camera.y));
+    app.swing_aim = (mouse_world - Vec2::new(cx, cy)).y.atan2((mouse_world - Vec2::new(cx, cy)).x);
+}
+
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.swing = (app.swing - dt).max(0.0);
+    // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
+    // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
+    if app.swing > 0.0 && app.swing_style == 5 {
+        let (sw, sh) = app.screen_size();
+        let mouse_world = Vec2::new(
+            app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+            app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+        );
+        let (cx, cy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((app.camera.x, app.camera.y));
+        let d = mouse_world - Vec2::new(cx, cy);
+        app.swing_aim = d.y.atan2(d.x);
+    }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42822`), so the press/release edges stay current even on
     // frames where the cursor is over the HUD or a panel.
@@ -62,11 +96,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     // `Player.ItemCheck`'s `!frozen && !webbed` gate (`Player.cs:3381`): a
     // frozen or webbed player cannot swing, throw, mine or place.
-    if app
-        .player
-        .as_ref()
-        .is_some_and(|p| p.frozen || p.webbed)
-    {
+    if app.player.as_ref().is_some_and(|p| p.frozen || p.webbed) {
         app.edit_target = None;
         app.mine_target = None;
         app.mine_timer = 0.0;
@@ -85,6 +115,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
+    }
+    // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
+    // `Player.cs:43742-43771`) fire before the world-editing gates — the C#
+    // runs them in the item-use tick, not the cursor path; the eye arm takes
+    // `app` wholesale (before the fn's `player` borrow).
+    if app.mine_down && !app.inventory_open {
+        let held = app.inventory[app.selected];
+        if held.kind == 43 && held.count > 0 && use_suspicious_looking_eye(app) {
+            return;
+        }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
     let tx = (world_pos.x / TILE_PX).floor() as i32;
@@ -116,9 +156,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // mana pay (`CheckMana`).
     if app.mine_down && held.count > 0 && !app.inventory_open {
         let def = registry::get(held.kind);
-        if def.is_some_and(|d| {
-            d.consumable && matches!(d.buff_type, 26 | 206 | 207)
-        }) {
+        if def.is_some_and(|d| d.consumable && matches!(d.buff_type, 26 | 206 | 207)) {
             let Some(def) = def else { unreachable!() };
             // The sim-context player borrow is immutable; the fed flag was
             // derived by this tick's scan, so the gate reads it directly.
@@ -140,6 +178,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -151,14 +190,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
         // clamps to max, the count decrements.
         let def = registry::get(held.kind);
-        if def.is_some_and(|d| {
-            d.potion && d.heal_life > 0
-        }) {
+        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
             let Some(def) = def else { unreachable!() };
-            let sick = player
-                .buffs
-                .find_buff_index(21)
-                .is_some();
+            let sick = player.buffs.find_buff_index(21).is_some();
             if !sick {
                 let heal = def.heal_life;
                 if let Some(p) = app.player.as_mut() {
@@ -174,6 +208,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -196,19 +231,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let mana_cost = registry::get(held.kind).map(|d| d.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
-            let Some(p) = app.player.as_mut() else { unreachable!() };
+            let Some(p) = app.player.as_mut() else {
+                unreachable!()
+            };
             if mana_cost > 0 {
                 // `Player.CheckMana`'s pay arm: a failed check blocks the use.
                 if p.mana < mana_cost {
                     return;
                 }
                 p.mana -= mana_cost;
-                crate::regen::apply_mana_regen_delay(
-                    &mut p.regen,
-                    p.mana_max,
-                    p.mana,
-                    false,
-                );
+                crate::regen::apply_mana_regen_delay(&mut p.regen, p.mana_max, p.mana, false);
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
             // rides the use start.
@@ -229,8 +261,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if dir != Vec2::ZERO {
                     let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
-                    let raw =
-                        def.damage as f32 * p.weapon_damage_multiplier(class);
+                    let raw = def.damage as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
@@ -258,6 +289,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // matches so the throw repeats only when the swing is over.
                     app.swing_max = crate::item::use_animation_secs(held.kind);
                     app.swing = app.swing_max;
+                    start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
                 }
             }
@@ -312,6 +344,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -323,14 +356,9 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // 21 (3600 ticks, `Item.potionDelay`) gates the re-drink, the heal
         // clamps to max, the count decrements.
         let def = registry::get(held.kind);
-        if def.is_some_and(|d| {
-            d.potion && d.heal_life > 0
-        }) {
+        if def.is_some_and(|d| d.potion && d.heal_life > 0) {
             let Some(def) = def else { unreachable!() };
-            let sick = player
-                .buffs
-                .find_buff_index(21)
-                .is_some();
+            let sick = player.buffs.find_buff_index(21).is_some();
             if !sick {
                 let heal = def.heal_life;
                 if let Some(p) = app.player.as_mut() {
@@ -346,10 +374,45 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
                 return;
+            }
+        }
+    }
+    // `Player.cs:42768-42771` (the use-success arm) + the can-use gate
+    // `:52312-52314` -> `Mount.CanMount` (`Mount.cs:6581-6604`): a saddle
+    // item equips its mount (a swap while mounted goes through the same
+    // `SetMount` guards, `Mount.cs:6196-6213`). Sits after the weapon/potion
+    // arms so the sim-context player borrow is already dead (NLL).
+    if app.mine_down && held.count > 0 && !app.inventory_open {
+        if let Some(m) = crate::mount::mount_type_of_item(held.kind) {
+            if let Some(p) = app.player.as_mut() {
+                if p.can_mount(&app.world, m) {
+                    p.set_mount(m, p.wet);
+                    let secs = crate::item::use_animation_secs(held.kind);
+                    app.swing_max = secs;
+                    app.swing = secs;
+                    app.attack_cd = secs;
+                    app.mine_target = None;
+                    app.mine_timer = 0.0;
+                    return;
+                }
+            }
+        }
+    }
+    // `Player.cs:31695-31698` (`ItemCheck_ManageRightClickFeatures`) and
+    // `:24992-24994`: using an item dismounts the mounts that say so — the
+    // held item being the very same mount is exempt (`:31697`).
+    if app.mine_down && !app.inventory_open {
+        if let Some(p) = app.player.as_mut() {
+            if p.mount.is_active() && p.mount.dismount_on_item_use() {
+                let same = crate::mount::mount_type_of_item(held.kind) == Some(p.mount.kind());
+                if !same {
+                    p.try_dismount();
+                }
             }
         }
     }
@@ -380,7 +443,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let can_mine = if axe_tile {
             tool_axe > 0
         } else {
-            tool_pick > 0 && tr_core::tool::pick_can_mine(tile.kind, tool_pick as i32, below_surface)
+            tool_pick > 0
+                && tr_core::tool::pick_can_mine(tile.kind, tool_pick as i32, below_surface)
         };
         if !can_mine {
             app.mine_target = None;
@@ -389,8 +453,18 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if app.swing <= 0.0 {
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
             }
-            if app.mine_target == Some((tx, ty)) {
+            // `PickTile_DetermineDamage` (`Player.cs:53830-53833`): a
+            // `CanKillTile` refusal zeroes the pick damage — the swing
+            // plays, the accumulator never reaches 100. (The C# fail tick's
+            // `KillTile(fail: true)` sound/dust has no per-tick path in the
+            // port.) `break_tile` re-checks for the other break sources.
+            let refused = !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app));
+            if refused {
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            } else if app.mine_target == Some((tx, ty)) {
                 app.mine_timer += dt;
             } else {
                 app.mine_target = Some((tx, ty));
@@ -425,6 +499,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if app.swing <= 0.0 {
             app.swing_max = crate::item::use_animation_secs(held.kind);
             app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
         }
         if app.mine_target == Some((tx, ty)) {
             app.mine_timer += dt;
@@ -463,9 +538,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 app.world_key = None;
             }
         } else {
-            let hardness = (if tile.wall == 1 { 0.7 } else { 0.35 })
-                * 35.0
-                / tool_hammer.max(1) as f32;
+            let hardness =
+                (if tile.wall == 1 { 0.7 } else { 0.35 }) * 35.0 / tool_hammer.max(1) as f32;
             if app.mine_timer >= hardness {
                 break_wall(app, tx, ty);
                 app.mine_target = None;
@@ -589,10 +663,36 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
     }
 }
 
+/// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
+/// app's in-memory chest store: any slot with a positive stack at the
+/// anchor refuses the break. The C#'s `type > 0` half is implied — the
+/// store only holds real stacks. The store stays empty until the
+/// M3-CHEST-UI seam fills it, so the refusal passes today.
+fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
+    move |x, y| {
+        app.world_chests
+            .iter()
+            .any(|c| c.tile == (x, y) && c.slots.iter().any(|&(_, stack)| stack > 0))
+    }
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
+    // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
+    // every break source — the C# `KillTile` entry duplicates them through
+    // `CheckTileBreakability` (the 1/2 flavours, `:63537-63545`) and
+    // `Chest.DestroyChest` (:63695). Vanilla answers the pick with the fail
+    // tick's sound/dust instead of the break; the port has no per-tick
+    // path, so the refusal is silent.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
     // `AchievementsHelper.NotifyTileDestroyed` + the CustomInt "Pick"
     // counter (BULLDOZER) — the destroyed tile feeds both rows.
-    let kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
+    let kind = app
+        .world
+        .tile(tx, ty)
+        .filter(|t| t.active())
+        .map(|t| t.kind);
     if let Some(kind) = kind {
         let _ = app
             .achievements
@@ -605,13 +705,17 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // (`WorldGen.cs:63964`): the per-cell drops read them after the tile is
     // already cleared (the planter-box style `frameY / 18`, the herb style
     // `frameX / 18`).
-    let hit = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| HitCell {
-        x: tx,
-        y: ty,
-        kind: t.kind,
-        frame_x: t.frame_x,
-        frame_y: t.frame_y,
-    });
+    let hit = app
+        .world
+        .tile(tx, ty)
+        .filter(|t| t.active())
+        .map(|t| HitCell {
+            x: tx,
+            y: ty,
+            kind: t.kind,
+            frame_x: t.frame_x,
+            frame_y: t.frame_y,
+        });
     let Some(kill) = edit::kill_tile(&mut app.world, tx, ty, false) else {
         return;
     };
@@ -619,8 +723,12 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
     // SoundID 4/6/13 have no ported cues, so the generic break cue stands in
     // at the event cell (ANALYSIS entry, phase 5).
     for event in &kill.events {
-        app.audio
-            .play_at("Dig_1", event.x as f32 * TILE_PX, event.y as f32 * TILE_PX, 1.0);
+        app.audio.play_at(
+            "Dig_1",
+            event.x as f32 * TILE_PX,
+            event.y as f32 * TILE_PX,
+            1.0,
+        );
     }
     // The breaking player's staff bonus (`GetPlayerForTile(x, y)
     // .staffOfRegrowthBonus`, `WorldGen.cs:65689` — the flag the placement
@@ -830,8 +938,14 @@ fn break_drop_events(
     // The cascade-killed herb cells: the per-cell herb rolls (`Main.rand`
     // only — no `genRand` rolls, no seed throw).
     for herb in &kill.herb_events {
-        for (id, count) in herb_drops(herb.kind, herb.style, herb.y, staff_of_regrowth, ctx, main_rng)
-        {
+        for (id, count) in herb_drops(
+            herb.kind,
+            herb.style,
+            herb.y,
+            staff_of_regrowth,
+            ctx,
+            main_rng,
+        ) {
             events.push((id, count.max(1) as u32, herb.x, herb.y));
         }
     }
@@ -860,14 +974,15 @@ fn break_drop_events(
 /// `Main.rand.Next(30) == 0` mints the Terragrim 4144, otherwise the
 /// Enchanted Sword 989. Every other 187 frame sits in the empty
 /// `GetItemDrops` group (:65759-65815).
-fn sword_pile_roll(
-    frame_x: i32,
-    rng: &mut super::npcs::LootRng<'_>,
-) -> Option<u16> {
+fn sword_pile_roll(frame_x: i32, rng: &mut super::npcs::LootRng<'_>) -> Option<u16> {
     if !(918..=970).contains(&frame_x) {
         return None;
     }
-    Some(if rng.next_range(0, 30) == 0 { 4144 } else { 989 })
+    Some(if rng.next_range(0, 30) == 0 {
+        4144
+    } else {
+        989
+    })
 }
 
 /// The per-cell slice of `KillTile_GetItemDrops` (`WorldGen.cs:63964-66092`)
@@ -1177,7 +1292,11 @@ fn spawn_things_from_pot(
         return (vec![(arrow, stack)], false);
     }
     if num11 == 3 {
-        let potion = if y > ctx.underworld_layer || ctx.hard_mode { 188 } else { 28 };
+        let potion = if y > ctx.underworld_layer || ctx.hard_mode {
+            188
+        } else {
+            28
+        };
         let mut count = 1;
         if ctx.expert_mode && main_rng.next_range(0, 3) != 0 {
             count += 1;
@@ -1426,10 +1545,7 @@ fn coin_drops(
 /// (`WorldGen.cs:57752-57810`): platinum/gold/silver/copper with the `> 50`
 /// shrinks — the gate roll is consumed only above 50 (C# `&&`), the copper's
 /// second divisor is `Next(4) + 1`.
-fn split_coins(
-    mut num17: f32,
-    main_rng: &mut super::npcs::LootRng<'_>,
-) -> Vec<(u16, i32)> {
+fn split_coins(mut num17: f32, main_rng: &mut super::npcs::LootRng<'_>) -> Vec<(u16, i32)> {
     let mut drops = Vec::new();
     while (num17 as i32) > 0 {
         // The >50 shrinks: `if (num > 50 && Main.rand.Next(2) == 0)` — the
@@ -1846,7 +1962,11 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
     match &result {
-        edit::TileInteraction::ChairSit { seat_x, seat_y, direction } => {
+        edit::TileInteraction::ChairSit {
+            seat_x,
+            seat_y,
+            direction,
+        } => {
             if let Some(p) = app.player.as_mut() {
                 p.sit_down(*seat_x, *seat_y, *direction);
             }
@@ -1879,8 +1999,8 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                     if let Some(p) = app.player.as_mut() {
                         p.spawn_x = *spawn_x as f32 * tr_core::TILE_PX + 8.0
                             - crate::player::WIDTH as f32 * 0.5;
-                        p.spawn_y = *spawn_y as f32 * tr_core::TILE_PX
-                            - crate::player::HEIGHT as f32;
+                        p.spawn_y =
+                            *spawn_y as f32 * tr_core::TILE_PX - crate::player::HEIGHT as f32;
                     }
                     app.chat
                         .new_text("Spawn point set!", crate::chat::COLOR_SERVER_MESSAGE);
@@ -2036,7 +2156,13 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             // Vanilla suppresses item drops on the replication side
             // (`Main.netMode != 1` gate, `WorldGen.cs:63860`); the cascade
             // itself must run so every client converges on the same world.
-            edit::kill_tile(world, x, y, true);
+            // The `KillTile` entry refuses the same three `CanKillTile`
+            // cases (`CheckTileBreakability`, `:63537-63545`); no chest
+            // store is reachable from a bare world, so that case passes
+            // (the store is empty until M3-CHEST-UI anyway).
+            if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
+                edit::kill_tile(world, x, y, true);
+            }
         }
         1 => {
             // Replicated placements take the same route as the local player.
@@ -2059,7 +2185,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
     /// parked under the screen-centre cursor and no tile there, so the
@@ -2078,12 +2204,9 @@ mod tests {
         }
         w.compute_column_surface();
         let mut app = mining_app(w, 30, 260);
-        let mut npc = crate::npc::Npc::spawn_slime_variant(
-            &app.world,
-            30,
-            crate::npc::SlimeVariant::Blue,
-        )
-        .expect("the floor row spawns the slime");
+        let mut npc =
+            crate::npc::Npc::spawn_slime_variant(&app.world, 30, crate::npc::SlimeVariant::Blue)
+                .expect("the floor row spawns the slime");
         npc.x = 30.0 * TILE_PX;
         npc.y = 260.0 * TILE_PX;
         app.npcs.push(npc);
@@ -2531,6 +2654,87 @@ mod tests {
         assert_eq!(app.items[0].kind, 48, "the chest item");
     }
 
+    /// M1.4-TO-6: the cell under a chest refuses the mining break
+    /// (`CanKillTile`'s container-family arm, `WorldGen.cs:62259-62270`) —
+    /// the support and the object stay, no drops.
+    #[test]
+    fn the_support_under_a_chest_refuses_the_mining_break() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 20); // the support cell
+        mine_frames(&mut app, 40);
+        assert!(
+            app.world.tile(10, 20).unwrap().active(),
+            "the support refuses"
+        );
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    app.world.tile(x, y).unwrap().active(),
+                    "chest cell ({x}, {y}) stands"
+                );
+            }
+        }
+        assert!(app.items.is_empty());
+    }
+
+    /// M1.4-TO-6: a chest holding items refuses its own break
+    /// (`:62311-62323` through `CanDestroyChest`); emptying the store
+    /// restores the DW-1.1 behaviour.
+    #[test]
+    fn a_stocked_chest_refuses_the_mining_break_until_emptied() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 18);
+        app.world_chests.push(crate::craft::WorldChest {
+            tile: (10, 18),
+            slots: vec![(9, 6)],
+        });
+        mine_frames(&mut app, 40);
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    app.world.tile(x, y).unwrap().active(),
+                    "stocked chest cell ({x}, {y}) refuses"
+                );
+            }
+        }
+        assert!(app.items.is_empty());
+        app.world_chests.clear();
+        mine_frames(&mut app, 40);
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    !app.world.tile(x, y).unwrap().active(),
+                    "the emptied chest breaks as in DW-1.1"
+                );
+            }
+        }
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// M1.4-TO-6: the locked golden door refuses `break_tile`
+    /// (`:62288-62296` through `IsLockedDoor`); the top cell's frames are
+    /// forced to the lock row — the break is silent and the object stays.
+    #[test]
+    fn the_locked_door_refuses_the_break() {
+        let mut w = object_world();
+        // The doorway's SolidTile anchors, as in DW-1.1.
+        set_tile(&mut w, 10, 16, 1);
+        assert!(edit::place_item_tile(&mut w, 10, 17, 10, 0, 1));
+        w.tile_mut(10, 17).unwrap().frame_y = 594;
+        let mut app = mining_app(w, 10, 17);
+        break_tile(&mut app, 10, 17);
+        for y in 17..=19 {
+            assert!(
+                app.world.tile(10, y).unwrap().active(),
+                "the locked door refuses ({y})"
+            );
+        }
+        assert!(app.items.is_empty());
+    }
+
     /// DW-1.2: the removed cactus carve-out is behaviour-neutral and the
     /// merged tool tiers restore vanilla's axe rule — kind 80 is `tileAxe`
     /// (`Main.cs:7210`), so the rig holds the Iron Axe: the cactus breaks,
@@ -2655,7 +2859,10 @@ mod tests {
         app2.inventory[app2.selected] = slot(307, 5);
         assert!(!use_tile_item(&mut app2, 10, 19));
         assert_eq!(app2.inventory[app2.selected].count, 5, "the seed is kept");
-        assert!(!app2.world.tile(10, 19).unwrap().active(), "nothing written");
+        assert!(
+            !app2.world.tile(10, 19).unwrap().active(),
+            "nothing written"
+        );
     }
 
     #[test]
@@ -2855,7 +3062,11 @@ mod tests {
         let drops = herb_rolls(&day, 84, 0, false);
         assert_eq!(drops[0], (313, 1), "Daybloom herb, stack 1");
         assert_eq!(drops[1].0, 307);
-        assert!((1..=3).contains(&drops[1].1), "seeds 1-3, got {}", drops[1].1);
+        assert!(
+            (1..=3).contains(&drops[1].1),
+            "seeds 1-3, got {}",
+            drops[1].1
+        );
         // The staff swaps the roll set: herbs `Next(1, 3)`, seeds `Next(1, 6)`.
         let drops = herb_rolls(&day, 84, 0, true);
         assert!((1..=2).contains(&drops[0].1), "staff herbs 1-2");
@@ -2892,8 +3103,16 @@ mod tests {
         let wrong_moon = herb_ctx(false, 5, false, false, 0.0, 0.0);
         assert!(!is_alchemy_plant_harvestable(3, 100, &wrong_moon));
         // 4 Waterleaf: rain or cloudAlpha.
-        assert!(is_alchemy_plant_harvestable(4, 100, &herb_ctx(true, 0, false, true, 0.0, 0.0)));
-        assert!(is_alchemy_plant_harvestable(4, 100, &herb_ctx(true, 0, false, false, 0.5, 0.0)));
+        assert!(is_alchemy_plant_harvestable(
+            4,
+            100,
+            &herb_ctx(true, 0, false, true, 0.0, 0.0)
+        ));
+        assert!(is_alchemy_plant_harvestable(
+            4,
+            100,
+            &herb_ctx(true, 0, false, false, 0.5, 0.0)
+        ));
         assert!(!is_alchemy_plant_harvestable(4, 100, &day));
         // 5 Fireblossom: time > 40500 and not (raining while shallow).
         let late = herb_ctx(true, 0, false, false, 0.0, 40500.5);
@@ -3192,7 +3411,11 @@ mod tests {
             num17 *= 1.0 + main.next_range(50, 101) as f32 * 0.01;
         }
         num17 *= pot_style_multiplier(0, false);
-        assert_eq!(coin_value(&loot), num17 as i64, "coin total == replayed num17");
+        assert_eq!(
+            coin_value(&loot),
+            num17 as i64,
+            "coin total == replayed num17"
+        );
     }
 
     // DW-3.3: the style multiplier drives the luck range and the coin scale.
@@ -3201,9 +3424,15 @@ mod tests {
         let close = |a: f32, b: f32| (a - b).abs() < 1e-6;
         // `num = (num * 2 + 1) / 3` after the band table.
         assert!(close(pot_style_multiplier(0, false), 1.0));
-        assert!(close(pot_style_multiplier(4, false), (1.25 * 2.0 + 1.0) / 3.0));
+        assert!(close(
+            pot_style_multiplier(4, false),
+            (1.25 * 2.0 + 1.0) / 3.0
+        ));
         assert!(close(pot_style_multiplier(25, false), 7.0), "10 → 21/3");
-        assert!(close(pot_style_multiplier(28, false), 1.0), "hardmode-gated");
+        assert!(
+            close(pot_style_multiplier(28, false), 1.0),
+            "hardmode-gated"
+        );
         assert!(close(pot_style_multiplier(28, true), 3.0), "4 → 9/3");
         assert_eq!(pot_luck_range(1.0), 500);
         assert_eq!(pot_luck_range(7.0), 125);
@@ -3330,7 +3559,16 @@ mod tests {
         let mut main = crate::world_sim::npcs::LootRng(&mut state);
         assert_eq!(split_coins(51.0, &mut main), vec![(71, 51)]);
         // Sweep: conservation holds across magnitudes and denominations.
-        for cents in [1.0f32, 50.0, 51.0, 99.0, 100.0, 5_050.0, 123_456.0, 2_500_000.0] {
+        for cents in [
+            1.0f32,
+            50.0,
+            51.0,
+            99.0,
+            100.0,
+            5_050.0,
+            123_456.0,
+            2_500_000.0,
+        ] {
             let mut state = 42u64;
             let mut main = crate::world_sim::npcs::LootRng(&mut state);
             let drops = split_coins(cents, &mut main);
@@ -3357,7 +3595,11 @@ mod tests {
             drops.sort_unstable();
             drops
         };
-        assert_eq!(run(), run(), "identical seeds and actions → identical drops");
+        assert_eq!(
+            run(),
+            run(),
+            "identical seeds and actions → identical drops"
+        );
     }
 
     // DW-3.6 (amended): the seed route is the `flag2` tileCut rule
@@ -3379,7 +3621,7 @@ mod tests {
         let mut app = break_app(w, 0xBEA5);
         app.world.day_time = false; // night: `IsAlchemyPlantHarvestable(0)` false
         app.inventory[app.selected] = slot(307, 5); // Daybloom seeds
-        // The cut rule kills (no pot below), then the seed plants itself.
+                                                    // The cut rule kills (no pot below), then the seed plants itself.
         assert!(use_tile_item(&mut app, 10, 18));
         let t = app.world.tile(10, 18).unwrap();
         assert!(t.active() && t.kind == 82, "the seed planted itself");
@@ -3465,7 +3707,10 @@ mod tests {
         set_herb(&mut w, 10, 18, 84, 0);
         let mut app = break_app(w, 0xBEA5);
         app.inventory[app.selected] = slot(213, 1); // Staff of Regrowth
-        assert!(!use_tile_item(&mut app, 10, 18), "no placement after the kill");
+        assert!(
+            !use_tile_item(&mut app, 10, 18),
+            "no placement after the kill"
+        );
         let t = app.world.tile(10, 18).unwrap();
         assert!(t.active() && t.kind == 82 && t.frame_x == 0, "replanted");
         let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
@@ -3692,3 +3937,99 @@ mod tests {
         assert_eq!(drops[0].0, 313);
         assert_eq!(drops[1].0, 307);
     }}
+
+/// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
+/// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
+/// = 15), then `NPC.SpawnOnPlayer(onWhichPlayer, 4)`. The
+/// `SummonItemCheck` (`Player.cs:42162-42176`) refuses while an EoC is
+/// already alive; `ApplyItemTime`'s re-fire guard rides the swing timers
+/// (the food/potion arms' shape).
+pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
+    let eye_alive = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0);
+    if app.world.day_time || eye_alive {
+        return false;
+    }
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = player.center();
+    let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
+        return false;
+    };
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    app.npcs.push(eye);
+    true
+}
+
+#[cfg(test)]
+mod loot_summon_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn the_suspicious_eye_summons_only_at_night_and_once() {
+        // `ItemCheck_UseBossSpawners`' gates: day → refused; night → the
+        // roar + the spawn + the consumption; alive → refused
+        // (`SummonItemCheck`).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = true;
+        app.inventory[app.selected] =
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+        assert!(
+            !use_suspicious_looking_eye(&mut app),
+            "day refuses"
+        );
+        app.world.day_time = false;
+        assert!(use_suspicious_looking_eye(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 0, "the use consumed");
+        assert!(app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0));
+        app.inventory[app.selected] =
+            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+        assert!(
+            !use_suspicious_looking_eye(&mut app),
+            "SummonItemCheck refuses while alive"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    #[test]
+    fn the_eoc_kill_sets_the_downed_flag() {
+        // `NPC.downedBoss1 = true` rides the death pass; the loot resolves
+        // against the full database (the executor skips the unregistered
+        // items).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = false;
+        let mut eye =
+            crate::npc::Npc::spawn_eye_of_cthulhu(&app.world, 64.0, 64.0).unwrap();
+        eye.hp = 0;
+        app.npcs.push(eye);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eoc);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::EyeOfCthulhu));
+    }
+}
