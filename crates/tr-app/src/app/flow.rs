@@ -1325,6 +1325,7 @@ pub(crate) mod front_flow_tests {
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            invasion_spawn_timer: 0.0,
             npc_rng: 0,
             spawn_no_cycle: false,
             attack_cd: 0.0,

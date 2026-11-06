@@ -100,6 +100,12 @@ pub struct World {
     pub downed_mech_boss3: bool,
     pub downed_mech_boss2: bool,
     pub downed_plant_boss: bool,
+    /// The Goblin Army invasion (`Main.invasionType = 1`).
+    pub invasion_goblins: bool,
+    /// The remaining invasion enemies (`Main.invasionSize`).
+    pub invasion_size: i32,
+    /// `World.downedGoblins` — the Goblin Tinkerer's gate.
+    pub downed_goblins: bool,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -151,10 +157,13 @@ impl World {
             downed_eow: false,
             downed_skeletron: false,
             downed_queen_bee: false,
-        downed_mech_boss1: false,
-        downed_mech_boss3: false,
-        downed_mech_boss2: false,
-        downed_plant_boss: false,
+            downed_mech_boss1: false,
+            downed_mech_boss3: false,
+            downed_mech_boss2: false,
+            downed_plant_boss: false,
+            invasion_goblins: false,
+            invasion_size: 0,
+            downed_goblins: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,

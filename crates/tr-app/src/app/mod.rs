@@ -142,6 +142,8 @@ pub(crate) struct App {
     /// The favorited inventory slots (`Item.favorited`'s port — the slot
     /// indices, not the per-item flag; the v1 tracks the slot positions).
     pub(crate) favorite_slots: Vec<usize>,
+    /// The Goblin Army spawn cadence (the 2-second invasion pass).
+    pub(crate) invasion_spawn_timer: f32,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -786,13 +788,8 @@ impl App {
             .filter(|t| crate::buffs::is_debuff(**t))
             .count() as i32;
         let npc = &self.npcs[nurse_idx];
-        let mood = crate::happiness::process_mood(
-            &self.world,
-            &self.npcs,
-            npc,
-            player.center(),
-            false,
-        );
+        let mood =
+            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
         nurse_heal_cost_for(missing, debuffs, mood.multiplier)
     }
 
@@ -1461,6 +1458,7 @@ impl App {
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
             favorite_slots: Vec::new(),
+            invasion_spawn_timer: 0.0,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
