@@ -212,6 +212,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
         // The hungry/leeches: no `DebuffImmunitySets` rows.
         NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => &[],
+        // The goblins: no `DebuffImmunitySets` rows.
+        NpcKind::GoblinThief
+        | NpcKind::GoblinWarrior
+        | NpcKind::GoblinArcher
+        | NpcKind::GoblinPeon
+        | NpcKind::GoblinSummoner => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

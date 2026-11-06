@@ -422,6 +422,11 @@ fn portrait_data(
         NpcKind::Plantera => 54,
         NpcKind::BrainOfCthulhu => 55,
         NpcKind::Creeper => 56,
+        NpcKind::GoblinThief => 57,
+        NpcKind::GoblinWarrior => 58,
+        NpcKind::GoblinArcher => 59,
+        NpcKind::GoblinPeon => 60,
+        NpcKind::GoblinSummoner => 61,
         NpcKind::GoblinPeon => 57,
         NpcKind::GoblinThief => 58,
         NpcKind::GoblinWarrior => 59,
@@ -531,6 +536,38 @@ fn portrait_data(
         (NpcKind::BoundGoblin, _) => (sheet_i, 48.0, 34.0, 54.0, white),
         (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
+        // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
+        // display boxes (the frame height rides each sheet).
+        (NpcKind::GoblinThief, _) => {
+            let h = lookups.bestiary_npc_sheets[57]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinWarrior, _) => {
+            let h = lookups.bestiary_npc_sheets[58]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinArcher, _) => {
+            let h = lookups.bestiary_npc_sheets[59]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinPeon, _) => {
+            let h = lookups.bestiary_npc_sheets[60]
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinSummoner, _) => {
+            let h = lookups.bestiary_npc_sheets[61]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
     }
 }
 

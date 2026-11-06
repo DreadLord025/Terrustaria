@@ -58,6 +58,24 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
+    /// `NPCID.GoblinThief` (26) — the invasion runner (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
+    GoblinThief,
+    /// `NPCID.GoblinWarrior` (27) — the invasion fighter (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
+    GoblinWarrior,
+    /// `NPCID.GoblinArcher` (28) — the invasion archer (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
+    /// ride the projectile work).
+    GoblinArcher,
+    /// `NPCID.GoblinPeon` (111) — the invasion grunt (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
+    GoblinPeon,
+    /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
+    /// (`NPC.cs`: 18×38, aiStyle 3 (the summoner's cast arms ride the
+    /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000;
+    /// `GetNPCInvasionGroup`'s 10-point kill).
+    GoblinSummoner,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -197,14 +215,6 @@ pub enum NpcKind {
     /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
     /// 30x30, dmg 20, def 10, 100 HP).
     Creeper,
-    /// `NPCID.GoblinPeon` (26) — x0.9, dmg 12, def 4, 60 HP.
-    GoblinPeon,
-    /// `NPCID.GoblinThief` (27) — x0.95, dmg 20, def 6, 80 HP.
-    GoblinThief,
-    /// `NPCID.GoblinWarrior` (28) — x1.1, dmg 25, def 8, 110 HP.
-    GoblinWarrior,
-    /// `NPCID.GoblinArcher` (111) — x0.95, dmg 20, def 6, 80 HP.
-    GoblinArcher,
     /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
     /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
     /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
@@ -395,6 +405,11 @@ impl NpcKind {
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
             NpcKind::GoblinSorcerer => 15,
+            NpcKind::GoblinThief => 57,
+            NpcKind::GoblinWarrior => 58,
+            NpcKind::GoblinArcher => 59,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinSummoner => 61,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -436,12 +451,8 @@ impl NpcKind {
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 56,
-            NpcKind::GoblinPeon => 57,
-            NpcKind::GoblinThief => 58,
-            NpcKind::GoblinWarrior => 59,
-            NpcKind::GoblinArcher => 60,
-            NpcKind::BoundGoblin => 61,
-            NpcKind::GoblinTinkerer => 62,
+            NpcKind::BoundGoblin => 63,
+            NpcKind::GoblinTinkerer => 64,
         }
     }
 
@@ -463,6 +474,11 @@ impl NpcKind {
             13 => NpcKind::Hornet,
             14 => NpcKind::MeteorHead,
             15 => NpcKind::GoblinSorcerer,
+            57 => NpcKind::GoblinThief,
+            58 => NpcKind::GoblinWarrior,
+            59 => NpcKind::GoblinArcher,
+            60 => NpcKind::GoblinPeon,
+            61 => NpcKind::GoblinSummoner,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -504,12 +520,8 @@ impl NpcKind {
             54 => NpcKind::Plantera,
             55 => NpcKind::BrainOfCthulhu,
             56 => NpcKind::Creeper,
-            57 => NpcKind::GoblinPeon,
-            58 => NpcKind::GoblinThief,
-            59 => NpcKind::GoblinWarrior,
-            60 => NpcKind::GoblinArcher,
-            61 => NpcKind::BoundGoblin,
-            62 => NpcKind::GoblinTinkerer,
+            63 => NpcKind::BoundGoblin,
+            64 => NpcKind::GoblinTinkerer,
             _ => return None,
         })
     }
@@ -629,11 +641,12 @@ impl NpcKind {
             NpcKind::BrainOfCthulhu => (160.0, 110.0),
             // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
             NpcKind::Creeper => (30.0, 30.0),
-            // The goblins: 18x38 x the scale.
-            NpcKind::GoblinPeon => (16.0, 34.0),
-            NpcKind::GoblinThief => (17.0, 36.0),
-            NpcKind::GoblinWarrior => (20.0, 42.0),
-            NpcKind::GoblinArcher => (17.0, 36.0),
+            // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/111/29/471).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -654,7 +667,13 @@ impl NpcKind {
             NpcKind::MeteorHead => (22.0, 22.0),
             // The casters: `SetDefaults` case 29 is 18x38, the cases
             // 45/32/24 18x40 (`NPC.cs:8951`/`:9322`/`:9121`/`:9078`).
-            NpcKind::GoblinSorcerer => (18.0, 38.0),
+            // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/29/111/471).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner
+            | NpcKind::GoblinSorcerer => (18.0, 38.0),
             NpcKind::Tim => (18.0, 40.0),
             NpcKind::DarkCaster => (18.0, 40.0),
             NpcKind::FireImp => (18.0, 40.0),
@@ -736,10 +755,6 @@ impl NpcKind {
             NpcKind::BrainOfCthulhu => 1250,
             NpcKind::Creeper => 100,
             // The goblins.
-            NpcKind::GoblinPeon => 60,
-            NpcKind::GoblinThief => 80,
-            NpcKind::GoblinWarrior => 110,
-            NpcKind::GoblinArcher => 80,
             // 250 HP both (`:10255`, `:10280`).
             NpcKind::BoundGoblin => 250,
             NpcKind::GoblinTinkerer => 250,
@@ -757,7 +772,13 @@ impl NpcKind {
             NpcKind::Hornet => 48,
             NpcKind::MeteorHead => 26,
             // The casters: `SetDefaults` cases 29/45/32/24.
+            // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
+            // 471 (2000).
+            NpcKind::GoblinThief => 60,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 80,
+            NpcKind::GoblinArcher => 110,
             NpcKind::GoblinSorcerer => 40,
+            NpcKind::GoblinSummoner => 2000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -813,10 +834,6 @@ impl NpcKind {
             NpcKind::Plantera => 50,
             NpcKind::BrainOfCthulhu => 30,
             NpcKind::Creeper => 20,
-            NpcKind::GoblinPeon => 12,
-            NpcKind::GoblinThief => 20,
-            NpcKind::GoblinWarrior => 25,
-            NpcKind::GoblinArcher => 20,
             // The `friendly` pair (`:10246`/`:10272`) — the contact gate
             // excludes them; 0 stands for the vanilla's unused dmg 10.
             NpcKind::BoundGoblin => 0,
@@ -834,7 +851,12 @@ impl NpcKind {
             NpcKind::Hornet => 26,
             NpcKind::MeteorHead => 40,
             // The casters: `SetDefaults` damage 20/20/20/30.
-            NpcKind::GoblinSorcerer => 20,
+            // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
+            // 471 (80).
+            NpcKind::GoblinThief => 12,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
+            NpcKind::GoblinArcher => 25,
+            NpcKind::GoblinSummoner => 80,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -966,6 +988,12 @@ pub struct Npc {
     /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
     /// makes it negative).
     pub defense_override: Option<i32>,
+    /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
+    /// it holds (the Brain of Cthulhu's Creeper shield).
+    pub dont_take_damage: bool,
+    /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
+    /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
+    pub swarm_done: bool,
 }
 
 impl Npc {
@@ -1268,6 +1296,8 @@ impl Npc {
             ai: [0.0; 4],
             wants_servant: None,
             defense_override: None,
+            dont_take_damage: false,
+            swarm_done: false,
         }
     }
 
@@ -1312,7 +1342,13 @@ impl Npc {
             NpcKind::Hornet => 0.5,
             NpcKind::MeteorHead => 0.4,
             // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
+            // `NPC.cs`'s cases 26 (0.8) / 27+111 (0.7) / 28 (0.5) / 29 (0.6)
+            // / 471 (0.15).
+            NpcKind::GoblinThief => 0.8,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
+            NpcKind::GoblinArcher => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
+            NpcKind::GoblinSummoner => 0.15,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1407,7 +1443,13 @@ impl Npc {
             NpcKind::Hornet => 12,
             NpcKind::MeteorHead => 6,
             // The casters: `SetDefaults` defense 2/4/2/16.
+            // `NPC.cs`'s cases 26 (4) / 27+111 (6) / 28 (8) / 29 (2) /
+            // 471 (26).
+            NpcKind::GoblinThief => 4,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
+            NpcKind::GoblinArcher => 8,
             NpcKind::GoblinSorcerer => 2,
+            NpcKind::GoblinSummoner => 26,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1495,7 +1537,12 @@ impl Npc {
             NpcKind::Hornet => 200.0,
             NpcKind::MeteorHead => 250.0,
             // The casters: `SetDefaults` value 200/5000/140/350.
-            NpcKind::GoblinSorcerer => 200.0,
+            // `NPC.cs`'s cases 26 (100) / 27+111 (200) / 28 (150) / 29 (200)
+            // / 471 (5000).
+            NpcKind::GoblinThief => 100.0,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::GoblinArcher => 150.0,
+            NpcKind::GoblinSummoner => 5000.0,
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
@@ -1577,6 +1624,11 @@ impl Npc {
     /// `knock_back` the weapon's `Item.knockBack`.
     pub fn hurt(&mut self, amount: i32, from_x: f32, knock_back: f32, crit: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
+            return false;
+        }
+        // `NPC.dontTakeDamage` (`NPC.cs:6525`): the shielded boss takes
+        // nothing (the Brain of Cthulhu's Creeper shield).
+        if self.dont_take_damage {
             return false;
         }
         self.hp -= amount;
@@ -1681,7 +1733,7 @@ impl Npc {
             NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player),
-            NpcKind::Creeper => {}
+            NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
             NpcKind::GoblinPeon
@@ -1690,6 +1742,20 @@ impl Npc {
             | NpcKind::GoblinArcher => self.update_goblin(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
+            // The goblin army's fighters (aiStyle 3): the walker speed
+            // rides the skeleton's, the peon/warrior/summoner carry the
+            // family's 0.85 hop (the vanilla's per-type velocity.X table
+            // folds into the walker params — the faithful per-type rows
+            // land with the AI_003's velocity table pass).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
+            NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
+            NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -1747,6 +1813,29 @@ impl Npc {
             0
         };
         match self.kind {
+            // The goblins: the 16/21/20-frame humanoid strips (the same
+            // accumulator as the zombie's).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::GoblinPeon => 21,
+                        _ => 16,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            NpcKind::GoblinSummoner => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 20;
+                }
+            }
             // The hungry (3 frames) / the leech segments (1).
             NpcKind::Hungry => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
@@ -3704,6 +3793,55 @@ impl Npc {
     /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
     /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
     /// invulnerability gate (the Creepers' orbit = the follow-ups).
+    /// The Creeper (`AI_055`, `NPC.cs:32657-32735`): the orbit around
+    /// the brain — beyond the 90 px ring the velocity blends home
+    /// (`x15/16`), inside it the speed amplifies x1.05 under the 8 cap;
+    /// the 1/200 roll (the classic; the expert's 1/100 folds out)
+    /// lunges at the player at 8 px/tick; the lunge holds until the
+    /// justHit recoil (`hurt_cd` stands in for `justHit`) sends it back
+    /// to the orbit. The brainless Creepers die in the sim
+    /// (`NPC.crimsonBoss < 0` -> `active = false`); the brain's anchor
+    /// rides the World fields (the WoF's write-through shape).
+    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        if !world.brain_present {
+            return;
+        }
+        let (w, h) = self.size();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[0] == 0.0 {
+            self.ai[1] = 0.0;
+            let dx = world.brain_x - cx;
+            let dy = world.brain_y - cy;
+            let d = (dx * dx + dy * dy).sqrt();
+            if d > 90.0 {
+                let s = 8.0 / d;
+                self.vx = (self.vx * 15.0 + dx * s) / 16.0;
+                self.vy = (self.vy * 15.0 + dy * s) / 16.0;
+                return;
+            }
+            if self.vx.abs() + self.vy.abs() < 8.0 {
+                self.vy *= 1.05;
+                self.vx *= 1.05;
+            }
+            if crate::app::rand01(rng) < 1.0 / 200.0 {
+                let (pcx, pcy) = player.center();
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                self.vx = dx / d * 8.0;
+                self.vy = dy / d * 8.0;
+                self.ai[0] = 1.0;
+            }
+            return;
+        }
+        // The lunge: the straight flight until the justHit recoil.
+        if self.hurt_cd <= 0.0 {
+            return;
+        }
+        self.ai[0] = 0.0;
+    }
+
     fn update_brain(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -3936,6 +4074,11 @@ impl Npc {
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
             NpcKind::GoblinSorcerer => 15,
+            NpcKind::GoblinThief => 57,
+            NpcKind::GoblinWarrior => 58,
+            NpcKind::GoblinArcher => 59,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinSummoner => 61,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -5805,25 +5948,77 @@ mod tests {
     #[test]
     fn the_goblin_kinds_spawn_and_maps() {
         // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
-        // round-trip + the bestiary rows.
+        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
+        // the Warrior 27, the Archer 28, the Peon 111).
         let w = ground_air();
-        let peon = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinPeon).expect("the peon spawns");
-        assert_eq!(peon.max_hp, 60);
-        assert_eq!(NpcKind::GoblinPeon.contact_damage(), 12);
-        let warrior =
-            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinWarrior).expect("the warrior spawns");
-        assert_eq!(warrior.max_hp, 110);
-        assert_eq!(NpcKind::GoblinWarrior.contact_damage(), 25);
+        let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
+        assert_eq!(thief.max_hp, 60);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        let archer =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        assert_eq!(archer.max_hp, 110);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
         for (kind, net) in [
-            (NpcKind::GoblinPeon, 26),
-            (NpcKind::GoblinThief, 27),
-            (NpcKind::GoblinWarrior, 28),
-            (NpcKind::GoblinArcher, 111),
+            (NpcKind::GoblinThief, 26),
+            (NpcKind::GoblinWarrior, 27),
+            (NpcKind::GoblinArcher, 28),
+            (NpcKind::GoblinPeon, 111),
         ] {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
         }
     }
+    #[test]
+    fn the_creeper_orbits_brain_and_lunges() {
+        // `AI_055` (`NPC.cs:32657-32735`): beyond the 90 px ring the
+        // velocity blends home (x15/16); inside it the drift amplifies;
+        // the 1/200 roll lunges at 8 px/tick and holds until the
+        // justHit recoil.
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 100.0 * 16.0;
+        w.brain_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // Far: the blend pulls home (the 10-tile offset clears the 90 px
+        // ring).
+        let mut c = Npc::new(NpcKind::Creeper, 110.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        c.hp = c.max_hp;
+        let mut rng = 1u64;
+        c.update_creeper(&w, &player, &mut rng);
+        assert!(c.vx < 0.0, "the orbit pulls toward the brain");
+        // At the ring: the roll may lunge — hunt a no-lunge seed and a
+        // lunge seed.
+        let mut lunge = None;
+        for seed in 0..20000u64 {
+            let mut c = Npc::new(NpcKind::Creeper, 100.2 * 16.0, 100.0 * 16.0, 1, 0.0);
+            c.hp = c.max_hp;
+            let mut rng = seed;
+            c.update_creeper(&w, &player, &mut rng);
+            if c.ai[0] == 1.0 {
+                lunge = Some((seed, c));
+                break;
+            }
+        }
+        let (seed, c) = lunge.expect("a lunge seed exists");
+        let (pcx, _) = player.center();
+        let (ccx, _) = c.center();
+        assert!(
+            (c.vx - 8.0).abs() < 0.5 && pcx > ccx,
+            "the lunge aims at the player"
+        );
+        // The lunge holds while the justHit recoil is silent.
+        let mut c = c;
+        let mut rng = seed;
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 1.0, "the lunge holds");
+        // The hit sends it back to the orbit.
+        c.hurt(10, c.x - 5.0, 5.0, false);
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 0.0, "the justHit returns to the orbit");
+    }
+
     #[test]
     fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
         // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
@@ -5837,7 +6032,7 @@ mod tests {
         assert_eq!(NpcKind::BoundGoblin.contact_damage(), 0);
         assert_eq!(NpcKind::BoundGoblin.size(), (18.0, 34.0));
         assert_eq!(NpcKind::GoblinTinkerer.size(), (18.0, 40.0));
-        for (kind, v) in [(NpcKind::BoundGoblin, 61), (NpcKind::GoblinTinkerer, 62)] {
+        for (kind, v) in [(NpcKind::BoundGoblin, 63), (NpcKind::GoblinTinkerer, 64)] {
             assert_eq!(kind.to_u16(), v);
             assert_eq!(NpcKind::from_u16(v), Some(kind));
         }

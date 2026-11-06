@@ -2523,6 +2523,46 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Goblin Army invasion (M4-EVENT-1)
+
+The event framework's first slice. The state machine (`Main.UpdateInvasion`,
+`Main.cs:64328-64386`): at `invasionSize <= 0` the defeat rides
+(`SetEventFlagCleared(ref downedGoblins, 0)` + the broadcast), else the
+army's `invasionX` marches toward `spawnTileX` by `max(dayRate, 1)` —
+the arrival broadcast fires on the reach and every 3600 ticks
+(`Main.InvasionWarning`; the port's literals stand in for
+`Lang.misc[0..3]`). The morning trigger (`UpdateTime_StartDay`,
+`:65439-65462`): the smashed shadow orb arms the goblin rolls — 1/3
+before the first defeat, 1/30 (hardmode) / 1/60 (the classic) after —
+and the `StartInvasion` request resolves in the app pass (the
+`CanStartInvasion` gates: no active type, no delay, the 200+ max-hp
+player; the size 80+40 per qualified player; the march column on the
+world's far side).
+
+The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
+the px-space surface band (`position.Y < worldSurface*16 + sHeight` = 200)
+plus the ±3000 px window around `invasionX` — overrides the natural roll
+with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
+none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
+1/3, else the Archer. The five kinds carry their verbatim `SetDefaults`
+rows (18×38, the aiStyle-3 walker — the Sorcerer keeps its caster arm,
+the Summoner rides it in hardmode).
+
+The kill credit (`NPC.cs:78236-78279`): the dead goblin's
+`GetNPCInvasionGroup` (1) matches the active `invasionType` →
+`invasionSize -= num9` (the Summoner's 10-point kill, the rest 1) — the
+progress `ReportInvasionProgress` fields land with the UI-bar slice.
+
+The borrow shape: the invasion spawn ride reads the world/player/roster
+BEFORE the npc_step split borrows and resolves the spawn AFTER the tick
+(the wholesale-app pass) — the same shape the voodoo sacrifice uses.
+
+Deviations: the town-NPC fallback window (the `maxTilesX/2 ± 5` arm of
+`ShouldSpawnInvasionEnemies`) needs the town roster scan — the follow-up;
+the UI progress bar (`DrawInvasionProgress`), the invasion-delay timer's
+save persistence and the waves 2-4 (the Frost Legion/Pirates/Martians)
+are the follow-ups.
+
 ## The lava burn (M1.5-ITEM-lava-burn)
 
 `CheckLavaDeath`'s non-doll arm: the drops touching lava vanish
