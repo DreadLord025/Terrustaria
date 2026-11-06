@@ -449,6 +449,12 @@ pub(crate) struct App {
     pub(crate) projectiles: ProjectilePool,
     /// The falling tombstone projectiles (`Player.DropTombstone`).
     pub(crate) tomb_falls: Vec<crate::death::TombFall>,
+    /// `Player.lostCoins`/`lostCoinString` + the last death text — the
+    /// death screen's "Dropped coins" line (`Main.cs:45333-45338`).
+    pub(crate) lost_coins: u64,
+    pub(crate) lost_coin_string: String,
+    /// The full death broadcast text (`{name} {text}`).
+    pub(crate) death_text: String,
     /// The placed tombstones' epitaphs keyed by the tile anchor
     /// (vanilla stores the text in the projectile's `miscText` and then the
     /// tile render reads it — `Projectile.miscText`).
@@ -1853,6 +1859,9 @@ impl App {
             coins,
             projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
+            lost_coins: 0,
+            lost_coin_string: String::new(),
+            death_text: String::new(),
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: std::env::var_os("TR_THROW").is_some(),

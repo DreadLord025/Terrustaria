@@ -2525,6 +2525,33 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The death-screen coin loss (M4-REVENGE-1)
+
+The drop half rode the earlier death.rs (`drop_gems`/`drop_coins`/
+`roll_tombstone`); the display half lands here:
+
+- **`value_to_coins`** (`Main.ValueToCoins`, `Main.cs:55220-55262`) —
+  the greedy copper→platinum split, the zero tiers skipped, the bare
+  copper still prints (`"0 copper"`), the en currency literals stand in
+  for the `Currency.*` keys.
+- **The KillMe arm** (`Player.cs:38931-38936`): `lostCoins =
+  DropCoins()` (the drop pass returns the dropped copper total),
+  `lostCoinString = ValueToCoins(lostCoins)` and the full death
+  broadcast — the App's `lost_coins`/`lost_coin_string`/`death_text`
+  fields set at `on_player_death`.
+- **The death screen** (`Main.DrawDeathText`, `Main.cs:45324-45341`):
+  the broadcast through the `DeathText` font (centered 60 px above the
+  screen's midpoint), the softcore `Dropped coins: X` line through the
+  `MouseText` font 50 px lower — `ui::draw_death_screen`, drawn from
+  frame.rs while the player is dead (`hp <= 0`). The death-tint alpha
+  rides fixed full-bright (the respawn fade = the death-screen pass).
+
+Deviations: the expert `/4` and master `0` drop tiers and the PvP
+zero-coin arm wait for the difficulty/pvp flags; the C# drops the coins
+from the INVENTORY coin stacks (`Item.IsACoin`), the port's aggregate
+`App.coins` purse splits greedily into the coin item stacks (the same
+denominations, the 999 caps).
+
 ## The Goblin Army invasion (M4-EVENT-1)
 
 The event framework's first slice. The state machine (`Main.UpdateInvasion`,

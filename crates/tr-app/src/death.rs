@@ -45,10 +45,47 @@ fn drop_gems(app: &mut App, x: f32, y: f32) {
 /// difficulty is classic), keeping the remainder. The port's coins live in
 /// `App.coins` (a copper total), so the dropped half is split greedily into
 /// platinum/gold/silver/copper stacks.
-pub fn drop_coins(app: &mut App, x: f32, y: f32) {
+/// `Main.ValueToCoins` (`Main.cs:55220-55262`): the copper total → the
+/// "1 platinum 2 gold 50 silver 10 copper" string, the zero denominations
+/// skipped (the en literals stand in for the `Currency.*` keys).
+pub fn value_to_coins(value: u64) -> String {
+    let mut num = value;
+    let mut platinum = 0u64;
+    let mut gold = 0u64;
+    let mut silver = 0u64;
+    while num >= 1_000_000 {
+        num -= 1_000_000;
+        platinum += 1;
+    }
+    while num >= 10_000 {
+        num -= 10_000;
+        gold += 1;
+    }
+    while num >= 100 {
+        num -= 100;
+        silver += 1;
+    }
+    let copper = num;
+    let mut text = String::new();
+    if platinum > 0 {
+        text += &format!("{} platinum ", platinum);
+    }
+    if gold > 0 {
+        text += &format!("{} gold ", gold);
+    }
+    if silver > 0 {
+        text += &format!("{} silver ", silver);
+    }
+    if copper > 0 || text.is_empty() {
+        text += &format!("{} copper", copper);
+    }
+    text
+}
+
+pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
     let dropped = app.coins / 2;
     if dropped == 0 {
-        return;
+        return 0;
     }
     app.coins -= dropped;
     let mut rng_state = app.item_rng;
@@ -97,6 +134,7 @@ pub fn drop_coins(app: &mut App, x: f32, y: f32) {
         ));
     }
     app.item_rng = rng_state;
+    dropped
 }
 
 /// The falling tombstone projectile (`Projectile` ids 43/201-205/527-531,
@@ -209,7 +247,13 @@ pub fn death_text_for(death: DotDeath) -> &'static str {
 /// tombstone. `death_text` is the epitaph (`PlayerDeathReason.ToString()`).
 pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     drop_gems(app, x, y);
-    drop_coins(app, x, y);
+    // `KillMe`'s softcore arm (`Player.cs:38931-38936`): `lostCoins =
+    // DropCoins()` and `lostCoinString = Main.ValueToCoins(lostCoins)` —
+    // the death screen's "Dropped coins" line reads both (`Main.cs:45333`).
+    let lost = drop_coins(app, x, y);
+    app.lost_coins = lost;
+    app.lost_coin_string = value_to_coins(lost);
+    app.death_text = format!("{} {death_text}", app.player_name);
     let mut tomb = roll_tombstone(&mut app.item_rng, app.coins);
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
@@ -293,4 +337,61 @@ mod tests {
         // 500 copper = 5 silver: no platinum/gold, one 5-stack of silver.
         assert_eq!(stacks, vec![(100, 5)]);
     }
+
+#[cfg(test)]
+mod revenge_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn value_to_coins_skips_the_zero_denominations() {
+        // `Main.ValueToCoins` (`Main.cs:55220-55262`): the greedy split, the
+        // zero tiers skipped, the bare copper still prints.
+        assert_eq!(value_to_coins(0), "0 copper");
+        assert_eq!(value_to_coins(10), "10 copper");
+        assert_eq!(value_to_coins(150), "1 silver 50 copper");
+        assert_eq!(value_to_coins(10_050), "1 gold 50 copper");
+        assert_eq!(value_to_coins(1_010_050), "1 platinum 1 gold 50 copper");
+        assert_eq!(value_to_coins(2_000_000), "2 platinum ");
+    }
+
+    #[test]
+    fn the_death_sets_the_lost_coins_state() {
+        // `KillMe`'s softcore arm (`Player.cs:38931-38936`): lostCoins =
+        // DropCoins() (half the purse), lostCoinString = ValueToCoins, the
+        // death text rides the broadcast.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player_name = "Tester".into();
+        app.coins = 10_050; // 1 gold 50 silver 50 copper → drops 5025
+        let before = app.coins;
+        on_player_death(&mut app, 100.0, 100.0, "was slain.");
+        assert!(app.lost_coins > 0 && app.lost_coins < before);
+        assert_eq!(app.lost_coins, before - app.coins, "the purse halves");
+        assert_eq!(
+            app.lost_coin_string,
+            value_to_coins(app.lost_coins),
+            "the string mirrors the total"
+        );
+        assert_eq!(app.death_text, "Tester was slain.");
+        // The coin items landed on the ground (the drop pass).
+        assert!(app
+            .items
+            .iter()
+            .any(|it| (71..=74).contains(&it.kind)), "the coin stacks dropped");
+    }
+
+    #[test]
+    fn the_zero_purse_leaves_the_state_clean() {
+        // `DropCoins`'s 0-gate: no drop, the lost state 0, the death screen
+        // skips the coins line.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player_name = "Tester".into();
+        app.coins = 0;
+        on_player_death(&mut app, 100.0, 100.0, "was slain.");
+        assert_eq!(app.lost_coins, 0);
+        assert_eq!(app.lost_coin_string, "0 copper");
+        assert_eq!(app.death_text, "Tester was slain.");
+    }
+}
+
 }
