@@ -469,6 +469,22 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Plantera",
     },
     BestiaryEntryDef {
+        credit_id: "BrainofCthulhu",
+        net_id: 266,
+        kind: NpcKind::BrainOfCthulhu,
+        variant: None,
+        quick_unlock: false,
+        name: "Brain of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "Creeper",
+        net_id: 267,
+        kind: NpcKind::Creeper,
+        variant: None,
+        quick_unlock: false,
+        name: "Brain of Cthulhu",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

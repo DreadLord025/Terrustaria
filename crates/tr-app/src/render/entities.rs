@@ -147,6 +147,8 @@ pub(crate) struct NpcAssets {
     pub(crate) retinazer: Option<BgTex>,
     pub(crate) spazmatism: Option<BgTex>,
     pub(crate) plantera: Option<BgTex>,
+    pub(crate) brain: Option<BgTex>,
+    pub(crate) creeper: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -210,6 +212,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         retinazer: sky_tex(atlas, "NPC_125", None),
         spazmatism: sky_tex(atlas, "NPC_126", None),
         plantera: sky_tex(atlas, "NPC_262", None),
+        brain: sky_tex(atlas, "NPC_266", None),
+        creeper: sky_tex(atlas, "NPC_267", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -828,6 +832,20 @@ pub(crate) fn draw_npcs(
                 assets.plantera.as_ref(),
                 assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
                 [86.0, 86.0],
+                [n.x, n.y],
+            ),
+            // The Brain: the single-frame 160x110 sheet.
+            NpcKind::BrainOfCthulhu => (
+                assets.brain.as_ref(),
+                assets.brain.as_ref().map_or(110.0, |t| t.h),
+                [160.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The Creeper: the single-frame 30x30 sheet.
+            NpcKind::Creeper => (
+                assets.creeper.as_ref(),
+                assets.creeper.as_ref().map_or(30.0, |t| t.h),
+                [30.0, 30.0],
                 [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the
