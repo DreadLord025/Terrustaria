@@ -141,6 +141,10 @@ pub enum NpcKind {
     /// the shop index 5; the arrival rides the downedSkeletron gate —
     /// constants-off).
     Clothier,
+    /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
+    /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
+    /// death sets `downed_eoc` and opens the Dryad's arrival).
+    EyeOfCthulhu,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -349,6 +353,7 @@ impl NpcKind {
             NpcKind::Painter => 39,
             NpcKind::WitchDoctor => 40,
             NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
         }
     }
 
@@ -396,6 +401,7 @@ impl NpcKind {
             39 => NpcKind::Painter,
             40 => NpcKind::WitchDoctor,
             41 => NpcKind::Clothier,
+            42 => NpcKind::EyeOfCthulhu,
             _ => return None,
         })
     }
@@ -476,6 +482,8 @@ impl NpcKind {
             NpcKind::Painter => (18.0, 40.0),
             NpcKind::WitchDoctor => (18.0, 40.0),
             NpcKind::Clothier => (18.0, 40.0),
+            // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
+            NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -545,6 +553,8 @@ impl NpcKind {
             NpcKind::WitchDoctor => 250,
             // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
             NpcKind::Clothier => 250,
+            // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
+            NpcKind::EyeOfCthulhu => 2800,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -597,6 +607,7 @@ impl NpcKind {
             NpcKind::Painter => 10,
             NpcKind::WitchDoctor => 10,
             NpcKind::Clothier => 10,
+            NpcKind::EyeOfCthulhu => 15,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1039,6 +1050,7 @@ impl Npc {
             NpcKind::Painter => 0.5,
             NpcKind::WitchDoctor => 0.5,
             NpcKind::Clothier => 0.5,
+            NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1101,6 +1113,7 @@ impl Npc {
             NpcKind::Painter => 15,
             NpcKind::WitchDoctor => 15,
             NpcKind::Clothier => 15,
+            NpcKind::EyeOfCthulhu => 12,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1161,6 +1174,8 @@ impl Npc {
             NpcKind::Painter => 0.0,
             NpcKind::WitchDoctor => 0.0,
             NpcKind::Clothier => 0.0,
+            // `SetDefaults` case 4: value 30000 (the coin drop).
+            NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1282,6 +1297,7 @@ impl Npc {
             | NpcKind::Painter
             | NpcKind::WitchDoctor
             | NpcKind::Clothier => self.update_guide(world, dt),
+            NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1573,6 +1589,20 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::EyeOfCthulhu => {
+                // `Main.npcFrameCount[4]` = 2 (`Main.cs:67082`): the pupil
+                // blink over the 8-step accumulator (the AI_004 hover's
+                // frame machine, `NPC.cs:73800+`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
             NpcKind::Clothier => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[54]` = 3, `Main.cs:67082`).
@@ -2230,6 +2260,95 @@ impl Npc {
         }
     }
 
+    /// `AI_004`'s EoC machine (`NPC.cs:19960-20700`) — the v1 phase
+    /// cycle without the Servant spawns and the <50% transformation (the
+    /// follow-ups): the hover accelerations toward the target (`ai[0]==0`'s
+    /// num10/num12 pair), the charge cycle (`ai[1]` 0→1→2 — the aim, the
+    /// velocity = the direct delta × 6, the 40-tick decel ×0.98), the day
+    /// flee (`Main.IsItDay() | dead` → the rise 0.04, `:20100` region).
+    fn update_eoc(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The day flee (`:20100`'s `Main.IsItDay() | dead` arm): the boss
+        // rises away and despawns off-world (the framework's guard).
+        if world.day_time {
+            self.vy -= 0.04;
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.y < -500.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        // The hover target: above the player (the vanilla's
+        // `vector = target.Center - (0, num12)` offset — the num12
+        // accelerations seek the offset point).
+        let hover_y = pcy - 300.0;
+        // `ai[0]==0 && ai[1]==0` — the hover phase (the counter counts
+        // within it; the cast_windup selects the phase).
+        if self.cast_windup == 0 {
+            // The X: toward the player (num10 = 0.05? the vanilla's
+            // num10/num11 pair — the X accel to the player's X).
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 8.0 {
+                self.vx = 8.0 * self.vx.signum();
+            }
+            // The Y: toward the hover point (num10 = 0.05, the cap 8).
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 8.0 {
+                self.vy = 8.0 * self.vy.signum();
+            }
+            // `:20131-20144`: the charge timer — 600 ticks (the expert
+            // 0.35x) then the charge phase.
+            self.caster_counter += 1;
+            if self.caster_counter >= 600 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            // `ai[1]==1` (`:20196-20216`): the aim + the direct velocity.
+            self.rotation = self.vy.atan2(self.vx);
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 6.0;
+            self.vy = dy / d * 6.0;
+            self.cast_windup = 2;
+        } else {
+            // `ai[1]==2` (`:20217-20245`): the charge flies; after 40
+            // ticks the decel ×0.98 to the stop, then the hover resets.
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        // The rotation tracks the motion (the vanilla's eye spin — the
+        // port's hover arms set it on the charge only).
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        // `noTileCollide` — the direct integration (`:90495-90498`).
+        self.x += self.vx;
+        self.y += self.vy;
+        // The off-world guard.
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -2357,6 +2476,7 @@ impl Npc {
                     | NpcKind::Painter
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
+                    | NpcKind::EyeOfCthulhu
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2423,6 +2543,7 @@ impl Npc {
             NpcKind::Painter => 39,
             NpcKind::WitchDoctor => 40,
             NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3659,7 +3780,52 @@ mod tests {
         assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
     }
 
+    #[test]
+    fn the_eoc_charges_on_cycle() {
+        // `AI_004`'s v1 cycle: the hover 600 ticks → the charge (the
+        // direct velocity 6) → the 40-tick decel → the hover reset.
+        let mut w = ground_air();
+        w.day_time = false; // The boss fights at night (the day = the flee).
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hover phase: 600 ticks moves the boss toward the hover point.
+        for _ in 0..600 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(eoc.cast_windup == 1, "the charge phase armed");
+        // The charge: the velocity 6 toward the player.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the charge speed ({speed})");
+        // The day flee: the boss rises.
+        let mut w2 = ground_air();
+        w2.day_time = true;
+        let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc2.hp = eoc2.max_hp;
+        eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc2.vy < 0.0, "the day flee rises");
+    }
+
+    #[test]
+    fn the_eoc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 4; the bestiary entry
+        // round-trips.
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::EyeOfCthulhu, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 4);
+        assert_eq!(e.credit_id, "EyeofCthulhu");
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 0.0, 0.0, 1, 0.0);
+        assert_eq!(eoc.size(), (100.0, 110.0));
+        assert_eq!(eoc.max_hp, 2800);
+        assert_eq!(eoc.knock_back_resist(), 0.0);
+        let _ = (&w, &mut eoc);
+    }
+
 }
+
 
 
 

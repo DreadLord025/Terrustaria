@@ -339,6 +339,7 @@ fn portrait_data(
         NpcKind::Painter => 39,
         NpcKind::WitchDoctor => 40,
         NpcKind::Clothier => 41,
+        NpcKind::EyeOfCthulhu => 42,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -410,6 +411,7 @@ fn portrait_data(
         (NpcKind::Painter, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
