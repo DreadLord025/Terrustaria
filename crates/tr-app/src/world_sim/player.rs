@@ -59,6 +59,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // global the source reads): the frame's `update_scene` scan feeds
         // the per-tick aura copy.
         p.auras = app.scene_metrics.auras();
+        // The zone flags (`Player.ZoneSnow`-family) — the torch-luck table's
+        // inputs (`Player.cs:17924-18036`), refreshed beside the auras.
+        p.zones = app.scene_metrics.zones();
+        // The held torch's style (`inventory[selectedItem].createTile == 4`,
+        // `Player.cs:17917-17920`).
+        p.held_torch_style = app
+            .inventory
+            .get(app.selected)
+            .filter(|slot| slot.count > 0)
+            .and_then(|slot| crate::registry::get(slot.kind))
+            .filter(|def| def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT)
+            .map(|def| def.place_style as u8);
             // `Player.statDefense` (`Player.UpdateEquips`): the equipped
             // pieces' defense plus the set bonus (M3-EQUIP-2).
             let armor_kinds: Vec<i32> = app
@@ -153,6 +165,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         let grapple_for_tick = grapple_snapshot
             .filter(|(_, _, attached)| *attached)
             .map(|(pos, hook_type, _)| (pos, hook_type));
+        // `Player.armor`'s kinds snapshot: the update's grant pass reads the
+        // equipped kinds (`UpdateEquips`, `Player.cs:12892` — the loop runs
+        // inside `Player.Update` on the vanilla's own array).
+        for i in 0..20 {
+            p.equipped[i] = app.equip.armor[i].kind;
+        }
         let step = 1.0 / 60.0;
         app.player_step.tick(dt, |_| {
             p.update_with_grapple(&app.world, input, grapple_for_tick)

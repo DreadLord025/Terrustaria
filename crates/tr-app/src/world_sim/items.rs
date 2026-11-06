@@ -77,14 +77,16 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     app.item_step.cap_backlog();
 }
 
-/// Spawns the drop left by a broken tile, with a small random pop like `Item.NewItem`.
-pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, tx: i32, ty: i32) {
+/// Spawns the drop left by a broken tile, with a small random pop like
+/// `Item.NewItem` — `count` carries the C# stack (`Item.NewItem`'s `stack`
+/// argument; the pot/pile/herb loot rolls spawn several items at once).
+pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty: i32) {
     let r1 = rand01(&mut app.item_rng);
     let r2 = rand01(&mut app.item_rng);
     let r3 = rand01(&mut app.item_rng);
     let drop = ItemDrop::new(
         kind,
-        1,
+        count.max(1),
         tx as f32 * TILE_PX + 1.0,
         ty as f32 * TILE_PX,
         (r1 * 2.0 - 1.0) * 1.4,

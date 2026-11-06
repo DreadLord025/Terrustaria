@@ -136,6 +136,122 @@ fn merge_dark_row(
     emitted
 }
 
+/// The drawn frame of one world cell — `TileDrawing`'s source-rect resolution
+/// (`TileDrawing.cs:1007`): `GetTileDrawData`'s sizes/strides feed the sheet
+/// lookup, tree trunks ride the 20x20 trunk grid, and plain 16x16 cells hit the
+/// 18 px frame table. A cell whose frames were never written
+/// (`frameX/frameY = -1` — the state `WorldGen.PlaceTile` leaves between the
+/// tile write and `SquareTileFrame`; the old seed bug wrote it permanently,
+/// `PlaceAlch` fixes it) draws nothing instead of sampling sheet-corner
+/// garbage: vanilla never draws one, because framing runs before the draw.
+fn resolve_tile_frame(
+    lookups: &mut assets::Lookups,
+    atlas: Option<&Atlas>,
+    is_tree: bool,
+    trunk_offset: i16,
+    kind: u16,
+    frame_x: i16,
+    frame_y: i16,
+    dd: &tr_core::drawdata::TileDrawData,
+) -> Option<assets::FrameTex> {
+    if frame_x < 0 || frame_y < 0 {
+        return None;
+    }
+    if is_tree {
+        // Tree trunks are 20x20 sprites on a 22 px grid.
+        return atlas.and_then(|a| {
+            lookups.rect_uv(
+                a,
+                kind,
+                frame_x + trunk_offset,
+                frame_y,
+                tree::TRUNK_SIZE as u32,
+                tree::TRUNK_SIZE as u32,
+            )
+        });
+    }
+    // Cases that rewrite C#'s `ref tileFrameX/Y` hand the final frame to us;
+    // the source rectangle is built from it (`TileDrawing.cs:1007`).
+    let fx = dd.frame_x_override.unwrap_or(frame_x);
+    let fy = dd.frame_y_override.unwrap_or(frame_y);
+    let frame = atlas.and_then(|a| {
+        if dd.width != 16 || dd.height != 16 || dd.add_fr_x != 0 || dd.add_fr_y != 0 {
+            lookups.rect_uv(
+                a,
+                kind,
+                fx + dd.add_fr_x,
+                fy + dd.add_fr_y,
+                dd.width as u32,
+                dd.height as u32,
+            )
+        } else {
+            lookups.frame_tex(a, kind, fx, fy)
+        }
+    });
+    frame.or_else(|| lookups.plain_tex(kind))
+}
+
+/// One cell of the sunflower's special-pass sway
+/// (`TileDrawing.DrawMultiTileGrassInWind`, `TileDrawing.cs:8916-9041`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct SunflowerSway {
+    /// `vector3.Y` — the draw position's vertical offset
+    /// `|windCycle| * 2 * num3` (`TileDrawing.cs:8985`); the horizontal offset
+    /// comes from the rotation about the flower's bottom-center anchor.
+    dy: f32,
+    /// `windCycle * num * num3` with the type-27 factor `num = 0.07`
+    /// (`TileDrawing.cs:8926`, `:9001`).
+    rot: f32,
+    /// `origin = vector - vector2` (`TileDrawing.cs:8990`) — the rotation pivot
+    /// relative to the cell sprite's top-left, i.e. the flower's bottom-center
+    /// anchor at `(topLeftX*16 + sizeX*8, topLeftY*16 + 16*sizeY)` with the
+    /// special pass's `sizeX = 2, sizeY = 5` (`TileDrawing.cs:8748-8752`).
+    pivot: [f32; 2],
+}
+
+/// The sway state of the sunflower cell at `(tx, ty)` whose flower's top-left
+/// is reconstructed from the frame grid: `frameX = 36*style + 18*col`,
+/// `frameY = 18*row` (`StyleHorizontal`, `RandomStyleRange = 3`,
+/// `TileObjectData.cs:4851-4864`).
+fn sunflower_sway(
+    wind: &tr_core::wind::Wind,
+    world: &World,
+    tx: i32,
+    ty: i32,
+    frame_x: i16,
+    frame_y: i16,
+    sunflower_wind_counter: f32,
+) -> SunflowerSway {
+    let col = (frame_x.rem_euclid(36) / 18) as i32;
+    let row = (frame_y / 18) as i32;
+    let top_left_x = tx - col;
+    let top_left_y = ty - row;
+    // `GetWindCycle(topLeftX, topLeftY, _sunflowerWindCounter)` (`:8918`); the
+    // surface-band and |wind| 0.08..0.18 gates live inside `Wind::cycle`.
+    let cycle = wind.cycle(top_left_x, top_left_y, sunflower_wind_counter);
+    // `flag = InAPlaceWithWind(topLeftX, topLeftY, sizeX, sizeY)` (`:8923`)
+    // with the special pass's `sizeY = 5` — the probe reaches one row into the
+    // flower's anchor ground.
+    let in_wind = wind.in_a_place_with_wind(world, top_left_x, top_left_y, 2, 5);
+    // `num3 = 1 - (j - topLeftY + 1) / sizeY` per row (`:8952`), the 0-row
+    // guard `num3 == 0 -> 0.1` (`:8957`), and `!flag -> 0` (`:8961`).
+    let mut num3 = 1.0 - (row + 1) as f32 / 5.0;
+    if num3 == 0.0 {
+        num3 = 0.1;
+    }
+    if !in_wind {
+        num3 = 0.0;
+    }
+    SunflowerSway {
+        dy: cycle.abs() * 2.0 * num3,
+        rot: cycle * 0.07 * num3,
+        pivot: [
+            (top_left_x * 16 + 16 - tx * 16) as f32,
+            (top_left_y * 16 + 80 - ty * 16) as f32,
+        ],
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tiles(
     r: &mut SpriteRenderer,
@@ -168,10 +284,13 @@ pub(crate) fn draw_tiles(
     liquid_alpha: &[f32; 15],
     // The frame's deterministic seed for the `TrySparkling` draws.
     sparkle_seed: u64,
-    // The wind state and the sway counters (`TileDrawing.DrawGrass`/`DrawTrees`).
+    // The wind state and the sway counters (`TileDrawing.DrawGrass`/`DrawTrees`;
+    // the sunflower's own counter rides its special pass,
+    // `TileDrawing.DrawMultiTileGrassInWind`).
     wind: &tr_core::wind::Wind,
     grass_wind_counter: f32,
     tree_wind_counter: f32,
+    sunflower_wind_counter: f32,
     // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
     // caller into the leaf particle list.
     leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
@@ -464,49 +583,21 @@ pub(crate) fn draw_tiles(
                 // Resolve the drawn tile frame once; reused for opacity and drawing.
                 let mut tile_frame = None;
                 if active && marker.is_none() {
-                    if is_tree {
-                        if tile.frame_x >= 0 && tile.frame_y >= 0 {
-                            let off = tree::trunk_sheet_offset_at(world, tx, ty);
-                            // Tree trunks are 20x20 sprites on a 22 px grid.
-                            tile_frame = atlas.and_then(|a| {
-                                lookups.rect_uv(
-                                    a,
-                                    tile.kind,
-                                    tile.frame_x + off as i16,
-                                    tile.frame_y,
-                                    tree::TRUNK_SIZE as u32,
-                                    tree::TRUNK_SIZE as u32,
-                                )
-                            });
-                        }
-                    } else if tile.frame_x >= 0 && tile.frame_y >= 0 {
-                        // Cases that rewrite C#'s `ref tileFrameX/Y` hand the
-                        // final frame to us; the source rectangle is built from
-                        // it (`TileDrawing.cs:1007`).
-                        let fx = dd.frame_x_override.unwrap_or(tile.frame_x);
-                        let fy = dd.frame_y_override.unwrap_or(tile.frame_y);
-                        tile_frame = atlas.and_then(|a| {
-                            if dd.width != 16
-                                || dd.height != 16
-                                || dd.add_fr_x != 0
-                                || dd.add_fr_y != 0
-                            {
-                                lookups.rect_uv(
-                                    a,
-                                    tile.kind,
-                                    fx + dd.add_fr_x,
-                                    fy + dd.add_fr_y,
-                                    dd.width as u32,
-                                    dd.height as u32,
-                                )
-                            } else {
-                                lookups.frame_tex(a, tile.kind, fx, fy)
-                            }
-                        });
-                    }
-                    if tile_frame.is_none() {
-                        tile_frame = lookups.plain_tex(tile.kind);
-                    }
+                    let trunk_offset = if is_tree && tile.frame_x >= 0 && tile.frame_y >= 0 {
+                        tree::trunk_sheet_offset_at(world, tx, ty) as i16
+                    } else {
+                        0
+                    };
+                    tile_frame = resolve_tile_frame(
+                        lookups,
+                        atlas,
+                        is_tree,
+                        trunk_offset,
+                        tile.kind,
+                        tile.frame_x,
+                        tile.frame_y,
+                        &dd,
+                    );
                 }
                 let solid = (tile.kind as usize) < td::TILE_COUNT && td::TILE_SOLID.has(tile.kind);
                 // A3/A4: fully black cell -> greedy merged rectangle.
@@ -622,6 +713,69 @@ pub(crate) fn draw_tiles(
                         tile.paint(),
                     );
                     stats.quads += 1;
+                } else if tile.kind == 27 {
+                    // The sunflower never draws through `DrawSingleTile` — C#
+                    // registers the flower's top-left cell as a MultiTileGrass
+                    // special (`TileDrawing.cs:600-606`) and
+                    // `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
+                    // (`TileDrawing.cs:8721-8805`, `:8916-9041`) draw the 2x4
+                    // from `_sunflowerWindCounter` (the cadence
+                    // `1/420 + num*5/420`, `:374`) about the flower's
+                    // bottom-center. The row-major loop draws each cell inline
+                    // with the same per-cell transform (the documented z-order
+                    // approximation, as for the grass sway); `windCycle = 0`
+                    // degenerates to the static draw, exactly like the special
+                    // pass with no wind.
+                    let sw = sunflower_sway(
+                        wind,
+                        world,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        sunflower_wind_counter,
+                    );
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    let tint = style.shade(l, tx, ty, anim_time);
+                    // `vector2 + (0, vector3.Y)` in world pixels — the XNA call
+                    // places the pivot `origin` at `vector + (0, vector3.Y)`
+                    // (`:8985-9001`), so the sprite's top-left lands at
+                    // `(i*16, j*16 + tileTop + dy)`; type 27 has `tileTop = 0`.
+                    r.push_sprite_origin_rot(
+                        [pos[0], pos[1] + sw.dy],
+                        [dw, dh],
+                        tf.uv,
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sw.rot,
+                        sw.pivot,
+                    );
+                    stats.quads += 1;
+                    // The glowmask: case 27 sets `flag2`/`num2 = 74`
+                    // (`:8924-8928`) — the same transform draws the sheet region
+                    // 74 px below the cell with `Color.White` (`:9004-9008`),
+                    // the face glow (Tiles_27.xnb is 108x148: 74 px of styles +
+                    // 74 px of glow art).
+                    if let Some(a) = atlas {
+                        let glow = lookups.rect_uv(
+                            a,
+                            tile.kind,
+                            dd.frame_x_override.unwrap_or(tile.frame_x) + dd.add_fr_x,
+                            dd.frame_y_override.unwrap_or(tile.frame_y) + dd.add_fr_y + 74,
+                            dd.width as u32,
+                            dd.height as u32,
+                        );
+                        if let Some(glow) = glow {
+                            r.push_sprite_origin_rot(
+                                [pos[0], pos[1] + sw.dy],
+                                [dw, dh],
+                                glow.uv,
+                                [1.0, 1.0, 1.0, 1.0],
+                                sw.rot,
+                                sw.pivot,
+                            );
+                            stats.quads += 1;
+                        }
+                    }
                 } else if sway != 0.0 {
                     // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
                     // and rotated `cycle * 0.1` about
@@ -1293,4 +1447,204 @@ fn draw_tile_flames(
         }
     }
     quads
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tr_core::wind::Wind;
+
+    /// 40x40 world, no tiles — the `sunflower_sway` probe needs `World::tile`
+    /// inside the 2x5 `InAPlaceWithWind` window to answer "no liquid, no
+    /// blocking wall" (the `object_world` fixture shape without the floor).
+    fn empty_world() -> World {
+        let mut w = World::new("t".into(), 40, 40);
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    /// A wind above the 0.08..0.18 gate (so the cycle lives) under an infinite
+    /// surface (so the surface band never zeroes it).
+    fn windy() -> Wind {
+        let mut wind = Wind::new(7);
+        wind.speed_current = 0.5;
+        wind.world_surface = f64::INFINITY;
+        wind
+    }
+
+    // The per-cell transform of `DrawMultiTileGrassInWind`
+    // (`TileDrawing.cs:8916-9041`): `num3 = 1 - (j - topLeftY + 1) / 5` per row
+    // (0.8/0.6/0.4/0.2 for the flower's four rows), the vertical offset
+    // `|windCycle| * 2 * num3`, the rotation `windCycle * 0.07 * num3` about
+    // the flower's bottom-center anchor `(topLeftX*16 + 16, topLeftY*16 + 80)`
+    // — the special pass's `sizeX = 2, sizeY = 5` (`:8748-8752`).
+    #[test]
+    fn test_DW_4_1_sunflower_sway_transform_per_row() {
+        let wind = windy();
+        let world = empty_world();
+        // A style-0 flower with its top-left at (10, 20): the four rows' cells
+        // carry frameY 0/18/36/54 and the two columns frameX 0/18.
+        let mut per_row: Vec<SunflowerSway> = Vec::new();
+        for row in 0..4_i32 {
+            for col in 0..2_i32 {
+                let (tx, ty) = (10 + col, 20 + row);
+                let fx = (18 * col) as i16;
+                let fy = (18 * row) as i16;
+                let sw = sunflower_sway(&wind, &world, tx, ty, fx, fy, 0.0);
+                // The pivot reconstructs the same anchor from every cell:
+                // (topLeftX*16 + 16 - tx*16, topLeftY*16 + 80 - ty*16).
+                assert_eq!(
+                    sw.pivot,
+                    [(16 - 16 * col) as f32, (80 - 16 * row) as f32],
+                    "pivot of cell ({tx}, {ty})"
+                );
+                per_row.push(sw);
+            }
+        }
+        // The rows scale exactly 0.8 : 0.6 : 0.4 : 0.2 — dy ratios 4:3:2:1.
+        let (d0, d1, d2, d3) = (
+            per_row[0].dy,
+            per_row[2].dy,
+            per_row[4].dy,
+            per_row[6].dy,
+        );
+        assert!(d3 > 0.0, "the bottom row still sways (num3 = 0.2)");
+        assert!((d0 / d3 - 4.0).abs() < 1e-4, "{d0} / {d3}");
+        assert!((d1 / d3 - 3.0).abs() < 1e-4, "{d1} / {d3}");
+        assert!((d2 / d3 - 2.0).abs() < 1e-4, "{d2} / {d3}");
+        // |rot| / dy = 0.07 / 2 for every cell, whatever the cycle's sign.
+        for sw in &per_row {
+            assert!(
+                (sw.rot.abs() / sw.dy - 0.035).abs() < 1e-4,
+                "rot {} dy {}",
+                sw.rot,
+                sw.dy
+            );
+        }
+        // A style-1 flower (frameX offset 36) reconstructs the same top-left.
+        let sw1 = sunflower_sway(&wind, &world, 11, 20, 54, 0, 0.0);
+        assert_eq!(sw1.pivot, [0.0, 80.0]);
+        let sw1_bottom = sunflower_sway(&wind, &world, 10, 23, 36, 54, 0.0);
+        assert_eq!(sw1_bottom.pivot, [16.0, 32.0]);
+    }
+
+    // The counter moves the flower: feeding the cadence
+    // `1/420 + num*5/420` (`TileDrawing.cs:374`) changes both the vertical
+    // offset and the rotation of the same cell.
+    #[test]
+    fn test_DW_4_1_sunflower_sway_tracks_the_counter() {
+        let wind = windy();
+        let world = empty_world();
+        let before = sunflower_sway(&wind, &world, 10, 20, 0, 0, 0.0);
+        // One in-game second of the fixed-step advance at |wind| = 0.5.
+        let mut counter = 0.0_f32;
+        for _ in 0..60 {
+            tr_core::wind::advance_sunflower_counter(&mut counter, 0.5);
+        }
+        let after = sunflower_sway(&wind, &world, 10, 20, 0, 0, counter);
+        assert_ne!(before.dy, after.dy, "the vertical offset tracks the counter");
+        assert_ne!(before.rot, after.rot, "the rotation tracks the counter");
+    }
+
+    // `GetWindCycle`'s gates freeze the flower (`TileDrawing.cs:7676-7700`):
+    // below the surface band, with sway disabled, or outside
+    // `InAPlaceWithWind(topLeft, 2, 5)` (`:8923`, `:8961`) every cell draws
+    // statically.
+    #[test]
+    fn sunflower_sway_gates_freeze_the_flower() {
+        let world = empty_world();
+        // Below the surface band (y >= worldSurface): cycle 0.
+        let mut wind = windy();
+        wind.world_surface = 25.0;
+        let sw = sunflower_sway(&wind, &world, 10, 30, 0, 0, 0.0);
+        assert_eq!(sw.dy, 0.0);
+        assert_eq!(sw.rot, 0.0);
+        // Sway disabled (`SettingsEnabled_TilesSwayInWind`): cycle 0.
+        let mut wind = windy();
+        wind.sway_enabled = false;
+        let sw = sunflower_sway(&wind, &world, 10, 20, 0, 0, 0.0);
+        assert_eq!(sw.dy, 0.0);
+        assert_eq!(sw.rot, 0.0);
+        // A wind-blocking wall inside the 2x5 probe window (`WallID.Sets.
+        // AllowsWind` fails for wall 1): `num3 = 0` — dy and rot are 0 even
+        // though the cycle is not.
+        let mut wind = windy();
+        wind.world_surface = f64::INFINITY;
+        let mut walled = empty_world();
+        let i = walled.index(10, 22);
+        walled.tiles[i].wall = 1;
+        let sw = sunflower_sway(&wind, &walled, 11, 20, 18, 0, 0.0);
+        assert_eq!(sw.dy, 0.0);
+        assert_eq!(sw.rot, 0.0);
+        assert_eq!(sw.pivot, [0.0, 80.0]);
+    }
+
+    fn sheet_atlas(names: &[&str], w: u32, h: u32) -> Atlas {
+        let images = names
+            .iter()
+            .map(|&name| tr_render::AtlasImage {
+                name: name.to_string(),
+                width: w,
+                height: h,
+                rgba: vec![180; (w * h * 4) as usize],
+                layout: tr_render::SheetLayout::Tile,
+            })
+            .collect();
+        Atlas::build(images, 1024)
+    }
+
+    // A tile whose frames were never written (`frameX/frameY = -1`, the state
+    // the old seed bug left behind) resolves no frame at all — the plain-sheet
+    // fallback that used to draw sheet-corner garbage is gated out, while the
+    // same kind with real frames still resolves.
+    #[test]
+    fn test_DW_4_3_unframed_tile_draws_nothing() {
+        let atlas = sheet_atlas(&["Tiles_27", "Tiles_82"], 126, 148);
+        let mut lookups = assets::Lookups::build(
+            &atlas,
+            [(27_u16, "Tiles_27".to_string()), (82, "Tiles_82".to_string())]
+                .into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+        );
+        let dd = tr_core::drawdata::TileDrawData::default();
+        // The fallback WOULD have produced a sprite (the plain sheet cell
+        // exists) — the guard is what keeps the unframed tile blank.
+        assert!(lookups.plain_tex(27).is_some());
+        assert!(lookups.plain_tex(82).is_some());
+        for (kind, fx, fy) in [(27_u16, -1_i16, -1_i16), (82, -1, -1), (82, 0, -1)] {
+            let frame = resolve_tile_frame(
+                &mut lookups,
+                Some(&atlas),
+                false,
+                0,
+                kind,
+                fx,
+                fy,
+                &dd,
+            );
+            assert!(frame.is_none(), "kind {kind} frame ({fx},{fy}) draws nothing");
+        }
+        // Real frames still resolve: the herbs sit on the 18 px grid, the
+        // sunflower's bottom row draws the 16x18 slice.
+        let herb = resolve_tile_frame(&mut lookups, Some(&atlas), false, 0, 82, 18, 0, &dd);
+        assert!(herb.is_some(), "herb frame (18,0) resolves");
+        let bottom = resolve_tile_frame(
+            &mut lookups,
+            Some(&atlas),
+            false,
+            0,
+            27,
+            0,
+            54,
+            &tr_core::drawdata::TileDrawData {
+                height: 18,
+                ..Default::default()
+            },
+        );
+        assert!(bottom.is_some(), "sunflower bottom row resolves");
+    }
 }

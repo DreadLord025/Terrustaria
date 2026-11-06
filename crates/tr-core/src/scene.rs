@@ -146,6 +146,24 @@ pub struct Auras {
 /// 1200/16 + 25*2 - 1 = 124 tall.
 pub const ZONE_SCAN_SIZE: (i32, i32) = (1920 / 16 + 25 * 2 - 1, 1200 / 16 + 25 * 2 - 1);
 
+/// The biome-zone flags the player reads as a Copy snapshot — the torch-luck
+/// verdict table's inputs (`Player.ZoneSnow`-family, `Player.cs:17924-18036`).
+/// `ZoneLihzhardTemple` is unmodelled (no jungle-temple content in the port),
+/// so the C# skip gate `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on
+/// dungeon only — deviation recorded in ANALYSIS.
+#[derive(Clone, Copy, Default, Debug, PartialEq)]
+pub struct Zones {
+    pub snow: bool,
+    pub desert: bool,
+    pub corrupt: bool,
+    pub crimson: bool,
+    pub hallow: bool,
+    pub jungle: bool,
+    /// `ZoneGlowshroom` — `EnoughTilesForGlowingMushroom` (`:698-701`).
+    pub glowshroom: bool,
+    pub dungeon: bool,
+}
+
 /// The static thresholds from `SceneMetrics`'s static ctor (`:922-943`).
 pub mod thresholds {
     /// `SnowTileNormalThreshold` (`SceneMetrics.cs:930`).
@@ -243,6 +261,20 @@ impl SceneMetrics {
             sunflower: self.has_sunflower,
             cat_bast: self.has_cat_bast,
             shadow_candle: self.shadow_candle_count > 0,
+        }
+    }
+
+    /// The zone-flag snapshot the torch-luck table consumes (see [`Zones`]).
+    pub fn zones(&self) -> Zones {
+        Zones {
+            snow: self.zone_snow,
+            desert: self.zone_desert,
+            corrupt: self.zone_corrupt,
+            crimson: self.zone_crimson,
+            hallow: self.zone_hallow,
+            jungle: self.zone_jungle,
+            glowshroom: self.enough_tiles_for_glowing_mushroom(),
+            dungeon: self.zone_dungeon,
         }
     }
 
