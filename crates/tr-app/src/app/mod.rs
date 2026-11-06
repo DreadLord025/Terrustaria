@@ -706,7 +706,7 @@ impl App {
         if self.coins < price {
             return false;
         }
-        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item) {
+        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item, 0) {
             Some(i) => i,
             None => return false,
         };
@@ -720,6 +720,7 @@ impl App {
                 kind: item,
                 name: crate::itemdata::ITEMS[item as usize].name,
                 count: 1,
+                prefix: 0,
             };
         }
         self.coins -= price;
@@ -1098,21 +1099,25 @@ impl App {
                 kind: 2, // ItemID.DirtBlock
                 name: registry::name(2),
                 count: 50,
+                prefix: 0,
             },
             1 => ItemSlot {
                 kind: 3, // ItemID.StoneBlock
                 name: registry::name(3),
                 count: 50,
+                prefix: 0,
             },
             2 => ItemSlot {
                 kind: 8, // ItemID.Torch
                 name: registry::name(8),
                 count: 99,
+                prefix: 0,
             },
             3 => ItemSlot {
                 kind: 42, // ItemID.Shuriken
                 name: registry::name(42),
                 count: 99,
+                prefix: 0,
             },
             // The vanilla starter tools (`Player.cs:54356-54360`'s copper
             // trio) plus the copper hammer — the port has no shop yet, so
@@ -1122,26 +1127,31 @@ impl App {
                 kind: 3509, // ItemID.CopperPickaxe
                 name: registry::name(3509),
                 count: 1,
+                prefix: 0,
             },
             5 => ItemSlot {
                 kind: 3506, // ItemID.CopperAxe
                 name: registry::name(3506),
                 count: 1,
+                prefix: 0,
             },
             6 => ItemSlot {
                 kind: 3505, // ItemID.CopperHammer
                 name: registry::name(3505),
                 count: 1,
+                prefix: 0,
             },
             7 => ItemSlot {
                 kind: 3507, // ItemID.CopperShortsword
                 name: registry::name(3507),
                 count: 1,
+                prefix: 0,
             },
             _ => ItemSlot {
                 kind: 0,
                 name: "",
                 count: 0,
+                prefix: 0,
             },
         });
         if world_path.extension().is_some_and(|e| e == "trwld") {
@@ -1159,6 +1169,7 @@ impl App {
                             kind: *kind,
                             name: registry::name(*kind),
                             count: *count,
+                            prefix: 0, // the M6-SAVE sidecar carries (kind, count)
                         };
                     }
                 }
@@ -1475,6 +1486,7 @@ impl App {
                             kind,
                             name: registry::name(kind),
                             count: 1,
+                            prefix: 0,
                         };
                     }
                 }
@@ -1495,6 +1507,7 @@ impl App {
                                 kind,
                                 name: registry::name(kind),
                                 count: 1,
+                                prefix: 0,
                             };
                         }
                     }

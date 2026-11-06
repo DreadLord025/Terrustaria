@@ -77,6 +77,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                     app.items.push(crate::item::ItemDrop {
                         kind: item_id as u16,
                         count: 1,
+                        prefix: 0,
                         pos: Vec2::new(x as f32, y as f32),
                         vel: Vec2::ZERO,
                         age: 0.0,

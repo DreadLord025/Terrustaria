@@ -135,6 +135,7 @@ mod tests {
                 kind,
                 name: crate::registry::name(kind),
                 count,
+                prefix: 0,
             };
         }
         inv
@@ -147,6 +148,7 @@ mod tests {
                 kind,
                 name: crate::registry::name(kind),
                 count,
+                prefix: 0,
             };
         }
         e
@@ -169,7 +171,7 @@ mod tests {
         // The coin gun's coins: useAmmo 71 matches the coins slots first.
         let coin_inv = inv_with(&[]);
         let mut equip = EquipSlots::empty();
-        equip.coins[1] = ItemSlot { kind: 71, name: "Copper Coin", count: 30 };
+        equip.coins[1] = ItemSlot { kind: 71, name: "Copper Coin", count: 30, prefix: 0 };
         let pick = super::pick(&coin_inv, &equip, 71).expect("coins");
         assert_eq!(pick, AmmoSource::Coin(1));
     }

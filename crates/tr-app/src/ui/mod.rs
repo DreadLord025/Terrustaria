@@ -259,6 +259,7 @@ pub fn draw_hud(
                     kind,
                     name: crate::registry::name(kind),
                     count,
+                    prefix: 0,
                 };
                 tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
             }
