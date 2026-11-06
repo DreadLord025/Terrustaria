@@ -498,6 +498,113 @@ pub fn step_up(
     }
 }
 
+/// `Collision.TileCollisionInStepsOf16` (`Collision.cs:2455-2482`): how far a
+/// body of this size travels along the unit direction `dir` before tiles stop
+/// it, probed in 16 px steps; `amount` when the whole distance is clear. The
+/// slope probes use `Width − 1` (`:2460`), the tile probe the full width.
+pub fn tile_collision_in_steps_of_16(
+    world: &World,
+    position: [f32; 2],
+    dir: [f32; 2],
+    amount: f32,
+    width: f32,
+    height: f32,
+) -> f32 {
+    let step = 16.0f32;
+    // `vector` (`:2459`).
+    let shifted = [position[0] + 1.0, position[1]];
+    let slope_width = width - 1.0;
+    let mut travelled = 0.0f32; // `num2`
+    while travelled < amount {
+        let offset = [dir[0] * travelled, dir[1] * travelled];
+        // `position` / `vector3` (`:2463-2464`).
+        let pos = [position[0] + offset[0], position[1] + offset[1]];
+        let probe = [shifted[0] + offset[0], shifted[1] + offset[1]];
+        let remain = (amount - travelled).min(step); // `num3`
+        let vel = [dir[0] * remain, dir[1] * remain]; // `vector4`
+        let sc = slope_collision(world, probe, vel, slope_width, height, false);
+        if sc.pos != probe || sc.vel != vel {
+            let dx = sc.pos[0] - probe[0];
+            let dy = sc.pos[1] - probe[1];
+            return travelled - dx.hypot(dy);
+        }
+        let probe2 = [probe[0] + vel[0], probe[1] + vel[1]];
+        let sc2 = slope_collision(world, probe2, vel, slope_width, height, false);
+        if sc2.pos != probe2 || sc2.vel != vel {
+            let dx = sc2.pos[0] - probe2[0];
+            let dy = sc2.pos[1] - probe2[1];
+            return travelled + remain - dx.hypot(dy);
+        }
+        let tc = tile_collision(world, pos, vel, width, height, false, false);
+        if tc.vel != vel {
+            return travelled + tc.vel[0].hypot(tc.vel[1]); // `vector5.Length()`
+        }
+        travelled += step;
+    }
+    amount
+}
+
+/// `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2545`):
+/// resize the hitbox to `target` keeping the bottom-center fixed. Returns the
+/// new top-left, or `None` when a growth has no room (`FailedNoSpace`). A
+/// shrink probes nothing and always fits (`:2505-2510` — the branch the cart
+/// dismount takes).
+pub fn try_changing_size_from_bottom_center(
+    world: &World,
+    top_left: [f32; 2],
+    size: [f32; 2],
+    target: [f32; 2],
+) -> Option<[f32; 2]> {
+    let mut x = top_left[0];
+    let mut y = top_left[1];
+    let mut w = size[0];
+    let mut h = size[1];
+    // The vertical change (`num`, `:2489`).
+    let dv = (target[1] - h) as i32;
+    if dv > 0 {
+        let down_room =
+            tile_collision_in_steps_of_16(world, [x, y], [0.0, 1.0], dv as f32, w, h) as i32; // `num2`
+        let up_room =
+            tile_collision_in_steps_of_16(world, [x, y], [0.0, -1.0], dv as f32, w, h) as i32; // `num3`
+        if up_room + down_room < dv {
+            return None;
+        }
+        // The split (`:2499-2503`) — the second `num4` add is the source's
+        // own arithmetic (a no-op at these bounds) and is kept verbatim.
+        let mut up = dv.min(up_room); // `num4`
+        let mut down = 0i32; // `num5`
+        up += (dv - up - down).min(up_room - up);
+        down += (dv - up - down).min(down_room - down);
+        y -= up as f32;
+        h += (up + down) as f32;
+    } else {
+        y -= dv as f32; // `Offset(0, -num)`
+        h = target[1];
+    }
+    // The horizontal change (`num6`, `:2512`).
+    let dw = (target[0] - w) as i32;
+    if dw > 0 {
+        let right_room =
+            tile_collision_in_steps_of_16(world, [x, y], [1.0, 0.0], dw as f32, w, h) as i32; // `num7`
+        let left_room =
+            tile_collision_in_steps_of_16(world, [x, y], [-1.0, 0.0], dw as f32, w, h) as i32; // `num8`
+        if left_room + right_room < dw {
+            return None;
+        }
+        // The split (`:2530-2536`).
+        let mut num10 = (dw / 2).min(left_room).min(right_room);
+        let mut num9 = num10;
+        num10 += (dw - num10 - num9).min(left_room - num10);
+        num9 += (dw - num10 - num9).min(right_room - num9);
+        x -= num10 as f32;
+        w += (num10 + num9) as f32;
+    } else {
+        x += (dw / 2) as f32; // `Offset(num6 / 2, 0)` — C# int division
+        w = target[0];
+    }
+    Some([x, y])
+}
+
 /// `Collision.StepDown` with `gravDir = 1`: drops the body when the floor falls away
 /// while walking, again recording the drop in `gfx_off_y`.
 #[allow(clippy::too_many_arguments)]
@@ -551,36 +658,6 @@ pub fn step_down(
         *gfx_off_y += pos[1] + height - num5;
         pos[1] = num5 - height;
     }
-}
-
-/// `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2545`):
-/// resize the box keeping its bottom center. The shrink path (`num <= 0`)
-/// is pure geometry and always fits; the grow/widen paths probe tile
-/// clearance in 16 px steps (`TileCollisionInStepsOf16`) — not reachable
-/// from the mount code (the only caller shrinks the hitbox back to 20x42),
-/// so they return `None` until a consumer appears.
-pub fn try_changing_size_from_bottom_center(
-    x: f32,
-    y: f32,
-    w: f32,
-    h: f32,
-    target_w: f32,
-    target_h: f32,
-) -> Option<(f32, f32, f32, f32)> {
-    let num = target_h - h;
-    if num > 0.0 {
-        // `:2490-2508`: the grow path — `TileCollisionInStepsOf16` both ways.
-        return None;
-    }
-    // `:2509-2513`: `Offset(0, -num); Height = targetHeight` — the bottom
-    // stays anchored, the top drops to the new height.
-    let ny = y - num;
-    let num6 = target_w - w;
-    if num6 != 0.0 {
-        // `:2514-2545`: the widen/narrow paths probe clearance too.
-        return None;
-    }
-    Some((x, ny, w, target_h))
 }
 
 #[cfg(test)]
@@ -642,5 +719,53 @@ mod tests {
             "the actuated row does not stop the body"
         );
         assert_eq!(actuated_pass.vel[1], 5.0, "the velocity kept falling");
+    }
+
+    /// DW-2.3 (dirty, mechanism level) — `Collision.TryChangingSizeFromBottomCenter`
+    /// (`Collision.cs:2486-2545`): a 42→52 growth under a two-tile ceiling has no
+    /// room (`FailedNoSpace`), the same growth with headroom shifts the top up,
+    /// and the 52→42 dismount shrink always fits (the shrink branch probes no
+    /// tiles, `:2505-2510`).
+    #[test]
+    fn dismount_space_check_blocks_growth_under_a_two_tile_ceiling() {
+        let mut w = world();
+        // A stone floor (row 20) with a ceiling (row 16) over it — a 3-tile
+        // cavity a 42-tall body fits in but a 52-tall growth does not.
+        for x in 4..16 {
+            put(&mut w, x, 20, 1);
+            put(&mut w, x, 16, 1);
+        }
+        // A body standing in the cavity cannot grow 10 px up into the ceiling.
+        let blocked = try_changing_size_from_bottom_center(
+            &w,
+            [80.0, 20.0 * 16.0 - 42.0],
+            [20.0, 42.0],
+            [20.0, 52.0],
+        );
+        assert!(blocked.is_none(), "the ceiling blocks the growth");
+        // The same body under open sky grows, keeping the bottom anchored.
+        let mut w_open = world();
+        for x in 4..16 {
+            put(&mut w_open, x, 20, 1);
+        }
+        let free = try_changing_size_from_bottom_center(
+            &w_open,
+            [80.0, 20.0 * 16.0 - 42.0],
+            [20.0, 42.0],
+            [20.0, 52.0],
+        );
+        let [fx, fy] = free.expect("open sky leaves room");
+        assert_eq!(fx, 80.0);
+        assert_eq!(fy, 20.0 * 16.0 - 52.0, "the top lifts, the bottom stays");
+        // The dismount shrink 52 -> 42 always fits, even in the cavity.
+        let shrink = try_changing_size_from_bottom_center(
+            &w,
+            [80.0, 20.0 * 16.0 - 52.0],
+            [20.0, 52.0],
+            [20.0, 42.0],
+        );
+        let [sx, sy] = shrink.expect("the shrink never probes tiles");
+        assert_eq!(sx, 80.0);
+        assert_eq!(sy, 20.0 * 16.0 - 42.0, "the bottom-center is kept");
     }
 }

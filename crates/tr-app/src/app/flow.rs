@@ -1423,6 +1423,7 @@ pub(crate) mod front_flow_tests {
             ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
+            minecart_sparks: crate::minecart::Sparks::new(),
             wind: tr_core::wind::Wind::new(1),
             world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
             atmo: 1.0,

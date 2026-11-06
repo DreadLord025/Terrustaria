@@ -411,7 +411,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if p.mount.is_active() && p.mount.dismount_on_item_use() {
                 let same = crate::mount::mount_type_of_item(held.kind) == Some(p.mount.kind());
                 if !same {
-                    p.try_dismount();
+                    p.try_dismount(&app.world);
                 }
             }
         }

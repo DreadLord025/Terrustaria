@@ -21,6 +21,7 @@ mod loot_db;
 mod loot_db_gen;
 mod map;
 mod menu;
+mod minecart;
 mod mount;
 mod net;
 mod npc;
