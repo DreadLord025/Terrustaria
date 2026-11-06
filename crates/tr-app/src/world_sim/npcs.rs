@@ -530,6 +530,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
             NpcKind::Plantera => app.world.downed_plant_boss = true,
+            // The Brain: the vanilla shares `downedBoss2` with the EoW —
+            // the port's `downed_eow` covers the shared flag.
+            NpcKind::BrainOfCthulhu => app.world.downed_eow = true,
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,

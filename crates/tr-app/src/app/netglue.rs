@@ -312,7 +312,9 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::SkeletronPrime
         | crate::npc::NpcKind::Retinazer
         | crate::npc::NpcKind::Spazmatism
-        | crate::npc::NpcKind::Plantera => {
+        | crate::npc::NpcKind::Plantera
+        | crate::npc::NpcKind::BrainOfCthulhu
+        | crate::npc::NpcKind::Creeper => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }

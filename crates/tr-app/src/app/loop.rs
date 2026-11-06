@@ -269,6 +269,47 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyH => {
+                                // The Brain of Cthulhu debug spawn (the
+                                // Bloody Spine item = the follow-up).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 15)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::BrainOfCthulhu,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        for i in 0..20 {
+                                            let ang = i as f32 / 20.0
+                                                * std::f32::consts::TAU;
+                                            let mx = boss.x + 160.0
+                                                + ang.cos() * 200.0;
+                                            let my = boss.y + 55.0
+                                                + ang.sin() * 200.0;
+                                            let mut cr = Npc::new(
+                                                NpcKind::Creeper,
+                                                mx,
+                                                my,
+                                                1,
+                                                0.0,
+                                            );
+                                            cr.hp = cr.max_hp;
+                                            self.npcs.push(cr);
+                                        }
+                                        log::info!("Brain of Cthulhu spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyG => {
                                 // The Plantera debug spawn.
                                 if !self

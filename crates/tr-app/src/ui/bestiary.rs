@@ -350,6 +350,8 @@ fn portrait_data(
         NpcKind::Retinazer => 48,
         NpcKind::Spazmatism => 49,
         NpcKind::Plantera => 50,
+        NpcKind::BrainOfCthulhu => 51,
+        NpcKind::Creeper => 52,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -439,6 +441,8 @@ fn portrait_data(
         (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
+        (NpcKind::BrainOfCthulhu, _) => (sheet_i, 110.0, 160.0, 110.0, white),
+        (NpcKind::Creeper, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

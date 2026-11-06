@@ -181,6 +181,13 @@ pub enum NpcKind {
     /// 86x86, dmg 50, def 14, 30000 HP; the death sets
     /// `downed_plant_boss` — the temple/Golem gate).
     Plantera,
+    /// `NPCID.BrainofCthulhu` (266) — the crimson boss (`NPC.cs:12438`:
+    /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1;
+    /// the death sets the downedBoss2 equivalent).
+    BrainOfCthulhu,
+    /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
+    /// 30x30, dmg 20, def 10, 100 HP).
+    Creeper,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -398,7 +405,9 @@ impl NpcKind {
             NpcKind::SkeletronPrime => 48,
             NpcKind::Retinazer => 49,
             NpcKind::Spazmatism => 50,
-            NpcKind::Plantera => 50,
+            NpcKind::Plantera => 51,
+            NpcKind::BrainOfCthulhu => 52,
+            NpcKind::Creeper => 53,
         }
     }
 
@@ -456,6 +465,8 @@ impl NpcKind {
             49 => NpcKind::Retinazer,
             50 => NpcKind::Spazmatism,
             51 => NpcKind::Plantera,
+            52 => NpcKind::BrainOfCthulhu,
+            53 => NpcKind::Creeper,
             _ => return None,
         })
     }
@@ -565,6 +576,10 @@ impl NpcKind {
             NpcKind::Spazmatism => (100.0, 110.0),
             // `SetDefaults` case 262 (`NPC.cs:12381`): 86x86.
             NpcKind::Plantera => (86.0, 86.0),
+            // `SetDefaults` case 266 (`NPC.cs:12440`): 160x110.
+            NpcKind::BrainOfCthulhu => (160.0, 110.0),
+            // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
+            NpcKind::Creeper => (30.0, 30.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -655,6 +670,9 @@ impl NpcKind {
             NpcKind::Spazmatism => 23000,
             // `SetDefaults` case 262 (`NPC.cs:12385`): 30000 HP.
             NpcKind::Plantera => 30000,
+            // `SetDefaults` cases 266/267.
+            NpcKind::BrainOfCthulhu => 1250,
+            NpcKind::Creeper => 100,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -719,6 +737,8 @@ impl NpcKind {
             NpcKind::Retinazer => 45,
             NpcKind::Spazmatism => 50,
             NpcKind::Plantera => 50,
+            NpcKind::BrainOfCthulhu => 30,
+            NpcKind::Creeper => 20,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1225,6 +1245,8 @@ impl Npc {
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
             NpcKind::Plantera => 0.0,
+            NpcKind::BrainOfCthulhu => 0.45,
+            NpcKind::Creeper => 0.8,
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
@@ -1306,6 +1328,8 @@ impl Npc {
             NpcKind::Retinazer => 10,
             NpcKind::Spazmatism => 10,
             NpcKind::Plantera => 14,
+            NpcKind::BrainOfCthulhu => 14,
+            NpcKind::Creeper => 10,
             NpcKind::KingSlime => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
@@ -1380,6 +1404,8 @@ impl Npc {
             NpcKind::Retinazer => 120000.0,
             NpcKind::Spazmatism => 120000.0,
             NpcKind::Plantera => 150000.0,
+            NpcKind::BrainOfCthulhu => 50000.0,
+            NpcKind::Creeper => 0.0,
             NpcKind::KingSlime => 10_000.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
@@ -1513,6 +1539,8 @@ impl Npc {
                 self.update_twin(world, player)
             }
             NpcKind::Plantera => self.update_plantera(world, player),
+            NpcKind::BrainOfCthulhu => self.update_brain(world, player),
+            NpcKind::Creeper => {}
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1825,6 +1853,9 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
+                // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
+            }
             NpcKind::Plantera => {
                 // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
                 self.frame_counter += 1.0;
@@ -3182,6 +3213,52 @@ impl Npc {
         }
     }
 
+    /// `AI_054`'s Brain of Cthulhu v1 (`NPC.cs`'s aiStyle 54 machine) —
+    /// the teleport-charge cycle: the telegraph pause, the dash at the
+    /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
+    /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
+    /// invulnerability gate (the Creepers' orbit = the follow-ups).
+    fn update_brain(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.caster_counter == 0 && self.cast_windup == 0 {
+            self.caster_counter = 1;
+        }
+        if self.cast_windup == 2 && self.caster_counter > 40 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 9.0;
+            self.vy = dy / d * 9.0;
+            self.cast_windup = 3;
+            self.caster_counter = 0;
+        } else if self.cast_windup == 3 {
+            self.vx *= 0.98;
+            self.vy *= 0.98;
+            if self.vx.abs() < 0.1 && self.vy.abs() < 0.1 {
+                self.cast_windup = 0;
+                self.caster_counter = 0;
+            }
+        } else {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            self.vx += dx.signum() * 0.05;
+            self.vy += dy.signum() * 0.05;
+            self.caster_counter += 1;
+            if self.caster_counter >= 60 {
+                self.cast_windup = 2;
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -3386,6 +3463,8 @@ impl Npc {
             NpcKind::Retinazer => 49,
             NpcKind::Spazmatism => 50,
             NpcKind::Plantera => 51,
+            NpcKind::BrainOfCthulhu => 52,
+            NpcKind::Creeper => 53,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -5016,7 +5095,39 @@ mod tests {
         assert_eq!(e.credit_id, "Plantera");
     }
 
+    #[test]
+    fn the_brain_teleport_dashes() {
+        // `AI_054`'s v1 cycle: the telegraph 60 ticks -> the dash (the
+        // velocity 9) -> the decay -> the telegraph reset.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut br = Npc::new(NpcKind::BrainOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        br.hp = br.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..59 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(br.cast_windup == 2, "the dash armed");
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.2, "the dash speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(br.size(), (160.0, 110.0));
+        assert_eq!(br.max_hp, 1250);
+        let cr = Npc::new(NpcKind::Creeper, 0.0, 0.0, 1, 0.0);
+        assert_eq!(cr.size(), (30.0, 30.0));
+        assert_eq!(cr.max_hp, 100);
+        let e = crate::bestiary::entry_for_npc(NpcKind::BrainOfCthulhu, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 266);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Creeper, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 267);
+    }
+
 }
+
 
 
 
