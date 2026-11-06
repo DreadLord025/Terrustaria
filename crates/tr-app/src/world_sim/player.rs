@@ -153,6 +153,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         let grapple_for_tick = grapple_snapshot
             .filter(|(_, _, attached)| *attached)
             .map(|(pos, hook_type, _)| (pos, hook_type));
+        // `Player.armor`'s kinds snapshot: the update's grant pass reads the
+        // equipped kinds (`UpdateEquips`, `Player.cs:12892` — the loop runs
+        // inside `Player.Update` on the vanilla's own array).
+        for i in 0..20 {
+            p.equipped[i] = app.equip.armor[i].kind;
+        }
         let step = 1.0 / 60.0;
         app.player_step.tick(dt, |_| {
             p.update_with_grapple(&app.world, input, grapple_for_tick)
