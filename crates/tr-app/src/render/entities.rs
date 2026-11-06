@@ -109,6 +109,7 @@ pub(crate) struct NpcAssets {
     pub(crate) painter: Option<BgTex>,
     pub(crate) witch_doctor: Option<BgTex>,
     pub(crate) clothier: Option<BgTex>,
+    pub(crate) eoc: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -155,6 +156,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         painter: sky_tex(atlas, "NPC_227", None),
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
+        eoc: sky_tex(atlas, "NPC_4", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -674,6 +676,13 @@ pub(crate) fn draw_npcs(
                 48.0,
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
+            ),
+            // The EoC: the 2-frame 100x110 sheet centred on the hitbox.
+            NpcKind::EyeOfCthulhu => (
+                assets.eoc.as_ref(),
+                assets.eoc.as_ref().map_or(110.0, |t| t.h / 2.0),
+                [100.0, 110.0],
+                [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).

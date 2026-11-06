@@ -355,6 +355,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Dryad: the downedBoss1 gate (`SpawnAllowed_Dryad`'s
+        // downedBoss1 — the port's downed_eoc).
+        if app.world.downed_eoc
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Dryad)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 9).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Dryad) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         if let Some(player) = app.player.as_ref() {
             if player.max_hp > 100
                 && !app.npcs.iter().any(|n| n.kind == NpcKind::Nurse)
@@ -442,6 +456,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // bestiary credit above.
         match npc.kind {
             NpcKind::KingSlime => app.world.downed_slime_king = true,
+            NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
             _ => {}
         }
         spawn_coins(app, &npc);

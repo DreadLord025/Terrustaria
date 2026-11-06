@@ -240,6 +240,35 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyE => {
+                                // The EoC debug spawn (the vanilla's
+                                // Suspicious Looking Eye + the night roll
+                                // land with the boss-item work).
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 15)
+                                            .clamp(2, self.world.width - 3);
+                                        let (w2, h2) = NpcKind::EyeOfCthulhu.size();
+                                        let mut boss = Npc::new(
+                                            NpcKind::EyeOfCthulhu,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 20) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        boss.caster_counter = 0;
+                                        boss.cast_windup = 0;
+                                        let _ = (w2, h2);
+                                        log::info!("Eye of Cthulhu spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyB => {
                                 if !self
                                     .npcs
