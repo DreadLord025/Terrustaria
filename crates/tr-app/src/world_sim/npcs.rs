@@ -152,6 +152,10 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     app.shop_stock = crate::shop::resolve_stock(shop, &flags, &inv_ids);
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
+    // `TinkererReforge` (`NPCInteractions.cs:407-423`) opens the reforge
+    // menu beside the shop (`NPCChatText_TinkererReforge`,
+    // `Main.cs:40022-40029`).
+    app.in_reforge_menu = app.npcs[idx].kind == NpcKind::GoblinTinkerer;
     true
 }
 
@@ -493,6 +497,10 @@ pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.attack_cd = (app.attack_cd - dt).max(0.0);
+    // `Main.reforgeCooldown`'s per-tick decrement (`Main.cs:17121-17123`).
+    if app.reforge_cooldown > 0 {
+        app.reforge_cooldown -= 1;
+    }
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
     // enemies move faster on high-refresh displays.

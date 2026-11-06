@@ -5857,6 +5857,32 @@ mod tests {
             crate::world_sim::npcs::shop_index_for_kind(NpcKind::Guide),
             None
         );
+        // `TinkererReforge` (`NPCInteractions.cs:407-423`): the Tinkerer's
+        // talk opens the reforge menu beside the shop; the other shop
+        // keepers do not.
+        let mut app_tinkerer = crate::app::flow::front_flow_tests::flow_app(
+            None,
+            vec![],
+            vec![],
+        );
+        let t = crate::npc::Npc::new(
+            NpcKind::GoblinTinkerer,
+            app_tinkerer.mouse_pos.x,
+            app_tinkerer.mouse_pos.y,
+            1,
+            0.0,
+        );
+        app_tinkerer.npcs.push(t);
+        let cursor = app_tinkerer.mouse_pos;
+        assert!(crate::world_sim::npcs::try_open_shop_at_cursor(
+            &mut app_tinkerer,
+            cursor
+        ));
+        assert!(
+            app_tinkerer.in_reforge_menu,
+            "the Tinkerer's talk opens the reforge menu"
+        );
+        assert_eq!(app_tinkerer.shop_npc, Some(0));
         // The stock (`Chest.cs:1989-2003`): the 7 rows in order, no gating.
         let ids = crate::shop::resolve_stock(6, &crate::shop::ShopFlags::default(), &[]);
         assert_eq!(ids, vec![128, 486, 398, 84, 407, 161, 5324]);

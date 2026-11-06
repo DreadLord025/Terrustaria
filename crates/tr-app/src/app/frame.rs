@@ -1156,6 +1156,26 @@ impl App {
                         &self.emotes,
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
+                        self.in_reforge_menu.then(|| {
+                            let cost = self
+                                .reforge_slot
+                                .kind
+                                .gt(&0)
+                                .then(|| {
+                                    crate::shop::reforge_cost(
+                                        crate::prefix::prefixed_stats(
+                                            self.reforge_slot.kind,
+                                            self.reforge_slot.prefix,
+                                        )
+                                        .map(|s| s.value)
+                                        .unwrap_or(0),
+                                        self.reforge_slot.count.max(1),
+                                        self.shop_mood,
+                                    )
+                                })
+                                .unwrap_or(0);
+                            (&self.reforge_slot, cost, self.reforge_cooldown)
+                        }),
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

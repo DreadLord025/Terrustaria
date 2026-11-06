@@ -146,6 +146,7 @@ pub fn draw_hud(
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
     shop: Option<(&[u16], f32)>,
+    reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -234,6 +235,38 @@ pub fn draw_hud(
                     &format!("{} - {} copper", def.name, price),
                 );
             }
+        }
+        // The reforge menu (`Main.DrawInventory`'s inline block,
+        // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
+        // button (30x30), the cost label above the button (`Lang.inter[46]`
+        // + the coin breakdown — the port prints the copper total), the
+        // `Lang.inter[20]` "place an item here" hint on the empty slot and
+        // the held item's name; the cooldown greys the label. The port's
+        // text-panel fidelity rides the same coordinates + m_h offset.
+        if let Some((slot, cost, cooldown)) = reforge {
+            text::hud_text(r, lookups, 50.0, 250.0 + m_h, 0.85, [1.0; 4], "Reforge");
+            if slot.count > 0 {
+                let def = &crate::itemdata::ITEMS[slot.kind as usize];
+                text::hud_text(
+                    r,
+                    lookups,
+                    76.0,
+                    274.0 + m_h,
+                    0.85,
+                    [1.0; 4],
+                    &format!("{} x{}", def.name, slot.count),
+                );
+            } else {
+                text::hud_text(r, lookups, 76.0, 274.0 + m_h, 0.85, [0.8; 4], "place an item here");
+            }
+            let label = if cooldown > 0 {
+                "cooling down".to_string()
+            } else {
+                format!("Reforge - {} copper", cost)
+            };
+            let ready = cooldown == 0;
+            let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
+            text::hud_text(r, lookups, 120.0, 316.0 + m_h, 0.85, tint, &label);
         }
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them

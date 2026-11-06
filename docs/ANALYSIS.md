@@ -1595,8 +1595,11 @@ The deviations below are deliberate and are the places the port is **not** pixel
   (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
   `Main.mouseTextColor` (`ui/inventory.rs` `LABEL_COLOR`).
-* The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
-  their menus are not opened, so they show as empty frames.
+* The reforge slot's menu opened with M3-REFORGE-1 — the (50,270) slot, the
+  (120,310) button and the cost label ride the text-panel fidelity at the
+  vanilla coordinates (`ui/mod.rs` + `clicks.rs`; the Reforge[0]/[1] button
+  textures and the coin breakdown stay out). The guide/crafting slots keep
+  their empty frames.
 
 ### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
 
