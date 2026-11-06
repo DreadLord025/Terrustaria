@@ -300,7 +300,8 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::Demolitionist
         | crate::npc::NpcKind::Painter
         | crate::npc::NpcKind::WitchDoctor
-        | crate::npc::NpcKind::Clothier => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::Clothier
+        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -323,7 +324,8 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::GoblinPeon
         | crate::npc::NpcKind::GoblinThief
         | crate::npc::NpcKind::GoblinWarrior
-        | crate::npc::NpcKind::GoblinArcher => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::GoblinArcher
+        | crate::npc::NpcKind::BoundGoblin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::EaterOfSouls
         | crate::npc::NpcKind::Hornet
         | crate::npc::NpcKind::MeteorHead => {

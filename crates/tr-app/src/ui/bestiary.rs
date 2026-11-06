@@ -426,6 +426,8 @@ fn portrait_data(
         NpcKind::GoblinThief => 58,
         NpcKind::GoblinWarrior => 59,
         NpcKind::GoblinArcher => 60,
+        NpcKind::BoundGoblin => 61,
+        NpcKind::GoblinTinkerer => 62,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -526,6 +528,8 @@ fn portrait_data(
         (NpcKind::GoblinThief, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::GoblinWarrior, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::GoblinArcher, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::BoundGoblin, _) => (sheet_i, 48.0, 34.0, 54.0, white),
+        (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

@@ -54,9 +54,24 @@ pub(crate) fn black_slime_darkness_touch(
 /// multiplier capture at the open (`Main.OpenShop`'s `SetupShop` +
 /// `ShopHelper.OpenShop` pair).
 pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
-    // The town dispatch: the Merchant opens the shop, the Nurse heals (the
-    // vanilla's dialog-button pair — the port collapses them onto the
-    // right-click).
+    // The bound-goblin rescue (`NPC.cs:19824-19840`'s `talkNPC` trigger +
+    // `AI_000_TransformBoundNPC` `:44884-44896`): the talk transforms 105
+    // → 107 in place and raises `savedGoblin` — the port falls through to
+    // the shop open (the vanilla opens the dialog, the player then picks
+    // Shop; the ПКМ-collapse matches the Nurse treatment).
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::BoundGoblin && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        rescue_bound_goblin(&mut app.npcs[i], &mut app.world);
+    }
+    // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
+    // — the port collapses them onto the right-click).
     let Some(nurse_idx) = app.npcs.iter().position(|n| {
         n.hp > 0 && n.kind == NpcKind::Nurse && {
             let (w, h) = n.size();
@@ -66,14 +81,42 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 && world_pos.y < n.y + h
         }
     }) else {
-        return try_open_merchant_shop_at_cursor(app, world_pos);
+        return try_open_town_shop_at_cursor(app, world_pos);
     };
     app.nurse_heal(nurse_idx)
 }
 
-fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
+/// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
+/// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
+/// vanilla indices). `None` = no shop (the Guide).
+pub(crate) fn shop_index_for_kind(kind: NpcKind) -> Option<u32> {
+    Some(match kind {
+        NpcKind::Merchant => 1,
+        NpcKind::ArmsDealer => 2,
+        NpcKind::Dryad => 3,
+        NpcKind::Demolitionist => 4,
+        NpcKind::Clothier => 5,
+        NpcKind::GoblinTinkerer => 6,
+        NpcKind::Painter => 15,
+        NpcKind::WitchDoctor => 16,
+        _ => return None,
+    })
+}
+
+/// The talk-rescue (`AI_000_TransformBoundNPC`, `NPC.cs:44884-44896`): the
+/// bound goblin transforms into the Tinkerer in place — the freed 18x40
+/// stats restore (`SetDefaults` 107, `:10271-10283`), `savedGoblin`
+/// raises (`:52944-52946`) and the tied state never returns.
+pub(crate) fn rescue_bound_goblin(n: &mut Npc, world: &mut tr_core::World) {
+    n.kind = NpcKind::GoblinTinkerer;
+    n.max_hp = NpcKind::GoblinTinkerer.max_hp();
+    n.hp = n.max_hp;
+    world.saved_goblin = true;
+}
+
+fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     let Some(idx) = app.npcs.iter().position(|n| {
-        n.hp > 0 && n.kind == NpcKind::Merchant && {
+        n.hp > 0 && shop_index_for_kind(n.kind).is_some() && {
             let (w, h) = n.size();
             world_pos.x >= n.x
                 && world_pos.x < n.x + w
@@ -83,6 +126,7 @@ fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }) else {
         return false;
     };
+    let shop = shop_index_for_kind(app.npcs[idx].kind).unwrap_or(1);
     let (pcx, pcy) = app
         .player
         .as_ref()
@@ -105,7 +149,7 @@ fn try_open_merchant_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         .filter(|sl| sl.kind != 0 && sl.count > 0)
         .map(|sl| sl.kind)
         .collect();
-    app.shop_stock = crate::shop::resolve_stock(1, &flags, &inv_ids);
+    app.shop_stock = crate::shop::resolve_stock(shop, &flags, &inv_ids);
     app.shop_mood = mood.multiplier;
     app.shop_npc = Some(idx);
     true
@@ -884,6 +928,13 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 day_time: app.world.day_time,
                 player_life_max: app.player.as_ref().map_or(100, |p| p.max_hp),
                 underworld_for_bats: (app.camera.y / 16.0) as i32 > app.world.height - 200,
+                // `NPC.cs:2084`'s guards: the army downed, the rescue not
+                // yet raised, and nobody bound/freed on the map.
+                bound_goblin_ok: app.world.downed_goblins
+                    && !app.world.saved_goblin
+                    && !app.npcs.iter().any(|n| {
+                        n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
+                    }),
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);

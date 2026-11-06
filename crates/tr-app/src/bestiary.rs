@@ -517,6 +517,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Goblin Archer",
     },
     BestiaryEntryDef {
+        credit_id: "GoblinTinkerer",
+        net_id: 107,
+        kind: NpcKind::GoblinTinkerer,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Tinkerer",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

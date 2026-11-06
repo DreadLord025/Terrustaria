@@ -129,7 +129,7 @@ fn filtered_items(filter: &str) -> Vec<(u16, &'static str)> {
         .collect()
 }
 
-const NPC_LIST: [(NpcKind, &str, &str); 18] = [
+const NPC_LIST: [(NpcKind, &str, &str); 20] = [
     (NpcKind::Slime, "Blue Slime", "NPC_1"),
     (NpcKind::Zombie, "Zombie", "NPC_3"),
     (NpcKind::DemonEye, "Demon Eye", "NPC_2"),
@@ -148,6 +148,8 @@ const NPC_LIST: [(NpcKind, &str, &str); 18] = [
     (NpcKind::Piranha, "Piranha", "NPC_58"),
     (NpcKind::Goldfish, "Goldfish", "NPC_55"),
     (NpcKind::Shark, "Shark", "NPC_65"),
+    (NpcKind::GoblinTinkerer, "Gob. Tinkerer", "NPC_107"),
+    (NpcKind::BoundGoblin, "Bound Goblin", "NPC_105"),
 ];
 
 const BOSS_LIST: [(NpcKind, &str, &str); 12] = [
@@ -455,6 +457,8 @@ fn spawn_npc(app: &mut App, kind: NpcKind) {
         NpcKind::Piranha | NpcKind::Goldfish | NpcKind::Shark => {
             Npc::spawn_swimmer(&app.world, x, y, kind)
         }
+        NpcKind::GoblinTinkerer => Npc::spawn_town(&app.world, x, kind),
+        NpcKind::BoundGoblin => Npc::spawn_caster(&app.world, x, y, kind),
         _ => None,
     };
     if let Some(n) = npc {

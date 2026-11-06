@@ -205,6 +205,14 @@ pub enum NpcKind {
     GoblinWarrior,
     /// `NPCID.GoblinArcher` (111) — x0.95, dmg 20, def 6, 80 HP.
     GoblinArcher,
+    /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
+    /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
+    /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
+    BoundGoblin,
+    /// `NPCID.GoblinTinkerer` (107) — the freed Tinkerer (`SetDefaults`
+    /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP,
+    /// def 15, kb 0.5).
+    GoblinTinkerer,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -432,6 +440,8 @@ impl NpcKind {
             NpcKind::GoblinThief => 58,
             NpcKind::GoblinWarrior => 59,
             NpcKind::GoblinArcher => 60,
+            NpcKind::BoundGoblin => 61,
+            NpcKind::GoblinTinkerer => 62,
         }
     }
 
@@ -498,6 +508,8 @@ impl NpcKind {
             58 => NpcKind::GoblinThief,
             59 => NpcKind::GoblinWarrior,
             60 => NpcKind::GoblinArcher,
+            61 => NpcKind::BoundGoblin,
+            62 => NpcKind::GoblinTinkerer,
             _ => return None,
         })
     }
@@ -622,6 +634,10 @@ impl NpcKind {
             NpcKind::GoblinThief => (17.0, 36.0),
             NpcKind::GoblinWarrior => (20.0, 42.0),
             NpcKind::GoblinArcher => (17.0, 36.0),
+            // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
+            // (`:10274-10275`).
+            NpcKind::BoundGoblin => (18.0, 34.0),
+            NpcKind::GoblinTinkerer => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -724,6 +740,9 @@ impl NpcKind {
             NpcKind::GoblinThief => 80,
             NpcKind::GoblinWarrior => 110,
             NpcKind::GoblinArcher => 80,
+            // 250 HP both (`:10255`, `:10280`).
+            NpcKind::BoundGoblin => 250,
+            NpcKind::GoblinTinkerer => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -798,6 +817,10 @@ impl NpcKind {
             NpcKind::GoblinThief => 20,
             NpcKind::GoblinWarrior => 25,
             NpcKind::GoblinArcher => 20,
+            // The `friendly` pair (`:10246`/`:10272`) — the contact gate
+            // excludes them; 0 stands for the vanilla's unused dmg 10.
+            NpcKind::BoundGoblin => 0,
+            NpcKind::GoblinTinkerer => 0,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1340,6 +1363,8 @@ impl Npc {
             NpcKind::GoblinThief => 0.7,
             NpcKind::GoblinWarrior => 0.5,
             NpcKind::GoblinArcher => 0.7,
+            NpcKind::BoundGoblin => 0.5,
+            NpcKind::GoblinTinkerer => 0.5,
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
@@ -1429,6 +1454,9 @@ impl Npc {
             NpcKind::GoblinThief => 6,
             NpcKind::GoblinWarrior => 8,
             NpcKind::GoblinArcher => 6,
+            // def 15 both (`:10254`, `:10279`).
+            NpcKind::BoundGoblin => 15,
+            NpcKind::GoblinTinkerer => 15,
             NpcKind::KingSlime => 10,
             // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
             // per-tick tiers ride `defense_override`.
@@ -1514,6 +1542,8 @@ impl Npc {
             NpcKind::GoblinThief => 200.0,
             NpcKind::GoblinWarrior => 150.0,
             NpcKind::GoblinArcher => 200.0,
+            NpcKind::BoundGoblin => 0.0,
+            NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
             // The hungry/leech rows carry no value line.
             NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
@@ -1639,7 +1669,8 @@ impl Npc {
             | NpcKind::Demolitionist
             | NpcKind::Painter
             | NpcKind::WitchDoctor
-            | NpcKind::Clothier => self.update_guide(world, dt),
+            | NpcKind::Clothier
+            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
@@ -1651,6 +1682,8 @@ impl Npc {
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player),
             NpcKind::Creeper => {}
+            // aiStyle 0 (`:10252`): the bound stand still until the talk.
+            NpcKind::BoundGoblin => {}
             NpcKind::GoblinPeon
             | NpcKind::GoblinThief
             | NpcKind::GoblinWarrior
@@ -2014,6 +2047,39 @@ impl Npc {
                         self.frame_counter = 0.0;
                     }
                 }
+            }
+            NpcKind::GoblinTinkerer => {
+                // The town 3-frame machine (`Main.npcFrameCount[107]`,
+                // aiStyle 7's FindFrame — the Guide's arm).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::BoundGoblin => {
+                // The tied pose: the single frame holds (`aiStyle 0` runs
+                // no FindFrame cycle).
+                self.frame_counter = 0.0;
+                self.frame = 0;
             }
             NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
                 // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
@@ -3827,6 +3893,8 @@ impl Npc {
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
                     | NpcKind::EyeOfCthulhu
+                    | NpcKind::BoundGoblin
+                    | NpcKind::GoblinTinkerer
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -3913,6 +3981,8 @@ impl Npc {
             NpcKind::GoblinThief => 55,
             NpcKind::GoblinWarrior => 56,
             NpcKind::GoblinArcher => 57,
+            NpcKind::BoundGoblin => 58,
+            NpcKind::GoblinTinkerer => 59,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -5753,5 +5823,58 @@ mod tests {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
         }
+    }
+    #[test]
+    fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
+        // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
+        // the 250/15/0.5 pair, the 18x34 vs 18x40 bodies, the kind<->u16
+        // round-trip, the bestiary row and the shop map.
+        assert_eq!(NpcKind::BoundGoblin.max_hp(), 250);
+        assert_eq!(NpcKind::GoblinTinkerer.max_hp(), 250);
+        let t = Npc::new(NpcKind::GoblinTinkerer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(t.defense(), 15);
+        assert_eq!(t.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::BoundGoblin.contact_damage(), 0);
+        assert_eq!(NpcKind::BoundGoblin.size(), (18.0, 34.0));
+        assert_eq!(NpcKind::GoblinTinkerer.size(), (18.0, 40.0));
+        for (kind, v) in [(NpcKind::BoundGoblin, 61), (NpcKind::GoblinTinkerer, 62)] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GoblinTinkerer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 107);
+        // The shop map (`NPCInteractions.cs:488-498`): the Tinkerer's
+        // shop 6; the Guide has none.
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::GoblinTinkerer),
+            Some(6)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Merchant),
+            Some(1)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Guide),
+            None
+        );
+        // The stock (`Chest.cs:1989-2003`): the 7 rows in order, no gating.
+        let ids = crate::shop::resolve_stock(6, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(ids, vec![128, 486, 398, 84, 407, 161, 5324]);
+    }
+
+    #[test]
+    fn the_bound_goblin_rescues_into_tinkerer() {
+        // `AI_000_TransformBoundNPC` (`NPC.cs:44884-44896`): the talk
+        // swaps 105 -> 107, the freed stats restore, `savedGoblin` raises.
+        let mut w = ground_air();
+        let mut n = Npc::new(NpcKind::BoundGoblin, 20.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        n.max_hp = 250;
+        n.hp = 250;
+        assert_eq!(w.saved_goblin, false);
+        crate::world_sim::npcs::rescue_bound_goblin(&mut n, &mut w);
+        assert_eq!(n.kind, NpcKind::GoblinTinkerer);
+        assert_eq!(n.max_hp, 250);
+        assert_eq!(n.hp, 250);
+        assert_eq!(w.saved_goblin, true);
     }
 }

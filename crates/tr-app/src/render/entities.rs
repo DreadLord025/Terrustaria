@@ -149,6 +149,8 @@ pub(crate) struct NpcAssets {
     pub(crate) goblin_thief: Option<BgTex>,
     pub(crate) goblin_warrior: Option<BgTex>,
     pub(crate) goblin_archer: Option<BgTex>,
+    pub(crate) bound_goblin: Option<BgTex>,
+    pub(crate) goblin_tinkerer: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -218,6 +220,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         goblin_thief: sky_tex(atlas, "NPC_27", None),
         goblin_warrior: sky_tex(atlas, "NPC_28", None),
         goblin_archer: sky_tex(atlas, "NPC_111", None),
+        bound_goblin: sky_tex(atlas, "NPC_105", None),
+        goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -857,6 +861,20 @@ pub(crate) fn draw_npcs(
                 assets.creeper.as_ref().map_or(30.0, |t| t.h),
                 [30.0, 30.0],
                 [n.x, n.y],
+            ),
+            // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
+            NpcKind::GoblinTinkerer => (
+                assets.goblin_tinkerer.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The bound goblin: the single tied frame over NPC_105.
+            NpcKind::BoundGoblin => (
+                assets.bound_goblin.as_ref(),
+                assets.bound_goblin.as_ref().map_or(48.0, |t| t.h),
+                [34.0, 54.0],
+                [n.x - 8.0, n.y - 10.0],
             ),
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
