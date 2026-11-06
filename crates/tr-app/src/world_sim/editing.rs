@@ -390,7 +390,17 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
             }
-            if app.mine_target == Some((tx, ty)) {
+            // `PickTile_DetermineDamage` (`Player.cs:53830-53833`): a
+            // `CanKillTile` refusal zeroes the pick damage — the swing
+            // plays, the accumulator never reaches 100. (The C# fail tick's
+            // `KillTile(fail: true)` sound/dust has no per-tick path in the
+            // port.) `break_tile` re-checks for the other break sources.
+            let refused =
+                !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app));
+            if refused {
+                app.mine_target = None;
+                app.mine_timer = 0.0;
+            } else if app.mine_target == Some((tx, ty)) {
                 app.mine_timer += dt;
             } else {
                 app.mine_target = Some((tx, ty));
@@ -589,7 +599,29 @@ pub(crate) fn place_wall_item(app: &mut App, tx: i32, ty: i32, wall: u16) {
     }
 }
 
+/// `Chest.CanDestroyChest`'s item scan (`Chest.cs:609-623`) against the
+/// app's in-memory chest store: any slot with a positive stack at the
+/// anchor refuses the break. The C#'s `type > 0` half is implied — the
+/// store only holds real stacks. The store stays empty until the
+/// M3-CHEST-UI seam fills it, so the refusal passes today.
+fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
+    move |x, y| {
+        app.world_chests
+            .iter()
+            .any(|c| c.tile == (x, y) && c.slots.iter().any(|&(_, stack)| stack > 0))
+    }
+}
+
 pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
+    // The three `CanKillTile` refusals (`WorldGen.cs:62219-62326`) gate
+    // every break source — the C# `KillTile` entry duplicates them through
+    // `CheckTileBreakability` (the 1/2 flavours, `:63537-63545`) and
+    // `Chest.DestroyChest` (:63695). Vanilla answers the pick with the fail
+    // tick's sound/dust instead of the break; the port has no per-tick
+    // path, so the refusal is silent.
+    if !edit::can_kill_tile(&app.world, tx, ty, chest_holds_items(app)) {
+        return;
+    }
     // `AchievementsHelper.NotifyTileDestroyed` + the CustomInt "Pick"
     // counter (BULLDOZER) — the destroyed tile feeds both rows.
     let kind = app.world.tile(tx, ty).filter(|t| t.active()).map(|t| t.kind);
@@ -2036,7 +2068,13 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
             // Vanilla suppresses item drops on the replication side
             // (`Main.netMode != 1` gate, `WorldGen.cs:63860`); the cascade
             // itself must run so every client converges on the same world.
-            edit::kill_tile(world, x, y, true);
+            // The `KillTile` entry refuses the same three `CanKillTile`
+            // cases (`CheckTileBreakability`, `:63537-63545`); no chest
+            // store is reachable from a bare world, so that case passes
+            // (the store is empty until M3-CHEST-UI anyway).
+            if tr_core::edit::can_kill_tile(world, x, y, |_, _| false) {
+                edit::kill_tile(world, x, y, true);
+            }
         }
         1 => {
             // Replicated placements take the same route as the local player.
@@ -2529,6 +2567,84 @@ mod tests {
         assert_eq!(app.items.len(), 1);
         assert_eq!(app.items[0].kind, registry::tile_drop(21, 0).unwrap());
         assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// M1.4-TO-6: the cell under a chest refuses the mining break
+    /// (`CanKillTile`'s container-family arm, `WorldGen.cs:62259-62270`) —
+    /// the support and the object stay, no drops.
+    #[test]
+    fn the_support_under_a_chest_refuses_the_mining_break() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 20); // the support cell
+        mine_frames(&mut app, 40);
+        assert!(app.world.tile(10, 20).unwrap().active(), "the support refuses");
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    app.world.tile(x, y).unwrap().active(),
+                    "chest cell ({x}, {y}) stands"
+                );
+            }
+        }
+        assert!(app.items.is_empty());
+    }
+
+    /// M1.4-TO-6: a chest holding items refuses its own break
+    /// (`:62311-62323` through `CanDestroyChest`); emptying the store
+    /// restores the DW-1.1 behaviour.
+    #[test]
+    fn a_stocked_chest_refuses_the_mining_break_until_emptied() {
+        let mut w = object_world();
+        assert!(edit::place_item_tile(&mut w, 10, 19, 21, 0, 1));
+        let mut app = mining_app(w, 10, 18);
+        app.world_chests.push(crate::craft::WorldChest {
+            tile: (10, 18),
+            slots: vec![(9, 6)],
+        });
+        mine_frames(&mut app, 40);
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    app.world.tile(x, y).unwrap().active(),
+                    "stocked chest cell ({x}, {y}) refuses"
+                );
+            }
+        }
+        assert!(app.items.is_empty());
+        app.world_chests.clear();
+        mine_frames(&mut app, 40);
+        for x in [10, 11] {
+            for y in [18, 19] {
+                assert!(
+                    !app.world.tile(x, y).unwrap().active(),
+                    "the emptied chest breaks as in DW-1.1"
+                );
+            }
+        }
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(app.items[0].kind, 48, "the chest item");
+    }
+
+    /// M1.4-TO-6: the locked golden door refuses `break_tile`
+    /// (`:62288-62296` through `IsLockedDoor`); the top cell's frames are
+    /// forced to the lock row — the break is silent and the object stays.
+    #[test]
+    fn the_locked_door_refuses_the_break() {
+        let mut w = object_world();
+        // The doorway's SolidTile anchors, as in DW-1.1.
+        set_tile(&mut w, 10, 16, 1);
+        assert!(edit::place_item_tile(&mut w, 10, 17, 10, 0, 1));
+        w.tile_mut(10, 17).unwrap().frame_y = 594;
+        let mut app = mining_app(w, 10, 17);
+        break_tile(&mut app, 10, 17);
+        for y in 17..=19 {
+            assert!(
+                app.world.tile(10, y).unwrap().active(),
+                "the locked door refuses ({y})"
+            );
+        }
+        assert!(app.items.is_empty());
     }
 
     /// DW-1.2: the removed cactus carve-out is behaviour-neutral and the
