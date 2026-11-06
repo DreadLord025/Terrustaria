@@ -1774,6 +1774,85 @@ pub(crate) fn remove_tile(world: &mut World, x: i32, y: i32) -> Option<u16> {
     Some(kind)
 }
 
+/// `WorldGen.CanKillTile` (`WorldGen.cs:62219-62326`) — the three break
+/// refusals. The mining chain zeroes the pick damage on a refusal
+/// (`Player.PickTile_DetermineDamage`, `Player.cs:53830-53833`) and the
+/// `KillTile` entry duplicates the same cases through
+/// `CheckTileBreakability` (the 1/2 flavours, `:62377-62461`), so every
+/// break source refuses, not only the pick. The C#'s
+/// `out bool blockDamaged` collapses here — the 2-arg overload
+/// (`:62213-62217`) discards it and no caller reads it.
+///
+/// Unported arms of the same C# function (M1.4-TO-6 ports the three named
+/// refusals only): the tree-trunk / palm / cactus-80 anchors above
+/// (`:62247-62257`, `:62271-62281`), the boulder `CheckBoulderChest` scan
+/// (`:62283-62287`) and the teleporter 235 (`:62297-62310`).
+///
+/// `chest_holds_items` stands in for `Chest.CanDestroyChest`'s registry scan
+/// (`Chest.cs:609-623`: no entry → destroyable; any slot with
+/// `type > 0 && stack > 0` → refused) keyed by the object's top-left cell.
+/// The app answers from its in-memory chest store; sources without one pass
+/// `|_, _| false` (the store stays empty until the M3-CHEST-UI seam fills
+/// it, so the refusal passes there today — same as the actuation slice in
+/// `wiring.rs`).
+pub fn can_kill_tile(
+    world: &World,
+    x: i32,
+    y: i32,
+    chest_holds_items: impl Fn(i32, i32) -> bool,
+) -> bool {
+    // `:62222-62235` — the bounds and the null/inactive guards; the port's
+    // dense array folds them into the `Option`.
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() {
+        return false;
+    }
+    // `:62236-62239` — the dungeon echo wall refuses every break.
+    if t.wall == WALL_UNBREAKABLE {
+        return false;
+    }
+    // `:62240-62281` — the anchor above (`j >= 1` guard kept); only the
+    // container-family arm is ported.
+    if y >= 1 {
+        if let Some(above) = world.tile(x, y - 1) {
+            if above.active() {
+                let kind = above.kind;
+                match kind {
+                    // `:62259-62270` — 21 Containers, 26 DemonAltar,
+                    // 72 MushroomTrees, 77 Hellforge, 88 Dressers,
+                    // 467 Containers2, 488 FallenLog (TileID.cs:671/:681/
+                    // :773/:783/:805/:1563/:1605). A different kind under the
+                    // object refuses: the object stands on this cell.
+                    21 | 26 | 72 | 77 | 88 | 467 | 488 => {
+                        if t.kind != kind {
+                            return false;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    // `:62288-62296` — the locked golden door (`is_locked_door`,
+    // `:69191-69197`); `OpenDoor` refuses the same frames (`:37654-37657`).
+    if t.kind == 10 && is_locked_door(t) {
+        return false;
+    }
+    // `:62311-62323` — a chest 21/467 (2 cells wide) or dresser 88 (3 wide)
+    // holding items refuses; the anchor is the object's top-left cell, the
+    // `Chest._chestsByCoords` key (`Chest.cs:92`).
+    let wide: i32 = match t.kind {
+        21 | 467 => 2,
+        88 => 3,
+        _ => return true,
+    };
+    let anchor_x = x - i32::from(t.frame_x) / 18 % wide;
+    let anchor_y = y - i32::from(t.frame_y) / 18;
+    !chest_holds_items(anchor_x, anchor_y)
+}
+
 /// Removes the background wall at `(x, y)`. Returns the wall id.
 pub fn break_wall(world: &mut World, x: i32, y: i32) -> Option<u16> {
     let t = *world.tile(x, y)?;
@@ -2613,6 +2692,91 @@ mod tests {
         assert!(t.frame_x >= 0 && t.frame_y >= 0);
         assert_eq!(w.surface_of(10), 20);
         assert!(w.revision >= 2);
+    }
+
+    /// M1.4-TO-6: the container family above refuses the cell below
+    /// (`WorldGen.cs:62259-62270`); the same kind passes (`tile.type != type`).
+    #[test]
+    fn the_container_family_above_refuses_can_kill_tile() {
+        let mut w = ground_world();
+        for (n, kind) in [21u16, 26, 72, 77, 88, 467, 488].into_iter().enumerate() {
+            let x = 10 + n as i32;
+            set_object_cell(&mut w, x, 19, kind, 0, 0);
+            assert!(!can_kill_tile(&w, x, 20, |_, _| false), "{kind} refuses below");
+        }
+        // The same kind under itself does not refuse (`tile.type != type`).
+        set_object_cell(&mut w, 20, 19, 1, 0, 0);
+        assert!(can_kill_tile(&w, 20, 20, |_, _| false));
+    }
+
+    /// M1.4-TO-6: the locked golden door refuses (`:62288-62296` through
+    /// `IsLockedDoor` `:69191-69197`); the wooden frames and the wide
+    /// `frameX` column pass.
+    #[test]
+    fn the_locked_door_refuses_can_kill_tile() {
+        let mut w = ground_world();
+        set_object_cell(&mut w, 10, 20, 10, 0, 594);
+        assert!(!can_kill_tile(&w, 10, 20, |_, _| false), "lock row opens at 594");
+        set_object_cell(&mut w, 10, 20, 10, 0, 646);
+        assert!(!can_kill_tile(&w, 10, 20, |_, _| false), "lock row ends at 646");
+        set_object_cell(&mut w, 10, 20, 10, 0, 0);
+        assert!(can_kill_tile(&w, 10, 20, |_, _| false), "wooden frames pass");
+        set_object_cell(&mut w, 10, 20, 10, 54, 594);
+        assert!(can_kill_tile(&w, 10, 20, |_, _| false), "frameX >= 54 is not the lock");
+    }
+
+    /// M1.4-TO-6: a chest 21/467 (2 cells wide) or dresser 88 (3 wide)
+    /// holding items refuses through the anchor scan (`:62311-62323`,
+    /// `Chest.cs:609-623`); the anchor is the top-left cell from
+    /// `frameX / 18 % wide`.
+    #[test]
+    fn the_stocked_chest_and_dresser_refuse_can_kill_tile() {
+        let mut w = ground_world();
+        // The chest's right cell maps back to the top-left anchor.
+        set_object_cell(&mut w, 10, 18, 21, 0, 0);
+        set_object_cell(&mut w, 11, 18, 21, 18, 0);
+        let holds = |x: i32, y: i32| x == 10 && y == 18;
+        assert!(!can_kill_tile(&w, 10, 18, holds));
+        assert!(!can_kill_tile(&w, 11, 18, holds), "the right cell maps to the anchor");
+        assert!(can_kill_tile(&w, 10, 18, |_, _| false), "no registry entry passes");
+        // Containers2 anchors like the chest.
+        set_object_cell(&mut w, 12, 18, 467, 18, 0);
+        let holds_467 = |x: i32, y: i32| x == 11 && y == 18;
+        assert!(!can_kill_tile(&w, 12, 18, holds_467));
+        // The dresser is 3 wide: `frameX / 18 % 3`.
+        set_object_cell(&mut w, 14, 18, 88, 36, 0);
+        let holds_dresser = |x: i32, y: i32| x == 12 && y == 18;
+        assert!(!can_kill_tile(&w, 14, 18, holds_dresser));
+        assert!(can_kill_tile(&w, 14, 18, |_, _| false));
+    }
+
+    /// M1.4-TO-6: the `CanKillTile` contract head — air, out-of-bounds,
+    /// inactive and the dungeon echo wall refuse (`:62222-62239`).
+    #[test]
+    fn can_kill_tile_contract_head_refuses_air_inactive_and_wall_350() {
+        let w = ground_world();
+        assert!(!can_kill_tile(&w, 10, 5, |_, _| false), "air refuses");
+        assert!(!can_kill_tile(&w, -1, 20, |_, _| false), "out of bounds refuses");
+        let mut w = ground_world();
+        let i = w.index(10, 20);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        assert!(!can_kill_tile(&w, 10, 20, |_, _| false), "inactive refuses");
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].wall = WALL_UNBREAKABLE;
+        assert!(!can_kill_tile(&w, 10, 20, |_, _| false), "wall 350 refuses");
+    }
+
+    /// M1.4-TO-6: the refusals gate the outer break sources only —
+    /// `kill_tile`'s body (and the cascade's re-entries) stay ungated, the
+    /// same split the C# draws between `CanKillTile` and the `KillTile`
+    /// entry (`CheckTileBreakability`). Recorded in ANALYSIS as the port's
+    /// single-choked-gate deviation.
+    #[test]
+    fn kill_tile_itself_stays_ungated() {
+        let mut w = ground_world();
+        set_object_cell(&mut w, 10, 19, 21, 0, 0);
+        assert!(!can_kill_tile(&w, 10, 20, |_, _| false));
+        assert_eq!(kill_tile(&mut w, 10, 20, true).map(|k| k.kind), Some(1));
     }
 
     #[test]
