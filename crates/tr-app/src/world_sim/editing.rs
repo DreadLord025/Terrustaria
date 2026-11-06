@@ -4503,6 +4503,69 @@ mod loot_summon_tests {
     }
 
     #[test]
+    fn the_bloody_spine_brain_spawns_swarm_and_shields() {
+        // `AI_054`'s init + the shield: the Bloody Spine's brain gets the
+        // 20-Creeper swarm at the first state pass (`localAI[0]` 0 -> 1),
+        // the shield holds while a Creeper lives (`dontTakeDamage`), and
+        // the last Creeper's death frees the brain.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.scene_metrics.zone_crimson = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        crate::world_sim::npcs::update_brain_state(&mut app);
+        let creepers = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Creeper && n.hp > 0)
+            .count();
+        assert_eq!(creepers, 20, "the init swarm");
+        let brain = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .expect("the brain");
+        assert!(brain.dont_take_damage, "the Creeper shield holds");
+        assert!(app.world.brain_present);
+        // The shielded brain refuses the hit (`StrikeNPC`'s no-op).
+        let mut brain_mut = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .unwrap();
+        let hp_before = brain_mut.hp;
+        assert!(
+            !brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false),
+            "the shield refuses"
+        );
+        assert_eq!(brain_mut.hp, hp_before);
+        drop(brain_mut);
+        // The last Creeper's death frees the brain.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Creeper {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_brain_state(&mut app);
+        let mut brain_mut = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .unwrap();
+        assert!(!brain_mut.dont_take_damage, "the shield falls");
+        assert!(brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false));
+        assert!(brain_mut.hp < hp_before);
+    }
+
+    #[test]
     fn the_mech_summons_night_gated_pair_and_refusals() {
         // `ItemCheck_UseBossSpawners`' mech arms (`Player.cs:43838-43876`):
         // day refuses free; night summons — the Eye spawns BOTH eyes, the
