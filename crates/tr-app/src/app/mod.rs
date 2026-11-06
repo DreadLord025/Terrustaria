@@ -510,6 +510,21 @@ pub(crate) fn deterministic_pointer_park() -> bool {
     *V.get_or_init(|| std::env::var_os("TR_SHOT").is_some() && mouse_pin().is_none())
 }
 
+/// The `TR_DYE=k1,k2,...` pin parse: the first ten comma-separated kinds fill
+/// `Player.dye` positionally; garbage and 0 leave the slot empty.
+fn parse_tr_dye(list: &str) -> [u16; 10] {
+    let mut out = [0u16; 10];
+    for (slot, kind) in out.iter_mut().zip(list.split(',')) {
+        *slot = kind.trim().parse().unwrap_or(0);
+    }
+    out
+}
+
+/// The `TR_DMOUNT=<kind>` pin parse (`App.equip.misc_dyes[3]`); garbage → 0.
+fn parse_tr_dmount(s: &str) -> u16 {
+    s.trim().parse().unwrap_or(0)
+}
+
 /// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
 /// motion, so screenshots can deterministically show the cursor and a hovered
 /// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).
@@ -1479,8 +1494,7 @@ impl App {
                 // (deferred to the inventory-interaction task), so the plumbing
                 // stays screenshotable through the pin.
                 if let Ok(list) = std::env::var("TR_DYE") {
-                    for (slot, kind) in equip.dye.iter_mut().zip(list.split(',')) {
-                        let kind: u16 = kind.trim().parse().unwrap_or(0);
+                    for (slot, kind) in equip.dye.iter_mut().zip(parse_tr_dye(&list)) {
                         if kind != 0 {
                             *slot = ItemSlot {
                                 kind,
@@ -1492,15 +1506,13 @@ impl App {
                 }
                 // `TR_DMOUNT=<kind>`: the saddle-dye stand-in — `miscDyes[3]`
                 // (`Player.cs:1484`, the vanilla mount dye slot).
-                if let Ok(kind) = std::env::var("TR_DMOUNT") {
-                    let kind: u16 = kind.trim().parse().unwrap_or(0);
-                    if kind != 0 {
-                        equip.misc_dyes[3] = ItemSlot {
-                            kind,
-                            name: registry::name(kind),
-                            count: 1,
-                        };
-                    }
+                let dmount = std::env::var("TR_DMOUNT").map_or(0, |s| parse_tr_dmount(&s));
+                if dmount != 0 {
+                    equip.misc_dyes[3] = ItemSlot {
+                        kind: dmount,
+                        name: registry::name(dmount),
+                        count: 1,
+                    };
                 }
                 equip
             },
@@ -2889,4 +2901,33 @@ mod tr_hooks {
 /// constants-off.
 pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
     ((missing + debuff_count * 100) as f32 * mood) as i32
+}
+
+#[cfg(test)]
+mod dye_pin_tests {
+    use super::*;
+
+    /// DW-2.3: the `TR_DYE`/`TR_DMOUNT` pin parses — positional fills,
+    /// garbage and empty entries stay empty slots.
+    #[test]
+    fn tr_dye_pin_fills_positionally_and_forgives_garbage() {
+        let dyes = parse_tr_dye("1007, 1015 ,, 1023");
+        assert_eq!(dyes[0], 1007);
+        assert_eq!(dyes[1], 1015);
+        assert_eq!(dyes[2], 0, "empty entry leaves the slot empty");
+        assert_eq!(dyes[3], 1023);
+        assert_eq!(dyes[4..], [0; 6]);
+        assert_eq!(parse_tr_dye(""), [0; 10]);
+        assert_eq!(parse_tr_dye("nope,x")[..2], [0, 0]);
+        // Overlong lists clip to the ten dye slots.
+        assert_eq!(parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
+    }
+
+    #[test]
+    fn tr_dmount_pin_parses_one_kind() {
+        assert_eq!(parse_tr_dmount("1007"), 1007);
+        assert_eq!(parse_tr_dmount(" 2871 "), 2871);
+        assert_eq!(parse_tr_dmount("nope"), 0);
+        assert_eq!(parse_tr_dmount(""), 0);
+    }
 }

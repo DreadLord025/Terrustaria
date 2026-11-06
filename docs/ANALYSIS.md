@@ -4721,7 +4721,7 @@ colors are constants (the item's own color is never read —
 `ArmorColoredAndSilverTrim` ride the `colored` core (their dark/trim masks
 are inside the unavailable HLSL), the `ArmorBrightness*` family likewise;
 every other pass (rainbow/flame/ocean/noise/reflective/team/void/hades/
-wisp/... — 52 of the 120 bindings) renders **plain** until its pass is
+wisp/... — 48 of the 120 bindings) renders **plain** until its pass is
 ported; `uSaturation` is folded on the CPU — for every binding either the
 color is already fully saturated or the value is the 1.0 default (pinned
 by `dye::tests::vanilla_dye_colors_are_saturated`; the brown bright

@@ -30,6 +30,9 @@ pub(crate) enum DyeCore {
 
 /// One `GameShaders.Armor.BindShader` call
 /// (`ArmorShaderDataSet.BindShader`, `ArmorShaderDataSet.cs:14-19`).
+// `csharp_pass`/`csharp_id`/`saturation` are the C#-diff anchors — the tests
+// read them, the renderer consumes only the deduped core parameters.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct DyeEntry {
     /// The dye item the shader binds to (`GetShaderIdFromItemId`'s key).
@@ -665,10 +668,18 @@ fn build_registry() -> Vec<DyeEntry> {
     bind_raw!(v, 3042, 97, "ArmorPhase", 0.4, 0.2, 1.5, 0.0, 0.0, 0.0, 1.0);
     bind_raw!(v, 3560, 98, "ArmorAcid", 0.9, 0.2, 0.2, 0.0, 0.0, 0.0, 1.0);
     bind_raw!(v, 3561, 99, "ArmorGel", 0.4, 0.7, 1.4, 0.0, 0.0, 0.1, 1.0);
-    bind_raw!(v, 3562, 100, "ArmorGel", 1.4, 0.75, 1.0, 0.45, 0.1, 0.3, 1.0);
-    bind_raw!(v, 3024, 101, "ArmorGel", -0.5, -1.0, 0.0, 1.5, 1.0, 2.2, 1.0);
-    bind_raw!(v, 4663, 102, "ArmorGel", 2.6, 0.6, 0.6, 0.2, -0.2, -0.2, 1.0);
-    bind_raw!(v, 4662, 103, "ArmorFog", 0.95, 0.95, 0.95, 0.3, 0.3, 0.3, 1.0);
+    bind_raw!(
+        v, 3562, 100, "ArmorGel", 1.4, 0.75, 1.0, 0.45, 0.1, 0.3, 1.0
+    );
+    bind_raw!(
+        v, 3024, 101, "ArmorGel", -0.5, -1.0, 0.0, 1.5, 1.0, 2.2, 1.0
+    );
+    bind_raw!(
+        v, 4663, 102, "ArmorGel", 2.6, 0.6, 0.6, 0.2, -0.2, -0.2, 1.0
+    );
+    bind_raw!(
+        v, 4662, 103, "ArmorFog", 0.95, 0.95, 0.95, 0.3, 0.3, 0.3, 1.0
+    );
     bind_raw!(
         v,
         4778,
@@ -990,10 +1001,12 @@ mod tests {
         // Unimplemented passes render plain (slot 0)…
         assert_eq!(shader_id_for(1066), 0, "Rainbow is not ported yet");
         // …while every Colored/Gradient binding gets a live slot.
-        assert!(registry()
-            .iter()
-            .filter(|e| !matches!(e.core, DyeCore::Unimplemented))
-            .all(|e| shader_id_for(e.item) > 0));
+        assert!(
+            registry()
+                .iter()
+                .filter(|e| !matches!(e.core, DyeCore::Unimplemented))
+                .all(|e| shader_id_for(e.item) > 0)
+        );
     }
 
     /// DW-1.3 (dirty): the saturation fold is a no-op on the whole registry —

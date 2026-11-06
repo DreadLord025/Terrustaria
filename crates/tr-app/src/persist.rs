@@ -221,6 +221,22 @@ mod tests {
         let _ = std::fs::remove_file(player_path(&path));
     }
 
+    /// The same gate one version down: a v4 sidecar (armor, no kills, no dye).
+    #[test]
+    fn version_4_loads_with_empty_dye() {
+        let path = std::env::temp_dir().join("tr-persist-v4.trwld");
+        let mut line = String::from("4\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n91 82 78\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v4 sidecar");
+        assert_eq!(s.armor, [91, 82, 78]);
+        assert_eq!(s.dye, [0; 10]);
+        let _ = std::fs::remove_file(player_path(&path));
+    }
+
     #[test]
     fn migrates_version_2_kinds_to_item_ids() {
         let path = std::env::temp_dir().join("tr-persist-v2.trwld");
