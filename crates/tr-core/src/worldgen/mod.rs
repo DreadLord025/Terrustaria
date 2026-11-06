@@ -16,6 +16,7 @@
 mod biome_detail;
 mod islands;
 mod biomes;
+mod config;
 mod structures;
 mod temple;
 mod caves;
