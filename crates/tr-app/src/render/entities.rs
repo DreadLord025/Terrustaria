@@ -1033,7 +1033,7 @@ pub(crate) fn draw_npcs(
         } else {
             base
         };
-        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
+        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
         if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0
             {
             // `Main.DrawNPC` draws every NPC at its centre with
