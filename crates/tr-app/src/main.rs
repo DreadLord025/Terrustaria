@@ -37,6 +37,7 @@ mod creative_sacrifices;
 mod happiness;
 mod player;
 mod player_file;
+mod prefix;
 mod projectile;
 mod rain;
 mod regen;

@@ -100,7 +100,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     items.swap_remove(i);
                     continue;
                 }
-                if let Some(slot) = slot_for_pickup(inventory, drop.kind) {
+                if let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) {
                     inventory[slot].count = inventory[slot].count.saturating_add(drop.count);
                     let c = drop.center();
                     audio.play_at("Item_1", c.x, c.y, 1.0);
@@ -132,9 +132,15 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
     let r1 = rand01(&mut app.item_rng);
     let r2 = rand01(&mut app.item_rng);
     let r3 = rand01(&mut app.item_rng);
+    // `Item.NewItem`'s `prefix: -1` on the tile/pot loot calls
+    // (`WorldGen.cs:54248+`): the natural roll, drawn after the velocity
+    // like the C# spawn order. Non-prefixable kinds draw nothing
+    // (`Prefix(-1)`'s `CanHavePrefixes` gate).
+    let prefix = crate::prefix::roll_prefix(kind, -1, &mut app.item_rng);
     let drop = ItemDrop::new(
         kind,
         count.max(1),
+        prefix,
         tx as f32 * TILE_PX + 1.0,
         ty as f32 * TILE_PX,
         (r1 * 2.0 - 1.0) * 1.4,
@@ -192,14 +198,14 @@ mod lava_burn_tests {
         player.y = 496.0 * TILE_PX;
         app.player = Some(player);
         // The rare-0 dirt block: burns.
-        app.items.push(ItemDrop::new(2, 1, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
+        app.items.push(ItemDrop::new(2, 1, 0, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
         // The lava-immune obsidian (173): survives.
-        app.items.push(ItemDrop::new(173, 1, 201.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
+        app.items.push(ItemDrop::new(173, 1, 0, 201.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
         // A rare-1+ drop: survives (the rarity gate).
         let rare_item = (200..500)
             .find_map(|id| registry::get(id).filter(|d| d.rare >= 1))
             .expect("a rare row");
-        app.items.push(ItemDrop::new(rare_item.id, 1, 202.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
+        app.items.push(ItemDrop::new(rare_item.id, 1, 0, 202.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
         let before = app.items.len();
         update_items(&mut app, 1.0 / 60.0);
         assert!(
@@ -228,7 +234,7 @@ mod lava_burn_tests {
         let mut guide = Npc::new(NpcKind::Guide, 196.0 * TILE_PX, 496.0 * TILE_PX, 1, 0.0);
         guide.hp = guide.max_hp;
         app.npcs.push(guide);
-        app.items.push(ItemDrop::new(267, 1, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
+        app.items.push(ItemDrop::new(267, 1, 0, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0));
         update_items(&mut app, 1.0 / 60.0);
         assert!(app
             .npcs

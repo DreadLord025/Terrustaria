@@ -196,6 +196,10 @@ pub struct Player {
     pub melee_damage: f32,
     pub ranged_damage: f32,
     pub magic_damage: f32,
+    /// `Player.minionDamage` (`Player.cs:2437`, default 1.0): the summon
+    /// class multiplier — the minion prefixes 69-72 add to it through
+    /// `weapon_damage_multiplier`'s Summon arm.
+    pub minion_damage: f32,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -260,6 +264,10 @@ pub struct Player {
     /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
     /// from `App.equip` per tick.
     pub equipped: [u16; 20],
+    /// The equipped items' rolled prefixes, slot-parallel to `equipped` —
+    /// `GrantPrefixBenefits` (`Player.cs:13953-14044`) reads them in the
+    /// accessory grant pass below.
+    pub equipped_prefix: [u16; 20],
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -463,7 +471,7 @@ pub struct Player {
     acc_run_speed: f32,
     /// `Player.moveSpeed` / `strongestMoveSpeedDebuff` (`Player.cs:2464,2462`):
     /// 1.0 until accessories/debuffs land (M3-EQUIP-3, M2-BUFF-4).
-    move_speed: f32,
+    pub(crate) move_speed: f32,
     strongest_move_speed_debuff: f32,
     /// `Player.iceSkate` / `desertBoots` (`Player.cs:1088,2256`): Ice Skates /
     /// Dunerider Boots (M3-EQUIP-3 — no accessory system yet).
@@ -567,6 +575,7 @@ impl Player {
             melee_damage: 1.0,
             ranged_damage: 1.0,
             magic_damage: 1.0,
+            minion_damage: 1.0,
             x: sx,
             y: sy,
             prev_x: sx,
@@ -589,6 +598,7 @@ impl Player {
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
+            equipped_prefix: [0; 20],
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -1044,6 +1054,7 @@ impl Player {
             registry::DamageClass::Melee => self.melee_damage,
             registry::DamageClass::Ranged => self.ranged_damage,
             registry::DamageClass::Magic => self.magic_damage,
+            registry::DamageClass::Summon => self.minion_damage,
             _ => 1.0,
         }
     }
@@ -1220,6 +1231,9 @@ impl Player {
         self.blind = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
+        self.ranged_damage = 1.0;
+        self.magic_damage = 1.0;
+        self.minion_damage = 1.0;
         self.mana_regen_bonus = 0;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
@@ -1350,7 +1364,12 @@ impl Player {
         self.no_knockback = false;
         self.has_jump_options = [false; 9];
         self.accessory_life_regen = 0;
-        for slot in &self.equipped[3..10] {
+        let (kinds, prefixes) = (self.equipped, self.equipped_prefix);
+        for (slot, prefix) in kinds[3..10].iter().zip(&prefixes[3..10]) {
+            // `UpdateEquips`' accessory arm (`Player.cs:12925-12930`):
+            // `GrantPrefixBenefits` rides the accessory slot's rolled prefix
+            // before the kind grants below.
+            crate::prefix::grant_prefix_benefits(*prefix, self);
             match *slot {
                 // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
                 53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
@@ -7178,6 +7197,7 @@ mod tests {
         kind: 0,
         name: "",
         count: 0,
+        prefix: 0,
     };
 
     // -- M2-MOUNT-1 phase 3: triggers, buff lifecycle, quick-mount ----------
@@ -7187,6 +7207,7 @@ mod tests {
             kind,
             name: "",
             count: 1,
+            prefix: 0,
         }
     }
 

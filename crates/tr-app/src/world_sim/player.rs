@@ -195,9 +195,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .map(|(pos, hook_type, _)| (pos, hook_type));
         // `Player.armor`'s kinds snapshot: the update's grant pass reads the
         // equipped kinds (`UpdateEquips`, `Player.cs:12892` — the loop runs
-        // inside `Player.Update` on the vanilla's own array).
+        // inside `Player.Update` on the vanilla's own array) plus the rolled
+        // prefixes for `GrantPrefixBenefits`.
         for i in 0..20 {
             p.equipped[i] = app.equip.armor[i].kind;
+            p.equipped_prefix[i] = app.equip.armor[i].prefix;
         }
         p.swing_aim = app.swing_aim;
         let step = 1.0 / 60.0;

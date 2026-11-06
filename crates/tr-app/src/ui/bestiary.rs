@@ -56,7 +56,12 @@ pub fn panel_rect(screen: Vec2) -> [f32; 4] {
 /// -25, centred, half the container's width (-10).
 pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
     let w = (panel[2] - 10.0) * 0.5;
-    [panel[0] + panel[2] * 0.5 - w * 0.5, panel[1] + panel[3] - 25.0 - 50.0, w, 50.0]
+    [
+        panel[0] + panel[2] * 0.5 - w * 0.5,
+        panel[1] + panel[3] - 25.0 - 50.0,
+        w,
+        50.0,
+    ]
 }
 
 /// The grid area — the `-12px wide, -4px tall` bestiary space above the
@@ -133,8 +138,20 @@ pub fn draw_inventory_button(r: &mut SpriteRenderer, lookups: &Lookups, mouse: V
     let frame_h = sheet.height as f32;
     let cx = BUTTON_RECT[0] + BUTTON_RECT[2] * 0.5;
     let cy = BUTTON_RECT[1] + BUTTON_RECT[3] * 0.5;
-    let dst = [cx - (frame_w - 2.0) * 0.5, cy - (frame_h - 2.0) * 0.5, frame_w - 2.0, frame_h - 2.0];
-    draw_sheet_frame(r, lookups, &sheet, button_hit(mouse) as usize, dst, [1.0; 4]);
+    let dst = [
+        cx - (frame_w - 2.0) * 0.5,
+        cy - (frame_h - 2.0) * 0.5,
+        frame_w - 2.0,
+        frame_h - 2.0,
+    ];
+    draw_sheet_frame(
+        r,
+        lookups,
+        &sheet,
+        button_hit(mouse) as usize,
+        dst,
+        [1.0; 4],
+    );
 }
 
 /// The whole screen: the dim backdrop, the container panel, the title, the
@@ -171,7 +188,11 @@ pub fn draw_screen(
                 == tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
         })
         .count() as f32;
-    let pct = if total > 0.0 { done / total * 100.0 } else { 0.0 };
+    let pct = if total > 0.0 {
+        done / total * 100.0
+    } else {
+        0.0
+    };
     text::hud_text(
         r,
         lookups,
@@ -186,7 +207,15 @@ pub fn draw_screen(
     let r0 = back_rect(&panel);
     let style = super::cards::fat_button_style();
     let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
-    super::uistate::draw_text_panel(r, lookups, r0, &style, "Back", text_w, back_hit(screen, mouse));
+    super::uistate::draw_text_panel(
+        r,
+        lookups,
+        r0,
+        &style,
+        "Back",
+        text_w,
+        back_hit(screen, mouse),
+    );
 }
 
 fn draw_panel_chrome(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2) {
@@ -198,14 +227,33 @@ fn draw_panel_chrome(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2) {
         [p[0], p[1]],
         [p[2], p[3]],
         r.white_uv(),
-        [33.0 / 255.0 * 0.8, 43.0 / 255.0 * 0.8, 79.0 / 255.0 * 0.8, 0.8],
+        [
+            33.0 / 255.0 * 0.8,
+            43.0 / 255.0 * 0.8,
+            79.0 / 255.0 * 0.8,
+            0.8,
+        ],
     );
     // The header text — the screen has no title element; the port labels the
     // panel with the inventory button's tooltip name.
-    text::hud_text(r, lookups, p[0] + 12.0, p[1] + 10.0, 1.0, [1.0; 4], "Bestiary");
+    text::hud_text(
+        r,
+        lookups,
+        p[0] + 12.0,
+        p[1] + 10.0,
+        1.0,
+        [1.0; 4],
+        "Bestiary",
+    );
 }
 
-fn draw_grid(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2, tracker: &KillTracker, mouse: Vec2) {
+fn draw_grid(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    tracker: &KillTracker,
+    mouse: Vec2,
+) {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
@@ -264,7 +312,15 @@ fn draw_card(
         }
     }
     // The display index (`:58-66` — `IBestiaryEntryDisplayIndex`'s number).
-    text::hud_text(r, lookups, cell[0] + 10.0, cell[1] + 10.0, 0.9, [1.0; 4], &format!("{}", idx + 1));
+    text::hud_text(
+        r,
+        lookups,
+        cell[0] + 10.0,
+        cell[1] + 10.0,
+        0.9,
+        [1.0; 4],
+        &format!("{}", idx + 1),
+    );
 }
 
 /// `UnlockableNPCEntryIcon.Draw` (`:194-211`) — the NPC drawn through
@@ -272,7 +328,14 @@ fn draw_card(
 /// `topLeft + size*(0.5, 1) + (0, -8)` (`UpdatePosition`, `:112-123`),
 /// floaters centred. The UI draws with full light; the slime variants keep
 /// their `NPC.color` tint.
-fn draw_portrait(r: &mut SpriteRenderer, lookups: &Lookups, entry: &crate::bestiary::BestiaryEntryDef, cx: f32, cy: f32, box_h: f32) {
+fn draw_portrait(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    entry: &crate::bestiary::BestiaryEntryDef,
+    cx: f32,
+    cy: f32,
+    box_h: f32,
+) {
     let (sheet_i, frame_h, w, h, tint) = portrait_data(entry, lookups);
     let Some(sheet) = lookups.bestiary_npc_sheets[sheet_i] else {
         return;
@@ -364,6 +427,12 @@ fn portrait_data(
         NpcKind::GoblinArcher => 59,
         NpcKind::GoblinPeon => 60,
         NpcKind::GoblinSummoner => 61,
+        NpcKind::GoblinPeon => 57,
+        NpcKind::GoblinThief => 58,
+        NpcKind::GoblinWarrior => 59,
+        NpcKind::GoblinArcher => 60,
+        NpcKind::BoundGoblin => 61,
+        NpcKind::GoblinTinkerer => 62,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -389,9 +458,7 @@ fn portrait_data(
                 .unwrap_or(30.0);
             (sheet_i, h, 30.0, h, white)
         }
-        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => {
-            (sheet_i, 14.0, 14.0, 14.0, white)
-        }
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => (sheet_i, 14.0, 14.0, 14.0, white),
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {
@@ -406,17 +473,14 @@ fn portrait_data(
         (NpcKind::WanderingEye, _) => {
             // The 4-frame sheet's frame height rides the sheet itself
             // (`draw_npcs`'s `t.h / 4`).
-            let h = lookups
-                .bestiary_npc_sheets[2]
+            let h = lookups.bestiary_npc_sheets[2]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(24.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::Zombie, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Guide, _) => (sheet_i, 48.0, 38.0, 48.0, white),
-        (NpcKind::Skeleton | NpcKind::UndeadMiner, _) => {
-            (sheet_i, 48.0, 38.0, 48.0, white)
-        }
+        (NpcKind::Skeleton | NpcKind::UndeadMiner, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::CaveBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::JungleBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::Hellbat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
@@ -465,6 +529,12 @@ fn portrait_data(
         (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
         (NpcKind::BrainOfCthulhu, _) => (sheet_i, 110.0, 160.0, 110.0, white),
         (NpcKind::Creeper, _) => (sheet_i, 30.0, 30.0, 30.0, white),
+        (NpcKind::GoblinPeon, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinThief, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinWarrior, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinArcher, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::BoundGoblin, _) => (sheet_i, 48.0, 34.0, 54.0, white),
+        (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
         // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
         // display boxes (the frame height rides each sheet).
@@ -549,11 +619,46 @@ fn draw_info_page(
     if state >= UnlockState::CanShowStats {
         let stats =
             crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_hp, &format!("{}", stats.hp));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_attack, &format!("{}", stats.damage));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_defense, &format!("{}", stats.defense));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_knockback, &format!("{:.2}", stats.kb));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_copper, &format!("{}", stats.value as i64));
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_hp,
+            &format!("{}", stats.hp),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_attack,
+            &format!("{}", stats.damage),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_defense,
+            &format!("{}", stats.defense),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_knockback,
+            &format!("{:.2}", stats.kb),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_copper,
+            &format!("{}", stats.value as i64),
+        );
         ty += 10.0;
     }
 
@@ -589,7 +694,15 @@ fn draw_info_page(
             ty += 22.0;
         }
         if crate::loot_db::drop_lines(entry.net_id).is_empty() {
-            text::hud_text(r, lookups, tx, ty, 0.8, [0.7; 4], "  (nothing recorded yet)");
+            text::hud_text(
+                r,
+                lookups,
+                tx,
+                ty,
+                0.8,
+                [0.7; 4],
+                "  (nothing recorded yet)",
+            );
         }
     }
 }

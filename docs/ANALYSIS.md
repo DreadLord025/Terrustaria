@@ -4534,8 +4534,9 @@ not ported — `Collision.cs:3220`), the Shark Tooth's `armorPenetration`
 (the NPC-defense consumer is M4's), the Band of Starpower (no grant site
 in this decompile's equip pass — do not invent; the real-vanilla +20 max
 mana is absent here), the wings' `wingSlot` grant (no `ItemDef` field —
-M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
-`GrantPrefixBenefits`), the vanity slots (the vanilla grants the
+M3-EQUIP-4's plumbing; M3-PREFIX's `GrantPrefixBenefits` landed — the
+62-80 accessory prefixes ride the `equipped_prefix` snapshot in the
+grant pass), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
 ### M1.4-TO-4 merge sync (2026-11-06)
