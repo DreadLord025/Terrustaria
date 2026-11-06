@@ -988,6 +988,12 @@ pub struct Npc {
     /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
     /// makes it negative).
     pub defense_override: Option<i32>,
+    /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
+    /// it holds (the Brain of Cthulhu's Creeper shield).
+    pub dont_take_damage: bool,
+    /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
+    /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
+    pub swarm_done: bool,
 }
 
 impl Npc {
@@ -1290,6 +1296,8 @@ impl Npc {
             ai: [0.0; 4],
             wants_servant: None,
             defense_override: None,
+            dont_take_damage: false,
+            swarm_done: false,
         }
     }
 
@@ -1618,6 +1626,11 @@ impl Npc {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
             return false;
         }
+        // `NPC.dontTakeDamage` (`NPC.cs:6525`): the shielded boss takes
+        // nothing (the Brain of Cthulhu's Creeper shield).
+        if self.dont_take_damage {
+            return false;
+        }
         self.hp -= amount;
         self.hurt_cd = 0.18;
         let (w, _) = self.size();
@@ -1720,7 +1733,7 @@ impl Npc {
             NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
             NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::BrainOfCthulhu => self.update_brain(world, player),
-            NpcKind::Creeper => {}
+            NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
             NpcKind::GoblinPeon
@@ -3780,6 +3793,55 @@ impl Npc {
     /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
     /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
     /// invulnerability gate (the Creepers' orbit = the follow-ups).
+    /// The Creeper (`AI_055`, `NPC.cs:32657-32735`): the orbit around
+    /// the brain — beyond the 90 px ring the velocity blends home
+    /// (`x15/16`), inside it the speed amplifies x1.05 under the 8 cap;
+    /// the 1/200 roll (the classic; the expert's 1/100 folds out)
+    /// lunges at the player at 8 px/tick; the lunge holds until the
+    /// justHit recoil (`hurt_cd` stands in for `justHit`) sends it back
+    /// to the orbit. The brainless Creepers die in the sim
+    /// (`NPC.crimsonBoss < 0` -> `active = false`); the brain's anchor
+    /// rides the World fields (the WoF's write-through shape).
+    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        if !world.brain_present {
+            return;
+        }
+        let (w, h) = self.size();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[0] == 0.0 {
+            self.ai[1] = 0.0;
+            let dx = world.brain_x - cx;
+            let dy = world.brain_y - cy;
+            let d = (dx * dx + dy * dy).sqrt();
+            if d > 90.0 {
+                let s = 8.0 / d;
+                self.vx = (self.vx * 15.0 + dx * s) / 16.0;
+                self.vy = (self.vy * 15.0 + dy * s) / 16.0;
+                return;
+            }
+            if self.vx.abs() + self.vy.abs() < 8.0 {
+                self.vy *= 1.05;
+                self.vx *= 1.05;
+            }
+            if crate::app::rand01(rng) < 1.0 / 200.0 {
+                let (pcx, pcy) = player.center();
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                self.vx = dx / d * 8.0;
+                self.vy = dy / d * 8.0;
+                self.ai[0] = 1.0;
+            }
+            return;
+        }
+        // The lunge: the straight flight until the justHit recoil.
+        if self.hurt_cd <= 0.0 {
+            return;
+        }
+        self.ai[0] = 0.0;
+    }
+
     fn update_brain(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -5906,6 +5968,57 @@ mod tests {
             assert_eq!(e.net_id, net);
         }
     }
+    #[test]
+    fn the_creeper_orbits_brain_and_lunges() {
+        // `AI_055` (`NPC.cs:32657-32735`): beyond the 90 px ring the
+        // velocity blends home (x15/16); inside it the drift amplifies;
+        // the 1/200 roll lunges at 8 px/tick and holds until the
+        // justHit recoil.
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 100.0 * 16.0;
+        w.brain_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // Far: the blend pulls home (the 10-tile offset clears the 90 px
+        // ring).
+        let mut c = Npc::new(NpcKind::Creeper, 110.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        c.hp = c.max_hp;
+        let mut rng = 1u64;
+        c.update_creeper(&w, &player, &mut rng);
+        assert!(c.vx < 0.0, "the orbit pulls toward the brain");
+        // At the ring: the roll may lunge — hunt a no-lunge seed and a
+        // lunge seed.
+        let mut lunge = None;
+        for seed in 0..20000u64 {
+            let mut c = Npc::new(NpcKind::Creeper, 100.2 * 16.0, 100.0 * 16.0, 1, 0.0);
+            c.hp = c.max_hp;
+            let mut rng = seed;
+            c.update_creeper(&w, &player, &mut rng);
+            if c.ai[0] == 1.0 {
+                lunge = Some((seed, c));
+                break;
+            }
+        }
+        let (seed, c) = lunge.expect("a lunge seed exists");
+        let (pcx, _) = player.center();
+        let (ccx, _) = c.center();
+        assert!(
+            (c.vx - 8.0).abs() < 0.5 && pcx > ccx,
+            "the lunge aims at the player"
+        );
+        // The lunge holds while the justHit recoil is silent.
+        let mut c = c;
+        let mut rng = seed;
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 1.0, "the lunge holds");
+        // The hit sends it back to the orbit.
+        c.hurt(10, c.x - 5.0, 5.0, false);
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 0.0, "the justHit returns to the orbit");
+    }
+
     #[test]
     fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
         // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
