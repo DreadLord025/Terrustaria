@@ -136,6 +136,9 @@ pub(crate) struct App {
     pub(crate) next_worm_id: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
+    /// module; delete the field + the module + the call sites to remove).
+    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -1424,6 +1427,7 @@ impl App {
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            debug_panel: crate::debug_panel::DebugPanel::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,

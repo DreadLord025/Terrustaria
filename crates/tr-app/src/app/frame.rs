@@ -1246,6 +1246,20 @@ impl App {
                         rain.drop_count(),
                         rain.snow_count(),
                     );
+
+                    // The debug cheat-sheet panel (the self-contained
+                    // debug_panel.rs) — the local borrows are still alive.
+                    if self.debug_panel.open {
+                        crate::debug_panel::draw(
+                            renderer, lookups, screen,
+                            &self.debug_panel,
+                            player.as_ref(),
+                            npcs,
+                            world,
+                            self.coins,
+                            0,
+                        );
+                    }
                 }
 
                 let frame = match gpu.surface.get_current_texture() {
