@@ -177,6 +177,10 @@ pub enum NpcKind {
     /// `NPCID.Spazmatism` (126) — the Twins' cursed-flame eye
     /// (`NPC.cs:10537`: 100x110, dmg 50, def 10, 23000 HP).
     Spazmatism,
+    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379`:
+    /// 86x86, dmg 50, def 14, 30000 HP; the death sets
+    /// `downed_plant_boss` — the temple/Golem gate).
+    Plantera,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -394,6 +398,7 @@ impl NpcKind {
             NpcKind::SkeletronPrime => 48,
             NpcKind::Retinazer => 49,
             NpcKind::Spazmatism => 50,
+            NpcKind::Plantera => 50,
         }
     }
 
@@ -450,6 +455,7 @@ impl NpcKind {
             48 => NpcKind::SkeletronPrime,
             49 => NpcKind::Retinazer,
             50 => NpcKind::Spazmatism,
+            51 => NpcKind::Plantera,
             _ => return None,
         })
     }
@@ -557,6 +563,8 @@ impl NpcKind {
             // The Twins: `SetDefaults` cases 125/126 are 100x110.
             NpcKind::Retinazer => (100.0, 110.0),
             NpcKind::Spazmatism => (100.0, 110.0),
+            // `SetDefaults` case 262 (`NPC.cs:12381`): 86x86.
+            NpcKind::Plantera => (86.0, 86.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -645,6 +653,8 @@ impl NpcKind {
             // `SetDefaults` cases 125/126.
             NpcKind::Retinazer => 20000,
             NpcKind::Spazmatism => 23000,
+            // `SetDefaults` case 262 (`NPC.cs:12385`): 30000 HP.
+            NpcKind::Plantera => 30000,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -708,6 +718,7 @@ impl NpcKind {
             NpcKind::SkeletronPrime => 47,
             NpcKind::Retinazer => 45,
             NpcKind::Spazmatism => 50,
+            NpcKind::Plantera => 50,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1213,6 +1224,7 @@ impl Npc {
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
+            NpcKind::Plantera => 0.0,
             NpcKind::SkeletronPrime => 0.0,
             NpcKind::Retinazer => 0.0,
             NpcKind::Spazmatism => 0.0,
@@ -1293,6 +1305,7 @@ impl Npc {
             NpcKind::SkeletronPrime => 24,
             NpcKind::Retinazer => 10,
             NpcKind::Spazmatism => 10,
+            NpcKind::Plantera => 14,
             NpcKind::KingSlime => 10,
             // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
             // final phase) / `:8721` (the servant 0).
@@ -1366,6 +1379,7 @@ impl Npc {
             NpcKind::SkeletronPrime => 120000.0,
             NpcKind::Retinazer => 120000.0,
             NpcKind::Spazmatism => 120000.0,
+            NpcKind::Plantera => 150000.0,
             NpcKind::KingSlime => 10_000.0,
             // `NPC.cs:8713` (the eye value 30000); the servant has no row.
             NpcKind::EyeOfCthulhu => 30_000.0,
@@ -1498,6 +1512,7 @@ impl Npc {
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 self.update_twin(world, player)
             }
+            NpcKind::Plantera => self.update_plantera(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1810,6 +1825,18 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::Plantera => {
+                // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 5 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
             NpcKind::Retinazer | NpcKind::Spazmatism => {
                 // `Main.npcFrameCount[125/126]` = 2 (`Main.cs:67082`).
                 self.frame_counter += 1.0;
@@ -3096,6 +3123,65 @@ impl Npc {
         }
     }
 
+    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
+    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
+    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
+    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
+    /// rage = the follow-ups.
+    fn update_plantera(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 250.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.1;
+            if self.vx.abs() > 8.0 {
+                self.vx = 8.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.1;
+            if self.vy.abs() > 8.0 {
+                self.vy = 8.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 7.5;
+            self.vy = dy / d * 7.5;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -3299,6 +3385,7 @@ impl Npc {
             NpcKind::SkeletronPrime => 48,
             NpcKind::Retinazer => 49,
             NpcKind::Spazmatism => 50,
+            NpcKind::Plantera => 51,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -4902,7 +4989,35 @@ mod tests {
         assert_eq!(e.net_id, 126);
     }
 
+    #[test]
+    fn the_plantera_cycles_and_maps() {
+        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 7.5) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pl.hp = pl.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pl.cast_windup == 1, "the charge phase armed");
+        pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
+        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(pl.size(), (86.0, 86.0));
+        assert_eq!(pl.max_hp, 30000);
+        assert_eq!(NpcKind::Plantera.contact_damage(), 50);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Plantera, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 262);
+        assert_eq!(e.credit_id, "Plantera");
+    }
+
 }
+
 
 
 

@@ -269,6 +269,29 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
+                            KeyCode::KeyG => {
+                                // The Plantera debug spawn.
+                                if !self
+                                    .npcs
+                                    .iter()
+                                    .any(|n| n.kind == NpcKind::Plantera && n.hp > 0)
+                                {
+                                    if let Some(p) = &self.player {
+                                        let xt = ((p.x / TILE_PX) as i32 + 12)
+                                            .clamp(2, self.world.width - 3);
+                                        let mut boss = Npc::new(
+                                            NpcKind::Plantera,
+                                            xt as f32 * TILE_PX,
+                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
+                                            1,
+                                            0.0,
+                                        );
+                                        boss.hp = boss.max_hp;
+                                        log::info!("Plantera spawned");
+                                        self.npcs.push(boss);
+                                    }
+                                }
+                            }
                             KeyCode::KeyT => {
                                 // The Twins debug spawn (the Mechanical
                                 // Eyes item = the follow-up): the pair of

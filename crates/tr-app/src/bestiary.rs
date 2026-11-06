@@ -445,6 +445,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Spazmatism",
     },
     BestiaryEntryDef {
+        credit_id: "Plantera",
+        net_id: 262,
+        kind: NpcKind::Plantera,
+        variant: None,
+        quick_unlock: false,
+        name: "Plantera",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

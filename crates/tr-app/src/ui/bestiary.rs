@@ -349,6 +349,7 @@ fn portrait_data(
         NpcKind::SkeletronPrime => 47,
         NpcKind::Retinazer => 48,
         NpcKind::Spazmatism => 49,
+        NpcKind::Plantera => 50,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -437,6 +438,7 @@ fn portrait_data(
         (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

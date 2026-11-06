@@ -529,6 +529,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     app.world.downed_mech_boss2 = true;
                 }
             }
+            NpcKind::Plantera => app.world.downed_plant_boss = true,
             NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             NpcKind::WallOfFlesh => {
                 // `WorldGen.StartHardmode()` (`NPC.cs:79485`'s death hook,
