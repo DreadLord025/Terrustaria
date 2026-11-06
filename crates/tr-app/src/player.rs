@@ -16,6 +16,7 @@ use glam::Vec2;
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
+use crate::luck::LuckState;
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -312,6 +313,19 @@ pub struct Player {
     /// (`Player.cs:19319-19334,19361-19384`) rides with the player until the
     /// death pipeline (world_sim) resolves the epitaph text and clears it.
     pub dot_death: Option<DotDeath>,
+    /// The luck value + its decay timers (`Player.luck`/`coinLuck`/
+    /// `ladyBugLuckTimeLeft`/`torchLuck`/`luckPotion`/`kiteLuckLevel`/…,
+    /// `Player.cs:3084-3096` etc.) — `luck.rs`, rebuilt every tick by
+    /// `RecalculateLuck` (`Player.cs:29137-29164`).
+    pub luck_state: LuckState,
+    /// The `Player.ZoneSnow`-family flags the torch-luck table reads
+    /// (`Player.cs:17924-18036`); the app copies them from `Main.SceneMetrics`
+    /// next to the aura snapshot (`UpdateBiomes`, `Player.cs:16726-16729`).
+    pub zones: tr_core::scene::Zones,
+    /// The held torch's place style — `inventory[selectedItem].createTile == 4`
+    /// (`:17917-17920`), refreshed per tick from `app.inventory[app.selected]`;
+    /// `None` when nothing torch-like is held.
+    pub held_torch_style: Option<u8>,
     /// `Player.fallStart` (`Player.cs:2882`): the tile row the fall started on,
     /// int-truncated like the original's `(int)(position.Y / 16f)`.
     fall_start: i32,
@@ -507,6 +521,9 @@ impl Player {
             breath_cd: 0,
             regen: RegenState::default(),
             dot_death: None,
+            luck_state: LuckState::default(),
+            zones: tr_core::scene::Zones::default(),
+            held_torch_style: None,
             fall_start: (sy / TILE_PX) as i32,
             extra_fall: 0,
             no_fall_dmg: false,
@@ -946,6 +963,12 @@ impl Player {
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
+        // The luck inputs ResetEffects owns (`Player.cs:18732` stinky,
+        // `:18812` equipmentBasedLuckBonus, `:18814` luckPotion): zeroed here,
+        // re-derived in the buff scan below (the potion/kite/stinky arms).
+        self.luck_state.stinky = false;
+        self.luck_state.equipment_based_luck_bonus = 0.0;
+        self.luck_state.luck_potion = 0;
         // `ResetEffects`' crit bases (`Player.cs:18640+`): the per-slot adds
         // (the fed tiers, the accessory states) stack on top per tick.
         self.melee_crit = 4;
@@ -1010,6 +1033,34 @@ impl Player {
                     self.pick_speed_bonus += 0.15;
                 }
                 149 => self.webbed = true, // `BuffID.Webbed`
+                // `:10276-10280`: buff 120 (Stinky) — the `talkNPC = -1`
+                // dialogue half is not ported; the luck −0.25 flag is.
+                120 => self.luck_state.stinky = true,
+                // `:10285-10301`: buff 257 (Lucky) — the potion tier by
+                // *remaining* time; `RecalculateLuck` weights it
+                // `(int)luckPotion · 0.1` (max +0.3).
+                257 => {
+                    if let Some(i) = self.buffs.find_buff_index(257) {
+                        let t = self.buffs.buff_time[i];
+                        self.luck_state.luck_potion = if t > 36_000 {
+                            3
+                        } else if t > 18_000 {
+                            2
+                        } else {
+                            1
+                        };
+                    }
+                }
+                // `:9920-9924`: buff 383 (Kite) — the tier is
+                // `buffTime / 10800` clamped 0..3, assigned only while the
+                // buff is active: the C# never zeroes the field, so it stays
+                // stale after expiry (no `kiteLuckLevel = 0` exists).
+                383 => {
+                    if let Some(i) = self.buffs.find_buff_index(383) {
+                        self.luck_state.kite_luck_level =
+                            (self.buffs.buff_time[i] / 10_800).clamp(0, 3) as u8;
+                    }
+                }
                 _ => {}
             }
         }
@@ -1107,6 +1158,10 @@ impl Player {
         if self.auras.sunflower {
             self.buffs.add_buff(146, 2);
         }
+        // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
+        // decay timers + `RecalculateLuck`, after the buff effects derived
+        // stinky/luckPotion/kiteLuckLevel above and before movement.
+        self.update_luck(world);
         self.run_acceleration *= self.move_speed;
         self.max_run_speed *= self.move_speed;
         self.acc_run_speed *= self.strongest_move_speed_debuff;
@@ -2259,6 +2314,76 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+    }
+
+    /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
+    /// (`Luck.RollLuck(this.luck, range)`, `Player.cs:18188`; `DamageVar`
+    /// `:44342`; `NPCLoot_DropMoney` `NPC.cs:79622`). Never clamped — the
+    /// −0.7/1.0 caps are UI-only (`NormalizedLuck`, `:4107-4122`).
+    pub fn luck(&self) -> f32 {
+        self.luck_state.luck
+    }
+
+    /// `Player.UpdateLuck` → `UpdateLuckFactors` (`Player.cs:29041-29135`),
+    /// called from the post-buff-effects position (`:25645`): the ladybug and
+    /// coin decays run for every player, the torch scan + the broken-mirror
+    /// decay for `Main.myPlayer` only (the port's single player). The torch
+    /// slot fills with the 1-row-per-tick scan in the M2-BUFF-6 phase 2; the
+    /// `luckNeedsSync` tail is net-only.
+    fn update_luck(&mut self, world: &World) {
+        let day_rate = world.day_rate();
+        self.luck_state.update_lady_bug_decay(day_rate);
+        self.luck_state.update_coin_decay(day_rate);
+        // `TryRecalculatingTorchLuck` + the diff check (`Player.cs:29126-29130`
+        // — the diff half is net-only): `Main.myPlayer`-only in the C#, which
+        // is the port's single player.
+        let center = self.center();
+        crate::luck::torch_scan_step(
+            &mut self.luck_state,
+            world,
+            center,
+            self.dead,
+            self.held_torch_style,
+            self.zones,
+        );
+        self.luck_state.update_broken_mirror_decay(day_rate);
+        self.luck_state.recalculate_luck();
+    }
+
+    /// `Player.AddCoinLuck` (`Player.cs:18090-18101`): the shimmer-coin feed
+    /// (`WorldItem.cs:1692-1716` is its only C# caller; the coin-shimmer chain
+    /// is unported — the callable is unit-tested per the plan). The
+    /// `luckNeedsSync` tail is net-only.
+    pub fn add_coin_luck(&mut self, coin_position: (f32, f32), coin_amount: i32) {
+        let (cx, cy) = self.center();
+        let dist = ((coin_position.0 - cx).powi(2) + (coin_position.1 - cy).powi(2)).sqrt();
+        if !self.dead && dist < 1000.0 {
+            self.luck_state.coin_luck += coin_amount as f32;
+            if self.luck_state.coin_luck > 1_000_000.0 {
+                self.luck_state.coin_luck = 1_000_000.0;
+            }
+        }
+    }
+
+    /// `NPC.LadyBugKilled`'s player half (`NPC.cs:81566-81598`) — see
+    /// `luck::on_lady_bug_killed`; returns the `ladyBugRainBoost` add for the
+    /// future Rain writer (the critter row, M4).
+    pub fn on_lady_bug_killed(&mut self, position: (f32, f32), gold: bool) -> i32 {
+        let (cx, cy) = self.center();
+        crate::luck::on_lady_bug_killed(&mut self.luck_state, position, (cx, cy), self.dead, gold)
+    }
+
+    /// `NPC.LadyBugLuck`'s player half (`NPC.cs:81600-81626`) — see
+    /// `luck::on_lady_bug_nearby`; the `releaseOwner == 255` wild-only gate
+    /// stays with the NPC (M4 critter row).
+    pub fn on_lady_bug_nearby(&mut self, position: (f32, f32), gold: bool) {
+        let (cx, cy) = self.center();
+        crate::luck::on_lady_bug_nearby(&mut self.luck_state, position, (cx, cy), gold);
+    }
+
+    /// `NPC.NPCLuck` (`NPC.cs:81628-81652`) — see `luck::on_town_npc_death`.
+    pub fn on_town_npc_death(&mut self, npc_type: i32) {
+        crate::luck::on_town_npc_death(&mut self.luck_state, npc_type, self.dead);
     }
 
     fn update_survival(&mut self) {
@@ -4248,6 +4373,94 @@ mod tests {
         p.max_hp = 1000;
         p.hp = 1000;
         p
+    }
+
+    // — M2-BUFF-6 (phase 1): the luck value + the buff-driven inputs —
+
+    #[test]
+    fn buff_257_tiers_follow_the_remaining_time() {
+        // DW-1.3 — `Player.cs:10285-10301`: `>36000 → 3, >18000 → 2, else 1`,
+        // read after `UpdateBuffs`' timer head decremented the slot.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 36_002);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 3);
+
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 36_001);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 2, "36000 → not > 36000");
+
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 18_001);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 1, "18000 → not > 18000");
+    }
+
+    #[test]
+    fn buff_383_tier_is_stale_after_expiry_never_zeroed() {
+        // DW-1.3 — `Player.cs:9920-9924`: tier = buffTime/10800 clamp 0..3,
+        // assigned only while the buff is active; no `kiteLuckLevel = 0`
+        // exists in the C#, so the field keeps its last value after expiry.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(383, 32_401);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.kite_luck_level, 3, "32400/10800");
+
+        p.buffs.clear_buff(383);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.kite_luck_level, 3, "stale-until-recomputed");
+    }
+
+    #[test]
+    fn buff_120_sets_stinky_and_the_reset_clears_it() {
+        // DW-1.3 — `Player.cs:10276-10280` sets it, `ResetEffects` `:18732`
+        // clears it every frame; RecalculateLuck weights it −0.25.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(120, 600);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(p.luck_state.stinky);
+        assert!((p.luck() + 0.25).abs() < 1e-6);
+
+        p.buffs.clear_buff(120);
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert!(!p.luck_state.stinky);
+        assert_eq!(p.luck(), 0.0);
+    }
+
+    #[test]
+    fn one_tick_order_decay_then_recalculate() {
+        // DW-1.4 — `UpdateLuckFactors` (`Player.cs:29121`) drains the ladybug
+        // timer before `RecalculateLuck` reads it, in the same tick the buff
+        // scan derived the potion tier; `p.luck()` is the consumer seam.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.buffs.add_buff(257, 20_002); // 20_001 after the timer head → tier 2
+        p.luck_state.lady_bug_luck_time_left = -10_800;
+        p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
+        assert_eq!(p.luck_state.luck_potion, 2);
+        assert_eq!(p.luck_state.lady_bug_luck_time_left, -10_799, "dayRate 1");
+        let want = (10_799.0f32 / -10_800.0) * 0.2 + 2.0f32 * 0.1;
+        assert!((p.luck() - want).abs() < 1e-6, "{} vs {want}", p.luck());
+    }
+
+    #[test]
+    fn add_coin_luck_caps_at_a_million_within_a_thousand_px() {
+        // DW-1.1 — `Player.AddCoinLuck` (`Player.cs:18090-18101`): `!dead`,
+        // within 1000 px of the center, capped at 1 000 000 copper
+        // equivalents (the shimmer feed is the only C# writer; unported).
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.add_coin_luck((p.x + 500.0, p.y), 999_000);
+        assert_eq!(p.luck_state.coin_luck, 999_000.0);
+        p.add_coin_luck((p.x + 500.0, p.y), 1_000_000);
+        assert_eq!(p.luck_state.coin_luck, 1_000_000.0, "capped");
+
+        p.luck_state.coin_luck = 100.0;
+        p.add_coin_luck((p.x + 1200.0, p.y), 5);
+        assert_eq!(p.luck_state.coin_luck, 100.0, "out of range");
+
+        p.dead = true;
+        p.add_coin_luck((p.x, p.y), 5);
+        assert_eq!(p.luck_state.coin_luck, 100.0, "dead bails");
     }
 
     #[test]

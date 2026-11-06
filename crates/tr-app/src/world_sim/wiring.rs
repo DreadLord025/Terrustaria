@@ -140,8 +140,8 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     // above); the trap requests spawn right after (the spear's proximity
     // cap reads the pool, so the drain splits it from the direct shots).
     for drop in actuation_drops {
-        if let Some(id) = crate::registry::tile_drop(drop.tile_kind) {
-            crate::world_sim::items::spawn_item_drop(app, id, drop.x, drop.y);
+        if let Some(id) = crate::registry::tile_drop(drop.tile_kind, 0) {
+            crate::world_sim::items::spawn_item_drop(app, id, 1, drop.x, drop.y);
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with

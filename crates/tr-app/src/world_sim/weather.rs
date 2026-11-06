@@ -96,7 +96,16 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // `86400/dayRate` denominators), and `StartRain`/`ChangeRain`/`StopRain`.
         // Runs after the weather loop, before Sandstorm.UpdateTime
         // (`Main.cs:64966`); `remixWorld` reads Wind's stand-in field.
-        rain.update_time(day_rate, world, any_player_120, wind.remix_world);
+        rain.update_time(
+            day_rate,
+            world,
+            any_player_120,
+            wind.remix_world,
+            // `GetPlayerWithHighestLuck().luck` for the coin-rain roll
+            // (`Main.cs:64668`) — the port's single player, 0 when none
+            // (the C# falls back to a fresh `Player()`).
+            app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+        );
         // (4) `Main.cs:64966`; the TR_SANDSTORM pin freezes the state machine
         // (the periodic intention roll would fight the pin — phase-1 glue doc).
         if scene_state.forced_severity.is_none() {

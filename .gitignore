@@ -27,3 +27,4 @@ Thumbs.db
 # gitignored /decompiled/, so neither is committed
 /graphify-out/
 target-m2d2/
+__pycache__/

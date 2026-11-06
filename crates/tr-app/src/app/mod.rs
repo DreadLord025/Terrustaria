@@ -134,6 +134,17 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
+    /// the mood captured at the open).
+    pub(crate) shop_npc: Option<usize>,
+    /// The stock captured at the open (`Chest.item[]`).
+    pub(crate) shop_stock: Vec<u16>,
+    /// The happiness multiplier captured at the open
+    /// (`currentShoppingSettings.PriceAdjustment`).
+    pub(crate) shop_mood: f32,
+    /// The closed shop — the state cleared (`Main.npcShop = -1`'s
+    /// equivalent).
+    pub(crate) shop_closed_flag: bool,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -365,6 +376,16 @@ pub(crate) struct App {
     pub(crate) ambience_rng: u64,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
+    /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
+    /// own sway counter — the flower never rides the grass one (its special pass
+    /// reads `_sunflowerWindCounter`, `TileDrawing.cs:8918`). C# advances it per
+    /// world-update tick (`TilesRenderer.Update()` in `Main.DoUpdateInWorld_Inner`,
+    /// `Main.cs:17812`), so [`Self::sunflower_wind_step`] steps it on the 60 Hz
+    /// accumulator instead of the redraw cadence the grass/tree counters inherited.
+    pub(crate) sunflower_wind_counter: f32,
+    /// The 1/60 stepper that ticks [`Self::sunflower_wind_counter`] — the port
+    /// shape of C#'s per-world-update advance (`TileDrawing.Update`).
+    pub(crate) sunflower_wind_step: FixedStepper,
     /// Ambient tree leaves (`TileDrawing.EmitTreeLeaves` / `Gore_UpdateLeaf`).
     pub(crate) leaves: Vec<crate::render::foliage::LeafGore>,
     /// `Main.liquidAlpha` (`Main.cs:1103`): the per-water-style cross-fade the
@@ -639,6 +660,54 @@ impl App {
 
     pub(crate) fn update_npcs(&mut self, dt: f32) {
         world_sim::npcs::update_npcs(self, dt);
+        // The shop closes when the seller leaves (the NPC's death/retreat
+        // invalidates the index).
+        if let Some(i) = self.shop_npc {
+            if self.npcs.get(i).map(|n| n.hp > 0) != Some(true) {
+                self.close_shop();
+            }
+        } else if self.shop_closed_flag {
+            self.shop_closed_flag = false;
+        }
+    }
+
+    /// `Player.BuyItem`'s shape: the purse covers the price → deduct and
+    /// deposit the item through the pickup stack (`Player.PickupItem`'s
+    /// slot_for_pickup). Returns false when the purse is short or the slot
+    /// is out of range.
+    pub(crate) fn buy_shop_item(&mut self, slot: usize) -> bool {
+        let Some(item) = self.shop_stock.get(slot).copied() else {
+            return false;
+        };
+        let price = crate::shop::buy_price(item, self.shop_mood) as u64;
+        if self.coins < price {
+            return false;
+        }
+        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item) {
+            Some(i) => i,
+            None => return false,
+        };
+        // `Player.PickupItem`'s deposit: the stack merge on the same kind,
+        // else the fresh slot.
+        let sl = &mut self.inventory[idx];
+        if sl.kind == item && sl.count > 0 {
+            sl.count += 1;
+        } else {
+            *sl = crate::item::ItemSlot {
+                kind: item,
+                name: crate::itemdata::ITEMS[item as usize].name,
+                count: 1,
+            };
+        }
+        self.coins -= price;
+        true
+    }
+
+    /// `Main.SetNPCShopIndex(-1)`'s equivalent.
+    pub(crate) fn close_shop(&mut self) {
+        self.shop_npc = None;
+        self.shop_stock.clear();
+        self.shop_mood = 1.0;
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -1247,6 +1316,10 @@ impl App {
             npc_assets,
             npc_timer: 6.0,
             next_worm_id: 1,
+            shop_npc: None,
+            shop_stock: Vec::new(),
+            shop_mood: 1.0,
+            shop_closed_flag: false,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1475,6 +1548,8 @@ impl App {
             ambience_rng: world_seed ^ 0x0A5C_E17A_1C1E_5EED,
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
+            sunflower_wind_counter: 0.0,
+            sunflower_wind_step: FixedStepper::new(1.0 / 60.0, 8),
             leaves: Vec::new(),
             liquid_alpha: [0.0; 15],
             items: Vec::new(),
@@ -1615,6 +1690,12 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
     if let Ok(v) = std::env::var("TR_TOGGLE") {
         apply_tr_toggles(&mut world, &parse_tr_toggle(&v));
     }
+    // `TR_TILES=x,y,kind,fx,fy[;...]`: write tiles with explicit frames at
+    // load — the render fixture for the M1.4-TO-4 kinds (the plan stages the
+    // scene by direct World writes, not through Phase 1 placement).
+    if let Ok(v) = std::env::var("TR_TILES") {
+        apply_tr_tiles(&mut world, &parse_tr_tiles(&v));
+    }
     // TR_DAY also sets the world clock so NPC day/night logic matches the pinned sky.
     if let Some(d) = std::env::var("TR_DAY")
         .ok()
@@ -1727,6 +1808,10 @@ pub(crate) fn load_world(world_path: &Path) -> Result<World> {
 // `TR_TOGGLE=x,y[,n][;...]` presses the Phase-4 interaction dispatcher
 // (`edit::interact_at`) n times at one tile — the closed→open→closed door
 // scenario.
+//
+// `TR_TILES=x,y,kind,fx,fy[;...]` writes single cells with explicit frames —
+// the render fixture for the M1.4-TO-4 kinds (sunflower 2x4, pots, clay pot,
+// herbs, piles, planter box), staged without the placement route.
 
 /// One `TR_PLACE` group: place this tile kind through the registry route.
 struct TrPlace {
@@ -1851,6 +1936,101 @@ fn apply_tr_places(world: &mut World, ops: &[TrPlace]) {
         );
     }
     if !ops.is_empty() {
+        world.revision = world.revision.wrapping_add(1);
+    }
+}
+
+/// One `TR_TILES` cell: write this exact tile kind with these exact frames —
+/// the render fixture's direct world write (the plan's "tiles and frames are
+/// written into the World directly"), bypassing placement and framing. The
+/// 4-token `x,y,w,h` form clears the rectangle to air (and wipes its walls) so
+/// the fixture can stage a clean stage on lived-in terrain.
+struct TrTile {
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    kind: i64,
+    fx: i16,
+    fy: i16,
+}
+
+fn parse_tr_tiles(v: &str) -> Vec<TrTile> {
+    v.split(';')
+        .filter_map(|group| match tr_nums(group)?[..] {
+            [x, y, w, h] => Some(TrTile {
+                x: x as i32,
+                y: y as i32,
+                w: w as i32,
+                h: h as i32,
+                kind: -1,
+                fx: 0,
+                fy: 0,
+            }),
+            [x, y, kind, fx, fy] => Some(TrTile {
+                x: x as i32,
+                y: y as i32,
+                w: 1,
+                h: 1,
+                kind,
+                fx: fx as i16,
+                fy: fy as i16,
+            }),
+            _ => None,
+        })
+        .collect()
+}
+
+fn apply_tr_tiles(world: &mut World, ops: &[TrTile]) {
+    let mut touched = false;
+    for op in ops {
+        for dy in 0..op.h {
+            for dx in 0..op.w {
+                let (x, y) = (op.x + dx, op.y + dy);
+                if op.kind >= 0 {
+                    let kind = op.kind as u16;
+                    // Every fixture kind is `Main.tileFrameImportant` in vanilla
+                    // (`Main.cs:7415/:7632/:7663-7685`), so the written frames
+                    // survive the post-hook `frame_world` even when the save's
+                    // table lacks the bit.
+                    if (kind as usize) < world.frame_important.len() {
+                        world.frame_important[kind as usize] = true;
+                    }
+                }
+                let Some(t) = world.tile_mut(x, y) else {
+                    continue;
+                };
+                if op.kind < 0 {
+                    // The clear: air, no wall — a blank stage cell.
+                    *t = tr_core::tile::Tile::default();
+                    touched = true;
+                    continue;
+                }
+                let kind = op.kind as u16;
+                *t = tr_core::tile::Tile {
+                    kind,
+                    frame_x: op.fx,
+                    frame_y: op.fy,
+                    ..Default::default()
+                };
+                t.flags |= tr_core::tile::FLAG_ACTIVE;
+                touched = true;
+            }
+        }
+        if op.kind >= 0 {
+            log::info!(
+                "TR_TILES {},{} kind {} frame ({},{}) {}x{}",
+                op.x,
+                op.y,
+                op.kind,
+                op.fx,
+                op.fy,
+                op.w,
+                op.h
+            );
+        }
+    }
+    if touched {
         world.revision = world.revision.wrapping_add(1);
     }
 }
@@ -2350,6 +2530,121 @@ mod tr_hooks {
             "the second press closes it again"
         );
         assert_eq!(w.tile(10, 18).unwrap().frame_y, closed_frame);
+    }
+
+    #[test]
+    fn tr_tiles_parsing_kinds_frames_and_clear_groups() {
+        // The TR_TILES dev hook parses fixture writes: 5 tokens `x,y,kind,fx,fy`
+        // place one tile with explicit frames (negative frames are meaningful —
+        // `-1` is "must be computed"), 4 tokens `x,y,w,h` are the clear
+        // rectangle carrying the kind −1 sentinel.
+        let ops = parse_tr_tiles("5,6,82,0,18;7,8,82,18,-1");
+        assert_eq!(ops.len(), 2, "groups split on ';'");
+        assert_eq!(
+            (ops[0].x, ops[0].y, ops[0].kind, ops[0].fx, ops[0].fy, ops[0].w, ops[0].h),
+            (5, 6, 82, 0, 18, 1, 1)
+        );
+        assert_eq!(
+            (ops[1].x, ops[1].y, ops[1].kind, ops[1].fx, ops[1].fy),
+            (7, 8, 82, 18, -1)
+        );
+        let clear = parse_tr_tiles("10,10,3,2");
+        assert_eq!(clear.len(), 1);
+        assert_eq!(
+            (clear[0].x, clear[0].y, clear[0].w, clear[0].h, clear[0].kind),
+            (10, 10, 3, 2, -1)
+        );
+        assert_eq!((clear[0].fx, clear[0].fy), (0, 0));
+        // Both forms mix freely in one fixture string.
+        let mixed = parse_tr_tiles("5,6,82,0,18;0,0,3,2");
+        assert_eq!(mixed.len(), 2);
+        assert_eq!(mixed[0].kind, 82);
+        assert_eq!(mixed[1].kind, -1);
+    }
+
+    #[test]
+    fn tr_tiles_parsing_skips_malformed_groups() {
+        // The fixture is one env value; a malformed group must be dropped whole
+        // without aborting the well-formed ones around it.
+        assert!(parse_tr_tiles("").is_empty(), "the empty string places nothing");
+        assert!(parse_tr_tiles("1,2").is_empty(), "2 tokens is not a form");
+        assert!(parse_tr_tiles("1,2,3").is_empty(), "3 tokens is not a form");
+        assert!(parse_tr_tiles("1,2,3,4,5,6").is_empty(), "6 tokens is not a form");
+        assert!(parse_tr_tiles("x,y,82,0,18").is_empty(), "non-numeric coords");
+        assert!(parse_tr_tiles("1,2,82,0,z").is_empty(), "non-numeric frames");
+        assert_eq!(parse_tr_tiles("1,2,3;5,6,82,0,18").len(), 1);
+    }
+
+    #[test]
+    fn tr_tiles_apply_writes_kind_frames_and_marks_frame_important() {
+        // The dev harness stages the render scene by direct world writes: the
+        // exact kind and frames land at the one cell with FLAG_ACTIVE, the
+        // frame_important mark keeps the written frames alive through the
+        // post-hook re-frame, and the edit bumps the world revision.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        // A lived-in cell: the write form must replace it wholesale (wall drops).
+        let i = w.index(5, 6);
+        w.tiles[i] = Tile {
+            kind: 1,
+            wall: 5,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let rev_before = w.revision;
+        apply_tr_tiles(&mut w, &parse_tr_tiles("5,6,82,0,18"));
+        let t = w.tile(5, 6).unwrap();
+        assert_eq!(t.kind, 82);
+        assert_eq!((t.frame_x, t.frame_y), (0, 18));
+        assert!(t.active(), "the fixture cell renders");
+        assert_eq!(t.wall, 0, "the write replaces the whole cell");
+        assert!(w.frame_important[82], "the written kind is marked frame-important");
+        assert!(!w.frame_important[1], "only the written kind is marked");
+        assert!(w.revision > rev_before, "a write bumps the world revision");
+        assert!(!w.tile(6, 6).unwrap().active(), "the write stays 1x1");
+    }
+
+    #[test]
+    fn tr_tiles_apply_clear_resets_cells_to_default() {
+        // The clear form wipes the whole rectangle to a blank stage cell —
+        // the default Tile: no kind, no wall, nothing active — so the fixture
+        // stages a clean scene on lived-in terrain.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        for x in 10..13 {
+            for y in 10..12 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    wall: 5,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let rev_before = w.revision;
+        apply_tr_tiles(&mut w, &parse_tr_tiles("10,10,3,2"));
+        for x in 10..13 {
+            for y in 10..12 {
+                assert_eq!(
+                    *w.tile(x, y).unwrap(),
+                    Tile::default(),
+                    "the clear resets {x},{y} to the default cell"
+                );
+            }
+        }
+        assert!(w.revision > rev_before, "a clear bumps the world revision");
+        assert!(!w.tile(9, 10).unwrap().active(), "the clear stays inside w*h");
+    }
+
+    #[test]
+    fn tr_tiles_apply_out_of_bounds_writes_nothing() {
+        // Groups that fall outside the world are skipped cell by cell; nothing
+        // is touched, so the revision stays exactly where it was.
+        let mut w = World::new("t".into(), 40, 40);
+        w.frame_important = vec![false; td::TILE_COUNT];
+        apply_tr_tiles(&mut w, &parse_tr_tiles("1000,1000,4,4;-5,-5,4,4"));
+        assert_eq!(w.revision, 0, "nothing touched -> no revision bump");
     }
 
     /// DW-1.6: `TR_SUNDIAL=1`/`TR_MOONDIAL=1` arm the dial fast-forwards at

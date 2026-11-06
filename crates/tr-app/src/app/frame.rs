@@ -457,6 +457,8 @@ impl App {
                 wind,
                 tree_wind_counter,
                 grass_wind_counter,
+                sunflower_wind_counter,
+                sunflower_wind_step,
                 leaves,
                 items,
                 swing,
@@ -730,6 +732,18 @@ impl App {
                 }
                 tr_core::wind::advance_tree_counter(tree_wind_counter, wind.speed_current);
                 tr_core::wind::advance_counter(grass_wind_counter, wind.speed_current);
+                // `TileDrawing.Update`'s sunflower counter (`TileDrawing.cs:374`)
+                // runs per world-update tick in the original
+                // (`TilesRenderer.Update()` in `Main.DoUpdateInWorld_Inner`,
+                // `Main.cs:17812`), so it steps on the 1/60 accumulator instead of
+                // the redraw cadence above — the flower's cadence stays
+                // tick-quantised (and screenshotable) at any refresh rate.
+                sunflower_wind_step.tick(dt, |_| {
+                    tr_core::wind::advance_sunflower_counter(
+                        sunflower_wind_counter,
+                        wind.speed_current,
+                    );
+                });
 
                 // Liquids animate the texture at 8 fps; include the frame in the G6
                 // key only when the world has any liquid.
@@ -768,6 +782,7 @@ impl App {
                             ^ (if wind.sway_enabled && wind.speed_current.abs() > 0.08 {
                                 (grass_wind_counter.to_bits() as u32)
                                     ^ (tree_wind_counter.to_bits() as u32)
+                                    ^ (sunflower_wind_counter.to_bits() as u32)
                             } else {
                                 0
                             })
@@ -910,6 +925,7 @@ impl App {
                         wind,
                         *grass_wind_counter,
                         *tree_wind_counter,
+                        *sunflower_wind_counter,
                         &mut leaf_spawns,
                     );
                     *world_key = Some(key);
@@ -1103,6 +1119,8 @@ impl App {
                         &self.kill_tracker,
                         &mut self.chat,
                         &self.emotes,
+                        self.shop_npc
+                            .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
