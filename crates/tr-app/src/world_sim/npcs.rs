@@ -436,6 +436,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 (npc.y / 16.0) as i32,
             );
         }
+        // `NPC.checkDead`'s boss arms (`NPC.cs:79416`'s
+        // `SetEventFlagCleared`): the boss deaths set the world's downed
+        // flags. The player-kill gate rides the same kill path as the
+        // bestiary credit above.
+        match npc.kind {
+            NpcKind::KingSlime => app.world.downed_slime_king = true,
+            _ => {}
+        }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
     }

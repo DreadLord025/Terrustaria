@@ -88,6 +88,14 @@ pub struct World {
     pub eclipse: bool,
     /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub blood_moon: bool,
+    /// The downed-boss flags (`NPC.downed*` statics, `NPC.cs:6340-6380`):
+    /// the world-persistent boss states. The save wire rides the .wld
+    /// flags block (M6-SAVE's world sections).
+    pub downed_slime_king: bool,
+    pub downed_eoc: bool,
+    pub downed_eow: bool,
+    pub downed_skeletron: bool,
+    pub downed_queen_bee: bool,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -123,6 +131,11 @@ impl World {
             day_time: true,
             moon_type: 0,
             moon_phase: 0,
+            downed_slime_king: false,
+            downed_eoc: false,
+            downed_eow: false,
+            downed_skeletron: false,
+            downed_queen_bee: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -476,5 +489,20 @@ mod tests {
         w.moondialing();
         assert!(w.fast_forward_to_dusk);
         assert_eq!(w.moondial_cooldown, 8);
+    }
+}
+
+#[cfg(test)]
+mod boss_tests {
+    use super::*;
+
+    #[test]
+    fn the_downed_flags_default_false() {
+        let w = World::new("t".into(), 100, 100);
+        assert!(!w.downed_slime_king);
+        assert!(!w.downed_eoc);
+        assert!(!w.downed_eow);
+        assert!(!w.downed_skeletron);
+        assert!(!w.downed_queen_bee);
     }
 }
