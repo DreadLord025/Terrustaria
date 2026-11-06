@@ -357,6 +357,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Painter",
     },
     BestiaryEntryDef {
+        credit_id: "WitchDoctor",
+        net_id: 228,
+        kind: NpcKind::WitchDoctor,
+        variant: None,
+        quick_unlock: false,
+        name: "Witch Doctor",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

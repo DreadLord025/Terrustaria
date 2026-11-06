@@ -515,6 +515,12 @@ pub fn spawn_allowed_painter(town_count_excluding: usize) -> bool {
     town_count_excluding >= 2
 }
 
+/// The Witch Doctor's arrival gate: the vanilla rides `NPC.downedQueenBee`
+/// — the port's boss-downed tracking is constants-off (the boss work).
+pub fn spawn_allowed_witch_doctor(downed_queen_bee: bool) -> bool {
+    downed_queen_bee
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 

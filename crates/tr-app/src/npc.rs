@@ -133,6 +133,10 @@ pub enum NpcKind {
     /// `NPCID.Painter` (227) — the paint seller (`NPC.cs:11925`: the town
     /// twin; the shop index 15; the arrival = at least 2 other town NPCs).
     Painter,
+    /// `NPCID.WitchDoctor` (228) — the jungle shaman (`NPC.cs:11942`: the
+    /// town twin; the shop index 16; the arrival rides the downedQueenBee
+    /// gate — constants-off until the boss-downed tracking).
+    WitchDoctor,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -339,6 +343,7 @@ impl NpcKind {
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
+            NpcKind::WitchDoctor => 40,
         }
     }
 
@@ -384,6 +389,7 @@ impl NpcKind {
             37 => NpcKind::ArmsDealer,
             38 => NpcKind::Demolitionist,
             39 => NpcKind::Painter,
+            40 => NpcKind::WitchDoctor,
             _ => return None,
         })
     }
@@ -462,6 +468,7 @@ impl NpcKind {
             NpcKind::ArmsDealer => (18.0, 40.0),
             NpcKind::Demolitionist => (18.0, 40.0),
             NpcKind::Painter => (18.0, 40.0),
+            NpcKind::WitchDoctor => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -527,6 +534,8 @@ impl NpcKind {
             NpcKind::Demolitionist => 250,
             // `SetDefaults` case 227 (`NPC.cs:11933`): 250 HP.
             NpcKind::Painter => 250,
+            // `SetDefaults` case 228 (`NPC.cs:11950`): 250 HP.
+            NpcKind::WitchDoctor => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -577,6 +586,7 @@ impl NpcKind {
             NpcKind::ArmsDealer => 10,
             NpcKind::Demolitionist => 10,
             NpcKind::Painter => 10,
+            NpcKind::WitchDoctor => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1017,6 +1027,7 @@ impl Npc {
             NpcKind::ArmsDealer => 0.5,
             NpcKind::Demolitionist => 0.5,
             NpcKind::Painter => 0.5,
+            NpcKind::WitchDoctor => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1077,6 +1088,7 @@ impl Npc {
             NpcKind::ArmsDealer => 15,
             NpcKind::Demolitionist => 15,
             NpcKind::Painter => 15,
+            NpcKind::WitchDoctor => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1135,6 +1147,7 @@ impl Npc {
             NpcKind::ArmsDealer => 0.0,
             NpcKind::Demolitionist => 0.0,
             NpcKind::Painter => 0.0,
+            NpcKind::WitchDoctor => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1253,7 +1266,8 @@ impl Npc {
             | NpcKind::Nurse
             | NpcKind::ArmsDealer
             | NpcKind::Demolitionist
-            | NpcKind::Painter => self.update_guide(world, dt),
+            | NpcKind::Painter
+            | NpcKind::WitchDoctor => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1545,6 +1559,33 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::WitchDoctor => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[228]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Painter => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[227]` = 3, `Main.cs:67082`).
@@ -2273,6 +2314,7 @@ impl Npc {
                     | NpcKind::ArmsDealer
                     | NpcKind::Demolitionist
                     | NpcKind::Painter
+                    | NpcKind::WitchDoctor
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2337,6 +2379,7 @@ impl Npc {
             NpcKind::ArmsDealer => 37,
             NpcKind::Demolitionist => 38,
             NpcKind::Painter => 39,
+            NpcKind::WitchDoctor => 40,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3514,7 +3557,37 @@ mod tests {
         }
     }
 
+    #[test]
+    fn the_witch_doctor_arrival_gate_and_shop() {
+        // The arrival: the downedQueenBee gate (constants-off in the port).
+        assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
+        assert!(crate::spawner::spawn_allowed_witch_doctor(true));
+        // The shop index 16: the Blowgun and the Flask always; the
+        // conditionals constants-off.
+        let stock = crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[]);
+        assert!(stock.contains(&1430) && stock.contains(&986));
+        assert!(!stock.contains(&1158), "the night row leaks");
+    }
+
+    #[test]
+    fn the_witch_doctor_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 228 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(228).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor)
+            .expect("the witch doctor spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::WitchDoctor, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 228);
+        assert_eq!(e.credit_id, "WitchDoctor");
+        let prefs = crate::happiness::biome_preferences(NpcKind::WitchDoctor);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Jungle);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
 }
+
 
 
 
