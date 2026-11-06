@@ -490,6 +490,16 @@ pub struct Player {
     /// The `Player.cs:28237-28241` switch trip handed to the caller (the C#
     /// `HitTrackSwitch` needs `&mut World`; the tick takes `&World`).
     pending_switch_trip: Option<(i32, i32)>,
+    /// The wheel-spark rolls' named stream (the per-consumer convention — C#
+    /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
+    /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
+    pub spark_rng: u64,
+    /// The tick's queued spark particles, drained by `world_sim` into the
+    /// App's `minecart::Sparks` pool (the `Main.dust` stand-in).
+    pending_sparks: Vec<crate::minecart::SparkP>,
+    /// The tick's queued minecart cues (Item53/55/56), drained into
+    /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
+    pending_cart_sounds: Vec<crate::minecart::CartCue>,
 }
 
 impl Player {
@@ -625,6 +635,9 @@ impl Player {
             full_rotation_origin: (0.0, 0.0),
             fall_start2: (sy / TILE_PX) as i32,
             pending_switch_trip: None,
+            spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
+            pending_sparks: Vec::new(),
+            pending_cart_sounds: Vec::new(),
         }
     }
 
@@ -733,6 +746,18 @@ impl Player {
         self.pending_switch_trip.take()
     }
 
+    /// Takes the tick's queued spark particles (the `Main.dust` handoff —
+    /// the caller owns the pool).
+    pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkP> {
+        std::mem::take(&mut self.pending_sparks)
+    }
+
+    /// Takes the tick's queued minecart cues (the `SoundEngine.PlaySound`
+    /// handoff — the caller owns the audio device).
+    pub(crate) fn take_cart_sounds(&mut self) -> Vec<crate::minecart::CartCue> {
+        std::mem::take(&mut self.pending_cart_sounds)
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`:47-102`): any control input,
     /// a direction change, or the chair going away stands the player up.
     /// The seat-stack cap (`Main.sittingManager`, 2 per tile) is the
@@ -815,6 +840,8 @@ impl Player {
         self.full_rotation_origin = (0.0, 0.0);
         self.fall_start2 = (self.y / TILE_PX) as i32;
         self.pending_switch_trip = None;
+        self.pending_sparks.clear();
+        self.pending_cart_sounds.clear();
         self.buffs.clear_buff(CART_MOUNT_BUFF);
     }
 
@@ -1490,7 +1517,7 @@ impl Player {
         // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
         // before the integration because it snaps Y itself and rewrites the
         // velocity (pitfall §10.3: X moves in the integration below).
-        let _was_on_track = self.on_track; // `:28091` `flag32` — phase-3 seam
+        let _was_on_track = self.on_track; // `:28091` `flag32` — the off-rail JumpingSound delegate is empty (see below)
         self.on_track = false; // `:28092`
         let mut hit_switch_flag = false; // `flag33`
         if self.cart_mounted {
@@ -1506,6 +1533,11 @@ impl Player {
                 0.5
             };
             let body_h = self.body_height() as i32;
+            // `Player.cs:28110-28111` + `Minecart.cs:809-813`: the landing
+            // event fires mid-call with the pre-resolve `Position` and the
+            // rotation the caller set before the call — both captured here.
+            let pre_pos = Vec2::new(self.x, self.y);
+            let pre_rotation = self.full_rotation;
             let mut pos = Vec2::new(self.x, self.y);
             let mut vel = Vec2::new(self.vx, self.vy);
             vel *= scale;
@@ -1541,10 +1573,29 @@ impl Player {
                 self.full_rotation = rot;
                 self.full_rotation_origin = ((WIDTH / 2.0), body_h as f32);
             }
-            // phase-3 seam: the riding-off-rail jump sound when `was_on_track`
-            // && !on_track (`:28117-28119`), and the landing sound + 10-spark
-            // burst when `flags.landing` (`Minecart.cs:809-813` via the
-            // Phase-1 `TrackFlags::landing`).
+            // `:28117-28119`: the riding-off-rail `MinecartJumpingSound`
+            // delegate is EMPTY in C# (`DelegateMethods.cs:244-248`) — the
+            // `was_on_track` && !on_track edge plays nothing.
+            if flags.landing {
+                // `Minecart.cs:809-813`: the landing check —
+                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
+                // with the pre-call position and rotation captured above.
+                minecart::minecart_landing_sound(
+                    &mut self.pending_cart_sounds,
+                    pre_pos,
+                    WIDTH as i32,
+                    body_h,
+                );
+                minecart::wheel_sparks(
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pre_pos,
+                    WIDTH as i32,
+                    body_h,
+                    10,
+                    pre_rotation,
+                );
+            }
             if flags.bouncy_bumper() {
                 // `:28123-28136`: the sprite flip follows the held direction
                 // keys; the body direction follows the flipped roll.
@@ -1556,7 +1607,14 @@ impl Player {
                 } else if vel.x < 0.0 {
                     self.facing = -1;
                 }
-                // phase-3 seam: the bouncy-bumper sound (Item56).
+                // `:28140`: `MinecartBumperSound` → Item56, at the
+                // post-TrackCollision position (`base.position`, pre-integration).
+                minecart::minecart_bumper_sound(
+                    &mut self.pending_cart_sounds,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                );
             }
             if flags.hit_switch() {
                 hit_switch_flag = true; // `:28138-28140`
@@ -2547,9 +2605,34 @@ impl Player {
                     self.vx = 0.0;
                 }
             }
-            // phase-3 seam: the rolling wheel sparks + Item55
-            // (`Player.cs:19868-19902` — gated on track rider + on-track +
-            // vy == 0 + vx >= 0, with `Minecart.rotation` set first).
+            // `Player.cs:19868-19902`: the rolling wheel sparks + Item55 —
+            // the arm's gate is the direction-OPPOSITE sign (`velocity.X >=
+            // 0f`): the sound + sparks fire while braking a rightward roll or
+            // at rest, not while accelerating left. (`itemAnimation == 0`
+            // holds — the port's item swing never gates movement.)
+            if self.cart_mounted
+                && !self.on_wrong_ground
+                && self.on_track
+                && self.vy == 0.0
+                && self.vx >= 0.0
+            {
+                let pos = Vec2::new(self.x, self.y);
+                let vel = Vec2::new(self.vx, self.vy);
+                let body_h = self.body_height() as i32;
+                let max_run = self.max_run_speed;
+                let rotation = self.full_rotation;
+                minecart::rolling_wheel_sparks(
+                    &mut self.pending_cart_sounds,
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                    vel,
+                    max_run,
+                    rotation,
+                );
+            }
         } else if self.control_right && self.vx < self.max_run_speed {
             // `:19904-19916`: the mirror arm.
             if !self.cart_mounted || self.vy == 0.0 {
@@ -2566,8 +2649,31 @@ impl Player {
                     self.vx = 0.0;
                 }
             }
-            // phase-3 seam: the rolling wheel sparks + Item55
-            // (`Player.cs:19926-19958` — the vx <= 0 mirror).
+            // `Player.cs:19926-19958`: the mirror arm — the gate is
+            // `velocity.X <= 0f` (braking a leftward roll or at rest).
+            if self.cart_mounted
+                && !self.on_wrong_ground
+                && self.on_track
+                && self.vy == 0.0
+                && self.vx <= 0.0
+            {
+                let pos = Vec2::new(self.x, self.y);
+                let vel = Vec2::new(self.vx, self.vy);
+                let body_h = self.body_height() as i32;
+                let max_run = self.max_run_speed;
+                let rotation = self.full_rotation;
+                minecart::rolling_wheel_sparks(
+                    &mut self.pending_cart_sounds,
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                    vel,
+                    max_run,
+                    rotation,
+                );
+            }
         } else if self.control_left && self.vx > -self.acc_run_speed && self.dash_delay >= 0 {
             // `:19960-19972`: the over-max refine — the inner gate carries the
             // airborne-wings term (`wingsLogic > 0`; carts zero it above).
@@ -5749,6 +5855,217 @@ mod tests {
             assert!(!p.on_track);
         }
         assert!(p.vy > 0.0, "falling under gravity: {}", p.vy);
+    }
+
+    // ------------------------------------------------------------------
+    // M2-PHYS-7 Phase 3 — wheel sparks + sounds
+    // ------------------------------------------------------------------
+
+    /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
+    /// exactly `want` sparks — the gate rolls interleave with the 14-roll
+    /// sparks (the rain.rs seed-search idiom, run against the same emitter
+    /// constants the tick passes).
+    fn seed_with_spark_count(vel_x: f32, want: usize) -> u64 {
+        for s in 1u64.. {
+            let mut sparks = Vec::new();
+            let mut rng = s;
+            crate::minecart::rolling_wheel_sparks(
+                &mut Vec::new(),
+                &mut sparks,
+                &mut rng,
+                Vec2::new(100.0, 200.0),
+                20,
+                52,
+                Vec2::new(vel_x, 0.0),
+                13.0,
+                0.0,
+            );
+            if sparks.len() == want {
+                return s;
+            }
+        }
+        unreachable!()
+    }
+
+    /// DW-3.2 — the landing burst (`Minecart.cs:809-813` via the Phase-1
+    /// `TrackFlags::landing`): a real fall onto a rail queues the Item53 cue
+    /// and exactly 10 sparks at the pre-call magnet point, with the
+    /// pre-call rotation (`Player.cs:28110-28111` sets the emitter statics
+    /// before `TrackCollision` runs).
+    #[test]
+    fn landing_on_a_rail_bursts_ten_sparks_and_item53() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 0.0);
+        p.y -= 64.0; // four rows above the rail line
+        p.prev_y = p.y;
+        p.vy = 5.0; // the gate needs `velocity.Y > defaultGravity` (0.4)
+        p.fall_start2 = (p.y / 16.0) as i32 - 3; // a real fall origin
+        // The fall takes a handful of ticks to cross the 64 px to the rail;
+        // the landing tick queues the burst with its pre-call position.
+        let mut landed_at = None;
+        for _ in 0..20 {
+            let (pre_x, pre_y) = (p.x, p.y);
+            p.update(&w, PlayerInput::default());
+            if !p.pending_sparks.is_empty() {
+                landed_at = Some((pre_x, pre_y));
+                break;
+            }
+        }
+        let (pre_x, pre_y) = landed_at.expect("the landing fired");
+        assert!(p.on_track, "the fall ended on the rail");
+        assert_eq!(p.pending_sparks.len(), 10, "the 10-spark burst");
+        assert_eq!(p.pending_cart_sounds.len(), 1);
+        assert_eq!(p.pending_cart_sounds[0].cue, "Item_53");
+        // Every spark sits at the pre-call magnet point (rotation 0 on the
+        // flat rail): y exactly `pre_y + 52`, x = pre_x + 10 ± 13 + 4.
+        for s in &p.pending_sparks {
+            assert_eq!(s.pos.y, pre_y + 52.0);
+            assert!(
+                (s.pos.x - (pre_x + 27.0)).abs() < 1e-3 || (s.pos.x - (pre_x + 1.0)).abs() < 1e-3,
+                "x {}",
+                s.pos.x
+            );
+        }
+    }
+
+    /// DW-3.3 (dirty) — the rolling gates are direction-opposite
+    /// (`Player.cs:19868`: the left arm needs `velocity.X >= 0f`; `:19926`:
+    /// the right arm `velocity.X <= 0f`): riding forward is silent, braking
+    /// a same-sign roll sparks.
+    #[test]
+    fn riding_forward_does_not_spark_the_braking_arms_do() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 140);
+        // Settle one tick so the previous tick's `onTrack` is up.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        p.update(&w, PlayerInput::default());
+        // All three 50% gates would pass — the arm's sign gate is the only
+        // thing that can stop them.
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        // Riding forward (right held, vx > 0): the right arm's `vx <= 0`
+        // gate fails — no sparks, no Item55.
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.pending_sparks.is_empty(), "forward riding is silent");
+        assert!(p.pending_cart_sounds.is_empty());
+        // Braking (left held against the rightward roll): the left arm's
+        // `vx >= 0` gate fires the three rolls → 3 sparks + Item55.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 13.0);
+        p.update(&w, PlayerInput::default());
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.pending_sparks.len(), 3, "the braking arm sparks");
+        assert_eq!(p.pending_cart_sounds.len(), 1);
+        assert_eq!(p.pending_cart_sounds[0].cue, "Item_55");
+        // At rest the arm's own accel (`Player.cs:19855`: `velocity.X -=
+        // runAcceleration`, unconditional for a grounded cart) flips vx to
+        // −0.04 before the gate reads it — the at-rest press never sparks
+        // (the C# order; the gate is the arm's post-accel velocity).
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 0.0);
+        p.update(&w, PlayerInput::default());
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            p.pending_sparks.is_empty(),
+            "the at-rest press never sparks"
+        );
+    }
+
+    /// DW-3.3 (dirty) — no sparks off-track or airborne: the gate needs the
+    /// previous tick's `onTrack` with `!onWrongGround` and `velocity.Y == 0`
+    /// (`Player.cs:19868`).
+    #[test]
+    fn sparks_are_absent_off_track_and_airborne() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        // Off-track: a mounted cart on plain ground (no rails) never passes
+        // the gate — the on-track check flags `on_wrong_ground` and the
+        // previous tick's `onTrack` is down.
+        let mut w2 = cart_world();
+        for x in 20..80 {
+            place_stone(&mut w2, x, 45);
+        }
+        let mut p = Player::spawn(&w2);
+        p.mount_cart();
+        p.y = 45.0 * 16.0 - 52.0;
+        p.prev_y = p.y;
+        p.vx = 10.0;
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w2,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.on_wrong_ground, "the off-track flag is up");
+        assert!(p.pending_sparks.is_empty(), "off-track: no sparks");
+        assert!(p.pending_cart_sounds.is_empty(), "off-track: no Item55");
+        // Airborne: jump off the rail, then brake mid-air — `onTrack` (the
+        // previous tick's) is down and `velocity.Y != 0`.
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        p.update(&w, PlayerInput::default());
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.vy != 0.0, "the jump launched the cart");
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.pending_sparks.is_empty(), "airborne: no sparks");
+        assert!(p.pending_cart_sounds.is_empty(), "airborne: no Item55");
+    }
+
+    /// DW-3.3 (the replay half, through the tick) — the same world, seed and
+    /// inputs give byte-equal spark queues and identical stream positions.
+    #[test]
+    fn the_player_spark_stream_replays_identically() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 140);
+        let mut a = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        let mut b = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        let seed = seed_with_spark_count(10.4, 3);
+        a.spark_rng = seed;
+        b.spark_rng = seed;
+        for _ in 0..10 {
+            let input = PlayerInput {
+                left: true,
+                ..Default::default()
+            };
+            a.update(&w, input);
+            b.update(&w, input);
+            assert_eq!(a.pending_sparks, b.pending_sparks, "byte-equal queues");
+            assert_eq!(a.pending_cart_sounds, b.pending_cart_sounds);
+            assert_eq!(a.spark_rng, b.spark_rng, "identical stream positions");
+        }
     }
 
     /// Dirty (pitfall §10.13) — the dismount resets `cartFlip`/`lastBoost`/
