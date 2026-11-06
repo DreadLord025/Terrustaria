@@ -1386,7 +1386,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M5-GEN-1 | `M5-GEN-1-pass-pipeline` | config-driven pass scaffold [6] |
+| 🔄 M5-GEN-1 | `M5-GEN-1-pass-pipeline` | config-driven pass scaffold [6] |
 | M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
 | M5-BIOME-2 | `M5-BIOME-2-mushroom-marble-granite` | micro-biomes [6] |
 | M5-OCEAN | `M5-OCEAN` | full ocean |
@@ -1522,7 +1522,7 @@ section in brackets before starting a row.
 
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
-| M5-GEN-1 | `M5-GEN-1-pass-pipeline` | config-driven pass scaffold [6] |
+| 🔄 M5-GEN-1 | `M5-GEN-1-pass-pipeline` | config-driven pass scaffold [6] |
 | M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
 | M5-BIOME-2 | `M5-BIOME-2-mushroom-marble-granite` | micro-biomes [6] |
 | M5-OCEAN | `M5-OCEAN` | full ocean |
