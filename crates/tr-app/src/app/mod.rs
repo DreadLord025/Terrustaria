@@ -139,6 +139,9 @@ pub(crate) struct App {
     /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
     /// module; delete the field + the module + the call sites to remove).
     pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// The favorited inventory slots (`Item.favorited`'s port — the slot
+    /// indices, not the per-item flag; the v1 tracks the slot positions).
+    pub(crate) favorite_slots: Vec<usize>,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -414,6 +417,9 @@ pub(crate) struct App {
     /// The aim angle (the mouse direction, radians) the shooting/throwing
     /// styles read — `Player.itemRotation`'s source for useStyle 5.
     pub(crate) swing_aim: f32,
+    /// The shot-fired latch of the current swing (`ItemTimeIsZero` fires
+    /// once per use — the refire waits for the next `TryStartUse`).
+    pub(crate) shot_fired: bool,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -728,6 +734,32 @@ impl App {
         };
         self.world.day_time = day;
         self.world.time = time;
+        true
+    }
+
+    /// The favorite toggle on an inventory slot (`Item.favorited`'s
+    /// right-click toggle).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+        if idx >= crate::item::INV {
+            return;
+        }
+        if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
+            self.favorite_slots.remove(pos);
+        } else {
+            self.favorite_slots.push(idx);
+        }
+    }
+
+    pub(crate) fn is_favorite(&self, idx: usize) -> bool {
+        self.favorite_slots.contains(&idx)
+    }
+
+    /// The trash swap: the held item goes to the trash, the old trash
+    /// returns. The favorited held items can't be trashed.
+    pub(crate) fn trash_swap(&mut self) -> bool {
+        let old = self.equip.trash;
+        self.equip.trash = self.mouse_item;
+        self.mouse_item = old;
         true
     }
 
@@ -1428,6 +1460,7 @@ impl App {
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
             debug_panel: crate::debug_panel::DebugPanel::new(),
+            favorite_slots: Vec::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1666,6 +1699,7 @@ impl App {
             swing: 0.0,
             swing_style: 0,
             swing_aim: 0.0,
+            shot_fired: false,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,
