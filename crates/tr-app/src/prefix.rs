@@ -495,6 +495,41 @@ pub fn roll_prefix(kind: u16, prefix_want: i32, rng: &mut u64) -> u16 {
     }
 }
 
+/// `Item.BestPrefixValue` (`Item.cs:1082-1099`): the max value multiplier
+/// over the rollable table, counting only the prefixes that survive the
+/// no-visible-change rejection (the vanilla takes `TryGet...`'s `out val`
+/// when it returns true). 0 when the kind is not prefixable.
+pub(crate) fn best_prefix_value(kind: u16) -> f32 {
+    let Some(rollable) = rollable_prefixes(kind) else {
+        return 0.0;
+    };
+    let Some(def) = itemdata::ITEMS.get(kind as usize) else {
+        return 0.0;
+    };
+    let mut best = 0.0_f32;
+    for &p in rollable {
+        let m = Multipliers::stat_switch(p);
+        if m.rejected(def) {
+            continue;
+        }
+        best = best.max(Multipliers::value_multiplier(p, &m));
+    }
+    best
+}
+
+/// The reforge entry (`Main.ReforgeItemInReforgeSlot`, `Main.cs:41902-41933`):
+/// the caller resets the stats first (the port recomputes from the defaults,
+/// so the reset is the prefix field write), then rolls `Prefix(-2)`; the
+/// bool is `rolledPrefixIsTopTier` — the rolled value multiplier equals the
+/// table's best (`Item.cs:575`), which drives the BestReforge sound and the
+/// 60-tick cooldown.
+pub(crate) fn reforge_roll(kind: u16, rng: &mut u64) -> (u16, bool) {
+    let rolled = roll_prefix(kind, -2, rng);
+    let m = Multipliers::stat_switch(rolled);
+    let best = best_prefix_value(kind);
+    (rolled, best > 0.0 && Multipliers::value_multiplier(rolled, &m) == best)
+}
+
 // --- The equipment pass -----------------------------------------------------
 
 /// `Player.GrantPrefixBenefits` (`Player.cs:13953-14044`): the accessory
@@ -766,6 +801,39 @@ mod tests {
         assert!((p.move_speed - (base.3 + 0.04)).abs() < 1e-6);
         assert!((p.melee_speed_bonus - 0.04).abs() < 1e-6);
         assert_eq!(p.mana_max, base.1 + 20);
+    }
+
+    #[test]
+    fn best_prefix_value_matches_the_visible_table() {
+        // The Iron Pickaxe: 81 (the swords' top universal tier — kb 1.15,
+        // dmg 1.15, crt 5, spd 0.9, size 1.1) beats Godly (59, 1.4547):
+        // 1.15·(2−0.9)·1.1·1.15·1.1 = 1.7602. The invisible ones (dmg 1.05
+        // on damage 5, mana tiers on 0 mana) drop out of the max too.
+        let best = best_prefix_value(1);
+        let m = Multipliers::stat_switch(81);
+        let legendary = Multipliers::value_multiplier(81, &m);
+        assert_eq!(best, legendary);
+        // A non-prefixable kind: 0 (vanilla returns 0 for a null table).
+        assert_eq!(best_prefix_value(2), 0.0);
+    }
+
+    #[test]
+    fn reforge_roll_never_lands_none_and_flags_the_top_tier() {
+        let mut rng = test_rng(0xBEEF);
+        let mut tops = 0;
+        for _ in 0..500 {
+            let (p, top) = reforge_roll(1, &mut rng);
+            assert_ne!(p, 0, "Prefix(-2) never lands none");
+            assert!(PREFIXES_FOR_SWORDS.contains(&p));
+            if top {
+                tops += 1;
+                assert_eq!(p, 81, "the pickaxe's top tier is 81");
+            }
+        }
+        assert!(tops > 0, "the seeded stream must land the top tier");
+        // The reforge of a non-prefixable kind keeps nothing.
+        let (p, top) = reforge_roll(2, &mut rng);
+        assert_eq!((p, top), (0, false));
     }
 
     #[test]

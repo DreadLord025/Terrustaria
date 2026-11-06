@@ -1320,6 +1320,9 @@ pub(crate) mod front_flow_tests {
             next_worm_id: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            in_reforge_menu: false,
+            reforge_slot: crate::item::EMPTY_SLOT,
+            reforge_cooldown: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
@@ -2104,5 +2107,107 @@ pub(crate) mod front_flow_tests {
         assert_eq!(entry.name, "Zealot");
         assert_eq!(entry.difficulty, 2);
         assert!(app.players.iter().any(|p| p.name == "Zealot"));
+    }
+
+    // -- M3-REFORGE-1: the reforge action (`Main.ReforgeItemInReforgeSlot`,
+    // `Main.cs:41902-41933`) + the slot transfer (`ItemSlot.cs:821-836`) --
+
+    fn reforge_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.coins = 100_000;
+        app.in_reforge_menu = true;
+        app.reforge_slot = crate::item::ItemSlot {
+            kind: 1, // the Iron Pickaxe — value 2000, the swords table
+            name: "Iron Pickaxe",
+            count: 1,
+            prefix: 0,
+        };
+        app
+    }
+
+    #[test]
+    fn the_reforge_charge_precedes_the_roll() {
+        // The purse gate: a short purse leaves everything untouched
+        // (`BuyItem(num53)` fails → no `ReforgeItemInReforgeSlot`).
+        let mut app = reforge_app();
+        app.coins = 100; // the 2000-value pickaxe costs 666
+        app.reforge_click();
+        assert_eq!(app.coins, 100);
+        assert_eq!(app.reforge_slot.prefix, 0, "the failed charge re-rolls nothing");
+
+        // The funded click: the charge, the roll (Prefix(-2) — never none,
+        // on the swords table), the top-tier cooldown.
+        let mut app = reforge_app();
+        app.reforge_click();
+        assert_eq!(app.coins, 100_000 - 666);
+        let p = app.reforge_slot.prefix;
+        assert_ne!(p, 0, "Prefix(-2) never lands none");
+        assert!(
+            crate::prefix::PREFIXES_FOR_SWORDS.contains(&p),
+            "the pickaxe rolls from the swords table"
+        );
+        if p == 81 {
+            assert_eq!(app.reforge_cooldown, 60, "the top tier arms the 60-tick lock");
+        } else {
+            assert_eq!(app.reforge_cooldown, 0);
+        }
+    }
+
+    #[test]
+    fn the_reforge_cooldown_blocks_the_next_click() {
+        let mut app = reforge_app();
+        app.reforge_cooldown = 10;
+        let coins = app.coins;
+        app.reforge_click();
+        assert_eq!(app.coins, coins, "the cooldown gates the charge");
+    }
+
+    #[test]
+    fn the_reforge_slot_transfer_follows_the_vanilla_split() {
+        // The single-item cursor swaps both ways; a stack splits ONE into
+        // the empty slot (`ItemSlot.cs:821-836`).
+        let mut app = reforge_app();
+        app.mouse_item = crate::item::ItemSlot {
+            kind: 41,
+            name: "Dye",
+            count: 1,
+            prefix: 3,
+        };
+        app.reforge_slot_click();
+        assert_eq!(app.reforge_slot.kind, 41);
+        assert_eq!(app.reforge_slot.prefix, 3, "the carried prefix moves with the item");
+        assert_eq!(app.mouse_item.kind, 1, "the pickaxe returns to the cursor");
+
+        // The stack split into the EMPTY slot (the fixture's pickaxe goes
+        // back to the cursor first).
+        let mut app = reforge_app();
+        app.reforge_slot = crate::item::EMPTY_SLOT;
+        app.mouse_item = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 5,
+            prefix: 0,
+        };
+        app.reforge_slot_click();
+        assert_eq!(app.reforge_slot.count, 1);
+        assert_eq!(app.mouse_item.count, 4);
+        // A stack cannot merge into a held slot — nothing moves.
+        app.reforge_slot_click();
+        assert_eq!(app.reforge_slot.count, 1);
+        assert_eq!(app.mouse_item.count, 4);
+    }
+
+    #[test]
+    fn closing_the_shop_returns_the_reforge_item() {
+        // `Main.cs:41574-41578`'s force-close: the slot item drops back into
+        // the inventory.
+        let mut app = reforge_app();
+        app.close_shop();
+        assert!(!app.in_reforge_menu);
+        assert_eq!(app.reforge_slot.count, 0);
+        assert!(
+            app.inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1),
+            "the pickaxe landed in the first free slot"
+        );
     }
 }

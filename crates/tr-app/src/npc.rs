@@ -1752,10 +1752,9 @@ impl Npc {
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                self.update_cave_bat(world, player, dt)
+            }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -5042,12 +5041,12 @@ mod tests {
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
-        // The head dies: the chain falls.
+        // The head dies: `NPC.cs:51507-51511`'s split — the first orphan
+        // becomes its own head (`Transform(13)`), the back part lives.
         npcs[0].hp = 0;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        for seg in &npcs {
-            assert!(seg.hp <= 0, "the segment followed the head down");
-        }
+        assert_eq!(npcs[1].kind, NpcKind::DevourerHead, "the orphan head");
+        assert!(npcs[1].hp > 0, "the split worm lives");
     }
 
     #[test]
@@ -6052,6 +6051,28 @@ mod tests {
             crate::world_sim::npcs::shop_index_for_kind(NpcKind::Guide),
             None
         );
+        // `TinkererReforge` (`NPCInteractions.cs:407-423`): the Tinkerer's
+        // talk opens the reforge menu beside the shop; the other shop
+        // keepers do not.
+        let mut app_tinkerer = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let t = crate::npc::Npc::new(
+            NpcKind::GoblinTinkerer,
+            app_tinkerer.mouse_pos.x,
+            app_tinkerer.mouse_pos.y,
+            1,
+            0.0,
+        );
+        app_tinkerer.npcs.push(t);
+        let cursor = app_tinkerer.mouse_pos;
+        assert!(crate::world_sim::npcs::try_open_shop_at_cursor(
+            &mut app_tinkerer,
+            cursor
+        ));
+        assert!(
+            app_tinkerer.in_reforge_menu,
+            "the Tinkerer's talk opens the reforge menu"
+        );
+        assert_eq!(app_tinkerer.shop_npc, Some(0));
         // The stock (`Chest.cs:1989-2003`): the 7 rows in order, no gating.
         let ids = crate::shop::resolve_stock(6, &crate::shop::ShopFlags::default(), &[]);
         assert_eq!(ids, vec![128, 486, 398, 84, 407, 161, 5324]);

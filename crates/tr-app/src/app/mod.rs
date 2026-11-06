@@ -155,6 +155,15 @@ pub(crate) struct App {
     /// The closed shop — the state cleared (`Main.npcShop = -1`'s
     /// equivalent).
     pub(crate) shop_closed_flag: bool,
+    /// `Main.InReforgeMenu` (`Main.cs:40022-40029`): the Tinkerer's chat
+    /// option flips it beside the shop; `close_shop` clears it.
+    pub(crate) in_reforge_menu: bool,
+    /// `Main.reforgeItem` — the slot at the menu's (50, 270); the transfer
+    /// keeps it at one item (`ItemSlot.cs:821-836`).
+    pub(crate) reforge_slot: ItemSlot,
+    /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
+    /// roll (`:41924`), decremented per tick (`:17121-17123`).
+    pub(crate) reforge_cooldown: i32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -748,6 +757,51 @@ impl App {
         true
     }
 
+    /// The reforge slot transfer (`ItemSlot.cs:821-836`): swap with the
+    /// cursor when the cursor's item is single; a stack splits one item in
+    /// (only into the empty slot), mirroring the vanilla's clone-1 rule.
+    pub(crate) fn reforge_slot_click(&mut self) {
+        if self.mouse_item.count > 1 {
+            if self.reforge_slot.count == 0 {
+                self.reforge_slot = self.mouse_item;
+                self.reforge_slot.count = 1;
+                self.mouse_item.count -= 1;
+            }
+            return;
+        }
+        std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+    }
+
+    /// `Main.ReforgeItemInReforgeSlot` (`Main.cs:41902-41933`): the charge
+    /// (`BuyItem`'s purse gate) precedes the roll; then the reset-to-
+    /// defaults + `Prefix(-2)` — the port recomputes the stats from the
+    /// kind's defaults, so the reset is the prefix-field write — and the
+    /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
+    /// `BestReforge`/`Item37`; the port's cue set has no such key yet.
+    pub(crate) fn reforge_click(&mut self) {
+        let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
+            return;
+        };
+        let cost = crate::shop::reforge_cost(
+            crate::prefix::prefixed_stats(self.reforge_slot.kind, self.reforge_slot.prefix)
+                .map(|s| s.value)
+                .unwrap_or(def.value),
+            self.reforge_slot.count.max(1),
+            self.shop_mood,
+        );
+        if self.reforge_cooldown > 0 || self.coins < cost {
+            return;
+        }
+        self.coins -= cost;
+        let mut rng = self.npc_rng;
+        let (prefix, top_tier) = crate::prefix::reforge_roll(self.reforge_slot.kind, &mut rng);
+        self.npc_rng = rng;
+        self.reforge_slot.prefix = prefix;
+        if top_tier {
+            self.reforge_cooldown = 60;
+        }
+    }
+
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
     /// (`CreativePowers.cs:769-860`): the clock jumps to the target — the
     /// (dayTime, time) pair from `button_target`. The boundary events (the
@@ -787,11 +841,27 @@ impl App {
         true
     }
 
-    /// `Main.SetNPCShopIndex(-1)`'s equivalent.
+    /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
+    /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
+    /// `dropItemCheck`); the slot item returns to the cursor if held there
+    /// is impossible, so it drops to the inventory's first free slot.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
         self.shop_mood = 1.0;
+        self.in_reforge_menu = false;
+        if self.reforge_slot.count > 0 {
+            if let Some(i) = crate::item::slot_for_pickup(
+                &mut self.inventory,
+                self.reforge_slot.kind,
+                self.reforge_slot.prefix,
+            ) {
+                self.inventory[i].count =
+                    (self.inventory[i].count + self.reforge_slot.count)
+                        .min(crate::registry::max_stack(self.reforge_slot.kind));
+                self.reforge_slot = EMPTY_SLOT;
+            }
+        }
     }
 
     /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
@@ -1488,6 +1558,9 @@ impl App {
             next_worm_id: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            in_reforge_menu: false,
+            reforge_slot: EMPTY_SLOT,
+            reforge_cooldown: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),

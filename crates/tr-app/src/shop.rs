@@ -268,6 +268,23 @@ pub fn buy_price(item: u16, adjustment: f32) -> i32 {
     round_half_to_even(store * adjustment)
 }
 
+/// The reforge cost (`Main.DrawInventory`'s inline block,
+/// `Main.cs:41584-41601`): `value * stack`, ×0.8 behind the Discount Card
+/// (not ported — no discount accessory yet), × the happiness
+/// `PriceAdjustment`, then the integer `/3`. The vanilla `<1 → 1` clamp is
+/// the DISPLAY only — the actual charge at `:41658` is the unclamped
+/// product (`BuyItem(0)` always succeeds on a value-0 item). `value` is
+/// the instance's CURRENT value — the kind's defaults after the current
+/// prefix's ×value² (`Item.cs:614-615`), so the cost scales with prefix
+/// quality; the reforge slot always holds exactly one item
+/// (`ItemSlot.cs:821-836`'s transfer splits stacks), so `stack` is 1.
+pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32) -> u64 {
+    // `Main.cs:41584-41601`'s order: value×stack (long), the float mood
+    // multiply, THEN the integer /3.
+    let product = (value as f32 * stack as f32 * mood) as i64;
+    (product / 3).max(0) as u64
+}
+
 /// The selling half (`:35388`): the store value ÷ the adjustment — the
 /// player's own items price at `value / 5` first (the vanilla's 20% sale
 /// rate lives in the shop-sell path; the port keeps the rate here).
@@ -328,6 +345,18 @@ mod tests {
         // The PlayerHasItem rows need the scan hit.
         let without = resolve_stock(1, &flags, &[]);
         assert!(!without.contains(&931));
+    }
+
+    #[test]
+    fn the_reforge_cost_follows_the_inline_block() {
+        // `Main.cs:41584-41601`: the value × the stack, × the mood, then the
+        // integer /3 — 2000 copper at mood 1 = 666, the happiness 1.25 =
+        // 833; the <1 → 1 clamp is the display only, so a value-0 item
+        // costs 0 and `BuyItem(0)` always succeeds.
+        assert_eq!(reforge_cost(2000, 1, 1.0), 666);
+        assert_eq!(reforge_cost(2000, 1, 1.25), 833);
+        assert_eq!(reforge_cost(0, 1, 1.0), 0);
+        assert_eq!(reforge_cost(1, 1, 1.0), 0);
     }
 
     #[test]
