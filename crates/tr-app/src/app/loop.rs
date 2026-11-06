@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{deterministic_pointer_park, mouse_pin, App};
+use crate::app::{App, deterministic_pointer_park, mouse_pin};
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -33,16 +33,13 @@ impl ApplicationHandler for App {
             .with_title("Terraria-Rust")
             .with_inner_size(PhysicalSize::new(1600, 900));
         // Window/taskbar icon, generated from the game logo by `build.rs`.
-        if let Ok(img) = image::load_from_memory(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/icon.png"
-        ))) {
+        if let Ok(img) =
+            image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/icon.png")))
+        {
             let rgba = img.to_rgba8();
-            if let Ok(icon) = winit::window::Icon::from_rgba(
-                rgba.clone().into_raw(),
-                rgba.width(),
-                rgba.height(),
-            ) {
+            if let Ok(icon) =
+                winit::window::Icon::from_rgba(rgba.clone().into_raw(), rgba.width(), rgba.height())
+            {
                 attrs = attrs.with_window_icon(Some(icon));
             }
         }
@@ -50,7 +47,22 @@ impl ApplicationHandler for App {
 
         let gpu = pollster::block_on(Gpu::new(window.clone())).expect("gpu init");
         let atlas = self.atlas.as_ref().expect("atlas");
-        let renderer = SpriteRenderer::new(&gpu, atlas, 8);
+        let mut renderer = SpriteRenderer::new(&gpu, atlas, 8);
+        // The dye pass table is static vanilla data (`DyeInitializer`'s
+        // binding constants, deduped in `dye::dye_params`) — one upload at
+        // startup, like the C# `Load()` bakes the shader parameters once.
+        renderer.set_dye_params(
+            &gpu,
+            &crate::dye::dye_params()
+                .iter()
+                .map(|p| tr_render::sprite::DyeParam {
+                    mode: p.mode,
+                    _pad: p._pad,
+                    color: p.color,
+                    secondary: p.secondary,
+                })
+                .collect::<Vec<_>>(),
+        );
 
         let fmt = gpu.config.format;
         let info = gpu.adapter.get_info();
@@ -289,19 +301,10 @@ impl ApplicationHandler for App {
                                         );
                                         boss.hp = boss.max_hp;
                                         for i in 0..20 {
-                                            let ang = i as f32 / 20.0
-                                                * std::f32::consts::TAU;
-                                            let mx = boss.x + 160.0
-                                                + ang.cos() * 200.0;
-                                            let my = boss.y + 55.0
-                                                + ang.sin() * 200.0;
-                                            let mut cr = Npc::new(
-                                                NpcKind::Creeper,
-                                                mx,
-                                                my,
-                                                1,
-                                                0.0,
-                                            );
+                                            let ang = i as f32 / 20.0 * std::f32::consts::TAU;
+                                            let mx = boss.x + 160.0 + ang.cos() * 200.0;
+                                            let my = boss.y + 55.0 + ang.sin() * 200.0;
+                                            let mut cr = Npc::new(NpcKind::Creeper, mx, my, 1, 0.0);
                                             cr.hp = cr.max_hp;
                                             self.npcs.push(cr);
                                         }
@@ -343,10 +346,9 @@ impl ApplicationHandler for App {
                                 });
                                 if !twins_alive {
                                     if let Some(p) = &self.player {
-                                        for (kind, dx) in [
-                                            (NpcKind::Retinazer, -14),
-                                            (NpcKind::Spazmatism, 14),
-                                        ] {
+                                        for (kind, dx) in
+                                            [(NpcKind::Retinazer, -14), (NpcKind::Spazmatism, 14)]
+                                        {
                                             let xt = ((p.x / TILE_PX) as i32 + dx)
                                                 .clamp(2, self.world.width - 3);
                                             let mut boss = Npc::new(

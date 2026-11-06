@@ -11,6 +11,19 @@ struct Globals {
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
+@group(0) @binding(3) var<uniform> dyes: array<DyeParam, 48>;
+
+/// One dye row (`sprite.rs`'s `DyeParam`): the pass mode plus the two colors
+/// — the CPU constants `DyeInitializer` bakes at `BindShader` time
+/// (`DyeInitializer.cs:9-140`), folded onto the port's deduped slots.
+struct DyeParam {
+    mode: u32,
+    _pad0: u32,
+    _pad1: u32,
+    _pad2: u32,
+    color: vec4<f32>,
+    secondary: vec4<f32>,
+}
 
 struct Instance {
     @location(0) pos: vec2<f32>,
@@ -21,6 +34,10 @@ struct Instance {
     @location(5) rot: f32,
     /// `PaintID` (0 = unpainted); see `paint_recolor`.
     @location(6) paint: f32,
+    /// The armor-dye slot (0 = plain): 1-based index into the `dyes` table —
+    /// the per-instance channel for `DrawData.shader`
+    /// (`PlayerDrawHelper.SetShaderForData`, `PlayerDrawHelper.cs:29-60`).
+    @location(7) dye: u32,
 };
 
 struct VsOut {
@@ -30,6 +47,11 @@ struct VsOut {
     // The paint id is uniform across the quad's corners, so the perspective
     // interpolation returns it exactly.
     @location(2) paint: f32,
+    // The dye slot — also corner-uniform; integer varyings need `flat`.
+    @location(3) @interpolate(flat) dye: u32,
+    // The sprite-local vertical (0 at the top corner, 1 at the bottom), the
+    // gradient axis of `Armor*Gradient` (uColor → uSecondaryColor).
+    @location(4) grad_v: f32,
 };
 
 @vertex
@@ -68,6 +90,8 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     out.uv = mix(inst.uv0 + half_texel, inst.uv1 - half_texel, c);
     out.color = inst.color;
     out.paint = inst.paint;
+    out.dye = inst.dye;
+    out.grad_v = c.y;
     return out;
 }
 
@@ -130,6 +154,31 @@ fn paint_recolor(tex: vec4<f32>, pid: u32) -> vec4<f32> {
     return vec4<f32>(paint_rgb(pid) * lum, tex.a);
 }
 
+// The armor-dye passes. The vanilla effect compiles from `Main.Assets[
+// "PixelShader"]` and the .fx bytecode is not in the decompile, so the cores
+// are the documented reconstruction (docs/ANALYSIS.md "Dye pass coverage"):
+// `colored` — the texel's luminance carries the texture detail while the dye
+// color washes it (the same shape as the tile-paint `paint_recolor` above);
+// `gradient` — a vertical uColor→uSecondaryColor lerp over the sprite before
+// the wash. The C# colors are baked constants (`DyeInitializer`); `AndBlack`/
+// `AndSilverTrim`/`Brightness` variants ride the colored core with their own
+// colors, and unported passes never reach the table (they keep dye 0).
+fn dye_recolor(tex: vec4<f32>, dye: u32, grad_v: f32) -> vec4<f32> {
+    if (dye == 0u) {
+        return tex;
+    }
+    let p = dyes[min(dye - 1u, 47u)];
+    let lum = dot(tex.rgb, vec3<f32>(0.299, 0.587, 0.114));
+    if (p.mode == 1u) {
+        return vec4<f32>(p.color.rgb * lum, tex.a);
+    }
+    if (p.mode == 2u) {
+        let col = mix(p.color.rgb, p.secondary.rgb, grad_v);
+        return vec4<f32>(col * lum, tex.a);
+    }
+    return tex;
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     var tex = textureSample(atlas, atlas_sampler, in.uv);
@@ -162,6 +211,7 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // set), so the fragment must NOT multiply rgb by the alpha here; the
     // pipeline's (One, OneMinusSrcAlpha) factors finish the equation.
     let alpha = tex.a * in.color.a;
-    let painted = paint_recolor(tex, u32(in.paint + 0.5));
+    let dyed = dye_recolor(tex, in.dye, in.grad_v);
+    let painted = paint_recolor(dyed, u32(in.paint + 0.5));
     return vec4<f32>(painted.rgb * tint, alpha);
 }

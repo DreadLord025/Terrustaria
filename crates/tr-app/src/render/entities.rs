@@ -1,20 +1,20 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
+use super::BgTex;
 use super::player_layers::{
-    assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
-    PlayerCompositeState,
+    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell,
+    swing_stand_in,
 };
 use super::sky::sky_tex;
-use super::BgTex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
-use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::TILE_PX;
+use tr_core::lighting::{LightMap, LightStyle};
 use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
@@ -93,26 +93,22 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         // The mount strips resolve by the rows' own sheet names (`Mount.cs:
         // 696-2567`); a missing file stays `None` and the draw skips it.
         mount_back: std::array::from_fn(|i| {
-            crate::mount::MOUNTS
-                .get(i)
-                .and_then(|row| {
-                    if row.back_sheet.is_empty() {
-                        None
-                    } else {
-                        sky_tex(atlas, row.back_sheet, None)
-                    }
-                })
+            crate::mount::MOUNTS.get(i).and_then(|row| {
+                if row.back_sheet.is_empty() {
+                    None
+                } else {
+                    sky_tex(atlas, row.back_sheet, None)
+                }
+            })
         }),
         mount_front: std::array::from_fn(|i| {
-            crate::mount::MOUNTS
-                .get(i)
-                .and_then(|row| {
-                    if row.front_sheet.is_empty() {
-                        None
-                    } else {
-                        sky_tex(atlas, row.front_sheet, None)
-                    }
-                })
+            crate::mount::MOUNTS.get(i).and_then(|row| {
+                if row.front_sheet.is_empty() {
+                    None
+                } else {
+                    sky_tex(atlas, row.front_sheet, None)
+                }
+            })
         }),
     }
 }
@@ -305,7 +301,11 @@ pub(crate) fn push_layers(
 ) -> u32 {
     let mut quads = 0;
     for s in layers {
-        if s.rotation != 0.0 {
+        if s.dye != 0 {
+            // `DrawData.shader` ≠ 0 — the layer draws through its dye pass
+            // (`PlayerDrawHelper.SetShaderForData`, `PlayerDrawHelper.cs:29-60`).
+            r.push_sprite_dye(s.pos, s.size, s.uv, s.color, s.rotation, s.dye);
+        } else if s.rotation != 0.0 {
             r.push_sprite_rot(s.pos, s.size, s.uv, s.color, s.rotation);
         } else {
             r.push_sprite(
@@ -392,15 +392,24 @@ pub(crate) fn draw_player(
         // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
         // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
         mount: if player.mount.is_active() {
-            player.mount.data().map(|d| super::player_layers::MountDraw {
-                id: d.id,
-                frame: player.mount.frame(),
-                player_offset: player.mount.player_offset(),
-                is_idle: player.mount.is_at_idle(),
-            })
+            player
+                .mount
+                .data()
+                .map(|d| super::player_layers::MountDraw {
+                    id: d.id,
+                    frame: player.mount.frame(),
+                    player_offset: player.mount.player_offset(),
+                    is_idle: player.mount.is_at_idle(),
+                })
         } else {
             None
         },
+        // `UpdateDyes`' cache (`Player.cs:9587-9614`): the per-layer dye the
+        // builders stamp onto the armor/mount pieces (`apply_dye`).
+        c_head: player.c_head,
+        c_body: player.c_body,
+        c_legs: player.c_legs,
+        c_mount: player.c_mount,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
@@ -669,7 +678,10 @@ pub(crate) fn draw_npcs(
                 // frame centre over the hitbox centre (`Main.DrawNPC`'s
                 // `origin = frame.Size() / 2`).
                 [32.0 * n.slime.stats().scale, 26.0 * n.slime.stats().scale],
-                [cx - 16.0 * n.slime.stats().scale, cy - 13.0 * n.slime.stats().scale],
+                [
+                    cx - 16.0 * n.slime.stats().scale,
+                    cy - 13.0 * n.slime.stats().scale,
+                ],
             ),
             NpcKind::DemonEye => (
                 assets.eye.as_ref(),
@@ -856,10 +868,7 @@ pub(crate) fn draw_npcs(
                 } else {
                     assets.undead_miner.as_ref()
                 },
-                assets
-                    .skeleton
-                    .as_ref()
-                    .map_or(48.0, |t| t.h / 15.0),
+                assets.skeleton.as_ref().map_or(48.0, |t| t.h / 15.0),
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
             ),
@@ -962,17 +971,9 @@ pub(crate) fn draw_npcs(
                 };
                 let fh = tex.map_or(30.0, |t| t.h / frames);
                 let (bw, bh) = n.size();
-                (
-                    tex,
-                    fh,
-                    [bw + 4.0, bh],
-                    [n.x - 2.0, n.y - 2.0],
-                )
+                (tex, fh, [bw + 4.0, bh], [n.x - 2.0, n.y - 2.0])
             }
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => (
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => (
                 match n.kind {
                     NpcKind::JungleBat => assets.jungle_bat.as_ref(),
                     NpcKind::Hellbat => assets.hellbat.as_ref(),
@@ -993,10 +994,7 @@ pub(crate) fn draw_npcs(
             // frame == the hitbox (the `Main.DrawNPC` anchor).
             NpcKind::EyeOfCthulhu => (
                 assets.eye_of_cthulhu.as_ref(),
-                assets
-                    .eye_of_cthulhu
-                    .as_ref()
-                    .map_or(110.0, |t| t.h / 6.0),
+                assets.eye_of_cthulhu.as_ref().map_or(110.0, |t| t.h / 6.0),
                 [100.0, 110.0],
                 [n.x, n.y],
             ),
@@ -1034,8 +1032,7 @@ pub(crate) fn draw_npcs(
             base
         };
         let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0
-            {
+        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0 {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight
