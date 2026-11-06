@@ -93,157 +93,18 @@ pub fn generate(opts: &GenOptions) -> World {
     let width = opts.width.max(512);
     let height = opts.height.max(512);
     let mut world = World::new(opts.name.clone(), width, height);
-    world.frame_important = vec![false; td::TILE_COUNT];
-    world.frame_important[tree::TREE as usize] = true;
-    world.frame_important[3] = true;
-    world.frame_important[4] = true;
-    // `Main.tileFrameImportant` boot statics for the M1.4-TO-4 families
-    // (sunflower 27 / pots 28 `Main.cs:7663-7664`, clay pot 78 `:7682`,
-    // herbs 82-84 `:7685-7687`, piles 185-187 `:7415-7417`, planter box 380
-    // `:7632`) — vanilla worlds honour them from boot, so a generated world
-    // must too: `framing` keeps the stored frames of these kinds and the kill
-    // cascade reaches them.
-    world.frame_important[27] = true;
-    world.frame_important[28] = true;
-    world.frame_important[78] = true;
-    world.frame_important[82] = true;
-    world.frame_important[83] = true;
-    world.frame_important[84] = true;
-    world.frame_important[185] = true;
-    world.frame_important[186] = true;
-    world.frame_important[187] = true;
-    world.frame_important[380] = true;
-
+    // The `Reset`-equivalent setup (vanilla runs `Reset` — the GenVars init
+    // and the layout rolls — before `AddPasses`; it is not a pass):
+    // the frame-important boot statics, the value noise and the three
+    // contract streams (the seed constants moved into `pipeline::Streams`
+    // verbatim). Then the config (`WorldGen.cs:11080` — parsed once per
+    // generation) and the pipeline (`WorldGen.cs:11086-11088`'s
+    // AddPasses + DisablePassesForSpecialSeeds + the WorldGenerator loop).
+    pipeline::boot_statics(&mut world);
     let noise = Noise { seed: opts.seed };
-    let mut rng = Rng(opts.seed ^ 0xA076_1D64_78BD_642F);
-
-    // --- surface height map + terrain fill ----------------------------------
-    let mut map = terrain::surface_height_map(width, height, &noise);
-    let layers = terrain::fill_terrain(&mut world, width, height, &noise, &map);
-
-    // --- biomes (the C# order: the jungle/evil/mushroom/granite/marble run
-    // before the caves so the caves cut through them) -----------------------
-    let spans = biomes::plan_spans(width, &map.heights, map.beach);
-    biomes::pass_jungle(&mut world, &map.heights, &spans, layers.rock_layer, &mut rng);
-    biomes::pass_evil(&mut world, &map.heights, &spans, &mut rng, opts.crimson);
-    biomes::pass_mushroom(&mut world, &spans, layers.rock_layer, &mut rng);
-    biomes::pass_granite_marble(&mut world, layers.rock_layer, &mut rng);
-
-    // --- caves --------------------------------------------------------------
-    caves::carve_caves(&mut world, width, &noise, &map.heights, layers.hell_top);
-    // Dirt pockets inside stone and stone outcrops inside dirt.
-    caves::blob_pass(
-        &mut world, &mut rng, width, height, TILE_STONE, TILE_DIRT, 900, 10,
-    );
-    caves::blob_pass(
-        &mut world, &mut rng, width, height, TILE_DIRT, TILE_STONE, 500, 6,
-    );
-    caves::blob_pass(
-        &mut world, &mut rng, width, height, TILE_ASH, TILE_STONE, 400, 8,
-    );
-
-    // --- ores ---------------------------------------------------------------
-    caves::place_ores(
-        &mut world,
-        &mut rng,
-        &map.heights,
-        width,
-        height,
-        layers.hell_top,
-    );
-
-    // --- liquids ------------------------------------------------------------
-    liquids::place_liquids(&mut world, &mut rng, &mut map, &layers, width);
-
-    // --- dungeon (the C# `Dungeon` pass runs after the caves; carving after
-    // the liquids keeps the shafts dry) -------------------------------------
-    biomes::pass_dungeon(&mut world, &map.heights, &spans, &mut rng);
-
-    // --- structures (the C# order: the shrines and the altars ride the
-    // world's later passes; the chests fill the registered spots; the pots
-    // scatter last) ---------------------------------------------------------
-    // The structures run on their own stream — the shared  feeds the
-    // living-tree/tree passes after this point and must not shift.
-    // The detail passes (the ocean caves run with the caves' timing, the
-    // plants/vines after the biomes; the fragile ice after the liquids).
-    let mut drng = Rng(opts.seed ^ 0x5DEE_CE66_D1A4_9B5F);
-    biome_detail::pass_ocean_caves(&mut world, &map.heights, map.beach, &mut drng);
-    biome_detail::pass_fragile_ice(&mut world, width * 2 / 3, &mut drng);
-    biome_detail::pass_underground_jungle_trees(&mut world, &spans, layers.rock_layer, &mut drng);
-    // The exposed gems in the ice biome (`ExposedGemsInIceBiome`).
-    biome_detail::pass_exposed_gems(&mut world, width * 2 / 3, layers.rock_layer, &mut drng);
-    let mut srng = Rng(opts.seed ^ 0x9E37_79B9_7F4A_7C15);
-    let shrine_spots = structures::pass_jungle_shrines(&mut world, &spans, layers.rock_layer, &mut srng);
-    structures::pass_chests(&mut world, &shrine_spots, &mut srng);
-    structures::pass_altars(&mut world, opts.crimson, &mut srng);
-    structures::pass_pyramids(
-        &mut world,
-        map.desert_start,
-        map.desert_end,
-        &map.heights,
-        &mut srng,
-    );
-    structures::pass_pots(&mut world, &mut srng);
-    structures::pass_beehives(&mut world, &spans, layers.rock_layer, &mut srng);
-    structures::pass_hell_forts(&mut world, layers.hell_top, &mut srng);
-    // The temple: the last big structure (the C#  pass
-    // runs after the jungle passes).
-    let _altar = temple::pass_lihzahrd_temple(&mut world, &spans, layers.rock_layer, &mut srng);
-    // The micro-biomes (the cave houses / the campsites / the spike pits /
-    // the sword shrines) run after the big structures.
-    mini_biomes::pass_cave_houses(&mut world, layers.rock_layer, &mut srng);
-    mini_biomes::pass_campsites(&mut world, &mut srng);
-    mini_biomes::pass_spike_pits(&mut world, &spans, layers.rock_layer, &mut srng);
-    mini_biomes::pass_sword_shrines(
-        &mut world,
-        &map.heights,
-        layers.rock_layer,
-        (map.desert_start, map.desert_end),
-        &mut srng,
-    );
-    biome_detail::pass_mushroom_and_jungle_plants(&mut world);
-    biome_detail::pass_vines(&mut world, &mut drng);
-    // The floating islands (`FloatingIslands` — the C# order places them
-    // right after the biome passes; the drng stream keeps the tree stream
-    // stable).
-    islands::pass_floating_islands(&mut world, &map.heights, &mut drng);
-
-    // --- surface slopes -----------------------------------------------------
-    surface::apply_slopes(&mut world, width, &map.heights);
-
-    // --- living trees -------------------------------------------------------
-    // Vanilla generates "Living Trees" before "Trees"
-    // (`GenPassNameID.cs:267-268`), so the clearance scans see bare terrain.
-    living_trees::plant_living_trees(
-        &mut world,
-        &mut rng,
-        &map.heights,
-        map.beach,
-        (map.desert_start, map.desert_end),
-    );
-
-    // --- trees --------------------------------------------------------------
-    surface::plant_trees(&mut world, &mut rng, &map.heights);
-
-    // --- surface plants -----------------------------------------------------
-    surface::plant_surface_flora(&mut world, &mut rng, width, &map.heights);
-
-    // --- desert cacti -------------------------------------------------------
-    surface::plant_cacti(&mut world, &mut rng, &map, width);
-
-    world.world_surface = layers.world_surface;
-    world.rock_layer = layers.rock_layer;
-    world.spawn_x = map.spawn_center;
-    world.spawn_y = (map.heights[map.spawn_center as usize] - 6).max(1);
-    world.time = 27000.0; // noon
-    world.day_time = true;
-    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
-    // generator here so it is fixed for the seed; the phase starts at 0.
-    world.moon_type = (rng.next_u32() % 9) as u8;
-    world.moon_phase = 0;
-    // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
-    // from the same generator; it picks the animated magma/hell sheets at draw time.
-    world.hell_back_style = (rng.next_u32() % 3) as u8;
+    let config = config::WorldGenConfig::parse();
+    let mut streams = pipeline::Streams::new(opts.seed);
+    pipeline::run(&mut world, &mut streams, opts, &noise, &config);
     world
 }
 
