@@ -201,3 +201,81 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         app.update_map_input();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+    use tr_core::tile::FLAG_ACTIVE;
+    use tr_core::wiring::WireColor;
+    use tr_core::{Tile, World};
+
+    /// Review probe (Phase 2 gate fix 2) — the `update_player` wiring
+    /// consumption (`Player.cs:28237-28241` + `Minecart.HitTrackSwitch`,
+    /// `Minecart.cs:1281-1288`): riding across a pressure track fires
+    /// `Wiring::hit_switch` at the magnet tile exactly once per pass. The
+    /// seeded red line flips the lamp once — a second trip would flip it
+    /// back. The `TR_CART` env-pin half stays screenshot-covered like
+    /// `TR_HOOK` (a same-process env test is order-fragile with `OnceLock`).
+    #[test]
+    fn update_player_trips_the_pressure_track_through_wiring() {
+        let mut app = flow_app(None, vec![], vec![]);
+        // A 32x32 ride world: a straight rail on row 12 with the pressure
+        // tile (frame 21, `_trackType == 1`) at x 14; a red wire on its own
+        // tile runs down to a lamp (422) — the trip's flood flips it to 421.
+        app.world = World::new("cart".into(), 32, 32);
+        for x in 4..=24 {
+            let i = app.world.index(x, 12);
+            app.world.tiles[i] = Tile {
+                kind: 314,
+                frame_x: if x == 14 { 21 } else { 1 },
+                frame_y: -1,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        app.world.wires.set(14, 12, WireColor::Red, true);
+        // The wire line below the rail row (the cart's body never reaches it),
+        // mirroring the `wiring.rs` flood fixtures (kind-419 carriers).
+        for y in 13..=14 {
+            let i = app.world.index(14, y);
+            app.world.tiles[i] = Tile {
+                kind: 419,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+            app.world.wires.set(14, y, WireColor::Red, true);
+        }
+        let i = app.world.index(14, 15);
+        app.world.tiles[i] = Tile {
+            kind: 422,
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        app.world.wires.set(14, 15, WireColor::Red, true);
+        // Mount and seat the cart five tiles left of the pressure tile, on
+        // the frame-1 rail line (`row * 16 + 6`).
+        let mut p = Player::spawn(&app.world);
+        p.mount_cart();
+        p.x = 10.0 * 16.0 + 8.0 - 10.0;
+        p.y = 12.0 * 16.0 + 6.0 - 52.0;
+        p.prev_x = p.x;
+        p.prev_y = p.y;
+        p.vx = 6.0;
+        app.player = Some(p);
+        // Hold right: the ride crosses the pressure tile and keeps going.
+        app.keys.insert(KeyCode::KeyD);
+        for _ in 0..20 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        let lamp = app.world.tile(14, 15).unwrap().kind;
+        assert_eq!(lamp, 421, "the trip fired once through app.wiring");
+        assert!(
+            app.player
+                .as_ref()
+                .is_some_and(|p| p.cart_mounted && p.on_track),
+            "the ride survived the pass"
+        );
+    }
+}

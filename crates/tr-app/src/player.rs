@@ -1293,17 +1293,16 @@ impl Player {
         // block is bypassed while grappling — `GrappleMovement` replaces the
         // velocity below.
         let grappling = self.grappling_active;
-        let dir = (input.right as i32 - input.left as i32) as f32;
-        if dir != 0.0 {
-            // `Player.cs:19837-19843`: the cart direction lock — the facing
-            // follows the input only while it matches the roll direction
-            // (`Math.Sign(velocity.X) == num5`; `Sign(0) = 0` locks a
-            // stationary cart). `AllowDirectionChange` is true for carts
-            // (`Mount.cs:630-639`).
+        let dir = input.right as i32 - input.left as i32;
+        // `Player.cs:26688` calls `HorizontalMovement()` unconditioned, so its
+        // direction block (`:19835-19843`) applies even on the ticks the
+        // port's grapple gate bypasses the call — the facing update for those
+        // ticks stays here (the pull replaces the velocity afterwards, the
+        // facing keeps following, with the cart lock intact).
+        if grappling && dir != 0 {
             let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
-            let may_face = !self.cart_mounted || roll == dir as i32;
-            if may_face {
-                self.facing = dir as i32;
+            if !self.cart_mounted || roll == dir {
+                self.facing = dir;
             }
         }
         // `Player.cs:26623-26687`: the mount stat override. The base cart is
@@ -2517,6 +2516,18 @@ impl Player {
                 }
             } else if self.vx > self.max_run_speed {
                 self.vx = self.max_run_speed;
+            }
+        }
+        // `Player.cs:19835-19843`: the direction lock — the facing follows the
+        // run keys (`ChangeDir(num5)`); a cart keeps the roll direction, read
+        // AFTER the boost above (`Math.Sign(velocity.X) == num5`; `Sign(0) =
+        // 0` locks a stationary cart; `AllowDirectionChange` is true for
+        // carts, `Mount.cs:630-639`).
+        let dir_keys = self.control_right as i32 - self.control_left as i32;
+        if dir_keys != 0 {
+            let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
+            if !self.cart_mounted || roll == dir_keys {
+                self.facing = dir_keys;
             }
         }
         if self.control_left && self.vx > -self.max_run_speed {
@@ -5576,6 +5587,74 @@ mod tests {
             "still on the rail line: {}",
             magnet_y
         );
+    }
+
+    /// Review probe (Phase 2 gate fix 1) — the direction lock reads the
+    /// POST-boost roll: the boost applies at `Player.cs:19818-19833` and the
+    /// lock sits at `:19835-19843`, both inside `HorizontalMovement`. Rolling
+    /// left over a right-boost booster with the right key held flips the
+    /// facing on the boost-apply tick, not one tick later.
+    #[test]
+    fn boost_tick_flips_the_facing_to_the_boosted_direction() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        place_track(&mut w, 45, 40, 30, -1); // right-boost booster
+        let mut p = cart_on_rail(&w, 40, 46.0 * 16.0 + 8.0, -3.0);
+        p.facing = -1;
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        // The crossing tick: the booster arms the push against the roll; the
+        // lock (pre-boost roll = negative) keeps the facing.
+        let mut crossed = false;
+        for _ in 0..20 {
+            p.update(&w, input);
+            if p.track_boost != 0.0 {
+                crossed = true;
+                break;
+            }
+        }
+        assert!(crossed, "the booster was crossed rolling left");
+        assert_eq!(p.facing, -1, "the crossing tick keeps the roll facing");
+        // The boost-apply tick: the roll turns positive pre-input and the
+        // lock (post-boost) flips the facing the same tick.
+        p.update(&w, input);
+        assert!(p.vx > 0.0, "the boost turned the roll: {}", p.vx);
+        assert_eq!(p.facing, 1, "the boosted direction, same tick");
+    }
+
+    /// Review probe (Phase 2 gate fix 1) — the dismount edge fires in the
+    /// stat override (`Player.cs:26672-26674`) and the now-unmounted
+    /// direction block inside `HorizontalMovement` (`:19835-19843`) flips
+    /// the facing the SAME tick.
+    #[test]
+    fn dismount_tick_flips_the_facing_to_the_pressed_direction() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 44);
+        for x in 36..80 {
+            place_stone(&mut w, x, 43);
+        }
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        // Roll off the end and settle off-track.
+        for _ in 0..90 {
+            p.update(&w, PlayerInput::default());
+            if !p.on_track && p.vy == 0.0 && p.on_wrong_ground {
+                break;
+            }
+        }
+        assert!(p.on_wrong_ground && !p.on_track && p.vy == 0.0, "settled");
+        assert_eq!(p.facing, 1, "the keyless roll-off kept the spawn facing");
+        // The left press edge: the dismount and the facing flip land together.
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(!p.cart_mounted, "the press edge dismounted");
+        assert_eq!(p.facing, -1, "the pressed direction, same tick");
     }
 
     /// The regular bumper (frame 2) dead-stops the cart at the rail line
