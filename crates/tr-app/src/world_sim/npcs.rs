@@ -394,7 +394,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             );
         }
         spawn_coins(app, &npc);
-        spawn_gel(app, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(app, &npc);
     }
     // `AI_015_KingSlime`: landing bosses request a blue slime minion.
     // The casters' sphere spawn requests (`AI_008`'s `NPC.NewNPC` at the
@@ -518,44 +518,49 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     app.npc_timer = 1.0 / 60.0;
 }
 
-/// The slime gel loot through the rule engine
-/// (`ItemDropResolver.TryDropping` + the `ItemDropDatabase.cs:1072-1082`
-/// registrations): the dead slime's vanilla net id resolves its registered
-/// rules; the executor skips requests for items the registry does not model
-/// (the Bladed Glove until its item data lands).
-fn spawn_gel(app: &mut App, kind: NpcKind, slime: SlimeVariant, x: f32, y: f32) {
-    if kind != NpcKind::Slime {
-        return;
-    }
-    let net_id = match slime {
-        SlimeVariant::Blue => crate::loot_db::BLUE_SLIME,
-        SlimeVariant::Green => crate::loot_db::GREEN_SLIME,
-        SlimeVariant::Pinky => crate::loot_db::PINKY,
-        SlimeVariant::Baby => crate::loot_db::BABY_SLIME,
-        SlimeVariant::Black => crate::loot_db::BLACK_SLIME,
-        SlimeVariant::Purple => crate::loot_db::PURPLE_SLIME,
-        SlimeVariant::Red => crate::loot_db::RED_SLIME,
-        SlimeVariant::Yellow => crate::loot_db::YELLOW_SLIME,
-    };
+/// The full NPC loot through the rule engine
+/// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
+/// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
+/// rules; the executor skips requests for items the registry does not model.
+fn spawn_loot(app: &mut App, npc: &Npc) {
+    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+    let net_id = entry.net_id;
+    let x = npc.x;
+    let y = npc.y;
     // The drop rolls ride the app's item stream (`rand01`), so the gel keeps
     // its slot in the deterministic order.
     let mut rng_state = app.item_rng;
     let mut loot_rng = LootRng(&mut rng_state);
-    let mut info = tr_core::loot::DropAttemptInfo {
+    let zones = &app.scene_metrics;
+    let info = tr_core::loot::DropAttemptInfo {
         rng: &mut loot_rng,
         luck: 0.0,
         is_expert: false,
         is_master: false,
         active_players: 1,
         extra_gel: false,
+        flags: tr_core::loot::LootFlags {
+            hard_mode: app.world.hard_mode,
+            day_time: app.world.day_time,
+            zone_snow: zones.zone_snow,
+            zone_corrupt: zones.zone_corrupt,
+            zone_crimson: zones.zone_crimson,
+            ..Default::default()
+        },
+        npc: tr_core::loot::LootNpc {
+            kind: if net_id < 0 { 1 } else { net_id },
+            value: 1.0,
+            life_max: npc.max_hp,
+            friendly: false,
+            spawned_from_statue: npc.spawned_from_statue,
+            is_boss: npc.kind == NpcKind::KingSlime,
+            has_player_target: true,
+            ..Default::default()
+        },
     };
+    let mut info = info;
     let mut out = Vec::new();
-    tr_core::loot::try_dropping(
-        crate::loot_db::slime_database(),
-        net_id,
-        &mut info,
-        &mut out,
-    );
+    tr_core::loot::try_dropping(crate::loot_db::database(), net_id, &mut info, &mut out);
     app.item_rng = rng_state;
     for req in out {
         if req.item > 0 && crate::registry::get(req.item as u16).is_some() {
