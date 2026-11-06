@@ -1132,6 +1132,32 @@ impl App {
                         &self.emotes,
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
+                        // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
+                        // + the statics) — the plan-amendment insertion
+                        // (#10): the disjoint `App` fields the panel reads
+                        // and animates per frame.
+                        ui::chest::PanelState {
+                            chest: self.chest,
+                            origin: (self.chest_x, self.chest_y),
+                            crafting_open: self.crafting_open,
+                            tile: world
+                                .tile(self.chest_x, self.chest_y)
+                                .filter(|t| t.active())
+                                .map(|t| (t.kind, t.frame_x)),
+                            slots: (self.chest > -1)
+                                .then(|| {
+                                    crate::chest::chest_slots(
+                                        &self.world_chests,
+                                        self.chest as usize,
+                                    )
+                                })
+                                .flatten(),
+                            editing: false, // `Main.editChest` — phase 5's rename state
+                            scroll_row: &mut self.chest_scroll_row,
+                            button_scales: &mut self.chest_button_scales,
+                            button_hovered: &mut self.chest_button_hovered,
+                            audio: &mut self.audio,
+                        },
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);

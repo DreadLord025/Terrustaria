@@ -201,6 +201,16 @@ pub(crate) struct App {
     /// tile origin (the 2×2's top-left).
     pub(crate) chest_x: i32,
     pub(crate) chest_y: i32,
+    /// `ChestUI.StartingRowForDrawing` (`ChestUI.cs:52`): the chest grid's top
+    /// visible row, clamped per frame by the draw and by the wheel scroll.
+    pub(crate) chest_scroll_row: i32,
+    /// `ChestUI.ButtonScale` (`ChestUI.cs:48`; the static ctor's `new
+    /// float[7]` starts at 0.0, `:1306`): the text buttons' scale animation —
+    /// the rename pair (5/6) draws in phase 3, the LootAll family (0-4) is
+    /// M3-STORE-2's.
+    pub(crate) chest_button_scales: [f32; ui::chest::BUTTON_COUNT],
+    /// `ChestUI.ButtonHovered` (`ChestUI.cs:50`).
+    pub(crate) chest_button_hovered: [bool; ui::chest::BUTTON_COUNT],
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
@@ -1297,6 +1307,40 @@ impl App {
                 }
             }
         }
+        // `TR_CHEST`: the chest-panel screenshot fixture — a style-0 chest on
+        // the spawn plateau's floor, stocked and opened (`OpenChest`'s state
+        // arms: `chest`/`chestX`/`chestY` :33507-33522, `playerInventory` and
+        // the crafting close ride the same path, `chest.rs:406-412`).
+        let mut tr_chest_store: Vec<craft::WorldChest> = Vec::new();
+        let tr_chest = if std::env::var_os("TR_CHEST").is_some() {
+            let cx = world.spawn_x + 3;
+            // The first solid tile below the spawn point; the 2×2 sits on it.
+            let mut gy = world.spawn_y;
+            while gy < world.height && !world.is_active(cx, gy) && !world.is_active(cx + 1, gy) {
+                gy += 1;
+            }
+            let cy = gy - 2;
+            // The 2×2 chest tile: the style-0 frame corners 0/18 (the 18 px
+            // sheet pitch — `chest.rs`'s test fixture shape, `Chest.cs`'s
+            // frame layout).
+            for (dx, dy) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1)] {
+                if let Some(t) = world.tile_mut(cx + dx, cy + dy) {
+                    t.kind = 21;
+                    t.frame_x = if dx == 1 { 18 } else { 0 };
+                    t.frame_y = if dy == 1 { 18 } else { 0 };
+                    t.flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+            let idx = crate::chest::create_chest(&mut tr_chest_store, cx, cy);
+            // A few stocked slots so the screenshot shows the item-icon path
+            // (`draw_slot`'s existing item draw — verified, not reinvented).
+            tr_chest_store[idx]
+                .slots
+                .extend_from_slice(&[(9, 6), (166, 42), (71, 3)]);
+            Some((idx as i32, cx, cy))
+        } else {
+            None
+        };
         let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
         let world_seed = world.seed;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
@@ -1480,7 +1524,10 @@ impl App {
                 s[0] = 1.0;
                 s
             },
-            inventory_open: std::env::var_os("TR_INV").is_some(),
+            // `TR_CHEST` opens the chest (`OpenChest` sets `playerInventory`,
+            // `Player.cs:33517` — chest.rs:409), so the panel + the player
+            // inventory draw together.
+            inventory_open: std::env::var_os("TR_INV").is_some() || tr_chest.is_some(),
             kill_tracker: {
                 let mut tracker = tr_core::bestiary::KillTracker::new();
                 tracker.load_pairs(loaded_kills.into_iter());
@@ -1529,13 +1576,19 @@ impl App {
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
-            // (the `TR_INV` presence pattern).
-            crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
-                || std::env::var_os("TR_CRAFT").is_some(),
-            world_chests: Vec::new(),
-            chest: -1,
-            chest_x: 0,
-            chest_y: 0,
+            // (the `TR_INV` presence pattern). An open chest closes it
+            // (`OpenChest` → `NewCraftingUI.Close`, `chest.rs:408`) — and the
+            // chest panel hides under it (`ChestUI.cs:86`).
+            crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
+                || std::env::var_os("TR_CRAFT").is_some())
+                && tr_chest.is_none(),
+            world_chests: tr_chest_store,
+            chest: tr_chest.as_ref().map_or(-1, |c| c.0),
+            chest_x: tr_chest.as_ref().map_or(0, |c| c.1),
+            chest_y: tr_chest.as_ref().map_or(0, |c| c.2),
+            chest_scroll_row: 0,
+            chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
+            chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
             craft_rng: 1,
             menu: menu_state,
             front: None,

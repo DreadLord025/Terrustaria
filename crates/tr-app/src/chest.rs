@@ -224,6 +224,68 @@ pub(crate) fn using_chest(chests: &[WorldChest], idx: usize, open_player_chest: 
     chests.get(idx).is_some_and(|c| !is_removed(c)) && open_player_chest == idx as i32
 }
 
+// --- Panel name defaulting (M3-CHEST-UI phase 3) ----------------------------
+//
+// `ChestUI.DrawName`'s tile-style chain (`ChestUI.cs:124-140`). The vanilla
+// strings ride the embedded `LegacyChestType.*` localization JSON, which is
+// not on disk in this repo, so the names derive from the port's generated
+// item table — the item placing `(tile, place_style)` carries the same en-US
+// string (recorded deviation, phase 6 `docs/ANALYSIS.md`).
+
+/// The chest's default name from the tile at the panel's origin
+/// (`ChestUI.cs:124-140`): tile 21 → `Lang.chestType[frameX / 36]`, tile 467
+/// style 4 → item 3988's name, tile 467 → `Lang.chestType2[frameX / 36]`,
+/// tile 88 → `Lang.dresserType[frameX / 54]`. An empty string when the style
+/// has no name (styles that cannot occur through placement — see
+/// [`chest_type_name`]).
+pub(crate) fn default_chest_name(kind: u16, frame_x: i16) -> String {
+    if kind == 21 {
+        return chest_type_name(frame_x as i32 / 36, 21);
+    }
+    if kind == 467 {
+        // `ChestUI.cs:129-131`: the Dead Man's Chest is style 4.
+        let style = frame_x as i32 / 36;
+        if style == 4 {
+            return crate::registry::name(3988).to_string();
+        }
+        return chest_type_name(style, 467);
+    }
+    if kind == 88 {
+        return chest_type_name(frame_x as i32 / 54, 88);
+    }
+    String::new()
+}
+
+/// The `LegacyChestType.{style}` / `LegacyChestType2.{style}` /
+/// `LegacyDresserType.{style}` string for a `(tile, style)`: the vanilla name
+/// of the item that places it. Tile 21's non-placeable locked frames render
+/// the vanilla `Locked <twin>` pattern — `Chest.Lock` shifts the style by +1
+/// (frameX +36) or +5 (frameX +180, the biome chests 18-22), `Chest.cs:449-464`,
+/// and the localization table names those frames "Locked <chest>" (styles
+/// 2/4 are the pinned "Locked Gold/Shadow Chest").
+fn chest_type_name(style: i32, kind: u16) -> String {
+    let find = |place_style: i32| {
+        crate::itemdata::ITEMS
+            .iter()
+            .find(|d| d.tile == Some(kind) && d.place_style == place_style)
+            .map(|d| d.name)
+    };
+    // `Lang.cs:503-506`: `chestType[52..]` aliases `chestType[0]` (the table
+    // is 54 entries for a style space that stops at 53).
+    let style = if kind == 21 && style >= 52 { 0 } else { style };
+    if let Some(name) = find(style) {
+        return name.to_string();
+    }
+    let twin = match (kind, style) {
+        (21, 2) | (21, 4) | (21, 36) | (21, 38) | (21, 40) => Some(style - 1),
+        (21, 23..=27) => Some(style - 5),
+        _ => None,
+    };
+    twin.and_then(find)
+        .map(|name| format!("Locked {name}"))
+        .unwrap_or_default()
+}
+
 // --- Open/close + locking interaction (M3-CHEST-UI phase 2) ----------------
 //
 // The `Player.cs` chest branch: the right-click open path
@@ -812,6 +874,30 @@ mod tests {
             !using_chest(&chests, idx, idx as i32),
             "a null slot is unusable"
         );
+    }
+
+    #[test]
+    fn default_chest_name_matches_the_chestui_chain() {
+        // `ChestUI.cs:124-140` — the tile-style default the panel shows while
+        // the stored name is empty. The strings are the port's generated item
+        // names (the vanilla en-US localization's own values).
+        assert_eq!(default_chest_name(21, 0), "Chest"); // style 0
+        assert_eq!(default_chest_name(21, 36), "Gold Chest"); // style 1
+        // The locked twins: `Chest.Lock` shifts +36 (`Chest.cs:449-453`).
+        assert_eq!(default_chest_name(21, 72), "Locked Gold Chest");
+        assert_eq!(default_chest_name(21, 144), "Locked Shadow Chest");
+        // The biome chests shift +180 → styles 23-27 (`Chest.cs:454-458`).
+        assert_eq!(default_chest_name(21, 828), "Locked Jungle Chest");
+        // `Lang.cs:503-506`: styles 52+ alias style 0.
+        assert_eq!(default_chest_name(21, 1908), "Chest");
+        // Tile 467: style 4 is the Dead Man's Chest (`ChestUI.cs:129-131`).
+        assert_eq!(default_chest_name(467, 144), "Dead Mans Chest");
+        assert_eq!(default_chest_name(467, 180), "Solar Chest");
+        // Tile 88 dressers read frameX / 54 (`:137-139`).
+        assert_eq!(default_chest_name(88, 0), "Dresser");
+        assert_eq!(default_chest_name(88, 54), "Ebonwood Dresser");
+        // A style with no placing item and no twin rule renders nothing.
+        assert_eq!(default_chest_name(467, 0), "");
     }
 
     // --- Phase 2: the open/close + locking interaction -----------------------
