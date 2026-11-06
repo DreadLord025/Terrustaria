@@ -603,7 +603,6 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
             ..Default::default()
         },
     };
-    let mut info = info;
     let mut out = Vec::new();
     tr_core::loot::try_dropping(crate::loot_db::database(), net_id, &mut info, &mut out);
     app.item_rng = rng_state;
@@ -775,13 +774,13 @@ mod tests {
 
         let start = a.item_rng;
         spawn_coins(&mut a, &npc);
-        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(&mut a, &npc);
         let state_0 = a.item_rng;
 
         a.item_rng = start;
         a.player.as_mut().unwrap().luck_state.luck = 1.0;
         spawn_coins(&mut a, &npc);
-        spawn_gel(&mut a, npc.kind, npc.slime, npc.x, npc.y);
+        spawn_loot(&mut a, &npc);
         assert_ne!(a.item_rng, state_0, "luck 1.0 takes the hit branches");
     }
 }
