@@ -733,6 +733,43 @@ pub(crate) static MOUNTS: &[MountData] = &[
     QUEEN_SLIME,    // 50
 ];
 
+/// The saddle items — `Item.SetDefaults`' `Item.mountType` assignments:
+/// `Item.cs:20779` Reindeer Bells 1914 -> Rudolph 0, `:24044` Fuzzy Carrot
+/// 2428 -> Bunny 1, `:24068` Slimy Saddle 2430 -> Slime 3, `:26465` Brain
+/// Scrambler 2771 -> Scutlix 9, `:30007` Blessed Apple 3260 -> Unicorn 10,
+/// `:33385` Ancient Horn 3771 -> Basilisk 14, `:39363` the horse saddles
+/// 4785-4787 -> 40-42, `:39395` Pogo Stick 4791 -> 43, `:39413` Wall Of
+/// Flesh Goat Mount Item 4795 -> 44 + (4795 - 4792) = 47, `:40133` Queen
+/// Slime Mount Saddle 4981 -> 50.
+const MOUNT_ITEMS: [(u16, i32); 12] = [
+    (1914, 0),
+    (2428, 1),
+    (2430, 3),
+    (2771, 9),
+    (3260, 10),
+    (3771, 14),
+    (4785, 40),
+    (4786, 41),
+    (4787, 42),
+    (4791, 43),
+    (4795, 47),
+    (4981, 50),
+];
+
+/// `Item.mountType` for the ported rows.
+pub(crate) fn mount_type_of_item(item: u16) -> Option<i32> {
+    MOUNT_ITEMS
+        .iter()
+        .find(|(id, _)| *id == item)
+        .map(|(_, m)| *m)
+}
+
+/// `BuffID.Sets.MountType` for the ported rows — each mount keeps its own
+/// buff alive (`MountData.buff`).
+pub(crate) fn mount_type_of_buff(buff: i32) -> Option<i32> {
+    MOUNTS.iter().find(|row| row.buff == buff).map(|row| row.id)
+}
+
 /// `Mount.mounts[m]` lookup; `None` for ids the partial table does not carry.
 pub(crate) fn mount_data(id: i32) -> Option<&'static MountData> {
     // The rows are `const`s, so a found reference is genuinely 'static.
@@ -797,6 +834,8 @@ pub(crate) struct MountState {
     test_can_use_wings: Option<bool>,
     #[cfg(test)]
     test_additive: Option<bool>,
+    #[cfg(test)]
+    test_dismounts_on_item_use: Option<bool>,
 }
 
 impl Default for MountState {
@@ -828,6 +867,8 @@ impl Default for MountState {
             test_can_use_wings: None,
             #[cfg(test)]
             test_additive: None,
+            #[cfg(test)]
+            test_dismounts_on_item_use: None,
         };
         state.reset();
         state
@@ -1145,6 +1186,10 @@ impl MountState {
 
     /// `Mount.DismountOnItemUse` (:642-652).
     pub(crate) fn dismount_on_item_use(&self) -> bool {
+        #[cfg(test)]
+        if let Some(v) = self.test_dismounts_on_item_use {
+            return self.active && v;
+        }
         self.active && self.data().map_or(false, |d| d.dismounts_on_item_use)
     }
 
@@ -1183,6 +1228,11 @@ impl MountState {
     ) {
         self.test_can_use_wings = can_use_wings;
         self.test_additive = additive;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_test_dismount_on_item_use(&mut self, v: Option<bool>) {
+        self.test_dismounts_on_item_use = v;
     }
 }
 

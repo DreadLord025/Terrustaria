@@ -69,30 +69,32 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .get(app.selected)
             .filter(|slot| slot.count > 0)
             .and_then(|slot| crate::registry::get(slot.kind))
-            .filter(|def| def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT)
+            .filter(|def| {
+                def.tile == Some(4) && (def.place_style as usize) < crate::luck::TORCH_ID_COUNT
+            })
             .map(|def| def.place_style as u8);
-            // `Player.statDefense` (`Player.UpdateEquips`): the equipped
-            // pieces' defense plus the set bonus (M3-EQUIP-2).
-            let armor_kinds: Vec<i32> = app
-                .equip
-                .armor
-                .iter()
-                .map(|slot| slot.kind as i32)
-                .collect();
-            let piece_def: i32 = app
-                .equip
-                .armor
-                .iter()
-                .filter(|slot| slot.kind != 0)
-                .filter_map(|slot| crate::registry::get(slot.kind))
-                .map(|d| d.defense as i32)
-                .sum();
-            let set = tr_core::armor_sets::set_bonus_defense(
-                armor_kinds.first().copied().unwrap_or(0),
-                armor_kinds.get(1).copied().unwrap_or(0),
-                armor_kinds.get(2).copied().unwrap_or(0),
-            );
-            p.stat_defense = piece_def + set;
+        // `Player.statDefense` (`Player.UpdateEquips`): the equipped
+        // pieces' defense plus the set bonus (M3-EQUIP-2).
+        let armor_kinds: Vec<i32> = app
+            .equip
+            .armor
+            .iter()
+            .map(|slot| slot.kind as i32)
+            .collect();
+        let piece_def: i32 = app
+            .equip
+            .armor
+            .iter()
+            .filter(|slot| slot.kind != 0)
+            .filter_map(|slot| crate::registry::get(slot.kind))
+            .map(|d| d.defense as i32)
+            .sum();
+        let set = tr_core::armor_sets::set_bonus_defense(
+            armor_kinds.first().copied().unwrap_or(0),
+            armor_kinds.get(1).copied().unwrap_or(0),
+            armor_kinds.get(2).copied().unwrap_or(0),
+        );
+        p.stat_defense = piece_def + set;
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
@@ -122,9 +124,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         // `QuickGrapple` (`Player.cs:27480-27492` + `:6296-6478`) — one hook
         // out at a time (the vanilla `num7 = 1` recycle path for the
         // single-hook items), aimed at the mouse world position.
-        static HOOK_PREV: std::sync::atomic::AtomicBool =
-            std::sync::atomic::AtomicBool::new(false);
-        let hook_edge = input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        static HOOK_PREV: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        let hook_edge =
+            input.hook && !HOOK_PREV.swap(input.hook, std::sync::atomic::Ordering::Relaxed);
+        // `Player.QuickGrapple` (`Player.cs:6334-6337`): a mount not in the
+        // CanUseHooks set dismounts before the hook fires — every row in this
+        // table (the set is {54, 57-60}).
+        if hook_edge && !p.dead && p.mount.is_active() {
+            p.try_dismount();
+        }
         if hook_edge && !p.dead {
             let center = Vec2::new(
                 p.x + crate::player::WIDTH * 0.5,
@@ -137,22 +145,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 16.0,
             ));
         }
+        // The quick-mount key: the `controlMount` press edge (the menu's
+        // "Mount R" row, `Main.cMount` default "R") fires `QuickMount`
+        // (`Player.cs:24888-24893` -> `:6045-6100`).
+        static MOUNT_PREV: std::sync::atomic::AtomicBool =
+            std::sync::atomic::AtomicBool::new(false);
+        let mount_key = app.keys.contains(&KeyCode::KeyR);
+        let mount_edge =
+            mount_key && !MOUNT_PREV.swap(mount_key, std::sync::atomic::Ordering::Relaxed);
+        if mount_edge && !map_open {
+            if let Some(kind) = p.quick_mount(&app.world, &app.inventory) {
+                // `ItemCheck_TryStartUse`'s animation (the saddle's
+                // `useAnimation` — 20 ticks on every row).
+                let secs = crate::item::use_animation_secs(kind);
+                app.swing_max = app.swing_max.max(secs);
+                app.swing = secs;
+                app.attack_cd = app.attack_cd.max(secs);
+            }
+        }
         // The hook AI tick (`AI_007_GrapplingHooks`): the flight, the tile
         // latch, the retract; the attached hook feeds the pull.
-        let grapple_snapshot = app
-            .grapple
-            .as_mut()
-            .and_then(|h| {
-                let center = Vec2::new(
-                    p.x + crate::player::WIDTH * 0.5,
-                    p.y + crate::player::HEIGHT * 0.5,
-                );
-                if h.update(&app.world, center) {
-                    Some((h.pos, h.hook_type, h.ai == crate::grapple::HookAi::Attached))
-                } else {
-                    None
-                }
-            });
+        let grapple_snapshot = app.grapple.as_mut().and_then(|h| {
+            let center = Vec2::new(
+                p.x + crate::player::WIDTH * 0.5,
+                p.y + crate::player::HEIGHT * 0.5,
+            );
+            if h.update(&app.world, center) {
+                Some((h.pos, h.hook_type, h.ai == crate::grapple::HookAi::Attached))
+            } else {
+                None
+            }
+        });
         p.grappling_active = grapple_snapshot
             .as_ref()
             .is_some_and(|(_, _, attached)| *attached);

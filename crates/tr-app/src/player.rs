@@ -248,6 +248,11 @@ pub struct Player {
     pub pinned_jumps: [bool; 9],
     pub pinned_balloon: bool,
     pub pinned_rocket_boots: i32,
+    /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
+    /// (the real items equip through `Item.mountType`), re-applied after the
+    /// per-tick flag clear while no mount is active (the `pinned_*` pattern,
+    /// docs/ANALYSIS.md "Item / equip deviations").
+    pub pinned_mount: Option<i32>,
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
@@ -517,6 +522,7 @@ impl Player {
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
+            pinned_mount: None,
             control_left: false,
             control_right: false,
             control_jump: false,
@@ -903,6 +909,23 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
+        // tick and holds `buffTime = 10` — the buff is the source of truth.
+        // (The vanilla re-calls `SetMount` with the live type, which is the
+        // `Mount.cs:6198` no-op guard; the real re-equip runs when the buff
+        // re-appears on its own.)
+        for bt in self.buffs.active_types() {
+            if let (Some(m), Some(i)) = (
+                crate::mount::mount_type_of_buff(bt),
+                self.buffs.find_buff_index(bt),
+            ) {
+                self.buffs.buff_time[i] = 10;
+                if !self.mount.is_active() {
+                    let wet = self.wet;
+                    self.set_mount(m, wet);
+                }
+            }
+        }
         // Buffs whose timer ran out are deleted right after the tick
         // (`Player.cs:25608-25616`) — before any effect can read them.
         self.remove_expired_buffs();
@@ -976,6 +999,16 @@ impl Player {
         // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
         self.just_jumped = false;
         self.auto_jump = false;
+        // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
+        // `Mount.cs:5275-5281`): the buff gone means dismount.
+        if self.mount.is_active()
+            && self
+                .mount
+                .data()
+                .is_some_and(|d| self.buffs.find_buff_index(d.buff).is_none())
+        {
+            self.try_dismount();
+        }
         self.blind = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
@@ -1156,6 +1189,14 @@ impl Player {
         }
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
+        }
+        // The `TR_MOUNT` pin equips while nothing else did this tick — a real
+        // saddle (or its still-live buff) wins, matching the refresh order.
+        if let Some(m) = self.pinned_mount {
+            if !self.mount.is_active() {
+                let wet = self.wet;
+                self.set_mount(m, wet);
+            }
         }
         // `Player.UpdateBuffs`' scene-buff grants (`Player.cs:25525-25555`):
         // the 2-tick indicator buffs refresh from the scan; the effect cases
@@ -2093,6 +2134,66 @@ impl Player {
     /// dismount runs; Phase 3's quick-mount counts the failures.
     pub fn try_dismount(&mut self) -> bool {
         self.dismount(false)
+    }
+
+    /// `Mount.CanMount` (`Mount.cs:6581-6604`): the grown box must fit in
+    /// space (`CanFitInSpaceWithSize` -> `Collision.IsClearSpotTest`, stand-in
+    /// [`collision::collides_rect`]) and a grapple in flight blocks the mount
+    /// (no row in this table is in the CanUseHooks set, `:6599-6601`). The
+    /// PlayerSize-delegate and bat-wet arms cannot fire on this table.
+    pub(crate) fn can_mount(&self, world: &World, m: i32) -> bool {
+        let Some(row) = crate::mount::mount_data(m) else {
+            return false;
+        };
+        let size_h = HEIGHT + row.height_boost as f32;
+        if collides_rect(world, self.x, self.y + self.height - size_h, WIDTH, size_h) {
+            return false;
+        }
+        if self.grappling_active {
+            return false;
+        }
+        true
+    }
+
+    /// `Player.QuickMount` (`Player.cs:6045-6100`): the toggle — dismount, or
+    /// equip the first saddle in the inventory. `QuickMount_GetItemToUse`
+    /// (`:6179-6198`) walks the inventory (the `miscEquips[3]` slot is not
+    /// ported — M3-EQUIP); the cart items are skipped by the table itself (no
+    /// cart rows) and the `QuickMinecart` fallback waits for M2-MOUNT-3. The
+    /// FailedNoSpace branch (`:6052-6070` — the 3-fail force + the
+    /// `PlayerNoSpaceTeleport`) is unreachable for this set: every row's
+    /// `heightBoost >= 0` makes the dismount probe a shrink, which always
+    /// fits. Returns the saddle item kind used (for the use animation).
+    pub fn quick_mount(
+        &mut self,
+        world: &World,
+        inventory: &[crate::item::ItemSlot],
+    ) -> Option<u16> {
+        if self.mount.is_active() {
+            self.try_dismount();
+            return None;
+        }
+        // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
+        if self.cced() || self.dead {
+            return None;
+        }
+        let item = inventory
+            .iter()
+            .find(|slot| slot.count > 0 && crate::mount::mount_type_of_item(slot.kind).is_some());
+        let Some(slot) = item else {
+            return None; // `:6097` `QuickMinecart` — M2-MOUNT-3
+        };
+        let Some(m) = crate::mount::mount_type_of_item(slot.kind) else {
+            return None;
+        };
+        if !self.can_mount(world, m) {
+            return None;
+        }
+        if self.set_mount(m, self.wet) {
+            Some(slot.kind)
+        } else {
+            None
+        }
     }
 
     /// The per-tick mount block — `Player.cs:26623-26688` with the
@@ -5342,5 +5443,157 @@ mod tests {
         assert!(p.auto_jump, "the mount head-sets autoJump (:4797)");
         assert!(p.just_jumped, "the grounded trigger sets justJumped");
         assert!(p.mount.fly_time() > 0, "ResetFlightTime refilled (:26777)");
+    }
+
+    const EMPTY_ITEM_SLOT: crate::item::ItemSlot = crate::item::ItemSlot {
+        kind: 0,
+        name: "",
+        count: 0,
+    };
+
+    // -- M2-MOUNT-1 phase 3: triggers, buff lifecycle, quick-mount ----------
+
+    fn saddle(kind: u16) -> crate::item::ItemSlot {
+        crate::item::ItemSlot {
+            kind,
+            name: "",
+            count: 1,
+        }
+    }
+
+    #[test]
+    fn quick_mount_equips_the_first_saddle_and_the_buff_persists() {
+        // DW-3.1 — `QuickMount` (`Player.cs:6045-6100`) + the refresh
+        // (`:9881-9884`, `buffTime = 10`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let inv = [saddle(3260), EMPTY_ITEM_SLOT];
+        assert_eq!(
+            p.quick_mount(&w, &inv),
+            Some(3260),
+            "the Blessed Apple equips"
+        );
+        assert!(p.mount.is_active() && p.mount.kind() == 10);
+        assert_eq!(p.height, HEIGHT + 34.0, "the hitbox grew");
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the mount buff added (:6226)"
+        );
+        p.update(&w, PlayerInput::default());
+        let i = p.buffs.find_buff_index(162).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 10, "the refresh holds buffTime at 10");
+        assert!(p.mount.is_active(), "the buff keeps the mount alive");
+    }
+
+    #[test]
+    fn the_buff_expiring_dismounts() {
+        // DW-3.2 — `CheckMountBuff` (`Mount.cs:5275-5281` via `:18832`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false);
+        assert!(p.mount.is_active());
+        let i = p.buffs.find_buff_index(162).unwrap();
+        p.buffs.del_buff(i);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.mount.is_active(), "the buff gone -> dismount");
+        assert_eq!(p.height, HEIGHT, "the hitbox restored");
+    }
+
+    #[test]
+    fn dismount_on_item_use_respects_the_same_mount_exemption() {
+        // DW-3.3 — the `DismountOnItemUse` predicate (`Mount.cs:642-652`);
+        // the item gate itself is the editing.rs arm (`Player.cs:31695-31698`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false);
+        assert!(
+            !p.mount.dismount_on_item_use(),
+            "no ground row sets the flag"
+        );
+        p.mount.set_test_dismount_on_item_use(Some(true));
+        assert!(p.mount.dismount_on_item_use());
+        // the exemption: the held item being the same mount does not clear
+        let same = crate::mount::mount_type_of_item(3260) == Some(p.mount.kind());
+        assert!(same, "Blessed Apple is the Unicorn's own saddle");
+        // a different item dismounts through the vanilla gate
+        assert!(p.try_dismount());
+        assert!(!p.mount.is_active());
+    }
+
+    #[test]
+    fn quick_mount_toggles_and_guards() {
+        // DW-3.4 — the toggle, the no-saddle fallback, the CC guard, the
+        // space check (`Mount.CanMount`, `Mount.cs:6581-6604`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let none = [EMPTY_ITEM_SLOT];
+        assert_eq!(p.quick_mount(&w, &none), None, "no saddle -> nothing");
+        let inv = [saddle(2430)]; // Slimy Saddle -> Slime 3
+        assert_eq!(p.quick_mount(&w, &inv), Some(2430));
+        assert!(p.mount.is_active());
+        assert_eq!(p.quick_mount(&w, &inv), None, "mounted -> dismount");
+        assert!(!p.mount.is_active());
+        // the CC guard (`:6074-6077`)
+        p.buffs.add_buff(47, 100); // Frozen
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.quick_mount(&w, &inv), None, "CCed cannot mount");
+    }
+
+    #[test]
+    fn can_mount_needs_the_grown_box_to_fit() {
+        // `Mount.cs:6593-6595` — the Unicorn's 76px box does not fit under a
+        // 3-tile ceiling where the Slime's 62px does.
+        let mut w = ground_world();
+        // A 64px cavity: solid rows 54-55, air rows 56-59, ground row 60.
+        for x in 0..64 {
+            for y in 54..56 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&w);
+        p.y = 918.0; // resting on the row-60 ground inside the cavity
+        assert!(!p.can_mount(&w, 10), "76px does not fit in the 64px cavity");
+        assert!(p.can_mount(&w, 3), "62px fits");
+    }
+
+    #[test]
+    fn the_tr_mount_pin_equips_and_a_real_saddle_wins() {
+        // DW-3.5 — the pin re-applies after the flag clear; a real mount
+        // (or its buff) suppresses it, matching the refresh order.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_mount = Some(10);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.mount.is_active() && p.mount.kind() == 10,
+            "the pin equipped"
+        );
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the buff sustains it"
+        );
+        // a real saddle overrides the pin while it is live
+        p.set_mount(3, false);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mount.kind(), 3, "the real saddle wins");
+        // removing the saddle hands control back to the pin
+        let i = p.buffs.find_buff_index(130).unwrap();
+        p.buffs.del_buff(i);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mount.kind(), 10, "the pin re-equipped after the clear");
     }
 }
