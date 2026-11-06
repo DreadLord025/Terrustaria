@@ -111,6 +111,7 @@ pub(crate) struct NpcAssets {
     pub(crate) clothier: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
     pub(crate) queen_bee: Option<BgTex>,
+    pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -159,6 +160,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         clothier: sky_tex(atlas, "NPC_54", None),
         eoc: sky_tex(atlas, "NPC_4", None),
         queen_bee: sky_tex(atlas, "NPC_222", None),
+        skeletron_head: sky_tex(atlas, "NPC_35", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -698,6 +700,13 @@ pub(crate) fn draw_npcs(
                 assets.queen_bee.as_ref(),
                 assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
                 [66.0, 66.0],
+                [n.x, n.y],
+            ),
+            // The Skeletron head: the single-frame 80x102 sheet.
+            NpcKind::SkeletronHead => (
+                assets.skeletron_head.as_ref(),
+                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
                 [n.x, n.y],
             ),
             // The skeleton family: the same humanoid frame shape — the

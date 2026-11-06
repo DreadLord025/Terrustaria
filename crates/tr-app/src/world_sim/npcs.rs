@@ -355,6 +355,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the 2-second town pass (the vanilla checks through UpdateWorld; the
     // dawn-gating lands with the clock events).
     if app.town_look_timer == 0.0 {
+        // The Clothier: the downedSkeletron gate.
+        if app.world.downed_skeletron
+            && !app.npcs.iter().any(|n| n.kind == NpcKind::Clothier)
+        {
+            if let Some(player) = app.player.as_ref() {
+                let xt = ((player.x / TILE_PX) as i32 + 11).clamp(2, app.world.width - 3);
+                if let Some(mut n) = Npc::spawn_town(&app.world, xt, NpcKind::Clothier) {
+                    n.home =
+                        crate::town::quick_find_home(&app.world, xt, (n.y / TILE_PX) as i32);
+                    app.npcs.push(n);
+                }
+            }
+        }
         // The Witch Doctor: the downedQueenBee gate.
         if app.world.downed_queen_bee
             && !app.npcs.iter().any(|n| n.kind == NpcKind::WitchDoctor)
@@ -472,6 +485,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
+            NpcKind::SkeletronHead => app.world.downed_skeletron = true,
             _ => {}
         }
         spawn_coins(app, &npc);

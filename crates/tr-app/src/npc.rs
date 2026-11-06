@@ -149,6 +149,10 @@ pub enum NpcKind {
     /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
     /// and opens the Witch Doctor's arrival).
     QueenBee,
+    /// `NPCID.SkeletronHead` (35) — the dungeon gatekeeper
+    /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
+    /// sets `downed_skeletron` and opens the Clothier's arrival).
+    SkeletronHead,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -359,6 +363,7 @@ impl NpcKind {
             NpcKind::Clothier => 41,
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
+            NpcKind::SkeletronHead => 44,
         }
     }
 
@@ -408,6 +413,7 @@ impl NpcKind {
             41 => NpcKind::Clothier,
             42 => NpcKind::EyeOfCthulhu,
             43 => NpcKind::QueenBee,
+            44 => NpcKind::SkeletronHead,
             _ => return None,
         })
     }
@@ -492,6 +498,8 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // `SetDefaults` case 222 (`NPC.cs:11858`): 66x66.
             NpcKind::QueenBee => (66.0, 66.0),
+            // `SetDefaults` case 35 (`NPC.cs:9168`): 80x102.
+            NpcKind::SkeletronHead => (80.0, 102.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -565,6 +573,8 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => 2800,
             // `SetDefaults` case 222 (`NPC.cs:11862`): 3400 HP.
             NpcKind::QueenBee => 3400,
+            // `SetDefaults` case 35 (`NPC.cs:9172`): 4400 HP.
+            NpcKind::SkeletronHead => 4400,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -619,6 +629,7 @@ impl NpcKind {
             NpcKind::Clothier => 10,
             NpcKind::EyeOfCthulhu => 15,
             NpcKind::QueenBee => 30,
+            NpcKind::SkeletronHead => 32,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -1063,6 +1074,7 @@ impl Npc {
             NpcKind::Clothier => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
+            NpcKind::SkeletronHead => 0.0,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1127,6 +1139,7 @@ impl Npc {
             NpcKind::Clothier => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
+            NpcKind::SkeletronHead => 10,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1190,6 +1203,7 @@ impl Npc {
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
+            NpcKind::SkeletronHead => 50000.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1313,6 +1327,7 @@ impl Npc {
             | NpcKind::Clothier => self.update_guide(world, dt),
             NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
+            NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1604,6 +1619,9 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::SkeletronHead => {
+                // `Main.npcFrameCount[35]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::QueenBee => {
                 // `Main.npcFrameCount[222]` = 2 (`Main.cs:67082`).
                 self.frame_counter += 1.0;
@@ -2447,6 +2465,65 @@ impl Npc {
         }
     }
 
+    /// `AI_011`'s Skeletron head v1 (`NPC.cs`'s aiStyle 11 machine) — the
+    /// EoC's cycle shape with the skull's numbers: the hover (the ±0.07,
+    /// the 7 cap), the charge (the 480-tick cycle, the direct velocity
+    /// x 8), the decel (the 40 ticks x0.98). The spinning hands (the
+    /// separate NPCs 36) = the follow-ups.
+    fn update_skeletron(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 280.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 7.0 {
+                self.vx = 7.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 7.0 {
+                self.vy = 7.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 8.0;
+            self.vy = dy / d * 8.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -2643,6 +2720,7 @@ impl Npc {
             NpcKind::Clothier => 41,
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
+            NpcKind::SkeletronHead => 44,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3971,7 +4049,41 @@ mod tests {
         let _ = (&w, &mut qb);
     }
 
+    #[test]
+    fn the_skeletron_cycles() {
+        // `AI_011`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 8) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        sk.hp = sk.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(sk.cast_windup == 1, "the charge phase armed");
+        sk.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (sk.vx * sk.vx + sk.vy * sk.vy).sqrt();
+        assert!((speed - 8.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_skeletron_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletronHead, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 35);
+        assert_eq!(e.credit_id, "SkeletronHead");
+        let mut sk = Npc::new(NpcKind::SkeletronHead, 0.0, 0.0, 1, 0.0);
+        assert_eq!(sk.size(), (80.0, 102.0));
+        assert_eq!(sk.max_hp, 4400);
+        assert_eq!(sk.knock_back_resist(), 0.0);
+        let _ = (&w, &mut sk);
+    }
+
 }
+
 
 
 
