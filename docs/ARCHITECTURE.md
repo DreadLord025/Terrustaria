@@ -136,7 +136,9 @@ an agent needs before touching code.
   planter box); breaking runs the per-type KillTile cascade (`check_object`'s arms —
   doors, chair, bench, chest, `check_3x2`, sunflower, pot, piles, alch, on-table) behind
   `kill_tile`, whose `TileKill` contract carries the drops and the pot/herb/pile loot
-  events out to the app.
+  events out to the app. The three `CanKillTile` break refusals (`can_kill_tile`) gate
+  the app's break sources — the mining tick, `break_tile`, the replicated break and
+  explosions.
 - `torch.rs` — `WorldGen.CheckTorch`: the attachment frame of every torch (`frameX` 0
   standing/wall, 22 on a left support, 44 on a right support, 66 preserved for the tall
   variant) and its removal when nothing holds it. Called from `edit::place_tile` and from

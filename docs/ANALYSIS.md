@@ -2278,14 +2278,27 @@ cites its builder chain. Deviations and seams:
   the object drop. Cactus 80 keeps its old path (`check_object`
   `_ => None`, the per-cell drop); the visible remainder is the missing
   `CanKillTile` refusals (next bullet, M1.4-TO-6).
-- `CanKillTile` refusals are not ported (owner decision 2026-11-04): C#
-  `CanKillTile` (`WorldGen.cs:62219-62326`) refuses a locked door type 10
-  (`:62290-62295`), a chest 21/467/88 holding items (`:62311-62323`) and the
-  tile under a container (`:62259-62270`); the port's `remove_tile` gates
-  only `active` + the wall (wall 350 via `WALL_UNBREAKABLE`,
-  `edit.rs:469`). With the LMB gate gone the gaps are visible through mining
-  — a locked door breaks free, a stocked chest breaks with its contents;
-  tracked as M1.4-TO-6 so the 1:1 fix is not lost.
+- `CanKillTile` refusals landed 2026-11-06 (M1.4-TO-6): C# `CanKillTile`
+  (`WorldGen.cs:62219-62326`) refuses a locked door type 10 (`:62290-62295` —
+  the already-ported `IsLockedDoor` frames, `:69191-69197`), a chest 21/467/88
+  holding items (`:62311-62323` — the app's chest store answers
+  `CanDestroyChest`, `Chest.cs:609-623`; the store stays empty until
+  M3-CHEST-UI) and the tile under a container {21,26,72,77,88,467,488}
+  (`:62259-62270`); `edit::can_kill_tile` (`edit.rs:1798`) ports the three
+  and gates the mining tick (`damage = 0`, `Player.cs:53830-53833`),
+  `break_tile`, the replicated break (`apply_edit` kind 0) and the bomb
+  explosions. Deviations: the C# `out bool blockDamaged` flavour collapses
+  into one bool (the 2-arg overload discards it, `:62213-62217`); the same
+  C# function's tree-trunk/palm/cactus anchors (`:62247-62257`,
+  `:62271-62281`), the boulder scan (`:62283-62287`) and the teleporter 235
+  (`:62297-62310`) stay unported; `kill_tile`'s body and the cascade's
+  re-entries are not re-checked (the C# `KillTile` entry duplicates the
+  refusals through `CheckTileBreakability` `:62377-62461` — the port chokes
+  the outer break sources instead, one query shared by all of them); the
+  per-tick `KillTile(fail: true)` sound/dust of a refused pick
+  (`Player.cs:53822-53831`) has no ported path, so the refusal is silent;
+  explosion/replication pass `|_, _| false` for the chest store (not
+  reachable without the app — unobservable while the store is empty).
 - The mining break carries no net messages: vanilla syncs the break/fail
   with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
   SP port has no replication for it (the same seam as the door message 19
@@ -2360,6 +2373,24 @@ training dummy; M4-TOWN-1: the Guide + the housing move-in — neither
 pixel-bearing in the break scene, the Guide spawns off-frame): all four
 hashes and the 910 px footprint are byte-identical, so the shot evidence
 carries over as-is.
+
+Verification (M1.4-TO-6): the workspace suite is green (`test result: ok` ×7:
+902+16+569+19 passed, 0 failed, `--skip
+migrates_version_2_kinds_to_item_ids`); the
+refusals are unit-covered in `tr-core/src/edit.rs`
+(`the_container_family_above_refuses_can_kill_tile` — all seven ids plus the
+same-kind control, `the_locked_door_refuses_can_kill_tile` — the 594/646 rows
+and the `frameX >= 54` escape, `the_stocked_chest_and_dresser_refuse_can_kill_tile`
+— the `frameX / 18 % wide` anchor math for 21/467/88,
+`can_kill_tile_contract_head_refuses_air_inactive_and_wall_350`,
+`kill_tile_itself_stays_ungated` — the Design-A split) and in
+`world_sim/editing.rs` (`the_support_under_a_chest_refuses_the_mining_break`,
+`a_stocked_chest_refuses_the_mining_break_until_emptied` — the DW-1.1 chest
+first refuses, then breaks after `world_chests.clear()`,
+`the_locked_door_refuses_the_break`). No shot re-take: the refusals only
+remove effects — a refused break renders the pre-existing no-break frame, and
+the non-refused path's pixel footprint is unchanged; determinism is carried by
+the suite.
 
 M1.4-TO-4 (herbs/pots/alch/sunflower/piles, 2026-11-05) extends the umbrella in
 four layers. The registry slice grows by 27/28/78/82-84/185-187 (`tileobject.rs`,
