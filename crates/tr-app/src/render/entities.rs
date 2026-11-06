@@ -307,10 +307,13 @@ pub(crate) fn draw_player(
         gfx_off_y: player.gfx_off_y,
         swing,
         hold_style: held.map_or(0, |(kind, _)| crate::item::hold_style(kind)),
-        use_style: 1,
+        // The held item's real useStyle (`Item.useStyle` — the per-style
+        // body rows and the held-item draw both read it).
+        use_style: held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
         item_uv: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(uv, _)| uv),
+        aim: player.swing_aim,
         item_size: held
             .and_then(|(kind, _)| held_item_quad(lookups, kind))
             .map(|(_, size)| size)
@@ -319,7 +322,11 @@ pub(crate) fn draw_player(
         head_armor,
         body_armor,
         leg_armor,
-        front_arm: swing_stand_in(1, swing, player.facing as f32),
+        front_arm: swing_stand_in(
+            held.map_or(1, |(kind, _)| crate::item::use_style(kind)),
+            swing,
+            player.facing as f32,
+        ),
         back_arm: CompositeArmState::DISABLED,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)

@@ -401,6 +401,12 @@ pub(crate) struct App {
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
+    /// The swing's `useStyle` — the held item's at the swing start
+    /// (`Player.cs:4449`'s `ApplyItemAnimation` carries it).
+    pub(crate) swing_style: u8,
+    /// The aim angle (the mouse direction, radians) the shooting/throwing
+    /// styles read — `Player.itemRotation`'s source for useStyle 5.
+    pub(crate) swing_aim: f32,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -1625,6 +1631,8 @@ impl App {
             item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
+            swing_style: 0,
+            swing_aim: 0.0,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,

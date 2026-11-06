@@ -35,6 +35,15 @@ pub(crate) fn use_animation_secs(kind: u16) -> f32 {
     ticks as f32 / 60.0
 }
 
+/// `Item.useStyle` of the kind (`Item.SetDefaults`; the
+/// `ItemUseStyleID.cs` constants — 1 Swing, 2 EatFood, 3 Thrust, 4 HoldUp,
+/// 5 Shoot, 6 DrinkLong, 7 DrinkOld, 8 GolfPlay, 9 DrinkLiquid, 10 Hidden,
+/// 11 MowTheLawn, 12 Guitar, 13 Rapier, 14 RaiseLamp, 15 HoldOrb, 16
+/// PlaySound), 0 when unregistered.
+pub(crate) fn use_style(kind: u16) -> u8 {
+    registry::get(kind).map_or(0, |d| d.use_style)
+}
+
 /// `Item.holdStyle` of the kind (`Item.SetDefaults`), 0 when unregistered.
 pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
