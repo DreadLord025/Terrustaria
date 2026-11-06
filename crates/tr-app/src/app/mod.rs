@@ -751,13 +751,8 @@ impl App {
             .filter(|t| crate::buffs::is_debuff(**t))
             .count() as i32;
         let npc = &self.npcs[nurse_idx];
-        let mood = crate::happiness::process_mood(
-            &self.world,
-            &self.npcs,
-            npc,
-            player.center(),
-            false,
-        );
+        let mood =
+            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
         nurse_heal_cost_for(missing, debuffs, mood.multiplier)
     }
 
@@ -1462,6 +1457,34 @@ impl App {
                                 count: 1,
                             };
                         }
+                    }
+                }
+                // `TR_DYE=1007,1015,...`: fill the dye slots positionally — the
+                // vanilla equips dyes through the `ItemSlot` swap paths
+                // (deferred to the inventory-interaction task), so the plumbing
+                // stays screenshotable through the pin.
+                if let Ok(list) = std::env::var("TR_DYE") {
+                    for (slot, kind) in equip.dye.iter_mut().zip(list.split(',')) {
+                        let kind: u16 = kind.trim().parse().unwrap_or(0);
+                        if kind != 0 {
+                            *slot = ItemSlot {
+                                kind,
+                                name: registry::name(kind),
+                                count: 1,
+                            };
+                        }
+                    }
+                }
+                // `TR_DMOUNT=<kind>`: the saddle-dye stand-in — `miscDyes[3]`
+                // (`Player.cs:1484`, the vanilla mount dye slot).
+                if let Ok(kind) = std::env::var("TR_DMOUNT") {
+                    let kind: u16 = kind.trim().parse().unwrap_or(0);
+                    if kind != 0 {
+                        equip.misc_dyes[3] = ItemSlot {
+                            kind,
+                            name: registry::name(kind),
+                            count: 1,
+                        };
                     }
                 }
                 equip

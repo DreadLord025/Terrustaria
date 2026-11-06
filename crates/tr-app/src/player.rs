@@ -10,10 +10,11 @@
 
 use crate::registry;
 use tr_core::tiledata as td;
-use tr_core::{World, TILE_PX};
+use tr_core::{TILE_PX, World};
 
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
+use crate::dye;
 use crate::luck::LuckState;
 use crate::minecart;
 use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
@@ -260,6 +261,30 @@ pub struct Player {
     /// update's grant pass reads (`UpdateEquips`, `Player.cs:12892`). Filled
     /// from `App.equip` per tick.
     pub equipped: [u16; 20],
+    /// `Player.dye[0..10]`'s kinds — `UpdateDyes`' input through
+    /// `GetEffectiveDye` (`Player.cs:5742-5764`; the port has no loadouts, so
+    /// the slot itself is the source). Filled from `App.equip` per tick next
+    /// to `equipped`.
+    pub dye_slots: [u16; 10],
+    /// `Player.miscDyes[0..5]`'s kinds (`Player.cs:1494`; pet/light/cart/
+    /// mount/hook). Filled from `App.equip` per tick.
+    pub misc_dye_slots: [u16; 5],
+    /// `UpdateDyes`' `c*` cache (`Player.cs:9587-9757`) — the dye pass each
+    /// draw layer applies (the `DrawData.shader` source, 0 = plain). The port
+    /// fills the fields with draw consumers: the armor trio reads its dye
+    /// slots directly (`cHead/cBody/cLegs = GetEffectiveDye(0..2).dye`,
+    /// `:9593-9595`) and the misc five mirror `:9600-9604` (`cMount` feeds
+    /// the mount layers; the pets/minions have no draw path yet). The ~27
+    /// accessory effect-slot fields of `UpdateItemDye` wait for the accessory
+    /// visuals — deviation in `docs/ANALYSIS.md`.
+    pub c_head: u32,
+    pub c_body: u32,
+    pub c_legs: u32,
+    pub c_pet: u32,
+    pub c_light: u32,
+    pub c_minecart: u32,
+    pub c_mount: u32,
+    pub c_grapple: u32,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -589,6 +614,16 @@ impl Player {
             accessory_life_regen: 0,
             swing_aim: 0.0,
             equipped: [0; 20],
+            dye_slots: [0; 10],
+            misc_dye_slots: [0; 5],
+            c_head: 0,
+            c_body: 0,
+            c_legs: 0,
+            c_pet: 0,
+            c_light: 0,
+            c_minecart: 0,
+            c_mount: 0,
+            c_grapple: 0,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -1079,6 +1114,29 @@ impl Player {
         // damage) leave `lifeRegenTime` untouched.
     }
 
+    /// `UpdateDyes` (`Player.cs:9587-9614`): the per-tick dye cache, refilled
+    /// after the `ResetEffects` clears and before the `UpdateEquips` grants
+    /// (`Player.Update` `:25491-25633`). The C# zero-fills ~36 `c*` fields
+    /// (`:9589-9592`) and `UpdateItemDye` (`:9616-9757`) re-derives the
+    /// accessory effect-slot fields from the armor items; the port keeps the
+    /// fields with draw consumers — the armor trio reads its dye slots
+    /// directly (`cHead/cBody/cLegs = GetEffectiveDye(0..2).dye`,
+    /// `:9593-9595`) and the misc five mirror `:9600-9604`. The `wearsRobe →
+    /// cLegs = cBody` rule (`:9596-9599`) and the accessory mappings wait for
+    /// their ported visuals (docs/ANALYSIS.md "Dye deviations").
+    pub(crate) fn update_dye_cache(&mut self) {
+        self.c_head = dye::shader_id_for(self.dye_slots[0]);
+        self.c_body = dye::shader_id_for(self.dye_slots[1]);
+        self.c_legs = dye::shader_id_for(self.dye_slots[2]);
+        // `cPet/cLight/cMinecart/cMount/cGrapple = miscDyes[0..4].dye`
+        // (`:9600-9604`); `cYorai = cPet` (`:9613`) has no draw consumer.
+        self.c_pet = dye::shader_id_for(self.misc_dye_slots[0]);
+        self.c_light = dye::shader_id_for(self.misc_dye_slots[1]);
+        self.c_minecart = dye::shader_id_for(self.misc_dye_slots[2]);
+        self.c_mount = dye::shader_id_for(self.misc_dye_slots[3]);
+        self.c_grapple = dye::shader_id_for(self.misc_dye_slots[4]);
+    }
+
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
         self.update_with_grapple(world, input, None)
@@ -1342,6 +1400,10 @@ impl Player {
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
         // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :14602-14604):
         // the flags reset, then the equipped kinds re-set them per tick.
+        // `UpdateDyes` sits between the two in `Player.Update`
+        // (`:25492` before `UpdateEquips`' `:25633`), so the dye cache
+        // refills here, against this tick's slots.
+        self.update_dye_cache();
         self.jump_boost = false;
         self.no_fall_dmg = false;
         self.ice_skate = false;
@@ -2035,18 +2097,33 @@ impl Player {
                     // `:36199-36200`: `TryBeginningFlight` only fires for
                     // hover mounts (`Mount.cs:4537` — none in this table);
                     // the Rudolph dust trail is a visual seam.
-                    self.mount
-                        .update_frame(crate::mount::FRAME_FLYING, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.mount.update_frame(
+                        crate::mount::FRAME_FLYING,
+                        self.vx,
+                        self.vy,
+                        self.just_jumped,
+                        self.control_down,
+                    );
                     self.try_landing(world);
                 } else if self.wet {
                     // `:36203-36206`: the swim state (the ground mounts'
                     // swim sets reuse their in-air frames).
-                    self.mount
-                        .update_frame(crate::mount::FRAME_SWIMMING, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.mount.update_frame(
+                        crate::mount::FRAME_SWIMMING,
+                        self.vx,
+                        self.vy,
+                        self.just_jumped,
+                        self.control_down,
+                    );
                 } else {
                     // `:36207-36212`: plain air.
-                    self.mount
-                        .update_frame(crate::mount::FRAME_IN_AIR, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.mount.update_frame(
+                        crate::mount::FRAME_IN_AIR,
+                        self.vx,
+                        self.vy,
+                        self.just_jumped,
+                        self.control_down,
+                    );
                     self.try_landing(world);
                 }
             } else {
@@ -2060,8 +2137,13 @@ impl Player {
                 } else {
                     crate::mount::FRAME_RUNNING
                 };
-                self.mount
-                    .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+                self.mount.update_frame(
+                    state,
+                    self.vx,
+                    self.vy,
+                    self.just_jumped,
+                    self.control_down,
+                );
             }
             // `:36488`: the body frame locks to the mount's row.
             self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
@@ -3788,6 +3870,43 @@ fn collides_filtered(world: &World, x: f32, y: f32, w: f32, h: f32, ignore_slope
 
 mod tests {
     #[test]
+    fn dye_cache_mirrors_update_dyes() {
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        // Empty slots → the C# zero-fill (`UpdateDyes`, `:9589-9592`).
+        p.update_dye_cache();
+        assert_eq!(p.c_head, 0);
+        // `cHead/cBody/cLegs = GetEffectiveDye(0..2).dye` (`:9593-9595`): red
+        // dye (1007) on the head slot, blue (1015) on the legs, nothing on
+        // the body.
+        p.dye_slots[0] = 1007;
+        p.dye_slots[2] = 1015;
+        p.misc_dye_slots[3] = 1007;
+        p.update_dye_cache();
+        assert!(p.c_head > 0);
+        assert_eq!(p.c_body, 0);
+        assert!(p.c_legs > 0 && p.c_legs != p.c_head);
+        // The same dye lands on the same slot everywhere (`cMount` mirrors
+        // `miscDyes[3].dye`, `:9600-9604`).
+        assert_eq!(p.c_mount, p.c_head);
+        // The misc five keep `:9600-9604`'s pet/light/cart/mount/hook order.
+        p.misc_dye_slots[0] = 1015;
+        p.update_dye_cache();
+        assert!(p.c_pet > 0);
+        assert_eq!(p.c_light, 0);
+    }
+
+    #[test]
+    fn dye_cache_ignores_non_dye_kinds() {
+        // Dirty: a non-dye in a dye slot renders plain — the C# reads
+        // `GetShaderIdFromItemId` (`Item.cs:48713`), which is 0 outside the
+        // `DyeInitializer` bindings.
+        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
+        p.dye_slots[1] = 89; // the Copper Helmet
+        p.update_dye_cache();
+        assert_eq!(p.c_body, 0);
+    }
+
+    #[test]
     fn dot_death_survival_drain_records_the_reason() {
         // DW-1.3 — Player.cs:19361-19384: a drain kill carries its reason out
         // of UpdateLifeRegen; update_survival parks it on the player for the
@@ -4016,7 +4135,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
@@ -5820,7 +5939,7 @@ mod tests {
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
-                                     // Inside the iframes the hit (and therefore the grant) repeats nothing.
+        // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
@@ -7382,7 +7501,10 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         p.set_mount(1, false); // Bunny: in-air start row 5
-        let press = PlayerInput { jump: true, ..Default::default() };
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
         p.update(&w, press);
         let release = PlayerInput::default();
         p.update(&w, release);
@@ -7403,7 +7525,11 @@ mod tests {
         for _ in 0..30 {
             p.update(&w, press); // hold: the jump budget (17) runs out
         }
-        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_FLYING, "fly time drives state 3");
+        assert_eq!(
+            p.mount.frame_state(),
+            crate::mount::FRAME_FLYING,
+            "fly time drives state 3"
+        );
         assert!((6..=11).contains(&p.mount.frame()), "the flying band");
     }
 
@@ -7418,7 +7544,10 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         p.set_mount(1, false);
-        let press = PlayerInput { jump: true, ..Default::default() };
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
         p.update(&w, press);
         let mut airborne_ticks = 0;
         for _ in 0..40 {
@@ -7435,6 +7564,4 @@ mod tests {
         }
         assert!(airborne_ticks > 10, "the hop stayed airborne");
     }
-
-
 }
