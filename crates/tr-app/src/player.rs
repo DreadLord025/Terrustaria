@@ -3014,6 +3014,14 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // The mount's animator state feeds the mount sprites' pixels
+        // (`Mount.Draw`'s frame rect + the per-frame player offset).
+        if self.mount.is_active() {
+            h ^= (self.mount.kind() as u32) << 3;
+            h ^= (self.mount.frame() as u32).wrapping_mul(0x9E37_79B1);
+            h ^= (self.mount.frame_state() as u32) << 20;
+            h ^= (self.mount.player_offset() as u32) << 26;
+        }
         h
     }
 }

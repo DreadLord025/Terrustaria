@@ -22,6 +22,8 @@ pub(crate) const EYES: [f32; 3] = [105.0 / 255.0, 90.0 / 255.0, 75.0 / 255.0];
 /// Which player part a sprite belongs to — the test seam for layer order.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum PlayerPart {
+    /// The mount's back/front sprite (`Mount.Draw`, `Mount.cs:5501-5935`).
+    Mount,
     TorsoSkin,
     LegsSkin,
     BackArmSkin,
@@ -156,6 +158,19 @@ pub(crate) fn composite_pivot(is_back: bool, dir: f32) -> [f32; 2] {
 
 /// The per-frame inputs every layer builder reads (parameter object — the
 /// cc-routine-and-class-design 7±2 cap).
+/// The mount draw inputs (`Mount.Draw` `Mount.cs:5501-5935`): the mount id
+/// (the row lookup for geometry + the assets' sheet tables), the animator's
+/// frame and the per-frame player offset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct MountDraw {
+    pub(crate) id: i32,
+    pub(crate) frame: i32,
+    pub(crate) player_offset: i32,
+    /// `Mount.IsAtIdle` (:594-608) — Rudolph hides its front strip while
+    /// idle (`Mount.cs:5520-5523`).
+    pub(crate) is_idle: bool,
+}
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct PlayerCompositeState {
     /// Top-left of the 40x56 sprite box (`player.x - 10, player.y - 10`).
@@ -181,6 +196,8 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) item_size: [f32; 2],
     /// The light tint at the player tile (`style.shade(...)` output).
     pub(crate) light: [f32; 3],
+    /// The live mount's draw inputs, `None` = unmounted.
+    pub(crate) mount: Option<MountDraw>,
     /// `Player.head` — the equipped helmet's armor slot (−1 = none); a set
     /// slot suppresses the hair (`Head.Sets.HidesHead`,
     /// `PlayerDrawLayers.cs:2512`). Slot 0 is real (Familiar Wig).
@@ -840,14 +857,74 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
     }]
 }
 
+/// The mount sprite (`Mount.Draw` `Mount.cs:5501-5735`): one vertical-strip
+/// frame, `frameH = textureHeight / totalFrames`, the drawn band cropped by
+/// the vanilla `Height -= 2` (`:5722`). The frame center lands at
+/// `player.center + (xOffset * direction, yOffset + PlayerOffset)`
+/// (`:5554-5561`, origin `:622`).
+fn mount_layer(s: &PlayerCompositeState, a: &PlayerAssets, front: bool) -> Option<LayerSprite> {
+    let m = s.mount?;
+    let idx = crate::mount::mount_index(m.id)?;
+    let row = crate::mount::mount_data(m.id)?;
+    let tex = if front {
+        &a.mount_front[idx]
+    } else {
+        &a.mount_back[idx]
+    }
+    .as_ref()?;
+    // An empty sheet name is the C# `Asset<Texture2D>.Empty` default — the
+    // drawType draws nothing (`Mount.cs:5509-5535`).
+    let sheet = if front { row.front_sheet } else { row.back_sheet };
+    if sheet.is_empty() {
+        return None;
+    }
+    // `:5520-5523`: Rudolph hides the front strip while idle.
+    if front && m.id == 0 && m.is_idle {
+        return None;
+    }
+    let frame_h = tex.h / row.total_frames.max(1) as f32;
+    let band_h = frame_h - 2.0;
+    let frame = (m.frame.max(0) as f32).min((row.total_frames.max(1) - 1) as f32);
+    let dv = (tex.uv[3] - tex.uv[1]) / row.total_frames.max(1) as f32;
+    let v0 = tex.uv[1] + dv * frame;
+    let uv = [
+        tex.uv[0],
+        v0,
+        tex.uv[2],
+        v0 + (tex.uv[3] - tex.uv[1]) * (band_h / tex.h),
+    ];
+    let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
+    let height = 42.0 + row.height_boost as f32;
+    let cx = s.origin[0] + 20.0 + row.x_offset as f32 * dir;
+    let cy = s.origin[1] + 10.0 + height / 2.0
+        + row.y_offset as f32 + m.player_offset as f32 + s.gfx_off_y;
+    let pos = [cx - tex.w / 2.0, cy - frame_h / 2.0];
+    Some(LayerSprite {
+        part: PlayerPart::Mount,
+        pos,
+        size: [tex.w, band_h],
+        uv: flip_uv(uv, dir < 0.0),
+        color: [s.light[0], s.light[1], s.light[2], 1.0],
+        rotation: 0.0,
+    })
+}
+
 /// The full player composition: body, then the held item in its
 /// `weaponDrawOrder` slot, then the front arm — the
-/// `LegacyPlayerRenderer.cs:185-255` sequence for the starter player.
+/// `LegacyPlayerRenderer.cs:185-255` sequence for the starter player. The
+/// mount rides the vanilla layer order: `DrawPlayer_02_MountBehindPlayer`
+/// (`PlayerDrawLayers.cs:211`, behind everything) and
+/// `DrawPlayer_23_MountFront` (`:2912`, after the arms).
 pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSprite> {
     let body = body_layers(s, a);
     let arms = front_arm_layers(s, a);
     let item = held_item_layers(s);
-    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len());
+    let mount_back = mount_layer(s, a, false);
+    let mount_front = mount_layer(s, a, true);
+    let mut out = Vec::with_capacity(body.len() + arms.len() + item.len() + 2);
+    if let Some(back) = mount_back {
+        out.push(back);
+    }
     match weapon_draw_order() {
         WeaponDrawOrder::BehindBackArm => {
             out.extend(item.iter().copied());
@@ -862,6 +939,9 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     out.extend(arms);
     if weapon_draw_order() == WeaponDrawOrder::OverFrontArm {
         out.extend(item.iter().copied());
+    }
+    if let Some(front) = mount_front {
+        out.push(front);
     }
     out
 }
@@ -1145,6 +1225,8 @@ mod tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            mount_back: [Some(sheet()); 12],
+            mount_front: [Some(sheet()); 12],
         }
     }
 
@@ -1166,6 +1248,7 @@ mod tests {
             leg_armor: -1,
             front_arm: CompositeArmState::DISABLED,
             back_arm: CompositeArmState::DISABLED,
+            mount: None,
         }
     }
 
@@ -1435,4 +1518,62 @@ mod tests {
         let body0 = body_layers(&state(), &a);
         assert!(body0.iter().all(|s| (s.pos[1] - 200.0).abs() < 1e-6));
     }
+
+    #[test]
+    fn mount_layers_order_behind_and_in_front() {
+        // DW-5.1 — `PlayerDrawLayers.cs:211` (behind everything) and `:2912`
+        // (after the arms).
+        let a = fixture();
+        let mut s = state();
+        s.mount = Some(MountDraw { id: 10, frame: 3, player_offset: 30, is_idle: false });
+        let out = assemble_layers(&s, &a);
+        assert_eq!(out.first().unwrap().part, PlayerPart::Mount, "back layer first");
+        // The Unicorn has no front strip (`Mount.cs:1469-1471` — only the
+        // back texture), so exactly one mount sprite draws.
+        assert_eq!(out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(), 1);
+        // Rudolph draws the front strip over the arms (idle hides it).
+        s.mount = Some(MountDraw { id: 0, frame: 0, player_offset: 30, is_idle: false });
+        let out = assemble_layers(&s, &a);
+        assert_eq!(out.first().unwrap().part, PlayerPart::Mount, "back first");
+        assert_eq!(out.last().unwrap().part, PlayerPart::Mount, "front last");
+        s.mount = Some(MountDraw { id: 0, frame: 0, player_offset: 30, is_idle: true });
+        let out = assemble_layers(&s, &a);
+        assert_eq!(out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(), 1, "the front hides while idle, the back stays first");
+        let s = state();
+        assert!(assemble_layers(&s, &a).iter().all(|sp| sp.part != PlayerPart::Mount));
+    }
+
+    #[test]
+    fn mount_frame_math_matches_the_c_draw() {
+        // DW-5.2 — `Mount.cs:5554-5561` position, `:5717-5722` the frame
+        // band (`frameH = textureHeight / totalFrames`, `Height -= 2`), the
+        // flip mirrors both the UV and the `xOffset * direction` offset.
+        let a = fixture(); // sheet(): uv [0,0,1,1], 360x224
+        let mut s = state(); // origin [100, 200], facing 1
+        s.mount = Some(MountDraw { id: 10, frame: 3, player_offset: 30, is_idle: false });
+        let sprite = mount_layer(&s, &a, false).expect("the unicorn draws its back strip");
+        // frameH = 224 / 16 = 14; the drawn band is 12 tall.
+        assert_eq!(sprite.size, [360.0, 12.0]);
+        // The band: v from 3/16 to 3/16 + 12/224.
+        let dv = 1.0 / 16.0;
+        assert!((sprite.uv[1] - dv * 3.0).abs() < 1e-6);
+        assert!((sprite.uv[3] - (dv * 3.0 + 12.0 / 224.0)).abs() < 1e-6);
+        // The center: origin.x + 20 + xOffset(5) * dir(1), origin.y + 10 +
+        // height(76)/2 + yOffset(1) + PlayerOffset(30).
+        let cx = 100.0 + 20.0 + 5.0;
+        let cy = 200.0 + 10.0 + 38.0 + 1.0 + 30.0;
+        assert!((sprite.pos[0] - (cx - 180.0)).abs() < 1e-5);
+        assert!((sprite.pos[1] - (cy - 7.0)).abs() < 1e-5, "the frame center anchors the quad");
+        // Facing away: the offset mirrors and the UV flips.
+        s.facing = -1.0;
+        let flipped = mount_layer(&s, &a, false).unwrap();
+        assert!((flipped.pos[0] - (100.0 + 20.0 - 5.0 - 180.0)).abs() < 1e-5);
+        assert_eq!(flipped.uv[0], sprite.uv[2], "the UV mirrors");
+        // The empty-back rows (Pogo 43 draws front only) skip the back pass.
+        let mut s = state();
+        s.mount = Some(MountDraw { id: 43, frame: 0, player_offset: 14, is_idle: false });
+        assert!(mount_layer(&s, &a, false).is_none(), "no back sheet");
+        assert!(mount_layer(&s, &a, true).is_some(), "the front strip draws");
+    }
+
 }

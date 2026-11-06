@@ -770,6 +770,12 @@ pub(crate) fn mount_type_of_buff(buff: i32) -> Option<i32> {
     MOUNTS.iter().find(|row| row.buff == buff).map(|row| row.id)
 }
 
+/// The index of a mount's row in [`MOUNTS`] — the key of the renderer's
+/// per-mount sheet tables.
+pub(crate) fn mount_index(id: i32) -> Option<usize> {
+    MOUNTS.iter().position(|row| row.id == id)
+}
+
 /// `Mount.mounts[m]` lookup; `None` for ids the partial table does not carry.
 pub(crate) fn mount_data(id: i32) -> Option<&'static MountData> {
     // The rows are `const`s, so a found reference is genuinely 'static.
@@ -1401,6 +1407,13 @@ impl MountState {
             return 0;
         }
         -self.player_offset() + self.data().map_or(0, |d| d.height_boost)
+    }
+
+    /// `Mount.IsAtIdle` (:594-608): the idle band active — Rudolph's draw
+    /// uses it to hide the front strip (`Mount.cs:5520-5523`).
+    pub(crate) fn is_at_idle(&self) -> bool {
+        let Some(row) = self.data() else { return false };
+        row.idle.count != 0 && self.idle_time >= self.idle_time_next
     }
 
     // The M2-MOUNT-2 rows (wing-allowed, additive-stat mounts) do not exist

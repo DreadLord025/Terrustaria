@@ -45,6 +45,11 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
+    /// strips (`MountData.backTexture`) and the front strips
+    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
+    pub(crate) mount_back: [Option<BgTex>; 12],
+    pub(crate) mount_front: [Option<BgTex>; 12],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -85,6 +90,30 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // The mount strips resolve by the rows' own sheet names (`Mount.cs:
+        // 696-2567`); a missing file stays `None` and the draw skips it.
+        mount_back: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.back_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.back_sheet, None)
+                    }
+                })
+        }),
+        mount_front: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.front_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.front_sheet, None)
+                    }
+                })
+        }),
     }
 }
 
@@ -307,6 +336,18 @@ pub(crate) fn draw_player(
         leg_armor,
         front_arm: swing_stand_in(1, swing, player.facing as f32),
         back_arm: CompositeArmState::DISABLED,
+        // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
+        // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
+        mount: if player.mount.is_active() {
+            player.mount.data().map(|d| super::player_layers::MountDraw {
+                id: d.id,
+                frame: player.mount.frame(),
+                player_offset: player.mount.player_offset(),
+                is_idle: player.mount.is_at_idle(),
+            })
+        } else {
+            None
+        },
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
