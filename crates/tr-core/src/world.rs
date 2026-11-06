@@ -105,6 +105,16 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+    /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs`'s statics): the WoF's
+    /// underworld draw band, written by the wall's AI_027 scan and read by
+    /// the Hungry's anchor (`aiStyle 29`). Runtime-only.
+    pub wof_draw_top: f32,
+    pub wof_draw_bottom: f32,
+    /// A WoF is alive (the Hungry deactivates without one) + its hp ratio
+    /// and x (the Hungry's anchor reads).
+    pub wof_present: bool,
+    pub wof_hp_ratio: f32,
+    pub wof_x: f32,
 
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
@@ -156,6 +166,11 @@ impl World {
             hard_mode: false,
 
             altars_smashed: 0,
+            wof_draw_top: -1.0,
+            wof_draw_bottom: -1.0,
+            wof_present: false,
+            wof_hp_ratio: 1.0,
+            wof_x: 0.0,
             butterfly_chance: 0,
         }
     }

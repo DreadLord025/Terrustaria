@@ -2520,6 +2520,47 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Wall of Flesh + the Hungry + the Leeches (M4-BOSS-6b)
+
+The aiStyle-27 machine (`npc.rs::update_wof`, the classic path
+verbatim over BOSS-6's v1): the off-edge kill, the underworld
+draw-band scan (`UnderworldLayer = maxTilesY - 200`; the 15-tile
+solid/liquid walks ease the band 1 px per tick with the 160-px clamp),
+the Y pinning to the band midpoint, the slide speed by the hp
+thresholds (1.5 → 2.75 across the 75/50/25/10% steps — the direction
+locks and never damps), the dead-player abandonment (3 s dead → the
+wall kills itself), the tongue phase (`ai[1]` 2700 with the hp bonuses
+→ the 3-4 phase cycle → the Leech spawns) and the Hungry init (11
+minions along the band).
+
+A structural note: the AI arms hold `&World`, so the wall cannot write
+the band — the wall's AI computes the scan targets onto its own
+`wof_bottom_target`/`wof_top_target` fields and the world sim eases
+`World.wof_draw_top/bottom` toward them, alongside
+`wof_present`/`wof_hp_ratio`/`wof_x` (the Hungry's read set). The same
+borrow shape carried the spawn requests (`wants_leech` with the
+`CountNPCS(117) < 10` gate, `wants_hungry`).
+
+**The Hungry (115)** — the aiStyle-29 verbatim: the anchor = the wall's
+x + the band row at `ai[0]`, the chase toward the player clamped to the
+leash (300/500/700 by the wall's hp; the dive cycle ×1.3 after 100
+ticks), the defense/damage tiers (30/60 at <50%, 20/45 at <75%) through
+the new `defense_override`/`damage_override` fields (the contact path
+prefers the override), the justHit recoil (the hurt cooldown stands in
+for the C# flag), the wall's death deactivates the minion.
+
+**The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
+the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
+default tunables, the 14×14/60 HP segments).
+
+Deviations: the eye/mouth mirrors (114, the 100×100 8000-HP wall parts)
+are the render-machinery follow-up (the vanilla draws them inside the
+wall's band); the expert burst block (the hp-scaled spawn odds) and the
+`getGoodWorld` spawn are out; the roar timer (`localAI[3]`'s sound 4)
+is cosmetic and skipped. The bestiary `card_at` now matches the draw's
+centred lattice — the stale top-left guard dropped cards once the
+roster's rows overflowed the panel.
+
 ## The Eye of Cthulhu (M4-BOSS-1)
 
 The first boss lands through the aiStyle-4 block's classic path

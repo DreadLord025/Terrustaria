@@ -171,6 +171,10 @@ pub(crate) fn update_worms_in(
                 NpcKind::GiantWormHead => {
                     4 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
                 }
+                // The leech head: `Next(3, 6)` (`AI_006`'s type-117 branch).
+                NpcKind::LeechHead => {
+                    3 + (crate::app::frame::rand01(&mut rng) * 3.0) as u32
+                }
                 // `GetEaterOfWorldsSegmentsCount` (65; the expert 70 rides
                 // the difficulty work).
                 _ => 65,
@@ -533,6 +537,93 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut servants);
+    // The WoF's spawn requests + the World state the Hungry reads
+    // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
+    // holds `&World`, so the writes land here).
+    let wof = app
+        .npcs
+        .iter()
+        .find(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
+        .cloned();
+    if let Some(wof) = wof {
+        // The Leech head (`NPC.CountNPCS(117) < 10`): the head link spawns
+        // at the wall's centre with the slide velocity (`direction * 8`).
+        if wof.wants_leech {
+            if app
+                .npcs
+                .iter()
+                .filter(|n| n.kind == NpcKind::LeechHead && n.hp > 0)
+                .count()
+                < 10
+            {
+                let mut leech = Npc::new(
+                    NpcKind::LeechHead,
+                    wof.x + wof.size().0 * 0.5,
+                    wof.y + wof.size().1 * 0.5 + 20.0,
+                    wof.facing,
+                    0.0,
+                );
+                leech.vx = wof.facing as f32 * 8.0;
+                leech.hp = leech.max_hp;
+                app.npcs.push(leech);
+            }
+        }
+        // The Hungry init (`localAI[0]` 1 → 2): the 11 Hungries along the
+        // band (`ai[0] = i * 0.1 - 0.05`); the eye/mouth mirrors (114) are
+        // the render follow-up.
+        if wof.wants_hungry {
+            let mid = (wof.y + wof.size().1 * 0.5 + app.world.wof_draw_bottom) / 2.0;
+            for i in 0..11 {
+                let mut hungry = Npc::new(
+                    NpcKind::Hungry,
+                    wof.x,
+                    mid,
+                    wof.facing,
+                    0.0,
+                );
+                hungry.hp = hungry.max_hp;
+                hungry.ai[0] = i as f32 * 0.1 - 0.05;
+                app.npcs.push(hungry);
+            }
+        }
+        // The band ease (1 px per tick toward the wall's scan targets) +
+        // the clamp (`:25834-25840`).
+        if wof.wof_bottom_target >= 0.0 {
+            if app.world.wof_draw_bottom < 0.0 {
+                app.world.wof_draw_bottom = wof.wof_bottom_target;
+            } else if app.world.wof_draw_bottom > wof.wof_bottom_target {
+                app.world.wof_draw_bottom -= 1.0;
+                if app.world.wof_draw_bottom < wof.wof_bottom_target {
+                    app.world.wof_draw_bottom = wof.wof_bottom_target;
+                }
+            } else if app.world.wof_draw_bottom < wof.wof_bottom_target {
+                app.world.wof_draw_bottom += 1.0;
+                if app.world.wof_draw_bottom > wof.wof_bottom_target {
+                    app.world.wof_draw_bottom = wof.wof_bottom_target;
+                }
+            }
+        }
+        if wof.wof_top_target >= 0.0 {
+            if app.world.wof_draw_top < 0.0 {
+                app.world.wof_draw_top = wof.wof_top_target;
+            } else if app.world.wof_draw_top > wof.wof_top_target {
+                app.world.wof_draw_top -= 1.0;
+                if app.world.wof_draw_top < wof.wof_top_target {
+                    app.world.wof_draw_top = wof.wof_top_target;
+                }
+            } else if app.world.wof_draw_top < wof.wof_top_target {
+                app.world.wof_draw_top += 1.0;
+                if app.world.wof_draw_top > wof.wof_top_target {
+                    app.world.wof_draw_top = wof.wof_top_target;
+                }
+            }
+        }
+        app.world.wof_present = true;
+        app.world.wof_hp_ratio = wof.hp as f32 / wof.max_hp as f32;
+        app.world.wof_x = wof.x;
+    } else {
+        app.world.wof_present = false;
+    }
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();

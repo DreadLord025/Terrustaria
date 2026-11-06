@@ -89,12 +89,14 @@ pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
-    if mouse.x < rect[0] || mouse.y < rect[1] {
-        return None;
-    }
-    let cx = ((mouse.x - rect[0]) / CELL) as usize;
-    let cy = ((mouse.y - rect[1]) / CELL) as usize;
-    if cx >= cols || cy >= rows {
+    // The lattice matches the draw's centred placement (`:219-220`'s
+    // `(rect - rows*CELL) * 0.5` offsets) — the uncentred math missed the
+    // cards once the rows overflowed the panel.
+    let off_x = (rect[2] - cols as f32 * CELL) * 0.5;
+    let off_y = (rect[3] - rows as f32 * CELL) * 0.5;
+    let cx = ((mouse.x - rect[0] - off_x) / CELL) as usize;
+    let cy = ((mouse.y - rect[1] - off_y) / CELL) as usize;
+    if cx >= cols || cy >= rows || mouse.x - rect[0] < off_x || mouse.y - rect[1] < off_y {
         return None;
     }
     let idx = cy * cols + cx;
@@ -341,10 +343,13 @@ fn portrait_data(
         NpcKind::Painter => 39,
         NpcKind::WitchDoctor => 40,
         NpcKind::Clothier => 41,
-        NpcKind::EyeOfCthulhu => 42,
-        NpcKind::QueenBee => 43,
-        NpcKind::SkeletronHead => 44,
-        NpcKind::WallOfFlesh => 45,
+        NpcKind::EyeOfCthulhu => 43,
+        NpcKind::QueenBee => 44,
+        NpcKind::SkeletronHead => 45,
+        NpcKind::WallOfFlesh => 47,
+        NpcKind::Hungry => 48,
+        NpcKind::LeechHead => 49,
+        NpcKind::LeechBody => 50,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -363,10 +368,20 @@ fn portrait_data(
                 ],
             )
         }
+        // The hungry (3 frames) / the leech segments (1).
+        (NpcKind::Hungry, _) => {
+            let h = lookups.bestiary_npc_sheets[48]
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => {
+            (sheet_i, 14.0, 14.0, 14.0, white)
+        }
         // The eye: the 6-frame sheet's frame height rides the sheet
         // (the 100x110 frames).
         (NpcKind::EyeOfCthulhu, _) => {
-            let h = lookups.bestiary_npc_sheets[41]
+            let h = lookups.bestiary_npc_sheets[43]
                 .map(|s| s.height as f32 / 6.0)
                 .unwrap_or(110.0);
             (sheet_i, h, 100.0, h, white)
