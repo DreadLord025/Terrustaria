@@ -4,16 +4,16 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{edit, World, TILE_PX};
+use tr_core::{TILE_PX, World, edit};
 
 use crate::achievements;
 use crate::app::App;
 use crate::item::ItemSlot;
-use tr_core::loot::DropRng;
 use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::projectile::Projectile;
 use crate::registry;
+use tr_core::loot::DropRng;
 
 use super::items::spawn_item_drop;
 
@@ -32,7 +32,9 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
         .as_ref()
         .map(|p| p.center())
         .unwrap_or((app.camera.x, app.camera.y));
-    app.swing_aim = (mouse_world - Vec2::new(cx, cy)).y.atan2((mouse_world - Vec2::new(cx, cy)).x);
+    app.swing_aim = (mouse_world - Vec2::new(cx, cy))
+        .y
+        .atan2((mouse_world - Vec2::new(cx, cy)).x);
 }
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
@@ -129,6 +131,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 43 && held.count > 0 && use_suspicious_looking_eye(app) {
             return;
         }
+        // The event items ride the same tick (`ItemCheck_UseEventItems`,
+        // `Player.cs:43920-43940`): the Goblin Battle Standard 361 starts
+        // the invasion through `CanStartInvasion(1, ignoreDelay: true)`.
+        if held.kind == 361 && held.count > 0 && use_goblin_battle_standard(app) {
+            return;
+        }
     }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
     let tx = (world_pos.x / TILE_PX).floor() as i32;
@@ -140,16 +148,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // The reach gate: the borrow ends at the statement (the arms below
     // re-borrow `app.player` individually, and the shooters' swing start
     // mutates `app` after the gate).
-    let player_in_reach = app
-        .player
-        .as_ref()
-        .is_some_and(|p| {
-            let (pcx, pcy) = p.center();
-            let dx = tx as f32 * TILE_PX + 8.0 - pcx;
-            let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-            let reach = 6.0 * TILE_PX;
-            dx * dx + dy * dy <= reach * reach
-        });
+    let player_in_reach = app.player.as_ref().is_some_and(|p| {
+        let (pcx, pcy) = p.center();
+        let dx = tx as f32 * TILE_PX + 8.0 - pcx;
+        let dy = ty as f32 * TILE_PX + 8.0 - pcy;
+        let reach = 6.0 * TILE_PX;
+        dx * dx + dy * dy <= reach * reach
+    });
     if !player_in_reach {
         app.edit_target = None;
         app.mine_target = None;
@@ -163,7 +168,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     }
     let held = app.inventory[app.selected];
     #[cfg(test)]
-    eprintln!("[flow-dbg] reached: kind={} mine_down={}", held.kind, app.mine_down);
+    eprintln!(
+        "[flow-dbg] reached: kind={} mine_down={}",
+        held.kind, app.mine_down
+    );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
     // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
@@ -219,8 +227,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // rides `Item.potionDelay` = 3600 (60 s).
                 p.buffs.add_buff(21, 3600);
             }
-            app.inventory[app.selected].count =
-                app.inventory[app.selected].count.saturating_sub(1);
+            app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
             if app.inventory[app.selected].count == 0 {
                 app.inventory[app.selected].kind = 0;
             }
@@ -234,8 +241,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         }
     }
     let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
-    let held_use_ammo =
-        registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
@@ -351,8 +357,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
     // The ammo shooters skip it — they fire their `useAmmo` projectile
     // instead (`Player.ItemCheck_Shoot`'s gate, `Player.cs:47069-47075`).
-    let held_use_ammo =
-        registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down
         && held_use_ammo == 0
         && app.attack_cd <= 0.0
@@ -361,11 +366,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     {
         let ax = world_pos.x;
         let ay = world_pos.y;
-        let (pcx, pcy) = app
-            .player
-            .as_ref()
-            .map(|p| p.center())
-            .unwrap_or((ax, ay));
+        let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
@@ -726,12 +727,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         };
         let class = weapon_def.class;
         if let Some(p) = app.player.as_mut() {
-            let weapon_damage = weapon_def.damage as f32
-                * p.weapon_damage_multiplier(class);
+            let weapon_damage = weapon_def.damage as f32 * p.weapon_damage_multiplier(class);
             let mut damage = weapon_damage;
             if ammo_def.damage > 0 {
-                damage += ammo_def.damage as f32
-                    * p.weapon_damage_multiplier(class);
+                damage += ammo_def.damage as f32 * p.weapon_damage_multiplier(class);
             }
             let speed = weapon_def.shoot_speed + ammo_def.shoot_speed;
             let (pcx, pcy) = p.center();
@@ -757,8 +756,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if let Some(slot) = slot {
                 app.projectiles.set_crit(slot, crit);
             }
-            app.audio
-                .play_at("Item_1", pcx, pcy, 1.0);
+            app.audio.play_at("Item_1", pcx, pcy, 1.0);
         }
     }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
@@ -1276,11 +1274,7 @@ fn herb_drops(
 /// margin.)
 fn get_fruit_for_pot(pot_style: i32, gen_rand: &mut tr_core::tile_light::FastRandom) -> u16 {
     let pick = |gen_rand: &mut tr_core::tile_light::FastRandom, a: u16, b: u16| {
-        if gen_rand.next_range(0, 2) == 0 {
-            a
-        } else {
-            b
-        }
+        if gen_rand.next_range(0, 2) == 0 { a } else { b }
     };
     if (4..=6).contains(&pot_style) {
         return pick(gen_rand, 4286, 4295);
@@ -2350,7 +2344,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
     /// parked under the screen-centre cursor and no tile there, so the
@@ -2734,8 +2728,7 @@ mod tests {
     /// The shooter rig: the Wooden Bow held, the arrows in the ammo slots
     /// (and optionally the grid), the cursor to the right of the player.
     fn held_use_ammo_dbg(app: &App) -> i32 {
-        crate::registry::get(app.inventory[app.selected].kind)
-            .map_or(0, |d| d.use_ammo)
+        crate::registry::get(app.inventory[app.selected].kind).map_or(0, |d| d.use_ammo)
     }
 
     fn shooter_app() -> App {
@@ -2840,7 +2833,10 @@ mod tests {
             .filter(|p| p.active)
             .collect();
         assert_eq!(fired.len(), 1, "one arrow");
-        assert_eq!(fired[0].kind, 1, "the ammo's Item.shoot — the WoodenArrowFriendly");
+        assert_eq!(
+            fired[0].kind, 1,
+            "the ammo's Item.shoot — the WoodenArrowFriendly"
+        );
         assert!(fired[0].vel.x > 0.0, "flies at the cursor");
         assert_eq!(app.equip.ammo[0].count, 6, "the arrow drained");
     }
@@ -3900,7 +3896,7 @@ mod tests {
         let mut app = break_app(w, 0xBEA5);
         app.world.day_time = false; // night: `IsAlchemyPlantHarvestable(0)` false
         app.inventory[app.selected] = slot(307, 5); // Daybloom seeds
-                                                    // The cut rule kills (no pot below), then the seed plants itself.
+        // The cut rule kills (no pot below), then the seed plants itself.
         assert!(use_tile_item(&mut app, 10, 18));
         let t = app.world.tile(10, 18).unwrap();
         assert!(t.active() && t.kind == 82, "the seed planted itself");
@@ -4215,7 +4211,8 @@ mod tests {
         assert_eq!(drops.len(), 2, "herb + seeds despite the closed window");
         assert_eq!(drops[0].0, 313);
         assert_eq!(drops[1].0, 307);
-    }}
+    }
+}
 
 /// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
 /// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
@@ -4223,6 +4220,34 @@ mod tests {
 /// `SummonItemCheck` (`Player.cs:42162-42176`) refuses while an EoC is
 /// already alive; `ApplyItemTime`'s re-fire guard rides the swing timers
 /// (the food/potion arms' shape).
+/// The Goblin Battle Standard (`Player.ItemCheck_UseEventItems`,
+/// `Player.cs:43920-43940`): the use through `CanStartInvasion(1,
+/// ignoreDelay: true)` — the refusal leaves the stack intact — then
+/// `StartInvasion()` sizes `80 + 40 x the qualifying players` and the
+/// stack pays one (`Item.consumable`); the roar rides the eye's sound.
+pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let life_max = player.max_hp;
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
+        return false;
+    }
+    crate::world_sim::npcs::start_invasion(&mut app.world, 1);
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
 pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let eye_alive = app
         .npcs
@@ -4239,8 +4264,7 @@ pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
         return false;
     };
     app.audio.play("Roar_0");
-    app.inventory[app.selected].count =
-        app.inventory[app.selected].count.saturating_sub(1);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
     }
@@ -4260,6 +4284,46 @@ mod loot_summon_tests {
     use crate::app::flow::front_flow_tests::flow_app;
 
     #[test]
+    fn the_battle_standard_gates_and_sizing() {
+        // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
+        // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
+        use crate::world_sim::npcs::{can_start_invasion, start_invasion};
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        assert!(!can_start_invasion(&w, 100), "the base life waits");
+        assert!(can_start_invasion(&w, 200));
+        start_invasion(&mut w, 1);
+        assert!(w.invasion_goblins);
+        assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
+        start_invasion(&mut w, 1);
+        assert_eq!(w.invasion_size, 120, "the active invasion blocks");
+    }
+
+    #[test]
+    fn the_battle_standard_starts_the_invasion_and_consumes() {
+        // `ItemCheck_UseEventItems` (`Player.cs:43920-43940`): the use
+        // starts the invasion + pays the stack; the refusal keeps it.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.hp = player.max_hp;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 361,
+            name: "Goblin Battle Standard".into(),
+            count: 2,
+        };
+        assert!(use_goblin_battle_standard(&mut app));
+        assert!(app.world.invasion_goblins);
+        assert_eq!(app.world.invasion_size, 120);
+        assert_eq!(app.inventory[app.selected].count, 1, "the use paid one");
+        assert!(
+            !use_goblin_battle_standard(&mut app),
+            "the active invasion refuses"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+    }
+
+    #[test]
     fn the_suspicious_eye_summons_only_at_night_and_once() {
         // `ItemCheck_UseBossSpawners`' gates: day → refused; night → the
         // roar + the spawn + the consumption; alive → refused
@@ -4270,21 +4334,25 @@ mod loot_summon_tests {
         player.y = 64.0;
         app.player = Some(player);
         app.world.day_time = true;
-        app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
-        assert!(
-            !use_suspicious_looking_eye(&mut app),
-            "day refuses"
-        );
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+        };
+        assert!(!use_suspicious_looking_eye(&mut app), "day refuses");
         app.world.day_time = false;
         assert!(use_suspicious_looking_eye(&mut app));
         assert_eq!(app.inventory[app.selected].count, 0, "the use consumed");
-        assert!(app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0));
-        app.inventory[app.selected] =
-            ItemSlot { kind: 43, name: "Suspicious Looking Eye".into(), count: 1 };
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
+        );
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+        };
         assert!(
             !use_suspicious_looking_eye(&mut app),
             "SummonItemCheck refuses while alive"
@@ -4303,8 +4371,7 @@ mod loot_summon_tests {
         player.y = 64.0;
         app.player = Some(player);
         app.world.day_time = false;
-        let mut eye =
-            crate::npc::Npc::spawn_eye_of_cthulhu(&app.world, 64.0, 64.0).unwrap();
+        let mut eye = crate::npc::Npc::spawn_eye_of_cthulhu(&app.world, 64.0, 64.0).unwrap();
         eye.hp = 0;
         app.npcs.push(eye);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);

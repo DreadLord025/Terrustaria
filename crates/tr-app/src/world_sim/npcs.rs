@@ -86,6 +86,26 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     app.nurse_heal(nurse_idx)
 }
 
+/// `Main.CanStartInvasion` (`Main.cs:64414-64432`): no active invasion
+/// (the port's `invasion_goblins` covers `invasionType`), and at least one
+/// qualifying player — the 200-life gate (`statLifeMax >= 200`); the
+/// multiplayer count folds to the session player. The item path passes
+/// `ignoreDelay: true`, so the `invasionDelay` scouting arm folds out.
+pub(crate) fn can_start_invasion(world: &tr_core::World, player_life_max: i32) -> bool {
+    !world.invasion_goblins && player_life_max >= 200
+}
+
+/// `Main.StartInvasion(1)` (`Main.cs:64435-64460`): the goblin type, the
+/// size `80 + 40 x the qualifying players` (the CanStart gate guarantees
+/// >= 1); the active-invasion early return holds (`invasionType != 0`).
+pub(crate) fn start_invasion(world: &mut tr_core::World, qualifying_players: i32) {
+    if world.invasion_goblins {
+        return;
+    }
+    world.invasion_goblins = true;
+    world.invasion_size = 80 + 40 * qualifying_players.max(1);
+}
+
 /// The kind → the shop number (`NPCInteractions.cs:488-498`'s registry:
 /// `Shop(17, 1)`, `Shop(19, 2)` … `Shop(107, 6)` — the port keeps the
 /// vanilla indices). `None` = no shop (the Guide).
