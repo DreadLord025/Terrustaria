@@ -40,13 +40,13 @@ use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
-use crate::craft;
 use crate::audio;
 use crate::banners;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
 use crate::chat;
+use crate::craft;
 use crate::emotes;
 use crate::inv;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
@@ -136,6 +136,9 @@ pub(crate) struct App {
     pub(crate) next_worm_id: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
+    /// module; delete the field + the module + the call sites to remove).
+    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -343,6 +346,10 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
+    /// The minecart wheel sparks (`Minecart.WheelSparks` → the type-213 dust)
+    /// — the `Main.dust` stand-in for the cart's pool, fed by the `world_sim`
+    /// drain and ticked/drawn with the other world dust.
+    pub(crate) minecart_sparks: crate::minecart::Sparks,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -1150,6 +1157,30 @@ impl App {
                 p.dash_type = d.clamp(0, 6);
             }
         }
+        // `TR_MOUNT=<id|name>` pins a mount (the granting saddle items are
+        // real items now — this stands in for the `miscEquips[3]` slot and
+        // for tests/screenshots).
+        if let Ok(v) = std::env::var("TR_MOUNT") {
+            if let Some(p) = player.as_mut() {
+                let name = v.trim().to_ascii_lowercase();
+                let id = name.parse::<i32>().ok().or_else(|| match name.as_str() {
+                    "rudolph" => Some(0),
+                    "bunny" => Some(1),
+                    "slime" => Some(3),
+                    "scutlix" => Some(9),
+                    "unicorn" => Some(10),
+                    "basilisk" => Some(14),
+                    "horse" | "painted_horse" => Some(40),
+                    "majestic_horse" => Some(41),
+                    "dark_horse" => Some(42),
+                    "pogo" | "pogo_stick" => Some(43),
+                    "wofgoat" | "goat" => Some(47),
+                    "queenslime" => Some(50),
+                    _ => None,
+                });
+                p.pinned_mount = id;
+            }
+        }
         // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
         // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
         // BlizzardinaBottle 987, FartinaJar 1724, TsunamiInABottle 3201) and
@@ -1358,6 +1389,7 @@ impl App {
             post: None,
             noise_tex: None,
             sand: crate::sand::Sand::new(1),
+            minecart_sparks: crate::minecart::Sparks::new(),
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -1398,6 +1430,7 @@ impl App {
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            debug_panel: crate::debug_panel::DebugPanel::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -2163,7 +2196,11 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                     "TR_TOGGLE {},{} -> bed ({})",
                     op.x,
                     op.y,
-                    if set_spawn { "spawn half" } else { "sleep half" }
+                    if set_spawn {
+                        "spawn half"
+                    } else {
+                        "sleep half"
+                    }
                 ),
                 edit::TileInteraction::ClockRead { text } => {
                     log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
@@ -2622,7 +2659,15 @@ mod tr_hooks {
         let ops = parse_tr_tiles("5,6,82,0,18;7,8,82,18,-1");
         assert_eq!(ops.len(), 2, "groups split on ';'");
         assert_eq!(
-            (ops[0].x, ops[0].y, ops[0].kind, ops[0].fx, ops[0].fy, ops[0].w, ops[0].h),
+            (
+                ops[0].x,
+                ops[0].y,
+                ops[0].kind,
+                ops[0].fx,
+                ops[0].fy,
+                ops[0].w,
+                ops[0].h
+            ),
             (5, 6, 82, 0, 18, 1, 1)
         );
         assert_eq!(
@@ -2632,7 +2677,13 @@ mod tr_hooks {
         let clear = parse_tr_tiles("10,10,3,2");
         assert_eq!(clear.len(), 1);
         assert_eq!(
-            (clear[0].x, clear[0].y, clear[0].w, clear[0].h, clear[0].kind),
+            (
+                clear[0].x,
+                clear[0].y,
+                clear[0].w,
+                clear[0].h,
+                clear[0].kind
+            ),
             (10, 10, 3, 2, -1)
         );
         assert_eq!((clear[0].fx, clear[0].fy), (0, 0));
@@ -2647,12 +2698,24 @@ mod tr_hooks {
     fn tr_tiles_parsing_skips_malformed_groups() {
         // The fixture is one env value; a malformed group must be dropped whole
         // without aborting the well-formed ones around it.
-        assert!(parse_tr_tiles("").is_empty(), "the empty string places nothing");
+        assert!(
+            parse_tr_tiles("").is_empty(),
+            "the empty string places nothing"
+        );
         assert!(parse_tr_tiles("1,2").is_empty(), "2 tokens is not a form");
         assert!(parse_tr_tiles("1,2,3").is_empty(), "3 tokens is not a form");
-        assert!(parse_tr_tiles("1,2,3,4,5,6").is_empty(), "6 tokens is not a form");
-        assert!(parse_tr_tiles("x,y,82,0,18").is_empty(), "non-numeric coords");
-        assert!(parse_tr_tiles("1,2,82,0,z").is_empty(), "non-numeric frames");
+        assert!(
+            parse_tr_tiles("1,2,3,4,5,6").is_empty(),
+            "6 tokens is not a form"
+        );
+        assert!(
+            parse_tr_tiles("x,y,82,0,18").is_empty(),
+            "non-numeric coords"
+        );
+        assert!(
+            parse_tr_tiles("1,2,82,0,z").is_empty(),
+            "non-numeric frames"
+        );
         assert_eq!(parse_tr_tiles("1,2,3;5,6,82,0,18").len(), 1);
     }
 
@@ -2679,7 +2742,10 @@ mod tr_hooks {
         assert_eq!((t.frame_x, t.frame_y), (0, 18));
         assert!(t.active(), "the fixture cell renders");
         assert_eq!(t.wall, 0, "the write replaces the whole cell");
-        assert!(w.frame_important[82], "the written kind is marked frame-important");
+        assert!(
+            w.frame_important[82],
+            "the written kind is marked frame-important"
+        );
         assert!(!w.frame_important[1], "only the written kind is marked");
         assert!(w.revision > rev_before, "a write bumps the world revision");
         assert!(!w.tile(6, 6).unwrap().active(), "the write stays 1x1");
@@ -2715,7 +2781,10 @@ mod tr_hooks {
             }
         }
         assert!(w.revision > rev_before, "a clear bumps the world revision");
-        assert!(!w.tile(9, 10).unwrap().active(), "the clear stays inside w*h");
+        assert!(
+            !w.tile(9, 10).unwrap().active(),
+            "the clear stays inside w*h"
+        );
     }
 
     #[test]

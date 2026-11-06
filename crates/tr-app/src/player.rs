@@ -10,13 +10,14 @@
 
 use crate::registry;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
-use glam::Vec2;
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
-use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use crate::luck::LuckState;
+use crate::minecart;
+use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
+use glam::Vec2;
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -27,6 +28,23 @@ const MAX_FALL: f32 = 10.0;
 /// upward velocity at `jumpSpeed` for `jumpHeight` ticks, so tap and hold jumps
 /// reach different heights.
 const JUMP_SPEED: f32 = 5.01;
+
+/// The base minecart's mount data (`Mount.SetAsMinecart` via the `mounts[6]`
+/// registration, `Mount.cs:918-931`): `runSpeed = dashSpeed = 13`,
+/// `acceleration = 0.04`, `jumpHeight = 15`, `jumpSpeed = 5.15` — the C#
+/// `JumpHeight`/`JumpSpeed` cases (`Mount.cs:2810-2858`) list no cart, so the
+/// stats are fixed (no |vx| scaling).
+const CART_RUN_SPEED: f32 = 13.0;
+const CART_DASH_SPEED: f32 = 13.0;
+const CART_ACCELERATION: f32 = 0.04;
+const CART_JUMP_HEIGHT: i32 = 15;
+const CART_JUMP_SPEED: f32 = 5.15;
+/// `mountData.buff` for the minecart (`Mount.cs:920`) — `AddBuff(buff, 3600)`
+/// on mount (`Mount.cs:6226`), cleared on dismount (`:6151`).
+const CART_MOUNT_BUFF: i32 = 118;
+/// The mounted body height: `42 + heightBoost` (`SetMount`, `Mount.cs:6270`;
+/// `heightBoost = 10`, `Mount.cs:923`). The width stays 20.
+const CART_MOUNT_HEIGHT: f32 = 52.0;
 /// `Player.breathMax`; `breath` is in ticks.
 pub const BREATH_MAX: i32 = 200;
 /// `Player.breathCDMax`: ticks between breath decrements.
@@ -248,6 +266,11 @@ pub struct Player {
     pub pinned_jumps: [bool; 9],
     pub pinned_balloon: bool,
     pub pinned_rocket_boots: i32,
+    /// The `TR_MOUNT=<id|name>` pin: the debug stand-in for the saddle item
+    /// (the real items equip through `Item.mountType`), re-applied after the
+    /// per-tick flag clear while no mount is active (the `pinned_*` pattern,
+    /// docs/ANALYSIS.md "Item / equip deviations").
+    pub pinned_mount: Option<i32>,
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
@@ -395,6 +418,20 @@ pub struct Player {
     /// the per-tick statics the jump branches read.
     jump_height: i32,
     jump_speed: f32,
+    /// `Player.mount` (`Player.cs:2126`): the mount instance state — the data
+    /// table and the state core live in the `mount` module.
+    pub mount: crate::mount::MountState,
+    /// `Player.autoJump`: the vanilla auto-jump accessibility setting; the
+    /// port has no settings surface, so this carries only the mount's
+    /// per-tick head-set (`Mount.UpdateEffects`, `Mount.cs:4797`).
+    auto_jump: bool,
+    /// `Player.justJumped` (`Player.cs:2722`): set on a grounded jump trigger
+    /// (`:20678`), cleared in `ResetEffects` (`:18786`); the wing/rocket
+    /// refills read it for the auto-jump (constant-jump) mounts.
+    just_jumped: bool,
+    /// The live hitbox height — `Player.height`: `HEIGHT` (42) normally,
+    /// `42 + heightBoost` while mounted (`SetMount` `Mount.cs:6264-6277`).
+    pub height: f32,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
@@ -453,6 +490,54 @@ pub struct Player {
     step_speed: f32,
     /// `Player.stairFall`: slopes may be fallen through this tick.
     stair_fall: bool,
+    /// `Player.mount.Active && Mount.Minecart` — the base-cart ride state
+    /// (`MountID.Sets.Cart` contains 6, `MountID.cs:43`). The full Mount
+    /// framework is M2-MOUNT-1; `TR_CART` pins this state for tests and
+    /// screenshots.
+    pub cart_mounted: bool,
+    /// `Player.cartFlip` (`Player.cs:1786`): the bouncy-bumper sprite flip,
+    /// toggled on each bounce while a direction key is held
+    /// (`Player.cs:28123-28130`).
+    pub cart_flip: bool,
+    /// `Player.onTrack` (`Player.cs:2811`): this tick's `Minecart.TrackCollision`
+    /// result bit 0 — the body rides a rail. Couples the collision heights
+    /// (pitfall §10.9).
+    pub on_track: bool,
+    /// `Player.onWrongGround` (`Player.cs:2455`): a mounted cart off the rails —
+    /// set by the on-track check (`Player.cs:26665-26674`), preserved across the
+    /// tick for carts (`:24371-24374`).
+    pub on_wrong_ground: bool,
+    /// `Player.trackBoost` (`Player.cs:1780`): the pending booster push, applied
+    /// pre-input next tick and clamped (`Player.cs:19818-19833`).
+    pub track_boost: f32,
+    /// `Player.lastBoost` (`Player.cs:1782`): the booster tile a boost is pending
+    /// from — tile coords, `(0, 0)` = none (`Minecart.cs:832-847`, `:894-897`).
+    pub last_boost: (i32, i32),
+    /// `Player.cartRampTime` (`Player.cs:1802`): the gravity-freeze ticks a ramp
+    /// launch grants (`Player.cs:28148-28150`), consumed by the gravity gate
+    /// (`:27352-27359`).
+    pub cart_ramp_time: i32,
+    /// `Player.fullRotation` / `fullRotationOrigin` (`Player.cs:1838-1840`): the
+    /// rail-slope tilt from `Minecart.TrackRotation` (`Player.cs:28114-28115`).
+    pub full_rotation: f32,
+    pub full_rotation_origin: (f32, f32),
+    /// `Player.fallStart2` (`Player.cs:2884`): the fall origin the rail-landing
+    /// gate reads (`Minecart.cs:809-813`), captured pre-movement when
+    /// `velocity.Y <= 0` (`Player.cs:25295-25297`).
+    pub fall_start2: i32,
+    /// The `Player.cs:28237-28241` switch trip handed to the caller (the C#
+    /// `HitTrackSwitch` needs `&mut World`; the tick takes `&World`).
+    pending_switch_trip: Option<(i32, i32)>,
+    /// The wheel-spark rolls' named stream (the per-consumer convention — C#
+    /// rolls the shared `Main.rand` at `Player.cs:19873-19901` and inside
+    /// `DelegateMethods.Minecart.Sparks`). Seeded from the world seed.
+    pub spark_rng: u64,
+    /// The tick's queued spark particles, drained by `world_sim` into the
+    /// App's `minecart::Sparks` pool (the `Main.dust` stand-in).
+    pending_sparks: Vec<crate::minecart::SparkP>,
+    /// The tick's queued minecart cues (Item53/55/56), drained into
+    /// `App::audio::play_at` (`DelegateMethods.cs:248-256`, `Player.cs:19870`).
+    pending_cart_sounds: Vec<crate::minecart::CartCue>,
 }
 
 impl Player {
@@ -507,6 +592,7 @@ impl Player {
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
+            pinned_mount: None,
             control_left: false,
             control_right: false,
             control_jump: false,
@@ -556,6 +642,10 @@ impl Player {
             jump_boost: false,
             jump_height: 15,
             jump_speed: 5.01,
+            mount: crate::mount::MountState::default(),
+            auto_jump: false,
+            just_jumped: false,
+            height: HEIGHT,
             last_stoned: false,
             dash_type: 0,
             dash: 0,
@@ -584,6 +674,20 @@ impl Player {
             prev_gfx_off_y: 0.0,
             step_speed: 1.0,
             stair_fall: false,
+            cart_mounted: false,
+            cart_flip: false,
+            on_track: false,
+            on_wrong_ground: false,
+            track_boost: 0.0,
+            last_boost: (0, 0),
+            cart_ramp_time: 0,
+            full_rotation: 0.0,
+            full_rotation_origin: (0.0, 0.0),
+            fall_start2: (sy / TILE_PX) as i32,
+            pending_switch_trip: None,
+            spark_rng: world.seed ^ 0x0CA4_75B1_A5E5_DD1D,
+            pending_sparks: Vec::new(),
+            pending_cart_sounds: Vec::new(),
         }
     }
 
@@ -595,14 +699,14 @@ impl Player {
     /// `RemoveAllGrapplingHooks`/`mount.TryDismount`.
     pub fn sit_down(&mut self, seat_x: f32, seat_y: f32, direction: i32) {
         let bottom_x = self.x + WIDTH as f32 * 0.5;
-        let bottom_y = self.y + HEIGHT as f32;
+        let bottom_y = self.y + self.height;
         if self.sitting && (bottom_x - seat_x).abs() < 0.01 && (bottom_y - seat_y).abs() < 0.01 {
             self.sit_up();
             return;
         }
         self.grappling_active = false;
         self.x = seat_x - WIDTH as f32 * 0.5;
-        self.y = seat_y - HEIGHT as f32;
+        self.y = seat_y - self.height;
         self.facing = direction;
         self.sitting = true;
         self.vx = 0.0;
@@ -614,6 +718,100 @@ impl Player {
         self.sitting = false;
     }
 
+    /// The body height the sim feeds `base.height` with — 52 while the cart is
+    /// mounted (`SetMount`, `Mount.cs:6270`: `height = 42 + heightBoost`), the
+    /// live hitbox height otherwise (the mount framework's equip mutates it for
+    /// its own mounts; unmounted 42). The width stays 20 (`:6271`).
+    pub fn body_height(&self) -> f32 {
+        if self.cart_mounted {
+            CART_MOUNT_HEIGHT
+        } else {
+            self.height
+        }
+    }
+
+    /// `Mount.SetMount(MountID.Minecart)` (`Mount.cs:6196-6305`) — the mount
+    /// entry this phase exposes to the `TR_CART` pin (the item/QuickMount/hook
+    /// paths are M2-MOUNT-3). A same-type re-mount is a no-op (`:6198`); a
+    /// mount change resets the ride state (`:6205-6211`, pitfall §10.13).
+    pub fn mount_cart(&mut self) {
+        if self.cart_mounted {
+            return;
+        }
+        self.cart_flip = false;
+        self.last_boost = (0, 0);
+        self.full_rotation = 0.0;
+        self.full_rotation_origin = (0.0, 0.0);
+        self.cart_mounted = true;
+        // `:6226` — the minecart buff for 3600 ticks.
+        self.buffs.add_buff(CART_MOUNT_BUFF, 3600);
+        // The bottom-center resize 42 -> 52 (`:6266-6272` — the generic
+        // `heightBoost` branch; carts have no `PlayerSize` delegate).
+        self.y -= CART_MOUNT_HEIGHT - HEIGHT;
+    }
+
+    /// `Mount.CanDismountWithResult` (`Mount.cs:6611-6624`): the cart is not in
+    /// `DontDismountWhenCCed` (`MountID.cs:47` — CCed never blocks it), so only
+    /// the unmount-size room check can refuse. For the base cart the check is
+    /// the 52→42 bottom-anchored shrink, which probes no tiles and always fits
+    /// (`Collision.cs:2505-2510`).
+    fn can_dismount(&self, world: &World) -> bool {
+        collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [WIDTH, self.body_height()],
+            [WIDTH, HEIGHT],
+        )
+        .is_some()
+    }
+
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) for the cart ride: clears the
+    /// ride state, the mount buff, and resizes 20×52 → 20×42 bottom-center.
+    /// Both resize branches (`:6182-6193`) anchor the bottom for a shrink, so
+    /// the port lifts the top by the freed heightBoost. The dismount dust is
+    /// Phase 3. (Named apart from the mount-framework `dismount` — the cart
+    /// ride sits outside `MountState` until M2-MOUNT-3 bridges them.)
+    fn cart_dismount(&mut self) {
+        if !self.cart_mounted {
+            return; // `:6146-6149` — the `!_active` guard
+        }
+        self.cart_mounted = false;
+        self.buffs.clear_buff(CART_MOUNT_BUFF); // `:6151`
+        self.cart_flip = false; // `:6157-6160`
+        self.last_boost = (0, 0);
+        self.full_rotation = 0.0; // `:6161-6162`
+        self.full_rotation_origin = (0.0, 0.0);
+        self.on_track = false;
+        self.y += CART_MOUNT_HEIGHT - HEIGHT;
+    }
+
+    /// `Mount.TryDismount` (`Mount.cs:6137-6140` → `TryDismountWithResult`
+    /// `:6127-6135`) for the cart ride: dismount only when the space check
+    /// succeeds. (Named apart from the mount-framework `try_dismount`.)
+    fn try_cart_dismount(&mut self, world: &World) {
+        if self.can_dismount(world) {
+            self.cart_dismount();
+        }
+    }
+
+    /// Takes the pending pressure-track trip (the `Player.cs:28237-28241`
+    /// `HitTrackSwitch` handoff — the caller owns `&mut World`).
+    pub fn take_switch_trip(&mut self) -> Option<(i32, i32)> {
+        self.pending_switch_trip.take()
+    }
+
+    /// Takes the tick's queued spark particles (the `Main.dust` handoff —
+    /// the caller owns the pool).
+    pub(crate) fn take_cart_sparks(&mut self) -> Vec<crate::minecart::SparkP> {
+        std::mem::take(&mut self.pending_sparks)
+    }
+
+    /// Takes the tick's queued minecart cues (the `SoundEngine.PlaySound`
+    /// handoff — the caller owns the audio device).
+    pub(crate) fn take_cart_sounds(&mut self) -> Vec<crate::minecart::CartCue> {
+        std::mem::take(&mut self.pending_cart_sounds)
+    }
+
     /// `PlayerSittingHelper.UpdateSitting` (`:47-102`): any control input,
     /// a direction change, or the chair going away stands the player up.
     /// The seat-stack cap (`Main.sittingManager`, 2 per tile) is the
@@ -622,18 +820,14 @@ impl Player {
         if !self.sitting {
             return;
         }
-        if self.control_left
-            || self.control_right
-            || self.control_jump
-            || self.control_down
-        {
+        if self.control_left || self.control_right || self.control_jump || self.control_down {
             self.sit_up();
             return;
         }
         // `TryGetSittingBlock` (`:33-45`): the tile at the bottom - 2 px must
         // still decode as a sit-able chair.
         let bx = self.x + WIDTH as f32 * 0.5;
-        let by = self.y + HEIGHT as f32 - 2.0;
+        let by = self.y + self.height - 2.0;
         let tx = (bx / 16.0).floor() as i32;
         let ty = (by / 16.0).floor() as i32;
         let chair_gone = world
@@ -699,14 +893,33 @@ impl Player {
         self.in_lava = false;
         self.gfx_off_y = 0.0;
         self.prev_gfx_off_y = 0.0;
+        // `Player.KillMe` dismounts the mount (`Player.cs:38907`); the respawn
+        // resets the ride state with it (the position is rebuilt from spawn
+        // below, so no bottom-center resize is needed here).
+        self.cart_mounted = false;
+        self.cart_flip = false;
+        self.on_track = false;
+        self.on_wrong_ground = false;
+        self.track_boost = 0.0;
+        self.last_boost = (0, 0);
+        self.cart_ramp_time = 0;
+        self.full_rotation = 0.0;
+        self.full_rotation_origin = (0.0, 0.0);
+        self.fall_start2 = (self.y / TILE_PX) as i32;
+        self.pending_switch_trip = None;
+        self.pending_sparks.clear();
+        self.pending_cart_sounds.clear();
+        self.buffs.clear_buff(CART_MOUNT_BUFF);
     }
 
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
     /// flag, `deadTime` reset and `respawnTimer = GetRespawnTime(pvp)`.
-    pub fn start_death(&mut self, boss_near: bool, expert: bool) {
+    pub fn start_death(&mut self, world: &World, boss_near: bool, expert: bool) {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+        // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
+        let _ = self.dismount(world, true);
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -821,7 +1034,7 @@ impl Player {
     }
 
     pub fn center(&self) -> (f32, f32) {
-        (self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5)
+        (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
 
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
@@ -891,6 +1104,23 @@ impl Player {
         // `Player.Update` → `UpdateBuffs(i)` (`Player.cs:24535`): the timer head runs
         // early in the tick. Nothing grants buffs yet, so this only decrements.
         self.buffs.update_buffs_tick();
+        // `Player.cs:9881-9884`: a mount-type buff re-affirms its mount every
+        // tick and holds `buffTime = 10` — the buff is the source of truth.
+        // (The vanilla re-calls `SetMount` with the live type, which is the
+        // `Mount.cs:6198` no-op guard; the real re-equip runs when the buff
+        // re-appears on its own.)
+        for bt in self.buffs.active_types() {
+            if let (Some(m), Some(i)) = (
+                crate::mount::mount_type_of_buff(bt),
+                self.buffs.find_buff_index(bt),
+            ) {
+                self.buffs.buff_time[i] = 10;
+                if !self.mount.is_active() {
+                    let wet = self.wet;
+                    self.set_mount(m, wet);
+                }
+            }
+        }
         // Buffs whose timer ran out are deleted right after the tick
         // (`Player.cs:25608-25616`) — before any effect can read them.
         self.remove_expired_buffs();
@@ -933,6 +1163,13 @@ impl Player {
         // condition (`Player.cs:25379`). The old pre-movement `vy <= 0` reset
         // measured falls from every upward apex — the vanilla code never does.
 
+        // `Player.cs:25295-25297`: `fallStart2` captures the pre-movement row
+        // while rising or resting — it feeds the rail-landing gate
+        // (`Minecart.cs:809-813`) and nothing else.
+        if self.vy <= 0.0 {
+            self.fall_start2 = (self.y / TILE_PX) as i32;
+        }
+
         // `Player.cs:24364-24371`: the per-tick movement defaults;
         // `moveSpeed` multiplies acceleration and the primary gate while
         // `accRunSpeed` takes only the debuff (`Player.cs:26004-26010`).
@@ -950,6 +1187,12 @@ impl Player {
         }
         self.move_speed = 1.0;
         self.strongest_move_speed_debuff = 1.0;
+        // `Player.cs:24371-24374`: a mounted cart keeps `onWrongGround` across
+        // the tick (the on-track check below rewrites it); everyone else
+        // clears it at the defaults.
+        if !self.cart_mounted {
+            self.on_wrong_ground = false;
+        }
         // `Player.ResetEffects` + `UpdateBuffs`' slot scan (`Player.cs:18640/
         // :9855`, the debuff rows `:10039-10061`, Weak `:11873-11878`, Webbed
         // `:11865-11883`, Darkness→blind `:9969-9971`): the flags derive per
@@ -960,6 +1203,20 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:18786`: justJumped clears at the tick head; the auto-jump
+        // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
+        self.just_jumped = false;
+        self.auto_jump = false;
+        // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
+        // `Mount.cs:5275-5281`): the buff gone means dismount.
+        if self.mount.is_active()
+            && self
+                .mount
+                .data()
+                .is_some_and(|d| self.buffs.find_buff_index(d.buff).is_none())
+        {
+            self.try_dismount(world);
+        }
         self.blind = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
@@ -1141,6 +1398,14 @@ impl Player {
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
         }
+        // The `TR_MOUNT` pin equips while nothing else did this tick — a real
+        // saddle (or its still-live buff) wins, matching the refresh order.
+        if let Some(m) = self.pinned_mount {
+            if !self.mount.is_active() {
+                let wet = self.wet;
+                self.set_mount(m, wet);
+            }
+        }
         // `Player.UpdateBuffs`' scene-buff grants (`Player.cs:25525-25555`):
         // the 2-tick indicator buffs refresh from the scan; the effect cases
         // above read the previous tick's grant, exactly like the source.
@@ -1223,16 +1488,76 @@ impl Player {
         // block is bypassed while grappling — `GrappleMovement` replaces the
         // velocity below.
         let grappling = self.grappling_active;
-        let dir = (input.right as i32 - input.left as i32) as f32;
-        if dir != 0.0 {
-            self.facing = dir as i32;
+        let dir = input.right as i32 - input.left as i32;
+        // `Player.cs:26688` calls `HorizontalMovement()` unconditioned, so its
+        // direction block (`:19835-19843`) applies even on the ticks the
+        // port's grapple gate bypasses the call — the facing update for those
+        // ticks stays here (the pull replaces the velocity afterwards, the
+        // facing keeps following, with the cart lock intact).
+        if grappling && dir != 0 {
+            let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
+            if !self.cart_mounted || roll == dir {
+                self.facing = dir;
+            }
+        }
+        // `Player.cs:26623-26687`: the mount stat override. The base cart is
+        // not additive and cannot use wings (`MovementStatsAreAdditive` false,
+        // `CanUseWings` false), so the stats are replaced outright and the
+        // wing/rocket gear is stripped for the tick.
+        if self.cart_mounted {
+            self.run_slowdown = 0.2; // `:26625`
+            self.rocket_boots = 0; // `:26628`
+            self.wings_logic = 0; // `:26631-26633` (`wings = 0` has no port field)
+            self.max_run_speed = CART_RUN_SPEED; // `:26652` mount.RunSpeed
+            self.acc_run_speed = CART_DASH_SPEED; // `:26653` mount.DashSpeed
+            self.run_acceleration = CART_ACCELERATION; // `:26654` mount.Acceleration
+            // `Player.cs:19628-19629` + `UpdateJumpHeight`: the cart is in no
+            // `JumpHeight`/`JumpSpeed` case (`Mount.cs:2810-2858`) — fixed
+            // 15/5.15, no |vx| scaling.
+            self.jump_height = CART_JUMP_HEIGHT;
+            self.jump_speed = CART_JUMP_SPEED;
+            // `Player.cs:26665-26681`: the on-track check while resting — the
+            // friction switch and the dismount-on-direction-press edge.
+            if self.vy == 0.0 {
+                if !minecart::on_track(
+                    world,
+                    Vec2::new(self.x, self.y),
+                    WIDTH as i32,
+                    CART_MOUNT_HEIGHT as i32,
+                ) {
+                    self.full_rotation = 0.0; // `:26668`
+                    self.on_wrong_ground = true; // `:26669`
+                    self.run_slowdown = 0.2; // `:26670`
+                    // `:26672` — `releaseLeft`/`releaseRight` are `!controlX`
+                    // recomputed at tick end (`:27624-27635`), so the pair is
+                    // a direction-key press edge.
+                    if (self.control_left && !self.left_prev)
+                        || (self.control_right && !self.right_prev)
+                    {
+                        self.try_cart_dismount(world);
+                    }
+                } else {
+                    self.run_slowdown = self.run_acceleration; // `:26675` — 0.04
+                    self.on_wrong_ground = false; // `:26676`
+                }
+            }
         }
         if !grappling {
-            // `:26496-26499`: the wing run-speed tweaks run before the movement.
-            if self.wings_logic > 0 && self.vy != 0.0 {
+            // `:26496-26499`: the wing run-speed tweaks run before the
+            // movement — vanilla gates them on `mount.CanUseWings` too (and
+            // on `!merman`, which has no port counterpart).
+            if self.wings_logic > 0 && self.vy != 0.0 && self.mount.can_use_wings() {
                 self.wing_air_logic_tweaks();
             }
-            self.horizontal_movement(dir);
+            // `Player.cs:26623-26688`: the per-tick mount block (with the
+            // `UpdateEffects` head and the `UpdateJumpHeight` merge — vanilla
+            // runs those at `:25656`/`:26011`, both earlier in the same tick).
+            // A no-op without a mount; the cart ride's own stat block (the
+            // same C# lines, `cart_mounted`-gated) runs where Phase 2 placed
+            // it — the two never fire together (no cart row in the mount
+            // table; M2-MOUNT-3 bridges them).
+            self.update_mount();
+            self.horizontal_movement();
         }
 
         let in_liquid = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
@@ -1261,8 +1586,20 @@ impl Player {
             // `:21024`: any held frame clears the release latch.
             self.release_jump = false;
             if self.on_ground && jump_pressed {
+                // `Player.cs:20671-20675`: the cart nudge — the mount jump
+                // lifts the magnet a hair off the rail line so the ride state
+                // machine cannot re-catch the jump.
+                if self.cart_mounted {
+                    self.y -= 0.001;
+                }
+                // `Player.cs:20752-20754`: leaving the rail levels the tilt.
+                if !self.on_track {
+                    self.full_rotation = 0.0;
+                }
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
-                // follows (`:20755-20758` — `RefreshDoubleJumps`).
+                // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
+                // sets `justJumped` on the grounded trigger.
+                self.just_jumped = true;
                 self.vy = -self.jump_speed;
                 self.jump = self.jump_height;
                 self.on_ground = false;
@@ -1293,6 +1630,10 @@ impl Player {
                 if let Some(j) = jumped {
                     self.can_jump_again[j.index()] = false;
                     self.performing_jump = Some(j);
+                    // `:20678`: only a grounded trigger counts as justJumped.
+                    if self.vy == 0.0 {
+                        self.just_jumped = true;
+                    }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
                 } else {
@@ -1319,6 +1660,12 @@ impl Player {
         if !grappling {
             self.dash_movement(world, input);
         }
+        // `Player.cs:26799-26812`: while CCed the mount dismounts and the
+        // plain gravity takes over (the port's CC input zeroing and the
+        // flight gate below already cover the rest of that branch).
+        if !grappling && self.cced() && self.mount.is_active() {
+            self.try_dismount(world);
+        }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
         // `Player.cs:22613-22740`): the pull REPLACES the velocity — the
@@ -1338,8 +1685,18 @@ impl Player {
         } else {
             false
         };
+        // `Player.cs:26821-26824`: a rest tick clears the ramp freeze.
+        if self.vy == 0.0 {
+            self.cart_ramp_time = 0;
+        }
         if !flew && !self.webbed && !grappling {
-            self.vy = (self.vy + gravity).min(fall_cap);
+            // `Player.cs:27352-27359`: the ramp freeze — gravity applies only
+            // once the ramp timer has run out; otherwise it ticks down.
+            if self.cart_ramp_time <= 0 {
+                self.vy = (self.vy + gravity).min(fall_cap);
+            } else {
+                self.cart_ramp_time -= 1;
+            }
         }
         self.vy = self.vy.max(if in_liquid {
             -(MAX_FALL / 3.0)
@@ -1347,9 +1704,141 @@ impl Player {
             -MAX_FALL
         });
 
+        // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
+        // before the integration because it snaps Y itself and rewrites the
+        // velocity (pitfall §10.3: X moves in the integration below).
+        let _was_on_track = self.on_track; // `:28091` `flag32` — the off-rail JumpingSound delegate is empty (see below)
+        self.on_track = false; // `:28092`
+        let mut hit_switch_flag = false; // `flag33`
+        if self.cart_mounted {
+            // `:28099-28106`: the water scale wraps only this call
+            // (`ignoreWater`/`merman` have no port fields yet — treated false).
+            let scale = if self.shimmer_wet {
+                0.25
+            } else if self.honey_wet {
+                0.25
+            } else if !self.wet {
+                1.0
+            } else {
+                0.5
+            };
+            let body_h = self.body_height() as i32;
+            // `Player.cs:28110-28111` + `Minecart.cs:809-813`: the landing
+            // event fires mid-call with the pre-resolve `Position` and the
+            // rotation the caller set before the call — both captured here.
+            let pre_pos = Vec2::new(self.x, self.y);
+            let pre_rotation = self.full_rotation;
+            let mut pos = Vec2::new(self.x, self.y);
+            let mut vel = Vec2::new(self.vx, self.vy);
+            vel *= scale;
+            // `:28109-28110` — `controlDown`/`controlUp` are the follow flags
+            // (the port's input has no up bit; single-rail rides never read it).
+            let flags = minecart::track_collision(
+                world,
+                &mut pos,
+                &mut vel,
+                &mut self.last_boost,
+                WIDTH as i32,
+                body_h,
+                self.control_down,
+                false,
+                self.fall_start2,
+                false,
+            );
+            vel /= scale;
+            // `:28116-28119` — the non-cart position restore never fires for
+            // carts (`!this.mount.Cart` gate).
+            if flags.on_track() {
+                self.on_track = true; // `:28113`
+                // `:28114-28115` — the rail-slope visual correction.
+                let (gfx, rot) = minecart::track_rotation(
+                    world,
+                    pos + vel,
+                    WIDTH as i32,
+                    body_h,
+                    self.control_down,
+                    false,
+                );
+                self.gfx_off_y = gfx;
+                self.full_rotation = rot;
+                self.full_rotation_origin = ((WIDTH / 2.0), body_h as f32);
+            }
+            // `:28117-28119`: the riding-off-rail `MinecartJumpingSound`
+            // delegate is EMPTY in C# (`DelegateMethods.cs:244-248`) — the
+            // `was_on_track` && !on_track edge plays nothing.
+            if flags.landing {
+                // `Minecart.cs:809-813`: the landing check —
+                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
+                // with the pre-call position and rotation captured above.
+                minecart::minecart_landing_sound(
+                    &mut self.pending_cart_sounds,
+                    pre_pos,
+                    WIDTH as i32,
+                    body_h,
+                );
+                minecart::wheel_sparks(
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pre_pos,
+                    WIDTH as i32,
+                    body_h,
+                    10,
+                    pre_rotation,
+                );
+            }
+            if flags.bouncy_bumper() {
+                // `:28123-28136`: the sprite flip follows the held direction
+                // keys; the body direction follows the flipped roll.
+                if self.control_left || self.control_right {
+                    self.cart_flip = !self.cart_flip;
+                }
+                if vel.x > 0.0 {
+                    self.facing = 1;
+                } else if vel.x < 0.0 {
+                    self.facing = -1;
+                }
+                // `:28140`: `MinecartBumperSound` → Item56, at the
+                // post-TrackCollision position (`base.position`, pre-integration).
+                minecart::minecart_bumper_sound(
+                    &mut self.pending_cart_sounds,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                );
+            }
+            if flags.hit_switch() {
+                hit_switch_flag = true; // `:28138-28140`
+            }
+            if flags.used_ramp() {
+                // `:28148-28150` — the gravity-freeze grant, truncated.
+                self.cart_ramp_time = (1.0f32.min(self.vx.abs() / CART_RUN_SPEED) * 20.0) as i32;
+            }
+            if flags.boost_left() {
+                self.track_boost -= minecart::BOOSTER_SPEED; // `:28151-28153`
+            }
+            if flags.boost_right() {
+                self.track_boost += minecart::BOOSTER_SPEED; // `:28155-28157`
+            }
+            self.x = pos.x;
+            self.y = pos.y;
+            self.vx = vel.x;
+            self.vy = vel.y;
+        }
         // The AABB resolve (`TileCollision` + the step/slope helpers): the
         // velocity phase above only shaped `velocity`; this integrates it.
         self.move_vanilla(world, input.down, gravity);
+        // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
+        // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
+        // post-integration magnet tile (net message 59 is out of scope; the
+        // caller applies `Wiring::hit_switch`).
+        if hit_switch_flag {
+            let m = minecart::magnet_position(
+                Vec2::new(self.x, self.y),
+                WIDTH as i32,
+                self.body_height() as i32,
+            );
+            self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
+        }
 
         // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
@@ -1366,17 +1855,37 @@ impl Player {
         if self.vy == 0.0 {
             self.refresh_double_jumps();
             // `num10 = 25 + extraFall` (`Player.cs:25301`); the mount addendum
-            // (`Player.cs:25304`) waits for M2-MOUNT-1.
-            let threshold = 25 + self.extra_fall;
+            // (`Player.cs:25301-25304`): `25 + extraFall` + the mount's own.
+            let threshold = 25 + self.extra_fall + self.mount.extra_fall();
             // `num11` is int-truncated on both ends (`Player.cs:25306`).
             let mut fell = (self.y / TILE_PX) as i32 - self.fall_start;
-            // The flying-minecart/bunny/dash zeroes (`Player.cs:25307-25323`)
-            // have no systems here yet; the cloud/soft-tile scan does
+            // `:25307-25318`: the zeroing — a flying mount and the bunny
+            // (type 1) nullify.
+            if self.mount.can_fly() || self.mount.kind() == 1 {
+                fell = 0;
+            }
+            // `Player.cs:25311-25314`: a track rider resting on rails takes no
+            // fall damage — `Minecart.OnTrack` reads the magnet tile.
+            if self.cart_mounted
+                && minecart::on_track(
+                    world,
+                    Vec2::new(self.x, self.y),
+                    WIDTH as i32,
+                    self.body_height() as i32,
+                )
+            {
+                fell = 0;
+            }
+            // The dash zero of `:25319-25323` waits for its own task; the
+            // cloud/soft-tile scan does
             // (`Player.cs:25325-25345`): the tile row under the feet across
             // the hitbox's x-extent.
             let tx0 = (self.x / TILE_PX) as i32;
             let tx1 = ((self.x + WIDTH) / TILE_PX) as i32;
-            let ty = ((self.y + HEIGHT + 1.0) / TILE_PX) as i32;
+            // `Player.cs:25321` reads `base.height` — the live hitbox height
+            // (the mount framework's equip for its mounts; the cart's 52) scans
+            // the tile row, not the row above it.
+            let ty = ((self.y + self.body_height() + 1.0) / TILE_PX) as i32;
             for tx in tx0..=tx1 {
                 if let Some(t) = world.tile(tx, ty) {
                     if t.active()
@@ -1403,7 +1912,15 @@ impl Player {
                 // `Player.cs:25360-25374`: `(fell - threshold) * 10` damage with
                 // hitDirection 0 — no knockback — and `immune = false` forced
                 // BEFORE the Hurt so the hit lands through any iframes.
-                self.hurt_fall((fell - threshold) * 10);
+                // `:25363-25367`: the mount's `FallDamage` scales the hit
+                // (only while a mount is active — the C# gates on
+                // `mount.Active`).
+                let dmg = if self.mount.is_active() {
+                    (((fell - threshold) * 10) as f32 * self.mount.fall_damage()) as i32
+                } else {
+                    (fell - threshold) * 10
+                };
+                self.hurt_fall(dmg);
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }
@@ -1441,12 +1958,51 @@ impl Player {
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
 
-        self.update_frames();
+        self.update_frames(world);
 
         // `Player.cs:27618-27635`: the release flags recompute at the end of
         // the tick — the double-tap reads the press edges against them.
         self.right_prev = input.right;
         self.left_prev = input.left;
+    }
+
+    /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
+    /// still air/fly, a 4px-down tile probe snapping shut pulls the frame to
+    /// the grounded set on the touchdown tick (the C# re-probes
+    /// `TileCollision` with `UnitY * gravDir * 4`).
+    fn try_landing(&mut self, world: &World) {
+        if !matches!(
+            self.mount.frame_state(),
+            crate::mount::FRAME_FLYING | crate::mount::FRAME_IN_AIR
+        ) {
+            return;
+        }
+        // The `!controlUp && !controlDown && !controlJump` gate — the port
+        // has no controlUp input yet.
+        if self.control_down || self.control_jump {
+            return;
+        }
+        let probe = collision::tile_collision(
+            world,
+            [self.x, self.y],
+            [0.0, 4.0],
+            WIDTH,
+            self.height,
+            false,
+            false,
+        );
+        if probe.vel[1] == 0.0 {
+            // `GetIntendedGroundedFrame` (`Mount.cs:4547-4560`).
+            let state = if self.vx == 0.0
+                || ((self.slippy || self.slippy2) && !self.control_left && !self.control_right)
+            {
+                crate::mount::FRAME_STANDING
+            } else {
+                crate::mount::FRAME_RUNNING
+            };
+            self.mount
+                .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+        }
     }
 
     /// `PlayerFrame()` (legs + the locomotion part of the body). The original runs this
@@ -1460,7 +2016,57 @@ impl Player {
     /// The wings/mount/pulley/hold-style branches of the original are not modelled yet,
     /// and item-use body frames are applied by the app via [`Player::apply_item_use_frame`]
     /// while a swing is active.
-    fn update_frames(&mut self) {
+    fn update_frames(&mut self, world: &World) {
+        // `Player.cs:36148-36217`: while mounted, the mount owns the leg
+        // frames and runs its own animator — the unmounted logic below is
+        // gated off exactly like the original's `flag7`.
+        if self.mount.is_active() {
+            // `:36150-36161`: the leg frames force to row 6 (the rows 0
+            // carve-out is for 23/45/48 — no rows here).
+            self.leg_frame_counter = 0.0;
+            self.leg_frame = 6;
+            // `:36155-36216`: the state selection.
+            if self.vy != 0.0 && self.mount.running_grace_time() <= 0 {
+                if self.mount.fly_time() > 0
+                    && self.jump == 0
+                    && self.control_jump
+                    && !self.mount.can_hover()
+                {
+                    // `:36199-36200`: `TryBeginningFlight` only fires for
+                    // hover mounts (`Mount.cs:4537` — none in this table);
+                    // the Rudolph dust trail is a visual seam.
+                    self.mount
+                        .update_frame(crate::mount::FRAME_FLYING, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.try_landing(world);
+                } else if self.wet {
+                    // `:36203-36206`: the swim state (the ground mounts'
+                    // swim sets reuse their in-air frames).
+                    self.mount
+                        .update_frame(crate::mount::FRAME_SWIMMING, self.vx, self.vy, self.just_jumped, self.control_down);
+                } else {
+                    // `:36207-36212`: plain air.
+                    self.mount
+                        .update_frame(crate::mount::FRAME_IN_AIR, self.vx, self.vy, self.just_jumped, self.control_down);
+                    self.try_landing(world);
+                }
+            } else {
+                // `:36216` -> `GetIntendedGroundedFrame` (`Mount.cs:4547-4560`):
+                // the hooks-grapple arm cannot fire (no rows in CanUseHooks);
+                // the `windPushed` term has no port counterpart.
+                let state = if self.vx == 0.0
+                    || ((self.slippy || self.slippy2) && !self.control_left && !self.control_right)
+                {
+                    crate::mount::FRAME_STANDING
+                } else {
+                    crate::mount::FRAME_RUNNING
+                };
+                self.mount
+                    .update_frame(state, self.vx, self.vy, self.just_jumped, self.control_down);
+            }
+            // `:36488`: the body frame locks to the mount's row.
+            self.body_frame = self.mount.data().map_or(0, |d| d.body_frame) as u32;
+            return;
+        }
         if self.vy != 0.0 {
             self.leg_frame_counter = 0.0;
             self.leg_frame = 5;
@@ -1946,9 +2552,9 @@ impl Player {
     /// body and the center rows.
     fn solid_ahead(&self, world: &World, dir: i32) -> bool {
         let cx = self.x + WIDTH * 0.5;
-        let cy = self.y + HEIGHT * 0.5;
+        let cy = self.y + self.height * 0.5;
         let tx = ((cx + dir as f32 * (WIDTH * 0.5 + 2.0)) / TILE_PX) as i32;
-        let ty0 = ((cy - HEIGHT * 0.5 + 2.0) / TILE_PX) as i32;
+        let ty0 = ((cy - self.height * 0.5 + 2.0) / TILE_PX) as i32;
         let ty1 = (cy / TILE_PX) as i32;
         [ty0, ty1].into_iter().any(|ty| {
             world.tile(tx, ty).is_some_and(|t| {
@@ -2043,6 +2649,211 @@ impl Player {
         false
     }
 
+    /// `Player.CCed` (`Player.cs:3377-3385`): frozen, webbed or stoned.
+    fn cced(&self) -> bool {
+        self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
+    }
+
+    /// `Player.ClearBuff` (`Player.cs:5242-5256`): every slot carrying the
+    /// buff type.
+    fn clear_buff_type(&mut self, bt: i32) {
+        while let Some(i) = self.buffs.find_buff_index(bt) {
+            self.buffs.del_buff(i);
+        }
+    }
+
+    /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
+    /// swap, the buff clear/add (`:6203`/`:6226`) and the bottom-anchored
+    /// hitbox growth (`:6264-6277` — no PlayerSize delegate exists in this
+    /// set; the type-44 dash reset `:6228-6235` cannot fire without that row).
+    pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
+        let Some(equip) = self.mount.set_mount(m, wet) else {
+            return false;
+        };
+        if let Some(old) = equip.clear_buff {
+            self.clear_buff_type(old);
+        }
+        self.buffs.add_buff(equip.add_buff, 3600);
+        self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        true
+    }
+
+    /// `:6270-6275`: the height change anchors the bottom (position.Y += h;
+    /// height = new; position.Y -= h).
+    fn grow_hitbox(&mut self, new_height: f32) {
+        self.y += self.height;
+        self.height = new_height;
+        self.y -= self.height;
+    }
+
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
+    /// and the hitbox restore. `ignore_effect` stands in for the spawn dust
+    /// (`:6167-6170` — no dust system yet).
+    pub fn dismount(&mut self, world: &World, ignore_effect: bool) -> bool {
+        let Some(buff) = self.mount.dismount() else {
+            return false;
+        };
+        let _ = ignore_effect;
+        self.clear_buff_type(buff);
+        // `:6176-6193`: the restore — the 20x42 box from the bottom center;
+        // on failure the Y patch accepts the overlap (the collision step
+        // resolves it next tick, as in the original). The resize goes through
+        // the single `TryChangingSizeFromBottomCenter` port (world-aware).
+        if let Some([_, ny]) = collision::try_changing_size_from_bottom_center(
+            world,
+            [self.x, self.y],
+            [WIDTH, self.height],
+            [WIDTH, HEIGHT],
+        ) {
+            self.y = ny;
+            self.height = HEIGHT;
+        } else {
+            self.y += self.height;
+            self.height = HEIGHT;
+            self.y -= self.height;
+        }
+        true
+    }
+
+    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) with `CanDismountWithResult`
+    /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
+    /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
+    /// dismount runs; Phase 3's quick-mount counts the failures.
+    pub fn try_dismount(&mut self, world: &World) -> bool {
+        self.dismount(world, false)
+    }
+
+    /// `Mount.CanMount` (`Mount.cs:6581-6604`): the grown box must fit in
+    /// space (`CanFitInSpaceWithSize` -> `Collision.IsClearSpotTest`, stand-in
+    /// [`collision::collides_rect`]) and a grapple in flight blocks the mount
+    /// (no row in this table is in the CanUseHooks set, `:6599-6601`). The
+    /// PlayerSize-delegate and bat-wet arms cannot fire on this table.
+    pub(crate) fn can_mount(&self, world: &World, m: i32) -> bool {
+        let Some(row) = crate::mount::mount_data(m) else {
+            return false;
+        };
+        let size_h = HEIGHT + row.height_boost as f32;
+        if collides_rect(world, self.x, self.y + self.height - size_h, WIDTH, size_h) {
+            return false;
+        }
+        if self.grappling_active {
+            return false;
+        }
+        true
+    }
+
+    /// `Player.QuickMount` (`Player.cs:6045-6100`): the toggle — dismount, or
+    /// equip the first saddle in the inventory. `QuickMount_GetItemToUse`
+    /// (`:6179-6198`) walks the inventory (the `miscEquips[3]` slot is not
+    /// ported — M3-EQUIP); the cart items are skipped by the table itself (no
+    /// cart rows) and the `QuickMinecart` fallback waits for M2-MOUNT-3. The
+    /// FailedNoSpace branch (`:6052-6070` — the 3-fail force + the
+    /// `PlayerNoSpaceTeleport`) is unreachable for this set: every row's
+    /// `heightBoost >= 0` makes the dismount probe a shrink, which always
+    /// fits. Returns the saddle item kind used (for the use animation).
+    pub fn quick_mount(
+        &mut self,
+        world: &World,
+        inventory: &[crate::item::ItemSlot],
+    ) -> Option<u16> {
+        if self.mount.is_active() {
+            self.try_dismount(world);
+            return None;
+        }
+        // `:6074-6077`: the guards (tongued/gravDir/noItems have no port arms).
+        if self.cced() || self.dead {
+            return None;
+        }
+        let item = inventory
+            .iter()
+            .find(|slot| slot.count > 0 && crate::mount::mount_type_of_item(slot.kind).is_some());
+        let Some(slot) = item else {
+            return None; // `:6097` `QuickMinecart` — M2-MOUNT-3
+        };
+        let Some(m) = crate::mount::mount_type_of_item(slot.kind) else {
+            return None;
+        };
+        if !self.can_mount(world, m) {
+            return None;
+        }
+        if self.set_mount(m, self.wet) {
+            Some(slot.kind)
+        } else {
+            None
+        }
+    }
+
+    /// The per-tick mount block — `Player.cs:26623-26688` with the
+    /// `UpdateEffects` head (`Mount.cs:4795-4803`, `:4949-4981`) and the
+    /// `UpdateJumpHeight` mount merge (`:26011` → `:19619-19637`). Vanilla
+    /// runs those at :25656/:26011, both before the run-speed merge — the
+    /// combined method keeps their relative order. Only reachable while not
+    /// grappling (the caller's `:26622` branch).
+    fn update_mount(&mut self) {
+        if !self.mount.is_active() {
+            return;
+        }
+        // `Mount.cs:4797`: the mount head-sets the auto-jump flag per tick.
+        self.auto_jump = self.mount.auto_jump();
+        // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
+        // (the PHYS-8 priority chain consumes them) and pin knockback off
+        // above the charge speed.
+        match self.mount.kind() {
+            10 => self.has_jump_options[ExtraJump::Unicorn.index()] = true,
+            47 => self.has_jump_options[ExtraJump::WallOfFleshGoat.index()] = true,
+            14 => self.has_jump_options[ExtraJump::Basilisk.index()] = true,
+            _ => {}
+        }
+        if matches!(self.mount.kind(), 10 | 47 | 14 | 40 | 41 | 42)
+            && self.vx.abs() > self.mount.dash_speed() - self.mount.run_speed() / 2.0
+        {
+            self.no_knockback = true;
+        }
+        // `Player.cs:19619-19631`: the jump statics — replace, or additive
+        // when the mount says so; `:19635-19637` the sticky clamp after (the
+        // `dazed` clamp `:19638-19641` has no port counterpart).
+        if self.mount.movement_stats_are_additive() {
+            self.jump_height += self.mount.jump_height(self.vx);
+            self.jump_speed += self.mount.jump_speed(self.vx);
+        } else {
+            self.jump_height = self.mount.jump_height(self.vx);
+            self.jump_speed = self.mount.jump_speed(self.vx);
+        }
+        if self.sticky {
+            self.jump_height /= 10;
+            self.jump_speed /= 5.0;
+        }
+        // `:26625-26635`: the wings/rocket suppression + the slowdown floor.
+        if !self.mount.can_use_wings() {
+            self.run_slowdown = 0.2;
+        }
+        self.rocket_boots = 0;
+        if !self.mount.can_use_wings() {
+            self.has_wings = false;
+            self.wings_logic = 0;
+        }
+        // `:26636` + `:26637-26654`: the three-way run-stat merge.
+        let flag17 = self.mount.can_use_wings() && self.wings_logic > 0 && self.vy != 0.0;
+        if self.mount.movement_stats_are_additive() {
+            self.max_run_speed += self.mount.run_speed();
+            self.acc_run_speed += self.mount.dash_speed();
+            self.run_acceleration += self.mount.acceleration();
+        } else if flag17 {
+            self.max_run_speed = self.max_run_speed.max(self.mount.run_speed());
+            self.acc_run_speed = self.acc_run_speed.max(self.mount.dash_speed());
+            self.run_acceleration = self.run_acceleration.max(self.mount.acceleration());
+        } else {
+            self.max_run_speed = self.mount.run_speed();
+            self.acc_run_speed = self.mount.dash_speed();
+            self.run_acceleration = self.mount.acceleration();
+        }
+        // `:26655-26659` (the Fishron halving), `:26660-26663` (the roller
+        // skates), `:26665-26682` (the cart/OnTrack block — M2-MOUNT-3) and
+        // `:26683-26686` (`UpdateDrill` — M2-MOUNT-4) have no rows in this
+        // table yet; the ability counters still tick (`:26663`).
+        self.mount.ability_recovery();
+    }
+
     /// The flight section (`Player.cs:26772-27425`): `canRocket`, the ground
     /// refills, `flag19`, `WingMovement`, the rocket trigger + thrust, the
     /// glide. Returns true when it integrated vy itself (the plain gravity
@@ -2065,12 +2876,16 @@ impl Player {
         if self.vy > -self.jump_speed && self.vy != 0.0 {
             self.can_rocket = true;
         }
-        // `:26776-26781`: the wing refill on the ground needs a jump release.
-        if self.vy == 0.0 && self.release_jump {
+        // `:26776-26781`: the wing refill on the ground needs a jump release —
+        // or an auto-jump (constant-jump) mount re-jumping this tick; the
+        // mount flight budget refills with it (`mount.ResetFlightTime`).
+        if (self.vy == 0.0 && self.release_jump) || (self.auto_jump && self.just_jumped) {
             self.wing_time = self.wing_time_max as f32;
+            self.mount.reset_flight_time(self.vx);
         }
-        // `:26859-26862`: the rocket fuel refills on any rest tick.
-        if self.vy == 0.0 {
+        // `:26859-26862`: the rocket fuel refills on any rest tick (or an
+        // auto-jump mount's re-jump).
+        if self.vy == 0.0 || (self.auto_jump && self.just_jumped) {
             self.rocket_time = self.rocket_time_max;
         }
         // `:26786-26798`: flag19 — actively flying this tick. The second
@@ -2140,6 +2955,50 @@ impl Player {
             return true;
         }
         if !flag19 {
+            // `:26962-26964`: the hover mounts (`Mount.Hover`) — no table row
+            // sets `usesHover` yet, so the branch cannot fire (M2-MOUNT-2).
+            if self.mount.can_hover() {
+                return false;
+            }
+            // `:26965-27015`: the mount flight thrust — the flying mounts'
+            // replacement for the wing ascent while the budget lasts.
+            if self.mount.can_fly() && self.control_jump && self.jump == 0 {
+                if self.mount.flight() {
+                    if self.trying_to_hover_down() {
+                        // `:26968-26974`: the hover-down dampening.
+                        self.vy *= 0.9;
+                        if self.vy > -1.0 && self.vy < 0.5 {
+                            self.vy = 1e-5;
+                        }
+                    } else {
+                        // `:26975-27000`: the rise thrust — the falling
+                        // brake, the rising assist, the upward cap. The
+                        // type-50 half cap references the full table; only
+                        // Queen Slime (50) exists here (56/61 are M2-MOUNT-2).
+                        let num40 = 0.1;
+                        let mut num41 = self.jump_speed;
+                        if self.mount.kind() == 50 {
+                            num41 *= 0.5;
+                        }
+                        if self.vy > 0.0 {
+                            self.vy -= num40 * 5.0;
+                        } else if self.vy > -num41 * 1.5 {
+                            self.vy -= num40;
+                        }
+                        if self.vy < -num41 * 1.5 {
+                            self.vy = -num41 * 1.5;
+                        }
+                    }
+                    return true;
+                }
+                // `:27001-27014`: the budget spent — gravity / 3 with the
+                // fall cap / 3 (the upward half needs gravDir, not ported).
+                self.vy += gravity / 3.0;
+                if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
+                    self.vy = fall_cap / 3.0;
+                }
+                return true;
+            }
             // `:27034-27037 + 27339-27350`: the wing glide — jump held while
             // falling: gravity / 3, the fall cap / 3, the fall origin
             // refreshed per tick (no fall damage accrues).
@@ -2252,7 +3111,7 @@ impl Player {
 
         // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
         // vector to the hook center clamped to the per-type pull speed.
-        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5);
+        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5);
         let dist = to_hook.length();
         let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
         let pull = if dist > 0.001 {
@@ -2312,32 +3171,193 @@ impl Player {
         }
     }
 
-    fn horizontal_movement(&mut self, dir: f32) {
-        if dir < 0.0 {
-            if self.vx > -self.max_run_speed {
+    /// `Player.HorizontalMovement` (`Player.cs:19772-20090`), the exact if/else
+    /// chain: the pending booster push applies pre-input and clamps
+    /// (`:19818-19833`), the cart arms gate their accel on `velocity.Y == 0`
+    /// (`:19849/:19907`), the off-track brakes pull the roll toward rest
+    /// (`:19858-19865`, `:19948-19956`), the cart coast arm clamps ±max without
+    /// on-track friction (`:20023-20058`), and the grounded/airborne friction
+    /// tails close the chain (`:20059-20087`).
+    fn horizontal_movement(&mut self) {
+        // `Player.cs:19818-19833`: the boost applies before any input reads
+        // the velocity, then clamps.
+        if self.track_boost != 0.0 {
+            self.vx += self.track_boost;
+            self.track_boost = 0.0;
+            if self.vx < 0.0 {
+                if self.vx < -self.max_run_speed {
+                    self.vx = -self.max_run_speed;
+                }
+            } else if self.vx > self.max_run_speed {
+                self.vx = self.max_run_speed;
+            }
+        }
+        // `Player.cs:19835-19843`: the direction lock — the facing follows the
+        // run keys (`ChangeDir(num5)`); a cart keeps the roll direction, read
+        // AFTER the boost above (`Math.Sign(velocity.X) == num5`; `Sign(0) =
+        // 0` locks a stationary cart; `AllowDirectionChange` is true for
+        // carts, `Mount.cs:630-639`).
+        let dir_keys = self.control_right as i32 - self.control_left as i32;
+        if dir_keys != 0 {
+            let roll = (self.vx > 0.0) as i32 - (self.vx < 0.0) as i32;
+            if !self.cart_mounted || roll == dir_keys {
+                self.facing = dir_keys;
+            }
+        }
+        if self.control_left && self.vx > -self.max_run_speed {
+            // `:19848-19857`: the cart accel gate — airborne carts get no
+            // input accel that tick.
+            if !self.cart_mounted || self.vy == 0.0 {
                 if self.vx > self.run_slowdown {
                     self.vx -= self.run_slowdown;
                 }
                 self.vx -= self.run_acceleration;
-            } else if self.vx > -self.acc_run_speed && self.vy == 0.0 && self.dash_delay >= 0 {
-                if self.vx > self.run_slowdown {
-                    self.vx -= self.run_slowdown;
-                }
-                self.vx -= self.run_acceleration * 0.2;
             }
-        } else if dir > 0.0 {
-            if self.vx < self.max_run_speed {
+            // `:19858-19865`: the off-track brake.
+            if self.on_wrong_ground {
+                if self.vx < -self.run_slowdown {
+                    self.vx += self.run_slowdown;
+                } else {
+                    self.vx = 0.0;
+                }
+            }
+            // `Player.cs:19868-19902`: the rolling wheel sparks + Item55 —
+            // the arm's gate is the direction-OPPOSITE sign (`velocity.X >=
+            // 0f`): the sound + sparks fire while braking a rightward roll or
+            // at rest, not while accelerating left. (`itemAnimation == 0`
+            // holds — the port's item swing never gates movement.)
+            if self.cart_mounted
+                && !self.on_wrong_ground
+                && self.on_track
+                && self.vy == 0.0
+                && self.vx >= 0.0
+            {
+                let pos = Vec2::new(self.x, self.y);
+                let vel = Vec2::new(self.vx, self.vy);
+                let body_h = self.body_height() as i32;
+                let max_run = self.max_run_speed;
+                let rotation = self.full_rotation;
+                minecart::rolling_wheel_sparks(
+                    &mut self.pending_cart_sounds,
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                    vel,
+                    max_run,
+                    rotation,
+                );
+            }
+        } else if self.control_right && self.vx < self.max_run_speed {
+            // `:19904-19916`: the mirror arm.
+            if !self.cart_mounted || self.vy == 0.0 {
                 if self.vx < -self.run_slowdown {
                     self.vx += self.run_slowdown;
                 }
                 self.vx += self.run_acceleration;
-            } else if self.vx < self.acc_run_speed && self.vy == 0.0 && self.dash_delay >= 0 {
+            }
+            // `:19948-19956`: the off-track brake.
+            if self.on_wrong_ground {
+                if self.vx > self.run_slowdown {
+                    self.vx -= self.run_slowdown;
+                } else {
+                    self.vx = 0.0;
+                }
+            }
+            // `Player.cs:19926-19958`: the mirror arm — the gate is
+            // `velocity.X <= 0f` (braking a leftward roll or at rest).
+            if self.cart_mounted
+                && !self.on_wrong_ground
+                && self.on_track
+                && self.vy == 0.0
+                && self.vx <= 0.0
+            {
+                let pos = Vec2::new(self.x, self.y);
+                let vel = Vec2::new(self.vx, self.vy);
+                let body_h = self.body_height() as i32;
+                let max_run = self.max_run_speed;
+                let rotation = self.full_rotation;
+                minecart::rolling_wheel_sparks(
+                    &mut self.pending_cart_sounds,
+                    &mut self.pending_sparks,
+                    &mut self.spark_rng,
+                    pos,
+                    WIDTH as i32,
+                    body_h,
+                    vel,
+                    max_run,
+                    rotation,
+                );
+            }
+        } else if self.control_left && self.vx > -self.acc_run_speed && self.dash_delay >= 0 {
+            // `:19960-19972`: the over-max refine — the inner gate carries the
+            // airborne-wings term (`wingsLogic > 0`; carts zero it above).
+            if self.vy == 0.0 || self.wings_logic > 0 {
+                if self.vx > self.run_slowdown {
+                    self.vx -= self.run_slowdown;
+                }
+                self.vx -= self.run_acceleration * 0.2;
+                if self.wings_logic > 0 {
+                    self.vx -= self.run_acceleration * 0.2;
+                }
+            }
+            // `:19973-19980`: the off-track brake — unreachable for carts
+            // (maxRunSpeed == accRunSpeed, `:26652-26653`), kept verbatim.
+            if self.on_wrong_ground {
+                if self.vx < self.run_slowdown {
+                    self.vx += self.run_slowdown;
+                } else {
+                    self.vx = 0.0;
+                }
+            }
+        } else if self.control_right && self.vx < self.acc_run_speed && self.dash_delay >= 0 {
+            // `:19992-20005`: the mirror arm.
+            if self.vy == 0.0 || self.wings_logic > 0 {
                 if self.vx < -self.run_slowdown {
                     self.vx += self.run_slowdown;
                 }
                 self.vx += self.run_acceleration * 0.2;
+                if self.wings_logic > 0 {
+                    self.vx += self.run_acceleration * 0.2;
+                }
+            }
+            // `:20006-20013`: the off-track brake (see above).
+            if self.on_wrong_ground {
+                if self.vx > self.run_slowdown {
+                    self.vx -= self.run_slowdown;
+                } else {
+                    self.vx = 0.0;
+                }
+            }
+        } else if self.cart_mounted && self.vx.abs() >= 1.0 {
+            // `:20023-20058`: the cart coast — friction only off-track (rails
+            // have no rolling resistance; the on-track 0.04 applies below
+            // 1 px/tick through the `velocity.Y == 0` arm), then the clamp.
+            if self.on_wrong_ground {
+                if self.vx > 0.0 {
+                    if self.vx > self.run_slowdown {
+                        self.vx -= self.run_slowdown;
+                    } else {
+                        self.vx = 0.0;
+                    }
+                } else if self.vx < 0.0 {
+                    if self.vx < -self.run_slowdown {
+                        self.vx += self.run_slowdown;
+                    } else {
+                        self.vx = 0.0;
+                    }
+                }
+            }
+            if self.vx > self.max_run_speed {
+                self.vx = self.max_run_speed;
+            }
+            if self.vx < -self.max_run_speed {
+                self.vx = -self.max_run_speed;
             }
         } else if self.vy == 0.0 {
+            // `:20059-20072`: the grounded friction — `runSlowdown` is 0.04
+            // on-track and 0.2 off-track via the on-track check.
             if self.vx > self.run_slowdown {
                 self.vx -= self.run_slowdown;
             } else if self.vx < -self.run_slowdown {
@@ -2345,12 +3365,16 @@ impl Player {
             } else {
                 self.vx = 0.0;
             }
-        } else if self.vx > self.run_slowdown * 0.5 {
-            self.vx -= self.run_slowdown * 0.5;
-        } else if self.vx < -self.run_slowdown * 0.5 {
-            self.vx += self.run_slowdown * 0.5;
         } else {
-            self.vx = 0.0;
+            // `:20074-20087`: the airborne friction, halved.
+            // (`PortalPhysicsEnabled` has no port system.)
+            if self.vx > self.run_slowdown * 0.5 {
+                self.vx -= self.run_slowdown * 0.5;
+            } else if self.vx < -self.run_slowdown * 0.5 {
+                self.vx += self.run_slowdown * 0.5;
+            } else {
+                self.vx = 0.0;
+            }
         }
     }
 
@@ -2360,7 +3384,9 @@ impl Player {
     /// the slope dust carve-out stay with the particle tasks.
     fn floor_visuals(&mut self, world: &World) {
         let x = ((self.x + WIDTH * 0.5) / TILE_PX) as i32;
-        let y = ((self.y + HEIGHT) / TILE_PX) as i32;
+        // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
+        // the live hitbox height (the mount framework's equip; the cart's 52).
+        let y = ((self.y + self.body_height()) / TILE_PX) as i32;
         let mut kind = None;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
@@ -2561,31 +3587,46 @@ impl Player {
         // still carries this tick's gravity), then resolves the AABB. The wet
         // path never steps — `WetCollision` goes straight to `TileCollision`
         // (`Player.cs:23443`), the step helpers are `DryCollision` internals.
+        // Both helpers are skipped while riding tracks (`IsRidingTracks`,
+        // `Player.cs:28057-28068` — a mounted cart always is) and inside
+        // `DryCollision` for any cart (`:23529-23541`).
+        let body_h = self.body_height();
         let dry = self.liquid_step == 1.0;
-        if dry && vel[1] == gravity {
+        if dry && vel[1] == gravity && !self.cart_mounted {
             collision::step_down(
                 world,
                 &mut pos,
                 &mut vel,
                 WIDTH,
-                HEIGHT,
+                body_h,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
             );
         }
-        if dry && vel[1] >= gravity && !down {
+        if dry && vel[1] >= gravity && !down && !self.cart_mounted {
             collision::step_up(
                 world,
                 &mut pos,
                 &mut vel,
                 WIDTH,
-                HEIGHT,
+                body_h,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
                 false,
             );
         }
-        let tc = collision::tile_collision(world, pos, vel, WIDTH, HEIGHT, false, false);
+        // `Player.TileCollision` (`Player.cs:23596-23603`): the collision body
+        // rides `height − 10` while on tracks — the cart sprite owns the bottom
+        // 10 px (pitfall §10.9).
+        let col_h = if self.on_track { body_h - 10.0 } else { body_h };
+        // `Player.cs:28088-28092`: the cart always falls through platforms
+        // (`fallThrough` and `flag31` both true).
+        let (fall_through, fall2) = if self.cart_mounted {
+            (true, true)
+        } else {
+            (false, false)
+        };
+        let tc = collision::tile_collision(world, pos, vel, WIDTH, col_h, fall_through, fall2);
         if tc.up {
             self.jump = 0;
         }
@@ -2610,7 +3651,16 @@ impl Player {
         if down {
             self.stair_fall = true;
         }
-        let sc = collision::slope_collision(world, pos, vel, WIDTH, HEIGHT, self.stair_fall);
+        // `Player.SlopingCollision(fallThrough, flag31)` (`Player.cs:28210`):
+        // the cart's platform pass-through rides here too.
+        let sc = collision::slope_collision(
+            world,
+            pos,
+            vel,
+            WIDTH,
+            body_h,
+            self.cart_mounted || self.stair_fall,
+        );
         self.stair_fall = sc.stair_fall;
         if sc.stair && (sc.pos[1] - pos[1]).abs() > 8.0 + vel[0].abs() {
             self.gfx_off_y -= sc.pos[1] - pos[1];
@@ -2653,6 +3703,14 @@ impl Player {
         // (`LegacyPlayerRenderer.cs:457,468`), so its ease after a step must
         // invalidate the cached range or the offset animation freezes.
         h ^= self.gfx_off_y.to_bits().wrapping_mul(0x27D4_EB2F);
+        // The mount's animator state feeds the mount sprites' pixels
+        // (`Mount.Draw`'s frame rect + the per-frame player offset).
+        if self.mount.is_active() {
+            h ^= (self.mount.kind() as u32) << 3;
+            h ^= (self.mount.frame() as u32).wrapping_mul(0x9E37_79B1);
+            h ^= (self.mount.frame_state() as u32) << 20;
+            h ^= (self.mount.player_offset() as u32) << 26;
+        }
         h
     }
 }
@@ -2877,8 +3935,9 @@ mod tests {
 
     #[test]
     fn update_dead_counts_down_and_revives_at_zero() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         assert!(p.dead);
         assert_eq!(p.respawn_timer, 600);
         // 600 ticks of the dead state (no jump) -> the timer drains to 0 and
@@ -2901,8 +3960,9 @@ mod tests {
         // Player.respawnTimerMax = 3600 (Player.cs:57109): a boss-near expert
         // death (1800) halved by nothing still clamps; the clamp matters for
         // the >3600 totals (the FTW x2 stays out). A forced high timer holds.
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(true, true);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, true, true);
         p.respawn_timer = 4000; // the save-load can exceed the cap
         p.update_dead(false, false, false);
         // The clamp catches the decrement result (Player.cs:17049).
@@ -2911,8 +3971,9 @@ mod tests {
 
     #[test]
     fn the_skip_needs_the_90_tick_lockout_and_a_jump_edge() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         // Inside the 90-tick lockout: no skip even on the jump edge (the
         // held jump's edge is consumed while the lockout runs).
         for _ in 0..89 {
@@ -2927,8 +3988,9 @@ mod tests {
 
     #[test]
     fn the_skip_is_blocked_while_a_boss_hinders() {
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         for _ in 0..95 {
             p.update_dead(false, false, false);
         }
@@ -2940,8 +4002,9 @@ mod tests {
     fn the_jump_edge_is_required_for_the_skip() {
         // Holding jump through the lockout does not skip on expiry; a fresh
         // press does (the JustBecameTrue semantics of PlayerInput.Triggers).
-        let mut p = Player::spawn(&World::new("t".into(), 64, 800));
-        p.start_death(false, false);
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.start_death(&w, false, false);
         for _ in 0..95 {
             p.update_dead(true, false, false);
         }
@@ -2953,7 +4016,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
@@ -3472,10 +4535,14 @@ mod tests {
         p.grapple_hook_type = 13;
         let grapple = Some((p.grapple_hook_center, 13));
         // The press edge: the jump-off.
-        p.update_with_grapple(&w, PlayerInput {
-            jump: true,
-            ..Default::default()
-        }, grapple);
+        p.update_with_grapple(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            grapple,
+        );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
     }
@@ -3493,11 +4560,15 @@ mod tests {
         p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
         p.grapple_hook_type = 13;
         let grapple = Some((p.grapple_hook_center, 13));
-        p.update_with_grapple(&w, PlayerInput {
-            jump: true,
-            down: true,
-            ..Default::default()
-        }, grapple);
+        p.update_with_grapple(
+            &w,
+            PlayerInput {
+                jump: true,
+                down: true,
+                ..Default::default()
+            },
+            grapple,
+        );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
         // counter — the pull velocity carries (the vanilla does not zero it
@@ -3620,7 +4691,11 @@ mod tests {
         // `Player.cs:15005-15008`: `accRunSpeed = 6f` — the base reset (3.0)
         // is lifted, the debuff multiplier still applies afterwards.
         let p = player_with_accessory(54);
-        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4, "{}", p.acc_run_speed_value());
+        assert!(
+            (p.acc_run_speed_value() - 6.0).abs() < 1e-4,
+            "{}",
+            p.acc_run_speed_value()
+        );
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
@@ -4745,7 +5820,7 @@ mod tests {
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
-        // Inside the iframes the hit (and therefore the grant) repeats nothing.
+                                     // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
@@ -4995,4 +6070,1371 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!(p.buffs.find_buff_index(20).is_some());
     }
+
+    // ------------------------------------------------------------------
+    // M2-PHYS-7 Phase 2 — the minecart ride (DW-2.1 .. DW-2.5)
+    // ------------------------------------------------------------------
+
+    /// The ride-test world: open sky, no ground — every fixture hand-places
+    /// its tiles.
+    fn cart_world() -> World {
+        World::new("cart".into(), 200, 200)
+    }
+
+    /// Hand-places one track tile with explicit frame indices — the Phase-1
+    /// convention (`minecart.rs` tests): `frame_x` is the front rail frame id,
+    /// `frame_y` the back rail (−1 = single rail). Track placement
+    /// (`FrameTrack`) is out of scope.
+    fn place_track(w: &mut World, x: i32, y: i32, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 314,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// A straight-rail run (frame 1) on `row` from `x0` to `x1`.
+    fn rail_run(w: &mut World, row: i32, x0: i32, x1: i32) {
+        for x in x0..=x1 {
+            place_track(w, x, row, 1, -1);
+        }
+    }
+
+    fn place_stone(w: &mut World, x: i32, y: i32) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The mounted player position whose bottom-center magnet sits at
+    /// `magnet`: `magnet = position + (width/2 − 25 + 25, 52/2 + 26)` =
+    /// `position + (10, 52)` (`Minecart.GetMagnetPosition`,
+    /// `Minecart.cs:1290-1294`).
+    fn cart_at(magnet: Vec2) -> (f32, f32) {
+        (magnet.x - 10.0, magnet.y - CART_MOUNT_HEIGHT)
+    }
+
+    /// Mounts and seats the cart on the straight rail of `row` (the frame-1
+    /// rail line is `row * 16 + 6`, `Minecart.cs:117-121`) at magnet X `mx`
+    /// with the given roll.
+    fn cart_on_rail(w: &World, row: i32, mx: f32, vx: f32) -> Player {
+        let mut p = Player::spawn(w);
+        p.mount_cart();
+        let (x, y) = cart_at(Vec2::new(mx, row as f32 * 16.0 + 6.0));
+        p.x = x;
+        p.y = y;
+        p.prev_x = x;
+        p.prev_y = y;
+        p.vx = vx;
+        p.fall_start = row;
+        p.fall_start2 = row;
+        p
+    }
+
+    /// The magnet's world point of the current position.
+    fn magnet_of(p: &Player) -> Vec2 {
+        Vec2::new(p.x + 10.0, p.y + CART_MOUNT_HEIGHT)
+    }
+
+    /// DW-2.1 — the `TR_CART` pin's body, `Mount.SetMount(MountID.Minecart)`
+    /// (`Mount.cs:6196-6305`): the Produced ride-field set lands at its
+    /// defaults, the mount buff is granted, and the body grows 42 -> 52
+    /// bottom-center. A same-type re-mount is a no-op (`:6198`); the death
+    /// path strips the ride state (`Player.cs:38907`).
+    #[test]
+    fn mount_cart_sets_the_ride_state_fields() {
+        let w = cart_world();
+        let mut p = Player::spawn(&w);
+        let top = p.y;
+        p.mount_cart();
+        assert!(p.cart_mounted);
+        assert!(!p.cart_flip);
+        assert!(!p.on_track);
+        assert!(!p.on_wrong_ground);
+        assert_eq!(p.track_boost, 0.0);
+        assert_eq!(p.last_boost, (0, 0));
+        assert_eq!(p.cart_ramp_time, 0);
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+        assert_eq!(p.body_height(), 52.0, "the mounted body is 20x52");
+        assert_eq!(p.y, top - 10.0, "the grow lifts the top, the bottom stays");
+        assert!(
+            p.buffs.find_buff_index(CART_MOUNT_BUFF).is_some(),
+            "the mount buff 118 for 3600 ticks"
+        );
+        // The same-type re-mount early-returns (`Mount.cs:6198`).
+        let y = p.y;
+        p.mount_cart();
+        assert_eq!(p.y, y);
+        // The respawn (post-death) path resets the ride state.
+        p.respawn();
+        assert!(!p.cart_mounted);
+        assert_eq!(p.body_height(), 42.0);
+        assert!(p.buffs.find_buff_index(CART_MOUNT_BUFF).is_none());
+    }
+
+    /// DW-2.2 — the cart top speed is the mount's 13 (`Mount.cs:926`) on a
+    /// straight rail: the input accel (`Player.cs:19904-19916`) may overshoot
+    /// by one step and the coast clamp (`:20043-20057`) pins it exactly.
+    #[test]
+    fn cart_top_speed_is_thirteen_on_straight_track() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        for _ in 0..30 {
+            p.update(
+                &w,
+                PlayerInput {
+                    right: true,
+                    ..Default::default()
+                },
+            );
+            assert!(p.on_track, "riding the straight");
+            // The accel arm may overshoot by one step (`:19904-19916` has no
+            // clamp); the coast clamp erases it the next tick.
+            assert!(p.vx <= 13.0 + 0.04 + 1e-4, "bounded overshoot: {}", p.vx);
+        }
+        assert_eq!(p.vx, 13.0, "the coast clamp pins the top speed");
+    }
+
+    /// DW-2.2 — the booster's ±4 applies NEXT tick pre-input, then the input
+    /// step, and the clamp caps at 13 (`Player.cs:19818-19833`; the detection
+    /// `Minecart.cs:832-847`).
+    #[test]
+    fn booster_applies_four_next_tick_pre_input_and_clamps() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        // Right-boost booster (frame 30) mid-run.
+        place_track(&mut w, 50, 40, 30, -1);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 5.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        let mut ticks = 0;
+        while p.track_boost == 0.0 && ticks < 120 {
+            p.update(&w, input);
+            ticks += 1;
+        }
+        assert!(ticks < 120, "the booster was crossed");
+        assert_eq!(p.track_boost, 4.0, "the booster tile arms the push");
+        let before = p.vx;
+        p.update(&w, input);
+        assert!(
+            (p.vx - (before + 4.0 + 0.04)).abs() < 1e-4,
+            "the boost applied pre-input, then the accel step: {}",
+            p.vx
+        );
+        assert_eq!(p.track_boost, 0.0, "the push is spent");
+        // The clamp: a fast cart caps at 13 instead of gaining the full 4.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.9);
+        let mut ticks = 0;
+        while p.track_boost == 0.0 && ticks < 120 {
+            p.update(&w, input);
+            ticks += 1;
+        }
+        p.update(&w, input);
+        assert_eq!(p.vx, 13.0, "the boost clamp: {}", p.vx);
+        assert_eq!(p.track_boost, 0.0);
+        // The left-boost booster (frame 31) pushes a leftward roll harder.
+        place_track(&mut w, 50, 40, 31, -1);
+        let mut p = cart_on_rail(&w, 40, 65.0 * 16.0 + 8.0, -5.0);
+        let input = PlayerInput {
+            left: true,
+            ..Default::default()
+        };
+        let mut ticks = 0;
+        while p.track_boost == 0.0 && ticks < 200 {
+            p.update(&w, input);
+            ticks += 1;
+        }
+        assert_eq!(p.track_boost, -4.0, "the left booster arms a negative push");
+        let before = p.vx;
+        p.update(&w, input);
+        assert!((p.vx - (before - 4.0 - 0.04)).abs() < 1e-4, "{}", p.vx);
+    }
+
+    /// DW-2.2 — the ramp end launches at 45° (`Minecart.cs:692-701`:
+    /// `(vx, −vx·√2/2)` for an up-right exit) and freezes gravity for
+    /// `(int)(min(1, |vx|/13) · 20)` ticks (`Player.cs:28148-28150`,
+    /// `:27352-27359`). The freeze also proves the input-accel gate
+    /// (`velocity.Y == 0`, `Player.cs:19849`) — the DW-2.5 mechanism.
+    #[test]
+    fn ramp_launch_suppresses_gravity_and_leaves_at_45_degrees() {
+        let mut w = cart_world();
+        rail_run(&mut w, 41, 30, 38);
+        place_track(&mut w, 39, 41, 6, -1); // corner: straight left, up right
+        place_track(&mut w, 40, 40, 16, -1); // ramp rising right, ramp end
+        let mut p = cart_on_rail(&w, 41, 33.0 * 16.0 + 8.0, 13.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        let mut launched = false;
+        for _ in 0..20 {
+            p.update(&w, input);
+            if p.cart_ramp_time > 0 {
+                launched = true;
+                break;
+            }
+        }
+        assert!(launched, "the ramp end launched the cart");
+        let launch_vy = -13.0 * std::f32::consts::FRAC_1_SQRT_2;
+        assert!((p.vy - launch_vy).abs() < 1e-3, "45 degrees up: {}", p.vy);
+        assert!((p.vx - 13.0).abs() < 1e-4, "the roll carries through");
+        assert_eq!(p.cart_ramp_time, 20, "full speed freezes 20 ticks");
+        assert!(!p.on_track, "airborne off the ramp end");
+        // The freeze: gravity and input accel both silent while vy != 0.
+        let (vx0, vy0) = (p.vx, p.vy);
+        for _ in 0..5 {
+            p.update(&w, input);
+            assert!(
+                (p.vx - vx0).abs() < 1e-4,
+                "no input accel airborne: {}",
+                p.vx
+            );
+            assert!((p.vy - vy0).abs() < 1e-4, "gravity frozen: {}", p.vy);
+        }
+        // Gravity resumes once the timer runs out.
+        for _ in 0..25 {
+            p.update(&w, input);
+        }
+        assert!(p.vy > vy0, "gravity resumed: {} -> {}", vy0, p.vy);
+    }
+
+    /// DW-2.2 — the corner hand-off: the cart follows an up-right corner at
+    /// speed (`Minecart.cs:600-614` corner switch) and ends on the upper rail
+    /// line (the `:818-819` snap).
+    #[test]
+    fn corner_follows_the_rail_at_speed() {
+        let mut w = cart_world();
+        rail_run(&mut w, 41, 30, 38);
+        place_track(&mut w, 39, 41, 6, -1); // corner: straight left, up right
+        place_track(&mut w, 40, 40, 4, -1); // corner: from below, straight right
+        rail_run(&mut w, 40, 41, 60);
+        let mut p = cart_on_rail(&w, 41, 33.0 * 16.0 + 8.0, 10.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        for _ in 0..12 {
+            p.update(&w, input);
+            assert!(p.on_track, "the rail is never lost through the corner");
+        }
+        let magnet_y = magnet_of(&p).y;
+        assert!(
+            (magnet_y - (40.0 * 16.0 + 6.0)).abs() < 0.5,
+            "snapped to the upper rail: {}",
+            magnet_y
+        );
+    }
+
+    /// DW-2.3 — off the rails the coast friction is `runSlowdown` = 0.2 per
+    /// tick (`Player.cs:26670` + `:20024-20041`) and a direction-key press
+    /// edge dismounts (`:26672-26674` → `Mount.TryDismount`).
+    #[test]
+    fn off_track_friction_is_point_two_and_direction_press_dismounts() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 44); // the run ends in open air
+        for x in 36..80 {
+            place_stone(&mut w, x, 43); // the landing floor 3 rows down
+        }
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        // Ride off the end and fall to the floor; the settle is complete when
+        // the off-track-at-rest flag is up with the body at rest.
+        for _ in 0..90 {
+            p.update(&w, PlayerInput::default());
+            if !p.on_track && p.vy == 0.0 && p.on_wrong_ground {
+                break;
+            }
+        }
+        assert!(!p.on_track, "off the rails");
+        assert_eq!(p.vy, 0.0, "settled on the floor");
+        assert!(p.on_wrong_ground, "the on-track check flagged wrong ground");
+        // The coast bleeds exactly 0.2 per tick while |vx| >= 1 (the fall
+        // decayed 6 by 0.2 per fall tick — about 3 remain).
+        assert!(p.vx >= 1.0, "measurable roll remains: {}", p.vx);
+        p.update(&w, PlayerInput::default());
+        let v1 = p.vx;
+        p.update(&w, PlayerInput::default());
+        let v2 = p.vx;
+        assert!(
+            (v1 - v2 - 0.2).abs() < 1e-4,
+            "0.2/tick off-track coast: {} -> {}",
+            v1,
+            v2
+        );
+        // A direction-key press edge dismounts; the shrink keeps the bottom.
+        let y_before = p.y;
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        assert!(!p.cart_mounted, "the press edge dismounted");
+        assert_eq!(p.body_height(), 42.0);
+        assert_eq!(p.y, y_before + 10.0, "the shrink anchors the bottom");
+        assert!(p.buffs.find_buff_index(CART_MOUNT_BUFF).is_none());
+    }
+
+    /// DW-2.3 — the cart jump: the −0.001 magnet nudge
+    /// (`Player.cs:20671-20675`) then the fixed cart jump stats 15/5.15
+    /// (`Mount.cs:929-930`; no `JumpHeight` case for carts) — the rider
+    /// leaves the rail, the mount stays, and the rider lands back.
+    #[test]
+    fn jump_from_the_cart_uses_the_cart_jump_stats() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        p.update(&w, PlayerInput::default());
+        assert!(p.on_track, "seated");
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.jump, CART_JUMP_HEIGHT, "the cart jump height 15");
+        assert!(
+            (p.vy - (-CART_JUMP_SPEED + GRAVITY)).abs() < 1e-4,
+            "the 5.15 impulse minus this tick's gravity: {}",
+            p.vy
+        );
+        assert!(p.cart_mounted, "still mounted");
+        assert!(!p.on_track, "left the rail");
+        // Hold the jump through the rise, then fall back onto the rail.
+        for _ in 0..30 {
+            p.update(
+                &w,
+                PlayerInput {
+                    jump: true,
+                    ..Default::default()
+                },
+            );
+        }
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_track, "landed back on the rail");
+        assert!(p.cart_mounted, "the mount survived the hop");
+    }
+
+    /// DW-2.3 — `Player.cs:25311-25314`: a track rider resting on rails takes
+    /// no fall damage; the same drop onto stone does.
+    #[test]
+    fn landing_on_rails_zeroes_fall_damage() {
+        // The rail catch: a 30-row drop lands harmlessly.
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        let mut p = cart_on_rail(&w, 40, 40.0 * 16.0 + 8.0, 0.0);
+        p.y = 10.0 * 16.0;
+        p.prev_y = p.y;
+        p.fall_start = 10;
+        p.fall_start2 = 10;
+        for _ in 0..90 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_track, "landed on the rail");
+        assert_eq!(p.hp, 100, "no fall damage on rails");
+        // The same drop onto stone hurts.
+        let mut w2 = cart_world();
+        for x in 30..60 {
+            place_stone(&mut w2, x, 41);
+        }
+        let mut p2 = Player::spawn(&w2);
+        p2.mount_cart();
+        p2.x = 40.0 * 16.0 - 10.0;
+        p2.y = 10.0 * 16.0;
+        p2.prev_y = p2.y;
+        p2.fall_start = 10;
+        p2.fall_start2 = 10;
+        for _ in 0..90 {
+            p2.update(&w2, PlayerInput::default());
+        }
+        assert!(p2.hp < 100, "the same drop onto stone hurts: {}", p2.hp);
+    }
+
+    /// DW-2.4 — riding over a pressure track (frame 21, `_trackType == 1`)
+    /// trips the switch once per pass: the magnet tile is handed to
+    /// `Wiring::hit_switch` by the caller (`Player.cs:28237-28241`,
+    /// `Minecart.cs:1281-1288`).
+    #[test]
+    fn riding_over_a_pressure_track_trips_the_switch_once_per_pass() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        place_track(&mut w, 50, 40, 21, -1); // the pressure straight
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        let mut trips = 0;
+        let mut trip_tile = None;
+        for _ in 0..40 {
+            p.update(&w, input);
+            if let Some((i, j)) = p.take_switch_trip() {
+                trips += 1;
+                trip_tile = Some((i, j));
+            }
+        }
+        assert_eq!(trips, 1, "once per pass");
+        assert_eq!(trip_tile, Some((50, 40)), "the magnet tile");
+        // A plain-rail pass never trips.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        for _ in 0..10 {
+            p.update(&w, input);
+            assert!(
+                p.take_switch_trip().is_none(),
+                "no trip off the pressure tile"
+            );
+        }
+    }
+
+    /// DW-2.5 — the bouncy bumper (frame 24): the rewind flips the roll and
+    /// the rider keeps the rail (`Minecart.cs:669-691`, `:914-922`;
+    /// `Player.cs:28123-28136` toggles `cartFlip` on the held key). The
+    /// input-accel suppression half of this item is the `velocity.Y == 0`
+    /// gate, exercised on the ramp flight in `ramp_launch_...` — a flat-rail
+    /// bounce itself resolves with vy == 0 (the ride snaps zero the march Y
+    /// before the resolve, `Minecart.cs:920`).
+    #[test]
+    fn bouncy_bumper_flips_velocity_and_the_rider_keeps_the_rail() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        place_track(&mut w, 45, 40, 24, -1); // bouncy bumper, rail on the right half
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 8.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        let mut flipped = false;
+        for _ in 0..20 {
+            p.update(&w, input);
+            if p.vx < 0.0 {
+                flipped = true;
+                break;
+            }
+        }
+        assert!(flipped, "the bounce flipped the roll");
+        assert!(p.cart_flip, "the held direction key toggled the flip");
+        assert!(p.on_track, "still riding the bouncy tile's rail");
+        assert_eq!(p.vy, 0.0, "the ride resolve zeroes vy");
+        let magnet_y = magnet_of(&p).y;
+        assert!(
+            (magnet_y - (40.0 * 16.0 + 6.0)).abs() < 0.5,
+            "still on the rail line: {}",
+            magnet_y
+        );
+    }
+
+    /// Review probe (Phase 2 gate fix 1) — the direction lock reads the
+    /// POST-boost roll: the boost applies at `Player.cs:19818-19833` and the
+    /// lock sits at `:19835-19843`, both inside `HorizontalMovement`. Rolling
+    /// left over a right-boost booster with the right key held flips the
+    /// facing on the boost-apply tick, not one tick later.
+    #[test]
+    fn boost_tick_flips_the_facing_to_the_boosted_direction() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        place_track(&mut w, 45, 40, 30, -1); // right-boost booster
+        let mut p = cart_on_rail(&w, 40, 46.0 * 16.0 + 8.0, -3.0);
+        p.facing = -1;
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        // The crossing tick: the booster arms the push against the roll; the
+        // lock (pre-boost roll = negative) keeps the facing.
+        let mut crossed = false;
+        for _ in 0..20 {
+            p.update(&w, input);
+            if p.track_boost != 0.0 {
+                crossed = true;
+                break;
+            }
+        }
+        assert!(crossed, "the booster was crossed rolling left");
+        assert_eq!(p.facing, -1, "the crossing tick keeps the roll facing");
+        // The boost-apply tick: the roll turns positive pre-input and the
+        // lock (post-boost) flips the facing the same tick.
+        p.update(&w, input);
+        assert!(p.vx > 0.0, "the boost turned the roll: {}", p.vx);
+        assert_eq!(p.facing, 1, "the boosted direction, same tick");
+    }
+
+    /// Review probe (Phase 2 gate fix 1) — the dismount edge fires in the
+    /// stat override (`Player.cs:26672-26674`) and the now-unmounted
+    /// direction block inside `HorizontalMovement` (`:19835-19843`) flips
+    /// the facing the SAME tick.
+    #[test]
+    fn dismount_tick_flips_the_facing_to_the_pressed_direction() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 44);
+        for x in 36..80 {
+            place_stone(&mut w, x, 43);
+        }
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        // Roll off the end and settle off-track.
+        for _ in 0..90 {
+            p.update(&w, PlayerInput::default());
+            if !p.on_track && p.vy == 0.0 && p.on_wrong_ground {
+                break;
+            }
+        }
+        assert!(p.on_wrong_ground && !p.on_track && p.vy == 0.0, "settled");
+        assert_eq!(p.facing, 1, "the keyless roll-off kept the spawn facing");
+        // The left press edge: the dismount and the facing flip land together.
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(!p.cart_mounted, "the press edge dismounted");
+        assert_eq!(p.facing, -1, "the pressed direction, same tick");
+    }
+
+    /// The regular bumper (frame 2) dead-stops the cart at the rail line
+    /// (`Minecart.cs:660-668` — the `stopped` resolve keeps only the travelled
+    /// X). With the key held the C# vibrates in place: the accel arm grants
+    /// one 0.04 step on the vy == 0 ticks and the boundary sentinel eats it
+    /// when the march crosses the sub edge, so |vx| never exceeds one step.
+    #[test]
+    fn bumper_stops_the_cart_on_the_rail() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        place_track(&mut w, 45, 40, 2, -1); // bumper on the left half
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 8.0);
+        let input = PlayerInput {
+            right: true,
+            ..Default::default()
+        };
+        let mut reached = false;
+        for _ in 0..20 {
+            p.update(&w, input);
+            if p.vx.abs() < 1e-4 {
+                reached = true;
+            }
+            if reached {
+                // The held key vibrates in place: one 0.04 accel step on the
+                // vy == 0 ticks, eaten by the boundary sentinel's stop.
+                assert!(
+                    p.vx.abs() <= 0.04 + 1e-4,
+                    "held against the bumper: {}",
+                    p.vx
+                );
+                assert!(p.on_track, "resting on the rail, never unseated");
+            }
+        }
+        assert!(reached, "the stop zeroed the roll at the boundary");
+        let magnet = magnet_of(&p);
+        assert!((magnet.y - (40.0 * 16.0 + 6.0)).abs() < 0.5);
+        assert!(magnet.x < 45.0 * 16.0 + 0.5, "never inside the bumper sub");
+    }
+
+    /// `Player.cs:28088-28092`: the cart always falls through platforms —
+    /// `fallThrough`/`flag31` are forced for `Mount.Cart`.
+    #[test]
+    fn the_cart_falls_through_platforms() {
+        let mut w = cart_world();
+        for x in 30..60 {
+            let i = w.index(x, 38);
+            w.tiles[i] = Tile {
+                kind: 19, // platform
+                frame_y: 0,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        for x in 30..60 {
+            place_stone(&mut w, x, 42);
+        }
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        let (x, y) = cart_at(Vec2::new(40.0 * 16.0 + 8.0, 30.0 * 16.0));
+        p.x = x;
+        p.y = y;
+        p.prev_x = x;
+        p.prev_y = y;
+        for _ in 0..90 {
+            p.update(&w, PlayerInput::default());
+        }
+        let bottom = p.y + CART_MOUNT_HEIGHT;
+        assert!(
+            (bottom - 42.0 * 16.0).abs() < 1.0,
+            "fell through to the floor: {}",
+            bottom
+        );
+        assert!(!p.on_track, "stone is not a rail");
+    }
+
+    /// Dirty (plan P2) — `TR_CART` with no rails under the magnet: the
+    /// mounted cart just falls under gravity; no ride state, no panic. The
+    /// first rest tick flags `on_wrong_ground` (the C# off-track-at-rest
+    /// check, `Player.cs:26665-26674`) and the cart keeps it through the fall
+    /// (`:24371-24374` preserves it for carts).
+    #[test]
+    fn cart_with_no_rails_falls_normally() {
+        let w = cart_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        p.y = 30.0 * 16.0;
+        p.update(&w, PlayerInput::default());
+        assert!(p.on_wrong_ground, "resting off-track flags wrong ground");
+        for _ in 0..30 {
+            p.update(&w, PlayerInput::default());
+            assert!(!p.on_track);
+        }
+        assert!(p.vy > 0.0, "falling under gravity: {}", p.vy);
+    }
+
+    // ------------------------------------------------------------------
+    // M2-PHYS-7 Phase 3 — wheel sparks + sounds
+    // ------------------------------------------------------------------
+
+    /// Finds a stream seed where one rolling call at `|vx| = vel_x` queues
+    /// exactly `want` sparks — the gate rolls interleave with the 14-roll
+    /// sparks (the rain.rs seed-search idiom, run against the same emitter
+    /// constants the tick passes).
+    fn seed_with_spark_count(vel_x: f32, want: usize) -> u64 {
+        for s in 1u64.. {
+            let mut sparks = Vec::new();
+            let mut rng = s;
+            crate::minecart::rolling_wheel_sparks(
+                &mut Vec::new(),
+                &mut sparks,
+                &mut rng,
+                Vec2::new(100.0, 200.0),
+                20,
+                52,
+                Vec2::new(vel_x, 0.0),
+                13.0,
+                0.0,
+            );
+            if sparks.len() == want {
+                return s;
+            }
+        }
+        unreachable!()
+    }
+
+    /// DW-3.2 — the landing burst (`Minecart.cs:809-813` via the Phase-1
+    /// `TrackFlags::landing`): a real fall onto a rail queues the Item53 cue
+    /// and exactly 10 sparks at the pre-call magnet point, with the
+    /// pre-call rotation (`Player.cs:28110-28111` sets the emitter statics
+    /// before `TrackCollision` runs).
+    #[test]
+    fn landing_on_a_rail_bursts_ten_sparks_and_item53() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 0.0);
+        p.y -= 64.0; // four rows above the rail line
+        p.prev_y = p.y;
+        p.vy = 5.0; // the gate needs `velocity.Y > defaultGravity` (0.4)
+        p.fall_start2 = (p.y / 16.0) as i32 - 3; // a real fall origin
+        // The fall takes a handful of ticks to cross the 64 px to the rail;
+        // the landing tick queues the burst with its pre-call position.
+        let mut landed_at = None;
+        for _ in 0..20 {
+            let (pre_x, pre_y) = (p.x, p.y);
+            p.update(&w, PlayerInput::default());
+            if !p.pending_sparks.is_empty() {
+                landed_at = Some((pre_x, pre_y));
+                break;
+            }
+        }
+        let (pre_x, pre_y) = landed_at.expect("the landing fired");
+        assert!(p.on_track, "the fall ended on the rail");
+        assert_eq!(p.pending_sparks.len(), 10, "the 10-spark burst");
+        assert_eq!(p.pending_cart_sounds.len(), 1);
+        assert_eq!(p.pending_cart_sounds[0].cue, "Item_53");
+        // Every spark sits at the pre-call magnet point (rotation 0 on the
+        // flat rail): y exactly `pre_y + 52`, x = pre_x + 10 ± 13 + 4.
+        for s in &p.pending_sparks {
+            assert_eq!(s.pos.y, pre_y + 52.0);
+            assert!(
+                (s.pos.x - (pre_x + 27.0)).abs() < 1e-3 || (s.pos.x - (pre_x + 1.0)).abs() < 1e-3,
+                "x {}",
+                s.pos.x
+            );
+        }
+    }
+
+    /// DW-3.3 (dirty) — the rolling gates are direction-opposite
+    /// (`Player.cs:19868`: the left arm needs `velocity.X >= 0f`; `:19926`:
+    /// the right arm `velocity.X <= 0f`): riding forward is silent, braking
+    /// a same-sign roll sparks.
+    #[test]
+    fn riding_forward_does_not_spark_the_braking_arms_do() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 140);
+        // Settle one tick so the previous tick's `onTrack` is up.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        p.update(&w, PlayerInput::default());
+        // All three 50% gates would pass — the arm's sign gate is the only
+        // thing that can stop them.
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        // Riding forward (right held, vx > 0): the right arm's `vx <= 0`
+        // gate fails — no sparks, no Item55.
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.pending_sparks.is_empty(), "forward riding is silent");
+        assert!(p.pending_cart_sounds.is_empty());
+        // Braking (left held against the rightward roll): the left arm's
+        // `vx >= 0` gate fires the three rolls → 3 sparks + Item55.
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 13.0);
+        p.update(&w, PlayerInput::default());
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert_eq!(p.pending_sparks.len(), 3, "the braking arm sparks");
+        assert_eq!(p.pending_cart_sounds.len(), 1);
+        assert_eq!(p.pending_cart_sounds[0].cue, "Item_55");
+        // At rest the arm's own accel (`Player.cs:19855`: `velocity.X -=
+        // runAcceleration`, unconditional for a grounded cart) flips vx to
+        // −0.04 before the gate reads it — the at-rest press never sparks
+        // (the C# order; the gate is the arm's post-accel velocity).
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 0.0);
+        p.update(&w, PlayerInput::default());
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            p.pending_sparks.is_empty(),
+            "the at-rest press never sparks"
+        );
+    }
+
+    /// DW-3.3 (dirty) — no sparks off-track or airborne: the gate needs the
+    /// previous tick's `onTrack` with `!onWrongGround` and `velocity.Y == 0`
+    /// (`Player.cs:19868`).
+    #[test]
+    fn sparks_are_absent_off_track_and_airborne() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 60);
+        // Off-track: a mounted cart on plain ground (no rails) never passes
+        // the gate — the on-track check flags `on_wrong_ground` and the
+        // previous tick's `onTrack` is down.
+        let mut w2 = cart_world();
+        for x in 20..80 {
+            place_stone(&mut w2, x, 45);
+        }
+        let mut p = Player::spawn(&w2);
+        p.mount_cart();
+        p.y = 45.0 * 16.0 - 52.0;
+        p.prev_y = p.y;
+        p.vx = 10.0;
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w2,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.on_wrong_ground, "the off-track flag is up");
+        assert!(p.pending_sparks.is_empty(), "off-track: no sparks");
+        assert!(p.pending_cart_sounds.is_empty(), "off-track: no Item55");
+        // Airborne: jump off the rail, then brake mid-air — `onTrack` (the
+        // previous tick's) is down and `velocity.Y != 0`.
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 120);
+        let mut p = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 6.0);
+        p.update(&w, PlayerInput::default());
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.vy != 0.0, "the jump launched the cart");
+        p.spark_rng = seed_with_spark_count(10.4, 3);
+        p.update(
+            &w,
+            PlayerInput {
+                left: true,
+                ..Default::default()
+            },
+        );
+        assert!(p.pending_sparks.is_empty(), "airborne: no sparks");
+        assert!(p.pending_cart_sounds.is_empty(), "airborne: no Item55");
+    }
+
+    /// DW-3.3 (the replay half, through the tick) — the same world, seed and
+    /// inputs give byte-equal spark queues and identical stream positions.
+    #[test]
+    fn the_player_spark_stream_replays_identically() {
+        let mut w = cart_world();
+        rail_run(&mut w, 40, 30, 140);
+        let mut a = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        let mut b = cart_on_rail(&w, 40, 35.0 * 16.0 + 8.0, 12.0);
+        let seed = seed_with_spark_count(10.4, 3);
+        a.spark_rng = seed;
+        b.spark_rng = seed;
+        for _ in 0..10 {
+            let input = PlayerInput {
+                left: true,
+                ..Default::default()
+            };
+            a.update(&w, input);
+            b.update(&w, input);
+            assert_eq!(a.pending_sparks, b.pending_sparks, "byte-equal queues");
+            assert_eq!(a.pending_cart_sounds, b.pending_cart_sounds);
+            assert_eq!(a.spark_rng, b.spark_rng, "identical stream positions");
+        }
+    }
+
+    /// Dirty (pitfall §10.13) — the dismount resets `cartFlip`/`lastBoost`/
+    /// `fullRotation` and clears the mount buff (`Mount.cs:6151-6162`), and a
+    /// fresh mount starts clean (`:6205-6211`).
+    #[test]
+    fn dismount_resets_the_ride_state() {
+        let w = cart_world();
+        let mut p = Player::spawn(&w);
+        p.mount_cart();
+        p.cart_flip = true;
+        p.last_boost = (3, 4);
+        p.full_rotation = 0.5;
+        p.full_rotation_origin = (10.0, 52.0);
+        p.track_boost = 2.0;
+        p.cart_dismount();
+        assert!(!p.cart_mounted);
+        assert!(!p.cart_flip);
+        assert_eq!(p.last_boost, (0, 0));
+        assert_eq!(p.full_rotation, 0.0);
+        assert_eq!(p.full_rotation_origin, (0.0, 0.0));
+        assert!(p.buffs.find_buff_index(CART_MOUNT_BUFF).is_none());
+        p.mount_cart();
+        assert!(p.cart_mounted);
+        assert_eq!(p.last_boost, (0, 0), "the fresh mount starts clean");
+        assert!(!p.cart_flip);
+    }
+    // -- M2-MOUNT-1 phase 2: the per-tick mount block ------------------------
+
+    #[test]
+    fn the_mount_replaces_the_run_stats_and_suppresses_the_wings() {
+        // DW-2.1/2.2 — the replace mode `Player.cs:26649-26654` and the
+        // wings/rocket suppression `:26625-26635`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wings_logic = 22; // pretend wings so the suppression has a target
+        p.has_wings = true;
+        p.rocket_boots = 1;
+        p.set_mount(10, false); // Unicorn 4/12/0.3
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.max_run_speed_value(), 4.0, "maxRunSpeed replaced");
+        assert_eq!(p.acc_run_speed_value(), 12.0, "accRunSpeed = DashSpeed");
+        assert!(!p.has_wings && p.wings_logic == 0, "wings suppressed");
+        assert_eq!(p.rocket_boots, 0, "rocketBoots zeroed");
+    }
+
+    #[test]
+    fn flying_with_wings_max_merges_instead_of_replacing() {
+        // `:26643-26648` — flag17 keeps the better stat (Hermes' 6.0 beats
+        // the Slime mount's 4.0 DashSpeed).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[3] = 54; // Hermes — `accRunSpeed = 6f`
+        p.update(&w, PlayerInput::default()); // the grant pass runs
+        assert_eq!(p.acc_run_speed_value(), 6.0);
+        p.set_mount(3, false);
+        p.wings_logic = 22;
+        p.vy = -1.0; // airborne so flag17 can arm
+        p.mount.set_test_overrides(Some(true), None); // the M2-MOUNT-2 row
+        p.update_mount();
+        assert_eq!(p.acc_run_speed_value(), 6.0, "max(6.0, 4.0)");
+        // without the wings the same merge replaces: 4.0
+        p.mount.set_test_overrides(Some(false), None);
+        p.wings_logic = 22;
+        p.update_mount();
+        assert_eq!(p.acc_run_speed_value(), 4.0, "replaced while grounded");
+    }
+
+    #[test]
+    fn the_additive_mode_adds_instead_of_replacing() {
+        // `:26637-26641` — the `MovementStatsAreAdditive` branch (roller
+        // skates in vanilla; the row lands with M2-MOUNT-4).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(3, false);
+        p.mount.set_test_overrides(None, Some(true));
+        p.update_mount();
+        assert_eq!(p.max_run_speed_value(), 3.0 + 4.0, "3 + Slime runSpeed");
+        assert_eq!(p.acc_run_speed_value(), 3.0 + 4.0, "3 + Slime dashSpeed");
+    }
+
+    #[test]
+    fn the_mount_jumps_replace_and_scale_with_x_velocity() {
+        // DW-2.3 — `Player.cs:19619-19631` + `Mount.cs:2810-2858`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false); // Unicorn — no scaling branch
+        p.vx = 16.0;
+        p.update_mount();
+        assert_eq!(p.jump_height, 10);
+        assert_eq!(p.jump_speed, 8.01);
+        p.dismount(&w, false);
+        p.set_mount(0, false); // Rudolph, type 0
+        p.vx = 4.0;
+        p.update_mount();
+        assert_eq!(p.jump_height, 18, "17 + (int)(4/4f)");
+        assert_eq!(p.jump_speed, 5.31 + 4.0 / 7.0);
+    }
+
+    #[test]
+    fn the_unicorn_arms_its_extra_jump_and_the_chain_consumes_it() {
+        // DW-2.3 — `Mount.cs:4950-4953` arms the option; the PHYS-8 chain
+        // (`Player.cs:20698-21022`) consumes it after the vanilla re-arm.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(10, false);
+        // the ground jump
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, press);
+        assert!(p.vy < 0.0, "the ground jump fired");
+        // release mid-air (the else branch zeroes `jump` and latches the
+        // release), then press again — the extra jump fires while airborne
+        let release = PlayerInput::default();
+        p.update(&w, release);
+        p.update(&w, press);
+        assert_eq!(
+            p.performing_jump,
+            Some(ExtraJump::Unicorn),
+            "the mount jump consumed"
+        );
+        assert!(!p.can_jump_again[ExtraJump::Unicorn.index()]);
+    }
+
+    #[test]
+    fn the_bunny_nullifies_fall_damage_and_the_unicorn_scales_it() {
+        // DW-2.4 — `Player.cs:25315-25318` (bunny zero) + `:25363-25367`
+        // (the FallDamage multiplier) + `:25307-25310` (CanFly zero).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(1, false); // Bunny — the nullify
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "the bunny nullifies the fall");
+        // Rudolph can fly — `CanFly` zeroes the fall distance too
+        p.dismount(&w, false);
+        p.set_mount(0, false);
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        p.hp = 100;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "the flying mount zeroes the fall");
+        // Unicorn — 0.2x: (32 - 25) * 10 = 70 -> 14
+        p.dismount(&w, false);
+        p.set_mount(10, false);
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        p.hp = 100;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        // The 76px unicorn hitbox rests with its top on row 55 (960-76=884),
+        // so `num11` measures 55-25 = 30: (30-25)*10 = 50, x0.2 = 10.
+        assert_eq!(p.hp, 90, "(50) * 0.2 = 10");
+    }
+
+    #[test]
+    fn the_slime_extra_fall_lifts_the_threshold() {
+        // `:25301-25304` + `Mount.cs:869` (extraFall 10): a 30-tile fall with
+        // the Slime mount stays under `25 + 10`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(3, false);
+        p.y = 30.0 * TILE_PX;
+        p.fall_start = 30;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "35 threshold eats the 30-tile fall");
+    }
+
+    #[test]
+    fn equipping_grows_the_hitbox_and_dismounting_restores_it() {
+        // DW-2.5 — `Mount.cs:6264-6277` grow, `:6176-6193` restore.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let y_before = p.y;
+        assert_eq!(p.height, HEIGHT);
+        assert!(p.set_mount(10, false)); // Unicorn boost 34
+        assert_eq!(p.height, HEIGHT + 34.0);
+        assert!(
+            (p.y - (y_before - 34.0)).abs() < 0.01,
+            "the bottom stays anchored"
+        );
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the mount buff added (:6226)"
+        );
+        assert!(p.dismount(&w, false));
+        assert_eq!(p.height, HEIGHT);
+        assert!((p.y - y_before).abs() < 0.01, "the restore returns the top");
+        assert!(
+            p.buffs.find_buff_index(162).is_none(),
+            "the buff cleared (:6150)"
+        );
+    }
+
+    #[test]
+    fn cced_dismounts_the_mount_mid_tick() {
+        // DW-2.6 — `Player.cs:26799-26812`: the Frozen buff CCs, the mount
+        // dismounts during the same tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(10, false);
+        p.buffs.add_buff(47, 100); // BuffID.Frozen
+        p.update(&w, PlayerInput::default());
+        assert!(!p.mount.is_active(), "CCed dismounts");
+        assert_eq!(p.height, HEIGHT, "the hitbox restored");
+    }
+
+    #[test]
+    fn the_auto_jump_refill_uses_just_jumped() {
+        // `:26776-26781` — a constant-jump mount's re-jump refills the flight
+        // budget (`autoJump && justJumped`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(50, false); // Queen Slime: constantJump + flightTimeMax 80
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, press);
+        assert!(p.auto_jump, "the mount head-sets autoJump (:4797)");
+        assert!(p.just_jumped, "the grounded trigger sets justJumped");
+        assert!(p.mount.fly_time() > 0, "ResetFlightTime refilled (:26777)");
+    }
+
+    const EMPTY_ITEM_SLOT: crate::item::ItemSlot = crate::item::ItemSlot {
+        kind: 0,
+        name: "",
+        count: 0,
+    };
+
+    // -- M2-MOUNT-1 phase 3: triggers, buff lifecycle, quick-mount ----------
+
+    fn saddle(kind: u16) -> crate::item::ItemSlot {
+        crate::item::ItemSlot {
+            kind,
+            name: "",
+            count: 1,
+        }
+    }
+
+    #[test]
+    fn quick_mount_equips_the_first_saddle_and_the_buff_persists() {
+        // DW-3.1 — `QuickMount` (`Player.cs:6045-6100`) + the refresh
+        // (`:9881-9884`, `buffTime = 10`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let inv = [saddle(3260), EMPTY_ITEM_SLOT];
+        assert_eq!(
+            p.quick_mount(&w, &inv),
+            Some(3260),
+            "the Blessed Apple equips"
+        );
+        assert!(p.mount.is_active() && p.mount.kind() == 10);
+        assert_eq!(p.height, HEIGHT + 34.0, "the hitbox grew");
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the mount buff added (:6226)"
+        );
+        p.update(&w, PlayerInput::default());
+        let i = p.buffs.find_buff_index(162).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 10, "the refresh holds buffTime at 10");
+        assert!(p.mount.is_active(), "the buff keeps the mount alive");
+    }
+
+    #[test]
+    fn the_buff_expiring_dismounts() {
+        // DW-3.2 — `CheckMountBuff` (`Mount.cs:5275-5281` via `:18832`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false);
+        assert!(p.mount.is_active());
+        let i = p.buffs.find_buff_index(162).unwrap();
+        p.buffs.del_buff(i);
+        p.update(&w, PlayerInput::default());
+        assert!(!p.mount.is_active(), "the buff gone -> dismount");
+        assert_eq!(p.height, HEIGHT, "the hitbox restored");
+    }
+
+    #[test]
+    fn dismount_on_item_use_respects_the_same_mount_exemption() {
+        // DW-3.3 — the `DismountOnItemUse` predicate (`Mount.cs:642-652`);
+        // the item gate itself is the editing.rs arm (`Player.cs:31695-31698`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false);
+        assert!(
+            !p.mount.dismount_on_item_use(),
+            "no ground row sets the flag"
+        );
+        p.mount.set_test_dismount_on_item_use(Some(true));
+        assert!(p.mount.dismount_on_item_use());
+        // the exemption: the held item being the same mount does not clear
+        let same = crate::mount::mount_type_of_item(3260) == Some(p.mount.kind());
+        assert!(same, "Blessed Apple is the Unicorn's own saddle");
+        // a different item dismounts through the vanilla gate
+        assert!(p.try_dismount(&w));
+        assert!(!p.mount.is_active());
+    }
+
+    #[test]
+    fn quick_mount_toggles_and_guards() {
+        // DW-3.4 — the toggle, the no-saddle fallback, the CC guard, the
+        // space check (`Mount.CanMount`, `Mount.cs:6581-6604`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let none = [EMPTY_ITEM_SLOT];
+        assert_eq!(p.quick_mount(&w, &none), None, "no saddle -> nothing");
+        let inv = [saddle(2430)]; // Slimy Saddle -> Slime 3
+        assert_eq!(p.quick_mount(&w, &inv), Some(2430));
+        assert!(p.mount.is_active());
+        assert_eq!(p.quick_mount(&w, &inv), None, "mounted -> dismount");
+        assert!(!p.mount.is_active());
+        // the CC guard (`:6074-6077`)
+        p.buffs.add_buff(47, 100); // Frozen
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.quick_mount(&w, &inv), None, "CCed cannot mount");
+    }
+
+    #[test]
+    fn can_mount_needs_the_grown_box_to_fit() {
+        // `Mount.cs:6593-6595` — the Unicorn's 76px box does not fit under a
+        // 3-tile ceiling where the Slime's 62px does.
+        let mut w = ground_world();
+        // A 64px cavity: solid rows 54-55, air rows 56-59, ground row 60.
+        for x in 0..64 {
+            for y in 54..56 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let mut p = Player::spawn(&w);
+        p.y = 918.0; // resting on the row-60 ground inside the cavity
+        assert!(!p.can_mount(&w, 10), "76px does not fit in the 64px cavity");
+        assert!(p.can_mount(&w, 3), "62px fits");
+    }
+
+    #[test]
+    fn the_tr_mount_pin_equips_and_a_real_saddle_wins() {
+        // DW-3.5 — the pin re-applies after the flag clear; a real mount
+        // (or its buff) suppresses it, matching the refresh order.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_mount = Some(10);
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.mount.is_active() && p.mount.kind() == 10,
+            "the pin equipped"
+        );
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the buff sustains it"
+        );
+        // a real saddle overrides the pin while it is live
+        p.set_mount(3, false);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mount.kind(), 3, "the real saddle wins");
+        // removing the saddle hands control back to the pin
+        let i = p.buffs.find_buff_index(130).unwrap();
+        p.buffs.del_buff(i);
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mount.kind(), 10, "the pin re-equipped after the clear");
+    }
+
+    // -- M2-MOUNT-1 phase 4: the frame animator ------------------------------
+
+    #[test]
+    fn the_queen_slime_run_counter_advances_at_half_speed() {
+        // DW-4.1 — `Mount.cs:4277-4279` (type 50: `|vx| * 0.5`) with the
+        // 16-tick delay and the 5-frame wrap (`:2194-2244` row).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(50, false);
+        p.vx = 4.0;
+        // 2.0 per tick, one crossing per tick — 8 ticks per frame; the first
+        // crossing lands on tick 9, the second on 17.
+        for _ in 0..17 {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_RUNNING);
+        assert_eq!(p.mount.frame(), 2, "two steps in 17 ticks");
+        // crossings at 25/33/41: the fourth step exits the 5-frame band...
+        for _ in 0..(8 * 3) {
+            p.update_frames(&w);
+        }
+        assert_eq!(p.mount.frame(), 0, "wrapped back into the running band");
+    }
+
+    #[test]
+    fn the_rudolph_idle_pick_is_deterministic_and_reaches_the_idle_band() {
+        // DW-4.2 — the idle timer (`Mount.cs:4145-4181`) through the
+        // splitmix stand-in: same tick sequence, same picks.
+        let w = ground_world();
+        let mut a = Player::spawn(&w);
+        let mut b = Player::spawn(&w);
+        a.set_mount(0, false);
+        b.set_mount(0, false);
+        let mut reached_idle = false;
+        for tick in 0..2500 {
+            a.update_frames(&w);
+            b.update_frames(&w);
+            assert_eq!(a.mount.frame(), b.mount.frame(), "tick {tick}: same pick");
+            assert!(a.mount.frame() != 1, "standing still never runs");
+            if a.mount.frame() >= 2 && a.mount.frame() <= 5 {
+                reached_idle = true;
+            }
+        }
+        assert!(reached_idle, "the idle band (frames 2-5) was reached");
+    }
+
+    #[test]
+    fn the_air_state_picks_the_in_air_row_and_rudolph_reaches_fly_frames() {
+        // DW-4.3 — `Player.cs:36155-36216`: the in-air row right after the
+        // jump, then the flying band while the budget lasts.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(1, false); // Bunny: in-air start row 5
+        let press = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, press);
+        let release = PlayerInput::default();
+        p.update(&w, release);
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_IN_AIR);
+        assert_eq!(p.mount.frame(), 5, "the bunny's in-air row");
+        // Rudolph: the ground refill arms the budget, the held jump after the
+        // jump budget runs out switches to the flying band (start row 6).
+        p.dismount(&w, false);
+        p.set_mount(0, false);
+        for _ in 0..240 {
+            p.update(&w, release); // settle back down; rest ticks refill
+            if p.on_ground && p.mount.fly_time() > 0 {
+                break;
+            }
+        }
+        assert!(p.on_ground && p.mount.fly_time() > 0, "the refill armed");
+        p.update(&w, press); // the ground jump
+        for _ in 0..30 {
+            p.update(&w, press); // hold: the jump budget (17) runs out
+        }
+        assert_eq!(p.mount.frame_state(), crate::mount::FRAME_FLYING, "fly time drives state 3");
+        assert!((6..=11).contains(&p.mount.frame()), "the flying band");
+    }
+
+    #[test]
+    fn the_walking_grace_stays_inert_for_the_ground_rows() {
+        // DW-4.4 — `Mount.cs:3620-3631`: every ground row carries
+        // `walkingGraceTimeMax = 0`, so the grace never blocks the air state
+        // and never goes negative.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(1, false);
+        let press = PlayerInput { jump: true, ..Default::default() };
+        p.update(&w, press);
+        let mut airborne_ticks = 0;
+        for _ in 0..40 {
+            p.update(&w, press);
+            assert_eq!(p.mount.running_grace_time(), 0, "max 0 -> always 0");
+            if p.vy != 0.0 {
+                airborne_ticks += 1;
+                assert_eq!(
+                    p.mount.frame_state(),
+                    crate::mount::FRAME_IN_AIR,
+                    "the grace never blocks the air state"
+                );
+            }
+        }
+        assert!(airborne_ticks > 10, "the hop stayed airborne");
+    }
+
+
 }

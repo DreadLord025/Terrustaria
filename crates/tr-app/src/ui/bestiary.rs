@@ -89,9 +89,9 @@ pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
-    if mouse.x < rect[0] || mouse.y < rect[1] {
-        return None;
-    }
+    // `GetEntriesToShow`'s raw CELL lattice (the space divided by 72 — no
+    // insets): the draw and the hit-test share it, so the overflow rows
+    // keep the hits.
     let cx = ((mouse.x - rect[0]) / CELL) as usize;
     let cy = ((mouse.y - rect[1]) / CELL) as usize;
     if cx >= cols || cy >= rows {
@@ -216,8 +216,8 @@ fn draw_grid(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2, tracker: &
     {
         let col = idx % cols;
         let row = idx / cols;
-        let x = rect[0] + col as f32 * CELL + (rect[2] - cols as f32 * CELL) * 0.5;
-        let y = rect[1] + row as f32 * CELL + (rect[3] - rows as f32 * CELL) * 0.5;
+        let x = rect[0] + col as f32 * CELL;
+        let y = rect[1] + row as f32 * CELL;
         let cell = [x, y, CELL, CELL];
         let hover = card_at(screen, mouse) == Some(idx);
         draw_card(r, lookups, cell, entry, tracker, idx, hover);
@@ -302,6 +302,8 @@ fn portrait_data(
         NpcKind::WanderingEye => 2,
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
+        NpcKind::EyeOfCthulhu => 41,
+        NpcKind::ServantOfCthulhu => 42,
         NpcKind::Guide => 5,
         NpcKind::Skeleton => 6,
         NpcKind::UndeadMiner => 7,
@@ -339,7 +341,24 @@ fn portrait_data(
         NpcKind::Painter => 39,
         NpcKind::WitchDoctor => 40,
         NpcKind::Clothier => 41,
+        NpcKind::EyeOfCthulhu => 43,
+        NpcKind::QueenBee => 44,
+        NpcKind::SkeletronHead => 45,
+        NpcKind::WallOfFlesh => 47,
+        NpcKind::Hungry => 48,
+        NpcKind::LeechHead => 49,
+        NpcKind::LeechBody => 50,
         NpcKind::EyeOfCthulhu => 42,
+        NpcKind::QueenBee => 43,
+        NpcKind::SkeletronHead => 44,
+        NpcKind::WallOfFlesh => 45,
+        NpcKind::TheDestroyer => 46,
+        NpcKind::SkeletronPrime => 47,
+        NpcKind::Retinazer => 48,
+        NpcKind::Spazmatism => 49,
+        NpcKind::Plantera => 50,
+        NpcKind::BrainOfCthulhu => 51,
+        NpcKind::Creeper => 52,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -358,6 +377,25 @@ fn portrait_data(
                 ],
             )
         }
+        // The hungry (3 frames) / the leech segments (1).
+        (NpcKind::Hungry, _) => {
+            let h = lookups.bestiary_npc_sheets[48]
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => {
+            (sheet_i, 14.0, 14.0, 14.0, white)
+        }
+        // The eye: the 6-frame sheet's frame height rides the sheet
+        // (the 100x110 frames).
+        (NpcKind::EyeOfCthulhu, _) => {
+            let h = lookups.bestiary_npc_sheets[43]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::ServantOfCthulhu, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         (NpcKind::Slime, None) => (sheet_i, 26.0, 32.0, 26.0, white),
         (NpcKind::DemonEye, _) => (sheet_i, 24.0, 38.0, 24.0, white),
         (NpcKind::WanderingEye, _) => {
@@ -412,6 +450,16 @@ fn portrait_data(
         (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
+        (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
+        (NpcKind::TheDestroyer, _) => (sheet_i, 48.0, 48.0, 48.0, white),
+        (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
+        (NpcKind::BrainOfCthulhu, _) => (sheet_i, 110.0, 160.0, 110.0, white),
+        (NpcKind::Creeper, _) => (sheet_i, 30.0, 30.0, 30.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
@@ -562,9 +610,11 @@ mod tests {
         let rect = grid_rect(&panel);
         let (cols, rows) = grid_metrics(&rect);
         assert!(cols * rows >= crate::bestiary::ENTRIES.len());
-        // The first cell's centre hits entry 0.
-        let first_x = rect[0] + (rect[2] - cols as f32 * CELL) * 0.5 + CELL * 0.5;
-        let first_y = rect[1] + (rect[3] - rows as f32 * CELL) * 0.5 + CELL * 0.5;
+        // The first cell's centre hits entry 0 — the probe rides
+        // `card_at`'s own lattice (the raw CELL grid, no insets) so the
+        // overflow rows keep the hit.
+        let first_x = rect[0] + CELL * 0.5;
+        let first_y = rect[1] + CELL * 0.5;
         assert_eq!(card_at(screen, Vec2::new(first_x, first_y)), Some(0));
         // The Back panel sits inside the container above the bottom edge.
         let back = back_rect(&panel);

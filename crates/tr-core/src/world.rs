@@ -96,6 +96,10 @@ pub struct World {
     pub downed_eow: bool,
     pub downed_skeletron: bool,
     pub downed_queen_bee: bool,
+    pub downed_mech_boss1: bool,
+    pub downed_mech_boss3: bool,
+    pub downed_mech_boss2: bool,
+    pub downed_plant_boss: bool,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -105,6 +109,17 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+    /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs`'s statics): the WoF's
+    /// underworld draw band, written by the wall's AI_027 scan and read by
+    /// the Hungry's anchor (`aiStyle 29`). Runtime-only.
+    pub wof_draw_top: f32,
+    pub wof_draw_bottom: f32,
+    /// A WoF is alive (the Hungry deactivates without one) + its hp ratio
+    /// and x (the Hungry's anchor reads).
+    pub wof_present: bool,
+    pub wof_hp_ratio: f32,
+    pub wof_x: f32,
+
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -136,6 +151,10 @@ impl World {
             downed_eow: false,
             downed_skeletron: false,
             downed_queen_bee: false,
+        downed_mech_boss1: false,
+        downed_mech_boss3: false,
+        downed_mech_boss2: false,
+        downed_plant_boss: false,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -153,7 +172,13 @@ impl World {
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
+
             altars_smashed: 0,
+            wof_draw_top: -1.0,
+            wof_draw_bottom: -1.0,
+            wof_present: false,
+            wof_hp_ratio: 1.0,
+            wof_x: 0.0,
             butterfly_chance: 0,
         }
     }

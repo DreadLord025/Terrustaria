@@ -45,6 +45,11 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
+    /// strips (`MountData.backTexture`) and the front strips
+    /// (`frontTexture`) of the M2-MOUNT-1 ground set.
+    pub(crate) mount_back: [Option<BgTex>; 12],
+    pub(crate) mount_front: [Option<BgTex>; 12],
 }
 
 /// `Player.armor[0..3]`'s item kinds (0 = empty) — head, body, legs, the draw
@@ -85,6 +90,30 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // The mount strips resolve by the rows' own sheet names (`Mount.cs:
+        // 696-2567`); a missing file stays `None` and the draw skips it.
+        mount_back: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.back_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.back_sheet, None)
+                    }
+                })
+        }),
+        mount_front: std::array::from_fn(|i| {
+            crate::mount::MOUNTS
+                .get(i)
+                .and_then(|row| {
+                    if row.front_sheet.is_empty() {
+                        None
+                    } else {
+                        sky_tex(atlas, row.front_sheet, None)
+                    }
+                })
+        }),
     }
 }
 
@@ -110,6 +139,16 @@ pub(crate) struct NpcAssets {
     pub(crate) witch_doctor: Option<BgTex>,
     pub(crate) clothier: Option<BgTex>,
     pub(crate) eoc: Option<BgTex>,
+    pub(crate) queen_bee: Option<BgTex>,
+    pub(crate) skeletron_head: Option<BgTex>,
+    pub(crate) wof: Option<BgTex>,
+    pub(crate) destroyer: Option<BgTex>,
+    pub(crate) prime: Option<BgTex>,
+    pub(crate) retinazer: Option<BgTex>,
+    pub(crate) spazmatism: Option<BgTex>,
+    pub(crate) plantera: Option<BgTex>,
+    pub(crate) brain: Option<BgTex>,
+    pub(crate) creeper: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -139,6 +178,14 @@ pub(crate) struct NpcAssets {
     pub(crate) eow_body: Option<BgTex>,
     pub(crate) eow_tail: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
+    /// `NPC_4.xnb` — the Eye of Cthulhu sheet (6 frames of 100×110).
+    pub(crate) eye_of_cthulhu: Option<BgTex>,
+    /// `NPC_5.xnb` — the Servant of Cthulhu sheet (2 frames of 20×20).
+    pub(crate) servant_of_cthulhu: Option<BgTex>,
+    /// `NPC_115.xnb` — the Hungry sheet (3 frames).
+    pub(crate) hungry: Option<BgTex>,
+    /// `NPC_117.xnb`/`NPC_118.xnb` — the Leech segments (1 frame).
+    pub(crate) leech: Option<BgTex>,
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -157,6 +204,16 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         witch_doctor: sky_tex(atlas, "NPC_228", None),
         clothier: sky_tex(atlas, "NPC_54", None),
         eoc: sky_tex(atlas, "NPC_4", None),
+        queen_bee: sky_tex(atlas, "NPC_222", None),
+        skeletron_head: sky_tex(atlas, "NPC_35", None),
+        wof: sky_tex(atlas, "NPC_113", None),
+        destroyer: sky_tex(atlas, "NPC_134", None),
+        prime: sky_tex(atlas, "NPC_127", None),
+        retinazer: sky_tex(atlas, "NPC_125", None),
+        spazmatism: sky_tex(atlas, "NPC_126", None),
+        plantera: sky_tex(atlas, "NPC_262", None),
+        brain: sky_tex(atlas, "NPC_266", None),
+        creeper: sky_tex(atlas, "NPC_267", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -186,6 +243,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eow_body: sky_tex(atlas, "NPC_14", None),
         eow_tail: sky_tex(atlas, "NPC_15", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
+        eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
+        servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
+        hungry: sky_tex(atlas, "NPC_115", None),
+        leech: sky_tex(atlas, "NPC_117", None),
     }
 }
 
@@ -328,6 +389,18 @@ pub(crate) fn draw_player(
             player.facing as f32,
         ),
         back_arm: CompositeArmState::DISABLED,
+        // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
+        // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
+        mount: if player.mount.is_active() {
+            player.mount.data().map(|d| super::player_layers::MountDraw {
+                id: d.id,
+                frame: player.mount.frame(),
+                player_offset: player.mount.player_offset(),
+                is_idle: player.mount.is_at_idle(),
+            })
+        } else {
+            None
+        },
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
@@ -691,6 +764,90 @@ pub(crate) fn draw_npcs(
                 [100.0, 110.0],
                 [n.x, n.y],
             ),
+            // The Queen Bee: the 2-frame 66x66 sheet.
+            NpcKind::QueenBee => (
+                assets.queen_bee.as_ref(),
+                assets.queen_bee.as_ref().map_or(66.0, |t| t.h / 2.0),
+                [66.0, 66.0],
+                [n.x, n.y],
+            ),
+            // The Skeletron head: the single-frame 80x102 sheet.
+            NpcKind::SkeletronHead => (
+                assets.skeletron_head.as_ref(),
+                assets.skeletron_head.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The WoF: the single-frame sheet over the 120x120 hitbox.
+            NpcKind::WallOfFlesh => (
+                assets.wof.as_ref(),
+                assets.wof.as_ref().map_or(120.0, |t| t.h),
+                [120.0, 120.0],
+                [n.x, n.y],
+            ),
+            // The hungry: `Main.npcFrameCount[115] = 3` frames of 30×30; the
+            // leech segments: 1 frame of 14×14.
+            NpcKind::Hungry => (
+                assets.hungry.as_ref(),
+                assets.hungry.as_ref().map_or(30.0, |t| t.h / 3.0),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            NpcKind::LeechHead | NpcKind::LeechBody => (
+                assets.leech.as_ref(),
+                assets.leech.as_ref().map_or(14.0, |t| t.h),
+                [14.0, 14.0],
+                [n.x, n.y],
+            ),
+            // The Destroyer: the single-frame 48x48 sheet.
+            NpcKind::TheDestroyer => (
+                assets.destroyer.as_ref(),
+                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
+                [48.0, 48.0],
+                [n.x, n.y],
+            ),
+            // The Prime: the single-frame 80x102 sheet.
+            NpcKind::SkeletronPrime => (
+                assets.prime.as_ref(),
+                assets.prime.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The Twins: the 2-frame 100x110 sheets.
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                let tex = if n.kind == NpcKind::Retinazer {
+                    assets.retinazer.as_ref()
+                } else {
+                    assets.spazmatism.as_ref()
+                };
+                (
+                    tex,
+                    tex.map_or(110.0, |t| t.h / 2.0),
+                    [100.0, 110.0],
+                    [n.x, n.y],
+                )
+            }
+            // The Plantera: the 5-frame 86x86 sheet.
+            NpcKind::Plantera => (
+                assets.plantera.as_ref(),
+                assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
+                [86.0, 86.0],
+                [n.x, n.y],
+            ),
+            // The Brain: the single-frame 160x110 sheet.
+            NpcKind::BrainOfCthulhu => (
+                assets.brain.as_ref(),
+                assets.brain.as_ref().map_or(110.0, |t| t.h),
+                [160.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The Creeper: the single-frame 30x30 sheet.
+            NpcKind::Creeper => (
+                assets.creeper.as_ref(),
+                assets.creeper.as_ref().map_or(30.0, |t| t.h),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => (
@@ -831,6 +988,27 @@ pub(crate) fn draw_npcs(
                 120.0,
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
+            ),
+            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
+            // frame == the hitbox (the `Main.DrawNPC` anchor).
+            NpcKind::EyeOfCthulhu => (
+                assets.eye_of_cthulhu.as_ref(),
+                assets
+                    .eye_of_cthulhu
+                    .as_ref()
+                    .map_or(110.0, |t| t.h / 6.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
+            NpcKind::ServantOfCthulhu => (
+                assets.servant_of_cthulhu.as_ref(),
+                assets
+                    .servant_of_cthulhu
+                    .as_ref()
+                    .map_or(20.0, |t| t.h / 2.0),
+                [20.0, 20.0],
+                [n.x, n.y],
             ),
         };
         let Some(tex) = tex else {

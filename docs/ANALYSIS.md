@@ -2520,6 +2520,110 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The voodoo sacrifice (M4-BOSS-6c)
+
+The gameplay hardmode gate: the dropped Guide Voodoo Doll (267) touching
+lava (`WorldItem.CheckLavaDeath`'s arm — `lavaWet` → `VoodooDollLavaDeath`)
+is consumed and strikes the town NPCs dead — the Guide FIRST
+(`StrikeNPCNoInteraction(9999)` → the port kills outright; the death pass
+picks the kill credit up), then the stack's remainder across the other
+town NPCs (the C# `isLikeATownNPC` list walks a shuffled copy; the port
+walks the spawn order). `NPC.SpawnWOF` ports the gates (the depth
+`maxTilesY - 205`, one living wall), the 1200-px player-clearance scan
+(the spawn x steps 16 px away from the world centre's side while a player
+sits within 1200 px), the free-row search (the solid/liquid>=100 blocker,
+the ±1000-step expand), the `UnderworldLayer+10..+80` row clamp and the
+`Announcement.HasAwoken` broadcast (the literal stands in for the
+localization key).
+
+The borrow shape: the items pass (`update_items`) reads the tile under
+each drop inside its tick closure and collects the lava-hit doll; the
+sacrifice resolves AFTER the tick (the spawn/kill pass takes `app`
+wholesale). The doll items never burn silently — the non-doll lava
+consumption (`rare 0/-1` items without the lava-immunity set) is the
+follow-up.
+
+## The Wall of Flesh + the Hungry + the Leeches (M4-BOSS-6b)
+
+The aiStyle-27 machine (`npc.rs::update_wof`, the classic path
+verbatim over BOSS-6's v1): the off-edge kill, the underworld
+draw-band scan (`UnderworldLayer = maxTilesY - 200`; the 15-tile
+solid/liquid walks ease the band 1 px per tick with the 160-px clamp),
+the Y pinning to the band midpoint, the slide speed by the hp
+thresholds (1.5 → 2.75 across the 75/50/25/10% steps — the direction
+locks and never damps), the dead-player abandonment (3 s dead → the
+wall kills itself), the tongue phase (`ai[1]` 2700 with the hp bonuses
+→ the 3-4 phase cycle → the Leech spawns) and the Hungry init (11
+minions along the band).
+
+A structural note: the AI arms hold `&World`, so the wall cannot write
+the band — the wall's AI computes the scan targets onto its own
+`wof_bottom_target`/`wof_top_target` fields and the world sim eases
+`World.wof_draw_top/bottom` toward them, alongside
+`wof_present`/`wof_hp_ratio`/`wof_x` (the Hungry's read set). The same
+borrow shape carried the spawn requests (`wants_leech` with the
+`CountNPCS(117) < 10` gate, `wants_hungry`).
+
+**The Hungry (115)** — the aiStyle-29 verbatim: the anchor = the wall's
+x + the band row at `ai[0]`, the chase toward the player clamped to the
+leash (300/500/700 by the wall's hp; the dive cycle ×1.3 after 100
+ticks), the defense/damage tiers (30/60 at <50%, 20/45 at <75%) through
+the new `defense_override`/`damage_override` fields (the contact path
+prefers the override), the justHit recoil (the hurt cooldown stands in
+for the C# flag), the wall's death deactivates the minion.
+
+**The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
+the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
+default tunables, the 14×14/60 HP segments).
+
+Deviations: the eye/mouth mirrors (114, the 100×100 8000-HP wall parts)
+are the render-machinery follow-up (the vanilla draws them inside the
+wall's band); the expert burst block (the hp-scaled spawn odds) and the
+`getGoodWorld` spawn are out; the roar timer (`localAI[3]`'s sound 4)
+is cosmetic and skipped. The bestiary `card_at` now matches the draw's
+centred lattice — the stale top-left guard dropped cards once the
+roster's rows overflowed the panel.
+
+## The Eye of Cthulhu (M4-BOSS-1)
+
+The first boss lands through the aiStyle-4 block's classic path
+(`npc.rs::update_eye_of_cthulhu`; the 841-line C# `if (this.aiStyle == 4)`
+in `AI()`). The machine state rides the new `Npc.ai[0..4]` (the phase /
+the sub-state / the timer / the dash-servant counter):
+
+- **Phase 0** — the hover at 200 px above the player (5 speed, 0.04
+  accel); `ai[2]` counts to 600 unconditionally and flips into the 3×
+  dash chain (`ai[1] = 1→2` at 6 speed, 150-tick flights, the 0.98 damp
+  after 40 ticks); while the eye is above + within 500 px the servant
+  counter `ai[3]` reaches 110 and requests the servant spawn (10 px out
+  along the aim, the launch velocity inherited — the
+  `wants_servant` → the world-sim resolve).
+- **Phases 1/2** — the spins: the rotation ramps `ai[2]` 0.005→0.5
+  rad/tick while `ai[1]` counts to 100, then the phase increments (the
+  getGood expert servant bursts + `reflectsProjectiles` are out).
+- **Phase 3** — the final: `defense_override = 0` (the new `Npc` field
+  the damage path reads), the faster machine (6.8 dashes, 130-tick
+  chains).
+
+Deviations: the expert rage arms (`flag2/flag3` at 12%/4% hp, the
+`ai[1] = 3/4/5` spread-dash sub-states, the ×1.5 turn rate) are out with
+the port's missing difficulty flags (the skips carry the C# cites);
+`EncourageDespawn(10)`'s off-screen counter becomes the distance cull
+(the dawn climb `velocity.Y -= 0.04` + the sim's removal above the
+player); `SpawnOnPlayer`'s tile scan simplifies to the clamped
+600-px-above position (the boss flies to the target from wherever it
+appears); `WorldGen.spawnEye` (the natural night spawn) is not modeled —
+the Suspicious Looking Eye (43) is the only summon path.
+
+The summon rides the new boss-spawner arm
+(`editing.rs::use_suspicious_looking_eye` — the night gate, the
+`SummonItemCheck` aliveness refusal, the roar cue `("Roar_0", 15)` =
+`SoundID.Roar` 15, the consumption + the swing timers) — hoisted before
+the editing fn's `player` borrow (the arm takes `app` wholesale). The
+kill sets `World.downed_boss1`, fed into the loot flags (the `Cond::`
+gates read it); the boss bar and the `MusicID.Boss1` (5) music extend
+the King Slime hooks (the 93-then-5 ladder order kept).
+
 ## The full drop database (M4-LOOT-2)
 
 `tools/gen_loot.py` reads the decompiled
@@ -2841,6 +2945,74 @@ Deviations, all deliberate:
 - **C# float widening quirks preserved** — the coin tier compare
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
+
+## Mounts framework (M2-MOUNT-1)
+
+`crates/tr-app/src/mount.rs` holds the `MountData` port (a 12-row ground table with the
+exact `Mount.cs:696-2567` constants — Rudolph, Bunny, Slime, Scutlix, Unicorn, Basilisk,
+the three horses, PogoStick, Wall-of-Flesh Goat, Queen Slime), the `MountState` instance
+core (`SetMount`/`Dismount`/`CheckMountBuff`/`Reset` — `Mount.cs:6196-6305`/`:6142-6194`/
+`:5275-5281`/`:675-694`, keeping the vanilla quirk that `fatigue`/`abilityCooldown`/
+`abilityDuration` survive `Reset`), the saddle-item and mount-buff lookups (the
+`Item.mountType` assignments `Item.cs:20779+`; `BuffID.Sets.MountType` as the inverse of
+each row's `buff`), and the frame animator (`UpdateFrame` `Mount.cs:3581-4506`, states
+0-4; the dash case 5 waits for M2-MOUNT-4). The per-tick block lives in `player.rs`
+(`update_mount` — the vanilla `Player.cs:26623-26688` with the `UpdateEffects` head
+`Mount.cs:4795-4803`/`:4949-4981` and the `UpdateJumpHeight` merge `:19619-19631`),
+wired at the verified tick points: the merge insertion before `HorizontalMovement`, the
+jump statics, the flight section (the `ResetFlightTime` refill `:26776-26781` + the
+mount flight thrust `:26962-27015`), the fall-damage addendum (`:25301-25367` — the
+`extraFall` threshold, the `FallDamage` multiplier, the bunny nullify `:25315-25318`,
+the `CanFly` zero) and the CC dismount (`:26799-26812`). The buff is the source of
+truth: `SetMount` adds the 3600-tick buff, the buff tick re-affirms the mount and holds
+`buffTime = 10` (`:9881-9884` — the M2-BUFF-1 deferral), and a missing buff dismounts.
+Equip paths: the saddle item use (`Player.cs:42768-42771` + the `CanMount` space gate
+`Mount.cs:6581-6604`), the quick-mount key (`QuickMount` `:6045-6100`, wired to the
+`controlMount` bind edge) and the `TR_MOUNT=<id|name>` pin (the `pinned_*` stand-in
+pattern). A grapple fire dismounts (`QuickGrapple` `:6334-6337`). Draw:
+`DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront` order
+(`PlayerDrawLayers.cs:211`/`:2912`) with the `Mount.Draw` frame math (`frameH =
+textureHeight/totalFrames`, `Height -= 2` `:5722`, the center-anchored position
+`:5554-5561`, the `xOffset*direction` mirror) in `render/player_layers.rs`; Rudolph
+hides its front strip while idle (`:5520-5523`). The hitbox grows to `42 + heightBoost`
+bottom-anchored (`:6264-6277`) and restores through the shrink path of
+`Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2486-2513`).
+
+Deviations:
+- **Partial table (12 of `MountID.Count` 66)** — `set_mount` rejects ids outside the
+  table where vanilla fills every row; the remaining categories land with
+  M2-MOUNT-2/3/4.
+- **No net sync** — `SetMount`/`Dismount`'s msg 13 (`Mount.cs:6222-6225`, `:6172-6175`)
+  has no multiplayer surface.
+- **No gravDir branch** — the flip block gated `!mount.Active` (`Player.cs:26690-26733`)
+  has no port counterpart (the port has no gravDir field).
+- **Idle-pick RNG stand-in** — `Main.rand.Next(900, 1500)` (`Mount.cs:4165`) runs on the
+  animator's own splitmix64 stream (the port-wide `Main.rand` deviation pattern); the
+  same tick sequence always picks the same delays.
+- **No dust/sounds** — `DoSpawnDust`/`DoFailedDismountDust` and the equip/dis mount
+  sounds wait for the particle/audio tasks.
+- **FailedNoSpace unreachable** — every ground row's `heightBoost >= 0` makes the
+  dismount probe a bottom-anchored shrink (always fits), so `QuickMount`'s 3-fail force
+  + `PlayerNoSpaceTeleport` (`:6052-6070`) cannot fire; the grow-probe half of
+  `Collision.TryChangingSizeFromBottomCenter` (`Collision.cs:2490-2508`) returns `None`
+  until a consumer appears.
+- **Cart/ability branches reserved** — the OnTrack/roller-skate/Fishron/drill arms of
+  the per-tick block are comment-marked (M2-MOUNT-3/4); the SuperCart stat overrides
+  read 0; `Mount.Hover` (hover mounts) cannot fire while no row sets `usesHover`.
+- **Charge/stomp damage deferred** — the dash-contact damage (`Player.cs:20108-20170`)
+  and the slime stomp (`:20533-20560`) wait for M2-MOUNT-4 with the other mount combat.
+- **Queen Slime draw** — the render-target swap and the extra passes (`Mount.cs:5536-5544`,
+  `:5840-5953`) are not ported; the row draws its base `Extra_204` frames. The WoF
+  goat's `GlowMask[284]` glow pass has no content file (`GlowMask_284` does not exist
+  in `assets/Content/Images`), so the row draws without the glow.
+- **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
+  quick-mount scan walks the inventory only.
+
+Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
+(the table constants, the set/dismount guards, the merge modes, the jump/fall
+interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle, the
+animator states, the draw math); `TR_SHOT` twin runs SHA256-equal with
+`TR_MOUNT=unicorn` over `assets/test/master.trwld` at frame 120.
 
 ## Projectile pool (M4-PROJ-1)
 
@@ -4262,8 +4434,6 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
-<<<<<<< HEAD
->>>>>>> origin/main
 
 ## The accessory effect flags (M3-EQUIP-3)
 
@@ -4315,7 +4485,6 @@ M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
 `GrantPrefixBenefits`), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
-=======
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -4435,7 +4604,6 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
->>>>>>> origin/main
 
 ## The use styles + body dispatch (M3-ITEM-2)
 
@@ -4523,3 +4691,72 @@ the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
 first-8-ticks window) have no port volley state — every shot is the
 first, so those items consume every shot (documented); the gunProj
 `dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).
+## Minecart riding (M2-PHYS-7)
+
+The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf
+`crates/tr-app/src/minecart.rs` (the `grapple.rs` pattern) with the ride
+integrated into the fixed step at the exact C# tick order:
+
+- **The track state machine** — the 36-frame decode tables
+  (`Minecart.cs:103-547`: the per-frame side connections, the
+  `_tileHeight[frame][8]` 2-px sub-columns with the −1..−4 sentinels
+  (bumper / bouncy / ramp / open end), `_trackType` (pressure = frames
+  20-23, booster = 30-35) and `_boostLeft`); `track_collision`
+  (`Minecart.cs:562-941`: the bottom-center magnet marched in 2-px steps,
+  the OnFront/OnBack ambiguity resolved by followDown/followUp, the Y snap
+  rounded to 2 decimals `:935`, X never moved here); `on_track`/
+  `get_on_track`/`track_rotation` (`:1200-1265`).
+- **The ride** — the `TR_CART` env pin mounts (`world_sim/player.rs`);
+  the tick slots follow `Player.cs:26623-28161` — the cart stats 13/13/0.04
+  with jump 15/5.15 (`Mount.cs:2747-2799`), boost ±4 applied next tick
+  pre-input and clamped (`:19818-19833`), input accel gated on
+  `velocity.Y == 0` (`:19849`), the coast clamp + friction 0.04 on-track /
+  0.2 off with the direction-key dismount (`:26665-26681`), the jump nudge
+  −0.001 (`:20672-20675`), the `cartRampTime` gravity freeze
+  (`:27352-27359`), `TrackCollision` before the integration (X moves in
+  `DryCollision`), `TileCollision` at `height − 10` on rails
+  (`:23596-23603`), fall damage zeroed on rails (`:25311-25314`), the
+  switch/pressure trip → `Wiring::hit_switch` (local; net 59 = MP).
+- **Sparks + sounds** — the dust-213 emitter (`DelegateMethods.cs:223-242`
+  with the `Dust.NewDust` internal rolls, 14 rolls per spark) queued on the
+  Player's named `spark_rng` stream (`world.seed ^ 0x0CA4_75B1_A5E5_DD1D`),
+  drained by `world_sim` into the App-owned `Sparks` pool (tick + draw in
+  `app/frame.rs`, the rain/sand pattern); the rolling thresholds 33/66 % of
+  `maxRunSpeed` (`Player.cs:19868-19958`) and the landing 10-spark burst
+  (`Minecart.cs:809-813`); Item53/55/56 registered in `SFX_CUES`.
+
+Deviations: no `minecartDelay`/`MinecartObjectiveCheck` in 1.4.5.8 (grep
+zero hits — 1.4.4-era mechanics, not ported; off-track dismount = key
+release, not a timer); carts are NOT in the mount `JumpHeight`/`JumpSpeed`
+scaling cases in this decompile — fixed 15/5.15 (verified
+`Mount.cs:2809-2858`; the |vx| scaling cases are bunny/slime types 0/1);
+the rolling-spark gate is **direction-opposite** (`Player.cs:19868`: the
+left arm's gate is `velocity.X >= 0f`, `:19926`: the right arm's is
+`velocity.X <= 0f`) — sparks + Item55 fire while braking a same-sign roll
+or at rest, not while accelerating forward; the spark pool caps at 500 and
+drops new sparks when full with the C# pool-pressure rolls pinned off (the
+6000-slot `Main.dust` never reaches pressure at ≤13 sparks/tick — the
+sand.rs precedent); the sound-cue availability risk the plan flagged did
+not materialise — `Item_53/55/56.xnb` exist and load through the
+`SFX_CUES` rows (no silent-cue deviation); the rail sprite does not
+render — the port's tile renderer treats `frame_x/frame_y` as pixel sheet
+coords and skips `frame_y < 0` (`render/tiles.rs:147-159`) while tile
+314's frames are the 0..35 track INDICES (`Minecart.cs:1632-1650`) —
+pre-existing frame semantics; the track sprite draw is M2-MOUNT-1/3 work;
+`followUp` is pinned false (the port's input has no up bit; single-rail
+rides never read it — M2-MOUNT-3 adds the key); the base-cart dismount
+cannot be geometrically blocked (52→42 bottom-anchored shrink,
+`Collision.cs:2505-2510`; `DontDismountWhenCCed` excludes carts,
+`MountID.cs:47`) — the `CanDismountWithResult` space check is ported 1:1
+and unit-tested at the growth direction instead. Batch-review (3-4)
+verified-equivalent notes, applied forward: the `sparks_one` side-roll
+ternary is transcribed inverted vs `DelegateMethods.cs` (the two arms
+swapped; the per-roll distribution is identical, so the RNG stream
+position is unchanged); the spark draw anchors the 8×8 dust frame at
+its top-left where the C# centres it with origin (4,4) — a 4·zoom px
+offset shared with the existing sand-dust baseline; the below-view
+spark death check is tighter than the C# screen-reject at zoom > 1
+(the emitter has no camera at tick time — the camera is taken at the
+per-frame tick); the `itemAnimation == 0` gate at `Player.cs:19868` is
+omitted (the port has no item-animation field; the gate is dead for a
+riding player in every reachable state).

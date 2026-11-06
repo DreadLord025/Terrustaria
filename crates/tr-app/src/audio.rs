@@ -40,6 +40,17 @@ const SFX_CUES: &[(&str, u32)] = &[
     // `SpawnEffects_BeforeGrantingItem` ← `OnCraft`); `SoundID.Grab = 7`
     // (`SoundID.cs`), the `Grab.xnb` cue.
     ("Grab", 7),
+    // `SoundID.Item53/55/56` — the minecart cues: the landing thud
+    // (`DelegateMethods.cs:248-251`), the rolling rattle
+    // (`Player.cs:19870/:19928`) and the bouncy bumper
+    // (`DelegateMethods.cs:253-256`); the legacy Item track like `Item_1`.
+    ("Item_53", 2),
+    ("Item_55", 2),
+    ("Item_56", 2),
+    // `SoundID.Roar` = 15 (`SoundID.cs`) — the boss-summon roar
+    // (`Player.cs:43765`'s `SoundEngine.PlaySound(15, ...)`; the `Roar_0`
+    // cue family).
+    ("Roar_0", 15),
 ];
 
 fn sound_type(cue: &str) -> u32 {
@@ -147,13 +158,8 @@ impl Audio {
             return;
         };
         let Some(handle) = &self.handle else { return };
-        let Some(playback) = sound::play_sound(
-            sound_type(cue),
-            x,
-            y,
-            self.listener,
-            volume_scale,
-        ) else {
+        let Some(playback) = sound::play_sound(sound_type(cue), x, y, self.listener, volume_scale)
+        else {
             return;
         };
         let (left, right) = sound::pan_gains(playback.pan);
@@ -193,7 +199,8 @@ impl Audio {
             return;
         }
         // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
-        let buf = rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
+        let buf =
+            rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
         let source = Panned {
             inner: buf.repeat_infinite(),
             channels,
@@ -561,8 +568,7 @@ impl MusicSystem {
         // quiet-sky gates (`cloudAlpha == 0 && !windy`, or the underground
         // view) and the graveyard cut. The port has no town NPCs yet
         // (M4-TOWN).
-        let quiet_or_underground =
-            env.quiet_sky || env.underground;
+        let quiet_or_underground = env.quiet_sky || env.underground;
         if env.town_npcs >= 3
             && !env.shadow_candle
             && !env.graveyard
@@ -830,7 +836,8 @@ impl MusicSystem {
         let Ok(sink) = rodio::Sink::try_new(handle) else {
             return;
         };
-        let buffer = rodio::buffer::SamplesBuffer::new(format.channels, format.sample_rate, samples);
+        let buffer =
+            rodio::buffer::SamplesBuffer::new(format.channels, format.sample_rate, samples);
         sink.append(buffer.repeat_infinite());
         sink.set_volume(volume);
         self.tracks[i] = Some(sink);
@@ -1297,5 +1304,3 @@ fn ambience_wind_volume(env: &MusicEnv) -> Option<f32> {
     let v = (num7.min(1.0)) * 0.9 * env.atmo.powi(4);
     Some(v)
 }
-
-

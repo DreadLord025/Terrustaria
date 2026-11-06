@@ -168,6 +168,16 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::WitchDoctor => &[],
         NpcKind::Clothier => &[],
         NpcKind::EyeOfCthulhu => &[],
+        NpcKind::QueenBee => &[],
+        NpcKind::SkeletronHead => &[],
+        NpcKind::WallOfFlesh => &[],
+        NpcKind::TheDestroyer => &[],
+        NpcKind::SkeletronPrime => &[],
+        NpcKind::Retinazer => &[],
+        NpcKind::Spazmatism => &[],
+        NpcKind::Plantera => &[],
+        NpcKind::BrainOfCthulhu => &[],
+        NpcKind::Creeper => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
@@ -192,6 +202,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
         NpcKind::KingSlime => &[20, 31],
+        // The eye and the servant: no `DebuffImmunitySets` rows.
+        NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
+        // The hungry/leeches: no `DebuffImmunitySets` rows.
+        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

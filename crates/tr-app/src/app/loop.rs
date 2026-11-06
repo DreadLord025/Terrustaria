@@ -206,28 +206,13 @@ impl ApplicationHandler for App {
                                 }
                             }
                             KeyCode::F1 => self.debug = !self.debug,
+                            KeyCode::F3 => {
+                                crate::debug_panel::handle_key(self, KeyCode::F3);
+                            }
                             KeyCode::F2 => {
                                 self.light_mode = self.light_mode.next();
                                 self.world_key = None;
                                 log::info!("light mode: {}", self.light_mode.label());
-                            }
-                            KeyCode::F5 => {
-                                if let Some(p) = self.player.as_mut() {
-                                    p.respawn();
-                                }
-                                if self.follow_player {
-                                    if let Some(p) = &self.player {
-                                        let (cx, cy) = p.center();
-                                        self.camera = Vec2::new(cx, cy);
-                                    }
-                                } else {
-                                    self.camera = Vec2::new(
-                                        self.world.width as f32 * TILE_PX * 0.5,
-                                        self.world.spawn_y as f32 * TILE_PX,
-                                    );
-                                }
-                                self.zoom = self.settings.zoom;
-                                self.world_key = None;
                             }
                             KeyCode::F9 => self.save_world(),
                             KeyCode::KeyM => {
@@ -240,51 +225,7 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
-                            KeyCode::KeyE => {
-                                // The EoC debug spawn (the vanilla's
-                                // Suspicious Looking Eye + the night roll
-                                // land with the boss-item work).
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 15)
-                                            .clamp(2, self.world.width - 3);
-                                        let (w2, h2) = NpcKind::EyeOfCthulhu.size();
-                                        let mut boss = Npc::new(
-                                            NpcKind::EyeOfCthulhu,
-                                            xt as f32 * TILE_PX,
-                                            ((p.y / TILE_PX) as i32 - 20) as f32 * TILE_PX,
-                                            1,
-                                            0.0,
-                                        );
-                                        boss.hp = boss.max_hp;
-                                        boss.caster_counter = 0;
-                                        boss.cast_windup = 0;
-                                        let _ = (w2, h2);
-                                        log::info!("Eye of Cthulhu spawned");
-                                        self.npcs.push(boss);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyB => {
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 12)
-                                            .clamp(2, self.world.width - 3);
-                                        if let Some(n) = Npc::spawn_king_slime(&self.world, xt) {
-                                            log::info!("King Slime spawned");
-                                            self.npcs.push(n);
-                                        }
-                                    }
-                                }
-                            }
+                            _ if crate::debug_panel::handle_key(self, code) => {}
                             KeyCode::Digit1 => {
                                 // The shop open: the 1 key buys the first
                                 // stock slot (the click-buy lands with the
@@ -375,9 +316,16 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        if !pressed {
+                            crate::debug_panel::end_drag(self);
+                        }
                         self.mine_down = pressed;
                         if pressed {
                             self.ui_left_press = true;
+                            // The debug panel's click (the self-contained
+                            // cheat-sheet — the panel consumes the clicks
+                            // inside its rect).
+                            crate::debug_panel::handle_click(self, self.mouse_pos);
                         }
                     }
                     MouseButton::Right => {
@@ -391,6 +339,11 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
+                // The debug panel's drag (the title-bar drag moves the
+                // panel).
+                if crate::debug_panel::handle_drag(self, p) {
+                    // The drag consumed the move.
+                }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
                 if mouse_pin().is_none() && !deterministic_pointer_park() {
@@ -419,4 +372,15 @@ impl ApplicationHandler for App {
             w.request_redraw();
         }
     }
+}
+
+/// The EoW presence check for the debug spawn (any active segment).
+fn app_has_eow(app: &App) -> bool {
+    app.npcs
+        .iter()
+        .any(|n| n.kind.is_worm() && n.worm_id != 0 && n.hp > 0)
+        && app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
 }
