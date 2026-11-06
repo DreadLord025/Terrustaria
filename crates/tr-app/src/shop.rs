@@ -100,6 +100,62 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             // `:1480-1482`'s HasItem(3107) → 3108 row lands with the
             // inventory-scan pass.
         ],
+        // The Arms Dealer (`Chest.cs:1484-1567`): the Musket Balls 97, the
+        // Flintlock 95?/98 rows always; the PlayerHasItem rows; the
+        // silver-tier flip (4915/278), the downedBoss2/night Minishark-ish
+        // 47, the night 324, the hardmode 534/1432/2177 and the graveyard
+        // 4703 sit constants-off.
+        2 => vec![
+            row(97, StockWhen::Always),
+            row(95, StockWhen::Always),
+            row(98, StockWhen::Always),
+            row(1261, StockWhen::PlayerHasItem(1258)),
+            row(1836, StockWhen::PlayerHasItem(1835)),
+            row(3108, StockWhen::PlayerHasItem(3107)),
+            row(1783, StockWhen::PlayerHasItem(1782)),
+            row(1785, StockWhen::PlayerHasItem(1784)),
+        ],
+        // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
+        // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
+        // painting row (num6) rides the moon-pair pass.
+        15 => vec![
+            row(1071, StockWhen::Always),
+            row(1072, StockWhen::Always),
+            row(1100, StockWhen::Always),
+            row(1097, StockWhen::Always),
+            row(1099, StockWhen::Always),
+            row(1098, StockWhen::Always),
+            row(1966, StockWhen::Always),
+        ],
+        // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
+        // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
+        // downedBoss1/slimeKing night gate (constants-off); the hardmode
+        // 265/5481/5464/1347 and the holy-arrow 937 rows constants-off.
+        4 => vec![
+            row(168, StockWhen::Always),
+            row(166, StockWhen::Always),
+            row(167, StockWhen::Always),
+        ],
+        // The Witch Doctor (`Chest.cs:2615-2672`): the Blowgun 1430 and the
+        // Flask 986 always; the conditionals (the Queen Bee 2999, the
+        // jungle 6147/1167, the night 1158, the hardmode 1159, the
+        // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
+        // constants-off until their flags land.
+        16 => vec![
+            row(1430, StockWhen::Always),
+            row(986, StockWhen::Always),
+        ],
+        // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
+        // 242; the moon-phase hats; the full set in the tail — the v1
+        // carries the always-on rows (the moon-phase and the clown rows
+        // land with their flags).
+        5 => vec![
+            row(254, StockWhen::Always),
+            row(981, StockWhen::Always),
+            row(269, StockWhen::Always),
+            row(270, StockWhen::Always),
+            row(271, StockWhen::Always),
+        ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
         // branch, the base rows, the flower-seed moon-phase pairs. The
         // crimson variants (2886/2171/4508), the graveyard/underworld/

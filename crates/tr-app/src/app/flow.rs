@@ -1322,6 +1322,7 @@ pub(crate) mod front_flow_tests {
             shop_stock: Vec::new(),
             shop_mood: 1.0,
             shop_closed_flag: false,
+            creative_powers: crate::creative::CreativePowers::new(),
             npc_rng: 0,
             spawn_no_cycle: false,
             attack_cd: 0.0,
