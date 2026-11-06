@@ -223,9 +223,13 @@ fn draw_button(
         color,
         label,
     );
-    // `ChestUI.cs:271-276` + `UpdateHover` (`:58-82`). (The click dispatch
+    // `ChestUI.cs:271-276` + `UpdateHover` (`:58-82`): the hover-start edge
+    // plays 12 (`SoundID.MenuTick`, `SoundID.cs:46`). (The click dispatch
     // `:282-308` joins phase 5 / M3-STORE-2.)
-    update_hover(p, id, hovering);
+    let sound = update_hover(p, id, hovering);
+    if sound != 0 {
+        p.audio.play("Menu_Tick");
+    }
 }
 
 /// `ChestUI.DrawSlots` (`ChestUI.cs:329-391`): the 10×4 slot window over the
@@ -279,17 +283,22 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
 
 /// `ChestUI.UpdateHover` (`ChestUI.cs:58-82`): the ±0.05 scale animation
 /// between [`BUTTON_SCALE_MIN`] and [`BUTTON_SCALE_MAX`] and the hover-start
-/// `SoundEngine.PlaySound(12)` (`:64`).
-fn update_hover(p: &mut PanelState<'_>, id: usize, hovering: bool) {
+/// `SoundEngine.PlaySound(12)` (`:64`). Returns the legacy sound id the C#
+/// plays — 12 on the hover edge, 0 for silence — so the caller plays it and
+/// the tests pin it (the phase-2 `toggle_open` pattern).
+fn update_hover(p: &mut PanelState<'_>, id: usize, hovering: bool) -> u32 {
     if hovering {
-        if !p.button_hovered[id] {
-            p.audio.play("Menu_Tick"); // `ChestUI.cs:64`
-        }
+        let edge = !p.button_hovered[id]; // `:62-64` — the hover-start arm
         p.button_hovered[id] = true;
         p.button_scales[id] = (p.button_scales[id] + 0.05).min(BUTTON_SCALE_MAX); // `:67-71`
+        if edge {
+            return 12; // `:64` — `SoundEngine.PlaySound(12)`
+        }
+        0
     } else {
         p.button_hovered[id] = false;
         p.button_scales[id] = (p.button_scales[id] - 0.05).max(BUTTON_SCALE_MIN); // `:76-80`
+        0
     }
 }
 
@@ -652,5 +661,48 @@ mod tests {
         // the cells past 40 — row 1's bottom-right cell would be slot 49.
         assert_eq!(slot_at(Vec2::new(75.0, 260.0), 1), Some(10));
         assert_eq!(slot_at(Vec2::new(460.0, 390.0), 1), None);
+    }
+
+    #[test]
+    fn update_hover_ramps_the_scale_and_pins_the_hover_edge_menu_tick() {
+        // `ChestUI.UpdateHover` (`ChestUI.cs:58-82`): the ±0.05 scale
+        // animation with its clamps and the hover-start
+        // `SoundEngine.PlaySound(12)` (`:64`) — the helper returns the legacy
+        // id so the test pins it (the phase-2 `toggle_open` pattern).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = PanelState {
+            chest: 0,
+            origin: (0, 0),
+            tile: None,
+            slots: None,
+            crafting_open: false,
+            editing: false,
+            scroll_row: &mut app.chest_scroll_row,
+            button_scales: &mut app.chest_button_scales,
+            button_hovered: &mut app.chest_button_hovered,
+            audio: &mut app.audio,
+        };
+        // The static ctor's `new float[7]` (`ChestUI.cs:1306`): scale 0.0.
+        assert_eq!(p.button_scales[BUTTON_RENAME], 0.0);
+        // Entering the rect is the edge: sound 12 (`:64`), +0.05.
+        assert_eq!(update_hover(&mut p, BUTTON_RENAME, true), 12);
+        assert_eq!(p.button_scales[BUTTON_RENAME], 0.05);
+        // Holding the hover ramps without another sound.
+        assert_eq!(update_hover(&mut p, BUTTON_RENAME, true), 0);
+        assert_eq!(p.button_scales[BUTTON_RENAME], 0.1);
+        // The ramp clamps at `buttonScaleMaximum` (`:68-71`).
+        for _ in 0..20 {
+            assert_eq!(update_hover(&mut p, BUTTON_RENAME, true), 0);
+        }
+        assert_eq!(p.button_scales[BUTTON_RENAME], BUTTON_SCALE_MAX);
+        // Un-hovering decays 0.05 per frame, clamped at `buttonScaleMinimum`
+        // (`:76-80`) — never below 0.75, never another sound.
+        for _ in 0..30 {
+            assert_eq!(update_hover(&mut p, BUTTON_RENAME, false), 0);
+        }
+        assert_eq!(p.button_scales[BUTTON_RENAME], BUTTON_SCALE_MIN);
+        // Leaving and re-entering the rect fires the edge sound again.
+        assert_eq!(update_hover(&mut p, BUTTON_RENAME, true), 12);
+        assert!((p.button_scales[BUTTON_RENAME] - 0.8).abs() < 1e-6);
     }
 }
