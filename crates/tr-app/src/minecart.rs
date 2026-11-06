@@ -11,10 +11,10 @@
 //! (`Mount.SetAsMinecart`, `Mount.cs:2747-2799`) and every function below is
 //! calibrated against the default `Minecart.Customization` (`Minecart.cs:29-34`).
 //!
-//! Phases 2-3 consume this contract, so pre-consumer items carry
-//! `#![allow(dead_code)]` until the tick slots land.
-
-#![allow(dead_code)]
+//! Phase 2 consumed the ride contract (the Player tick slots call
+//! `track_collision`/`on_track`/`track_rotation`/`magnet_position`); the
+//! remaining pre-consumer items keep targeted allows until Phase 3 (sparks)
+//! and M2-MOUNT-3 (the hook-mount snap, the sprite decode) land.
 
 use glam::Vec2;
 use tr_core::tile::FLAG_INACTIVE;
@@ -234,6 +234,7 @@ pub(crate) const TRACK_FRAMES: [TrackFrameData; 36] = [
 /// cell scale `:433-436`) — the sprite cell of each frame id in the 18 px
 /// track sheet. Frames 36-39 are the decoration pieces (36/37 left-down and
 /// right-down, 38/39 the bumpers — note the C# assigns 39 before 38).
+#[allow(dead_code)] // the track-sprite decode — the rendering follow-up
 pub(crate) const TEXTURE_POSITION: [(f32, f32); 40] = [
     (0.0, 0.0),
     (18.0, 0.0),
@@ -279,8 +280,11 @@ pub(crate) const TEXTURE_POSITION: [(f32, f32); 40] = [
 
 /// `_firstPressureFrame` / `_firstRightBoostFrame` / `_firstLeftBoostFrame`
 /// (`Minecart.cs:519-546`).
+#[allow(dead_code)] // the placement/orientation follow-up reads these ranges
 pub(crate) const FIRST_PRESSURE_FRAME: i16 = 20;
+#[allow(dead_code)] // see above
 pub(crate) const FIRST_RIGHT_BOOST_FRAME: i16 = 30;
+#[allow(dead_code)] // see above
 pub(crate) const FIRST_LEFT_BOOST_FRAME: i16 = 31;
 
 /// `tile.nactive() && tile.type == 314` (`Minecart.cs:633`) — an active,
@@ -826,6 +830,7 @@ pub(crate) fn on_track(world: &World, position: Vec2, width: i32, height: i32) -
 /// (`tile_x`, `tile_y`). Returns false when the tile is not a track — the C#
 /// NREs on a missing tile (`:1202` reads it unchecked), which the port treats
 /// as "not a track".
+#[allow(dead_code)] // the hook→cart mount snap — M2-MOUNT-3
 pub(crate) fn get_on_track(
     world: &World,
     tile_x: i32,
