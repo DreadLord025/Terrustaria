@@ -125,6 +125,11 @@ pub enum NpcKind {
     /// twin; the shop index 2; the arrival `SpawnAllowed_ArmsDealer`,
     /// `NPC.cs:7092` — the bullets in the inventory).
     ArmsDealer,
+    /// `NPCID.Demolitionist` (38) — the explosive seller (`NPC.cs:9211`:
+    /// the town twin; the shop index 4; the arrival
+    /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` — the bombs in the
+    /// inventory).
+    Demolitionist,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -329,6 +334,7 @@ impl NpcKind {
             NpcKind::Dryad => 35,
             NpcKind::Nurse => 36,
             NpcKind::ArmsDealer => 37,
+            NpcKind::Demolitionist => 38,
         }
     }
 
@@ -372,6 +378,7 @@ impl NpcKind {
             35 => NpcKind::Dryad,
             36 => NpcKind::Nurse,
             37 => NpcKind::ArmsDealer,
+            38 => NpcKind::Demolitionist,
             _ => return None,
         })
     }
@@ -448,6 +455,7 @@ impl NpcKind {
             NpcKind::Dryad => (18.0, 40.0),
             NpcKind::Nurse => (18.0, 40.0),
             NpcKind::ArmsDealer => (18.0, 40.0),
+            NpcKind::Demolitionist => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -509,6 +517,8 @@ impl NpcKind {
             NpcKind::Nurse => 250,
             // `SetDefaults` case 19 (`NPC.cs:9016`): 250 HP.
             NpcKind::ArmsDealer => 250,
+            // `SetDefaults` case 38 (`NPC.cs:9019` region): 250 HP.
+            NpcKind::Demolitionist => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -557,6 +567,7 @@ impl NpcKind {
             NpcKind::Dryad => 10,
             NpcKind::Nurse => 10,
             NpcKind::ArmsDealer => 10,
+            NpcKind::Demolitionist => 10,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -995,6 +1006,7 @@ impl Npc {
             NpcKind::Dryad => 0.5,
             NpcKind::Nurse => 0.5,
             NpcKind::ArmsDealer => 0.5,
+            NpcKind::Demolitionist => 0.5,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1053,6 +1065,7 @@ impl Npc {
             NpcKind::Dryad => 15,
             NpcKind::Nurse => 15,
             NpcKind::ArmsDealer => 15,
+            NpcKind::Demolitionist => 15,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1109,6 +1122,7 @@ impl Npc {
             NpcKind::Dryad => 0.0,
             NpcKind::Nurse => 0.0,
             NpcKind::ArmsDealer => 0.0,
+            NpcKind::Demolitionist => 0.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1225,7 +1239,8 @@ impl Npc {
             | NpcKind::Merchant
             | NpcKind::Dryad
             | NpcKind::Nurse
-            | NpcKind::ArmsDealer => self.update_guide(world, dt),
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist => self.update_guide(world, dt),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1517,6 +1532,33 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::Demolitionist => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[38]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::ArmsDealer => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[19]` = 3, `Main.cs:67082`).
@@ -2189,6 +2231,7 @@ impl Npc {
                     | NpcKind::Dryad
                     | NpcKind::Nurse
                     | NpcKind::ArmsDealer
+                    | NpcKind::Demolitionist
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2251,6 +2294,7 @@ impl Npc {
             NpcKind::Dryad => 35,
             NpcKind::Nurse => 36,
             NpcKind::ArmsDealer => 37,
+            NpcKind::Demolitionist => 38,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3365,7 +3409,41 @@ mod tests {
         assert!(!stock.contains(&1836), "the other has-item row stays shut");
     }
 
+    #[test]
+    fn the_demolitionist_arrives_on_bombs() {
+        // `SpawnAllowed_Demolitionist` (`NPC.cs:7067-7091`): the bomb set's
+        // core rows (the Grenade 168, the Bomb 166, the Dynamite 157, the
+        // sticky pair, the Bomb Fish).
+        use crate::spawner::spawn_allowed_demolitionist;
+        assert!(spawn_allowed_demolitionist(&[168]), "the grenade arrives");
+        assert!(spawn_allowed_demolitionist(&[166]), "the bomb arrives");
+        assert!(spawn_allowed_demolitionist(&[157]), "the dynamite arrives");
+        assert!(!spawn_allowed_demolitionist(&[97, 8]), "the bullets don't count");
+        assert!(!spawn_allowed_demolitionist(&[]), "the empty waits");
+    }
+
+    #[test]
+    fn the_demolitionist_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 38 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(38); the
+        // shop index 4 carries the explosives.
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Demolitionist).expect("the demo spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Demolitionist, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 38);
+        assert_eq!(e.credit_id, "Demolitionist");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Demolitionist);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Ocean);
+        let stock = crate::shop::resolve_stock(4, &crate::shop::ShopFlags::default(), &[]);
+        assert!(stock.contains(&168) && stock.contains(&166) && stock.contains(&167));
+        assert!(!stock.contains(&265), "the hardmode row leaks");
+    }
+
 }
+
 
 
 

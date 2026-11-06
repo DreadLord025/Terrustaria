@@ -496,6 +496,18 @@ pub fn spawn_allowed_arms_dealer(inventory_ids: &[u16]) -> bool {
         })
 }
 
+/// `NPC.SpawnAllowed_Demolitionist` (`NPC.cs:7067-7091`): any inventory
+/// item in `ItemID.Sets.ItemsThatCountAsBombsForDemolitionistToSpawn` — the
+/// port carries the set's core rows (the Grenade 168, the Bomb 166, the
+/// Dynamite 157, the sticky pair 2896/2897, the Bomb Fish 2350; the set's
+/// full sweep grows with the data pass).
+pub fn spawn_allowed_demolitionist(inventory_ids: &[u16]) -> bool {
+    const BOMBS: [u16; 6] = [168, 166, 157, 2896, 2897, 2350];
+    inventory_ids
+        .iter()
+        .any(|id| BOMBS.contains(id))
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 

@@ -341,6 +341,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Arms Dealer",
     },
     BestiaryEntryDef {
+        credit_id: "Demolitionist",
+        net_id: 38,
+        kind: NpcKind::Demolitionist,
+        variant: None,
+        quick_unlock: false,
+        name: "Demolitionist",
+    },
+    BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
         net_id: 13,
         kind: NpcKind::EaterOfWorldsHead,

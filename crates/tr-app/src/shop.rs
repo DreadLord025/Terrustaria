@@ -115,6 +115,15 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
             row(1783, StockWhen::PlayerHasItem(1782)),
             row(1785, StockWhen::PlayerHasItem(1784)),
         ],
+        // The Demolitionist (`Chest.cs:1746-1814`): the Grenade 168/the
+        // Bomb 166/the Dynamite 167 always; the Land Mine 5542 rides the
+        // downedBoss1/slimeKing night gate (constants-off); the hardmode
+        // 265/5481/5464/1347 and the holy-arrow 937 rows constants-off.
+        4 => vec![
+            row(168, StockWhen::Always),
+            row(166, StockWhen::Always),
+            row(167, StockWhen::Always),
+        ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
         // branch, the base rows, the flower-seed moon-phase pairs. The
         // crimson variants (2886/2171/4508), the graveyard/underworld/

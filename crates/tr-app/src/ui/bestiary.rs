@@ -335,6 +335,7 @@ fn portrait_data(
         NpcKind::Dryad => 35,
         NpcKind::Nurse => 36,
         NpcKind::ArmsDealer => 37,
+        NpcKind::Demolitionist => 38,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -402,6 +403,7 @@ fn portrait_data(
         (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Nurse, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::ArmsDealer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Demolitionist, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }
