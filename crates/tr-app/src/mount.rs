@@ -125,13 +125,48 @@ const BASE: MountData = MountData {
     spawn_dust: 0,
     spawn_dust_no_gravity: false,
     total_frames: 0,
-    standing: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    running: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    flying: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    in_air: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    idle: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    swim: FrameSet { start: 0, count: 0, delay: 0, loops: false },
-    dashing: FrameSet { start: 0, count: 0, delay: 0, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    idle: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    swim: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
+    dashing: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 0,
+        loops: false,
+    },
     minecart: false,
     can_ride_minecart_tracks: false,
     can_use_wings: false,
@@ -164,12 +199,42 @@ const RUDOLPH: MountData = MountData {
     jump_speed: 5.31,
     spawn_dust: 57,
     total_frames: 12,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 6, count: 6, delay: 12, loops: false },
-    flying: FrameSet { start: 6, count: 6, delay: 6, loops: false },
-    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
-    idle: FrameSet { start: 2, count: 4, delay: 30, loops: true },
-    swim: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 6,
+        count: 6,
+        delay: 12,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 6,
+        count: 6,
+        delay: 6,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    idle: FrameSet {
+        start: 2,
+        count: 4,
+        delay: 30,
+        loops: true,
+    },
+    swim: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Rudolph_0",
     front_sheet: "Rudolph_1",
     front_extra_sheet: "Rudolph_2",
@@ -195,10 +260,30 @@ const BUNNY: MountData = MountData {
     jump_speed: 5.01,
     spawn_dust: 15,
     total_frames: 7,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 0, count: 7, delay: 12, loops: false },
-    flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
-    in_air: FrameSet { start: 5, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 7,
+        delay: 12,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 1,
+        count: 6,
+        delay: 6,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 5,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Mount_Bunny",
     x_offset: 1,
     y_offset: 4,
@@ -225,9 +310,24 @@ const SLIME: MountData = MountData {
     constant_jump: true,
     spawn_dust: 56,
     total_frames: 4,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 0, count: 4, delay: 12, loops: false },
-    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 4,
+        delay: 12,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Mount_Slime",
     x_offset: 1,
     y_offset: 11,
@@ -257,12 +357,42 @@ const SCUTLIX: MountData = MountData {
     block_extra_jumps: false,
     spawn_dust: 15,
     total_frames: 12,
-    standing: FrameSet { start: 6, count: 6, delay: 12, loops: false },
-    running: FrameSet { start: 0, count: 6, delay: 12, loops: false },
-    flying: FrameSet { start: 0, count: 0, delay: 12, loops: false },
-    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
-    idle: FrameSet { start: 6, count: 0, delay: 12, loops: true },
-    swim: FrameSet { start: 0, count: 0, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 6,
+        count: 6,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 6,
+        delay: 12,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 12,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    idle: FrameSet {
+        start: 6,
+        count: 0,
+        delay: 12,
+        loops: true,
+    },
+    swim: FrameSet {
+        start: 0,
+        count: 0,
+        delay: 12,
+        loops: false,
+    },
     // `TextureAssets.ScutlixMount[0..2]` — the [1]/[2] sheet names are verified
     // against the atlas in the draw phase.
     back_sheet: "Mount_Scutlix",
@@ -277,7 +407,9 @@ const SCUTLIX: MountData = MountData {
 };
 
 /// 10 Unicorn (`Mount.cs:1423-1482`): the atlas "4/12/0.3" ground dasher.
-static UNICORN_Y_OFFSETS: [i32; 16] = [28, 28, 28, 30, 30, 28, 28, 30, 30, 28, 28, 28, 30, 30, 28, 32];
+static UNICORN_Y_OFFSETS: [i32; 16] = [
+    28, 28, 28, 30, 30, 28, 28, 30, 30, 28, 28, 28, 30, 30, 28, 32,
+];
 const UNICORN: MountData = MountData {
     id: 10,
     buff: 162,
@@ -290,11 +422,36 @@ const UNICORN: MountData = MountData {
     jump_speed: 8.01,
     spawn_dust: 15,
     total_frames: 16,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 1, count: 7, delay: 15, loops: false },
-    dashing: FrameSet { start: 9, count: 6, delay: 40, loops: false },
-    flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
-    in_air: FrameSet { start: 15, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 1,
+        count: 7,
+        delay: 15,
+        loops: false,
+    },
+    dashing: FrameSet {
+        start: 9,
+        count: 6,
+        delay: 40,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 1,
+        count: 6,
+        delay: 6,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 15,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Mount_Unicorn",
     x_offset: 5,
     y_offset: 1,
@@ -318,9 +475,24 @@ const BASILISK: MountData = MountData {
     jump_speed: 8.01,
     spawn_dust: 15,
     total_frames: 8,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 2, count: 6, delay: 30, loops: false },
-    in_air: FrameSet { start: 1, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 2,
+        count: 6,
+        delay: 30,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 1,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Mount_Basilisk",
     x_offset: 4,
     y_offset: 8,
@@ -332,7 +504,9 @@ const BASILISK: MountData = MountData {
 
 /// 40/41/42 horses via `SetAsHorse` (`Mount.cs:2607-2668`, rows :1843-1850):
 /// the atlas "3/9/0.25"; buffs 275/276/277.
-static HORSE_Y_OFFSETS: [i32; 16] = [28, 28, 28, 30, 30, 28, 28, 30, 30, 28, 28, 28, 30, 30, 28, 32];
+static HORSE_Y_OFFSETS: [i32; 16] = [
+    28, 28, 28, 30, 30, 28, 28, 30, 30, 28, 28, 28, 30, 30, 28, 32,
+];
 const fn horse(id: i32, buff: i32, back_sheet: &'static str) -> MountData {
     MountData {
         id,
@@ -346,11 +520,36 @@ const fn horse(id: i32, buff: i32, back_sheet: &'static str) -> MountData {
         jump_speed: 7.01,
         spawn_dust: 3,
         total_frames: 16,
-        standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-        running: FrameSet { start: 1, count: 7, delay: 15, loops: false },
-        dashing: FrameSet { start: 9, count: 6, delay: 40, loops: false },
-        flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
-        in_air: FrameSet { start: 15, count: 1, delay: 12, loops: false },
+        standing: FrameSet {
+            start: 0,
+            count: 1,
+            delay: 12,
+            loops: false,
+        },
+        running: FrameSet {
+            start: 1,
+            count: 7,
+            delay: 15,
+            loops: false,
+        },
+        dashing: FrameSet {
+            start: 9,
+            count: 6,
+            delay: 40,
+            loops: false,
+        },
+        flying: FrameSet {
+            start: 1,
+            count: 6,
+            delay: 6,
+            loops: false,
+        },
+        in_air: FrameSet {
+            start: 15,
+            count: 1,
+            delay: 12,
+            loops: false,
+        },
         back_sheet,
         x_offset: 5,
         y_offset: 1,
@@ -380,10 +579,30 @@ const POGO_STICK: MountData = MountData {
     constant_jump: true,
     spawn_dust: 15,
     total_frames: 4,
-    standing: FrameSet { start: 0, count: 1, delay: 5, loops: false },
-    running: FrameSet { start: 0, count: 4, delay: 5, loops: false },
-    in_air: FrameSet { start: 0, count: 1, delay: 5, loops: false },
-    swim: FrameSet { start: 0, count: 1, delay: 5, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 5,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 4,
+        delay: 5,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 5,
+        loops: false,
+    },
+    swim: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 5,
+        loops: false,
+    },
     front_sheet: "Extra_164",
     x_offset: 5,
     y_offset: 10,
@@ -394,7 +613,9 @@ const POGO_STICK: MountData = MountData {
 };
 
 /// 47 WallOfFleshGoat (`Mount.cs:2041-2100`): Unicorn stats with a glow pass.
-static WOF_GOAT_Y_OFFSETS: [i32; 16] = [30, 30, 30, 32, 32, 30, 30, 32, 32, 30, 30, 30, 32, 32, 30, 34];
+static WOF_GOAT_Y_OFFSETS: [i32; 16] = [
+    30, 30, 30, 32, 32, 30, 30, 32, 32, 30, 30, 30, 32, 32, 30, 34,
+];
 const WOF_GOAT: MountData = MountData {
     id: 47,
     buff: 282,
@@ -407,11 +628,36 @@ const WOF_GOAT: MountData = MountData {
     jump_speed: 8.01,
     spawn_dust: 5,
     total_frames: 16,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 1, count: 7, delay: 15, loops: false },
-    dashing: FrameSet { start: 9, count: 6, delay: 40, loops: false },
-    flying: FrameSet { start: 1, count: 6, delay: 6, loops: false },
-    in_air: FrameSet { start: 15, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 1,
+        count: 7,
+        delay: 15,
+        loops: false,
+    },
+    dashing: FrameSet {
+        start: 9,
+        count: 6,
+        delay: 40,
+        loops: false,
+    },
+    flying: FrameSet {
+        start: 1,
+        count: 6,
+        delay: 6,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 15,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Extra_169",
     // `TextureAssets.GlowMask[284]` — the port's glow sheet name is verified in
     // the draw phase (the content dir has no GlowMask_284 file).
@@ -441,9 +687,24 @@ const QUEEN_SLIME: MountData = MountData {
     constant_jump: true,
     spawn_dust: 243,
     total_frames: 8,
-    standing: FrameSet { start: 0, count: 1, delay: 12, loops: false },
-    running: FrameSet { start: 0, count: 5, delay: 16, loops: false },
-    in_air: FrameSet { start: 5, count: 1, delay: 12, loops: false },
+    standing: FrameSet {
+        start: 0,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
+    running: FrameSet {
+        start: 0,
+        count: 5,
+        delay: 16,
+        loops: false,
+    },
+    in_air: FrameSet {
+        start: 5,
+        count: 1,
+        delay: 12,
+        loops: false,
+    },
     back_sheet: "Extra_204",
     x_offset: 1,
     y_offset: -1,
@@ -458,18 +719,18 @@ const QUEEN_SLIME: MountData = MountData {
 /// `set_mount` — deviation recorded in ANALYSIS "Mounts framework (M2-MOUNT-1)",
 /// the remaining categories land with M2-MOUNT-2/3/4.
 pub(crate) static MOUNTS: &[MountData] = &[
-    RUDOLPH,       // 0
-    BUNNY,         // 1
-    SLIME,         // 3
-    SCUTLIX,       // 9
-    UNICORN,       // 10
-    BASILISK,      // 14
-    PAINTED_HORSE, // 40
+    RUDOLPH,        // 0
+    BUNNY,          // 1
+    SLIME,          // 3
+    SCUTLIX,        // 9
+    UNICORN,        // 10
+    BASILISK,       // 14
+    PAINTED_HORSE,  // 40
     MAJESTIC_HORSE, // 41
-    DARK_HORSE,    // 42
-    POGO_STICK,    // 43
-    WOF_GOAT,      // 47
-    QUEEN_SLIME,   // 50
+    DARK_HORSE,     // 42
+    POGO_STICK,     // 43
+    WOF_GOAT,       // 47
+    QUEEN_SLIME,    // 50
 ];
 
 /// `Mount.mounts[m]` lookup; `None` for ids the partial table does not carry.
@@ -532,6 +793,10 @@ pub(crate) struct MountState {
     aiming: bool,
     should_super_cart: bool,
     walking_grace_time_left: i32,
+    #[cfg(test)]
+    test_can_use_wings: Option<bool>,
+    #[cfg(test)]
+    test_additive: Option<bool>,
 }
 
 impl Default for MountState {
@@ -559,6 +824,10 @@ impl Default for MountState {
             aiming: false,
             should_super_cart: false,
             walking_grace_time_left: 0,
+            #[cfg(test)]
+            test_can_use_wings: None,
+            #[cfg(test)]
+            test_additive: None,
         };
         state.reset();
         state
@@ -634,7 +903,7 @@ impl MountState {
         self.fly_time = 0; // :6218
         self.kind = m;
         self.fatigue_max = row.fatigue_max as f32; // :6221
-        // :6227 `_flipDraw = false`
+                                                   // :6227 `_flipDraw = false`
         self.flip_draw = false;
         // :6236-6243 — the Scutlix/Santank ability-cooldown floors.
         if self.kind == 9 && self.ability_cooldown < 20 {
@@ -779,7 +1048,11 @@ impl MountState {
     /// `Mount.ResetFlightTime` (`Mount.cs:5262-5273`) — the type-0 |v|*20 bonus
     /// and the type-54 wings borrow need the Player (Phase 2 passes velocity).
     pub(crate) fn reset_flight_time(&mut self, x_velocity: f32) {
-        self.fly_time = if self.active { mount_data(self.kind).map_or(0, |d| d.flight_time_max) } else { 0 };
+        self.fly_time = if self.active {
+            mount_data(self.kind).map_or(0, |d| d.flight_time_max)
+        } else {
+            0
+        };
         if self.kind == 0 {
             self.fly_time += (x_velocity.abs() * 20.0) as i32;
         }
@@ -787,6 +1060,50 @@ impl MountState {
 
     pub(crate) fn flight_time_max(&self) -> i32 {
         self.data().map_or(0, |d| d.flight_time_max)
+    }
+
+    /// `Mount.Flight` (`Mount.cs:2973-2981`): one tick of budget per call.
+    pub(crate) fn flight(&mut self) -> bool {
+        if self.fly_time <= 0 {
+            return false;
+        }
+        self.fly_time -= 1;
+        true
+    }
+
+    /// `Mount.CanHover` (`Mount.cs:2881-2896`): `usesHover`; the lava shark
+    /// (49) only in its swim state. No table row sets `usesHover` yet
+    /// (M2-MOUNT-2), so this is false for every current id.
+    pub(crate) fn can_hover(&self) -> bool {
+        let Some(row) = self.data() else { return false };
+        if !row.uses_hover {
+            return false;
+        }
+        if self.kind == 49 {
+            return self.frame_state == 4;
+        }
+        true
+    }
+
+    /// `Mount.AbilityRecovery` (`Mount.cs:2938-2959`): the charge fills while
+    /// charging, decays one per tick otherwise; the cooldown and the duration
+    /// count down. (The ability consumers themselves are M2-MOUNT-4.)
+    pub(crate) fn ability_recovery(&mut self) {
+        if self.ability_charging {
+            if let Some(row) = self.data() {
+                if self.ability_charge < row.ability_charge_max {
+                    self.ability_charge += 1;
+                }
+            }
+        } else if self.ability_charge > 0 {
+            self.ability_charge -= 1;
+        }
+        if self.ability_cooldown > 0 {
+            self.ability_cooldown -= 1;
+        }
+        if self.ability_duration > 0 {
+            self.ability_duration -= 1;
+        }
     }
 
     /// `Mount.ExtraFall` / `Mount.FallDamage` (:183/:181 read via properties).
@@ -810,11 +1127,19 @@ impl MountState {
     /// `Mount.CanUseWings` (`Mount.cs:570-580`) — an inactive mount leaves the
     /// player's wings untouched (`true`).
     pub(crate) fn can_use_wings(&self) -> bool {
+        #[cfg(test)]
+        if let Some(v) = self.test_can_use_wings {
+            return v;
+        }
         self.data().map_or(true, |d| d.can_use_wings)
     }
 
     /// `Mount.MovementStatsAreAdditive` (`Mount.cs:582-592`).
     pub(crate) fn movement_stats_are_additive(&self) -> bool {
+        #[cfg(test)]
+        if let Some(v) = self.test_additive {
+            return v;
+        }
         self.data().map_or(false, |d| d.movement_stats_are_additive)
     }
 
@@ -847,6 +1172,36 @@ impl MountState {
         }
         -self.player_offset() + self.data().map_or(0, |d| d.height_boost)
     }
+
+    // The M2-MOUNT-2 rows (wing-allowed, additive-stat mounts) do not exist
+    // yet; these test-only overrides let the merge branches be exercised now.
+    #[cfg(test)]
+    pub(crate) fn set_test_overrides(
+        &mut self,
+        can_use_wings: Option<bool>,
+        additive: Option<bool>,
+    ) {
+        self.test_can_use_wings = can_use_wings;
+        self.test_additive = additive;
+    }
+}
+
+#[cfg(test)]
+impl Default for TestOverrides {
+    fn default() -> Self {
+        TestOverrides {
+            can_use_wings: None,
+            additive: None,
+        }
+    }
+}
+
+/// Test-only row-value overrides (see `set_test_overrides`).
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct TestOverrides {
+    can_use_wings: Option<bool>,
+    additive: Option<bool>,
 }
 
 #[cfg(test)]
@@ -857,11 +1212,17 @@ mod tests {
     fn the_twelve_ground_rows_carry_the_exact_c_constants() {
         // DW-1.2 — values read from Mount.Initialize (`Mount.cs:696-2567`).
         let unicorn = mount_data(10).unwrap();
-        assert_eq!((unicorn.run_speed, unicorn.dash_speed, unicorn.acceleration), (4.0, 12.0, 0.3));
+        assert_eq!(
+            (unicorn.run_speed, unicorn.dash_speed, unicorn.acceleration),
+            (4.0, 12.0, 0.3)
+        );
         assert_eq!(unicorn.buff, 162);
         assert_eq!(unicorn.height_boost, 34);
         let horse = mount_data(40).unwrap();
-        assert_eq!((horse.run_speed, horse.dash_speed, horse.acceleration), (3.0, 9.0, 0.25));
+        assert_eq!(
+            (horse.run_speed, horse.dash_speed, horse.acceleration),
+            (3.0, 9.0, 0.25)
+        );
         assert_eq!(horse.buff, 275);
         assert_eq!(mount_data(41).unwrap().buff, 276);
         assert_eq!(mount_data(42).unwrap().buff, 277);
@@ -877,11 +1238,15 @@ mod tests {
         assert_eq!(mount_data(14).unwrap().dash_speed, 0.0); // never set, :1644-1692
         assert_eq!(mount_data(9).unwrap().ability_charge_max, 40); // :1350
         assert_eq!(mount_data(43).unwrap().body_frame, 4); // :1876
-        // every row's buff id resolves and its offsets cover total_frames
+                                                           // every row's buff id resolves and its offsets cover total_frames
         for &id in [0, 1, 3, 9, 10, 14, 40, 41, 42, 43, 47, 50].iter() {
             let row = mount_data(id).unwrap();
             assert!(row.buff > 0, "row {id} has no buff");
-            assert_eq!(row.player_y_offsets.len() as i32, row.total_frames, "row {id}");
+            assert_eq!(
+                row.player_y_offsets.len() as i32,
+                row.total_frames,
+                "row {id}"
+            );
         }
     }
 
@@ -890,11 +1255,22 @@ mod tests {
         // DW-1.3 — `SetMount` (:6196-6305) / `Dismount` (:6142-6194).
         let mut m = MountState::default();
         assert!(!m.is_active());
-        assert_eq!(m.dismount(), None, "dismount while inactive is a no-op (:6144)");
+        assert_eq!(
+            m.dismount(),
+            None,
+            "dismount while inactive is a no-op (:6144)"
+        );
         // unknown id (2 Pigron is not in the partial table) is rejected
         assert_eq!(m.set_mount(2, false), None);
         let equip = m.set_mount(10, false).expect("unicorn equips");
-        assert_eq!(equip, Equip { clear_buff: None, add_buff: 162, height_boost: 34 });
+        assert_eq!(
+            equip,
+            Equip {
+                clear_buff: None,
+                add_buff: 162,
+                height_boost: 34
+            }
+        );
         assert!(m.is_active());
         // same type is a no-op (:6198) — the buff refresh must not re-add
         assert_eq!(m.set_mount(10, false), None);
@@ -902,7 +1278,14 @@ mod tests {
         assert_eq!(m.set_mount(5, true), None);
         // a swap clears the old buff (:6203)
         let swap = m.set_mount(40, false).expect("horse swap");
-        assert_eq!(swap, Equip { clear_buff: Some(162), add_buff: 275, height_boost: 34 });
+        assert_eq!(
+            swap,
+            Equip {
+                clear_buff: Some(162),
+                add_buff: 275,
+                height_boost: 34
+            }
+        );
         assert_eq!(m.kind(), 40);
         // dismount returns the buff to clear
         assert_eq!(m.dismount(), Some(275));

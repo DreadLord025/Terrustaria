@@ -10,13 +10,13 @@
 
 use crate::registry;
 use tr_core::tiledata as td;
-use tr_core::{TILE_PX, World};
+use tr_core::{World, TILE_PX};
 
-use glam::Vec2;
 use crate::buffs::{BuffSlots, MAX_BUFFS};
 use crate::collision;
-use crate::regen::{DotDeath, RegenInputs, RegenState, update_life_regen, update_mana_regen};
 use crate::luck::LuckState;
+use crate::regen::{update_life_regen, update_mana_regen, DotDeath, RegenInputs, RegenState};
+use glam::Vec2;
 
 pub const WIDTH: f32 = 20.0;
 pub const HEIGHT: f32 = 42.0;
@@ -392,6 +392,20 @@ pub struct Player {
     /// the per-tick statics the jump branches read.
     jump_height: i32,
     jump_speed: f32,
+    /// `Player.mount` (`Player.cs:2126`): the mount instance state — the data
+    /// table and the state core live in the `mount` module.
+    pub mount: crate::mount::MountState,
+    /// `Player.autoJump`: the vanilla auto-jump accessibility setting; the
+    /// port has no settings surface, so this carries only the mount's
+    /// per-tick head-set (`Mount.UpdateEffects`, `Mount.cs:4797`).
+    auto_jump: bool,
+    /// `Player.justJumped` (`Player.cs:2722`): set on a grounded jump trigger
+    /// (`:20678`), cleared in `ResetEffects` (`:18786`); the wing/rocket
+    /// refills read it for the auto-jump (constant-jump) mounts.
+    just_jumped: bool,
+    /// The live hitbox height — `Player.height`: `HEIGHT` (42) normally,
+    /// `42 + heightBoost` while mounted (`SetMount` `Mount.cs:6264-6277`).
+    pub height: f32,
     /// `Player.lastStoned` (`Player.cs`): the petrify-transition detector.
     last_stoned: bool,
     /// `Player.dashType` (`Player.cs:1044`): the equipped dash capability.
@@ -552,6 +566,10 @@ impl Player {
             jump_boost: false,
             jump_height: 15,
             jump_speed: 5.01,
+            mount: crate::mount::MountState::default(),
+            auto_jump: false,
+            just_jumped: false,
+            height: HEIGHT,
             last_stoned: false,
             dash_type: 0,
             dash: 0,
@@ -591,14 +609,14 @@ impl Player {
     /// `RemoveAllGrapplingHooks`/`mount.TryDismount`.
     pub fn sit_down(&mut self, seat_x: f32, seat_y: f32, direction: i32) {
         let bottom_x = self.x + WIDTH as f32 * 0.5;
-        let bottom_y = self.y + HEIGHT as f32;
+        let bottom_y = self.y + self.height;
         if self.sitting && (bottom_x - seat_x).abs() < 0.01 && (bottom_y - seat_y).abs() < 0.01 {
             self.sit_up();
             return;
         }
         self.grappling_active = false;
         self.x = seat_x - WIDTH as f32 * 0.5;
-        self.y = seat_y - HEIGHT as f32;
+        self.y = seat_y - self.height;
         self.facing = direction;
         self.sitting = true;
         self.vx = 0.0;
@@ -618,18 +636,14 @@ impl Player {
         if !self.sitting {
             return;
         }
-        if self.control_left
-            || self.control_right
-            || self.control_jump
-            || self.control_down
-        {
+        if self.control_left || self.control_right || self.control_jump || self.control_down {
             self.sit_up();
             return;
         }
         // `TryGetSittingBlock` (`:33-45`): the tile at the bottom - 2 px must
         // still decode as a sit-able chair.
         let bx = self.x + WIDTH as f32 * 0.5;
-        let by = self.y + HEIGHT as f32 - 2.0;
+        let by = self.y + self.height - 2.0;
         let tx = (bx / 16.0).floor() as i32;
         let ty = (by / 16.0).floor() as i32;
         let chair_gone = world
@@ -703,6 +717,8 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+        // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
+        let _ = self.dismount(true);
     }
 
     /// `Player.GetRespawnTime` (`Player.cs:39060-39082`): 600 base, +600 when
@@ -817,7 +833,7 @@ impl Player {
     }
 
     pub fn center(&self) -> (f32, f32) {
-        (self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5)
+        (self.x + WIDTH * 0.5, self.y + self.height * 0.5)
     }
 
     /// `Player.GetWeaponDamageMultiplier` (`Player.cs:53386`) narrowed to
@@ -956,6 +972,10 @@ impl Player {
         self.chilled = false;
         self.frozen = false;
         self.webbed = false;
+        // `Player.cs:18786`: justJumped clears at the tick head; the auto-jump
+        // flag re-derives per tick from the mount head-set (`Mount.cs:4797`).
+        self.just_jumped = false;
+        self.auto_jump = false;
         self.blind = false;
         self.weak_stacks = 0;
         self.melee_damage = 1.0;
@@ -1224,10 +1244,16 @@ impl Player {
             self.facing = dir as i32;
         }
         if !grappling {
-            // `:26496-26499`: the wing run-speed tweaks run before the movement.
-            if self.wings_logic > 0 && self.vy != 0.0 {
+            // `:26496-26499`: the wing run-speed tweaks run before the
+            // movement — vanilla gates them on `mount.CanUseWings` too (and
+            // on `!merman`, which has no port counterpart).
+            if self.wings_logic > 0 && self.vy != 0.0 && self.mount.can_use_wings() {
                 self.wing_air_logic_tweaks();
             }
+            // `Player.cs:26623-26688`: the per-tick mount block (with the
+            // `UpdateEffects` head and the `UpdateJumpHeight` merge — vanilla
+            // runs those at `:25656`/`:26011`, both earlier in the same tick).
+            self.update_mount();
             self.horizontal_movement(dir);
         }
 
@@ -1258,7 +1284,9 @@ impl Player {
             self.release_jump = false;
             if self.on_ground && jump_pressed {
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
-                // follows (`:20755-20758` — `RefreshDoubleJumps`).
+                // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
+                // sets `justJumped` on the grounded trigger.
+                self.just_jumped = true;
                 self.vy = -self.jump_speed;
                 self.jump = self.jump_height;
                 self.on_ground = false;
@@ -1289,6 +1317,10 @@ impl Player {
                 if let Some(j) = jumped {
                     self.can_jump_again[j.index()] = false;
                     self.performing_jump = Some(j);
+                    // `:20678`: only a grounded trigger counts as justJumped.
+                    if self.vy == 0.0 {
+                        self.just_jumped = true;
+                    }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
                 } else {
@@ -1314,6 +1346,12 @@ impl Player {
         // velocity-only dash pass before the collision step.
         if !grappling {
             self.dash_movement(world, input);
+        }
+        // `Player.cs:26799-26812`: while CCed the mount dismounts and the
+        // plain gravity takes over (the port's CC input zeroing and the
+        // flight gate below already cover the rest of that branch).
+        if !grappling && self.cced() && self.mount.is_active() {
+            self.try_dismount();
         }
 
         // `Player.Update` → `GrappleMovement` (`Main` call order `:27653`,
@@ -1362,17 +1400,22 @@ impl Player {
         if self.vy == 0.0 {
             self.refresh_double_jumps();
             // `num10 = 25 + extraFall` (`Player.cs:25301`); the mount addendum
-            // (`Player.cs:25304`) waits for M2-MOUNT-1.
-            let threshold = 25 + self.extra_fall;
+            // (`Player.cs:25301-25304`): `25 + extraFall` + the mount's own.
+            let threshold = 25 + self.extra_fall + self.mount.extra_fall();
             // `num11` is int-truncated on both ends (`Player.cs:25306`).
             let mut fell = (self.y / TILE_PX) as i32 - self.fall_start;
-            // The flying-minecart/bunny/dash zeroes (`Player.cs:25307-25323`)
-            // have no systems here yet; the cloud/soft-tile scan does
+            // `:25307-25318`: the zeroing — a flying mount and the bunny
+            // (type 1) nullify. The track-rider branch waits for M2-MOUNT-3
+            // and the dead-cells dash for its own task.
+            if self.mount.can_fly() || self.mount.kind() == 1 {
+                fell = 0;
+            }
+            // The cloud/soft-tile scan does
             // (`Player.cs:25325-25345`): the tile row under the feet across
             // the hitbox's x-extent.
             let tx0 = (self.x / TILE_PX) as i32;
             let tx1 = ((self.x + WIDTH) / TILE_PX) as i32;
-            let ty = ((self.y + HEIGHT + 1.0) / TILE_PX) as i32;
+            let ty = ((self.y + self.height + 1.0) / TILE_PX) as i32;
             for tx in tx0..=tx1 {
                 if let Some(t) = world.tile(tx, ty) {
                     if t.active()
@@ -1399,7 +1442,15 @@ impl Player {
                 // `Player.cs:25360-25374`: `(fell - threshold) * 10` damage with
                 // hitDirection 0 — no knockback — and `immune = false` forced
                 // BEFORE the Hurt so the hit lands through any iframes.
-                self.hurt_fall((fell - threshold) * 10);
+                // `:25363-25367`: the mount's `FallDamage` scales the hit
+                // (only while a mount is active — the C# gates on
+                // `mount.Active`).
+                let dmg = if self.mount.is_active() {
+                    (((fell - threshold) * 10) as f32 * self.mount.fall_damage()) as i32
+                } else {
+                    (fell - threshold) * 10
+                };
+                self.hurt_fall(dmg);
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }
@@ -1872,9 +1923,9 @@ impl Player {
     /// body and the center rows.
     fn solid_ahead(&self, world: &World, dir: i32) -> bool {
         let cx = self.x + WIDTH * 0.5;
-        let cy = self.y + HEIGHT * 0.5;
+        let cy = self.y + self.height * 0.5;
         let tx = ((cx + dir as f32 * (WIDTH * 0.5 + 2.0)) / TILE_PX) as i32;
-        let ty0 = ((cy - HEIGHT * 0.5 + 2.0) / TILE_PX) as i32;
+        let ty0 = ((cy - self.height * 0.5 + 2.0) / TILE_PX) as i32;
         let ty1 = (cy / TILE_PX) as i32;
         [ty0, ty1].into_iter().any(|ty| {
             world.tile(tx, ty).is_some_and(|t| {
@@ -1969,6 +2020,152 @@ impl Player {
         false
     }
 
+    /// `Player.CCed` (`Player.cs:3377-3385`): frozen, webbed or stoned.
+    fn cced(&self) -> bool {
+        self.frozen || self.webbed || self.buffs.find_buff_index(156).is_some()
+    }
+
+    /// `Player.ClearBuff` (`Player.cs:5242-5256`): every slot carrying the
+    /// buff type.
+    fn clear_buff_type(&mut self, bt: i32) {
+        while let Some(i) = self.buffs.find_buff_index(bt) {
+            self.buffs.del_buff(i);
+        }
+    }
+
+    /// `Mount.SetMount` (`Mount.cs:6196-6305`) via the player: the state
+    /// swap, the buff clear/add (`:6203`/`:6226`) and the bottom-anchored
+    /// hitbox growth (`:6264-6277` — no PlayerSize delegate exists in this
+    /// set; the type-44 dash reset `:6228-6235` cannot fire without that row).
+    pub fn set_mount(&mut self, m: i32, wet: bool) -> bool {
+        let Some(equip) = self.mount.set_mount(m, wet) else {
+            return false;
+        };
+        if let Some(old) = equip.clear_buff {
+            self.clear_buff_type(old);
+        }
+        self.buffs.add_buff(equip.add_buff, 3600);
+        self.grow_hitbox(HEIGHT + equip.height_boost as f32);
+        true
+    }
+
+    /// `:6270-6275`: the height change anchors the bottom (position.Y += h;
+    /// height = new; position.Y -= h).
+    fn grow_hitbox(&mut self, new_height: f32) {
+        self.y += self.height;
+        self.height = new_height;
+        self.y -= self.height;
+    }
+
+    /// `Mount.Dismount` (`Mount.cs:6142-6194`) via the player: the buff clear
+    /// and the hitbox restore. `ignore_effect` stands in for the spawn dust
+    /// (`:6167-6170` — no dust system yet).
+    pub fn dismount(&mut self, ignore_effect: bool) -> bool {
+        let Some(buff) = self.mount.dismount() else {
+            return false;
+        };
+        let _ = ignore_effect;
+        self.clear_buff_type(buff);
+        // `:6176-6193`: the restore — the 20x42 box from the bottom center;
+        // on failure the Y patch accepts the overlap (the collision step
+        // resolves it next tick, as in the original).
+        if let Some((_, ny, _, nh)) = collision::try_changing_size_from_bottom_center(
+            self.x,
+            self.y,
+            WIDTH,
+            self.height,
+            WIDTH,
+            HEIGHT,
+        ) {
+            self.y = ny;
+            self.height = nh;
+        } else {
+            self.y += self.height;
+            self.height = HEIGHT;
+            self.y -= self.height;
+        }
+        true
+    }
+
+    /// `Mount.TryDismount` (`Mount.cs:6127-6140`) with `CanDismountWithResult`
+    /// (`:6611-6624`): the CC gate cannot fire on this table (no row sets
+    /// `DontDismountWhenCCed`) and the shrink probe always fits, so the
+    /// dismount runs; Phase 3's quick-mount counts the failures.
+    pub fn try_dismount(&mut self) -> bool {
+        self.dismount(false)
+    }
+
+    /// The per-tick mount block — `Player.cs:26623-26688` with the
+    /// `UpdateEffects` head (`Mount.cs:4795-4803`, `:4949-4981`) and the
+    /// `UpdateJumpHeight` mount merge (`:26011` → `:19619-19637`). Vanilla
+    /// runs those at :25656/:26011, both before the run-speed merge — the
+    /// combined method keeps their relative order. Only reachable while not
+    /// grappling (the caller's `:26622` branch).
+    fn update_mount(&mut self) {
+        if !self.mount.is_active() {
+            return;
+        }
+        // `Mount.cs:4797`: the mount head-sets the auto-jump flag per tick.
+        self.auto_jump = self.mount.auto_jump();
+        // `Mount.cs:4949-4981`: the ground-dash mounts arm their extra jumps
+        // (the PHYS-8 priority chain consumes them) and pin knockback off
+        // above the charge speed.
+        match self.mount.kind() {
+            10 => self.has_jump_options[ExtraJump::Unicorn.index()] = true,
+            47 => self.has_jump_options[ExtraJump::WallOfFleshGoat.index()] = true,
+            14 => self.has_jump_options[ExtraJump::Basilisk.index()] = true,
+            _ => {}
+        }
+        if matches!(self.mount.kind(), 10 | 47 | 14 | 40 | 41 | 42)
+            && self.vx.abs() > self.mount.dash_speed() - self.mount.run_speed() / 2.0
+        {
+            self.no_knockback = true;
+        }
+        // `Player.cs:19619-19631`: the jump statics — replace, or additive
+        // when the mount says so; `:19635-19637` the sticky clamp after (the
+        // `dazed` clamp `:19638-19641` has no port counterpart).
+        if self.mount.movement_stats_are_additive() {
+            self.jump_height += self.mount.jump_height(self.vx);
+            self.jump_speed += self.mount.jump_speed(self.vx);
+        } else {
+            self.jump_height = self.mount.jump_height(self.vx);
+            self.jump_speed = self.mount.jump_speed(self.vx);
+        }
+        if self.sticky {
+            self.jump_height /= 10;
+            self.jump_speed /= 5.0;
+        }
+        // `:26625-26635`: the wings/rocket suppression + the slowdown floor.
+        if !self.mount.can_use_wings() {
+            self.run_slowdown = 0.2;
+        }
+        self.rocket_boots = 0;
+        if !self.mount.can_use_wings() {
+            self.has_wings = false;
+            self.wings_logic = 0;
+        }
+        // `:26636` + `:26637-26654`: the three-way run-stat merge.
+        let flag17 = self.mount.can_use_wings() && self.wings_logic > 0 && self.vy != 0.0;
+        if self.mount.movement_stats_are_additive() {
+            self.max_run_speed += self.mount.run_speed();
+            self.acc_run_speed += self.mount.dash_speed();
+            self.run_acceleration += self.mount.acceleration();
+        } else if flag17 {
+            self.max_run_speed = self.max_run_speed.max(self.mount.run_speed());
+            self.acc_run_speed = self.acc_run_speed.max(self.mount.dash_speed());
+            self.run_acceleration = self.run_acceleration.max(self.mount.acceleration());
+        } else {
+            self.max_run_speed = self.mount.run_speed();
+            self.acc_run_speed = self.mount.dash_speed();
+            self.run_acceleration = self.mount.acceleration();
+        }
+        // `:26655-26659` (the Fishron halving), `:26660-26663` (the roller
+        // skates), `:26665-26682` (the cart/OnTrack block — M2-MOUNT-3) and
+        // `:26683-26686` (`UpdateDrill` — M2-MOUNT-4) have no rows in this
+        // table yet; the ability counters still tick (`:26663`).
+        self.mount.ability_recovery();
+    }
+
     /// The flight section (`Player.cs:26772-27425`): `canRocket`, the ground
     /// refills, `flag19`, `WingMovement`, the rocket trigger + thrust, the
     /// glide. Returns true when it integrated vy itself (the plain gravity
@@ -1991,12 +2188,16 @@ impl Player {
         if self.vy > -self.jump_speed && self.vy != 0.0 {
             self.can_rocket = true;
         }
-        // `:26776-26781`: the wing refill on the ground needs a jump release.
-        if self.vy == 0.0 && self.release_jump {
+        // `:26776-26781`: the wing refill on the ground needs a jump release —
+        // or an auto-jump (constant-jump) mount re-jumping this tick; the
+        // mount flight budget refills with it (`mount.ResetFlightTime`).
+        if (self.vy == 0.0 && self.release_jump) || (self.auto_jump && self.just_jumped) {
             self.wing_time = self.wing_time_max as f32;
+            self.mount.reset_flight_time(self.vx);
         }
-        // `:26859-26862`: the rocket fuel refills on any rest tick.
-        if self.vy == 0.0 {
+        // `:26859-26862`: the rocket fuel refills on any rest tick (or an
+        // auto-jump mount's re-jump).
+        if self.vy == 0.0 || (self.auto_jump && self.just_jumped) {
             self.rocket_time = self.rocket_time_max;
         }
         // `:26786-26798`: flag19 — actively flying this tick. The second
@@ -2066,6 +2267,50 @@ impl Player {
             return true;
         }
         if !flag19 {
+            // `:26962-26964`: the hover mounts (`Mount.Hover`) — no table row
+            // sets `usesHover` yet, so the branch cannot fire (M2-MOUNT-2).
+            if self.mount.can_hover() {
+                return false;
+            }
+            // `:26965-27015`: the mount flight thrust — the flying mounts'
+            // replacement for the wing ascent while the budget lasts.
+            if self.mount.can_fly() && self.control_jump && self.jump == 0 {
+                if self.mount.flight() {
+                    if self.trying_to_hover_down() {
+                        // `:26968-26974`: the hover-down dampening.
+                        self.vy *= 0.9;
+                        if self.vy > -1.0 && self.vy < 0.5 {
+                            self.vy = 1e-5;
+                        }
+                    } else {
+                        // `:26975-27000`: the rise thrust — the falling
+                        // brake, the rising assist, the upward cap. The
+                        // type-50 half cap references the full table; only
+                        // Queen Slime (50) exists here (56/61 are M2-MOUNT-2).
+                        let num40 = 0.1;
+                        let mut num41 = self.jump_speed;
+                        if self.mount.kind() == 50 {
+                            num41 *= 0.5;
+                        }
+                        if self.vy > 0.0 {
+                            self.vy -= num40 * 5.0;
+                        } else if self.vy > -num41 * 1.5 {
+                            self.vy -= num40;
+                        }
+                        if self.vy < -num41 * 1.5 {
+                            self.vy = -num41 * 1.5;
+                        }
+                    }
+                    return true;
+                }
+                // `:27001-27014`: the budget spent — gravity / 3 with the
+                // fall cap / 3 (the upward half needs gravDir, not ported).
+                self.vy += gravity / 3.0;
+                if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
+                    self.vy = fall_cap / 3.0;
+                }
+                return true;
+            }
             // `:27034-27037 + 27339-27350`: the wing glide — jump held while
             // falling: gravity / 3, the fall cap / 3, the fall origin
             // refreshed per tick (no fall damage accrues).
@@ -2178,7 +2423,7 @@ impl Player {
 
         // `GetGrapplingForces` (`Player.cs:22820-22846`): the velocity = the
         // vector to the hook center clamped to the per-type pull speed.
-        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + HEIGHT * 0.5);
+        let to_hook = hook_center - Vec2::new(self.x + WIDTH * 0.5, self.y + self.height * 0.5);
         let dist = to_hook.length();
         let pull_speed = crate::grapple::hook_spec(hook_type).pull_speed;
         let pull = if dist > 0.001 {
@@ -2286,7 +2531,7 @@ impl Player {
     /// the slope dust carve-out stay with the particle tasks.
     fn floor_visuals(&mut self, world: &World) {
         let x = ((self.x + WIDTH * 0.5) / TILE_PX) as i32;
-        let y = ((self.y + HEIGHT) / TILE_PX) as i32;
+        let y = ((self.y + self.height) / TILE_PX) as i32;
         let mut kind = None;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
@@ -2494,7 +2739,7 @@ impl Player {
                 &mut pos,
                 &mut vel,
                 WIDTH,
-                HEIGHT,
+                self.height,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
             );
@@ -2505,13 +2750,13 @@ impl Player {
                 &mut pos,
                 &mut vel,
                 WIDTH,
-                HEIGHT,
+                self.height,
                 &mut self.step_speed,
                 &mut self.gfx_off_y,
                 false,
             );
         }
-        let tc = collision::tile_collision(world, pos, vel, WIDTH, HEIGHT, false, false);
+        let tc = collision::tile_collision(world, pos, vel, WIDTH, self.height, false, false);
         if tc.up {
             self.jump = 0;
         }
@@ -2536,7 +2781,7 @@ impl Player {
         if down {
             self.stair_fall = true;
         }
-        let sc = collision::slope_collision(world, pos, vel, WIDTH, HEIGHT, self.stair_fall);
+        let sc = collision::slope_collision(world, pos, vel, WIDTH, self.height, self.stair_fall);
         self.stair_fall = sc.stair_fall;
         if sc.stair && (sc.pos[1] - pos[1]).abs() > 8.0 + vel[0].abs() {
             self.gfx_off_y -= sc.pos[1] - pos[1];
@@ -2879,7 +3124,7 @@ mod tests {
     }
 
     use super::*;
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn ground_world() -> World {
         let mut w = World::new("t".into(), 64, 128);
@@ -3398,10 +3643,14 @@ mod tests {
         p.grapple_hook_type = 13;
         let grapple = Some((p.grapple_hook_center, 13));
         // The press edge: the jump-off.
-        p.update_with_grapple(&w, PlayerInput {
-            jump: true,
-            ..Default::default()
-        }, grapple);
+        p.update_with_grapple(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+            grapple,
+        );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
     }
@@ -3419,11 +3668,15 @@ mod tests {
         p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y - 4.0);
         p.grapple_hook_type = 13;
         let grapple = Some((p.grapple_hook_center, 13));
-        p.update_with_grapple(&w, PlayerInput {
-            jump: true,
-            down: true,
-            ..Default::default()
-        }, grapple);
+        p.update_with_grapple(
+            &w,
+            PlayerInput {
+                jump: true,
+                down: true,
+                ..Default::default()
+            },
+            grapple,
+        );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
         // counter — the pull velocity carries (the vanilla does not zero it
@@ -3546,7 +3799,11 @@ mod tests {
         // `Player.cs:15005-15008`: `accRunSpeed = 6f` — the base reset (3.0)
         // is lifted, the debuff multiplier still applies afterwards.
         let p = player_with_accessory(54);
-        assert!((p.acc_run_speed_value() - 6.0).abs() < 1e-4, "{}", p.acc_run_speed_value());
+        assert!(
+            (p.acc_run_speed_value() - 6.0).abs() < 1e-4,
+            "{}",
+            p.acc_run_speed_value()
+        );
         // The vanilla leaves `maxRunSpeed` at 3.0 — the boots only widen the
         // acceleration window (the continuation to accRunSpeed).
         assert!((p.max_run_speed_value() - 3.0).abs() < 1e-4);
@@ -4596,7 +4853,7 @@ mod tests {
         let idx = p.buffs.find_buff_index(24).expect("OnFire granted on lava");
         assert_eq!(p.buffs.buff_time[idx], 420);
         assert_eq!(p.hp, 1000 - 30); // the pre-existing 30-dmg lava hit
-        // Inside the iframes the hit (and therefore the grant) repeats nothing.
+                                     // Inside the iframes the hit (and therefore the grant) repeats nothing.
         let hp = p.hp;
         p.update_survival();
         assert_eq!(p.hp, hp, "no second lava hit inside the iframes");
@@ -4845,5 +5102,245 @@ mod tests {
         p.buffs.add_buff(20, 600);
         p.update(&w, PlayerInput::default());
         assert!(p.buffs.find_buff_index(20).is_some());
+    }
+
+    // -- M2-MOUNT-1 phase 2: the per-tick mount block ------------------------
+
+    #[test]
+    fn the_mount_replaces_the_run_stats_and_suppresses_the_wings() {
+        // DW-2.1/2.2 — the replace mode `Player.cs:26649-26654` and the
+        // wings/rocket suppression `:26625-26635`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.wings_logic = 22; // pretend wings so the suppression has a target
+        p.has_wings = true;
+        p.rocket_boots = 1;
+        p.set_mount(10, false); // Unicorn 4/12/0.3
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.max_run_speed_value(), 4.0, "maxRunSpeed replaced");
+        assert_eq!(p.acc_run_speed_value(), 12.0, "accRunSpeed = DashSpeed");
+        assert!(!p.has_wings && p.wings_logic == 0, "wings suppressed");
+        assert_eq!(p.rocket_boots, 0, "rocketBoots zeroed");
+    }
+
+    #[test]
+    fn flying_with_wings_max_merges_instead_of_replacing() {
+        // `:26643-26648` — flag17 keeps the better stat (Hermes' 6.0 beats
+        // the Slime mount's 4.0 DashSpeed).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.equipped[3] = 54; // Hermes — `accRunSpeed = 6f`
+        p.update(&w, PlayerInput::default()); // the grant pass runs
+        assert_eq!(p.acc_run_speed_value(), 6.0);
+        p.set_mount(3, false);
+        p.wings_logic = 22;
+        p.vy = -1.0; // airborne so flag17 can arm
+        p.mount.set_test_overrides(Some(true), None); // the M2-MOUNT-2 row
+        p.update_mount();
+        assert_eq!(p.acc_run_speed_value(), 6.0, "max(6.0, 4.0)");
+        // without the wings the same merge replaces: 4.0
+        p.mount.set_test_overrides(Some(false), None);
+        p.wings_logic = 22;
+        p.update_mount();
+        assert_eq!(p.acc_run_speed_value(), 4.0, "replaced while grounded");
+    }
+
+    #[test]
+    fn the_additive_mode_adds_instead_of_replacing() {
+        // `:26637-26641` — the `MovementStatsAreAdditive` branch (roller
+        // skates in vanilla; the row lands with M2-MOUNT-4).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(3, false);
+        p.mount.set_test_overrides(None, Some(true));
+        p.update_mount();
+        assert_eq!(p.max_run_speed_value(), 3.0 + 4.0, "3 + Slime runSpeed");
+        assert_eq!(p.acc_run_speed_value(), 3.0 + 4.0, "3 + Slime dashSpeed");
+    }
+
+    #[test]
+    fn the_mount_jumps_replace_and_scale_with_x_velocity() {
+        // DW-2.3 — `Player.cs:19619-19631` + `Mount.cs:2810-2858`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(10, false); // Unicorn — no scaling branch
+        p.vx = 16.0;
+        p.update_mount();
+        assert_eq!(p.jump_height, 10);
+        assert_eq!(p.jump_speed, 8.01);
+        p.dismount(false);
+        p.set_mount(0, false); // Rudolph, type 0
+        p.vx = 4.0;
+        p.update_mount();
+        assert_eq!(p.jump_height, 18, "17 + (int)(4/4f)");
+        assert_eq!(p.jump_speed, 5.31 + 4.0 / 7.0);
+    }
+
+    #[test]
+    fn the_unicorn_arms_its_extra_jump_and_the_chain_consumes_it() {
+        // DW-2.3 — `Mount.cs:4950-4953` arms the option; the PHYS-8 chain
+        // (`Player.cs:20698-21022`) consumes it after the vanilla re-arm.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(10, false);
+        // the ground jump
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, press);
+        assert!(p.vy < 0.0, "the ground jump fired");
+        // release mid-air (the else branch zeroes `jump` and latches the
+        // release), then press again — the extra jump fires while airborne
+        let release = PlayerInput::default();
+        p.update(&w, release);
+        p.update(&w, press);
+        assert_eq!(
+            p.performing_jump,
+            Some(ExtraJump::Unicorn),
+            "the mount jump consumed"
+        );
+        assert!(!p.can_jump_again[ExtraJump::Unicorn.index()]);
+    }
+
+    #[test]
+    fn the_bunny_nullifies_fall_damage_and_the_unicorn_scales_it() {
+        // DW-2.4 — `Player.cs:25315-25318` (bunny zero) + `:25363-25367`
+        // (the FallDamage multiplier) + `:25307-25310` (CanFly zero).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(1, false); // Bunny — the nullify
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "the bunny nullifies the fall");
+        // Rudolph can fly — `CanFly` zeroes the fall distance too
+        p.dismount(false);
+        p.set_mount(0, false);
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        p.hp = 100;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "the flying mount zeroes the fall");
+        // Unicorn — 0.2x: (32 - 25) * 10 = 70 -> 14
+        p.dismount(false);
+        p.set_mount(10, false);
+        p.y = 25.0 * TILE_PX;
+        p.fall_start = 25;
+        p.hp = 100;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        // The 76px unicorn hitbox rests with its top on row 55 (960-76=884),
+        // so `num11` measures 55-25 = 30: (30-25)*10 = 50, x0.2 = 10.
+        assert_eq!(p.hp, 90, "(50) * 0.2 = 10");
+    }
+
+    #[test]
+    fn the_slime_extra_fall_lifts_the_threshold() {
+        // `:25301-25304` + `Mount.cs:869` (extraFall 10): a 30-tile fall with
+        // the Slime mount stays under `25 + 10`.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.set_mount(3, false);
+        p.y = 30.0 * TILE_PX;
+        p.fall_start = 30;
+        for _ in 0..600 {
+            p.update(&w, PlayerInput::default());
+            if p.on_ground {
+                break;
+            }
+        }
+        assert_eq!(p.hp, 100, "35 threshold eats the 30-tile fall");
+    }
+
+    #[test]
+    fn equipping_grows_the_hitbox_and_dismounting_restores_it() {
+        // DW-2.5 — `Mount.cs:6264-6277` grow, `:6176-6193` restore.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        let y_before = p.y;
+        assert_eq!(p.height, HEIGHT);
+        assert!(p.set_mount(10, false)); // Unicorn boost 34
+        assert_eq!(p.height, HEIGHT + 34.0);
+        assert!(
+            (p.y - (y_before - 34.0)).abs() < 0.01,
+            "the bottom stays anchored"
+        );
+        assert!(
+            p.buffs.find_buff_index(162).is_some(),
+            "the mount buff added (:6226)"
+        );
+        assert!(p.dismount(false));
+        assert_eq!(p.height, HEIGHT);
+        assert!((p.y - y_before).abs() < 0.01, "the restore returns the top");
+        assert!(
+            p.buffs.find_buff_index(162).is_none(),
+            "the buff cleared (:6150)"
+        );
+    }
+
+    #[test]
+    fn cced_dismounts_the_mount_mid_tick() {
+        // DW-2.6 — `Player.cs:26799-26812`: the Frozen buff CCs, the mount
+        // dismounts during the same tick.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(10, false);
+        p.buffs.add_buff(47, 100); // BuffID.Frozen
+        p.update(&w, PlayerInput::default());
+        assert!(!p.mount.is_active(), "CCed dismounts");
+        assert_eq!(p.height, HEIGHT, "the hitbox restored");
+    }
+
+    #[test]
+    fn the_auto_jump_refill_uses_just_jumped() {
+        // `:26776-26781` — a constant-jump mount's re-jump refills the flight
+        // budget (`autoJump && justJumped`).
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..60 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.set_mount(50, false); // Queen Slime: constantJump + flightTimeMax 80
+        let press = PlayerInput {
+            jump: true,
+            ..Default::default()
+        };
+        p.update(&w, press);
+        assert!(p.auto_jump, "the mount head-sets autoJump (:4797)");
+        assert!(p.just_jumped, "the grounded trigger sets justJumped");
+        assert!(p.mount.fly_time() > 0, "ResetFlightTime refilled (:26777)");
     }
 }
