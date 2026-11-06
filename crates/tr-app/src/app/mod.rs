@@ -134,6 +134,8 @@ pub(crate) struct App {
     /// The worm chain id counter (`AI_006`'s chain identity) — the head
     /// takes the next id, the segments share it.
     pub(crate) next_worm_id: u32,
+    /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
+    pub(crate) creative_powers: crate::creative::CreativePowers,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -399,6 +401,12 @@ pub(crate) struct App {
     pub(crate) item_step: FixedStepper,
     /// Remaining seconds of the current held-item swing.
     pub(crate) swing: f32,
+    /// The swing's `useStyle` — the held item's at the swing start
+    /// (`Player.cs:4449`'s `ApplyItemAnimation` carries it).
+    pub(crate) swing_style: u8,
+    /// The aim angle (the mouse direction, radians) the shooting/throwing
+    /// styles read — `Player.itemRotation`'s source for useStyle 5.
+    pub(crate) swing_aim: f32,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -703,11 +711,77 @@ impl App {
         true
     }
 
+    /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
+    /// (`CreativePowers.cs:769-860`): the clock jumps to the target — the
+    /// (dayTime, time) pair from `button_target`. The boundary events (the
+    /// moon-phase roll, the event rolls) land with their tasks.
+    pub(crate) fn set_time_of_day(&mut self, id: crate::creative::PowerId) -> bool {
+        let Some((day, time)) = self.creative_powers.button_target(id) else {
+            return false;
+        };
+        self.world.day_time = day;
+        self.world.time = time;
+        true
+    }
+
     /// `Main.SetNPCShopIndex(-1)`'s equivalent.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
         self.shop_mood = 1.0;
+    }
+
+    /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
+    /// plus the removable debuffs x100, multiplied by the happiness
+    /// adjustment. The boss-progression/expert/discount multipliers sit
+    /// constants-off (the downed tracking lands with the boss work).
+    pub(crate) fn nurse_heal_cost(&self, nurse_idx: usize) -> i32 {
+        let Some(player) = self.player.as_ref() else {
+            return 0;
+        };
+        let missing = player.max_hp - player.hp;
+        let debuffs = player
+            .buffs
+            .active_types()
+            .iter()
+            .filter(|t| crate::buffs::is_debuff(**t))
+            .count() as i32;
+        let npc = &self.npcs[nurse_idx];
+        let mood = crate::happiness::process_mood(
+            &self.world,
+            &self.npcs,
+            npc,
+            player.center(),
+            false,
+        );
+        nurse_heal_cost_for(missing, debuffs, mood.multiplier)
+    }
+
+    /// `Main.NPCChatText_DoNurseHeal` (`Main.cs:40103+`): `BuyItem(healCost)`
+    /// → the life to full + the removable debuffs cleared. Returns false
+    /// when the purse is short or there is nothing to heal.
+    pub(crate) fn nurse_heal(&mut self, nurse_idx: usize) -> bool {
+        let cost = self.nurse_heal_cost(nurse_idx);
+        if cost <= 0 || self.coins < cost as u64 {
+            return false;
+        }
+        let Some(player) = self.player.as_mut() else {
+            return false;
+        };
+        player.hp = player.max_hp;
+        // The removable debuffs clear (`DoNurseHeal`'s removal block).
+        let types: Vec<i32> = player
+            .buffs
+            .active_types()
+            .iter()
+            .copied()
+            .filter(|t| crate::buffs::is_debuff(*t))
+            .collect();
+        for t in types {
+            player.buffs.clear_buff(t);
+        }
+        self.coins -= cost as u64;
+        true
     }
 
     pub(crate) fn update_editing(&mut self, dt: f32, screen: Vec2) {
@@ -1344,6 +1418,7 @@ impl App {
             shop_stock: Vec::new(),
             shop_mood: 1.0,
             shop_closed_flag: false,
+            creative_powers: crate::creative::CreativePowers::new(),
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1580,6 +1655,8 @@ impl App {
             item_rng: world_seed ^ 0x5DEE_CE66_D1A4_9B5F,
             item_step: FixedStepper::new(1.0 / 60.0, 8),
             swing: 0.0,
+            swing_style: 0,
+            swing_aim: 0.0,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,
@@ -2725,4 +2802,12 @@ mod tr_hooks {
         assert!(!world.fast_forward_to_dawn && !world.fast_forward_to_dusk);
         assert_eq!((world.sundial_cooldown, world.moondial_cooldown), (0, 0));
     }
+}
+
+/// `GetNurseHealCost`'s core arithmetic (`Main.cs:40054-40100`): the
+/// missing life plus the removable debuffs x100, times the happiness
+/// adjustment. The boss-progression/expert/discount multipliers sit
+/// constants-off.
+pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
+    ((missing + debuff_count * 100) as f32 * mood) as i32
 }

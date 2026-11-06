@@ -194,6 +194,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         for i in 0..20 {
             p.equipped[i] = app.equip.armor[i].kind;
         }
+        p.swing_aim = app.swing_aim;
         let step = 1.0 / 60.0;
         app.player_step.tick(dt, |_| {
             p.update_with_grapple(&app.world, input, grapple_for_tick)

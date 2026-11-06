@@ -17,8 +17,42 @@ use tr_core::loot::DropRng;
 
 use super::items::spawn_item_drop;
 
+/// The `Player.ApplyItemAnimation` tail (`Player.cs:4449-4451`): the swing
+/// carries the item's `useStyle` and the current aim angle — the per-style
+/// body dispatch and the held-item draw read both.
+pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
+    app.swing_style = crate::item::use_style(held_kind);
+    let (sw, sh) = app.screen_size();
+    let mouse_world = Vec2::new(
+        app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+        app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+    );
+    let (cx, cy) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((app.camera.x, app.camera.y));
+    app.swing_aim = (mouse_world - Vec2::new(cx, cy)).y.atan2((mouse_world - Vec2::new(cx, cy)).x);
+}
+
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     app.swing = (app.swing - dt).max(0.0);
+    // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
+    // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
+    if app.swing > 0.0 && app.swing_style == 5 {
+        let (sw, sh) = app.screen_size();
+        let mouse_world = Vec2::new(
+            app.camera.x + (app.mouse_pos.x - sw * 0.5) / app.zoom,
+            app.camera.y + (app.mouse_pos.y - sh * 0.5) / app.zoom,
+        );
+        let (cx, cy) = app
+            .player
+            .as_ref()
+            .map(|p| p.center())
+            .unwrap_or((app.camera.x, app.camera.y));
+        let d = mouse_world - Vec2::new(cx, cy);
+        app.swing_aim = d.y.atan2(d.x);
+    }
     // `Player.releaseUseItem = !controlUseItem` runs every tick
     // (`Player.cs:42822`), so the press/release edges stay current even on
     // frames where the cursor is over the HUD or a panel.
@@ -134,6 +168,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -163,6 +198,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -243,6 +279,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // matches so the throw repeats only when the swing is over.
                     app.swing_max = crate::item::use_animation_secs(held.kind);
                     app.swing = app.swing_max;
+                    start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
                 }
             }
@@ -297,6 +334,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -326,6 +364,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 }
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
                 app.mine_target = None;
                 app.mine_timer = 0.0;
@@ -404,6 +443,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if app.swing <= 0.0 {
                 app.swing_max = crate::item::use_animation_secs(held.kind);
                 app.swing = app.swing_max;
+                start_swing_extras(app, held.kind);
             }
             // `PickTile_DetermineDamage` (`Player.cs:53830-53833`): a
             // `CanKillTile` refusal zeroes the pick damage — the swing
@@ -449,6 +489,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if app.swing <= 0.0 {
             app.swing_max = crate::item::use_animation_secs(held.kind);
             app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
         }
         if app.mine_target == Some((tx, ty)) {
             app.mine_timer += dt;

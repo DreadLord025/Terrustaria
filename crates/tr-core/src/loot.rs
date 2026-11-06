@@ -39,6 +39,114 @@ pub struct DropAttemptInfo<'a> {
     pub active_players: u32,
     /// `SpecialSeedFeatures.ShouldDropExtraGel` (`DropBasedOnExtraGel`).
     pub extra_gel: bool,
+    /// The world/event state the `Conditions.*` gates read (the caller
+    /// snapshots it once per drop attempt).
+    pub flags: LootFlags,
+    /// The dying NPC's fields the conditions read (`info.npc.*`).
+    pub npc: LootNpc,
+}
+
+/// The world/event snapshot the drop conditions read — `Main.hardMode`,
+/// `Main.bloodMoon`, `Main.xMas`, `Main.halloween`, `NPC.downed*`,
+/// `NPC.waveNumber`, the special seeds and the closest player's zones.
+#[derive(Clone, Copy, Default, Debug)]
+pub struct LootFlags {
+    pub hard_mode: bool,
+    /// `WorldGen.crimson` — the WORLD evil type, not the player zone.
+    pub crimson_world: bool,
+    pub blood_moon: bool,
+    pub day_time: bool,
+    pub xmas: bool,
+    pub halloween: bool,
+    /// `Main.tenthAnniversaryWorld`.
+    pub tenth_anniversary: bool,
+    /// `Main.dontStarveWorld`.
+    pub dont_starve: bool,
+    /// `WorldGen.Skyblock.lowTiles`.
+    pub skyblock: bool,
+    /// The player holds the Skyblock sickle (1786).
+    pub player_has_sickle: bool,
+    /// `SpecialSeedFeatures.RemixSeed`.
+    pub remix_seed: bool,
+    /// `SpecialSeedFeatures.Mechdusa`.
+    pub mechdusa: bool,
+    /// `Main.WindyEnoughForKiteDrops`.
+    pub windy: bool,
+    /// `NPC.waveNumber`.
+    pub wave_number: i32,
+    /// `Main.pumpkinMoon` / `Main.snowMoon`.
+    pub pumpkin_moon: bool,
+    pub frost_moon: bool,
+    pub downed_eoc: bool,
+    pub downed_boss2: bool,
+    pub downed_boss3: bool,
+    pub downed_mech1: bool,
+    pub downed_mech2: bool,
+    pub downed_mech3: bool,
+    /// `NPC.downedMechBossAny`.
+    pub downed_mech_any: bool,
+    /// `NPC.downedPlantera`.
+    pub downed_plantera: bool,
+    /// `NPC.downedPlantBoss` (`Conditions.FirstTimeKillingPlantera` inverts it).
+    pub downed_plant_boss: bool,
+    /// `NPC.downedMechdusa`.
+    pub downed_mechdusa: bool,
+    /// `Conditions.EmpressOfLightIsGenuinelyEnraged` — the caller folds the
+    /// AI-120 rage gate in.
+    pub empress_enraged: bool,
+    /// `Conditions.EyeOfCthulhuDefeatedAndNoAltarsInWorld`.
+    pub eoc_defeated_no_altars: bool,
+    /// The underworld depth band (`Conditions.LivingFlames`).
+    pub underworld: bool,
+    /// The closest player's zones (`Player.Zone*`).
+    pub zone_jungle: bool,
+    pub zone_corrupt: bool,
+    pub zone_crimson: bool,
+    pub zone_hallow: bool,
+    pub zone_desert: bool,
+    pub zone_snow: bool,
+    /// `Conditions.SoulOfWhateverConditionCanDrop`'s depth band.
+    pub soul_depth_ok: bool,
+    /// The PirateMap depth/ocean band (`Conditions.PirateMap`).
+    pub pirate_map_band: bool,
+    /// `HalloweenWeapons`' `info.npc.value` cap (500 × the difficulty mult).
+    pub halloween_value_cap: f32,
+    /// `HalloweenWeapons`' `info.npc.damage` cap (40 × the difficulty mult).
+    pub halloween_damage_cap: f32,
+    /// `Conditions.YoyoCascade`'s deep band (`y / 16 > maxTilesY - 350`).
+    pub deep_yoyo_band: bool,
+    /// `Conditions.YoyosHelFire`'s deep band
+    /// (`y / 16 > (rockLayer + maxTilesY * 2) / 3`).
+    pub helfire_band: bool,
+    /// The closest player's `Player.ZoneDungeon`.
+    pub zone_dungeon: bool,
+}
+
+/// The dying NPC's fields the conditions read (`info.npc.SpawnedFromStatue`,
+/// `.value > 0f`, `.lifeMax > 1`, `.damage > 0`, `.friendly`, `.type`).
+#[derive(Clone, Copy, Default, Debug)]
+pub struct LootNpc {
+    pub kind: i32,
+    /// `info.npc.value`.
+    pub value: f32,
+    /// `info.npc.lifeMax`.
+    pub life_max: i32,
+    /// `info.npc.damage`.
+    pub damage: i32,
+    /// `info.npc.defense`.
+    pub defense: i32,
+    pub friendly: bool,
+    /// `info.npc.boss` (`Conditions.LegacyHack_IsABoss`).
+    pub is_boss: bool,
+    pub spawned_from_statue: bool,
+    /// `NPCID.Sets.DontDropDungeonKeysOrSouls[type]`.
+    pub dont_drop_keys: bool,
+    /// The Twin's other half is absent (`Conditions.MissingTwin`).
+    pub twin_missing: bool,
+    /// The other Mechdusa parts are absent (`Conditions.MechdusaKill`).
+    pub mechdusa_parts_cleared: bool,
+    /// `info.npc.HasPlayerTarget` (the yoyo gates).
+    pub has_player_target: bool,
 }
 
 /// One resolved drop — the arguments of `CommonCode.DropItemFromNPC`.
@@ -181,6 +289,9 @@ fn resolve_chains(
 /// (`RegisterToNPC` / `RegisterToMultipleNPCs` / `RemoveFromMultipleNPCs`).
 #[derive(Default)]
 pub struct ItemDropDatabase {
+    /// `ItemDropDatabase._globalEntries` — applied to EVERY npc before the
+    /// per-net-id entries (`GetRulesForNPCID`, `ItemDropDatabase.cs:41-52`).
+    globals: Vec<Box<dyn ItemDropRule>>,
     rules: std::collections::BTreeMap<i32, Vec<Box<dyn ItemDropRule>>>,
 }
 
@@ -220,6 +331,11 @@ impl ItemDropDatabase {
     }
 
     /// `GetRulesForNPCID`.
+    /// `ItemDropDatabase.RegisterToGlobal` (`ItemDropDatabase.cs:55-59`).
+    pub fn register_global(&mut self, rule: Box<dyn ItemDropRule>) {
+        self.globals.push(rule);
+    }
+
     pub fn rules_for_npc(&self, net_id: i32) -> &[Box<dyn ItemDropRule>] {
         self.rules.get(&net_id).map(|v| v.as_slice()).unwrap_or(&[])
     }
@@ -232,6 +348,10 @@ pub fn try_dropping(
     info: &mut DropAttemptInfo,
     out: &mut Vec<DropRequest>,
 ) {
+    // `GetRulesForNPCID(includeGlobalDrops = true)`: the globals first.
+    for rule in &db.globals {
+        resolve_rule(rule.as_ref(), info, out);
+    }
     for rule in db.rules_for_npc(net_id) {
         resolve_rule(rule.as_ref(), info, out);
     }
@@ -465,6 +585,12 @@ pub struct CommonDrop {
     pub amount_min: i32,
     pub amount_max: i32,
     pub chance_numerator: i32,
+    /// `CommonDropNotScalingWithLuck` flips this off
+    /// (`ItemDropRule.NotScalingWithLuck`, `ItemDropRule.cs:50-52`).
+    pub uses_luck: bool,
+    /// `CommonDropScalingWithOnlyBadLuck` keeps only the bad-luck side
+    /// (`ItemDropRule.ScalingWithOnlyBadLuck`, `:45-48`).
+    pub bad_luck_only: bool,
     chains: Vec<ChainRule>,
 }
 
@@ -477,6 +603,8 @@ impl CommonDrop {
             amount_min: min,
             amount_max: max,
             chance_numerator: 1,
+            uses_luck: true,
+            bad_luck_only: false,
             chains: Vec::new(),
         })
     }
@@ -494,6 +622,8 @@ impl CommonDrop {
             amount_min: min,
             amount_max: max,
             chance_numerator,
+            uses_luck: true,
+            bad_luck_only: false,
             chains: Vec::new(),
         })
     }
@@ -509,8 +639,17 @@ impl ItemDropRule for CommonDrop {
         out: &mut Vec<DropRequest>,
     ) -> DropAttemptResult {
         // `CommonDrop.TryDroppingItem`: the stack range is inclusive of the
-        // maximum (`Next(min, max + 1)`).
-        if roll_luck(info.rng, info.luck, self.chance_denominator) < self.chance_numerator {
+        // maximum (`Next(min, max + 1)`). The luck variants swap the scaled
+        // luck for 0 (NotScalingWithLuck) or for its bad side only
+        // (ScalingWithOnlyBadLuck).
+        let luck = if !self.uses_luck {
+            0.0
+        } else if self.bad_luck_only {
+            info.luck.min(0.0)
+        } else {
+            info.luck
+        };
+        if roll_luck(info.rng, luck, self.chance_denominator) < self.chance_numerator {
             let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
             out.push(drop_request(self.item, stack, false));
             DropAttemptResult {
@@ -585,6 +724,9 @@ pub struct OneFromOptionsDrop {
     pub options: Vec<i32>,
     pub chance_denominator: i32,
     pub chance_numerator: i32,
+    /// `OneFromOptionsNotScaledWithLuckDropRule` flips this off
+    /// (`ItemDropRule.OneFromOptionsNotScalingWithLuck`).
+    pub uses_luck: bool,
     chains: Vec<ChainRule>,
 }
 
@@ -595,6 +737,7 @@ impl OneFromOptionsDrop {
             options: options.to_vec(),
             chance_denominator,
             chance_numerator: 1,
+            uses_luck: true,
             chains: Vec::new(),
         })
     }
@@ -1035,6 +1178,33 @@ impl<T: ItemDropRule + 'static> ChainSugar for T {
     }
 }
 
+/// The erased-rule chain builders (the C# extension methods
+/// `Chains.OnSuccess`/`OnFailedRoll`/`OnFailedConditions` over `IItemDropRule`
+/// references; the `self: Box<Self>` receivers do not erase across `dyn`).
+pub fn chain_on_success(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+    rule.chains_mut().push(ChainRule {
+        kind: ChainKind::OnSuccess,
+        rule: sub,
+    });
+    rule
+}
+
+pub fn chain_on_failed_roll(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+    rule.chains_mut().push(ChainRule {
+        kind: ChainKind::OnFailedRoll,
+        rule: sub,
+    });
+    rule
+}
+
+pub fn chain_on_failed_conditions(mut rule: Box<dyn ItemDropRule>, sub: Box<dyn ItemDropRule>) -> Box<dyn ItemDropRule> {
+    rule.chains_mut().push(ChainRule {
+        kind: ChainKind::OnDoesntFillConditions,
+        rule: sub,
+    });
+    rule
+}
+
 // --- Conditions (the few the engine and the tests need; the ~71 concrete
 // classes land with M4-LOOT-2's registrations) --------------------------------
 
@@ -1089,6 +1259,11 @@ pub fn boss_bag(item: i32) -> Box<dyn ItemDropRule> {
     )
 }
 
+/// The `Common` factory (`ItemDropRule.cs:7-10`).
+pub fn common(item: i32, chance_denominator: i32, min: i32, max: i32) -> Box<dyn ItemDropRule> {
+    CommonDrop::new(item, chance_denominator, min, max)
+}
+
 /// The `NormalvsExpert` factory (`ItemDropRule.cs:86-89`).
 pub fn normalvs_expert(item: i32, denom_normal: i32, denom_expert: i32) -> Box<dyn ItemDropRule> {
     DropBasedOnExpertMode::new(
@@ -1119,6 +1294,576 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
     DropNothing::new()
 }
 
+// --- Conditions (`GameContent/ItemDropRules/Conditions.cs`) ------------------
+//
+// The data-driven `Cond` enum ports the gates the registrations use; each
+// variant's `can_drop` is the verbatim `Conditions.<Name>.CanDrop` body over
+// [`LootFlags`]/[`LootNpc`] (the caller snapshots the world/player/NPC state).
+
+/// `Conditions.SoulOfWhateverConditionCanDrop` (`Conditions.cs:805-855`): the
+/// depth band below the cavern layer, shared by the two soul conditions.
+fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
+    info.flags.soul_depth_ok
+}
+
+/// The pumpkin/frost moon gates' wave-scaled chance denominator
+/// (`Conditions.cs:55-122`).
+fn moon_wave_gate(rng: &mut dyn DropRng, luck: f32, is_pumpkin: bool, is_expert: bool, wave: i32) -> bool {
+    let mut num = wave;
+    if is_expert {
+        num += 5;
+    }
+    let base = if is_pumpkin { 24 } else { 28 };
+    let mut num2 = ((base - num) as f64 / 2.5) as i32;
+    if is_expert {
+        num2 -= if is_pumpkin { 1 } else { 2 };
+    }
+    if num2 < 1 {
+        num2 = 1;
+    }
+    // `info.player.RollLuck(num2) == 0` (`Player.RollLuck` = the luck roll).
+    roll_luck(rng, luck, num2) == 0
+}
+
+/// The trophy gates' wave table (`Conditions.cs:124-180`).
+fn moon_trophy_gate(rng: &mut dyn DropRng, is_pumpkin: bool, is_expert: bool, wave: i32) -> bool {
+    if wave < 15 {
+        return false;
+    }
+    let mut num = 4;
+    if wave == 17 || wave == 18 {
+        num = 3;
+    }
+    if wave >= 19 {
+        num = 2;
+    }
+    // `if (Main.expertMode && Main.rand.Next(3) == 0) num--;`
+    if is_expert && rng.next_range(0, 3) == 0 {
+        num -= 1;
+    }
+    rng.next_range(0, num) == 0
+}
+
+/// Every `Conditions.*` gate the database registrations reference, keyed for
+/// the data-driven rules.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Cond {
+    NotExpert,
+    IsExpert,
+    IsMasterMode,
+    /// `Conditions.Easymode` — `!Main.hardMode`.
+    Easymode,
+    IsHardmode,
+    WindyEnoughForKiteDrops,
+    RemixSeed,
+    NotRemixSeed,
+    NotRemixSeedHardmode,
+    RemixSeedHardmode,
+    RemixSeedEasymode,
+    NotRemixSeedEasymode,
+    TenthAnniversaryIsUp,
+    TenthAnniversaryIsNotUp,
+    DontStarveIsUp,
+    DontStarveIsNotUp,
+    /// `Conditions.SkyblockIsUp` (`WorldGen.Skyblock.lowTiles`).
+    SkyblockIsUp,
+    /// `Conditions.SkyblockIsUpNoSickle` — up + the player lacks the sickle.
+    SkyblockIsUpNoSickle,
+    /// `Conditions.MechdusaKill` — the remix merge + the other parts gone.
+    MechdusaKill,
+    BeatAnyMechBoss,
+    DownedAllMechBosses,
+    DownedPlantera,
+    /// `Conditions.FirstTimeKillingPlantera` — `!NPC.downedPlantBoss`.
+    FirstTimeKillingPlantera,
+    /// `Conditions.MissingTwin` — the other Twin half is absent.
+    MissingTwin,
+    /// `Conditions.LegacyHack_IsABoss` — `info.npc.boss`.
+    LegacyHack_IsABoss,
+    LegacyHack_IsBossAndExpert,
+    LegacyHack_IsBossAndNotExpert,
+    IsBloodMoonAndNotFromStatue,
+    IsCrimsonAndNotExpert,
+    IsCorruptionAndNotExpert,
+    IsPumpkinMoon,
+    IsChristmas,
+    /// `Conditions.PumpkinMoonDropGatingChance` — the wave-scaled roll.
+    PumpkinMoonDropGatingChance,
+    FrostMoonDropGatingChance,
+    PumpkinMoonDropGateForTrophies,
+    FrostMoonDropGateForTrophies,
+    HalloweenWeapons,
+    HalloweenGoodieBagDrop,
+    XmasPresentDrop,
+    LivingFlames,
+    SoulOfLight,
+    SoulOfNight,
+    NotFromStatue,
+    PirateMap,
+    JungleKeyCondition,
+    CorruptKeyCondition,
+    CrimsonKeyCondition,
+    HallowKeyCondition,
+    FrozenKeyCondition,
+    DesertKeyCondition,
+    EyeOfCthulhuDefeatedAndNoAltarsInWorld,
+    EmpressOfLightIsGenuinelyEnraged,
+    /// `Conditions.FromCertainWaveAndAbove` — `NPC.waveNumber >= wave`.
+    FromCertainWaveAndAbove(i32),
+    /// `Conditions.YoyoCascade` (the pre-hardmode underground yoyo gate).
+    YoyoCascade,
+    YoyosAmarok,
+    YoyosYelets,
+    YoyosHelFire,
+    /// `Conditions.NeverTrue` (the explicit dead rule).
+    NeverTrue,
+}
+
+impl DropCondition for Cond {
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        let f = &info.flags;
+        let n = &info.npc;
+        match *self {
+            Cond::NotExpert => !info.is_expert,
+            Cond::IsExpert => info.is_expert,
+            Cond::IsMasterMode => info.is_master,
+            Cond::Easymode => !f.hard_mode,
+            Cond::IsHardmode => f.hard_mode,
+            Cond::WindyEnoughForKiteDrops => f.windy,
+            Cond::RemixSeed => f.remix_seed,
+            Cond::NotRemixSeed => !f.remix_seed,
+            Cond::NotRemixSeedHardmode => !f.remix_seed && f.hard_mode,
+            Cond::RemixSeedHardmode => f.remix_seed && f.hard_mode,
+            Cond::RemixSeedEasymode => f.remix_seed && !f.hard_mode,
+            Cond::NotRemixSeedEasymode => !f.remix_seed && !f.hard_mode,
+            Cond::TenthAnniversaryIsUp => f.tenth_anniversary,
+            Cond::TenthAnniversaryIsNotUp => !f.tenth_anniversary,
+            Cond::DontStarveIsUp => f.dont_starve,
+            Cond::DontStarveIsNotUp => !f.dont_starve,
+            Cond::SkyblockIsUp => f.skyblock,
+            Cond::SkyblockIsUpNoSickle => f.skyblock && !f.player_has_sickle,
+            Cond::MechdusaKill => f.mechdusa && n.mechdusa_parts_cleared,
+            Cond::BeatAnyMechBoss => f.downed_mech_any,
+            Cond::DownedAllMechBosses => f.downed_mech1 && f.downed_mech2 && f.downed_mech3,
+            Cond::DownedPlantera => f.downed_plantera,
+            Cond::FirstTimeKillingPlantera => !f.downed_plant_boss,
+            Cond::MissingTwin => n.twin_missing,
+            Cond::LegacyHack_IsABoss => n.is_boss,
+            Cond::LegacyHack_IsBossAndExpert => n.is_boss && info.is_expert,
+            Cond::LegacyHack_IsBossAndNotExpert => n.is_boss && !info.is_expert,
+            Cond::IsBloodMoonAndNotFromStatue => {
+                !f.day_time && f.blood_moon && !n.spawned_from_statue
+            }
+            Cond::IsCrimsonAndNotExpert => f.crimson_world && !info.is_expert,
+            Cond::IsCorruptionAndNotExpert => !f.crimson_world && !info.is_expert,
+            Cond::IsPumpkinMoon => f.pumpkin_moon,
+            Cond::IsChristmas => f.xmas,
+            Cond::PumpkinMoonDropGatingChance => {
+                f.pumpkin_moon
+                    && moon_wave_gate(info.rng, info.luck, true, info.is_expert, f.wave_number)
+            }
+            Cond::FrostMoonDropGatingChance => {
+                f.frost_moon
+                    && moon_wave_gate(info.rng, info.luck, false, info.is_expert, f.wave_number)
+            }
+            Cond::PumpkinMoonDropGateForTrophies => {
+                f.pumpkin_moon
+                    && moon_trophy_gate(info.rng, true, info.is_expert, f.wave_number)
+            }
+            Cond::FrostMoonDropGateForTrophies => {
+                f.frost_moon
+                    && moon_trophy_gate(info.rng, false, info.is_expert, f.wave_number)
+            }
+            // `HalloweenWeapons` (`Conditions.cs:805-828`): the value/damage/
+            // defense caps over the difficulty multipliers (folded into the
+            // caps by the caller).
+            Cond::HalloweenWeapons => {
+                f.halloween
+                    && n.value > 0.0
+                    && n.value < f.halloween_value_cap
+                    && (n.damage as f32) < f.halloween_damage_cap
+                    && (n.defense as f32) < 20.0
+            }
+            Cond::HalloweenGoodieBagDrop => {
+                f.halloween
+                    && n.life_max > 1
+                    && n.damage > 0
+                    && !n.friendly
+                    && n.kind != 121
+                    && n.kind != 23
+                    && n.value > 0.0
+            }
+            Cond::XmasPresentDrop => {
+                f.xmas
+                    && n.life_max > 1
+                    && n.damage > 0
+                    && !n.friendly
+                    && n.kind != 121
+                    && n.kind != 23
+                    && n.value > 0.0
+            }
+            // `LivingFlames` (`Conditions.cs:940-955`): lifeMax > 5 + value +
+            // !friendly + hardmode + the underworld depth.
+            Cond::LivingFlames => {
+                n.life_max > 5 && n.value > 0.0 && !n.friendly && f.hard_mode && f.underworld
+            }
+            Cond::SoulOfLight => soul_of_whatever_can_drop(info) && f.zone_hallow,
+            Cond::SoulOfNight => {
+                soul_of_whatever_can_drop(info) && (f.zone_corrupt || f.zone_crimson)
+            }
+            Cond::NotFromStatue => !n.spawned_from_statue,
+            Cond::PirateMap => n.value > 0.0 && f.hard_mode && f.pirate_map_band,
+            Cond::JungleKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_jungle
+            }
+            Cond::CorruptKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_corrupt
+            }
+            Cond::CrimsonKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_crimson
+            }
+            Cond::HallowKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_hallow
+            }
+            Cond::FrozenKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_snow
+            }
+            // `DesertKeyCondition` adds `!player.ZoneBeach` — folded into the
+            // zone_desert snapshot (the caller excludes the beach).
+            Cond::DesertKeyCondition => {
+                n.value > 0.0 && !n.dont_drop_keys && f.hard_mode && f.zone_desert
+            }
+            Cond::EyeOfCthulhuDefeatedAndNoAltarsInWorld => f.eoc_defeated_no_altars,
+            Cond::EmpressOfLightIsGenuinelyEnraged => f.empress_enraged,
+            Cond::FromCertainWaveAndAbove(wave) => f.wave_number >= wave,
+            // The yoyo gates (`Conditions.cs:1699-1790`): the depth/hardmode
+            // bands over a worth-dropping NPC.
+            Cond::YoyoCascade => {
+                !f.hard_mode
+                    && n.has_player_target
+                    && n.life_max > 5
+                    && !n.friendly
+                    && n.value > 0.0
+                    && f.deep_yoyo_band
+                    && f.downed_boss3
+            }
+            Cond::YoyosAmarok => {
+                f.hard_mode
+                    && n.has_player_target
+                    && f.zone_snow
+                    && n.life_max > 5
+                    && !n.friendly
+                    && n.value > 0.0
+            }
+            Cond::YoyosYelets => {
+                f.hard_mode
+                    && f.zone_jungle
+                    && f.downed_mech_any
+                    && n.life_max > 5
+                    && n.has_player_target
+                    && !n.friendly
+                    && n.value > 0.0
+            }
+            Cond::YoyosHelFire => {
+                f.hard_mode
+                    && !f.zone_dungeon
+                    && f.helfire_band
+                    && n.life_max > 5
+                    && n.has_player_target
+                    && !n.friendly
+                    && n.value > 0.0
+            }
+            Cond::NeverTrue => false,
+        }
+    }
+}
+
+/// A boxed condition for the data rules.
+pub fn cond(kind: Cond) -> Box<dyn DropCondition> {
+    Box::new(kind)
+}
+
+/// `LeadingConditionRule` (`LeadingConditionRule.cs`): `CanDrop` = the
+/// condition; `TryDroppingItem` drops nothing and returns `Success`, so the
+/// `OnSuccess` chains fire only when the gate passes (a failed gate yields
+/// `DoesntFillConditions`).
+pub struct LeadingConditionRule {
+    pub condition: Box<dyn DropCondition>,
+    chains: Vec<ChainRule>,
+}
+
+impl LeadingConditionRule {
+    pub fn new(condition: Box<dyn DropCondition>) -> Box<Self> {
+        Box::new(Self {
+            condition,
+            chains: Vec::new(),
+        })
+    }
+}
+
+impl ItemDropRule for LeadingConditionRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn can_drop(&self, info: &mut DropAttemptInfo) -> bool {
+        self.condition.can_drop(info)
+    }
+    fn try_dropping_item(
+        &self,
+        _info: &mut DropAttemptInfo,
+        _out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+}
+impl_chains!(LeadingConditionRule);
+
+/// The leading-condition factory the generated table uses
+/// (`new LeadingConditionRule(new Conditions.X())`).
+pub fn leading_condition(condition: Cond) -> Box<dyn ItemDropRule> {
+    LeadingConditionRule::new(Box::new(condition))
+}
+
+/// `DropPerPlayerOnThePlayer` (`DropPerPlayerOnThePlayer.cs`): one stack roll
+/// PER active player (`MasterModeDropOnAllPlayers`' inner rule).
+pub struct DropPerPlayerOnThePlayer {
+    pub item: i32,
+    pub chance_denominator: i32,
+    pub amount_min: i32,
+    pub amount_max: i32,
+    pub condition: Option<Box<dyn DropCondition>>,
+    chains: Vec<ChainRule>,
+}
+
+impl DropPerPlayerOnThePlayer {
+    pub fn new(
+        item: i32,
+        chance_denominator: i32,
+        min: i32,
+        max: i32,
+        condition: Option<Box<dyn DropCondition>>,
+    ) -> Box<Self> {
+        Box::new(Self {
+            item,
+            chance_denominator,
+            amount_min: min,
+            amount_max: max,
+            condition,
+            chains: Vec::new(),
+        })
+    }
+}
+
+impl ItemDropRule for DropPerPlayerOnThePlayer {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // The condition rides the rule itself (the C# passes it to the
+        // constructor; `CanDrop` folds it in).
+        if let Some(cond) = &self.condition {
+            if !cond.can_drop(info) {
+                return DropAttemptResult {
+                    state: DropResultState::DoesntFillConditions,
+                };
+            }
+        }
+        // One `Next(min, max + 1)` roll per active player.
+        for _ in 0..info.active_players {
+            if info.rng.next_range(0, self.chance_denominator.max(1)) == 0 {
+                let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
+                out.push(drop_request(self.item, stack, false));
+            }
+        }
+        DropAttemptResult {
+            state: DropResultState::Success,
+        }
+    }
+}
+impl_chains!(DropPerPlayerOnThePlayer);
+
+/// `OneFromRulesRule` (`OneFromRulesRule.cs`): one passing sub-rule's drops.
+pub struct OneFromRulesRule {
+    pub rules: Vec<Box<dyn ItemDropRule>>,
+    chains: Vec<ChainRule>,
+}
+
+impl OneFromRulesRule {
+    pub fn new(rules: Vec<Box<dyn ItemDropRule>>) -> Box<Self> {
+        Box::new(Self {
+            rules,
+            chains: Vec::new(),
+        })
+    }
+}
+
+impl ItemDropRule for OneFromRulesRule {
+    fn chained_rules(&self) -> &[ChainRule] {
+        &self.chains
+    }
+    fn try_dropping_item(
+        &self,
+        info: &mut DropAttemptInfo,
+        out: &mut Vec<DropRequest>,
+    ) -> DropAttemptResult {
+        // The C# picks the first rule whose `TryDroppingItem` reports success
+        // (`OneFromRulesRule.TryDroppingItem`: the sequential walk).
+        for rule in &self.rules {
+            let result = resolve_rule(rule.as_ref(), info, out);
+            if result.state == DropResultState::Success {
+                return result;
+            }
+        }
+        DropAttemptResult {
+            state: DropResultState::FailedRandomRoll,
+        }
+    }
+}
+impl_chains!(OneFromRulesRule);
+
+// --- The remaining factories (`ItemDropRule.cs:15-115`) ----------------------
+
+/// The `MasterModeCommonDrop` factory (`ItemDropRule.cs:25-27`) — a plain
+/// `ByCondition(IsMasterMode)` gate.
+pub fn master_mode_common_drop(item: i32) -> Box<dyn ItemDropRule> {
+    by_condition(Cond::IsMasterMode, item, 1, 1, 1, 1)
+}
+
+/// The `MasterModeDropOnAllPlayers` factory (`ItemDropRule.cs:29-33`).
+pub fn master_mode_drop_on_all_players(item: i32, chance_denominator: i32) -> Box<dyn ItemDropRule> {
+    DropBasedOnMasterMode::new(
+        DropNothing::new(),
+        DropPerPlayerOnThePlayer::new(
+            item,
+            chance_denominator,
+            1,
+            1,
+            Some(Box::new(Cond::IsMasterMode)),
+        ),
+    )
+}
+
+/// The `BossBagByCondition` factory (`ItemDropRule.cs:15-23`).
+pub fn boss_bag_by_condition(condition: Cond, item: i32) -> Box<dyn ItemDropRule> {
+    DropBasedOnExpertMode::new(
+        DropNothing::new(),
+        DropLocalPerClientAndResetsMoney::with_condition(item, 1, 1, 1, Box::new(condition)),
+    )
+}
+
+/// The `WithRerolls` factory (`ItemDropRule.cs:35-39`).
+pub fn with_rerolls(
+    item: i32,
+    rerolls: i32,
+    chance_denominator: i32,
+    min: i32,
+    max: i32,
+) -> Box<dyn ItemDropRule> {
+    CommonDropWithRerolls::new(item, rerolls, chance_denominator, min, max)
+}
+
+/// The `ByCondition` factory (`ItemDropRule.cs:41-43`).
+pub fn by_condition(
+    condition: Cond,
+    item: i32,
+    chance_denominator: i32,
+    min: i32,
+    max: i32,
+    chance_numerator: i32,
+) -> Box<dyn ItemDropRule> {
+    let mut rule = ItemDropWithCondition::new(Box::new(condition), item, chance_denominator, min, max);
+    rule.chance_numerator = chance_numerator;
+    rule
+}
+
+/// The `Food` factory (`ItemDropRule.cs:107-110`) — the NotFromStatue gate
+/// (the `ItemID.Sets.IsFood` marking is the item registry's concern).
+pub fn food(item: i32, chance_denominator: i32, min: i32, max: i32) -> Box<dyn ItemDropRule> {
+    by_condition(Cond::NotFromStatue, item, chance_denominator, min, max, 1)
+}
+
+/// The `StatusImmunityItem` factory (`ItemDropRule.cs:112-115`).
+pub fn status_immunity_item(item: i32, drops_out_of_x: i32) -> Box<dyn ItemDropRule> {
+    expert_gets_rerolls(item, drops_out_of_x, 1)
+}
+
+/// The `ScalingWithOnlyBadLuck` factory (`ItemDropRule.cs:45-48`).
+pub fn scaling_with_only_bad_luck(
+    item: i32,
+    chance_denominator: i32,
+    min: i32,
+    max: i32,
+) -> Box<dyn ItemDropRule> {
+    let mut rule = CommonDrop::new(item, chance_denominator, min, max);
+    rule.bad_luck_only = true;
+    rule
+}
+
+/// The `NotScalingWithLuck` factory (`ItemDropRule.cs:50-52`).
+pub fn not_scaling_with_luck(
+    item: i32,
+    chance_denominator: i32,
+    min: i32,
+    max: i32,
+) -> Box<dyn ItemDropRule> {
+    let mut rule = CommonDrop::new(item, chance_denominator, min, max);
+    rule.uses_luck = false;
+    rule
+}
+
+/// The `OneFromOptionsNotScalingWithLuck` factory (`ItemDropRule.cs:54-56`).
+pub fn one_from_options_not_scaling_with_luck(
+    chance_denominator: i32,
+    options: &[i32],
+) -> Box<dyn ItemDropRule> {
+    let mut rule = OneFromOptionsDrop::new(chance_denominator, options);
+    rule.uses_luck = false;
+    rule
+}
+
+/// The `NormalvsExpertNotScalingWithLuck` factory (`ItemDropRule.cs:91-95`).
+pub fn normalvs_expert_not_scaling_with_luck(
+    item: i32,
+    denom_normal: i32,
+    denom_expert: i32,
+) -> Box<dyn ItemDropRule> {
+    DropBasedOnExpertMode::new(
+        not_scaling_with_luck(item, denom_normal, 1, 1),
+        not_scaling_with_luck(item, denom_expert, 1, 1),
+    )
+}
+
+/// The `NormalvsExpertOneFromOptions` factory (`ItemDropRule.cs:102-105`).
+pub fn normalvs_expert_one_from_options(
+    denom_normal: i32,
+    denom_expert: i32,
+    options: &[i32],
+) -> Box<dyn ItemDropRule> {
+    DropBasedOnExpertMode::new(
+        one_from_options(denom_normal, options),
+        one_from_options(denom_expert, options),
+    )
+}
+
+/// The `NormalvsExpertOneFromOptionsNotScalingWithLuck` factory
+/// (`ItemDropRule.cs:97-100`).
+pub fn normalvs_expert_one_from_options_not_scaling_with_luck(
+    denom_normal: i32,
+    denom_expert: i32,
+    options: &[i32],
+) -> Box<dyn ItemDropRule> {
+    DropBasedOnExpertMode::new(
+        one_from_options_not_scaling_with_luck(denom_normal, options),
+        one_from_options_not_scaling_with_luck(denom_expert, options),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1131,6 +1876,8 @@ mod tests {
             is_master: false,
             active_players: 1,
             extra_gel: false,
+            flags: LootFlags::default(),
+            npc: LootNpc::default(),
         }
     }
 

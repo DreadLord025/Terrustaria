@@ -259,6 +259,9 @@ pub struct Player {
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
+    /// `Player.itemRotation`'s source for useStyle 5 — the aim angle the App
+    /// updates per tick (`swing_aim`), mirrored onto the player for the draw.
+    pub swing_aim: f32,
     /// The accessory-granted `Player.lifeRegen` base (`Player.cs:13122`'s
     /// `lifeRegen += armorPiece.lifeRegen` - the Band's `Item.lifeRegen = 2`).
     accessory_life_regen: i32,
@@ -518,6 +521,7 @@ impl Player {
             sitting: false,
             no_knockback: false,
             accessory_life_regen: 0,
+            swing_aim: 0.0,
             equipped: [0; 20],
             pinned_jumps: [false; 9],
             pinned_balloon: false,
@@ -1666,17 +1670,87 @@ impl Player {
         }
     }
 
-    /// `PlayerFrame()` item-use branch for `useStyle == 1` (blocks and other placeables):
-    /// the body steps rows `1 -> 2 -> 3` as `itemAnimation` runs out. `remaining` is
-    /// `itemAnimation / itemAnimationMax` (1 at the start of the swing, 0 at the end).
-    pub fn apply_item_use_frame(&mut self, remaining: f32) {
-        self.body_frame = if remaining < 0.333 {
-            3
-        } else if remaining < 0.666 {
-            2
-        } else {
-            1
-        };
+    /// `PlayerFrame()`'s item-use branch (`Player.cs:36307-36444`): the body
+    /// rows per useStyle while `itemAnimation > 0`. `remaining` is
+    /// `itemAnimation / itemAnimationMax` (1 at the swing's start, 0 at the
+    /// end — the C# compares `itemAnimation` against the fractions directly);
+    /// `aim_relative` is `itemRotation * direction` (the shooting styles'
+    /// rows read it). The quirks are verbatim: style 3's both branches are
+    /// row 3, style 5 reads the aim, style 13 mirrors style 1.
+    pub fn apply_item_use_frame(&mut self, remaining: f32, use_style: u8, aim_relative: f32) {
+        // The inverted remaining: `itemAnimation > max * frac` ==
+        // `remaining < (1 - frac)` (itemAnimation runs 1 -> 0).
+        let inv = 1.0 - remaining;
+        match use_style {
+            // `:36312-36326` (blocks/placeables; `type == 0` shares it) —
+            // rows 1 -> 2 -> 3 by thirds.
+            1 | 0 => {
+                self.body_frame = if remaining < 0.333 {
+                    3
+                } else if remaining < 0.666 {
+                    2
+                } else {
+                    1
+                };
+            }
+            // `:36327-36331` — DrinkOld: the first half row 3, then row 2.
+            7 => {
+                self.body_frame = if remaining > 0.5 { 3 } else { 2 };
+            }
+            // `:36332-36334` — EatFood: row 3 through the use.
+            2 => self.body_frame = 3,
+            // `:36335-36345` — MowTheLawn: >half row 4, >15% row 3, else 2.
+            11 => {
+                self.body_frame = if remaining > 0.5 {
+                    4
+                } else if remaining > 0.15 {
+                    3
+                } else {
+                    2
+                };
+            }
+            // `:36346-36348` — DrinkLiquid: row 0.
+            9 => self.body_frame = 0,
+            // `:36349-36362` — DrinkLong: the progress `* 6` clamped at 1,
+            // >= 0.5 row 3 else row 2.
+            6 => {
+                let num20 = (inv * 6.0).min(1.0);
+                self.body_frame = if num20 >= 0.5 { 3 } else { 2 };
+            }
+            // `:36363-36372` — Thrust: BOTH branches row 3 (the vanilla
+            // quirk — `:36368`'s else is dead).
+            3 => self.body_frame = 3,
+            // `:36373-36375` — HoldUp: row 2.
+            4 => self.body_frame = 2,
+            // `:36376-36378` — GolfPlay: row 0.
+            8 => self.body_frame = 0,
+            // `:36379-36381` — Guitar: row 3.
+            12 => self.body_frame = 3,
+            // `:36382-36392` — Rapier: the same thirds as style 1.
+            13 => {
+                self.body_frame = if remaining < 0.333 {
+                    3
+                } else if remaining < 0.666 {
+                    2
+                } else {
+                    1
+                };
+            }
+            // `:36393-36444` — Shoot: the rows read `itemRotation *
+            // direction` (the aim): the default row 3, past -0.75 row 2
+            // (gravDir -1: row 4), past 0.6 row 4 (gravDir -1: row 2).
+            5 => {
+                self.body_frame = 3;
+                let num21 = aim_relative;
+                if num21 < -0.75 {
+                    self.body_frame = 2;
+                }
+                if num21 > 0.6 {
+                    self.body_frame = 4;
+                }
+            }
+            _ => {}
+        }
     }
 
     /// The expired-buff sweep of `Player.Update` (`Player.cs:25608-25616`): a
@@ -4086,6 +4160,81 @@ mod tests {
         assert!(p.has_jump_options[ExtraJump::Cloud.index()]);
         assert_eq!(p.rocket_boots, 3);
         assert!(!p.has_jump_options[ExtraJump::Sandstorm.index()]);
+    }
+
+    #[test]
+    fn the_use_style_body_dispatch_matches_the_playerframe_chain() {
+        // `Player.cs:36307-36444`: the body rows per useStyle. `remaining` is
+        // `itemAnimation / itemAnimationMax` (1 at the start, 0 at the end).
+        let w = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&w);
+        // Style 1 (Swing): the thirds 1 -> 2 -> 3.
+        p.apply_item_use_frame(0.9, 1, 0.0);
+        assert_eq!(p.body_frame, 1, "style 1 first third");
+        p.apply_item_use_frame(0.5, 1, 0.0);
+        assert_eq!(p.body_frame, 2, "style 1 middle third");
+        p.apply_item_use_frame(0.1, 1, 0.0);
+        assert_eq!(p.body_frame, 3, "style 1 last third");
+        // Style 7 (DrinkOld): the first half row 3, then 2.
+        p.apply_item_use_frame(0.75, 7, 0.0);
+        assert_eq!(p.body_frame, 3, "style 7 first half");
+        p.apply_item_use_frame(0.25, 7, 0.0);
+        assert_eq!(p.body_frame, 2, "style 7 second half");
+        // Style 2 (EatFood): row 3 through the use.
+        p.apply_item_use_frame(0.5, 2, 0.0);
+        assert_eq!(p.body_frame, 3);
+        // Style 11 (MowTheLawn): >half 4, >15% 3, else 2.
+        p.apply_item_use_frame(0.75, 11, 0.0);
+        assert_eq!(p.body_frame, 4, "style 11 first half");
+        p.apply_item_use_frame(0.3, 11, 0.0);
+        assert_eq!(p.body_frame, 3, "style 11 middle");
+        p.apply_item_use_frame(0.05, 11, 0.0);
+        assert_eq!(p.body_frame, 2, "style 11 tail");
+        // Style 9 (DrinkLiquid): row 0.
+        p.apply_item_use_frame(0.5, 9, 0.0);
+        assert_eq!(p.body_frame, 0);
+        // Style 6 (DrinkLong): `num20 = progress * 6` clamped at 1 - the
+        // row flips to 3 once num20 passes 0.5 (progress > 1/12).
+        p.apply_item_use_frame(0.99, 6, 0.0);
+        assert_eq!(p.body_frame, 2, "style 6 start - num20 = 0.06");
+        p.apply_item_use_frame(0.9, 6, 0.0);
+        assert_eq!(p.body_frame, 3, "style 6 mid - num20 = 0.6");
+        p.apply_item_use_frame(0.05, 6, 0.0);
+        assert_eq!(p.body_frame, 3, "style 6 late - num20 clamps at 1");
+        // Style 3 (Thrust): BOTH branches row 3 - the vanilla quirk.
+        p.apply_item_use_frame(0.9, 3, 0.0);
+        assert_eq!(p.body_frame, 3, "style 3 first third");
+        p.apply_item_use_frame(0.1, 3, 0.0);
+        assert_eq!(p.body_frame, 3, "style 3 last third");
+        // Style 4 (HoldUp): row 2 through the use.
+        p.apply_item_use_frame(0.5, 4, 0.0);
+        assert_eq!(p.body_frame, 2);
+        // Style 8 (GolfPlay): row 0. Style 12 (Guitar): row 3.
+        p.apply_item_use_frame(0.5, 8, 0.0);
+        assert_eq!(p.body_frame, 0);
+        p.apply_item_use_frame(0.5, 12, 0.0);
+        assert_eq!(p.body_frame, 3);
+        // Style 13 (Rapier): the thirds mirror style 1.
+        p.apply_item_use_frame(0.9, 13, 0.0);
+        assert_eq!(p.body_frame, 1);
+        p.apply_item_use_frame(0.1, 13, 0.0);
+        assert_eq!(p.body_frame, 3);
+        // Style 5 (Shoot): the aim-relative rows - the default 3, past
+        // -0.75 row 2, past 0.6 row 4.
+        p.apply_item_use_frame(0.5, 5, 0.0);
+        assert_eq!(p.body_frame, 3, "style 5 aim centred");
+        p.apply_item_use_frame(0.5, 5, -0.9);
+        assert_eq!(p.body_frame, 2, "style 5 aim high");
+        p.apply_item_use_frame(0.5, 5, 0.9);
+        assert_eq!(p.body_frame, 4, "style 5 aim low");
+    }
+
+    #[test]
+    fn the_use_style_carries_from_the_held_item() {
+        // `item::use_style` reads the ItemDef's `useStyle`.
+        assert_eq!(crate::item::use_style(36), 1, "the wooden sword swings");
+        assert_eq!(crate::item::use_style(31), 1, "the bottle places");
+        assert_eq!(crate::item::use_style(0), 0, "the empty hand");
     }
 
     /// Arms the Cloud + Sandstorm options on a settled player — through the

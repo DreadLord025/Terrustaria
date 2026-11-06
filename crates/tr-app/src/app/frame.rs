@@ -62,7 +62,13 @@ impl App {
             self.pan_camera(dt);
         }
         if !time_frozen() {
-            advance_time(&mut self.world, dt);
+            // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
+            // `:1441`): the powers' multiplier folds into the clock tick
+            // (the freeze stops the advance entirely).
+            let rate = self.creative_powers.time_rate();
+            if rate > 0.0 {
+                advance_time(&mut self.world, dt * rate);
+            }
         }
         // `Main.cs:19751-19765`: with Autosave on, `WorldGen.saveAndPlay` runs
         // every 600000 ms (10 minutes); the player/map save rides along.
@@ -402,7 +408,12 @@ impl App {
             .map_or(0, |s| item::hold_style(s.kind));
         if let Some(p) = render_player.as_mut() {
             if self.swing > 0.0 && self.inventory[self.selected].count > 0 {
-                p.apply_item_use_frame(self.swing / self.swing_max.max(f32::EPSILON));
+                let aim_relative = self.swing_aim * p.facing as f32;
+                p.apply_item_use_frame(
+                    self.swing / self.swing_max.max(f32::EPSILON),
+                    self.swing_style,
+                    aim_relative,
+                );
             } else if held_hold_style == 1 {
                 p.body_frame = 3;
             }

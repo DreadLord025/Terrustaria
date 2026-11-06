@@ -333,6 +333,13 @@ fn portrait_data(
         NpcKind::EaterOfWorldsTail => 33,
         NpcKind::Merchant => 34,
         NpcKind::Dryad => 35,
+        NpcKind::Nurse => 36,
+        NpcKind::ArmsDealer => 37,
+        NpcKind::Demolitionist => 38,
+        NpcKind::Painter => 39,
+        NpcKind::WitchDoctor => 40,
+        NpcKind::Clothier => 41,
+        NpcKind::EyeOfCthulhu => 42,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -398,6 +405,13 @@ fn portrait_data(
         (NpcKind::EaterOfWorldsTail, _) => (sheet_i, 38.0, 38.0, 38.0, white),
         (NpcKind::Merchant, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Dryad, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Nurse, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::ArmsDealer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Demolitionist, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Painter, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::WitchDoctor, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::Clothier, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
     }
 }

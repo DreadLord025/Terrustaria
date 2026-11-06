@@ -117,6 +117,34 @@ pub enum NpcKind {
     /// twin; the shop index 3; the arrival rides the downedBoss1 gate —
     /// the boss-downed tracking lands with the boss work).
     Dryad,
+    /// `NPCID.Nurse` (18) — the healer town NPC (`NPC.cs:8994`: the town
+    /// twin; no shop — the heal interaction rides the right-click; the
+    /// arrival `SpawnAllowed_Nurse`, `NPC.cs:7158`).
+    Nurse,
+    /// `NPCID.ArmsDealer` (19) — the ammo seller (`NPC.cs:9008`: the town
+    /// twin; the shop index 2; the arrival `SpawnAllowed_ArmsDealer`,
+    /// `NPC.cs:7092` — the bullets in the inventory).
+    ArmsDealer,
+    /// `NPCID.Demolitionist` (38) — the explosive seller (`NPC.cs:9211`:
+    /// the town twin; the shop index 4; the arrival
+    /// `SpawnAllowed_Demolitionist`, `NPC.cs:7067` — the bombs in the
+    /// inventory).
+    Demolitionist,
+    /// `NPCID.Painter` (227) — the paint seller (`NPC.cs:11925`: the town
+    /// twin; the shop index 15; the arrival = at least 2 other town NPCs).
+    Painter,
+    /// `NPCID.WitchDoctor` (228) — the jungle shaman (`NPC.cs:11942`: the
+    /// town twin; the shop index 16; the arrival rides the downedQueenBee
+    /// gate — constants-off until the boss-downed tracking).
+    WitchDoctor,
+    /// `NPCID.Clothier` (54) — the tailor (`NPC.cs:9446`: the town twin;
+    /// the shop index 5; the arrival rides the downedSkeletron gate —
+    /// constants-off).
+    Clothier,
+    /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
+    /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
+    /// death sets `downed_eoc` and opens the Dryad's arrival).
+    EyeOfCthulhu,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -319,6 +347,13 @@ impl NpcKind {
             NpcKind::EaterOfWorldsTail => 33,
             NpcKind::Merchant => 34,
             NpcKind::Dryad => 35,
+            NpcKind::Nurse => 36,
+            NpcKind::ArmsDealer => 37,
+            NpcKind::Demolitionist => 38,
+            NpcKind::Painter => 39,
+            NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
         }
     }
 
@@ -360,6 +395,13 @@ impl NpcKind {
             33 => NpcKind::EaterOfWorldsTail,
             34 => NpcKind::Merchant,
             35 => NpcKind::Dryad,
+            36 => NpcKind::Nurse,
+            37 => NpcKind::ArmsDealer,
+            38 => NpcKind::Demolitionist,
+            39 => NpcKind::Painter,
+            40 => NpcKind::WitchDoctor,
+            41 => NpcKind::Clothier,
+            42 => NpcKind::EyeOfCthulhu,
             _ => return None,
         })
     }
@@ -434,6 +476,14 @@ impl NpcKind {
             NpcKind::Guide => (18.0, 40.0),
             NpcKind::Merchant => (18.0, 40.0),
             NpcKind::Dryad => (18.0, 40.0),
+            NpcKind::Nurse => (18.0, 40.0),
+            NpcKind::ArmsDealer => (18.0, 40.0),
+            NpcKind::Demolitionist => (18.0, 40.0),
+            NpcKind::Painter => (18.0, 40.0),
+            NpcKind::WitchDoctor => (18.0, 40.0),
+            NpcKind::Clothier => (18.0, 40.0),
+            // `SetDefaults` case 4 (`NPC.cs:8706`): 100x110.
+            NpcKind::EyeOfCthulhu => (100.0, 110.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -491,6 +541,20 @@ impl NpcKind {
             NpcKind::Merchant => 250,
             // `SetDefaults` case 20 (`NPC.cs:9032`): 250 HP.
             NpcKind::Dryad => 250,
+            // `SetDefaults` case 18 (`NPC.cs:9002` region): 250 HP.
+            NpcKind::Nurse => 250,
+            // `SetDefaults` case 19 (`NPC.cs:9016`): 250 HP.
+            NpcKind::ArmsDealer => 250,
+            // `SetDefaults` case 38 (`NPC.cs:9019` region): 250 HP.
+            NpcKind::Demolitionist => 250,
+            // `SetDefaults` case 227 (`NPC.cs:11933`): 250 HP.
+            NpcKind::Painter => 250,
+            // `SetDefaults` case 228 (`NPC.cs:11950`): 250 HP.
+            NpcKind::WitchDoctor => 250,
+            // `SetDefaults` case 54 (`NPC.cs:9456`): 250 HP.
+            NpcKind::Clothier => 250,
+            // `SetDefaults` case 4 (`NPC.cs:8710`): 2800 HP.
+            NpcKind::EyeOfCthulhu => 2800,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -537,6 +601,13 @@ impl NpcKind {
             // (the contact gate skips them).
             NpcKind::Merchant => 10,
             NpcKind::Dryad => 10,
+            NpcKind::Nurse => 10,
+            NpcKind::ArmsDealer => 10,
+            NpcKind::Demolitionist => 10,
+            NpcKind::Painter => 10,
+            NpcKind::WitchDoctor => 10,
+            NpcKind::Clothier => 10,
+            NpcKind::EyeOfCthulhu => 15,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -973,6 +1044,13 @@ impl Npc {
             // `SetDefaults` case 17: knockBackResist 0.5.
             NpcKind::Merchant => 0.5,
             NpcKind::Dryad => 0.5,
+            NpcKind::Nurse => 0.5,
+            NpcKind::ArmsDealer => 0.5,
+            NpcKind::Demolitionist => 0.5,
+            NpcKind::Painter => 0.5,
+            NpcKind::WitchDoctor => 0.5,
+            NpcKind::Clothier => 0.5,
+            NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::KingSlime => 0.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1029,6 +1107,13 @@ impl Npc {
             // `SetDefaults` case 17: defense 15.
             NpcKind::Merchant => 15,
             NpcKind::Dryad => 15,
+            NpcKind::Nurse => 15,
+            NpcKind::ArmsDealer => 15,
+            NpcKind::Demolitionist => 15,
+            NpcKind::Painter => 15,
+            NpcKind::WitchDoctor => 15,
+            NpcKind::Clothier => 15,
+            NpcKind::EyeOfCthulhu => 12,
             NpcKind::KingSlime => 10,
             NpcKind::Slime => unreachable!(),
         }
@@ -1083,6 +1168,14 @@ impl Npc {
             // The town NPCs carry no coin value.
             NpcKind::Merchant => 0.0,
             NpcKind::Dryad => 0.0,
+            NpcKind::Nurse => 0.0,
+            NpcKind::ArmsDealer => 0.0,
+            NpcKind::Demolitionist => 0.0,
+            NpcKind::Painter => 0.0,
+            NpcKind::WitchDoctor => 0.0,
+            NpcKind::Clothier => 0.0,
+            // `SetDefaults` case 4: value 30000 (the coin drop).
+            NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::KingSlime => 10_000.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -1195,9 +1288,16 @@ impl Npc {
             NpcKind::Slime => self.update_slime(world, player, dt),
             NpcKind::DemonEye | NpcKind::WanderingEye => self.update_eye(world, player, dt),
             NpcKind::Zombie => self.update_zombie(world, player, dt),
-            NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad => {
-                self.update_guide(world, dt)
-            }
+            NpcKind::Guide
+            | NpcKind::Merchant
+            | NpcKind::Dryad
+            | NpcKind::Nurse
+            | NpcKind::ArmsDealer
+            | NpcKind::Demolitionist
+            | NpcKind::Painter
+            | NpcKind::WitchDoctor
+            | NpcKind::Clothier => self.update_guide(world, dt),
+            NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             NpcKind::CaveBat
@@ -1489,6 +1589,182 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::EyeOfCthulhu => {
+                // `Main.npcFrameCount[4]` = 2 (`Main.cs:67082`): the pupil
+                // blink over the 8-step accumulator (the AI_004 hover's
+                // frame machine, `NPC.cs:73800+`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::Clothier => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[54]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::WitchDoctor => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[228]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::Painter => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[227]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::Demolitionist => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[38]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::ArmsDealer => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[19]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::Nurse => {
+                // The town wander rides the Guide's 3-frame humanoid machine
+                // (`Main.npcFrameCount[18]` = 3, `Main.cs:67082`).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
             NpcKind::Dryad => {
                 // The town wander rides the Guide's 3-frame humanoid machine
                 // (`Main.npcFrameCount[20]` = 3, `Main.cs:67082`).
@@ -1984,6 +2260,95 @@ impl Npc {
         }
     }
 
+    /// `AI_004`'s EoC machine (`NPC.cs:19960-20700`) — the v1 phase
+    /// cycle without the Servant spawns and the <50% transformation (the
+    /// follow-ups): the hover accelerations toward the target (`ai[0]==0`'s
+    /// num10/num12 pair), the charge cycle (`ai[1]` 0→1→2 — the aim, the
+    /// velocity = the direct delta × 6, the 40-tick decel ×0.98), the day
+    /// flee (`Main.IsItDay() | dead` → the rise 0.04, `:20100` region).
+    fn update_eoc(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        // The day flee (`:20100`'s `Main.IsItDay() | dead` arm): the boss
+        // rises away and despawns off-world (the framework's guard).
+        if world.day_time {
+            self.vy -= 0.04;
+            self.x += self.vx;
+            self.y += self.vy;
+            if self.y < -500.0 {
+                self.hp = 0;
+            }
+            return;
+        }
+        // The hover target: above the player (the vanilla's
+        // `vector = target.Center - (0, num12)` offset — the num12
+        // accelerations seek the offset point).
+        let hover_y = pcy - 300.0;
+        // `ai[0]==0 && ai[1]==0` — the hover phase (the counter counts
+        // within it; the cast_windup selects the phase).
+        if self.cast_windup == 0 {
+            // The X: toward the player (num10 = 0.05? the vanilla's
+            // num10/num11 pair — the X accel to the player's X).
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.07;
+            if self.vx.abs() > 8.0 {
+                self.vx = 8.0 * self.vx.signum();
+            }
+            // The Y: toward the hover point (num10 = 0.05, the cap 8).
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.07;
+            if self.vy.abs() > 8.0 {
+                self.vy = 8.0 * self.vy.signum();
+            }
+            // `:20131-20144`: the charge timer — 600 ticks (the expert
+            // 0.35x) then the charge phase.
+            self.caster_counter += 1;
+            if self.caster_counter >= 600 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            // `ai[1]==1` (`:20196-20216`): the aim + the direct velocity.
+            self.rotation = self.vy.atan2(self.vx);
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 6.0;
+            self.vy = dy / d * 6.0;
+            self.cast_windup = 2;
+        } else {
+            // `ai[1]==2` (`:20217-20245`): the charge flies; after 40
+            // ticks the decel ×0.98 to the stop, then the hover resets.
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        // The rotation tracks the motion (the vanilla's eye spin — the
+        // port's hover arms set it on the charge only).
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        // `noTileCollide` — the direct integration (`:90495-90498`).
+        self.x += self.vx;
+        self.y += self.vy;
+        // The off-world guard.
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
     /// core, `:21404-21429`): the one-shot launch, then the straight fly
     /// through the tiles (`noGravity`/`noTileCollide`).
@@ -2102,7 +2467,16 @@ impl Npc {
             // reached the hurt path until this).
             if !matches!(
                 self.kind,
-                NpcKind::Guide | NpcKind::Merchant | NpcKind::Dryad
+                NpcKind::Guide
+                    | NpcKind::Merchant
+                    | NpcKind::Dryad
+                    | NpcKind::Nurse
+                    | NpcKind::ArmsDealer
+                    | NpcKind::Demolitionist
+                    | NpcKind::Painter
+                    | NpcKind::WitchDoctor
+                    | NpcKind::Clothier
+                    | NpcKind::EyeOfCthulhu
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -2163,6 +2537,13 @@ impl Npc {
             NpcKind::EaterOfWorldsTail => 33,
             NpcKind::Merchant => 34,
             NpcKind::Dryad => 35,
+            NpcKind::Nurse => 36,
+            NpcKind::ArmsDealer => 37,
+            NpcKind::Demolitionist => 38,
+            NpcKind::Painter => 39,
+            NpcKind::WitchDoctor => 40,
+            NpcKind::Clothier => 41,
+            NpcKind::EyeOfCthulhu => 42,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -3203,5 +3584,253 @@ mod tests {
         assert!(crate::spawner::spawn_allowed_dryad(true));
     }
 
+    #[test]
+    fn the_nurse_arrives_past_100_life() {
+        // `SpawnAllowed_Nurse` (`NPC.cs:7158-7171`): statLifeMax / 20 > 5 —
+        // the life maximum grew past the base 100.
+        use crate::spawner::spawn_allowed_nurse;
+        assert!(!spawn_allowed_nurse(100), "the base life waits");
+        assert!(spawn_allowed_nurse(120), "the first crystal arrives");
+        assert!(spawn_allowed_nurse(400), "the max life arrives");
+        assert!(!spawn_allowed_nurse(99));
+    }
+
+    #[test]
+    fn the_nurse_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 18 (the town twin); the
+        // bestiary entry round-trips; the biome prefs ride Register(18).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Nurse).expect("the nurse spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        assert_eq!(n.knock_back_resist(), 0.5);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Nurse, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 18);
+        assert_eq!(e.credit_id, "Nurse");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Nurse);
+        assert_eq!(prefs.len(), 2);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Hallow);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Snow);
+    }
+
+    #[test]
+    fn the_nurse_heal_cost_math() {
+        // `GetNurseHealCost`'s core: the missing life + the debuffs x100,
+        // x the happiness multiplier; the rounding truncates (the C# cast).
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 0, 1.0), 40);
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.0), 140);
+        assert_eq!(crate::app::nurse_heal_cost_for(0, 2, 1.0), 200);
+        // The content forest Guide multiplier (0.89) rides the service too.
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 0.89), 124);
+        // The ceiling 1.5.
+        assert_eq!(crate::app::nurse_heal_cost_for(40, 1, 1.5), 210);
+    }
+
+    #[test]
+    fn the_arms_dealer_arrives_on_bullets() {
+        // `SpawnAllowed_ArmsDealer` (`NPC.cs:7092-7116`): any inventory
+        // item with ammo == Bullet(97) or useAmmo == Bullet — the Musket
+        // Ball 97's own row answers.
+        use crate::spawner::spawn_allowed_arms_dealer;
+        assert!(spawn_allowed_arms_dealer(&[97]), "the musket balls arrive");
+        assert!(!spawn_allowed_arms_dealer(&[8, 28]), "the torches don't");
+        assert!(!spawn_allowed_arms_dealer(&[]), "the empty waits");
+    }
+
+    #[test]
+    fn the_arms_dealer_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 19 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(19).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::ArmsDealer).expect("the dealer spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::ArmsDealer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 19);
+        assert_eq!(e.credit_id, "ArmsDealer");
+        let prefs = crate::happiness::biome_preferences(NpcKind::ArmsDealer);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Desert);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Snow);
+        // The shop index 2: the base rows + the PlayerHasItem gates.
+        let stock = crate::shop::resolve_stock(2, &crate::shop::ShopFlags::default(), &[1258]);
+        assert!(stock.contains(&97) && stock.contains(&95) && stock.contains(&98));
+        assert!(stock.contains(&1261), "the has-item row opens");
+        assert!(!stock.contains(&1836), "the other has-item row stays shut");
+    }
+
+    #[test]
+    fn the_demolitionist_arrives_on_bombs() {
+        // `SpawnAllowed_Demolitionist` (`NPC.cs:7067-7091`): the bomb set's
+        // core rows (the Grenade 168, the Bomb 166, the Dynamite 157, the
+        // sticky pair, the Bomb Fish).
+        use crate::spawner::spawn_allowed_demolitionist;
+        assert!(spawn_allowed_demolitionist(&[168]), "the grenade arrives");
+        assert!(spawn_allowed_demolitionist(&[166]), "the bomb arrives");
+        assert!(spawn_allowed_demolitionist(&[157]), "the dynamite arrives");
+        assert!(!spawn_allowed_demolitionist(&[97, 8]), "the bullets don't count");
+        assert!(!spawn_allowed_demolitionist(&[]), "the empty waits");
+    }
+
+    #[test]
+    fn the_demolitionist_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 38 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(38); the
+        // shop index 4 carries the explosives.
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Demolitionist).expect("the demo spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Demolitionist, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 38);
+        assert_eq!(e.credit_id, "Demolitionist");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Demolitionist);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Ocean);
+        let stock = crate::shop::resolve_stock(4, &crate::shop::ShopFlags::default(), &[]);
+        assert!(stock.contains(&168) && stock.contains(&166) && stock.contains(&167));
+        assert!(!stock.contains(&265), "the hardmode row leaks");
+    }
+
+    #[test]
+    fn the_painter_arrives_with_two_neighbors() {
+        // The town-count rule: at least 2 OTHER town NPCs present.
+        use crate::spawner::spawn_allowed_painter;
+        assert!(!spawn_allowed_painter(0));
+        assert!(!spawn_allowed_painter(1));
+        assert!(spawn_allowed_painter(2), "two neighbors open the gate");
+    }
+
+    #[test]
+    fn the_painter_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 227 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(227); the
+        // shop index 15 carries the paints.
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Painter).expect("the painter spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Painter, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 227);
+        assert_eq!(e.credit_id, "Painter");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Painter);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Jungle);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Forest);
+        let stock = crate::shop::resolve_stock(15, &crate::shop::ShopFlags::default(), &[]);
+        for id in [1071, 1072, 1100, 1097, 1099, 1098, 1966] {
+            assert!(stock.contains(&id), "the paint row {id} missing");
+        }
+    }
+
+    #[test]
+    fn the_witch_doctor_arrival_gate_and_shop() {
+        // The arrival: the downedQueenBee gate (constants-off in the port).
+        assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
+        assert!(crate::spawner::spawn_allowed_witch_doctor(true));
+        // The shop index 16: the Blowgun and the Flask always; the
+        // conditionals constants-off.
+        let stock = crate::shop::resolve_stock(16, &crate::shop::ShopFlags::default(), &[]);
+        assert!(stock.contains(&1430) && stock.contains(&986));
+        assert!(!stock.contains(&1158), "the night row leaks");
+    }
+
+    #[test]
+    fn the_witch_doctor_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 228 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(228).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor)
+            .expect("the witch doctor spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::WitchDoctor, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 228);
+        assert_eq!(e.credit_id, "WitchDoctor");
+        let prefs = crate::happiness::biome_preferences(NpcKind::WitchDoctor);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Jungle);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
+    #[test]
+    fn the_clothier_arrival_gate_and_shop() {
+        // The arrival: the downedSkeletron gate (constants-off in the
+        // port).
+        assert!(!crate::spawner::spawn_allowed_clothier(false));
+        assert!(crate::spawner::spawn_allowed_clothier(true));
+        // The shop index 5: the always-on rows.
+        let stock = crate::shop::resolve_stock(5, &crate::shop::ShopFlags::default(), &[]);
+        for id in [254, 981, 269, 270, 271] {
+            assert!(stock.contains(&id), "the clothier row {id} missing");
+        }
+        assert!(!stock.contains(&242), "the day row leaks");
+    }
+
+    #[test]
+    fn the_clothier_town_npc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 54 (the town twin); the
+        // bestiary entry round-trips; the prefs ride Register(54).
+        let w = ground_air();
+        let n = Npc::spawn_town(&w, 60, NpcKind::Clothier).expect("the clothier spawns");
+        assert_eq!(n.size(), (18.0, 40.0));
+        assert_eq!(n.max_hp, 250);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Clothier, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 54);
+        assert_eq!(e.credit_id, "Clothier");
+        let prefs = crate::happiness::biome_preferences(NpcKind::Clothier);
+        assert_eq!(prefs[0].biome, crate::happiness::BiomeKind::Underground);
+        assert_eq!(prefs[1].biome, crate::happiness::BiomeKind::Hallow);
+    }
+
+    #[test]
+    fn the_eoc_charges_on_cycle() {
+        // `AI_004`'s v1 cycle: the hover 600 ticks → the charge (the
+        // direct velocity 6) → the 40-tick decel → the hover reset.
+        let mut w = ground_air();
+        w.day_time = false; // The boss fights at night (the day = the flee).
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc.hp = eoc.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The hover phase: 600 ticks moves the boss toward the hover point.
+        for _ in 0..600 {
+            eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(eoc.cast_windup == 1, "the charge phase armed");
+        // The charge: the velocity 6 toward the player.
+        eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
+        assert!((speed - 6.0).abs() < 0.1, "the charge speed ({speed})");
+        // The day flee: the boss rises.
+        let mut w2 = ground_air();
+        w2.day_time = true;
+        let mut eoc2 = Npc::new(NpcKind::EyeOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        eoc2.hp = eoc2.max_hp;
+        eoc2.update_rng(&w2, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc2.vy < 0.0, "the day flee rises");
+    }
+
+    #[test]
+    fn the_eoc_spawns_and_maps() {
+        // The stats ride `SetDefaults` case 4; the bestiary entry
+        // round-trips.
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::EyeOfCthulhu, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 4);
+        assert_eq!(e.credit_id, "EyeofCthulhu");
+        let mut eoc = Npc::new(NpcKind::EyeOfCthulhu, 0.0, 0.0, 1, 0.0);
+        assert_eq!(eoc.size(), (100.0, 110.0));
+        assert_eq!(eoc.max_hp, 2800);
+        assert_eq!(eoc.knock_back_resist(), 0.0);
+        let _ = (&w, &mut eoc);
+    }
+
 }
+
+
+
+
+
+
+
+
 

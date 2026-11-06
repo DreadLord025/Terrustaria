@@ -476,6 +476,57 @@ pub fn spawn_allowed_dryad(downed_boss1: bool) -> bool {
     downed_boss1
 }
 
+/// `NPC.SpawnAllowed_Nurse` (`NPC.cs:7158-7171`): any player's
+/// `statLifeMax / 20 > 5` — the life maximum grew past the base 100 (the
+/// first Life Crystal).
+pub fn spawn_allowed_nurse(life_max: i32) -> bool {
+    life_max / 20 > 5
+}
+
+/// `NPC.SpawnAllowed_ArmsDealer` (`NPC.cs:7092-7116`): any inventory item
+/// whose `ammo == Bullet(97)` or `useAmmo == Bullet` — the itemdata's
+/// `ammo`/`use_ammo` rows answer.
+pub fn spawn_allowed_arms_dealer(inventory_ids: &[u16]) -> bool {
+    inventory_ids
+        .iter()
+        .any(|id| {
+            crate::itemdata::ITEMS
+                .get(*id as usize)
+                .is_some_and(|d| d.ammo == 97 || d.use_ammo == 97)
+        })
+}
+
+/// `NPC.SpawnAllowed_Demolitionist` (`NPC.cs:7067-7091`): any inventory
+/// item in `ItemID.Sets.ItemsThatCountAsBombsForDemolitionistToSpawn` — the
+/// port carries the set's core rows (the Grenade 168, the Bomb 166, the
+/// Dynamite 157, the sticky pair 2896/2897, the Bomb Fish 2350; the set's
+/// full sweep grows with the data pass).
+pub fn spawn_allowed_demolitionist(inventory_ids: &[u16]) -> bool {
+    const BOMBS: [u16; 6] = [168, 166, 157, 2896, 2897, 2350];
+    inventory_ids
+        .iter()
+        .any(|id| BOMBS.contains(id))
+}
+
+/// The Painter's arrival: the vanilla `CheckForNPCsToSpawn`'s town-count
+/// rule — at least 2 OTHER town NPCs present (the wiki-standard count; the
+/// exact roll cadence rides the arrival work).
+pub fn spawn_allowed_painter(town_count_excluding: usize) -> bool {
+    town_count_excluding >= 2
+}
+
+/// The Witch Doctor's arrival gate: the vanilla rides `NPC.downedQueenBee`
+/// — the port's boss-downed tracking is constants-off (the boss work).
+pub fn spawn_allowed_witch_doctor(downed_queen_bee: bool) -> bool {
+    downed_queen_bee
+}
+
+/// The Clothier's arrival gate: the vanilla rides `NPC.downedSkeletron` —
+/// the port's boss-downed tracking is constants-off.
+pub fn spawn_allowed_clothier(downed_skeletron: bool) -> bool {
+    downed_skeletron
+}
+
 pub fn try_spawn_an_npc(ctx: &SpawnContext, rng: &mut FastRandom) -> Option<Npc> {
     let (spawn_area, safe_area) = get_spawn_area(ctx);
 

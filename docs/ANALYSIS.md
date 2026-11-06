@@ -2520,6 +2520,55 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The full drop database (M4-LOOT-2)
+
+`tools/gen_loot.py` reads the decompiled
+`GameContent/ItemDropRules/ItemDropDatabase.cs` `Populate()` and emits
+`crates/tr-app/src/loot_db_gen.rs` - `loot_db::database()`, **1421
+net-id registrations over the 643 C# register sites** in the C# order.
+The C# `RegisterToNPC(type)` expands to the type itself + the negative
+net-id family (`PrepareNPCNetIDsByTypeDictionary` over `NPCID.NetIdMap`
+- e.g. the type-1 slime family = `-3..-10`); the removal wrappers
+(`RemoveFromMultipleNPCs(RegisterToMultipleNPCs(...), ids)`) compute the
+net id set minus the removals, keeping the tough-slime gel split. The
+negative-id dedupe mirrors `TrimDuplicateRulesForNegativeIDs`.
+
+The engine grew the pieces the registrations need:
+
+- **`LootFlags` + `LootNpc`** - the world/event snapshot the conditions
+  read (the downed bosses 1/2/3/any/plantera/plant-boss, the seasons,
+  the special seeds, `NPC.waveNumber` + the pumpkin/frost moon formulas
+  verbatim, the closest player's zones, the pirate-map/soul depth bands,
+  the npc's `value`/`lifeMax`/`damage`/`defense`/`boss`/
+  `SpawnedFromStatue`); `spawn_loot` fills it from
+  `World.hard_mode`/`day_time` + the scene zones + the dying npc.
+- **`Cond`** - the data-driven enum porting ~50 `Conditions.*` gates;
+  the yoyo gates and the moon trophy tables carry their exact formulas.
+- **`LeadingConditionRule`** (`LeadingConditionRule.cs`: the condition
+  rides `CanDrop`, `TryDroppingItem` always `Success`), the free
+  functions `chain_on_success`/`chain_on_failed_roll` (the C#
+  extension methods; the `self: Box<Self>` receivers do not erase across
+  `dyn`), `DropPerPlayerOnThePlayer`, `OneFromRulesRule`, the luck
+  variants (`NotScalingWithLuck`/`ScalingWithOnlyBadLuck` flags on
+  `CommonDrop`, the OneFromOptions pair), and the
+  `Food`/`StatusImmunityItem`/`MasterModeCommonDrop`/
+  `MasterModeDropOnAllPlayers`/`BossBagByCondition` factories (all
+  compositions of the M4-LOOT-1 rules, exactly as `ItemDropRule.cs`
+  composes them).
+- **The global entries** - `RegisterToGlobal` (the biome keys, the
+  souls, the goodie bags, the kite drops) resolve before every NPC's
+  own rules (`GetRulesForNPCID(includeGlobalDrops = true)`).
+
+Findings: `corruption`/`crimson` recipe-style flags do not exist here -
+the evil drops gate on `Conditions.IsCorruption/CrimsonAndNotExpert`
+which read `WorldGen.crimson` (the WORLD type). The skipped rows
+(13, warned): the NamedNPC localization gates, the RedHat legendary
+gate, the MechBossSpawners/SlimeBody/StatueMimic/
+FromOptionsWithoutRepeats rule classes (each needs its own event state).
+The unknown item ids (the ~20 warn-only OneFromOptions sets) emit and
+resolve - the executor drops only registry-known items, so they surface
+as the registry scale-up work.
+
 ## Buff slots (M2-BUFF-1)
 
 `crates/tr-app/src/buffs.rs` ports the `Player.buffType[44]`/`buffTime[44]`
@@ -4455,3 +4504,45 @@ flag exists, no row sets it); the deco/shimmer variant rows
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
 >>>>>>> origin/main
+
+## The use styles + body dispatch (M3-ITEM-2)
+
+The `ItemUseStyleID.cs` constants: Swing 1, EatFood 2, Thrust 3, HoldUp 4,
+Shoot 5, DrinkLong 6, DrinkOld 7, GolfPlay 8, DrinkLiquid 9, Hidden 10,
+MowTheLawn 11, Guitar 12, Rapier 13, RaiseLamp 14, HoldOrb 15, PlaySound
+16. The body dispatch = `PlayerFrame`'s per-style chain
+(`Player.cs:36307-36444`); the held-item draw = `ItemDraw`'s per-style
+branches (`:50686-51243`).
+
+The port: `apply_item_use_frame(remaining, use_style, aim_relative)` ports
+the chain verbatim — the quirks preserved: style 3's both branches are row
+3 (the else is dead code in C#), style 5 reads `itemRotation *
+direction` (the aim) for rows 2/3/4 with the gravDir mirrors dead, style
+13 mirrors style 1, style 6's `num20 = progress * 6` clamps at 1 and the
+row flips at 0.5 (progress > 1/12), style 9/8 pin row 0. The real
+useStyle flows: `item::use_style(kind)` from the ItemDef, carried at the
+swing start (`start_swing_extras` — the `Player.ApplyItemAnimation` tail
+:4449-4451 with the 7 route sites) and per tick for the aim
+(`swing_aim` = the mouse angle, updated while a style-5 swing runs).
+
+The held-item draw: `use_style` in the composite state (was hardcoded 1)
+with the per-style branches — style 4 (rotation 0 + the
+beside-shoulder anchor), style 3 (the first third tucks the item
+offscreen — the vanilla `itemLocation = -1000` — then the `0.8 * dir`
+rotation with the X-thrust clamp ±8), style 5 (the rotation = the aim +
+the centre anchor). The composite arms: `swing_stand_in` grew the real
+per-style states — style 2's both arms −π/2 with the stretch Full→None
+over the quarters (`Player.cs:50953-50954`), style 11's front Quarter
+−π/4 + back Full −π/16 (`:51006-51007`), style 13's front at −π/2 by
+thirds (`:51195`); the others stay DISABLED (style 1 never calls
+`SetCompositeArm` in vanilla — `:50686-50953`).
+
+Deviations: the gravDir −1 mirrors are dead (no flipped gravity); style
+5's staff anchor (`Item.staff`) and loot special cases are out (no staff
+items in the port's registry subset); the display-doll/claw sub-branches
+(`:50689-50723`) are display-doll-only; styles 10/14/15/16 have no ported
+items yet (Hidden is the remote-only, RaiseLamp/HoldOrb are M4's,
+PlaySound is M4-TOWN-8's). The held-item draw's useStyle-2/13 item
+positions ride the generic centre anchor (the C# positions them via the
+composite arms' stretch-dependent offsets — the arms carry the pose; the
+item offset differences are sub-10px polish for the render pass).
