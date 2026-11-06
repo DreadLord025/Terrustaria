@@ -17,6 +17,12 @@ pub struct SavedPlayer {
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
     /// of the sidecar; older files load with all three empty.
     pub armor: [u16; 3],
+    /// `Player.dye[0..10]` item ids (0 = empty) — version 6; older files load
+    /// with all ten empty. The vanilla writes the dye array straight after
+    /// the armor, `type, prefix, favorited` per slot without a stack
+    /// (`Player.cs:54818-54822`); the port keeps the kinds (the slot model
+    /// carries no prefix/favorited) and restores each as a single stack.
+    pub dye: [u16; 10],
     /// `Main.BestiaryTracker.Kills`' pairs — version 5; older files load
     /// with none. Vanilla keeps the same pairs in world-file section 11
     /// (`NPCKillsTracker.Save`, M6-SAVE-1's scope).
@@ -40,9 +46,10 @@ pub fn save(
     inventory: [(u16, u32); 50],
     coins: u64,
     armor: [u16; 3],
+    dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("5\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("6\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -56,6 +63,12 @@ pub fn save(
         s.push_str(&format!("{id} {count} "));
     }
     s.push_str("\n");
+    // Version 6: the dye slot kinds on their own line (the vanilla order —
+    // dye directly after armor, `Player.cs:54818-54822`).
+    for kind in dye {
+        s.push_str(&format!("{kind} "));
+    }
+    s.push_str("\n");
     std::fs::write(player_path(world), s)
 }
 
@@ -64,10 +77,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let mut lines = s.lines();
     let version = lines.next()?.trim();
     let migrate = match version {
-        // Version 4 adds the equipped armor line; 3 stores vanilla `ItemID`s;
-        // 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges and are
-        // converted on load.
-        "3" | "4" | "5" => false,
+        // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
+        // dye kinds; 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
+        // tile/wall/weapon/coin ranges and are converted on load.
+        "3" | "4" | "5" | "6" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -94,7 +107,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if version == "4" || version == "5" {
+    if version == "4" || version == "5" || version == "6" {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -102,14 +115,25 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if version == "5" {
+    if version == "5" || version == "6" {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
         for _ in 0..count {
             let Some(id) = parts.next() else { break };
-            let Some(value) = parts.next().and_then(|v| v.parse().ok()) else { break };
+            let Some(value) = parts.next().and_then(|v| v.parse().ok()) else {
+                break;
+            };
             kills.push((id.to_string(), value));
+        }
+    }
+    // Version 6 adds the dye slot kinds; older files load with every slot
+    // empty.
+    let mut dye = [0u16; 10];
+    if version == "6" {
+        let dye_line = lines.next()?;
+        for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
+            *slot = kind.parse().ok()?;
         }
     }
     Some(SavedPlayer {
@@ -119,6 +143,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         inventory,
         coins,
         armor,
+        dye,
         kills,
     })
 }
@@ -142,13 +167,26 @@ mod tests {
         inv[2] = (8, 9);
         inv[3] = (12, 1);
         inv[4] = (71, 40);
-        save(&path, &p, inv, 123_456, [89, 80, 76], &[("BlueSlime".into(), 7)]).unwrap();
+        let mut dye = [0u16; 10];
+        dye[0] = 1007;
+        dye[5] = 1015;
+        save(
+            &path,
+            &p,
+            inv,
+            123_456,
+            [89, 80, 76],
+            &dye,
+            &[("BlueSlime".into(), 7)],
+        )
+        .unwrap();
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
         assert_eq!(s.armor, [89, 80, 76]);
+        assert_eq!(s.dye, dye);
         let _ = std::fs::remove_file(player_path(&path));
     }
 
@@ -166,6 +204,23 @@ mod tests {
         let _ = std::fs::remove_file(player_path(&path));
     }
 
+    /// DW-4.2 (dirty): a v5 sidecar (no dye line) loads with every dye slot
+    /// empty — the version-6 dye read is gated on the file version.
+    #[test]
+    fn version_5_loads_with_empty_dye() {
+        let path = std::env::temp_dir().join("tr-persist-v5.trwld");
+        let mut line = String::from("5\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n1 (BlueSlime 7) \n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v5 sidecar");
+        assert_eq!(s.armor, [89, 80, 76]);
+        assert_eq!(s.dye, [0; 10]);
+        let _ = std::fs::remove_file(player_path(&path));
+    }
+
     #[test]
     fn migrates_version_2_kinds_to_item_ids() {
         let path = std::env::temp_dir().join("tr-persist-v2.trwld");
@@ -176,9 +231,11 @@ mod tests {
         for kind in [0u16, 1, 10_002, 20_001, 30_002] {
             line.push_str(&format!("{kind} 5 "));
         }
-        line.push_str("
+        line.push_str(
+            "
 0
-");
+",
+        );
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("v2 sidecar");
         assert_eq!(s.inventory[0], (2, 5));

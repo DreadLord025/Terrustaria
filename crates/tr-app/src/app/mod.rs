@@ -1056,6 +1056,8 @@ impl App {
         }
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
+        // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
+        let mut dye_kinds = [0u16; 10];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
@@ -1117,6 +1119,7 @@ impl App {
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     coins = saved.coins;
                     armor_kinds = saved.armor;
+                    dye_kinds = saved.dye;
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
@@ -1430,6 +1433,18 @@ impl App {
                 // screenshotable without a drag-and-drop flow (vanilla equips
                 // through `Player.EquipArmor`).
                 for (slot, kind) in equip.armor.iter_mut().zip(armor_kinds) {
+                    if kind != 0 {
+                        *slot = ItemSlot {
+                            kind,
+                            name: registry::name(kind),
+                            count: 1,
+                        };
+                    }
+                }
+                // The saved character's dye slots (sidecar v6; each restores as
+                // a single stack — the vanilla keeps dyes at stack 1 in
+                // `Player.dye`, `ItemSlot.cs:1182-1187`).
+                for (slot, kind) in equip.dye.iter_mut().zip(dye_kinds) {
                     if kind != 0 {
                         *slot = ItemSlot {
                             kind,
