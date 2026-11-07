@@ -5698,3 +5698,57 @@ M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
 items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
+
+## Extractinator (M7-EXTRACT-1)
+
+`tr-core/src/extract.rs` ports `ExtractinatorHelper.RollExtractinatorDrop`
+(`ExtractinatorHelper.cs:5-525`) as an RNG-injected chain — the branch order is
+the roll order and the port keeps it a straight-line `else if` chain rather than
+a table, so no draw is reordered. `Player.PlaceThing_ItemInExtractinator`
+(`Player.cs:41665-41697`) is item data (the mode map `ItemID.cs:1321` and the
+`ItemTrader.ChlorophyteExtractinator` first-match table `ItemTrader.cs:82-108`);
+the tile side is `TileObjectData.cs:4042-4045` (`Style3x3`, `DrawYOffset = 2`)
+plus `Check3x3`'s bottom-support arm (`WorldGen.cs:53114-53158`).
+
+Deliberate deviations and notes:
+
+- **The loot engine is not used.** Vanilla rolls the plain `Main.rand` sequence
+  here, not `IItemDropRule`; forcing the table through `loot.rs`'s rule types
+  would reorder draws. The port keeps a separate cited function and rolls on
+  `app.item_rng` (the `Main.rand` seam, PORT_MAP's item-loot convention).
+- **The interaction is swing-anchored, not click-anchored.** The C# arm runs
+  inside `PlaceThing` (re-firing every `useTime` inside a held swing,
+  `Player.cs:39591`/`:41669`), so the port routes it through the same
+  `starting || inside_swing` cadence the tile/wall placement uses
+  (`world_sim/editing.rs`); the press-edge `interact_tile` falls through for the
+  new variant (the chest/shop/door seam is untouched — `interact_at` only gained
+  one registry arm). `ApplyItemTime`'s shape (`Player.cs:4406-4413`) makes the
+  swing and the action time the same value, ×0.33 on tile 642 (`:41673-41677` →
+  3 frames), which the apply mirrors.
+- **The drop spawns at the cursor pixel** (`DropItemFromExtractinator`,
+  `Player.cs:42081-42089`); the smart-cursor/gamepad player-centre branch
+  (`:42084-42087`) has no port mechanic yet — with smart cursor on, vanilla
+  spawns at the player centre and the port still spawns at the cursor.
+- **The input is consumed per action by the arm itself.** The C#'s generic
+  consumable path (`Player.cs:43280`) decrements one per swing-start while the
+  arm re-fires mid-swing; the port consumes one per extraction (the convention
+  `place_item_and_consume` already uses). The C# also never checks weapon-ness
+  in this arm, and the port's `item_gate_blocks` would refuse a `projectile`-set
+  item on the place route — the arm's own decrement keeps the behaviour right.
+- **Reach** is the plain `TileReachCheckSettings.Simple` region (5/3,
+  `Player.cs:32025-32030`): every extractinator input has `tileBoost = 0`
+  (verified in the C# `Item.SetDefaults` bodies), and the port has no
+  `blockRange` (builder-potion buff 107 / gizmo-pack 407).
+- **Item-data bug found (pre-existing, not fixed here):** `itemdata.rs:3465-3466`
+  carries 1.4.4-era melee-thrower data for 3347/3348 (`projectile: Some(610)`,
+  `consumable: false`) where the C# `Item.cs:30521-30549` has a consumable
+  placeable (useTime 10, createTile 404 / createWall 311). The extractinator
+  path is immune (the arm's own decrement), but the fossil items are wrong
+  elsewhere — regenerating `tools/GenItemData` is the fix.
+- **Out of scope:** the wired extractination (`Wiring.cs:2554-2584` —
+  `CheckMech` 60, `TryFindChestForExtractinator`'s 6×6 chest scan, the
+  first-non-air chest item, the wiring broad-cast drop) = M7-WIRE-2/3; the tile
+  animator (`Main.cs:18659-18678`: 10 frames for 219, 6 for 642, advancing
+  every 5 ticks; `drawdata.rs` already ports the `tileFrame * 54` offset but
+  `render/tiles.rs` passes the t=0 state) = TILE-DRAW-3; smart cursor
+  (`Player.cs:17595-17614`'s strategy 7) = M7-SMARTCURSOR-1.

@@ -205,6 +205,15 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
 /// `Item.NewItem` — `count` carries the C# stack (`Item.NewItem`'s `stack`
 /// argument; the pot/pile/herb loot rolls spawn several items at once).
 pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty: i32) {
+    spawn_item_drop_px(app, kind, count, Vec2::new(tx as f32 * TILE_PX, ty as f32 * TILE_PX));
+}
+
+/// The pixel-position variant of [`spawn_item_drop`] — the spawn points that
+/// name a world position instead of a tile cell (`Item.RequestNewItem`'s
+/// `center`, e.g. the extractinator's cursor drop,
+/// `Player.DropItemFromExtractinator` `Player.cs:42081-42089`). The draws keep
+/// the `Item.NewItem` order: the velocity/phase first, the prefix last.
+pub(crate) fn spawn_item_drop_px(app: &mut App, kind: u16, count: u32, pos: Vec2) {
     let r1 = rand01(&mut app.item_rng);
     let r2 = rand01(&mut app.item_rng);
     let r3 = rand01(&mut app.item_rng);
@@ -217,8 +226,8 @@ pub(crate) fn spawn_item_drop(app: &mut App, kind: u16, count: u32, tx: i32, ty:
         kind,
         count.max(1),
         prefix,
-        tx as f32 * TILE_PX + 1.0,
-        ty as f32 * TILE_PX,
+        pos.x + 1.0,
+        pos.y,
         (r1 * 2.0 - 1.0) * 1.4,
         -2.2 - r2 * 1.2,
         r3 * std::f32::consts::TAU,

@@ -384,7 +384,10 @@ struct CheckPlan {
 /// (:46706), 79/90 → `Check4x2` (:47408), 82/83/84 → `CheckAlch` (the
 /// `Main.tileAlch` default arm, :85830-85832), 93 → `Check1xX` (:37788),
 /// 100/172 → `Check2x2`'s default (:48397), 101 → `Check3x4` (:50076),
-/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275).
+/// 104 → `Check2xX` (:37993), 185 → `CheckPile` (:85275), 219/642 →
+/// `Check3x3`'s bottom-support arm (:53059, the `:53114` support group — the
+/// M7-EXTRACT-1 extractinators; tile 34's is the ceiling arm, the `else` at
+/// `:53129-53139`).
 fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let kind = world.tile(x, y)?.kind;
     match kind {
@@ -399,6 +402,9 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         27 => check_sunflower(world, x, y),
         28 => check_pot(world, x, y),
         34 => check_chandelier(world, x, y),
+        // M7-EXTRACT-1: the extractinators ride `Check3x3`'s bottom-support
+        // arm (`WorldGen.cs:53114-53127`, the group the C# lists 219/642 in).
+        219 | 642 => check_3x3_bottom(world, x, y, kind),
         42 => check_lantern(world, x, y),
         79 | 90 => check_bed_bathtub(world, x, y),
         82 | 83 | 84 => check_alch(world, x, y),
@@ -805,6 +811,75 @@ fn check_candelabra_sink(world: &mut World, x: i32, y: i32) -> Option<CheckPlan>
         pile_event: None,
         ring: None,
          // floats until a later break (`WorldGen.cs`'s check_candelabra_sink).
+    })
+}
+
+/// `WorldGen.Check3x3`'s bottom-support arm (`WorldGen.cs:53059-53158`) —
+/// the group the C# lists at `:53114` (106/212/219/220/228/231/243/247/283,
+/// 300-308, 354/355/406/412/452/455/491/642/733): the nine cells must carry
+/// the matching kind and the style frames, and all three cells of the row
+/// below the object must be `SolidTileAllowBottomSlope` (`:53116-53127`).
+/// Otherwise `destroyObject` kills the whole 3x3 and the object's item drops at
+/// the trigger cell (`:53159-53175`, 219 → 997, 642 → 5296). The frame check is
+/// the same math `check_chandelier` ports.
+fn check_3x3_bottom(world: &mut World, x: i32, y: i32, kind: u16) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let mut style_col = t.frame_x as i32 / 18;
+    let mut sx = 0i32;
+    while style_col >= 3 {
+        style_col -= 3;
+        sx += 1;
+    }
+    let ox = x - style_col;
+    let style_x = 54 * sx;
+    let style_row = t.frame_y as i32 / 54;
+    let oy = y - (t.frame_y as i32 % 54 / 18);
+    let mut broken = false;
+    let mut region = Vec::with_capacity(9);
+    for k in ox..ox + 3 {
+        for l in oy..oy + 3 {
+            region.push((k, l));
+            let expected = (
+                ((k - ox) * 18 + style_x) as i16,
+                ((l - oy) * 18 + style_row * 54) as i16,
+            );
+            if world
+                .tile(k, l)
+                .is_none_or(|c| !c.active() || c.kind != kind || (c.frame_x, c.frame_y) != expected)
+            {
+                broken = true;
+            }
+        }
+    }
+    // `:53116-53127` — the three cells below the object.
+    for n in ox..ox + 3 {
+        let supported = world.tile(n, oy + 3).is_some_and(|c| {
+            (c.active() || c.has_any_liquid())
+                && td::TILE_SOLID.has(c.kind)
+                && !td::TILE_SOLID_TOP.has(c.kind)
+        });
+        if !supported {
+            broken = true;
+            break;
+        }
+    }
+    if !broken {
+        return None;
+    }
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: kind,
+            x,
+            y,
+            // `:53170-53175` — the item per tile kind (219 → 997, 642 → 5296).
+            item: Some(if kind == 219 { 997 } else { 5296 }),
+        }),
+        cells: killable_cells(world, &region, kind),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s Check3x3 has no tail).
     })
 }
 
@@ -2189,6 +2264,14 @@ pub enum TileInteraction {
     /// changes and no sound plays. No object drops — the dial arms kill no
     /// tiles.
     DialRefused,
+    /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
+    /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
+    /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
+    /// held-item swing cadence rather than the click edge; the app-side arm in
+    /// `world_sim/extract.rs` owns the held-item gate, the roll, the drop and
+    /// the consumption). No world write here — the extraction only consumes the
+    /// held item and spawns the output.
+    Extractinator,
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -2359,9 +2442,21 @@ pub fn interact_at(
                 text: format!("{num45}:{num46:02} {am_pm}"),
             }
         }
+        crate::tileobject::Interaction::Extractinator => {
+            // The extractinator tiles (219/642) — the C# arm is not part of
+            // `TileInteractionsUse`'s chain at all: it lives in the held-item
+            // `PlaceThing` path (`Player.cs:39591`, `PlaceThing_ItemInExtractinator`
+            // `:41665-41697`), which fires on the swing's action ticks. The
+            // dispatch here only tells the caller the tile IS an extractinator
+            // (the C# chain tests the kind literals, `:41669`/`:41691`), so the
+            // app-layer arm can gate on the held item before consuming the tick.
+            // No world change: vanilla only consumes the held item and spawns
+            // the output at the cursor (`ExtractinatorUse` `:42072-42079`,
+            // `DropItemFromExtractinator` `:42081-42089`).
+            TileInteraction::Extractinator
+        }
         crate::tileobject::Interaction::None => TileInteraction::None,
-        crate::tileobject::Interaction::Door => {
-            let mut drops = Vec::new();
+        crate::tileobject::Interaction::Door => {            let mut drops = Vec::new();
             if t.kind == 10 {
                 // The closed-door branch (`Player.cs:32835-32856`): open with
                 // the player's facing; while the tile is still a closed door,
@@ -4423,6 +4518,59 @@ mod tests {
                 TileInteraction::None
             ));
         }
+    }
+
+    /// A 40x40 world with a placed 3x3 extractinator at origin (9, 17)
+    /// (tile 219) — the registry route, so the frames come from
+    /// `TileObject.Place`.
+    fn extractinator_world() -> World {
+        let mut w = World::new("e".into(), 40, 40);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let def = crate::tileobject::def_for_tile(219).unwrap();
+        let inst = crate::tileobject::can_place(&w, 10, 19, def, 0, 1, None).unwrap();
+        assert!(crate::tileobject::place(&mut w, &inst));
+        // Clear the floor cells the object now covers is NOT done by Place; the
+        // object's own cells are what the dispatch reads.
+        w
+    }
+
+    #[test]
+    fn test_M7_EXTRACT_1_interact_at_dispatches_the_extractinators() {
+        // M7-EXTRACT-1: both extractinator tiles (219/642) answer the dispatch
+        // (`Player.cs:41669`/`:41691`'s kind literals) with the new bare
+        // variant — no world change; the held-item semantics are the app's.
+        let mut w = extractinator_world();
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 11, 18, 1, &blocked),
+            TileInteraction::Extractinator
+        ));
+        // The cells keep their frames (the extraction only consumes the item).
+        let t = w.tile(11, 18).unwrap();
+        // (11, 18) is the object's middle row, right column of the (9, 17)
+        // origin — frames (36, 18), untouched by the dispatch.
+        assert_eq!((t.kind, t.frame_x, t.frame_y), (219, 36, 18));
+        // An unrelated tile (the stone floor below) is still `None` (the
+        // registry gate) — but every cell of the object answers Extractinator,
+        // the way the C# kind test does.
+        assert!(matches!(
+            interact_at(&mut w, 9, 17, 1, &blocked),
+            TileInteraction::Extractinator
+        ));
+        assert!(matches!(
+            interact_at(&mut w, 5, 20, 1, &blocked),
+            TileInteraction::None
+        ));
     }
 
     #[test]
