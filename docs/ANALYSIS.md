@@ -5063,16 +5063,20 @@ Deviations (deliberate, in plan order):
   discarded (`RenameChestCancel`, sound 12).
 - **The entity folds are parked at M6-SAVE-2.** `Chest.name` rides the
   `App.chest_names` side map (the frozen `editing.rs:2680` literal keeps the
-  `WorldChest` widening out until then); `ChestSlot` carries no prefix byte
-  (the port's player items have none); `maxItems` is the
-  `DEFAULT_MAX_ITEMS = 40` const, not a per-chest field. All three fold
-  into the entity when M6-SAVE-2 ports the `.wld` chest sections
+  `WorldChest` name widening out until then); `maxItems` is the
+  `DEFAULT_MAX_ITEMS = 40` const, not a per-chest field. The prefix clause
+  is resolved (flipped 2026-11-07, M3-CHEST-INT: `ChestSlot` is gone — the
+  slots are `ItemSlot` and the prefix survives deposit/take; the "player
+  items have none" premise died with M3-PREFIX). The name and `maxItems`
+  fold into the entity when M6-SAVE-2 ports the `.wld` chest sections
   (`WorldFile.cs` `SaveChests`/`LoadChests` `:1606`/`:2723`).
-- **Favorites are stateless.** The `canFavoriteAt`/`retainFavoriteOnMoveAt`
-  RULE tables are ported (`ItemSlot.cs:386-394`/`:1255-1263` — context 3 is
-  excluded from favoriting, moving out clears the flag); no favorite flag
-  exists on any slot yet (M7-UI-2 owns the state), and the cursor-override
-  TEXTURE display is deferred (`Cursor_8/9` are on disk but not in the
+- **Favorites are no longer stateless (flipped 2026-11-07, M3-CHEST-INT).**
+  The `canFavoriteAt`/`retainFavoriteOnMoveAt` RULE tables are joined by the
+  state: `App.favorite_slots` (slot-positional) with the C# Alt+left-click
+  toggle (`ItemSlot.cs:602-625`, sound 12) and the shift-transfer refusal
+  (`:631-634`) — see "Chest/bank integration (M3-CHEST-INT)" for the retain
+  semantics; M7-UI-2 still owns the per-item flag, and the cursor-override
+  TEXTURE display stays deferred (`Cursor_8/9` are on disk but not in the
   packed atlas — the 8/9 state machinery is fully ported, Decision Log
   #14).
 - **The context-0 inventory keeps its half-take.** Right-click in context 0
@@ -5274,3 +5278,139 @@ asymmetric invention. Testability: `TR_DYE=k1,k2,...` fills the dye slots
 positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
+
+## Chest/bank integration (M3-CHEST-INT)
+
+The three parallel storage merges (M3-CHEST-UI, M3-STORE-1/2, M3-STORE-3)
+left the loop split in two — world chests rode `App.chest` with `ChestSlot`
+tuple slots, banks rode `Player.chest` with `ItemSlot`s — and this task
+stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
+`c62e63b`, `56e46d3` + fixes `1acd887`/`01620fd`, `9b76a84`; final suite
+`test result: ok` ×7, 1882 passed / 0 failed):
+
+- **One open-container state.** `Player.chest/chest_x/chest_y` is the single
+  index (−1 closed, −2..−5 `bank_for_chest` → `Player.banks[i]`, ≥0 the
+  `App.world_chests` store index — `Player.cs:2876/:2878/:2880`); `App.chest`
+  is deleted and every reader re-pointed. Bank open/close rides
+  `chest::toggle_open` (the shared C# block `Player.cs:33233-33252`, sounds
+  10/11/12) behind the C# prologue (`close_shop` `:33087-33096`,
+  `bank_open_origin` `:33060-33079` incl. the 463/491 ±1/+=2 adjustment),
+  and `tick_open` is the full `HandleBeingInChestRange` port
+  (`:31015-31097`, minus the projectile trackers — remote opens are out)
+  with the per-tile hitbox table (`:31099-31124`, the Empty-rect two-if
+  `ClosestPointInRect` chain): banks now auto-close out of range or on a
+  dead tile, sound 11. The ctx-3 world-chest surfaces gate to `chest >= 0`
+  (banks keep the STORE-1 panel — see the ownership deviation below).
+- **World chests hold `ItemSlot`s.** `WorldChest.slots: Vec<ItemSlot>`
+  (implicit-air semantics kept, `ChestSlot` gone); the prefix survives
+  deposit/take end-to-end (the stale M3-CHEST-UI note is flipped below);
+  `bank::can_stack` is the shared `Item.CanStack` port
+  (`Item.cs:49865-49871`); `open_chest` materializes the browsed chest's
+  40-slot window (`Chest.cs:107-109`) so the transfers' free-slot walks see
+  the real window; `try_placing_in_chest`/`quick_transfer_from_slot`
+  retyped (`ChestUI.cs:1209-1289`).
+- **The world-chest panel gained its transfer buttons.** Anchors 0-3 draw
+  Loot All / Deposit All / Quick Stack / Restock (`ChestUI.cs:206-228`),
+  `chest_button_hit` generalises the hit rules, and the button dispatch
+  runs before the slot grid (`:281-308`) gated to `chest >= 0`. MoveCoins
+  lives at the dispatch layer: the bank call site runs it before DepositAll
+  (`:543-562`) and QuickStack (`:670-685`), the world chest's QuickStack
+  gets none. `move_coins` gained the no-container-coins early return
+  (`:1044`/`:1048-1051`) and the pInv coin-row favorite space
+  (`:1052-1054`); `restock` mirrors the demand walk (pInv 57..=0 with the
+  ammo rows 54-57 first, coin types 71-74 gated out of demand AND empties,
+  `:899-917`; the ammo-into-empty bonus inside the `:921` gate,
+  `:955-989`); `quick_stack`'s empty-slot phase is the C# per-slot
+  consolidation (`:772-812`); `loot_all` gained the `CanGoIntoVoidVault`
+  overflow arm (`GetItemSettings.cs:55-56`, `Player.cs:39395-39398`) via a
+  `vault: Option<&mut BankStore>` parameter.
+- **STORE-3 is wired per the C# binding.** Favorite = FavoriteKey LeftAlt
+  (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
+  (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
+  `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
+  favorited slots (`:631-634`); the favorited visual is the
+  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
+  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
+  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
+  `:1008-1011`).
+
+Verification: `TR_CHEST` closed-panel double-run SHA256 `166e5f6a…` equal
+and byte-identical to the pre-change HEAD; the open-panel labels verified
+with `TR_XY=2103,354` (pair `3ed3c984…` equal); bank pixels unchanged
+(`ui/inventory.rs`'s bank feed untouched).
+
+Deviations (deliberate, in plan order):
+
+- **The favorite binding follows the C#, not the row's wording.** The
+  M3-STORE-3 row said "right-click toggles"; the C# has no right-click
+  favorite on PC — `ItemSlot.cs:602-625`/`:745-755` bind favorite to
+  FavoriteKey (LeftAlt, `Main.cs:67196`) + left-click via cursorOverride 3,
+  right-click stays the half-take ladder. The port follows the C# and the
+  row is corrected. FavoriteKey is LeftAlt only (the `KeyFavoriteModifier`
+  rebind has no port surface).
+- **Two-panel ownership.** The C# draws ONE panel for every container
+  (`ChestUI` regardless of the chest sign); the port keeps the STORE-1 bank
+  panel for banks (−2..−5) and the world-chest panel for `chest >= 0` — the
+  ctx-3 surfaces gate everything (labels, hit, dispatch) to `chest >= 0`,
+  so no phantom panel and no double button row. The C# single-panel
+  behaviour stays the standing STORE-1 panel-fidelity deviation (recorded
+  there); bank screenshots unchanged by design.
+- **DepositAll's MoveCoins pre-pass is a fix, not an addition.** The port's
+  `deposit_all` was the post-MoveCoins tail and the bank call site never
+  ran `move_coins` — the C# runs it for every container kind
+  (`ChestUI.cs:543-562`). Both call sites gained the pre-pass at the
+  dispatch layer.
+- **The `quick_stack` hoist.** MoveCoins lived folded inside the port's
+  `quick_stack`; hoisting keeps the bank behaviour byte-equal while the
+  world chest correctly skips it (the C# runs MoveCoins for banks only,
+  `:670-685`), and the empty-slot phase became the C# per-slot
+  consolidation (`:772-812`).
+- **LootAll's void-vault overflow arm.** With `IsVoidVaultEnabled` the
+  leftover fills the vault first (`GetItemSettings.cs:55-56`,
+  `Player.cs:39395-39398`) before staying in the chest.
+- **The prefix fix.** The `ChestSlot = (u16, u32)` tuple dropped the prefix
+  byte on every deposit/take; the `ItemSlot` retype preserves it (the
+  stale M3-CHEST-UI note flipped below).
+- **Bank auto-close is live.** Before the unification only world chests
+  range-closed; `tick_open` now covers banks (the `HandleBeingInChestRange`
+  port) — out of range or a dead tile closes with sound 11.
+- **The coin-row favorite gap.** `toggle_favorite`'s `idx >= INV` guard
+  keeps the coin/ammo rows unfavoritable; the favorited sell/drop pass or
+  M7-UI-2 rides it.
+- **The trash swap is a plain swap.** `trash_swap`'s doc claimed a
+  favorited guard; the C# swap (`MouseItemSwap` `ItemSlot.cs:1255-1263`)
+  has none — favorited held items CAN be trashed there; the can't-drop rule
+  lives in `DropSelectedItem` (`Player.cs:5170-5184`, the sell/drop pass's
+  seam). The doc is fixed. The separate `TrashItem` cue (`:1007`) has no
+  port cue; the swap plays Grab (7) per `:1008-1011`.
+- **Slot-positional retain semantics.** The favorite stays on the slot
+  through context-0 moves (`retainFavoriteOnMoveAt[0]`); the
+  `ItemSlot.cs:1728-1734` stack-1 carry and the `:1258-1261` non-retain
+  clearing are unrepresentable in the v1 slot-index model (a held favorite
+  has no index; the trash slot is not favoritable) — M7-UI-2 owns the
+  per-item flag.
+- **The `UpdateDead` reset is not ported.** The C# death path sets
+  `chest = -1` (`Player.cs:17020`); the port's `update_dead` resets only
+  deadTime/respawn timer — a death-path follow-up.
+- **The restock ammo bonus' empty-slot destination.** For the notAmmo
+  family (Acorn 27, Sand 169/370/408/1246 — `Item.FitsAmmoSlot`,
+  `ItemSlot.cs:1499-1503`) the bonus lands on the ammo row where vanilla
+  uses the first empty grid slot; a notAmmo/FitsAmmoSlot seam in the
+  generated item data is the future pass.
+- **The `move_coins` refill is single-pass largest-first** vs the C#
+  three-pass (`:1090-1196`); they coincide without carry, with a carry the
+  carry tier can land in a different slot. Bounded deviation.
+
+Out (unchanged): QuickStackAllChests (the 600 px scan), Sort/ItemSorting
+(anchor 4 stays label-less), Cursor_8/9 + cursorOverride display,
+persistence (M6-SAVE), net syncs, chest loot (M5), favorited sell/drop
+rules, remote opens (Void Lens/Money Trough), the keyboard overlay rework,
+the lid animation, `IsBlockedFromTransferIntoChest` (`ChestUI.cs:1291-1302`,
+bank-only — noted at `chest.rs`).
+
+The stale notes flipped with this landing (located by content): the
+M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
+items have none)" clause and its "Favorites are stateless" bullet now point
+at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
+favorite wording is corrected the same way.

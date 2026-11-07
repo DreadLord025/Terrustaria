@@ -263,7 +263,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
-| `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the 10×4 chest slot window, context-3 slot backgrounds |
+| `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the Loot All/Deposit All/Quick Stack/Restock button row, the 10×4 chest slot window, context-3 slot backgrounds |
 
 Key geometry (1600×900, `UIScale = 1.0`, `Main.inventoryScale = 0.85`):
 
@@ -315,7 +315,8 @@ list is in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)
 
-The panel draws while a world chest is open (`App.chest >= 0`; `OpenChest` also raises
+The panel draws while a world chest is open (`player.chest >= 0` — the unified
+open-container index, `App.chest` is gone; `OpenChest` also raises
 `playerInventory` — `Player.cs:33517`, so the chest slots render in front of the open
 inventory grid). There is no panel background texture — the panel is text plus
 `Inventory_Back*` slot frames (`ChestUI.cs` draws no `UIPanel`). Key geometry
@@ -329,8 +330,10 @@ inventory grid). There is no panel background texture — the panel is text plus
   after the text;
 * the rename text buttons at `x = 506`, `y = invBottom(258) + 40 + ID·26`
   (`ChestUI.cs:191`/`:203`) — IDs 5 RenameChest and 6 RenameChestCancel render
-  (`ChestUI.cs:20-42`; the port's `ButtonID` table matches all of 0-6); the 0-4
-  anchors (LootAll/DepositAll/QuickStack/Restock/Sort) are reserved for M3-STORE-2;
+  (`ChestUI.cs:20-42`; the port's `ButtonID` table matches all of 0-6); IDs 0-3
+  render too — Loot All / Deposit All / Quick Stack / Restock
+  (`ChestUI.cs:206-228`) — and work (see the interactions below); anchor 4
+  (Sort) stays reserved and label-less;
   cancel is hidden unless the rename keyboard is editing (`:198-202`);
 * the 10×4 slot window from `(73, 258)` with the 56 px layout pitch: slot `(i, j)` at
   `(int)(73 + i·56·0.755), (int)(258 + j·56·0.755)` (`ChestUI.cs:379-380`), the drawn
@@ -351,6 +354,22 @@ and 9 (inventory→chest, `TryPlacingInChest` `ChestUI.cs:1209-1289`: a stack-me
 then an empty-slot pass). Re-clicking the open chest's tile toggles the panel closed
 (or switches chests) through the UI click path — the editing interception is gated
 while the inventory is open.
+
+The transfer buttons: the button dispatch runs before the slot-grid clicks
+(`ChestUI.cs:281-308`) and the whole panel (labels, hit, dispatch) gates to
+`chest >= 0` — banks keep the STORE-1 panel instead of drawing a second button row.
+MoveCoins is hoisted to the dispatch layer: the bank call site runs it before Deposit
+All and Quick Stack (`ChestUI.cs:543-562`/`:670-685`), the world chest's Quick Stack
+gets none; Loot All routes its overflow into the void vault when it is enabled
+(`GetItemSettings.cs:55-56`, `Player.cs:39395-39398`).
+
+Favorites and trash: hovering an inventory slot with LeftAlt held turns left-click
+into the favorite toggle (the `ItemSlot.cs:602-625` cursorOverride-3 arm, sound 12,
+the `can_favorite_at` gate — the C# binding; the row sketch's right-click wording was
+wrong); favorited slots tint `OurFavoriteColor` (255, 231, 69 — the tint fallback,
+`Inventory_Back10/17` are not in the packed atlas) and shift-transfer refuses them
+(`:631-634`). The trash slot at `(448, 258)` is clickable: left-click swaps held ↔
+trash (`MouseItemSwap` `ItemSlot.cs:1255-1263`, the Grab cue).
 
 Rename: the RenameChest button opens the existing virtual keyboard as
 `FrontScreen::Keyboard` mid-game with a `KeyboardTail::ChestRename` session — prefilled
@@ -478,8 +497,10 @@ caller) — the full list is in `docs/ANALYSIS.md` →
   metadata, no gamepad snap points, no UI click sounds, no credits cinematic …).
 * Chest panel (M3-CHEST-UI) deviations are collected in `docs/ANALYSIS.md` →
   "Chest UI + world chests (M3-CHEST-UI)" (lazy store entries, no lid animation,
-  the rename keyboard pauses the sim, the cursor-override textures deferred,
-  favorites stateless …).
+  the rename keyboard pauses the sim, the cursor-override textures deferred …);
+  the chest/bank integration has its own entry → "Chest/bank integration
+  (M3-CHEST-INT)" (the two-panel ownership, the Alt+left-click favorite binding,
+  the retain semantics …).
 
 ## Dev hooks and verification
 
