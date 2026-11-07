@@ -17,7 +17,7 @@ mod biome_detail;
 mod biomes;
 mod caves;
 mod config;
-mod evil;
+pub mod evil;
 mod islands;
 mod liquids;
 mod living_trees;
