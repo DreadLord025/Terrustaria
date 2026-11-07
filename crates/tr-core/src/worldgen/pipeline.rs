@@ -33,6 +33,7 @@ use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::caves;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::evil;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -955,7 +956,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Mud Caves To Grass",
         step_mud_caves_to_jungle_grass
     ),
-    step!("evil", "Corruption", step_evil),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
     step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
@@ -964,6 +964,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
+    // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
+    // (`:13182`) and Underworld (`:13645`), before Lakes (`:14556`) — the
+    // M5-BIOME phase-4 move (was between `mud caves to grass` and
+    // `mushroom patches`).
+    step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
     step!("dungeon", "Dungeon", step_dungeon),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
@@ -1153,12 +1158,22 @@ fn step_evil(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    biomes::pass_evil(
+    // The faithful `CorruptionAndCrimson` draws from its own fresh per-pass
+    // stream (the `WorldGenerator.cs:497` re-seed model — the Phase-1
+    // contract). The dungeon position rides `BiomeSpans.dungeon_x`
+    // (`GenVars.CurrentDungeonGenVars.dungeonLocation` — Decision #10).
+    let (world_surface_low, world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface, l.rock_layer)
+    };
+    let dungeon_location = gv.spans().dungeon_x;
+    evil::corruption_and_crimson(
         world,
-        &map.heights,
-        gv.spans(),
-        &mut streams.rng,
+        &mut streams.pass_rng("Corruption"),
+        world_surface_low,
+        world_surface,
+        rock_layer,
+        dungeon_location,
         opts.crimson,
     );
 }
@@ -1692,6 +1707,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     // cascade reaches them.
     world.frame_important[27] = true;
     world.frame_important[28] = true;
+    // The demon altar 26 and the shadow orb 31 (`Main.cs:7661/:7666`) — the
+    // M5-BIOME phase-4 evil pass writes their style/frame data, which the
+    // framer must keep.
+    world.frame_important[26] = true;
+    world.frame_important[31] = true;
     world.frame_important[78] = true;
     world.frame_important[82] = true;
     world.frame_important[83] = true;
@@ -1768,7 +1788,9 @@ mod tests {
         // M5-BIOME phase-3 insertions — `mud caves to grass` right after
         // `jungle` (vanilla `:12466` → `:12468`) and `dirt to mud` between
         // `dirt-in-stone blobs` and `ash blobs` (satisfies the vanilla
-        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs).
+        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) —
+        // plus the phase-4 move of `evil` to its vanilla slot between
+        // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`).
         assert_eq!(
             names,
             vec![
@@ -1777,7 +1799,6 @@ mod tests {
                 "plan biome spans",
                 "jungle",
                 "mud caves to grass",
-                "evil",
                 "mushroom patches",
                 "granite and marble",
                 "cave fields",
@@ -1786,6 +1807,7 @@ mod tests {
                 "dirt to mud",
                 "ash blobs",
                 "ores and gems",
+                "evil",
                 "liquids",
                 "dungeon",
                 "ocean caves",
@@ -1838,6 +1860,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Mud Caves To Grass") == cpos("Jungle") + 1);
         assert!(cpos("Dirt To Mud") < cpos("Shinies") && cpos("Dirt To Mud") < cpos("Underworld"));
+    }
+
+    /// DW-4.3: the evil step sits between `ores and gems`/Shinies
+    /// (`WorldGen.cs:13182`) and `liquids`/Lakes (`:14556`) — the vanilla
+    /// Corruption slot (`:13866`), with Underworld (`:13645`) before it too.
+    #[test]
+    fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("evil") + 1], "liquids");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shinies") < cpos("Corruption"));
+        assert!(cpos("Underworld") < cpos("Corruption"));
+        assert!(cpos("Corruption") < cpos("Lakes"));
     }
 
     #[test]

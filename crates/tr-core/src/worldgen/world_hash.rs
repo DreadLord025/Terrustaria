@@ -71,10 +71,18 @@ mod tests {
     /// for M5-BIOME phase 3: the faithful `JunglePass` replaces the
     /// shape-level band (and leaves the shared `rng` stream), `Mud Caves To
     /// Grass` and `Dirt To Mud` join as their own steps, and the wall-arm /
-    /// slope-fix TileRunner semantics landed — every world on every seed
-    /// changes by design (the ANALYSIS section lands in Phase 7).
+    /// slope-fix TileRunner semantics landed. Re-pinned for M5-BIOME
+    /// phase 4: the faithful `CorruptionAndCrimson` replaces the shape-level
+    /// evil band, moves to the vanilla slot between `ores and gems` and
+    /// `liquids` (its own `pass_rng("Corruption")` stream), and the
+    /// frame-important 26/31 boot statics landed — every world on every
+    /// seed changes by design (the ANALYSIS section lands in Phase 7).
+    /// `SEED42_512` is UNCHANGED by the phase-4 move: on a 512-wide world
+    /// the evil pass runs nothing (the sub-vanilla width gate skips it —
+    /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
+    /// the old shape pass drew nothing either (its spans collapsed).
     const SEED42_512: u32 = 844298041;
-    const DEFAULT_WORLD: u32 = 4129395800;
+    const DEFAULT_WORLD: u32 = 302268298;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

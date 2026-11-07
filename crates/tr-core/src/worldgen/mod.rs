@@ -17,6 +17,7 @@ mod biome_detail;
 mod biomes;
 mod caves;
 mod config;
+mod evil;
 mod islands;
 mod liquids;
 mod living_trees;
@@ -120,14 +121,31 @@ mod tests {
     #[test]
     fn living_trees_generate_for_seed() {
         // The living-trees pass places tile 191 (wood) with 192 canopies and
-        // wall 244 interiors (`WorldGen.cs:15476-15715`).
-        let world = generate(&GenOptions {
-            crimson: false,
-            name: "living".into(),
-            width: 4200,
-            height: 1200,
-            seed: 1,
-        });
+        // wall 244 interiors (`WorldGen.cs:15476-15715`). The tree-count roll
+        // (`rng.range(0, 2*num3 + 1)` + the 50% rescue) can legitimately
+        // draw 0 for a seed — the shared stream's position shifted when the
+        // evil pass moved to its own stream (M5-BIOME phase 4) — so the
+        // smoke check sweeps a few seeds and requires one to carry trees.
+        let mut world = None;
+        for seed in 1..=6u64 {
+            let w = generate(&GenOptions {
+                crimson: false,
+                name: "living".into(),
+                width: 4200,
+                height: 1200,
+                seed,
+            });
+            let wood = w
+                .tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == 191)
+                .count();
+            if wood > 0 {
+                world = Some(w);
+                break;
+            }
+        }
+        let world = world.expect("no seed in 1..=6 grew living trees");
         let mut wood = 0;
         let mut leaves = 0;
         let mut wall = 0;
@@ -405,6 +423,97 @@ mod tests {
             0,
             "no ebonstone in the crimson world"
         );
+    }
+
+    /// DW-4.1: the faithful evil pass at the integration level — the
+    /// corruption world carries chasm shadow orbs (2x2 tile 31, frames
+    /// 0/18), demon altars from the chasm tails (style 0), the ebonstone
+    /// shells with the wall-3 lining, the ebonsand surface and the demonite
+    /// side-cavern blobs; the crimson world carries the crimstone blob, the
+    /// crimson hearts (frameX + 36), the style-1 altar scatter and the
+    /// crimsand surface.
+    #[test]
+    fn test_DW_4_1_evil_biomes_carry_the_vanilla_structures() {
+        let w = generate(&GenOptions {
+            seed: 77,
+            ..Default::default()
+        });
+        let orbs = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 31)
+            .count();
+        assert!(orbs >= 8, "the shadow orbs ({orbs})");
+        assert_eq!(orbs % 4, 0, "orbs come in 2x2 blocks");
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == 31) {
+            assert!(
+                matches!(t.frame_x, 0 | 18) && matches!(t.frame_y, 0 | 18),
+                "the corruption orb frames ({},{})",
+                t.frame_x,
+                t.frame_y
+            );
+        }
+        // The demon altars: the chasm-tail search places style-0 altars
+        // (frameX 0/18/36); the structures pass may add its own.
+        // The structures pass's own altars never sit above
+        // `(2*worldSurface + rockLayer) / 3` (`structures.rs:243`); an altar
+        // above that line can only come from a chasm tail (the search draws
+        // `Next(posY - 50, posY)` with `posY` in the walker's depth band).
+        let structures_y_lo =
+            ((w.world_surface * 2.0 + w.rock_layer) / 3.0) as i32;
+        let altars: Vec<i32> = (0..w.width)
+            .flat_map(|x| (0..w.height).map(move |y| (x, y)))
+            .filter(|&(x, y)| {
+                w.tile(x, y)
+                    .is_some_and(|t| t.active() && t.kind == 26)
+            })
+            .map(|(_, y)| y)
+            .collect();
+        assert!(altars.len() >= 6, "the demon altars ({})", altars.len());
+        let chasm_altars = altars.iter().filter(|&&y| y < structures_y_lo).count();
+        assert!(
+            chasm_altars >= 1,
+            "the chasm-tail altars ({chasm_altars} above the structures band)"
+        );
+        let ebon_walls = w.tiles.iter().filter(|t| t.wall == 3).count();
+        assert!(ebon_walls > 100, "the ebonstone wall lining ({ebon_walls})");
+        let demonite = w
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 22)
+            .count();
+        assert!(demonite > 0, "the Demonite side-cavern blobs ({demonite})");
+        // The crimson flavour: the blob + the hearts + the style-1 altars.
+        let c = generate(&GenOptions {
+            seed: 77,
+            crimson: true,
+            ..Default::default()
+        });
+        let hearts = c
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 31 && t.frame_x >= 36)
+            .count();
+        assert!(hearts >= 8, "the crimson hearts ({hearts})");
+        assert_eq!(hearts % 4, 0, "hearts come in 2x2 blocks");
+        for t in c.tiles.iter().filter(|t| t.active() && t.kind == 31) {
+            assert!(
+                matches!(t.frame_x, 36 | 54) && matches!(t.frame_y, 0 | 18),
+                "the crimson heart frames ({},{})",
+                t.frame_x,
+                t.frame_y
+            );
+        }
+        // The style-1 altar scatter: frameX 54/72/90 (the structures pass's
+        // own altars carry frameX 0/18/36).
+        let style1 = c
+            .tiles
+            .iter()
+            .filter(|t| t.active() && t.kind == 26 && t.frame_x >= 54)
+            .count();
+        assert!(style1 >= 6, "the style-1 altars ({style1})");
+        let crim_walls = c.tiles.iter().filter(|t| t.wall == 83).count();
+        assert!(crim_walls > 100, "the crimstone wall lining ({crim_walls})");
     }
 
     #[test]

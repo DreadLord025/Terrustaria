@@ -2,9 +2,10 @@
 //! `GameContent/Generation/Biomes/*` and the `GenPassNameID` order
 //! (`ID/GenPassNameID.cs`): the jungle (`JunglePass` — faithful since
 //! M5-BIOME phase 3, with `MudCavesToJungleGrass` and `DirtToMud` beside
-//! it), the evil (`CorruptionAndCrimson`), the glowing mushroom patches
-//! (`GlowingMushroomPatches`), the granite and marble caves and the
-//! dungeon (`Dungeon`).
+//! it), the glowing mushroom patches (`GlowingMushroomPatches`), the granite
+//! and marble caves and the dungeon (`Dungeon`). The evil pass
+//! (`CorruptionAndCrimson`) moved to its own module in M5-BIOME phase 4
+//! (`super::evil` — the faithful port).
 //!
 //! Tile ids (`TileID.cs`): the jungle grass 60, the mud 59, the mushroom
 //! grass 70, the corrupt grass 23, the ebonstone 25, the ebonsand 112, the
@@ -17,10 +18,10 @@
 //! Deviations (ANALYSIS "Biome passes (M1.4-WGEN-1)"): the C# passes are
 //! shape-driven (`ShapeRunner`/`ShapeFloodFill` chains, `DungeonCrawler`);
 //! the port reproduces the vanilla SHAPES with its own deterministic noise
-//! and blob machinery — the exact tile-level layout is not 1:1 for the evil
-//! and mushroom passes (the evil pass is the M5-BIOME phase-4 target); the
-//! jungle shrines, the temple, the pyramids and the chests are the
-//! follow-up tasks; the hallow is the hardmode strip (M5-HARDFORCE).
+//! and blob machinery — the exact tile-level layout is not 1:1 for the
+//! mushroom pass; the jungle shrines, the temple, the pyramids and the
+//! chests are the follow-up tasks; the hallow is the hardmode strip
+//! (M5-HARDFORCE).
 
 use super::tile_runner::{tile_runner, TileRunnerOpts};
 use super::{Rng, TILE_DIRT, TILE_GRASS, TILE_SAND, TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_STONE};
@@ -48,13 +49,14 @@ pub(crate) const WALL_EBONSTONE: u16 = 3;
 pub(crate) const WALL_CRIMSON: u16 = 192;
 
 /// The biome span decisions shared by the passes (the C# `GenVars` slice):
-/// the jungle on the west edge, the evil band east of spawn, the dungeon at
-/// the snow side's surface.
+/// the jungle band on the dungeon-opposite side (re-derived from
+/// `GenVars.jungle_origin_x` since M5-BIOME phase 3) and the dungeon at the
+/// snow side's surface. The evil band retired with the shape-level
+/// `pass_evil` in phase 4 — the faithful pass draws its own centres
+/// (`evil::corruption_and_crimson`).
 pub(crate) struct BiomeSpans {
     pub(crate) jungle_start: i32,
     pub(crate) jungle_end: i32,
-    pub(crate) evil_start: i32,
-    pub(crate) evil_end: i32,
     pub(crate) dungeon_x: i32,
 }
 
@@ -77,16 +79,6 @@ pub(crate) fn plan_spans(
     let jungle_end = (jungle_origin_x + reach)
         .min(width - 60)
         .max(jungle_start + 40);
-    // The evil band sits between the spawn and the snow half, clear of the
-    // spawn plateau (`CorruptionAndCrimson` picks its centre off the
-    // spawn/jungle/snow triangle); the tiny worlds collapse it.
-    let evil_start = width / 2 + 260;
-    let evil_end = (evil_start + width / 12).min(width * 2 / 3 - 120);
-    let (evil_start, evil_end) = if evil_end <= evil_start + 40 {
-        (0, 0)
-    } else {
-        (evil_start, evil_end)
-    };
     // The dungeon digs at the snow side (`DungeonCrawler`'s entrance spawns
     // at the far edge opposite the jungle).
     let dungeon_x = (width - beach - 60).max(width / 2);
@@ -94,8 +86,6 @@ pub(crate) fn plan_spans(
     BiomeSpans {
         jungle_start,
         jungle_end,
-        evil_start,
-        evil_end,
         dungeon_x,
     }
 }
@@ -849,87 +839,6 @@ pub(crate) fn pass_dirt_to_mud(
                 ..TileRunnerOpts::default()
             },
         );
-    }
-}
-
-/// The evil pass (`CorruptionAndCrimson`): the surface band of the
-/// evil sand/grass over the evil stone, with the chasms — the vertical
-/// shafts widening downward — cut into it. `crimson` picks the crimson
-/// tile set.
-pub(crate) fn pass_evil(
-    world: &mut World,
-    surface: &[i32],
-    spans: &BiomeSpans,
-    rng: &mut super::Rng,
-    crimson: bool,
-) {
-    // The tiny-world collapse (see `plan_spans`).
-    if spans.evil_end <= spans.evil_start {
-        return;
-    }
-    let (grass, stone, sand, wall) = if crimson {
-        (
-            TILE_CRIMSON_GRASS,
-            TILE_CRIMSTONE,
-            TILE_CRIMSAND,
-            WALL_CRIMSON,
-        )
-    } else {
-        (
-            TILE_CORRUPT_GRASS,
-            TILE_EBONSTONE,
-            TILE_EBONSAND,
-            WALL_EBONSTONE,
-        )
-    };
-    // The surface band: the evil grass over the evil stone + the sand cap.
-    for x in spans.evil_start..spans.evil_end {
-        let top = surface[x as usize];
-        let depth = 8 + (x as f32 * 0.11).sin().abs() as i32 * 4;
-        for y in top..(top + depth).min(world.height - 2) {
-            if !active_at(world, x, y) {
-                continue;
-            }
-            let t = world.tile(x, y).unwrap();
-            if !matches!(t.kind, TILE_DIRT | TILE_STONE | TILE_GRASS) {
-                continue;
-            }
-            let kind = if y == top {
-                grass
-            } else if y < top + 3 {
-                stone
-            } else {
-                stone
-            };
-            put(world, x, y, kind, wall);
-        }
-    }
-    // The chasms: 3-4 shafts, each a widening runner pair cut down past the
-    // rock layer (`CorruptionAndCrimson`'s chasm shapes).
-    let chasms = 3 + (spans.evil_end - spans.evil_start) / 90;
-    for _ in 0..chasms {
-        let x0 = rng.range(spans.evil_start + 20, spans.evil_end - 20);
-        let top = surface[x0 as usize];
-        let bottom = (world.rock_layer as i32 + 60).min(world.height - 60);
-        let mut x = x0;
-        let mut w = 2;
-        let mut y = top - 4;
-        while y < bottom {
-            let dig = w;
-            for dx in -dig..=dig {
-                put(world, x + dx, y, 0, wall);
-            }
-            // The stone sheath around the shaft (the evil stone lining).
-            put(world, x - dig - 1, y, stone, wall);
-            put(world, x + dig + 1, y, stone, wall);
-            y += 1;
-            if rng.range(0, 3) == 0 {
-                x += rng.range(-1, 2);
-            }
-            if y % 24 == 0 && w < 5 {
-                w += 1;
-            }
-        }
     }
 }
 
