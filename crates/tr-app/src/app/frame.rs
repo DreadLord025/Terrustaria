@@ -1196,6 +1196,18 @@ impl App {
                             );
                         }
                     }
+                    // `Main.DrawInvasionProgress` (`Main.cs:47696-47840`):
+                    // the bar draws while the fade alpha holds (the
+                    // display-timer decay rides the world tick).
+                    ui::draw_invasion_progress(
+                        renderer,
+                        lookups,
+                        screen,
+                        self.invasion_progress,
+                        self.invasion_progress_max,
+                        self.invasion_progress_icon,
+                        self.invasion_progress_alpha,
+                    );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
                 }

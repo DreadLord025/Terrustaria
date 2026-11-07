@@ -589,6 +589,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Pirate Captain",
     },
     BestiaryEntryDef {
+        credit_id: "Golem",
+        net_id: 245,
+        kind: NpcKind::Golem,
+        variant: None,
+        quick_unlock: true,
+        name: "Golem",
+    },
+    BestiaryEntryDef {
         credit_id: "GoblinTinkerer",
         net_id: 107,
         kind: NpcKind::GoblinTinkerer,
@@ -628,6 +636,12 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // The Golem's parts fold onto the body's entry (the Brain's
+        // Creeper precedent — one credit per boss).
+        NpcKind::GolemHead
+        | NpcKind::GolemFistLeft
+        | NpcKind::GolemFistRight
+        | NpcKind::GolemHeadFree => NpcKind::Golem,
         other => other,
     };
     ENTRIES

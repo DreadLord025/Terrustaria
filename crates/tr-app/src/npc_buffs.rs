@@ -226,6 +226,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::PirateArcher
         | NpcKind::PirateCorsair
         | NpcKind::PirateCaptain => &[],
+        NpcKind::Golem
+        | NpcKind::GolemHead
+        | NpcKind::GolemFistLeft
+        | NpcKind::GolemFistRight
+        | NpcKind::GolemHeadFree => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }
