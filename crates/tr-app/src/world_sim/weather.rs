@@ -111,8 +111,73 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
         }
+        // (5) The Slime Rain event (`Main.cs:64925-64949`'s morning roll +
+        // the time flow): the expiry decays dayRate-scaled (`StopSlimeRain`
+        // at <= 0, `Main.cs:64788-64800`); the roll runs while the morning
+        // sun lasts — `!raining`, no invasion, `dayTime && time < 27000`:
+        // `Next(450000/dayRate)` — halved before the first King, x1.5
+        // hardmode after, x5 without a fight-ready player
+        // (`AnyPlayerReadyToFightKingSlime`: lifeMax > 140 && defense > 8,
+        // `Main.cs:65166-65174`); the classic requires ready (the
+        // `(flag3 || expertMode)` arm folds to ready).
+        if world.slime_rain {
+            world.slime_rain_time -= day_rate as f64;
+            if world.slime_rain_time <= 0.0 {
+                world.slime_rain = false;
+                world.slime_rain_time = 0.0;
+                world.slime_rain_kills = 0;
+            }
+        } else if !rain.is_raining()
+            && !world.invasion_goblins
+            && world.invasion_type == 0
+            && world.day_time
+            && world.time < 27000.0
+            && world.invasion_size <= 0
+        {
+            let mut num3 = 450000.0 / (day_rate.max(1) as f64);
+            if !world.downed_slime_king {
+                num3 /= 2.0;
+            } else if world.hard_mode {
+                num3 *= 1.5;
+            }
+            let ready = app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.max_hp > 140 && p.stat_defense > 8);
+            if !ready {
+                num3 *= 5.0;
+            }
+            if slime_rain_roll(&world, ready, &mut app.npc_rng) {
+                start_slime_rain(world, &mut app.npc_rng);
+            }
+        }
     });
     world_tick_step.cap_backlog();
+}
+
+/// `Main.cs:64938-64949`'s roll shape: `Next(450000/dayRate)` — halved
+/// before the first King, x1.5 hardmode after, x5 without a fight-ready
+/// player; the classic requires ready (`(flag3 || expertMode)` folds).
+pub(crate) fn slime_rain_roll(world: &tr_core::World, ready: bool, rng: &mut u64) -> bool {
+    let mut num3 = 450000.0 / (world.day_rate().max(1) as f64);
+    if !world.downed_slime_king {
+        num3 /= 2.0;
+    } else if world.hard_mode {
+        num3 *= 1.5;
+    }
+    if !ready {
+        num3 *= 5.0;
+    }
+    ready && num3 > 0.0 && (crate::app::rand01(rng) as f64) < 1.0 / num3
+}
+
+/// `StartSlimeRain` (`Main.cs:64742-64776`): the duration
+/// Next(32400, 54000), the kill counter reset; the rain/invasion gates
+/// live at the caller (the tick's morning arm).
+pub(crate) fn start_slime_rain(world: &mut tr_core::World, rng: &mut u64) {
+    world.slime_rain = true;
+    world.slime_rain_time = 32400.0 + (crate::app::rand01(rng) as f64) * 21600.0;
+    world.slime_rain_kills = 0;
 }
 
 #[cfg(test)]
@@ -140,8 +205,8 @@ mod tests {
         let mut app = flow_app(None, vec![], vec![]);
         app.world.fast_forward_to_dawn = true; // day_rate 60
         app.rain = Rain::with_forced(7, Some(0.8), false); // maxRaining 0.8
-                                                           // The forced pin materializes inside `Rain::tick` — run one drop-sim
-                                                           // tick so `max_raining()` really reads 0.8.
+        // The forced pin materializes inside `Rain::tick` — run one drop-sim
+        // tick so `max_raining()` really reads 0.8.
         app.rain.update(
             &app.world,
             app.camera,
@@ -286,6 +351,101 @@ mod tests {
         assert!(
             app.rain.is_raining(),
             "statLifeMax >= 120 arms the start rolls"
+        );
+    }
+
+    #[test]
+    fn the_slime_rain_roll_gates_and_king_counter() {
+        // The morning roll's shape (`Main.cs:64938-64949`): the
+        // threshold 450000/dayRate — halved before the first King, x1.5
+        // hardmode after, x5 without a fight-ready player; the gates
+        // refuse the afternoon; `StartSlimeRain` sets the duration band
+        // and resets the counter (`Main.cs:64742-64776`); the kill
+        // counter (`NPC.cs:79078-79095`) fires the King at 75 after the
+        // first (150 before) and flips the negative half.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.stat_defense = 10;
+        app.player = Some(player);
+        // The roll shape: the ready player + the King downed = 1/300000
+        // per tick at dayRate 1 (450000 x1.5 /2? no: /2 then... the
+        // order: /2 (the King downed) — 225000; the hardmode arm is
+        // ELSE-if).
+        app.world.downed_slime_king = true;
+        app.world.hard_mode = false;
+        let mut rng = 1u64;
+        let fired = (0..500000u64).any(|seed| {
+            let mut r = seed + 1;
+            crate::world_sim::weather::slime_rain_roll(&app.world, true, &mut r)
+        });
+        assert!(fired, "the roll fires within 500000 seeds");
+        // The not-ready x5: the threshold quadruples the rarity — the
+        // forced shape assert rides the modifier math instead (the
+        // ready=false arm consumes one roll and returns false early? no —
+        // it rolls against 1/num3 with num3 x5 — the direct prove: the
+        // not-ready NEVER fires without... the vanilla `(flag3 ||
+        // expertMode)` gate means the classic not-ready never rolls.
+        assert!(!crate::world_sim::weather::slime_rain_roll(
+            &app.world, false, &mut rng
+        ));
+        // The start fields.
+        crate::world_sim::weather::start_slime_rain(&mut app.world, &mut rng);
+        assert!(app.world.slime_rain);
+        assert!(
+            app.world.slime_rain_time >= 32400.0 && app.world.slime_rain_time <= 54000.0,
+            "the duration band"
+        );
+        assert_eq!(app.world.slime_rain_kills, 0);
+        // The gates: the afternoon tick leaves the state untouched.
+        app.world.slime_rain = false;
+        app.world.time = 30000.0;
+        app.npc_rng = 7;
+        super::update_world_tick(&mut app, 1.0 / 60.0);
+        assert!(!app.world.slime_rain, "the afternoon refuses");
+        // The kill counter: the King spawns at 75 (the first downed) and
+        // the counter flips to -37. The flow_app world is 8x8 — the King
+        // spawn needs real ground (the surface_of scan).
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        let mut px = crate::player::Player::spawn(&big);
+        px.x = 30.0 * 16.0;
+        px.y = 118.0 * 16.0;
+        px.max_hp = 200;
+        px.stat_defense = 10;
+        app.player = Some(px);
+        app.world = big;
+        app.world.downed_slime_king = true;
+        app.world.time = 1000.0;
+        app.world.slime_rain = true;
+        app.world.slime_rain_kills = 74;
+        let mut slime = crate::npc::Npc::spawn_slime_sky(
+            30.0 * 16.0,
+            90.0 * 16.0,
+            crate::npc::SlimeVariant::Blue,
+        );
+        slime.hp = 0;
+        app.npcs.push(slime);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.world.slime_rain_kills, -37,
+            "the negative-half hysteresis"
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::KingSlime),
+            "the King spawned"
         );
     }
 }

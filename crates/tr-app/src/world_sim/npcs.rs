@@ -112,7 +112,15 @@ pub(crate) fn start_invasion(
     // pirate bonus (`type == 3`'s `+40+20x`) rides the type-3 slice.
     world.invasion_type = invasion_type;
     world.invasion_warn = 0;
+    // `:64457-64464`: the base 80+40x; the pirates (type 3) add 40+20x,
+    // the martians (type 4) use 160+40x.
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    if invasion_type == 3 {
+        world.invasion_size += 40 + 20 * qualifying_players.max(1);
+    }
+    if invasion_type == 4 {
+        world.invasion_size = 160 + 40 * qualifying_players.max(1);
+    }
     world.invasion_size_start = world.invasion_size;
 }
 
@@ -683,6 +691,12 @@ fn invasion_warning(app: &mut App) {
             "Frost Legion is approaching from the east!",
             "The Frost Legion has arrived!",
         ),
+        3 => (
+            "The pirates have been defeated!",
+            "Pirates are approaching from the west!",
+            "Pirates are approaching from the east!",
+            "The pirates have arrived!",
+        ),
         _ => (
             "The goblin army has been defeated!",
             "Goblins are approaching from the west!",
@@ -719,6 +733,7 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // flag-set state carries the defeat).
         match app.world.invasion_type {
             2 => app.world.downed_frost = true,
+            3 => app.world.downed_pirates = true,
             _ => app.world.downed_goblins = true,
         }
         invasion_warning(app);
@@ -765,6 +780,13 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::GoblinSummoner => 1,
         // `NPC.cs:78311-78314`: the Frost Legion's trio.
         NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 2,
+        // `NPC.cs:78316-78325`: the pirates (the Captain 216 is the
+        // 5-point kill, `:78238-78241`).
+        NpcKind::PirateDeckhand
+        | NpcKind::PirateCaptainsMate
+        | NpcKind::PirateArcher
+        | NpcKind::PirateCorsair
+        | NpcKind::PirateCaptain => 3,
         _ => 0,
     }
 }
@@ -779,6 +801,7 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
         return;
     }
     let num9 = match kind {
+        NpcKind::PirateCaptain => 5,
         NpcKind::GoblinSummoner => 10,
         _ => 1,
     };
@@ -835,6 +858,30 @@ fn invasion_spawn_pick(
     }
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
+    }
+    // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
+    // 491 (the half-points window) is the boss-minion follow-up; the
+    // Captain 216 1/30 while none alive; the Deadeye 1/11, the Corsair
+    // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
+    // Deckhand.
+    if invasion_type == 3 {
+        let r = crate::app::frame::rand01(rng);
+        if r < 1.0 / 30.0 {
+            return NpcKind::PirateCaptain;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 {
+            return NpcKind::PirateCorsair;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 + 1.0 / 3.0 {
+            return NpcKind::PirateCaptainsMate;
+        }
+        return NpcKind::PirateDeckhand;
     }
     let r = crate::app::frame::rand01(rng);
     if r < 1.0 / 9.0 {
@@ -1041,6 +1088,34 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // drains the army's points and reports the progress.
     for npc in &dead {
         report_invasion_kill(app, npc.kind);
+    }
+    // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
+    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
+    // the first King) while no King lives (`!AnyNPCs(50)`); at the
+    // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
+    // negative (`-num / 2`) for the next climb.
+    if app.world.slime_rain
+        && !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+    {
+        for npc in &dead {
+            if npc.kind != NpcKind::Slime {
+                continue;
+            }
+            let threshold = if app.world.downed_slime_king { 75 } else { 150 };
+            app.world.slime_rain_kills += 1;
+            if app.world.slime_rain_kills >= threshold {
+                if let Some(p) = app.player.as_ref() {
+                    let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
+                    if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
+                        app.npcs.push(k);
+                    }
+                }
+                app.world.slime_rain_kills = -threshold / 2;
+            }
+        }
     }
     for npc in &dead {
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
@@ -1305,6 +1380,74 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         .wrapping_add(1_442_695_040_888_963_407);
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
+        // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
+        // — the pre-roll before the regular spawner (`:296-302`'s call
+        // order): the depth/crowd gates (the player below
+        // `worldSurface*16 + view/2` or the nearby count > 15 refuse),
+        // `Next(45 + 450 x (nearby/15))`, the sky window (x within +-1
+        // view width, y 0.75-1.5 view heights above), the validity scan
+        // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
+        // the 7x8 solid-rect scan — the house-wall arm folds), the kind
+        // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
+        if app.world.slime_rain {
+            if let Some(player) = app.player.as_ref() {
+                let (pcx, pcy) = player.center();
+                let view_w = spawner::S_WIDTH as f32;
+                let view_h = spawner::S_HEIGHT as f32;
+                let nearby = app
+                    .npcs
+                    .iter()
+                    .filter(|n| {
+                        let (cx, cy) = n.center();
+                        (cx - pcx).abs() < view_w * 0.5 && (cy - pcy).abs() < view_h * 0.5
+                    })
+                    .count() as f32;
+                if !player.dead
+                    && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
+                    && nearby <= 15.0
+                {
+                    let denom = 45.0 + 450.0 * (nearby / 15.0);
+                    if crate::app::rand01(&mut app.npc_rng) < 1.0 / denom {
+                        let x_px =
+                            pcx - view_w + crate::app::rand01(&mut app.npc_rng) * view_w * 2.0;
+                        let y_px = pcy - view_h * 1.5
+                            + crate::app::rand01(&mut app.npc_rng) * view_h * 0.75;
+                        let xt = (x_px / TILE_PX) as i32;
+                        let yt = (y_px / TILE_PX) as i32;
+                        let solid = (0..7).any(|dx| {
+                            (0..8).any(|dy| {
+                                app.world
+                                    .tile(xt - 3 + dx as i32, yt - 5 + dy as i32)
+                                    .is_some_and(|t| {
+                                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                                    })
+                            })
+                        });
+                        if xt > 10
+                            && xt < app.world.width - 10
+                            && (yt as f64) >= app.world.world_surface * 0.3
+                            && (yt as f64) <= app.world.world_surface
+                            && !solid
+                        {
+                            let variant = if crate::app::rand01(&mut app.npc_rng) < 0.1 {
+                                SlimeVariant::Yellow
+                            } else if crate::app::rand01(&mut app.npc_rng) < 0.4 {
+                                SlimeVariant::Green
+                            } else {
+                                SlimeVariant::Blue
+                            };
+                            let scale = variant.stats().scale;
+                            let (sw, sh) = NpcKind::Slime.size();
+                            app.npcs.push(Npc::spawn_slime_sky(
+                                xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
+                                yt as f32 * TILE_PX - sh * scale,
+                                variant,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).
@@ -1358,7 +1501,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
-            let kind = invasion_spawn_pick(&mut app.item_rng, app.world.hard_mode, summoner_alive, app.world.invasion_type);
+            let kind = invasion_spawn_pick(
+                &mut app.item_rng,
+                app.world.hard_mode,
+                summoner_alive,
+                app.world.invasion_type,
+            );
             invasion_pick = Some((kind, ix, iy));
         }
         if invasion_pick.is_none() {
@@ -2038,12 +2186,113 @@ mod invasion_tests {
         assert!((sp - 8.0).abs() < 2.0, "the 8-speed aim ({sp})");
     }
 
+    #[cfg(test)]
+    mod frost_invasion_tests {
+        use super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use crate::npc::Npc;
+        use crate::world_sim::editing::use_snow_globe;
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+        fn surface_world() -> World {
+            let mut w = World::new("t".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.compute_column_surface();
+            w
+        }
+
+        #[test]
+        fn the_snow_globe_arms_the_frost_legion() {
+            // `ItemCheck_UseBossSpawners`' Frost arm (`Player.cs:43940-43956`):
+            // the Snow Globe starts `invasionType = 2` with the 80-point army;
+            // a second globe refuses while the invasion is active.
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 200;
+            player.x = 150.0 * TILE_PX;
+            player.y = 118.0 * TILE_PX;
+            app.player = Some(player);
+            app.inventory[app.selected] = crate::item::ItemSlot {
+                kind: 602,
+                name: "Snow Globe".into(),
+                count: 1,
+                prefix: 0,
+            };
+            assert!(use_snow_globe(&mut app));
+            assert_eq!(app.world.invasion_type, 2);
+            assert_eq!(app.world.invasion_size, 120);
+            assert!(app.world.invasion_goblins, "the active-invasion flag");
+            app.inventory[app.selected] = crate::item::ItemSlot {
+                kind: 602,
+                name: "Snow Globe".into(),
+                count: 1,
+                prefix: 0,
+            };
+            assert!(!use_snow_globe(&mut app), "the active invasion refuses");
+            assert_eq!(app.inventory[app.selected].count, 1);
+        }
+
+        #[test]
+        fn the_frost_kill_credit_drains_and_defeats() {
+            // The group-2 match: the frost kills drain 1 point each; at 0 the
+            // `downedFrost` flag sets (the goblin flag stays untouched).
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = 2;
+            app.world.invasion_size = 1;
+            app.world.invasion_size_start = 120;
+            report_invasion_kill(&mut app, NpcKind::SnowmanGangsta);
+            assert_eq!(app.world.invasion_size, 0);
+            update_invasion_state(&mut app);
+            assert!(app.world.downed_frost, "the frost defeat flag");
+            assert!(!app.world.downed_goblins, "the goblin flag untouched");
+            assert_eq!(app.world.invasion_type, 0);
+        }
+
+        #[test]
+        fn the_frost_spawn_table_picks_the_trio() {
+            // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
+            // 1/3, else the MysterySnowman — always the frost trio.
+            let mut rng = 9u64;
+            for _ in 0..60 {
+                assert!(matches!(
+                    invasion_spawn_pick(&mut rng, false, false, 2),
+                    NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
+                ));
+            }
+            // The goblin table stays on type 1.
+            let mut rng = 9u64;
+            for _ in 0..40 {
+                assert!(matches!(
+                    invasion_spawn_pick(&mut rng, false, false, 1),
+                    NpcKind::GoblinSorcerer
+                        | NpcKind::GoblinThief
+                        | NpcKind::GoblinPeon
+                        | NpcKind::GoblinWarrior
+                        | NpcKind::GoblinArcher
+                ));
+            }
+        }
+    }
+}
+
 #[cfg(test)]
-mod frost_invasion_tests {
+mod pirate_invasion_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
-    use crate::world_sim::editing::use_snow_globe;
+    use crate::world_sim::editing::use_pirate_map;
     use tr_core::tile::{Tile, FLAG_ACTIVE};
 
     fn surface_world() -> World {
@@ -2061,10 +2310,10 @@ mod frost_invasion_tests {
     }
 
     #[test]
-    fn the_snow_globe_arms_the_frost_legion() {
-        // `ItemCheck_UseBossSpawners`' Frost arm (`Player.cs:43940-43956`):
-        // the Snow Globe starts `invasionType = 2` with the 80-point army;
-        // a second globe refuses while the invasion is active.
+    fn the_pirate_map_arms_the_invasion_with_the_bonus() {
+        // `ItemCheck_UseBossSpawners`' pirate arm (`Player.cs:43957-43971`)
+        // + `StartInvasion`'s type-3 bonus (`Main.cs:64460-64464`): the
+        // size = 80+40x + 40+20x (the single qualified player → 180).
         let mut app = flow_app(None, vec![], vec![]);
         app.world = surface_world();
         let mut player = crate::player::Player::spawn(&app.world);
@@ -2073,58 +2322,67 @@ mod frost_invasion_tests {
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
         app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
-        assert!(use_snow_globe(&mut app));
-        assert_eq!(app.world.invasion_type, 2);
-        assert_eq!(app.world.invasion_size, 120);
+            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        assert!(use_pirate_map(&mut app));
+        assert_eq!(app.world.invasion_type, 3);
+        assert_eq!(app.world.invasion_size, 180);
+        assert_eq!(app.world.invasion_size_start, 180);
         assert!(app.world.invasion_goblins, "the active-invasion flag");
+        // The second map refuses while the invasion is active.
         app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
-        assert!(!use_snow_globe(&mut app), "the active invasion refuses");
+            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        assert!(!use_pirate_map(&mut app), "the active invasion refuses");
         assert_eq!(app.inventory[app.selected].count, 1);
     }
 
     #[test]
-    fn the_frost_kill_credit_drains_and_defeats() {
-        // The group-2 match: the frost kills drain 1 point each; at 0 the
-        // `downedFrost` flag sets (the goblin flag stays untouched).
+    fn the_pirate_kill_credit_drains_and_defeats() {
+        // The group-3 match: the Deckhand drains 1, the Captain drains 5;
+        // at 0 the `downedPirates` flag sets (the frost flag untouched).
         let mut app = flow_app(None, vec![], vec![]);
         app.world = surface_world();
-        app.world.invasion_type = 2;
-        app.world.invasion_size = 1;
-        app.world.invasion_size_start = 120;
-        report_invasion_kill(&mut app, NpcKind::SnowmanGangsta);
+        app.world.invasion_type = 3;
+        app.world.invasion_size = 6;
+        app.world.invasion_size_start = 180;
+        report_invasion_kill(&mut app, NpcKind::PirateDeckhand);
+        assert_eq!(app.world.invasion_size, 5);
+        report_invasion_kill(&mut app, NpcKind::PirateCaptain);
         assert_eq!(app.world.invasion_size, 0);
         update_invasion_state(&mut app);
-        assert!(app.world.downed_frost, "the frost defeat flag");
+        assert!(app.world.downed_pirates, "the pirate defeat flag");
+        assert!(!app.world.downed_frost, "the frost flag untouched");
         assert!(!app.world.downed_goblins, "the goblin flag untouched");
         assert_eq!(app.world.invasion_type, 0);
     }
 
     #[test]
-    fn the_frost_spawn_table_picks_the_trio() {
-        // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
-        // 1/3, else the MysterySnowman — always the frost trio.
-        let mut rng = 9u64;
-        for _ in 0..60 {
+    fn the_pirate_spawn_table_picks_the_crew() {
+        // `invasionType == 3`'s table: the Captain 1/30, the Deadeye 1/11,
+        // the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+        // Deckhand — always the pirate crew.
+        let mut rng = 11u64;
+        for _ in 0..80 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 2),
-                NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateDeckhand
+                    | NpcKind::PirateCaptainsMate
+                    | NpcKind::PirateArcher
+                    | NpcKind::PirateCorsair
+                    | NpcKind::PirateCaptain
             ));
         }
-        // The goblin table stays on type 1.
-        let mut rng = 9u64;
-        for _ in 0..40 {
-            assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 1),
-                NpcKind::GoblinSorcerer
-                    | NpcKind::GoblinThief
-                    | NpcKind::GoblinPeon
-                    | NpcKind::GoblinWarrior
-                    | NpcKind::GoblinArcher
-            ));
+        // The Captain roll fires within the 1/30 odds.
+        let mut rng = 5u64;
+        let mut saw_captain = false;
+        for _ in 0..600 {
+            if matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateCaptain
+            ) {
+                saw_captain = true;
+                break;
+            }
         }
+        assert!(saw_captain, "the Captain roll fires");
     }
-}
-
 }

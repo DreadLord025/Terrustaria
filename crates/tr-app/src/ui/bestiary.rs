@@ -436,6 +436,11 @@ fn portrait_data(
         NpcKind::SnowmanGangsta => 48,
         NpcKind::SnowBalla => 49,
         NpcKind::MysterySnowman => 50,
+        NpcKind::PirateDeckhand => 51,
+        NpcKind::PirateCaptainsMate => 51,
+        NpcKind::PirateArcher => 51,
+        NpcKind::PirateCorsair => 51,
+        NpcKind::PirateCaptain => 52,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -556,6 +561,22 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 7.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 26.0, h, white)
+        }
+        // The pirates: the 16/20-frame strips over the 18x40 frames.
+        (NpcKind::PirateDeckhand, _)
+        | (NpcKind::PirateCaptainsMate, _)
+        | (NpcKind::PirateArcher, _)
+        | (NpcKind::PirateCorsair, _) => {
+            let h = lookups.bestiary_npc_sheets[51]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::PirateCaptain, _) => {
+            let h = lookups.bestiary_npc_sheets[52]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
         }
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
         // The goblins: the 16/21/20-frame humanoid strips over the 38-wide

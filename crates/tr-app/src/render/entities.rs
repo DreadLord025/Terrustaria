@@ -161,6 +161,9 @@ pub(crate) struct NpcAssets {
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
     pub(crate) mystery_snowman: Option<BgTex>,
+    /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
+    pub(crate) pirates: Option<BgTex>,
+    pub(crate) pirate_captain: Option<BgTex>,
     /// `NPC_26/27/28/111` — the invasion fighters (16/21-frame humanoid
     /// strips; the port renders the 16-frame family shape the zombie arm
     /// walks).
@@ -240,6 +243,8 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         snowman_gangsta: sky_tex(atlas, "NPC_143", None),
         snow_balla: sky_tex(atlas, "NPC_144", None),
         mystery_snowman: sky_tex(atlas, "NPC_145", None),
+        pirates: sky_tex(atlas, "NPC_212", None),
+        pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
         goblin_warrior: sky_tex(atlas, "NPC_27", None),
         goblin_archer: sky_tex(atlas, "NPC_28", None),
@@ -847,6 +852,25 @@ pub(crate) fn draw_npcs(
                     tex,
                     tex.map_or(40.0, |t| t.h / frames),
                     [26.0, 40.0],
+                    [n.x, n.y],
+                )
+            }
+            // The pirates: the 16/20-frame strips over the 18x40 frames
+            // (the Captain's 20-frame sheet rides NPC_216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                let (tex, frames) = if n.kind == NpcKind::PirateCaptain {
+                    (assets.pirate_captain.as_ref(), 20.0)
+                } else {
+                    (assets.pirates.as_ref(), 16.0)
+                };
+                (
+                    tex,
+                    tex.map_or(40.0, |t| t.h / frames),
+                    [18.0, 40.0],
                     [n.x, n.y],
                 )
             }

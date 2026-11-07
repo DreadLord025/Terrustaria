@@ -2525,6 +2525,39 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Pirate Invasion (M4-EVENT-3)
+
+The framework's third slice: `StartInvasion`'s pirate bonus (`Main.cs:
+64460-64464`) — the size 80+40x **plus 40+20x** per qualified player
+(the single player → 180 points); `Main.InvasionWarning`'s type-3
+literals; the defeat ride sets the new `World.downed_pirates`
+(`SetEventFlagCleared(ref downedPirates, 2)`).
+
+The spawn table (`NPC.cs:1460-1484`): the Flying Dutchman 491 spawns
+through the half-points window (`invasionSize < invasionSizeStart/2` +
+the `SolidTiles` clear-scan) — the boss-minion follow-up; the port's
+table carries the Captain 216 1/30 (while none alive), the Deadeye 1/11,
+the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+Deckhand. The kill points ride `:78238-78241`'s num9 table — the
+Captain's 5-point kill.
+
+The summon: the Pirate Map 1315 through
+`ItemCheck_UseBossSpawners`'s pirate arm (`Player.cs:43957-43971`) —
+the same `CanStartInvasion(3, ignoreDelay: true)` + roar + march-state
+shape the Snow Globe uses. The map's own drop gate rides the loot db's
+`Cond::PirateMap` (the depth/ocean band condition already ported in
+M4-LOOT-2).
+
+The five kinds (PirateDeckhand 212/PirateCaptainsMate 213/PirateArcher
+214/PirateCorsair 215/PirateCaptain 216) carry their verbatim
+`SetDefaults` rows (18×40, the aiStyle-3 walker, the Captain's
+3000-HP/50k-value boss-minion body) and the 16/20-frame sheets
+NPC_212/216.
+
+Deviations: the Flying Dutchman (the 350×120 aiStyle-93 ship boss) and
+the Deadeye/Corsair ranged shots are the follow-ups; the Captain's
+`GetNPCInvasionGroup` 5-point kill rides the port's num9 table.
+
 ## The Frost Legion (M4-EVENT-2)
 
 The invasion framework's second slice: `StartInvasion(2)` generalizes

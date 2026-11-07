@@ -90,6 +90,24 @@ pub enum NpcKind {
     /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
     /// 220 HP, kb 0.6, value 400).
     MysterySnowman,
+
+    /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
+    PirateDeckhand,
+    /// `NPCID.PirateCaptainsMate` (213) — the pirate bruiser (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000).
+    PirateCaptainsMate,
+    /// `NPCID.PirateArcher` (214) — the pirate archer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 30, def 14, 225 HP, kb 0.3, value 1000; the arrows
+    /// ride the projectile work).
+    PirateArcher,
+    /// `NPCID.PirateCorsair` (215) — the pirate elite (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 20, 350 HP, kb 0.35, value 1500).
+    PirateCorsair,
+    /// `NPCID.PirateCaptain` (216) — the pirate boss-minion (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000;
+    /// `GetNPCInvasionGroup`'s 5-point kill).
+    PirateCaptain,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -427,6 +445,11 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
@@ -511,6 +534,11 @@ impl NpcKind {
             65 => NpcKind::SnowmanGangsta,
             66 => NpcKind::SnowBalla,
             67 => NpcKind::MysterySnowman,
+            68 => NpcKind::PirateDeckhand,
+            69 => NpcKind::PirateCaptainsMate,
+            70 => NpcKind::PirateArcher,
+            71 => NpcKind::PirateCorsair,
+            72 => NpcKind::PirateCaptain,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -681,6 +709,12 @@ impl NpcKind {
             | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
+            // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => (18.0, 40.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -817,6 +851,12 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 200,
             NpcKind::SnowBalla => 240,
             NpcKind::MysterySnowman => 220,
+            // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 300,
+            NpcKind::PirateCaptainsMate => 450,
+            NpcKind::PirateArcher => 225,
+            NpcKind::PirateCorsair => 350,
+            NpcKind::PirateCaptain => 3000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -899,6 +939,12 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
             NpcKind::MysterySnowman => 55,
+            // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 35,
+            NpcKind::PirateCaptainsMate => 50,
+            NpcKind::PirateArcher => 30,
+            NpcKind::PirateCorsair => 35,
+            NpcKind::PirateCaptain => 70,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1081,6 +1127,27 @@ impl Npc {
         npc.max_hp = stats.life;
         npc.hp = stats.life;
         Some(npc)
+    }
+
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// the random sky tile): the position is the caller's — the slime
+    /// falls through the air under its own gravity. The seed-facing
+    /// variation and the variant stats ride the ground ctor's shape.
+    pub fn spawn_slime_sky(x_px: f32, y_px: f32, variant: SlimeVariant) -> Self {
+        let stats = variant.stats();
+        let mut seed = ((x_px / 16.0) as i32 as u32).wrapping_mul(2_654_435_761);
+        seed ^= seed >> 15;
+        let mut npc = Self::new(
+            NpcKind::Slime,
+            x_px,
+            y_px,
+            if seed & 1 == 0 { 1 } else { -1 },
+            0.4 + (seed % 80) as f32 * 0.01,
+        );
+        npc.slime = variant;
+        npc.max_hp = stats.life;
+        npc.hp = stats.life;
+        npc
     }
 
     /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
@@ -1398,6 +1465,12 @@ impl Npc {
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
+            // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 0.4,
+            NpcKind::PirateCaptainsMate => 0.2,
+            NpcKind::PirateArcher => 0.3,
+            NpcKind::PirateCorsair => 0.35,
+            NpcKind::PirateCaptain => 0.0,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1502,6 +1575,12 @@ impl Npc {
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
             NpcKind::MysterySnowman => 22,
+            // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 17,
+            NpcKind::PirateCaptainsMate => 22,
+            NpcKind::PirateArcher => 14,
+            NpcKind::PirateCorsair => 20,
+            NpcKind::PirateCaptain => 30,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1602,6 +1681,12 @@ impl Npc {
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 700.0,
+            NpcKind::PirateCaptainsMate => 1000.0,
+            NpcKind::PirateArcher => 1000.0,
+            NpcKind::PirateCorsair => 1500.0,
+            NpcKind::PirateCaptain => 50000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
@@ -1818,6 +1903,14 @@ impl Npc {
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_skeleton(world, player, dt)
             }
+            // The pirates: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Captain's cannon and the
+            // Deadeye's shots land with the projectile work).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -1905,6 +1998,23 @@ impl Npc {
                         NpcKind::SnowmanGangsta => 4,
                         NpcKind::SnowBalla => 5,
                         _ => 7,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The pirates: the 16/20-frame humanoid strips (the same
+            // accumulator).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => 16,
+                        _ => 20,
                     };
                     self.frame = (self.frame + 1) % count;
                 }
@@ -4259,6 +4369,11 @@ impl Npc {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -4300,10 +4415,6 @@ impl Npc {
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 53,
-            NpcKind::GoblinPeon => 54,
-            NpcKind::GoblinThief => 55,
-            NpcKind::GoblinWarrior => 56,
-            NpcKind::GoblinArcher => 57,
             NpcKind::BoundGoblin => 58,
             NpcKind::GoblinTinkerer => 59,
         } << 5;
