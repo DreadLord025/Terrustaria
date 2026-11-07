@@ -133,6 +133,12 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// `NPC.golemBoss`'s anchor (the body's centre, `NPC.cs:19507`) — the
+    /// head/fists/free-head tethers read it (the WoF write-through
+    /// shape).
+    pub golem_present: bool,
+    pub golem_x: f32,
+    pub golem_y: f32,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -225,6 +231,9 @@ impl World {
             brain_y: 0.0,
             downed_golem: false,
             downed_deerclops: false,
+            golem_present: false,
+            golem_x: 0.0,
+            golem_y: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
