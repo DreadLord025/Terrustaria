@@ -2245,6 +2245,20 @@ mod invasion_tests {
         use tr_core::tile::{FLAG_ACTIVE, Tile};
 
         fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn surface_world_orig() -> World {
             let mut w = World::new("t".into(), 300, 200);
             w.world_surface = 120.0;
             for x in 0..w.width {
@@ -2442,8 +2456,24 @@ mod invasion_bar_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::World;
 
-    #[test]
+        fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+#[test]
     fn the_kill_credit_reports_the_bar_state() {
         // `ReportInvasionProgress` (`Main.cs:47687-47694`): the points
         // (sizeStart - size), the max (sizeStart), the icon (group + 3) and
@@ -2530,6 +2560,4 @@ mod invasion_bar_tests {
         assert_eq!(app.world.invasion_type, 0);
         assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
     }
-}
-
 }
