@@ -115,7 +115,7 @@ pub(crate) fn find_temple_site(
                 site = (num7, num6);
                 break;
             }
-            // `:15884-15893`: the widening valve — the post-increment compare,
+            // `:15900-15912`: the widening valve — the post-increment compare,
             // then `num3 = Math.Min(0.35, num3 + 0.05)` with the overflow
             // counter giving up after 11 stages at the cap.
             let old = num2;
@@ -133,7 +133,7 @@ pub(crate) fn find_temple_site(
         }
     }
     if !found {
-        // `:15926-15930`: the fallback — the dungeon-mirrored x
+        // `:15914-15923`: the fallback — the dungeon-mirrored x
         // (`generatingDungeonPositionX` is the dungeon entrance x,
         // `DungeonCrawler.cs:352/:399`; the port's stand-in is
         // `BiomeSpans.dungeon_x`) and 100 rows below the rock layer.
@@ -344,7 +344,7 @@ mod tests {
     /// earlier sample lands on mud (59) and must not accept. The site can
     /// therefore only come from the two 1,000,000-attempt widening stages
     /// (0.25 → 0.30 → 0.35) — the C# counter semantics
-    /// (`WorldGen.cs:15884-15893`, `Math.Min` landing `num3` exactly on 0.35).
+    /// (`WorldGen.cs:15900-15912`, `Math.Min` landing `num3` exactly on 0.35).
     #[test]
     fn test_DW_6_1_search_widens_and_accepts_only_tile_60() {
         let mut world = World::new("t".into(), 800, 800);
@@ -361,7 +361,7 @@ mod tests {
 
     /// DW-6.1: the sub-vanilla valve — on `maxTilesY - 600 <= 0` the vanilla
     /// y band cannot exist in-world, so the search goes straight to the C#
-    /// fallback (`WorldGen.cs:15926-15930`): `x = maxTilesX -
+    /// fallback (`WorldGen.cs:15914-15923`): `x = maxTilesX -
     /// generatingDungeonPositionX`, `y = (int)rockLayer + 100`, consuming no
     /// draws at all.
     #[test]
@@ -374,10 +374,10 @@ mod tests {
     }
 
     /// DW-7.1 (the batch-5-6 review note): the 11-stage give-up branch
-    /// (`WorldGen.cs:15884-15893`) — a world with no jungle grass anywhere in
+    /// (`WorldGen.cs:15900-15912`) — a world with no jungle grass anywhere in
     /// the sampled band never accepts: the search widens 0.25 → 0.30 → 0.35,
     /// then runs 11 more 1,000,000-attempt stages at the cap (`num > 10`)
-    /// and gives up to the C# fallback (`:15926-15930`). The draw ledger pins
+    /// and gives up to the C# fallback (`:15914-15923`). The draw ledger pins
     /// the full counter ladder — 13 widen-stage runs × 1,000,002 attempts ×
     /// 2 draws; a break one stage early would be 2,000,004 draws short.
     #[test]

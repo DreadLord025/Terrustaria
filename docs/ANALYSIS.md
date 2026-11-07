@@ -5200,20 +5200,20 @@ dungeon passes (M5-BIOME-2's and M5-DUNGEON's rows).
 - **`roll_crimson` stands**: the evil flavour remains the deterministic
   seed-high-bit draw (`mod.rs::roll_crimson`, `(seed >> 56) & 1`) feeding
   the UI `_optionEvil` Random choice — the C# rolls `WorldGen.crimson` at
-  menu/Reset time (`WorldGen.cs:11191-11202`'s neighbourhood); the port's
+  menu/Reset time (`WorldGen.cs:11305-11315`); the port's
   seed-side draw is the recorded stand-in, consumed by
   `GenOptions.crimson` for the crimson twins.
 - **The research correction (altars)**: the `Next(10,15)` altar scatter is
   crimson-branch-only (`:14186-14234`, `Place3x2(…, 26, 1)` behind the
   crimstone-ground check) — the corruption branch has none; its altars
-  come from `ChasmRunner`'s `flag3` search (`:76042`), whose never-re-armed
+  come from `ChasmRunner`'s `flag3` search (`:75989-76036`), whose never-re-armed
   quirk (`:75991`) accumulates the multi-altar tails and is ported
   verbatim.
 - **The temple-stub scope** (`temple.rs` module docs): the verbatim/shape
   seam for M5-TEMPLE — verbatim: the placement search (the y band, the
   `num3 = 0.25` x formula with the 1M-attempt widening to the exact-0.35
-  cap and the 11-stage give-up `:15884-15893`, acceptance on tile 60, the
-  fallback `x = width − dungeon_x` `:15926-15930`); shape-level:
+  cap and the 11-stage give-up `:15900-15912`, acceptance on tile 60, the
+  fallback `x = width − dungeon_x` `:15914-15923`); shape-level:
   `makeTemple`'s non-intersecting room crawl (`:33444-33548`),
   `GenerateBricks` (`:34241+`), the carve sweeps, `templePather`
   corridors, the style-11 door, the spike/platform loop, `templeCleaner`.
