@@ -612,6 +612,79 @@ fn parse_tr_dmount(s: &str) -> u16 {
     s.trim().parse().unwrap_or(0)
 }
 
+/// `TR_POSE=sit|sleep` — writes the furniture beside the world spawn and
+/// snaps the player on through the real interaction decode, so the
+/// screenshots/tests exercise the live sitting/sleeping pose (the sim's
+/// re-validation holds it; nothing wakes in a headless capture).
+fn apply_pose_pin(world: &mut World, mut p: Option<&mut crate::player::Player>, mode: &str) {
+    let put = |world: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16| {
+        let i = world.index(x, y);
+        world.tiles[i] = tr_core::tile::Tile {
+            kind,
+            frame_x: fx,
+            frame_y: fy,
+            ..Default::default()
+        };
+        world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+    };
+    // `Player::spawn` seeds the header's spawn row and the fixed step drops
+    // the feet onto the surface below. The pin builds its own stage — a flat
+    // dirt ledge eight tiles right of the spawn with three air rows over it
+    // — so the furniture/snap scene never fights the terrain (trees, bushes
+    // and slopes would otherwise draw over or block the pose).
+    let sx = world.spawn_x + 8;
+    let mut ground = world.spawn_y;
+    for _ in 0..400 {
+        if world
+            .tile(sx, ground)
+            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind))
+        {
+            break;
+        }
+        ground += 1;
+    }
+    let sy = ground;
+    for col in sx - 1..=sx + 4 {
+        put(world, col, sy, 1, 0, 0); // the dirt floor
+        for y in (sy - 3)..sy {
+            let i = world.index(col, y);
+            world.tiles[i] = tr_core::tile::Tile::default(); // the clearance
+        }
+    }
+    match mode {
+        // The left-facing chair (15): the top cell carries `frameY = 0`, the
+        // bottom `frameY = 18` (the 40-px style stride's second row).
+        "sit" => {
+            put(world, sx, sy - 2, 15, 0, 0);
+            put(world, sx, sy - 1, 15, 0, 18);
+            if let Some((seat_x, seat_y, dir, off)) =
+                edit::sitting_target_info(world, sx, sy - 1, 1)
+            {
+                if let Some(p) = p.as_deref_mut() {
+                    p.sit_down(world, seat_x, seat_y, dir, off);
+                }
+            }
+        }
+        // The unflipped style-0 bed (79): columns `frameX 0/18/36/54`, the
+        // bottom row `frameY = 18` (the 36-px style stride).
+        "sleep" => {
+            for (dx, fx) in [0i16, 18, 36, 54].iter().enumerate() {
+                put(world, sx + dx as i32, sy - 2, 79, *fx, 0);
+                put(world, sx + dx as i32, sy - 1, 79, *fx, 18);
+            }
+            if let Some((ax, ay, dir, style)) = edit::sleeping_target_info(world, sx, sy - 1) {
+                if let Some(p) = p.as_deref_mut() {
+                    p.sleep_down(world, ax, ay, dir, style);
+                }
+            }
+        }
+        _ => {}
+    }
+    // The pin writes tiles after the render chunks were built — the
+    // revision bump is what `apply_edit` uses to rebuild them.
+    world.revision = world.revision.wrapping_add(1);
+}
+
 /// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
 /// motion, so screenshots can deterministically show the cursor and a hovered
 /// item tooltip (like `TR_CAM`/`TR_DAY` do for the world).
@@ -1291,7 +1364,11 @@ impl App {
         let player_enabled = std::env::var_os("TR_NOPLAYER").is_none();
         let mut player = player_enabled.then(|| Player::spawn(&world));
         let mut npcs = Vec::new();
-        if let Some(p) = &player {
+        // `TR_POSE` keeps the capture scene empty — a contact-damage NPC
+        // would knock the pinned player off the furniture.
+        let spawn_npcs = std::env::var_os("TR_POSE").is_none();
+        if spawn_npcs && player.is_some() {
+            let p = player.as_ref().unwrap();
             let xt = (p.x / TILE_PX) as i32;
             for (i, dx) in [-20, 16, 26].iter().enumerate() {
                 let spawned = if world.day_time {
@@ -1449,6 +1526,15 @@ impl App {
                 });
                 p.pinned_mount = id;
             }
+        }
+        // `TR_POSE=sit|sleep` pins the furniture pose for screenshots/tests:
+        // the furniture tiles are written beside the spawn and the player is
+        // snapped on through the real decode — the sim's own re-validation
+        // then holds the pose (no input reaches the headless capture). The
+        // tile writes run without a player too (`TR_NOPLAYER` + `TR_POSE`
+        // verifies the furniture draw itself).
+        if let Ok(v) = std::env::var("TR_POSE") {
+            apply_pose_pin(&mut world, player.as_mut(), v.trim());
         }
         // `TR_JUMPS=cloud,sandstorm,...` arms the extra-jump options — the
         // granting accessories (CloudinaBottle 53, SandstorminaBottle 857,
@@ -2607,6 +2693,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::ChairSit { .. } => {
                     log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
                 }
+                edit::TileInteraction::BedSleep { .. } => {
+                    log::info!("TR_TOGGLE -> bed sleep (no player at load)")
+                }
                 edit::TileInteraction::BedInteract { set_spawn, .. } => log::info!(
                     "TR_TOGGLE {},{} -> bed ({})",
                     op.x,
@@ -2641,6 +2730,12 @@ pub(crate) fn build_atlas(
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
     tile_ids.insert(7); // copper ore
+    // `TR_POSE=sit|sleep` writes the chair/bed beside the spawn after the
+    // usage scan — the pose pin's sheets ride along.
+    if std::env::var_os("TR_POSE").is_some() {
+        tile_ids.insert(15); // chair
+        tile_ids.insert(79); // bed
+    }
     log::info!(
         "world uses {} tile types and {} wall types",
         tile_ids.len(),

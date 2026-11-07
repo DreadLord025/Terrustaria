@@ -188,6 +188,23 @@ mod tests {
     }
 
     #[test]
+    fn the_all_asleep_flag_runs_the_clock_at_five_times() {
+        // `Main.UpdateTimeRate` (`Main.cs:6209-6215`): the all-players-fully-
+        // asleep flag multiplies dayRate by 5 — but the dial fast-forward
+        // returns first (`:6201-6205`), so 60 outranks 5.
+        let mut w = World::new("t".into(), 8, 8);
+        assert_eq!(w.day_rate(), 1);
+        w.all_players_asleep = true;
+        assert_eq!(w.day_rate(), 5);
+        w.fast_forward_to_dawn = true;
+        assert_eq!(w.day_rate(), 60);
+        w.fast_forward_to_dawn = false;
+        assert_eq!(w.day_rate(), 5);
+        w.all_players_asleep = false;
+        assert_eq!(w.day_rate(), 1);
+    }
+
+    #[test]
     fn dw_1_3_cooldowns_decrement_once_per_transition() {
         // DW-1.3 (`Main.cs:65394-65397`, `:65217-65220`): each transition
         // decrements only its own dial's cooldown, exactly once — here on a

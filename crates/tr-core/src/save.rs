@@ -15,8 +15,11 @@ use crate::world::World;
 
 const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// v2 added `moon_type`/`moon_phase`; v1 files still load with 0/0. v3 added
-/// the sparse paint/coating extras; v4 appended the two dial cooldown bytes.
-pub const VERSION: u32 = 4;
+/// the sparse paint/coating extras; v4 appended the two dial cooldown bytes;
+/// v5 appended the bed spawn (the vanilla keeps it in the *player* file's
+/// `spX/spY` arrays, `Player.cs:54877-54888` — the port's single-player world
+/// save carries it world-side, `World::bed_spawn`).
+pub const VERSION: u32 = 5;
 
 pub fn default_world_dir() -> Option<PathBuf> {
     let home = std::env::var_os("USERPROFILE")?;
@@ -148,6 +151,16 @@ fn write_world(w: &mut impl Write, world: &World) -> Result<()> {
     // runtime-only — the C# `.wld` has written `fastForwardTimeToDusk` since
     // v264, but the request is transient by nature.
     w.write_all(&[world.sundial_cooldown, world.moondial_cooldown])?;
+    // v5: the bed spawn (`ChangeSpawn`'s cell — the CheckSpawn-validated
+    // ground cell under the bed, `Player.cs:54635-54660`).
+    match world.bed_spawn {
+        Some((x, y)) => {
+            w.write_all(&[1u8])?;
+            w.write_all(&x.to_le_bytes())?;
+            w.write_all(&y.to_le_bytes())?;
+        }
+        None => w.write_all(&[0u8])?,
+    }
     Ok(())
 }
 
@@ -241,6 +254,17 @@ pub fn parse(data: &[u8]) -> Result<World> {
     if version >= 4 {
         world.sundial_cooldown = r.u8()?;
         world.moondial_cooldown = r.u8()?;
+    }
+    // v5: the bed spawn. A corrupt/out-of-range cell degrades to `None` —
+    // the payload rides disk reads (the load is a trust boundary) and a
+    // dropped spawn point only falls back to the world spawn
+    // (`Player.cs:37571-37575`'s `SpawnX = -1` arm).
+    if version >= 5 && r.u8()? != 0 {
+        let x = r.i32()?;
+        let y = r.i32()?;
+        if x >= 10 && x < world.width - 10 && y >= 10 && y < world.height - 10 {
+            world.bed_spawn = Some((x, y));
+        }
     }
     world.revision = 0;
     Ok(world)
@@ -390,7 +414,7 @@ mod tests {
         w.moondial_cooldown = 8;
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        assert_eq!(&buf[8..12], &[4, 0, 0, 0], "the writer emits v4");
+        assert_eq!(&buf[8..12], &[5, 0, 0, 0], "the writer emits the current v5");
         let back = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 5);
         assert_eq!(back.moondial_cooldown, 8);
@@ -398,13 +422,15 @@ mod tests {
 
     #[test]
     fn dw_1_4_v3_loads_zero_cooldowns() {
-        // DW-1.4: a pristine v3 file (the v4 stream stripped of its 2-byte
-        // tail, version field restored) loads with both cooldowns at 0.
+        // DW-1.4: a pristine v3 file (the current stream stripped of the
+        // v4 tail (2 bytes) and the v5 tail (1 presence byte — the world has
+        // no bed spawn), the version field restored) loads with both
+        // cooldowns at 0.
         let mut w = World::new("Test".into(), 32, 32);
         w.sundial_cooldown = 7;
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        buf.truncate(buf.len() - 2);
+        buf.truncate(buf.len() - 3);
         buf[8..12].copy_from_slice(&3u32.to_le_bytes());
         let back = parse(&buf).unwrap();
         assert_eq!(back.sundial_cooldown, 0);
@@ -414,11 +440,61 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate).
+        // current one (`save.rs` version gate). v5 (the bed spawn) is now the
+        // current format, so the gate pins 6.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w).unwrap();
-        buf[8..12].copy_from_slice(&5u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 5 is unsupported");
+        buf[8..12].copy_from_slice(&6u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 6 is unsupported");
+    }
+
+    #[test]
+    fn the_bed_spawn_round_trips_in_v5() {
+        // DW-3.1 — the v5 tail field: `World::bed_spawn` survives the save
+        // (both arms), and a `None` world stays `None`.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.bed_spawn = Some((30, 20));
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.bed_spawn, Some((30, 20)));
+        w.bed_spawn = None;
+        buf.clear();
+        write_world(&mut buf, &w).unwrap();
+        assert_eq!(parse(&buf).unwrap().bed_spawn, None);
+    }
+
+    #[test]
+    fn a_v4_payload_still_loads_without_the_bed_spawn() {
+        // DW-3.1 — the back-compat read: the v5 payload with the version
+        // field patched to 4 parses as v4 — the tail sits unread and the bed
+        // spawn degrades to `None`.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.spawn_x = 32;
+        w.spawn_y = 20;
+        w.bed_spawn = Some((30, 22));
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        buf[8..12].copy_from_slice(&4u32.to_le_bytes());
+        let back = parse(&buf).unwrap();
+        assert_eq!(back.bed_spawn, None);
+        assert_eq!((back.spawn_x, back.spawn_y), (32, 20));
+    }
+
+    #[test]
+    fn a_corrupt_bed_spawn_degrades_to_none() {
+        // DW-3.1 (dirty, the deserialization trust boundary): an
+        // out-of-range bed cell degrades to `None` instead of erroring or
+        // poisoning the spawn (`Player.cs:37571-37575`'s fallback arm).
+        let mut w = World::new("Test".into(), 64, 48);
+        w.bed_spawn = Some((30, 20));
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w).unwrap();
+        // The v5 tail is the last 9 bytes: [presence][x: i32][y: i32] —
+        // poison the x.
+        let tail = buf.len() - 9;
+        buf[tail + 1..tail + 5].copy_from_slice(&99999i32.to_le_bytes());
+        assert_eq!(parse(&buf).unwrap().bed_spawn, None);
     }
 }

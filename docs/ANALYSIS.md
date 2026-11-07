@@ -4934,14 +4934,85 @@ housing module) with the "Spawn point set!/removed!" texts; the top half is
 consumed-but-inert — the sleep state is not ported), the grandfather clock
 (104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
 
-Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
-render follow-up — the sitting player draws standing, shifted -4 px
-(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) and the
+sleep state landed with M7-INTERACT-1 (the section below); the
 multiplayer seat-stack manager is out (one player); the chest/dresser
 inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
 metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
 the style-0 wooden slice places. The DrawYOffset fields are preview-only
 (`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
+## The sit/sleep poses and the bed spawn (M7-INTERACT-1)
+
+The furniture interaction family completed: the right-click chain's
+chairs/benches/thrones/picnic tables/toilets sit, the beds sleep and set the
+spawn, the spawn survives saves and re-validates at revive.
+
+**Sitting** — the full `PlayerSittingHelper.GetSittingTargetInfo`
+(`PlayerSittingHelper.cs:144-321`): the per-kind anchors (chairs/toilets
+15/497 share the arm with the style-27 seat drop; thrones 102 the
+`frameX/18`+`frameY/18` shifts; picnic 487 the `frameX % 72 / 18` pick; the
+benches 89 the per-style `frameX / 54` seat-offset table with the `zero2`
+X-nudge and the `zero` (-1, 0) position shift), the 40-px snap gate
+(`IsWithinSnappngRangeToTile`, `Player.cs:17365-17372` — the tile centre to
+`(Center.X, Bottom.Y - 16)`), and `UpdateSitting`'s exit mask
+(`PlayerSittingHelper.cs:62-65` — any control input, the mount, or a facing
+mismatch; the port's merged jump binding covers `controlUp`, W/ArrowUp feed
+`control_jump`).
+
+**Sleeping** — `PlayerSleepingHelper`: `StartSleeping`'s anchor decode
+(`:192-224`, the anchor column `leftmost + 1` unflipped / `+ 2` flipped, the
+style = `frameY / 36`), the 96-px gate, `CanSnapToPosition` =
+`!Collision.SolidCollision` (`Player.cs:33401-33403`; the port's
+`SolidCollision` copy carries the `-1/+2` sample expansion, the half-brick
+cut and the `maxTilesY - 40` bottom clamp), the fully-asleep counter
+(`timeSleeping >= 120`) that arms `UpdateTimeRate`'s ×5 (`Main.cs:6209-6215`
+— the dial's 60 outranks it), and the wake set: the input mask, the blood
+moon night, the held-item swing (the counter reset) — the damage does NOT
+wake, matching vanilla.
+
+**The poses** — `DrawSittingLegs` (`PlayerDrawLayers.cs:1536-1707`): the
+standing legs cell (row 0) re-sliced into three strips (the 10-px bottom
+block fanned +4 px along the facing over two 2-px knee slices, dropped
+42 px, `+2·direction/+2` pre-shift, `-2` lift, `seatYOffset`), the torso
+sandwich drop (`PlayerDrawSet.cs:343-347`'s `torsoOffset` over the
+`LegacyPlayerRenderer.cs:183-225` ranges — torso/back arm/head drop, the
+front arm does not), and the sleep rotation (`TransformDrawData`,
+`:4092-4119` — every sprite's position rotates around `fullRotationOrigin`
+= the hitbox centre, `PlayerSleepingHelper.cs:73-74`'s `PI/2 * (-direction)`)
+plus `SetOffsetbyBed` (`:226-279`) verbatim.
+
+**The bed spawn** — the port keeps it world-side (`World::bed_spawn`), TRWLD
+**v5** (a presence byte + the cell; a corrupt/out-of-range payload degrades
+to `None`), while the vanilla persists it in the *player* file's spX/spY
+arrays (`Player.cs:54877-54888`) — the single-player shape, recorded. The
+re-validation runs the same `CheckSpawn` at revive (`Player.cs:37571-37575`)
+with the failure texts on the chat; the load-time fallback is silent (the
+chat monitor does not exist at join — the C# prints via `CheckSpawn`'s
+`Main.NewText`).
+
+**The housing flood fix (a real port bug the task caught):** the port's
+`CheckRoom` settled the fill on ANY active tile; the C# settles only on
+SOLID tiles and the open gates (11 at the frameX ends 0/54/72/126, 389, and
+386 at the open frame pairs — `WorldGen.cs:6176-6195`). The bed-spawn check
+starts its flood ON the bed's cell (`StartRoomCheck(x, y - 1)`), so the old
+semantics failed every bed room with "This room is too small." Furniture
+(non-solid actives) now keeps the fill running, exactly like vanilla; the
+town-NPC housing inherits the fix (rooms with furniture validate).
+
+**Deviations:** the 2-players-per-tile seat/sleep stack managers
+(`Main.sittingManager`/`sleepingManager`) are the multiplayer registries —
+SP no-op; the Skeletron-hat bench easter egg (`UpdateSitting`'s night arm)
+and the toilet's `TryToPoop` regen hook stay out (the NPC/regen sides); the
+armor-specific sitting rows (legs 106/143/226/217) wait for those armor
+sets; the `ForcesBreaksSleeping`/damaging-item wake arm waits for M3-ITEM's
+item stats (the swing itself already resets the counter); the eclipse wake
+condition waits for the hardmode state; the tile-379 solidity keeps the
+generated set's base state (solid) — the vanilla's per-frame non-solid
+window during `UpdateWorld_Players` (`Main.cs:17753`/`:17799`) is not
+emulated, which is exactly what `CheckSpawn`'s forced-solid window needs.
+`TR_POSE=sit|sleep` pins the debug scene (a dirt ledge + the furniture + the
+snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
