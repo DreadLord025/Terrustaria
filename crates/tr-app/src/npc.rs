@@ -2590,6 +2590,47 @@ impl Npc {
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
+            NpcKind::Golem => {
+                // `FindFrame`'s case 245 (`NPC.cs:72898-72930`): the
+                // grounded state selects the 5-row charge ramp over the
+                // `ai[1]` window (-20..0), row 0 while charging; the
+                // flight arm's literal `frame.Y = 1` pixel write folds
+                // to row 0 (the documented 1-px deviation).
+                if self.ai[0] == 0.0 {
+                    let c = self.cast_windup as f32;
+                    self.frame = if c < -16.0 {
+                        0
+                    } else if c < -12.0 {
+                        1
+                    } else if c < -8.0 {
+                        2
+                    } else if c < -4.0 {
+                        3
+                    } else if c < 0.0 {
+                        4
+                    } else {
+                        0
+                    };
+                } else {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::GolemHead => {
+                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): the mouth
+                // row rides the fireball window (the first/last 20 of the
+                // 300 cadence — `:31181`/`:31186`'s localAI[0]), the
+                // phase-1 head-turn rows (+2/+4) follow the side toward
+                // the player (`:31213`/`:31218`'s localAI[1]).
+                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
+                // /'s localAI[1] side turns ride the
+                // facing (the machine faces the player): +2 left, +4 right
+                // (`:72955`/`:72959`'s row offsets).
+                let mut row = if mouth { 1 } else { 0 };
+                if self.ai[0] == 1.0 {
+                    row += if self.facing < 0 { 4 } else { 2 };
+                }
+                self.frame = row;
+            }
             NpcKind::GoblinTinkerer => {
                 // The town 3-frame machine (`Main.npcFrameCount[107]`,
                 // aiStyle 7's FindFrame — the Guide's arm).
@@ -4268,7 +4309,11 @@ impl Npc {
             } else {
                 let (dx, dy) = (pcx - cx, pcy - cy);
                 let len = (dx * dx + dy * dy).sqrt();
-                let (nx, ny) = if len > 0.0 { (dx / len, dy / len) } else { (self.facing as f32, 0.0) };
+                let (nx, ny) = if len > 0.0 {
+                    (dx / len, dy / len)
+                } else {
+                    (self.facing as f32, 0.0)
+                };
                 let vlen = (self.vx * self.vx + self.vy * self.vy).sqrt();
                 self.vx = (self.vx * (lerp - 1.0) + nx * (vlen + home_term)) / lerp;
                 self.vy = (self.vy * (lerp - 1.0) + ny * (vlen + home_term)) / lerp;
@@ -4658,7 +4703,14 @@ impl Npc {
                         self.vx = dx / d * num3;
                         self.vy = dy / d * num3;
                     }
-                    self.ai[1] += 1.0;
+                    // The contact cadence: +1, the body's damaged
+                    // tier adds 10x (`:19301`'s `10f * num5` — the
+                    // 16.7x charge under damage).
+                    self.ai[1] += if world.golem_hp_ratio < 1.0 {
+                        10.0
+                    } else {
+                        1.0
+                    };
                     if self.ai[1] >= 60.0 {
                         self.ai[0] = 1.0;
                         self.ai[1] = 0.0;
@@ -4682,8 +4734,15 @@ impl Npc {
                         let dx = pcx - cx;
                         let dy = pcy - cy;
                         let d = (dx * dx + dy * dy).sqrt().max(0.001);
-                        self.vx = dx / d * 12.0;
-                        self.vy = dy / d * 12.0;
+                        // `:19362-19378`'s tiers: the base 12, the
+                        // body-damaged +10 (the own-life tiers fold), the
+                        // 48 clamp.
+                        let mut sp = 12.0;
+                        if world.golem_hp_ratio < 1.0 {
+                            sp += 10.0;
+                        }
+                        self.vx = dx / d * sp;
+                        self.vy = dy / d * sp;
                     }
                     self.ai[1] += 1.0;
                     let ddx = anchor_x - cx;
@@ -4720,24 +4779,39 @@ impl Npc {
                 }
                 // The eye-beam barrage (`:31506-31568`): the 100+Next(4800)
                 // cadence folds to the flat 1500 average; 2 per volley,
-                // the 259 dmg 24 with the +-14 spread, the 11 speed, the
-                // 3-tick lead.
+                // the 259 dmg/speed tiers by the BODY's hp ratio
+                // (`:31524-31548`: 24->29 dmg, 11->12.25 at 50/40/30/20/10%),
+                // the +-14 spread, the 3-tick lead.
                 self.ai[2] += 1.0;
                 if self.ai[2] > 1500.0 {
                     self.ai[2] = 0.0;
+                    let ratio = world.golem_hp_ratio;
+                    let (dmg, sp) = if ratio < 0.1 {
+                        (29, 12.25)
+                    } else if ratio < 0.2 {
+                        (28, 12.0)
+                    } else if ratio < 0.3 {
+                        (27, 11.75)
+                    } else if ratio < 0.4 {
+                        (26, 11.5)
+                    } else if ratio < 0.5 {
+                        (25, 11.25)
+                    } else {
+                        (24, 11.0)
+                    };
                     for sx in [-14.0, 14.0] {
                         let mut vx = pcx - (cx + sx);
                         let mut vy = pcy - (cy - 50.0);
                         let vd = (vx * vx + vy * vy).sqrt().max(0.001);
-                        vx = vx / vd * 11.0;
-                        vy = vy / vd * 11.0;
+                        vx = vx / vd * sp;
+                        vy = vy / vd * sp;
                         self.wants_hostile_shot = Some((
                             crate::projectile::GOLEM_EYE_BEAM,
                             cx + sx + vx * 3.0,
                             cy - 50.0 + vy * 3.0,
                             vx,
                             vy,
-                            24,
+                            dmg,
                         ));
                     }
                 }
@@ -7316,6 +7390,45 @@ mod tests {
         assert_eq!(e.net_id, 245, "the parts fold onto the Golem entry");
     }
 
+    #[test]
+    fn the_golem_free_head_tiers_by_body_hp() {
+        // :31524-31548's tiers: the beams escalate by the body's hp ratio
+        // (24 -> 29 dmg, 11 -> 12.25 speed) — the ratio rides the World.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 115.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut free = Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        free.hp = free.max_hp;
+        free.ai[2] = 1500.0;
+        let mut beam = None;
+        free.update_golem(&w, &player);
+        if let Some(p) = free.wants_hostile_shot.take() {
+            beam = Some(p);
+        }
+        let (kind, _, _, vx, vy, dmg) = beam.expect("the volley fires");
+        assert_eq!(kind, crate::projectile::GOLEM_EYE_BEAM);
+        assert_eq!(dmg, 24, "the full-body damage");
+        let sp = (vx * vx + vy * vy).sqrt();
+        assert!((sp - 11.0).abs() < 0.5, "the 11 speed ({sp})");
+        // The mortally wounded body: 29 dmg at 12.25.
+        w.golem_hp_ratio = 0.05;
+        free.ai[2] = 1500.0;
+        let mut beam2 = None;
+        free.update_golem(&w, &player);
+        for _ in 0..3 {
+            if let Some(p) = free.wants_hostile_shot.take() {
+                beam2 = Some(p);
+            }
+        }
+        let (_, _, _, vx2, vy2, dmg2) = beam2.expect("the escalated volley");
+        assert_eq!(dmg2, 29, "the low-body damage tier");
+        let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
+        assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
+    }
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate

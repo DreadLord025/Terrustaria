@@ -1389,6 +1389,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             app.world.golem_present = true;
             app.world.golem_x = body.x + bw * 0.5;
             app.world.golem_y = body.y + bh * 0.5;
+            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
             let head_alive = app
                 .npcs
                 .iter()
@@ -1402,6 +1403,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         } else {
             app.world.golem_present = false;
+            // NPC.cs:31141/19242/31372's golemBoss < 0 arm: the parts
+            // 9999-strike themselves (the no-interaction kill — the port's
+            // hp = 0; the kill credit is the documented deviation).
+            for n in app.npcs.iter_mut() {
+                if matches!(
+                    n.kind,
+                    NpcKind::GolemHead
+                        | NpcKind::GolemFistLeft
+                        | NpcKind::GolemFistRight
+                        | NpcKind::GolemHeadFree
+                ) {
+                    n.hp = 0;
+                }
+            }
         }
     }
     // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
@@ -3005,6 +3020,48 @@ mod probe_tests {
         assert!(
             !app.npcs.iter().any(|m| m.kind == NpcKind::MartianProbe),
             "the dead probe is removed"
+        );
+    }
+    #[test]
+    fn the_golem_parts_die_with_the_body() {
+        // `NPC.cs:31141`/`:19242`/`:31372`'s `golemBoss < 0` arm: the head,
+        // fists and free head 9999-strike themselves once the body's gone.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        app.world = big;
+        app.world.golem_present = false;
+        let mut head = Npc::new(NpcKind::GolemHead, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        head.hp = head.max_hp;
+        let mut fist = Npc::new(NpcKind::GolemFistLeft, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        fist.hp = fist.max_hp;
+        app.npcs.push(head);
+        app.npcs.push(fist);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs
+                .iter()
+                .filter(|n| n.hp > 0
+                    && matches!(
+                        n.kind,
+                        NpcKind::GolemHead
+                            | NpcKind::GolemFistLeft
+                            | NpcKind::GolemFistRight
+                            | NpcKind::GolemHeadFree
+                    ))
+                .count()
+                == 0,
+            "the parts follow the body down"
         );
     }
 }
