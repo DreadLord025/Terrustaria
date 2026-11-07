@@ -1885,7 +1885,9 @@ The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`
 commits `9c84351..028daba`) moved code, gave the moved functions readable Rust
 names (overriding the C#-name rule for this pass) and added three C#-shaped
 trait seams. Behaviour and RNG streams were pinned unchanged: the worldgen
-byte-proof's four FNV-1a state hashes and a post-refactor determinism pair
+byte-proof (four FNV-1a state hashes — at the time an out-of-tree harness;
+now in-tree as `worldgen/world_hash.rs`'s pinned constants, M5-GEN-1) and a
+post-refactor determinism pair
 (SHA256-equal repeat screenshots) both pass; the workspace tests read
 399/10/147. The new tree, the "where to look" map and the frame flow live in
 `docs/ARCHITECTURE.md`; the `PORT_MAP.md` rows are re-pointed. The movements,
@@ -3995,6 +3997,59 @@ tree/cactus growth and the biome spread are M7-GROWTH-2; the
 notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
+
+## Worldgen pass pipeline (M5-GEN-1)
+
+The scaffold wraps the already-landed passes in the vanilla pipeline shape
+(`worldgen/pipeline.rs`) without touching a single pass body or stream constant:
+
+- **Two tables.** `VANILLA_CHAIN` declares the vanilla chain as data — 109
+  `AddGenerationPass` registrations (106 for a classic world; the skyblock
+  `Jungle`+`Skyblock` pair and the dual-dungeons `DitherSnakePass` are
+  conditional) with the `GenPassNameID` display names, the `PassLegacy._weightMap`
+  progress weights and the `WorldGen.cs` anchors. It is the model and the slot
+  registry for future passes; the runtime never walks it. `EXECUTED_PIPELINE`
+  declares the port's 39 steps in the pre-scaffold `generate()` call order,
+  each an adapter over the unchanged `pub(crate)` pass fns.
+- **The order is NOT vanilla, deliberately.** The port's execution order
+  deviates from the vanilla chain in several slots (the evil band runs before
+  the mushroom patches; the floating islands run near the end; the slopes
+  precede the living trees; ...) — the shared xorshift streams make any
+  reorder byte-breaking, and the world contract pins the order. The vanilla
+  chain stays the declaration of record; unported vanilla passes simply have
+  no executed step yet (vanilla's disabled-pass shape).
+- **The GenVars slice** — `SurfaceMap`/`Layers`/`BiomeSpans` + the shrine
+  spots — moved into `pipeline::GenVars`; the three seed constants moved into
+  `pipeline::Streams` verbatim; the frame-important boot statics into
+  `pipeline::boot_statics`. `generate()` is now the `Reset`-equivalent setup
+  (boot statics, `Noise`, streams, the parsed config) + `pipeline::run`.
+- **The config layer** (`worldgen/config.rs`): the game's embedded
+  `Terraria.GameContent.WorldBuilding.Configuration.json` copied verbatim
+  (it IS in the decompile root — the old ROADMAP note said otherwise) next to
+  the module, parsed through a BOM/`//`-comment prefilter into typed
+  lookups: `pass(name)`/`biome(name)` sections (`GameConfiguration.Get`),
+  `WorldGenRange::get_random` with the exact C# scaling (WorldArea
+  `maxTilesX·maxTilesY/5040000`, WorldWidth `maxTilesX/4200`, truncating) and
+  the inclusive-max `Next(min, max+1)`. The runner hands every step its
+  config view like vanilla `RunPass` (`WorldGenerator.cs:501`); today's
+  adapters ignore it — the shape-level passes keep their own pinned constants
+  (e.g. the living-tree count stays `Next(4)` per side, not the vanilla
+  `Micro Biomes.LivingTreeCount 6-11`) — future passes read their options
+  from there.
+- **Determinism, proven.** Vanilla gives every pass a fresh
+  `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`) — pass streams are
+  independent, which is what makes its fixed chain insertion-safe. The port
+  keeps its three contract streams (main `seed ^ 0xA076_1D64_78BD_642F`,
+  detail `seed ^ 0x5DEE_CE66_D1A4_9B5F`, structures
+  `seed ^ 0x9E37_79B9_7F4A_7C15`); a FUTURE pass slots between existing
+  steps only with its own stream (`Rng(seed ^ fnv(pass_name))`), never by
+  joining these. The proof: `worldgen/world_hash.rs` ports
+  `WorldGenerator.HashWorld` (`:517-545`) — the per-column
+  `rotl13(h)*5 + 3864292196` FNV fold over every stored `Tile` field — and
+  pins the constants captured from the PRE-scaffold output (512×512/seed 42
+  `3510339375`, the default 4200×1200/seed-1 world `3248003836`); the pins
+  held through the rewiring. The seam test additionally proved the runner
+  tile-for-tile equal to the old straight-line body before it was replaced.
 
 ## Biome passes (M1.4-WGEN-1)
 
