@@ -13,7 +13,7 @@
 //!   the `AddGenerationPass` anchor and the conditional-registration gate.
 //!   It is the model and the slot registry future passes register into —
 //!   it is never walked at runtime.
-//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 39 steps in
+//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 41 steps in
 //!   today's exact call order, each an adapter that calls the existing
 //!   `pub(crate)` pass fn unchanged. The order is NOT the vanilla order (the
 //!   deviations are pinned by the world contract — see the per-step
@@ -161,6 +161,15 @@ pub(crate) struct GenVars {
     /// The temple bounds — the M5-TEMPLE seam (see [`TempleBounds`]).
     #[allow(dead_code)] // written by the temple pass from Phase 6 on
     pub(crate) temple: TempleBounds,
+    /// `GenVars.waterLine`/`lavaLine` (`GenVars.cs:62-64`) — the
+    /// `TerrainPass` products the mud runners read
+    /// (`TerrainPass.cs:211-236`: `(int)(rockLayer + maxTilesY)/2 +
+    /// Next(-100, 20)` and `+ Next(50, 80)`), drawn in the terrain-fill
+    /// step from the pass's own fresh stream.
+    #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
+    pub(crate) water_line: i32,
+    #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
+    pub(crate) lava_line: i32,
 }
 
 impl Default for GenVars {
@@ -185,6 +194,10 @@ impl Default for GenVars {
                 l_altar_x: 0,
                 l_altar_y: 0,
             },
+            // The C# statics are zero until `TerrainPass` writes them
+            // (`TerrainPass.cs:235-236`).
+            water_line: 0,
+            lava_line: 0,
         }
     }
 }
@@ -937,12 +950,18 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
     step!("jungle", "Jungle", step_jungle),
+    step!(
+        "mud caves to grass",
+        "Mud Caves To Grass",
+        step_mud_caves_to_jungle_grass
+    ),
     step!("evil", "Corruption", step_evil),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
     step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
     step!("liquids", "Lakes", step_liquids),
@@ -1007,7 +1026,7 @@ fn step_terrain_height_map(
 fn step_terrain_fill(
     world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     noise: &Noise,
     _pass_config: &ConfigSection,
@@ -1017,23 +1036,49 @@ fn step_terrain_fill(
         .map
         .as_ref()
         .expect("the terrain height-map step did not run");
-    gv.layers = Some(terrain::fill_terrain(world, width, height, noise, map));
+    let layers = terrain::fill_terrain(world, width, height, noise, map);
+    // `TerrainPass`'s water/lava lines (`TerrainPass.cs:211-236`):
+    // `num13 = (int)(rockLayer + maxTilesY) / 2 + Next(-100, 20)` →
+    // `GenVars.waterLine`, `lavaLine = num13 + Next(50, 80)`. Drawn from the
+    // pass's own fresh stream (the per-pass contract) — the port's Terrain
+    // stand-in otherwise draws nothing, so no existing draw shifts.
+    let (water_line, lava_line) = {
+        let mut trng = streams.pass_rng("Terrain");
+        let water_line = ((layers.rock_layer + height as f64) as i32) / 2 + trng.range(-100, 20);
+        let lava_line = water_line + trng.range(50, 80);
+        (water_line, lava_line)
+    };
+    gv.water_line = water_line;
+    gv.lava_line = lava_line;
+    gv.layers = Some(layers);
 }
 
 fn step_plan_biome_spans(
-    _world: &mut World,
+    world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // `Reset`'s jungle origin draw (`WorldGen.cs:11341-11376`): the port's
+    // Reset stand-in draws `Next(15, 30)` from a fresh "Jungle" stream — the
+    // dungeon-side sign is fixed Right because the port's dungeon sits on
+    // the right (`plan_spans`' `dungeon_x`), so the C# `Next(2)` side draw
+    // (`:11348`) is not portable. The pass consumes `jungle_origin_x`
+    // without redrawing.
+    let jungle_origin_x = {
+        let mut origin_rng = streams.pass_rng("Jungle");
+        let percent = origin_rng.range(15, 30);
+        (world.width as f64 * (percent as f64 * 0.01)) as i32
+    };
+    gv.jungle_origin_x = jungle_origin_x;
     let (width, beach) = {
         let map = gv.map();
-        (_world.width, map.beach)
+        (world.width, map.beach)
     };
     let surface = gv.map().heights.clone();
-    gv.spans = Some(biomes::plan_spans(width, &surface, beach));
+    gv.spans = Some(biomes::plan_spans(width, &surface, beach, jungle_origin_x));
 }
 
 fn step_jungle(
@@ -1044,13 +1089,59 @@ fn step_jungle(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
+    // The faithful `JunglePass` draws from its own fresh per-pass stream
+    // (the `WorldGenerator.cs:497` re-seed model — the Phase-1 contract).
+    let jungle_origin_x = gv.jungle_origin_x;
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
+    let beach = gv.map().beach;
     biomes::pass_jungle(
         world,
-        &map.heights,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.rng,
+        jungle_origin_x,
+        world_surface,
+        rock_layer,
+        water_line,
+        lava_line,
+        beach,
+        &mut streams.pass_rng("Jungle"),
+    );
+}
+
+fn step_mud_caves_to_jungle_grass(
+    world: &mut World,
+    _gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    biomes::pass_mud_caves_to_jungle_grass(world);
+}
+
+fn step_dirt_to_mud(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_low, rock_layer, world_surface) = {
+        let l = gv.layers();
+        (l.rock_low, l.rock_layer, l.world_surface)
+    };
+    let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
+    biomes::pass_dirt_to_mud(
+        world,
+        rock_low,
+        rock_layer,
+        water_line,
+        lava_line,
+        world_surface,
+        &mut streams.pass_rng("Dirt To Mud"),
     );
 }
 
@@ -1665,16 +1756,19 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_39_named_steps() {
+    fn the_executed_pipeline_is_41_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 39);
+        assert_eq!(names.len(), 41);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
         sorted.dedup();
         assert_eq!(sorted.len(), count, "step names must be unique");
-        // The order is the pre-scaffold generate() call order (pinned; the
-        // byte contract — see the module doc).
+        // The order: the pre-scaffold generate() call order with the two
+        // M5-BIOME phase-3 insertions — `mud caves to grass` right after
+        // `jungle` (vanilla `:12466` → `:12468`) and `dirt to mud` between
+        // `dirt-in-stone blobs` and `ash blobs` (satisfies the vanilla
+        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs).
         assert_eq!(
             names,
             vec![
@@ -1682,12 +1776,14 @@ mod tests {
                 "terrain fill",
                 "plan biome spans",
                 "jungle",
+                "mud caves to grass",
                 "evil",
                 "mushroom patches",
                 "granite and marble",
                 "cave fields",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "dirt to mud",
                 "ash blobs",
                 "ores and gems",
                 "liquids",
@@ -1719,6 +1815,29 @@ mod tests {
                 "world tail",
             ]
         );
+    }
+
+    /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
+    /// positions — `mud caves to grass` immediately after `jungle`
+    /// (vanilla `:12466` → `:12468`) and `dirt to mud` between
+    /// `dirt-in-stone blobs` and `ash blobs` (the vanilla DirtToMud <
+    /// Shinies and DirtToMud < Underworld relative pairs, research §5.3).
+    #[test]
+    fn test_DW_3_3_new_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 1);
+        assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
+        // The vanilla chain carries both passes in the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mud Caves To Grass") == cpos("Jungle") + 1);
+        assert!(cpos("Dirt To Mud") < cpos("Shinies") && cpos("Dirt To Mud") < cpos("Underworld"));
     }
 
     #[test]

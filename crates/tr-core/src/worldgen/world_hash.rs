@@ -67,9 +67,14 @@ mod tests {
     /// must reproduce them exactly, across two runs each. Re-pinned for
     /// M5-ORES-1: the ore step now runs the faithful `OresAndShinies`
     /// TileRunner pass (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)"),
-    /// which changes every world on every seed by design.
-    const SEED42_512: u32 = 2612473380;
-    const DEFAULT_WORLD: u32 = 3104994150;
+    /// which changes every world on every seed by design. Re-pinned again
+    /// for M5-BIOME phase 3: the faithful `JunglePass` replaces the
+    /// shape-level band (and leaves the shared `rng` stream), `Mud Caves To
+    /// Grass` and `Dirt To Mud` join as their own steps, and the wall-arm /
+    /// slope-fix TileRunner semantics landed — every world on every seed
+    /// changes by design (the ANALYSIS section lands in Phase 7).
+    const SEED42_512: u32 = 844298041;
+    const DEFAULT_WORLD: u32 = 4129395800;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

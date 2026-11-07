@@ -18,7 +18,7 @@
 use super::noise::Rng;
 use super::{TILE_SAND, WALL_DIRT};
 use crate::tile::{LiquidKind, Tile, FLAG_ACTIVE, FLAG_LIQUID_LAVA};
-use crate::tiledata::{SET_CAN_BE_CLEARED_DURING_GENERATION, SET_ORE, TILE_STONE};
+use crate::tiledata::{SET_CAN_BE_CLEARED_DURING_GENERATION, SET_ORE, TILE_SOLID, TILE_STONE};
 use crate::tileobject::tile_cut;
 use crate::world::World;
 
@@ -66,6 +66,18 @@ impl Default for TileRunnerOpts {
     }
 }
 
+/// `TileID.Sets.NonSolidSaveSlopes` (`TileID.cs:496`) — the eight non-solid
+/// kinds that keep their slopes through a runner write.
+const NON_SOLID_SAVE_SLOPES: [i32; 8] = [131, 351, 336, 340, 342, 341, 343, 344];
+
+/// `TileID.Sets.SaveSlopes` (`TileID.cs:468-471`): filled in `PostSetupContent`
+/// — every solid tile plus the eight non-solid kinds above. The runner's
+/// slope-clear flag reads it (`WorldGen.cs:76802`: `type >= 0 &&
+/// !TileID.Sets.SaveSlopes[type]`), so solid runner kinds keep their slopes.
+fn save_slopes(kind: i32) -> bool {
+    (kind >= 0 && TILE_SOLID.has(kind as u16)) || NON_SOLID_SAVE_SLOPES.contains(&kind)
+}
+
 /// `WallID.MudUnsafe` = 15 (`WorldGen.cs:76881`) — the mud-body lining placed
 /// in the deep half of the wall band.
 const WALL_MUD_UNSAFE: u16 = 15;
@@ -109,6 +121,26 @@ fn wall_at(world: &World, x: i32, y: i32) -> u16 {
     world.tile(x, y).map_or(0, |t| t.wall)
 }
 
+/// The mud-wall arm's write (`WorldGen.cs:76881`/`:76886` → `PlaceWall`,
+/// `:75125-75144`, empty-wall-only). Vanilla reaches the arm with wall 0
+/// below ~`worldSurface + 10` — `Dirt Wall Backgrounds` (`:11858-11880`) is
+/// the only pre-jungle wall writer and stops there — while the port's
+/// `fill_terrain` pre-walls every solid row (dirt 2 / stone 1 / sandstone
+/// 187). Those baseline walls correspond to vanilla's wall-0 region, so the
+/// write lands on them; the arm's own walls (15/64) are never overwritten,
+/// which is `PlaceWall`'s rule for every wall the arm can meet (the
+/// neighbour gates plus this rule keep the phase-2 wall semantics).
+fn place_mud_arm_wall(world: &mut World, k: i32, l: i32, wall: u16) {
+    if k <= 1 || l <= 1 || k >= world.width - 2 || l >= world.height - 2 {
+        return;
+    }
+    if let Some(tile) = world.tile_mut(k, l) {
+        if !matches!(tile.wall, 15 | 64) {
+            tile.wall = wall;
+        }
+    }
+}
+
 /// One `TileRunner` call. `strength`/`steps` are the C# blob size and step
 /// count, `world_surface` is `Main.worldSurface` (read by the sand protection,
 /// the `no_y_change` dirt-wall lining, the mud-wall arm and the kind-59 stone
@@ -135,10 +167,11 @@ pub(crate) fn tile_runner(
         vel_x = opts.speed_x;
         vel_y = opts.speed_y;
     }
-    // The runner kind keeps its slope cleared: `flag = type >= 0 &&
-    // !TileID.Sets.SaveSlopes[type]` (`:76802`) and `SaveSlopes` is empty
-    // (`TileID.cs:468`).
-    let clears_slope = kind >= 0;
+    // The runner kind keeps its slope cleared unless `SaveSlopes` holds it:
+    // `flag = type >= 0 && !TileID.Sets.SaveSlopes[type]` (`:76802`) with
+    // `SaveSlopes` = every solid tile + the eight non-solid kinds
+    // (`TileID.cs:468-471`, `:496`).
+    let clears_slope = kind >= 0 && !save_slopes(kind);
 
     // The `num3` liquid-type lottery (`:76806-76820`) draws `Next(4)` on every
     // call even though every branch is secret-seed-only and the result is a
@@ -218,14 +251,14 @@ pub(crate) fn tile_runner(
                             && wall_at(world, k - 1, l) != WALL_JUNGLE_UNSAFE
                             && wall_at(world, k + 1, l) != WALL_JUNGLE_UNSAFE
                         {
-                            place_wall(world, k, l, WALL_MUD_UNSAFE);
+                            place_mud_arm_wall(world, k, l, WALL_MUD_UNSAFE);
                         }
                     } else if wall_at(world, k, l - 1) != WALL_MUD_UNSAFE
                         && wall_at(world, k, l + 1) != WALL_MUD_UNSAFE
                         && wall_at(world, k - 1, l) != WALL_MUD_UNSAFE
                         && wall_at(world, k + 1, l) != WALL_MUD_UNSAFE
                     {
-                        place_wall(world, k, l, WALL_JUNGLE_UNSAFE);
+                        place_mud_arm_wall(world, k, l, WALL_JUNGLE_UNSAFE);
                     }
                 }
                 // The `type < 0` liquid-carving path (`WorldGen.cs:76889-76913`):
@@ -1006,6 +1039,58 @@ mod tests {
             FLAG_LIQUID_LAVA,
             "outside the disc: lava intact"
         );
+    }
+
+    /// DW-3.5: the slope-clear flag reads `SaveSlopes` (`WorldGen.cs:76802`,
+    /// `TileID.cs:468-471`/`:496`) — solid runner kinds keep the slope of the
+    /// tile they replace, the eight non-solid `NonSolidSaveSlopes` kinds keep
+    /// theirs, and other non-solid kinds clear. The base tile is replaceable
+    /// dirt either way (the flag keys on the runner kind).
+    #[test]
+    fn test_DW_3_5_slope_clearing_matches_save_slopes() {
+        // The premises: mud 59 is solid, kind 131 is not (the generated set).
+        assert!(TILE_SOLID.has(59));
+        assert!(!TILE_SOLID.has(131));
+        for (runner_kind, base, saved) in [(59i32, 0u16, true), (131, 1, true), (3, 0, false)] {
+            // The kind-131 base must be stone: 131 is in `Main.tileStone`,
+            // so the runner protects every non-stone tile (`:76926`).
+            let mut world = World::new("t".into(), 200, 200);
+            let idx = world.index(100, 100);
+            let mut tile = Tile::default();
+            tile.kind = base; // clearable, replaced by every runner here
+            tile.flags |= FLAG_ACTIVE;
+            tile.set_slope(1);
+            world.tiles[idx] = tile;
+            world.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+            tile_runner(
+                &mut world,
+                &mut Rng(3),
+                100,
+                100,
+                2.0,
+                1,
+                runner_kind,
+                0.0,
+                &TileRunnerOpts::default(),
+            );
+            let wrote = world.tile(100, 100).unwrap();
+            assert_eq!(wrote.kind, runner_kind as u16, "the base was replaced");
+            assert_eq!(
+                wrote.slope(),
+                if saved { 1 } else { 0 },
+                "runner kind {runner_kind} slope flag"
+            );
+        }
+        // And `save_slopes` itself mirrors the C# set for the boundary kinds.
+        for kind in [131i32, 351, 336, 340, 342, 341, 343, 344] {
+            assert!(save_slopes(kind), "NonSolidSaveSlopes {kind}");
+        }
+        for kind in [1i32, 0, 59, 60, 161] {
+            assert!(save_slopes(kind), "solid {kind}");
+        }
+        for kind in [3i32, 4, 21] {
+            assert!(!save_slopes(kind), "plain non-solid {kind}");
+        }
     }
 
     /// The kind-59 depth clamps (`:77123-77141`): above `rockLayer + 100` the
