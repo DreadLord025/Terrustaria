@@ -451,10 +451,11 @@ pub fn draw_hud(
     // scale 1, tinted `Color(Main.mouseTextColor x4)` — no shadow pass.
     let item = &inventory[selected.min(HOTBAR - 1)];
     if item.count > 0 && !inventory_open {
-        let label = item.name;
-        let tw = text::hud_text_width(r, lookups, label, 1.0);
+        // `Lang.GetItemNameValue` via the `ItemName.<const>` key.
+        let label = crate::lang::item_name(item.kind);
+        let tw = text::hud_text_width(r, lookups, &label, 1.0);
         let t = pulse.text;
-        text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], label);
+        text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], &label);
     }
 
     // `Main.mouseItem`: `DrawInterface_38_MouseCarriedObject` (`Main.cs:45173-45195`)

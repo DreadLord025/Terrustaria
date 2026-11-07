@@ -67,7 +67,7 @@ broad parity 1.5–3 years, full 1:1 3+ years.
 | Projectiles | ⬜ | shuriken first pass only; no engine (immunity/penetrate/minions) |
 | Wiring / tile entities / shimmer / fishing / pylons | ⬜ | — |
 | UI framework & screens | 🟡 | front-end char/world screens done; HUD partial; inventory UX partial; chest/creative/bestiary/emotes missing |
-| Localization | 🟡 | core ported + tested, not wired into UI |
+| Localization | 🟡 | wired (language screens/menus/item names) — sub-screens pending |
 | Audio | 🟡 | 8 cues + XACT music engine + 3D attenuation + rain/wind ambience tracks + waterfall/lavafall loops; the blizzard loops and the remaining biome branches missing |
 | Networking | 🔄 | custom host/join flow; exact 1.4.5.8 protocol not started |
 | Saves | 🟡 | `.trwld` round-trip, `.wld` header+tiles, `.map` v326; chests/signs/NPC sections skipped |
@@ -968,9 +968,20 @@ framework.
 
 ## 25. Localization
 
-**C#** `Localization/*`, `Lang.cs` · **Rust** `localization/` ✅ core — not wired · 🟡.
+**C#** `Localization/*`, `Lang.cs` · **Rust** `localization/` ✅ core — `tr-app::lang` wired
+(title/settings/language screens, item names) · 🟡.
 
-**Tasks:** M6-LOCALIZE-wire (HUD/item names/menus).
+**Tasks:** M6-LOCALIZE-wire — first slice done 2026-11-07 (`M6-LOCALIZE-wire-fonts`):
+the `lang` runtime (84 shipped `Terraria.Localization.Content.*` resources, 12 cultures ×
+7 groups, loaded from `TR_LOCALE`/the `../decompiled` sibling of the content dir — the
+same retail-derived content model as `assets/Content`), the `LanguageManager.SetLanguage`
+menu flow (`Main.cs:48519-48523`), `Settings.language` under the vanilla `"Language"`
+key (`Main.cs:4099`) applied at startup (`Main.cs:4345`, `TR_LANG` = the `-lang` flag),
+plus the font fix the localized strings needed (the shipped `DynamicSpriteFont` parse —
+159 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
+texture array the XNA `SurfaceFormat.Dxt3` path implies). Remaining: the video/volume/
+effects/controls sub-screens and the UIState screens still draw their English labels
+(next slice), then HUD/death-dialog text.
 
 ## 26. Audio & music
 
