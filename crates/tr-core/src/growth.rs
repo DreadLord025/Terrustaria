@@ -510,6 +510,220 @@ pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
     }
 }
 
+/// `WorldGen.UpdateWorld_GrassGrowth` (:74269-74424), the slice: the
+/// per-type table (:74284-74356 - the infection rows gated by
+/// `AllowedToSpreadInfections`, the jungle/mushroom/plant rows maxValue 10),
+/// the plant-above roll (:74368-74371), the 3x3 soil scan converting the
+/// neighbours via [`spread_grass`] (:74381-74404).
+pub fn update_world_grass_growth(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    min_i: i32,
+    max_i: i32,
+    min_j: i32,
+    max_j: i32,
+    allowed_to_spread: bool,
+    rng: &mut FastRandom,
+) {
+    if i < 10 || j < 10 || i >= world.width as i32 - 10 || j >= world.height as i32 - 10 {
+        return;
+    }
+    let Some(t) = world.tile(i, j) else {
+        return;
+    };
+    let (soil, soil2, grass, grass2, plant, max_value): (i16, i16, i16, i16, i16, i32) = match t.kind {
+        2 => (0, -1, 2, -1, -1, 1),
+        23 => (0, 59, 23, 661, 24, 2),
+        199 => (0, 59, 199, 662, 201, 2),
+        661 => (59, 0, 661, 23, 24, 2),
+        662 => (59, 0, 662, 199, 201, 2),
+        60 => (59, -1, 60, -1, 61, 10),
+        70 => (59, -1, 70, -1, 71, 10),
+        633 => (57, -1, 633, -1, 637, 2),
+        226 => (-1, -1, 226, -1, 61, 10),
+        _ => return,
+    };
+    if matches!(t.kind, 23 | 199 | 661 | 662) && !allowed_to_spread {
+        return;
+    }
+    // The plant-above roll (:74368-74371).
+    if plant != -1
+        && min_j < world.height as i32
+        && world.tile(i, min_j).is_none_or(|t| !t.active())
+        && rng.next(max_value) == 0
+    {
+        let idx = world.index(i, min_j);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: plant as u16,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        if world.frame_important.len() <= plant as usize {
+            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        }
+        world.frame_important[plant as usize] = true;
+    }
+    // The 3x3 soil scan (:74381-74404).
+    if soil != -1 {
+        for k in min_i..max_i {
+            for l in min_j..max_j {
+                if k < 10
+                    || l < 10
+                    || k >= world.width as i32 - 10
+                    || l >= world.height as i32 - 10
+                {
+                    continue;
+                }
+                if k == i && l == j {
+                    continue;
+                }
+                let Some(n) = world.tile(k, l) else {
+                    continue;
+                };
+                if !n.active() {
+                    continue;
+                }
+                if n.kind == soil as u16 {
+                    spread_grass(world, k, l, soil as u16, grass as u16);
+                } else if soil2 > -1 && grass2 > -1 && n.kind == soil2 as u16 {
+                    spread_grass(world, k, l, soil2 as u16, grass2 as u16);
+                }
+            }
+        }
+    }
+}
+
+/// `WorldGen.SpreadGrass` (:75146-75270), the slice: the guards (the dirt
+/// type match, the surface rule `j >= worldSurface && dirt == 0`, the +-1
+/// solid-neighbour scan with the lava exception, the flower-27 exclusion)
+/// + the write. The infection Convert()/wall arms ride the next slice.
+pub fn spread_grass(world: &mut World, i: i32, j: i32, dirt: u16, grass: u16) {
+    let Some(t) = world.tile(i, j) else {
+        return;
+    };
+    if !t.active() || t.kind != dirt {
+        return;
+    }
+    // The surface rule (:75166-75169).
+    if dirt == 0 && j as f64 >= world.world_surface {
+        return;
+    }
+    // The +-1 solid-neighbour scan with the lava exception (:75183-75197).
+    let mut all_empty = true;
+    let mut lava = false;
+    for k in (i - 1)..=(i + 1) {
+        for l in (j - 1)..=(j + 1) {
+            let Some(n) = world.tile(k, l) else {
+                continue;
+            };
+            if n.active() && crate::tiledata::TILE_SOLID.has(n.kind) {
+                all_empty = false;
+            }
+            if n.liquid > 0 && n.liquid_kind() == crate::tile::LiquidKind::Lava {
+                lava = true;
+            }
+        }
+    }
+    if all_empty && !lava {
+        return;
+    }
+    // The flower-27 exclusions (:75204-75206).
+    if matches!(grass, 23 | 661 | 199 | 662 | 109)
+        && world.tile(i, j - 1).is_some_and(|t| t.kind == 27)
+    {
+        return;
+    }
+    let idx = world.index(i, j);
+    world.tiles[idx] = crate::tile::Tile {
+        kind: grass,
+        flags: FLAG_ACTIVE,
+        ..Default::default()
+    };
+    if world.frame_important.len() <= grass as usize {
+        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[grass as usize] = true;
+}
+
+/// `WorldGen.GrowSpike` (:45481-45570): the thorn bushes on the evil/jungle
+/// grass. The 4-neighbour density gate, the Next(4) directional walk, the
+/// landing cell empty with <=2 spike neighbours and a spike within the
+/// diamond radius 7 standing on the land type, then the plant.
+pub fn grow_spike(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    spike_type: u16,
+    land_type: u16,
+    rng: &mut FastRandom,
+) {
+    let converted = match land_type {
+        23 => 661,
+        199 => 662,
+        _ => 0,
+    };
+    let spike_neighbours = |x: i32, y: i32| -> i32 {
+        [(1i32, 0), (-1, 0), (0, 1), (0, -1)]
+            .iter()
+            .filter(|&&(dx, dy)| {
+                world
+                    .tile(x + dx, y + dy)
+                    .is_some_and(|t| t.active() && t.kind == spike_type)
+            })
+            .count() as i32
+    };
+    let Some(t) = world.tile(i, j) else {
+        return;
+    };
+    let num4 = spike_neighbours(i, j);
+    if num4 >= 3 && t.kind != land_type && t.kind != converted {
+        return;
+    }
+    let (num2, num3) = match rng.next(4) {
+        0 => (i, j - 1),
+        1 => (i, j + 1),
+        2 => (i - 1, j),
+        _ => (i + 1, j),
+    };
+    if world.tile(num2, num3).is_some_and(|t| t.active()) {
+        return;
+    }
+    if spike_neighbours(num2, num3) >= 2 {
+        return;
+    }
+    let num5 = 7;
+    let mut flag = false;
+    'outer: for k in (num2 - num5)..(num2 + num5) {
+        for l in (num3 - num5)..(num3 + num5) {
+            if (k - num2).abs() * 2 + (l - num3).abs() < 9
+                && world.tile(k, l).is_some_and(|t| {
+                    t.active() && (t.kind == land_type || t.kind == converted)
+                })
+                && world
+                    .tile(k, l - 1)
+                    .is_some_and(|t| t.active() && t.kind == spike_type && t.liquid == 0)
+            {
+                flag = true;
+                break 'outer;
+            }
+        }
+    }
+    if !flag {
+        return;
+    }
+    let idx = world.index(num2, num3);
+    world.tiles[idx] = crate::tile::Tile {
+        kind: spike_type,
+        flags: FLAG_ACTIVE,
+        ..Default::default()
+    };
+    if world.frame_important.len() <= spike_type as usize {
+        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[spike_type as usize] = true;
+}
+
 pub fn update_world_overground_tile(
     world: &mut World,
     x: i32,
@@ -518,38 +732,68 @@ pub fn update_world_overground_tile(
     raining: bool,
     rng: &mut FastRandom,
 ) {
-    let Some(t) = world.tile(x, y) else {
+    let kind = world.tile(x, y).map(|t| (t.active(), t.kind));
+    let Some((active, kind)) = kind else {
         return;
     };
-    if !t.active() {
+    if !active {
         return;
     }
-    if TILE_ALCH.contains(&t.kind) {
+    if TILE_ALCH.contains(&kind) {
         grow_alch(world, x, y, day_time, raining, rng);
         return;
     }
     // The sapling arm (:72430-72434): the kind-20 sapling at `Next(20)`,
     // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
     // land with the vanity trees).
-    if t.kind == 20 && rng.next(20) == 0 {
+    if kind == 20 && rng.next(20) == 0 {
         attempt_grow_tree_from_sapling(world, x, y, false, rng);
         return;
     }
-    if (t.kind == 595 || t.kind == 615) && rng.next(5) == 0 {
+    if (kind == 595 || kind == 615) && rng.next(5) == 0 {
         // `AttemptToGrowTreeFromSapling`'s 595/615 arms — the settings
         // profiles (Sakura/Willow) land with the vanity trees.
         return;
     }
     // The cactus arm (:72229-72231): `Next(15)`.
-    if t.kind == 80 && rng.next(15) == 0 {
+    if kind == 80 && rng.next(15) == 0 {
         grow_cactus(world, x, y, rng);
         return;
     }
     // The bare-sand arm (:72282-72284) rolls `Next(300)` inside the
     // beach-distance bounds — the port has no beachDistanceYet; the
     // water-box abort inside `grow_cactus` keeps the shore in check.
-    if matches!(t.kind, 53 | 234 | 116 | 112) && rng.next(300) == 0 {
+    if matches!(kind, 53 | 234 | 116 | 112) && rng.next(300) == 0 {
         grow_cactus(world, x, y, rng);
+        return;
+    }
+    // The grass-growth pass (:72357 + :73282): the spread-overground grasses
+    // with the plant windows (minI/maxI = i±1, minJ/maxJ = j±1 per :72350-
+    // 72356's window).
+    let grass_pass = matches!(
+        kind,
+        2 | 23 | 199 | 60 | 70 | 109 | 226 | 633 | 661 | 662
+    );
+    if grass_pass {
+        update_world_grass_growth(
+            world,
+            x,
+            y,
+            x - 1,
+            x + 2,
+            y - 1,
+            y + 2,
+            true,
+            rng,
+        );
+        // The thorn arms (:72362-72370): the jungle 32 at Next(3), the evil
+        // 352 at Next(3), on their grass types.
+        if (kind == 23 && rng.next(3) == 0) || (kind == 60 && rng.next(3) == 0) {
+            grow_spike(world, x, y, 32, 23, rng);
+        }
+        if kind == 199 && rng.next(3) == 0 {
+            grow_spike(world, x, y, 352, 199, rng);
+        }
     }
 }
 
@@ -853,6 +1097,49 @@ mod tests {
         let mut rng = FastRandom::new(7);
         grow_cactus(&mut w, 100, 200, &mut rng);
         assert!(w.tile(100, 199).is_none_or(|t| !t.active() || t.kind != 80), "the crowd gate");
+    }
+
+    #[test]
+    fn test_spread_2_grass_grows_over_dirt_and_the_spikes_grow() {
+        // `UpdateWorld_GrassGrowth` (:74269+): the 3x3 scan converts the
+        // dirt neighbours to grass; the flower-27 exclusion; the spike arms
+        // grow on the matching grass with the density gates.
+        let mut w = world();
+        w.world_surface = 250.0; // the surface below the cells
+        put(&mut w, 100, 200, 2, 0); // the grass seed cell
+        put(&mut w, 101, 200, 0, 0); // the dirt neighbour
+        let mut rng = FastRandom::new(7);
+        update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
+        assert!(
+            w.tile(101, 200).is_some_and(|t| t.kind == 2),
+            "the dirt converted to grass"
+        );
+        // The spike: the evil grass grows a 352 thorn onto the empty cell.
+        let mut w = world();
+        w.world_surface = 250.0; // the surface below the cells
+        put(&mut w, 100, 200, 199, 0);
+        put(&mut w, 101, 200, 199, 0);
+        put(&mut w, 100, 199, 352, 0); // a spike on the land type
+        let mut rng = FastRandom::new(7);
+        let mut grew = false;
+        for tick in 0..200 {
+            update_world_overground_tile(&mut w, 100, 200, true, false, &mut rng);
+            let grew_cell = [
+                (99i32, 199),
+                (100, 198),
+                (101, 199),
+                (100, 201), // the down walk lands too (the diamond covers it)
+            ]
+            .iter()
+            .any(|&(cx, cy)| {
+                w.tile(cx, cy).is_some_and(|t| t.active() && t.kind == 352)
+            });
+            if grew_cell {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the thorn grew eventually");
     }
 
     #[test]
