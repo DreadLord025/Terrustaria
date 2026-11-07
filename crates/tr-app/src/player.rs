@@ -980,6 +980,19 @@ impl Player {
             self.stop_sleeping();
             return;
         }
+        // `:103-106`: the same exit mask as sitting (`controlUp` rides the
+        // port's merged jump binding — W/ArrowUp feed `control_jump`).
+        if self.control_left
+            || self.control_right
+            || self.control_jump
+            || self.control_down
+            || self.cart_mounted
+            || self.mount.is_active()
+            || target_direction != self.facing
+        {
+            self.stop_sleeping();
+            return;
+        }
         // `:107-128`: a damaging/fishing/`ForcesBreaksSleeping` held item
         // breaks the sleep — the item stats land with M3-ITEM; the swing
         // itself already reset the counter above.

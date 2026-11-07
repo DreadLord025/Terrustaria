@@ -397,13 +397,32 @@ pub(crate) fn draw_player(
     let head_armor = registry::get(head_kind).map_or(-1, |d| d.head_slot);
     let body_armor = registry::get(body_kind).map_or(-1, |d| d.body_slot);
     let leg_armor = registry::get(legs_kind).map_or(-1, |d| d.leg_slot);
-    // `PlayerDrawSet.cs:343-347` + `GetSittingOffsetInfo`
-    // (`PlayerSittingHelper.cs:14-31`): the sitting body draws shifted up by
-    // the seat adjustment (-4 px; the index-0 posOffset is zero). The
-    // sliced-leg sit pose is the render follow-up.
-    let sit_shift = if player.sitting { -4.0 } else { 0.0 };
+    // `PlayerDrawSet.cs:318-347`: the seated/sleeping draw inputs — the
+    // seat posOffset (`GetSittingOffsetInfo`, stack index 0 in SP) with the
+    // torso drop, and the sleep base offset (`GetSleepingOffsetInfo`'s
+    // `SetOffsetbyBed` value mirrored to the facing).
+    let (seat_pos_offset, seat_y_offset) = if player.sitting {
+        (
+            [player.seat_pos_offset.0, player.seat_pos_offset.1],
+            player.seat_y_offset,
+        )
+    } else {
+        ([0.0, 0.0], 0)
+    };
+    let (sleep_pos_offset, full_rotation) = if player.sleeping {
+        let off = super::player_layers::bed_visual_offset(player.sleeping_style);
+        (
+            [off[0] * player.facing as f32, off[1]],
+            player.full_rotation,
+        )
+    } else {
+        ([0.0, 0.0], 0.0)
+    };
     let state = PlayerCompositeState {
-        origin: [player.x - 10.0, player.y - 10.0 + sit_shift],
+        origin: [
+            player.x - 10.0 + seat_pos_offset[0] + sleep_pos_offset[0],
+            player.y - 10.0 + seat_pos_offset[1] + sleep_pos_offset[1],
+        ],
         leg_frame: player.leg_frame,
         body_frame: player.body_frame,
         facing: player.facing as f32,
@@ -454,8 +473,23 @@ pub(crate) fn draw_player(
         c_body: player.c_body,
         c_legs: player.c_legs,
         c_mount: player.c_mount,
+        sitting: player.sitting,
+        seat_y_offset,
+        sleeping: player.sleeping,
+        full_rotation,
     };
-    push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
+    let mut layers = assemble_layers(&state, assets);
+    // `DrawPlayer_TransformDrawData` (`PlayerDrawLayers.cs:4092-4119`): the
+    // sleeping pose rotates the whole set around `fullRotationOrigin`
+    // (`PlayerSleepingHelper.cs:74` sets it to the hitbox centre).
+    if state.sleeping && state.full_rotation != 0.0 {
+        let pivot = [
+            player.x + player.full_rotation_origin.0,
+            player.y + player.full_rotation_origin.1 + player.gfx_off_y,
+        ];
+        super::player_layers::apply_player_rotation(&mut layers, pivot, state.full_rotation);
+    }
+    push_layers(r, &layers, camera, zoom, screen)
 }
 
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
@@ -882,7 +916,10 @@ pub(crate) fn draw_npcs(
             ),
             NpcKind::MartianWalker => (
                 assets.martian_walker_big.as_ref(),
-                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 11.0),
+                assets
+                    .martian_walker_big
+                    .as_ref()
+                    .map_or(110.0, |t| t.h / 11.0),
                 [34.0, 110.0],
                 [n.x, n.y],
             ),
