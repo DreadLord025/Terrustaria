@@ -39,6 +39,54 @@ fn no_cache() -> bool {
 }
 
 impl App {
+    /// `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`), ticked
+    /// per drawn frame before the interface handlers read it: the idle reset,
+    /// then the `stackDelay` decay ladder (30/25/20/15/10/5 frames keyed on
+    /// the current delay 7..3) that bottoms the delay at 2 and grows
+    /// `superFastStack` once the tries pass 10 (~2 s of holding).
+    pub(crate) fn tick_stack_split(&mut self) {
+        if self.stack_split == 0 {
+            self.times_tried_to_fast_stack = 0;
+            self.stack_counter = 0;
+            self.stack_delay = 7;
+            self.super_fast_stack = 0;
+            return;
+        }
+        self.stack_counter += 1;
+        let step = match self.stack_delay {
+            7 => 30,
+            6 => 25,
+            5 => 20,
+            4 => 15,
+            3 => 10,
+            _ => 5,
+        };
+        if self.stack_counter >= step {
+            self.stack_delay -= 1;
+            if self.stack_delay < 2 {
+                self.stack_delay = 2;
+                self.super_fast_stack += 1;
+            }
+            if self.times_tried_to_fast_stack < 10 {
+                self.super_fast_stack = 0;
+            }
+            self.times_tried_to_fast_stack += 1;
+            self.stack_counter = 0;
+        }
+    }
+
+    /// `Main.cs:62466-62473` — the stack-split decay after the interface's
+    /// MouseUI pass: no mouse button held resets the split, then one tick
+    /// comes off.
+    pub(crate) fn decay_stack_split(&mut self) {
+        if !self.mine_down && !self.place_down {
+            self.stack_split = 0;
+        }
+        if self.stack_split > 0 {
+            self.stack_split -= 1;
+        }
+    }
+
     pub(crate) fn frame(&mut self) {
         let now = Instant::now();
         // `TR_SHOT` pins the animation clock: the sky's twinkle/drift phases read
@@ -171,13 +219,23 @@ impl App {
         }
 
         if self.menu.is_none() && self.front.is_none() {
+            // `Main.Draw`'s stack-split accelerator (`Main.cs:61781-61807`),
+            // ticked before the interface handlers read the state.
+            self.tick_stack_split();
             // `MinimapFrame.Update` runs before the inventory's click handling
             // (`MinimapFrameManager.cs:45`, `Main.cs:41037`'s `ItemSlot.Handle`).
             self.handle_minimap_clicks();
             self.handle_bestiary_clicks();
-            if !self.handle_crafting_clicks() {
+            // The chest panel's slot dispatch (`ChestUI.DrawSlots`' per-cell
+            // `ItemSlot.Handle`, `ChestUI.cs:385`) runs before the crafting
+            // and inventory handlers and consumes the press when a chest
+            // slot, the shift transfer or a chest tile took it.
+            if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
                 self.handle_inventory_clicks();
             }
+            // `Main.cs:62466-62473` — the stack-split decay, after the
+            // interface's MouseUI pass.
+            self.decay_stack_split();
             for (i, scale) in self.hotbar_scales.iter_mut().enumerate() {
                 let target = if i == self.selected { 1.0 } else { 0.75 };
                 if *scale < target {
@@ -435,6 +493,24 @@ impl App {
         let npc_key = npc::render_key(&self.npcs);
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
+
+        // The chest-rename editor's per-frame reads — `Main.editChest`
+        // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
+        // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
+        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // borrows (the keyboard session owns the editor state; the name
+        // reads the map field directly so the borrow stays field-scoped).
+        let chest_editing = self.chest_editing();
+        let chest_edit_text = self.chest_edit_text().to_string();
+        let chest_open = self.open_container();
+        let chest_stored_name = if chest_open > -1 {
+            self.chest_names
+                .get(&(chest_open as usize))
+                .map(String::as_str)
+                .unwrap_or("")
+        } else {
+            ""
+        };
 
         {
             let App {
@@ -1123,6 +1199,14 @@ impl App {
                     } else {
                         Vec::new()
                     };
+                    // The unified open-container state (`Player.chest`,
+                    // `Player.cs:2876`/`:2878`/:2880) — the panel reads the
+                    // player's fields now that one field covers every kind.
+                    let panel_chest = player
+                        .as_ref()
+                        .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
+                    let (panel_chest_x, panel_chest_y) =
+                        player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -1130,6 +1214,7 @@ impl App {
                         screen,
                         lookups,
                         inventory,
+                        &self.favorite_slots,
                         &self.equip,
                         self.equip_page,
                         *selected,
@@ -1156,6 +1241,39 @@ impl App {
                         &self.emotes,
                         self.shop_npc
                             .map(|_| (self.shop_stock.as_slice(), self.shop_mood)),
+                        // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
+                        // + the statics) — the plan-amendment insertion
+                        // (#10): the disjoint `App` fields the panel reads
+                        // and animates per frame. The unified open state is
+                        // `Player.chest` (M3-CHEST-INT) — `panel_chest`
+                        // carries the full index space; the panel itself is
+                        // the world-chest surface (the `>= 0` gate in
+                        // `ui::chest::draw`, the STORE-1 two-panel shape).
+                        ui::chest::PanelState {
+                            chest: panel_chest,
+                            origin: (panel_chest_x, panel_chest_y),
+                            crafting_open: self.crafting_open,
+                            tile: world
+                                .tile(panel_chest_x, panel_chest_y)
+                                .filter(|t| t.active())
+                                .map(|t| (t.kind, t.frame_x)),
+                            slots: (panel_chest > -1)
+                                .then(|| {
+                                    crate::chest::chest_slots(
+                                        &self.world_chests,
+                                        panel_chest as usize,
+                                    )
+                                })
+                                .flatten(),
+                            editing: chest_editing,
+                            name: chest_stored_name,
+                            edit_text: &chest_edit_text,
+                            blinker: &mut self.text_blinker,
+                            scroll_row: &mut self.chest_scroll_row,
+                            button_scales: &mut self.chest_button_scales,
+                            button_hovered: &mut self.chest_button_hovered,
+                            audio: &mut self.audio,
+                        },
                         self.in_reforge_menu.then(|| {
                             let cost = self
                                 .reforge_slot

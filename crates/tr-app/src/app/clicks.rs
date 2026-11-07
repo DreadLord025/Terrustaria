@@ -4,17 +4,87 @@
 //! live in [`crate::app::flow`].)
 
 use winit::event_loop::ActiveEventLoop;
+use winit::keyboard::KeyCode;
 
-use crate::craft;
+use crate::achievements;
 use crate::app::flow::{FlowClick, FrontScreen, next_flow_state};
 use crate::app::netglue::compressed_world;
 use crate::app::{App, NetRole, no_hud};
+use crate::chest;
+use crate::craft;
 use crate::item::{EMPTY_SLOT, HOTBAR, ItemSlot, MAX_STACK};
 use crate::menu;
-use crate::achievements;
 use crate::net;
+use crate::registry;
 use crate::ui;
 use glam::Vec2;
+
+/// `AlternateClickAction.TransferFromChest`'s cursor id (`ItemSlot.cs:216`) —
+/// the shift-click arrow on a hovered chest slot.
+const CURSOR_FROM_CHEST: i32 = 8;
+/// `AlternateClickAction.TransferToChest`'s cursor id (`ItemSlot.cs:217`) —
+/// the shift-click arrow on a hovered inventory slot with an open chest.
+const CURSOR_TO_CHEST: i32 = 9;
+/// The favorite override's cursor id — `Main.cursorOverride = 3`
+/// (`ItemSlot.cs:616-619`).
+const CURSOR_FAVORITE: i32 = 3;
+
+/// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
+/// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
+/// codes, `app/loop.rs:117`/:402). The `ShiftForcedOn` gamepad/test static is
+/// out.
+fn shift_in_use(app: &App) -> bool {
+    app.keys.contains(&KeyCode::ShiftLeft) || app.keys.contains(&KeyCode::ShiftRight)
+}
+
+/// `Main.FavoriteKey` (`Main.cs:67196` — `Keys.LeftAlt`; the binding string
+/// `cFavoriteKey = "LeftAlt"` sits at `Main.cs:67177`), read live like the
+/// C#'s `Main.keyState.IsKeyDown(Main.FavoriteKey)` (`ItemSlot.cs:611`) —
+/// the same pressed-codes set `shift_in_use` reads. The
+/// `KeyFavoriteModifier` rebind setting has no port surface.
+fn favorite_key_held(app: &App) -> bool {
+    app.keys.contains(&KeyCode::AltLeft)
+}
+
+/// `ItemSlot.LeftClick`'s action-0 movement (`ItemSlot.cs:934-1017`) — the
+/// one copy behind the inventory grid (context 0) and the chest grid
+/// (context 3, `PickItemMovementAction` `:1505-1507`'s action 0): take into
+/// an empty cursor, place onto an empty slot, swap different kinds, stack
+/// into a same-kind partial up to the kind's `maxStack`
+/// (`registry::max_stack`, the C#'s `Item.maxStack`). The C#'s
+/// swap-then-`CanStack`-merge order (`MouseItemSwap` `:1255-1263` + the merge
+/// `:980-998`) produces these same four outcomes at every boundary, equal
+/// stacks included. Returns the `SoundEngine.PlaySound(7)` condition
+/// (`:1004-1011` — an item sits on either side after the move).
+///
+/// `MouseItemSwap`'s favorite half (`:1255-1263`: both sides clear
+/// `favorited` unless `retainFavoriteOnMoveAt[context]` — a chest move is a
+/// clear, `chest::retain_favorite_on_move_at`) has nothing to clear yet: the
+/// port's `ItemSlot` carries no favorite field (item.rs:52-57) — the no-op is
+/// recorded for M7-UI-2, which owns the flag.
+fn left_click_movement(held: &mut ItemSlot, target: &mut ItemSlot) -> bool {
+    let max = registry::max_stack(target.kind);
+    if held.count == 0 {
+        *held = *target;
+        *target = EMPTY_SLOT;
+    } else if target.count == 0 {
+        *target = *held;
+        *held = EMPTY_SLOT;
+    } else if target.kind == held.kind && target.prefix == held.prefix && target.count < max {
+        // The merge gate is `Item.CanStack` (`ItemSlot.cs:1000`'s case-0
+        // merge, `Item.cs:49865-49871`) — same type AND same prefix; a
+        // prefixed stack never blends into an unprefixed one.
+        let moved = (max - target.count).min(held.count);
+        target.count += moved;
+        held.count -= moved;
+        if held.count == 0 {
+            *held = EMPTY_SLOT;
+        }
+    } else {
+        std::mem::swap(held, target);
+    }
+    held.count > 0 || target.count > 0
+}
 
 impl App {
     /// The slot under the cursor, using the same geometry as `draw_hud`.
@@ -329,26 +399,54 @@ impl App {
                         let favs = self.favorite_slots.clone();
                         let fav = move |i: usize| favs.contains(&i);
                         match id {
+                            // `ChestUI.LootAll`'s bank arm (:417-473) —
+                            // `LootAllFromBank` is the default settings
+                            // (`GetItemSettings.cs:55`): no vault arm, so
+                            // `None` (the overflow stays in the bank).
                             0 => crate::bank::loot_all(
                                 &mut p.banks[bi],
                                 &mut self.inventory,
                                 &mut self.equip.coins,
+                                None,
                             ),
-                            1 => crate::bank::deposit_all(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &fav,
-                            ),
-                            2 => crate::bank::quick_stack(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &mut self.equip.coins,
-                                &fav,
-                            ),
+                            // `ChestUI.DepositAll` (`:540-659`) — the
+                            // MoveCoins pre-pass runs for every container
+                            // kind (:543-562).
+                            1 => {
+                                crate::bank::move_coins(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
+                                );
+                                crate::bank::deposit_all(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &fav,
+                                );
+                            }
+                            // `ChestUI.QuickStack`'s bank arm (:670-685) —
+                            // the MoveCoins pre-pass rides the dispatch
+                            // (hoisted out of `quick_stack`, M3-CHEST-INT).
+                            2 => {
+                                crate::bank::move_coins(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
+                                );
+                                crate::bank::quick_stack(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
+                                );
+                            }
                             _ => {
                                 let _ = crate::bank::restock(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
+                                    &mut self.equip.ammo,
                                 );
                             }
                         }
@@ -430,6 +528,22 @@ impl App {
                 return;
             }
         }
+        // The trash slot's left click (`ItemSlot.LeftClick`'s context-6 arm,
+        // `ItemSlot.cs:937-941`): `MouseItemSwap(ref trashItem, 6)` — the
+        // plain held/trash swap (no favorited-held guard exists in the C#
+        // swap; the can't-drop rule lives in `DropSelectedItem`,
+        // `Player.cs:5170-5184`, the sell/drop pass's seam). The swap plays
+        // 7 when an item sits on either side after it (`:1008-1011`, the
+        // same cue the grid movement uses); the separate `TrashItem` cue
+        // (`:1007`) has no port cue — the recorded gap. Right-click stays
+        // unported (the Journey research arm `:940-943`).
+        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos) {
+            self.trash_swap();
+            if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
+                self.audio.play("Grab");
+            }
+            return;
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };
@@ -439,24 +553,26 @@ impl App {
             }
             return;
         }
+        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-755`): the
+        // favorite toggle consumes the left click before the movement arms
+        // (`LeftClick` returns on `OverrideLeftClick`'s `true`,
+        // `:915-918`). `cursor_override == 3` is the Alt+hover gate
+        // `evaluate_cursor_override` set this frame, so Alt held never falls
+        // through to the pickup arm.
+        if left && self.cursor_override == CURSOR_FAVORITE {
+            if self.toggle_favorite(slot) != 0 {
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            }
+            return;
+        }
         let mut held = self.mouse_item;
         let mut target = self.inventory[slot];
         if left {
-            if held.count == 0 {
-                held = target;
-                target = EMPTY_SLOT;
-            } else if target.count == 0 {
-                target = held;
-                held = EMPTY_SLOT;
-            } else if target.kind == held.kind && target.count < MAX_STACK {
-                let moved = (MAX_STACK - target.count).min(held.count);
-                target.count += moved;
-                held.count -= moved;
-                if held.count == 0 {
-                    held = EMPTY_SLOT;
-                }
-            } else {
-                std::mem::swap(&mut held, &mut target);
+            // The action-0 movement shared with the chest grid
+            // (`left_click_movement`); the C# plays 7 when an item sits on
+            // either side after the move (`ItemSlot.cs:1004-1011`).
+            if left_click_movement(&mut held, &mut target) {
+                self.audio.play("Grab");
             }
         } else if held.count == 0 {
             if target.count > 0 {
@@ -492,6 +608,329 @@ impl App {
         }
         self.mouse_item = held;
         self.inventory[slot] = target;
+    }
+
+    /// The chest panel's slot dispatch (M3-CHEST-UI phase 4) — the ctx-3 half
+    /// of `ChestUI.DrawSlots`' per-cell `ItemSlot.Handle` calls (`ChestUI.cs:
+    /// 382-385`, every drawn frame for the hovered cell), the shift transfer
+    /// into the chest from the inventory grid (`GetAlternateClickAction`'s
+    /// ctx-0 arm, `ItemSlot.cs:680-686`), and the open-inventory complement of
+    /// the editing.rs chest interception: with the panel up, the C# open
+    /// branch (`Player.cs:33056-33260`) still runs on a world right-click that
+    /// no UI slot holds, so the re-click toggle (`:33230-33252`) and the
+    /// switch-to-another-chest click route here (the batch-review carry).
+    /// `true` consumes the press and stops the click chain.
+    pub(crate) fn handle_chest_clicks(&mut self) -> bool {
+        // `Main.cursorOverride = -1` at the interface's head (`Main.cs:44941`).
+        self.cursor_override = -1;
+        if !self.inventory_open || self.bestiary_open {
+            return false;
+        }
+        // `OverrideHover` → `GetAlternateClickAction` (`ItemSlot.cs:599-627`,
+        // `:629-728`): the favorite and shift arms evaluate for the hovered
+        // slot with or without a click.
+        self.evaluate_cursor_override();
+        let left = self.ui_left_press;
+        let right_held = self.place_down; // `Main.mouseRight` (`ItemSlot.cs:1654`)
+        let right_edge = self.ui_right_press;
+        if !left && !right_held {
+            return false;
+        }
+        // The cursor-9 shift-click — `OverrideLeftClick` (`ItemSlot.cs:813-850`)
+        // → `ChestUI.TryPlacingInChest(justCheck: false)` (`:846`).
+        if left && self.cursor_override == CURSOR_TO_CHEST {
+            let Some(slot) = self.slot_at_mouse() else {
+                return false;
+            };
+            chest::try_placing_in_chest(self, slot, false);
+            self.ui_left_press = false;
+            return true;
+        }
+        // The chest cells own the pointer while the panel draws
+        // (`player.mouseInterface = true`, `ChestUI.cs:86`'s visibility gate
+        // + `:382-384`); a cell hit consumes both buttons even when the
+        // stack-split gate transfers nothing this frame. The dispatch is
+        // the world-chest panel's (the ctx-3 grid) — bank values keep the
+        // STORE-1 panel and its own handler, so the gate is `>= 0` (the C#'s
+        // single `ChestUI.Draw` covers all kinds — the recorded STORE-1
+        // panel-fidelity deviation).
+        if self.open_container() >= 0 && !self.crafting_open {
+            // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:281-308`) —
+            // the C# `DrawButtons` pass runs before `DrawSlots`, so the
+            // buttons take the press before the slot grid sees it. IDs 0-3
+            // are the M3-STORE-2 transfers, 5/6 the rename pair (ID 5 →
+            // `RenameChest` :827-838, ID 6 → `RenameChestCancel` :863-869);
+            // Sort (4) stays label-less and takes no clicks. The port's
+            // modal rename keyboard parks the world routes, so the
+            // editing-state arms (`Save`/`Cancel` clicks) are the overlay
+            // shape's revive point.
+            if left {
+                if let Some(id) = ui::chest::chest_button_hit(
+                    &self.lookups,
+                    self.mouse_pos,
+                    &self.chest_button_scales,
+                    &self.chest_button_hovered,
+                    self.open_container(),
+                    self.chest_editing(),
+                ) {
+                    match id {
+                        0..=3 => self.chest_transfer_click(id),
+                        ui::chest::BUTTON_RENAME => chest::rename_button_click(self),
+                        ui::chest::BUTTON_RENAME_CANCEL => {
+                            chest::rename_cancel(self);
+                        }
+                        _ => {}
+                    }
+                    self.ui_left_press = false;
+                    return true;
+                }
+            }
+            if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
+                self.chest_slot_click(abs, left, right_held);
+                self.ui_left_press = false;
+                self.ui_right_press = false;
+                return true;
+            }
+        }
+        // The open-inventory chest-tile click: only when no UI slot holds the
+        // pointer (the C#'s `mouseInterface` rule — the drawn cell rects
+        // `ChestUI.cs:382`, the inventory grid's hit test) and on the right
+        // press. The left button stays the mine input.
+        if right_edge && self.slot_at_mouse().is_none() {
+            let (sw, sh) = self.screen_size();
+            let world_pos = Vec2::new(
+                self.camera.x + (self.mouse_pos.x - sw * 0.5) / self.zoom,
+                self.camera.y + (self.mouse_pos.y - sh * 0.5) / self.zoom,
+            );
+            if chest::try_open_chest_at_cursor(self, world_pos) {
+                self.ui_right_press = false;
+                return true;
+            }
+        }
+        false
+    }
+
+    /// `ItemSlot.OverrideHover` (`ItemSlot.cs:602-625`) — the FavoriteKey arm
+    /// first: a non-air favoritable slot under Alt lights `cursorOverride = 3`
+    /// and the shift arms never evaluate (the C# `return`s inside the key
+    /// block; the canShareAt/chat arm `:613-615` and the loadout arm are out —
+    /// no chat-draw share, no loadout system). Then
+    /// `GetAlternateClickAction`'s shift arms (`ItemSlot.cs:644-726`), over
+    /// the two ported surfaces: a hovered chest cell (context 3 → cursor 8
+    /// when the inventory can take the stack, `:692-698`) and a hovered
+    /// inventory grid slot (context 0 → cursor 9 when the open chest can take
+    /// it, `:680-686` via `TryPlacingInChest(justCheck: true)`). The
+    /// Control-in-use trash arm (`:637-643`) and the gamepad arms are out.
+    fn evaluate_cursor_override(&mut self) {
+        // `ItemSlot.cs:611-620`: `Main.keyState.IsKeyDown(Main.FavoriteKey)`
+        // + `canFavoriteAt[context]` → `Main.cursorOverride = 3`. The port's
+        // favoritable click surface is the open inventory's 10x5 grid
+        // (context 0; the closed hotbar is context 13 — not in the table).
+        if favorite_key_held(self) && self.inventory_open {
+            if let Some(slot) = self.slot_at_mouse() {
+                // `:607-609` — air returns before the key block; `:616-619`
+                // — the canFavoriteAt gate (the grid is context 0; the
+                // coin/ammo rows are not clickable here, the recorded
+                // coin-row gap).
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && chest::can_favorite_at(0)
+                {
+                    self.cursor_override = CURSOR_FAVORITE;
+                    return;
+                }
+            }
+        }
+        let chest = self.open_container();
+        if !shift_in_use(self) {
+            return;
+        }
+        // The ctx-3 arms are the world-chest panel's (`chest >= 0`) — banks
+        // keep the STORE-1 panel and no cursor-8/9 shift route (the recorded
+        // panel-fidelity deviation; `TryPlacingInChest` refuses banks too).
+        if chest >= 0 && !self.crafting_open {
+            if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
+                if let Some(s) = chest::chest_slot(&self.world_chests, chest as usize, abs) {
+                    if s.kind != 0 && s.count > 0 && chest::inventory_has_room_for(self, s.kind) {
+                        self.cursor_override = CURSOR_FROM_CHEST;
+                    }
+                }
+                return;
+            }
+        }
+        if chest >= 0 {
+            if let Some(slot) = self.slot_at_mouse() {
+                // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`):
+                // `item.IsAir || item.favorited` → null — a favorited slot
+                // never lights the shift cursor, so the cursor-9 click arm
+                // cannot fire for one either.
+                if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
+                    self.cursor_override = CURSOR_TO_CHEST;
+                }
+            }
+        }
+    }
+
+    /// The chest panel's transfer-button dispatch (`ChestUI.cs:281-308`'s
+    /// cases 0-3, M3-STORE-2) against the open world chest's slots, with the
+    /// C# world/bank deltas: LootAll rides the void vault when enabled, the
+    /// DepositAll MoveCoins pre-pass runs for every container kind
+    /// (`:543-562`) and QuickStack gets none (the pre-pass arms cover the
+    /// bank kinds only, `:670-685`).
+    fn chest_transfer_click(&mut self, id: usize) {
+        let idx = self.open_container() as usize;
+        // The open-container gate in `handle_chest_clicks` guarantees a live
+        // store entry (`open_chest` opened it); the `get_mut` keeps the click
+        // path panic-free regardless.
+        let Some(wc) = self.world_chests.get_mut(idx) else {
+            return;
+        };
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let Some(p) = self.player.as_mut() else {
+            return;
+        };
+        // `LootAllFromChest`'s `CanGoIntoVoidVault` (`GetItemSettings.cs:55-56`)
+        // + `IsVoidVaultEnabled` (`Player.cs:24550-24553`): the vault is
+        // `GetItem`'s per-item last resort (`Player.cs:39395-39398`). Banks
+        // ride the default `LootAllFromBank` and never pass a vault.
+        let vault = if p.void_vault_enabled {
+            Some(&mut p.banks[3])
+        } else {
+            None
+        };
+        match id {
+            // `ChestUI.LootAll` (`:393-473`).
+            0 => crate::bank::loot_all(
+                &mut wc.slots,
+                &mut self.inventory,
+                &mut self.equip.coins,
+                vault,
+            ),
+            // `ChestUI.DepositAll` (`:540-659`) — the MoveCoins pre-pass runs
+            // for every container kind (`:543-562`).
+            1 => {
+                crate::bank::move_coins(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &mut self.equip.coins,
+                    &fav,
+                );
+                crate::bank::deposit_all(&mut wc.slots, &mut self.inventory, &fav);
+            }
+            // `ChestUI.QuickStack` (`:661-825`) — NO MoveCoins for a world
+            // chest (`:670-685`'s arms are the bank kinds only).
+            2 => crate::bank::quick_stack(
+                &mut wc.slots,
+                &mut self.inventory,
+                &mut self.equip.coins,
+                &fav,
+            ),
+            // `ChestUI.Restock` (`:871-995`) — the single PlaySound(7) on a
+            // moved item (`:991-994`) stays out with the existing cue stance.
+            _ => {
+                let _ =
+                    crate::bank::restock(&mut wc.slots, &mut self.inventory, &mut self.equip.ammo);
+            }
+        }
+    }
+
+    /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +
+    /// `RightClick` order, `ItemSlot.cs:588-597`): the left press runs the
+    /// cursor-8 shift transfer or the action-0 movement, the held right
+    /// button runs the stack-split.
+    fn chest_slot_click(&mut self, abs: usize, left: bool, right_held: bool) {
+        let chest_idx = self.open_container() as usize;
+        if left && self.cursor_override == CURSOR_FROM_CHEST {
+            // `OverrideLeftClick`'s cursor-8 arm (`ItemSlot.cs:800-812`):
+            // `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`;
+            // consumes the click (the action-0 movement does not run).
+            chest::quick_transfer_from_slot(self, abs);
+            return;
+        }
+        if left {
+            let mut held = self.mouse_item;
+            // The chest slot IS an `ItemSlot` now (M3-CHEST-INT) — the
+            // fabricated view is gone and the slot's prefix rides the whole
+            // movement (take / place / CanStack merge / swap).
+            let mut target =
+                chest::chest_slot(&self.world_chests, chest_idx, abs).unwrap_or(EMPTY_SLOT);
+            // `PickItemMovementAction` ctx 3 → action 0 (`ItemSlot.cs:1505-1507`)
+            // — the shared movement.
+            if left_click_movement(&mut held, &mut target) {
+                self.audio.play("Grab"); // `:1010` — `SoundEngine.PlaySound(7)`
+            }
+            // `:976-979` — the emptied slot turns to air (the air-normalizing
+            // write; the moved-in item keeps its prefix).
+            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, target);
+            self.mouse_item = held;
+        }
+        if right_held {
+            self.chest_slot_stack_split(abs);
+        }
+    }
+
+    /// `ItemSlot.RightClick`'s stack-split for context 3 (`ItemSlot.cs:
+    /// 1636-1715` + `PickupItemIntoMouse` `:1717-1747`): one item per gated
+    /// drawn frame while the right button is held — `superFastStack + 1` once
+    /// the accelerator bottoms out — sound 12 per transfer and
+    /// `RefreshStackSplitCooldown` (`:1774-1784`) after each. The ctx-0/3
+    /// `SwapEquip` arm (`:1685-1697`) and the OpenableBag/HasItemSwap arms
+    /// (`:1660-1675`) have no equip/swap state in the port.
+    fn chest_slot_stack_split(&mut self, abs: usize) {
+        if self.stack_split > 1 {
+            return; // `:1700`
+        }
+        let chest_idx = self.open_container() as usize;
+        let transfers = self.super_fast_stack + 1; // `:1704`
+        for _ in 0..transfers {
+            let Some(s) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
+                break;
+            };
+            if s.kind == 0 || s.count == 0 {
+                break; // `:1700`'s `inv[slot].IsAir`
+            }
+            let max = registry::max_stack(s.kind);
+            // `:1707` — `CanStack(mouseItem, inv[slot]) && mouseItem.stack <
+            // maxStack`, or an air cursor (`Item.CanStack` = same type AND
+            // same prefix, `Item.cs:49865-49871`).
+            let can_take = (crate::bank::can_stack(&self.mouse_item, &s)
+                && self.mouse_item.count < max)
+                || self.mouse_item.count == 0;
+            if !can_take {
+                break;
+            }
+            // `PickupItemIntoMouse` (`:1717-1747`): an air cursor clones the
+            // slot at stack 0 — name and prefix included (`:1721`'s
+            // `inv[slot].Clone()`) — then +1/−1; the emptied slot turns to
+            // air (`:1743-1746`). (The `:1728-1735` favorite carry is
+            // unreachable — chest slots cannot be favorited.)
+            if self.mouse_item.count == 0 {
+                self.mouse_item = s;
+                self.mouse_item.count = 0;
+            }
+            self.mouse_item.count += 1;
+            let left_in_slot = s.count - 1;
+            chest::set_chest_slot(
+                &mut self.world_chests,
+                chest_idx,
+                abs,
+                ItemSlot {
+                    count: left_in_slot,
+                    ..s
+                },
+            );
+            self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
+            // `RefreshStackSplitCooldown` (`:1774-1784`).
+            self.stack_split = if self.stack_split == 0 {
+                30
+            } else {
+                self.stack_delay
+            };
+            if left_in_slot == 0 {
+                break;
+            }
+        }
     }
 
     /// Applies a menu action (start singleplayer, host on a port, join a server).
@@ -607,5 +1046,1216 @@ impl App {
             self.settings = m.settings;
         }
         self.apply_settings();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
+    use tr_core::World;
+
+    /// Inside the chest grid's cell (0, 0) — the drawn 52·0.755 px cell at
+    /// (73, 258) (`ui::chest::slot_at`).
+    const CHEST_SLOT_0: Vec2 = Vec2::new(90.0, 270.0);
+    /// Inside the chest grid's cell (1, 0).
+    const CHEST_SLOT_1: Vec2 = Vec2::new(130.0, 270.0);
+    /// Inside the inventory grid's cell (5, 0) — the 56·0.85 px pitch from
+    /// (20, 20) (`App::slot_at_mouse`).
+    const INV_SLOT_5: Vec2 = Vec2::new(280.0, 40.0);
+
+    fn slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        }
+    }
+
+    /// A prefixed fixture slot (the M3-PREFIX rolled-prefix shape).
+    fn prefixed(kind: u16, count: u32, prefix: u16) -> ItemSlot {
+        ItemSlot {
+            prefix,
+            ..slot(kind, count)
+        }
+    }
+
+    /// A headless app with the inventory open and an open chest (index 0,
+    /// tile origin (20, 10)) whose store holds `slots`. The open state is
+    /// the player's (`Player.chest`, the M3-CHEST-INT unify).
+    fn chest_app(slots: Vec<ItemSlot>) -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.world_chests.push(WorldChest {
+            tile: (20, 10),
+            slots,
+        });
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_mut().unwrap();
+        p.chest = 0;
+        p.chest_x = 20;
+        p.chest_y = 10;
+        app
+    }
+
+    /// A 2×2 chest tile at `(x, y)` in the app's world (the phase-2
+    /// `place_chest` shape).
+    fn place_tile_chest(app: &mut App, x: i32, y: i32) {
+        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+            let i = app.world.index(x + dx, y + dy);
+            app.world.tiles[i].kind = 21;
+            app.world.tiles[i].frame_x = if dx == 1 { 18 } else { 0 };
+            app.world.tiles[i].frame_y = if dy == 1 { 18 } else { 0 };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+    }
+
+    /// The screen point whose camera mapping lands on tile `(x, y)`'s centre
+    /// (the `update_editing` mapping with the fixture's camera 0/zoom 1 and
+    /// the 1280×720 headless screen).
+    fn tile_click(x: i32, y: i32) -> Vec2 {
+        Vec2::new(x as f32 * 16.0 + 8.0 + 640.0, y as f32 * 16.0 + 8.0 + 360.0)
+    }
+
+    /// DW-4.1 — the ctx-3 left-click movements (`PickItemMovementAction`
+    /// ctx 3 → action 0, `ItemSlot.cs:1505-1507`) match the inventory grid's
+    /// semantics: both drive the shared [`left_click_movement`].
+    #[test]
+    fn dw_4_1_take_place_swap_stack_on_chest_slots() {
+        let mut app = chest_app(vec![slot(9, 6)]);
+        // Take: an empty cursor takes the whole stack.
+        app.mouse_pos = CHEST_SLOT_0;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.kind, 9);
+        assert_eq!(app.mouse_item.count, 6);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        // Place: the cursor stack lands on an empty chest cell.
+        app.mouse_item = slot(9, 3);
+        app.mouse_pos = CHEST_SLOT_1;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(9, 3)));
+        assert_eq!(app.mouse_item.count, 0);
+        // Swap: a different kind exchanges with the cursor.
+        app.mouse_item = slot(5, 2);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(5, 2)));
+        assert_eq!(app.mouse_item.kind, 9);
+        assert_eq!(app.mouse_item.count, 3);
+        // Stack-merge: the same kind pours into the partial slot.
+        app.mouse_item = slot(5, 4);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(5, 6)));
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
+    /// DW-4.1 — the merge caps at the kind's `registry::max_stack` (Wood's
+    /// `Item.maxStack` is 9999, itemdata) and a full slot swaps instead of
+    /// merging (`ItemSlot.cs:980-998`).
+    #[test]
+    fn dw_4_1_stack_merge_respects_max_stack_boundary() {
+        let mut app = chest_app(vec![slot(9, 9990)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.mouse_item = slot(9, 20);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(9, 9999))
+        );
+        assert_eq!(app.mouse_item.count, 11);
+        // The now-full slot exchanges with the cursor stack.
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(9, 11))
+        );
+        assert_eq!(app.mouse_item.count, 9999);
+    }
+
+    /// DW-4.2 — a full chest refuses the shift-in transfer: the merge pass
+    /// finds no room (alien kinds at full stack, or same-kind full stacks)
+    /// and the empty pass finds no empty slot, so both the `just_check`
+    /// probe and the real pass are no-ops (`ChestUI.cs:1221-1287`).
+    #[test]
+    fn dw_4_2_shift_transfer_full_chest_is_noop() {
+        let full_count = DEFAULT_MAX_ITEMS as usize;
+        // Alien kinds at full stack.
+        let mut app = chest_app(vec![slot(3, 9999); full_count]);
+        app.inventory[3] = slot(9, 10);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, true));
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.inventory[3].count, 10);
+        assert_eq!(app.world_chests[0].slots, vec![slot(3, 9999); full_count]);
+        // Same kind, every stack full: the merge skip rule (`:1225`).
+        let mut app = chest_app(vec![slot(9, 9999); full_count]);
+        app.inventory[3] = slot(9, 10);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.inventory[3].count, 10);
+    }
+
+    /// DW-4.2 — `just_check` answers placeability without mutating the
+    /// inventory, the store or the audio state (`ChestUI.cs:1234-1237`,
+    /// `:1271-1274`).
+    #[test]
+    fn dw_4_2_just_check_mutates_nothing() {
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.inventory[3] = slot(9, 10);
+        let store_before = app.world_chests[0].slots.clone();
+        let inv_before: Vec<(u16, u32)> = app.inventory.iter().map(|s| (s.kind, s.count)).collect();
+        assert!(chest::try_placing_in_chest(&mut app, 3, true));
+        assert_eq!(app.world_chests[0].slots, store_before);
+        let inv_after: Vec<(u16, u32)> = app.inventory.iter().map(|s| (s.kind, s.count)).collect();
+        assert_eq!(inv_after, inv_before);
+    }
+
+    /// `TryPlacingInChest`'s happy path (`ChestUI.cs:1221-1287`): the merge
+    /// pass pours into every partial same-kind slot in order, then the first
+    /// empty slot takes the whole remainder. The C# `flag2` return is only
+    /// set by the `justCheck` branches — the real pass always answers false
+    /// (its only caller ignores the value, `ItemSlot.cs:846`).
+    #[test]
+    fn try_placing_in_chest_merges_then_fills_the_first_empty_slot() {
+        // Everything merges into the one partial slot.
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.inventory[3] = slot(9, 12);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 17));
+        assert_eq!(app.inventory[3].count, 0);
+        // A remainder overflows into the first empty slot only.
+        let mut app = chest_app(vec![slot(9, 9990)]);
+        app.inventory[3] = slot(9, 20);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 9999));
+        assert_eq!(app.world_chests[0].slots[1], slot(9, 11));
+        assert_eq!(app.inventory[3].count, 0);
+        // Two partials soak their room in slot order before the empty pass.
+        let mut app = chest_app(vec![slot(9, 9995), EMPTY_SLOT, slot(9, 9995)]);
+        app.inventory[3] = slot(9, 12);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 9999));
+        assert_eq!(app.world_chests[0].slots[1], slot(9, 4));
+        assert_eq!(app.world_chests[0].slots[2], slot(9, 9999));
+        assert_eq!(app.inventory[3].count, 0);
+    }
+
+    /// `TryPlacingInChest` answers false with no chest open
+    /// (`GetCurrentContainer`'s world-chest arm, `ChestUI.cs:1213`; the banks
+    /// are M3-STORE-1).
+    #[test]
+    fn try_placing_in_chest_refuses_without_an_open_chest() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.inventory[3] = slot(9, 10);
+        assert!(!chest::try_placing_in_chest(&mut app, 3, false));
+    }
+
+    /// DW-4.3 — the accelerator ladder (`Main.cs:61781-61807`): the first
+    /// step consumes 30 frames (delay 7 → 6), the ladder bottoms at 2, and
+    /// `superFastStack` starts accumulating on the 11th decay (~2 s in).
+    #[test]
+    fn dw_4_3_stack_split_timing_constants() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.tick_stack_split(); // the idle arm installs stackDelay 7
+        app.stack_split = 1;
+        for _ in 0..30 {
+            app.tick_stack_split();
+        }
+        assert_eq!(app.stack_delay, 6, "the first step is 30 frames");
+        assert_eq!(app.stack_counter, 0);
+        for _ in 0..100 {
+            app.tick_stack_split();
+        }
+        // 25+20+15+10 = 70 frames bottom the delay at 2 (steps 2-5, whose
+        // superFast the `timesTriedToFastStack < 10` guard keeps resetting),
+        // then six 5-frame steps land on the 11th decay — the first one that
+        // accumulates.
+        assert_eq!(app.stack_delay, 2);
+        assert_eq!(app.super_fast_stack, 1);
+        for _ in 0..5 {
+            app.tick_stack_split();
+        }
+        assert_eq!(app.super_fast_stack, 2, "one more per 5 frames");
+        // The idle reset re-installs the constants (`:61782-61787`).
+        app.stack_split = 0;
+        app.tick_stack_split();
+        assert_eq!(app.stack_delay, 7);
+        assert_eq!(app.super_fast_stack, 0);
+        assert_eq!(app.times_tried_to_fast_stack, 0);
+    }
+
+    /// DW-4.3 — a stack of 1 right-clicks whole into the cursor and arms the
+    /// first 30-frame cooldown (`PickupItemIntoMouse` `:1717-1747`).
+    #[test]
+    fn dw_4_3_right_click_stack_one_takes_one() {
+        let mut app = chest_app(vec![slot(9, 1)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.kind, 9);
+        assert_eq!(app.mouse_item.count, 1);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        assert_eq!(app.stack_split, 30);
+    }
+
+    /// DW-4.3 — the held repeat is paced: no transfer while `stackSplit > 1`
+    /// (`:1700`), then one per frame and `RefreshStackSplitCooldown` arms
+    /// `stackDelay` (`:1774-1784`).
+    #[test]
+    fn dw_4_3_right_click_repeat_paced_by_stack_split() {
+        let mut app = chest_app(vec![slot(9, 5)]);
+        // The accelerator's idle arm has installed `stackDelay` 7 by the time
+        // any repeat runs (`Main.cs:61782-61787`).
+        app.stack_delay = 7;
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.count, 1);
+        assert_eq!(app.stack_split, 30);
+        // The gate blocks the next frames while the cooldown runs.
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.count, 1);
+        for _ in 0..29 {
+            app.decay_stack_split();
+        }
+        assert_eq!(app.stack_split, 1);
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.count, 2);
+        assert_eq!(app.stack_split, 7, "the repeat arms stackDelay");
+    }
+
+    /// The split honours the cursor's room and kind: a full same-kind cursor,
+    /// an alien cursor or a drained slot transfers nothing
+    /// (`ItemSlot.cs:1707`).
+    #[test]
+    fn right_click_split_respects_the_cursor_room_and_kind() {
+        // A full cursor of the same kind cannot take more.
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.mouse_item = slot(9, 9999);
+        app.place_down = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.mouse_item.count, 9999);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(slot(9, 5)));
+        // An alien cursor never splits.
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.mouse_item = slot(3, 1);
+        app.place_down = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.mouse_item.kind, 3);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(slot(9, 5)));
+    }
+
+    /// DW-2.1 — the ctx-3 left-click take carries the chest slot's prefix
+    /// into the cursor and back (`PickItemMovementAction` ctx 3 → action 0
+    /// through the shared movement; the C# moves whole `Item`s, so the
+    /// prefix rides every swap).
+    #[test]
+    fn test_DW_2_1_prefix_survives_the_left_click_take() {
+        let mut app = chest_app(vec![prefixed(48, 7, 3)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.prefix, 3, "the take carried the prefix");
+        assert_eq!(app.mouse_item.kind, 48);
+        assert_eq!(app.mouse_item.count, 7);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        // Placing it back keeps the prefix in the store.
+        app.mouse_pos = CHEST_SLOT_1;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 1),
+            Some(prefixed(48, 7, 3))
+        );
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
+    /// DW-2.1 (dirty) — the right-click stack-split's cursor clone carries
+    /// the chest slot's prefix (`PickupItemIntoMouse`'s `inv[slot].Clone()`,
+    /// `ItemSlot.cs:1721`), and the take gate is CanStack — a different
+    /// prefix never splits into the cursor's stack (`ItemSlot.cs:1707`).
+    #[test]
+    fn test_DW_2_1_stack_split_carries_the_prefix_and_refuses_cross_prefix() {
+        let mut app = chest_app(vec![prefixed(9, 3, 2)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.prefix, 2, "the clone carried the prefix");
+        assert_eq!(app.mouse_item.count, 1);
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(prefixed(9, 2, 2))
+        );
+        // An unprefixed cursor never splits a prefixed chest stack.
+        let mut app = chest_app(vec![prefixed(9, 3, 2)]);
+        app.mouse_item = slot(9, 5);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.mouse_item.count, 5, "the cross-prefix split refused");
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(prefixed(9, 3, 2))
+        );
+    }
+
+    /// DW-4.5 — the shift hover evaluation (`GetAlternateClickAction`,
+    /// `ItemSlot.cs:644-726`): cursor 8 on a chest cell with inventory room,
+    /// 9 on an inventory slot with a placeable stack, −1 without Shift and
+    /// −1 when nothing has room. (The Cursors_8/9 texture draw is the
+    /// recorded follow-up — the state is what the click arms consume.)
+    #[test]
+    fn dw_4_5_cursor_override_eval_per_hover_and_shift() {
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_FROM_CHEST);
+        // An inventory grid slot with a placeable stack → 9.
+        app.inventory[5] = slot(9, 10);
+        app.mouse_pos = INV_SLOT_5;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, CURSOR_TO_CHEST);
+        // Without Shift the evaluation stays off.
+        app.keys.remove(&KeyCode::ShiftLeft);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1);
+        // No room anywhere in the inventory → no cursor 8.
+        app.keys.insert(KeyCode::ShiftRight);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1);
+    }
+
+    /// The cursor-9 shift-click moves the stack into the chest
+    /// (`OverrideLeftClick` `ItemSlot.cs:813-850` → `TryPlacingInChest(justCheck:
+    /// false)` `:846`) and consumes the press.
+    #[test]
+    fn shift_click_transfers_inventory_into_the_chest() {
+        let mut app = chest_app(vec![slot(9, 5)]);
+        app.inventory[5] = slot(9, 10);
+        app.mouse_pos = INV_SLOT_5;
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 15));
+        assert_eq!(app.inventory[5].count, 0);
+        assert!(!app.ui_left_press, "the press is consumed");
+    }
+
+    /// The cursor-8 shift-click drains a chest cell into the inventory
+    /// (`OverrideLeftClick` `ItemSlot.cs:800-812` → `GetItem`): the partial
+    /// grid stack soaks what it has room for, the remainder lands on the
+    /// reverse-scanned empty slot (49 — the hotbar pass finds none with
+    /// everything else full), and nothing stays behind.
+    #[test]
+    fn shift_click_from_chest_slot_transfers_to_the_inventory() {
+        let mut app = chest_app(vec![slot(9, 500)]);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        app.inventory[0] = slot(9, 9995); // room for 4
+        app.inventory[49] = EMPTY_SLOT; // the reverse pass's first hit
+        app.mouse_pos = CHEST_SLOT_0;
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.inventory[0].count, 9999);
+        assert_eq!(app.inventory[49].kind, 9);
+        assert_eq!(app.inventory[49].count, 496);
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(EMPTY_SLOT),
+            "the whole stack moved"
+        );
+    }
+
+    /// The batch-review carry — the open-inventory chest-tile click: the same
+    /// chest's right-click toggles closed (`Player.cs:33230-33252`) and the
+    /// press is consumed.
+    #[test]
+    fn re_click_on_the_open_chest_tile_closes_it() {
+        let mut app = chest_app(vec![slot(9, 1)]);
+        app.world = World::new("t".into(), 120, 120);
+        place_tile_chest(&mut app, 20, 10);
+        app.mouse_pos = tile_click(20, 10);
+        app.ui_right_press = true;
+        app.place_down = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the re-click closes (:33236)"
+        );
+        assert!(!app.ui_right_press, "the press is consumed");
+    }
+
+    /// The carry's switch half — a right-click on another chest's tile opens
+    /// it in place of the open one (`:33248-33251`, the re-open sound 12).
+    #[test]
+    fn right_click_on_another_chest_switches_while_open() {
+        let mut app = chest_app(vec![]);
+        app.world = World::new("t".into(), 120, 120);
+        place_tile_chest(&mut app, 20, 10);
+        place_tile_chest(&mut app, 40, 10);
+        app.world_chests.push(WorldChest {
+            tile: (40, 10),
+            slots: vec![],
+        });
+        app.player.as_mut().unwrap().chest = 0;
+        app.mouse_pos = tile_click(40, 10);
+        app.ui_right_press = true;
+        app.place_down = true;
+        assert!(app.handle_chest_clicks());
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, 1, "the store index of the (40, 10) chest");
+        assert_eq!((p.chest_x, p.chest_y), (40, 10));
+    }
+
+    /// The inventory grid's left click still moves items through the shared
+    /// helper — the extraction's characterization pin (DW-4.5's "inventory
+    /// clicks still green" half).
+    #[test]
+    fn inventory_left_clicks_move_through_the_shared_helper() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.inventory[0] = slot(9, 6);
+        app.mouse_pos = Vec2::new(30.0, 30.0); // grid (0, 0)
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item.count, 6);
+        assert_eq!(app.inventory[0].count, 0);
+    }
+
+    // --- Phase 5: the rename button dispatch -----------------------------
+
+    /// `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:282-308`): the ID-5
+    /// click opens the ctx-2 keyboard (`RenameChest` :827-838 →
+    /// `IngameFancyUI.OpenVirtualKeyboard(2)`), the ID-6 click (the editor is
+    /// live) cancels it (`RenameChestCancel` :863-869).
+    #[test]
+    fn dw_5_rename_button_click_routes_to_the_keyboard_and_cancel() {
+        let mut app = chest_app(vec![]);
+        // A real style-0 chest tile at the open origin, so the prefill
+        // decodes the tile default (`IngameFancyUI.cs:103-107`).
+        place_tile_chest(&mut app, 2, 2);
+        let p = app.player.as_mut().unwrap();
+        p.chest_x = 2;
+        p.chest_y = 2;
+        // The rename button's row anchor (506, invBottom + 40 + 5*26) at the
+        // idle scale (the static-ctor 0.0 only precedes the first drawn
+        // frame), probed a few px in (the headless font estimate).
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(
+            app.chest_editing(),
+            "the rename keyboard opened (the ChestRename tail session)"
+        );
+        assert!(
+            matches!(
+                app.front.as_ref(),
+                Some(crate::app::flow::FrontScreen::Keyboard(s))
+                    if s.tail == crate::app::flow::KeyboardTail::ChestRename
+                        && s.request.context == ui::keyboard::Context::Chest
+            ),
+            "the session is the chest-rename keyboard"
+        );
+        assert_eq!(app.chest_edit_text(), "Chest", "the tile default prefills");
+        // The cancel button's row (ID 6, y = 454) is only live while editing;
+        // the click cancels the editor back into gameplay.
+        app.mouse_pos = Vec2::new(510.0, 454.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the cancel button took the click");
+        assert!(!app.chest_editing(), "the editor closed");
+        assert_eq!(app.front, None, "back into gameplay");
+        assert!(app.chest_names.is_empty(), "the cancel never wrote");
+    }
+
+    /// The editing-state Save arm (`ChestUI.RenameChest`'s else, `:834-837`):
+    /// clicking ID 5 while the editor is live submits the live text.
+    #[test]
+    fn rename_button_click_submits_while_editing() {
+        let mut app = chest_app(vec![]);
+        place_tile_chest(&mut app, 2, 2);
+        let p = app.player.as_mut().unwrap();
+        p.chest_x = 2;
+        p.chest_y = 2;
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(app.chest_editing());
+        // Type, then click the Save-labelled button again.
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            ui::keyboard::write_str(&mut s.state, "Saved");
+        }
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(!app.chest_editing(), "the Save click submitted");
+        assert_eq!(chest::chest_name(&app, 0), "Saved");
+    }
+
+    // --- Phase 3 (M3-CHEST-INT): the STORE-2 transfer buttons ------------
+
+    /// A headless app with the inventory open and a piggy bank open
+    /// (`Player.chest = -2`, bank index 0) — the M3-STORE-1 dispatch
+    /// fixture.
+    fn bank_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.player.as_mut().unwrap().chest = -2;
+        app
+    }
+
+    /// `chest_app` with the open chest's slots materialized to the browsed
+    /// 40-slot window (`open_chest`'s resize, Phase-2 decision #8) — the
+    /// transfers' free-slot walks need the real window shape.
+    fn stocked_chest_app(slots: Vec<ItemSlot>) -> App {
+        let mut app = chest_app(slots);
+        app.world_chests[0]
+            .slots
+            .resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
+        app
+    }
+
+    /// The button row at the drawn idle state — the dispatch reads the same
+    /// scales the draw pass animates (`ChestUI.ButtonScale`, the static
+    /// ctor's 0.0 decays to `buttonScaleMinimum` after one frame).
+    fn ready_buttons(app: &mut App) {
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+    }
+
+    /// DW-3.1 — LootAll on a world chest drains it into the player: the
+    /// coins ride the coin rows first (`Player.GetItem`'s isACoin arm,
+    /// `Player.cs:39340-39364`), the overflow stays in the chest with the
+    /// vault disabled (`LootAllFromBank`'s default settings — the port's
+    /// `void_vault_enabled` gates `CanGoIntoVoidVault`).
+    #[test]
+    fn test_DW_3_1_loot_all_drains_a_world_chest_coins_first_and_keeps_overflow() {
+        let mut app = stocked_chest_app(vec![slot(9, 5), slot(71, 50), slot(3, 500)]);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999); // stone everywhere: the wood/stone overflow
+        }
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0); // the Loot All row (id 0)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(!app.ui_left_press, "the press is consumed");
+        assert_eq!(
+            app.mouse_item.count, 0,
+            "the slot handler never saw the click"
+        );
+        assert_eq!(
+            app.equip.coins[0].count, 50,
+            "the coins ride the coin rows first"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[1].count, 0,
+            "the coin slot drained"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[0].count, 5,
+            "the wood overflow stayed in the chest"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[2].count, 500,
+            "the stone overflow stayed in the chest"
+        );
+    }
+
+    /// DW-3.1 — with the void vault enabled (`IsVoidVaultEnabled`,
+    /// `Player.cs:24550-24553`) the overflow fills the vault first
+    /// (`GetItem`'s per-item last resort, `Player.cs:39395-39398`).
+    #[test]
+    fn test_DW_3_1_loot_all_overflow_fills_the_void_vault_when_enabled() {
+        let mut app = stocked_chest_app(vec![slot(9, 5), slot(71, 50), slot(3, 500)]);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.void_vault_enabled = true;
+        }
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.equip.coins[0].count, 50,
+            "the coins still ride the rows"
+        );
+        assert!(
+            app.world_chests[0].slots.iter().all(|s| s.count == 0),
+            "the vault took the whole overflow"
+        );
+        let vault = &app.player.as_ref().unwrap().banks[3];
+        assert_eq!(vault[0].kind, 9);
+        assert_eq!(vault[0].count, 5, "the wood overflowed into the vault");
+        assert_eq!(vault[1].kind, 3);
+        assert_eq!(vault[1].count, 500, "the stone overflowed into the vault");
+    }
+
+    /// DW-3.2 — DepositAll on a world chest = MoveCoins + the rows 49..=10
+    /// descending scan, the favorited rows stay, the leftovers park in the
+    /// first empty slot (`ChestUI.cs:540-659`). A coin-less chest is the
+    /// `:1048-1051` MoveCoins no-op — the coin rows stay put and the grid
+    /// stacks park as plain stacks; with a coin in the chest the pre-pass
+    /// consolidates into it.
+    #[test]
+    fn test_DW_3_2_deposit_all_moves_coins_then_pours_rows_descending() {
+        let mut app = stocked_chest_app(vec![slot(9, 500)]);
+        app.inventory[0] = slot(9, 50); // the hotbar: untouched
+        app.inventory[20] = slot(9, 200); // merges 500 -> 700
+        app.inventory[22] = slot(71, 100); // a grid coin stack
+        app.inventory[25] = slot(3, 100); // favorited: stays
+        app.inventory[30] = slot(41, 1); // a non-merge kind: the first empty slot
+        app.favorite_slots.push(25);
+        app.equip.coins[0] = slot(71, 60); // the coin rows
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0); // the Deposit All row (id 1)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        let chest = &app.world_chests[0].slots;
+        assert_eq!(chest[0].count, 700, "the wood merged");
+        assert!(
+            !chest.iter().any(|s| s.kind == 72),
+            "no consolidation into a coin-less chest (`:1048-1051`)"
+        );
+        assert!(
+            chest.iter().any(|s| s.kind == 71 && s.count == 100),
+            "the grid coin stack parked as a plain stack"
+        );
+        assert!(
+            chest.iter().any(|s| s.kind == 41 && s.count == 1),
+            "the leftover parked in the first empty slot"
+        );
+        assert_eq!(app.inventory[25].count, 100, "the favorited row stayed");
+        assert_eq!(app.inventory[0].count, 50, "the hotbar untouched");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[22].count, 0, "the grid stack deposited");
+        assert_eq!(app.inventory[30].count, 0);
+        assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
+        // The pre-pass with a coin in the chest: 40 + 35 + 5 = 80 copper
+        // consolidates into the chest's coin slot (no carry at 80).
+        let mut app = stocked_chest_app(vec![slot(71, 40)]);
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[0].kind, 71,
+            "the pre-pass consolidated into the chest's coin slot"
+        );
+        assert_eq!(app.world_chests[0].slots[0].count, 80);
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[30].count, 0);
+        // The descending order: one free slot — row 40 scans before row 20
+        // (`ChestUI.cs:563`'s `for num = 49; num >= 10; num--`).
+        let mut slots = vec![slot(3, 9999); DEFAULT_MAX_ITEMS as usize - 1];
+        slots.push(EMPTY_SLOT);
+        let mut app = stocked_chest_app(slots);
+        app.inventory[20] = slot(41, 1); // the torch: scanned last
+        app.inventory[40] = slot(43, 5); // the arrows: scanned first
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[DEFAULT_MAX_ITEMS as usize - 1].kind,
+            43,
+            "row 40 won the free slot"
+        );
+        assert_eq!(app.inventory[20].count, 1, "row 20 found no free slot");
+    }
+
+    /// DW-3.3 — QuickStack on a world chest performs NO MoveCoins and only
+    /// merges types the chest already holds (`ChestUI.cs:661-825` — the
+    /// MoveCoins arms :670-685 cover the bank kinds only).
+    #[test]
+    fn test_DW_3_3_quick_stack_world_merges_only_held_types_without_move_coins() {
+        let mut app = stocked_chest_app(vec![slot(9, 100)]);
+        app.inventory[20] = slot(9, 150); // wood merges (the chest holds wood)
+        app.inventory[21] = slot(3, 40); // stone: the chest holds none — stays
+        app.inventory[22] = slot(71, 200); // grid coins: no MoveCoins — stay
+        app.equip.coins[0] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 352.0); // the Quick Stack row (id 2)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        let chest = &app.world_chests[0].slots;
+        assert_eq!(chest[0].count, 250, "the wood merged");
+        assert_eq!(app.inventory[21].count, 40, "only held types merge");
+        assert_eq!(app.inventory[22].count, 200, "no MoveCoins ran");
+        assert_eq!(app.equip.coins[0].count, 5, "the coin rows untouched");
+        assert!(
+            !chest.iter().any(|s| s.kind == 71 || s.kind == 72),
+            "no coin consolidation into the chest"
+        );
+    }
+
+    /// DW-3.3 — the bank regression: the bank QuickStack keeps its MoveCoins
+    /// pre-pass (`ChestUI.cs:670-685`) — with a coin in the bank it pulls the
+    /// player's coins and consolidates into the bank's coin slot; with a
+    /// coin-less bank it is the `:1048-1051` no-op and nothing moves.
+    #[test]
+    fn test_DW_3_3_quick_stack_bank_keeps_the_move_coins_pre_pass() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        app.player.as_mut().unwrap().banks[0][1] = slot(71, 10); // the seed coin
+        app.inventory[20] = slot(9, 150); // merges into the wood target
+        app.inventory[22] = slot(71, 85); // MoveCoins pulls the grid coins
+        app.mouse_pos = Vec2::new(510.0, 390.0); // the bank's Quick Stack row
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].count, 250, "the wood merged");
+        assert_eq!(bank[1].kind, 71);
+        assert_eq!(
+            bank[1].count, 95,
+            "the pre-pass consolidated 10 + 85 copper (no carry at 95)"
+        );
+        assert_eq!(bank[2].count, 0);
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[22].count, 0, "the grid coins drained");
+        // The coin-less bank: the pre-pass is the `:1048-1051` no-op — the
+        // player's coins stay put.
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        app.inventory[20] = slot(9, 150);
+        app.inventory[22] = slot(71, 200);
+        app.equip.coins[0] = slot(71, 5);
+        app.mouse_pos = Vec2::new(510.0, 390.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].count, 250, "the wood merged");
+        assert_eq!(bank[1].count, 0, "the bank took no coins");
+        assert_eq!(
+            app.inventory[22].count, 200,
+            "no consolidation into a coin-less bank"
+        );
+        assert_eq!(app.equip.coins[0].count, 5, "the coin rows untouched");
+    }
+
+    /// DW-3.4 — Restock from a world chest fills unprefixed demanded stacks
+    /// only (`ChestUI.cs:871-995`); prefixed chest stacks never move
+    /// (:921's `prefix != 0` gate).
+    #[test]
+    fn test_DW_3_4_restock_fills_unprefixed_demanded_stacks_only() {
+        let mut app = stocked_chest_app(vec![prefixed(9, 10, 2), slot(9, 30), slot(40, 20)]);
+        app.inventory[20] = slot(9, 50); // partial wood: the demand
+        app.inventory[21] = slot(40, 10); // partial arrows: the demand
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 378.0); // the Restock row (id 3)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.inventory[20].count, 80,
+            "the unprefixed supply filled it"
+        );
+        assert_eq!(app.inventory[21].count, 30);
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            prefixed(9, 10, 2),
+            "the prefixed stack never moves"
+        );
+        assert_eq!(app.world_chests[0].slots[1].count, 0);
+        assert_eq!(app.world_chests[0].slots[2].count, 0);
+    }
+
+    /// DW-3.5 — the button hit region swallows the click before
+    /// `chest_slot_click` sees it (`ChestUI.DrawButtons` runs before
+    /// `DrawSlots`): the transfer runs, the press is consumed and the cursor
+    /// never picked the slot up.
+    #[test]
+    fn test_DW_3_5_button_hit_consumes_the_press_before_the_slot_grid() {
+        let mut app = stocked_chest_app(vec![slot(40, 20)]);
+        app.inventory[21] = slot(40, 10); // partial arrows: the demand
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 378.0); // the Restock row (id 3)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(!app.ui_left_press, "the press is consumed");
+        assert_eq!(app.mouse_item.count, 0, "the slot handler never ran");
+        assert_eq!(app.inventory[21].count, 30, "the transfer ran instead");
+        assert_eq!(app.world_chests[0].slots[0].count, 0);
+    }
+
+    /// DW-3.5 — a bank value never dispatches the chest panel's row (the
+    /// two-panel ownership): the click falls through unconsumed and the bank
+    /// keeps its contents.
+    #[test]
+    fn test_DW_3_5_bank_values_dispatch_no_chest_panel_row() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0); // the chest panel's Loot All row
+        app.ui_left_press = true;
+        assert!(
+            !app.handle_chest_clicks(),
+            "the chest panel's dispatch is bank-hidden"
+        );
+        assert!(
+            app.ui_left_press,
+            "the press fell through to the bank panel"
+        );
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[0][0].count,
+            100,
+            "the bank untouched by the chest row"
+        );
+    }
+
+    /// DW-3.6 — the bank DepositAll call site gains the MoveCoins pre-pass
+    /// per `ChestUI.cs:543-562` (it runs for every container kind): with a
+    /// coin in the bank the scattered coins consolidate into the bank on
+    /// deposit; with a coin-less bank the pre-pass is the `:1048-1051`
+    /// no-op — the grid stacks park as plain stacks (:563-655) and the coin
+    /// rows stay put.
+    #[test]
+    fn test_DW_3_6_bank_deposit_all_consolidates_coins_into_the_bank() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(71, 40); // the seed coin
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        app.mouse_pos = Vec2::new(510.0, 360.0); // the bank's Deposit All row
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].kind, 71);
+        assert_eq!(
+            bank[0].count, 80,
+            "the pre-pass consolidated 40 + 35 + 5 (no carry at 80)"
+        );
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[30].count, 0);
+        // The coin-less bank: no consolidation — the grid stacks park as
+        // plain stacks (row 30 scans first, row 20 merges into it) and the
+        // coin rows stay untouched.
+        let mut app = bank_app();
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        app.equip.coins[0] = slot(71, 60);
+        app.mouse_pos = Vec2::new(510.0, 360.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(
+            bank[0].kind,
+            71,
+            "the grid stacks parked as plain stacks"
+        );
+        assert_eq!(bank[0].count, 40, "5 parked first, then 35 merged in");
+        assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[30].count, 0);
+    }
+
+    /// Dirty — an empty chest's LootAll is a no-op (the drain loop sees only
+    /// air slots).
+    #[test]
+    fn loot_all_empty_chest_is_a_noop() {
+        let mut app = stocked_chest_app(vec![]);
+        app.inventory[20] = slot(9, 10);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(
+            app.world_chests[0].slots.iter().all(|s| s.count == 0),
+            "the empty chest stays empty"
+        );
+        assert_eq!(app.inventory[20].count, 10, "the inventory untouched");
+    }
+
+    /// Dirty — a chest holding only coin types merges nothing on QuickStack
+    /// (the coin exclusion rides the target side, `ChestUI.cs:703-714`), and
+    /// no MoveCoins runs for a world chest.
+    #[test]
+    fn quick_stack_with_a_chest_holding_only_coins_merges_nothing() {
+        let mut app = stocked_chest_app(vec![slot(71, 30)]);
+        app.inventory[20] = slot(9, 50);
+        app.equip.coins[0] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 352.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            slot(71, 30),
+            "the chest's coin stack is not a target"
+        );
+        assert_eq!(app.inventory[20].count, 50, "nothing merged");
+        assert_eq!(app.equip.coins[0].count, 5, "no MoveCoins ran");
+    }
+
+    // ------------------------------------------------------------------
+    // M3-CHEST-INT phase 4 — STORE-3: the favorite toggle + the trash swap.
+    // ------------------------------------------------------------------
+
+    /// Inside the trash slot's cell — `Main.cs:42352-42353`'s (448, 258) at
+    /// scale 0.85 (`ui::inventory::trash_slot_at`).
+    const TRASH_CELL: Vec2 = Vec2::new(470.0, 280.0);
+
+    /// A plain open-inventory app with no container open (the favorite/trash
+    /// surfaces; the player exists so the open-container reads are live).
+    fn inv_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    /// DW-4.1 — Alt+left-click on an inventory slot toggles the favorite
+    /// (`OverrideHover`'s cursor-3 arm `ItemSlot.cs:616-620` +
+    /// `OverrideLeftClick`'s `:745-755` → `ToggleFavorited`): the click is
+    /// consumed before the movement arms, so a held item neither swaps nor
+    /// merges (`ItemSlot.cs:915-918` returns on the override's `true`).
+    #[test]
+    fn test_DW_4_1_alt_left_click_toggles_the_favorite() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.mouse_item = slot(3, 1); // held: the override must eat the click
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        app.handle_inventory_clicks();
+        assert!(app.is_favorite(5), "the toggle fired");
+        assert_eq!(app.mouse_item, slot(3, 1), "the held item stayed");
+        assert_eq!(app.inventory[5], slot(9, 6), "the slot item stayed");
+        // The second Alt+click clears it — the toggle is single-click.
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.is_favorite(5), "the second click un-favorited");
+    }
+
+    /// DW-4.1 — without Alt the same click picks the stack up (the movement
+    /// arm), and a right-click with Alt held runs the half-take ladder and
+    /// never toggles (`OverrideLeftClick`'s cursor-3 arm is left-only; the
+    /// right path is `RightClick`, a different entry).
+    #[test]
+    fn test_DW_4_1_without_alt_picks_up_and_right_click_never_toggles() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty(), "no favorite without Alt");
+        assert_eq!(app.mouse_item, slot(9, 6), "the pickup ran");
+        assert_eq!(app.inventory[5], EMPTY_SLOT);
+
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_right_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty(), "right-click never toggles");
+        assert_eq!(app.mouse_item.count, 3, "the half-take ran");
+        assert_eq!(app.inventory[5].count, 3);
+    }
+
+    /// DW-4.1 (dirty) — Alt+click on an empty slot never toggles: air returns
+    /// before the key block (`ItemSlot.cs:607-609`), so the cursor never
+    /// lights and the click falls to the movement arm — with an empty cursor
+    /// that is a full no-op; with a held item the C# movement still places
+    /// (the override never engages on air).
+    #[test]
+    fn test_DW_4_1_alt_click_on_empty_slot_never_toggles() {
+        let mut app = inv_app();
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5; // slot 5 empty
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "air returns before the key block");
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty());
+        assert_eq!(app.mouse_item, EMPTY_SLOT, "nothing moved");
+
+        let mut app = inv_app();
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.mouse_item = slot(9, 4);
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty());
+        assert_eq!(app.inventory[5], slot(9, 4), "the C# movement places on air");
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+    }
+
+    /// DW-4.2 — the `canFavoriteAt` context table holds (`ItemSlot.cs:386-389`)
+    /// and the toggle returns `PlaySound(12)`'s legacy id on every flip
+    /// (`ToggleFavorited`, `ItemSlot.cs:873-877` — the `toggle_open` pinning
+    /// precedent); the coin-row guard refuses with no sound.
+    #[test]
+    fn test_DW_4_2_can_favorite_gate_holds_and_toggle_plays_sound_12() {
+        assert!(chest::can_favorite_at(0));
+        assert!(chest::can_favorite_at(1));
+        assert!(chest::can_favorite_at(2));
+        assert!(chest::can_favorite_at(32));
+        assert!(!chest::can_favorite_at(3), "chest slots cannot be favorited");
+        assert!(!chest::can_favorite_at(5));
+        assert!(!chest::can_favorite_at(6), "the trash slot cannot be favorited");
+        assert!(!chest::can_favorite_at(13), "the closed hotbar cannot either");
+
+        let mut app = inv_app();
+        assert_eq!(app.toggle_favorite(7), 12);
+        assert!(app.is_favorite(7));
+        assert_eq!(app.toggle_favorite(7), 12, "the C# plays 12 on both flips");
+        assert!(!app.is_favorite(7));
+        assert_eq!(app.toggle_favorite(crate::item::INV), 0, "the coin-row guard");
+        assert_eq!(app.toggle_favorite(53), 0);
+
+        // The hover gate refuses air — the cursor never lights (the click-path
+        // half of the gate; the table asserts above are the static half).
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5; // empty
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1);
+    }
+
+    /// DW-4.2 — the closed hotbar is context 13, not in `canFavoriteAt`: an
+    /// Alt+click selects the slot like the C# and never toggles.
+    #[test]
+    fn test_DW_4_2_alt_click_closed_hotbar_selects_never_toggles() {
+        let mut app = inv_app();
+        app.inventory[3] = slot(9, 6);
+        app.inventory_open = false;
+        app.keys.insert(KeyCode::AltLeft);
+        // Inside closed-hotbar slot 3 (x 20 + 3·43 = 149..188, y 25..64 at
+        // the 0.75 idle scale — `ui::slot::closed_hotbar_metrics`).
+        app.mouse_pos = Vec2::new(160.0, 40.0);
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert_eq!(app.selected, 3, "the select ran");
+        assert!(app.favorite_slots.is_empty(), "context 13 cannot favorite");
+    }
+
+    /// DW-4.3 — a shift-click on a favorited slot is a no-op as the alternate
+    /// action: `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`)
+    /// keeps cursor 9 dark, so the cursor-9 transfer never fires. The click
+    /// then falls through to the C# movement arm (the override returned
+    /// false) — a plain pickup, with the favorite retained on the slot
+    /// (context 0 is in `retainFavoriteOnMoveAt`).
+    #[test]
+    fn test_DW_4_3_shift_click_on_favorited_slot_is_noop() {
+        let mut app = stocked_chest_app(vec![slot(9, 5)]);
+        app.inventory[5] = slot(3, 10);
+        app.favorite_slots.push(5);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks());
+        assert_eq!(
+            app.cursor_override, -1,
+            "the favorited guard keeps cursor 9 dark"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            slot(9, 5),
+            "nothing transferred into the chest"
+        );
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(3, 10), "the fall-through pickup ran");
+        assert_eq!(app.favorite_slots, vec![5], "context 0 retains the favorite");
+    }
+
+    /// DW-4.3 — direct moves on favorited slots work (the C# has no
+    /// immovability rule for direct clicks) and the retain table leaves the
+    /// favorite in place: context 0 retains, so nothing clears on the move
+    /// (the slot-positional v1 model — the `ItemSlot.cs:1728-1734` flag-carry
+    /// is unrepresentable, Phase 5's ANALYSIS note).
+    #[test]
+    fn test_DW_4_3_direct_moves_work_and_favorite_stays_on_the_slot() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.favorite_slots.push(5);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 6), "the direct move worked");
+        assert_eq!(app.favorite_slots, vec![5], "retain[0]: nothing cleared");
+    }
+
+    /// DW-4.4 — the trash slot's left click is the plain `MouseItemSwap`
+    /// (`ItemSlot.cs:937-941` + `:1255-1263`): all four arms.
+    #[test]
+    fn test_DW_4_4_left_click_trash_swaps_held_and_trash() {
+        // held ↔ trash: both sides move.
+        let mut app = inv_app();
+        app.mouse_item = slot(9, 4);
+        app.equip.trash = slot(3, 2);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash, slot(9, 4), "the held item was trashed");
+        assert_eq!(app.mouse_item, slot(3, 2), "the old trash returned");
+
+        // held + empty trash: the item is trashed, the cursor empties.
+        let mut app = inv_app();
+        app.mouse_item = slot(9, 4);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash, slot(9, 4));
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+
+        // empty held + trash: the trash returns to the cursor.
+        let mut app = inv_app();
+        app.equip.trash = slot(3, 2);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(3, 2));
+        assert_eq!(app.equip.trash, EMPTY_SLOT);
+
+        // empty-on-empty: nothing moves anywhere.
+        let mut app = inv_app();
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+        assert_eq!(app.equip.trash, EMPTY_SLOT);
+    }
+
+    /// The trash hit region sits outside the inventory grid's rows — a click
+    /// at the trash cell must not also resolve as a grid slot (the dispatch's
+    /// trash arm precedes the grid, but the geometry should not overlap).
+    #[test]
+    fn trash_cell_is_outside_the_inventory_grid() {
+        let mut app = inv_app();
+        app.mouse_pos = TRASH_CELL;
+        assert!(ui::inventory::trash_slot_at(TRASH_CELL));
+        assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
     }
 }

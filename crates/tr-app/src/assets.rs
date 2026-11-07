@@ -314,6 +314,7 @@ pub fn load_world_images(
         "Logo",
         "Inventory_Back",
         "Inventory_Back2",
+        "Inventory_Back5",
         "Inventory_Back9",
         "Inventory_Back14",
         "Heart",
@@ -1078,6 +1079,8 @@ pub struct Lookups {
     pub ui_back3: Option<tr_render::SheetRect>,
     /// `Inventory_Back4`: reforge/guide/crafting slot frame (`ItemSlot.cs:2286`).
     pub ui_back4: Option<tr_render::SheetRect>,
+    /// `Inventory_Back5`: the world-chest slot frame (`ItemSlot.cs:2215-2221`).
+    pub ui_back5: Option<tr_render::SheetRect>,
     /// `Inventory_Back6`: shop slot frame (`ItemSlot.cs:2292`).
     pub ui_back6: Option<tr_render::SheetRect>,
     /// `Inventory_Back7`: the trash slot frame (`ItemSlot.cs:2295`).
@@ -1336,6 +1339,7 @@ impl Lookups {
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),
             ui_back4: atlas.sheet("Inventory_Back4").copied(),
+            ui_back5: atlas.sheet("Inventory_Back5").copied(),
             ui_back6: atlas.sheet("Inventory_Back6").copied(),
             ui_back7: atlas.sheet("Inventory_Back7").copied(),
             ui_back12: atlas.sheet("Inventory_Back12").copied(),
@@ -1421,6 +1425,8 @@ impl Lookups {
                 atlas.sheet("NPC_143").copied(),
                 atlas.sheet("NPC_144").copied(),
                 atlas.sheet("NPC_145").copied(),
+                atlas.sheet("NPC_383").copied(),
+                atlas.sheet("NPC_520").copied(),
                 atlas.sheet("NPC_212").copied(),
                 atlas.sheet("NPC_216").copied(),
                 atlas.sheet("NPC_117").copied(),
@@ -1443,6 +1449,7 @@ impl Lookups {
                 atlas.sheet("NPC_246").copied(),
                 atlas.sheet("NPC_247").copied(),
                 atlas.sheet("NPC_249").copied(),
+                atlas.sheet("NPC_399").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

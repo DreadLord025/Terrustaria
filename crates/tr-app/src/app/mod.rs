@@ -214,9 +214,61 @@ pub(crate) struct App {
     /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
     /// `M6-SAVE-2`) — in-memory for now.
     pub(crate) world_chests: Vec<craft::WorldChest>,
+    /// `ChestUI.StartingRowForDrawing` (`ChestUI.cs:52`): the chest grid's top
+    /// visible row, clamped per frame by the draw and by the wheel scroll.
+    pub(crate) chest_scroll_row: i32,
+    /// `ChestUI.ButtonScale` (`ChestUI.cs:48`; the static ctor's `new
+    /// float[7]` starts at 0.0, `:1306`): the text buttons' scale animation —
+    /// the rename pair (5/6) draws in phase 3, the LootAll family (0-4) is
+    /// M3-STORE-2's.
+    pub(crate) chest_button_scales: [f32; ui::chest::BUTTON_COUNT],
+    /// `ChestUI.ButtonHovered` (`ChestUI.cs:50`).
+    pub(crate) chest_button_hovered: [bool; ui::chest::BUTTON_COUNT],
+    /// `Main.stackSplit` (`Main.cs:1693`): the slot stack-split's repeat
+    /// cooldown — 0 idle, >1 gating the next transfer (`ItemSlot.cs:1700`).
+    /// Ticked per drawn frame by `app::frame` (the Main.cs:61781-61807
+    /// accelerator + the :62466-62473 decay).
+    pub(crate) stack_split: i32,
+    /// `Main.stackDelay` (`Main.cs:1694`): the repeat delay between
+    /// right-click transfers, decaying 7 → 2 by the accelerator ladder.
+    pub(crate) stack_delay: i32,
+    /// `Main.stackCounter` (`Main.cs:1695`): frames toward the next
+    /// `stackDelay` decay step.
+    pub(crate) stack_counter: i32,
+    /// `Main.superFastStack` (`Main.cs:1696`): extra items per frame once the
+    /// delay bottoms out (~2 s of holding).
+    pub(crate) super_fast_stack: i32,
+    /// `Main.timesTriedToFastStack` (`Main.cs:1697`).
+    pub(crate) times_tried_to_fast_stack: i32,
+    /// `Main.cursorOverride` (`Main.cs:2047`): the hovered slot's
+    /// alternate-click cursor — 8 = transfer from the chest, 9 = transfer to
+    /// it (`ItemSlot.cs:213-218`) — or −1. Reset per interface frame
+    /// (`Main.cs:44941`), set by the chest hover evaluation (`ItemSlot.cs:
+    /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
+    /// phase-4 file scope excludes assets.rs/cursor.rs).
+    pub(crate) cursor_override: i32,
+    /// The stored `Chest.name` (`Chest.cs:82`) per store index — the panel's
+    /// name line and the rename submit's write target (`App.chest_names`
+    /// feeds `chest::chest_name`). A side map until M6-SAVE-2 widens the
+    /// `WorldChest` entity: the frozen `editing.rs` stocked-chest test
+    /// literal pins the struct shape (the phase-5 discovery, Gap #2).
+    pub(crate) chest_names: HashMap<usize, String>,
+    /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
+    /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
+    /// submit's empty-if-default read (`ChestUI.cs:849-852`).
+    pub(crate) chest_default_name: String,
+    /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
+    /// chest-panel name editor's caret blinker (`ui::chest::TextBlinker`).
+    pub(crate) text_blinker: ui::chest::TextBlinker,
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
+    /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
+    /// .cs:315`): the cached coin carriers. Session-only — cleared on the
+    /// world unload (the vanilla never saves them).
+    pub(crate) revenge_markers: Vec<crate::revenge::RevengeMarker>,
+    /// `CoinLossRevengeSystem._gameTime` (:382-389) — the revenge clock.
+    pub(crate) revenge_tick: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -827,30 +879,40 @@ impl App {
         true
     }
 
-    /// The favorite toggle on an inventory slot (`Item.favorited`'s
-    /// right-click toggle).
-    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+    /// `ItemSlot.ToggleFavorited` (`ItemSlot.cs:873-877`): flip the slot's
+    /// favorite + `PlaySound(12)`. Returns the legacy sound id (12) so the
+    /// caller plays it and the tests pin it (the `chest::toggle_open`
+    /// precedent — no audio capture seam), 0 when the guard refuses. The
+    /// `idx >= INV` guard keeps the coin/ammo rows out — `canFavoriteAt`
+    /// allows contexts 1/2 in the C# (`ItemSlot.cs:386-389`), but the port's
+    /// favorites address the 10x5 grid only (the recorded coin-row gap,
+    /// Phase 5's ANALYSIS entry).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) -> u32 {
         if idx >= crate::item::INV {
-            return;
+            return 0;
         }
         if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
             self.favorite_slots.remove(pos);
         } else {
             self.favorite_slots.push(idx);
         }
+        12
     }
 
     pub(crate) fn is_favorite(&self, idx: usize) -> bool {
         self.favorite_slots.contains(&idx)
     }
 
-    /// The trash swap: the held item goes to the trash, the old trash
-    /// returns. The favorited held items can't be trashed.
-    pub(crate) fn trash_swap(&mut self) -> bool {
-        let old = self.equip.trash;
-        self.equip.trash = self.mouse_item;
-        self.mouse_item = old;
-        true
+    /// `ItemSlot.MouseItemSwap` (`ItemSlot.cs:1255-1263`) at context 6 — the
+    /// plain held/trash swap. The retain table has no context 6, so the C#
+    /// clears both favorites here (`:1258-1261`); the port's slot-positional
+    /// favorites have nothing to clear (the trash slot is not favoritable and
+    /// a held favorite is unrepresentable — the v1 model, Phase 5's ANALYSIS
+    /// entry). **No favorited-held guard exists in the C# swap** — favorited
+    /// held items CAN be trashed; the can't-drop rule lives in
+    /// `DropSelectedItem` (`Player.cs:5170-5184`), the sell/drop pass's seam.
+    pub(crate) fn trash_swap(&mut self) {
+        std::mem::swap(&mut self.equip.trash, &mut self.mouse_item);
     }
 
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
@@ -996,15 +1058,17 @@ impl App {
     /// menu side closes with the settings sync first, so exactly one of
     /// `front`/`menu` stays live (Review Focus 1).
     pub(crate) fn open_keyboard(&mut self, request: ui::keyboard::Request, back: FrontScreen) {
-        self.open_keyboard_with_tail(request, back, KeyboardTail::Rename);
+        self.open_keyboard_with_tail(request, Some(back), KeyboardTail::Rename);
     }
 
     /// The [`App::open_keyboard`] twin for the creator's naming flows — the
-    /// `tail` selects the submit behaviour (`KeyboardTail`).
+    /// `tail` selects the submit behaviour (`KeyboardTail`). `back: None`
+    /// backs the in-game chest rename (`IngameFancyUI.Close` returns to
+    /// gameplay, `:162-188`).
     pub(crate) fn open_keyboard_with_tail(
         &mut self,
         request: ui::keyboard::Request,
-        back: FrontScreen,
+        back: Option<FrontScreen>,
         tail: KeyboardTail,
     ) {
         let state = ui::keyboard::KeyboardState::new(&request);
@@ -1017,31 +1081,74 @@ impl App {
         })));
     }
 
+    /// The unified open-container index (`Player.chest`, `Player.cs:2876`):
+    /// -1 closed, -2..-5 the banks (`bank.rs`'s `bank_for_chest`), >= 0 the
+    /// `App.world_chests` store index. The -1 answer when no player is live
+    /// (the front screens park the world routes).
+    pub(crate) fn open_container(&self) -> i32 {
+        self.player
+            .as_ref()
+            .map_or(crate::bank::CHEST_CLOSED, |p| p.chest)
+    }
+
+    /// `Main.editChest` (`Main.cs:1747`) — the port's editor is exactly "the
+    /// chest-rename keyboard session is open" (`IngameFancyUI.cs:124` sets
+    /// it, the submit/cancel closures clear it).
+    pub(crate) fn chest_editing(&self) -> bool {
+        matches!(
+            self.front.as_ref(),
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::ChestRename
+        )
+    }
+
+    /// `Main.npcChatText`'s editor read (`ChestUI.cs:113`) — the live
+    /// keyboard text while the chest editor is open
+    /// (`UIVirtualKeyboard.cs:1061-1067`'s sync), "" otherwise.
+    pub(crate) fn chest_edit_text(&self) -> &str {
+        match self.front.as_ref() {
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::ChestRename => {
+                s.state.text.as_str()
+            }
+            _ => "",
+        }
+    }
+
     /// The submit tail. The rename tail keeps Task 6's notice (no `.plr`
     /// writer, spec §9.4); the creator's naming tails run
     /// `OnFinishedNaming` (`:1684-1689`: the trimmed name lands in the draft,
     /// `SetState(this)` restores the screen) and `OnFinishedNamingAndCreating`
-    /// (`:1696-1702`: the same, then `FinishCreatingCharacter`).
+    /// (`:1696-1702`: the same, then `FinishCreatingCharacter`). The chest
+    /// rename tail runs `ChestUI.RenameChestSubmit` + `Close(quiet: true)`
+    /// (`IngameFancyUI.cs:148-156`).
     pub(crate) fn keyboard_submit(&mut self) {
         let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
             return;
         };
         let name = session.state.text.trim().to_string();
+        // The chest submit reads the live untrimmed text — the C# submit
+        // closure ignores its trimmed argument (`UIVirtualKeyboard.cs:363`,
+        // `Main.npcChatText`'s sync `:1061-1067`).
+        let chest_text = session.state.text.clone();
+        let back = session.back.clone();
+        // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
+        // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
+        // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
+        // `CanSubmit`).
+        self.audio.play("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
-                let back = session.back.clone();
                 self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
-                self.enter_front(back);
+                self.enter_front(back.expect("the rename tail is built with a back screen"));
             }
             KeyboardTail::Name => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the naming tail is built with a back screen");
                 if let FrontScreen::CharCreation(state) = &mut back {
                     state.draft.name = name;
                 }
                 self.enter_front(back);
             }
             KeyboardTail::NameAndCreate => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the naming tail is built with a back screen");
                 if let FrontScreen::CharCreation(state) = &mut back {
                     state.draft.name = name;
                 }
@@ -1052,7 +1159,7 @@ impl App {
             // trimmed name lands (`UpdateInputFields` -> `SetContents`), the
             // creation screen returns through `GoBackHere` (`:730`).
             KeyboardTail::WorldName => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the world-name tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.name = name;
                 }
@@ -1062,7 +1169,7 @@ impl App {
             // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
             // scope Advanced tab, plan Uncertainty 4).
             KeyboardTail::WorldSeed => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.seed = name;
                 }
@@ -1071,7 +1178,8 @@ impl App {
             // `OnFinishedNamingAndCreating` (`:838-842`): the name lands,
             // then `FinishCreatingWorld` (`:845-863`).
             KeyboardTail::WorldNameAndCreate => {
-                let mut back = session.back.clone();
+                let mut back =
+                    back.expect("the world-name-and-create tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.name = name;
                 }
@@ -1080,19 +1188,37 @@ impl App {
                     self.finish_creating_world(draft);
                 }
             }
+            // `ChestUI.RenameChestSubmit` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:148-156`) — the name lands, the keyboard
+            // closes back into gameplay.
+            KeyboardTail::ChestRename => {
+                crate::chest::rename_submit(self, &chest_text);
+            }
         }
     }
 
     /// The cancel tail — `_cancelAction` (`UIVirtualKeyboard.cs:86`) is the
     /// card lists' `GoBackHere` (`UICharacterListItem.cs:214-216`,
     /// `UIWorldListItem.cs:428-430`): reopen the screen the keyboard came
-    /// from, no rename, no notice.
+    /// from, no rename, no notice. The chest rename tail runs
+    /// `ChestUI.RenameChestCancel` + `Close(quiet: true)`
+    /// (`IngameFancyUI.cs:152-156`) — back into gameplay, nothing written.
     pub(crate) fn keyboard_cancel(&mut self) {
         let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
             return;
         };
+        let is_chest = session.tail == KeyboardTail::ChestRename;
         let back = session.back.clone();
-        self.enter_front(back);
+        // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
+        // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
+        // `_cancelAction` (the buttons `:321`/:387, Escape's
+        // `TryEscapingMenu` :806-810).
+        self.audio.play("Menu_Close");
+        if is_chest {
+            crate::chest::rename_cancel(self);
+            return;
+        }
+        self.enter_front(back.expect("the cancel tail is built with a back screen"));
     }
 
     /// One printable character from the physical keyboard — `Main.GetInputText`'s
@@ -1116,12 +1242,15 @@ impl App {
     /// The physical Enter — `Main.inputTextEnter && UIVirtualKeyboard.CanSubmit`
     /// fires the submit (`:763-766`); `CanSubmit` is `ValidateText`'s cached
     /// `TextIsValidForSubmit` (`:108-145`, `:585-626`), so an invalid text
-    /// keeps the keyboard open, exactly like the dead Submit click.
+    /// keeps the keyboard open, exactly like the dead Submit click. The chest
+    /// context is always valid (`:615-626`'s `_editingChest` gate).
     pub(crate) fn keyboard_enter(&mut self) {
         let valid = match self.front.as_ref() {
-            Some(FrontScreen::Keyboard(session)) => {
-                ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
-            }
+            Some(FrontScreen::Keyboard(session)) => ui::keyboard::text_valid_for(
+                &session.state.text,
+                session.request.allow_empty,
+                session.request.context,
+            ),
             _ => return,
         };
         if valid {
@@ -1444,6 +1573,71 @@ impl App {
                 }
             }
         }
+        // `TR_CHEST`: the chest-panel screenshot fixture — a style-0 chest on
+        // the spawn plateau's floor, stocked and opened (`OpenChest`'s state
+        // arms: `chest`/`chestX`/`chestY` :33507-33522, `playerInventory` and
+        // the crafting close ride the same path, `chest.rs:406-412`).
+        let mut tr_chest_store: Vec<craft::WorldChest> = Vec::new();
+        let tr_chest = if std::env::var_os("TR_CHEST").is_some() {
+            let cx = world.spawn_x + 3;
+            // The first solid tile below the spawn point; the 2×2 sits on it.
+            let mut gy = world.spawn_y;
+            while gy < world.height && !world.is_active(cx, gy) && !world.is_active(cx + 1, gy) {
+                gy += 1;
+            }
+            let cy = gy - 2;
+            // The 2×2 chest tile: the style-0 frame corners 0/18 (the 18 px
+            // sheet pitch — `chest.rs`'s test fixture shape, `Chest.cs`'s
+            // frame layout).
+            for (dx, dy) in [(0i32, 0i32), (1, 0), (0, 1), (1, 1)] {
+                if let Some(t) = world.tile_mut(cx + dx, cy + dy) {
+                    t.kind = 21;
+                    t.frame_x = if dx == 1 { 18 } else { 0 };
+                    t.frame_y = if dy == 1 { 18 } else { 0 };
+                    t.flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+            let idx = crate::chest::create_chest(&mut tr_chest_store, cx, cy);
+            // A few stocked slots so the screenshot shows the item-icon path
+            // (`draw_slot`'s existing item draw — verified, not reinvented).
+            // The store's `ItemSlot`s since the M3-CHEST-INT upgrade — the
+            // same kinds/counts, so the screenshot pixels are unchanged.
+            tr_chest_store[idx]
+                .slots
+                .extend_from_slice(&[
+                    crate::item::ItemSlot {
+                        kind: 9,
+                        name: crate::registry::name(9),
+                        count: 6,
+                        prefix: 0,
+                    },
+                    crate::item::ItemSlot {
+                        kind: 166,
+                        name: crate::registry::name(166),
+                        count: 42,
+                        prefix: 0,
+                    },
+                    crate::item::ItemSlot {
+                        kind: 71,
+                        name: crate::registry::name(71),
+                        count: 3,
+                        prefix: 0,
+                    },
+                ]);
+            Some((idx as i32, cx, cy))
+        } else {
+            None
+        };
+        // The open state lives on the player (`Player.chest`, the C#
+        // location — M3-CHEST-INT's unify): the fixture stages it on the
+        // spawned player. `TR_CHEST` + `TR_NOPLAYER` stages no open panel
+        // (no player = no container state, C#-faithful); the fixture's
+        // screenshot combos keep the player.
+        if let (Some(p), Some((idx, cx, cy))) = (player.as_mut(), tr_chest) {
+            p.chest = idx;
+            p.chest_x = cx;
+            p.chest_y = cy;
+        }
         let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
         let world_seed = world.seed;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
@@ -1679,7 +1873,10 @@ impl App {
                 s[0] = 1.0;
                 s
             },
-            inventory_open: std::env::var_os("TR_INV").is_some(),
+            // `TR_CHEST` opens the chest (`OpenChest` sets `playerInventory`,
+            // `Player.cs:33517` — chest.rs:409), so the panel + the player
+            // inventory draw together.
+            inventory_open: std::env::var_os("TR_INV").is_some() || tr_chest.is_some(),
             kill_tracker: {
                 let mut tracker = tr_core::bestiary::KillTracker::new();
                 tracker.load_pairs(loaded_kills.into_iter());
@@ -1728,11 +1925,31 @@ impl App {
             reuse_delay: 0.0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
-            // (the `TR_INV` presence pattern).
-            crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
-                || std::env::var_os("TR_CRAFT").is_some(),
-            world_chests: Vec::new(),
+            // (the `TR_INV` presence pattern). An open chest closes it
+            // (`OpenChest` → `NewCraftingUI.Close`, `chest.rs:408`) — and the
+            // chest panel hides under it (`ChestUI.cs:86`).
+            crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
+                || std::env::var_os("TR_CRAFT").is_some())
+                && tr_chest.is_none(),
+            world_chests: tr_chest_store,
+            chest_scroll_row: 0,
+            chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
+            chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
+            // `Main.stackSplit`'s cluster — the C# statics start at 0
+            // (`Main.cs:1693-1697`); the first idle tick installs the
+            // `stackDelay` 7 (`Main.cs:61781-61807`).
+            stack_split: 0,
+            stack_delay: 0,
+            stack_counter: 0,
+            super_fast_stack: 0,
+            times_tried_to_fast_stack: 0,
+            cursor_override: -1,
+            chest_names: HashMap::new(),
+            chest_default_name: String::new(),
+            text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
+            revenge_markers: Vec::new(),
+            revenge_tick: 0,
             menu: menu_state,
             front: None,
             front_backup: None,
