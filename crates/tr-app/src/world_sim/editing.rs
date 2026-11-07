@@ -2324,24 +2324,23 @@ fn interaction_events(
     Some((cue, events))
 }
 
-/// `Player.CheckSpawn` (`Player.cs:54533-54590`): the bounds (the C# checks
-/// `y` against `maxTilesX` — mirrored), the bed tile above the spawn cell,
-/// the 3x3 area above free of solid non-solid-top tiles, and the room check.
-/// The failure messages ride the chat like `Main.NewText`.
-fn check_bed_spawn(
+/// `Player.CheckSpawn` (`Player.cs:54533-54590`) without the messages — the
+/// checks the revive path and the load rebuild share (the C# runs the same
+/// `CheckSpawn` inside `Player.Spawn`, `:37571-37575`). `Err` carries the
+/// failure reason the chat wrapper prints.
+pub(crate) fn bed_spawn_valid(
     world: &tr_core::World,
     x: i32,
     y: i32,
-    chat: &mut crate::chat::ChatMonitor,
-) -> bool {
+) -> Result<(), BedSpawnFailure> {
     if x < 10 || x > world.width as i32 - 10 || y < 10 || y > world.width as i32 - 10 {
-        return false;
+        return Err(BedSpawnFailure::Bounds);
     }
     if !world
         .tile(x, y - 1)
         .is_some_and(|t| t.active() && t.kind == 79)
     {
-        return false;
+        return Err(BedSpawnFailure::Gone);
     }
     for i in x - 1..=x + 1 {
         for j in y - 3..y {
@@ -2354,15 +2353,43 @@ fn check_bed_spawn(
                     && td::TILE_SOLID.has(t.kind)
                     && !td::TILE_SOLID_TOP.has(t.kind)
                 {
-                    chat.new_text("The bed is obstructed.", crate::chat::COLOR_SERVER_MESSAGE);
-                    return false;
+                    return Err(BedSpawnFailure::Obstructed);
                 }
             }
         }
     }
     match tr_core::housing::check_room(world, x, y - 1) {
-        Ok(_) => true,
-        Err(reason) => {
+        Ok(_) => Ok(()),
+        Err(reason) => Err(BedSpawnFailure::Room(reason)),
+    }
+}
+
+/// The `CheckSpawn` failure kinds — the chat wrapper maps them to the
+/// `Game.Bed*` texts (`Player.cs:54566`/`:54573-54587`).
+pub(crate) enum BedSpawnFailure {
+    Bounds,
+    Gone,
+    Obstructed,
+    Room(tr_core::housing::RoomFailure),
+}
+
+/// `Player.CheckSpawn` (`Player.cs:54533-54590`): the bounds (the C# checks
+/// `y` against `maxTilesX` — mirrored), the bed tile above the spawn cell,
+/// the 3x3 area above free of solid non-solid-top tiles, and the room check.
+/// The failure messages ride the chat like `Main.NewText`.
+pub(crate) fn check_bed_spawn(
+    world: &tr_core::World,
+    x: i32,
+    y: i32,
+    chat: &mut crate::chat::ChatMonitor,
+) -> bool {
+    match bed_spawn_valid(world, x, y) {
+        Ok(()) => true,
+        Err(BedSpawnFailure::Obstructed) => {
+            chat.new_text("The bed is obstructed.", crate::chat::COLOR_SERVER_MESSAGE);
+            false
+        }
+        Err(BedSpawnFailure::Room(reason)) => {
             let text = match reason {
                 tr_core::housing::RoomFailure::TooCloseToWorldEdge => {
                     "This bed is too close to the edge of the world."
@@ -2380,6 +2407,7 @@ fn check_bed_spawn(
             chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
             false
         }
+        Err(_) => false,
     }
 }
 

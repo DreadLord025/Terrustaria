@@ -163,11 +163,22 @@ fn check_tile(
             if !scan.house_tiles.contains(&t.kind) {
                 scan.house_tiles.push(t.kind);
             }
-            // `:6176-6191`: a solid tile or an unfolded open gate just
-            // settles (the wall the fill butts against) — the C# records
-            // BlockingWall/BlockingOpenGate in the rich feedback only and
-            // does NOT clear canSpawn.
-            return Ok(false);
+            // `:6176-6195`: only a SOLID tile settles the fill (the wall the
+            // fill butts against) — plus the open gates (11 at the frameX
+            // ends 0/54/72/126, 389, and 386 at the open frame pairs).
+            // Non-solid furniture keeps the fill running — the bed-spawn
+            // check starts its flood ON the bed's cell (`Player.cs:54571`'s
+            // `StartRoomCheck(x, y - 1)`), so settling on any active tile
+            // would fail every bed room.
+            if TILE_SOLID.has(t.kind)
+                || (t.kind == 11 && matches!(t.frame_x, 0 | 54 | 72 | 126))
+                || t.kind == 389
+                || (t.kind == 386
+                    && ((t.frame_x < 36 && t.frame_y == 18)
+                        || (t.frame_x >= 36 && t.frame_y == 0)))
+            {
+                return Ok(false);
+            }
         }
     }
     // The ±2 wall scan (`:6215-6241`): a house wall or a solid/housing tile

@@ -614,8 +614,28 @@ pub struct Player {
 
 impl Player {
     pub fn spawn(world: &World) -> Self {
-        let sx = world.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5;
-        let sy = world.spawn_y as f32 * TILE_PX;
+        // `FindSpawn` (`Player.cs:54592-54609`): the bed spawn — the port's
+        // `World::bed_spawn` — overrides the world spawn when it validates
+        // through the same `CheckSpawn` the revive path runs
+        // (`Player.cs:37571-37575`). The load-time fallback is silent (the
+        // failure chat needs the monitor, which the join path has not built
+        // yet); the revive prints like the C#.
+        let (sx, sy) = match world.bed_spawn {
+            Some((bx, by))
+                if crate::world_sim::editing::bed_spawn_valid(world, bx, by).is_ok() =>
+            {
+                // `Spawn_SetPosition` (`Player.cs:37987-37991`): the feet at
+                // the spawn cell's top.
+                (
+                    bx as f32 * TILE_PX + 8.0 - WIDTH * 0.5,
+                    by as f32 * TILE_PX - HEIGHT,
+                )
+            }
+            _ => (
+                world.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5,
+                world.spawn_y as f32 * TILE_PX,
+            ),
+        };
         Self {
             dead: false,
             dead_time: 0,
@@ -7963,6 +7983,55 @@ mod tests {
         w.tiles[bed].flags &= !tr_core::tile::FLAG_ACTIVE;
         p.update_sleeping(&w, false, false);
         assert!(!p.sleeping);
+    }
+
+    /// A minimal valid NPC room (the `housing` tests' shape): the wood
+    /// frame, the background walls everywhere, the interior air ≥ the
+    /// 60-tile room minimum.
+    fn room_box(w: &mut World, x0: i32, y0: i32, rw: i32, rh: i32) {
+        for x in x0..x0 + rw {
+            for y in y0..y0 + rh {
+                let i = w.index(x, y);
+                w.tiles[i].wall = 27;
+                let border = x == x0 || x == x0 + rw - 1 || y == y0 || y == y0 + rh - 1;
+                if border {
+                    w.tiles[i] = tr_core::tile::Tile {
+                        kind: 9,
+                        frame_x: -1,
+                        frame_y: -1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_load_rebuilds_the_spawn_from_a_valid_bed() {
+        // DW-3.2 — `FindSpawn` (`Player.cs:54592-54609`) over the port's
+        // world-side bed spawn: a validated bed cell overrides the world
+        // spawn; a destroyed bed falls back (the silent load-time arm).
+        let mut w = sit_world();
+        // The room sits on the floor row (20): the frame rows 12..20, the
+        // interior 13..19. The bed's bottom cell rides (20, 19) and the
+        // spawn cell = (20, 20) — the box floor.
+        room_box(&mut w, 14, 12, 12, 9);
+        let bed = w.index(20, 19);
+        w.tiles[bed] = tr_core::tile::Tile {
+            kind: 79,
+            frame_y: 18,
+            ..Default::default()
+        };
+        w.tiles[bed].flags |= tr_core::tile::FLAG_ACTIVE;
+        w.bed_spawn = Some((20, 20));
+        let p = Player::spawn(&w);
+        assert_eq!(p.spawn_x, 20.0 * TILE_PX + 8.0 - WIDTH * 0.5);
+        assert_eq!(p.spawn_y, 20.0 * TILE_PX - HEIGHT);
+        // The bed gone → the world spawn (`SpawnX = -1`'s fallback).
+        w.tiles[bed].flags &= !tr_core::tile::FLAG_ACTIVE;
+        let p = Player::spawn(&w);
+        assert_eq!(p.spawn_x, w.spawn_x as f32 * TILE_PX + 8.0 - WIDTH * 0.5);
     }
 
     #[test]
