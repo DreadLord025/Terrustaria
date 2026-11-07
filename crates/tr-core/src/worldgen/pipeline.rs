@@ -1082,13 +1082,34 @@ fn step_ores(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    let (heights, hell_top) = (&gv.map().heights, gv.layers().hell_top);
-    caves::place_ores(world, &mut streams.rng, heights, width, height, hell_top);
+    // A local copy of the anchors — the pass needs the world mutable and the
+    // layers immutable at the same time.
+    let layers = {
+        let l = gv.layers();
+        Layers {
+            avg_surface: l.avg_surface,
+            world_surface: l.world_surface,
+            rock_layer: l.rock_layer,
+            hell_top: l.hell_top,
+            surface_low: l.surface_low,
+            surface_high: l.surface_high,
+            rock_low: l.rock_low,
+            rock_high: l.rock_high,
+        }
+    };
+    caves::ores_and_shinies(
+        world,
+        &mut streams.rng,
+        &layers,
+        width,
+        height,
+        opts.crimson,
+    );
 }
 
 fn step_liquids(

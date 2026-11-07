@@ -456,11 +456,18 @@ mod tests {
     }
 
     #[test]
-    fn the_ore_pools_roll_one_alternate_per_pair() {
-        // The world rolls one kind per metal pair (the copper 7 / the tin
-        // 166, the iron 6 / the lead 167, the silver 9 / the tungsten 168,
-        // the gold 8 / the platinum 169) — the rolled kinds' veins exist in
-        // the stone band, the other pair's kinds are absent.
+    fn the_ore_tiers_roll_one_kind_per_pair() {
+        // The `OresAndShinies` pass (`WorldGen.cs:13182-13606`) rolls one kind
+        // per metal pair per world (the copper 7 / the tin 166, the iron 6 /
+        // the lead 167, the silver 9 / the tungsten 168, the gold 8 / the
+        // platinum 169) — the rolled kind's TileRunner blobs exist, the other
+        // pair member is absent. The evil band adds the demonite 22 in a
+        // corruption world.
+        //
+        // The counts only take tiles that carry a wall: a `TileRunner` blob
+        // inherits the wall of the tile it retypes, while the underground
+        // jungle canopy mistakenly places bare active iron tiles (kind 6,
+        // `biome_detail.rs` "TreeBranches" — a pre-existing bug, its own row).
         let w = generate(&GenOptions {
             seed: 66,
             ..Default::default()
@@ -468,7 +475,7 @@ mod tests {
         let count = |kind: u16| {
             w.tiles
                 .iter()
-                .filter(|t| t.active() && t.kind == kind)
+                .filter(|t| t.active() && t.kind == kind && t.wall != 0)
                 .count()
         };
         for (a, b) in [(7u16, 166u16), (6, 167), (9, 168), (8, 169)] {
@@ -478,11 +485,34 @@ mod tests {
                 "the pair {a}/{b}: {ca} vs {cb}"
             );
         }
+        // The evil band (`WorldGen.cs:13589-13602`).
+        assert!(count(22) > 100, "the demonite band ({})", count(22));
+        assert!(count(204) == 0, "no crimtane in a corruption world");
         // The gems in the stone band (the amethyst 63 .. the diamond 68).
         let gems: usize = (63..=68)
             .map(|k| w.tiles.iter().filter(|t| t.active() && t.kind == k).count())
             .sum();
         assert!(gems > 40, "the gem veins ({gems})");
+    }
+
+    #[test]
+    fn the_crimson_world_carries_crimtane() {
+        // The evil band's crimson half (`WorldGen.cs:13584-13594`): the
+        // crimtane 204 replaces the demonite 22, everything else is the same
+        // pass. Wall-carrying tiles only — see the pair test's comment.
+        let w = generate(&GenOptions {
+            seed: 67,
+            crimson: true,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind && t.wall != 0)
+                .count()
+        };
+        assert!(count(204) > 100, "the crimtane band ({})", count(204));
+        assert!(count(22) == 0, "no demonite in a crimson world");
     }
 
     #[test]
