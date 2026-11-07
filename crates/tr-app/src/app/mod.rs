@@ -455,6 +455,15 @@ pub(crate) struct App {
     pub(crate) lost_coin_string: String,
     /// The full death broadcast text (`{name} {text}`).
     pub(crate) death_text: String,
+    /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
+    /// state — the points, the max, the icon (the group + 3), the 160-tick
+    /// display timer, the fade alpha and the near-invasion flag.
+    pub(crate) invasion_progress: i32,
+    pub(crate) invasion_progress_max: i32,
+    pub(crate) invasion_progress_icon: i32,
+    pub(crate) invasion_progress_display_left: i32,
+    pub(crate) invasion_progress_alpha: f32,
+    pub(crate) invasion_progress_near: bool,
     /// The placed tombstones' epitaphs keyed by the tile anchor
     /// (vanilla stores the text in the projectile's `miscText` and then the
     /// tile render reads it — `Projectile.miscText`).
@@ -1862,6 +1871,12 @@ impl App {
             lost_coins: 0,
             lost_coin_string: String::new(),
             death_text: String::new(),
+            invasion_progress: -1,
+            invasion_progress_max: 0,
+            invasion_progress_icon: 0,
+            invasion_progress_display_left: 0,
+            invasion_progress_alpha: 0.0,
+            invasion_progress_near: false,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: std::env::var_os("TR_THROW").is_some(),

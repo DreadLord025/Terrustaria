@@ -140,6 +140,104 @@ pub(crate) fn draw_death_screen(
     }
 }
 
+/// The invasion progress bar — `Main.DrawInvasionProgress`'s non-wave arm
+/// (`Main.cs:47807-47830`): the 200x45 `DrawInvBG` panel at
+/// `(screenWidth - 120, screenHeight - 40)` (the centre-anchored rect), the
+/// `ColorBar` track, the yellow fill (255,241,51), the orange edge
+/// (255,165,0,127), the black rest, and the `{label}` + `{percent}%` text
+/// through `DrawBorderString`. The alpha ramps 0.05 per tick toward the
+/// display timer; the icon's texture row is the group's Extra sheet (the
+/// port draws the label only — the Extra sheets land with the icon row).
+pub(crate) fn draw_invasion_progress(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    progress: i32,
+    progress_max: i32,
+    progress_icon: i32,
+    alpha: f32,
+) {
+    // The label: `Lang.inter[88]` (the goblins) / `[85]` (the pirates) /
+    // `[86]` (the frost) — the en literals stand in.
+    let label = match progress_icon {
+        4 => "Goblin Army",
+        5 => "Pirate Invasion",
+        6 => "Frost Legion",
+        _ => "Invasion",
+    };
+    let num = 0.5 + alpha * 0.5;
+    let num7 = (200.0 * num) as i32;
+    let num8 = (45.0 * num) as i32;
+    // The panel centre: `(screenWidth - 120, screenHeight - 40)`.
+    let cx = screen.x - 120.0;
+    let cy = screen.y - 40.0;
+    let px = cx - num7 as f32 / 2.0;
+    let py = cy - num8 as f32 / 2.0;
+    // `Utils.DrawInvBG`'s fill (the (63,65,151,255) * 0.785 backdrop).
+    r.push_fx_rect(
+        [px, py],
+        [num7 as f32, num8 as f32],
+        [
+            63.0 / 255.0 * 0.785,
+            65.0 / 255.0 * 0.785,
+            151.0 / 255.0 * 0.785,
+            255.0 / 255.0 * 0.785,
+        ],
+    );
+    if progress_max != 0 {
+        let frac = (progress as f32 / progress_max as f32).clamp(0.0, 1.0);
+        let num11 = 169.0 * num;
+        let num12 = 8.0 * num;
+        // The `ColorBar` track.
+        r.push_fx_rect(
+            [cx - num11 / 2.0, cy - num12 / 2.0],
+            [num11, num12],
+            [1.0, 1.0, 1.0, alpha],
+        );
+        let fill_x = cx - num11 / 2.0 + (frac - 0.5) * num11;
+        let fill_w = num11 * frac;
+        // The yellow fill.
+        r.push_fx_rect(
+            [fill_x, cy - num12 / 2.0],
+            [fill_w, num12],
+            [1.0, 241.0 / 255.0, 51.0 / 255.0, alpha],
+        );
+        // The orange edge (the 2-px strip).
+        r.push_fx_rect(
+            [fill_x, cy - num12 / 2.0],
+            [2.0, num12],
+            [1.0, 165.0 / 255.0, 0.0, 127.0 / 255.0 * alpha],
+        );
+        // The black rest.
+        r.push_fx_rect(
+            [fill_x + fill_w, cy - num12 / 2.0],
+            [num11 * (1.0 - frac), num12],
+            [0.0, 0.0, 0.0, alpha],
+        );
+        // The percent line above the bar (`DrawBorderString`, the MouseText).
+        let percent = format!("{}%", (progress as f32 * 100.0 / progress_max as f32) as i32);
+        let w = text::hud_text_width(r, lookups, &percent, num);
+        text::border_string(
+            r,
+            lookups,
+            cx - w / 2.0,
+            cy - num12 / 2.0 - 14.0,
+            [1.0, 1.0, 1.0, alpha],
+            &percent,
+        );
+    }
+    // The label line under the bar (`DrawBorderString`).
+    let w = text::hud_text_width(r, lookups, label, num);
+    text::border_string(
+        r,
+        lookups,
+        cx - w / 2.0,
+        cy + num8 as f32 / 2.0,
+        [1.0, 1.0, 1.0, alpha],
+        label,
+    );
+}
+
 pub fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -417,6 +515,8 @@ fn hover_item_for<'a>(
     match hit {
         H::Grid(i) => inventory.get(i),
         H::Bank(i) => bank.and_then(|b| b.get(i)),
+        // The buttons carry no item: the tooltip stays off.
+        H::BankButton(_) => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

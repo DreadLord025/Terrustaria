@@ -721,6 +721,19 @@ fn invasion_warning(app: &mut App) {
 /// progression event 10), the march toward `spawnTileX` by
 /// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
 pub(crate) fn update_invasion_state(app: &mut App) {
+    // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
+    // display timer decays per tick, the alpha ramps 0.05 toward it, and
+    // the mode-0 arm (no bar) zeroes both.
+    if app.invasion_progress_display_left > 0 {
+        app.invasion_progress_display_left -= 1;
+        app.invasion_progress_alpha = (app.invasion_progress_alpha + 0.05).min(1.0);
+    } else {
+        app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
+    }
+    if app.invasion_progress_near {
+        app.invasion_progress_display_left =
+            app.invasion_progress_display_left.max(160);
+    }
     // `invasion_goblins` rides the type (the debug panel's flag reads it).
     app.world.invasion_goblins = app.world.invasion_type == 1;
     if app.world.invasion_type <= 0 {
@@ -791,6 +804,37 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
     }
 }
 
+/// `Main.CheckInvasionProgressDisplay` (`Main.cs:47599-47649`): while the
+/// bar mode is the invasion one (2), any active NPC whose invasion group
+/// matches the active `invasionType` within 5000 px of the player marks
+/// the near-invasion flag and refreshes the report (the icon-0 case — the
+/// wave events' moon/DD2 arms are their own slices).
+pub(crate) fn check_invasion_progress_display(app: &mut App) {
+    // The port draws the bar in the invasion mode always (the settings
+    // screen's bar-mode toggle = the follow-up).
+    let Some(player) = app.player.as_ref() else {
+        return;
+    };
+    let (pcx, pcy) = player.center();
+    let near = app.npcs.iter().any(|n| {
+        n.hp > 0
+            && npc_invasion_group(n.kind) != 0
+            && npc_invasion_group(n.kind) == app.world.invasion_type
+            && (n.center().0 - pcx).abs() < 5000.0
+            && (n.center().1 - pcy).abs() < 5000.0
+    });
+    app.invasion_progress_near = near;
+    if !near || app.invasion_progress_icon != 0 {
+        return;
+    }
+    // The refresh: the points, the max, the icon (the group + 3).
+    if app.world.invasion_type != 0 && app.world.invasion_size_start != 0 {
+        app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
+        app.invasion_progress_max = app.world.invasion_size_start;
+        app.invasion_progress_icon = app.world.invasion_type + 3;
+    }
+}
+
 /// The kill-credit block (`NPC.cs:78236-78279`): the group matches the
 /// active invasion → `invasionSize -= num9` (the Summoner 471's 10-point
 /// kill, the rest 1) + `ReportInvasionProgress(sizeStart - size, sizeStart,
@@ -806,9 +850,12 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
         _ => 1,
     };
     app.world.invasion_size = (app.world.invasion_size - num9).max(0);
-    // `ReportInvasionProgress` (`Main.cs:47687-47694`): the display timer
-    // state rides the UI pass (the fields land with the progress-bar slice).
-    let _ = app.world.invasion_size_start;
+    // `Main.ReportInvasionProgress` (`Main.cs:47687-47694`): the points,
+    // the max, the icon (the group + 3) and the 160-tick display timer.
+    app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
+    app.invasion_progress_max = app.world.invasion_size_start;
+    app.invasion_progress_icon = group + 3;
+    app.invasion_progress_display_left = 160;
 }
 
 /// `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) for the
@@ -932,6 +979,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // machine before the spawn pass (the C# calls it from `UpdateAudio`'s
     // family each update).
     update_invasion_state(app);
+    // `Main.CheckInvasionProgressDisplay` (`Main.cs:17183`): the near-scan
+    // + the report refresh before the spawn pass.
+    check_invasion_progress_display(app);
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     // `Main.reforgeCooldown`'s per-tick decrement (`Main.cs:17121-17123`).
     if app.reforge_cooldown > 0 {
@@ -2214,6 +2264,20 @@ mod invasion_tests {
         use tr_core::tile::{FLAG_ACTIVE, Tile};
 
         fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn surface_world_orig() -> World {
             let mut w = World::new("t".into(), 300, 200);
             w.world_surface = 120.0;
             for x in 0..w.width {
@@ -2454,5 +2518,116 @@ mod pirate_invasion_tests {
             app.world.downed_golem,
             "the body's death is the fight's end"
         );
+    }
+}
+
+#[cfg(test)]
+mod invasion_bar_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::World;
+
+        fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+#[test]
+    fn the_kill_credit_reports_the_bar_state() {
+        // `ReportInvasionProgress` (`Main.cs:47687-47694`): the points
+        // (sizeStart - size), the max (sizeStart), the icon (group + 3) and
+        // the 160-tick display timer.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 3;
+        app.world.invasion_size_start = 120;
+        report_invasion_kill(&mut app, NpcKind::GoblinThief);
+        assert_eq!(app.invasion_progress, 118, "sizeStart - size");
+        assert_eq!(app.invasion_progress_max, 120);
+        assert_eq!(app.invasion_progress_icon, 4, "the goblins' icon (1 + 3)");
+        assert_eq!(app.invasion_progress_display_left, 160);
+    }
+
+    #[test]
+    fn the_near_scan_refreshes_the_report() {
+        // `CheckInvasionProgressDisplay` (`Main.cs:47599-47649`): a living
+        // invader within 5000 px of the player marks near and refreshes the
+        // report while the icon is set; the far case drops the flag.
+        let mut w = World::new("wide".into(), 900, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 3;
+        app.world.invasion_size_start = 120;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        let mut invader =
+            Npc::new(NpcKind::GoblinThief, 101.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        invader.hp = invader.max_hp;
+        app.npcs.push(invader);
+        check_invasion_progress_display(&mut app);
+        assert!(app.invasion_progress_near);
+        assert_eq!(app.invasion_progress_icon, 4, "the refresh sets the icon");
+        // The invader far away (beyond the 5000-px window): the near flag drops.
+        if let Some(n) = app.npcs.first_mut() {
+            n.x = 700.0 * TILE_PX;
+        }
+        check_invasion_progress_display(&mut app);
+        assert!(!app.invasion_progress_near);
+    }
+
+    #[test]
+    fn the_fade_head_ramps_the_alpha() {
+        // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
+        // display timer decays per tick, the alpha ramps 0.05 toward the
+        // visible, and at 0 display the alpha fades back to 0.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.invasion_progress_display_left = 160;
+        app.invasion_progress_alpha = 0.0;
+        update_invasion_state(&mut app);
+        assert_eq!(app.invasion_progress_display_left, 159);
+        assert!(app.invasion_progress_alpha > 0.0, "the alpha ramps up");
+        app.invasion_progress_display_left = 0;
+        app.invasion_progress_alpha = 1.0;
+        update_invasion_state(&mut app);
+        assert!((app.invasion_progress_alpha - 0.95).abs() < 1e-6, "the fade down");
+    }
+
+    #[test]
+    fn the_defeat_resets_the_bar_state() {
+        // The invasion clears → the bar state resets (the icon 0 keeps the
+        // near-scan from re-reporting after the invasion's end).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 0;
+        app.world.invasion_size_start = 120;
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_goblins);
+        assert_eq!(app.world.invasion_type, 0);
+        assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
     }
 }
