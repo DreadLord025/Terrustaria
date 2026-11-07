@@ -144,6 +144,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
+        // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
+        // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
+        // `invasionDelay = 0; StartInvasion(3)` while no invasion is
+        // active.
+        if held.kind == 1315 && held.count > 0 && use_pirate_map(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' pre-hardmode summons
         // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
@@ -4780,4 +4788,44 @@ mod loot_summon_tests {
         assert!(app.world.downed_eoc);
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::EyeOfCthulhu));
     }
+}
+
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
+/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
+/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
+/// the march state rides the World (the morning-roll resolve's shape).
+pub fn use_pirate_map(app: &mut App) -> bool {
+    if app.world.invasion_type != 0 {
+        return false;
+    }
+    let qualified = app
+        .player
+        .as_ref()
+        .map(|p| p.max_hp >= 200)
+        .unwrap_or(false);
+    if !qualified {
+        return false;
+    }
+    app.audio.play("Roar_0");
+    app.world.invasion_delay = 0;
+    app.world.invasion_goblins = true;
+    app.world.invasion_type = 3;
+    app.world.invasion_warn = 0;
+    app.world.invasion_size = 80 + 40 + 40 + 20;
+    app.world.invasion_size_start = app.world.invasion_size;
+    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
 }
