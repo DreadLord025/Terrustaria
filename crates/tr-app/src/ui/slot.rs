@@ -2,9 +2,10 @@
 //! (`decompiled/Terraria/UI/ItemSlot.cs:2105-2776`).
 //!
 //! Covered contexts (the ones the P2 inventory panels use): 0 (main grid/hotbar),
-//! 1 (coins), 2 (ammo), 5 (reforge), 6 (trash), 7 (guide), 8-12 (armour/vanity/dye),
-//! 13 (the closed hotbar, `GUIHotbarDrawInner`), 21 (the mouse-carried item, no
-//! background — `Main.cs:45194`), 16-20 (misc equips) and 33 (misc dyes).
+//! 1 (coins), 2 (ammo), 3 (the world-chest panel, `Inventory_Back5`), 5 (reforge),
+//! 6 (trash), 7 (guide), 8-12 (armour/vanity/dye), 13 (the closed hotbar,
+//! `GUIHotbarDrawInner`), 21 (the mouse-carried item, no background —
+//! `Main.cs:45194`), 16-20 (misc equips) and 33 (misc dyes).
 
 use tr_render::{SheetRect, SpriteRenderer};
 
@@ -17,7 +18,7 @@ use crate::item::ItemSlot;
 /// The numbers are indices into this port's sheet set: `0` `Inventory_Back`,
 /// `1` `Inventory_Back9`, `2` `Inventory_Back4`, `3` `Inventory_Back7`,
 /// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`,
-/// `7` `Inventory_Back18`.
+/// `7` `Inventory_Back18`, `8` `Inventory_Back5`.
 /// Tests assert on this because `SheetRect` has no `PartialEq`.
 fn context_texture_index(context: i32, index: i32) -> u8 {
     match context {
@@ -25,6 +26,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         0 if index < 10 => 1,
         // `ItemSlot.cs:2148-2149`: context 0 slot >= 10, coins (1) and ammo (2).
         0 | 1 | 2 => 0,
+        // `ItemSlot.cs:2215-2218`: the world-chest slots (3) are
+        // `Inventory_Back5`.
+        3 => 8,
         // `ItemSlot.cs:2222-2225`: reforge (5) and guide (7) are `Inventory_Back4`.
         5 | 7 => 2,
         // `ItemSlot.cs:2226-2228`: trash (6) is `Inventory_Back7`.
@@ -58,6 +62,7 @@ pub(crate) fn background_for(
         5 => lookups.ui_back3,       // Inventory_Back3
         6 => lookups.ui_back12,      // Inventory_Back12
         7 => lookups.ui_back18,      // Inventory_Back18
+        8 => lookups.ui_back5,       // Inventory_Back5
         _ => lookups.ui_back,        // Inventory_Back
     }
 }
@@ -73,6 +78,33 @@ pub fn craft_slot_tint() -> [f32; 4] {
         [16, 36, 56, 180],
         0.9,
     )))
+}
+
+/// `ItemSlot.cs:2149-2156`'s favorited-background arm gate:
+/// `!item.IsAir && item.favorited && ItemSlot.retainFavoriteOnMoveAt[context]`
+/// (the contexts whose moves keep the flag — `chest::retain_favorite_on_move_at`).
+/// Non-air is `count > 0` (the port's implicit-air shape).
+pub(crate) fn favorited_background_active(context: i32, favorited: bool, item: &ItemSlot) -> bool {
+    favorited && item.count > 0 && crate::chest::retain_favorite_on_move_at(context)
+}
+
+/// The favorited slot's draw tint — the fallback for `ItemSlot.cs:2149-2156`'s
+/// gold `Inventory_Back10` background (32 → `Inventory_Back19`). The port's
+/// atlas packs neither sheet (`assets.rs`'s sheet list has Back 2/3/4/5/6/7/9/
+/// 12/13/14/18 only), so the arm tints the slot's own background with
+/// `Main.OurFavoriteColor` = `Color(255, 231, 69)` (`Main.cs:66748`) — the
+/// plan-authorized fallback, recorded in Phase 5's ANALYSIS entry.
+pub(crate) fn favorited_slot_tint(inv_back: [f32; 4]) -> [f32; 4] {
+    // `Main.OurFavoriteColor` (`Main.cs:66748`), XNA byte-multiplied into the
+    // caller's `Main.inventoryBack` tint (the C# keeps `color2 =
+    // Main.inventoryBack` on the favorited arm and swaps the sheet instead).
+    let favorite = [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 1.0];
+    [
+        favorite[0] * inv_back[0],
+        favorite[1] * inv_back[1],
+        favorite[2] * inv_back[2],
+        favorite[3] * inv_back[3],
+    ]
 }
 
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
@@ -451,6 +483,14 @@ mod tests {
         }
         // misc dye (33) is `Inventory_Back12`.
         assert_eq!(context_texture_index(33, 0), 6);
+        // the world-chest panel (3) is `Inventory_Back5` (`ItemSlot.cs:2215-2218`).
+        assert_eq!(context_texture_index(3, 0), 8);
+        assert_eq!(context_texture_index(3, 39), 8);
+        // The bank contexts (4/32) map to `Inventory_Back2` in the C#
+        // (`ItemSlot.cs:2219-2221`) — M3-STORE-1's; deliberately left on the
+        // default like contexts 22/34 below.
+        assert_eq!(context_texture_index(4, 0), 0);
+        assert_eq!(context_texture_index(32, 0), 0);
     }
 
     #[test]
@@ -465,12 +505,14 @@ mod tests {
         lk.ui_inv_bg13 = Some(rect(14));
         lk.ui_back3 = Some(rect(15));
         lk.ui_back12 = Some(rect(16));
+        lk.ui_back5 = Some(rect(17));
 
         let pick = |c, i| background_for(&lk, c, i).map(|r| r.x);
         assert_eq!(pick(0, 5), Some(11)); // hotbar row
         assert_eq!(pick(0, 15), Some(10)); // main grid
         assert_eq!(pick(1, 0), Some(10)); // coins
         assert_eq!(pick(2, 0), Some(10)); // ammo
+        assert_eq!(pick(3, 0), Some(17)); // the chest panel
         assert_eq!(pick(5, 0), Some(12)); // reforge
         assert_eq!(pick(7, 0), Some(12)); // guide
         assert_eq!(pick(6, 0), Some(13)); // trash
@@ -484,6 +526,7 @@ mod tests {
         let lk = assets::Lookups::default();
         assert!(background_for(&lk, 0, 0).is_none());
         assert!(background_for(&lk, 33, 0).is_none());
+        assert!(background_for(&lk, 3, 0).is_none());
     }
 
     #[test]
@@ -631,5 +674,49 @@ mod tests {
             74.0 / 255.0,
             162.0 / 255.0,
         ]);
+    }
+
+    // M3-CHEST-INT phase 4 — the favorited slot's draw args (DW-4.5).
+
+    #[test]
+    fn test_DW_4_5_favorited_background_gate_matches_the_csharp_arm() {
+        // `ItemSlot.cs:2149-2156`: `!item.IsAir && item.favorited &&
+        // ItemSlot.retainFavoriteOnMoveAt[context]`.
+        let item = ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 3,
+            prefix: 0,
+        };
+        let air = crate::item::EMPTY_SLOT;
+        assert!(favorited_background_active(0, true, &item));
+        assert!(favorited_background_active(32, true, &item));
+        assert!(favorited_background_active(5, true, &item), "retain[5] = true");
+        assert!(
+            !favorited_background_active(0, true, &air),
+            "IsAir returns before the arm"
+        );
+        assert!(!favorited_background_active(0, false, &item));
+        assert!(
+            !favorited_background_active(3, true, &item),
+            "ctx 3 is not in the retain table"
+        );
+        assert!(
+            !favorited_background_active(6, true, &item),
+            "the trash slot is not retained either"
+        );
+        assert!(!favorited_background_active(13, true, &item));
+    }
+
+    #[test]
+    fn test_DW_4_5_favorited_tint_is_our_favorite_color() {
+        // `Main.OurFavoriteColor = Color(255, 231, 69)` (`Main.cs:66748`)
+        // composed over `Main.inventoryBack` (220, 220, 220, 220) — the
+        // fallback for the `Inventory_Back10` sheet the atlas lacks.
+        let tint = favorited_slot_tint([220.0 / 255.0; 4]);
+        assert_eq!(tint[0], 220.0 / 255.0);
+        assert_eq!(tint[1], (231.0 / 255.0) * (220.0 / 255.0));
+        assert_eq!(tint[2], (69.0 / 255.0) * (220.0 / 255.0));
+        assert_eq!(tint[3], 220.0 / 255.0);
     }
 }
