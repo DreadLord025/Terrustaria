@@ -64,13 +64,21 @@ mod tests {
     /// The constants captured from the PRE-scaffold `generate()` output
     /// (the straight-line body, before it was rewired through
     /// `pipeline::run`) — they are the byte-identity proof: the scaffold
-    /// must reproduce them exactly, across two runs each.
-    const SEED42_512: u32 = 3510339375;
-    const DEFAULT_WORLD: u32 = 3248003836;
+    /// must reproduce them exactly, across two runs each. Re-pinned for
+    /// M5-ORES-1: the ore step now runs the faithful `OresAndShinies`
+    /// TileRunner pass (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)"),
+    /// which changes every world on every seed by design.
+    const SEED42_512: u32 = 2612473380;
+    const DEFAULT_WORLD: u32 = 3104994150;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
-        let opts = GenOptions { width: 512, height: 512, seed: 42, ..Default::default() };
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
         let a = world_hash(&crate::worldgen::generate(&opts));
         let b = world_hash(&crate::worldgen::generate(&opts));
         assert_eq!(a, b);
