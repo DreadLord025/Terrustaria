@@ -137,6 +137,10 @@ pub struct World {
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
     pub golem_present: bool,
+    /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
+    /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
+    /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
+    pub golem_hp_ratio: f32,
     pub golem_x: f32,
     pub golem_y: f32,
     /// `Main.slimeRain` — the Slime Rain event.
@@ -232,6 +236,7 @@ impl World {
             downed_golem: false,
             downed_deerclops: false,
             golem_present: false,
+            golem_hp_ratio: 1.0,
             golem_x: 0.0,
             golem_y: 0.0,
             slime_rain: false,
