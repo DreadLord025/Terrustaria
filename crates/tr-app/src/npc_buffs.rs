@@ -220,6 +220,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoblinSummoner => &[],
         // The frost trio: no `DebuffImmunitySets` rows.
         NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => &[],
+        // The martians: no `DebuffImmunitySets` rows.
+        NpcKind::MartianOfficer
+        | NpcKind::GrayGrunt
+        | NpcKind::MartianEngineer
+        | NpcKind::GigaZapper
+        | NpcKind::MartianWalker => &[],
         // The pirates: no `DebuffImmunitySets` rows.
         NpcKind::PirateDeckhand
         | NpcKind::PirateCaptainsMate

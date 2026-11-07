@@ -441,6 +441,11 @@ fn portrait_data(
         NpcKind::SnowmanGangsta => 48,
         NpcKind::SnowBalla => 49,
         NpcKind::MysterySnowman => 50,
+        NpcKind::MartianOfficer => 51,
+        NpcKind::GrayGrunt => 51,
+        NpcKind::MartianEngineer => 51,
+        NpcKind::GigaZapper => 51,
+        NpcKind::MartianWalker => 52,
         NpcKind::PirateDeckhand => 51,
         NpcKind::PirateCaptainsMate => 51,
         NpcKind::PirateArcher => 51,
@@ -571,6 +576,23 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 7.0)
                 .unwrap_or(40.0);
             (sheet_i, h, 26.0, h, white)
+        }
+        // The martians: the 9-frame strips over the 18x40 frames (the
+        // walker's 11-frame 34x110 sheet).
+        (NpcKind::MartianOfficer, _)
+        | (NpcKind::GrayGrunt, _)
+        | (NpcKind::MartianEngineer, _)
+        | (NpcKind::GigaZapper, _) => {
+            let h = lookups.bestiary_npc_sheets[51]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::MartianWalker, _) => {
+            let h = lookups.bestiary_npc_sheets[52]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 34.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

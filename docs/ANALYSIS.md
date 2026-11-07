@@ -2525,6 +2525,28 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Martian Madness (M4-EVENT-4)
+
+The framework's fourth slice: `StartInvasion(4)` (`Main.cs:64463-64464`)
+overrides the size to **160+40x** (the base 80+40x replaced — the
+C#'s assignment, not a bonus); `Main.InvasionWarning`'s type-4 literals;
+the defeat ride sets the new `World.downed_martians`
+(`SetEventFlagCleared(ref downedMartians, 3)`).
+
+The spawn table (`NPC.cs:1487-1540`) ports with the ground-four arms:
+the else arm's GrayGrunt 385/GigaZapper 389/Officer 383 (the num9
+Next(4) roll) and the num6<4 fallback. The remaining arms — the Saucer
+395 (the Next(45) + the 30% progress gate), the ScutlixRider 390/the
+RayGunner 382/the BrainScrambler 381 (num6 >= 6/4), the Drone 388 (the
+aiStyle-74 flyer) and the Walker 520's walk-in gate (`!AnyNPCs(520)`)
+— land with their AI families (the Saucer boss, the mounted Scutlix,
+the ray flyer). The Martian Probe 399 trigger (the scout's
+escape-when-spotted mechanic) is the event's entry — the follow-up.
+
+The five kinds carry their verbatim `SetDefaults` rows (the Officer's
+300-HP/def-50 body, the GrayGrunt's 750-HP/0-kb bruiser, the walker's
+34×110 2000-HP body) and the 9/11-frame sheets NPC_383/520.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
