@@ -5312,6 +5312,41 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
+
+**Resource source:** the C# embeds its 84 strings files as assembly manifest
+resources (`Terraria.Localization.Content.<culture>[.<Group>].json`); the port
+reads the extracted resources off disk (`TR_LOCALE` → the `../decompiled`
+sibling of `Content` → the working dir → the exe dir). This is the same
+retail-derived, gitignored content model the `.xnb` assets already use;
+without any of them the menus keep their bundled English strings, which is
+the vanilla "unknown key prints the key" behaviour — the 1:1 rule only
+reaches as far as the resources present.
+
+**Font encoding:** the shipped ReLogic writes a different `DynamicSpriteFont`
+byte layout than the decompiled `DynamicSpriteFontReader` documents —
+default char 7-bit + `Int32` page count, reader-indexed tables with `Int32`
+counts, and the character list as a UTF-8 string (details in
+`crates/tr-content/src/font.rs` docs). A font is accepted only when the walk
+consumes the payload exactly; `Mouse_Text` is 159 pages / 38 636 glyphs.
+
+**Font upload:** XNA samples the font pages as `SurfaceFormat.Dxt3`; the
+port uploads the shipped BC2 blocks verbatim into a texture array
+(`tr-render/src/font_atlas.rs`, one 8192² layer per shelf set, ~220 MB —
+the same order of magnitude as the vanilla ~226 MB, where the RGBA
+decompression would cost ~900 MB). The shader selects between the two
+textures per instance, so the draw order stays exactly one instanced pass.
+Glyph UVs bake the half-texel inset the main-atlas path applies in the
+shader (the both textures' layers are 8192 px wide).
+
+**Missing glyphs:** the original falls back to the font's default char
+(`'*'`); `UiFont::glyph` does the same and the 8×8 bitmap fallback still
+drops non-ASCII — it now only serves the no-retail-content build.
+
+**Test gate:** the M1.4-BG-18 leftover `tmp_dump::dump_flame0_tiles4_rgba`
+writes into a hardcoded scratch directory and failed wherever it does not
+exist (pre-existing on main); it now skips instead of failing.
+
 ## Biome passes fidelity (M5-BIOME)
 
 The evil + jungle worldgen replaced its shape-level approximation with the

@@ -5,27 +5,6 @@
 use super::actions::{Act, Action, Toggle};
 use super::{Item, Menu, Page};
 
-/// The `Language.*` values of `Terraria.Localization.Content.en-US.json` in the
-/// `Main.cs:48466-48477` (1212) / `:48497-48508` (1213) fill order — English,
-/// German, Italian, French, Spanish, Russian, Chinese, Portuguese, Polish,
-/// Japanese, Korean, ChineseTraditional. Note that is *not* the JSON's own key
-/// order; both branches assign the twelve `Language.GetTextValue` rows
-/// explicitly.
-const LANGUAGES: [&str; 12] = [
-    "English",
-    "Deutsch (German)",
-    "Italiano (Italian)",
-    "Français (French)",
-    "Español (Spanish)",
-    "Русский (Russian)",
-    "简体中文 (Simplified Chinese)",
-    "Português brasileiro (Brazilian Portuguese)",
-    "Polski (Polish)",
-    "日本語 (Japanese)",
-    "한국어 (Korean)",
-    "繁體中文 (Traditional Chinese)",
-];
-
 /// The `Lang.menu` prefixes of the menuMode 27 rows (`Main.cs:50527-50540`):
 /// the raw `en-US.Legacy.json` values — [74]..[85], [120], [130] — with
 /// vanilla's trailing-space column alignment kept byte for byte.
@@ -216,36 +195,46 @@ impl Menu {
     // `menuMode == 11`.
     fn main_items(&self) -> Vec<Item> {
         vec![
-            Item::new("Single Player", Act::Out(Action::Singleplayer)),
-            Item::new("Multiplayer", Act::Nav(Page::Multiplayer)),
-            Item::new("Achievements", Act::Hint("Achievements are not ported yet")),
-            Item::new("Resource Packs", Act::Hint("Resource packs are not ported yet")),
-            Item::new("Settings", Act::Nav(Page::Settings)),
+            // `Lang.menu[12]`/`[13]`/`[131]` + `UI.ResourcePacks`, `Lang.menu[14]`,
+            // `UI.Credits`, `Lang.menu[15]` (`Main.cs:48908-48971`).
+            Item::new(crate::lang::menu(12), Act::Out(Action::Singleplayer)),
+            Item::new(crate::lang::menu(13), Act::Nav(Page::Multiplayer)),
+            Item::new(
+                crate::lang::menu(131),
+                Act::Hint("Achievements are not ported yet"),
+            ),
+            Item::new(
+                crate::lang::text("UI.ResourcePacks"),
+                Act::Hint("Resource packs are not ported yet"),
+            ),
+            Item::new(crate::lang::menu(14), Act::Nav(Page::Settings)),
             // Row 5 (`Main.cs:48964-48971`): `UI.Credits` sets
             // `menuMode = 3000` (`:48967-48969`); the
             // `SkyManager.Activate("CreditsRoll")` cinematic is the
             // documented deviation — the port's credits page draws the
             // world backdrop + the Back row.
-            Item::new("Credits", Act::Nav(Page::Credits)),
-            Item::new("Exit", Act::Out(Action::Quit)),
+            Item::new(crate::lang::text("UI.Credits"), Act::Nav(Page::Credits)),
+            Item::new(crate::lang::menu(15), Act::Out(Action::Quit)),
         ]
     }
 
     // `menuMode == 112`.
     fn settings_items(&self) -> Vec<Item> {
         vec![
-            Item::new("General", Act::Nav(Page::General)).scaled(0.75),
-            Item::new("Interface", Act::Nav(Page::Interface)).scaled(0.75),
-            Item::new("Video", Act::Nav(Page::Video)).scaled(0.75),
-            Item::new("Volume", Act::Nav(Page::Volume)).scaled(0.75),
+            // `Lang.menu[114]`/`[210]`/`[63]`/`[65]`/`[218]`/`[219]`/`[103]`/`[5]`
+            // (`Main.cs:49710-49768`).
+            Item::new(crate::lang::menu(114), Act::Nav(Page::General)).scaled(0.75),
+            Item::new(crate::lang::menu(210), Act::Nav(Page::Interface)).scaled(0.75),
+            Item::new(crate::lang::menu(63), Act::Nav(Page::Video)).scaled(0.75),
+            Item::new(crate::lang::menu(65), Act::Nav(Page::Volume)).scaled(0.75),
             // menuMode 11 row 4 (`Main.cs:49753-49759`): opens 1125
             // (`Main.cs:50309-50316` is the 1125 Back twin).
-            Item::new("Cursor", Act::Nav(Page::Cursor)).scaled(0.75),
+            Item::new(crate::lang::menu(218), Act::Nav(Page::Cursor)).scaled(0.75),
             // Row 5 (`Main.cs:49752-49758`): `Lang.menu[219]` opens 1127.
-            Item::new("Controls", Act::Nav(Page::Controls)).scaled(0.75),
+            Item::new(crate::lang::menu(219), Act::Nav(Page::Controls)).scaled(0.75),
             // Row 6 (`Main.cs:49759-49763`): `Lang.menu[103]` opens 1213.
-            Item::new("Language", Act::Nav(Page::Language)).scaled(0.75),
-            Item::new("Back", Act::Nav(Page::Main)).scaled(0.75).at(8.0),
+            Item::new(crate::lang::menu(103), Act::Nav(Page::Language)).scaled(0.75),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Main)).scaled(0.75).at(8.0),
         ]
     }
 
@@ -686,14 +675,29 @@ impl Menu {
     // and a language row shows the same notice (the original would
     // `SetLanguage` and jump to menuMode 0, `:48484-48490`).
     fn language_items(&self) -> Vec<Item> {
-            let mut rows = vec![
-                Item::new("Select language", Act::None).at(-20.0).heading().scaled(0.85),
-            ];
-            for language in LANGUAGES {
-                rows.push(Item::new(language, Act::Hint("Only English is bundled")).scaled(0.65));
-            }
-            rows.push(Item::new("Back", Act::Nav(Page::Settings)).scaled(0.8).at(9.0));
-            rows
+        // `array9[0] = Lang.menu[102]` (`Main.cs:48495`) and the twelve
+        // `Language.GetTextValue("Language.*")` rows in the `:48497-48508`
+        // order, then `Lang.menu[5]` Back (`:48510`). A row calls
+        // `LanguageManager.SetLanguage(selectedMenu)` (`:48520`) — the
+        // `GameCulture` legacy id — and the page stays up so the rows redraw
+        // localized.
+        let mut rows = vec![
+            Item::new(crate::lang::menu(102), Act::None)
+                .at(-20.0)
+                .heading()
+                .scaled(0.85),
+        ];
+        for culture in crate::lang::cultures() {
+            rows.push(
+                Item::new(
+                    crate::lang::text(culture.language_key()),
+                    Act::SetLanguage(culture.legacy_id()),
+                )
+                .scaled(0.65),
+            );
+        }
+        rows.push(Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.8).at(9.0));
+        rows
     }
 
     // menuMode 1127 (`Main.cs:50638-50698`): `num2 = 250`, `num4 = 52`,
@@ -701,11 +705,22 @@ impl Menu {
     // (`:50639-50646`). Draw y = `250 + 52*i + array4[i]`
     // (`Main.cs:51769`): 250, 302, 354, 424.
     fn language_initial_items(&self) -> Vec<Item> {
-            let mut rows = vec![Item::new("Select language", Act::None).at(-20.0).heading()];
-            for language in LANGUAGES {
-                rows.push(Item::new(language, Act::Hint("Only English is bundled")).scaled(0.65));
-            }
-            rows
+        // menuMode 1212 (`Main.cs:48458-48491`): the same `Lang.menu[102]`
+        // header and twelve `Language.*` rows, no Back row; a row
+        // `SetLanguage`s and jumps to the title (`:48484-48490`).
+        let mut rows = vec![
+            Item::new(crate::lang::menu(102), Act::None).at(-20.0).heading(),
+        ];
+        for culture in crate::lang::cultures() {
+            rows.push(
+                Item::new(
+                    crate::lang::text(culture.language_key()),
+                    Act::SetLanguage(culture.legacy_id()),
+                )
+                .scaled(0.65),
+            );
+        }
+        rows
     }
 
     // menuMode 27 (`Main.cs:50501-50637`): `num2 = 176`, `num4 = 22`,

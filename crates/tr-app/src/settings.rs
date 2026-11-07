@@ -8,6 +8,12 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub struct Settings {
+    /// `Language.ActiveCulture.Name` — the saved `GameCulture` name
+    /// ("en-US", "ru-RU", …). Vanilla persists it under `"Language"`
+    /// (`Put` `Main.cs:4099`, read back by `LoadSettings`'s
+    /// `LanguageManager.SetLanguage(text)` `:4345`); the port applies it at
+    /// startup (`lang::init`) and on the language-menu click.
+    pub language: String,
     /// `Main.autoSave`.
     pub auto_save: bool,
     /// `Main.autoPause`.
@@ -174,6 +180,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            language: "en-US".to_string(),
             auto_save: true,
             auto_pause: false,
             map_enabled: true,
@@ -257,6 +264,16 @@ impl Settings {
             match key {
                 "AutoSave" => me.auto_save = boolean(value),
                 "AutoPause" => me.auto_pause = boolean(value),
+                // `configuration.Put("Language", Language.ActiveCulture.Name)`
+                // (`Main.cs:4099`) writes a quoted string.
+                "Language" => {
+                    let v = value.trim();
+                    me.language = v
+                        .strip_prefix('"')
+                        .and_then(|rest| rest.split_once('"').map(|(s, _)| s))
+                        .unwrap_or(v)
+                        .to_string();
+                }
                 "MapEnabled" => me.map_enabled = boolean(value),
                 "HidePassword" => me.hide_password = boolean(value),
                 "SettingPlayWhenUnfocused" => me.play_when_unfocused = boolean(value),
@@ -440,7 +457,8 @@ impl Settings {
 
     pub fn to_json(&self) -> String {
         format!(
-            "{{\n  \"AutoSave\": {},\n  \"AutoPause\": {},\n  \"MapEnabled\": {},\n  \
+            "{{\n  \"AutoSave\": {},\n  \"AutoPause\": {},\n  \"Language\": \"{}\",\n  \
+             \"MapEnabled\": {},\n  \
              \"HidePassword\": {},\n  \"SettingPlayWhenUnfocused\": {},\n  \"PickupText\": {},\n  \
              \"InvasionProgressMode\": {},\n  \"PlacementPreview\": {},\n  \
              \"HighlightNewItems\": {},\n  \"MouseShowBuildingGrid\": {},\n  \
@@ -464,6 +482,7 @@ impl Settings {
              \"MinimapFrame\": \"{}\"\n}}\n",
             self.auto_save,
             self.auto_pause,
+            self.language,
             self.map_enabled,
             self.hide_password,
             self.play_when_unfocused,
