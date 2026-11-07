@@ -87,6 +87,16 @@ pub(super) const RESOURCE_SET_KEYS: [&str; 6] = [
 /// The `UI.HealthManaStyle_*` values (`en-US.json`), keyed by the set key —
 /// the menuMode 1112 row composes `UI.SelectHealthStyle` with
 /// `ActiveSetKeyName` (`Main.cs:49948`).
+/// The stored `SelectionHolder` key name as the `UI.HealthManaStyle_{key}`
+/// json key spells it (the label lookup, not the human text).
+fn resource_set_label_name(key: &str) -> &str {
+    if RESOURCE_SET_KEYS.contains(&key) {
+        key
+    } else {
+        RESOURCE_SET_KEYS[0]
+    }
+}
+
 fn resource_set_label(key: &str) -> &'static str {
     match key {
         "New" => "Fancy",
@@ -159,6 +169,12 @@ fn password_display(m: &Menu) -> String {
 }
 
 /// `Main.DrawMenu`'s on/off row label pair, shared by the settings arms.
+/// The `GameUI.Enabled`/`GameUI.Disabled`-style key a two-state format row's
+/// `{0}` argument resolves to.
+fn on_off_key(b: bool, on: &'static str, off: &'static str) -> &'static str {
+    if b { on } else { off }
+}
+
 fn on_off(b: bool, on: &str, off: &str) -> String {
     if b { on.to_string() } else { off.to_string() }
 }
@@ -237,12 +253,12 @@ impl Menu {
     fn general_items(&self) -> Vec<Item> {
         let s = &self.settings;
         vec![
-            Item::new(on_off(s.auto_save, "Autosave On", "Autosave Off"), Act::Toggle(Toggle::AutoSave)).scaled(0.78),
-            Item::new(on_off(s.auto_pause, "Autopause On", "Autopause Off"), Act::Toggle(Toggle::AutoPause)).scaled(0.78),
-            Item::new(on_off(s.map_enabled, "Map Enabled", "Map Disabled"), Act::Toggle(Toggle::MapEnabled)).scaled(0.78),
-            Item::new(on_off(s.hide_password, "Passwords: Hidden", "Passwords: Visible"), Act::Toggle(Toggle::HidePassword)).scaled(0.78),
-            Item::new(on_off(s.play_when_unfocused, "Pause When Unfocused: Off", "Pause When Unfocused: On"), Act::Toggle(Toggle::PlayWhenUnfocused)).scaled(0.78),
-            Item::new("Back", Act::Nav(Page::Settings)).scaled(0.78).at(18.0),
+            Item::new(on_off(s.auto_save, &crate::lang::menu(67), &crate::lang::menu(68)), Act::Toggle(Toggle::AutoSave)).scaled(0.78),
+            Item::new(on_off(s.auto_pause, &crate::lang::menu(69), &crate::lang::menu(70)), Act::Toggle(Toggle::AutoPause)).scaled(0.78),
+            Item::new(on_off(s.map_enabled, &crate::lang::menu(112), &crate::lang::menu(113)), Act::Toggle(Toggle::MapEnabled)).scaled(0.78),
+            Item::new(on_off(s.hide_password, &crate::lang::menu(212), &crate::lang::menu(211)), Act::Toggle(Toggle::HidePassword)).scaled(0.78),
+            Item::new(on_off(s.play_when_unfocused, &crate::lang::text("UI.PlayWhenUnfocusedOn"), &crate::lang::text("UI.PlayWhenUnfocusedOff")), Act::Toggle(Toggle::PlayWhenUnfocused)).scaled(0.78),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.78).at(18.0),
         ]
     }
 
@@ -251,30 +267,31 @@ impl Menu {
     fn interface_items(&self) -> Vec<Item> {
         let s = &self.settings;
         vec![
-            Item::new(on_off(s.pickup_text, "Pickup Text On", "Pickup Text Off"), Act::Toggle(Toggle::PickupText)).scaled(0.6),
+            Item::new(on_off(s.pickup_text, &crate::lang::menu(71), &crate::lang::menu(72)), Act::Toggle(Toggle::PickupText)).scaled(0.6),
             Item::new(
-                format!("Event Progress Bar {}", ["Off", "Timed", "On"][s.event_progress as usize % 3]),
+                format!("{} {}", crate::lang::menu(123), crate::lang::menu(124 + s.event_progress.min(2) as u32)),
                 Act::Toggle(Toggle::EventProgress),
             ).scaled(0.6),
-            Item::new(on_off(s.placement_preview, "Placement Preview On", "Placement Preview Off"), Act::Toggle(Toggle::PlacementPreview)).scaled(0.6),
-            Item::new(on_off(s.highlight_new_items, "Highlight New Items On", "Highlight New Items Off"), Act::Toggle(Toggle::HighlightNew)).scaled(0.6),
-            Item::new(on_off(s.tile_grid, "Tile Grid On", "Tile Grid Off"), Act::Toggle(Toggle::TileGrid)).scaled(0.6),
-            Item::new(on_off(s.gamepad_instructions, "Gamepad Instructions On", "Gamepad Instructions Off"), Act::Toggle(Toggle::GamepadInstructions)).scaled(0.6),
+            Item::new(on_off(s.placement_preview, &crate::lang::menu(128), &crate::lang::menu(129)), Act::Toggle(Toggle::PlacementPreview)).scaled(0.6),
+            Item::new(on_off(s.highlight_new_items, &crate::lang::text("LegacyInterface.117"), &crate::lang::text("LegacyInterface.116")), Act::Toggle(Toggle::HighlightNew)).scaled(0.6),
+            Item::new(on_off(s.tile_grid, &crate::lang::menu(229), &crate::lang::menu(230)), Act::Toggle(Toggle::TileGrid)).scaled(0.6),
+            Item::new(on_off(s.gamepad_instructions, &crate::lang::menu(242), &crate::lang::menu(241)), Act::Toggle(Toggle::GamepadInstructions)).scaled(0.6),
             // Row 6 (`Main.cs:49941-49946`): `UI.SelectMapBorder`
             // ("Minimap Border: {0}") with the active `UI.MinimapFrame_*`
             // name; the click calls `CycleSelection` with no sound. The
             // stored key feeds `ui::minimap::style_index` live, so the
             // minimap frame re-renders as the row cycles.
             Item::new(
-                format!(
-                    "Minimap Border: {}",
-                    // An unknown config name normalizes to the first
-                    // option (`SelectionHolder.cs:71-78`).
-                    if MINIMAP_FRAME_KEYS.contains(&s.minimap_frame.as_str()) {
-                        s.minimap_frame.as_str()
-                    } else {
-                        MINIMAP_FRAME_KEYS[0]
-                    }
+                crate::lang::text_args(
+                    "UI.SelectMapBorder",
+                    &[crate::lang::text(&format!(
+                        "UI.MinimapFrame_{}",
+                        if MINIMAP_FRAME_KEYS.contains(&s.minimap_frame.as_str()) {
+                            s.minimap_frame.as_str()
+                        } else {
+                            MINIMAP_FRAME_KEYS[0]
+                        }
+                    ))],
                 ),
                 Act::Toggle(Toggle::MinimapFrame),
             )
@@ -282,7 +299,7 @@ impl Menu {
             // Row 7 (`Main.cs:49947-49952`): `UI.SelectHealthStyle` with
             // `UI.HealthManaStyle_{ActiveSetKeyName}`; no click sound.
             Item::new(
-                format!("Health and Mana Style: {}", resource_set_label(&s.resource_sets)),
+                crate::lang::text_args("UI.SelectHealthStyle", &[crate::lang::text(&format!("UI.HealthManaStyle_{}", resource_set_label_name(&s.resource_sets)))]),
                 Act::Toggle(Toggle::ResourceSets),
             )
             .scaled(0.6),
@@ -290,12 +307,12 @@ impl Menu {
             // labels — the `switch`'s `_` arm reads Detailed; the click
             // runs `CycleNPCPortraitMode` (`Main.cs:40297-40315`).
             Item::new(
-                match s.portrait_preference {
-                    1 => "Portraits Style: Profile",
-                    2 => "Portraits Style: Retro",
-                    3 => "Portraits Style: Disabled",
-                    _ => "Portraits Style: Detailed",
-                },
+                crate::lang::text(match s.portrait_preference {
+                    1 => "UI.PortraitsCloseUp",
+                    2 => "UI.PortraitsFullBody",
+                    3 => "UI.PortraitsDisabled",
+                    _ => "UI.PortraitsDetailed",
+                }),
                 Act::Toggle(Toggle::PortraitPreference),
             )
             .scaled(0.6),
@@ -305,8 +322,8 @@ impl Menu {
             Item::new(
                 on_off(
                     s.boss_bar_text,
-                    "Boss Health Bar Numbers: On",
-                    "Boss Health Bar Numbers: Off",
+                    &crate::lang::text("UI.ShowBossLifeTextOn"),
+                    &crate::lang::text("UI.ShowBossLifeTextOff"),
                 ),
                 Act::Toggle(Toggle::BossBarText),
             )
@@ -316,13 +333,13 @@ impl Menu {
             Item::new(
                 on_off(
                     s.flashy_effects_interface,
-                    "Inventory Effects: On",
-                    "Inventory Effects: Reduced",
+                    &crate::lang::text("UI.FlashyEffectsInterfaceOn"),
+                    &crate::lang::text("UI.FlashyEffectsInterfaceOff"),
                 ),
                 Act::Toggle(Toggle::FlashyEffectsInterface),
             )
             .scaled(0.6),
-            Item::new("Back", Act::Nav(Page::Settings)).scaled(0.6).at(16.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.6).at(16.0),
         ]
     }
 
@@ -340,7 +357,7 @@ impl Menu {
         let s = &self.settings;
         vec![
             // Row 0 (`Main.cs:49992-49996`): `Lang.menu[51]` opens 111.
-            Item::new("Resolution", Act::Nav(Page::Resolution)).scaled(0.6),
+            Item::new(crate::lang::menu(51), Act::Nav(Page::Resolution)).scaled(0.6),
             Item::new(
                 format!("Zoom: {:.0}%", s.zoom * 100.0),
                 Act::Toggle(Toggle::Zoom),
@@ -348,17 +365,22 @@ impl Menu {
             .scaled(0.6),
             // menuMode 1111 row 1 (`Main.cs:49996-50002`): `Lang.menu[52]`
             // opens the parallax slider (28).
-            Item::new("Parallax", Act::Nav(Page::Parallax)).scaled(0.6),
-            Item::new(["Frame Skip Off", "Frame Skip On", "Frame Skip Subtle"][s.frame_skip as usize % 3], Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
-            Item::new(["Lighting: Color", "Lighting: White", "Lighting: Retro", "Lighting: Trippy"][s.light_mode as usize % 4], Act::Toggle(Toggle::LightMode)).scaled(0.6),
-            Item::new(["Quality: Auto", "Quality: High", "Quality: Medium", "Quality: Low"][s.quality as usize % 4], Act::Toggle(Toggle::Quality)).scaled(0.6),
-            Item::new(on_off(s.background, "Background On", "Background Off"), Act::Toggle(Toggle::Background)).scaled(0.6),
-            Item::new(on_off(s.blood, "Blood and Gore On", "Blood and Gore Off"), Act::Toggle(Toggle::Blood)).scaled(0.6),
-            Item::new(on_off(s.miners_wobble, "Miner's Wobble: Enabled", "Miner's Wobble: Disabled"), Act::Toggle(Toggle::MinersWobble)).scaled(0.6),
-            Item::new(on_off(s.tiles_sway, "Windy Environment: Enabled", "Windy Environment: Disabled"), Act::Toggle(Toggle::TilesSway)).scaled(0.6),
+            Item::new(crate::lang::menu(52), Act::Nav(Page::Parallax)).scaled(0.6),
+            Item::new(crate::lang::menu(247 + s.frame_skip.min(2) as u32), Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
+            Item::new(crate::lang::text(match s.light_mode {
+        1 => "UI.LightMode_White",
+        2 => "UI.LightMode_Retro",
+        3 => "UI.LightMode_Trippy",
+        _ => "UI.LightMode_Color",
+    }), Act::Toggle(Toggle::LightMode)).scaled(0.6),
+            Item::new(crate::lang::menu(59 + s.quality.min(3) as u32), Act::Toggle(Toggle::Quality)).scaled(0.6),
+            Item::new(on_off(s.background, &crate::lang::menu(100), &crate::lang::menu(101)), Act::Toggle(Toggle::Background)).scaled(0.6),
+            Item::new(on_off(s.blood, &crate::lang::menu(132), &crate::lang::menu(133)), Act::Toggle(Toggle::Blood)).scaled(0.6),
+            Item::new(on_off(s.miners_wobble, &crate::lang::menu(250), &crate::lang::menu(251)), Act::Toggle(Toggle::MinersWobble)).scaled(0.6),
+            Item::new(on_off(s.tiles_sway, &crate::lang::text("UI.TilesSwayInWindOn"), &crate::lang::text("UI.TilesSwayInWindOff")), Act::Toggle(Toggle::TilesSway)).scaled(0.6),
             // Row 10 (`Main.cs:50072-50077`): `UI.Effects` opens 2008.
-            Item::new("Effects", Act::Nav(Page::Effects)).scaled(0.6),
-            Item::new("Back", Act::Nav(Page::Settings)).at(8.0),
+            Item::new(crate::lang::text("UI.Effects"), Act::Nav(Page::Effects)).scaled(0.6),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).at(8.0),
         ]
     }
 
@@ -375,14 +397,14 @@ impl Menu {
         vec![
             // Row 0 (`:50702`): `Lang.menu[87]` "Join" — vanilla opens the
             // character select, then 13 (`:50714-50718`, `:66241`).
-            Item::new("Join", Act::Nav(Page::JoinIp)),
+            Item::new(crate::lang::menu(87), Act::Nav(Page::JoinIp)),
             // Row 1 (`:50704`, the `1 + num41` overwrite): `Lang.menu[88]`
             // "Host & Play" — vanilla opens the character select with
             // `menuServer` (`:50720-50726`), the port goes to 30.
-            Item::new("Host & Play", Act::Nav(Page::HostPassword)),
+            Item::new(crate::lang::menu(88), Act::Nav(Page::HostPassword)),
             // Row 2 (`:50705`, the `2 + num41` Back): `Lang.menu[5]`
             // returns to menuMode 0 (`:50727-50733`).
-            Item::new("Back", Act::Nav(Page::Main)),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Main)),
         ]
     }
 
@@ -405,7 +427,7 @@ impl Menu {
             let accept_ready =
                 !self.get_ip.is_empty() && !self.get_ip.starts_with(' ');
             vec![
-                Item::new("Enter Server IP Address:", Act::None).heading(),
+                Item::new(crate::lang::menu(89), Act::None).heading(),
                 input,
                 // Rows 2-8 (`:50834-50848`): `array4 = 40`, `array7 = 0.6`,
                 // blank + `array[i] = true` without a recent entry.
@@ -420,15 +442,15 @@ impl Menu {
                 // Accept row is non-clickable like a header
                 // (`Main.cs:51790-51796` covers `array2` too).
                 if accept_ready {
-                    Item::new("Accept", Act::Nav(Page::JoinPort)).at(44.0)
+                    Item::new(crate::lang::menu(4), Act::Nav(Page::JoinPort)).at(44.0)
                 } else {
-                    Item::new("Accept", Act::None).at(44.0).heading()
+                    Item::new(crate::lang::menu(4), Act::None).at(44.0).heading()
                 },
                 // Row 10 (`:50832-50833`): `array4[10] = 64`; vanilla
                 // returns to the character select (`:50859-50864`), the
                 // port returns to the multiplayer menu (documented
                 // deviation, pinned by the escape test).
-                Item::new("Back", Act::Nav(Page::Multiplayer)).at(64.0),
+                Item::new(crate::lang::menu(5), Act::Nav(Page::Multiplayer)).at(64.0),
             ]
     }
 
@@ -439,8 +461,8 @@ impl Menu {
     fn volume_items(&self) -> Vec<Item> {
         vec![
             Item::new("", Act::None),
-            Item::new("Volume", Act::None).at(10.0).heading(),
-            Item::new("Back", Act::Nav(Page::Settings)).at(250.0),
+            Item::new(crate::lang::menu(65), Act::None).at(10.0).heading(),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).at(250.0),
         ]
     }
 
@@ -449,8 +471,8 @@ impl Menu {
     fn parallax_items(&self) -> Vec<Item> {
         vec![
             Item::new("", Act::None),
-            Item::new("Parallax", Act::None).at(10.0).heading(),
-            Item::new("Back", Act::Nav(Page::Video)).at(170.0),
+            Item::new(crate::lang::menu(52), Act::None).at(10.0).heading(),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Video)).at(170.0),
         ]
     }
 
@@ -463,15 +485,15 @@ impl Menu {
         vec![
             // Rows 0-1 (`Main.cs:50253-50268`): the colour rows seed
             // `Main.selColor` from the stored colour, then open 25 / 252.
-            Item::new("Cursor Color", Act::PickColor(Page::CursorColor)).scaled(0.73),
-            Item::new("Border Color", Act::PickColor(Page::BorderColor)).scaled(0.73),
+            Item::new(crate::lang::menu(64), Act::PickColor(Page::CursorColor)).scaled(0.73),
+            Item::new(crate::lang::menu(217), Act::PickColor(Page::BorderColor)).scaled(0.73),
             // Row 2 (`Main.cs:50269-50277`):
             // `cSmartCursorModeIsToggleAndNotHold ? Lang.menu[121] : [122]`.
             Item::new(
                 on_off(
                     s.smart_cursor_toggle,
-                    "Smart Cursor Mode: Toggle",
-                    "Smart Cursor Mode: Hold",
+                    &crate::lang::menu(121),
+                    &crate::lang::menu(122),
                 ),
                 Act::Toggle(Toggle::SmartCursorToggle),
             )
@@ -481,8 +503,8 @@ impl Menu {
             Item::new(
                 on_off(
                     s.smart_axe_first,
-                    "Smart Cursor Priority: Axe → Pickaxe",
-                    "Smart Cursor Priority: Pickaxe → Axe",
+                    &crate::lang::menu(214),
+                    &crate::lang::menu(213),
                 ),
                 Act::Toggle(Toggle::SmartAxeFirst),
             )
@@ -492,8 +514,8 @@ impl Menu {
             Item::new(
                 on_off(
                     s.smart_blocks,
-                    "Smart Block Placement: To Cursor",
-                    "Smart Block Placement: Disabled",
+                    &crate::lang::menu(215),
+                    &crate::lang::menu(216),
                 ),
                 Act::Toggle(Toggle::SmartBlocks),
             )
@@ -504,16 +526,16 @@ impl Menu {
             // stored value is 0, which `LoadSettings` rewrites to ThreeDS
             // (`Main.cs:4502-4505`).
             Item::new(
-                match s.lock_on_priority {
-                    0 => "Lock On Priority: Focus Target",
-                    1 => "Lock On Priority: Target Closest",
-                    _ => "Lock On Priority: Clearest Line",
-                },
+                crate::lang::menu(match s.lock_on_priority {
+                    0 => 232,
+                    1 => 233,
+                    _ => 234,
+                }),
                 Act::Toggle(Toggle::LockOnPriority),
             )
             .scaled(0.73),
             // Row 6 (`Main.cs:50309-50316`): Back opens 11.
-            Item::new("Back", Act::Nav(Page::Settings)).scaled(0.73).at(18.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.73).at(18.0),
         ]
     }
 
@@ -522,7 +544,7 @@ impl Menu {
     fn cursor_color_items(&self) -> Vec<Item> {
         vec![
             Item::new("", Act::None),
-            Item::new("Cursor Color", Act::None).at(10.0).heading(),
+            Item::new(crate::lang::menu(64), Act::None).at(10.0).heading(),
             Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
         ]
     }
@@ -538,7 +560,7 @@ impl Menu {
     fn border_color_items(&self) -> Vec<Item> {
         vec![
             Item::new("", Act::None),
-            Item::new("Border Color", Act::None).at(10.0).heading(),
+            Item::new(crate::lang::menu(217), Act::None).at(10.0).heading(),
             Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
         ]
     }
@@ -556,7 +578,8 @@ impl Menu {
             // pending size mirrors the live window (`:66399-66400`).
             Item::new(
                 format!(
-                    "Fullscreen Resolution: {}x{}",
+                    "{}: {}x{}",
+                    crate::lang::menu(73),
                     self.screen_size.x as u32,
                     self.screen_size.y as u32
                 ),
@@ -570,21 +593,21 @@ impl Menu {
             // `IsBorderlessDisplayAvailable` is `Platform.IsWindows`
             // (`Main.cs:52305-52312`).
             Item::new(
-                "Borderless Window: Disabled",
+                crate::lang::menu(246),
                 Act::Hint("Borderless windows are not ported yet"),
             )
             .scaled(0.85),
             // Row 2 (`Main.cs:50206-50210`): `Lang.menu[50]` while
             // windowed; the port always runs windowed.
-            Item::new("Go Fullscreen", Act::Hint("Fullscreen is not ported yet")).scaled(0.85),
+            Item::new(crate::lang::menu(50), Act::Hint("Fullscreen is not ported yet")).scaled(0.85),
             // Row 3 (`Main.cs:50212-50227`): `array4 = 100`, label
             // `Lang.menu[134]`.
-            Item::new("Apply", Act::Hint("Resolution switching is not ported yet"))
+            Item::new(crate::lang::menu(134), Act::Hint("Resolution switching is not ported yet"))
                 .scaled(0.85)
                 .at(100.0),
             // Row 4 (`Main.cs:50229-50239`): `array4 = 100`; Back resets
             // the pending state and opens 1111 (`:50237`).
-            Item::new("Back", Act::Nav(Page::Video)).scaled(0.85).at(100.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Video)).scaled(0.85).at(100.0),
         ]
     }
 
@@ -601,68 +624,56 @@ impl Menu {
         vec![
             // Row 0 (`Main.cs:50108-50111`): the `UI.Effects` header,
             // `array[0] = true`, `array7 = 0.7`, `array4 -= 8`.
-            Item::new("Effects", Act::None).at(-8.0).heading().scaled(0.7),
+            Item::new(crate::lang::text("UI.Effects"), Act::None).at(-8.0).heading().scaled(0.7),
             // Row 1 (`Main.cs:50113-50118`):
             // `GameUI.StormEffects` with `GameUI.Enabled`/`Disabled`.
             Item::new(
-                on_off(s.use_storm_effects, "Storm Effects: Enabled", "Storm Effects: Disabled"),
+                crate::lang::text_args("GameUI.StormEffects", &[crate::lang::text(on_off_key(s.use_storm_effects, "GameUI.Enabled", "GameUI.Disabled"))]),
                 Act::Toggle(Toggle::UseStormEffects),
             )
             .scaled(0.6),
             // Row 2 (`Main.cs:50120-50125`): `GameUI.ForegroundSunlightEffects`.
             Item::new(
-                on_off(
-                    s.foreground_sunlight,
-                    "Sunlight Effects: Enabled",
-                    "Sunlight Effects: Disabled",
-                ),
+                crate::lang::text_args("GameUI.ForegroundSunlightEffects", &[crate::lang::text(on_off_key(s.foreground_sunlight, "GameUI.Enabled", "GameUI.Disabled"))]),
                 Act::Toggle(Toggle::ForegroundSunlight),
             )
             .scaled(0.6),
             // Row 3 (`Main.cs:50127-50132`): `GameUI.HeatDistortion`.
             Item::new(
-                on_off(
-                    s.use_heat_distortion,
-                    "Heat Distortion: Enabled",
-                    "Heat Distortion: Disabled",
-                ),
+                crate::lang::text_args("GameUI.HeatDistortion", &[crate::lang::text(on_off_key(s.use_heat_distortion, "GameUI.Enabled", "GameUI.Disabled"))]),
                 Act::Toggle(Toggle::UseHeatDistortion),
             )
             .scaled(0.6),
             // Row 4 (`Main.cs:50134-50146`): `GameUI.WaveQuality` with
             // 1 Low, 2 Medium, 3 High, anything else Off (`_` arm).
             Item::new(
-                format!(
-                    "Waves Quality: {}",
-                    match s.wave_quality {
-                        1 => "Low",
-                        2 => "Medium",
-                        3 => "High",
-                        _ => "Off",
-                    }
+                crate::lang::text_args(
+                    "GameUI.WaveQuality",
+                    &[crate::lang::text(match s.wave_quality {
+                        1 => "GameUI.QualityLow",
+                        2 => "GameUI.QualityMedium",
+                        3 => "GameUI.QualityHigh",
+                        _ => "GameUI.QualityOff",
+                    })],
                 ),
                 Act::Toggle(Toggle::WaveQuality),
             )
             .scaled(0.6),
             // Row 5 (`Main.cs:50150-50155`): `GameUI.ScreenShake`.
             Item::new(
-                on_off(
-                    s.use_screen_shake,
-                    "Screen Shake: Enabled",
-                    "Screen Shake: Disabled",
-                ),
+                crate::lang::text_args("GameUI.ScreenShake", &[crate::lang::text(on_off_key(s.use_screen_shake, "GameUI.Enabled", "GameUI.Disabled"))]),
                 Act::Toggle(Toggle::UseScreenShake),
             )
             .scaled(0.6),
             // Row 6 (`Main.cs:50157-50162`): `UI.FlashyEffectsWorldOn` /
             // `UI.FlashyEffectsWorldOff` ("Thunder Effects: On/Reduced").
             Item::new(
-                on_off(s.flashy_effects_world, "Thunder Effects: On", "Thunder Effects: Reduced"),
+                on_off(s.flashy_effects_world, &crate::lang::text("UI.FlashyEffectsWorldOn"), &crate::lang::text("UI.FlashyEffectsWorldOff")),
                 Act::Toggle(Toggle::FlashyEffectsWorld),
             )
             .scaled(0.6),
             // Row 7 (`Main.cs:50164-50169`): Back opens 1111.
-            Item::new("Back", Act::Nav(Page::Video)).scaled(0.6),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Video)).scaled(0.6),
         ]
     }
 
@@ -714,8 +725,8 @@ impl Menu {
             Item::new(
                 on_off(
                     s.reversed_armor_bonuses,
-                    "Activate Set Bonuses: Up",
-                    "Activate Set Bonuses: Down",
+                    &crate::lang::menu(220),
+                    &crate::lang::menu(221),
                 ),
                 Act::Toggle(Toggle::ReversedArmorBonuses),
             )
@@ -725,11 +736,11 @@ impl Menu {
             // ? [224] : [223])`.
             Item::new(
                 if s.quick_trash {
-                    "Quick Trash: Disabled"
+                    &crate::lang::menu(253)
                 } else if s.disable_left_shift_trash {
-                    "Quick Trash: Left Control"
+                    &crate::lang::menu(224)
                 } else {
-                    "Quick Trash: Left Shift"
+                    &crate::lang::menu(223)
                 },
                 Act::Toggle(Toggle::QuickTrash),
             )
@@ -738,12 +749,12 @@ impl Menu {
             // menuMode 888 `ManageControlsMenu` UIState (`:50661-50666`) —
             // out of scope (spec §9.1), so the row shows the notice.
             Item::new(
-                "Keybindings",
+                crate::lang::menu(222),
                 Act::Hint("The manage-controls screen is not ported yet"),
             )
             .scaled(0.78),
             // Row 3 (`Main.cs:50695-50698`): Back opens 11.
-            Item::new("Back", Act::Nav(Page::Settings)).scaled(0.78).at(18.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.78).at(18.0),
         ]
     }
 

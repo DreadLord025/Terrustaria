@@ -828,9 +828,9 @@ impl Menu {
         // The six labels at scale 0.5 (`Main.cs:51489-51525`): the three names
         // and their percentages, 90 px right of the names (`:51502`, `:51506`,
         // `:51511`).
-        border_string_four_way(r, font, label_x, 350.0, label, "Sound:"); // [98] (`:51490`)
-        border_string_four_way(r, font, label_x, 320.0, label, "Music:"); // [99] (`:51494`)
-        border_string_four_way(r, font, label_x, 380.0, label, "Ambient:"); // [119] (`:51497`)
+        border_string_four_way(r, font, label_x, 350.0, label, &crate::lang::menu(98)); // [98] (`:51490`)
+        border_string_four_way(r, font, label_x, 320.0, label, &crate::lang::menu(99)); // [99] (`:51494`)
+        border_string_four_way(r, font, label_x, 380.0, label, &crate::lang::menu(119)); // [119] (`:51497`)
         border_string_four_way(
             r,
             font,
