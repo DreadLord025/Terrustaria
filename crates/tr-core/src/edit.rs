@@ -391,6 +391,7 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         10 => check_door_closed(world, x, y),
         11 => check_door_open(world, x, y),
         13 | 33 | 49 | 78 => check_on_table_1x1(world, x, y),
+        29 => check_piggy(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
@@ -408,6 +409,53 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         185 => check_pile(world, x, y),
         _ => None,
     }
+}
+
+/// `WorldGen.Check2x1`'s case-29 arm (`WorldGen.cs:47003-47013`) for the
+/// piggy bank: the 2x1 pair with the second cell's `frameX == first + 18`
+/// (:47000-47008), and BOTH bottom cells must hold an active table tile
+/// (`Main.tileTable[type]`) without halfBrick/topSlope — the case-29 arm
+/// checks `Main.tileTable` directly, no `AnchorValid` fallback (unlike the
+/// case-103 arm :46988-46998). The port's placement anchor is broader
+/// (`AnchorType.Table` accepts platforms, `TileObject.cs:392-409`) — the
+/// C# kill is stricter than its own placement, ported verbatim.
+fn check_piggy(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
+    let t = world.tile(x, y)?;
+    let frame_x = t.frame_x as i32;
+    let ox = x - frame_x / 18 % 2;
+    let left = world.tile(ox, y);
+    let right = world.tile(ox + 1, y);
+    let left_x = left.map(|l| l.frame_x as i32).unwrap_or(i32::MIN);
+    // :47000-47008: the pair intact = the right cell's frameX is first+18
+    // and both cells are the same active kind.
+    let intact = right.is_some_and(|c| c.frame_x as i32 == left_x + 18)
+        && left.is_some_and(|c| c.active() && c.kind == 29)
+        && right.is_some_and(|c| c.active() && c.kind == 29)
+        // :47003-47013: both bottom cells on a table.
+        && world
+            .tile(ox, y + 1)
+            .is_some_and(|b| b.active() && crate::tileobject::is_table(b.kind) && !b.half_brick() && !b.top_slope())
+        && world
+            .tile(ox + 1, y + 1)
+            .is_some_and(|b| b.active() && crate::tileobject::is_table(b.kind) && !b.half_brick() && !b.top_slope());
+    if intact {
+        return None;
+    }
+    let region = [(ox, y), (ox + 1, y)];
+    Some(CheckPlan {
+        drop: Some(ObjectDrop {
+            tile_kind: 29,
+            x: ox,
+            y,
+            item: None,
+        }),
+        cells: killable_cells(world, &region, 29),
+        pot_event: None,
+        herb_event: None,
+        pile_event: None,
+        ring: None,
+         // floats until a later break (`WorldGen.cs`'s Check2x1 tail).
+    })
 }
 
 /// `WorldGen.Check1xX` (`WorldGen.cs:37788-37878`) for the lamp (93): three
@@ -2080,6 +2128,12 @@ pub enum TileInteraction {
     DoorBlocked {
         object_drops: Vec<ObjectDrop>,
     },
+    /// The bank open ran (`Player.cs:33122-33138`'s num73 switch): `bank`
+    /// is the chest index -2..-5. No sound on the open path in the port's
+    /// cue set (`OpenChest`'s SoundID 10/11/12 keys are absent).
+    BankOpen {
+        bank: i32,
+    },
     /// The dial branch fired: `Main.Sundialing()`/`Moondialing()` armed the
     /// fast-forward (`Main.cs:6178-6180`/:6192-6194, SP branch). `sundial`
     /// picks which dial — the cue is the same `SoundID.Item4` for both
@@ -2155,6 +2209,21 @@ pub fn interact_at(
     if t.kind == 356 || t.kind == 663 {
         return dial_interaction(world, t.kind == 356);
     }
+    // The bank tiles (tiles 29/97/463/491, `Player.cs:33056-33138`): the
+    // num73 switch maps 29 -> -2, 97 -> -3, 463 -> -4, 491 -> -5. The
+    // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
+    // are player-bounded (`Player.bank[1..4]`, `Player.cs:1580-1591`), so
+    // only the chest index moves. The vault's `disableVoidBag` gate
+    // (:33127-33133) has no port mechanic yet.
+    if matches!(t.kind, 29 | 97 | 463 | 491) {
+        let bank = match t.kind {
+            29 => -2,
+            97 => -3,
+            463 => -4,
+            _ => -5,
+        };
+        return TileInteraction::BankOpen { bank };
+    }
     // The port routes on the registry def's `interaction` tag (Decision #3)
     // where the C# chain tests `Main.tile[myX, myY].type` literals
     // (`Player.cs:32835`/:32857 for 10/11).
@@ -2162,6 +2231,9 @@ pub fn interact_at(
         return TileInteraction::None;
     };
     match def.interaction {
+        crate::tileobject::Interaction::Bank(bank) => {
+            return TileInteraction::BankOpen { bank };
+        }
         crate::tileobject::Interaction::Candle => {
             // `Player.cs:32378-32390`: `num27 = (frameX > 0) ? -18 : 18;
             // tile.frameX += num27` — the lit/unlit toggle, no sound.
@@ -4380,6 +4452,64 @@ mod tests {
             set_active(&mut w, x, 21, 1);
         }
         w
+    }
+
+    #[test]
+    fn test_store_1_piggy_survives_on_a_table_and_dies_off_it() {
+        // `Check2x1`'s case-29 arm (`WorldGen.cs:47003-47013`): both bottom
+        // cells must hold an active table tile. A stone kill ABOVE the piggy
+        // frames its cells (the cascade's 3x3 walk) without touching them.
+        let piggy_world = |table: bool| -> World {
+            let mut w = soil_world(2);
+            if table {
+                set_object_cell(&mut w, 10, 21, 14, 0, 0);
+                set_object_cell(&mut w, 11, 21, 14, 18, 0);
+                set_object_cell(&mut w, 12, 21, 14, 36, 0);
+            }
+            set_object_cell(&mut w, 10, 20, 29, 0, 0);
+            set_object_cell(&mut w, 11, 20, 29, 18, 0);
+            set_active(&mut w, 10, 19, 1); // the cascade trigger block
+            w
+        };
+        // On the table: the pair survives the pass-through framing.
+        let mut w = piggy_world(true);
+        trigger_at(&mut w, 10, 19);
+        let t = w.tile(10, 20).unwrap();
+        assert!(t.active() && t.kind == 29, "the piggy sits on the table");
+        // Off the table: the pass-through framing kills the pair through the
+        // case-29 arm (the piggy drops item 87).
+        let mut w = piggy_world(false);
+        let kill = trigger_at(&mut w, 10, 19);
+        assert!(
+            !w.tile(10, 20).unwrap().active(),
+            "no table below — the case-29 arm kills"
+        );
+        assert!(!kill.object_drops.is_empty(), "the piggy drops item 87");
+        // The direct hit kills through the piggy's own check.
+        let mut w = piggy_world(true);
+        let kill = kill_tile(&mut w, 10, 20, false).unwrap();
+        assert_eq!(kill.kind, 29);
+        assert!(!w.tile(10, 20).unwrap().active(), "the direct hit kills");
+    }
+
+    #[test]
+    fn test_store_1_bank_tiles_resolve_the_interaction() {
+        // `Player.cs:33056-33138`'s num73 switch: 29 -> -2, 97 -> -3,
+        // 463 -> -4, 491 -> -5. The port's interact_at returns BankOpen for
+        // each literal (the defs carry Interaction::Bank too).
+        for (kind, chest) in [(29, -2), (97, -3), (463, -4), (491, -5)] {
+            let mut w = soil_world(2);
+            set_object_cell(&mut w, 10, 20, kind, 0, 0);
+            let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
+            assert!(
+                matches!(hit, TileInteraction::BankOpen { bank } if bank == chest),
+                "tile {kind} opens chest {chest}"
+            );
+        }
+        // An ordinary tile: no interaction.
+        let mut w = soil_world(2);
+        let hit = interact_at(&mut w, 10, 20, 1, &|_, _| false);
+        assert!(matches!(hit, TileInteraction::None));
     }
 
     #[test]

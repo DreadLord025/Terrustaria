@@ -147,6 +147,7 @@ pub fn draw_hud(
     emotes_state: &crate::emotes::EmoteSystem,
     shop: Option<(&[u16], f32)>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
+    bank: Option<(&[ItemSlot], i32)>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -200,6 +201,7 @@ pub fn draw_hud(
             equip_page,
             mouse_pos,
             m_h,
+            bank,
         );
         open_hover = hit.hovered;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
@@ -368,7 +370,7 @@ pub fn draw_hud(
     // cursor. With the inventory open the hover comes from the panel layout
     // (`inventory::draw`); closed, only the hotbar row is hoverable.
     let hover_item: Option<&ItemSlot> = if inventory_open {
-        open_hover.and_then(|h| hover_item_for(equip, inventory, h))
+        open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
@@ -387,10 +389,12 @@ fn hover_item_for<'a>(
     equip: &'a inv::EquipSlots,
     inventory: &'a [ItemSlot; INV],
     hit: inventory::HoverRef,
+    bank: Option<&'a [ItemSlot]>,
 ) -> Option<&'a ItemSlot> {
     use inventory::HoverRef as H;
     match hit {
         H::Grid(i) => inventory.get(i),
+        H::Bank(i) => bank.and_then(|b| b.get(i)),
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

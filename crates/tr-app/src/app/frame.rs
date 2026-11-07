@@ -1176,6 +1176,10 @@ impl App {
                                 .unwrap_or(0);
                             (&self.reforge_slot, cost, self.reforge_cooldown)
                         }),
+                        player.as_ref().and_then(|p| {
+                            crate::bank::bank_for_chest(p.chest)
+                                .map(|bi| (&p.banks[bi][..], p.chest))
+                        }),
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
