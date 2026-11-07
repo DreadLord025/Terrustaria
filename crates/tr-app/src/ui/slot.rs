@@ -80,6 +80,33 @@ pub fn craft_slot_tint() -> [f32; 4] {
     )))
 }
 
+/// `ItemSlot.cs:2149-2156`'s favorited-background arm gate:
+/// `!item.IsAir && item.favorited && ItemSlot.retainFavoriteOnMoveAt[context]`
+/// (the contexts whose moves keep the flag — `chest::retain_favorite_on_move_at`).
+/// Non-air is `count > 0` (the port's implicit-air shape).
+pub(crate) fn favorited_background_active(context: i32, favorited: bool, item: &ItemSlot) -> bool {
+    favorited && item.count > 0 && crate::chest::retain_favorite_on_move_at(context)
+}
+
+/// The favorited slot's draw tint — the fallback for `ItemSlot.cs:2149-2156`'s
+/// gold `Inventory_Back10` background (32 → `Inventory_Back19`). The port's
+/// atlas packs neither sheet (`assets.rs`'s sheet list has Back 2/3/4/5/6/7/9/
+/// 12/13/14/18 only), so the arm tints the slot's own background with
+/// `Main.OurFavoriteColor` = `Color(255, 231, 69)` (`Main.cs:66748`) — the
+/// plan-authorized fallback, recorded in Phase 5's ANALYSIS entry.
+pub(crate) fn favorited_slot_tint(inv_back: [f32; 4]) -> [f32; 4] {
+    // `Main.OurFavoriteColor` (`Main.cs:66748`), XNA byte-multiplied into the
+    // caller's `Main.inventoryBack` tint (the C# keeps `color2 =
+    // Main.inventoryBack` on the favorited arm and swaps the sheet instead).
+    let favorite = [255.0 / 255.0, 231.0 / 255.0, 69.0 / 255.0, 1.0];
+    [
+        favorite[0] * inv_back[0],
+        favorite[1] * inv_back[1],
+        favorite[2] * inv_back[2],
+        favorite[3] * inv_back[3],
+    ]
+}
+
 /// `ItemSlot.cs:2403-2470`: the `Extra_54` frame index for an empty equipment
 /// slot (`num15`), or `-1` when the context has no glyph.
 fn equip_glyph_index(context: i32, index: i32) -> i32 {
@@ -647,5 +674,49 @@ mod tests {
             74.0 / 255.0,
             162.0 / 255.0,
         ]);
+    }
+
+    // M3-CHEST-INT phase 4 — the favorited slot's draw args (DW-4.5).
+
+    #[test]
+    fn test_DW_4_5_favorited_background_gate_matches_the_csharp_arm() {
+        // `ItemSlot.cs:2149-2156`: `!item.IsAir && item.favorited &&
+        // ItemSlot.retainFavoriteOnMoveAt[context]`.
+        let item = ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 3,
+            prefix: 0,
+        };
+        let air = crate::item::EMPTY_SLOT;
+        assert!(favorited_background_active(0, true, &item));
+        assert!(favorited_background_active(32, true, &item));
+        assert!(favorited_background_active(5, true, &item), "retain[5] = true");
+        assert!(
+            !favorited_background_active(0, true, &air),
+            "IsAir returns before the arm"
+        );
+        assert!(!favorited_background_active(0, false, &item));
+        assert!(
+            !favorited_background_active(3, true, &item),
+            "ctx 3 is not in the retain table"
+        );
+        assert!(
+            !favorited_background_active(6, true, &item),
+            "the trash slot is not retained either"
+        );
+        assert!(!favorited_background_active(13, true, &item));
+    }
+
+    #[test]
+    fn test_DW_4_5_favorited_tint_is_our_favorite_color() {
+        // `Main.OurFavoriteColor = Color(255, 231, 69)` (`Main.cs:66748`)
+        // composed over `Main.inventoryBack` (220, 220, 220, 220) — the
+        // fallback for the `Inventory_Back10` sheet the atlas lacks.
+        let tint = favorited_slot_tint([220.0 / 255.0; 4]);
+        assert_eq!(tint[0], 220.0 / 255.0);
+        assert_eq!(tint[1], (231.0 / 255.0) * (220.0 / 255.0));
+        assert_eq!(tint[2], (69.0 / 255.0) * (220.0 / 255.0));
+        assert_eq!(tint[3], 220.0 / 255.0);
     }
 }

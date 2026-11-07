@@ -25,6 +25,9 @@ const CURSOR_FROM_CHEST: i32 = 8;
 /// `AlternateClickAction.TransferToChest`'s cursor id (`ItemSlot.cs:217`) —
 /// the shift-click arrow on a hovered inventory slot with an open chest.
 const CURSOR_TO_CHEST: i32 = 9;
+/// The favorite override's cursor id — `Main.cursorOverride = 3`
+/// (`ItemSlot.cs:616-619`).
+const CURSOR_FAVORITE: i32 = 3;
 
 /// `ItemSlot.ShiftInUse` (`ItemSlot.cs:328-338`): the physical Shift keys are
 /// `Main.keyState.PressingShift()`'s port (`app.keys` tracks the pressed
@@ -32,6 +35,15 @@ const CURSOR_TO_CHEST: i32 = 9;
 /// out.
 fn shift_in_use(app: &App) -> bool {
     app.keys.contains(&KeyCode::ShiftLeft) || app.keys.contains(&KeyCode::ShiftRight)
+}
+
+/// `Main.FavoriteKey` (`Main.cs:67196` — `Keys.LeftAlt`; the binding string
+/// `cFavoriteKey = "LeftAlt"` sits at `Main.cs:67177`), read live like the
+/// C#'s `Main.keyState.IsKeyDown(Main.FavoriteKey)` (`ItemSlot.cs:611`) —
+/// the same pressed-codes set `shift_in_use` reads. The
+/// `KeyFavoriteModifier` rebind setting has no port surface.
+fn favorite_key_held(app: &App) -> bool {
+    app.keys.contains(&KeyCode::AltLeft)
 }
 
 /// `ItemSlot.LeftClick`'s action-0 movement (`ItemSlot.cs:934-1017`) — the
@@ -512,12 +524,40 @@ impl App {
                 return;
             }
         }
+        // The trash slot's left click (`ItemSlot.LeftClick`'s context-6 arm,
+        // `ItemSlot.cs:937-941`): `MouseItemSwap(ref trashItem, 6)` — the
+        // plain held/trash swap (no favorited-held guard exists in the C#
+        // swap; the can't-drop rule lives in `DropSelectedItem`,
+        // `Player.cs:5170-5184`, the sell/drop pass's seam). The swap plays
+        // 7 when an item sits on either side after it (`:1008-1011`, the
+        // same cue the grid movement uses); the separate `TrashItem` cue
+        // (`:1007`) has no port cue — the recorded gap. Right-click stays
+        // unported (the Journey research arm `:940-943`).
+        if left && self.inventory_open && ui::inventory::trash_slot_at(self.mouse_pos) {
+            self.trash_swap();
+            if self.mouse_item.count > 0 || self.equip.trash.count > 0 {
+                self.audio.play("Grab");
+            }
+            return;
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };
         if !self.inventory_open {
             if left {
                 self.selected = slot;
+            }
+            return;
+        }
+        // `OverrideLeftClick`'s cursor-3 arm (`ItemSlot.cs:745-755`): the
+        // favorite toggle consumes the left click before the movement arms
+        // (`LeftClick` returns on `OverrideLeftClick`'s `true`,
+        // `:915-918`). `cursor_override == 3` is the Alt+hover gate
+        // `evaluate_cursor_override` set this frame, so Alt held never falls
+        // through to the pickup arm.
+        if left && self.cursor_override == CURSOR_FAVORITE {
+            if self.toggle_favorite(slot) != 0 {
+                self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
             }
             return;
         }
@@ -583,9 +623,9 @@ impl App {
             return false;
         }
         // `OverrideHover` → `GetAlternateClickAction` (`ItemSlot.cs:599-627`,
-        // `:629-728`): the shift arms evaluate for the hovered slot with or
-        // without a click.
-        self.evaluate_shift_cursor_override();
+        // `:629-728`): the favorite and shift arms evaluate for the hovered
+        // slot with or without a click.
+        self.evaluate_cursor_override();
         let left = self.ui_left_press;
         let right_held = self.place_down; // `Main.mouseRight` (`ItemSlot.cs:1654`)
         let right_edge = self.ui_right_press;
@@ -666,14 +706,37 @@ impl App {
         false
     }
 
-    /// `ItemSlot.OverrideHover` → `GetAlternateClickAction`'s shift arms
-    /// (`ItemSlot.cs:644-726`), over the two ported surfaces: a hovered chest
-    /// cell (context 3 → cursor 8 when the inventory can take the stack,
-    /// `:692-698`) and a hovered inventory grid slot (context 0 → cursor 9
-    /// when the open chest can take it, `:680-686` via
-    /// `TryPlacingInChest(justCheck: true)`). The Control-in-use trash arm
-    /// (`:637-643`) and the gamepad arms are out.
-    fn evaluate_shift_cursor_override(&mut self) {
+    /// `ItemSlot.OverrideHover` (`ItemSlot.cs:602-625`) — the FavoriteKey arm
+    /// first: a non-air favoritable slot under Alt lights `cursorOverride = 3`
+    /// and the shift arms never evaluate (the C# `return`s inside the key
+    /// block; the canShareAt/chat arm `:613-615` and the loadout arm are out —
+    /// no chat-draw share, no loadout system). Then
+    /// `GetAlternateClickAction`'s shift arms (`ItemSlot.cs:644-726`), over
+    /// the two ported surfaces: a hovered chest cell (context 3 → cursor 8
+    /// when the inventory can take the stack, `:692-698`) and a hovered
+    /// inventory grid slot (context 0 → cursor 9 when the open chest can take
+    /// it, `:680-686` via `TryPlacingInChest(justCheck: true)`). The
+    /// Control-in-use trash arm (`:637-643`) and the gamepad arms are out.
+    fn evaluate_cursor_override(&mut self) {
+        // `ItemSlot.cs:611-620`: `Main.keyState.IsKeyDown(Main.FavoriteKey)`
+        // + `canFavoriteAt[context]` → `Main.cursorOverride = 3`. The port's
+        // favoritable click surface is the open inventory's 10x5 grid
+        // (context 0; the closed hotbar is context 13 — not in the table).
+        if favorite_key_held(self) && self.inventory_open {
+            if let Some(slot) = self.slot_at_mouse() {
+                // `:607-609` — air returns before the key block; `:616-619`
+                // — the canFavoriteAt gate (the grid is context 0; the
+                // coin/ammo rows are not clickable here, the recorded
+                // coin-row gap).
+                if slot < crate::item::INV
+                    && self.inventory[slot].count > 0
+                    && chest::can_favorite_at(0)
+                {
+                    self.cursor_override = CURSOR_FAVORITE;
+                    return;
+                }
+            }
+        }
         let chest = self.open_container();
         if !shift_in_use(self) {
             return;
@@ -693,7 +756,11 @@ impl App {
         }
         if chest >= 0 {
             if let Some(slot) = self.slot_at_mouse() {
-                if chest::try_placing_in_chest(self, slot, true) {
+                // `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`):
+                // `item.IsAir || item.favorited` → null — a favorited slot
+                // never lights the shift cursor, so the cursor-9 click arm
+                // cannot fire for one either.
+                if !self.is_favorite(slot) && chest::try_placing_in_chest(self, slot, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
                 }
             }
@@ -1868,5 +1935,252 @@ mod tests {
         );
         assert_eq!(app.inventory[20].count, 50, "nothing merged");
         assert_eq!(app.equip.coins[0].count, 5, "no MoveCoins ran");
+    }
+
+    // ------------------------------------------------------------------
+    // M3-CHEST-INT phase 4 — STORE-3: the favorite toggle + the trash swap.
+    // ------------------------------------------------------------------
+
+    /// Inside the trash slot's cell — `Main.cs:42352-42353`'s (448, 258) at
+    /// scale 0.85 (`ui::inventory::trash_slot_at`).
+    const TRASH_CELL: Vec2 = Vec2::new(470.0, 280.0);
+
+    /// A plain open-inventory app with no container open (the favorite/trash
+    /// surfaces; the player exists so the open-container reads are live).
+    fn inv_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app
+    }
+
+    /// DW-4.1 — Alt+left-click on an inventory slot toggles the favorite
+    /// (`OverrideHover`'s cursor-3 arm `ItemSlot.cs:616-620` +
+    /// `OverrideLeftClick`'s `:745-755` → `ToggleFavorited`): the click is
+    /// consumed before the movement arms, so a held item neither swaps nor
+    /// merges (`ItemSlot.cs:915-918` returns on the override's `true`).
+    #[test]
+    fn test_DW_4_1_alt_left_click_toggles_the_favorite() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.mouse_item = slot(3, 1); // held: the override must eat the click
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks(), "no chest surface takes it");
+        app.handle_inventory_clicks();
+        assert!(app.is_favorite(5), "the toggle fired");
+        assert_eq!(app.mouse_item, slot(3, 1), "the held item stayed");
+        assert_eq!(app.inventory[5], slot(9, 6), "the slot item stayed");
+        // The second Alt+click clears it — the toggle is single-click.
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(!app.is_favorite(5), "the second click un-favorited");
+    }
+
+    /// DW-4.1 — without Alt the same click picks the stack up (the movement
+    /// arm), and a right-click with Alt held runs the half-take ladder and
+    /// never toggles (`OverrideLeftClick`'s cursor-3 arm is left-only; the
+    /// right path is `RightClick`, a different entry).
+    #[test]
+    fn test_DW_4_1_without_alt_picks_up_and_right_click_never_toggles() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty(), "no favorite without Alt");
+        assert_eq!(app.mouse_item, slot(9, 6), "the pickup ran");
+        assert_eq!(app.inventory[5], EMPTY_SLOT);
+
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_right_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty(), "right-click never toggles");
+        assert_eq!(app.mouse_item.count, 3, "the half-take ran");
+        assert_eq!(app.inventory[5].count, 3);
+    }
+
+    /// DW-4.1 (dirty) — Alt+click on an empty slot never toggles: air returns
+    /// before the key block (`ItemSlot.cs:607-609`), so the cursor never
+    /// lights and the click falls to the movement arm — with an empty cursor
+    /// that is a full no-op; with a held item the C# movement still places
+    /// (the override never engages on air).
+    #[test]
+    fn test_DW_4_1_alt_click_on_empty_slot_never_toggles() {
+        let mut app = inv_app();
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5; // slot 5 empty
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1, "air returns before the key block");
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty());
+        assert_eq!(app.mouse_item, EMPTY_SLOT, "nothing moved");
+
+        let mut app = inv_app();
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.mouse_item = slot(9, 4);
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert!(app.favorite_slots.is_empty());
+        assert_eq!(app.inventory[5], slot(9, 4), "the C# movement places on air");
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+    }
+
+    /// DW-4.2 — the `canFavoriteAt` context table holds (`ItemSlot.cs:386-389`)
+    /// and the toggle returns `PlaySound(12)`'s legacy id on every flip
+    /// (`ToggleFavorited`, `ItemSlot.cs:873-877` — the `toggle_open` pinning
+    /// precedent); the coin-row guard refuses with no sound.
+    #[test]
+    fn test_DW_4_2_can_favorite_gate_holds_and_toggle_plays_sound_12() {
+        assert!(chest::can_favorite_at(0));
+        assert!(chest::can_favorite_at(1));
+        assert!(chest::can_favorite_at(2));
+        assert!(chest::can_favorite_at(32));
+        assert!(!chest::can_favorite_at(3), "chest slots cannot be favorited");
+        assert!(!chest::can_favorite_at(5));
+        assert!(!chest::can_favorite_at(6), "the trash slot cannot be favorited");
+        assert!(!chest::can_favorite_at(13), "the closed hotbar cannot either");
+
+        let mut app = inv_app();
+        assert_eq!(app.toggle_favorite(7), 12);
+        assert!(app.is_favorite(7));
+        assert_eq!(app.toggle_favorite(7), 12, "the C# plays 12 on both flips");
+        assert!(!app.is_favorite(7));
+        assert_eq!(app.toggle_favorite(crate::item::INV), 0, "the coin-row guard");
+        assert_eq!(app.toggle_favorite(53), 0);
+
+        // The hover gate refuses air — the cursor never lights (the click-path
+        // half of the gate; the table asserts above are the static half).
+        app.keys.insert(KeyCode::AltLeft);
+        app.mouse_pos = INV_SLOT_5; // empty
+        app.handle_chest_clicks();
+        assert_eq!(app.cursor_override, -1);
+    }
+
+    /// DW-4.2 — the closed hotbar is context 13, not in `canFavoriteAt`: an
+    /// Alt+click selects the slot like the C# and never toggles.
+    #[test]
+    fn test_DW_4_2_alt_click_closed_hotbar_selects_never_toggles() {
+        let mut app = inv_app();
+        app.inventory[3] = slot(9, 6);
+        app.inventory_open = false;
+        app.keys.insert(KeyCode::AltLeft);
+        // Inside closed-hotbar slot 3 (x 20 + 3·43 = 149..188, y 25..64 at
+        // the 0.75 idle scale — `ui::slot::closed_hotbar_metrics`).
+        app.mouse_pos = Vec2::new(160.0, 40.0);
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert_eq!(app.selected, 3, "the select ran");
+        assert!(app.favorite_slots.is_empty(), "context 13 cannot favorite");
+    }
+
+    /// DW-4.3 — a shift-click on a favorited slot is a no-op as the alternate
+    /// action: `GetAlternateClickAction`'s head guard (`ItemSlot.cs:631-634`)
+    /// keeps cursor 9 dark, so the cursor-9 transfer never fires. The click
+    /// then falls through to the C# movement arm (the override returned
+    /// false) — a plain pickup, with the favorite retained on the slot
+    /// (context 0 is in `retainFavoriteOnMoveAt`).
+    #[test]
+    fn test_DW_4_3_shift_click_on_favorited_slot_is_noop() {
+        let mut app = stocked_chest_app(vec![slot(9, 5)]);
+        app.inventory[5] = slot(3, 10);
+        app.favorite_slots.push(5);
+        app.keys.insert(KeyCode::ShiftLeft);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        assert!(!app.handle_chest_clicks());
+        assert_eq!(
+            app.cursor_override, -1,
+            "the favorited guard keeps cursor 9 dark"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            slot(9, 5),
+            "nothing transferred into the chest"
+        );
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(3, 10), "the fall-through pickup ran");
+        assert_eq!(app.favorite_slots, vec![5], "context 0 retains the favorite");
+    }
+
+    /// DW-4.3 — direct moves on favorited slots work (the C# has no
+    /// immovability rule for direct clicks) and the retain table leaves the
+    /// favorite in place: context 0 retains, so nothing clears on the move
+    /// (the slot-positional v1 model — the `ItemSlot.cs:1728-1734` flag-carry
+    /// is unrepresentable, Phase 5's ANALYSIS note).
+    #[test]
+    fn test_DW_4_3_direct_moves_work_and_favorite_stays_on_the_slot() {
+        let mut app = inv_app();
+        app.inventory[5] = slot(9, 6);
+        app.favorite_slots.push(5);
+        app.mouse_pos = INV_SLOT_5;
+        app.ui_left_press = true;
+        app.handle_chest_clicks();
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 6), "the direct move worked");
+        assert_eq!(app.favorite_slots, vec![5], "retain[0]: nothing cleared");
+    }
+
+    /// DW-4.4 — the trash slot's left click is the plain `MouseItemSwap`
+    /// (`ItemSlot.cs:937-941` + `:1255-1263`): all four arms.
+    #[test]
+    fn test_DW_4_4_left_click_trash_swaps_held_and_trash() {
+        // held ↔ trash: both sides move.
+        let mut app = inv_app();
+        app.mouse_item = slot(9, 4);
+        app.equip.trash = slot(3, 2);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash, slot(9, 4), "the held item was trashed");
+        assert_eq!(app.mouse_item, slot(3, 2), "the old trash returned");
+
+        // held + empty trash: the item is trashed, the cursor empties.
+        let mut app = inv_app();
+        app.mouse_item = slot(9, 4);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.equip.trash, slot(9, 4));
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+
+        // empty held + trash: the trash returns to the cursor.
+        let mut app = inv_app();
+        app.equip.trash = slot(3, 2);
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(3, 2));
+        assert_eq!(app.equip.trash, EMPTY_SLOT);
+
+        // empty-on-empty: nothing moves anywhere.
+        let mut app = inv_app();
+        app.mouse_pos = TRASH_CELL;
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, EMPTY_SLOT);
+        assert_eq!(app.equip.trash, EMPTY_SLOT);
+    }
+
+    /// The trash hit region sits outside the inventory grid's rows — a click
+    /// at the trash cell must not also resolve as a grid slot (the dispatch's
+    /// trash arm precedes the grid, but the geometry should not overlap).
+    #[test]
+    fn trash_cell_is_outside_the_inventory_grid() {
+        let mut app = inv_app();
+        app.mouse_pos = TRASH_CELL;
+        assert!(ui::inventory::trash_slot_at(TRASH_CELL));
+        assert_eq!(app.slot_at_mouse(), None, "the grid rows end at y 258");
     }
 }

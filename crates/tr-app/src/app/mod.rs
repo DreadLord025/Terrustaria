@@ -876,30 +876,40 @@ impl App {
         true
     }
 
-    /// The favorite toggle on an inventory slot (`Item.favorited`'s
-    /// right-click toggle).
-    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+    /// `ItemSlot.ToggleFavorited` (`ItemSlot.cs:873-877`): flip the slot's
+    /// favorite + `PlaySound(12)`. Returns the legacy sound id (12) so the
+    /// caller plays it and the tests pin it (the `chest::toggle_open`
+    /// precedent — no audio capture seam), 0 when the guard refuses. The
+    /// `idx >= INV` guard keeps the coin/ammo rows out — `canFavoriteAt`
+    /// allows contexts 1/2 in the C# (`ItemSlot.cs:386-389`), but the port's
+    /// favorites address the 10x5 grid only (the recorded coin-row gap,
+    /// Phase 5's ANALYSIS entry).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) -> u32 {
         if idx >= crate::item::INV {
-            return;
+            return 0;
         }
         if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
             self.favorite_slots.remove(pos);
         } else {
             self.favorite_slots.push(idx);
         }
+        12
     }
 
     pub(crate) fn is_favorite(&self, idx: usize) -> bool {
         self.favorite_slots.contains(&idx)
     }
 
-    /// The trash swap: the held item goes to the trash, the old trash
-    /// returns. The favorited held items can't be trashed.
-    pub(crate) fn trash_swap(&mut self) -> bool {
-        let old = self.equip.trash;
-        self.equip.trash = self.mouse_item;
-        self.mouse_item = old;
-        true
+    /// `ItemSlot.MouseItemSwap` (`ItemSlot.cs:1255-1263`) at context 6 — the
+    /// plain held/trash swap. The retain table has no context 6, so the C#
+    /// clears both favorites here (`:1258-1261`); the port's slot-positional
+    /// favorites have nothing to clear (the trash slot is not favoritable and
+    /// a held favorite is unrepresentable — the v1 model, Phase 5's ANALYSIS
+    /// entry). **No favorited-held guard exists in the C# swap** — favorited
+    /// held items CAN be trashed; the can't-drop rule lives in
+    /// `DropSelectedItem` (`Player.cs:5170-5184`), the sell/drop pass's seam.
+    pub(crate) fn trash_swap(&mut self) {
+        std::mem::swap(&mut self.equip.trash, &mut self.mouse_item);
     }
 
     /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-

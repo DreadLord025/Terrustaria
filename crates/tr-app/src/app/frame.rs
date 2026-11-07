@@ -1214,6 +1214,7 @@ impl App {
                         screen,
                         lookups,
                         inventory,
+                        &self.favorite_slots,
                         &self.equip,
                         self.equip_page,
                         *selected,
