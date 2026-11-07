@@ -54,6 +54,7 @@ pub(crate) const WALL_CRIMSON: u16 = 192;
 /// snow side's surface. The evil band retired with the shape-level
 /// `pass_evil` in phase 4 — the faithful pass draws its own centres
 /// (`evil::corruption_and_crimson`).
+#[derive(Clone)]
 pub(crate) struct BiomeSpans {
     pub(crate) jungle_start: i32,
     pub(crate) jungle_end: i32,

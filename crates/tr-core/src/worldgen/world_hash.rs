@@ -121,8 +121,15 @@ mod tests {
     /// sand prism, `TuneOceanDepth`'s seafloor curve, the wall wipe, the
     /// shell anchors), the compact edge flood and fill sand-top rule
     /// retire — every world on every seed changes by design.
-    const SEED42_512: u32 = 3514183229;
-    const DEFAULT_WORLD: u32 = 3280797184;
+    /// Re-pinned for M5-OCEAN phase 3: the shape-level ocean-cave
+    /// placeholder retires for the faithful `WorldGen.oceanCave` walker
+    /// (`WorldGen.cs:76452-76713` — the shrinking ellipse, the sentinel-264
+    /// carve marker, the stalactite columns, the water shafts) on its own
+    /// `pass_rng("Create Ocean Caves")` stream (was `streams.drng` — the
+    /// accepted world change, the later `drng` consumers shift) — every
+    /// world on every seed changes by design.
+    const SEED42_512: u32 = 2167384932;
+    const DEFAULT_WORLD: u32 = 1139665945;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

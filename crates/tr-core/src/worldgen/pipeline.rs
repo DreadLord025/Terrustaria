@@ -210,6 +210,13 @@ pub(crate) struct GenVars {
     pub(crate) pyr_x: Vec<i32>,
     pub(crate) pyr_y: Vec<i32>,
     pub(crate) num_pyr: i32,
+    /// `GenVars.numOceanCaveTreasure`/`oceanCaveTreasure[2]`
+    /// (`GenVars.cs:130-134`, reset in `WorldGen.cs:11224`, `GenVars.cs:440-442`)
+    /// — the ocean-cave walker's treasure anchors (the counter wraps at
+    /// `maxOceanCaveTreasure` = 2, `WorldGen.cs:76454-76457`). Consumed by
+    /// `UnderwaterChests` (`:17245-17355`, M5-CHEST-gen) — published here.
+    pub(crate) num_ocean_cave_treasure: i32,
+    pub(crate) ocean_cave_treasure: [(i32, i32); 2],
 }
 
 impl Default for GenVars {
@@ -253,6 +260,9 @@ impl Default for GenVars {
             pyr_x: Vec::new(),
             pyr_y: Vec::new(),
             num_pyr: 0,
+            // The C# resets the treasure counter to 0 (`WorldGen.cs:11224`).
+            num_ocean_cave_treasure: 0,
+            ocean_cave_treasure: [(0, 0); 2],
         }
     }
 }
@@ -1518,11 +1528,14 @@ fn step_ocean_caves(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let heights = {
-        let map = gv.map();
-        &map.heights
-    };
-    biome_detail::pass_ocean_caves(world, heights, &mut streams.drng);
+    // The faithful `WorldGen.oceanCave` walker (`WorldGen.cs:76452-76713`)
+    // on its own fresh per-pass stream — the shape-level placeholder
+    // (`biome_detail::pass_ocean_caves`) retired with this move. The stream
+    // shift `drng → pass_rng("Create Ocean Caves")` is the accepted world
+    // change of this phase (the later `drng` consumers shift along their
+    // stream — the same class as the M5-BIOME phase-3/6 accepted shifts).
+    let layers = *gv.layers();
+    ocean::ocean_caves(world, gv, &layers, &mut streams.pass_rng("Create Ocean Caves"));
 }
 
 fn step_fragile_ice(

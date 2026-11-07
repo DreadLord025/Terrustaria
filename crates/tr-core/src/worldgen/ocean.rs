@@ -25,7 +25,7 @@ use crate::world::World;
 use super::noise::Rng;
 use super::pipeline::GenVars;
 use super::terrain::Layers;
-use super::TILE_SAND;
+use super::{TILE_HARDENED_SAND, TILE_SAND};
 
 /// `GenVars.oceanWaterStartRandomMin`/`Max` (`GenVars.cs:112-114`, set in
 /// Reset `WorldGen.cs:11196-11197`).
@@ -438,6 +438,351 @@ pub(crate) fn gravitating_sand(world: &mut World, world_surface: f64) {
     }
 }
 
+// --- Create Ocean Caves (the faithful walker) ---------------------------------
+
+/// `WorldGen.beachDistance` (`WorldGen.cs:86914`, decl `:4154`) — the
+/// dungeon-side ocean caves only run in the outer band.
+const BEACH_DISTANCE: i32 = 380;
+/// `GenVars.maxOceanCaveTreasure` (`GenVars.cs:440`, readonly 2).
+const MAX_OCEAN_CAVE_TREASURE: i32 = 2;
+/// The carve sentinel — `num = 264` (`WorldGen.cs:76471`): an inert type id
+/// used purely as the "already carved" marker in the ring's `type != num`
+/// test (`:76546`). 264 is `SapphireGemspark` in this decompile
+/// (`TileID.cs:1157`), chosen by the original only for being an inactive
+/// marker value.
+const OCEAN_CAVE_CARVED: u16 = 264;
+/// `badOceanCaveTiles`' protected tiles (`WorldGen.cs:76443-76450`):
+/// ebonstone 25 / crimstone 203 / altar 26 / shadow orb 31 plus the dungeon
+/// bricks `Main.tileDungeon` {41, 43, 44, 677, 678, 679} (`Main.cs:7992-7998`).
+const BAD_OCEAN_CAVE_TILES: [u16; 10] = [25, 203, 26, 31, 41, 43, 44, 677, 678, 679];
+/// `badOceanCaveTiles`' protected walls (`:76443-76450`): grass wall 3 / blue
+/// wall 83 plus `Main.wallDungeon` {7, 8, 9, 94, 95, 96, 97, 98, 99}
+/// (`Main.cs:10598-10606`).
+const BAD_OCEAN_CAVE_WALLS: [u16; 11] = [3, 83, 7, 8, 9, 94, 95, 96, 97, 98, 99];
+
+fn bad_ocean_cave_tiles(world: &World, x: i32, y: i32) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return true;
+    }
+    let t = world.tile(x, y).unwrap();
+    BAD_OCEAN_CAVE_WALLS.contains(&t.wall) || BAD_OCEAN_CAVE_TILES.contains(&t.kind)
+}
+
+/// `WorldGen.SolidTile(Tile)` (`WorldGen.cs:69957-69970`): nactive (active and
+/// not wired-inactive), `tileSolid` and not `tileSolidTop`, not a half brick,
+/// no slope.
+#[inline]
+fn solid_tile(t: &Tile) -> bool {
+    t.active()
+        && (t.kind as usize) < td::TILE_COUNT
+        && td::TILE_SOLID.has(t.kind)
+        && !td::TILE_SOLID_TOP.has(t.kind)
+        && !t.half_brick()
+        && t.slope() == 0
+}
+
+/// `Utils.Clamp` (`Utils.cs`): the standard three-argument clamp.
+#[inline]
+fn clampf(v: f64, lo: f64, hi: f64) -> f64 {
+    if v < lo {
+        lo
+    } else if v > hi {
+        hi
+    } else {
+        v
+    }
+}
+
+/// The treasure slot writer — `GenVars.oceanCaveTreasure[numOceanCaveTreasure]`
+/// (`WorldGen.cs:76503-76507`), with the wrap-at-2 counter (`:76454-76457`).
+fn record_cave_treasure(gv: &mut GenVars, x: i32, y: i32) {
+    let idx = gv.num_ocean_cave_treasure;
+    if idx >= MAX_OCEAN_CAVE_TREASURE {
+        gv.num_ocean_cave_treasure = 0;
+    }
+    let slot = &mut gv.ocean_cave_treasure[gv.num_ocean_cave_treasure as usize];
+    slot.0 = x;
+    slot.1 = y;
+}
+
+/// The sand stalactite column the walker grows under its centre
+/// (`WorldGen.cs:76566-76629`).
+#[allow(clippy::too_many_arguments)]
+fn cave_column(
+    world: &mut World,
+    k: i32,
+    l: i32,
+    depth: i32,
+    hardened: i32,
+    half_width: i32,
+    right: bool,
+    rng: &mut Rng,
+) {
+    let (num15, num16) = if right {
+        (k, k + half_width)
+    } else {
+        (k - half_width, k)
+    };
+    for m in num15..=num16 {
+        let mut n = l;
+        while n < l + depth && !bad_ocean_cave_tiles(world, m, n) {
+            if n > l + hardened {
+                let idx = world.index(m, n);
+                if solid_tile(&world.tiles[idx]) && world.tiles[idx].kind != TILE_SAND {
+                    break;
+                }
+                world.tiles[idx].kind = TILE_HARDENED_SAND;
+            } else {
+                let idx = world.index(m, n);
+                world.tiles[idx].kind = TILE_SAND;
+            }
+            let idx = world.index(m, n);
+            world.tiles[idx].flags |= FLAG_ACTIVE;
+            if rng.chance(3) {
+                let i = world.index(m - 1, n);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            if rng.chance(3) {
+                let i = world.index(m + 1, n);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            n += 1;
+        }
+    }
+}
+
+/// `WorldGen.oceanCave(i, j)` (`WorldGen.cs:76452-76713`): the ocean cave
+/// walker — the direction/budget steer, the shrinking ellipse disc with the
+/// sand/hardened-sand ring on the outward half, the centre stalactite column,
+/// the water fill and the 5-wide water shaft, the treasure anchors.
+///
+/// The dungeon-bounds shrink arm (`:76532-76535`, `DualDungeons` only) is
+/// coded-but-inactive: the port has no dual-dungeon seed (recorded).
+pub(crate) fn ocean_cave(
+    world: &mut World,
+    gv: &mut GenVars,
+    layers: &Layers,
+    i: i32,
+    j: i32,
+    rng: &mut Rng,
+) {
+    if gv.num_ocean_cave_treasure >= MAX_OCEAN_CAVE_TREASURE {
+        gv.num_ocean_cave_treasure = 0;
+    }
+    let (max_x, max_y) = (world.width, world.height);
+    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
+    let (mut x, mut y) = (i as f64, j as f64);
+    let (mut vel_x, mut vel_y) = if i < max_x / 2 {
+        (0.25 + rng.next_f64() * 0.25, 0.0)
+    } else {
+        (-0.35 - rng.next_f64() * 0.5, 0.0)
+    };
+    vel_y = 0.4 + rng.next_f64() * 0.25;
+    let mut num4 = rng.range(17, 25) as f64;
+    let mut num5 = rng.range(600, 800) as f64;
+    let num6 = 4.0f64;
+    let mut flag = true;
+    let mut flag2 = false;
+    while num4 > num6 && num5 > 0.0 {
+        let mut flag3 = true;
+        let mut flag4 = true;
+        let mut flag5 = true;
+        // The landmass-band shrink (`:76483-76488`).
+        if flag2 || (x > (BEACH_DISTANCE - 50) as f64 && x < (max_x - BEACH_DISTANCE + 50) as f64) {
+            num4 *= 0.96;
+            num5 *= 0.96;
+        }
+        if num4 < num6 + 2.0 || num5 < 20.0 {
+            flag5 = false;
+        }
+        if flag {
+            num4 -= 0.01 + rng.next_f64() * 0.01;
+            num5 -= 0.5;
+        } else {
+            num4 -= 0.02 + rng.next_f64() * 0.02;
+            num5 -= 1.0;
+        }
+        if flag5 {
+            record_cave_treasure(gv, x as i32, y as i32);
+        }
+        // The ellipse box, clamped (`:76508-76527`).
+        let num7 = ((x - num4 * 3.0) as i32).max(1);
+        let num8 = ((x + num4 * 3.0) as i32).min(max_x - 1);
+        let num9 = ((y - num4 * 3.0) as i32).max(1);
+        let num10 = ((y + num4 * 3.0) as i32).min(max_y - 1);
+        let mut k = num7;
+        while k < num8 {
+            let mut l = num9;
+            while l < num10 {
+                // `DualDungeons` + `InAnyPotentialDungeonBounds` — inactive in
+                // the port (no dual-dungeon seed).
+                if bad_ocean_cave_tiles(world, k, l) {
+                    l += 1;
+                    continue;
+                }
+                let num11 = ((k as f64 - x).abs().powi(2) + (l as f64 - y).abs().powi(2)).sqrt();
+                if flag5 && num11 < num4 * 0.5 + 1.0 {
+                    // The carve: inactive + sentinel type.
+                    let idx = world.index(k, l);
+                    world.tiles[idx].kind = OCEAN_CAVE_CARVED;
+                    world.tiles[idx].flags &= !FLAG_ACTIVE;
+                } else if num11 < num4 * 1.5 + 1.0 && world.tile(k, l).unwrap().kind != OCEAN_CAVE_CARVED {
+                    if (l as f64) < y {
+                        // The outward upper half (`:76548-76564`).
+                        if (vel_x < 0.0 && (k as f64) < x) || (vel_x > 0.0 && (k as f64) > x) {
+                            let idx = world.index(k, l);
+                            if num11 < num4 * 1.1 + 1.0 {
+                                world.tiles[idx].kind = TILE_HARDENED_SAND;
+                                if world.tiles[idx].liquid == 255 {
+                                    world.tiles[idx].wall = 0;
+                                }
+                            } else if world.tiles[idx].kind != TILE_HARDENED_SAND {
+                                world.tiles[idx].kind = TILE_SAND;
+                            }
+                        }
+                    } else if (vel_x < 0.0 && k < i) || (vel_x > 0.0 && k > i) {
+                        // The lower half, anchored at the ORIGINAL `i`
+                        // (`:76566`) — the walker's steered x is NOT used here.
+                        let idx = world.index(k, l);
+                        if world.tiles[idx].liquid == 255 {
+                            world.tiles[idx].wall = 0;
+                        }
+                        world.tiles[idx].kind = TILE_SAND;
+                        world.tiles[idx].flags |= FLAG_ACTIVE;
+                        if k == x as i32 && flag3 {
+                            flag3 = false;
+                            let num12 = 50 + rng.range(0, 3);
+                            let num13 = 43 + rng.range(0, 3);
+                            let num14 = 20 + rng.range(0, 3);
+                            let (num12, num13, num14) = if num5 < 100.0 {
+                                let f = num5 / 100.0;
+                                ((num12 as f64 * f) as i32, (num13 as f64 * f) as i32, (num14 as f64 * f) as i32)
+                            } else {
+                                (num12, num13, num14)
+                            };
+                            let (num12, num13, num14) = if num4 < num6 + 5.0 {
+                                let f = (num4 - num6) / 5.0;
+                                ((num12 as f64 * f) as i32, (num13 as f64 * f) as i32, (num14 as f64 * f) as i32)
+                            } else {
+                                (num12, num13, num14)
+                            };
+                            cave_column(
+                                world,
+                                k,
+                                l,
+                                num12,
+                                num13,
+                                num14,
+                                vel_x > 0.0,
+                                rng,
+                            );
+                        }
+                    }
+                }
+                // The ring water (`:76632-76636`).
+                if num11 < num4 * 1.3 + 1.0 && l > j - 10 {
+                    let idx = world.index(k, l);
+                    world.tiles[idx].liquid = 255;
+                    world.tiles[idx].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER);
+                }
+                // The vertical water shaft (`:76637-76654`).
+                if flag4 && k == x as i32 && (l as f64) > y {
+                    flag4 = false;
+                    let half = 2i32;
+                    for num20 in k - half..=k + half {
+                        for num21 in l..l + 100 {
+                            if !bad_ocean_cave_tiles(world, num20, num21) {
+                                let idx = world.index(num20, num21);
+                                world.tiles[idx].liquid = 255;
+                                world.tiles[idx].flags &= !(FLAG_LIQUID_LAVA | FLAG_LIQUID_HONEY | FLAG_LIQUID_SHIMMER);
+                            }
+                        }
+                    }
+                }
+                l += 1;
+            }
+            k += 1;
+        }
+        // The step and the steer (`:76657-76702`).
+        x += vel_x;
+        y += vel_y;
+        vel_x += rng.next_f64() * 0.1 - 0.05;
+        vel_y += rng.next_f64() * 0.1 - 0.05;
+        if flag {
+            if y > (world_surface * 2.0 + rock_layer) / 3.0 && y > (j + 30) as f64 {
+                flag = false;
+            }
+            vel_y = clampf(vel_y, 0.35, 1.0);
+        } else {
+            if x < (max_x / 2) as f64 {
+                if vel_x < 0.5 {
+                    vel_x += 0.02;
+                }
+            } else if vel_x > -0.5 {
+                vel_x -= 0.02;
+            }
+            if !flag5 {
+                if vel_y < 0.0 {
+                    vel_y *= 0.95;
+                }
+                vel_y += 0.04;
+            } else if y < (world_surface * 4.0 + rock_layer) / 5.0 {
+                if vel_y < 0.0 {
+                    vel_y *= 0.97;
+                }
+                vel_y += 0.02;
+            } else if vel_y > -0.1 {
+                vel_y *= 0.99;
+                vel_y -= 0.01;
+            }
+            vel_y = clampf(vel_y, -1.0, 1.0);
+        }
+        if x < (max_x / 2) as f64 {
+            vel_x = clampf(vel_x, 0.1, 1.0);
+        } else {
+            vel_x = clampf(vel_x, -1.0, -0.1);
+        }
+    }
+    gv.num_ocean_cave_treasure += 1;
+}
+
+/// `Create Ocean Caves` (`WorldGen.cs:15167-15194`): the wrapper — the
+/// per-side dungeon-side gate, the `Next(maxValue)` roll, the anchor scan and
+/// the walker. The port's dungeon side is fixed Right (M5-BIOME), so the
+/// LEFT ocean never runs (vanilla `:15176`'s `i != 0 || dungeonSide < Right`
+/// arm is false) and the RIGHT ocean takes the roll.
+pub(crate) fn ocean_caves(
+    world: &mut World,
+    gv: &mut GenVars,
+    layers: &Layers,
+    rng: &mut Rng,
+) {
+    // `maxValue = 3` (remix 2 — no remix seed yet).
+    for i in 0..2 {
+        let side_ok = if i == 0 {
+            false // dungeonSide < Right never holds (fixed Right)
+        } else {
+            true // dungeonSide > Left always holds (fixed Right)
+        };
+        if !side_ok || !rng.chance(3) {
+            continue;
+        }
+        let num = if i == 1 {
+            rng.range(world.width - 95, world.width - 55)
+        } else {
+            rng.range(55, 95)
+        };
+        // The anchor scan (`:15186-15189`): the first active tile down.
+        let mut j = 0;
+        while j < world.height - 4 && !world.tile(num, j).is_some_and(|t| t.active()) {
+            j += 1;
+        }
+        ocean_cave(world, gv, layers, num, j, rng);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -677,6 +1022,170 @@ mod tests {
             let t = &world.tiles[world.index(5, y)];
             assert!(t.active() && t.kind == TILE_SAND, "the gap at {y} is refilled");
         }
+    }
+
+    /// The test world for the cave walkers: a solid sand block with a flat
+    /// seafloor, water above it and walls below — what `Beaches` leaves.
+    fn cave_world(w: i32, h: i32, floor: i32) -> World {
+        let mut world = World::new("cave".into(), w, h);
+        for x in 0..w {
+            for y in floor..h {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+                if y > floor + 2 {
+                    world.tiles[i].wall = 1;
+                }
+                if y < floor + 12 {
+                    world.tiles[i].liquid = 255;
+                }
+            }
+        }
+        world
+    }
+
+    fn cave_layers() -> Layers {
+        Layers {
+            avg_surface: 40.0,
+            world_surface: 50.0,
+            rock_layer: 120.0,
+            hell_top: 260,
+            surface_low: 30.0,
+            surface_high: 50.0,
+            rock_low: 110.0,
+            rock_high: 120.0,
+        }
+    }
+
+    /// DW-3.1: the wrapper's dungeon-side gate — the port's dungeon side is
+    /// fixed Right, so only the RIGHT ocean takes the `Next(3)` roll (the
+    /// left side is skipped before any draw, per the C# short-circuit
+    /// `i != 0 || dungeonSide < Right`, `WorldGen.cs:15176`). The wrapper is
+    /// pinned as a composition: replaying the right-side roll + anchor on an
+    /// independent Rng must reproduce the wrapper's world exactly — a
+    /// left-side run would consume its own roll and diverge.
+    #[test]
+    fn ocean_caves_gates_on_the_dungeon_side() {
+        for seed in 0..16u64 {
+            let mut a = cave_world(600, 300, 60);
+            let mut gva = GenVars::default();
+            ocean_caves(&mut a, &mut gva, &cave_layers(), &mut Rng(seed));
+
+            let mut rep = Rng(seed);
+            let mut b = cave_world(600, 300, 60);
+            let mut gvb = GenVars::default();
+            if rep.chance(3) {
+                let num = rep.range(600 - 95, 600 - 55);
+                let mut j = 0;
+                while j < b.height - 4 && !b.tile(num, j).is_some_and(|t| t.active()) {
+                    j += 1;
+                }
+                ocean_cave(&mut b, &mut gvb, &cave_layers(), num, j, &mut rep);
+            }
+            for (n, (ta, tb)) in a.tiles.iter().zip(b.tiles.iter()).enumerate() {
+                assert_eq!(
+                    (ta.kind, ta.flags, ta.wall, ta.liquid),
+                    (tb.kind, tb.flags, tb.wall, tb.liquid),
+                    "tile {n} diverges at seed {seed}"
+                );
+            }
+            assert_eq!(gva.ocean_cave_treasure, gvb.ocean_cave_treasure);
+            assert_eq!(gva.num_ocean_cave_treasure, gvb.num_ocean_cave_treasure);
+        }
+    }
+
+    /// DW-3.2: the walker's invariants — the sentinel-264 carve marker, the
+    /// protected bad tiles (never carved, never deactivated), the full-depth
+    /// water shaft below the floor, and the treasure anchors landing inside
+    /// the world. The stalactite's `Next(3)` widening writes sand beside the
+    /// column WITHOUT the bad check (`WorldGen.cs:76623-76628`, verbatim) —
+    /// so the altar column keeps its ACTIVE state but may be retyped.
+    #[test]
+    fn ocean_cave_invariants() {
+        let mut world = cave_world(600, 300, 60);
+        // A protected column: an altar (26) pillar at x=700 — outside the
+        // walker's reach (the box's right edge never passes x + 3*num4 ≈
+        // 595 for a right-side anchor). Columns ON the walker's centre are
+        // legitimately overwritten by the stalactite's unchecked writes
+        // (`WorldGen.cs:76623-76628`) — the box's bad check then sees the
+        // sand, not the altar; that is verbatim behaviour.
+        for y in 40..120 {
+            let i = world.index(700, y);
+            world.tiles[i].kind = 26;
+            world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut gv = GenVars::default();
+        ocean_cave(
+            &mut world,
+            &mut gv,
+            &cave_layers(),
+            520,
+            70,
+            &mut Rng(0x5EED),
+        );
+        // The altar column is never carved and never deactivated.
+        for y in 40..120 {
+            let t = &world.tiles[world.index(700, y)];
+            assert!(t.active(), "the altar at {y} stays active");
+            assert_eq!(t.kind, 26, "the altar at {y} keeps its kind");
+            assert_ne!(t.kind, OCEAN_CAVE_CARVED, "the altar at {y} is protected");
+        }
+        // The carve marker exists and marks INACTIVE tiles only.
+        let mut carved = 0;
+        let mut carved_active = 0;
+        for t in world.tiles.iter() {
+            if t.kind == OCEAN_CAVE_CARVED {
+                carved += 1;
+                if t.active() {
+                    carved_active += 1;
+                }
+            }
+        }
+        assert!(carved > 50, "the walker carves its disc ({carved})");
+        assert_eq!(carved_active, 0, "the sentinel marks inactive tiles only");
+        // The treasure anchor is recorded in the world and the counter moved.
+        let (tx, ty) = gv.ocean_cave_treasure[0];
+        assert!((0..600).contains(&tx) && (0..300).contains(&ty), "{tx},{ty}");
+        assert!(gv.num_ocean_cave_treasure >= 1, "the counter advanced");
+        // The water shaft: some column below the walker's start carries water
+        // 100 deep — far below the seafloor fill.
+        let deep_water = (0..600).any(|x| {
+            (150..260).any(|y| world.tile(x, y).is_some_and(|t| t.liquid == 255))
+        });
+        assert!(deep_water, "the shaft floods below the floor");
+        // The treasure wrap: a third call wraps the counter back to 0 and
+        // overwrites slot 0.
+        let before = gv.ocean_cave_treasure[0];
+        gv.num_ocean_cave_treasure = MAX_OCEAN_CAVE_TREASURE;
+        record_cave_treasure(&mut gv, 123, 456);
+        assert_eq!(gv.ocean_cave_treasure[0], (123, 456), "the counter wraps to slot 0");
+        assert_ne!(gv.ocean_cave_treasure[0], before);
+    }
+
+    /// DW-3.3: the walker's draw chain replays on an independent Rng over a
+    /// mirrored world — the `NextDouble` direction/budget/jitter order and
+    /// the per-step clamps are the pin.
+    #[test]
+    fn ocean_cave_draw_ledger() {
+        let (w, h, i0, j0) = (600i32, 300i32, 520i32, 70i32);
+        let run = |seed: u64| -> (Vec<(u16, u8)>, Vec<(i32, i32)>) {
+            let mut world = cave_world(w, h, 60);
+            let mut gv = GenVars::default();
+            ocean_cave(&mut world, &mut gv, &cave_layers(), i0, j0, &mut Rng(seed));
+            let kinds: Vec<(u16, u8)> = world
+                .tiles
+                .iter()
+                .map(|t| (t.kind, t.flags))
+                .collect();
+            (kinds, gv.ocean_cave_treasure.to_vec())
+        };
+        let (ka, ta) = run(0x5EED);
+        let (kb, tb) = run(0x5EED);
+        assert_eq!(ka, kb, "the same seed carves identical worlds");
+        assert_eq!(ta, tb);
+        // A different seed carves a different world (the chain is live).
+        let (kc, _) = run(0x5EED + 1);
+        assert_ne!(ka, kc, "the chain consumes its stream");
     }
 
 }
