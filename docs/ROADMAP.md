@@ -1399,7 +1399,7 @@ section in brackets before starting a row.
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
 | ✅ M5-GEN-1 | `M5-GEN-1-pass-pipeline` | done 2026-11-07: the config-driven pass scaffold — `worldgen/pipeline.rs` (`VANILLA_CHAIN`: 109 `GenPassNameID` declarations with the `PassLegacy._weightMap` weights and the `WorldGen.cs` anchors — the model, never walked; `EXECUTED_PIPELINE`: the 39 steps as adapters over the unchanged pass fns, today's exact order — the byte contract, NOT the vanilla order, the deltas recorded in ANALYSIS; the `RunPass`-shaped runner handing every step its config view) + `config.rs` (the embedded `Terraria.GameContent.WorldBuilding.Configuration.json` verbatim — it IS in the decompile root — with `WorldGenRange::get_random`'s exact C# scaling; data-only today, future passes read it) + `world_hash.rs` (the `WorldGenerator.HashWorld` FNV port, pinned to the pre-scaffold constants 512/42 = 3510339375 and default = 3248003836 — the in-tree byte-identity proof) + `Streams`/`GenVars` consolidation (the three seed constants verbatim; boot statics moved); pass bodies and stream draw order untouched; future passes slot in with their own `Rng(seed ^ fnv(name))` stream (the vanilla per-pass re-seed model); 8 new tests (config 6, pipeline tables+seam 4, hash 3 — the seam test proved tile-for-tile equality pre-rewiring) [6] |
-| M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
+| 🔄 M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
 | M5-BIOME-2 | `M5-BIOME-2-mushroom-marble-granite` | micro-biomes [6] |
 | M5-OCEAN | `M5-OCEAN` | full ocean |
 | M5-DESERT-structures | `M5-DESERT-structures` | desert + underground desert |
@@ -1541,7 +1541,7 @@ section in brackets before starting a row.
 | Task | Branch | Scope [atlas] |
 | --- | --- | --- |
 | ✅ M5-GEN-1 | `M5-GEN-1-pass-pipeline` | done 2026-11-07: the config-driven pass scaffold — `worldgen/pipeline.rs` (`VANILLA_CHAIN`: 109 `GenPassNameID` declarations with the `PassLegacy._weightMap` weights and the `WorldGen.cs` anchors — the model, never walked; `EXECUTED_PIPELINE`: the 39 steps as adapters over the unchanged pass fns, today's exact order — the byte contract, NOT the vanilla order, the deltas recorded in ANALYSIS; the `RunPass`-shaped runner handing every step its config view) + `config.rs` (the embedded `Terraria.GameContent.WorldBuilding.Configuration.json` verbatim — it IS in the decompile root — with `WorldGenRange::get_random`'s exact C# scaling; data-only today, future passes read it) + `world_hash.rs` (the `WorldGenerator.HashWorld` FNV port, pinned to the pre-scaffold constants 512/42 = 3510339375 and default = 3248003836 — the in-tree byte-identity proof) + `Streams`/`GenVars` consolidation (the three seed constants verbatim; boot statics moved); pass bodies and stream draw order untouched; future passes slot in with their own `Rng(seed ^ fnv(name))` stream (the vanilla per-pass re-seed model); 8 new tests (config 6, pipeline tables+seam 4, hash 3 — the seam test proved tile-for-tile equality pre-rewiring) [6] |
-| M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
+| 🔄 M5-BIOME | `M5-BIOME-evil-jungle` | evil + jungle [6] |
 | M5-BIOME-2 | `M5-BIOME-2-mushroom-marble-granite` | micro-biomes [6] |
 | M5-OCEAN | `M5-OCEAN` | full ocean |
 | M5-DESERT-structures | `M5-DESERT-structures` | desert + underground desert |
