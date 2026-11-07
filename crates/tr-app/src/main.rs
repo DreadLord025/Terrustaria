@@ -109,9 +109,14 @@ fn main() -> Result<()> {
 
     // `LoadSettings`'s `LanguageManager.SetLanguage(text)` (`Main.cs:4345`):
     // register the shipped resources and apply the saved culture before the
-    // first menu draws.
+    // first menu draws. `TR_LANG` mirrors LaunchInitializer's `-lang` flag
+    // (`LaunchInitializer.cs:120` sets the culture ahead of the config read).
     let settings = settings::Settings::load();
-    lang::init(tr_core::localization::GameCulture::from_name(&settings.language));
+    let culture = std::env::var("TR_LANG")
+        .ok()
+        .map(|name| tr_core::localization::GameCulture::from_name(&name))
+        .unwrap_or_else(|| tr_core::localization::GameCulture::from_name(&settings.language));
+    lang::init(culture);
 
     app::log_world_diagnostics(&world);
 

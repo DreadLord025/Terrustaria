@@ -38,53 +38,65 @@ pub struct PageRect {
     pub uv: [f32; 4],
 }
 
-/// One layer's shelf cursor plus its packed BC2 bytes.
+/// One layer's shelf cursor plus its packed BC2 bytes. The cursor and the
+/// page positions work in 4x4 block units — a compressed texture can only be
+/// written at block-aligned origins, so the packer rounds every position to
+/// a block boundary (the `PAD` guard band is one block, 4 px).
 struct Layer {
-    x: u32,
-    y: u32,
-    row_height: u32,
+    x_blocks: u32,
+    y_blocks: u32,
+    row_height_blocks: u32,
     data: Vec<u8>,
 }
+
+/// Blocks per layer edge (8192 / 4).
+const BLOCKS: u32 = LAYER_SIZE / 4;
 
 impl Layer {
     fn new() -> Self {
         // BC2 stores 16 bytes per 4x4 block = 1 byte per pixel.
         Layer {
-            x: PAD,
-            y: PAD,
-            row_height: 0,
+            x_blocks: 1,
+            y_blocks: 1,
+            row_height_blocks: 0,
             data: vec![0u8; (LAYER_SIZE * LAYER_SIZE) as usize],
         }
     }
 
     /// Places the page if it fits below the current shelf row, wrapping to a
-    /// new row first (`Atlas::build`'s cursor walk).
+    /// new row first (`Atlas::build`'s cursor walk). The page dimensions must
+    /// be block multiples (every retail font page is).
     fn place(&mut self, page: &FontPageData) -> Option<PageRect> {
-        if self.x + page.width + PAD > LAYER_SIZE {
-            self.x = PAD;
-            self.y += self.row_height + PAD;
-            self.row_height = 0;
-        }
-        if self.y + page.height + PAD > LAYER_SIZE {
+        if page.width % 4 != 0 || page.height % 4 != 0 {
             return None;
         }
-        let (x, y) = (self.x, self.y);
-        let stride = (LAYER_SIZE / 4 * 16) as usize;
-        let src_stride = (page.width / 4 * 16) as usize;
-        for row in 0..(page.height / 4) as usize {
+        let bw = page.width / 4;
+        let bh = page.height / 4;
+        if self.x_blocks + bw + 1 > BLOCKS {
+            self.x_blocks = 1;
+            self.y_blocks += self.row_height_blocks + 1;
+            self.row_height_blocks = 0;
+        }
+        if self.y_blocks + bh + 1 > BLOCKS {
+            return None;
+        }
+        let (x, y) = (self.x_blocks, self.y_blocks);
+        let stride = (BLOCKS * 16) as usize;
+        let src_stride = (bw * 16) as usize;
+        for row in 0..bh as usize {
             let src = row * src_stride;
-            let dst = (y as usize + row) * stride + x as usize;
+            let dst = (y as usize + row) * stride + x as usize * 16;
             self.data[dst..dst + src_stride].copy_from_slice(&page.blocks[src..src + src_stride]);
         }
-        self.x += page.width + PAD;
-        self.row_height = self.row_height.max(page.height);
+        self.x_blocks += bw + 1;
+        self.row_height_blocks = self.row_height_blocks.max(bh);
         Some(PageRect {
             layer: 0,
             uv: [
-                x as f32 / LAYER_SIZE as f32,
-                y as f32 / LAYER_SIZE as f32,
-                (x + page.width) as f32 / LAYER_SIZE as f32,
-                (y + page.height) as f32 / LAYER_SIZE as f32,
+                (x * 4) as f32 / LAYER_SIZE as f32,
+                (y * 4) as f32 / LAYER_SIZE as f32,
+                ((x + bw) * 4) as f32 / LAYER_SIZE as f32,
+                ((y + bh) * 4) as f32 / LAYER_SIZE as f32,
             ],
         })
     }
@@ -171,16 +183,16 @@ mod tests {
         let atlas = FontAtlas::build(vec![small, big]);
         assert_eq!(atlas.layers.len(), 1);
         let uv_big = atlas.rects[1].uv;
-        assert_eq!(uv_big[0], 1.0 / LAYER_SIZE as f32);
-        assert_eq!(uv_big[1], 1.0 / LAYER_SIZE as f32);
+        assert_eq!(uv_big[0], 4.0 / LAYER_SIZE as f32);
+        assert_eq!(uv_big[1], 4.0 / LAYER_SIZE as f32);
         assert_eq!(atlas.rects[1].layer, 1);
         let uv_small = atlas.rects[0].uv;
-        assert_eq!(uv_small[0], (1.0 + 64.0 + 1.0) / LAYER_SIZE as f32);
+        assert_eq!(uv_small[0], (4.0 + 64.0 + 4.0) / LAYER_SIZE as f32);
         assert_eq!(atlas.rects[0].layer, 1);
-        // The small page's first block lands at its shelf position.
-        let stride = (LAYER_SIZE / 4 * 16) as usize;
-        let x = (uv_small[0] * LAYER_SIZE as f32) as usize;
-        let y = (uv_small[1] * LAYER_SIZE as f32) as usize;
+        // The small page's first BC2 block lands at its shelf position.
+        let stride = (BLOCKS * 16) as usize;
+        let x = ((uv_small[0] * LAYER_SIZE as f32) as usize / 4) * 16;
+        let y = (uv_small[1] * LAYER_SIZE as f32) as usize / 4;
         assert_eq!(atlas.layers[0][y * stride + x], 2);
     }
 

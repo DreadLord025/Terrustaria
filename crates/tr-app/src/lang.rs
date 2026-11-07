@@ -182,7 +182,14 @@ mod tests {
         init(GameCulture::English);
         set_language(GameCulture::Russian);
         assert_eq!(menu(14), "Настройки");
+        // The `Language.*` rows are localized in every culture — each name in
+        // its own language (`decompiled/Terraria.Localization.Content.ru-RU.json`):
+        // `Language.Russian` reads "Русский" there and the en-US parenthetical
+        // ("Русский (Russian)") only under English.
+        assert_eq!(text("Language.Russian"), "Русский");
+        set_language(GameCulture::English);
         assert_eq!(text("Language.Russian"), "Русский (Russian)");
+        set_language(GameCulture::Russian);
         // ItemName.DirtBlock — the ru-RU Items group.
         assert!(!item_name(2).is_empty());
         assert_ne!(item_name(2), "ItemName.DirtBlock");

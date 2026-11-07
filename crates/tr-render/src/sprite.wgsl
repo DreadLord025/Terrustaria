@@ -202,7 +202,7 @@ fn sample_tex(uv: vec2<f32>, layer: u32) -> vec4<f32> {
     if (layer == 0u) {
         return textureSampleLevel(atlas, atlas_sampler, uv, 0.0);
     }
-    return textureSampleLevel(fonts, atlas_sampler, uv, f32(layer - 1u), 0.0);
+    return textureSampleLevel(fonts, atlas_sampler, uv, i32(layer - 1u), 0.0);
 }
 
 @fragment
