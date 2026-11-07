@@ -1713,16 +1713,20 @@ mod tests {
 
     /// DW-3.2 — DepositAll on a world chest = MoveCoins + the rows 49..=10
     /// descending scan, the favorited rows stay, the leftovers park in the
-    /// first empty slot (`ChestUI.cs:540-659`).
+    /// first empty slot (`ChestUI.cs:540-659`). A coin-less chest is the
+    /// `:1048-1051` MoveCoins no-op — the coin rows stay put and the grid
+    /// stacks park as plain stacks; with a coin in the chest the pre-pass
+    /// consolidates into it.
     #[test]
     fn test_DW_3_2_deposit_all_moves_coins_then_pours_rows_descending() {
         let mut app = stocked_chest_app(vec![slot(9, 500)]);
         app.inventory[0] = slot(9, 50); // the hotbar: untouched
         app.inventory[20] = slot(9, 200); // merges 500 -> 700
-        app.inventory[22] = slot(71, 100); // grid coins: MoveCoins pulls them
+        app.inventory[22] = slot(71, 100); // a grid coin stack
         app.inventory[25] = slot(3, 100); // favorited: stays
         app.inventory[30] = slot(41, 1); // a non-merge kind: the first empty slot
         app.favorite_slots.push(25);
+        app.equip.coins[0] = slot(71, 60); // the coin rows
         ready_buttons(&mut app);
         app.mouse_pos = Vec2::new(510.0, 326.0); // the Deposit All row (id 1)
         app.ui_left_press = true;
@@ -1730,8 +1734,12 @@ mod tests {
         let chest = &app.world_chests[0].slots;
         assert_eq!(chest[0].count, 700, "the wood merged");
         assert!(
-            chest.iter().any(|s| s.kind == 72 && s.count == 1),
-            "MoveCoins carried 100 copper into 1 silver in the chest"
+            !chest.iter().any(|s| s.kind == 72),
+            "no consolidation into a coin-less chest (`:1048-1051`)"
+        );
+        assert!(
+            chest.iter().any(|s| s.kind == 71 && s.count == 100),
+            "the grid coin stack parked as a plain stack"
         );
         assert!(
             chest.iter().any(|s| s.kind == 41 && s.count == 1),
@@ -1740,7 +1748,24 @@ mod tests {
         assert_eq!(app.inventory[25].count, 100, "the favorited row stayed");
         assert_eq!(app.inventory[0].count, 50, "the hotbar untouched");
         assert_eq!(app.inventory[20].count, 0);
-        assert_eq!(app.inventory[22].count, 0, "the grid coins drained");
+        assert_eq!(app.inventory[22].count, 0, "the grid stack deposited");
+        assert_eq!(app.inventory[30].count, 0);
+        assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
+        // The pre-pass with a coin in the chest: 40 + 35 + 5 = 80 copper
+        // consolidates into the chest's coin slot (no carry at 80).
+        let mut app = stocked_chest_app(vec![slot(71, 40)]);
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[0].kind, 71,
+            "the pre-pass consolidated into the chest's coin slot"
+        );
+        assert_eq!(app.world_chests[0].slots[0].count, 80);
+        assert_eq!(app.inventory[20].count, 0);
         assert_eq!(app.inventory[30].count, 0);
         // The descending order: one free slot — row 40 scans before row 20
         // (`ChestUI.cs:563`'s `for num = 49; num >= 10; num--`).
@@ -1787,27 +1812,47 @@ mod tests {
     }
 
     /// DW-3.3 — the bank regression: the bank QuickStack keeps its MoveCoins
-    /// pre-pass (`ChestUI.cs:670-685`) — the coins consolidate into the bank
-    /// (the carry: 205 copper rolls into 2 silver + 5 copper).
+    /// pre-pass (`ChestUI.cs:670-685`) — with a coin in the bank it pulls the
+    /// player's coins and consolidates into the bank's coin slot; with a
+    /// coin-less bank it is the `:1048-1051` no-op and nothing moves.
     #[test]
     fn test_DW_3_3_quick_stack_bank_keeps_the_move_coins_pre_pass() {
         let mut app = bank_app();
         app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        app.player.as_mut().unwrap().banks[0][1] = slot(71, 10); // the seed coin
         app.inventory[20] = slot(9, 150); // merges into the wood target
-        app.inventory[22] = slot(71, 200); // MoveCoins pulls the grid coins
-        app.equip.coins[0] = slot(71, 5);
+        app.inventory[22] = slot(71, 85); // MoveCoins pulls the grid coins
         app.mouse_pos = Vec2::new(510.0, 390.0); // the bank's Quick Stack row
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         let bank = &app.player.as_ref().unwrap().banks[0];
         assert_eq!(bank[0].count, 250, "the wood merged");
-        assert_eq!(bank[1].kind, 72);
-        assert_eq!(bank[1].count, 2, "the carry's silver");
-        assert_eq!(bank[2].kind, 71);
-        assert_eq!(bank[2].count, 5, "the carry's copper remainder");
+        assert_eq!(bank[1].kind, 71);
+        assert_eq!(
+            bank[1].count, 95,
+            "the pre-pass consolidated 10 + 85 copper (no carry at 95)"
+        );
+        assert_eq!(bank[2].count, 0);
         assert_eq!(app.inventory[20].count, 0);
         assert_eq!(app.inventory[22].count, 0, "the grid coins drained");
-        assert_eq!(app.equip.coins[0].count, 0, "the coin rows drained too");
+        // The coin-less bank: the pre-pass is the `:1048-1051` no-op — the
+        // player's coins stay put.
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        app.inventory[20] = slot(9, 150);
+        app.inventory[22] = slot(71, 200);
+        app.equip.coins[0] = slot(71, 5);
+        app.mouse_pos = Vec2::new(510.0, 390.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].count, 250, "the wood merged");
+        assert_eq!(bank[1].count, 0, "the bank took no coins");
+        assert_eq!(
+            app.inventory[22].count, 200,
+            "no consolidation into a coin-less bank"
+        );
+        assert_eq!(app.equip.coins[0].count, 5, "the coin rows untouched");
     }
 
     /// DW-3.4 — Restock from a world chest fills unprefixed demanded stacks
@@ -1880,23 +1925,48 @@ mod tests {
     }
 
     /// DW-3.6 — the bank DepositAll call site gains the MoveCoins pre-pass
-    /// per `ChestUI.cs:543-562` (it runs for every container kind): the
-    /// scattered coins consolidate into the bank on deposit.
+    /// per `ChestUI.cs:543-562` (it runs for every container kind): with a
+    /// coin in the bank the scattered coins consolidate into the bank on
+    /// deposit; with a coin-less bank the pre-pass is the `:1048-1051`
+    /// no-op — the grid stacks park as plain stacks (:563-655) and the coin
+    /// rows stay put.
     #[test]
     fn test_DW_3_6_bank_deposit_all_consolidates_coins_into_the_bank() {
         let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(71, 40); // the seed coin
         app.inventory[20] = slot(71, 35);
         app.inventory[30] = slot(71, 5);
-        app.equip.coins[0] = slot(71, 60);
         app.mouse_pos = Vec2::new(510.0, 360.0); // the bank's Deposit All row
         app.ui_left_press = true;
         app.handle_inventory_clicks();
         let bank = &app.player.as_ref().unwrap().banks[0];
-        assert_eq!(bank[0].kind, 72);
-        assert_eq!(bank[0].count, 1, "100 copper carried into 1 silver");
+        assert_eq!(bank[0].kind, 71);
+        assert_eq!(
+            bank[0].count, 80,
+            "the pre-pass consolidated 40 + 35 + 5 (no carry at 80)"
+        );
         assert_eq!(app.inventory[20].count, 0);
         assert_eq!(app.inventory[30].count, 0);
-        assert_eq!(app.equip.coins[0].count, 0);
+        // The coin-less bank: no consolidation — the grid stacks park as
+        // plain stacks (row 30 scans first, row 20 merges into it) and the
+        // coin rows stay untouched.
+        let mut app = bank_app();
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        app.equip.coins[0] = slot(71, 60);
+        app.mouse_pos = Vec2::new(510.0, 360.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(
+            bank[0].kind,
+            71,
+            "the grid stacks parked as plain stacks"
+        );
+        assert_eq!(bank[0].count, 40, "5 parked first, then 35 merged in");
+        assert_eq!(app.equip.coins[0].count, 60, "the coin rows untouched");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[30].count, 0);
     }
 
     /// Dirty — an empty chest's LootAll is a no-op (the drain loop sees only
