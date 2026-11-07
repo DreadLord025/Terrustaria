@@ -64,11 +64,12 @@ pub(crate) fn push_font_text(
             pen.x += font.spacing * scale;
         }
         pen.x += bearing * scale;
-        r.push_ui_sprite(
+        r.push_font_glyph(
             [pen.x + g.pad[0] * scale, pen.y + g.pad[1] * scale],
             [g.w * scale, g.h * scale],
             g.uv,
             color,
+            g.layer,
         );
         pen.x += (g.kerning[1] + g.kerning[2]) * scale;
         first = false;

@@ -1609,6 +1609,8 @@ mod tests {
             None,
             None,
             None,
+            None,
+            None,
         );
         let dd = tr_core::drawdata::TileDrawData::default();
         // The fallback WOULD have produced a sprite (the plain sheet cell

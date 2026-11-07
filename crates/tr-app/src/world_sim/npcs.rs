@@ -901,6 +901,11 @@ fn invasion_spawn_pick(
     hard_mode: bool,
     summoner_alive: bool,
     invasion_type: i32,
+    // The type-4 table's roster gates (`NPC.cs:1517`'s `!AnyNPCs(520)`,
+    // `:1509`'s `!AnyNPCs(395)` + the 30% progress window).
+    walker_alive: bool,
+    saucer_alive: bool,
+    progress_30: bool,
 ) -> NpcKind {
     let hard_type = if invasion_type == 1 { Some(1) } else { None };
     // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
@@ -918,24 +923,60 @@ fn invasion_spawn_pick(
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
     }
-    // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the verbatim tiers —
-    // the Saucer 395 (the Next(45) + the 30% progress gate), the Scutlix
-    // Rider 390/the RayGunner 382/the BrainScrambler 381 (num6 >= 6 / >= 4),
-    // the Drone 388 — ride their AI families as they land; the ground four
-    // (the GrayGrunt 385, the GigaZapper 389, the Officer 383, the Walker
-    // 520's walk-in) spawn from the else arm.
+    // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the roll ORDER is
+    // vanilla — num6 (`Next(7)`), the Saucer gate (`Next(45)` + the 30%
+    // progress + `!AnyNPCs(395)`), the num6 >= 6 rider arm (`Next(20)` +
+    // the gate → 390 unported; else `Next(2)` → the Engineer 386), the
+    // num6 >= 4 ray arm (`num8` `Next(5)`: <2 → the RayGunner 382 and
+    // ==2 → the Scrambler 381 both unported, >=4 → the Drone 388), and
+    // the else arm's ground chain (`num9` `Next(4)`, the 3 → the Walker
+    // 520's walk-in gate, the `Next(3)` fallback). The Saucer 395 (the
+    // boss), the Scutlix Rider 390, the RayGunner 382 and the Scrambler
+    // 381 land with their AI families — their rolls consume the stream
+    // exactly here.
     if invasion_type == 4 {
         let num6 = (crate::app::frame::rand01(rng) * 7.0) as u32;
-        if num6 < 4 {
-            let num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
-            return match num9 {
-                0 => NpcKind::GrayGrunt,
-                1 => NpcKind::GigaZapper,
-                2 => NpcKind::MartianOfficer,
-                _ => NpcKind::GrayGrunt,
+        let flag6 = progress_30 && !saucer_alive;
+        if crate::app::frame::rand01(rng) * 45.0 < 1.0 && flag6 {
+            // The Saucer 395: unported — the roll consumed, the hit maps
+            // to the ground fallback (documented).
+            return NpcKind::GrayGrunt;
+        }
+        if num6 >= 6 {
+            if crate::app::frame::rand01(rng) * 20.0 < 1.0 && flag6 {
+                // The Scutlix Rider 390: the mount spawns its 391 carrier
+                // (the machine's init arm).
+                return NpcKind::ScutlixRider;
+            }
+            // `Next(2)`: 0 → the Rider 390, 1 → the Engineer 386.
+            return if crate::app::frame::rand01(rng) * 2.0 < 1.0 {
+                NpcKind::ScutlixRider
+            } else {
+                NpcKind::MartianEngineer
             };
         }
-        return NpcKind::GrayGrunt;
+        if num6 >= 4 {
+            let num8 = (crate::app::frame::rand01(rng) * 5.0) as u32;
+            // num8 < 2 → the RayGunner 382, == 2 → the BrainScrambler 381,
+            // >= 4 → the Drone 388.
+            return match num8 {
+                0 | 1 => NpcKind::RayGunner,
+                2 => NpcKind::BrainScrambler,
+                _ => NpcKind::MartianDrone,
+            };
+        }
+        let mut num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
+        if num9 == 3 {
+            if !walker_alive {
+                return NpcKind::MartianWalker;
+            }
+            num9 = (crate::app::frame::rand01(rng) * 3.0) as u32;
+        }
+        return match num9 {
+            0 => NpcKind::GrayGrunt,
+            1 => NpcKind::GigaZapper,
+            _ => NpcKind::MartianOfficer,
+        };
     }
     // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
     // 491 (the half-points window) is the boss-minion follow-up; the
@@ -976,6 +1017,43 @@ fn invasion_spawn_pick(
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // The Scutlix rider's carrier write-through (`AI_075`'s type-390
+    // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
+    // live centre before the AI tick (the vanilla reads `nPC5.Center`
+    // live in the same pass), and a rider whose carrier died falls with
+    // it (the retire lands before the retain pass below).
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind != NpcKind::ScutlixRider {
+            continue;
+        }
+        let (rcx, rcy) = app.npcs[i].center();
+        let mut best: Option<(usize, f32)> = None;
+        for (j, m) in app.npcs.iter().enumerate() {
+            if m.kind != NpcKind::Scutlix || m.hp <= 0 {
+                continue;
+            }
+            let (mcx, mcy) = m.center();
+            let d = (mcx - rcx).hypot(mcy - rcy);
+            if d < 800.0 && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((j, d));
+            }
+        }
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = app.npcs[j].center();
+                app.npcs[i].carrier_x = mcx;
+                app.npcs[i].carrier_y = mcy;
+            }
+            None => {
+                if app.npcs[i].carrier_x >= 0.0 {
+                    // The carrier just died: the rider falls.
+                    app.npcs[i].carrier_x = -1.0;
+                    app.npcs[i].carrier_y = -1.0;
+                    app.npcs[i].hp = 0;
+                }
+            }
+        }
+    }
     // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
     // the morning roll's pending flag + the players' life-max gate. The
     // march state (the type/x/warn) rides the World — `invasion_goblins`
@@ -1022,7 +1100,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // expired markers (`Main.cs:17758`'s call order).
     app.revenge_tick += 1;
     if app.revenge_tick % 60 == 0 {
-        app.revenge_markers.retain(|m| !m.expired(app.revenge_tick));
+        app.revenge_markers
+            .retain(|m| !m.expired(app.revenge_tick));
     }
     // `CheckRespawns` (:391-457, called from the spawn pass `NPC.cs:80176`):
     // a marker whose outer box (2608x1840 :514) holds the player respawns
@@ -1032,7 +1111,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     if !app.revenge_markers.is_empty() {
         if let Some(p) = app.player.as_ref() {
             let (pcx, pcy) = p.center();
-            let outer = [pcx - 2608.0 * 0.5, pcy - 1840.0 * 0.5, 2608.0, 1840.0];
+            let outer = [
+                pcx - 2608.0 * 0.5,
+                pcy - 1840.0 * 0.5,
+                2608.0,
+                1840.0,
+            ];
             let mut done = Vec::new();
             for m in &app.revenge_markers {
                 let b = m.hitbox();
@@ -1049,7 +1133,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     app.npcs.push(carrier);
                 }
             }
-            app.revenge_markers.retain(|m| !done.contains(&m.unique_id));
+            app.revenge_markers
+                .retain(|m| !done.contains(&m.unique_id));
         }
     }
     app.npc_timer -= dt;
@@ -1217,8 +1302,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 hp_percent,
                 base_value: n.value(),
                 coins_value: n.extra_value,
-                expiration_tick: app.revenge_tick + crate::revenge::expiration_addon(n.extra_value),
-                unique_id: app.revenge_tick.wrapping_mul(31) + n.extra_value,
+                expiration_tick: app.revenge_tick
+                    + crate::revenge::expiration_addon(n.extra_value),
+                unique_id: app.revenge_tick.wrapping_mul(31)
+                    + n.extra_value,
                 force_expire: false,
             }
         })
@@ -1242,6 +1329,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
+            }
+            NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
+                // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
+                // meteorite — the guaranteed first (the pre-kill read of
+                // the downed flag), the 1/2 afterwards.
+                let was_down = app.world.downed_eow;
+                if !was_down {
+                    app.world.spawn_meteor = true;
+                } else {
+                    app.world.spawn_meteor =
+                        tr_core::worldgen::meteor::boss_death_roll(&mut app.item_rng, true);
+                }
+                app.world.downed_eow = true;
             }
             NpcKind::GolemHead => {
                 let mut free =
@@ -1374,51 +1474,6 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
-    // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
-    // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
-    // centre for the head/fist tethers; the BODY is invulnerable while
-    // the attached head (246) lives. The fists' deaths do not shield.
-    {
-        let body = app
-            .npcs
-            .iter()
-            .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
-            .cloned();
-        if let Some(body) = body {
-            let (bw, bh) = body.size();
-            app.world.golem_present = true;
-            app.world.golem_x = body.x + bw * 0.5;
-            app.world.golem_y = body.y + bh * 0.5;
-            app.world.golem_hp_ratio = body.hp as f32 / body.max_hp as f32;
-            let head_alive = app
-                .npcs
-                .iter()
-                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
-            if let Some(b) = app
-                .npcs
-                .iter_mut()
-                .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
-            {
-                b.dont_take_damage = head_alive;
-            }
-        } else {
-            app.world.golem_present = false;
-            // NPC.cs:31141/19242/31372's golemBoss < 0 arm: the parts
-            // 9999-strike themselves (the no-interaction kill — the port's
-            // hp = 0; the kill credit is the documented deviation).
-            for n in app.npcs.iter_mut() {
-                if matches!(
-                    n.kind,
-                    NpcKind::GolemHead
-                        | NpcKind::GolemFistLeft
-                        | NpcKind::GolemFistRight
-                        | NpcKind::GolemHeadFree
-                ) {
-                    n.hp = 0;
-                }
-            }
-        }
-    }
     // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
     // block): the update pass set `wants_servant`, this pass resolves it —
     // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).
@@ -1547,15 +1602,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the invasion starts and the probe leaves (no loot either way; the
     // vanilla registers no drops for the probe). The qualifying-player
     // count is 1 (the single-player port).
-    if app
-        .npcs
-        .iter()
-        .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion)
-    {
+    if app.npcs.iter().any(|n| {
+        n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion
+    }) {
         start_invasion(&mut app.world, 1, 4);
         app.npcs
             .retain(|n| !(n.kind == NpcKind::MartianProbe && n.wants_martian_invasion));
     }
+
+    // The Scutlix rider's carrier pair (`AI_075`'s type-390 arm,
+    // `NPC.cs:35506-35745`): the init spawns the 391 carrier once at the
+    // rider's centre; the carrier's centre is written onto the rider
+    // each tick (the WoF write-through shape); the rider falls with its
+    // carrier (the vanilla's `timeLeft` latch has no port model — the
+    // retirement rides the carrier's death, documented).
+    let mut new_carriers = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::ScutlixRider {
+            continue;
+        }
+        if n.wants_scutlix {
+            // The init arm: the carrier at the rider's feet.
+            n.wants_scutlix = false;
+            let (w, h) = n.size();
+            let mut c = Npc::new(NpcKind::Scutlix, n.x, n.y + h, 1, 0.0);
+            c.hp = c.max_hp;
+            new_carriers.push(c);
+            n.carrier_x = n.x + w * 0.5;
+            n.carrier_y = n.y + h * 0.5;
+        }
+    }
+    app.npcs.extend(new_carriers);
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
@@ -1771,11 +1848,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
+            let walker_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.hp > 0 && n.kind == NpcKind::MartianWalker);
+            // `!NPC.AnyNPCs(395)`: the Saucer kind is unported (its AI
+            // family is the follow-up), so the gate reads false until it
+            // lands.
+            let saucer_alive = false;
+            // The 30% window: `(sizeStart - size) / sizeStart >= 0.3`.
+            let progress_30 = app.world.invasion_size_start > 0
+                && (app.world.invasion_size_start - app.world.invasion_size) as f32
+                    / app.world.invasion_size_start as f32
+                    >= 0.3;
             let kind = invasion_spawn_pick(
                 &mut app.item_rng,
                 app.world.hard_mode,
                 summoner_alive,
                 app.world.invasion_type,
+                walker_alive,
+                saucer_alive,
+                progress_30,
             );
             invasion_pick = Some((kind, ix, iy));
         }
@@ -1908,8 +2001,8 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        false,                  // Midas
-        false,                  // Main.bloodMoon
+        false, // Midas
+        false, // Main.bloodMoon
         npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
@@ -2320,7 +2413,7 @@ mod invasion_tests {
         // The table: the picks are always goblins.
         let mut rng = 7u64;
         for _ in 0..40 {
-            let kind = invasion_spawn_pick(&mut rng, false, false, 1);
+            let kind = invasion_spawn_pick(&mut rng, false, false, 1, false, false, false);
             assert!(matches!(
                 kind,
                 NpcKind::GoblinSorcerer
@@ -2335,7 +2428,7 @@ mod invasion_tests {
         let mut saw_summoner = false;
         for _ in 0..200 {
             if matches!(
-                invasion_spawn_pick(&mut rng, true, false, 1),
+                invasion_spawn_pick(&mut rng, true, false, 1, false, false, false),
                 NpcKind::GoblinSummoner
             ) {
                 saw_summoner = true;
@@ -2347,7 +2440,7 @@ mod invasion_tests {
         for _ in 0..200 {
             assert!(
                 !matches!(
-                    invasion_spawn_pick(&mut rng, true, true, 1),
+                    invasion_spawn_pick(&mut rng, true, true, 1, false, false, false),
                     NpcKind::GoblinSummoner
                 ),
                 "the alive summoner blocks the roll"
@@ -2554,7 +2647,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..60 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 2),
+                    invasion_spawn_pick(&mut rng, false, false, 2, false, false, false),
                     NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
                 ));
             }
@@ -2562,7 +2655,7 @@ mod invasion_tests {
             let mut rng = 9u64;
             for _ in 0..40 {
                 assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 1),
+                    invasion_spawn_pick(&mut rng, false, false, 1, false, false, false),
                     NpcKind::GoblinSorcerer
                         | NpcKind::GoblinThief
                         | NpcKind::GoblinPeon
@@ -2661,7 +2754,7 @@ mod pirate_invasion_tests {
         let mut rng = 11u64;
         for _ in 0..80 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
                 NpcKind::PirateDeckhand
                     | NpcKind::PirateCaptainsMate
                     | NpcKind::PirateArcher
@@ -2674,7 +2767,7 @@ mod pirate_invasion_tests {
         let mut saw_captain = false;
         for _ in 0..600 {
             if matches!(
-                invasion_spawn_pick(&mut rng, false, false, 3),
+                invasion_spawn_pick(&mut rng, false, false, 3, false, false, false),
                 NpcKind::PirateCaptain
             ) {
                 saw_captain = true;
@@ -2849,60 +2942,117 @@ mod invasion_bar_tests {
         assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
     }
 
-    #[cfg(test)]
-    mod martian_invasion_tests {
-        use super::*;
-        use crate::app::flow::front_flow_tests::flow_app;
-        use crate::npc::Npc;
+#[cfg(test)]
+mod martian_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
 
-        #[test]
-        fn the_type4_machine_sizes_the_invasion() {
-            // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
-            // single qualified player → 200) — the type-4 arm overrides the base.
-            let mut app = flow_app(None, vec![], vec![]);
-            app.world = surface_world();
-            let mut player = crate::player::Player::spawn(&app.world);
-            player.max_hp = 200;
-            player.x = 150.0 * TILE_PX;
-            player.y = 118.0 * TILE_PX;
-            app.player = Some(player);
-            start_invasion(&mut app.world, 1, 4);
-            assert_eq!(app.world.invasion_type, 4);
-            assert_eq!(app.world.invasion_size, 200);
-            assert_eq!(app.world.invasion_size_start, 200);
+
+    #[test]
+    fn the_type4_machine_sizes_the_invasion() {
+        // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
+        // single qualified player → 200) — the type-4 arm overrides the base.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        start_invasion(&mut app.world, 1, 4);
+        assert_eq!(app.world.invasion_type, 4);
+        assert_eq!(app.world.invasion_size, 200);
+        assert_eq!(app.world.invasion_size_start, 200);
+    }
+
+    #[test]
+    fn the_martian_kill_credit_drains_and_defeats() {
+        // The group-4 match: the martian kills drain 1 point each; at 0 the
+        // `downedMartians` flag sets (the pirate flag untouched).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 4;
+        app.world.invasion_size = 1;
+        app.world.invasion_size_start = 200;
+        report_invasion_kill(&mut app, NpcKind::GrayGrunt);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_martians, "the martian defeat flag");
+        assert!(!app.world.downed_pirates, "the pirate flag untouched");
+        assert_eq!(app.world.invasion_type, 0);
+    }
+
+    #[test]
+    fn the_martian_spawn_table_picks_the_ground_four() {
+        // `invasionType == 4`'s ported table (`NPC.cs:1487-1540`): every
+        // rolled kind is one of the ported five — the ground four (the
+        // GrayGrunt 385, the GigaZapper 389, the Officer 383, the Walker
+        // 520's walk-in), the Engineer 386's rider arm and the Drone 388's
+        // num8 >= 4 arm; the Saucer 395/Rider 390/RayGunner 382/Scrambler
+        // 381 arms consume their rolls and map to the ground fallback.
+        let mut rng = 13u64;
+        let mut seen_engineer = false;
+        let mut seen_drone = false;
+        let mut seen_walker = false;
+        for _ in 0..600 {
+            let kind = invasion_spawn_pick(&mut rng, false, false, 4, false, false, false);
+            assert!(
+                matches!(
+                    kind,
+                    NpcKind::GrayGrunt
+                        | NpcKind::GigaZapper
+                        | NpcKind::MartianOfficer
+                        | NpcKind::MartianWalker
+                        | NpcKind::MartianEngineer
+                        | NpcKind::MartianDrone
+                        | NpcKind::RayGunner
+                        | NpcKind::BrainScrambler
+                        | NpcKind::ScutlixRider
+                ),
+                "the unported kinds never surface: {kind:?}"
+            );
+            seen_engineer |= kind == NpcKind::MartianEngineer;
+            seen_drone |= kind == NpcKind::MartianDrone;
+            seen_walker |= kind == NpcKind::MartianWalker;
         }
-
-        #[test]
-        fn the_martian_kill_credit_drains_and_defeats() {
-            // The group-4 match: the martian kills drain 1 point each; at 0 the
-            // `downedMartians` flag sets (the pirate flag untouched).
-            let mut app = flow_app(None, vec![], vec![]);
-            app.world = surface_world();
-            app.world.invasion_type = 4;
-            app.world.invasion_size = 1;
-            app.world.invasion_size_start = 200;
-            report_invasion_kill(&mut app, NpcKind::GrayGrunt);
-            assert_eq!(app.world.invasion_size, 0);
-            update_invasion_state(&mut app);
-            assert!(app.world.downed_martians, "the martian defeat flag");
-            assert!(!app.world.downed_pirates, "the pirate flag untouched");
-            assert_eq!(app.world.invasion_type, 0);
-        }
-
-        #[test]
-        fn the_martian_spawn_table_picks_the_ground_four() {
-            // `invasionType == 4`'s ported table: the ground four (the GrayGrunt
-            // 385, the GigaZapper 389, the Officer 383) — the Saucer/Rider/
-            // Drone/Probe arms ride their AI families as they land.
-            let mut rng = 13u64;
-            for _ in 0..60 {
-                assert!(matches!(
-                    invasion_spawn_pick(&mut rng, false, false, 4),
-                    NpcKind::GrayGrunt | NpcKind::GigaZapper | NpcKind::MartianOfficer
-                ));
+        assert!(seen_engineer, "the num6 >= 6 arm's Engineer half");
+        assert!(seen_drone, "the num8 >= 4 arm's Drone");
+        assert!(seen_walker, "the walk-in gate's Walker");
+        let mut rng = 3u64;
+        let mut seen_ray = false;
+        let mut seen_scrambler = false;
+        let mut seen_rider = false;
+        for _ in 0..1200 {
+            match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false) {
+                NpcKind::RayGunner => seen_ray = true,
+                NpcKind::BrainScrambler => seen_scrambler = true,
+                NpcKind::ScutlixRider => seen_rider = true,
+                _ => {}
             }
         }
+        assert!(seen_ray, "the num8 < 2 arm's RayGunner");
+        assert!(seen_scrambler, "the num8 == 2 arm's BrainScrambler");
+        assert!(seen_rider, "the num6 >= 6 arm's Rider half");
+        // The walker's uniqueness: while one lives, the num9 == 3 arm
+        // re-rolls the ground chain instead.
+        let mut rng = 5u64;
+        for _ in 0..200 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 4, true, false, false),
+                NpcKind::GrayGrunt
+                    | NpcKind::GigaZapper
+                    | NpcKind::MartianOfficer
+                    | NpcKind::MartianEngineer
+                    | NpcKind::MartianDrone
+                    | NpcKind::RayGunner
+                    | NpcKind::BrainScrambler
+                    | NpcKind::ScutlixRider
+            ));
+        }
     }
+}
+
 }
 
 #[cfg(test)]
@@ -3022,46 +3172,285 @@ mod probe_tests {
             "the dead probe is removed"
         );
     }
-    #[test]
-    fn the_golem_parts_die_with_the_body() {
-        // `NPC.cs:31141`/`:19242`/`:31372`'s `golemBoss < 0` arm: the head,
-        // fists and free head 9999-strike themselves once the body's gone.
-        let mut app = flow_app(None, vec![], vec![]);
-        let mut big = tr_core::World::new("t".into(), 64, 200);
-        for x in 0..64 {
-            for y in 120..200 {
-                let i = big.index(x, y);
-                big.tiles[i] = tr_core::Tile {
+}
+
+#[cfg(test)]
+mod drone_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
                     kind: 1,
                     ..Default::default()
                 };
-                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
             }
         }
-        big.compute_column_surface();
-        app.world = big;
-        app.world.golem_present = false;
-        let mut head = Npc::new(NpcKind::GolemHead, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        head.hp = head.max_hp;
-        let mut fist = Npc::new(NpcKind::GolemFistLeft, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-        fist.hp = fist.max_hp;
-        app.npcs.push(head);
-        app.npcs.push(fist);
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_drone_machine_approaches_then_charges_and_dashes() {
+        // aiStyle 74 (`NPC.cs:35218-35500`): the hover damps toward the
+        // 200-px-above-the-player vector while it cannot hit (the angle
+        // gate), then the 30-tick charge, then the jittered ×14 dash.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianDrone, 145.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        // The player BELOW the drone (the angle gate passes): the approach
+        // hands straight over to the charge.
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 1.0, "the in-line approach starts the charge");
+        // The charge runs 30 ticks, then the dash.
+        for _ in 0..30 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 2.0, "the 30-tick charge fires the dash");
+        let dash_len = (n.vx * n.vx + n.vy * n.vy).sqrt();
+        assert!(dash_len > 13.9, "the dash's ×14 jittered vector: {dash_len}");
+    }
+
+    #[test]
+    fn the_drone_explodes_at_contact_and_dies() {
+        // The contact explosion (`:35336-35396`): within 64 px the machine
+        // folds to phase 3, the damage override takes the 80, and the
+        // 3-tick fuse kills it (the loot db holds no 388 rules — nothing
+        // drops either way).
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianDrone, 150.0 * TILE_PX, 1800.0, 0, 0.0);
+        n.hp = n.max_hp;
+        // The player's centre sits just under the drone's.
+        player.x = 150.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 3.0, "the 64-px contact folds to the explosion");
+        assert_eq!(n.damage_override, Some(80), "the explosion's damage");
+        // The fold tick leaves the fuse at 1; ticks 2 and 3 burn it out.
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert!(n.hp > 0, "the fuse ticks");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.hp, 0, "the 3-tick fuse kills the drone");
+    }
+
+    #[test]
+    fn the_drone_kill_when_blocked_by_wall() {
+        // The dash's solid-collision fold (`:35329-35334`): dashing into
+        // terrain detonates early.
+        let (mut app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianDrone, 150.0 * TILE_PX, 1760.0, 0, 0.0);
+        n.hp = n.max_hp;
+        // Force the dash toward the ground.
+        n.ai[0] = 2.0;
+        n.ai[2] = 0.0;
+        n.ai[3] = 1.0;
+        n.vx = 0.0;
+        n.vy = 5.0;
+        // Move the drone into the ground band before the tick: the
+        // collision fold reads the position.
+        n.y = 120.0 * TILE_PX + 2.0;
+        player.y = 118.0 * TILE_PX;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 3.0, "the solid collision folds to phase 3");
+        for _ in 0..3 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.hp, 0, "the explosion's fuse burns out");
+        // The sim removes the exploded drone.
+        app.npcs.push(n);
+        app.world.invasion_type = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|m| m.kind == NpcKind::MartianDrone));
+    }
+}
+
+#[cfg(test)]
+
+#[cfg(test)]
+mod rider_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_rider_spawns_its_carrier_and_rides_it() {
+        // `AI_075`'s type-390 arm (`NPC.cs:35506-35745`): the first tick
+        // spawns the 391 carrier at the rider's feet; the write-through
+        // carries its centre and the ride sits 14 px above it.
+        let (mut app, _player) = app_with_player();
+        let mut rng = 7u64;
+        let mut rider = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        rider.hp = rider.max_hp;
+        app.npcs.push(rider);
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(
-            app.npcs
-                .iter()
-                .filter(|n| n.hp > 0
-                    && matches!(
-                        n.kind,
-                        NpcKind::GolemHead
-                            | NpcKind::GolemFistLeft
-                            | NpcKind::GolemFistRight
-                            | NpcKind::GolemHeadFree
-                    ))
-                .count()
-                == 0,
-            "the parts follow the body down"
+            app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix),
+            "the carrier spawns at the rider's feet"
         );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::ScutlixRider),
+            "the rider lives"
+        );
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let rider = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::ScutlixRider)
+            .unwrap();
+        // The ride equation against the pre-pass link (the carrier's
+        // own move lands after the rider's in the tick — the vanilla
+        // reads the live centre inside its pass, the port's write-through
+        // is one tick earlier: the documented deviation).
+        assert!((rider.x + 9.0 - rider.carrier_x).abs() < 0.01, "the ride centres X");
+        assert!(
+            (rider.y + 20.0 + 14.0 - rider.carrier_y).abs() < 0.01,
+            "the ride +14 Y"
+        );
+        assert!(rider.carrier_x > 0.0, "the link is live");
+    }
+
+    #[test]
+    fn the_rider_falls_with_its_carrier() {
+        // The carrier's death retires the rider (the vanilla's timeLeft
+        // latch has no port model — documented).
+        let (mut app, _player) = app_with_player();
+        let mut rider = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        rider.hp = rider.max_hp;
+        app.npcs.push(rider);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix));
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Scutlix {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::ScutlixRider));
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix));
+    }
+
+    #[test]
+    fn the_rider_fires_the_ray_at_the_cycle() {
+        // The 438 ray at `ai[1] == 60` with the direction match: the cycle
+        // resets to -60 after the shot (the payload itself resolves
+        // through the sim).
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_scutlix = true;
+        n.carrier_x = n.x + 9.0;
+        n.carrier_y = n.y + 20.0;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut shot_seen = false;
+        for _ in 0..62 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot {
+                shot_seen = true;
+                assert_eq!(s.0, 438, "the rider's ray");
+                assert_eq!(s.5, 30, "the classic damage");
+            }
+        }
+        assert!(shot_seen, "the ray fires within 62 ticks");
+        assert_eq!(n.ai[1], -58.0, "the cycle reset (two ticks past the fire)");
+    }
+
+    #[test]
+    fn the_shooter_stops_and_fires_the_scrambler_ray() {
+        // The stop-and-fire cycle: the 80-tick timer starts on the stop,
+        // the 436 ray (24 damage) fires at `ai[1] == 40`.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::BrainScrambler, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..2 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.ai[2] > 0.0, "the stop state");
+        assert_eq!(n.ai[1], 79.0, "the 80-tick timer runs down");
+        for _ in 0..45 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_hostile_shot.is_some() {
+                break;
+            }
+        }
+        let shot = n.wants_hostile_shot.expect("the ray fires");
+        assert_eq!(shot.0, 436, "the Scrambler's projectile");
+        assert_eq!(shot.5, 24, "the classic damage");
+    }
+
+    #[test]
+    fn the_ray_gunner_fires_the_438() {
+        // The RayGunner's arm of the same cycle: the 438 projectile at 30.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 11u64;
+        let mut n = Npc::new(NpcKind::RayGunner, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_hostile_shot.is_some() {
+                break;
+            }
+        }
+        let shot = n.wants_hostile_shot.expect("the ray fires");
+        assert_eq!(shot.0, 438);
+        assert_eq!(shot.5, 30);
     }
 }

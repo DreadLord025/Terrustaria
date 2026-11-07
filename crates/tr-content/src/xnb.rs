@@ -13,7 +13,7 @@ const PLAIN_HEADER_SIZE: usize = 10;
 
 /// Little-endian binary reader over the decompressed payload (stands in for
 /// `System.IO.BinaryReader`).
-pub(crate) struct ByteReader<'a> {
+pub struct ByteReader<'a> {
     data: &'a [u8],
     pos: usize,
 }
@@ -62,7 +62,7 @@ impl<'a> ByteReader<'a> {
 
 /// A parsed XNB file: the reader table plus the asset payload that follows the
 /// metadata (i.e. positioned exactly where the asset's ContentTypeReader starts).
-pub(crate) struct XnbFile {
+pub struct XnbFile {
     pub readers: Vec<String>,
     pub type_id: u32,
     pub payload: Vec<u8>,
