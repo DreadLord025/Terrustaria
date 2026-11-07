@@ -43,7 +43,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         return;
     }
     let world = &app.world;
-    let player = &app.player;
+    let player = &mut app.player;
     let items = &mut app.items;
     let coins = &mut app.coins;
     let inventory = &mut app.inventory;
@@ -100,7 +100,43 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                     items.swap_remove(i);
                     continue;
                 }
+                // `Player.GetItem`'s void-vault arm (`Player.cs:39395`):
+                // `CanGoIntoVoidVault && IsVoidVaultEnabled &&
+                // CanVoidVaultAccept` routes the pickup into bank4 first
+                // (`GetItem_VoidVault`, :39402-39423); the leftover falls
+                // through to the inventory.
+                let mut remaining = drop.count;
+                let mut into_vault = false;
+                if let Some(p) = player.as_mut() {
+                    if p.void_vault_enabled
+                        && crate::bank::can_void_vault_accept(drop.kind)
+                        && crate::bank::bank_for_chest(-5).is_some()
+                    {
+                        let def = registry::get(drop.kind);
+                        let max_stack = def.map(|d| d.max_stack).unwrap_or(999);
+                        let taken = crate::bank::void_vault_take(
+                            &mut p.banks[3],
+                            drop.kind,
+                            drop.prefix,
+                            drop.count,
+                            max_stack,
+                        );
+                        if taken == drop.count {
+                            into_vault = true;
+                        } else {
+                            remaining = drop.count - taken;
+                        }
+                    }
+                }
+                if into_vault {
+                    let c = drop.center();
+                    audio.play_at("Item_1", c.x, c.y, 1.0);
+                    items.swap_remove(i);
+                    continue;
+                }
+                let drop_count = remaining;
                 if let Some(slot) = slot_for_pickup(inventory, drop.kind, drop.prefix) {
+                    inventory[slot].count = inventory[slot].count.saturating_add(drop_count);
                     inventory[slot].count = inventory[slot].count.saturating_add(drop.count);
                     let c = drop.center();
                     audio.play_at("Item_1", c.x, c.y, 1.0);

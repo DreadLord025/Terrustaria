@@ -2388,6 +2388,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::ClockRead { text } => {
                     log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
                 }
+                edit::TileInteraction::BankOpen { bank } => {
+                    log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
+                }
             }
         }
     }

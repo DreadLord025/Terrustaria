@@ -112,7 +112,15 @@ pub(crate) fn start_invasion(
     // pirate bonus (`type == 3`'s `+40+20x`) rides the type-3 slice.
     world.invasion_type = invasion_type;
     world.invasion_warn = 0;
+    // `:64457-64464`: the base 80+40x; the pirates (type 3) add 40+20x,
+    // the martians (type 4) use 160+40x.
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    if invasion_type == 3 {
+        world.invasion_size += 40 + 20 * qualifying_players.max(1);
+    }
+    if invasion_type == 4 {
+        world.invasion_size = 160 + 40 * qualifying_players.max(1);
+    }
     world.invasion_size_start = world.invasion_size;
 }
 
@@ -683,6 +691,12 @@ fn invasion_warning(app: &mut App) {
             "Frost Legion is approaching from the east!",
             "The Frost Legion has arrived!",
         ),
+        3 => (
+            "The pirates have been defeated!",
+            "Pirates are approaching from the west!",
+            "Pirates are approaching from the east!",
+            "The pirates have arrived!",
+        ),
         _ => (
             "The goblin army has been defeated!",
             "Goblins are approaching from the west!",
@@ -719,6 +733,7 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // flag-set state carries the defeat).
         match app.world.invasion_type {
             2 => app.world.downed_frost = true,
+            3 => app.world.downed_pirates = true,
             _ => app.world.downed_goblins = true,
         }
         invasion_warning(app);
@@ -765,6 +780,13 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::GoblinSummoner => 1,
         // `NPC.cs:78311-78314`: the Frost Legion's trio.
         NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 2,
+        // `NPC.cs:78316-78325`: the pirates (the Captain 216 is the
+        // 5-point kill, `:78238-78241`).
+        NpcKind::PirateDeckhand
+        | NpcKind::PirateCaptainsMate
+        | NpcKind::PirateArcher
+        | NpcKind::PirateCorsair
+        | NpcKind::PirateCaptain => 3,
         _ => 0,
     }
 }
@@ -779,6 +801,7 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
         return;
     }
     let num9 = match kind {
+        NpcKind::PirateCaptain => 5,
         NpcKind::GoblinSummoner => 10,
         _ => 1,
     };
@@ -835,6 +858,30 @@ fn invasion_spawn_pick(
     }
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
+    }
+    // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
+    // 491 (the half-points window) is the boss-minion follow-up; the
+    // Captain 216 1/30 while none alive; the Deadeye 1/11, the Corsair
+    // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
+    // Deckhand.
+    if invasion_type == 3 {
+        let r = crate::app::frame::rand01(rng);
+        if r < 1.0 / 30.0 {
+            return NpcKind::PirateCaptain;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 {
+            return NpcKind::PirateCorsair;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 + 1.0 / 3.0 {
+            return NpcKind::PirateCaptainsMate;
+        }
+        return NpcKind::PirateDeckhand;
     }
     let r = crate::app::frame::rand01(rng);
     if r < 1.0 / 9.0 {
@@ -2237,5 +2284,105 @@ mod invasion_tests {
                 ));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod pirate_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use crate::world_sim::editing::use_pirate_map;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_pirate_map_arms_the_invasion_with_the_bonus() {
+        // `ItemCheck_UseBossSpawners`' pirate arm (`Player.cs:43957-43971`)
+        // + `StartInvasion`'s type-3 bonus (`Main.cs:64460-64464`): the
+        // size = 80+40x + 40+20x (the single qualified player → 180).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory[app.selected] =
+            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        assert!(use_pirate_map(&mut app));
+        assert_eq!(app.world.invasion_type, 3);
+        assert_eq!(app.world.invasion_size, 180);
+        assert_eq!(app.world.invasion_size_start, 180);
+        assert!(app.world.invasion_goblins, "the active-invasion flag");
+        // The second map refuses while the invasion is active.
+        app.inventory[app.selected] =
+            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        assert!(!use_pirate_map(&mut app), "the active invasion refuses");
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    #[test]
+    fn the_pirate_kill_credit_drains_and_defeats() {
+        // The group-3 match: the Deckhand drains 1, the Captain drains 5;
+        // at 0 the `downedPirates` flag sets (the frost flag untouched).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 3;
+        app.world.invasion_size = 6;
+        app.world.invasion_size_start = 180;
+        report_invasion_kill(&mut app, NpcKind::PirateDeckhand);
+        assert_eq!(app.world.invasion_size, 5);
+        report_invasion_kill(&mut app, NpcKind::PirateCaptain);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_pirates, "the pirate defeat flag");
+        assert!(!app.world.downed_frost, "the frost flag untouched");
+        assert!(!app.world.downed_goblins, "the goblin flag untouched");
+        assert_eq!(app.world.invasion_type, 0);
+    }
+
+    #[test]
+    fn the_pirate_spawn_table_picks_the_crew() {
+        // `invasionType == 3`'s table: the Captain 1/30, the Deadeye 1/11,
+        // the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+        // Deckhand — always the pirate crew.
+        let mut rng = 11u64;
+        for _ in 0..80 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateDeckhand
+                    | NpcKind::PirateCaptainsMate
+                    | NpcKind::PirateArcher
+                    | NpcKind::PirateCorsair
+                    | NpcKind::PirateCaptain
+            ));
+        }
+        // The Captain roll fires within the 1/30 odds.
+        let mut rng = 5u64;
+        let mut saw_captain = false;
+        for _ in 0..600 {
+            if matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateCaptain
+            ) {
+                saw_captain = true;
+                break;
+            }
+        }
+        assert!(saw_captain, "the Captain roll fires");
     }
 }

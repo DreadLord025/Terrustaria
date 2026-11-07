@@ -363,6 +363,11 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::SnowmanGangsta
         | crate::npc::NpcKind::SnowBalla
         | crate::npc::NpcKind::MysterySnowman
+        | crate::npc::NpcKind::PirateDeckhand
+        | crate::npc::NpcKind::PirateCaptainsMate
+        | crate::npc::NpcKind::PirateArcher
+        | crate::npc::NpcKind::PirateCorsair
+        | crate::npc::NpcKind::PirateCaptain
         | crate::npc::NpcKind::Tim
         | crate::npc::NpcKind::DarkCaster
         | crate::npc::NpcKind::FireImp

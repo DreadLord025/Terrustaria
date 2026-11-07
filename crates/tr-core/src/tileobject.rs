@@ -164,6 +164,9 @@ pub enum Interaction {
     /// The chair sit (tile 15, `Player.cs:32313-32321` →
     /// `PlayerSittingHelper.SitDown`).
     Chair,
+    /// The bank open (tiles 29/97/463/491, `Player.cs:33056-33138`): the
+    /// field carries the chest index -2..-5 (piggy/safe/forge/vault).
+    Bank(i32),
     /// The bed (tile 79, `Player.cs:32654-32692`): the top half sleeps, the
     /// bottom half sets the spawn point.
     Bed,
@@ -309,7 +312,89 @@ pub const TABLE: &[TileObjectDef] = &[
     GRANDFATHER_CLOCK,
     BED,
     BATHTUB,
+    // The banks (M3-STORE-1): the piggy 29, the safe 97, the forge 463,
+    // the vault 491.
+    PIGGY_BANK,
+    SAFE,
+    DEFENDERS_FORGE,
+    VOID_VAULT,
 ];
+
+// -- piggy bank (tile 29) — `TileObjectData.cs:2801-2811` + Style2x1 --------
+/// `Style2x1` (:2798-2808) with the table anchor swap (`:2805`: `AnchorBottom
+/// = new AnchorData(AnchorType.Table, newTile.Width, 0)`); item 87, value
+/// 10000 (`Item.cs:2407-2416`). The kill rides `Check2x1`'s case-29 arm
+/// (`WorldGen.cs:47003-47013`).
+const PIGGY_BANK: TileObjectDef = TileObjectDef {
+    kind: 29,
+    width: 2,
+    height: 1,
+    origin: Point16::new(0, 0),
+    anchor_bottom: AnchorData::new(anchor_type::TABLE, 2, 0),
+    coordinate_heights: &[16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true, // `Main.cs:7656`'s list
+    interaction: Interaction::Bank(-2),
+    ..base_def()
+};
+
+// -- safe (tile 97) — `TileObjectData.cs:3590` (a plain Style2x2 copy) ------
+/// `Style2x2` (:3451-3460) with no overrides (`TileObjectData.cs:3588-3590`);
+/// item 346, value 200000 (`Item.cs:5438-5449`).
+const SAFE: TileObjectDef = TileObjectDef {
+    kind: 97,
+    width: 2,
+    height: 2,
+    origin: Point16::new(0, 1),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 2, 0),
+    coordinate_heights: &[16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    interaction: Interaction::Bank(-3),
+    ..base_def()
+};
+
+// -- defender's forge (tile 463) — `TileObjectData.cs:3402-3406` + Style3x4 --
+/// `Style3x4` with `DrawYOffset = 2` (`:3405` — draw-only, unported here);
+/// item 3813, rare 3, value 100000 (`Item.cs:33745-33754`).
+const DEFENDERS_FORGE: TileObjectDef = TileObjectDef {
+    kind: 463,
+    width: 3,
+    height: 4,
+    origin: Point16::new(1, 3),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    interaction: Interaction::Bank(-4),
+    ..base_def()
+};
+
+// -- void vault (tile 491) — `TileObjectData.cs:3797-3800` + Style3x3 --------
+/// `Style3x3` with `DrawYOffset = 2` (`:3799` — draw-only); item 4076, rare
+/// 3, value 100000 (`Item.cs:35741-35752`). The placed tile opens bank4
+/// regardless of holding the Void Lens (`Player.cs:33127-33133` — the only
+/// gate is `disableVoidBag`).
+const VOID_VAULT: TileObjectDef = TileObjectDef {
+    kind: 491,
+    width: 3,
+    height: 3,
+    origin: Point16::new(1, 2),
+    anchor_bottom: AnchorData::new(ANCHOR_SWTSS, 3, 0),
+    coordinate_heights: &[16, 16, 16],
+    coordinate_width: 16,
+    coordinate_padding: 2,
+    style_horizontal: true,
+    frame_important: true,
+    interaction: Interaction::Bank(-5),
+    ..base_def()
+};
 
 /// `Main.tileAlch` (`Main.cs:7806-7808`): the three herb-stage tiles the legacy
 /// `WorldGen.PlaceTile` dispatcher routes to `PlaceAlch` (`WorldGen.cs:60177-60181`).

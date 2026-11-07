@@ -201,6 +201,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.equipped[i] = app.equip.armor[i].kind;
             p.equipped_prefix[i] = app.equip.armor[i].prefix;
         }
+        // `IsVoidVaultEnabled`'s per-tick refresh (`Player.cs:24550-24553`
+        // — `useVoidBag`'s scan :23171-23180; the port scans the grid plus
+        // the coin/ammo rows the App holds).
+        {
+            let holds_lens = app
+                .inventory
+                .iter()
+                .chain(app.equip.coins.iter())
+                .chain(app.equip.ammo.iter())
+                .any(|sl| sl.count > 0 && sl.kind == 4131);
+            p.void_vault_enabled = holds_lens;
+        }
         // `Player.dye`/`miscDyes`' kinds snapshot — `UpdateDyes`' input
         // through `GetEffectiveDye` (`Player.cs:5742-5764`; no loadouts in
         // the port, the slot itself is the source).
