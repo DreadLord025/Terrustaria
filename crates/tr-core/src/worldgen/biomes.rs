@@ -404,10 +404,11 @@ fn generate_tunnel_to_surface(
             }
         }
         steps_since_branch += 1;
-        // The side-branch runner (`:153-162`).
+        // The side-branch runner (`:153-162`): `num4` starts at -2 and the
+        // `Next(2) == 0` draw maps it to +2.
         if steps_since_branch > 10 && rng.range(0, 50) < steps_since_branch {
             steps_since_branch = 0;
-            let branch_speed = if rng.range(0, 2) == 0 { -2.0 } else { 2.0 };
+            let branch_speed = if rng.range(0, 2) == 0 { 2.0 } else { -2.0 };
             let strength = rng.range(3, 20);
             let steps = rng.range(10, 100);
             tile_runner(
@@ -594,11 +595,14 @@ fn generate_finishing_touches(
             &TileRunnerOpts::default(),
         );
         if rng.range(0, 4) == 0 {
+            // `:254`'s named arguments evaluate in source order — the gem
+            // `type:` draw comes first, then `i:`, `j:`, `strength:`,
+            // `steps:`.
+            let g_kind = rng.range(63, 69);
             let gx = num + rng.range(-1, 2);
             let gy = num2 + rng.range(-1, 2);
             let g_strength = rng.range(3, 7);
             let g_steps = rng.range(4, 8);
-            let g_kind = rng.range(63, 69);
             tile_runner(
                 world,
                 rng,
@@ -1231,7 +1235,7 @@ mod tests {
             branch_steps += 1;
             if branch_steps > 10 && rep.range(0, 50) < branch_steps {
                 branch_steps = 0;
-                let dir = if rep.range(0, 2) == 0 { -2.0 } else { 2.0 };
+                let dir = if rep.range(0, 2) == 0 { 2.0 } else { -2.0 };
                 let s = rep.range(3, 20);
                 let st = rep.range(10, 100);
                 tile_runner(
@@ -1353,11 +1357,12 @@ mod tests {
                 &TileRunnerOpts::default(),
             );
             if rep.range(0, 4) == 0 {
+                // `:254`'s named-argument order — the gem draw first.
+                let gk = rep.range(63, 69);
                 let gx = num + rep.range(-1, 2);
                 let gy = num2 + rep.range(-1, 2);
                 let gs = rep.range(3, 7);
                 let gst = rep.range(4, 8);
-                let gk = rep.range(63, 69);
                 tile_runner(
                     &mut wb,
                     &mut rep,

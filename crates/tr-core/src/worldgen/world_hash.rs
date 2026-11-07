@@ -81,8 +81,13 @@ mod tests {
     /// the evil pass runs nothing (the sub-vanilla width gate skips it —
     /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
     /// the old shape pass drew nothing either (its spans collapsed).
-    const SEED42_512: u32 = 844298041;
-    const DEFAULT_WORLD: u32 = 302268298;
+    /// Re-pinned for the batch-review RNG-order fixes: the tunnel
+    /// side-branch direction now maps `Next(2) == 0` to +2 and the
+    /// finishing gem tail draws `type:` first (`JunglePass.cs:156-160`,
+    /// `:254` — named arguments evaluate in source order) — the same draw
+    /// counts with different outcomes, so every world shifts again.
+    const SEED42_512: u32 = 2202225353;
+    const DEFAULT_WORLD: u32 = 2961948300;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
