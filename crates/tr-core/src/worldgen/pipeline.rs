@@ -43,9 +43,9 @@ use super::surface;
 use super::temple;
 use super::terrain::{self, Layers, SurfaceMap};
 use super::{GenOptions, TILE_ASH, TILE_DIRT, TILE_STONE};
+use crate::tiledata as td;
 use crate::tree;
 use crate::world::World;
-use crate::tiledata as td;
 
 // --- streams ----------------------------------------------------------------
 
@@ -89,25 +89,38 @@ pub(crate) struct GenVars {
 
 impl Default for GenVars {
     fn default() -> Self {
-        GenVars { map: None, layers: None, spans: None, shrine_spots: Vec::new() }
+        GenVars {
+            map: None,
+            layers: None,
+            spans: None,
+            shrine_spots: Vec::new(),
+        }
     }
 }
 
 impl GenVars {
     fn map(&self) -> &SurfaceMap {
-        self.map.as_ref().expect("the terrain height-map step did not run")
+        self.map
+            .as_ref()
+            .expect("the terrain height-map step did not run")
     }
 
     fn map_mut(&mut self) -> &mut SurfaceMap {
-        self.map.as_mut().expect("the terrain height-map step did not run")
+        self.map
+            .as_mut()
+            .expect("the terrain height-map step did not run")
     }
 
     fn layers(&self) -> &Layers {
-        self.layers.as_ref().expect("the terrain fill step did not run")
+        self.layers
+            .as_ref()
+            .expect("the terrain fill step did not run")
     }
 
     fn spans(&self) -> &BiomeSpans {
-        self.spans.as_ref().expect("the biome-span step did not run")
+        self.spans
+            .as_ref()
+            .expect("the biome-span step did not run")
     }
 }
 
@@ -141,118 +154,663 @@ pub(crate) struct PassDecl {
 /// (`Slush Check`, `Mud To Dirt`, `Cactus`, ...) — name-keyed lookups, not a
 /// pass list.
 pub(crate) const VANILLA_CHAIN: &[PassDecl] = &[
-    PassDecl { name: "Terrain", weight: 507.352, anchor: "WorldGen.cs:11504", gate: "" },
-    PassDecl { name: "Skyblock", weight: 1.0, anchor: "WorldGen.cs:11511", gate: "WorldGen.skyblockWorldGen" },
-    PassDecl { name: "Jungle", weight: 11205.83, anchor: "WorldGen.cs:11509", gate: "WorldGen.skyblockWorldGen" },
-    PassDecl { name: "Dunes", weight: 239.7913, anchor: "WorldGen.cs:11517", gate: "" },
-    PassDecl { name: "Ocean Sand", weight: 10.4129, anchor: "WorldGen.cs:11580", gate: "" },
-    PassDecl { name: "Sand Patches", weight: 452.6755, anchor: "WorldGen.cs:11689", gate: "" },
-    PassDecl { name: "Tunnels", weight: 4.3622, anchor: "WorldGen.cs:11718", gate: "" },
-    PassDecl { name: "Mount Caves", weight: 49.9993, anchor: "WorldGen.cs:11784", gate: "" },
-    PassDecl { name: "Dirt Wall Backgrounds", weight: 328.7817, anchor: "WorldGen.cs:11858", gate: "" },
-    PassDecl { name: "Rocks In Dirt", weight: 1537.4661, anchor: "WorldGen.cs:11896", gate: "" },
-    PassDecl { name: "Dirt In Rocks", weight: 1515.2301, anchor: "WorldGen.cs:11926", gate: "" },
-    PassDecl { name: "Clay", weight: 314.8327, anchor: "WorldGen.cs:11959", gate: "" },
-    PassDecl { name: "Small Holes", weight: 2955.9258, anchor: "WorldGen.cs:12008", gate: "" },
-    PassDecl { name: "Dirt Layer Caves", weight: 238.2545, anchor: "WorldGen.cs:12067", gate: "" },
-    PassDecl { name: "Rock Layer Caves", weight: 2708.3958, anchor: "WorldGen.cs:12107", gate: "" },
-    PassDecl { name: "Surface Caves", weight: 42.3857, anchor: "WorldGen.cs:12162", gate: "" },
-    PassDecl { name: "Wavy Caves", weight: 1.0, anchor: "WorldGen.cs:12271", gate: "" },
-    PassDecl { name: "Generate Ice Biome", weight: 100.005, anchor: "WorldGen.cs:12312", gate: "" },
-    PassDecl { name: "Grass", weight: 29.7885, anchor: "WorldGen.cs:12423", gate: "" },
-    PassDecl { name: "Jungle", weight: 11205.83, anchor: "WorldGen.cs:12466", gate: "" },
-    PassDecl { name: "Mud Caves To Grass", weight: 3319.761, anchor: "WorldGen.cs:12468", gate: "" },
-    PassDecl { name: "Full Desert", weight: 9730.408, anchor: "WorldGen.cs:12500", gate: "" },
-    PassDecl { name: "Mushroom Patches", weight: 743.7686, anchor: "WorldGen.cs:12544", gate: "" },
-    PassDecl { name: "Marble", weight: 5358.8843, anchor: "WorldGen.cs:12757", gate: "" },
-    PassDecl { name: "Granite", weight: 2142.6638, anchor: "WorldGen.cs:12839", gate: "" },
-    PassDecl { name: "Floating Islands", weight: 1364.3461, anchor: "WorldGen.cs:12927", gate: "" },
-    PassDecl { name: "Dirt To Mud", weight: 351.3519, anchor: "WorldGen.cs:13123", gate: "" },
-    PassDecl { name: "Silt", weight: 211.84, anchor: "WorldGen.cs:13143", gate: "" },
-    PassDecl { name: "Shinies", weight: 237.4298, anchor: "WorldGen.cs:13182", gate: "" },
-    PassDecl { name: "Webs", weight: 50.6646, anchor: "WorldGen.cs:13607", gate: "" },
-    PassDecl { name: "Underworld", weight: 8936.494, anchor: "WorldGen.cs:13645", gate: "" },
-    PassDecl { name: "Corruption", weight: 1094.237, anchor: "WorldGen.cs:13866", gate: "" },
-    PassDecl { name: "Lakes", weight: 12.1766, anchor: "WorldGen.cs:14556", gate: "" },
-    PassDecl { name: "Slush", weight: 55.1857, anchor: "WorldGen.cs:14697", gate: "" },
-    PassDecl { name: "Dual Dungeons Dither Snake", weight: 1.0, anchor: "WorldGen.cs:14755", gate: "SecretSeed.dualDungeons" },
-    PassDecl { name: "Dungeon", weight: 477.1963, anchor: "WorldGen.cs:14757", gate: "" },
-    PassDecl { name: "Mountain Caves", weight: 11.4819, anchor: "WorldGen.cs:14873", gate: "" },
-    PassDecl { name: "Beaches", weight: 7.8287, anchor: "WorldGen.cs:14888", gate: "" },
-    PassDecl { name: "Gems", weight: 895.426, anchor: "WorldGen.cs:15050", gate: "" },
-    PassDecl { name: "Gravitating Sand", weight: 933.5295, anchor: "WorldGen.cs:15138", gate: "" },
-    PassDecl { name: "Create Ocean Caves", weight: 1.0, anchor: "WorldGen.cs:15167", gate: "" },
-    PassDecl { name: "Shimmer", weight: 1.0, anchor: "WorldGen.cs:15195", gate: "" },
-    PassDecl { name: "Clean Up Dirt", weight: 697.0276, anchor: "WorldGen.cs:15246", gate: "" },
-    PassDecl { name: "Pyramids", weight: 6.6884, anchor: "WorldGen.cs:15360", gate: "" },
-    PassDecl { name: "Dirt Rock Wall Runner", weight: 24.7648, anchor: "WorldGen.cs:15461", gate: "" },
-    PassDecl { name: "Living Trees", weight: 4.937, anchor: "WorldGen.cs:15476", gate: "" },
-    PassDecl { name: "Wood Tree Walls", weight: 76.8709, anchor: "WorldGen.cs:15717", gate: "" },
-    PassDecl { name: "Altars", weight: 72.6607, anchor: "WorldGen.cs:15750", gate: "" },
-    PassDecl { name: "Wet Jungle", weight: 23.492, anchor: "WorldGen.cs:15810", gate: "" },
-    PassDecl { name: "Jungle Temple", weight: 595.8422, anchor: "WorldGen.cs:15834", gate: "" },
-    PassDecl { name: "Hives", weight: 371.392, anchor: "WorldGen.cs:15927", gate: "" },
-    PassDecl { name: "Jungle Chests", weight: 0.5896, anchor: "WorldGen.cs:15977", gate: "" },
-    PassDecl { name: "Settle Liquids", weight: 9398.525, anchor: "WorldGen.cs:16132", gate: "" },
-    PassDecl { name: "Remove Water From Sand", weight: 22.0898, anchor: "WorldGen.cs:16211", gate: "" },
-    PassDecl { name: "Oasis", weight: 1.0, anchor: "WorldGen.cs:16243", gate: "" },
-    PassDecl { name: "Shell Piles", weight: 1.0, anchor: "WorldGen.cs:16266", gate: "" },
-    PassDecl { name: "Smooth World", weight: 5841.608, anchor: "WorldGen.cs:16419", gate: "" },
-    PassDecl { name: "Waterfalls", weight: 4118.666, anchor: "WorldGen.cs:16610", gate: "" },
-    PassDecl { name: "Ice", weight: 163.0777, anchor: "WorldGen.cs:16667", gate: "" },
-    PassDecl { name: "Wall Variety", weight: 5264.0215, anchor: "WorldGen.cs:16697", gate: "" },
-    PassDecl { name: "Life Crystals", weight: 2.7582, anchor: "WorldGen.cs:16755", gate: "" },
-    PassDecl { name: "Statues", weight: 64.5737, anchor: "WorldGen.cs:16853", gate: "" },
-    PassDecl { name: "Buried Chests", weight: 1102.5532, anchor: "WorldGen.cs:16971", gate: "" },
-    PassDecl { name: "Surface Chests", weight: 12.8337, anchor: "WorldGen.cs:17130", gate: "" },
-    PassDecl { name: "Jungle Chests Placement", weight: 1.3546, anchor: "WorldGen.cs:17211", gate: "" },
-    PassDecl { name: "Water Chests", weight: 12.5981, anchor: "WorldGen.cs:17245", gate: "" },
-    PassDecl { name: "Spider Caves", weight: 475.4143, anchor: "WorldGen.cs:17356", gate: "" },
-    PassDecl { name: "Gem Caves", weight: 36.0143, anchor: "WorldGen.cs:17428", gate: "" },
-    PassDecl { name: "Moss", weight: 655.8314, anchor: "WorldGen.cs:17472", gate: "" },
-    PassDecl { name: "Temple", weight: 5.6917, anchor: "WorldGen.cs:17701", gate: "" },
-    PassDecl { name: "Cave Walls", weight: 1.0, anchor: "WorldGen.cs:17711", gate: "" },
-    PassDecl { name: "Jungle Trees", weight: 817.2459, anchor: "WorldGen.cs:17840", gate: "" },
-    PassDecl { name: "Floating Island Houses", weight: 1.5022, anchor: "WorldGen.cs:17859", gate: "" },
-    PassDecl { name: "Quick Cleanup", weight: 1374.467, anchor: "WorldGen.cs:17875", gate: "" },
-    PassDecl { name: "Pots", weight: 1638.6091, anchor: "WorldGen.cs:17996", gate: "" },
-    PassDecl { name: "Hellforge", weight: 2.8645, anchor: "WorldGen.cs:18187", gate: "" },
-    PassDecl { name: "Spreading Grass", weight: 127.7581, anchor: "WorldGen.cs:18237", gate: "" },
-    PassDecl { name: "Surface Ore and Stone", weight: 1.0, anchor: "WorldGen.cs:18447", gate: "" },
-    PassDecl { name: "Place Fallen Log", weight: 17.3377, anchor: "WorldGen.cs:18513", gate: "" },
-    PassDecl { name: "Traps", weight: 562.9085, anchor: "WorldGen.cs:18657", gate: "" },
-    PassDecl { name: "Piles", weight: 288.3675, anchor: "WorldGen.cs:18788", gate: "" },
-    PassDecl { name: "Spawn Point", weight: 0.012, anchor: "WorldGen.cs:19460", gate: "" },
-    PassDecl { name: "Grass Wall", weight: 604.9992, anchor: "WorldGen.cs:19589", gate: "" },
-    PassDecl { name: "Guide", weight: 0.016, anchor: "WorldGen.cs:19685", gate: "" },
-    PassDecl { name: "Sunflowers", weight: 4.1757, anchor: "WorldGen.cs:19898", gate: "" },
-    PassDecl { name: "Planting Trees", weight: 325.0993, anchor: "WorldGen.cs:19940", gate: "" },
-    PassDecl { name: "Herbs", weight: 120.1871, anchor: "WorldGen.cs:19964", gate: "" },
-    PassDecl { name: "Dye Plants", weight: 226.6394, anchor: "WorldGen.cs:19981", gate: "" },
-    PassDecl { name: "Webs And Honey", weight: 608.9524, anchor: "WorldGen.cs:19995", gate: "" },
-    PassDecl { name: "Weeds", weight: 187.9759, anchor: "WorldGen.cs:20064", gate: "" },
-    PassDecl { name: "Glowing Mushrooms and Jungle Plants", weight: 1.0, anchor: "WorldGen.cs:20122", gate: "" },
-    PassDecl { name: "Jungle Plants", weight: 1295.0378, anchor: "WorldGen.cs:20165", gate: "" },
-    PassDecl { name: "Vines", weight: 1132.5549, anchor: "WorldGen.cs:20193", gate: "" },
-    PassDecl { name: "Flowers", weight: 16.7723, anchor: "WorldGen.cs:20447", gate: "" },
-    PassDecl { name: "Mushrooms", weight: 0.2294, anchor: "WorldGen.cs:20599", gate: "" },
-    PassDecl { name: "Gems In Ice Biome", weight: 10.3092, anchor: "WorldGen.cs:20697", gate: "" },
-    PassDecl { name: "Random Gems", weight: 18.4925, anchor: "WorldGen.cs:20729", gate: "" },
-    PassDecl { name: "Moss Grass", weight: 687.742, anchor: "WorldGen.cs:20769", gate: "" },
-    PassDecl { name: "Muds Walls In Jungle", weight: 89.7739, anchor: "WorldGen.cs:20813", gate: "" },
-    PassDecl { name: "Larva", weight: 0.2074, anchor: "WorldGen.cs:20868", gate: "" },
-    PassDecl { name: "Micro Biomes", weight: 3547.4304, anchor: "WorldGen.cs:20901", gate: "" },
-    PassDecl { name: "Settle Liquids Again", weight: 7073.647, anchor: "WorldGen.cs:21246", gate: "" },
+    PassDecl {
+        name: "Terrain",
+        weight: 507.352,
+        anchor: "WorldGen.cs:11504",
+        gate: "",
+    },
+    PassDecl {
+        name: "Skyblock",
+        weight: 1.0,
+        anchor: "WorldGen.cs:11511",
+        gate: "WorldGen.skyblockWorldGen",
+    },
+    PassDecl {
+        name: "Jungle",
+        weight: 11205.83,
+        anchor: "WorldGen.cs:11509",
+        gate: "WorldGen.skyblockWorldGen",
+    },
+    PassDecl {
+        name: "Dunes",
+        weight: 239.7913,
+        anchor: "WorldGen.cs:11517",
+        gate: "",
+    },
+    PassDecl {
+        name: "Ocean Sand",
+        weight: 10.4129,
+        anchor: "WorldGen.cs:11580",
+        gate: "",
+    },
+    PassDecl {
+        name: "Sand Patches",
+        weight: 452.6755,
+        anchor: "WorldGen.cs:11689",
+        gate: "",
+    },
+    PassDecl {
+        name: "Tunnels",
+        weight: 4.3622,
+        anchor: "WorldGen.cs:11718",
+        gate: "",
+    },
+    PassDecl {
+        name: "Mount Caves",
+        weight: 49.9993,
+        anchor: "WorldGen.cs:11784",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dirt Wall Backgrounds",
+        weight: 328.7817,
+        anchor: "WorldGen.cs:11858",
+        gate: "",
+    },
+    PassDecl {
+        name: "Rocks In Dirt",
+        weight: 1537.4661,
+        anchor: "WorldGen.cs:11896",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dirt In Rocks",
+        weight: 1515.2301,
+        anchor: "WorldGen.cs:11926",
+        gate: "",
+    },
+    PassDecl {
+        name: "Clay",
+        weight: 314.8327,
+        anchor: "WorldGen.cs:11959",
+        gate: "",
+    },
+    PassDecl {
+        name: "Small Holes",
+        weight: 2955.9258,
+        anchor: "WorldGen.cs:12008",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dirt Layer Caves",
+        weight: 238.2545,
+        anchor: "WorldGen.cs:12067",
+        gate: "",
+    },
+    PassDecl {
+        name: "Rock Layer Caves",
+        weight: 2708.3958,
+        anchor: "WorldGen.cs:12107",
+        gate: "",
+    },
+    PassDecl {
+        name: "Surface Caves",
+        weight: 42.3857,
+        anchor: "WorldGen.cs:12162",
+        gate: "",
+    },
+    PassDecl {
+        name: "Wavy Caves",
+        weight: 1.0,
+        anchor: "WorldGen.cs:12271",
+        gate: "",
+    },
+    PassDecl {
+        name: "Generate Ice Biome",
+        weight: 100.005,
+        anchor: "WorldGen.cs:12312",
+        gate: "",
+    },
+    PassDecl {
+        name: "Grass",
+        weight: 29.7885,
+        anchor: "WorldGen.cs:12423",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle",
+        weight: 11205.83,
+        anchor: "WorldGen.cs:12466",
+        gate: "",
+    },
+    PassDecl {
+        name: "Mud Caves To Grass",
+        weight: 3319.761,
+        anchor: "WorldGen.cs:12468",
+        gate: "",
+    },
+    PassDecl {
+        name: "Full Desert",
+        weight: 9730.408,
+        anchor: "WorldGen.cs:12500",
+        gate: "",
+    },
+    PassDecl {
+        name: "Mushroom Patches",
+        weight: 743.7686,
+        anchor: "WorldGen.cs:12544",
+        gate: "",
+    },
+    PassDecl {
+        name: "Marble",
+        weight: 5358.8843,
+        anchor: "WorldGen.cs:12757",
+        gate: "",
+    },
+    PassDecl {
+        name: "Granite",
+        weight: 2142.6638,
+        anchor: "WorldGen.cs:12839",
+        gate: "",
+    },
+    PassDecl {
+        name: "Floating Islands",
+        weight: 1364.3461,
+        anchor: "WorldGen.cs:12927",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dirt To Mud",
+        weight: 351.3519,
+        anchor: "WorldGen.cs:13123",
+        gate: "",
+    },
+    PassDecl {
+        name: "Silt",
+        weight: 211.84,
+        anchor: "WorldGen.cs:13143",
+        gate: "",
+    },
+    PassDecl {
+        name: "Shinies",
+        weight: 237.4298,
+        anchor: "WorldGen.cs:13182",
+        gate: "",
+    },
+    PassDecl {
+        name: "Webs",
+        weight: 50.6646,
+        anchor: "WorldGen.cs:13607",
+        gate: "",
+    },
+    PassDecl {
+        name: "Underworld",
+        weight: 8936.494,
+        anchor: "WorldGen.cs:13645",
+        gate: "",
+    },
+    PassDecl {
+        name: "Corruption",
+        weight: 1094.237,
+        anchor: "WorldGen.cs:13866",
+        gate: "",
+    },
+    PassDecl {
+        name: "Lakes",
+        weight: 12.1766,
+        anchor: "WorldGen.cs:14556",
+        gate: "",
+    },
+    PassDecl {
+        name: "Slush",
+        weight: 55.1857,
+        anchor: "WorldGen.cs:14697",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dual Dungeons Dither Snake",
+        weight: 1.0,
+        anchor: "WorldGen.cs:14755",
+        gate: "SecretSeed.dualDungeons",
+    },
+    PassDecl {
+        name: "Dungeon",
+        weight: 477.1963,
+        anchor: "WorldGen.cs:14757",
+        gate: "",
+    },
+    PassDecl {
+        name: "Mountain Caves",
+        weight: 11.4819,
+        anchor: "WorldGen.cs:14873",
+        gate: "",
+    },
+    PassDecl {
+        name: "Beaches",
+        weight: 7.8287,
+        anchor: "WorldGen.cs:14888",
+        gate: "",
+    },
+    PassDecl {
+        name: "Gems",
+        weight: 895.426,
+        anchor: "WorldGen.cs:15050",
+        gate: "",
+    },
+    PassDecl {
+        name: "Gravitating Sand",
+        weight: 933.5295,
+        anchor: "WorldGen.cs:15138",
+        gate: "",
+    },
+    PassDecl {
+        name: "Create Ocean Caves",
+        weight: 1.0,
+        anchor: "WorldGen.cs:15167",
+        gate: "",
+    },
+    PassDecl {
+        name: "Shimmer",
+        weight: 1.0,
+        anchor: "WorldGen.cs:15195",
+        gate: "",
+    },
+    PassDecl {
+        name: "Clean Up Dirt",
+        weight: 697.0276,
+        anchor: "WorldGen.cs:15246",
+        gate: "",
+    },
+    PassDecl {
+        name: "Pyramids",
+        weight: 6.6884,
+        anchor: "WorldGen.cs:15360",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dirt Rock Wall Runner",
+        weight: 24.7648,
+        anchor: "WorldGen.cs:15461",
+        gate: "",
+    },
+    PassDecl {
+        name: "Living Trees",
+        weight: 4.937,
+        anchor: "WorldGen.cs:15476",
+        gate: "",
+    },
+    PassDecl {
+        name: "Wood Tree Walls",
+        weight: 76.8709,
+        anchor: "WorldGen.cs:15717",
+        gate: "",
+    },
+    PassDecl {
+        name: "Altars",
+        weight: 72.6607,
+        anchor: "WorldGen.cs:15750",
+        gate: "",
+    },
+    PassDecl {
+        name: "Wet Jungle",
+        weight: 23.492,
+        anchor: "WorldGen.cs:15810",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle Temple",
+        weight: 595.8422,
+        anchor: "WorldGen.cs:15834",
+        gate: "",
+    },
+    PassDecl {
+        name: "Hives",
+        weight: 371.392,
+        anchor: "WorldGen.cs:15927",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle Chests",
+        weight: 0.5896,
+        anchor: "WorldGen.cs:15977",
+        gate: "",
+    },
+    PassDecl {
+        name: "Settle Liquids",
+        weight: 9398.525,
+        anchor: "WorldGen.cs:16132",
+        gate: "",
+    },
+    PassDecl {
+        name: "Remove Water From Sand",
+        weight: 22.0898,
+        anchor: "WorldGen.cs:16211",
+        gate: "",
+    },
+    PassDecl {
+        name: "Oasis",
+        weight: 1.0,
+        anchor: "WorldGen.cs:16243",
+        gate: "",
+    },
+    PassDecl {
+        name: "Shell Piles",
+        weight: 1.0,
+        anchor: "WorldGen.cs:16266",
+        gate: "",
+    },
+    PassDecl {
+        name: "Smooth World",
+        weight: 5841.608,
+        anchor: "WorldGen.cs:16419",
+        gate: "",
+    },
+    PassDecl {
+        name: "Waterfalls",
+        weight: 4118.666,
+        anchor: "WorldGen.cs:16610",
+        gate: "",
+    },
+    PassDecl {
+        name: "Ice",
+        weight: 163.0777,
+        anchor: "WorldGen.cs:16667",
+        gate: "",
+    },
+    PassDecl {
+        name: "Wall Variety",
+        weight: 5264.0215,
+        anchor: "WorldGen.cs:16697",
+        gate: "",
+    },
+    PassDecl {
+        name: "Life Crystals",
+        weight: 2.7582,
+        anchor: "WorldGen.cs:16755",
+        gate: "",
+    },
+    PassDecl {
+        name: "Statues",
+        weight: 64.5737,
+        anchor: "WorldGen.cs:16853",
+        gate: "",
+    },
+    PassDecl {
+        name: "Buried Chests",
+        weight: 1102.5532,
+        anchor: "WorldGen.cs:16971",
+        gate: "",
+    },
+    PassDecl {
+        name: "Surface Chests",
+        weight: 12.8337,
+        anchor: "WorldGen.cs:17130",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle Chests Placement",
+        weight: 1.3546,
+        anchor: "WorldGen.cs:17211",
+        gate: "",
+    },
+    PassDecl {
+        name: "Water Chests",
+        weight: 12.5981,
+        anchor: "WorldGen.cs:17245",
+        gate: "",
+    },
+    PassDecl {
+        name: "Spider Caves",
+        weight: 475.4143,
+        anchor: "WorldGen.cs:17356",
+        gate: "",
+    },
+    PassDecl {
+        name: "Gem Caves",
+        weight: 36.0143,
+        anchor: "WorldGen.cs:17428",
+        gate: "",
+    },
+    PassDecl {
+        name: "Moss",
+        weight: 655.8314,
+        anchor: "WorldGen.cs:17472",
+        gate: "",
+    },
+    PassDecl {
+        name: "Temple",
+        weight: 5.6917,
+        anchor: "WorldGen.cs:17701",
+        gate: "",
+    },
+    PassDecl {
+        name: "Cave Walls",
+        weight: 1.0,
+        anchor: "WorldGen.cs:17711",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle Trees",
+        weight: 817.2459,
+        anchor: "WorldGen.cs:17840",
+        gate: "",
+    },
+    PassDecl {
+        name: "Floating Island Houses",
+        weight: 1.5022,
+        anchor: "WorldGen.cs:17859",
+        gate: "",
+    },
+    PassDecl {
+        name: "Quick Cleanup",
+        weight: 1374.467,
+        anchor: "WorldGen.cs:17875",
+        gate: "",
+    },
+    PassDecl {
+        name: "Pots",
+        weight: 1638.6091,
+        anchor: "WorldGen.cs:17996",
+        gate: "",
+    },
+    PassDecl {
+        name: "Hellforge",
+        weight: 2.8645,
+        anchor: "WorldGen.cs:18187",
+        gate: "",
+    },
+    PassDecl {
+        name: "Spreading Grass",
+        weight: 127.7581,
+        anchor: "WorldGen.cs:18237",
+        gate: "",
+    },
+    PassDecl {
+        name: "Surface Ore and Stone",
+        weight: 1.0,
+        anchor: "WorldGen.cs:18447",
+        gate: "",
+    },
+    PassDecl {
+        name: "Place Fallen Log",
+        weight: 17.3377,
+        anchor: "WorldGen.cs:18513",
+        gate: "",
+    },
+    PassDecl {
+        name: "Traps",
+        weight: 562.9085,
+        anchor: "WorldGen.cs:18657",
+        gate: "",
+    },
+    PassDecl {
+        name: "Piles",
+        weight: 288.3675,
+        anchor: "WorldGen.cs:18788",
+        gate: "",
+    },
+    PassDecl {
+        name: "Spawn Point",
+        weight: 0.012,
+        anchor: "WorldGen.cs:19460",
+        gate: "",
+    },
+    PassDecl {
+        name: "Grass Wall",
+        weight: 604.9992,
+        anchor: "WorldGen.cs:19589",
+        gate: "",
+    },
+    PassDecl {
+        name: "Guide",
+        weight: 0.016,
+        anchor: "WorldGen.cs:19685",
+        gate: "",
+    },
+    PassDecl {
+        name: "Sunflowers",
+        weight: 4.1757,
+        anchor: "WorldGen.cs:19898",
+        gate: "",
+    },
+    PassDecl {
+        name: "Planting Trees",
+        weight: 325.0993,
+        anchor: "WorldGen.cs:19940",
+        gate: "",
+    },
+    PassDecl {
+        name: "Herbs",
+        weight: 120.1871,
+        anchor: "WorldGen.cs:19964",
+        gate: "",
+    },
+    PassDecl {
+        name: "Dye Plants",
+        weight: 226.6394,
+        anchor: "WorldGen.cs:19981",
+        gate: "",
+    },
+    PassDecl {
+        name: "Webs And Honey",
+        weight: 608.9524,
+        anchor: "WorldGen.cs:19995",
+        gate: "",
+    },
+    PassDecl {
+        name: "Weeds",
+        weight: 187.9759,
+        anchor: "WorldGen.cs:20064",
+        gate: "",
+    },
+    PassDecl {
+        name: "Glowing Mushrooms and Jungle Plants",
+        weight: 1.0,
+        anchor: "WorldGen.cs:20122",
+        gate: "",
+    },
+    PassDecl {
+        name: "Jungle Plants",
+        weight: 1295.0378,
+        anchor: "WorldGen.cs:20165",
+        gate: "",
+    },
+    PassDecl {
+        name: "Vines",
+        weight: 1132.5549,
+        anchor: "WorldGen.cs:20193",
+        gate: "",
+    },
+    PassDecl {
+        name: "Flowers",
+        weight: 16.7723,
+        anchor: "WorldGen.cs:20447",
+        gate: "",
+    },
+    PassDecl {
+        name: "Mushrooms",
+        weight: 0.2294,
+        anchor: "WorldGen.cs:20599",
+        gate: "",
+    },
+    PassDecl {
+        name: "Gems In Ice Biome",
+        weight: 10.3092,
+        anchor: "WorldGen.cs:20697",
+        gate: "",
+    },
+    PassDecl {
+        name: "Random Gems",
+        weight: 18.4925,
+        anchor: "WorldGen.cs:20729",
+        gate: "",
+    },
+    PassDecl {
+        name: "Moss Grass",
+        weight: 687.742,
+        anchor: "WorldGen.cs:20769",
+        gate: "",
+    },
+    PassDecl {
+        name: "Muds Walls In Jungle",
+        weight: 89.7739,
+        anchor: "WorldGen.cs:20813",
+        gate: "",
+    },
+    PassDecl {
+        name: "Larva",
+        weight: 0.2074,
+        anchor: "WorldGen.cs:20868",
+        gate: "",
+    },
+    PassDecl {
+        name: "Micro Biomes",
+        weight: 3547.4304,
+        anchor: "WorldGen.cs:20901",
+        gate: "",
+    },
+    PassDecl {
+        name: "Settle Liquids Again",
+        weight: 7073.647,
+        anchor: "WorldGen.cs:21246",
+        gate: "",
+    },
     // The weight map keys this pass "Cactus & Coral" (the old name, 31.6349)
     // while `GenPassNameID` registers "Cactus, Palm Trees, & Coral" — the
     // lookup misses and the pass runs at the default weight 1.0.
-    PassDecl { name: "Cactus, Palm Trees, & Coral", weight: 1.0, anchor: "WorldGen.cs:21310", gate: "" },
-    PassDecl { name: "Tile Cleanup", weight: 1896.7603, anchor: "WorldGen.cs:21520", gate: "" },
-    PassDecl { name: "Lihzahrd Altars", weight: 0.0071, anchor: "WorldGen.cs:21943", gate: "" },
-    PassDecl { name: "Water Plants", weight: 1.0, anchor: "WorldGen.cs:21973", gate: "" },
-    PassDecl { name: "Stalac", weight: 1180.9058, anchor: "WorldGen.cs:22038", gate: "" },
-    PassDecl { name: "Remove Broken Traps", weight: 1293.4247, anchor: "WorldGen.cs:22121", gate: "" },
-    PassDecl { name: "Final Cleanup", weight: 2080.294, anchor: "WorldGen.cs:22141", gate: "" },
+    PassDecl {
+        name: "Cactus, Palm Trees, & Coral",
+        weight: 1.0,
+        anchor: "WorldGen.cs:21310",
+        gate: "",
+    },
+    PassDecl {
+        name: "Tile Cleanup",
+        weight: 1896.7603,
+        anchor: "WorldGen.cs:21520",
+        gate: "",
+    },
+    PassDecl {
+        name: "Lihzahrd Altars",
+        weight: 0.0071,
+        anchor: "WorldGen.cs:21943",
+        gate: "",
+    },
+    PassDecl {
+        name: "Water Plants",
+        weight: 1.0,
+        anchor: "WorldGen.cs:21973",
+        gate: "",
+    },
+    PassDecl {
+        name: "Stalac",
+        weight: 1180.9058,
+        anchor: "WorldGen.cs:22038",
+        gate: "",
+    },
+    PassDecl {
+        name: "Remove Broken Traps",
+        weight: 1293.4247,
+        anchor: "WorldGen.cs:22121",
+        gate: "",
+    },
+    PassDecl {
+        name: "Final Cleanup",
+        weight: 2080.294,
+        anchor: "WorldGen.cs:22141",
+        gate: "",
+    },
 ];
 
 // --- the executed pipeline (today's order, verbatim call sites) -------------
@@ -271,7 +829,11 @@ pub(crate) struct Step {
 
 macro_rules! step {
     ($name:literal, $vanilla:literal, $f:ident) => {
-        Step { name: $name, vanilla: $vanilla, f: $f }
+        Step {
+            name: $name,
+            vanilla: $vanilla,
+            f: $f,
+        }
     };
 }
 
@@ -296,7 +858,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("dungeon", "Dungeon", step_dungeon),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
     step!("fragile ice", "Ice", step_fragile_ice),
-    step!("underground jungle trees", "Jungle Trees", step_underground_jungle_trees),
+    step!(
+        "underground jungle trees",
+        "Jungle Trees",
+        step_underground_jungle_trees
+    ),
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
@@ -310,9 +876,17 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("campsites", "Micro Biomes", step_campsites),
     step!("spike pits", "Shell Piles", step_spike_pits),
     step!("sword shrines", "Micro Biomes", step_sword_shrines),
-    step!("mushroom and jungle plants", "Glowing Mushrooms and Jungle Plants", step_mushroom_jungle_plants),
+    step!(
+        "mushroom and jungle plants",
+        "Glowing Mushrooms and Jungle Plants",
+        step_mushroom_jungle_plants
+    ),
     step!("vines", "Vines", step_vines),
-    step!("floating islands", "Floating Islands", step_floating_islands),
+    step!(
+        "floating islands",
+        "Floating Islands",
+        step_floating_islands
+    ),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
     step!("trees", "Planting Trees", step_trees),
@@ -348,7 +922,10 @@ fn step_terrain_fill(
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    let map = gv.map.as_ref().expect("the terrain height-map step did not run");
+    let map = gv
+        .map
+        .as_ref()
+        .expect("the terrain height-map step did not run");
     gv.layers = Some(terrain::fill_terrain(world, width, height, noise, map));
 }
 
@@ -377,7 +954,13 @@ fn step_jungle(
     _pass_config: &ConfigSection,
 ) {
     let map = gv.map();
-    biomes::pass_jungle(world, &map.heights, gv.spans(), gv.layers().rock_layer, &mut streams.rng);
+    biomes::pass_jungle(
+        world,
+        &map.heights,
+        gv.spans(),
+        gv.layers().rock_layer,
+        &mut streams.rng,
+    );
 }
 
 fn step_evil(
@@ -389,7 +972,13 @@ fn step_evil(
     _pass_config: &ConfigSection,
 ) {
     let map = gv.map();
-    biomes::pass_evil(world, &map.heights, gv.spans(), &mut streams.rng, opts.crimson);
+    biomes::pass_evil(
+        world,
+        &map.heights,
+        gv.spans(),
+        &mut streams.rng,
+        opts.crimson,
+    );
 }
 
 fn step_mushroom(
@@ -435,7 +1024,16 @@ fn step_stone_in_dirt(
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    caves::blob_pass(world, &mut streams.rng, width, height, TILE_STONE, TILE_DIRT, 900, 10);
+    caves::blob_pass(
+        world,
+        &mut streams.rng,
+        width,
+        height,
+        TILE_STONE,
+        TILE_DIRT,
+        900,
+        10,
+    );
 }
 
 fn step_dirt_in_stone(
@@ -447,7 +1045,16 @@ fn step_dirt_in_stone(
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    caves::blob_pass(world, &mut streams.rng, width, height, TILE_DIRT, TILE_STONE, 500, 6);
+    caves::blob_pass(
+        world,
+        &mut streams.rng,
+        width,
+        height,
+        TILE_DIRT,
+        TILE_STONE,
+        500,
+        6,
+    );
 }
 
 fn step_ash_blobs(
@@ -459,20 +1066,50 @@ fn step_ash_blobs(
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    caves::blob_pass(world, &mut streams.rng, width, height, TILE_ASH, TILE_STONE, 400, 8);
+    caves::blob_pass(
+        world,
+        &mut streams.rng,
+        width,
+        height,
+        TILE_ASH,
+        TILE_STONE,
+        400,
+        8,
+    );
 }
 
 fn step_ores(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    _opts: &GenOptions,
+    opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (world.width, world.height);
-    let (heights, hell_top) = (&gv.map().heights, gv.layers().hell_top);
-    caves::place_ores(world, &mut streams.rng, heights, width, height, hell_top);
+    // A local copy of the anchors — the pass needs the world mutable and the
+    // layers immutable at the same time.
+    let layers = {
+        let l = gv.layers();
+        Layers {
+            avg_surface: l.avg_surface,
+            world_surface: l.world_surface,
+            rock_layer: l.rock_layer,
+            hell_top: l.hell_top,
+            surface_low: l.surface_low,
+            surface_high: l.surface_high,
+            rock_low: l.rock_low,
+            rock_high: l.rock_high,
+        }
+    };
+    caves::ores_and_shinies(
+        world,
+        &mut streams.rng,
+        &layers,
+        width,
+        height,
+        opts.crimson,
+    );
 }
 
 fn step_liquids(
@@ -494,6 +1131,10 @@ fn step_liquids(
             world_surface: l.world_surface,
             rock_layer: l.rock_layer,
             hell_top: l.hell_top,
+            surface_low: l.surface_low,
+            surface_high: l.surface_high,
+            rock_low: l.rock_low,
+            rock_high: l.rock_high,
         }
     };
     liquids::place_liquids(world, &mut streams.rng, gv.map_mut(), &layers, width);
@@ -561,7 +1202,12 @@ fn step_exposed_gems(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biome_detail::pass_exposed_gems(world, world.width * 2 / 3, gv.layers().rock_layer, &mut streams.drng);
+    biome_detail::pass_exposed_gems(
+        world,
+        world.width * 2 / 3,
+        gv.layers().rock_layer,
+        &mut streams.drng,
+    );
 }
 
 fn step_jungle_shrines(
@@ -572,8 +1218,12 @@ fn step_jungle_shrines(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    gv.shrine_spots =
-        structures::pass_jungle_shrines(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    gv.shrine_spots = structures::pass_jungle_shrines(
+        world,
+        gv.spans(),
+        gv.layers().rock_layer,
+        &mut streams.srng,
+    );
 }
 
 fn step_chests(
@@ -657,7 +1307,8 @@ fn step_temple(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let _altar = temple::pass_lihzahrd_temple(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    let _altar =
+        temple::pass_lihzahrd_temple(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
 }
 
 fn step_cave_houses(
@@ -906,14 +1557,16 @@ mod tests {
         let classic: Vec<&PassDecl> = VANILLA_CHAIN.iter().filter(|p| p.gate.is_empty()).collect();
         assert_eq!(classic.len(), 106);
         assert_eq!(VANILLA_CHAIN.len(), 109); // + the skyblock pair + the dither snake
-        // Unique classic names (the skyblock Jungle is a duplicate registration).
+                                              // Unique classic names (the skyblock Jungle is a duplicate registration).
         let mut names: Vec<&'static str> = classic.iter().map(|p| p.name).collect();
         let count = names.len();
         names.sort_unstable();
         names.dedup();
         assert_eq!(names.len(), count);
         // Positive weights, anchors present, first/last match the C#.
-        assert!(classic.iter().all(|p| p.weight > 0.0 && p.anchor.starts_with("WorldGen.cs:")));
+        assert!(classic
+            .iter()
+            .all(|p| p.weight > 0.0 && p.anchor.starts_with("WorldGen.cs:")));
         assert_eq!(classic[0].name, "Terrain");
         assert_eq!(classic[0].anchor, "WorldGen.cs:11504");
         assert_eq!(classic[106 - 1].name, "Final Cleanup");
@@ -979,8 +1632,11 @@ mod tests {
 
     #[test]
     fn every_executed_step_maps_into_the_chain() {
-        let classic_names: std::collections::HashSet<&str> =
-            VANILLA_CHAIN.iter().filter(|p| p.gate.is_empty()).map(|p| p.name).collect();
+        let classic_names: std::collections::HashSet<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
         for step in EXECUTED_PIPELINE {
             if step.vanilla.is_empty() {
                 continue; // the span planner, slopes and the tail are not passes
@@ -1008,7 +1664,8 @@ mod tests {
             ..Default::default()
         };
         let direct = super::super::generate(&opts);
-        let mut via_pipeline = World::new(opts.name.clone(), opts.width.max(512), opts.height.max(512));
+        let mut via_pipeline =
+            World::new(opts.name.clone(), opts.width.max(512), opts.height.max(512));
         boot_statics(&mut via_pipeline);
         let noise = Noise { seed: opts.seed };
         let config = WorldGenConfig::parse();

@@ -14,19 +14,20 @@
 //! pins them.
 
 mod biome_detail;
-mod islands;
 mod biomes;
-mod config;
-mod pipeline;
-mod structures;
-mod temple;
 mod caves;
+mod config;
+mod islands;
 mod liquids;
 mod living_trees;
 mod mini_biomes;
 mod noise;
+mod pipeline;
+mod structures;
 mod surface;
+mod temple;
 mod terrain;
+mod tile_runner;
 mod world_hash;
 
 use self::noise::{Noise, Rng};
@@ -85,6 +86,10 @@ pub(crate) const TILE_TIN: u16 = 166;
 pub(crate) const TILE_LEAD: u16 = 167;
 pub(crate) const TILE_TUNGSTEN: u16 = 168;
 pub(crate) const TILE_PLATINUM: u16 = 169;
+/// The evil ores (`TileID.cs`: the demonite 22, the crimtane 204) — the
+/// `OresAndShinies` evil band (`WorldGen.cs:13589-13602`).
+pub(crate) const TILE_DEMONITE: u16 = 22;
+pub(crate) const TILE_CRIMTANE: u16 = 204;
 pub(crate) const WALL_STONE: u16 = 1;
 pub(crate) const WALL_DIRT: u16 = 2;
 pub(crate) const WALL_SANDSTONE: u16 = 187;
@@ -149,36 +154,58 @@ mod tests {
         let mut xs: Vec<i32> = Vec::new();
         for x in 0..world.width {
             for y in 0..world.height {
-                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 191) {
+                if world
+                    .tile(x, y)
+                    .is_some_and(|t| t.active() && t.kind == 191)
+                {
                     xs.push(x);
                     break;
                 }
             }
         }
-        eprintln!("living columns: {} first {} last {}", xs.len(), xs.first().map_or(0, |v| *v), xs.last().map_or(0, |v| *v));
+        eprintln!(
+            "living columns: {} first {} last {}",
+            xs.len(),
+            xs.first().map_or(0, |v| *v),
+            xs.last().map_or(0, |v| *v)
+        );
         let mut ys: Vec<i32> = Vec::new();
         for x in 1920..2020 {
             for y in 0..world.height {
-                if world.tile(x, y).is_some_and(|t| t.active() && t.kind == 191) {
+                if world
+                    .tile(x, y)
+                    .is_some_and(|t| t.active() && t.kind == 191)
+                {
                     ys.push(y);
                     break;
                 }
             }
         }
-        eprintln!("first-191-y per column 1920..2020: min {} max {} count {}", ys.iter().min().map_or(0, |v| *v), ys.iter().max().map_or(0, |v| *v), ys.len());
+        eprintln!(
+            "first-191-y per column 1920..2020: min {} max {} count {}",
+            ys.iter().min().map_or(0, |v| *v),
+            ys.iter().max().map_or(0, |v| *v),
+            ys.len()
+        );
         for (px, py) in [(300i32, 0i32), (280, 0), (350, 0)] {
             let mut rows = Vec::new();
             for y in 0..world.height {
-                if world.tile(px, y).is_some_and(|t| t.active() && t.kind == 191) {
+                if world
+                    .tile(px, y)
+                    .is_some_and(|t| t.active() && t.kind == 191)
+                {
                     rows.push(y);
                 }
             }
             let first = rows.first().map_or(-1, |v| *v);
             let last = rows.last().map_or(-1, |v| *v);
-            eprintln!("col {px}: 191 rows {} first {first} last {last} (surface {})", rows.len(), world.surface_of(px));
+            eprintln!(
+                "col {px}: 191 rows {} first {first} last {last} (surface {})",
+                rows.len(),
+                world.surface_of(px)
+            );
         }
     }
-
 
     #[test]
     fn deterministic_for_seed() {
@@ -240,9 +267,7 @@ mod tests {
             }
         }
         #[cfg(test)]
-        eprintln!(
-            "probe final: h{saw_hardened} s{saw_sandstone}"
-        );
+        eprintln!("probe final: h{saw_hardened} s{saw_sandstone}");
         if !(saw_hardened && saw_sandstone) {
             let mut p2 = String::new();
             for x in [start + 10, start + 60, start + 130, end - 30] {
@@ -255,7 +280,9 @@ mod tests {
                 p2.push_str(&format!(
                     "x{x} top{top} kind{} skip{} [{ks}] ",
                     t.kind,
-                    !t.active() || matches!(t.kind, 191 | 192) || (top as f64) < w.world_surface - 100.0
+                    !t.active()
+                        || matches!(t.kind, 191 | 192)
+                        || (top as f64) < w.world_surface - 100.0
                 ));
             }
             panic!("missing desert strata ws{:.0}: {p2}", w.world_surface);
@@ -395,12 +422,7 @@ mod tests {
                 .filter(|t| t.active() && t.kind == kind)
                 .count()
         };
-        let walls = |wall: u16| {
-            w.tiles
-                .iter()
-                .filter(|t| t.wall == wall)
-                .count()
-        };
+        let walls = |wall: u16| w.tiles.iter().filter(|t| t.wall == wall).count();
         assert!(count(226) > 800, "the temple brick ({})", count(226));
         assert!(count(237) == 6, "the altar tiles ({})", count(237));
         assert!(count(137) >= 3, "the dart traps ({})", count(137));
@@ -426,16 +448,26 @@ mod tests {
         };
         assert!(count(27) > 100, "the cabin wood frames ({})", count(27));
         assert!(count(19) > 20, "the cabin platforms ({})", count(19));
-        assert!(count(196) + count(197) + count(198) + count(199) > 30, "the tents");
+        assert!(
+            count(196) + count(197) + count(198) + count(199) > 30,
+            "the tents"
+        );
         assert!(count(187) >= 2, "the sword shrines ({})", count(187));
     }
 
     #[test]
-    fn the_ore_pools_roll_one_alternate_per_pair() {
-        // The world rolls one kind per metal pair (the copper 7 / the tin
-        // 166, the iron 6 / the lead 167, the silver 9 / the tungsten 168,
-        // the gold 8 / the platinum 169) — the rolled kinds' veins exist in
-        // the stone band, the other pair's kinds are absent.
+    fn the_ore_tiers_roll_one_kind_per_pair() {
+        // The `OresAndShinies` pass (`WorldGen.cs:13182-13606`) rolls one kind
+        // per metal pair per world (the copper 7 / the tin 166, the iron 6 /
+        // the lead 167, the silver 9 / the tungsten 168, the gold 8 / the
+        // platinum 169) — the rolled kind's TileRunner blobs exist, the other
+        // pair member is absent. The evil band adds the demonite 22 in a
+        // corruption world.
+        //
+        // The counts only take tiles that carry a wall: a `TileRunner` blob
+        // inherits the wall of the tile it retypes, while the underground
+        // jungle canopy mistakenly places bare active iron tiles (kind 6,
+        // `biome_detail.rs` "TreeBranches" — a pre-existing bug, its own row).
         let w = generate(&GenOptions {
             seed: 66,
             ..Default::default()
@@ -443,7 +475,7 @@ mod tests {
         let count = |kind: u16| {
             w.tiles
                 .iter()
-                .filter(|t| t.active() && t.kind == kind)
+                .filter(|t| t.active() && t.kind == kind && t.wall != 0)
                 .count()
         };
         for (a, b) in [(7u16, 166u16), (6, 167), (9, 168), (8, 169)] {
@@ -453,11 +485,34 @@ mod tests {
                 "the pair {a}/{b}: {ca} vs {cb}"
             );
         }
+        // The evil band (`WorldGen.cs:13589-13602`).
+        assert!(count(22) > 100, "the demonite band ({})", count(22));
+        assert!(count(204) == 0, "no crimtane in a corruption world");
         // The gems in the stone band (the amethyst 63 .. the diamond 68).
         let gems: usize = (63..=68)
             .map(|k| w.tiles.iter().filter(|t| t.active() && t.kind == k).count())
             .sum();
         assert!(gems > 40, "the gem veins ({gems})");
+    }
+
+    #[test]
+    fn the_crimson_world_carries_crimtane() {
+        // The evil band's crimson half (`WorldGen.cs:13584-13594`): the
+        // crimtane 204 replaces the demonite 22, everything else is the same
+        // pass. Wall-carrying tiles only — see the pair test's comment.
+        let w = generate(&GenOptions {
+            seed: 67,
+            crimson: true,
+            ..Default::default()
+        });
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind && t.wall != 0)
+                .count()
+        };
+        assert!(count(204) > 100, "the crimtane band ({})", count(204));
+        assert!(count(22) == 0, "no demonite in a crimson world");
     }
 
     #[test]
@@ -488,19 +543,11 @@ mod tests {
         // walls match the brick.
         let bricks = [(41u16, 7u16), (43, 8), (44, 9)];
         let present: Vec<usize> = (0..3)
-            .filter(|i| {
-                w.tiles
-                    .iter()
-                    .any(|t| t.active() && t.kind == bricks[*i].0)
-            })
+            .filter(|i| w.tiles.iter().any(|t| t.active() && t.kind == bricks[*i].0))
             .collect();
         assert_eq!(present.len(), 1, "one dungeon colour ({:?})", present);
         let bi = present[0];
-        let wall_count = w
-            .tiles
-            .iter()
-            .filter(|t| t.wall == bricks[bi].1)
-            .count();
+        let wall_count = w.tiles.iter().filter(|t| t.wall == bricks[bi].1).count();
         assert!(wall_count > 200, "the dungeon walls ({wall_count})");
     }
 
@@ -590,13 +637,17 @@ mod tests {
             for x in 1..w.width - 2 {
                 let t = w.tile(x, y).unwrap();
                 if t.active() && t.kind == 21 && t.frame_x == 0 && t.frame_y == 0 {
-                    let ok = [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
-                        .iter()
-                        .all(|(dx, dy, fx)| {
-                            w.tile(x + dx, y + dy).is_some_and(|n| {
-                                n.active() && n.kind == 21 && n.frame_x == *fx && n.frame_y == if *dy == 1 { 18 } else { 0 }
-                            })
-                        });
+                    let ok =
+                        [(1i32, 0i32, 18i16), (0, 1, 0), (1, 1, 18)]
+                            .iter()
+                            .all(|(dx, dy, fx)| {
+                                w.tile(x + dx, y + dy).is_some_and(|n| {
+                                    n.active()
+                                        && n.kind == 21
+                                        && n.frame_x == *fx
+                                        && n.frame_y == if *dy == 1 { 18 } else { 0 }
+                                })
+                            });
                     if ok {
                         anchors += 1;
                     }
