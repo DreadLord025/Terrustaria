@@ -2525,6 +2525,36 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The invasion progress bar (M4-EVENT-1b)
+
+The UI half of the invasion framework. The report:
+`Main.ReportInvasionProgress` (`Main.cs:47687-47694`) rides the kill
+credit — the points (`invasionSizeStart - invasionSize`), the max
+(`invasionSizeStart`), the icon (the `GetNPCInvasionGroup` group + 3 —
+the goblins' 4) and the 160-tick display timer.
+
+The near-scan: `Main.CheckInvasionProgressDisplay`
+(`Main.cs:47599-47649`) runs per tick — a living NPC whose
+`GetNPCInvasionGroup` matches the active `invasionType` within the
+±5000-px window around the player marks `invasion_progress_near` and
+refreshes the report while the icon is set (the C#'s moon/DD2 arms are
+their own slices). The bar draws through
+`Main.DrawInvasionProgress`'s non-wave arm (`:47807-47830`): the
+200×45 `DrawInvBG` panel at `(screenWidth - 120, screenHeight - 40)`,
+the `ColorBar` track, the yellow fill (255,241,51), the orange 2-px
+edge (255,165,0,127), the black rest and the `{percent}%` +
+group-label text. The fade head (the display timer's decay + the 0.05
+alpha ramp) rides the World tick; the icon's `Extra[7..12]` texture
+rows are the follow-up.
+
+The pipeline lesson: the insertion pass's doc-comment `{label}
+{label}`
+escapes — a raw newline split the `///` comment and the orphan
+`{percent}%` line broke the parser (the "prefix is unknown" errors),
+which cascaded into an "unterminated string" at the chat line. The
+heredoc-written doc text now avoids inline `
+` escapes.
+
 ## The Pirate Invasion (M4-EVENT-3)
 
 The framework's third slice: `StartInvasion`'s pirate bonus (`Main.cs:
