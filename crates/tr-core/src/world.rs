@@ -116,6 +116,14 @@ pub struct World {
     pub brain_present: bool,
     pub brain_x: f32,
     pub brain_y: f32,
+    /// `Main.slimeRain` — the Slime Rain event.
+    pub slime_rain: bool,
+    /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
+    /// the start, the dayRate-scaled decay).
+    pub slime_rain_time: f64,
+    /// `Main.slimeRainKillCount` — the kill counter (the negative half
+    /// after the King spawns = the vanilla's hysteresis).
+    pub slime_rain_kills: i32,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -198,6 +206,9 @@ impl World {
             brain_present: false,
             brain_x: 0.0,
             brain_y: 0.0,
+            slime_rain: false,
+            slime_rain_time: 0.0,
+            slime_rain_kills: 0,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -264,7 +275,13 @@ impl World {
                 self.invasion_delay = 0;
                 self.invasion_arm_pending = true;
             }
-        } else if rng01 < if self.hard_mode { 1.0 / 60.0 } else { 1.0 / 30.0 } {
+        } else if rng01
+            < if self.hard_mode {
+                1.0 / 60.0
+            } else {
+                1.0 / 30.0
+            }
+        {
             self.invasion_delay = 0;
             self.invasion_arm_pending = true;
         }
