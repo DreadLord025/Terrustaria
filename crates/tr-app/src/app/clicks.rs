@@ -310,6 +310,79 @@ impl App {
                 return;
             }
         }
+        // The bank panel's slots (M3-STORE-1, `ChestUI.Draw`'s context-4
+        // grid): the same held/target merge as the grid rows below —
+        // `ItemSlot.Handle`'s swap/stack/split semantics.
+        if self.inventory_open {
+            let chest_open = self
+                .player
+                .as_ref()
+                .map(|p| p.chest)
+                .unwrap_or(crate::bank::CHEST_CLOSED);
+            if let Some(bank_idx) = (crate::bank::bank_for_chest(chest_open))
+                .and_then(|_| {
+                    let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                    ui::inventory::bank_slot_at(self.mouse_pos, m_h)
+                })
+            {
+                let Some(p) = self.player.as_mut() else {
+                    return;
+                };
+                let mut held = std::mem::replace(&mut self.mouse_item, crate::item::EMPTY_SLOT);
+                let bi = crate::bank::bank_for_chest(chest_open).unwrap();
+                let mut target = p.banks[bi][bank_idx];
+                if left {
+                    if held.count == 0 {
+                        held = target;
+                        target = crate::item::EMPTY_SLOT;
+                    } else if target.count == 0 {
+                        target = held;
+                        held = crate::item::EMPTY_SLOT;
+                    } else if target.kind == held.kind
+                        && target.prefix == held.prefix
+                        && target.count < crate::registry::max_stack(target.kind)
+                    {
+                        let moved = (crate::registry::max_stack(target.kind) - target.count)
+                            .min(held.count);
+                        target.count += moved;
+                        held.count -= moved;
+                        if held.count == 0 {
+                            held = crate::item::EMPTY_SLOT;
+                        }
+                    } else {
+                        std::mem::swap(&mut held, &mut target);
+                    }
+                } else if held.count == 0 {
+                    if target.count > 0 {
+                        let take = (target.count + 1) / 2;
+                        held = ItemSlot {
+                            kind: target.kind,
+                            name: target.name,
+                            count: take,
+                            prefix: target.prefix,
+                        };
+                        target.count -= take;
+                        if target.count == 0 {
+                            target = crate::item::EMPTY_SLOT;
+                        }
+                    }
+                } else if target.count == 0 {
+                    target = ItemSlot {
+                        kind: held.kind,
+                        name: held.name,
+                        count: 1,
+                        prefix: held.prefix,
+                    };
+                    held.count -= 1;
+                    if held.count == 0 {
+                        held = crate::item::EMPTY_SLOT;
+                    }
+                }
+                self.mouse_item = held;
+                p.banks[bi][bank_idx] = target;
+                return;
+            }
+        }
         let Some(slot) = self.slot_at_mouse() else {
             return;
         };

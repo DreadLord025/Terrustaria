@@ -1176,6 +1176,10 @@ impl App {
                                 .unwrap_or(0);
                             (&self.reforge_slot, cost, self.reforge_cooldown)
                         }),
+                        player.as_ref().and_then(|p| {
+                            crate::bank::bank_for_chest(p.chest)
+                                .map(|bi| (&p.banks[bi][..], p.chest))
+                        }),
                     );
                     // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
                     // the death broadcast + the softcore "Dropped coins"

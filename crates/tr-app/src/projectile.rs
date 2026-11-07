@@ -45,6 +45,8 @@ pub const WOODEN_ARROW: u16 = 1;
 /// `ProjectileID.WoodenArrowHostile` (`ProjectileID.cs:716`) — the
 /// Goblin Archer's shot; the box/flight mirror the wooden arrow.
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
+/// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
+pub const DESTROYER_LASER: u16 = 100;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -146,6 +148,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
             // flight, `timeLeft = 1200`.
             WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            // `Projectile.cs:1871-1882` — the laser: 4x4, the aiStyle-1
+            // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
+            // (the AI_037 arm overrides to 300 post-spawn).
+            DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
@@ -749,6 +755,23 @@ impl ProjectilePool {
     ) -> Option<usize> {
         let slot = self.spawn(kind, 0, pos, vel, damage, knock_back, false)?;
         self.slots[slot].friendly = false;
+        Some(slot)
+    }
+
+    /// The hostile shot with the explicit `timeLeft` override — the
+    /// AI_037 arm's `Main.projectile[num12].timeLeft = 300`
+    /// (`NPC.cs:49891`).
+    pub fn spawn_hostile_timed(
+        &mut self,
+        kind: u16,
+        pos: Vec2,
+        vel: Vec2,
+        damage: i32,
+        knock_back: f32,
+        time_left: i32,
+    ) -> Option<usize> {
+        let slot = self.spawn_hostile(kind, pos, vel, damage, knock_back)?;
+        self.slots[slot].time_left = time_left;
         Some(slot)
     }
 

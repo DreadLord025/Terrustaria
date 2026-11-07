@@ -377,6 +377,41 @@ pub(crate) fn update_worms_in(
         {
             continue;
         }
+        // The Destroyer's segment laser (`AI_037_Destroyer`'s type-135
+        // arm, `NPC.cs:49856-49891`): `localAI[0] += Next(4)`; when it
+        // crosses the fresh `Next(1400, 26000)` roll — reset, `CanHit`,
+        // fire the hostile laser 100 (the dmg 22 classic): the aim = the
+        // player's centre minus the segment's with the +-20 px jitter,
+        // the speed 8 with the +-0.05 spread, the spawn at the centre +
+        // the aim x 5, `timeLeft = 300`. The vanilla's tail (136) never
+        // fires; the port's last link rides along (the same kind).
+        if npcs[i].hp > 0 && npcs[i].seg_index > 0 && npcs[i].kind.worm_next() == npcs[i].kind {
+            npcs[i].caster_counter += (rand01(rng) * 4.0) as i32;
+            let threshold = (rand01(rng) * 24600.0 + 1400.0) as i32;
+            if npcs[i].caster_counter >= threshold {
+                npcs[i].caster_counter = 0;
+                if let Some((pcx, pcy)) = player {
+                    let (lw, lh) = npcs[i].size();
+                    let cx = npcs[i].x + lw * 0.5;
+                    let cy = npcs[i].y + lh * 0.5;
+                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        let mut dx = pcx - cx + (rand01(rng) * 41.0 - 20.0);
+                        let mut dy = pcy - cy + (rand01(rng) * 41.0 - 20.0);
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / d * 8.0 + (rand01(rng) * 41.0 - 20.0) * 0.05;
+                        dy = dy / d * 8.0 + (rand01(rng) * 41.0 - 20.0) * 0.05;
+                        npcs[i].wants_hostile_shot = Some((
+                            crate::projectile::DESTROYER_LASER,
+                            cx + dx / 8.0 * 5.0,
+                            cy + dy / 8.0 * 5.0,
+                            dx,
+                            dy,
+                            22,
+                        ));
+                    }
+                }
+            }
+        }
         let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
         let Some(leader) = npcs
             .iter()
@@ -1168,8 +1203,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
-        app.projectiles
-            .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+        // The AI_037 arm's `timeLeft = 300` override rides the laser.
+        let time_left = if kind == crate::projectile::DESTROYER_LASER {
+            300
+        } else {
+            0
+        };
+        if time_left > 0 {
+            app.projectiles.spawn_hostile_timed(
+                kind,
+                Vec2::new(sx, sy),
+                Vec2::new(svx, svy),
+                dmg,
+                0.0,
+                time_left,
+            );
+        } else {
+            app.projectiles
+                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+        }
     }
     // The WoF's spawn requests + the World state the Hungry reads
     // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
@@ -1982,6 +2034,55 @@ mod invasion_tests {
             "the front closes as a tail"
         );
         assert!(npcs[2].hp > 0);
+    }
+    #[test]
+    fn the_destroyer_segments_fire_lasers() {
+        // `AI_037_Destroyer`'s type-135 arm (`NPC.cs:49856-49891`): the
+        // timer rolls Next(4) per tick against the fresh
+        // Next(1400, 26000) threshold; the fire sets the hostile laser
+        // 100 payload (the dmg 22, the speed 8, the CanHit gate).
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 30..800 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The head (seg 0) never fires; the body link does. Both sit in
+        // the open air above the ground so the CanHit line exists.
+        let mut head = Npc::spawn_worm_head(&w, 30, 25, NpcKind::TheDestroyer);
+        head.hp = head.max_hp;
+        head.worm_id = 5;
+        head.seg_index = 0;
+        head.worm_inited = true;
+        let mut body = Npc::new(NpcKind::TheDestroyer, head.x, head.y + 20.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_id = 5;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        let mut npcs = vec![head, body];
+        let mut rng = 1u64;
+        let mut next_id = 9u32;
+        // One body link fires ~once per 9100 ticks (the vanilla's 80
+        // links make the fight rate) — the window gives the ~97% hit.
+        let mut shot = None;
+        for _ in 0..40000 {
+            update_worms_in(&w, Some((480.0, 380.0)), &mut npcs, &mut rng, &mut next_id);
+            if let Some(p) = npcs[1].wants_hostile_shot.take() {
+                shot = Some(p);
+            }
+        }
+        let (kind, _, _, vx, vy, dmg) = shot.expect("the body link fires within 40000 ticks");
+        assert!(npcs[0].wants_hostile_shot.is_none(), "the head never fires");
+        assert_eq!(kind, crate::projectile::DESTROYER_LASER);
+        assert_eq!(dmg, 22);
+        let sp = (vx * vx + vy * vy).sqrt();
+        assert!((sp - 8.0).abs() < 2.0, "the 8-speed aim ({sp})");
     }
 
 #[cfg(test)]

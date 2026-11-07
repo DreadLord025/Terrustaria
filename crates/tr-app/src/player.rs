@@ -293,6 +293,16 @@ pub struct Player {
     /// `GrantPrefixBenefits` (`Player.cs:13953-14044`) reads them in the
     /// accessory grant pass below.
     pub equipped_prefix: [u16; 20],
+    /// The four banks (`Player.bank/bank2/bank3/bank4`,
+    /// `Player.cs:1580-1591` — `Chest.CreateBank(-2..-5)`, 40 slots each;
+    /// player-bounded, always unlocked per `Chest.cs:178-189`).
+    pub banks: [crate::bank::BankStore; 4],
+    /// `Player.chest` (`Player.cs:33492-33502`): the open container index —
+    /// -1 closed, -2..-5 the banks. The world chests (>= 0) are M3-CHEST-UI's.
+    pub chest: i32,
+    /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
+    /// `HasItem(4131)`): refreshed per tick beside the other scans.
+    pub void_vault_enabled: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -634,6 +644,9 @@ impl Player {
             c_mount: 0,
             c_grapple: 0,
             equipped_prefix: [0; 20],
+            banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
+            chest: crate::bank::CHEST_CLOSED,
+            void_vault_enabled: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,

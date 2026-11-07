@@ -6,6 +6,7 @@ mod app;
 mod assets;
 mod achievements;
 mod audio;
+mod bank;
 mod banners;
 mod bestiary;
 mod biome;
