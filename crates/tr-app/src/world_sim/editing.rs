@@ -144,6 +144,14 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
             return;
         }
+        // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
+        // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
+        // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
+        // `invasionDelay = 0; StartInvasion(3)` while no invasion is
+        // active.
+        if held.kind == 1315 && held.count > 0 && use_pirate_map(app) {
+            return;
+        }
         // `ItemCheck_UseBossSpawners`' pre-hardmode summons
         // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
         // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
@@ -2148,6 +2156,30 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
+    if let edit::TileInteraction::BankOpen { bank } = result {
+        // `Player.OpenChest`'s toggle (`Player.cs:33245-33255` + the
+        // num73 switch :33122-33138): the same bank re-clicked closes
+        // (`chest = -1`), another switches; the inventory opens with it
+        // (`Main.playerInventory = true`, `Player.cs:33516`).
+        let (next, opening) = {
+            let p = app.player.as_ref().map(|p| p.chest).unwrap_or(crate::bank::CHEST_CLOSED);
+            if p == bank {
+                (crate::bank::CHEST_CLOSED, false)
+            } else {
+                (bank, true)
+            }
+        };
+        if let Some(p) = app.player.as_mut() {
+            p.chest = next;
+        }
+        // `OpenChest`'s `Main.playerInventory = true` (`Player.cs:33516`);
+        // the close drops the panel too (the vanilla keeps the inventory
+        // open on the chest close — the port closes the pair, the
+        // text-panel fidelity).
+        app.inventory_open = opening;
+        app.world_key = None;
+        return true;
+    }
     match &result {
         edit::TileInteraction::ChairSit {
             seat_x,
@@ -2248,6 +2280,9 @@ fn interaction_events(
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
+        // The bank open is consumed in `interact_tile` ahead of this
+        // mapping (the SoundID 10/11/12 keys are absent from the cue set).
+        edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
     };
     let events = object_drops
         .iter()
@@ -4032,6 +4067,72 @@ mod tests {
 
     // DW-3.6: the Staff-of-Regrowth replant support matrix 78/380/579
     // (`Player.cs:45826`, called from the `flag` block :41279/:41290).
+    // ---- M3-STORE-1: the bank open toggle + the void-vault pickup -------
+
+    #[test]
+    fn test_store_1_the_piggy_right_click_toggles_the_bank() {
+        // `Player.cs:33122-33138` + `OpenChest`'s toggle (:33245-33255): the
+        // right-click opens chest -2 (the piggy), the re-click closes to -1;
+        // the inventory opens with the bank. The furniture interact tests
+        // drive `interact_tile` directly (the route's press edge is latched
+        // at `update_editing`'s head).
+        let mut w = object_world();
+        // The piggy rides ON a table: the table row at 20, the piggy at 19.
+        set_tile(&mut w, 10, 20, 14);
+        set_tile(&mut w, 11, 20, 14);
+        set_tile(&mut w, 12, 20, 14);
+        set_tile(&mut w, 10, 19, 29);
+        set_tile(&mut w, 11, 19, 29);
+        w.frame_important[29] = true;
+        if let Some(t) = w.tile_mut(10, 19) {
+            t.frame_x = 0;
+        }
+        if let Some(t) = w.tile_mut(11, 19) {
+            t.frame_x = 18;
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        // The first click opens chest -2.
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -2, "the piggy opens chest -2");
+        assert!(app.inventory_open, "the bank opens the inventory");
+        // The re-click closes.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the re-click closes");
+        assert!(!app.inventory_open, "closing drops the inventory");
+    }
+
+    #[test]
+    fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
+        // `Player.cs:39395`'s pickup arm: holding 4131 (the Void Lens)
+        // enables the vault (`IsVoidVaultEnabled`), `GetItem_VoidVault`
+        // fills bank4 first.
+        let mut app = mining_app(object_world(), 14, 260);
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 4131,
+            name: "Void Lens",
+            count: 1,
+            prefix: 0,
+        };
+        // The per-tick refresh rides update_player; drive it directly here.
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        crate::world_sim::items::spawn_item_drop(&mut app, 9, 5, 14, 260);
+        for _ in 0..40 {
+            crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.banks[3].iter().any(|sl| sl.kind == 9 && sl.count == 5),
+            "the wood stack landed in bank4"
+        );
+        assert!(
+            !app.inventory.iter().any(|sl| sl.kind == 9),
+            "the inventory stayed out of it"
+        );
+    }
+
     #[test]
     fn test_DW_3_6_replant_support_78_380_579() {
         let replant_world = |support: u16| {
@@ -4780,4 +4881,44 @@ mod loot_summon_tests {
         assert!(app.world.downed_eoc);
         assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::EyeOfCthulhu));
     }
+}
+
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
+/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
+/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
+/// the march state rides the World (the morning-roll resolve's shape).
+pub fn use_pirate_map(app: &mut App) -> bool {
+    if app.world.invasion_type != 0 {
+        return false;
+    }
+    let qualified = app
+        .player
+        .as_ref()
+        .map(|p| p.max_hp >= 200)
+        .unwrap_or(false);
+    if !qualified {
+        return false;
+    }
+    app.audio.play("Roar_0");
+    app.world.invasion_delay = 0;
+    app.world.invasion_goblins = true;
+    app.world.invasion_type = 3;
+    app.world.invasion_warn = 0;
+    app.world.invasion_size = 80 + 40 + 40 + 20;
+    app.world.invasion_size_start = app.world.invasion_size;
+    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
 }

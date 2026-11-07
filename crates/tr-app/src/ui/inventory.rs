@@ -113,6 +113,10 @@ pub enum HoverRef {
     Coin(usize),
     /// `Player.inventory[54..57]`, `0..3`.
     Ammo(usize),
+    /// The open bank's slot (`Player.bank[1..4]`, M3-STORE-1).
+    Bank(usize),
+    /// The transfer button row (M3-STORE-2): the `ChestUI.ButtonID` 0-3.
+    BankButton(u8),
     /// `Player.armor[0..19]` (armour and accessories columns).
     Armor(usize),
     /// `Player.dye[0..9]`.
@@ -229,6 +233,7 @@ pub fn draw(
     equip_page: i32,
     mouse: Vec2,
     m_h: f32,
+    bank: Option<(&[ItemSlot], i32)>,
 ) -> InventoryHit {
     // `ItemSlot.cs:2499`: cell = `InventoryBack.Size() * inventoryScale`.
     let cell = lookups
@@ -478,7 +483,115 @@ pub fn draw(
         hit.hovered = Some(HoverRef::Trash);
     }
 
+    // The bank panel (M3-STORE-1): `ChestUI.Draw`'s 10x4 bank grid
+    // (`UI/ChestUI.cs:337-397`, context 4 at scale 0.755) — the port keeps
+    // the 0.85 cell geometry and appends the grid BELOW the inventory rows
+    // (the vanilla interleaves it under the hotbar; the deviation keeps the
+    // port's own grid clean). The titles (`Lang.inter[32]/[33]` and the
+    // forge/vault item names, `ChestUI.cs:143-158`).
+    if let Some((slots, chest)) = bank {
+        let title = match chest {
+            -2 => "Piggy Bank",
+            -3 => "Safe",
+            -4 => "Defender's Forge",
+            _ => "Void Vault",
+        };
+        text::hud_text(r, lookups, 40.0, BANK_PIVOT_Y + m_h - 14.0, 0.85, LABEL_COLOR, title);
+        // The transfer button row (`ChestUI.DrawButton`, `ChestUI.cs:187-228`):
+        // the labels stacked top-to-bottom, 26 px apart — the vanilla sits at
+        // x 506 right of the columns; the port's panel-fidelity parks the row
+        // under the title. RenameChest (5) is bank-hidden (:198 — `chest <
+        // -1`); the port's no-world-chest UI shows 0-3 only (Sort rides the
+        // M3-CHEST-UI panel).
+        for (id, label) in [
+            (0u8, "Loot All"),
+            (1, "Deposit All"),
+            (2, "Quick Stack"),
+            (3, "Restock"),
+        ] {
+            let p = bank_button_pos(id);
+            let ready = hit.hovered.is_none()
+                && hit_test(mouse, p.x, p.y + m_h, 1.0, BANK_BUTTON_HIT[0]);
+            let tint = if ready { [1.0; 4] } else { [0.85; 4] };
+            text::hud_text(r, lookups, p.x, p.y + m_h, 0.85, tint, label);
+            if ready {
+                hit.hovered = Some(HoverRef::BankButton(id));
+            }
+        }
+        for idx in 0..crate::bank::BANK_SLOTS {
+            let i = idx % 10;
+            let j = idx / 10;
+            let p = bank_pos(i, j);
+            slot::draw_slot(
+                r,
+                lookups,
+                &slots[idx],
+                p.x,
+                p.y + m_h,
+                4,
+                idx as i32,
+                false,
+                INVENTORY_SCALE,
+                INVENTORY_BACK,
+            );
+            if hit.hovered.is_none() && hit_test(mouse, p.x, p.y + m_h, INVENTORY_SCALE, cell) {
+                hit.hovered = Some(HoverRef::Bank(idx));
+            }
+        }
+    }
+
     hit
+}
+
+/// The bank grid's pivot — one cell gap under the 5 inventory rows
+/// (`20 + 5 * 56 * 0.85 = 258`), M3-STORE-1.
+pub(crate) const BANK_PIVOT_Y: f32 = 270.0;
+pub(crate) const BANK_COLS: usize = 10;
+/// The transfer-button row: x 506 (the vanilla's `DrawButton` x, :187),
+/// the 26 px pitch (:203), the 120x16 hit box.
+pub(crate) const BANK_BUTTON_HIT: [f32; 2] = [120.0, 16.0];
+
+fn bank_button_pos(id: u8) -> Vec2 {
+    Vec2::new(506.0, BANK_PIVOT_Y + id as f32 * 26.0)
+}
+
+/// The transfer button under `mouse` (`None` off the row). `id` is the
+/// `ChestUI.ButtonID` (0 LootAll / 1 DepositAll / 2 QuickStack / 3 Restock).
+pub(crate) fn bank_button_at(mouse: Vec2, m_h: f32) -> Option<u8> {
+    for id in 0..4u8 {
+        let p = bank_button_pos(id);
+        let m = Vec2::new(mouse.x, mouse.y - m_h);
+        if mouse.x >= p.x
+            && mouse.x <= p.x + BANK_BUTTON_HIT[0]
+            && m.y >= p.y
+            && m.y <= p.y + BANK_BUTTON_HIT[1]
+        {
+            return Some(id);
+        }
+    }
+    None
+}
+
+fn bank_pos(i: usize, j: usize) -> Vec2 {
+    Vec2::new(
+        (GRID_PIVOT + i as f32 * GRID_PITCH * INVENTORY_SCALE) as i32 as f32,
+        (BANK_PIVOT_Y + j as f32 * GRID_PITCH * INVENTORY_SCALE) as i32 as f32,
+    )
+}
+
+/// The bank cell at `mouse` for the click pass (the same `hit_test` shape,
+/// App-side). `None` off the grid.
+pub(crate) fn bank_slot_at(mouse: Vec2, m_h: f32) -> Option<usize> {
+    let m = Vec2::new(mouse.x, mouse.y - m_h);
+    for idx in 0..crate::bank::BANK_SLOTS {
+        let i = idx % 10;
+        let j = idx / 10;
+        let p = bank_pos(i, j);
+        if hit_test(m, p.x, p.y, INVENTORY_SCALE, SLOT_FALLBACK_PX) {
+            return Some(idx);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

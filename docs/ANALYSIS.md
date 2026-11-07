@@ -2525,6 +2525,91 @@ the pot-loot roll order (fixed-seed `item_rng`).
   registers), green/baby nothing. The executor drops only registry-known
   items.
 
+## The Martian Madness (M4-EVENT-4)
+
+The framework's fourth slice: `StartInvasion(4)` (`Main.cs:64463-64464`)
+overrides the size to **160+40x** (the base 80+40x replaced — the
+C#'s assignment, not a bonus); `Main.InvasionWarning`'s type-4 literals;
+the defeat ride sets the new `World.downed_martians`
+(`SetEventFlagCleared(ref downedMartians, 3)`).
+
+The spawn table (`NPC.cs:1487-1540`) ports with the ground-four arms:
+the else arm's GrayGrunt 385/GigaZapper 389/Officer 383 (the num9
+Next(4) roll) and the num6<4 fallback. The remaining arms — the Saucer
+395 (the Next(45) + the 30% progress gate), the ScutlixRider 390/the
+RayGunner 382/the BrainScrambler 381 (num6 >= 6/4), the Drone 388 (the
+aiStyle-74 flyer) and the Walker 520's walk-in gate (`!AnyNPCs(520)`)
+— land with their AI families (the Saucer boss, the mounted Scutlix,
+the ray flyer). The Martian Probe 399 trigger (the scout's
+escape-when-spotted mechanic) is the event's entry — the follow-up.
+
+The five kinds carry their verbatim `SetDefaults` rows (the Officer's
+300-HP/def-50 body, the GrayGrunt's 750-HP/0-kb bruiser, the walker's
+34×110 2000-HP body) and the 9/11-frame sheets NPC_383/520.
+
+## The invasion progress bar (M4-EVENT-1b)
+
+The UI half of the invasion framework. The report:
+`Main.ReportInvasionProgress` (`Main.cs:47687-47694`) rides the kill
+credit — the points (`invasionSizeStart - invasionSize`), the max
+(`invasionSizeStart`), the icon (the `GetNPCInvasionGroup` group + 3 —
+the goblins' 4) and the 160-tick display timer.
+
+The near-scan: `Main.CheckInvasionProgressDisplay`
+(`Main.cs:47599-47649`) runs per tick — a living NPC whose
+`GetNPCInvasionGroup` matches the active `invasionType` within the
+±5000-px window around the player marks `invasion_progress_near` and
+refreshes the report while the icon is set (the C#'s moon/DD2 arms are
+their own slices). The bar draws through
+`Main.DrawInvasionProgress`'s non-wave arm (`:47807-47830`): the
+200×45 `DrawInvBG` panel at `(screenWidth - 120, screenHeight - 40)`,
+the `ColorBar` track, the yellow fill (255,241,51), the orange 2-px
+edge (255,165,0,127), the black rest and the `{percent}%` +
+group-label text. The fade head (the display timer's decay + the 0.05
+alpha ramp) rides the World tick; the icon's `Extra[7..12]` texture
+rows are the follow-up.
+
+The pipeline lesson: the insertion pass's doc-comment `{label}
+{label}`
+escapes — a raw newline split the `///` comment and the orphan
+`{percent}%` line broke the parser (the "prefix is unknown" errors),
+which cascaded into an "unterminated string" at the chat line. The
+heredoc-written doc text now avoids inline `
+` escapes.
+
+## The Pirate Invasion (M4-EVENT-3)
+
+The framework's third slice: `StartInvasion`'s pirate bonus (`Main.cs:
+64460-64464`) — the size 80+40x **plus 40+20x** per qualified player
+(the single player → 180 points); `Main.InvasionWarning`'s type-3
+literals; the defeat ride sets the new `World.downed_pirates`
+(`SetEventFlagCleared(ref downedPirates, 2)`).
+
+The spawn table (`NPC.cs:1460-1484`): the Flying Dutchman 491 spawns
+through the half-points window (`invasionSize < invasionSizeStart/2` +
+the `SolidTiles` clear-scan) — the boss-minion follow-up; the port's
+table carries the Captain 216 1/30 (while none alive), the Deadeye 1/11,
+the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+Deckhand. The kill points ride `:78238-78241`'s num9 table — the
+Captain's 5-point kill.
+
+The summon: the Pirate Map 1315 through
+`ItemCheck_UseBossSpawners`'s pirate arm (`Player.cs:43957-43971`) —
+the same `CanStartInvasion(3, ignoreDelay: true)` + roar + march-state
+shape the Snow Globe uses. The map's own drop gate rides the loot db's
+`Cond::PirateMap` (the depth/ocean band condition already ported in
+M4-LOOT-2).
+
+The five kinds (PirateDeckhand 212/PirateCaptainsMate 213/PirateArcher
+214/PirateCorsair 215/PirateCaptain 216) carry their verbatim
+`SetDefaults` rows (18×40, the aiStyle-3 walker, the Captain's
+3000-HP/50k-value boss-minion body) and the 16/20-frame sheets
+NPC_212/216.
+
+Deviations: the Flying Dutchman (the 350×120 aiStyle-93 ship boss) and
+the Deadeye/Corsair ranged shots are the follow-ups; the Captain's
+`GetNPCInvasionGroup` 5-point kill rides the port's num9 table.
+
 ## The Frost Legion (M4-EVENT-2)
 
 The invasion framework's second slice: `StartInvasion(2)` generalizes

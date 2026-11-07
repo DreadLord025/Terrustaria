@@ -112,7 +112,15 @@ pub(crate) fn start_invasion(
     // pirate bonus (`type == 3`'s `+40+20x`) rides the type-3 slice.
     world.invasion_type = invasion_type;
     world.invasion_warn = 0;
+    // `:64457-64464`: the base 80+40x; the pirates (type 3) add 40+20x,
+    // the martians (type 4) use 160+40x.
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
+    if invasion_type == 3 {
+        world.invasion_size += 40 + 20 * qualifying_players.max(1);
+    }
+    if invasion_type == 4 {
+        world.invasion_size = 160 + 40 * qualifying_players.max(1);
+    }
     world.invasion_size_start = world.invasion_size;
 }
 
@@ -368,6 +376,41 @@ pub(crate) fn update_worms_in(
             || (npcs[i].kind.is_worm_head() && npcs[i].kind.worm_next() != npcs[i].kind)
         {
             continue;
+        }
+        // The Destroyer's segment laser (`AI_037_Destroyer`'s type-135
+        // arm, `NPC.cs:49856-49891`): `localAI[0] += Next(4)`; when it
+        // crosses the fresh `Next(1400, 26000)` roll — reset, `CanHit`,
+        // fire the hostile laser 100 (the dmg 22 classic): the aim = the
+        // player's centre minus the segment's with the +-20 px jitter,
+        // the speed 8 with the +-0.05 spread, the spawn at the centre +
+        // the aim x 5, `timeLeft = 300`. The vanilla's tail (136) never
+        // fires; the port's last link rides along (the same kind).
+        if npcs[i].hp > 0 && npcs[i].seg_index > 0 && npcs[i].kind.worm_next() == npcs[i].kind {
+            npcs[i].caster_counter += (rand01(rng) * 4.0) as i32;
+            let threshold = (rand01(rng) * 24600.0 + 1400.0) as i32;
+            if npcs[i].caster_counter >= threshold {
+                npcs[i].caster_counter = 0;
+                if let Some((pcx, pcy)) = player {
+                    let (lw, lh) = npcs[i].size();
+                    let cx = npcs[i].x + lw * 0.5;
+                    let cy = npcs[i].y + lh * 0.5;
+                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        let mut dx = pcx - cx + (rand01(rng) * 41.0 - 20.0);
+                        let mut dy = pcy - cy + (rand01(rng) * 41.0 - 20.0);
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        dx = dx / d * 8.0 + (rand01(rng) * 41.0 - 20.0) * 0.05;
+                        dy = dy / d * 8.0 + (rand01(rng) * 41.0 - 20.0) * 0.05;
+                        npcs[i].wants_hostile_shot = Some((
+                            crate::projectile::DESTROYER_LASER,
+                            cx + dx / 8.0 * 5.0,
+                            cy + dy / 8.0 * 5.0,
+                            dx,
+                            dy,
+                            22,
+                        ));
+                    }
+                }
+            }
         }
         let (wid, seg) = (npcs[i].worm_id, npcs[i].seg_index);
         let Some(leader) = npcs
@@ -648,6 +691,18 @@ fn invasion_warning(app: &mut App) {
             "Frost Legion is approaching from the east!",
             "The Frost Legion has arrived!",
         ),
+        3 => (
+            "The pirates have been defeated!",
+            "Pirates are approaching from the west!",
+            "Pirates are approaching from the east!",
+            "The pirates have arrived!",
+        ),
+        4 => (
+            "Martian Madness has been defeated!",
+            "Martian Madness is approaching from the west!",
+            "Martian Madness is approaching from the east!",
+            "Martian Madness has arrived!",
+        ),
         _ => (
             "The goblin army has been defeated!",
             "Goblins are approaching from the west!",
@@ -672,6 +727,19 @@ fn invasion_warning(app: &mut App) {
 /// progression event 10), the march toward `spawnTileX` by
 /// `max(dayRate, 1)`, the arrival warning and the 3600-tick warn timer.
 pub(crate) fn update_invasion_state(app: &mut App) {
+    // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
+    // display timer decays per tick, the alpha ramps 0.05 toward it, and
+    // the mode-0 arm (no bar) zeroes both.
+    if app.invasion_progress_display_left > 0 {
+        app.invasion_progress_display_left -= 1;
+        app.invasion_progress_alpha = (app.invasion_progress_alpha + 0.05).min(1.0);
+    } else {
+        app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
+    }
+    if app.invasion_progress_near {
+        app.invasion_progress_display_left =
+            app.invasion_progress_display_left.max(160);
+    }
     // `invasion_goblins` rides the type (the debug panel's flag reads it).
     app.world.invasion_goblins = app.world.invasion_type == 1;
     if app.world.invasion_type <= 0 {
@@ -684,6 +752,8 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // flag-set state carries the defeat).
         match app.world.invasion_type {
             2 => app.world.downed_frost = true,
+            3 => app.world.downed_pirates = true,
+            4 => app.world.downed_martians = true,
             _ => app.world.downed_goblins = true,
         }
         invasion_warning(app);
@@ -730,7 +800,51 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::GoblinSummoner => 1,
         // `NPC.cs:78311-78314`: the Frost Legion's trio.
         NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 2,
+        // `NPC.cs:78316-78325`: the pirates (the Captain 216 is the
+        // 5-point kill, `:78238-78241`).
+        NpcKind::PirateDeckhand
+        | NpcKind::PirateCaptainsMate
+        | NpcKind::PirateArcher
+        | NpcKind::PirateCorsair
+        | NpcKind::PirateCaptain => 3,
+        // `NPC.cs:78327-78336`+: the martians (the group 4).
+        NpcKind::MartianOfficer
+        | NpcKind::GrayGrunt
+        | NpcKind::MartianEngineer
+        | NpcKind::GigaZapper
+        | NpcKind::MartianWalker => 4,
         _ => 0,
+    }
+}
+
+/// `Main.CheckInvasionProgressDisplay` (`Main.cs:47599-47649`): while the
+/// bar mode is the invasion one (2), any active NPC whose invasion group
+/// matches the active `invasionType` within 5000 px of the player marks
+/// the near-invasion flag and refreshes the report (the icon-0 case — the
+/// wave events' moon/DD2 arms are their own slices).
+pub(crate) fn check_invasion_progress_display(app: &mut App) {
+    // The port draws the bar in the invasion mode always (the settings
+    // screen's bar-mode toggle = the follow-up).
+    let Some(player) = app.player.as_ref() else {
+        return;
+    };
+    let (pcx, pcy) = player.center();
+    let near = app.npcs.iter().any(|n| {
+        n.hp > 0
+            && npc_invasion_group(n.kind) != 0
+            && npc_invasion_group(n.kind) == app.world.invasion_type
+            && (n.center().0 - pcx).abs() < 5000.0
+            && (n.center().1 - pcy).abs() < 5000.0
+    });
+    app.invasion_progress_near = near;
+    if !near || app.invasion_progress_icon != 0 {
+        return;
+    }
+    // The refresh: the points, the max, the icon (the group + 3).
+    if app.world.invasion_type != 0 && app.world.invasion_size_start != 0 {
+        app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
+        app.invasion_progress_max = app.world.invasion_size_start;
+        app.invasion_progress_icon = app.world.invasion_type + 3;
     }
 }
 
@@ -744,13 +858,17 @@ fn report_invasion_kill(app: &mut App, kind: NpcKind) {
         return;
     }
     let num9 = match kind {
+        NpcKind::PirateCaptain => 5,
         NpcKind::GoblinSummoner => 10,
         _ => 1,
     };
     app.world.invasion_size = (app.world.invasion_size - num9).max(0);
-    // `ReportInvasionProgress` (`Main.cs:47687-47694`): the display timer
-    // state rides the UI pass (the fields land with the progress-bar slice).
-    let _ = app.world.invasion_size_start;
+    // `Main.ReportInvasionProgress` (`Main.cs:47687-47694`): the points,
+    // the max, the icon (the group + 3) and the 160-tick display timer.
+    app.invasion_progress = app.world.invasion_size_start - app.world.invasion_size;
+    app.invasion_progress_max = app.world.invasion_size_start;
+    app.invasion_progress_icon = group + 3;
+    app.invasion_progress_display_left = 160;
 }
 
 /// `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) for the
@@ -801,6 +919,49 @@ fn invasion_spawn_pick(
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
     }
+    // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the verbatim tiers —
+    // the Saucer 395 (the Next(45) + the 30% progress gate), the Scutlix
+    // Rider 390/the RayGunner 382/the BrainScrambler 381 (num6 >= 6 / >= 4),
+    // the Drone 388 — ride their AI families as they land; the ground four
+    // (the GrayGrunt 385, the GigaZapper 389, the Officer 383, the Walker
+    // 520's walk-in) spawn from the else arm.
+    if invasion_type == 4 {
+        let num6 = (crate::app::frame::rand01(rng) * 7.0) as u32;
+        if num6 < 4 {
+            let num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
+            return match num9 {
+                0 => NpcKind::GrayGrunt,
+                1 => NpcKind::GigaZapper,
+                2 => NpcKind::MartianOfficer,
+                _ => NpcKind::GrayGrunt,
+            };
+        }
+        return NpcKind::GrayGrunt;
+    }
+    // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
+    // 491 (the half-points window) is the boss-minion follow-up; the
+    // Captain 216 1/30 while none alive; the Deadeye 1/11, the Corsair
+    // 1/9, the Deckhand's musketeer 1/7, the CaptainsMate 1/3, else the
+    // Deckhand.
+    if invasion_type == 3 {
+        let r = crate::app::frame::rand01(rng);
+        if r < 1.0 / 30.0 {
+            return NpcKind::PirateCaptain;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 {
+            return NpcKind::PirateCorsair;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 {
+            return NpcKind::PirateArcher;
+        }
+        if r < 1.0 / 30.0 + 1.0 / 11.0 + 1.0 / 9.0 + 1.0 / 7.0 + 1.0 / 3.0 {
+            return NpcKind::PirateCaptainsMate;
+        }
+        return NpcKind::PirateDeckhand;
+    }
     let r = crate::app::frame::rand01(rng);
     if r < 1.0 / 9.0 {
         NpcKind::GoblinSorcerer
@@ -850,10 +1011,54 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // machine before the spawn pass (the C# calls it from `UpdateAudio`'s
     // family each update).
     update_invasion_state(app);
+    // `Main.CheckInvasionProgressDisplay` (`Main.cs:17183`): the near-scan
+    // + the report refresh before the spawn pass.
+    check_invasion_progress_display(app);
     app.attack_cd = (app.attack_cd - dt).max(0.0);
     // `Main.reforgeCooldown`'s per-tick decrement (`Main.cs:17121-17123`).
     if app.reforge_cooldown > 0 {
         app.reforge_cooldown -= 1;
+    }
+    // `CoinLossRevengeSystem.Update` (:382-389) + the 60-tick purge of the
+    // expired markers (`Main.cs:17758`'s call order).
+    app.revenge_tick += 1;
+    if app.revenge_tick % 60 == 0 {
+        app.revenge_markers
+            .retain(|m| !m.expired(app.revenge_tick));
+    }
+    // `CheckRespawns` (:391-457, called from the spawn pass `NPC.cs:80176`):
+    // a marker whose outer box (2608x1840 :514) holds the player respawns
+    // its carrier once at `_location` with `extraValue = _coinsValue` and
+    // `life = lifeMax * max(0.5, hpPercent)` (:172-210), and the marker
+    // removes itself (:455).
+    if !app.revenge_markers.is_empty() {
+        if let Some(p) = app.player.as_ref() {
+            let (pcx, pcy) = p.center();
+            let outer = [
+                pcx - 2608.0 * 0.5,
+                pcy - 1840.0 * 0.5,
+                2608.0,
+                1840.0,
+            ];
+            let mut done = Vec::new();
+            for m in &app.revenge_markers {
+                let b = m.hitbox();
+                let hits = outer[0] < b[0] + b[2]
+                    && outer[0] + outer[2] > b[0]
+                    && outer[1] < b[1] + b[3]
+                    && outer[1] + outer[3] > b[1];
+                if hits {
+                    done.push(m.unique_id);
+                    let mut carrier = Npc::new(m.kind, m.location.x, m.location.y, 1, 0.0);
+                    carrier.extra_value = m.coins_value;
+                    carrier.hp = (carrier.max_hp as f32 * m.hp_percent.max(0.5)) as i32;
+                    carrier.hp = carrier.hp.max(1);
+                    app.npcs.push(carrier);
+                }
+            }
+            app.revenge_markers
+                .retain(|m| !done.contains(&m.unique_id));
+        }
     }
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
@@ -1000,12 +1205,88 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The revenge cache (`NPC.CheckActive` :78000-78002 -> CacheEnemy
+    // :347-371): a despawning carrier caches its marker. The port's removal
+    // paths run through this retain; the death removal rides the same hook.
+    let cached: Vec<crate::revenge::RevengeMarker> = app
+        .npcs
+        .iter()
+        .filter(|n| n.hp <= 0 && crate::revenge::should_cache(n))
+        .map(|n| {
+            let hp_percent = if n.max_hp > 0 {
+                n.hp as f32 / n.max_hp as f32
+            } else {
+                0.0
+            };
+            let (cx, cy) = n.center();
+            crate::revenge::RevengeMarker {
+                location: Vec2::new(cx, cy),
+                kind: n.kind,
+                hp_percent,
+                base_value: n.value(),
+                coins_value: n.extra_value,
+                expiration_tick: app.revenge_tick
+                    + crate::revenge::expiration_addon(n.extra_value),
+                unique_id: app.revenge_tick.wrapping_mul(31)
+                    + n.extra_value,
+                force_expire: false,
+            }
+        })
+        .collect();
+    app.revenge_markers.extend(cached);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
     // drains the army's points and reports the progress.
     for npc in &dead {
         report_invasion_kill(app, npc.kind);
+    }
+    // The Golem's death chain (`:79346`'s event-flag case 245 + the
+    // head's detach at `:84957`): the BODY's death raises
+    // `downedGolemBoss`; the attached head's death spawns the free head
+    // at its position (`NewNPC(..., 249, base.whoAmI)`).
+    for npc in &dead {
+        match npc.kind {
+            NpcKind::Golem => {
+                app.world.downed_golem = true;
+            }
+            NpcKind::GolemHead => {
+                let mut free =
+                    Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
+                free.dont_take_damage = true;
+                free.hp = free.max_hp;
+                app.npcs.push(free);
+            }
+            _ => {}
+        }
+    }
+    // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
+    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
+    // the first King) while no King lives (`!AnyNPCs(50)`); at the
+    // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
+    // negative (`-num / 2`) for the next climb.
+    if app.world.slime_rain
+        && !app
+            .npcs
+            .iter()
+            .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+    {
+        for npc in &dead {
+            if npc.kind != NpcKind::Slime {
+                continue;
+            }
+            let threshold = if app.world.downed_slime_king { 75 } else { 150 };
+            app.world.slime_rain_kills += 1;
+            if app.world.slime_rain_kills >= threshold {
+                if let Some(p) = app.player.as_ref() {
+                    let xt = ((p.x / TILE_PX) as i32 + 12).clamp(2, app.world.width - 3);
+                    if let Some(k) = Npc::spawn_king_slime(&app.world, xt) {
+                        app.npcs.push(k);
+                    }
+                }
+                app.world.slime_rain_kills = -threshold / 2;
+            }
+        }
     }
     for npc in &dead {
         // `Main.BestiaryTracker.Kills.RegisterKill` at the death's NPCLoot
@@ -1121,8 +1402,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     for (kind, sx, sy, svx, svy, dmg) in shots {
-        app.projectiles
-            .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+        // The AI_037 arm's `timeLeft = 300` override rides the laser.
+        let time_left = if kind == crate::projectile::DESTROYER_LASER {
+            300
+        } else {
+            0
+        };
+        if time_left > 0 {
+            app.projectiles.spawn_hostile_timed(
+                kind,
+                Vec2::new(sx, sy),
+                Vec2::new(svx, svy),
+                dmg,
+                0.0,
+                time_left,
+            );
+        } else {
+            app.projectiles
+                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+        }
     }
     // The WoF's spawn requests + the World state the Hungry reads
     // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
@@ -1253,6 +1551,74 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         .wrapping_add(1_442_695_040_888_963_407);
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
+        // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
+        // — the pre-roll before the regular spawner (`:296-302`'s call
+        // order): the depth/crowd gates (the player below
+        // `worldSurface*16 + view/2` or the nearby count > 15 refuse),
+        // `Next(45 + 450 x (nearby/15))`, the sky window (x within +-1
+        // view width, y 0.75-1.5 view heights above), the validity scan
+        // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
+        // the 7x8 solid-rect scan — the house-wall arm folds), the kind
+        // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
+        if app.world.slime_rain {
+            if let Some(player) = app.player.as_ref() {
+                let (pcx, pcy) = player.center();
+                let view_w = spawner::S_WIDTH as f32;
+                let view_h = spawner::S_HEIGHT as f32;
+                let nearby = app
+                    .npcs
+                    .iter()
+                    .filter(|n| {
+                        let (cx, cy) = n.center();
+                        (cx - pcx).abs() < view_w * 0.5 && (cy - pcy).abs() < view_h * 0.5
+                    })
+                    .count() as f32;
+                if !player.dead
+                    && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
+                    && nearby <= 15.0
+                {
+                    let denom = 45.0 + 450.0 * (nearby / 15.0);
+                    if crate::app::rand01(&mut app.npc_rng) < 1.0 / denom {
+                        let x_px =
+                            pcx - view_w + crate::app::rand01(&mut app.npc_rng) * view_w * 2.0;
+                        let y_px = pcy - view_h * 1.5
+                            + crate::app::rand01(&mut app.npc_rng) * view_h * 0.75;
+                        let xt = (x_px / TILE_PX) as i32;
+                        let yt = (y_px / TILE_PX) as i32;
+                        let solid = (0..7).any(|dx| {
+                            (0..8).any(|dy| {
+                                app.world
+                                    .tile(xt - 3 + dx as i32, yt - 5 + dy as i32)
+                                    .is_some_and(|t| {
+                                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                                    })
+                            })
+                        });
+                        if xt > 10
+                            && xt < app.world.width - 10
+                            && (yt as f64) >= app.world.world_surface * 0.3
+                            && (yt as f64) <= app.world.world_surface
+                            && !solid
+                        {
+                            let variant = if crate::app::rand01(&mut app.npc_rng) < 0.1 {
+                                SlimeVariant::Yellow
+                            } else if crate::app::rand01(&mut app.npc_rng) < 0.4 {
+                                SlimeVariant::Green
+                            } else {
+                                SlimeVariant::Blue
+                            };
+                            let scale = variant.stats().scale;
+                            let (sw, sh) = NpcKind::Slime.size();
+                            app.npcs.push(Npc::spawn_slime_sky(
+                                xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
+                                yt as f32 * TILE_PX - sh * scale,
+                                variant,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
         // sources yet).
@@ -1306,7 +1672,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
-            let kind = invasion_spawn_pick(&mut app.item_rng, app.world.hard_mode, summoner_alive, app.world.invasion_type);
+            let kind = invasion_spawn_pick(
+                &mut app.item_rng,
+                app.world.hard_mode,
+                summoner_alive,
+                app.world.invasion_type,
+            );
             invasion_pick = Some((kind, ix, iy));
         }
         if invasion_pick.is_none() {
@@ -1440,7 +1811,7 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         false, // Midas
         false, // Main.bloodMoon
-        0.0,   // NPC.extraValue (master-mode bump, not modelled)
+        npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
     app.item_rng = rng_state;
@@ -1936,16 +2307,65 @@ mod invasion_tests {
         );
         assert!(npcs[2].hp > 0);
     }
+    #[test]
+    fn the_destroyer_segments_fire_lasers() {
+        // `AI_037_Destroyer`'s type-135 arm (`NPC.cs:49856-49891`): the
+        // timer rolls Next(4) per tick against the fresh
+        // Next(1400, 26000) threshold; the fire sets the hostile laser
+        // 100 payload (the dmg 22, the speed 8, the CanHit gate).
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            for y in 30..800 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The head (seg 0) never fires; the body link does. Both sit in
+        // the open air above the ground so the CanHit line exists.
+        let mut head = Npc::spawn_worm_head(&w, 30, 25, NpcKind::TheDestroyer);
+        head.hp = head.max_hp;
+        head.worm_id = 5;
+        head.seg_index = 0;
+        head.worm_inited = true;
+        let mut body = Npc::new(NpcKind::TheDestroyer, head.x, head.y + 20.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.worm_id = 5;
+        body.seg_index = 1;
+        body.worm_inited = true;
+        let mut npcs = vec![head, body];
+        let mut rng = 1u64;
+        let mut next_id = 9u32;
+        // One body link fires ~once per 9100 ticks (the vanilla's 80
+        // links make the fight rate) — the window gives the ~97% hit.
+        let mut shot = None;
+        for _ in 0..40000 {
+            update_worms_in(&w, Some((480.0, 380.0)), &mut npcs, &mut rng, &mut next_id);
+            if let Some(p) = npcs[1].wants_hostile_shot.take() {
+                shot = Some(p);
+            }
+        }
+        let (kind, _, _, vx, vy, dmg) = shot.expect("the body link fires within 40000 ticks");
+        assert!(npcs[0].wants_hostile_shot.is_none(), "the head never fires");
+        assert_eq!(kind, crate::projectile::DESTROYER_LASER);
+        assert_eq!(dmg, 22);
+        let sp = (vx * vx + vy * vy).sqrt();
+        assert!((sp - 8.0).abs() < 2.0, "the 8-speed aim ({sp})");
+    }
 
-#[cfg(test)]
-mod frost_invasion_tests {
-    use super::*;
-    use crate::app::flow::front_flow_tests::flow_app;
-    use crate::npc::Npc;
-    use crate::world_sim::editing::use_snow_globe;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    #[cfg(test)]
+    mod frost_invasion_tests {
+        use super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use crate::npc::Npc;
+        use crate::world_sim::editing::use_snow_globe;
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-    fn surface_world() -> World {
+        fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
         w.world_surface = 120.0;
         for x in 0..w.width {
@@ -1959,11 +2379,129 @@ mod frost_invasion_tests {
         w
     }
 
+    fn surface_world_orig() -> World {
+            let mut w = World::new("t".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
+            }
+            w.compute_column_surface();
+            w
+        }
+
+        #[test]
+        fn the_snow_globe_arms_the_frost_legion() {
+            // `ItemCheck_UseBossSpawners`' Frost arm (`Player.cs:43940-43956`):
+            // the Snow Globe starts `invasionType = 2` with the 80-point army;
+            // a second globe refuses while the invasion is active.
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 200;
+            player.x = 150.0 * TILE_PX;
+            player.y = 118.0 * TILE_PX;
+            app.player = Some(player);
+            app.inventory[app.selected] = crate::item::ItemSlot {
+                kind: 602,
+                name: "Snow Globe".into(),
+                count: 1,
+                prefix: 0,
+            };
+            assert!(use_snow_globe(&mut app));
+            assert_eq!(app.world.invasion_type, 2);
+            assert_eq!(app.world.invasion_size, 120);
+            assert!(app.world.invasion_goblins, "the active-invasion flag");
+            app.inventory[app.selected] = crate::item::ItemSlot {
+                kind: 602,
+                name: "Snow Globe".into(),
+                count: 1,
+                prefix: 0,
+            };
+            assert!(!use_snow_globe(&mut app), "the active invasion refuses");
+            assert_eq!(app.inventory[app.selected].count, 1);
+        }
+
+        #[test]
+        fn the_frost_kill_credit_drains_and_defeats() {
+            // The group-2 match: the frost kills drain 1 point each; at 0 the
+            // `downedFrost` flag sets (the goblin flag stays untouched).
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = 2;
+            app.world.invasion_size = 1;
+            app.world.invasion_size_start = 120;
+            report_invasion_kill(&mut app, NpcKind::SnowmanGangsta);
+            assert_eq!(app.world.invasion_size, 0);
+            update_invasion_state(&mut app);
+            assert!(app.world.downed_frost, "the frost defeat flag");
+            assert!(!app.world.downed_goblins, "the goblin flag untouched");
+            assert_eq!(app.world.invasion_type, 0);
+        }
+
+        #[test]
+        fn the_frost_spawn_table_picks_the_trio() {
+            // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
+            // 1/3, else the MysterySnowman — always the frost trio.
+            let mut rng = 9u64;
+            for _ in 0..60 {
+                assert!(matches!(
+                    invasion_spawn_pick(&mut rng, false, false, 2),
+                    NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
+                ));
+            }
+            // The goblin table stays on type 1.
+            let mut rng = 9u64;
+            for _ in 0..40 {
+                assert!(matches!(
+                    invasion_spawn_pick(&mut rng, false, false, 1),
+                    NpcKind::GoblinSorcerer
+                        | NpcKind::GoblinThief
+                        | NpcKind::GoblinPeon
+                        | NpcKind::GoblinWarrior
+                        | NpcKind::GoblinArcher
+                ));
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod pirate_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use crate::world_sim::editing::use_pirate_map;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
     #[test]
-    fn the_snow_globe_arms_the_frost_legion() {
-        // `ItemCheck_UseBossSpawners`' Frost arm (`Player.cs:43940-43956`):
-        // the Snow Globe starts `invasionType = 2` with the 80-point army;
-        // a second globe refuses while the invasion is active.
+    fn the_pirate_map_arms_the_invasion_with_the_bonus() {
+        // `ItemCheck_UseBossSpawners`' pirate arm (`Player.cs:43957-43971`)
+        // + `StartInvasion`'s type-3 bonus (`Main.cs:64460-64464`): the
+        // size = 80+40x + 40+20x (the single qualified player → 180).
         let mut app = flow_app(None, vec![], vec![]);
         app.world = surface_world();
         let mut player = crate::player::Player::spawn(&app.world);
@@ -1971,56 +2509,281 @@ mod frost_invasion_tests {
         player.x = 150.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
-        assert!(use_snow_globe(&mut app));
-        assert_eq!(app.world.invasion_type, 2);
-        assert_eq!(app.world.invasion_size, 120);
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_pirate_map(&mut app));
+        assert_eq!(app.world.invasion_type, 3);
+        assert_eq!(app.world.invasion_size, 180);
+        assert_eq!(app.world.invasion_size_start, 180);
         assert!(app.world.invasion_goblins, "the active-invasion flag");
-        app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
-        assert!(!use_snow_globe(&mut app), "the active invasion refuses");
+        // The second map refuses while the invasion is active.
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_pirate_map(&mut app), "the active invasion refuses");
         assert_eq!(app.inventory[app.selected].count, 1);
     }
 
     #[test]
-    fn the_frost_kill_credit_drains_and_defeats() {
-        // The group-2 match: the frost kills drain 1 point each; at 0 the
-        // `downedFrost` flag sets (the goblin flag stays untouched).
+    fn the_pirate_kill_credit_drains_and_defeats() {
+        // The group-3 match: the Deckhand drains 1, the Captain drains 5;
+        // at 0 the `downedPirates` flag sets (the frost flag untouched).
         let mut app = flow_app(None, vec![], vec![]);
         app.world = surface_world();
-        app.world.invasion_type = 2;
-        app.world.invasion_size = 1;
-        app.world.invasion_size_start = 120;
-        report_invasion_kill(&mut app, NpcKind::SnowmanGangsta);
+        app.world.invasion_type = 3;
+        app.world.invasion_size = 6;
+        app.world.invasion_size_start = 180;
+        report_invasion_kill(&mut app, NpcKind::PirateDeckhand);
+        assert_eq!(app.world.invasion_size, 5);
+        report_invasion_kill(&mut app, NpcKind::PirateCaptain);
         assert_eq!(app.world.invasion_size, 0);
         update_invasion_state(&mut app);
-        assert!(app.world.downed_frost, "the frost defeat flag");
+        assert!(app.world.downed_pirates, "the pirate defeat flag");
+        assert!(!app.world.downed_frost, "the frost flag untouched");
         assert!(!app.world.downed_goblins, "the goblin flag untouched");
         assert_eq!(app.world.invasion_type, 0);
     }
 
     #[test]
-    fn the_frost_spawn_table_picks_the_trio() {
-        // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
-        // 1/3, else the MysterySnowman — always the frost trio.
-        let mut rng = 9u64;
-        for _ in 0..60 {
+    fn the_pirate_spawn_table_picks_the_crew() {
+        // `invasionType == 3`'s table: the Captain 1/30, the Deadeye 1/11,
+        // the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+        // Deckhand — always the pirate crew.
+        let mut rng = 11u64;
+        for _ in 0..80 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 2),
-                NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateDeckhand
+                    | NpcKind::PirateCaptainsMate
+                    | NpcKind::PirateArcher
+                    | NpcKind::PirateCorsair
+                    | NpcKind::PirateCaptain
             ));
         }
-        // The goblin table stays on type 1.
-        let mut rng = 9u64;
-        for _ in 0..40 {
+        // The Captain roll fires within the 1/30 odds.
+        let mut rng = 5u64;
+        let mut saw_captain = false;
+        for _ in 0..600 {
+            if matches!(
+                invasion_spawn_pick(&mut rng, false, false, 3),
+                NpcKind::PirateCaptain
+            ) {
+                saw_captain = true;
+                break;
+            }
+        }
+        assert!(saw_captain, "the Captain roll fires");
+    }
+    #[test]
+    fn the_golem_death_chain() {
+        // `:79346`'s case 245 + `:84957`'s detach: the BODY's death
+        // raises `downed_golem`; the attached head's death spawns the
+        // shielded free head at its position.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        app.world = big;
+        // The head dies -> the free head spawns (the shield on).
+        let mut head = Npc::new(NpcKind::GolemHead, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        head.hp = 0;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let free = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::GolemHeadFree)
+            .expect("the free head spawns");
+        assert!(free.dont_take_damage, "the spawn shield");
+        // The body dies -> downed_golem.
+        let mut body = Npc::new(NpcKind::Golem, 40.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        body.hp = 0;
+        app.npcs.push(body);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.world.downed_golem,
+            "the body's death is the fight's end"
+        );
+    }
+}
+
+#[cfg(test)]
+mod invasion_bar_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::World;
+
+        fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+#[test]
+    fn the_kill_credit_reports_the_bar_state() {
+        // `ReportInvasionProgress` (`Main.cs:47687-47694`): the points
+        // (sizeStart - size), the max (sizeStart), the icon (group + 3) and
+        // the 160-tick display timer.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 3;
+        app.world.invasion_size_start = 120;
+        report_invasion_kill(&mut app, NpcKind::GoblinThief);
+        assert_eq!(app.invasion_progress, 118, "sizeStart - size");
+        assert_eq!(app.invasion_progress_max, 120);
+        assert_eq!(app.invasion_progress_icon, 4, "the goblins' icon (1 + 3)");
+        assert_eq!(app.invasion_progress_display_left, 160);
+    }
+
+    #[test]
+    fn the_near_scan_refreshes_the_report() {
+        // `CheckInvasionProgressDisplay` (`Main.cs:47599-47649`): a living
+        // invader within 5000 px of the player marks near and refreshes the
+        // report while the icon is set; the far case drops the flag.
+        let mut w = World::new("wide".into(), 900, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 3;
+        app.world.invasion_size_start = 120;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        let mut invader =
+            Npc::new(NpcKind::GoblinThief, 101.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        invader.hp = invader.max_hp;
+        app.npcs.push(invader);
+        check_invasion_progress_display(&mut app);
+        assert!(app.invasion_progress_near);
+        assert_eq!(app.invasion_progress_icon, 4, "the refresh sets the icon");
+        // The invader far away (beyond the 5000-px window): the near flag drops.
+        if let Some(n) = app.npcs.first_mut() {
+            n.x = 700.0 * TILE_PX;
+        }
+        check_invasion_progress_display(&mut app);
+        assert!(!app.invasion_progress_near);
+    }
+
+    #[test]
+    fn the_fade_head_ramps_the_alpha() {
+        // `DrawInvasionProgress`'s fade head (`Main.cs:47712-47736`): the
+        // display timer decays per tick, the alpha ramps 0.05 toward the
+        // visible, and at 0 display the alpha fades back to 0.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.invasion_progress_display_left = 160;
+        app.invasion_progress_alpha = 0.0;
+        update_invasion_state(&mut app);
+        assert_eq!(app.invasion_progress_display_left, 159);
+        assert!(app.invasion_progress_alpha > 0.0, "the alpha ramps up");
+        app.invasion_progress_display_left = 0;
+        app.invasion_progress_alpha = 1.0;
+        update_invasion_state(&mut app);
+        assert!((app.invasion_progress_alpha - 0.95).abs() < 1e-6, "the fade down");
+    }
+
+    #[test]
+    fn the_defeat_resets_the_bar_state() {
+        // The invasion clears → the bar state resets (the icon 0 keeps the
+        // near-scan from re-reporting after the invasion's end).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 1;
+        app.world.invasion_size = 0;
+        app.world.invasion_size_start = 120;
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_goblins);
+        assert_eq!(app.world.invasion_type, 0);
+        assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
+    }
+
+#[cfg(test)]
+mod martian_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+
+
+    #[test]
+    fn the_type4_machine_sizes_the_invasion() {
+        // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
+        // single qualified player → 200) — the type-4 arm overrides the base.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        start_invasion(&mut app.world, 1, 4);
+        assert_eq!(app.world.invasion_type, 4);
+        assert_eq!(app.world.invasion_size, 200);
+        assert_eq!(app.world.invasion_size_start, 200);
+    }
+
+    #[test]
+    fn the_martian_kill_credit_drains_and_defeats() {
+        // The group-4 match: the martian kills drain 1 point each; at 0 the
+        // `downedMartians` flag sets (the pirate flag untouched).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 4;
+        app.world.invasion_size = 1;
+        app.world.invasion_size_start = 200;
+        report_invasion_kill(&mut app, NpcKind::GrayGrunt);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_martians, "the martian defeat flag");
+        assert!(!app.world.downed_pirates, "the pirate flag untouched");
+        assert_eq!(app.world.invasion_type, 0);
+    }
+
+    #[test]
+    fn the_martian_spawn_table_picks_the_ground_four() {
+        // `invasionType == 4`'s ported table: the ground four (the GrayGrunt
+        // 385, the GigaZapper 389, the Officer 383) — the Saucer/Rider/
+        // Drone/Probe arms ride their AI families as they land.
+        let mut rng = 13u64;
+        for _ in 0..60 {
             assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 1),
-                NpcKind::GoblinSorcerer
-                    | NpcKind::GoblinThief
-                    | NpcKind::GoblinPeon
-                    | NpcKind::GoblinWarrior
-                    | NpcKind::GoblinArcher
+                invasion_spawn_pick(&mut rng, false, false, 4),
+                NpcKind::GrayGrunt | NpcKind::GigaZapper | NpcKind::MartianOfficer
             ));
         }
     }

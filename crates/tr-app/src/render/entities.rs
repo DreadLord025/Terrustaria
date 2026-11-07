@@ -147,6 +147,10 @@ pub(crate) struct NpcAssets {
     pub(crate) creeper: Option<BgTex>,
     pub(crate) bound_goblin: Option<BgTex>,
     pub(crate) goblin_tinkerer: Option<BgTex>,
+    pub(crate) golem: Option<BgTex>,
+    pub(crate) golem_head: Option<BgTex>,
+    pub(crate) golem_fist: Option<BgTex>,
+    pub(crate) golem_head_free: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -161,6 +165,13 @@ pub(crate) struct NpcAssets {
     pub(crate) snowman_gangsta: Option<BgTex>,
     pub(crate) snow_balla: Option<BgTex>,
     pub(crate) mystery_snowman: Option<BgTex>,
+    /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
+    /// `NPC_520` — the Martian Walker (11 frames of 34x110).
+    pub(crate) martian_walkers: Option<BgTex>,
+    pub(crate) martian_walker_big: Option<BgTex>,
+    /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
+    pub(crate) pirates: Option<BgTex>,
+    pub(crate) pirate_captain: Option<BgTex>,
     /// `NPC_26/27/28/111` — the invasion fighters (16/21-frame humanoid
     /// strips; the port renders the 16-frame family shape the zombie arm
     /// walks).
@@ -227,6 +238,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         creeper: sky_tex(atlas, "NPC_267", None),
         bound_goblin: sky_tex(atlas, "NPC_105", None),
         goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
+        golem: sky_tex(atlas, "NPC_245", None),
+        golem_head: sky_tex(atlas, "NPC_246", None),
+        golem_fist: sky_tex(atlas, "NPC_247", None),
+        golem_head_free: sky_tex(atlas, "NPC_249", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -240,6 +255,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         snowman_gangsta: sky_tex(atlas, "NPC_143", None),
         snow_balla: sky_tex(atlas, "NPC_144", None),
         mystery_snowman: sky_tex(atlas, "NPC_145", None),
+        martian_walkers: sky_tex(atlas, "NPC_383", None),
+        martian_walker_big: sky_tex(atlas, "NPC_520", None),
+        pirates: sky_tex(atlas, "NPC_212", None),
+        pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
         goblin_warrior: sky_tex(atlas, "NPC_27", None),
         goblin_archer: sky_tex(atlas, "NPC_28", None),
@@ -850,6 +869,42 @@ pub(crate) fn draw_npcs(
                     [n.x, n.y],
                 )
             }
+            // The martians: the 9-frame strips over the 18x40 frames (the
+            // walker's 11-frame 34x110 sheet rides NPC_520).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => (
+                assets.martian_walkers.as_ref(),
+                assets.martian_walkers.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianWalker => (
+                assets.martian_walker_big.as_ref(),
+                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 11.0),
+                [34.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The pirates: the 16/20-frame strips over the 18x40 frames
+            // (the Captain's 20-frame sheet rides NPC_216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                let (tex, frames) = if n.kind == NpcKind::PirateCaptain {
+                    (assets.pirate_captain.as_ref(), 20.0)
+                } else {
+                    (assets.pirates.as_ref(), 16.0)
+                };
+                (
+                    tex,
+                    tex.map_or(40.0, |t| t.h / frames),
+                    [18.0, 40.0],
+                    [n.x, n.y],
+                )
+            }
             // The Destroyer: the single-frame 48x48 sheet.
             NpcKind::TheDestroyer => (
                 assets.destroyer.as_ref(),
@@ -913,6 +968,28 @@ pub(crate) fn draw_npcs(
                 [34.0, 54.0],
                 [n.x - 8.0, n.y - 10.0],
             ),
+            // The Golem family (the v1 single-frame draws): the body
+            // 140x140, the heads 70x70, the fists 40x30 (the SetDefaults
+            // boxes; the sheets draw at the box size).
+            NpcKind::Golem => (
+                assets.golem.as_ref(),
+                assets.golem.as_ref().map_or(140.0, |t| t.h),
+                [140.0, 140.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (
+                if n.kind == NpcKind::GolemHead {
+                    assets.golem_head.as_ref()
+                } else {
+                    assets.golem_head_free.as_ref()
+                },
+                70.0,
+                [70.0, 70.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
+            }
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon

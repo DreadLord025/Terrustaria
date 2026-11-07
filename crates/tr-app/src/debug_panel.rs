@@ -410,11 +410,19 @@ pub fn handle_click(app: &mut App, mouse: Vec2) -> bool {
 
 fn give_item(app: &mut App, item: u16, count: u32) -> bool {
     let idx = match crate::item::slot_for_pickup(&mut app.inventory, item, 0) {
-        Some(i) => i, None => return false,
+        Some(i) => i,
+        None => return false,
     };
     let sl = &mut app.inventory[idx];
-    if sl.kind == item && sl.count > 0 { sl.count += count; } else {
-        *sl = ItemSlot { kind: item, name: crate::itemdata::ITEMS[item as usize].name, count, prefix: 0 };
+    if sl.kind == item && sl.count > 0 {
+        sl.count += count;
+    } else {
+        *sl = ItemSlot {
+            kind: item,
+            name: crate::itemdata::ITEMS[item as usize].name,
+            count,
+            prefix: 0,
+        };
     }
     true
 }
@@ -493,6 +501,28 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
             h.worm_left = 65;
             Some(h)
         }
+        NpcKind::Golem => {
+            // The 4-piece set (`AI_045`'s init shape): the body at the
+            // click, the head locked above, the fists flanking.
+            let mut body = Npc::new(NpcKind::Golem, x_px, y_px, 1, 0.0);
+            body.hp = body.max_hp;
+            let mut head = Npc::new(
+                NpcKind::GolemHead,
+                x_px + (140.0 - 70.0) * 0.5,
+                y_px - 70.0,
+                1,
+                0.0,
+            );
+            head.hp = head.max_hp;
+            let mut fl = Npc::new(NpcKind::GolemFistLeft, x_px - 80.0, y_px + 40.0, 1, 0.0);
+            fl.hp = fl.max_hp;
+            let mut fr = Npc::new(NpcKind::GolemFistRight, x_px + 180.0, y_px + 40.0, 1, 0.0);
+            fr.hp = fr.max_hp;
+            app.npcs.push(head);
+            app.npcs.push(fl);
+            app.npcs.push(fr);
+            Some(body)
+        }
         NpcKind::TheDestroyer => {
             let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
             h.hp = h.max_hp;
@@ -546,6 +576,20 @@ fn world_click(app: &mut App, row: usize) {
             }
         }
         8 => {
+            // The Slime Rain toggle: the vanilla roll/kill machinery
+            // runs off the flag; the start uses the vanilla duration
+            // band's midpoint.
+            if app.world.slime_rain {
+                app.world.slime_rain = false;
+                app.world.slime_rain_time = 0.0;
+                app.world.slime_rain_kills = 0;
+            } else {
+                app.world.slime_rain = true;
+                app.world.slime_rain_time = 43200.0;
+                app.world.slime_rain_kills = 0;
+            }
+        }
+        9 => {
             for n in app.npcs.iter_mut() {
                 if n.hp > 0 && !n.kind.is_worm_head() {
                     n.hp = 0;

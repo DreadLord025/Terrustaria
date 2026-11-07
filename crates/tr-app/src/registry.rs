@@ -87,6 +87,14 @@ pub fn by_wall(wall: u16) -> Option<u16> {
 }
 
 pub fn place_tile(id: u16) -> Option<u16> {
+    // `Item.cs:33745-33754` (case 3813): `createTile = 463`. The generated
+    // `itemdata.rs` row carries `tile: None` for the Defender's Forge (the
+    // GenItemData dispatcher mis-merged the case — the generator bug rides
+    // here until the regen pass; the M3-EQUIP-3 `accessory_life_regen`
+    // precedent).
+    if id == 3813 {
+        return Some(463);
+    }
     get(id)?.tile
 }
 

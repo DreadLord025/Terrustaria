@@ -90,6 +90,38 @@ pub enum NpcKind {
     /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
     /// 220 HP, kb 0.6, value 400).
     MysterySnowman,
+    /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
+    MartianOfficer,
+    /// `NPCID.GrayGrunt` (385) — the martian grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600).
+    GrayGrunt,
+    /// `NPCID.MartianEngineer` (386) — the martian engineer (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
+    MartianEngineer,
+    /// `NPCID.GigaZapper` (389) — the martian zapper (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200).
+    GigaZapper,
+    /// `NPCID.MartianWalker` (520) — the martian walker (`NPC.cs`: 34×110,
+    /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0).
+    MartianWalker,
+    /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
+    PirateDeckhand,
+    /// `NPCID.PirateCaptainsMate` (213) — the pirate bruiser (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000).
+    PirateCaptainsMate,
+    /// `NPCID.PirateArcher` (214) — the pirate archer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 30, def 14, 225 HP, kb 0.3, value 1000; the arrows
+    /// ride the projectile work).
+    PirateArcher,
+    /// `NPCID.PirateCorsair` (215) — the pirate elite (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 20, 350 HP, kb 0.35, value 1500).
+    PirateCorsair,
+    /// `NPCID.PirateCaptain` (216) — the pirate boss-minion (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000;
+    /// `GetNPCInvasionGroup`'s 5-point kill).
+    PirateCaptain,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -237,6 +269,23 @@ pub enum NpcKind {
     /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP,
     /// def 15, kb 0.5).
     GoblinTinkerer,
+    /// `NPCID.Golem` (245) — the BODY (`SetDefaults` `NPC.cs:12163-12177`:
+    /// 140x140, aiStyle 45, dmg 72, def 26, 15000 HP, kb 0, boss, value
+    /// 15 gold). Its death is the fight's end (`:79346`'s event flag).
+    Golem,
+    /// `NPCID.GolemHead` (246) — the attached head (`:12178-12192`: 70x70,
+    /// aiStyle 46, dmg 64, def 20, 25000 HP, the silent death — the head
+    /// detaches rather than dies).
+    GolemHead,
+    /// `NPCID.GolemFistLeft` (247) — the lunging fist (`:12193-12206`:
+    /// 40x30, aiStyle 47, dmg 59, def 28, 10000 HP).
+    GolemFistLeft,
+    /// `NPCID.GolemFistRight` (248) — the mirrored fist (the same stats).
+    GolemFistRight,
+    /// `NPCID.GolemHeadFree` (249) — the detached head (`:12207-12220`:
+    /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` —
+    /// the spawn-shielded free-flying phase).
+    GolemHeadFree,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -427,6 +476,21 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
@@ -482,6 +546,11 @@ impl NpcKind {
             NpcKind::Creeper => 56,
             NpcKind::BoundGoblin => 63,
             NpcKind::GoblinTinkerer => 64,
+            NpcKind::Golem => 73,
+            NpcKind::GolemHead => 74,
+            NpcKind::GolemFistLeft => 75,
+            NpcKind::GolemFistRight => 76,
+            NpcKind::GolemHeadFree => 77,
         }
     }
 
@@ -511,6 +580,16 @@ impl NpcKind {
             65 => NpcKind::SnowmanGangsta,
             66 => NpcKind::SnowBalla,
             67 => NpcKind::MysterySnowman,
+            68 => NpcKind::MartianOfficer,
+            69 => NpcKind::GrayGrunt,
+            70 => NpcKind::MartianEngineer,
+            71 => NpcKind::GigaZapper,
+            72 => NpcKind::MartianWalker,
+            68 => NpcKind::PirateDeckhand,
+            69 => NpcKind::PirateCaptainsMate,
+            70 => NpcKind::PirateArcher,
+            71 => NpcKind::PirateCorsair,
+            72 => NpcKind::PirateCaptain,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -554,6 +633,11 @@ impl NpcKind {
             56 => NpcKind::Creeper,
             63 => NpcKind::BoundGoblin,
             64 => NpcKind::GoblinTinkerer,
+            73 => NpcKind::Golem,
+            74 => NpcKind::GolemHead,
+            75 => NpcKind::GolemFistLeft,
+            76 => NpcKind::GolemFistRight,
+            77 => NpcKind::GolemHeadFree,
             _ => return None,
         })
     }
@@ -681,6 +765,23 @@ impl NpcKind {
             | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
+            // The martians: 18x40 (`NPC.cs`'s cases 383/385/386/389) + the walker's 34x110.
+            NpcKind::MartianOfficer => (18.0, 40.0),
+            NpcKind::GrayGrunt => (18.0, 40.0),
+            NpcKind::MartianEngineer => (18.0, 40.0),
+            NpcKind::GigaZapper => (18.0, 40.0),
+            NpcKind::MartianWalker => (34.0, 110.0),
+            // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => (18.0, 40.0),
+            // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the body
+            // 140x140, the head/free head 70x70, the fists 40x30.
+            NpcKind::Golem => (140.0, 140.0),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (70.0, 70.0),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => (40.0, 30.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -817,6 +918,24 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 200,
             NpcKind::SnowBalla => 240,
             NpcKind::MysterySnowman => 220,
+            // The martians: 300/750/400/600/2000 (`NPC.cs`'s cases 383-520).
+            NpcKind::MartianOfficer => 300,
+            NpcKind::GrayGrunt => 750,
+            NpcKind::MartianEngineer => 400,
+            NpcKind::GigaZapper => 600,
+            NpcKind::MartianWalker => 2000,
+            // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 300,
+            NpcKind::PirateCaptainsMate => 450,
+            NpcKind::PirateArcher => 225,
+            NpcKind::PirateCorsair => 350,
+            NpcKind::PirateCaptain => 3000,
+            // `SetDefaults` 245-249: the body 15000, the head 25000, the
+            // fists 10000, the free head 16000.
+            NpcKind::Golem => 15000,
+            NpcKind::GolemHead => 25000,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 10000,
+            NpcKind::GolemHeadFree => 16000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -899,6 +1018,23 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
             NpcKind::MysterySnowman => 55,
+            // The martians: 75/80/40/75/60.
+            NpcKind::MartianOfficer => 75,
+            NpcKind::GrayGrunt => 80,
+            NpcKind::MartianEngineer => 40,
+            NpcKind::GigaZapper => 75,
+            NpcKind::MartianWalker => 60,
+            // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 35,
+            NpcKind::PirateCaptainsMate => 50,
+            NpcKind::PirateArcher => 30,
+            NpcKind::PirateCorsair => 35,
+            NpcKind::PirateCaptain => 70,
+            // `SetDefaults` 245-249: 72/64/59/59/80.
+            NpcKind::Golem => 72,
+            NpcKind::GolemHead => 64,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 59,
+            NpcKind::GolemHeadFree => 80,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -931,6 +1067,10 @@ impl NpcKind {
 
 #[derive(Clone, Debug)]
 pub struct Npc {
+    /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
+    /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
+    /// `+= extraValue` (:79680).
+    pub extra_value: u64,
     pub kind: NpcKind,
     /// The slime colour variant (`SlimeVariant`); only meaningful while
     /// `kind == NpcKind::Slime`.
@@ -1081,6 +1221,27 @@ impl Npc {
         npc.max_hp = stats.life;
         npc.hp = stats.life;
         Some(npc)
+    }
+
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// the random sky tile): the position is the caller's — the slime
+    /// falls through the air under its own gravity. The seed-facing
+    /// variation and the variant stats ride the ground ctor's shape.
+    pub fn spawn_slime_sky(x_px: f32, y_px: f32, variant: SlimeVariant) -> Self {
+        let stats = variant.stats();
+        let mut seed = ((x_px / 16.0) as i32 as u32).wrapping_mul(2_654_435_761);
+        seed ^= seed >> 15;
+        let mut npc = Self::new(
+            NpcKind::Slime,
+            x_px,
+            y_px,
+            if seed & 1 == 0 { 1 } else { -1 },
+            0.4 + (seed % 80) as f32 * 0.01,
+        );
+        npc.slime = variant;
+        npc.max_hp = stats.life;
+        npc.hp = stats.life;
+        npc
     }
 
     /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
@@ -1304,6 +1465,7 @@ impl Npc {
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
             y,
@@ -1398,6 +1560,24 @@ impl Npc {
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
+            // The martians: 0.25/0/0.4/0.3/0.
+            NpcKind::MartianOfficer => 0.25,
+            NpcKind::GrayGrunt => 0.0,
+            NpcKind::MartianEngineer => 0.4,
+            NpcKind::GigaZapper => 0.3,
+            NpcKind::MartianWalker => 0.0,
+            // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 0.4,
+            NpcKind::PirateCaptainsMate => 0.2,
+            NpcKind::PirateArcher => 0.3,
+            NpcKind::PirateCorsair => 0.35,
+            NpcKind::PirateCaptain => 0.0,
+            // The whole family: kb 0 (`:12171`/`:12188`/`:12204`/`:12218`).
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1502,6 +1682,23 @@ impl Npc {
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
             NpcKind::MysterySnowman => 22,
+            // The martians: 50/30/34/38/40.
+            NpcKind::MartianOfficer => 50,
+            NpcKind::GrayGrunt => 30,
+            NpcKind::MartianEngineer => 34,
+            NpcKind::GigaZapper => 38,
+            NpcKind::MartianWalker => 40,
+            // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 17,
+            NpcKind::PirateCaptainsMate => 22,
+            NpcKind::PirateArcher => 14,
+            NpcKind::PirateCorsair => 20,
+            NpcKind::PirateCaptain => 30,
+            // `SetDefaults` 245-249: 26/20/28/28/32.
+            NpcKind::Golem => 26,
+            NpcKind::GolemHead => 20,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 28,
+            NpcKind::GolemHeadFree => 32,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1602,6 +1799,26 @@ impl Npc {
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The martians: 1200/600/1200/1200/0 (the walker has no value row —
+            // the vanilla's 2000-HP body drops through the kill chain).
+            NpcKind::MartianOfficer => 1200.0,
+            NpcKind::GrayGrunt => 600.0,
+            NpcKind::MartianEngineer => 1200.0,
+            NpcKind::GigaZapper => 1200.0,
+            NpcKind::MartianWalker => 0.0,
+            // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 700.0,
+            NpcKind::PirateCaptainsMate => 1000.0,
+            NpcKind::PirateArcher => 1000.0,
+            NpcKind::PirateCorsair => 1500.0,
+            NpcKind::PirateCaptain => 50000.0,
+            // The body carries `Item.buyPrice(0, 15)` = 15 gold = 150000
+            // copper (`:12173`); the parts none.
+            NpcKind::Golem => 150000.0,
+            NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
@@ -1801,6 +2018,11 @@ impl Npc {
                 self.update_goblin(world, player)
             }
             NpcKind::GoblinArcher => self.update_archer(world, player, rng),
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => self.update_golem(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3): the walker speed
@@ -1818,6 +2040,22 @@ impl Npc {
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_skeleton(world, player, dt)
             }
+            // The martians: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Scrambler/RayGunner/zapper
+            // shot arms land with the projectile work).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper
+            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            // The pirates: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Captain's cannon and the
+            // Deadeye's shots land with the projectile work).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -1905,6 +2143,42 @@ impl Npc {
                         NpcKind::SnowmanGangsta => 4,
                         NpcKind::SnowBalla => 5,
                         _ => 7,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The martians: the 9-frame strips (the walker's 11) — the same
+            // accumulator.
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            NpcKind::MartianWalker => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
+                }
+            }
+            // The pirates: the 16/20-frame humanoid strips (the same
+            // accumulator).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => 16,
+                        _ => 20,
                     };
                     self.frame = (self.frame + 1) % count;
                 }
@@ -2216,6 +2490,16 @@ impl Npc {
                         self.frame_counter = 0.0;
                     }
                 }
+            }
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => {
+                // The v1: the single-frame draws (the Golem's part
+                // animation cycles land with the full AI_045-48 machines).
+                self.frame_counter = 0.0;
+                self.frame = 0;
             }
             NpcKind::GoblinTinkerer => {
                 // The town 3-frame machine (`Main.npcFrameCount[107]`,
@@ -3873,6 +4157,93 @@ impl Npc {
     /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
     /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
     /// invulnerability gate (the Creepers' orbit = the follow-ups).
+    /// The Golem family's v1 machines (the aiStyles 45-48): the body
+    /// hovers the EoC-cycle shape toward the player; the attached head
+    /// floats at the body's crown (the offset lock); the fists lunge
+    /// (the reach at the 120-tick interval, the retract); the free head
+    /// clears its spawn shield at 120 ticks and hovers. The full AI_045
+    /// through AI_048 (the fireballs, the head-retract, the laser eyes)
+    /// = the follow-ups.
+    fn update_golem(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        match self.kind {
+            NpcKind::Golem => {
+                // The body: the EoC-cycle shape's hover arm (the target
+                // point 200 above the player, the +-0.07 accels, the 8
+                // cap — the established v1 hover).
+                let tx = pcx - cx;
+                let ty = (pcy - 200.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-8.0, 8.0);
+                self.vy = self.vy.clamp(-8.0, 8.0);
+            }
+            NpcKind::GolemHead => {
+                // The attached head: the same hover target as the body —
+                // they spawn together and hold formation (the offset
+                // lock through the roster link = the follow-up).
+                let tx = pcx - cx;
+                let ty = (pcy - 200.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-8.0, 8.0);
+                self.vy = self.vy.clamp(-8.0, 8.0);
+            }
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                // The fists: the lunge cycle — the reach toward the
+                // player at the 120-tick interval (the ai[0] counter),
+                // the straight flight, the decay to the stop.
+                if self.ai[0] <= 0.0 {
+                    self.caster_counter += 1;
+                    if self.caster_counter >= 120 {
+                        self.caster_counter = 0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        self.vx = dx / d * 8.0;
+                        self.vy = dy / d * 8.0;
+                        self.ai[0] = 1.0;
+                    }
+                } else {
+                    self.vx *= 0.95;
+                    self.vy *= 0.95;
+                    if self.vx.abs() + self.vy.abs() < 0.5 {
+                        self.ai[0] = 0.0;
+                    }
+                }
+            }
+            NpcKind::GolemHeadFree => {
+                // The free head: the spawn shield clears at 120 ticks
+                // (the vanilla AI_048 clears `dontTakeDamage` — the
+                // exact arm lands with the full machine), then the
+                // EoC-shape hover.
+                self.caster_counter += 1;
+                if self.caster_counter > 120 {
+                    self.dont_take_damage = false;
+                }
+                let tx = pcx - cx;
+                let ty = (pcy - 150.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-7.0, 7.0);
+                self.vy = self.vy.clamp(-7.0, 7.0);
+            }
+            _ => {}
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
     /// The Creeper (`AI_055`, `NPC.cs:32657-32735`): the orbit around
     /// the brain — beyond the 90 px ring the velocity blends home
     /// (`x15/16`), inside it the speed amplifies x1.05 under the 8 cap;
@@ -4259,6 +4630,16 @@ impl Npc {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -4300,12 +4681,13 @@ impl Npc {
             NpcKind::Plantera => 54,
             NpcKind::BrainOfCthulhu => 55,
             NpcKind::Creeper => 53,
-            NpcKind::GoblinPeon => 54,
-            NpcKind::GoblinThief => 55,
-            NpcKind::GoblinWarrior => 56,
-            NpcKind::GoblinArcher => 57,
             NpcKind::BoundGoblin => 58,
             NpcKind::GoblinTinkerer => 59,
+            NpcKind::Golem => 60,
+            NpcKind::GolemHead => 61,
+            NpcKind::GolemFistLeft => 62,
+            NpcKind::GolemFistRight => 63,
+            NpcKind::GolemHeadFree => 64,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -6274,6 +6656,37 @@ mod tests {
         assert_eq!(n.hp, 250);
         assert_eq!(w.saved_goblin, true);
     }
+    #[test]
+    fn the_golem_family_stats_and_maps() {
+        // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the
+        // kind<->u16 65-69, the bestiary fold (the parts -> the Golem
+        // entry net 245).
+        assert_eq!(NpcKind::Golem.max_hp(), 15000);
+        assert_eq!(NpcKind::GolemHead.max_hp(), 25000);
+        assert_eq!(NpcKind::GolemFistLeft.max_hp(), 10000);
+        assert_eq!(NpcKind::GolemHeadFree.max_hp(), 16000);
+        let b = Npc::new(NpcKind::Golem, 0.0, 0.0, 1, 0.0);
+        assert_eq!(b.defense(), 26);
+        let fh = Npc::new(NpcKind::GolemHeadFree, 0.0, 0.0, 1, 0.0);
+        assert_eq!(fh.defense(), 32);
+        assert_eq!(NpcKind::Golem.size(), (140.0, 140.0));
+        assert_eq!(NpcKind::GolemFistRight.size(), (40.0, 30.0));
+        assert_eq!(NpcKind::Golem.contact_damage(), 72);
+        assert_eq!(NpcKind::GolemHeadFree.contact_damage(), 80);
+        for (kind, v) in [
+            (NpcKind::Golem, 73),
+            (NpcKind::GolemHead, 74),
+            (NpcKind::GolemFistLeft, 75),
+            (NpcKind::GolemFistRight, 76),
+            (NpcKind::GolemHeadFree, 77),
+        ] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GolemHeadFree, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 245, "the parts fold onto the Golem entry");
+    }
+
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
