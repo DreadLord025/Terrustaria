@@ -1802,6 +1802,11 @@ impl App {
                 .unwrap_or(1);
             ty.map(|ty| (ty, seed))
         });
+        // The chests roll their loot here — before the struct literal moves
+        // `world` (`AddBuriedChest`'s stock inline with the placement, the
+        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
+        // chest merges in (its anchor is already stocked — the roll skips).
+        let world_chests = crate::chest_gen::generate_world_chests(&world);
         let mut app = App {
             window: None,
             gpu: None,
@@ -2012,7 +2017,10 @@ impl App {
             crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
-            world_chests: tr_chest_store,
+            // The load-time loot roll (the hoist above); the `TR_CHEST`
+            // store's own chests stay (its anchor gets double-stocked in
+            // vanilla too — the fixture stock wins the first slots).
+            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
