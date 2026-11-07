@@ -697,6 +697,12 @@ fn invasion_warning(app: &mut App) {
             "Pirates are approaching from the east!",
             "The pirates have arrived!",
         ),
+        4 => (
+            "Martian Madness has been defeated!",
+            "Martian Madness is approaching from the west!",
+            "Martian Madness is approaching from the east!",
+            "Martian Madness has arrived!",
+        ),
         _ => (
             "The goblin army has been defeated!",
             "Goblins are approaching from the west!",
@@ -747,6 +753,7 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         match app.world.invasion_type {
             2 => app.world.downed_frost = true,
             3 => app.world.downed_pirates = true,
+            4 => app.world.downed_martians = true,
             _ => app.world.downed_goblins = true,
         }
         invasion_warning(app);
@@ -800,6 +807,12 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::PirateArcher
         | NpcKind::PirateCorsair
         | NpcKind::PirateCaptain => 3,
+        // `NPC.cs:78327-78336`+: the martians (the group 4).
+        NpcKind::MartianOfficer
+        | NpcKind::GrayGrunt
+        | NpcKind::MartianEngineer
+        | NpcKind::GigaZapper
+        | NpcKind::MartianWalker => 4,
         _ => 0,
     }
 }
@@ -905,6 +918,25 @@ fn invasion_spawn_pick(
     }
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
+    }
+    // `invasionType == 4`'s table (`NPC.cs:1487-1540`): the verbatim tiers —
+    // the Saucer 395 (the Next(45) + the 30% progress gate), the Scutlix
+    // Rider 390/the RayGunner 382/the BrainScrambler 381 (num6 >= 6 / >= 4),
+    // the Drone 388 — ride their AI families as they land; the ground four
+    // (the GrayGrunt 385, the GigaZapper 389, the Officer 383, the Walker
+    // 520's walk-in) spawn from the else arm.
+    if invasion_type == 4 {
+        let num6 = (crate::app::frame::rand01(rng) * 7.0) as u32;
+        if num6 < 4 {
+            let num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
+            return match num9 {
+                0 => NpcKind::GrayGrunt,
+                1 => NpcKind::GigaZapper,
+                2 => NpcKind::MartianOfficer,
+                _ => NpcKind::GrayGrunt,
+            };
+        }
+        return NpcKind::GrayGrunt;
     }
     // `invasionType == 3`'s table (`NPC.cs:1460-1484`): the Flying Dutchman
     // 491 (the half-points window) is the boss-minion follow-up; the
@@ -2630,4 +2662,61 @@ mod invasion_bar_tests {
         assert_eq!(app.world.invasion_type, 0);
         assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
     }
+
+#[cfg(test)]
+mod martian_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+
+
+    #[test]
+    fn the_type4_machine_sizes_the_invasion() {
+        // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
+        // single qualified player → 200) — the type-4 arm overrides the base.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        start_invasion(&mut app.world, 1, 4);
+        assert_eq!(app.world.invasion_type, 4);
+        assert_eq!(app.world.invasion_size, 200);
+        assert_eq!(app.world.invasion_size_start, 200);
+    }
+
+    #[test]
+    fn the_martian_kill_credit_drains_and_defeats() {
+        // The group-4 match: the martian kills drain 1 point each; at 0 the
+        // `downedMartians` flag sets (the pirate flag untouched).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 4;
+        app.world.invasion_size = 1;
+        app.world.invasion_size_start = 200;
+        report_invasion_kill(&mut app, NpcKind::GrayGrunt);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_martians, "the martian defeat flag");
+        assert!(!app.world.downed_pirates, "the pirate flag untouched");
+        assert_eq!(app.world.invasion_type, 0);
+    }
+
+    #[test]
+    fn the_martian_spawn_table_picks_the_ground_four() {
+        // `invasionType == 4`'s ported table: the ground four (the GrayGrunt
+        // 385, the GigaZapper 389, the Officer 383) — the Saucer/Rider/
+        // Drone/Probe arms ride their AI families as they land.
+        let mut rng = 13u64;
+        for _ in 0..60 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 4),
+                NpcKind::GrayGrunt | NpcKind::GigaZapper | NpcKind::MartianOfficer
+            ));
+        }
+    }
+}
+
 }

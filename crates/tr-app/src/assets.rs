@@ -1359,6 +1359,8 @@ impl Lookups {
                 atlas.sheet("NPC_143").copied(),
                 atlas.sheet("NPC_144").copied(),
                 atlas.sheet("NPC_145").copied(),
+                atlas.sheet("NPC_383").copied(),
+                atlas.sheet("NPC_520").copied(),
                 atlas.sheet("NPC_212").copied(),
                 atlas.sheet("NPC_216").copied(),
                 atlas.sheet("NPC_117").copied(),

@@ -90,7 +90,21 @@ pub enum NpcKind {
     /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
     /// 220 HP, kb 0.6, value 400).
     MysterySnowman,
-
+    /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
+    MartianOfficer,
+    /// `NPCID.GrayGrunt` (385) — the martian grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600).
+    GrayGrunt,
+    /// `NPCID.MartianEngineer` (386) — the martian engineer (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
+    MartianEngineer,
+    /// `NPCID.GigaZapper` (389) — the martian zapper (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200).
+    GigaZapper,
+    /// `NPCID.MartianWalker` (520) — the martian walker (`NPC.cs`: 34×110,
+    /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0).
+    MartianWalker,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -462,6 +476,16 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
             NpcKind::PirateDeckhand => 68,
             NpcKind::PirateCaptainsMate => 69,
             NpcKind::PirateArcher => 70,
@@ -556,6 +580,11 @@ impl NpcKind {
             65 => NpcKind::SnowmanGangsta,
             66 => NpcKind::SnowBalla,
             67 => NpcKind::MysterySnowman,
+            68 => NpcKind::MartianOfficer,
+            69 => NpcKind::GrayGrunt,
+            70 => NpcKind::MartianEngineer,
+            71 => NpcKind::GigaZapper,
+            72 => NpcKind::MartianWalker,
             68 => NpcKind::PirateDeckhand,
             69 => NpcKind::PirateCaptainsMate,
             70 => NpcKind::PirateArcher,
@@ -736,6 +765,12 @@ impl NpcKind {
             | NpcKind::GoblinSummoner => (18.0, 38.0),
             // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
+            // The martians: 18x40 (`NPC.cs`'s cases 383/385/386/389) + the walker's 34x110.
+            NpcKind::MartianOfficer => (18.0, 40.0),
+            NpcKind::GrayGrunt => (18.0, 40.0),
+            NpcKind::MartianEngineer => (18.0, 40.0),
+            NpcKind::GigaZapper => (18.0, 40.0),
+            NpcKind::MartianWalker => (34.0, 110.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -883,6 +918,12 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 200,
             NpcKind::SnowBalla => 240,
             NpcKind::MysterySnowman => 220,
+            // The martians: 300/750/400/600/2000 (`NPC.cs`'s cases 383-520).
+            NpcKind::MartianOfficer => 300,
+            NpcKind::GrayGrunt => 750,
+            NpcKind::MartianEngineer => 400,
+            NpcKind::GigaZapper => 600,
+            NpcKind::MartianWalker => 2000,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -977,6 +1018,12 @@ impl NpcKind {
             NpcKind::SnowmanGangsta => 50,
             NpcKind::SnowBalla => 65,
             NpcKind::MysterySnowman => 55,
+            // The martians: 75/80/40/75/60.
+            NpcKind::MartianOfficer => 75,
+            NpcKind::GrayGrunt => 80,
+            NpcKind::MartianEngineer => 40,
+            NpcKind::GigaZapper => 75,
+            NpcKind::MartianWalker => 60,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1508,6 +1555,12 @@ impl Npc {
             // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
+            // The martians: 0.25/0/0.4/0.3/0.
+            NpcKind::MartianOfficer => 0.25,
+            NpcKind::GrayGrunt => 0.0,
+            NpcKind::MartianEngineer => 0.4,
+            NpcKind::GigaZapper => 0.3,
+            NpcKind::MartianWalker => 0.0,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1624,6 +1677,12 @@ impl Npc {
             NpcKind::SnowmanGangsta => 20,
             NpcKind::SnowBalla => 26,
             NpcKind::MysterySnowman => 22,
+            // The martians: 50/30/34/38/40.
+            NpcKind::MartianOfficer => 50,
+            NpcKind::GrayGrunt => 30,
+            NpcKind::MartianEngineer => 34,
+            NpcKind::GigaZapper => 38,
+            NpcKind::MartianWalker => 40,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1735,6 +1794,13 @@ impl Npc {
             NpcKind::GoblinSummoner => 5000.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The martians: 1200/600/1200/1200/0 (the walker has no value row —
+            // the vanilla's 2000-HP body drops through the kill chain).
+            NpcKind::MartianOfficer => 1200.0,
+            NpcKind::GrayGrunt => 600.0,
+            NpcKind::MartianEngineer => 1200.0,
+            NpcKind::GigaZapper => 1200.0,
+            NpcKind::MartianWalker => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -1969,6 +2035,14 @@ impl Npc {
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
                 self.update_skeleton(world, player, dt)
             }
+            // The martians: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Scrambler/RayGunner/zapper
+            // shot arms land with the projectile work).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper
+            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2066,6 +2140,25 @@ impl Npc {
                         _ => 7,
                     };
                     self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The martians: the 9-frame strips (the walker's 11) — the same
+            // accumulator.
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            NpcKind::MartianWalker => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
                 }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
@@ -4532,6 +4625,11 @@ impl Npc {
             NpcKind::SnowmanGangsta => 65,
             NpcKind::SnowBalla => 66,
             NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
             NpcKind::PirateDeckhand => 68,
             NpcKind::PirateCaptainsMate => 69,
             NpcKind::PirateArcher => 70,
