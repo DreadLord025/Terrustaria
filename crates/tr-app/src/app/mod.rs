@@ -211,13 +211,6 @@ pub(crate) struct App {
     /// crafting reads; the chest UI/storage fills it (`M3-CHEST-UI`,
     /// `M6-SAVE-2`) — in-memory for now.
     pub(crate) world_chests: Vec<craft::WorldChest>,
-    /// `Player.chest` (`Player.cs:2876`): the open world chest's store index,
-    /// `-1` = none. The bank values −2..−5 land with M3-STORE-1.
-    pub(crate) chest: i32,
-    /// `Player.chestX`/`chestY` (`Player.cs:2878`/:2880): the open chest's
-    /// tile origin (the 2×2's top-left).
-    pub(crate) chest_x: i32,
-    pub(crate) chest_y: i32,
     /// `ChestUI.StartingRowForDrawing` (`ChestUI.cs:52`): the chest grid's top
     /// visible row, clamped per frame by the draw and by the wheel scroll.
     pub(crate) chest_scroll_row: i32,
@@ -1075,6 +1068,16 @@ impl App {
         })));
     }
 
+    /// The unified open-container index (`Player.chest`, `Player.cs:2876`):
+    /// -1 closed, -2..-5 the banks (`bank.rs`'s `bank_for_chest`), >= 0 the
+    /// `App.world_chests` store index. The -1 answer when no player is live
+    /// (the front screens park the world routes).
+    pub(crate) fn open_container(&self) -> i32 {
+        self.player
+            .as_ref()
+            .map_or(crate::bank::CHEST_CLOSED, |p| p.chest)
+    }
+
     /// `Main.editChest` (`Main.cs:1747`) — the port's editor is exactly "the
     /// chest-rename keyboard session is open" (`IngameFancyUI.cs:124` sets
     /// it, the submit/cancel closures clear it).
@@ -1590,6 +1593,16 @@ impl App {
         } else {
             None
         };
+        // The open state lives on the player (`Player.chest`, the C#
+        // location — M3-CHEST-INT's unify): the fixture stages it on the
+        // spawned player. `TR_CHEST` + `TR_NOPLAYER` stages no open panel
+        // (no player = no container state, C#-faithful); the fixture's
+        // screenshot combos keep the player.
+        if let (Some(p), Some((idx, cx, cy))) = (player.as_mut(), tr_chest) {
+            p.chest = idx;
+            p.chest_x = cx;
+            p.chest_y = cy;
+        }
         let has_liquids = world.tiles.iter().any(|t| t.liquid > 0);
         let world_seed = world.seed;
         let mut wind = tr_core::wind::Wind::new(world_seed as u32);
@@ -1883,9 +1896,6 @@ impl App {
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
             world_chests: tr_chest_store,
-            chest: tr_chest.as_ref().map_or(-1, |c| c.0),
-            chest_x: tr_chest.as_ref().map_or(0, |c| c.1),
-            chest_y: tr_chest.as_ref().map_or(0, |c| c.2),
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],

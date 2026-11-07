@@ -297,9 +297,16 @@ pub struct Player {
     /// `Player.cs:1580-1591` — `Chest.CreateBank(-2..-5)`, 40 slots each;
     /// player-bounded, always unlocked per `Chest.cs:178-189`).
     pub banks: [crate::bank::BankStore; 4],
-    /// `Player.chest` (`Player.cs:33492-33502`): the open container index —
-    /// -1 closed, -2..-5 the banks. The world chests (>= 0) are M3-CHEST-UI's.
+    /// `Player.chest` (`Player.cs:2876`): the single open-container index —
+    /// -1 closed, -2..-5 the banks (`bank.rs`'s `bank_for_chest`), >= 0 the
+    /// `App.world_chests` store index. Every open/close/tick route writes
+    /// this one field (`chest.rs`'s shared path — the M3-CHEST-INT unify).
     pub chest: i32,
+    /// `Player.chestX`/`chestY` (`Player.cs:2878`/:2880): the open
+    /// container's tile origin — set for the banks too (`OpenChest`
+    /// `:33524-33525`), the per-tick range close's probe point.
+    pub chest_x: i32,
+    pub chest_y: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -646,6 +653,8 @@ impl Player {
             equipped_prefix: [0; 20],
             banks: std::array::from_fn(|_| std::array::from_fn(|_| crate::item::EMPTY_SLOT)),
             chest: crate::bank::CHEST_CLOSED,
+            chest_x: 0,
+            chest_y: 0,
             void_vault_enabled: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,

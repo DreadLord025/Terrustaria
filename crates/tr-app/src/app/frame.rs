@@ -502,9 +502,10 @@ impl App {
         // reads the map field directly so the borrow stays field-scoped).
         let chest_editing = self.chest_editing();
         let chest_edit_text = self.chest_edit_text().to_string();
-        let chest_stored_name = if self.chest > -1 {
+        let chest_open = self.open_container();
+        let chest_stored_name = if chest_open > -1 {
             self.chest_names
-                .get(&(self.chest as usize))
+                .get(&(chest_open as usize))
                 .map(String::as_str)
                 .unwrap_or("")
         } else {
@@ -1198,6 +1199,14 @@ impl App {
                     } else {
                         Vec::new()
                     };
+                    // The unified open-container state (`Player.chest`,
+                    // `Player.cs:2876`/`:2878`/:2880) — the panel reads the
+                    // player's fields now that one field covers every kind.
+                    let panel_chest = player
+                        .as_ref()
+                        .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
+                    let (panel_chest_x, panel_chest_y) =
+                        player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
                     ui::draw_hud(
                         renderer,
                         *camera,
@@ -1234,20 +1243,24 @@ impl App {
                         // `ChestUI.Draw`'s state (`Main.player[myPlayer].chest`
                         // + the statics) — the plan-amendment insertion
                         // (#10): the disjoint `App` fields the panel reads
-                        // and animates per frame.
+                        // and animates per frame. The unified open state is
+                        // `Player.chest` (M3-CHEST-INT) — `panel_chest`
+                        // carries the full index space; the panel itself is
+                        // the world-chest surface (the `>= 0` gate in
+                        // `ui::chest::draw`, the STORE-1 two-panel shape).
                         ui::chest::PanelState {
-                            chest: self.chest,
-                            origin: (self.chest_x, self.chest_y),
+                            chest: panel_chest,
+                            origin: (panel_chest_x, panel_chest_y),
                             crafting_open: self.crafting_open,
                             tile: world
-                                .tile(self.chest_x, self.chest_y)
+                                .tile(panel_chest_x, panel_chest_y)
                                 .filter(|t| t.active())
                                 .map(|t| (t.kind, t.frame_x)),
-                            slots: (self.chest > -1)
+                            slots: (panel_chest > -1)
                                 .then(|| {
                                     crate::chest::chest_slots(
                                         &self.world_chests,
-                                        self.chest as usize,
+                                        panel_chest as usize,
                                     )
                                 })
                                 .flatten(),

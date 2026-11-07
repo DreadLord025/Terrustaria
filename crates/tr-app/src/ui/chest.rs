@@ -69,7 +69,10 @@ const SLOT_TINT: [f32; 4] = [220.0 / 255.0; 4];
 /// per-frame mutable button state cannot re-enter `&mut App` from inside
 /// `draw_hud`.
 pub(crate) struct PanelState<'a> {
-    /// `Main.player[Main.myPlayer].chest` (`Player.cs:2876`); `-1` = closed.
+    /// `Main.player[Main.myPlayer].chest` (`Player.cs:2876`) — the unified
+    /// open-container index (M3-CHEST-INT): `-1` closed, `-2..-5` the banks
+    /// (whose panel is the STORE-1 row — this one draws for `>= 0` only),
+    /// `>= 0` the world-chest store index.
     pub(crate) chest: i32,
     /// `Player.chestX/chestY` (`Player.cs:2878`/:2880`) — the 2×2's origin.
     pub(crate) origin: (i32, i32),
@@ -105,10 +108,14 @@ pub(crate) struct PanelState<'a> {
     pub(crate) audio: &'a mut audio::Audio,
 }
 
-/// `ChestUI.Draw` (`ChestUI.cs:84-105`): the whole panel runs while a chest is
-/// open and the crafting panel is closed (`!NewCraftingUI.Visible`; the
-/// gamepad `PipsUseGrid` arm is unported). Closed — or covered — every button
-/// decays back to its idle state (`:99-104`).
+/// `ChestUI.Draw` (`ChestUI.cs:84-105`): the whole panel runs while a chest
+/// is open and the crafting panel is closed (`!NewCraftingUI.Visible`; the
+/// gamepad `PipsUseGrid` arm is unported). Closed — or covered — every
+/// button decays back to its idle state (`:99-104`). The C# gate is
+/// `chest != -1` for every container kind; the port's panel is the
+/// world-chest surface (the STORE-1 two-panel shape — the banks keep their
+/// `ui/inventory.rs` row), so the gate is `chest >= 0` and the bank values
+/// fall to the idle reset.
 pub(crate) fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -116,7 +123,7 @@ pub(crate) fn draw(
     pulse: super::UiPulse,
     mouse: Vec2,
 ) {
-    if p.chest != -1 && !p.crafting_open {
+    if p.chest >= 0 && !p.crafting_open {
         draw_name(r, lookups, &mut p, pulse);
         draw_buttons(r, lookups, &mut p, pulse, mouse);
         draw_slots(r, lookups, &mut p);
@@ -374,8 +381,10 @@ pub(crate) fn scroll(app: &mut crate::app::App, notches: i32, mouse: Vec2) -> bo
     // `Main.cs:17436` — `chest != -1 && ChestUI.LastHighestChestRow > 0`
     // (the row count is a pure function of the default maxItems until
     // M6-SAVE-2's `Resize` — with the default 40 the gate is dead, exactly
-    // like the C#'s for a full-size chest).
-    if app.chest == -1 || highest_scroll_row(DEFAULT_MAX_ITEMS) <= 0 {
+    // like the C#'s for a full-size chest). The port's scrollable grid is
+    // the world-chest panel's — bank values refuse (the STORE-1 two-panel
+    // shape, `ui::chest::draw`'s gate).
+    if app.open_container() < 0 || highest_scroll_row(DEFAULT_MAX_ITEMS) <= 0 {
         return false;
     }
     // `Main.cs:17442` — `LastChestDisplayRectangle.Contains(MouseScreen)`.
@@ -632,9 +641,10 @@ mod tests {
         // is not consumed even inside the rect (it falls through to the
         // crafting list, `flag` stays true).
         let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
         let inside = Vec2::new(200.0, 300.0);
         assert!(!scroll(&mut app, 1, inside)); // chest == -1
-        app.chest = 0;
+        app.player.as_mut().unwrap().chest = 0;
         assert!(!scroll(&mut app, 1, inside)); // LastHighestChestRow == 0
         assert_eq!(app.chest_scroll_row, 0);
         // The rect gate would reject an outside pointer even with rows.

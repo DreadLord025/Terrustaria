@@ -2158,26 +2158,20 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
     if let edit::TileInteraction::BankOpen { bank } = result {
-        // `Player.OpenChest`'s toggle (`Player.cs:33245-33255` + the
-        // num73 switch :33122-33138): the same bank re-clicked closes
-        // (`chest = -1`), another switches; the inventory opens with it
-        // (`Main.playerInventory = true`, `Player.cs:33516`).
-        let (next, opening) = {
-            let p = app.player.as_ref().map(|p| p.chest).unwrap_or(crate::bank::CHEST_CLOSED);
-            if p == bank {
-                (crate::bank::CHEST_CLOSED, false)
-            } else {
-                (bank, true)
-            }
-        };
-        if let Some(p) = app.player.as_mut() {
-            p.chest = next;
-        }
-        // `OpenChest`'s `Main.playerInventory = true` (`Player.cs:33516`);
-        // the close drops the panel too (the vanilla keeps the inventory
-        // open on the chest close — the port closes the pair, the
-        // text-panel fidelity).
-        app.inventory_open = opening;
+        // The bank tiles ride the same shared open block the world chests
+        // use (`Player.cs:33230-33252` via `chest::toggle_open`, the
+        // M3-CHEST-INT unify): the re-click closes (`chest = -1`, sound 11),
+        // a fresh open plays 10, a switch plays 12. `OpenChest` rides inside
+        // — `chest`/`chestX`/`chestY` (the C# origin decode,
+        // `chest::bank_open_origin`) and `Main.playerInventory = true`
+        // (`:33516-33525`); the close keeps the inventory open (the C#
+        // never touches it here — the STORE-1 pair-close deviation is
+        // gone). The prologue's sign/talk/chat clears (:33087-33096) are
+        // the shop close, the world route's mapping (chest.rs:525).
+        app.close_shop();
+        let (ox, oy) = crate::chest::bank_open_origin(&app.world, tx, ty);
+        let sound = crate::chest::toggle_open(app, ox, oy, bank);
+        crate::chest::play_menu_sound(app, sound);
         app.world_key = None;
         return true;
     }
@@ -4072,9 +4066,14 @@ mod tests {
 
     #[test]
     fn test_store_1_the_piggy_right_click_toggles_the_bank() {
-        // `Player.cs:33122-33138` + `OpenChest`'s toggle (:33245-33255): the
+        // `Player.cs:33122-33138` + the shared open block (:33230-33252, the
+        // M3-CHEST-INT unify routes it through `chest::toggle_open`): the
         // right-click opens chest -2 (the piggy), the re-click closes to -1;
-        // the inventory opens with the bank. The furniture interact tests
+        // the inventory opens with the bank (`OpenChest`'s
+        // `Main.playerInventory = true`, `:33517`) and STAYS open on the
+        // chest close — the C# close arm never touches `playerInventory`
+        // (the world-chest panel's close behaves the same; the STORE-1
+        // pair-close deviation is gone). The furniture interact tests
         // drive `interact_tile` directly (the route's press edge is latched
         // at `update_editing`'s head).
         let mut w = object_world();
@@ -4099,10 +4098,185 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.chest, -2, "the piggy opens chest -2");
         assert!(app.inventory_open, "the bank opens the inventory");
-        // The re-click closes.
+        assert_eq!(
+            (p.chest_x, p.chest_y),
+            (10, 19),
+            "OpenChest sets the origin for the banks too (:33524-33525)"
+        );
+        // The re-click closes; the inventory stays open (C# 1:1).
         assert!(interact_tile(&mut app, 10, 19));
-        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the re-click closes");
-        assert!(!app.inventory_open, "closing drops the inventory");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the re-click closes"
+        );
+        assert!(app.inventory_open, "the close keeps the inventory open");
+        assert_eq!(
+            (
+                app.player.as_ref().unwrap().chest_x,
+                app.player.as_ref().unwrap().chest_y
+            ),
+            (10, 19),
+            "the close keeps chestX/Y (:33236)"
+        );
+    }
+
+    /// A container tile with its sheet frame set (the 2×2 chest shape's
+    /// corners — `chest.rs`'s `place_chest` test fixture).
+    fn set_container_tile(w: &mut World, x: i32, y: i32, kind: u16, fx: i16, fy: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.tiles[i].frame_x = fx;
+        w.tiles[i].frame_y = fy;
+    }
+
+    /// The world-position of tile `(x, y)`'s centre (the
+    /// `chest::try_open_chest_at_cursor` route's `(px / TILE_PX).floor()`).
+    fn world_click(x: i32, y: i32) -> Vec2 {
+        Vec2::new(x as f32 * TILE_PX + 8.0, y as f32 * TILE_PX + 8.0)
+    }
+
+    /// DW-1.1 — opening a bank closes an open world chest (`Player.chest`,
+    /// `Player.cs:2876`, the M3-CHEST-INT unify): the world chest opened by
+    /// the right-click route (`chest::try_open_chest_at_cursor`, store index
+    /// 0) is replaced when the bank tile's click runs the shared open block
+    /// — the cross-close is free with one field and one open path.
+    #[test]
+    fn test_DW_1_1_opening_a_bank_closes_the_world_chest() {
+        let mut w = object_world();
+        // A world chest 2×2 at (30, 15) — the frame corners 0/18.
+        set_container_tile(&mut w, 30, 15, 21, 0, 0);
+        set_container_tile(&mut w, 31, 15, 21, 18, 0);
+        set_container_tile(&mut w, 30, 16, 21, 0, 18);
+        set_container_tile(&mut w, 31, 16, 21, 18, 18);
+        // The piggy on its table row (the store-1 fixture shape).
+        set_tile(&mut w, 10, 20, 14);
+        set_tile(&mut w, 11, 20, 14);
+        set_tile(&mut w, 12, 20, 14);
+        set_container_tile(&mut w, 10, 19, 29, 0, 0);
+        set_container_tile(&mut w, 11, 19, 29, 18, 0);
+        w.frame_important[29] = true;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+
+        // The world chest opens (store index 0, the lazy entry).
+        assert!(crate::chest::try_open_chest_at_cursor(
+            &mut app,
+            world_click(30, 15)
+        ));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, 0, "the world chest is open");
+        assert_eq!((p.chest_x, p.chest_y), (30, 15));
+
+        // The piggy's click runs the shared block through the bank arm: the
+        // world chest is replaced by the bank — one field, no second open
+        // container.
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -2, "the bank replaced the world chest");
+        assert_eq!((p.chest_x, p.chest_y), (10, 19), "the origin moved too");
+        assert!(app.inventory_open, "the bank opened with the inventory");
+    }
+
+    /// DW-1.1 — the reverse: opening a world chest closes an open bank.
+    #[test]
+    fn test_DW_1_1_opening_a_world_chest_closes_the_bank() {
+        let mut w = object_world();
+        set_container_tile(&mut w, 30, 15, 21, 0, 0);
+        set_container_tile(&mut w, 31, 15, 21, 18, 0);
+        set_container_tile(&mut w, 30, 16, 21, 0, 18);
+        set_container_tile(&mut w, 31, 16, 21, 18, 18);
+        set_tile(&mut w, 10, 20, 14);
+        set_tile(&mut w, 11, 20, 14);
+        set_tile(&mut w, 12, 20, 14);
+        set_container_tile(&mut w, 10, 19, 29, 0, 0);
+        set_container_tile(&mut w, 11, 19, 29, 18, 0);
+        w.frame_important[29] = true;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+
+        // The bank opens first.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        // The world chest's right-column click: the origin decodes to
+        // (30, 15), the bank closes (the shared block's `num76 != chest`
+        // switch arm).
+        assert!(crate::chest::try_open_chest_at_cursor(
+            &mut app,
+            world_click(31, 15)
+        ));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, 0, "the world chest replaced the bank");
+        assert_eq!((p.chest_x, p.chest_y), (30, 15));
+    }
+
+    /// DW-1.3 — the bank open/close/re-click path goes through
+    /// `chest::toggle_open` (`Player.cs:33230-33252`, the shared block): the
+    /// fresh open sets `chest`/`chestX`/`chestY` — the C# origin decode lands
+    /// on the piggy's left column even when the RIGHT tile is clicked
+    /// (`Player.cs:33060-33079`) — and the inventory opens with it; the
+    /// re-click closes (the inventory stays open — the C# close arm never
+    /// touches `playerInventory`); a second bank's click switches (the
+    /// sound-12 arm). The sound ids themselves are pinned by
+    /// `chest::tests::test_DW_1_3_toggle_open_returns_the_shared_block_sound_ids`
+    /// (`toggle_open`'s return contract; this arm plays them through
+    /// `play_menu_sound`).
+    #[test]
+    fn test_DW_1_3_bank_clicks_route_through_toggle_open() {
+        let mut w = object_world();
+        // The piggy on its table row.
+        set_tile(&mut w, 10, 20, 14);
+        set_tile(&mut w, 11, 20, 14);
+        set_tile(&mut w, 12, 20, 14);
+        set_container_tile(&mut w, 10, 19, 29, 0, 0);
+        set_container_tile(&mut w, 11, 19, 29, 18, 0);
+        w.frame_important[29] = true;
+        // A safe (97) 2×2 elsewhere — the switch target.
+        set_container_tile(&mut w, 20, 17, 97, 0, 0);
+        set_container_tile(&mut w, 21, 17, 97, 18, 0);
+        set_container_tile(&mut w, 20, 18, 97, 0, 18);
+        set_container_tile(&mut w, 21, 18, 97, 18, 18);
+        w.frame_important[97] = true;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+
+        // The RIGHT piggy tile's click: the origin decodes to (10, 19).
+        assert!(interact_tile(&mut app, 11, 19));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -2, "the piggy opens chest -2");
+        assert_eq!(
+            (p.chest_x, p.chest_y),
+            (10, 19),
+            "the C# origin decode (:33060-33079)"
+        );
+        assert!(
+            app.inventory_open,
+            "OpenChest's playerInventory = true (:33517)"
+        );
+        // The re-click closes; the inventory stays open.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the re-click closes"
+        );
+        assert!(app.inventory_open, "the close keeps the inventory open");
+        // A fresh piggy open, then the safe's click switches.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        assert!(interact_tile(&mut app, 20, 17));
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -3,
+            "the switch opens the safe"
+        );
     }
 
     #[test]

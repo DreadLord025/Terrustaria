@@ -23,8 +23,8 @@
 
 use glam::Vec2;
 
-use crate::app::flow::KeyboardTail;
 use crate::app::App;
+use crate::app::flow::KeyboardTail;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemSlot};
 use crate::player;
 use crate::registry;
@@ -465,29 +465,40 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 
 /// `Player.OpenChest` (`Player.cs:33505-33526`): the index, the crafting
 /// panel close (`NewCraftingUI.Close(quiet: true)` `:33516`), the inventory
-/// open (`Main.playerInventory = true` `:33517`) and the tile origin. The
-/// `ItemSlot.SetGlowForChest`/input-navigator arms are UI state the port
-/// does not carry (`:33508-33515`/:33518-33523).
-fn open_chest(app: &mut App, x: i32, y: i32, new_chest: usize) {
-    app.chest = new_chest as i32;
+/// open (`Main.playerInventory = true` `:33517`) and the tile origin — set
+/// for the banks too (`:33524-33525`), or the per-tick range close would
+/// probe a stale tile. The `ItemSlot.SetGlowForChest`/input-navigator arms
+/// are UI state the port does not carry (`:33508-33515`/:33518-33523).
+fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
+    let Some(p) = app.player.as_mut() else {
+        return;
+    };
+    p.chest = new_chest;
+    p.chest_x = x;
+    p.chest_y = y;
     app.crafting_open = false;
     app.inventory_open = true;
-    app.chest_x = x;
-    app.chest_y = y;
 }
 
-/// `Player.cs:33230-33252` — the open toggle: the same index closes (sound
+/// `Player.cs:33230-33252` — the open toggle shared by every container kind
+/// (the bank tiles land here from editing.rs's `BankOpen` arm, the world
+/// chests from [`try_open_chest_at_cursor`]): the same index closes (sound
 /// 11), a fresh open plays 10 (the `frameX 36..72` Shadow-chest special
 /// event 16 arm `:33243-33246` is the recorded achievements deviation), a
-/// re-open with another chest already open plays 12. Returns the legacy
+/// re-open with another container already open plays 12. Returns the legacy
 /// sound id (the `SoundEngine.PlaySound` argument) so the caller plays it
 /// and the tests pin it.
-fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: usize) -> u32 {
-    if new_chest as i32 == app.chest {
-        app.chest = -1; // `:33236`
+pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 {
+    let Some(current) = app.player.as_ref().map(|p| p.chest) else {
+        return 0; // no player — no container state (the front screens park the routes)
+    };
+    if new_chest == current {
+        if let Some(p) = app.player.as_mut() {
+            p.chest = -1; // `:33236` — `chestX/Y` stay
+        }
         return 11; // `:33237`
     }
-    let was_closed = app.chest == -1; // `:33239`
+    let was_closed = current == -1; // `:33239`
     open_chest(app, x, y, new_chest);
     if was_closed {
         10 // `:33242`
@@ -496,7 +507,31 @@ fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: usize) -> u32 {
     }
 }
 
-fn play_menu_sound(app: &App, legacy_id: u32) {
+/// The container-tile origin decode the C# runs ahead of the shared open
+/// block (`Player.cs:33060-33079`): the frame's sheet column reduced mod 2
+/// and the row from `frameY / 18` — `chest_origin`'s loop — plus the 463/491
+/// adjustment (`frameX != 36 ? +1 : -1`, `y += 2`) that lands on the 3×4
+/// bbox anchor the hitbox table expects (`:31103-31105`). editing.rs's
+/// `BankOpen` arm feeds the pair to [`toggle_open`] (the C# passes the same
+/// `num74/num75` to `OpenChest`, `:33241`/:33249).
+pub(crate) fn bank_open_origin(world: &World, x: i32, y: i32) -> (i32, i32) {
+    let Some(t) = world.tile(x, y) else {
+        return (x, y);
+    };
+    let mut col = t.frame_x / 18;
+    while col > 1 {
+        col -= 2;
+    }
+    let mut ox = x - col as i32;
+    let mut oy = y - (t.frame_y / 18) as i32;
+    if t.kind == 463 || t.kind == 491 {
+        ox += if t.frame_x != 36 { 1 } else { -1 };
+        oy += 2;
+    }
+    (ox, oy)
+}
+
+pub(crate) fn play_menu_sound(app: &App, legacy_id: u32) {
     // `SoundID.MenuOpen/MenuClose/MenuTick = 10/11/12` (`SoundID.cs:42/44/46`),
     // played without a position in the C# (`:33242`/:33237/:33251).
     match legacy_id {
@@ -592,40 +627,43 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         };
         // `:33230-33252` — the open toggle. (`Main.stackSplit = 600`
         // `:33232` and the rigged-chest arm are out.)
-        let sound = toggle_open(app, ox, oy, new_chest);
+        let sound = toggle_open(app, ox, oy, new_chest as i32);
         play_menu_sound(app, sound);
     }
     true
 }
 
 /// `Player.HandleBeingInChestRange` (`Player.cs:31015-31097`) — the per-tick
-/// close: out of the chest's interaction range or a dead tile force-closes
-/// with sound 11 (`:31078-31090`). The bank-projectile arms
-/// (`:31019-31076`) are M3-STORE-1. Runs for alive players only (the C#
-/// call site sits after the dead branch's return, `:24752`/:25290) — the
+/// close for every open container (the unified `Player.chest` covers the
+/// world chests and the banks): out of the container's multi-tile-hitbox
+/// interaction range or a dead origin tile force-closes with sound 11
+/// (`:31078-31090`). The bank-projectile arms (`:31019-31076`) are the
+/// remote opens — out of scope. Runs for alive players only (the C# call
+/// site sits after the dead branch's return, `:24752`/:25290) — the
 /// `update_player` hook inherits that gating.
 pub(crate) fn tick_open(app: &mut App) {
-    if app.chest == -1 {
-        return; // `:31017`
-    }
     let Some(p) = app.player.as_ref() else {
         return;
     };
-    // `:31078` — `IsInInteractionRangeToMultiTileHitbox` (`:31099-31124`).
-    if !in_interaction_range_to_multi_tile_hitbox(app, p) {
+    if p.chest == -1 {
+        return; // `:31017`
+    }
+    let (chest_x, chest_y) = (p.chest_x, p.chest_y);
+    // Both probes read the world only; the close below mutates the player
+    // after the borrow ends.
+    let in_range = in_interaction_range_to_multi_tile_hitbox(&app.world, p, chest_x, chest_y);
+    let origin_active = app.world.tile(chest_x, chest_y).is_some_and(|t| t.active());
+    // `:31078-31085` — the range close plays sound 11.
+    if !in_range {
         let id = force_close(app);
-        play_menu_sound(app, id); // `:31082` — `SoundEngine.PlaySound(11)`
+        play_menu_sound(app, id);
         return;
     }
     // `:31086-31090` — a dead tile force-closes (the `Main.cs:41820-41823`
     // stale-chest equivalent rides this check).
-    if app
-        .world
-        .tile(app.chest_x, app.chest_y)
-        .is_none_or(|t| !t.active())
-    {
+    if !origin_active {
         let id = force_close(app);
-        play_menu_sound(app, id); // `:31088`
+        play_menu_sound(app, id); // `:31088` — `SoundEngine.PlaySound(11)`
     }
 }
 
@@ -633,27 +671,78 @@ pub(crate) fn tick_open(app: &mut App) {
 /// id (11 — `SoundEngine.PlaySound(11)`, played by the caller) so the tests
 /// pin it.
 fn force_close(app: &mut App) -> u32 {
-    app.chest = -1;
+    if let Some(p) = app.player.as_mut() {
+        p.chest = -1;
+    }
     11
 }
 
-/// `Player.IsInInteractionRangeToMultiTileHitbox` (`Player.cs:31099-31124`),
-/// the `BasicChest` row (`:31107-31109` — the 97/88/29/463/491 rows are the
-/// bank/dresser families): the 32×32 rect at the chest origin, deflated by
+/// The per-tile hitbox rect (`Player.cs:31101-31118`), in world px, at the
+/// container origin: the 463/491 row (3×4 at −1/−2 tiles), the
+/// `BasicChest`/97 row (2×2), the 88 dresser row (3×2) and the 29 piggy row
+/// (2×1). An unmatched kind answers `Rectangle.Empty` — `(0, 0, 0, 0)`
+/// (`:31100`).
+fn multi_tile_hitbox_px_rect(kind: u16, x: i32, y: i32) -> (i32, i32, i32, i32) {
+    if kind == 463 || kind == 491 {
+        return (x * 16 - 16, y * 16 - 32, 48, 64); // `:31103-31105`
+    }
+    if is_basic_chest(kind) || kind == 97 {
+        return (x * 16, y * 16, 32, 32); // `:31107-31109`
+    }
+    if kind == 88 {
+        return (x * 16, y * 16, 48, 32); // `:31110-31112`
+    }
+    if kind == 29 {
+        return (x * 16, y * 16, 32, 16); // `:31115-31117`
+    }
+    (0, 0, 0, 0)
+}
+
+/// `Player.IsInInteractionRangeToMultiTileHitbox` (`Player.cs:31099-31124`):
+/// the tile kind's rect at the container origin, deflated by
 /// `Inflate(-1, -1)` (`:31119`), the player's center clamped in
-/// (`Utils.ClosestPointInRect`, `Utils.cs:1581-1595`), the resulting tile
-/// point tested against the `TileReachCheckSettings.Simple` bounds
-/// (`DataStructures/TileReachCheckSettings.cs:81-85` — ranges 5/3,
+/// (`Utils.ClosestPointInRect`, `Utils.cs:1581-1595`), the `(int)`-truncated
+/// tile point (`ToTileCoordinates`) tested against the
+/// `TileReachCheckSettings.Simple` bounds
+/// (`DataStructures/TileReachCheckSettings.cs:45-54/:81-85` — ranges 5/3,
 /// `Player.cs:57113-57114`, under the 20 cap; `Collision.InTileBounds`,
 /// `Collision.cs:3776`, inclusive).
-fn in_interaction_range_to_multi_tile_hitbox(app: &App, p: &player::Player) -> bool {
-    let (rx, ry, rw, rh) = (app.chest_x * 16 + 1, app.chest_y * 16 + 1, 30, 30);
+fn in_interaction_range_to_multi_tile_hitbox(
+    world: &World,
+    p: &player::Player,
+    chest_x: i32,
+    chest_y: i32,
+) -> bool {
+    let kind = world.tile(chest_x, chest_y).map_or(0, |t| t.kind);
+    let (rx, ry, rw, rh) = multi_tile_hitbox_px_rect(kind, chest_x, chest_y);
+    // `r.Inflate(-1, -1)` (`:31119`) — X += 1, Y += 1, W -= 2, H -= 2 (the
+    // Empty rect degenerates to an inverted (1, 1, -2, -2)).
+    let (rx, ry, rw, rh) = (rx + 1, ry + 1, rw - 2, rh - 2);
+    let (left, top) = (rx as f32, ry as f32);
+    let (right, bottom) = ((rx + rw) as f32, (ry + rh) as f32);
     let (center_x, center_y) = p.center();
-    let px = center_x.clamp(rx as f32, (rx + rw) as f32);
-    let py = center_y.clamp(ry as f32, (ry + rh) as f32);
+    // `ClosestPointInRect`'s two sequential ifs (`Utils.cs:1583-1592`) —
+    // `f32::clamp` would panic on the Empty rect's inverted bounds; the
+    // chain answers (-1, -1) there, exactly like the C#.
+    let mut px = center_x;
+    if px < left {
+        px = left;
+    }
+    if px > right {
+        px = right;
+    }
+    let mut py = center_y;
+    if py < top {
+        py = top;
+    }
+    if py > bottom {
+        py = bottom;
+    }
     // `ToTileCoordinates` — the C# `(int)` truncation.
     let tx = (px / 16.0) as i32;
     let ty = (py / 16.0) as i32;
+    // `IsInTileInteractionRange` (`Player.cs:32025-32030`) over the Simple
+    // region (`TileReachCheckSettings.cs:45-54`).
     let lx = (p.x / 16.0) as i32 - 5;
     let hx = ((p.x + player::WIDTH) / 16.0).ceil() as i32 - 1 + 5;
     let ly = (p.y / 16.0) as i32 - 3;
@@ -761,14 +850,14 @@ pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
 /// `IsBlockedFromTransferIntoChest` (`:1291-1302`) is a bank-only rule —
 /// noted for STORE-1.
 pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool) -> bool {
-    if app.chest < 0 {
-        return false; // `GetCurrentContainer`'s world-chest arm (`:1213`)
-    }
+    let chest = match app.player.as_ref() {
+        Some(p) if p.chest >= 0 => p.chest as usize,
+        _ => return false, // `GetCurrentContainer`'s world-chest arm (`:1213`)
+    };
     let item = app.inventory[slot];
     if item.kind == 0 || item.count == 0 {
         return false; // an air item never merges and never fills (`item.maxStack` 0)
     }
-    let chest = app.chest as usize;
     let kind = item.kind;
     let max = registry::max_stack(kind);
     let mut stack = item.count;
@@ -881,10 +970,10 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
         }
     }
 
-    if app.chest < 0 {
-        return;
-    }
-    let chest_idx = app.chest as usize;
+    let chest_idx = match app.player.as_ref() {
+        Some(p) if p.chest >= 0 => p.chest as usize,
+        _ => return,
+    };
     let Some((kind, stack)) = chest_slot(&app.world_chests, chest_idx, chest_slot_idx) else {
         return;
     };
@@ -1007,25 +1096,28 @@ pub(crate) fn rename_button_click(app: &mut App) {
 /// [`CHEST_MAX_NAME_LENGTH`], `Chest.cs:70`). `chest < 0` no-ops (`false`):
 /// the C# would index `Main.chest[-1]`, unreachable in vanilla because the
 /// rename button only draws with a chest open — the port answers calmly
-/// (DW-5.4). `CanDisplay(2)` is unconditionally true
+/// (DW-5.4). The unified `Player.chest` makes the guard exclude the banks
+/// too — correct per `ChestUI.cs:198`'s bank hide rule + `:844-848`
+/// (M3-CHEST-INT). `CanDisplay(2)` is unconditionally true
 /// (`UIVirtualKeyboard.cs:1022-1029`); `Main.clrInput` (`:128`) has no port
 /// route (the front screen parks the world input routes).
 pub(crate) fn open_rename(app: &mut App) -> bool {
-    if app.chest < 0 {
-        return false; // the DW-5.4 guard
-    }
+    let (chest, chest_x, chest_y) = match app.player.as_ref() {
+        Some(p) if p.chest >= 0 => (p.chest, p.chest_x, p.chest_y),
+        _ => return false, // the DW-5.4 guard (`ChestUI.cs:844-848`'s calm arm)
+    };
     app.audio.play("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
     // `:103-119` — the tile-default decode at the open chest's origin (the
     // phase-3 `default_chest_name` chain).
     let default_name = app
         .world
-        .tile(app.chest_x, app.chest_y)
+        .tile(chest_x, chest_y)
         .map(|t| default_chest_name(t.kind, t.frame_x))
         .unwrap_or_default();
     // `:102-123` — `npcChatText = chest.name`; an empty name falls to the
     // default, which becomes the keyboard's starting text.
     let initial = {
-        let stored = chest_name(app, app.chest);
+        let stored = chest_name(app, chest);
         if stored.is_empty() {
             default_name.clone()
         } else {
@@ -1061,15 +1153,16 @@ pub(crate) fn open_rename(app: &mut App) -> bool {
 pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
     app.audio.play("Menu_Tick"); // `:842`
     app.front = None; // `Main.editChest = false` (:843) + `Close(quiet: true)`
-    if app.chest < 0 {
-        return 12; // `:844-848`
-    }
+    let chest = match app.player.as_ref() {
+        Some(p) if p.chest >= 0 => p.chest,
+        _ => return 12, // `:844-848`
+    };
     let mut name = text.to_string();
     if name == app.chest_default_name {
         name = String::new(); // `:849-852`
     }
-    if chest_name(app, app.chest) != name {
-        app.chest_names.insert(app.chest as usize, name); // `:853-860`
+    if chest_name(app, chest) != name {
+        app.chest_names.insert(chest as usize, name); // `:853-860`
     }
     12
 }
@@ -1403,8 +1496,14 @@ mod tests {
 
         // The open click through the public path: state + the lazy entry.
         assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
-        assert_eq!(app.chest, 0);
-        assert_eq!((app.chest_x, app.chest_y), (10, 18));
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
+        assert_eq!(
+            (
+                app.player.as_ref().unwrap().chest_x,
+                app.player.as_ref().unwrap().chest_y
+            ),
+            (10, 18)
+        );
         assert!(app.inventory_open, "`Main.playerInventory = true` (:33517)");
         assert!(!app.crafting_open, "`NewCraftingUI.Close` (:33516)");
         assert_eq!(
@@ -1417,19 +1516,26 @@ mod tests {
         // The toggle's sound ids, driven through the same helper the click
         // path uses (`:33230-33252`).
         assert_eq!(toggle_open(&mut app, 10, 18, 0), 11, "same chest closes");
-        assert_eq!(app.chest, -1, "the close resets `chest`");
         assert_eq!(
-            (app.chest_x, app.chest_y),
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the close resets `chest`"
+        );
+        assert_eq!(
+            (
+                app.player.as_ref().unwrap().chest_x,
+                app.player.as_ref().unwrap().chest_y
+            ),
             (10, 18),
             "the C# keeps chestX/Y on close (:33236)"
         );
         // A fresh open with nothing open plays 10 (`:33239-33242`).
         let b = create_chest(&mut app.world_chests, 30, 40);
-        assert_eq!(toggle_open(&mut app, 30, 40, b), 10);
-        assert_eq!(app.chest, b as i32);
+        assert_eq!(toggle_open(&mut app, 30, 40, b as i32), 10);
+        assert_eq!(app.player.as_ref().unwrap().chest, b as i32);
         // Opening another chest while one is open plays 12 (`:33248-33251`).
         assert_eq!(toggle_open(&mut app, 10, 18, 0), 12);
-        assert_eq!(app.chest, 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
     }
 
     /// DW-2.2 — the per-tick close (`HandleBeingInChestRange`,
@@ -1442,7 +1548,7 @@ mod tests {
         place_chest(&mut w, 10, 10, 21, 0);
         let mut app = interact_app(w);
         assert!(try_open_chest_at_cursor(&mut app, click(10, 10)));
-        assert_eq!(app.chest, 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
 
         // In range (the player's center clamps into the chest's deflated
         // rect inside the ±5/±3 bounds): stays open.
@@ -1452,7 +1558,7 @@ mod tests {
             p.y = 150.0;
         }
         tick_open(&mut app);
-        assert_eq!(app.chest, 0, "in range stays open");
+        assert_eq!(app.player.as_ref().unwrap().chest, 0, "in range stays open");
 
         // Out of range: the force close (`:31078-31085`, sound 11).
         {
@@ -1461,12 +1567,16 @@ mod tests {
             p.y = 150.0;
         }
         tick_open(&mut app);
-        assert_eq!(app.chest, -1, "out of range force-closes");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "out of range force-closes"
+        );
         assert_eq!(force_close(&mut app), 11, "the close sound is 11");
 
         // Re-open, then kill the tile: the dead-tile arm (:31086-31090).
         assert!(try_open_chest_at_cursor(&mut app, click(10, 10)));
-        assert_eq!(app.chest, 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
         {
             let p = app.player.as_mut().unwrap();
             p.x = 150.0;
@@ -1475,11 +1585,233 @@ mod tests {
         let i = app.world.index(10, 10);
         app.world.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
         tick_open(&mut app);
-        assert_eq!(app.chest, -1, "a dead tile force-closes");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "a dead tile force-closes"
+        );
 
         // Nothing open: the tick is a no-op (`:31017`).
         tick_open(&mut app);
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+    }
+
+    /// DW-1.2 — the per-tile hitbox table (`Player.cs:31101-31118`): every
+    /// container family's rect at the origin, in world px, before the
+    /// `Inflate(-1, -1)` deflation (`:31119` — X += 1, Y += 1, W −= 2, H −= 2
+    /// inside [`in_interaction_range_to_multi_tile_hitbox`]; the 1 px shrink
+    /// is below the tile granularity the tick's clamp probes can observe, so
+    /// the rect values are pinned here directly). The bank rows are the
+    /// M3-CHEST-INT addition — the banks share the world chest's per-tick
+    /// close now.
+    #[test]
+    fn test_DW_1_2_hitbox_rect_table_matches_the_csharp() {
+        // 463/491 (`:31103-31105`) — 3×4 at −1/−2 tiles.
+        assert_eq!(multi_tile_hitbox_px_rect(463, 10, 20), (144, 288, 48, 64));
+        assert_eq!(multi_tile_hitbox_px_rect(491, 10, 20), (144, 288, 48, 64));
+        // The `BasicChest` set {21, 467} (`TileID.cs:570`) + the 97 safe
+        // (`:31107-31109`) — 2×2.
+        assert_eq!(multi_tile_hitbox_px_rect(21, 10, 10), (160, 160, 32, 32));
+        assert_eq!(multi_tile_hitbox_px_rect(467, 10, 10), (160, 160, 32, 32));
+        assert_eq!(multi_tile_hitbox_px_rect(97, 10, 10), (160, 160, 32, 32));
+        // The 88 dresser (`:31110-31112`) — 3×2.
+        assert_eq!(multi_tile_hitbox_px_rect(88, 10, 10), (160, 160, 48, 32));
+        // The 29 piggy (`:31115-31117`) — 2×1.
+        assert_eq!(multi_tile_hitbox_px_rect(29, 10, 19), (160, 304, 32, 16));
+        // An unmatched kind answers `Rectangle.Empty` (`:31100`).
+        assert_eq!(multi_tile_hitbox_px_rect(0, 10, 10), (0, 0, 0, 0));
+    }
+
+    /// DW-1.2 — the bank tile (29) rides the per-tick close
+    /// (`HandleBeingInChestRange`, `Player.cs:31015-31097`): the piggy's 2×1
+    /// rect (`:31115-31117`, inflated to 30×14) keeps the open bank in reach
+    /// below it and force-closes out of reach above — the bank auto-close
+    /// the port never had (M3-CHEST-INT). The close's sound id is 11 (the
+    /// `force_close` return, the dw_2_2 pin).
+    #[test]
+    fn test_DW_1_2_tick_open_range_closes_bank_out_of_range() {
+        let mut w = world();
+        // A piggy bank 2×1 at (10, 19) — frame columns 0/18.
+        set_tile(&mut w, 10, 19, 29, 0);
+        set_tile(&mut w, 11, 19, 29, 18);
+        let mut app = interact_app(w);
+        // The bank opens through the shared toggle (the editing.rs arm's
+        // callee) — `chest`/`chestX`/`chestY` land on the player.
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -2);
+        assert_eq!((p.chest_x, p.chest_y), (10, 19));
+
+        // In range: just below the piggy, the center clamps into the deflated
+        // rect (Bottom 319 px → tile 19) inside the ±5/±3 bounds — stays open.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 166.0; // center x 176 — inside [161, 191]
+            p.y = 320.0; // center y 341 — clamps to the rect's bottom
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -2,
+            "in range stays open"
+        );
+
+        // Out of range: far above, the clamp still lands on tile 19 but the
+        // reach's hy is 18 — the close (`:31078-31085`, sound 11).
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 166.0;
+            p.y = 200.0;
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "out of range closes"
+        );
+        assert_eq!(force_close(&mut app), 11, "the close sound is 11");
+    }
+
+    /// DW-1.2 — the bank's dead-tile close (`:31086-31090`): a deactivated
+    /// origin tile force-closes the open bank, same as the world chests.
+    #[test]
+    fn test_DW_1_2_tick_open_bank_dead_tile_closes() {
+        let mut w = world();
+        set_tile(&mut w, 10, 19, 29, 0);
+        set_tile(&mut w, 11, 19, 29, 18);
+        let mut app = interact_app(w);
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 166.0;
+            p.y = 320.0;
+        }
+        let i = app.world.index(10, 19);
+        app.world.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "a dead tile force-closes"
+        );
+    }
+
+    /// DW-1.2 — the inflate(−1)/closest-point boundary (`:31119-31123`): the
+    /// reach test runs on the CLAMPED point (`Utils.ClosestPointInRect`,
+    /// `Utils.cs:1581-1595`) and the `Simple` bounds are inclusive
+    /// (`Collision.InTileBounds`, `Collision.cs:3776`) over the `ceil`-derived
+    /// edges (`TileReachCheckSettings.cs:51-53`) — one px across the edge
+    /// flips the answer. The inflate's 1 px itself sits inside the pinned
+    /// rect values (the table test above): the tick's tile granularity
+    /// cannot split it.
+    #[test]
+    fn test_DW_1_2_inflate_closest_point_boundary_at_the_reach_edge() {
+        let mut w = world();
+        place_chest(&mut w, 10, 10, 21, 0);
+        let mut app = interact_app(w);
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+
+        // The X edge, far left: the center clamps to the rect's Left (161 px
+        // → tile 10); hx = ceil((x + 20)/16) − 1 + 5 decides. px 61 →
+        // ceil(81/16) = 6 → hx 10 ≥ 10: in bounds, stays open.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 61.0;
+            p.y = 150.0; // center y 171 — inside the rect's [161, 191]
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            0,
+            "the boundary px stays in reach"
+        );
+
+        // px 60 → ceil(80/16) = 5 → hx 9 < 10: the same clamp point is out of
+        // the reach — the close.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 60.0;
+            p.y = 150.0;
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "one px past the reach closes"
+        );
+
+        // Re-open for the Y edge, above the chest: the clamp lands on tile 10
+        // (Top 161), hy = ceil((y + 42)/16) − 1 + 3 — y 71 keeps it (hy 10),
+        // y 70 closes (hy 9). The re-open is fresh (the chest was closed) —
+        // sound 10.
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 166.0; // center x 176 — no X clamp
+            p.y = 71.0;
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            0,
+            "the boundary py stays in reach"
+        );
+        {
+            let p = app.player.as_mut().unwrap();
+            p.y = 70.0;
+        }
+        tick_open(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "one px past the vertical reach closes"
+        );
+    }
+
+    /// DW-1.3 — the shared block's sound ids for the bank values
+    /// (`Player.cs:33230-33252`): a fresh bank open plays 10 (`:33241-33243`),
+    /// the same bank's re-click closes with 11 (`:33235-33237`), opening
+    /// another bank while one is open plays 12 (`:33248-33252`). The ids are
+    /// `toggle_open`'s returned legacy ids — the callers play them through
+    /// `play_menu_sound`'s 10/11/12 → Menu_Open/Menu_Close/Menu_Tick mapping
+    /// (the world-chest values ride the same contract, the dw_2_1 pin).
+    #[test]
+    fn test_DW_1_3_toggle_open_returns_the_shared_block_sound_ids() {
+        let mut app = interact_app(world());
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10, "fresh bank open");
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 11, "re-click closes");
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
+        assert_eq!(toggle_open(&mut app, 20, 19, -3), 10, "fresh again");
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 12, "the switch");
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+    }
+
+    /// DW-1.4 — the one open-container field carries the full C# index space
+    /// (`Player.chest`, `Player.cs:2876`): −1 closed, −2..−5 the banks (the
+    /// `bank_for_chest` resolver order), ≥ 0 the `App.world_chests` store
+    /// index. Every step replaces the previous value — there is no second
+    /// field (`App.chest` is gone; the compile is the witness, the suite the
+    /// reader sweep).
+    #[test]
+    fn test_DW_1_4_unified_field_carries_the_full_index_space() {
+        let mut app = interact_app(world());
+        let chest_of = |app: &App| app.player.as_ref().unwrap().chest;
+        assert_eq!(chest_of(&app), -1, "closed");
+        // The world chests (>= 0).
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 10);
+        assert_eq!(chest_of(&app), 0);
+        // The banks in the resolver order (−2..−5 → banks[0..4]).
+        for (i, idx) in [-2, -3, -4, -5].iter().enumerate() {
+            assert_eq!(toggle_open(&mut app, 10, 10, *idx), 12, "switch to {idx}");
+            assert_eq!(chest_of(&app), *idx);
+            assert_eq!(crate::bank::bank_for_chest(*idx), Some(i));
+        }
+        // Back to a world chest, then closed.
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 12);
+        assert_eq!(chest_of(&app), 0);
+        assert_eq!(toggle_open(&mut app, 10, 10, 0), 11);
+        assert_eq!(chest_of(&app), -1);
     }
 
     /// DW-2.3 — the locked chest's click chain (`Player.cs:33142-33228`):
@@ -1495,7 +1827,7 @@ mod tests {
         // Locked, no key: the click is consumed, nothing opens, no store
         // entry is created.
         assert!(try_open_chest_at_cursor(&mut app, click(20, 10)));
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
         assert_eq!(find_chest(&app.world_chests, 20, 10), None);
         assert!(is_locked(&app.world, 20, 10), "still locked");
 
@@ -1507,13 +1839,23 @@ mod tests {
         assert_eq!(app.world.tile(21, 10).unwrap().frame_x, 54, "90 - 36");
         assert_eq!(app.inventory[0].count, 1, "the key is consumed");
         assert!(!is_locked(&app.world, 20, 10));
-        assert_eq!(app.chest, -1, "the unlock consumes the click");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the unlock consumes the click"
+        );
         assert_eq!(find_chest(&app.world_chests, 20, 10), None);
 
         // The next click opens (`:33223-33226` runs `FindChest` now).
         assert!(try_open_chest_at_cursor(&mut app, click(20, 10)));
-        assert_eq!(app.chest, 0);
-        assert_eq!((app.chest_x, app.chest_y), (20, 10));
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
+        assert_eq!(
+            (
+                app.player.as_ref().unwrap().chest_x,
+                app.player.as_ref().unwrap().chest_y
+            ),
+            (20, 10)
+        );
     }
 
     /// DW-2.3 — the shadow key (329) unlocks without consuming
@@ -1528,10 +1870,14 @@ mod tests {
         assert_eq!(app.world.tile(40, 10).unwrap().frame_x, 108, "144 - 36");
         assert!(!is_locked(&app.world, 40, 10));
         assert_eq!(app.inventory[0].count, 5, "the shadow key is not consumed");
-        assert_eq!(app.chest, -1, "the click is still consumed");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the click is still consumed"
+        );
         // And the unlocked chest opens on the next click.
         assert!(try_open_chest_at_cursor(&mut app, click(40, 10)));
-        assert_eq!(app.chest, 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
     }
 
     /// DW-2.3 — the key scan covers the C# `inventory[0..=58]` array only
@@ -1709,15 +2055,18 @@ mod tests {
         place_chest(&mut w, 10, 18, 21, 0);
         let mut app = interact_app(w);
         assert!(try_open_chest_at_cursor(&mut app, click(11, 19)));
-        assert_eq!(app.chest, 0);
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
         assert_eq!(
-            (app.chest_x, app.chest_y),
+            (
+                app.player.as_ref().unwrap().chest_x,
+                app.player.as_ref().unwrap().chest_y
+            ),
             (10, 18),
             "the bottom-right cell"
         );
         // The same chest's origin-cell click closes it (the same index).
         assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
     }
 
     /// `TileID.Sets.BasicChest` (`TileID.cs:570`) gates the open path: tile
@@ -1731,11 +2080,11 @@ mod tests {
         set_tile(&mut w, 20, 10, 21, 0);
         let mut app = interact_app(w);
         assert!(!try_open_chest_at_cursor(&mut app, click(10, 10)));
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
         let i = app.world.index(20, 10);
         app.world.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
         assert!(!try_open_chest_at_cursor(&mut app, click(20, 10)));
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
     }
 
     /// `Chest.Unlock`/`Chest.Lock` refuse a 2×2 with a missing tile
@@ -1868,10 +2217,14 @@ mod tests {
         }
         rename_submit(&mut app, "Custom");
         assert_eq!(chest_name(&app, 0), "Custom");
-        assert!(open_rename(&mut app), "the editor reopens with the stored name");
+        assert!(
+            open_rename(&mut app),
+            "the editor reopens with the stored name"
+        );
         assert_eq!(rename_submit(&mut app, "Chest"), 12);
         assert_eq!(
-            chest_name(&app, 0), "",
+            chest_name(&app, 0),
+            "",
             "the default-name submit cleared the stored name (:849-852)"
         );
     }
@@ -1946,7 +2299,10 @@ mod tests {
             assert_eq!(s.request.initial, "Chest", "the tile default prefills");
             assert_eq!(s.state.text, "Chest");
             assert_eq!(s.request.allow_empty, false, "the ctor default (:147-156)");
-            assert_eq!(s.request.max_length, 20, "the ctor default == MaxNameLength");
+            assert_eq!(
+                s.request.max_length, 20,
+                "the ctor default == MaxNameLength"
+            );
             assert_eq!(s.request.context, Context::Chest);
             assert_eq!(s.tail, KeyboardTail::ChestRename);
             assert!(s.back.is_none(), "the chest tail returns to gameplay");
@@ -2010,7 +2366,7 @@ mod tests {
         let mut w = world();
         place_chest(&mut w, 10, 18, 21, 0);
         let mut app = interact_app(w);
-        assert_eq!(app.chest, -1);
+        assert_eq!(app.player.as_ref().unwrap().chest, -1);
         assert!(!open_rename(&mut app), "chest < 0 refuses");
         assert!(app.front.is_none(), "no keyboard opened");
         assert!(app.chest_names.is_empty(), "nothing stored");
@@ -2067,7 +2423,11 @@ mod tests {
         assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
         assert!(!app.chest_editing(), "the flush cleared the editor");
         assert!(app.front.is_none());
-        assert_eq!(app.chest, -1, "the toggle-close followed the flush");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the toggle-close followed the flush"
+        );
         assert!(
             !app.chest_names.contains_key(&0),
             "the flush never writes (`npcChatText = \"\"`)"

@@ -578,8 +578,12 @@ impl App {
         // The chest cells own the pointer while the panel draws
         // (`player.mouseInterface = true`, `ChestUI.cs:86`'s visibility gate
         // + `:382-384`); a cell hit consumes both buttons even when the
-        // stack-split gate transfers nothing this frame.
-        if self.chest != -1 && !self.crafting_open {
+        // stack-split gate transfers nothing this frame. The dispatch is
+        // the world-chest panel's (the ctx-3 grid) — bank values keep the
+        // STORE-1 panel and its own handler, so the gate is `>= 0` (the C#'s
+        // single `ChestUI.Draw` covers all kinds — the recorded STORE-1
+        // panel-fidelity deviation).
+        if self.open_container() >= 0 && !self.crafting_open {
             if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
                 self.chest_slot_click(abs, left, right_held);
                 self.ui_left_press = false;
@@ -600,7 +604,7 @@ impl App {
                     self.mouse_pos,
                     &self.chest_button_scales,
                     &self.chest_button_hovered,
-                    self.chest,
+                    self.open_container(),
                     self.chest_editing(),
                 ) {
                     match id {
@@ -641,13 +645,17 @@ impl App {
     /// `TryPlacingInChest(justCheck: true)`). The Control-in-use trash arm
     /// (`:637-643`) and the gamepad arms are out.
     fn evaluate_shift_cursor_override(&mut self) {
+        let chest = self.open_container();
         if !shift_in_use(self) {
             return;
         }
-        if self.chest != -1 && !self.crafting_open {
+        // The ctx-3 arms are the world-chest panel's (`chest >= 0`) — banks
+        // keep the STORE-1 panel and no cursor-8/9 shift route (the recorded
+        // panel-fidelity deviation; `TryPlacingInChest` refuses banks too).
+        if chest >= 0 && !self.crafting_open {
             if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
                 if let Some((kind, stack)) =
-                    chest::chest_slot(&self.world_chests, self.chest as usize, abs)
+                    chest::chest_slot(&self.world_chests, chest as usize, abs)
                 {
                     if kind != 0 && stack > 0 && chest::inventory_has_room_for(self, kind) {
                         self.cursor_override = CURSOR_FROM_CHEST;
@@ -656,7 +664,7 @@ impl App {
                 return;
             }
         }
-        if self.chest != -1 {
+        if chest >= 0 {
             if let Some(slot) = self.slot_at_mouse() {
                 if chest::try_placing_in_chest(self, slot, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
@@ -670,6 +678,7 @@ impl App {
     /// cursor-8 shift transfer or the action-0 movement, the held right
     /// button runs the stack-split.
     fn chest_slot_click(&mut self, abs: usize, left: bool, right_held: bool) {
+        let chest_idx = self.open_container() as usize;
         if left && self.cursor_override == CURSOR_FROM_CHEST {
             // `OverrideLeftClick`'s cursor-8 arm (`ItemSlot.cs:800-812`):
             // `inv[slot] = player.GetItem(inv[slot], QuickTransferFromSlot)`;
@@ -680,7 +689,7 @@ impl App {
         if left {
             let mut held = self.mouse_item;
             let (kind, stack) =
-                chest::chest_slot(&self.world_chests, self.chest as usize, abs).unwrap_or((0, 0));
+                chest::chest_slot(&self.world_chests, chest_idx, abs).unwrap_or((0, 0));
             let mut target = if kind != 0 {
                 ItemSlot {
                     kind,
@@ -700,7 +709,7 @@ impl App {
             // `(kind, stack)` encoding (the air-normalizing write).
             chest::set_chest_slot(
                 &mut self.world_chests,
-                self.chest as usize,
+                chest_idx,
                 abs,
                 (target.kind, target.count),
             );
@@ -722,11 +731,10 @@ impl App {
         if self.stack_split > 1 {
             return; // `:1700`
         }
+        let chest_idx = self.open_container() as usize;
         let transfers = self.super_fast_stack + 1; // `:1704`
         for _ in 0..transfers {
-            let Some((kind, stack)) =
-                chest::chest_slot(&self.world_chests, self.chest as usize, abs)
-            else {
+            let Some((kind, stack)) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
                 break;
             };
             if kind == 0 || stack == 0 {
@@ -755,12 +763,7 @@ impl App {
             }
             self.mouse_item.count += 1;
             let left_in_slot = stack - 1;
-            chest::set_chest_slot(
-                &mut self.world_chests,
-                self.chest as usize,
-                abs,
-                (kind, left_in_slot),
-            );
+            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, (kind, left_in_slot));
             self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
             // `RefreshStackSplitCooldown` (`:1774-1784`).
             self.stack_split = if self.stack_split == 0 {
@@ -916,7 +919,8 @@ mod tests {
     }
 
     /// A headless app with the inventory open and an open chest (index 0,
-    /// tile origin (20, 10)) whose store holds `slots`.
+    /// tile origin (20, 10)) whose store holds `slots`. The open state is
+    /// the player's (`Player.chest`, the M3-CHEST-INT unify).
     fn chest_app(slots: Vec<ChestSlot>) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.inventory_open = true;
@@ -924,9 +928,11 @@ mod tests {
             tile: (20, 10),
             slots,
         });
-        app.chest = 0;
-        app.chest_x = 20;
-        app.chest_y = 10;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_mut().unwrap();
+        p.chest = 0;
+        p.chest_x = 20;
+        p.chest_y = 10;
         app
     }
 
@@ -1266,7 +1272,11 @@ mod tests {
         app.ui_right_press = true;
         app.place_down = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(app.chest, -1, "the re-click closes (:33236)");
+        assert_eq!(
+            app.player.as_ref().unwrap().chest,
+            -1,
+            "the re-click closes (:33236)"
+        );
         assert!(!app.ui_right_press, "the press is consumed");
     }
 
@@ -1282,13 +1292,14 @@ mod tests {
             tile: (40, 10),
             slots: vec![],
         });
-        app.chest = 0;
+        app.player.as_mut().unwrap().chest = 0;
         app.mouse_pos = tile_click(40, 10);
         app.ui_right_press = true;
         app.place_down = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(app.chest, 1, "the store index of the (40, 10) chest");
-        assert_eq!((app.chest_x, app.chest_y), (40, 10));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, 1, "the store index of the (40, 10) chest");
+        assert_eq!((p.chest_x, p.chest_y), (40, 10));
     }
 
     /// The inventory grid's left click still moves items through the shared
@@ -1318,8 +1329,9 @@ mod tests {
         // A real style-0 chest tile at the open origin, so the prefill
         // decodes the tile default (`IngameFancyUI.cs:103-107`).
         place_tile_chest(&mut app, 2, 2);
-        app.chest_x = 2;
-        app.chest_y = 2;
+        let p = app.player.as_mut().unwrap();
+        p.chest_x = 2;
+        p.chest_y = 2;
         // The rename button's row anchor (506, invBottom + 40 + 5*26) at the
         // idle scale (the static-ctor 0.0 only precedes the first drawn
         // frame), probed a few px in (the headless font estimate).
@@ -1357,8 +1369,9 @@ mod tests {
     fn rename_button_click_submits_while_editing() {
         let mut app = chest_app(vec![]);
         place_tile_chest(&mut app, 2, 2);
-        app.chest_x = 2;
-        app.chest_y = 2;
+        let p = app.player.as_mut().unwrap();
+        p.chest_x = 2;
+        p.chest_y = 2;
         app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
         app.mouse_pos = Vec2::new(510.0, 428.0);
         app.ui_left_press = true;
