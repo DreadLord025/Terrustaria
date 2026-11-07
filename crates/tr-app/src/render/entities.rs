@@ -151,6 +151,7 @@ pub(crate) struct NpcAssets {
     pub(crate) golem_head: Option<BgTex>,
     pub(crate) golem_fist: Option<BgTex>,
     pub(crate) golem_head_free: Option<BgTex>,
+    pub(crate) deerclops: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -246,6 +247,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         golem_head: sky_tex(atlas, "NPC_246", None),
         golem_fist: sky_tex(atlas, "NPC_247", None),
         golem_head_free: sky_tex(atlas, "NPC_249", None),
+        deerclops: sky_tex(atlas, "NPC_668", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -1011,6 +1013,13 @@ pub(crate) fn draw_npcs(
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
                 (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
             }
+            // The Deerclops: the 60x154 sheet (the v1 single-frame).
+            NpcKind::Deerclops => (
+                assets.deerclops.as_ref(),
+                assets.deerclops.as_ref().map_or(154.0, |t| t.h),
+                [60.0, 154.0],
+                [n.x, n.y],
+            ),
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon

@@ -447,8 +447,9 @@ fn portrait_data(
         NpcKind::GolemFistLeft => 73,  // NPC_247 (the FistRight shares it
         NpcKind::GolemFistRight => 73, // — NPC_248 is not loaded)
         NpcKind::GolemHeadFree => 74,  // NPC_249
-        NpcKind::MartianProbe => 75,   // NPC_399
-        NpcKind::MartianDrone => 76,   // NPC_388
+        NpcKind::MartianProbe => 76,   // NPC_399
+        NpcKind::MartianDrone => 77,   // NPC_388
+        NpcKind::Deerclops => 75,      // NPC_668
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -457,6 +458,7 @@ fn portrait_data(
         (NpcKind::GolemFistLeft, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::GolemFistRight, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
+        (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
@@ -594,14 +596,14 @@ fn portrait_data(
         }
         // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
         (NpcKind::MartianProbe, _) => {
-            let h = lookups.bestiary_npc_sheets[75]
+            let h = lookups.bestiary_npc_sheets[76]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(72.0);
             (sheet_i, h, 42.0, h, white)
         }
         // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
         (NpcKind::MartianDrone, _) => {
-            let h = lookups.bestiary_npc_sheets[76]
+            let h = lookups.bestiary_npc_sheets[77]
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
