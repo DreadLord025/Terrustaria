@@ -6,6 +6,7 @@ use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
 use crate::atlas::Atlas;
+use crate::font_atlas::FontAtlas;
 use crate::gpu::Gpu;
 
 #[repr(C)]
@@ -39,6 +40,10 @@ pub struct SpriteInstance {
     /// port's `DrawData.shader` (`PlayerDrawHelper.cs:29-60` unpacks the C#
     /// side per draw entry).
     pub dye: u32,
+    /// Which texture the instance samples: 0 = the main RGBA atlas, otherwise
+    /// 1-based layer into the BC2 font array (`font_atlas::FontAtlas`) — the
+    /// retail `DynamicSpriteFont` glyph pages (`Fonts/*.xnb`).
+    pub layer: u32,
 }
 
 /// One dye uniform-table row: the pass mode and the two colors. Mirrors
@@ -70,6 +75,9 @@ pub struct SpriteRenderer {
     sampler: wgpu::Sampler,
     bind_world: wgpu::BindGroup,
     bind_ui: wgpu::BindGroup,
+    /// The BC2 font-array view the retail `Fonts/*.xnb` pages upload into
+    /// (`upload_font_atlas`); shared by every sprite bind group.
+    font_view: wgpu::TextureView,
     /// Bind group for the world-sized map texture (one texel = one map tile). `None`
     /// until `ensure_map_texture` has run, in which case the `map` range is not drawn.
     bind_map: Option<wgpu::BindGroup>,
@@ -115,7 +123,10 @@ pub struct SpriteRenderer {
 const RING: usize = 3;
 
 impl SpriteRenderer {
-    pub fn new(gpu: &Gpu, atlas: &Atlas, font_glyph_px: u32) -> Self {
+    /// `font` uploads the retail `Fonts/*.xnb` glyph pages as a BC2 texture
+    /// array (`font_atlas::FontAtlas`); `None` (or an adapter without the BC
+    /// feature, handled by the caller) falls back to the built-in bitmap font.
+    pub fn new(gpu: &Gpu, atlas: &Atlas, font_glyph_px: u32, font: Option<&FontAtlas>) -> Self {
         let device = &gpu.device;
         let atlas_tex = device.create_texture_with_data(
             &gpu.queue,
@@ -137,6 +148,33 @@ impl SpriteRenderer {
             &atlas.pixels,
         );
         let view = atlas_tex.create_view(&wgpu::TextureViewDescriptor::default());
+
+        // The font texture array: the shipped BC2/DXT3 pages packed per layer,
+        // or an empty RGBA stand-in when the retail fonts are unavailable (the
+        // layout's texture entry is format-agnostic; instances never address it).
+        let font_view = match font {
+            Some(font) => Self::upload_font_atlas(gpu, font),
+            None => {
+                let tex = device.create_texture(&wgpu::TextureDescriptor {
+                    label: Some("font-atlas-empty"),
+                    size: wgpu::Extent3d {
+                        width: 4,
+                        height: 4,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                });
+                tex.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2Array),
+                    ..Default::default()
+                })
+            }
+        };
 
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("atlas-sampler"),
@@ -208,6 +246,16 @@ impl SpriteRenderer {
                     },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 4,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2Array,
+                        multisampled: false,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -218,6 +266,7 @@ impl SpriteRenderer {
             &globals_world,
             &view,
             &dye_table,
+            &font_view,
             "bg-world",
         );
         let bind_ui = Self::mk_bind(
@@ -227,6 +276,7 @@ impl SpriteRenderer {
             &globals_ui,
             &view,
             &dye_table,
+            &font_view,
             "bg-ui",
         );
 
@@ -259,6 +309,7 @@ impl SpriteRenderer {
                         5 => Float32,
                         6 => Float32,
                         7 => Uint32,
+                        8 => Uint32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -347,6 +398,7 @@ impl SpriteRenderer {
             sampler,
             bind_world,
             bind_ui,
+            font_view,
             bind_map: None,
             map_tex: None,
             map_size: (0, 0),
@@ -372,6 +424,59 @@ impl SpriteRenderer {
         }
     }
 
+    /// Uploads the packed font pages as one BC2 texture array — the vanilla
+    /// `SurfaceFormat.Dxt3` path (`Texture2D` uploads the compressed blocks
+    /// verbatim, so GPU sampling reproduces the retail pixels).
+    fn upload_font_atlas(gpu: &Gpu, font: &FontAtlas) -> wgpu::TextureView {
+        let device = &gpu.device;
+        let layers = font.layers.len() as u32;
+        let tex = device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("font-atlas"),
+            size: wgpu::Extent3d {
+                width: 8192,
+                height: 8192,
+                depth_or_array_layers: layers,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Bc2RgbaUnormSrgb,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        // One layer per write: BC2 rows are `blocks_per_row * 16` bytes.
+        let bytes_per_row = 8192 / 4 * 16;
+        for (li, data) in font.layers.iter().enumerate() {
+            gpu.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &tex,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: li as u32,
+                    },
+                    aspect: wgpu::TextureAspect::All,
+                },
+                data,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(bytes_per_row),
+                    rows_per_image: Some(8192 / 4),
+                },
+                wgpu::Extent3d {
+                    width: 8192,
+                    height: 8192,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        tex.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2Array),
+            ..Default::default()
+        })
+    }
+
     /// Builds one sprite bind group: globals uniform + a texture view + the shared
     /// sampler + the dye table. Used for the atlas view (`bg-world`/`bg-ui`) and
     /// the map view.
@@ -382,6 +487,7 @@ impl SpriteRenderer {
         buf: &wgpu::Buffer,
         tex: &wgpu::TextureView,
         dye: &wgpu::Buffer,
+        font_tex: &wgpu::TextureView,
         label: &str,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -403,6 +509,10 @@ impl SpriteRenderer {
                 wgpu::BindGroupEntry {
                     binding: 3,
                     resource: dye.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: wgpu::BindingResource::TextureView(font_tex),
                 },
             ],
         })
@@ -442,6 +552,7 @@ impl SpriteRenderer {
             &self.globals_ui,
             &view,
             &self.dye_table,
+            &self.font_view,
             "bg-map",
         ));
         self.map_tex = Some(tex);
@@ -505,6 +616,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -526,6 +638,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -548,6 +661,7 @@ impl SpriteRenderer {
             rot,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -571,6 +685,7 @@ impl SpriteRenderer {
             rot,
             paint: paint as f32,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -597,6 +712,7 @@ impl SpriteRenderer {
             rot,
             paint: 0.0,
             dye,
+            layer: 0,
         });
     }
 
@@ -630,6 +746,7 @@ impl SpriteRenderer {
             rot,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -674,6 +791,7 @@ impl SpriteRenderer {
             rot,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -696,6 +814,7 @@ impl SpriteRenderer {
             rot,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -710,6 +829,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -724,6 +844,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -738,6 +859,32 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
+        });
+    }
+
+    /// One `DynamicSpriteFont` glyph in screen space: `uv` addresses the packed
+    /// page inside the font texture array (`font_atlas::PageRect.layer`),
+    /// already inset by the half texel the main-atlas path applies in the
+    /// shader. The layer value is the 1-based instance layer (0 = main atlas).
+    pub fn push_font_glyph(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        layer: u32,
+    ) {
+        self.ui.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot: 0.0,
+            paint: 0.0,
+            dye: 0,
+            layer,
         });
     }
 
@@ -759,6 +906,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -779,6 +927,7 @@ impl SpriteRenderer {
             rot: 0.0,
             paint: 0.0,
             dye: 0,
+            layer: 0,
         });
     }
 
@@ -802,6 +951,7 @@ impl SpriteRenderer {
                     rot: 0.0,
                     paint: 0.0,
                     dye: 0,
+                    layer: 0,
                 });
             }
             cx += gw * scale;

@@ -1207,31 +1207,42 @@ mod tests {
 
     #[test]
     fn main_menu_has_the_seven_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let items = menu(Page::Main).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            [
-                "Single Player",
-                "Multiplayer",
-                "Achievements",
-                "Resource Packs",
-                "Settings",
-                "Credits",
-                "Exit"
-            ]
-        );
+        // The rows resolve `Lang.menu[12]`/`[13]`/`[131]`, `UI.ResourcePacks`,
+        // `Lang.menu[14]`, `UI.Credits`, `Lang.menu[15]` (`Main.cs:48908-48971`)
+        // — compared against the same `lang::` reads, so the pin holds with or
+        // without the shipped resources.
+        let expected = [
+            crate::lang::menu(12),
+            crate::lang::menu(13),
+            crate::lang::menu(131),
+            crate::lang::text("UI.ResourcePacks"),
+            crate::lang::menu(14),
+            crate::lang::text("UI.Credits"),
+            crate::lang::menu(15),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         assert!(items.iter().all(|i| i.scale == 1.0));
     }
 
     #[test]
     fn settings_screen_matches_the_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         let items = menu(Page::Settings).items();
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(
-            labels,
-            ["General", "Interface", "Video", "Volume", "Cursor", "Controls", "Language", "Back"]
-        );
+        let expected = [
+            crate::lang::menu(114),
+            crate::lang::menu(210),
+            crate::lang::menu(63),
+            crate::lang::menu(65),
+            crate::lang::menu(218),
+            crate::lang::menu(219),
+            crate::lang::menu(103),
+            crate::lang::menu(5),
+        ];
+        let labels: Vec<String> = items.iter().map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
         assert!(items.iter().all(|i| i.scale == 0.75));
         assert_eq!(items[7].y, 8.0, "array4[num5 - 1] = 8");
     }
@@ -1897,16 +1908,19 @@ mod tests {
 
     #[test]
     fn language_screen_lists_the_twelve_vanilla_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48493-48535`: the `Lang.menu[102]` header (`array4[0] =
-        // -20`, `array7` 0.85), the twelve `Language.*` rows at 0.65, then
-        // Back (`array4[13] = 9`, `array7` 0.8) — draw y `200 + 26*13 + 9` =
-        // 547 (`:48510`, `:48525-48534`).
+        // -20`, `array7` 0.85), the twelve `Language.GetTextValue` rows at
+        // 0.65, then Back (`array4[13] = 9`, `array7` 0.8) — draw y
+        // `200 + 26*13 + 9` = 547 (`:48510`, `:48525-48534`).
         let m = menu(Page::Language);
         let items = m.items();
         assert_eq!(items.len(), 14);
-        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
-        assert_eq!(&labels[..13], &["Select language", "English", "Deutsch (German)", "Italiano (Italian)", "Français (French)", "Español (Spanish)", "Русский (Russian)", "简体中文 (Simplified Chinese)", "Português brasileiro (Brazilian Portuguese)", "Polski (Polish)", "日本語 (Japanese)", "한국어 (Korean)", "繁體中文 (Traditional Chinese)"]);
-        assert_eq!(labels[13], "Back");
+        let mut expected = vec![crate::lang::menu(102)];
+        expected.extend(crate::lang::cultures().iter().map(|c| crate::lang::text(c.language_key())));
+        let labels: Vec<String> = items.iter().take(13).map(|i| i.label.clone()).collect();
+        assert_eq!(labels, expected);
+        assert_eq!(items[13].label, crate::lang::menu(5));
         assert!(items[0].header);
         assert_eq!(items[0].scale, 0.85);
         assert_eq!(items[0].y, -20.0);
@@ -1920,13 +1934,16 @@ mod tests {
         assert_eq!(draw_y(0), 180.0);
         assert_eq!(draw_y(1), 226.0);
         assert_eq!(draw_y(13), 547.0);
-        // Language rows show the notice (the original calls
-        // `LanguageManager.SetLanguage`, `Main.cs:48519-48523`); Back opens 11
-        // (`:48512-48517`).
+        // A language row calls `LanguageManager.SetLanguage(selectedMenu)`
+        // (`Main.cs:48519-48523`) and the page stays up — the rows redraw in
+        // the chosen culture; Back opens 11 (`:48512-48517`).
+        let before = crate::lang::active_culture();
         let mut m = menu(Page::Language);
         m.activate(1);
-        assert!(m.hint.is_some());
+        assert_eq!(crate::lang::active_culture(), tr_core::localization::GameCulture::from_legacy_id(1));
+        assert!(m.hint.is_none());
         assert_eq!(m.page, Page::Language);
+        crate::lang::set_language(before);
         m.activate(13);
         assert_eq!(m.page, Page::Settings);
         assert!(m.hint.is_none());
@@ -1934,6 +1951,7 @@ mod tests {
 
     #[test]
     fn language_initial_picker_differs_from_the_language_screen() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         // `Main.cs:48458-48491`: the same header and twelve rows but
         // `num4 = 30` (`:48462`), no Back row, `array7[0] = 1f` (`:48483`) —
         // versus 1213's `num4 = 26`, header 0.85, Back 0.8 (`:48525-48534`).
@@ -1943,7 +1961,10 @@ mod tests {
         assert_eq!(items[0].scale, 1.0);
         assert_eq!(items[0].y, -20.0);
         assert!(items[1..].iter().all(|i| i.scale == 0.65));
-        assert_eq!(items[1].label, "English");
+        assert_eq!(
+            items[1].label,
+            crate::lang::text(tr_core::localization::GameCulture::English.language_key())
+        );
         let initial = Page::LanguageInitial.layout();
         assert_eq!((initial.y0, initial.row), (200.0, 30.0));
         // Draw y (`Main.cs:51769`): header 180, English 230, last row 560 —
@@ -1951,12 +1972,12 @@ mod tests {
         let draw_y = |i: usize| initial.y0 + initial.row * i as f32 + items[i].y;
         assert_eq!(draw_y(1), 230.0);
         assert_eq!(draw_y(12), 560.0);
-        // A language row still only shows the notice (the original would
-        // `SetLanguage` and jump to menuMode 0, `Main.cs:48484-48490`).
+        // A language row `SetLanguage`s and jumps to the title
+        // (`Main.cs:48484-48490`).
         let mut m = menu(Page::LanguageInitial);
         m.activate(1);
-        assert!(m.hint.is_some());
-        assert_eq!(m.page, Page::LanguageInitial);
+        assert!(m.hint.is_none());
+        assert_eq!(m.page, Page::Main);
     }
 
     #[test]
