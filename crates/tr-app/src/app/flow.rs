@@ -1323,6 +1323,8 @@ pub(crate) mod front_flow_tests {
             in_reforge_menu: false,
             reforge_slot: crate::item::EMPTY_SLOT,
             reforge_cooldown: 0,
+            revenge_markers: Vec::new(),
+            revenge_tick: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),

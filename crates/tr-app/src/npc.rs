@@ -977,6 +977,10 @@ impl NpcKind {
 
 #[derive(Clone, Debug)]
 pub struct Npc {
+    /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
+    /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
+    /// `+= extraValue` (:79680).
+    pub extra_value: u64,
     pub kind: NpcKind,
     /// The slime colour variant (`SlimeVariant`); only meaningful while
     /// `kind == NpcKind::Slime`.
@@ -1371,6 +1375,7 @@ impl Npc {
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
             y,

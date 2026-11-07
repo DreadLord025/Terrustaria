@@ -30,6 +30,7 @@ mod minecart;
 mod mount;
 mod net;
 mod npc;
+mod revenge;
 mod npc_ai;
 mod npc_buffs;
 mod persist;

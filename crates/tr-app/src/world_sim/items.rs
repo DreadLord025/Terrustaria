@@ -93,8 +93,48 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             if drop.update(world, player_center, step) {
+                // The revenge pickup arm (`WorldItem.cs:1125-1200`): a
+                // nearby hostile NPC (lifeMax > 5, not statue-spawned) sucks
+                // 50-75% of a coin stack into `extraValue` while its
+                // `extraValue < item.value && extraValue + value <
+                // 999000000`. The moneyPing cue is not in the port's set.
                 if registry::is_coin(drop.kind) {
-                    *coins = (*coins).saturating_add(registry::coin_value(drop.kind) * drop.count as u64);
+                    let coin_copper =
+                        registry::coin_value(drop.kind) * drop.count as u64;
+                    let mut picked = 0u64;
+                    if let Some(npc) = app.npcs.iter_mut().find(|n| {
+                        n.hp > 5
+                            && !n.spawned_from_statue
+                            && (n.center().0 - drop.center().x).abs() < 16.0
+                            && (n.center().1 - drop.center().y).abs() < 24.0
+                            && n.extra_value < coin_copper
+                            && n.extra_value + coin_copper < 999_000_000
+                    }) {
+                        // `num7 = item.stack * (50..75)/100` (:1155-1160).
+                        let share = if drop.count == 1 {
+                            1
+                        } else {
+                            let mut rng_state = app.item_rng;
+                            let r = crate::app::rand01(&mut rng_state);
+                            app.item_rng = rng_state;
+                            ((drop.count as f32 * (50.0 + r * 25.0)) as u32)
+                                .clamp(1, drop.count)
+                        };
+                        picked = registry::coin_value(drop.kind) * share as u64;
+                        npc.extra_value += picked;
+                        drop.count -= share;
+                    }
+                    if picked > 0 {
+                        let c = drop.center();
+                        audio.play_at("Coin_0", c.x, c.y, 1.0);
+                    }
+                    if drop.count == 0 {
+                        items.swap_remove(i);
+                        continue;
+                    }
+                    *coins = (*coins).saturating_add(
+                        registry::coin_value(drop.kind) * drop.count as u64,
+                    );
                     let c = drop.center();
                     audio.play_at("Coin_0", c.x, c.y, 1.0);
                     items.swap_remove(i);

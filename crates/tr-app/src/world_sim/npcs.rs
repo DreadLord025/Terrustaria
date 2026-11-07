@@ -937,6 +937,47 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     if app.reforge_cooldown > 0 {
         app.reforge_cooldown -= 1;
     }
+    // `CoinLossRevengeSystem.Update` (:382-389) + the 60-tick purge of the
+    // expired markers (`Main.cs:17758`'s call order).
+    app.revenge_tick += 1;
+    if app.revenge_tick % 60 == 0 {
+        app.revenge_markers
+            .retain(|m| !m.expired(app.revenge_tick));
+    }
+    // `CheckRespawns` (:391-457, called from the spawn pass `NPC.cs:80176`):
+    // a marker whose outer box (2608x1840 :514) holds the player respawns
+    // its carrier once at `_location` with `extraValue = _coinsValue` and
+    // `life = lifeMax * max(0.5, hpPercent)` (:172-210), and the marker
+    // removes itself (:455).
+    if !app.revenge_markers.is_empty() {
+        if let Some(p) = app.player.as_ref() {
+            let (pcx, pcy) = p.center();
+            let outer = [
+                pcx - 2608.0 * 0.5,
+                pcy - 1840.0 * 0.5,
+                2608.0,
+                1840.0,
+            ];
+            let mut done = Vec::new();
+            for m in &app.revenge_markers {
+                let b = m.hitbox();
+                let hits = outer[0] < b[0] + b[2]
+                    && outer[0] + outer[2] > b[0]
+                    && outer[1] < b[1] + b[3]
+                    && outer[1] + outer[3] > b[1];
+                if hits {
+                    done.push(m.unique_id);
+                    let mut carrier = Npc::new(m.kind, m.location.x, m.location.y, 1, 0.0);
+                    carrier.extra_value = m.coins_value;
+                    carrier.hp = (carrier.max_hp as f32 * m.hp_percent.max(0.5)) as i32;
+                    carrier.hp = carrier.hp.max(1);
+                    app.npcs.push(carrier);
+                }
+            }
+            app.revenge_markers
+                .retain(|m| !done.contains(&m.unique_id));
+        }
+    }
     app.npc_timer -= dt;
     // Fixed 60 Hz NPC simulation, like NPC.cs. Updating per rendered frame made
     // enemies move faster on high-refresh displays.
@@ -1082,6 +1123,35 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // The revenge cache (`NPC.CheckActive` :78000-78002 -> CacheEnemy
+    // :347-371): a despawning carrier caches its marker. The port's removal
+    // paths run through this retain; the death removal rides the same hook.
+    let cached: Vec<crate::revenge::RevengeMarker> = app
+        .npcs
+        .iter()
+        .filter(|n| n.hp <= 0 && crate::revenge::should_cache(n))
+        .map(|n| {
+            let hp_percent = if n.max_hp > 0 {
+                n.hp as f32 / n.max_hp as f32
+            } else {
+                0.0
+            };
+            let (cx, cy) = n.center();
+            crate::revenge::RevengeMarker {
+                location: Vec2::new(cx, cy),
+                kind: n.kind,
+                hp_percent,
+                base_value: n.value(),
+                coins_value: n.extra_value,
+                expiration_tick: app.revenge_tick
+                    + crate::revenge::expiration_addon(n.extra_value),
+                unique_id: app.revenge_tick.wrapping_mul(31)
+                    + n.extra_value,
+                force_expire: false,
+            }
+        })
+        .collect();
+    app.revenge_markers.extend(cached);
     let dead: Vec<Npc> = app.npcs.iter().filter(|n| n.hp <= 0).cloned().collect();
     app.npcs.retain(|n| n.hp > 0);
     // The invasion kill credit (`NPC.cs:78236-78279`): the group match
@@ -1640,7 +1710,7 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
         false, // Midas
         false, // Main.bloodMoon
-        0.0,   // NPC.extraValue (master-mode bump, not modelled)
+        npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
     app.item_rng = rng_state;

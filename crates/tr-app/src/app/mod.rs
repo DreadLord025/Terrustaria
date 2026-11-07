@@ -214,6 +214,12 @@ pub(crate) struct App {
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
+    /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
+    /// .cs:315`): the cached coin carriers. Session-only — cleared on the
+    /// world unload (the vanilla never saves them).
+    pub(crate) revenge_markers: Vec<crate::revenge::RevengeMarker>,
+    /// `CoinLossRevengeSystem._gameTime` (:382-389) — the revenge clock.
+    pub(crate) revenge_tick: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -1719,6 +1725,8 @@ impl App {
                 || std::env::var_os("TR_CRAFT").is_some(),
             world_chests: Vec::new(),
             craft_rng: 1,
+            revenge_markers: Vec::new(),
+            revenge_tick: 0,
             menu: menu_state,
             front: None,
             front_backup: None,
