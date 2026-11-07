@@ -2547,6 +2547,39 @@ The five kinds carry their verbatim `SetDefaults` rows (the Officer's
 300-HP/def-50 body, the GrayGrunt's 750-HP/0-kb bruiser, the walker's
 34×110 2000-HP body) and the 9/11-frame sheets NPC_383/520.
 
+## The Martian Probe (M4-EVENT-4b)
+
+The event's entry. `AI()`'s aiStyle-80 block (`NPC.cs:36532-36624`):
+`ai[0] == 0` hovers (the 3·direction drift with the collideX flip, the
+30-tile vertical scan's 15/20 rise-damp-sink bands); `ai[0] == 1` is
+the 60-tick detect flash (the closest player within 352 px whose centre
+sits below the probe); `ai[0] == 2` escapes (the `noTileCollide` rise
+− 0.1/tick to −10, the `ai[3]` x-drift away from the player, the
+leave-world/180-tick arm's `StartInvasion(4); active = false`). The AI
+holds `&World`, so the resolve rides `wants_martian_invasion` — the sim
+starts the invasion (the type-4's 160+40x army) and removes the probe.
+`CheckActive`'s timeout latch is constants-off (no NPC timeLeft model).
+
+Both spawn sites: the skyMob dispatch (`NPC.cs:1354-1412` — the
+`FindSpawnTile` 0.35/0.45 bands' `skyMob` flag with the `Next(10)` roll,
+`flag5`'s edge band + `skyBehindPlayer`, the water-candle 3/10 vs 8/30
+tables, the `!downedMartians` short-circuit rolls, `AnyDanger`'s
+refusal; the Drone arm consumes the dispatch position and the Wyvern arm
+consumes its `Next(10)`, both returning nothing — the kinds land with
+their AI families) and the surfaceSpawn arm (`:4164-4199`, the 100/400
+rolls). The vanilla registers NO loot for the probe (neither
+`ItemDropDatabase` nor `NPCLoot`), so killing it drops nothing and does
+not trigger anything — only the escape does.
+
+The task also landed a reconciliation pass over the node's parallel
+slices: the `to_u16` id map's pirate/martian collision (both families
+had taken 68-72 across merges) renumbered to 78-82/83 through all three
+tables, the duplicated dead arms removed, the bestiary `sheet_i` table
+re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
+48-50 slot had silently drifted every later agent's rows), the Walker's
+11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
+0.55 middle cut ported.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
