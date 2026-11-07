@@ -1330,6 +1330,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
+            NpcKind::EaterOfWorldsHead | NpcKind::BrainOfCthulhu => {
+                // `NPC.cs:79450-79456`'s orb-boss-death arm: the pending
+                // meteorite — the guaranteed first (the pre-kill read of
+                // the downed flag), the 1/2 afterwards.
+                let was_down = app.world.downed_eow;
+                if !was_down {
+                    app.world.spawn_meteor = true;
+                } else {
+                    app.world.spawn_meteor =
+                        tr_core::worldgen::meteor::boss_death_roll(&mut app.item_rng, true);
+                }
+                app.world.downed_eow = true;
+            }
             NpcKind::GolemHead => {
                 let mut free =
                     Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
