@@ -282,6 +282,14 @@ impl ApplicationHandler for App {
                     }
                 } else {
                     let step = d.round() as i32;
+                    // `Main.DoScrollingInInventory`'s chest arm
+                    // (`Main.cs:17435-17452`): the wheel scrolls the chest
+                    // slot window while the inventory is open and the pointer
+                    // is inside the grid (the plan-amendment insertion #10).
+                    if step != 0 && self.menu.is_none() && self.front.is_none() && self.inventory_open
+                    {
+                        crate::ui::chest::scroll(self, step, self.mouse_pos);
+                    }
                     if step != 0
                         && self.menu.is_none()
                         && self.front.is_none()

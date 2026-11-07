@@ -48,6 +48,7 @@ impl App {
                         initial: String::new(),
                         allow_empty: true,
                         max_length: 20,
+                        context: ui::keyboard::Context::Text,
                     },
                     FrontScreen::CharSelect,
                 );

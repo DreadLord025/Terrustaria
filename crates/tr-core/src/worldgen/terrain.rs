@@ -10,7 +10,7 @@ use super::{
     TILE_ASH, TILE_DIRT, TILE_GRASS, TILE_HARDENED_SAND, TILE_ICE, TILE_SAND, TILE_SANDSTONE,
     TILE_SNOW, TILE_STONE, WALL_DIRT, WALL_SANDSTONE, WALL_STONE,
 };
-use crate::tile::{FLAG_ACTIVE, Tile};
+use crate::tile::{Tile, FLAG_ACTIVE};
 use crate::world::World;
 
 /// Everything the surface-height pass computes that the later passes consume.
@@ -35,6 +35,22 @@ pub(crate) struct Layers {
     pub(crate) world_surface: f64,
     pub(crate) rock_layer: f64,
     pub(crate) hell_top: i32,
+    /// The `GenVars` surface/rock quartet the ore bands key on
+    /// (`TerrainPass.cs:230-234`): min/max of the per-column surface and of the
+    /// per-column rock start, both raw.
+    ///
+    /// The C# ≥ 20 recentering (`TerrainPass.cs:217-228`) is deliberately not
+    /// applied: it guards a degenerate case that needs the C# rock line (6-35 %
+    /// of the world height below the surface) — the model's rock line sits only
+    /// `dirt_depth` (16-22) below the surface, so the guard would fire on every
+    /// world and drag `surface_high` below the mean surface, shifting the
+    /// surface ore bands underground. A normal C# world never recenters, so the
+    /// raw quartet is what reproduces the normal-world band geometry
+    /// (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)").
+    pub(crate) surface_low: f64,
+    pub(crate) surface_high: f64,
+    pub(crate) rock_low: f64,
+    pub(crate) rock_high: f64,
 }
 
 /// Shapes the per-column surface row before any tile is painted.
@@ -186,12 +202,24 @@ pub(crate) fn fill_terrain(
     let rock_raw = (height as f64 * 0.43).max(world_surface + 65.0);
     let rock_layer = world_surface + ((rock_raw - world_surface) / 6.0).floor() * 6.0;
     let hell_top = (height - 170) as i32;
+    // The `GenVars` quartet (`TerrainPass.cs:73-76,88-91`): min/max of the
+    // per-column surface (num5/num6) and of the per-column rock start (num7/num8).
+    // The model's per-column rock start is the dirt→stone transition `top +
+    // dirt_depth` (the C# walks a smoother num4 line — ANALYSIS "OresAndShinies
+    // fidelity").
+    let surface_low = surface.iter().min().copied().unwrap_or(0) as f64;
+    let mut rock_low = f64::INFINITY;
+    let mut rock_high = f64::NEG_INFINITY;
+
     // Eastern third of the world is a snow biome.
     let snow_start = width * 2 / 3;
 
     for x in 0..width {
         let top = surface[x as usize];
         let dirt_depth = 16 + (noise.value(x as f32 * 0.05, 3.0) * 6.0) as i32;
+        let rock_line = (top + dirt_depth) as f64;
+        rock_low = rock_low.min(rock_line);
+        rock_high = rock_high.max(rock_line);
         for y in 0..height {
             let i = world.index(x, y);
             let mut tile = Tile::default();
@@ -242,5 +270,53 @@ pub(crate) fn fill_terrain(
         world_surface,
         rock_layer,
         hell_top,
+        surface_low,
+        surface_high: surface_max,
+        rock_low,
+        rock_high,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DW-2.1: `fill_terrain` fills the quartet from the finished columns — the
+    /// raw min/max relations hold and every ore band's y-range stays non-empty
+    /// (the C#-normal-world geometry, no recentering).
+    #[test]
+    fn fill_terrain_records_the_layer_quartet() {
+        let mut world = World::new("test".into(), 400, 800);
+        let noise = Noise { seed: 42 };
+        let map = surface_height_map(400, 800, &noise);
+        let layers = fill_terrain(&mut world, 400, 800, &noise, &map);
+
+        let raw_max = map.heights.iter().copied().max().unwrap_or(0) as f64;
+        let raw_min = map.heights.iter().copied().min().unwrap_or(0) as f64;
+        assert_eq!(layers.surface_high, raw_max, "surface_high = max surface");
+        assert_eq!(layers.surface_low, raw_min, "surface_low = min surface");
+        assert!(layers.surface_low <= layers.avg_surface);
+        assert!(layers.avg_surface <= layers.surface_high);
+        // rock_low/rock_high are the raw min/max of the model's rock line
+        // `top + dirt_depth` (dirt_depth ∈ 16..=22).
+        let rock_line = |x: i32| {
+            let d = 16 + (noise.value(x as f32 * 0.05, 3.0) * 6.0) as i32;
+            (map.heights[x as usize] + d) as f64
+        };
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for x in 0..400 {
+            lo = lo.min(rock_line(x));
+            hi = hi.max(rock_line(x));
+        }
+        assert_eq!(layers.rock_low, lo);
+        assert_eq!(layers.rock_high, hi);
+        // No recentering: surface_high keeps its raw value even though the
+        // model's rock line sits above `surface_high + 20` on a shallow line.
+        // Band geometry stays C#-normal-world: every band range is non-empty.
+        assert!(layers.surface_high < layers.rock_high, "band 2/5/7");
+        assert!(layers.rock_low < 800.0, "bands 3/6/8/9");
+        assert!(layers.surface_low > 20.0, "band 11");
+        assert_eq!(layers.world_surface, raw_max + 25.0);
+        assert_eq!(layers.hell_top, 630);
     }
 }
