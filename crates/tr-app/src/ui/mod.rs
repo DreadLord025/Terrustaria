@@ -515,6 +515,8 @@ fn hover_item_for<'a>(
     match hit {
         H::Grid(i) => inventory.get(i),
         H::Bank(i) => bank.and_then(|b| b.get(i)),
+        // The buttons carry no item: the tooltip stays off.
+        H::BankButton(_) => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

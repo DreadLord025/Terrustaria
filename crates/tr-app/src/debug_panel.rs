@@ -410,11 +410,19 @@ pub fn handle_click(app: &mut App, mouse: Vec2) -> bool {
 
 fn give_item(app: &mut App, item: u16, count: u32) -> bool {
     let idx = match crate::item::slot_for_pickup(&mut app.inventory, item, 0) {
-        Some(i) => i, None => return false,
+        Some(i) => i,
+        None => return false,
     };
     let sl = &mut app.inventory[idx];
-    if sl.kind == item && sl.count > 0 { sl.count += count; } else {
-        *sl = ItemSlot { kind: item, name: crate::itemdata::ITEMS[item as usize].name, count, prefix: 0 };
+    if sl.kind == item && sl.count > 0 {
+        sl.count += count;
+    } else {
+        *sl = ItemSlot {
+            kind: item,
+            name: crate::itemdata::ITEMS[item as usize].name,
+            count,
+            prefix: 0,
+        };
     }
     true
 }
@@ -546,6 +554,20 @@ fn world_click(app: &mut App, row: usize) {
             }
         }
         8 => {
+            // The Slime Rain toggle: the vanilla roll/kill machinery
+            // runs off the flag; the start uses the vanilla duration
+            // band's midpoint.
+            if app.world.slime_rain {
+                app.world.slime_rain = false;
+                app.world.slime_rain_time = 0.0;
+                app.world.slime_rain_kills = 0;
+            } else {
+                app.world.slime_rain = true;
+                app.world.slime_rain_time = 43200.0;
+                app.world.slime_rain_kills = 0;
+            }
+        }
+        9 => {
             for n in app.npcs.iter_mut() {
                 if n.hp > 0 && !n.kind.is_worm_head() {
                     n.hp = 0;

@@ -1129,6 +1129,27 @@ impl Npc {
         Some(npc)
     }
 
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// the random sky tile): the position is the caller's — the slime
+    /// falls through the air under its own gravity. The seed-facing
+    /// variation and the variant stats ride the ground ctor's shape.
+    pub fn spawn_slime_sky(x_px: f32, y_px: f32, variant: SlimeVariant) -> Self {
+        let stats = variant.stats();
+        let mut seed = ((x_px / 16.0) as i32 as u32).wrapping_mul(2_654_435_761);
+        seed ^= seed >> 15;
+        let mut npc = Self::new(
+            NpcKind::Slime,
+            x_px,
+            y_px,
+            if seed & 1 == 0 { 1 } else { -1 },
+            0.4 + (seed % 80) as f32 * 0.01,
+        );
+        npc.slime = variant;
+        npc.max_hp = stats.life;
+        npc.hp = stats.life;
+        npc
+    }
+
     /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
     pub fn spawn_king_slime(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);

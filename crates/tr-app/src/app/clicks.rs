@@ -310,6 +310,53 @@ impl App {
                 return;
             }
         }
+        // The transfer buttons (M3-STORE-2, `ChestUI.cs:282-307`'s click
+        // dispatch): LootAll/DepositAll/QuickStack/Restock over the open
+        // bank. A hit consumes the press before the slot grid.
+        if self.inventory_open {
+            let chest_open = self
+                .player
+                .as_ref()
+                .map(|p| p.chest)
+                .unwrap_or(crate::bank::CHEST_CLOSED);
+            if let Some(bi) = crate::bank::bank_for_chest(chest_open) {
+                let m_h = (self.screen_size().1 as f32 - 600.0) / 2.0;
+                if let Some(id) = ui::inventory::bank_button_at(self.mouse_pos, m_h) {
+                    if left {
+                        let Some(p) = self.player.as_mut() else {
+                            return;
+                        };
+                        let favs = self.favorite_slots.clone();
+                        let fav = move |i: usize| favs.contains(&i);
+                        match id {
+                            0 => crate::bank::loot_all(
+                                &mut p.banks[bi],
+                                &mut self.inventory,
+                                &mut self.equip.coins,
+                            ),
+                            1 => crate::bank::deposit_all(
+                                &mut p.banks[bi],
+                                &mut self.inventory,
+                                &fav,
+                            ),
+                            2 => crate::bank::quick_stack(
+                                &mut p.banks[bi],
+                                &mut self.inventory,
+                                &mut self.equip.coins,
+                                &fav,
+                            ),
+                            _ => {
+                                let _ = crate::bank::restock(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                );
+                            }
+                        }
+                        return;
+                    }
+                }
+            }
+        }
         // The bank panel's slots (M3-STORE-1, `ChestUI.Draw`'s context-4
         // grid): the same held/target merge as the grid rows below —
         // `ItemSlot.Handle`'s swap/stack/split semantics.
