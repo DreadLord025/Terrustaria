@@ -373,6 +373,31 @@ mod tests {
         assert_eq!(rng.0, 999, "the valve skips the loop without drawing");
     }
 
+    /// DW-7.1 (the batch-5-6 review note): the 11-stage give-up branch
+    /// (`WorldGen.cs:15884-15893`) — a world with no jungle grass anywhere in
+    /// the sampled band never accepts: the search widens 0.25 → 0.30 → 0.35,
+    /// then runs 11 more 1,000,000-attempt stages at the cap (`num > 10`)
+    /// and gives up to the C# fallback (`:15926-15930`). The draw ledger pins
+    /// the full counter ladder — 13 widen-stage runs × 1,000,002 attempts ×
+    /// 2 draws; a break one stage early would be 2,000,004 draws short.
+    #[test]
+    fn test_DW_7_1_temple_search_gives_up_after_eleven_cap_stages() {
+        let world = World::new("t".into(), 800, 800); // no tile 60 anywhere
+        let mut rng = Rng(0x5EED_5EED);
+        let site = find_temple_site(&world, 300, 50.0, &mut rng);
+        assert_eq!(site, (800 - 300, 50 + 100), "the C# fallback position");
+        // The exact attempt ladder: two stages to reach the 0.35 cap + the
+        // eleven cap stages, every stage 1,000,002 attempts (the
+        // post-increment compare), 2 draws per attempt (the y `Next` + the
+        // x `NextDouble`).
+        let mut fresh = Rng(0x5EED_5EED);
+        for _ in 0..13 * 1_000_002 {
+            fresh.next_u32();
+            fresh.next_u32();
+        }
+        assert_eq!(rng.0, fresh.0, "the full 11-stage give-up ladder consumed");
+    }
+
     /// DW-6.1: the shell publishes the GenVars the M5-TEMPLE passes read —
     /// `t_rooms` is the carved-room count, the bounds are the filled extent
     /// ± 10 (`WorldGen.cs:33788-33817`, published `:34231-34235`) and

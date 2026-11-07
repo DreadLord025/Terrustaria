@@ -44,7 +44,7 @@ const TILE_JUNGLE_THORNS: u16 = 69; // TileID.JungleThorns (TileID.cs:767)
 const TILE_JUNGLE_PLANTS2: u16 = 74; // TileID.JunglePlants2 (TileID.cs:777)
 const TILE_LIHZAHRD_BRICK: u16 = 226; // TileID.LihzahrdBrick (TileID.cs:1081)
 const TILE_PLANT_DETRITUS: u16 = 233; // TileID.PlantDetritus (TileID.cs:1095)
-const WALL_DIRT: u16 = 2; // WallID.Dirt
+const WALL_DIRT: u16 = 2; // WallID.DirtUnsafe (WallID.cs:109)
 const WALL_MUD_UNSAFE: u16 = 15; // WallID.MudUnsafe (WallID.cs:135)
 const WALL_CAVE6_UNSAFE: u16 = 59; // WallID.Cave6Unsafe (WallID.cs:223)
 
