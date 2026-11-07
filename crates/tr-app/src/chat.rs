@@ -130,8 +130,11 @@ impl ChatMonitor {
 
 /// `Player.KillMe`'s death broadcast (`NetworkText.FromLiteral($"{name}
 /// {text}")` shape) — the Death color (`ChatColors.cs`).
-pub fn broadcast_death(chat: &mut ChatMonitor, player_name: &str, text: &str) {
-    chat.new_text(format!("{player_name} {text}"), COLOR_DEATH);
+pub fn broadcast_death(chat: &mut ChatMonitor, text: &str) {
+    // The C# line is the resolved NetworkText — "X was slain..." with the
+    // name already inside (the DeathText rows carry `{0}`), so the port
+    // broadcasts the final text as-is.
+    chat.new_text(text.to_string(), COLOR_DEATH);
 }
 
 /// The colored system line (`ChatHelper.DisplayMessage`'s flat form) — the
@@ -190,7 +193,7 @@ mod tests {
     #[test]
     fn the_death_broadcast_uses_the_death_color() {
         let mut chat = ChatMonitor::default();
-        broadcast_death(&mut chat, "Belsin", "was slain...");
+        broadcast_death(&mut chat, "Belsin was slain...");
         assert_eq!(chat.messages[0].text, "Belsin was slain...");
         assert_eq!(chat.messages[0].color, COLOR_DEATH);
     }

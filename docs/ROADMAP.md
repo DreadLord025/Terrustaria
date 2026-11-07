@@ -973,7 +973,7 @@ framework.
 (title/settings/language screens, item names) · 🟡.
 
 **Tasks:** M6-LOCALIZE-wire — first slice done 2026-11-07 (`M6-LOCALIZE-wire-fonts`),
-second slice 2026-11-08 (`M6-LOCALIZE-2-settings-screens`):
+second slice 2026-11-08 (`M6-LOCALIZE-2-settings-screens`), third slice 2026-11-08 (`M6-LOCALIZE-3-death-text`):
 the `lang` runtime (84 shipped `Terraria.Localization.Content.*` resources, 12 cultures ×
 7 groups, loaded from `TR_LOCALE`/the `../decompiled` sibling of the content dir — the
 same retail-derived content model as `assets/Content`), the `LanguageManager.SetLanguage`
@@ -982,8 +982,9 @@ key (`Main.cs:4099`) applied at startup (`Main.cs:4345`, `TR_LANG` = the `-lang`
 plus the font fix the localized strings needed (the shipped `DynamicSpriteFont` parse —
 159 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
 texture array the XNA `SurfaceFormat.Dxt3` path implies). Remaining: the UIState screens (char/world
-creation and select, keyboard) still draw their English labels, then HUD/death-dialog
-text. Font groundwork done in slice 1: the shipped `DynamicSpriteFont` parse — 159
+creation and select, keyboard) still draw their English labels; the death texts landed
+with slice 3 (`DeathText.*` row families with the `DeathText.{base}_{variant}`
+roll, `Currency.*` coin names, `Game.DroppedCoins`). Font groundwork done in slice 1: the shipped `DynamicSpriteFont` parse — 159
 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
 texture array the XNA `SurfaceFormat.Dxt3` path implies.
 
