@@ -433,6 +433,9 @@ fn portrait_data(
         NpcKind::GoblinArcher => 60,
         NpcKind::BoundGoblin => 61,
         NpcKind::GoblinTinkerer => 62,
+        NpcKind::SnowmanGangsta => 48,
+        NpcKind::SnowBalla => 49,
+        NpcKind::MysterySnowman => 50,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -535,6 +538,25 @@ fn portrait_data(
         (NpcKind::GoblinArcher, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::BoundGoblin, _) => (sheet_i, 48.0, 34.0, 54.0, white),
         (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
+        (NpcKind::SnowmanGangsta, _) => {
+            let h = lookups.bestiary_npc_sheets[48]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::SnowBalla, _) => {
+            let h = lookups.bestiary_npc_sheets[49]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::MysterySnowman, _) => {
+            let h = lookups.bestiary_npc_sheets[50]
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
         // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
         // display boxes (the frame height rides each sheet).

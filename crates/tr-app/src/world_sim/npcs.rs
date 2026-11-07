@@ -98,14 +98,19 @@ pub(crate) fn can_start_invasion(world: &tr_core::World, player_life_max: i32) -
 /// `Main.StartInvasion(1)` (`Main.cs:64435-64460`): the goblin type, the
 /// size `80 + 40 x the qualifying players` (the CanStart gate guarantees
 /// >= 1); the active-invasion early return holds (`invasionType != 0`).
-pub(crate) fn start_invasion(world: &mut tr_core::World, qualifying_players: i32) {
+pub(crate) fn start_invasion(
+    world: &mut tr_core::World,
+    qualifying_players: i32,
+    invasion_type: i32,
+) {
     if world.invasion_goblins {
         return;
     }
     world.invasion_goblins = true;
-    // `Main.invasionType = 1` + the march/warn state (`:64455-64510`) —
-    // the morning-roll resolve and the item path share the state.
-    world.invasion_type = 1;
+    // `Main.invasionType = type` + the march/warn state (`:64455-64510`) —
+    // the morning-roll resolve and the item paths share the state. The
+    // pirate bonus (`type == 3`'s `+40+20x`) rides the type-3 slice.
+    world.invasion_type = invasion_type;
     world.invasion_warn = 0;
     world.invasion_size = 80 + 40 * qualifying_players.max(1);
     world.invasion_size_start = world.invasion_size;
@@ -634,14 +639,30 @@ pub(crate) fn spawn_wof_at(app: &mut App, pos: Vec2) -> bool {
 /// `Main.InvasionWarning` (`Main.cs:64400-64415`) for the goblin slice —
 /// the literal en strings stand in for the `Lang.misc[0..3]` keys.
 fn invasion_warning(app: &mut App) {
+    // `Main.InvasionWarning`'s per-type literals (the en strings stand in
+    // for `Lang.misc[0..3]` = the goblins, `[4..7]` = the Frost Legion).
+    let (done, west, east, here) = match app.world.invasion_type {
+        2 => (
+            "The frost army has been defeated!",
+            "Frost Legion is approaching from the west!",
+            "Frost Legion is approaching from the east!",
+            "The Frost Legion has arrived!",
+        ),
+        _ => (
+            "The goblin army has been defeated!",
+            "Goblins are approaching from the west!",
+            "Goblins are approaching from the east!",
+            "The goblin army has arrived!",
+        ),
+    };
     let text = if app.world.invasion_size <= 0 {
-        "The goblin army has been defeated!"
+        done
     } else if app.world.invasion_x < app.world.spawn_x as f64 {
-        "Goblins are approaching from the west!"
+        west
     } else if app.world.invasion_x > app.world.spawn_x as f64 {
-        "Goblins are approaching from the east!"
+        east
     } else {
-        "The goblin army has arrived!"
+        here
     };
     crate::chat::broadcast_death_text(&mut app.chat, text, crate::chat::COLOR_COMMAND);
 }
@@ -661,7 +682,10 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         // `AchievementsHelper.NotifyProgressionEvent(10)` — the port's
         // achievement engine has no progression-kind rows yet (the
         // flag-set state carries the defeat).
-        app.world.downed_goblins = true;
+        match app.world.invasion_type {
+            2 => app.world.downed_frost = true,
+            _ => app.world.downed_goblins = true,
+        }
         invasion_warning(app);
         app.world.invasion_type = 0;
         app.world.invasion_delay = 0;
@@ -704,6 +728,8 @@ fn npc_invasion_group(kind: NpcKind) -> i32 {
         | NpcKind::GoblinPeon
         | NpcKind::GoblinSorcerer
         | NpcKind::GoblinSummoner => 1,
+        // `NPC.cs:78311-78314`: the Frost Legion's trio.
+        NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 2,
         _ => 0,
     }
 }
@@ -753,7 +779,25 @@ pub(crate) fn should_spawn_invasion_enemies(world: &World, player_y: f32, player
 /// The invasion spawn table (`NPC.cs:1419-1450`, `invasionType == 1`):
 /// hardmode's Summoner 1/30 (no living ones), the Sorcerer 1/9, the Thief
 /// 1/5, the Peon 1/3, the Warrior 1/3, else the Archer.
-fn invasion_spawn_pick(rng: &mut u64, hard_mode: bool, summoner_alive: bool) -> NpcKind {
+fn invasion_spawn_pick(
+    rng: &mut u64,
+    hard_mode: bool,
+    summoner_alive: bool,
+    invasion_type: i32,
+) -> NpcKind {
+    let hard_type = if invasion_type == 1 { Some(1) } else { None };
+    // `invasionType == 2`'s table (`NPC.cs:1450-1459`): the SnowmanGangsta
+    // 1/7, the SnowBalla 1/3, else the MysterySnowman.
+    if invasion_type == 2 {
+        let r = crate::app::frame::rand01(rng);
+        return if r < 1.0 / 7.0 {
+            NpcKind::SnowmanGangsta
+        } else if r < 1.0 / 7.0 + 1.0 / 3.0 {
+            NpcKind::SnowBalla
+        } else {
+            NpcKind::MysterySnowman
+        };
+    }
     if hard_mode && !summoner_alive && crate::app::frame::rand01(rng) < 1.0 / 30.0 {
         return NpcKind::GoblinSummoner;
     }
@@ -797,7 +841,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             } else {
                 app.world.width as f64
             };
-            start_invasion(&mut app.world, num);
+            start_invasion(&mut app.world, num, 1);
             // The march state rides the World fields (the app-level pass
             // reads them in `update_invasion_state`).
         }
@@ -1248,7 +1292,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `this.invaders` branch ahead of the normal picks). The pick rides
         // the local (the closure's borrows don't reach the spawn resolve).
         if let Some((ix, iy, summoner_alive)) = inv_input {
-            let kind = invasion_spawn_pick(&mut app.item_rng, app.world.hard_mode, summoner_alive);
+            let kind = invasion_spawn_pick(&mut app.item_rng, app.world.hard_mode, summoner_alive, app.world.invasion_type);
             invasion_pick = Some((kind, ix, iy));
         }
         if invasion_pick.is_none() {
@@ -1704,7 +1748,7 @@ mod invasion_tests {
         player.x = 150.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        start_invasion(&mut app.world, 1);
+        start_invasion(&mut app.world, 1, 1);
         assert_eq!(app.world.invasion_type, 1);
         assert_eq!(app.world.invasion_size, 120);
         assert_eq!(app.world.invasion_size_start, 120);
@@ -1714,7 +1758,7 @@ mod invasion_tests {
             app.world.invasion_x
         );
         // The second call refuses (the invasion is active).
-        start_invasion(&mut app.world, 1);
+        start_invasion(&mut app.world, 1, 1);
         assert_eq!(app.world.invasion_type, 1);
     }
 
@@ -1792,7 +1836,7 @@ mod invasion_tests {
         // The table: the picks are always goblins.
         let mut rng = 7u64;
         for _ in 0..40 {
-            let kind = invasion_spawn_pick(&mut rng, false, false);
+            let kind = invasion_spawn_pick(&mut rng, false, false, 1);
             assert!(matches!(
                 kind,
                 NpcKind::GoblinSorcerer
@@ -1807,7 +1851,7 @@ mod invasion_tests {
         let mut saw_summoner = false;
         for _ in 0..200 {
             if matches!(
-                invasion_spawn_pick(&mut rng, true, false),
+                invasion_spawn_pick(&mut rng, true, false, 1),
                 NpcKind::GoblinSummoner
             ) {
                 saw_summoner = true;
@@ -1819,7 +1863,7 @@ mod invasion_tests {
         for _ in 0..200 {
             assert!(
                 !matches!(
-                    invasion_spawn_pick(&mut rng, true, true),
+                    invasion_spawn_pick(&mut rng, true, true, 1),
                     NpcKind::GoblinSummoner
                 ),
                 "the alive summoner blocks the roll"
@@ -1878,4 +1922,94 @@ mod invasion_tests {
         );
         assert!(npcs[2].hp > 0);
     }
+
+#[cfg(test)]
+mod frost_invasion_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::npc::Npc;
+    use crate::world_sim::editing::use_snow_globe;
+    use tr_core::tile::{Tile, FLAG_ACTIVE};
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_snow_globe_arms_the_frost_legion() {
+        // `ItemCheck_UseBossSpawners`' Frost arm (`Player.cs:43940-43956`):
+        // the Snow Globe starts `invasionType = 2` with the 80-point army;
+        // a second globe refuses while the invasion is active.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player);
+        app.inventory[app.selected] =
+            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
+        assert!(use_snow_globe(&mut app));
+        assert_eq!(app.world.invasion_type, 2);
+        assert_eq!(app.world.invasion_size, 120);
+        assert!(app.world.invasion_goblins, "the active-invasion flag");
+        app.inventory[app.selected] =
+            crate::item::ItemSlot { kind: 602, name: "Snow Globe".into(), count: 1, prefix: 0 };
+        assert!(!use_snow_globe(&mut app), "the active invasion refuses");
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    #[test]
+    fn the_frost_kill_credit_drains_and_defeats() {
+        // The group-2 match: the frost kills drain 1 point each; at 0 the
+        // `downedFrost` flag sets (the goblin flag stays untouched).
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        app.world.invasion_type = 2;
+        app.world.invasion_size = 1;
+        app.world.invasion_size_start = 120;
+        report_invasion_kill(&mut app, NpcKind::SnowmanGangsta);
+        assert_eq!(app.world.invasion_size, 0);
+        update_invasion_state(&mut app);
+        assert!(app.world.downed_frost, "the frost defeat flag");
+        assert!(!app.world.downed_goblins, "the goblin flag untouched");
+        assert_eq!(app.world.invasion_type, 0);
+    }
+
+    #[test]
+    fn the_frost_spawn_table_picks_the_trio() {
+        // `invasionType == 2`'s table: the SnowmanGangsta 1/7, the SnowBalla
+        // 1/3, else the MysterySnowman — always the frost trio.
+        let mut rng = 9u64;
+        for _ in 0..60 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 2),
+                NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman
+            ));
+        }
+        // The goblin table stays on type 1.
+        let mut rng = 9u64;
+        for _ in 0..40 {
+            assert!(matches!(
+                invasion_spawn_pick(&mut rng, false, false, 1),
+                NpcKind::GoblinSorcerer
+                    | NpcKind::GoblinThief
+                    | NpcKind::GoblinPeon
+                    | NpcKind::GoblinWarrior
+                    | NpcKind::GoblinArcher
+            ));
+        }
+    }
+}
+
 }

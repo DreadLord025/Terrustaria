@@ -76,6 +76,20 @@ pub enum NpcKind {
     /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000;
     /// `GetNPCInvasionGroup`'s 10-point kill).
     GoblinSummoner,
+
+    /// `NPCID.SnowmanGangsta` (143) — the Frost Legion's bottle-thrower
+    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7; the throw
+    /// arm lands with the projectile work), dmg 50, def 20, 200 HP,
+    /// kb 0.6, value 400).
+    SnowmanGangsta,
+    /// `NPCID.SnowBalla` (144) — the kicker (`NPC.cs`: 26×40, aiStyle 38
+    /// (the speed 3.5/accel 0.8; the kick arm = the follow-up), dmg 65,
+    /// def 26, 240 HP, kb 0.6, value 400).
+    SnowBalla,
+    /// `NPCID.MysterySnowman` (145) — the jumper (`NPC.cs`: 26×40,
+    /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
+    /// 220 HP, kb 0.6, value 400).
+    MysterySnowman,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -410,6 +424,21 @@ impl NpcKind {
             NpcKind::GoblinArcher => 59,
             NpcKind::GoblinPeon => 60,
             NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -479,6 +508,9 @@ impl NpcKind {
             59 => NpcKind::GoblinArcher,
             60 => NpcKind::GoblinPeon,
             61 => NpcKind::GoblinSummoner,
+            65 => NpcKind::SnowmanGangsta,
+            66 => NpcKind::SnowBalla,
+            67 => NpcKind::MysterySnowman,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -647,6 +679,8 @@ impl NpcKind {
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon
             | NpcKind::GoblinSummoner => (18.0, 38.0),
+            // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -779,6 +813,10 @@ impl NpcKind {
             NpcKind::GoblinArcher => 110,
             NpcKind::GoblinSorcerer => 40,
             NpcKind::GoblinSummoner => 2000,
+            // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
+            NpcKind::SnowmanGangsta => 200,
+            NpcKind::SnowBalla => 240,
+            NpcKind::MysterySnowman => 220,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -857,6 +895,10 @@ impl NpcKind {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
             NpcKind::GoblinArcher => 25,
             NpcKind::GoblinSummoner => 80,
+            // The frost trio: 50/65/55.
+            NpcKind::SnowmanGangsta => 50,
+            NpcKind::SnowBalla => 65,
+            NpcKind::MysterySnowman => 55,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1348,7 +1390,9 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
             NpcKind::GoblinArcher => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
+            // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1449,7 +1493,10 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
             NpcKind::GoblinArcher => 8,
             NpcKind::GoblinSorcerer => 2,
-            NpcKind::GoblinSummoner => 26,
+            // The frost trio: 20/26/22.
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1509,6 +1556,11 @@ impl Npc {
             // final phase) / `:8721` (the servant 0).
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::ServantOfCthulhu => 0,
+            // `SetDefaults` case 471: defense 26; the frost trio: 20/26/22.
+            NpcKind::GoblinSummoner => 26,
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1543,6 +1595,10 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
             NpcKind::GoblinArcher => 150.0,
             NpcKind::GoblinSummoner => 5000.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
@@ -1751,6 +1807,12 @@ impl Npc {
             | NpcKind::GoblinWarrior
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
+            // The frost trio: aiStyle 38's movement core rides the walker
+            // (the per-type speeds 3/3.5/4 fold into the walker params —
+            // the throw/kick/jump arms land with the projectile work).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.update_skeleton(world, player, dt)
+            }
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
@@ -1824,6 +1886,20 @@ impl Npc {
                     let count = match self.kind {
                         NpcKind::GoblinPeon => 21,
                         _ => 16,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The frost trio: the 4/5/7-frame strips (the same walker
+            // accumulator).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::SnowmanGangsta => 4,
+                        NpcKind::SnowBalla => 5,
+                        _ => 7,
                     };
                     self.frame = (self.frame + 1) % count;
                 }
@@ -4078,6 +4154,9 @@ impl Npc {
             NpcKind::GoblinArcher => 59,
             NpcKind::GoblinPeon => 60,
             NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
