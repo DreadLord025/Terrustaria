@@ -36,7 +36,7 @@ re-implement something that already exists, or to port the wrong file.
 | `Map/*`, `MapRenderer.cs`, `Main.Map*` | `crates/tr-core/src/map/` (`mod`/`colors`/`option`/`file`), `mapdata.rs` (colour tables) | partial |
 | `IO/WorldFile.cs` (`.wld` save/load), world IO | `crates/tr-core/src/save.rs`, `wld.rs` (over `binio.rs`) | partial |
 | `Main.cs` `DrawSunAndMoon` / `SetBackColor` (sun+moon placement & tint) | `crates/tr-core/src/sky.rs` | partial |
-| `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization/` (`mod`/`culture`/`format`/`json`) | partial |
+| `Lang.cs`, `Localization/*` | `crates/tr-core/src/localization/` (`mod`/`culture`/`format`/`json`) + `tr-app/src/lang.rs` (runtime wiring: language screens, `LegacyMenu`/`UI.*` menu labels, item names) | wip — sub-screens pending |
 | block place/break/edit rules (`WorldGen.*`, `HitTile`) | `crates/tr-core/src/edit.rs` (`place_item_tile` incl. the seed `PlaceAlch` branch + the planter box 380, the per-type `check_*` cascade arms behind `kill_tile`, the `can_kill_tile` break refusals `WorldGen.cs:62219-62326` — the three named refusals; the trunk/palm/cactus/boulder/teleporter arms unported) | partial |
 | `ObjectData/TileObjectData.cs` + `TileObject.cs` (`CanPlace`/`Place`), KillTile `Check*` cascade (`WorldGen.cs`) | `crates/tr-core/src/tileobject.rs` (registry, `can_place`/`place`, `object_tiles_at`), `crates/tr-core/src/edit.rs` (`place_item_tile`, `kill_tile` cascade) | partial (wooden slice 10/11/14/15/18/21 + 27/28/78/82-84/185-187, the cascade arms for both slices incl. `CheckAlch`/`CheckSunflower`/`CheckPot`/`CheckPile`/`Check3x2`/`CheckOnTable1x1`; full-registry generator is the follow-up — ANALYSIS "Tile objects (M1.4-TO)") |
 | `WorldGen.OpenDoor`/`CloseDoor` + the `Player.LookForTileInteractions` right-click chain | `crates/tr-core/src/edit.rs` (`interact_at`/`open_door`/`close_door`), hook in `crates/tr-app/src/world_sim/editing.rs` (`update_editing`) | done for doors (door net message not wired — ANALYSIS "Tile objects (M1.4-TO)") |
@@ -159,7 +159,7 @@ re-implement something that already exists, or to port the wrong file.
 | LZX decompression (`ReLogic/Content/Lzx*`) | `crates/tr-content/src/lzx.rs` | done |
 | DXT texture decode | `crates/tr-content/src/dxt.rs` | done |
 | `.xwb`/XACT sound bank + ADPCM (`ReLogic/.../Xact`) | `crates/tr-content/src/xact.rs`, `adpcm.rs`, `sound.rs` | partial |
-| sprite font (`SpriteFont`) | `crates/tr-content/src/font.rs` | partial |
+| sprite font (`DynamicSpriteFont`) | `crates/tr-content/src/font.rs` (exact 1.4.5.8 parse: 159 pages/38 636 glyphs, DXT3 surfaces) + `tr-render/src/font_atlas.rs` (BC2 texture array) | done |
 | texture surface | `crates/tr-content/src/texture.rs` | done |
 
 ## Renderer (`crates/tr-render`)

@@ -173,6 +173,21 @@ pub enum TrapRequest {
         kind: u16,
         damage: i32,
     },
+    /// `Wiring.GeyserTrap` (`:3084-3112`): the trap wall (443) fires the
+    /// tracer projectile 654 (20 dmg, kb 2) — downward when `frameX / 36 >=
+    /// 2`, upward otherwise, from the anchor column.
+    Geyser { x: f32, y: f32, vx: f32, vy: f32, kind: u16, damage: i32 },
+    /// `Wiring.ExplodeMine` (`:3074-3082`): the trigger mine (210) kills
+    /// its tile (no item) and spawns the land mine 164 (250 dmg, kb 10) at
+    /// rest.
+    Mine { x: f32, y: f32, kind: u16, damage: i32, knock_back: f32 },
+    /// `HitWireSingle`'s case 531 (`:1994-2015`): the trap boulder — the
+    /// 2-wide frame decodes the top-left anchor, `CheckMech(900)`, then the
+    /// boulder 99 (70 dmg, kb 10) rests under the top row.
+    Boulder { x: f32, y: f32, kind: u16, damage: i32, knock_back: f32 },
+    /// `HitWireSingle`'s case 141 (`:2035-2040`): the explosive lock kills
+    /// its tile (no item) and spawns the bomb 108 (500 dmg, kb 10) at rest.
+    ExplosiveLock { x: f32, y: f32, kind: u16, damage: i32, knock_back: f32 },
     /// The Spear Trap's variant: the engine pre-rolls the ±1 px spread
     /// (`Main.rand.Next(...) * 0.05f`, `Wiring.cs:1838-1839`), the app
     /// applies the proximity cap before spawning.
@@ -600,6 +615,79 @@ impl Wiring {
     /// The style → spawn map (the NPC styles `CheckMech(30)`, the item
     /// styles `CheckMech(600)`). Returns the spawn request for the app layer,
     /// which runs the `MechSpawn` caps and constructs the entities.
+    /// `Wiring.GeyserTrap` (`Wiring.cs:3084-3112`): the 2-wide wall trap.
+    /// The anchor column is `i - (frameX - (frameX / 36) * 36) / 18`; the
+    /// cooldown `CheckMech(anchor, j, 200)`; the projectile 654 (20 dmg)
+    /// spawns at `(anchor + 1) * 16` with the ±8 Y velocity — down when
+    /// `frameX / 36 >= 2` (the spawn y shifts to `j + 1`), up otherwise.
+    fn geyser_trap(&mut self, i: i32, j: i32, tile_frame_x: i16) {
+        let style = tile_frame_x as i32 / 36;
+        let anchor = i - (tile_frame_x as i32 - style * 36) / 18;
+        if !self.check_mech(anchor, j, 200) {
+            return;
+        }
+        let (y_row, vy) = if style >= 2 {
+            (j + 1, 8.0)
+        } else {
+            (j, -8.0)
+        };
+        self.trap_requests.push(TrapRequest::Geyser {
+            x: (anchor + 1) as f32 * 16.0,
+            y: y_row as f32 * 16.0,
+            vx: 0.0,
+            vy,
+            kind: 654,
+            damage: 20,
+        });
+    }
+
+    /// `Wiring.ExplodeMine` (`Wiring.cs:3074-3082`): the tile is killed
+    /// without an item (`KillTile(fail, effectOnly: false, noItem: true)`)
+    /// and the land mine 164 spawns at rest at the tile center.
+    fn explode_mine(&mut self, i: i32, j: i32) {
+        self.trap_requests.push(TrapRequest::Mine {
+            x: i as f32 * 16.0 + 8.0,
+            y: j as f32 * 16.0 + 8.0,
+            kind: 164,
+            damage: 250,
+            knock_back: 10.0,
+        });
+    }
+
+    /// `HitWireSingle`'s case 531 (`Wiring.cs:1994-2015`): the 2-wide trap
+    /// boulder — the anchor decodes from the frames, the cooldown
+    /// `CheckMech(900)`, and the boulder 99 (70 dmg, kb 10) rests 28 px
+    /// below the top row's top-left.
+    fn boulder_trap(&mut self, i: i32, j: i32, tile_frame_x: i16, tile_frame_y: i16) {
+        let style_x = tile_frame_x as i32 / 36;
+        let style_y = tile_frame_y as i32 / 54;
+        let anchor_x = i - (tile_frame_x as i32 - style_x * 36) / 18;
+        let anchor_y = j - (tile_frame_y as i32 - style_y * 54) / 18;
+        if !self.check_mech(anchor_x, anchor_y, 900) {
+            return;
+        }
+        self.trap_requests.push(TrapRequest::Boulder {
+            x: (anchor_x + 1) as f32 * 16.0,
+            y: anchor_y as f32 * 16.0 + 28.0,
+            kind: 99,
+            damage: 70,
+            knock_back: 10.0,
+        });
+    }
+
+    /// `HitWireSingle`'s case 141 (`Wiring.cs:2035-2040`): the explosive
+    /// lock — its tile dies without an item and the bomb 108 (500 dmg,
+    /// kb 10) spawns at rest at the tile center.
+    fn explosive_lock(&mut self, i: i32, j: i32) {
+        self.trap_requests.push(TrapRequest::ExplosiveLock {
+            x: i as f32 * 16.0 + 8.0,
+            y: j as f32 * 16.0 + 8.0,
+            kind: 108,
+            damage: 500,
+            knock_back: 10.0,
+        });
+    }
+
     pub fn statue_trigger(&mut self, world: &mut World, i: i32, j: i32) {
         let Some(tile) = world.tile(i, j) else {
             return;
@@ -994,6 +1082,20 @@ impl Wiring {
             // variants are the six traps — dart/superdart/flame/spear/
             // boulder/spiky, plus the wall-mounted negatives.
             137 => self.trap_emit(i, j, tile_frame_x, tile_frame_y),
+            // The geyser trap (443, `Wiring.cs:1983-1984` → `GeyserTrap`
+            // :3084-3112): the tracer 654 from the anchor column, down when
+            // `frameX / 36 >= 2`, up otherwise.
+            443 => self.geyser_trap(i, j, tile_frame_x),
+            // The trigger mine (210, `:2040-2042` → `ExplodeMine`
+            // :3074-3082): the tile dies without an item and the land mine
+            // 164 (250 dmg, kb 10) spawns at rest.
+            210 => self.explode_mine(i, j),
+            // The trap boulder (531, `:1994-2015`): the frame decodes the
+            // anchor, `CheckMech(900)`, the boulder 99 (70, kb 10) rests.
+            531 => self.boulder_trap(i, j, tile_frame_x, tile_frame_y),
+            // The explosive lock (141, `:2035-2040`): the tile dies without
+            // an item and the bomb 108 (500, kb 10) spawns at rest.
+            141 => self.explosive_lock(i, j),
             // The teleporter pad (235): the wall-87 temple guard, then the
             // pad registration — the first hit fills `_teleport[0]`, a hit at
             // a different position fills `_teleport[1]` (`Wiring.cs:1067-
@@ -2202,6 +2304,144 @@ mod trap_tests {
         assert_eq!(wiring.take_trap_requests().len(), 1);
         wiring.trip_wire(&mut w, 8, 20, 1, 1);
         assert!(wiring.take_trap_requests().is_empty());
+    }
+
+    fn put_device(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        // The trigger switch two tiles left, wired red (`put_trap`'s shape).
+        let si = w.index(x - 2, y);
+        w.tiles[si] = Tile {
+            kind: 135,
+            ..Default::default()
+        };
+        w.tiles[si].flags |= FLAG_ACTIVE;
+        w.wires.set(x - 2, y, WireColor::Red, true);
+        w.wires.set(x - 1, y, WireColor::Red, true);
+        w.wires.set(x, y, WireColor::Red, true);
+    }
+
+    #[test]
+    fn test_wire_2_the_geyser_trap_fires_the_tracer() {
+        // `Wiring.cs:3084-3112`: style 0 (`frameX / 36 < 2`) fires the 654
+        // upward at the anchor column + 1; the cooldown `CheckMech(200)`.
+        let mut w = world();
+        put_device(&mut w, 10, 20, 443, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Geyser {
+                x,
+                y,
+                vx,
+                vy,
+                kind,
+                damage,
+            } => {
+                assert_eq!((kind, damage), (654, 20));
+                assert_eq!(x, 11.0 * 16.0);
+                assert_eq!(y, 20.0 * 16.0);
+                assert_eq!(vy, -8.0);
+                assert_eq!(vx, 0.0);
+            }
+            other => panic!("the geyser emitted {other:?}"),
+        }
+        // Style 3 (frameX 108): the +2 column shift → the downward jet.
+        let mut w = world();
+        put_device(&mut w, 10, 20, 443, 108, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        match reqs[0] {
+            TrapRequest::Geyser { x, y, vy, .. } => {
+                assert_eq!(x, 11.0 * 16.0);
+                assert_eq!(y, 21.0 * 16.0);
+                assert_eq!(vy, 8.0);
+            }
+            other => panic!("the style-3 geyser emitted {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_wire_2_the_mine_and_the_blast_lock_spawn_their_rests() {
+        // `:3074-3082` / `:2035-2040`: both devices emit a resting
+        // projectile at the tile centre — the mine 164 (250/10), the lock
+        // 108 (500/10).
+        let mut w = world();
+        put_device(&mut w, 12, 30, 210, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 10, 30, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Mine {
+                x,
+                y,
+                kind,
+                damage,
+                knock_back,
+            } => {
+                assert_eq!((kind, damage, knock_back), (164, 250, 10.0));
+                assert_eq!(x, 12.0 * 16.0 + 8.0);
+                assert_eq!(y, 30.0 * 16.0 + 8.0);
+            }
+            other => panic!("the mine emitted {other:?}"),
+        }
+        let mut w = world();
+        put_device(&mut w, 12, 30, 141, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 10, 30, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::ExplosiveLock {
+                x,
+                y,
+                kind,
+                damage,
+                knock_back,
+            } => {
+                assert_eq!((kind, damage, knock_back), (108, 500, 10.0));
+                assert_eq!(x, 12.0 * 16.0 + 8.0);
+            }
+            other => panic!("the lock emitted {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_wire_2_the_boulder_trap_reads_the_2wide_anchor() {
+        // `:1994-2015`: the anchor decodes off `frameX`, the cooldown is
+        // 900, and the boulder 99 (70/10) rests 28 px below the top row.
+        let mut w = world();
+        put_device(&mut w, 10, 20, 531, 18, 18); // the +1 column of the 2nd row
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 8, 20, 1, 1);
+        let reqs = wiring.take_trap_requests();
+        assert_eq!(reqs.len(), 1);
+        match reqs[0] {
+            TrapRequest::Boulder {
+                x,
+                y,
+                kind,
+                damage,
+                knock_back,
+            } => {
+                assert_eq!((kind, damage, knock_back), (99, 70, 10.0));
+                // The anchor decodes `frameY 18 → anchor row j-1`: 19*16+28.
+                assert_eq!(y, 19.0 * 16.0 + 28.0);
+                // frameX 18 → anchor column i-1, +1 → 10*16 = 160.
+                assert_eq!(x, 10.0 * 16.0);
+            }
+            other => panic!("the boulder emitted {other:?}"),
+        }
     }
 
     #[test]

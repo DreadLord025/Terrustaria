@@ -105,6 +105,9 @@ pub(crate) struct App {
     pub(crate) filter_driver: crate::app::filters::FilterDriver,
     pub(crate) world: World,
     pub(crate) atlas: Option<Atlas>,
+    /// The packed BC2 font pages the renderer uploads (`loop`'s
+    /// `SpriteRenderer::new`); `None` without the retail fonts.
+    pub(crate) font_atlas: Option<tr_render::FontAtlas>,
     pub(crate) lookups: assets::Lookups,
     pub(crate) clouds: Vec<CloudSprite>,
     pub(crate) sky: SkyAssets,
@@ -1352,6 +1355,7 @@ impl App {
         world: World,
         world_path: PathBuf,
         atlas: Atlas,
+        font_atlas: Option<tr_render::FontAtlas>,
         lookups: assets::Lookups,
         atlas_stats: (u32, u32, usize, usize),
     ) -> App {
@@ -1802,6 +1806,11 @@ impl App {
                 .unwrap_or(1);
             ty.map(|ty| (ty, seed))
         });
+        // The chests roll their loot here — before the struct literal moves
+        // `world` (`AddBuriedChest`'s stock inline with the placement, the
+        // port's load-time re-roll). The `TR_CHEST` fixture's own stocked
+        // chest merges in (its anchor is already stocked — the roll skips).
+        let world_chests = crate::chest_gen::generate_world_chests(&world);
         let mut app = App {
             window: None,
             gpu: None,
@@ -1816,6 +1825,7 @@ impl App {
             filter_driver: crate::app::filters::FilterDriver::new(),
             world,
             atlas: Some(atlas),
+            font_atlas,
             lookups,
             clouds,
             sky,
@@ -2012,7 +2022,10 @@ impl App {
             crafting_open: (std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some())
                 && tr_chest.is_none(),
-            world_chests: tr_chest_store,
+            // The load-time loot roll (the hoist above); the `TR_CHEST`
+            // store's own chests stay (its anchor gets double-stocked in
+            // vanilla too — the fixture stock wins the first slots).
+            world_chests: crate::chest_gen::merge_store(world_chests, tr_chest_store),
             chest_scroll_row: 0,
             chest_button_scales: [0.0; ui::chest::BUTTON_COUNT],
             chest_button_hovered: [false; ui::chest::BUTTON_COUNT],
@@ -2725,7 +2738,7 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
 pub(crate) fn build_atlas(
     world: &World,
     assets_dir: &Path,
-) -> Result<(Atlas, assets::Lookups, (u32, u32, usize, usize))> {
+) -> Result<(Atlas, Option<tr_render::FontAtlas>, assets::Lookups, (u32, u32, usize, usize))> {
     let (mut tile_ids, wall_ids) = assets::usage(&world);
     // The hotbar can place these even when the loaded world does not use them yet.
     tile_ids.insert(4); // torch
@@ -2744,8 +2757,7 @@ pub(crate) fn build_atlas(
 
     let t1 = Instant::now();
     let mut images = assets::load_world_images(&assets_dir, &tile_ids, &wall_ids)?;
-    let (font_images, ui_font_meta, item_font_meta, death_font_meta) = assets::load_fonts();
-    images.extend(font_images);
+    let fonts = assets::load_fonts();
     let font = tr_render::atlas::font_sheet();
     images.push(font.0);
     log::info!(
@@ -2768,15 +2780,6 @@ pub(crate) fn build_atlas(
         log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
     }
 
-    let ui_font = ui_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let item_font = item_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
-    let death_font = death_font_meta
-        .as_ref()
-        .and_then(|(sheet, f)| assets::build_ui_font(&atlas, sheet, f));
     let lookups = assets::Lookups::build(
         &atlas,
         tile_ids
@@ -2785,9 +2788,11 @@ pub(crate) fn build_atlas(
         wall_ids
             .iter()
             .map(|&id| (id, assets::image_name_for_wall(id))),
-        ui_font,
-        item_font,
-        death_font,
+        fonts.ui,
+        fonts.item,
+        fonts.death,
+        fonts.combat_text,
+        fonts.combat_crit,
     );
 
     let atlas_stats = (
@@ -2796,7 +2801,7 @@ pub(crate) fn build_atlas(
         atlas.memory_bytes(),
         atlas.sheets.len(),
     );
-    Ok((atlas, lookups, atlas_stats))
+    Ok((atlas, fonts.atlas, lookups, atlas_stats))
 }
 
 /// The world-dump diagnostics: `TR_DUMP_TILES` prints the raw tile grid and

@@ -13,6 +13,9 @@ pub struct Gpu {
     pub queue: wgpu::Queue,
     pub config: wgpu::SurfaceConfiguration,
     pub size: PhysicalSize<u32>,
+    /// The device's enabled features — the font path checks
+    /// `TEXTURE_COMPRESSION_BC` (the retail fonts ship as DXT3 = BC2).
+    pub features: wgpu::Features,
 }
 
 impl Gpu {
@@ -57,10 +60,21 @@ impl Gpu {
             ..wgpu::Limits::default()
         };
 
+        // The retail font pages upload as BC2 (`Texture2D` `SurfaceFormat.Dxt3`);
+        // desktop adapters ship it, but only require it when present so the
+        // GL debug path keeps working with the bitmap-font fallback.
+        let mut features = wgpu::Features::empty();
+        if adapter
+            .features()
+            .contains(wgpu::Features::TEXTURE_COMPRESSION_BC)
+        {
+            features |= wgpu::Features::TEXTURE_COMPRESSION_BC;
+        }
+
         let (device, queue) = adapter
             .request_device(&wgpu::DeviceDescriptor {
                 label: Some("tr-device"),
-                required_features: wgpu::Features::empty(),
+                required_features: features,
                 required_limits: limits,
                 memory_hints: wgpu::MemoryHints::Performance,
                 ..Default::default()
@@ -105,6 +119,7 @@ impl Gpu {
             queue,
             config,
             size,
+            features,
         })
     }
 

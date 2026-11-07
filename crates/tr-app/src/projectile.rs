@@ -47,6 +47,12 @@ pub const WOODEN_ARROW: u16 = 1;
 pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// The Destroyer's segment laser (`NPC.cs`'s `num11 = 100`, `:49886`).
 pub const DESTROYER_LASER: u16 = 100;
+/// `ProjectileID.Fireball` (`ProjectileID.cs`'s 258) — the Golem's head
+/// and free-head fireballs (`NPC.cs:31200`/`:31460`'s `num686`/`num720`).
+pub const GOLEM_FIREBALL: u16 = 258;
+/// `ProjectileID.EyeBeam` (259) — the Golem's eye beams
+/// (`NPC.cs:31282`'s `num698`, `:31565`'s `num729`).
+pub const GOLEM_EYE_BEAM: u16 = 259;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -152,6 +158,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // flight, `penetrate = 3`, `extraUpdates = 2`, `timeLeft = 2700`
             // (the AI_037 arm overrides to 300 post-spawn).
             DESTROYER_LASER => (4.0, 4.0, 1, 3, 2700, 2, true, false, false),
+            // `Projectile.cs:3417-3426` — the Fireball: 16x16, aiStyle 8,
+            // `timeLeft = 300`, `penetrate = -1`, hostile, alpha 100.
+            GOLEM_FIREBALL => (16.0, 16.0, 8, -1, 300, 0, true, false, false),
+            // `Projectile.cs:3427-3440` — the Eye Beam: 8x8, aiStyle 1,
+            // `extraUpdates = 1`, `tileCollide = false`, `penetrate = -1`,
+            // hostile, `timeLeft = 300` (the call sites' override).
+            GOLEM_EYE_BEAM => (8.0, 8.0, 1, -1, 300, 1, false, false, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and

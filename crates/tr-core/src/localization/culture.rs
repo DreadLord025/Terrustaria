@@ -84,6 +84,28 @@ impl GameCulture {
             .unwrap_or(GameCulture::DEFAULT)
     }
 
+    /// The `Language.*` row key of the language screens (`Main.cs:48464-48476`
+    /// names the twelve explicitly — `Language.English`, `Language.German`,
+    /// …, `Language.ChineseTraditional`; the values live in the base
+    /// `Terraria.Localization.Content.<culture>.json` and are localized in
+    /// every culture).
+    pub fn language_key(self) -> &'static str {
+        match self {
+            GameCulture::English => "Language.English",
+            GameCulture::German => "Language.German",
+            GameCulture::Italian => "Language.Italian",
+            GameCulture::French => "Language.French",
+            GameCulture::Spanish => "Language.Spanish",
+            GameCulture::Russian => "Language.Russian",
+            GameCulture::Chinese => "Language.Chinese",
+            GameCulture::Portuguese => "Language.Portuguese",
+            GameCulture::Polish => "Language.Polish",
+            GameCulture::Japanese => "Language.Japanese",
+            GameCulture::Korean => "Language.Korean",
+            GameCulture::ChineseTraditional => "Language.ChineseTraditional",
+        }
+    }
+
     /// `GameCulture.FromName`.
     pub fn from_name(name: &str) -> GameCulture {
         CULTURES
