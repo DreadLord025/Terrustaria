@@ -443,7 +443,11 @@ impl App {
                                 );
                             }
                             _ => {
-                                let _ = crate::bank::restock(&mut p.banks[bi], &mut self.inventory);
+                                let _ = crate::bank::restock(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.ammo,
+                                );
                             }
                         }
                         return;
@@ -825,7 +829,8 @@ impl App {
             // `ChestUI.Restock` (`:871-995`) — the single PlaySound(7) on a
             // moved item (`:991-994`) stays out with the existing cue stance.
             _ => {
-                let _ = crate::bank::restock(&mut wc.slots, &mut self.inventory);
+                let _ =
+                    crate::bank::restock(&mut wc.slots, &mut self.inventory, &mut self.equip.ammo);
             }
         }
     }

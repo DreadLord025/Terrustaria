@@ -2433,6 +2433,7 @@ mod tests {
         chest.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
         chest.slots[0] = slot(9, 500);
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| EMPTY_SLOT);
         inventory[5] = slot(9, 50); // the hotbar partial — restock's demand
         inventory[20] = slot(9, 100);
         inventory[21] = slot(3, 10);
@@ -2452,7 +2453,7 @@ mod tests {
         // `restock` fills the hotbar partial from the unprefixed chest stack
         // (the prefix-0 supply gate reads the chest's real prefixes now).
         assert!(
-            crate::bank::restock(&mut chest.slots, &mut inventory),
+            crate::bank::restock(&mut chest.slots, &mut inventory, &mut ammo),
             "restock filled the partial"
         );
         assert_eq!(inventory[5].count, 650);

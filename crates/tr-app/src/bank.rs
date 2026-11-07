@@ -349,11 +349,13 @@ pub(crate) fn deposit_all(
 /// non-coin stacks are the merge targets (the coin exclusion 71-74 rides the
 /// TARGET side, :703-714), the source scan = the storage rows 10..50 (+ the
 /// coin rows when a bank is open, :715-725), the same-type filter (:726-732),
-/// the CanStack merge (:733-760) and the first-source-per-type empty-slot
-/// rule (:772-812). The MoveCoins pre-pass is the DISPATCH layer's (M3-CHEST-INT
-/// decision): the C# runs it for the bank kinds only (:670-685 — the world
-/// chest gets none), so the bank call site does `move_coins` + `quick_stack`
-/// and the world call site calls this alone.
+/// the CanStack merge (:733-760) and the empty-slot phase (:772-812 — for
+/// each empty container slot the first queued source moves whole into it and
+/// every subsequent CanStack source stacks into it until maxStack). The
+/// MoveCoins pre-pass is the DISPATCH layer's (M3-CHEST-INT decision): the
+/// C# runs it for the bank kinds only (:670-685 — the world chest gets
+/// none), so the bank call site does `move_coins` + `quick_stack` and the
+/// world call site calls this alone.
 pub(crate) fn quick_stack(
     container: &mut [ItemSlot],
     inventory: &mut [ItemSlot; crate::item::INV],
@@ -398,57 +400,142 @@ pub(crate) fn quick_stack(
             }
         }
     }
-    // The empty-slot phase: only the first source of a type takes a free
-    // slot (:772-812's flag rule).
-    let mut taken: Vec<u16> = Vec::new();
-    for j in 10..50 {
-        if inventory[j].count > 0
-            && types.contains(&inventory[j].kind)
-            && !is_favorite(j)
-            && !taken.contains(&inventory[j].kind)
-        {
-            if let Some(free) = container.iter().position(|sl| sl.kind == 0 || sl.count == 0) {
-                taken.push(inventory[j].kind);
+    // The empty-slot phase (:772-812): for each empty container slot in
+    // order, the first queued source moves WHOLE into it (:783-788) and
+    // every subsequent CanStack source stacks into it until maxStack
+    // (:789-808) — all the same-type leftovers consolidate into the chest.
+    // A source skipped for its prefix stays queued for the next empty slot
+    // (`flag` resets per slot, :775).
+    for free in 0..container.len() {
+        if container[free].kind != 0 && container[free].count != 0 {
+            continue; // `list3`'s members — the initially-empty slots
+        }
+        let mut first = true; // `:775`'s `flag`
+        for j in 10..50 {
+            if inventory[j].count == 0 || !types.contains(&inventory[j].kind) || is_favorite(j) {
+                continue; // `:778` — drained sources skip
+            }
+            if !first && !can_stack(&inventory[j], &container[free]) {
+                continue; // `:778` — after the first placement, same type+prefix only
+            }
+            if first {
+                // `:783-788` — the first source moves whole.
                 std::mem::swap(&mut container[free], &mut inventory[j]);
+                first = false;
+            } else {
+                // `:789-808` — the capped stack into the slot.
+                let cap = crate::registry::max_stack(container[free].kind)
+                    .saturating_sub(container[free].count);
+                if cap == 0 {
+                    break; // `:793-795` — the slot is full
+                }
+                let moved = inventory[j].count.min(cap);
+                container[free].count += moved;
+                inventory[j].count -= moved;
+                if inventory[j].count == 0 {
+                    inventory[j] = ItemSlot {
+                        kind: 0,
+                        name: "",
+                        count: 0,
+                        prefix: 0,
+                    };
+                }
             }
         }
-    }
-    for j in 0..4 {
-        if coins[j].count > 0 && types.contains(&coins[j].kind) && !taken.contains(&coins[j].kind)
-        {
-            if let Some(free) = container.iter().position(|sl| sl.kind == 0 || sl.count == 0) {
-                taken.push(coins[j].kind);
+        for j in 0..4 {
+            // The bank's coin-row sources (:717-725's `num += 4`) — inert
+            // here: coin types never join `types` (the container-side
+            // exclusion, :703-714).
+            if coins[j].count == 0 || !types.contains(&coins[j].kind) || is_favorite(50 + j) {
+                continue;
+            }
+            if !first && !can_stack(&coins[j], &container[free]) {
+                continue;
+            }
+            if first {
                 std::mem::swap(&mut container[free], &mut coins[j]);
+                first = false;
+            } else {
+                let cap = crate::registry::max_stack(container[free].kind)
+                    .saturating_sub(container[free].count);
+                if cap == 0 {
+                    break;
+                }
+                let moved = coins[j].count.min(cap);
+                container[free].count += moved;
+                coins[j].count -= moved;
+                if coins[j].count == 0 {
+                    coins[j] = ItemSlot {
+                        kind: 0,
+                        name: "",
+                        count: 0,
+                        prefix: 0,
+                    };
+                }
             }
         }
     }
 }
 
 /// `ChestUI.Restock` (:871-995): the container -> the player. The demand =
-/// the player's stackable types; the supply = the container's UNPREFIXED
-/// stacks of demanded types (:919-924's `prefix != 0` + `hashSet.Contains`
-/// gate, which governs the whole loop); the capped fill (:925-965) and the
-/// ammo-into-empty bonus (:966-989 — a demanded ammo stack that did NOT
-/// fully empty into the partials swaps into the first free empty slot).
-/// Returns whether anything moved (the single PlaySound(7), :991-994).
+/// the player's stackable types, walked pInv 57..=0 (:899-917 — the ammo
+/// rows 54-57 included, the coin rows 50-53 and coin types 71-74 excluded
+/// throughout); the supply = the container's UNPREFIXED stacks of demanded
+/// types (:919-924's `prefix != 0` + `hashSet.Contains` gate, which governs
+/// the whole loop); the capped fill (:925-965) and the ammo-into-empty
+/// bonus (:966-989 — a demanded ammo stack that did NOT fully empty into
+/// the partials swaps into the first free empty slot). Returns whether
+/// anything moved (the single PlaySound(7), :991-994).
 pub(crate) fn restock(
     container: &mut [ItemSlot],
     inventory: &mut [ItemSlot; crate::item::INV],
+    ammo: &mut [ItemSlot; 4],
 ) -> bool {
     let mut moved_any = false;
     let mut demand_types: Vec<u16> = Vec::new();
+    // The row references ride the C#'s pInv index space: grid 0-49, ammo
+    // 54-57 (`ChestUI.cs:899`'s single `inventory` walk maps onto the
+    // port's split arrays).
     let mut partial: Vec<usize> = Vec::new();
     let mut empty_slots: Vec<usize> = Vec::new();
-    for i in (0..50).rev() {
-        let sl = &inventory[i];
-        if sl.count == 0 {
-            empty_slots.push(i);
+    // `ChestUI.cs:899-917` — the demand walk 57..=0: coin types are
+    // excluded throughout (:902's type gate — they register neither demand
+    // nor free slots), empty slots join `list2`, stackable types join
+    // `hashSet` and partials join `list`.
+    let mut scan_row = |sl: &ItemSlot,
+                        p_inv: usize,
+                        demand_types: &mut Vec<u16>,
+                        partial: &mut Vec<usize>,
+                        empty_slots: &mut Vec<usize>| {
+        if COIN_TYPES.contains(&sl.kind) {
+            return; // `:902` — `(type < 71 || type > 74)`
+        }
+        if sl.count == 0 || sl.kind == 0 {
+            empty_slots.push(p_inv); // `:904-907`'s `list2`
         } else if crate::registry::max_stack(sl.kind) > 1 {
-            demand_types.push(sl.kind);
+            demand_types.push(sl.kind); // `:910`'s `hashSet`
             if sl.count < crate::registry::max_stack(sl.kind) {
-                partial.push(i);
+                partial.push(p_inv); // `:911-914`'s `list`
             }
         }
+    };
+    for i in (0..4).rev() {
+        scan_row(
+            &ammo[i],
+            54 + i,
+            &mut demand_types,
+            &mut partial,
+            &mut empty_slots,
+        );
+    }
+    for i in (0..50).rev() {
+        scan_row(
+            &inventory[i],
+            i,
+            &mut demand_types,
+            &mut partial,
+            &mut empty_slots,
+        );
     }
     // The supply scan (:919-924): the `hashSet.Contains` gate governs the
     // whole loop — unprefixed demanded types only.
@@ -462,7 +549,11 @@ pub(crate) fn restock(
         // partials; `emptied` is the C#'s `flag2` (:955-958).
         let mut emptied = false;
         for &p in &partial {
-            let target = &mut inventory[p];
+            let target = if p >= 54 {
+                &mut ammo[p - 54]
+            } else {
+                &mut inventory[p]
+            };
             if !can_stack(target, &container[i]) {
                 continue;
             }
@@ -491,12 +582,16 @@ pub(crate) fn restock(
         if emptied || empty_slots.is_empty() {
             continue;
         }
-        let is_ammo = crate::registry::get(container[i].kind).is_some_and(|d| d.ammo != 0);
-        if !is_ammo {
+        let is_ammo_item = crate::registry::get(container[i].kind).is_some_and(|d| d.ammo != 0);
+        if !is_ammo_item {
             continue;
         }
         let e = empty_slots.remove(0);
-        std::mem::swap(&mut inventory[e], &mut container[i]);
+        if e >= 54 {
+            std::mem::swap(&mut ammo[e - 54], &mut container[i]);
+        } else {
+            std::mem::swap(&mut inventory[e], &mut container[i]);
+        }
         moved_any = true;
         partial.push(e);
     }
@@ -648,6 +743,50 @@ mod tests {
     }
 
     #[test]
+    fn quick_stack_consolidates_every_same_type_leftover_into_the_free_slots() {
+        // `ChestUI.cs:772-812` — the empty-slot phase: for each empty
+        // container slot the first queued source moves WHOLE into it
+        // (:783-788) and every subsequent CanStack source stacks into it
+        // until maxStack (:789-808) — all the same-type leftovers
+        // consolidate into the chest. A different-prefix source skips the
+        // filled slot and takes the next one whole (`flag` resets per slot,
+        // :775; CanStack's prefix gate, :778).
+        let mut container = [slot(9, 9000), slot(0, 0)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        inventory[20] = slot(9, 9999); // full: pours 999, keeps 9000
+        inventory[21] = slot(9, 500);
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        let fav = |_: usize| false;
+        quick_stack(&mut container, &mut inventory, &mut coins, &fav);
+        assert_eq!(container[0].count, 9999, "the merge filled the partial");
+        assert_eq!(container[1].kind, 9);
+        assert_eq!(
+            container[1].count, 9500,
+            "the whole 9000 moved in and the 500 stacked after it"
+        );
+        assert_eq!(inventory[20].count, 0);
+        assert_eq!(inventory[21].count, 0, "no same-type leftover stays behind");
+        // The prefix gate: a different-prefix source skips the filled slot
+        // (:778) and takes the next empty slot whole (:783-788).
+        let mut container = [slot(9, 10), slot(0, 0), slot(0, 0)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        inventory[20] = slot(9, 9999); // pours 9989, keeps 10
+        inventory[21] = ItemSlot { kind: 9, name: "", count: 50, prefix: 3 };
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        let fav = |_: usize| false;
+        quick_stack(&mut container, &mut inventory, &mut coins, &fav);
+        assert_eq!(container[0].count, 9999);
+        assert_eq!(container[1].count, 10, "the unprefixed remainder moved whole");
+        assert_eq!(
+            container[2],
+            ItemSlot { kind: 9, name: "", count: 50, prefix: 3 },
+            "the prefixed stack took the next slot whole — never blended"
+        );
+        assert_eq!(inventory[20].count, 0);
+        assert_eq!(inventory[21].count, 0);
+    }
+
+    #[test]
     fn move_coins_is_a_noop_when_the_container_holds_no_coins() {
         // `ChestUI.cs:1044`/`:1048-1051` — `flag2` is set only when the
         // CONTAINER held a coin stack and `if (!flag2) return 0L;` follows:
@@ -692,6 +831,7 @@ mod tests {
         // supply must be UNPREFIXED demanded types (:919-924 — the
         // `hashSet.Contains` gate governs the whole loop, the ammo bonus
         // included); the capped fill.
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut container = [
             slot(40, 30), // the arrows: demanded (partial in inv)
             slot(40, 10),
@@ -700,7 +840,7 @@ mod tests {
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[20] = ItemSlot { kind: 40, name: "", count: 50, prefix: 0 }; // partial
         inventory[21] = slot(43, 5); // the demand type
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(moved);
         assert_eq!(inventory[20].count, 110, "the 9999 cap takes all 60");
         assert!(container[0].count == 0 && container[1].count == 0 && container[2].count == 0);
@@ -710,7 +850,7 @@ mod tests {
         let mut container = [ItemSlot { kind: 40, name: "", count: 5, prefix: 2 }];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[21] = slot(43, 5);
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(!moved, "the prefixed stack is not a restock source");
         assert_eq!(container[0].count, 5);
         // The UNPREFIXED undemanded ammo stack: :921's gate skips it before
@@ -718,48 +858,86 @@ mod tests {
         let mut container = [slot(40, 5)];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[21] = slot(43, 5);
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(!moved, "an undemanded stack is not a restock source");
         assert_eq!(container[0].count, 5, "the chest stack never moved");
         assert!(inventory.iter().all(|sl| sl.kind != 40), "the inventory untouched");
     }
 
     #[test]
+    fn restock_excludes_coin_types_from_the_demand() {
+        // `ChestUI.cs:902` — coin types (71-74) register neither demand nor
+        // free slots: chest coins never "restock" into a grid coin partial
+        // (vanilla moves nothing here).
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut container = [slot(71, 100)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        inventory[20] = slot(71, 100); // a grid coin partial — not a demand
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
+        assert!(!moved, "coin types are not restock sources or demand");
+        assert_eq!(container[0].count, 100, "the chest coins stay put");
+        assert_eq!(inventory[20].count, 100, "the grid coins stay put");
+    }
+
+    #[test]
+    fn restock_registers_ammo_row_demand_and_fills_it() {
+        // `ChestUI.cs:899-917` — the demand walk runs pInv 57..=0: the ammo
+        // rows 54-57 register demand and partials like the grid rows (the
+        // coin rows 50-53 are the skipped span).
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        ammo[0] = slot(40, 50); // pInv 54: a partial ammo row — the demand
+        let mut container = [slot(40, 30)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
+        assert!(moved);
+        assert_eq!(ammo[0].count, 80, "the ammo-row partial filled");
+        assert_eq!(container[0].count, 0, "the chest stack drained");
+        assert!(inventory.iter().all(|sl| sl.kind != 40), "the grid untouched");
+    }
+
+    #[test]
     fn restock_bonus_swaps_a_demanded_ammo_remainder_into_an_empty_slot() {
         // `ChestUI.cs:966-989` — the bonus: a demanded ammo stack that did
         // NOT fully empty into the partials (`flag2 == false`, :955-964)
-        // swaps into the first free empty slot (the descending scan's first
-        // hit, :970-988 — `list2.RemoveAt(k)` consumes it, and the filled
-        // slot joins the partials, :984-985). A stack that fully emptied,
-        // a non-ammo kind, or no empty slot skips (:966).
+        // swaps into the first free empty slot — the demand walk's
+        // descending order (:899) puts the empty AMMO rows first, so the
+        // remainder lands on pInv 57 (`list2.RemoveAt(k)` consumes it, and
+        // the filled slot joins the partials, :984-985). A stack that fully
+        // emptied, a non-ammo kind, or no empty slot skips (:966).
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut container = [slot(40, 20)];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[20] = slot(40, 9990); // partial: room 9 — the fill leaves 11
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(moved);
         assert_eq!(inventory[20].count, 9999, "the partial filled to the cap");
-        assert_eq!(inventory[49].kind, 40, "the remainder swapped into slot 49");
-        assert_eq!(inventory[49].count, 11);
+        assert_eq!(ammo[3].kind, 40, "the remainder swapped into pInv 57");
+        assert_eq!(ammo[3].count, 11);
+        assert_eq!(inventory[49].count, 0, "the grid empties come after the ammo rows");
         assert_eq!(container[0].count, 0, "the swap emptied the container slot");
         // A stack that fully emptied into the partials skips the bonus
         // (:955-964's `flag2` → :966's `continue`).
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut container = [slot(40, 5)];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[20] = slot(40, 9990); // room 9 takes the whole 5
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(moved);
         assert_eq!(inventory[20].count, 9995);
-        assert_eq!(inventory[49].count, 0, "no bonus after a full empty");
+        assert_eq!(ammo[3].count, 0, "no bonus after a full empty");
+        assert_eq!(inventory[49].count, 0);
         assert_eq!(container[0].count, 0);
         // A non-ammo remainder never swaps (:966's `item.ammo == 0`).
+        let mut ammo: [ItemSlot; 4] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut container = [slot(9, 20)];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[20] = slot(9, 9990); // room 9 leaves 11
-        let moved = restock(&mut container, &mut inventory);
+        let moved = restock(&mut container, &mut inventory, &mut ammo);
         assert!(moved, "the partial fill moved");
         assert_eq!(inventory[20].count, 9999);
         assert_eq!(container[0].count, 11, "the wood remainder stays in the chest");
         assert_eq!(inventory[49].count, 0, "no bonus for a non-ammo kind");
+        assert_eq!(ammo[3].count, 0);
     }
 
 
