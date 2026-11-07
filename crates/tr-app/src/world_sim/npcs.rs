@@ -1022,8 +1022,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // expired markers (`Main.cs:17758`'s call order).
     app.revenge_tick += 1;
     if app.revenge_tick % 60 == 0 {
-        app.revenge_markers
-            .retain(|m| !m.expired(app.revenge_tick));
+        app.revenge_markers.retain(|m| !m.expired(app.revenge_tick));
     }
     // `CheckRespawns` (:391-457, called from the spawn pass `NPC.cs:80176`):
     // a marker whose outer box (2608x1840 :514) holds the player respawns
@@ -1033,12 +1032,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     if !app.revenge_markers.is_empty() {
         if let Some(p) = app.player.as_ref() {
             let (pcx, pcy) = p.center();
-            let outer = [
-                pcx - 2608.0 * 0.5,
-                pcy - 1840.0 * 0.5,
-                2608.0,
-                1840.0,
-            ];
+            let outer = [pcx - 2608.0 * 0.5, pcy - 1840.0 * 0.5, 2608.0, 1840.0];
             let mut done = Vec::new();
             for m in &app.revenge_markers {
                 let b = m.hitbox();
@@ -1055,8 +1049,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     app.npcs.push(carrier);
                 }
             }
-            app.revenge_markers
-                .retain(|m| !done.contains(&m.unique_id));
+            app.revenge_markers.retain(|m| !done.contains(&m.unique_id));
         }
     }
     app.npc_timer -= dt;
@@ -1224,10 +1217,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 hp_percent,
                 base_value: n.value(),
                 coins_value: n.extra_value,
-                expiration_tick: app.revenge_tick
-                    + crate::revenge::expiration_addon(n.extra_value),
-                unique_id: app.revenge_tick.wrapping_mul(31)
-                    + n.extra_value,
+                expiration_tick: app.revenge_tick + crate::revenge::expiration_addon(n.extra_value),
+                unique_id: app.revenge_tick.wrapping_mul(31) + n.extra_value,
                 force_expire: false,
             }
         })
@@ -1383,6 +1374,36 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     }
     app.npcs.append(&mut spheres);
     update_brain_state(app);
+    // The Golem's anchor + shield (`NPC.cs:19507`'s `NPC.golemBoss` +
+    // `:19547/19567`'s `dontTakeDamage = flag`): the body writes its
+    // centre for the head/fist tethers; the BODY is invulnerable while
+    // the attached head (246) lives. The fists' deaths do not shield.
+    {
+        let body = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
+            .cloned();
+        if let Some(body) = body {
+            let (bw, bh) = body.size();
+            app.world.golem_present = true;
+            app.world.golem_x = body.x + bw * 0.5;
+            app.world.golem_y = body.y + bh * 0.5;
+            let head_alive = app
+                .npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::GolemHead && n.hp > 0);
+            if let Some(b) = app
+                .npcs
+                .iter_mut()
+                .find(|n| n.kind == NpcKind::Golem && n.hp > 0)
+            {
+                b.dont_take_damage = head_alive;
+            }
+        } else {
+            app.world.golem_present = false;
+        }
+    }
     // The EoC's servant bursts (`NPC.NewNPC(..., 5)`, `AI()`'s aiStyle-4
     // block): the update pass set `wants_servant`, this pass resolves it —
     // the payload is the (x, y, vx, vy) spawn state (`vector2` + `vector3`).
@@ -1511,9 +1532,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // the invasion starts and the probe leaves (no loot either way; the
     // vanilla registers no drops for the probe). The qualifying-player
     // count is 1 (the single-player port).
-    if app.npcs.iter().any(|n| {
-        n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion
-    }) {
+    if app
+        .npcs
+        .iter()
+        .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion)
+    {
         start_invasion(&mut app.world, 1, 4);
         app.npcs
             .retain(|n| !(n.kind == NpcKind::MartianProbe && n.wants_martian_invasion));
@@ -1870,8 +1893,8 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        false, // Midas
-        false, // Main.bloodMoon
+        false,                  // Midas
+        false,                  // Main.bloodMoon
         npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
@@ -2811,62 +2834,60 @@ mod invasion_bar_tests {
         assert_eq!(app.invasion_progress_icon, 0, "the icon resets");
     }
 
-#[cfg(test)]
-mod martian_invasion_tests {
-    use super::*;
-    use crate::app::flow::front_flow_tests::flow_app;
-    use crate::npc::Npc;
+    #[cfg(test)]
+    mod martian_invasion_tests {
+        use super::*;
+        use crate::app::flow::front_flow_tests::flow_app;
+        use crate::npc::Npc;
 
+        #[test]
+        fn the_type4_machine_sizes_the_invasion() {
+            // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
+            // single qualified player → 200) — the type-4 arm overrides the base.
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.max_hp = 200;
+            player.x = 150.0 * TILE_PX;
+            player.y = 118.0 * TILE_PX;
+            app.player = Some(player);
+            start_invasion(&mut app.world, 1, 4);
+            assert_eq!(app.world.invasion_type, 4);
+            assert_eq!(app.world.invasion_size, 200);
+            assert_eq!(app.world.invasion_size_start, 200);
+        }
 
-    #[test]
-    fn the_type4_machine_sizes_the_invasion() {
-        // `StartInvasion(4)` (`Main.cs:64463-64464`): the size 160+40x (the
-        // single qualified player → 200) — the type-4 arm overrides the base.
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = surface_world();
-        let mut player = crate::player::Player::spawn(&app.world);
-        player.max_hp = 200;
-        player.x = 150.0 * TILE_PX;
-        player.y = 118.0 * TILE_PX;
-        app.player = Some(player);
-        start_invasion(&mut app.world, 1, 4);
-        assert_eq!(app.world.invasion_type, 4);
-        assert_eq!(app.world.invasion_size, 200);
-        assert_eq!(app.world.invasion_size_start, 200);
-    }
+        #[test]
+        fn the_martian_kill_credit_drains_and_defeats() {
+            // The group-4 match: the martian kills drain 1 point each; at 0 the
+            // `downedMartians` flag sets (the pirate flag untouched).
+            let mut app = flow_app(None, vec![], vec![]);
+            app.world = surface_world();
+            app.world.invasion_type = 4;
+            app.world.invasion_size = 1;
+            app.world.invasion_size_start = 200;
+            report_invasion_kill(&mut app, NpcKind::GrayGrunt);
+            assert_eq!(app.world.invasion_size, 0);
+            update_invasion_state(&mut app);
+            assert!(app.world.downed_martians, "the martian defeat flag");
+            assert!(!app.world.downed_pirates, "the pirate flag untouched");
+            assert_eq!(app.world.invasion_type, 0);
+        }
 
-    #[test]
-    fn the_martian_kill_credit_drains_and_defeats() {
-        // The group-4 match: the martian kills drain 1 point each; at 0 the
-        // `downedMartians` flag sets (the pirate flag untouched).
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = surface_world();
-        app.world.invasion_type = 4;
-        app.world.invasion_size = 1;
-        app.world.invasion_size_start = 200;
-        report_invasion_kill(&mut app, NpcKind::GrayGrunt);
-        assert_eq!(app.world.invasion_size, 0);
-        update_invasion_state(&mut app);
-        assert!(app.world.downed_martians, "the martian defeat flag");
-        assert!(!app.world.downed_pirates, "the pirate flag untouched");
-        assert_eq!(app.world.invasion_type, 0);
-    }
-
-    #[test]
-    fn the_martian_spawn_table_picks_the_ground_four() {
-        // `invasionType == 4`'s ported table: the ground four (the GrayGrunt
-        // 385, the GigaZapper 389, the Officer 383) — the Saucer/Rider/
-        // Drone/Probe arms ride their AI families as they land.
-        let mut rng = 13u64;
-        for _ in 0..60 {
-            assert!(matches!(
-                invasion_spawn_pick(&mut rng, false, false, 4),
-                NpcKind::GrayGrunt | NpcKind::GigaZapper | NpcKind::MartianOfficer
-            ));
+        #[test]
+        fn the_martian_spawn_table_picks_the_ground_four() {
+            // `invasionType == 4`'s ported table: the ground four (the GrayGrunt
+            // 385, the GigaZapper 389, the Officer 383) — the Saucer/Rider/
+            // Drone/Probe arms ride their AI families as they land.
+            let mut rng = 13u64;
+            for _ in 0..60 {
+                assert!(matches!(
+                    invasion_spawn_pick(&mut rng, false, false, 4),
+                    NpcKind::GrayGrunt | NpcKind::GigaZapper | NpcKind::MartianOfficer
+                ));
+            }
         }
     }
-}
-
 }
 
 #[cfg(test)]
