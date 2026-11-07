@@ -25,9 +25,9 @@
 //! adapters ignore it (the port's shape-level passes keep their own pinned
 //! constants), but future passes read their options from there instead of
 //! hardcoding. A future pass slots between existing steps only with its own
-//! RNG stream (`Rng(seed ^ fnv(name))` — vanilla's per-pass re-seed is what
-//! makes its chain insertion-safe); the three contract streams here must
-//! never shift.
+//! RNG stream ([`Streams::pass_rng`] — `Rng(seed ^ fnv1a64(name))`; vanilla's
+//! per-pass re-seed is what makes its chain insertion-safe); the three
+//! contract streams here must never shift.
 
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
@@ -49,11 +49,31 @@ use crate::world::World;
 
 // --- streams ----------------------------------------------------------------
 
+/// FNV-1a 64-bit over a pass name — the mixer that keys each per-pass stream
+/// off the world seed. The offset basis and prime are the standard constants
+/// (the same numbers the embedded-config provenance pin in `config.rs`'s
+/// `the_embedded_copy_is_unmodified` hashes with).
+#[allow(dead_code)] // the per-pass stream contract — consumed from Phase 3 on
+pub(crate) fn fnv1a64(name: &str) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01B3;
+    let mut hash = OFFSET_BASIS;
+    for byte in name.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
+}
+
 /// The three worldgen xorshift streams. The seeds are contract constants
 /// (`noise.rs`: "the output streams of both are part of the world contract");
 /// `Rng` construction draws nothing, so creating all three up front (vanilla
 /// creates its per-pass stream inside `RunPass`) shifts no draw.
 pub(crate) struct Streams {
+    /// The world seed everything here derives from (`new`'s argument, kept so
+    /// `pass_rng` stays seed-keyed).
+    #[allow(dead_code)] // read only by `pass_rng` until Phase 3
+    seed: u64,
     /// The main stream — the biome, blob, ore, liquid, dungeon, tree and
     /// tail-till-the-end draws (`mod.rs`'s `rng`).
     pub(crate) rng: Rng,
@@ -68,14 +88,51 @@ pub(crate) struct Streams {
 impl Streams {
     pub(crate) fn new(seed: u64) -> Streams {
         Streams {
+            seed,
             rng: Rng(seed ^ 0xA076_1D64_78BD_642F),
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
         }
     }
+
+    /// The per-pass stream — the port's model of the vanilla per-pass
+    /// re-seed (`WorldGenerator.cs:497`: `Main.rand = new UnifiedRandom(
+    /// this._seed)` runs before every pass applies). Deviations from the
+    /// vanilla fact, both deliberate and recorded in `docs/ANALYSIS.md` as
+    /// the faithful passes land: xorshift stands in for the Knuth subtractive
+    /// `UnifiedRandom`, and each pass draws from its own name-mixed stream
+    /// (`seed ^ fnv1a64(name)`) instead of every pass re-drawing the same
+    /// world-seed sequence — the isolation is what makes a chain insertion
+    /// shift no other pass's draws. The three contract streams above are
+    /// untouched by this.
+    #[allow(dead_code)] // the per-pass stream contract — consumed from Phase 3 on
+    pub(crate) fn pass_rng(&self, name: &str) -> Rng {
+        Rng(self.seed ^ fnv1a64(name))
+    }
 }
 
 // --- cross-pass state (the GenVars slice) -----------------------------------
+
+/// The Lihzahrd temple bounds — the port's slice of the temple GenVars
+/// statics: the room-extent rectangle (`GenVars.cs:188-196` — `tLeft`/
+/// `tRight`/`tTop`/`tBottom`/`tRooms`, written by the temple pass
+/// `WorldGen.cs:34231-34235`) and the altar anchor (`GenVars.cs:198-200` —
+/// `lAltarX`/`lAltarY`, set when the altar tile places `WorldGen.cs:33999`).
+/// Plain ints with C# static zero-init semantics; `l_altar_x`/`l_altar_y`
+/// being 0 simply means "not placed yet" until the temple pass writes them.
+/// The M5-TEMPLE seam: Phase 6's placement search writes this, the later
+/// temple work reads it.
+#[allow(dead_code)] // written by the temple pass from Phase 6 on
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct TempleBounds {
+    pub(crate) t_left: i32,
+    pub(crate) t_right: i32,
+    pub(crate) t_top: i32,
+    pub(crate) t_bottom: i32,
+    pub(crate) t_rooms: i32,
+    pub(crate) l_altar_x: i32,
+    pub(crate) l_altar_y: i32,
+}
 
 /// The cross-pass generation state — the port's slice of the C# `GenVars`
 /// statics (`WorldBuilding/GenVars.cs`): the stage products every later pass
@@ -85,6 +142,25 @@ pub(crate) struct GenVars {
     layers: Option<Layers>,
     spans: Option<BiomeSpans>,
     shrine_spots: Vec<(i32, i32)>,
+    /// The jungle origin column — `GenVars.jungleOriginX`
+    /// (`GenVars.cs:166`). Vanilla draws it once in `Reset`, not in the
+    /// pass (`WorldGen.cs:11341-11376` — `Next(15, 30)` with the dungeon-side
+    /// sign mapping); the port's Reset stand-in is the spans step, which
+    /// draws it from Phase 3 on, and the faithful jungle pass consumes it
+    /// without redrawing.
+    #[allow(dead_code)] // written by the spans step from Phase 3 on
+    pub(crate) jungle_origin_x: i32,
+    /// `GenVars.jungleMinX`/`jungleMaxX` (`GenVars.cs:168,170`) — reset to
+    /// the C# unset sentinel −1 (`WorldGen.cs:11176-11177`) and filled by
+    /// the jungle-band scans (the origin-derived band from Phase 3, the
+    /// `MudsWallsInJungle` scan from Phase 5).
+    #[allow(dead_code)] // written from Phase 3 on
+    pub(crate) jungle_min_x: i32,
+    #[allow(dead_code)] // written from Phase 3 on
+    pub(crate) jungle_max_x: i32,
+    /// The temple bounds — the M5-TEMPLE seam (see [`TempleBounds`]).
+    #[allow(dead_code)] // written by the temple pass from Phase 6 on
+    pub(crate) temple: TempleBounds,
 }
 
 impl Default for GenVars {
@@ -94,6 +170,21 @@ impl Default for GenVars {
             layers: None,
             spans: None,
             shrine_spots: Vec::new(),
+            // The C# reset values: the jungle bounds to their unset
+            // sentinel (`WorldGen.cs:11176-11177`), the origin and the
+            // temple statics to plain zero-init (`GenVars.cs:166-200`).
+            jungle_origin_x: 0,
+            jungle_min_x: -1,
+            jungle_max_x: -1,
+            temple: TempleBounds {
+                t_left: 0,
+                t_right: 0,
+                t_top: 0,
+                t_bottom: 0,
+                t_rooms: 0,
+                l_altar_x: 0,
+                l_altar_y: 0,
+            },
         }
     }
 }
@@ -1683,5 +1774,84 @@ mod tests {
         assert_eq!(direct.moon_phase, via_pipeline.moon_phase);
         assert_eq!(direct.hell_back_style, via_pipeline.hell_back_style);
         assert_eq!(direct.frame_important, via_pipeline.frame_important);
+    }
+
+    // --- Phase 1: stream scaffolding ----------------------------------------
+
+    /// DW-1.1: `fnv1a64` against the standard FNV-1a 64 reference vectors
+    /// (cross-checked against a Python reference) plus the pass names the
+    /// per-pass streams mix.
+    #[test]
+    fn test_DW_1_1_fnv1a64_known_vectors() {
+        assert_eq!(fnv1a64(""), 0xcbf2_9ce4_8422_2325); // the offset basis
+        assert_eq!(fnv1a64("a"), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a64("foobar"), 0x8594_4171_f739_67e8);
+        assert_eq!(fnv1a64("Terrain"), 0x6a63_c902_245f_5e0e);
+        assert_eq!(fnv1a64("Jungle"), 0x416a_d620_6e03_3a84);
+        // Byte order matters (a sum-style hash would fold these together).
+        assert_ne!(fnv1a64("ab"), fnv1a64("ba"));
+    }
+
+    /// DW-1.1: `pass_rng` is deterministic (same seed + name replays the
+    /// identical draw sequence) and name-distinct (each name keys its own
+    /// stream, different from the three contract streams, with no two
+    /// vanilla pass names colliding).
+    #[test]
+    fn test_DW_1_1_pass_rng_deterministic_and_name_distinct() {
+        let streams = Streams::new(42);
+        // Deterministic replay across two independently built Streams.
+        let mut a = streams.pass_rng("Jungle");
+        let mut b = Streams::new(42).pass_rng("Jungle");
+        for _ in 0..64 {
+            assert_eq!(a.next_u32(), b.next_u32());
+        }
+        // Name-distinct: two pass names never share a stream seed.
+        let jungle = streams.pass_rng("Jungle").0;
+        let corruption = streams.pass_rng("Corruption").0;
+        assert_ne!(jungle, corruption);
+        assert_ne!(
+            streams.pass_rng("Jungle").next_u32(),
+            streams.pass_rng("Corruption").next_u32()
+        );
+        // Neither collides with the three contract streams' seeds.
+        assert_ne!(jungle, streams.rng.0);
+        assert_ne!(jungle, streams.drng.0);
+        assert_ne!(jungle, streams.srng.0);
+        // And every distinct vanilla pass name keys a distinct stream (the
+        // skyblock "Jungle" is a deliberate duplicate name → same stream).
+        let mut hashes: Vec<u64> = VANILLA_CHAIN
+            .iter()
+            .map(|p| streams.pass_rng(p.name).0)
+            .collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        let mut names: Vec<&'static str> = VANILLA_CHAIN.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(hashes.len(), names.len(), "pass names must not collide");
+    }
+
+    /// The GenVars defaults carry the C# reset values — the unset sentinels
+    /// (`WorldGen.cs:11176-11177`) and the static zero-inits
+    /// (`GenVars.cs:166-200`) — so adding the fields shifts no behaviour
+    /// (DW-1.2's "no behavioral change" arm on the state side).
+    #[test]
+    fn genvars_defaults_carry_the_csharp_reset_values() {
+        let gv = GenVars::default();
+        assert_eq!(gv.jungle_origin_x, 0);
+        assert_eq!(gv.jungle_min_x, -1);
+        assert_eq!(gv.jungle_max_x, -1);
+        assert_eq!(
+            gv.temple,
+            TempleBounds {
+                t_left: 0,
+                t_right: 0,
+                t_top: 0,
+                t_bottom: 0,
+                t_rooms: 0,
+                l_altar_x: 0,
+                l_altar_y: 0,
+            }
+        );
     }
 }
