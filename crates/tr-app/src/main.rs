@@ -22,6 +22,7 @@ mod luck;
 mod wiring_stub;
 mod item;
 mod itemdata;
+mod lang;
 mod loot_db;
 mod loot_db_gen;
 mod map;
@@ -105,6 +106,12 @@ fn main() -> Result<()> {
     assets::set_content_dir(content_dir.clone());
     log::info!("content: {}", content_dir.display());
     let assets_dir = content_dir.join("Images");
+
+    // `LoadSettings`'s `LanguageManager.SetLanguage(text)` (`Main.cs:4345`):
+    // register the shipped resources and apply the saved culture before the
+    // first menu draws.
+    let settings = settings::Settings::load();
+    lang::init(tr_core::localization::GameCulture::from_name(&settings.language));
 
     app::log_world_diagnostics(&world);
 
