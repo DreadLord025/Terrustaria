@@ -2588,6 +2588,65 @@ re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
 11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
 0.55 middle cut ported.
 
+## The Martian Drone (M4-EVENT-4c)
+
+The type-4 sky mob (`NPC.cs:13935-13953`): 40×30, dmg 60, def 16, 300
+HP, kb 0.4, npcSlots 1.5, noTileCollide + noGravity.
+`AI()`'s aiStyle-74 block (`:35218-35500`, the 388 parameter set):
+`ai[0] == 0` hovers — the approach vector points 200 px above the player
+at speed 10, damped into the velocity over 30 ticks, gated by the
+line-of-sight + the ±π/8 angle cone (the cone only opens downward — the
+drone dives under the players it cannot see, with the 120-tick argue
+override); `ai[0] == 1` charges 30 ticks (the ×0.95 damp, then the
+±50×0.04 jittered vector ×14); `ai[0] == 2` dashes (the 20-lerp toward
+the player, the exit at velocity < 7 or the 100-px-past + 30-tick
+window, the solid-collision fold to the explosion); and within 64 px of
+the player the machine folds to `ai[0] == 3` — the 192×192 box, the 80
+damage, the 3-tick fuse. The loot db registers no 388 rules, so the
+explosion drops nothing.
+
+The spawn: the skyMob dispatch's drone arm (`:1395-1398` — `invaders &&
+invasionType == 4` → the Drone at the candidate tile) runs through the
+spawner verbatim, and the ground table's roll chain is complete now:
+`num6` `Next(7)` → the Saucer gate (`Next(45)` + the 30% progress +
+`!AnyNPCs(395)`) → the num6 >= 6 rider arm (`Next(20)` + the gate → the
+unported Scutlix Rider; the `Next(2)` split → the Engineer 386) → the
+num8 `Next(5)` ray arm (the RayGunner 382 / Scrambler 381 unported,
+`>= 4` → the Drone 388) → the else arm's ground chain (the `Next(4)`
+with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
+the stream where the C#'s short-circuit reaches it; the four unported
+kinds' hits map to the ground fallback until their AI families land.
+
+## The martian riders (M4-EVENT-4d)
+
+The 381 BrainScrambler / 382 RayGunner pair (the grouped `SetDefaults`
+row: 18×40, dmg 50, def 25, 350 HP, kb 0.35) walk through the walker
+step and run `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`):
+the stop entry (an aim under 700 px with `ai[2] <= 0` and `ai[1] <= 0`
+arms the 80-tick timer and the aim octant), the fire at `ai[1] == 40`
+(the ±100×0.4 jitter re-scaled ×(0.85..1.15), the spawn at the centre
++ 6 — the 436 ray at 24 damage and speed 11 for the Scrambler, the
+438 at 30 and 7 for the RayGunner), the hurt interrupt (the 30-tick
+rest), the sleep's exit. The vanilla's `stealth`/`itemAnimation`
+aggression gate is constants-off (the port's Player carries no swing
+timer).
+
+The 390 ScutlixRider (`AI_075`'s type-390 arm, `:35506-35745`) is a
+MOUNT machine: it spawns its 391 Scutlix carrier once through the
+sim (`wants_scutlix` → the carrier at the rider's feet), rides 14 px
+above its centre with the carrier's velocity, and fires the same 438
+ray at a 60/−60 cycle (the 700-px window, the carrier-direction match,
+the ±50×(0.8..1.2) aim). The port has no NPC indices, so the link is
+the sim's write-through (the WoF shape) in a pre-pass — the vanilla
+reads the carrier's live centre inside its own pass, the port's is one
+tick earlier (documented). The rider falls with its carrier: the
+`timeLeft` latch has no port model, so the retirement rides the
+carrier's death instead of the 750-tick decay.
+
+The type-4 table is complete but for the Saucer 395 family: the
+`num8` arm ports the RayGunner (<2) / the BrainScrambler (==2) / the
+Drone (>=4), and the num6 >= 6 arm's `Next(2)` split ports the Rider.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:
@@ -4905,14 +4964,85 @@ housing module) with the "Spawn point set!/removed!" texts; the top half is
 consumed-but-inert — the sleep state is not ported), the grandfather clock
 (104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
 
-Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
-render follow-up — the sitting player draws standing, shifted -4 px
-(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) and the
+sleep state landed with M7-INTERACT-1 (the section below); the
 multiplayer seat-stack manager is out (one player); the chest/dresser
 inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
 metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
 the style-0 wooden slice places. The DrawYOffset fields are preview-only
 (`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
+## The sit/sleep poses and the bed spawn (M7-INTERACT-1)
+
+The furniture interaction family completed: the right-click chain's
+chairs/benches/thrones/picnic tables/toilets sit, the beds sleep and set the
+spawn, the spawn survives saves and re-validates at revive.
+
+**Sitting** — the full `PlayerSittingHelper.GetSittingTargetInfo`
+(`PlayerSittingHelper.cs:144-321`): the per-kind anchors (chairs/toilets
+15/497 share the arm with the style-27 seat drop; thrones 102 the
+`frameX/18`+`frameY/18` shifts; picnic 487 the `frameX % 72 / 18` pick; the
+benches 89 the per-style `frameX / 54` seat-offset table with the `zero2`
+X-nudge and the `zero` (-1, 0) position shift), the 40-px snap gate
+(`IsWithinSnappngRangeToTile`, `Player.cs:17365-17372` — the tile centre to
+`(Center.X, Bottom.Y - 16)`), and `UpdateSitting`'s exit mask
+(`PlayerSittingHelper.cs:62-65` — any control input, the mount, or a facing
+mismatch; the port's merged jump binding covers `controlUp`, W/ArrowUp feed
+`control_jump`).
+
+**Sleeping** — `PlayerSleepingHelper`: `StartSleeping`'s anchor decode
+(`:192-224`, the anchor column `leftmost + 1` unflipped / `+ 2` flipped, the
+style = `frameY / 36`), the 96-px gate, `CanSnapToPosition` =
+`!Collision.SolidCollision` (`Player.cs:33401-33403`; the port's
+`SolidCollision` copy carries the `-1/+2` sample expansion, the half-brick
+cut and the `maxTilesY - 40` bottom clamp), the fully-asleep counter
+(`timeSleeping >= 120`) that arms `UpdateTimeRate`'s ×5 (`Main.cs:6209-6215`
+— the dial's 60 outranks it), and the wake set: the input mask, the blood
+moon night, the held-item swing (the counter reset) — the damage does NOT
+wake, matching vanilla.
+
+**The poses** — `DrawSittingLegs` (`PlayerDrawLayers.cs:1536-1707`): the
+standing legs cell (row 0) re-sliced into three strips (the 10-px bottom
+block fanned +4 px along the facing over two 2-px knee slices, dropped
+42 px, `+2·direction/+2` pre-shift, `-2` lift, `seatYOffset`), the torso
+sandwich drop (`PlayerDrawSet.cs:343-347`'s `torsoOffset` over the
+`LegacyPlayerRenderer.cs:183-225` ranges — torso/back arm/head drop, the
+front arm does not), and the sleep rotation (`TransformDrawData`,
+`:4092-4119` — every sprite's position rotates around `fullRotationOrigin`
+= the hitbox centre, `PlayerSleepingHelper.cs:73-74`'s `PI/2 * (-direction)`)
+plus `SetOffsetbyBed` (`:226-279`) verbatim.
+
+**The bed spawn** — the port keeps it world-side (`World::bed_spawn`), TRWLD
+**v5** (a presence byte + the cell; a corrupt/out-of-range payload degrades
+to `None`), while the vanilla persists it in the *player* file's spX/spY
+arrays (`Player.cs:54877-54888`) — the single-player shape, recorded. The
+re-validation runs the same `CheckSpawn` at revive (`Player.cs:37571-37575`)
+with the failure texts on the chat; the load-time fallback is silent (the
+chat monitor does not exist at join — the C# prints via `CheckSpawn`'s
+`Main.NewText`).
+
+**The housing flood fix (a real port bug the task caught):** the port's
+`CheckRoom` settled the fill on ANY active tile; the C# settles only on
+SOLID tiles and the open gates (11 at the frameX ends 0/54/72/126, 389, and
+386 at the open frame pairs — `WorldGen.cs:6176-6195`). The bed-spawn check
+starts its flood ON the bed's cell (`StartRoomCheck(x, y - 1)`), so the old
+semantics failed every bed room with "This room is too small." Furniture
+(non-solid actives) now keeps the fill running, exactly like vanilla; the
+town-NPC housing inherits the fix (rooms with furniture validate).
+
+**Deviations:** the 2-players-per-tile seat/sleep stack managers
+(`Main.sittingManager`/`sleepingManager`) are the multiplayer registries —
+SP no-op; the Skeletron-hat bench easter egg (`UpdateSitting`'s night arm)
+and the toilet's `TryToPoop` regen hook stay out (the NPC/regen sides); the
+armor-specific sitting rows (legs 106/143/226/217) wait for those armor
+sets; the `ForcesBreaksSleeping`/damaging-item wake arm waits for M3-ITEM's
+item stats (the swing itself already resets the counter); the eclipse wake
+condition waits for the hardmode state; the tile-379 solidity keeps the
+generated set's base state (solid) — the vanilla's per-frame non-solid
+window during `UpdateWorld_Players` (`Main.cs:17753`/`:17799`) is not
+emulated, which is exactly what `CheckSpawn`'s forced-solid window needs.
+`TR_POSE=sit|sleep` pins the debug scene (a dirt ledge + the furniture + the
+snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
@@ -5311,6 +5441,41 @@ asymmetric invention. Testability: `TR_DYE=k1,k2,...` fills the dye slots
 positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
+
+## Localization runtime + retail fonts (M6-LOCALIZE-wire-fonts, 2026-11-07)
+
+**Resource source:** the C# embeds its 84 strings files as assembly manifest
+resources (`Terraria.Localization.Content.<culture>[.<Group>].json`); the port
+reads the extracted resources off disk (`TR_LOCALE` → the `../decompiled`
+sibling of `Content` → the working dir → the exe dir). This is the same
+retail-derived, gitignored content model the `.xnb` assets already use;
+without any of them the menus keep their bundled English strings, which is
+the vanilla "unknown key prints the key" behaviour — the 1:1 rule only
+reaches as far as the resources present.
+
+**Font encoding:** the shipped ReLogic writes a different `DynamicSpriteFont`
+byte layout than the decompiled `DynamicSpriteFontReader` documents —
+default char 7-bit + `Int32` page count, reader-indexed tables with `Int32`
+counts, and the character list as a UTF-8 string (details in
+`crates/tr-content/src/font.rs` docs). A font is accepted only when the walk
+consumes the payload exactly; `Mouse_Text` is 159 pages / 38 636 glyphs.
+
+**Font upload:** XNA samples the font pages as `SurfaceFormat.Dxt3`; the
+port uploads the shipped BC2 blocks verbatim into a texture array
+(`tr-render/src/font_atlas.rs`, one 8192² layer per shelf set, ~220 MB —
+the same order of magnitude as the vanilla ~226 MB, where the RGBA
+decompression would cost ~900 MB). The shader selects between the two
+textures per instance, so the draw order stays exactly one instanced pass.
+Glyph UVs bake the half-texel inset the main-atlas path applies in the
+shader (the both textures' layers are 8192 px wide).
+
+**Missing glyphs:** the original falls back to the font's default char
+(`'*'`); `UiFont::glyph` does the same and the 8×8 bitmap fallback still
+drops non-ASCII — it now only serves the no-retail-content build.
+
+**Test gate:** the M1.4-BG-18 leftover `tmp_dump::dump_flame0_tiles4_rgba`
+writes into a hardcoded scratch directory and failed wherever it does not
+exist (pre-existing on main); it now skips instead of failing.
 
 ## Biome passes fidelity (M5-BIOME)
 

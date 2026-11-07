@@ -1,24 +1,40 @@
-//! ReLogic `DynamicSpriteFontReader`: glyph pages plus kerning tables.
+//! ReLogic `DynamicSpriteFontReader` — the encoding Terraria 1.4.5.8 actually
+//! ships, verified byte-exact against all five retail fonts (`Fonts/*.xnb`).
 //!
-//! The reader in `decompiled-libs/ReLogic` documents the logical structure
-//! (spacing, line spacing, default char, pages of texture + glyphs + padding +
-//! characters + kerning), but the ReLogic shipped with Terraria 1.4.5.8 writes a
-//! slightly different encoding: the character list is a UTF-8 string and the
-//! page header carries extra fields, so the primitive offsets differ from the
-//! decompiled build. The parser therefore locates the page texture and every
-//! table structurally and accepts a layout only when the whole page validates:
-//! the mip-0 byte count must match the surface size, every glyph rect must lie
-//! inside the page, there must be exactly one kerning entry per character, and
-//! the character string must decode as UTF-8.
+//! The decompiled `decompiled-libs/ReLogic/ReLogic.Graphics/DynamicSpriteFontReader.cs`
+//! documents the logical structure (spacing, line spacing, default char, pages of
+//! texture + glyphs + padding + characters + kerning), but the shipped writer
+//! differs from it in three ways, which the byte walk pins down:
+//!
+//! 1. the default character is written as a 7-bit encoded int (`'*'` = 42 in all
+//!    five retail fonts), and the page count follows as a raw `Int32`;
+//! 2. every table (texture, glyph rects, padding, characters, kerning) carries a
+//!    7-bit `ReadObject` reader-index prefix — 2 = `Texture2DReader`, 3 =
+//!    `ListReader<Rectangle>`, 5 = `ListReader<Char>`, 7 = `ListReader<Vector3>`
+//!    (the order in the file's reader table, `XnbFile::read`) — but the *list*
+//!    lengths are raw `Int32`s, not XNA's 7-bit lengths;
+//! 3. the character list is a UTF-8 string, not UTF-16 (`ListReader<Char>` would
+//!    store 2 bytes per char).
+//!
+//! The parser therefore walks the payload deterministically and accepts a font
+//! only when the walk consumes it exactly: every page must carry four tables of
+//! the same length, every glyph rect must lie inside the page texture, and the
+//! final kerning table must end precisely at the payload end. A 1.4.5.8 font is
+//! fully CJK+Cyrillic-capable: `Mouse_Text` ships 159 pages / 38 636 glyphs.
+//!
+//! Page surfaces stay in their shipped compressed form (`SurfaceFormat.Dxt3` =
+//! BC2 in every retail font) so the renderer uploads them exactly like XNA does —
+//! GPU BC2 sampling reproduces the original pixels without a 4x decompression
+//! blow-up (~230 MB of font textures instead of ~900 MB).
 
 use std::path::Path;
 
 use anyhow::{bail, Result};
 
-use crate::dxt;
 use crate::xnb::XnbFile;
 
-pub use crate::texture::RgbaImage;
+/// `SurfaceFormat.Dxt3` — the compressed form of every retail font page.
+pub const SURFACE_DXT3: i32 = 5;
 
 #[derive(Clone, Debug)]
 pub struct Glyph {
@@ -31,8 +47,15 @@ pub struct Glyph {
     pub kerning: [f32; 3],
 }
 
+/// One font page: the mip-0 surface in its shipped form plus the glyph tables.
+#[derive(Clone, Debug)]
 pub struct FontPage {
-    pub texture: RgbaImage,
+    /// `Texture2D.format` (`SurfaceFormat.Dxt3` for the retail fonts).
+    pub format: i32,
+    pub width: u32,
+    pub height: u32,
+    /// Mip 0 in the shipped compressed form (BC2 blocks, `w * h / 2` bytes).
+    pub mip0: Vec<u8>,
     pub glyphs: Vec<Glyph>,
 }
 
@@ -52,71 +75,109 @@ pub fn load_font(path: impl AsRef<Path>) -> Result<DynamicSpriteFont> {
     read_font(&xnb.payload).map_err(|e| anyhow::anyhow!("{}: {e}", path.as_ref().display()))
 }
 
+/// The `ReadObject` reader-indexes the shipped writer emits for each table, in
+/// the file's reader-table order (`XnbFile.readers`): 2 = `Texture2DReader`,
+/// 3 = `ListReader<Rectangle>`, 5 = `ListReader<Char>`, 7 = `ListReader<Vector3>`.
+const RID_TEXTURE: u32 = 2;
+const RID_RECT_LIST: u32 = 3;
+const RID_CHAR_LIST: u32 = 5;
+const RID_VECTOR3_LIST: u32 = 7;
+
 pub(crate) fn read_font(d: &[u8]) -> Result<DynamicSpriteFont> {
-    let spacing = read_f32_at(d, 0)?;
-    let line_spacing = read_i32_at(d, 4)?;
-    if !(0.0..=10.0).contains(&spacing) || !(-10..=400).contains(&line_spacing) {
+    let mut p = 0usize;
+    let spacing = f32_at(d, &mut p)?;
+    let line_spacing = i32_at(d, &mut p)?;
+    if !(-10.0..=10.0).contains(&spacing) || !(-10..=400).contains(&line_spacing) {
         bail!("implausible font metrics: spacing {spacing}, line {line_spacing}");
     }
-
-    // Page texture: first offset whose `Texture2D` header validates exactly.
-    let mut found = None;
-    for start in 8..=96 {
-        if let Ok((tex, end)) = texture_at(d, start) {
-            found = Some((tex, end, start));
-            break;
-        }
+    // `input.ReadChar()` in the decompiled reader; the shipped writer emits a
+    // 7-bit encoded codepoint (always a single ASCII byte in the retail fonts).
+    let default_char = u32::from(seven_at(d, &mut p)?)
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("default char out of range"))?;
+    let page_count = i32_at(d, &mut p)?;
+    if !(1..=4096).contains(&page_count) {
+        bail!("implausible page count {page_count}");
     }
-    let (texture, mut pos, tex_start) = found.ok_or_else(|| anyhow::anyhow!("no page texture"))?;
 
-    let (glyphs, end) = find_rects(d, pos, 20, Some(&texture))?;
+    let mut pages = Vec::with_capacity(page_count as usize);
+    for _ in 0..page_count {
+        pages.push(read_page(d, &mut p)?);
+    }
+    if p != d.len() {
+        bail!("{} trailing bytes after the last page", d.len() - p);
+    }
+    Ok(DynamicSpriteFont {
+        spacing,
+        line_spacing,
+        default_char,
+        pages,
+    })
+}
+
+/// One page: `Texture2D` + glyph rects + padding + UTF-8 characters + kerning,
+/// each list carrying its 7-bit reader index and a raw `Int32` length.
+fn read_page(d: &[u8], p: &mut usize) -> Result<FontPage> {
+    let rid = seven_at(d, p)?;
+    if rid != RID_TEXTURE {
+        bail!("page texture: reader index {rid}, expected {RID_TEXTURE}");
+    }
+    let format = i32_at(d, p)?;
+    let width = i32_at(d, p)?;
+    let height = i32_at(d, p)?;
+    let mips = i32_at(d, p)?;
+    if !(8..=4096).contains(&width) || !(8..=4096).contains(&height) {
+        bail!("bad page size {width}x{height}");
+    }
+    if !(1..=8).contains(&mips) {
+        bail!("bad mip count {mips}");
+    }
+    let (width, height) = (width as u32, height as u32);
+    let expect = expected_surface_bytes(format, width, height)
+        .ok_or_else(|| anyhow::anyhow!("bad surface format {format}"))?;
+    // Mip 0 first; the smaller mips are parsed and discarded (the renderer
+    // never samples them — the sprite pipeline draws straight 1:1 quads).
+    let mip0_size = i32_at(d, p)?;
+    if mip0_size as usize != expect {
+        bail!("mip 0 size {mip0_size} != {expect}");
+    }
+    let mip0 = bytes_at(d, p, expect)?.to_vec();
+    for _ in 1..mips {
+        let size = i32_at(d, p)?;
+        if size < 0 {
+            bail!("negative mip size");
+        }
+        bytes_at(d, p, size as usize)?;
+    }
+
+    let (glyphs, end) = read_rect_list(d, p, Some((width, height)))?;
     let count = glyphs.len();
-    pos = end;
-    let (padding, end) = find_rects_exact(d, pos, count)?;
-    pos = end;
-    let (characters, end) = find_chars(d, pos, count)?;
-    pos = end;
-    let (kerning, _end) = find_kerning(d, pos, count)?;
+    *p = end;
+    let (padding, end) = read_rect_list(d, p, None)?;
+    if padding.len() != count {
+        bail!("padding table has {} entries, expected {count}", padding.len());
+    }
+    *p = end;
+    let characters = read_char_list(d, p, count)?;
+    let characters: Vec<char> = characters.chars().collect();
 
-    // The default character sits in the small header block before the texture.
-    let default_char = d
-        .get(8..tex_start)
-        .and_then(|b| {
-            b.windows(2)
-                .find_map(|w| char::from_u32(u16::from_le_bytes([w[0], w[1]]) as u32))
-        })
-        .filter(|c| !c.is_control())
-        .unwrap_or('?');
+    let (kerning, end) = read_vector3_list(d, p, count)?;
+    *p = end;
 
-    let page = FontPage {
-        texture,
-        glyphs: characters
-            .into_iter()
-            .enumerate()
-            .map(|(i, ch)| Glyph {
-                ch,
+    Ok(FontPage {
+        format,
+        width,
+        height,
+        mip0,
+        glyphs: (0..count)
+            .map(|i| Glyph {
+                ch: characters[i],
                 src: glyphs[i],
                 pad: padding[i],
                 kerning: kerning[i],
             })
             .collect(),
-    };
-    Ok(DynamicSpriteFont {
-        spacing,
-        line_spacing,
-        default_char,
-        pages: vec![page],
     })
-}
-
-fn read_i32_at(d: &[u8], p: usize) -> Result<i32> {
-    d.get(p..p + 4)
-        .map(|b| i32::from_le_bytes(b.try_into().unwrap()))
-        .ok_or_else(|| anyhow::anyhow!("short read at {p}"))
-}
-
-fn read_f32_at(d: &[u8], p: usize) -> Result<f32> {
-    Ok(f32::from_bits(read_i32_at(d, p)? as u32))
 }
 
 fn expected_surface_bytes(format: i32, w: u32, h: u32) -> Option<usize> {
@@ -129,247 +190,137 @@ fn expected_surface_bytes(format: i32, w: u32, h: u32) -> Option<usize> {
     }
 }
 
-/// Validates a `Texture2DReader` header at `start` and decodes mip 0.
-fn texture_at(d: &[u8], start: usize) -> Result<(RgbaImage, usize)> {
-    let format = read_i32_at(d, start)?;
-    let width = read_i32_at(d, start + 4)?;
-    let height = read_i32_at(d, start + 8)?;
-    let mips = read_i32_at(d, start + 12)?;
-    if !(8..=4096).contains(&width) || !(8..=4096).contains(&height) {
-        bail!("bad size");
-    }
-    if !(1..=8).contains(&mips) {
-        bail!("bad mip count");
-    }
-    let (width, height) = (width as u32, height as u32);
-    let expect = expected_surface_bytes(format, width, height)
-        .ok_or_else(|| anyhow::anyhow!("bad format"))?;
-    let size = read_i32_at(d, start + 16)?;
-    if size as usize != expect {
-        bail!("mip size {size} != {expect}");
-    }
-    let data = d
-        .get(start + 20..start + 20 + expect)
-        .ok_or_else(|| anyhow::anyhow!("short surface"))?;
-    let pixels = match format {
-        0 => data.to_vec(),
-        4 => dxt::decompress_dxt1(data, width as i32, height as i32)?,
-        5 => dxt::decompress_dxt3(data, width as i32, height as i32)?,
-        6 => dxt::decompress_dxt5(data, width as i32, height as i32)?,
-        _ => unreachable!(),
-    };
-    Ok((
-        RgbaImage {
-            width,
-            height,
-            pixels,
-        },
-        start + 20 + expect,
-    ))
+fn i32_at(d: &[u8], p: &mut usize) -> Result<i32> {
+    let b = d
+        .get(*p..*p + 4)
+        .ok_or_else(|| anyhow::anyhow!("short read at {}", p))?;
+    *p += 4;
+    Ok(i32::from_le_bytes(b.try_into().unwrap()))
 }
 
-fn rects_at(d: &[u8], count_pos: usize, count: usize) -> Result<Vec<[i32; 4]>> {
-    let mut out = Vec::with_capacity(count);
-    for i in 0..count {
-        let p = count_pos + i * 16;
-        out.push([
-            read_i32_at(d, p)?,
-            read_i32_at(d, p + 4)?,
-            read_i32_at(d, p + 8)?,
-            read_i32_at(d, p + 12)?,
-        ]);
-    }
-    Ok(out)
+fn f32_at(d: &[u8], p: &mut usize) -> Result<f32> {
+    Ok(f32::from_bits(i32_at(d, p)? as u32))
 }
 
-/// Finds `count + rects` where every rect lies inside `page`.
-fn find_rects(
-    d: &[u8],
-    start: usize,
-    min_count: usize,
-    page: Option<&RgbaImage>,
-) -> Result<(Vec<[i32; 4]>, usize)> {
-    for gap in 0..=12 {
-        for seven in [false, true] {
-            let count_pos = start + gap + if seven { 0 } else { 4 };
-            let count = if seven {
-                match read_7bit_at(d, start + gap) {
-                    Some(v) => v as usize,
-                    None => continue,
-                }
-            } else {
-                match read_i32_at(d, start + gap) {
-                    Ok(v) if v > 0 => v as usize,
-                    _ => continue,
-                }
-            };
-            if count < min_count || count > 4096 {
-                continue;
-            }
-            let Ok(rects) = rects_at(d, count_pos, count) else {
-                continue;
-            };
-            let valid = rects.iter().all(|r| {
-                let [x, y, w, h] = *r;
-                if let Some(page) = page {
-                    x >= 0
-                        && y >= 0
-                        && w > 0
-                        && h > 0
-                        && x + w <= page.width as i32
-                        && y + h <= page.height as i32
-                } else {
-                    x.abs() <= 4096
-                        && y.abs() <= 4096
-                        && (0..=512).contains(&w)
-                        && (0..=512).contains(&h)
-                }
-            });
-            if valid {
-                return Ok((rects, count_pos + count * 16));
-            }
-        }
-    }
-    bail!("no rect table at {start}")
+fn bytes_at<'a>(d: &'a [u8], p: &mut usize, n: usize) -> Result<&'a [u8]> {
+    let end = (*p)
+        .checked_add(n)
+        .ok_or_else(|| anyhow::anyhow!("byte count overflow at {}", p))?;
+    let b = d
+        .get(*p..end)
+        .ok_or_else(|| anyhow::anyhow!("short surface read at {}", p))?;
+    *p = end;
+    Ok(b)
 }
 
-/// Padding table with a known entry count.
-fn find_rects_exact(d: &[u8], start: usize, count: usize) -> Result<(Vec<[i32; 4]>, usize)> {
-    for gap in 0..=12 {
-        for seven in [false, true] {
-            let (stored, after_count) = if seven {
-                match read_7bit_at(d, start + gap) {
-                    Some(v) => (v as usize, start + gap + 1),
-                    None => continue,
-                }
-            } else {
-                match read_i32_at(d, start + gap) {
-                    Ok(v) if v > 0 => (v as usize, start + gap + 4),
-                    _ => continue,
-                }
-            };
-            if stored != count {
-                continue;
-            }
-            let Ok(rects) = rects_at(d, after_count, count) else {
-                continue;
-            };
-            let valid = rects.iter().all(|r| {
-                let [x, y, w, h] = *r;
-                x.abs() <= 512 && y.abs() <= 512 && (0..=512).contains(&w) && (0..=512).contains(&h)
-            });
-            if valid {
-                return Ok((rects, after_count + count * 16));
-            }
-        }
-    }
-    bail!("no padding table at {start}")
-}
-
-fn read_7bit_at(d: &[u8], p: usize) -> Option<u32> {
+fn seven_at(d: &[u8], p: &mut usize) -> Result<u32> {
     let mut v = 0u32;
     let mut sh = 0;
-    let mut i = p;
     loop {
-        let b = *d.get(i)?;
-        i += 1;
+        let b = *d
+            .get(*p)
+            .ok_or_else(|| anyhow::anyhow!("unexpected end at {}", p))?;
+        *p += 1;
         v |= ((b & 0x7F) as u32) << sh;
         if b & 0x80 == 0 {
-            return Some(v);
+            return Ok(v);
         }
         sh += 7;
         if sh > 28 {
-            return None;
+            bail!("malformed 7-bit int at {}", p);
         }
     }
 }
 
-/// Finds `count + a UTF-8 string of exactly `count` characters`.
-fn find_chars(d: &[u8], start: usize, count: usize) -> Result<(Vec<char>, usize)> {
-    for gap in 0..=12 {
-        let Some(stored) = read_i32_at(d, start + gap).ok().filter(|v| *v > 0) else {
-            continue;
-        };
-        if stored as usize != count {
-            continue;
-        }
-        let mut p = start + gap + 4;
-        let mut chars = Vec::with_capacity(count);
-        let mut ok = true;
-        while chars.len() < count {
-            let Some(&b) = d.get(p) else {
-                ok = false;
-                break;
-            };
-            let len = match b {
-                0x00..=0x7F => 1,
-                0xC2..=0xDF => 2,
-                0xE0..=0xEF => 3,
-                0xF0..=0xF4 => 4,
-                _ => {
-                    ok = false;
-                    break;
-                }
-            };
-            let Some(slice) = d.get(p..p + len) else {
-                ok = false;
-                break;
-            };
-            let Ok(s) = std::str::from_utf8(slice) else {
-                ok = false;
-                break;
-            };
-            let Some(c) = s.chars().next() else {
-                ok = false;
-                break;
-            };
-            chars.push(c);
-            p += len;
-        }
-        if ok && chars.len() == count {
-            return Ok((chars, p));
-        }
+/// `ListReader<Rectangle>`: reader index + `Int32` count + `count` rects.
+/// With `page` set, every rect must lie inside it (the glyph table check).
+fn read_rect_list(
+    d: &[u8],
+    p: &mut usize,
+    page: Option<(u32, u32)>,
+) -> Result<(Vec<[i32; 4]>, usize)> {
+    let rid = seven_at(d, p)?;
+    if rid != RID_RECT_LIST {
+        bail!("rect list: reader index {rid}, expected {RID_RECT_LIST}");
     }
-    bail!("no character string at {start}")
-}
-
-/// Finds `count + 3 floats per entry`.
-fn find_kerning(d: &[u8], start: usize, count: usize) -> Result<(Vec<[f32; 3]>, usize)> {
-    for gap in 0..=12 {
-        let Some(stored) = read_i32_at(d, start + gap).ok().filter(|v| *v > 0) else {
-            continue;
-        };
-        if stored as usize != count {
-            continue;
-        }
-        let mut p = start + gap + 4;
-        let mut out = Vec::with_capacity(count);
-        let mut ok = true;
-        for _ in 0..count {
-            let Ok(x) = read_f32_at(d, p) else {
-                ok = false;
-                break;
-            };
-            let Ok(y) = read_f32_at(d, p + 4) else {
-                ok = false;
-                break;
-            };
-            let Ok(z) = read_f32_at(d, p + 8) else {
-                ok = false;
-                break;
-            };
-            if !(x.abs() < 1000.0 && y.abs() < 1000.0 && z.abs() < 1000.0) {
-                ok = false;
-                break;
+    let count = i32_at(d, p)?;
+    if !(0..=65536).contains(&count) {
+        bail!("implausible rect count {count}");
+    }
+    let mut out = Vec::with_capacity(count as usize);
+    for _ in 0..count {
+        let x = i32_at(d, p)?;
+        let y = i32_at(d, p)?;
+        let w = i32_at(d, p)?;
+        let h = i32_at(d, p)?;
+        if let Some((pw, ph)) = page {
+            if x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > pw as i32 || y + h > ph as i32 {
+                bail!("glyph rect {x},{y} {w}x{h} outside the {pw}x{ph} page");
             }
-            out.push([x, y, z]);
-            p += 12;
         }
-        if ok {
-            return Ok((out, p));
-        }
+        out.push([x, y, w, h]);
     }
-    bail!("no kerning table at {start}")
+    Ok((out, *p))
+}
+
+/// `ListReader<Char>` in the shipped form: reader index + `Int32` char count +
+/// a UTF-8 string of exactly `count` characters.
+fn read_char_list(d: &[u8], p: &mut usize, count: usize) -> Result<String> {
+    let rid = seven_at(d, p)?;
+    if rid != RID_CHAR_LIST {
+        bail!("char list: reader index {rid}, expected {RID_CHAR_LIST}");
+    }
+    let stored = i32_at(d, p)?;
+    if stored as usize != count {
+        bail!("char list has {stored} entries, expected {count}");
+    }
+    let mut s = String::with_capacity(count);
+    for _ in 0..count {
+        let b = *d
+            .get(*p)
+            .ok_or_else(|| anyhow::anyhow!("unexpected end in the char list at {}", p))?;
+        let len = match b {
+            0x00..=0x7F => 1,
+            0xC2..=0xDF => 2,
+            0xE0..=0xEF => 3,
+            0xF0..=0xF4 => 4,
+            _ => bail!("invalid UTF-8 lead byte {b:#x} in the char list at {}", p),
+        };
+        let slice = d
+            .get(*p..*p + len)
+            .ok_or_else(|| anyhow::anyhow!("short char list at {}", p))?;
+        let ch = std::str::from_utf8(slice)
+            .map_err(|_| anyhow::anyhow!("bad UTF-8 in the char list at {}", p))?
+            .chars()
+            .next()
+            .unwrap_or('?');
+        s.push(ch);
+        *p += len;
+    }
+    Ok(s)
+}
+
+/// `ListReader<Vector3>`: reader index + `Int32` count + `count` 3-float rows.
+fn read_vector3_list(d: &[u8], p: &mut usize, count: usize) -> Result<(Vec<[f32; 3]>, usize)> {
+    let rid = seven_at(d, p)?;
+    if rid != RID_VECTOR3_LIST {
+        bail!("kerning list: reader index {rid}, expected {RID_VECTOR3_LIST}");
+    }
+    let stored = i32_at(d, p)?;
+    if stored as usize != count {
+        bail!("kerning list has {stored} entries, expected {count}");
+    }
+    let mut out = Vec::with_capacity(count);
+    for _ in 0..count {
+        let x = f32_at(d, p)?;
+        let y = f32_at(d, p)?;
+        let z = f32_at(d, p)?;
+        if !(x.abs() < 1000.0 && y.abs() < 1000.0 && z.abs() < 1000.0) {
+            bail!("implausible kerning {x},{y},{z}");
+        }
+        out.push([x, y, z]);
+    }
+    Ok((out, *p))
 }
 
 #[cfg(test)]
@@ -380,37 +331,90 @@ mod tests {
         std::env::var_os("TR_CONTENT").map(std::path::PathBuf::from)
     }
 
+    /// The shipped-format pins for all five retail fonts (page counts, glyph
+    /// totals, the `'*'` default char, full-payload consumption — a parse error
+    /// fails the walk before the pin checks run).
     #[test]
     fn decodes_the_ui_fonts() {
         let Some(dir) = content_dir() else { return };
+        for (name, pages, glyphs, line) in [
+            ("Mouse_Text", 159usize, 38636usize, 29i32),
+            ("Item_Stack", 159, 38636, 24),
+            ("Death_Text", 159, 38636, 72),
+            ("Combat_Text", 160, 38636, 30),
+            ("Combat_Crit", 160, 38636, 38),
+        ] {
+            let font = load_font(dir.join(format!("Fonts/{name}.xnb")))
+                .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+            assert_eq!(font.default_char, '*', "{name} default char");
+            assert_eq!(font.pages.len(), pages, "{name} pages");
+            let total: usize = font.pages.iter().map(|p| p.glyphs.len()).sum();
+            assert_eq!(total, glyphs, "{name} glyphs");
+            assert_eq!(font.line_spacing, line, "{name} line spacing");
+            // Every page is the shipped DXT3 surface of the right byte size.
+            for page in &font.pages {
+                assert_eq!(page.format, SURFACE_DXT3, "{name} page format");
+                assert_eq!(
+                    page.mip0.len(),
+                    (page.width as usize) * (page.height as usize),
+                    "{name} page {}x{} mip size",
+                    page.width,
+                    page.height
+                );
+            }
+        }
+    }
+
+    /// The retail `Mouse_Text` covers the scripts the shipped localizations
+    /// need: Latin + Greek on page 0, Cyrillic and the CJK ideographs on later
+    /// pages, full Hangul at the end.
+    #[test]
+    fn covers_the_scripts_the_localizations_use() {
+        let Some(dir) = content_dir() else { return };
         let font = load_font(dir.join("Fonts/Mouse_Text.xnb")).expect("Mouse_Text");
-        println!(
-            "Mouse_Text: spacing {} line {} default {:?} pages {} glyphs {}",
-            font.spacing,
-            font.line_spacing,
-            font.default_char,
-            font.pages.len(),
-            font.pages[0].glyphs.len()
-        );
-        let page = &font.pages[0];
-        println!("page {}x{}", page.texture.width, page.texture.height);
-        for g in page
-            .glyphs
-            .iter()
-            .filter(|g| matches!(g.ch, 'A' | 'a' | '1' | ' ' | '.'))
-        {
-            println!(
-                "{:?} src {:?} pad {:?} kern {:?}",
-                g.ch, g.src, g.pad, g.kerning
+        let mut all = String::new();
+        for page in &font.pages {
+            for g in &page.glyphs {
+                all.push(g.ch);
+            }
+        }
+        for probe in ["A", "АБВГДабвгдёЁ", "你好世界中文", "日本語テスト", "한국어"] {
+            assert!(
+                probe.chars().all(|c| all.contains(c)),
+                "glyph coverage missing {probe:?}"
             );
         }
-        assert!(page.glyphs.len() > 80);
-        assert!(page.glyphs.iter().any(|g| g.ch == 'A'));
-        let item = load_font(dir.join("Fonts/Item_Stack.xnb")).expect("Item_Stack");
-        println!(
-            "Item_Stack: line {} glyphs {}",
-            item.line_spacing,
-            item.pages[0].glyphs.len()
-        );
+        // Page 0 is the Latin/Greek page; Cyrillic lives on its own page.
+        let page0: String = font.pages[0].glyphs.iter().map(|g| g.ch).collect();
+        assert!(page0.contains('A') && page0.contains('Ω'));
+        assert!(!page0.contains('А'));
+        let cyr: String = font
+            .pages
+            .iter()
+            .flat_map(|p| p.glyphs.iter())
+            .filter(|g| ('\u{0400}'..='\u{04FF}').contains(&g.ch))
+            .map(|g| g.ch)
+            .collect();
+        assert!(cyr.contains('А') && cyr.contains('я'), "Cyrillic page");
+    }
+
+    /// Page-0 glyph metrics for a few known chars, pinned from the retail
+    /// `Mouse_Text` (the exact `Rectangle`/`Padding`/`Kerning` rows).
+    #[test]
+    fn pins_page0_metrics() {
+        let Some(dir) = content_dir() else { return };
+        let font = load_font(dir.join("Fonts/Mouse_Text.xnb")).expect("Mouse_Text");
+        let page = &font.pages[0];
+        for ch in ['A', 'a', '1', ' ', '.'] {
+            let g = page
+                .glyphs
+                .iter()
+                .find(|g| g.ch == ch)
+                .unwrap_or_else(|| panic!("{ch:?} glyph"));
+            println!("{ch:?} src {:?} pad {:?} kern {:?}", g.src, g.pad, g.kerning);
+        }
+        let a = page.glyphs.iter().find(|g| g.ch == 'A').unwrap();
+        assert_eq!(a.src, [242, 40, 13, 15]);
+        assert_eq!(a.pad, [0, 2, 13, 27]);
     }
 }

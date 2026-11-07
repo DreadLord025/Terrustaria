@@ -365,93 +365,6 @@ fn portrait_data(
     // 48-50, the boss/leech/goblin/golem/pirate rows drifted); the whole
     // table is re-derived from the vec once.
     let sheet_i = match entry.kind {
-        NpcKind::Slime => 0,
-        NpcKind::DemonEye => 1,
-        NpcKind::WanderingEye => 2,
-        NpcKind::Zombie => 3,
-        NpcKind::KingSlime => 4,
-        NpcKind::EyeOfCthulhu => 41,
-        NpcKind::ServantOfCthulhu => 42,
-        NpcKind::Guide => 5,
-        NpcKind::Skeleton => 6,
-        NpcKind::UndeadMiner => 7,
-        NpcKind::CaveBat => 8,
-        NpcKind::JungleBat => 9,
-        NpcKind::Hellbat => 10,
-        NpcKind::VoodooDemon => 11,
-        NpcKind::EaterOfSouls => 12,
-        NpcKind::Hornet => 13,
-        NpcKind::MeteorHead => 14,
-        NpcKind::GoblinSorcerer => 15,
-        NpcKind::Tim => 16,
-        NpcKind::DarkCaster => 17,
-        NpcKind::FireImp => 18,
-        NpcKind::ChaosBall => 19,
-        NpcKind::BurningSphere => 20,
-        NpcKind::WaterSphere => 21,
-        NpcKind::Goldfish => 22,
-        NpcKind::Piranha => 23,
-        NpcKind::Shark => 24,
-        NpcKind::DevourerHead => 25,
-        NpcKind::DevourerBody => 27,
-        NpcKind::DevourerTail => 28,
-        NpcKind::GiantWormHead => 29,
-        NpcKind::GiantWormBody => 30,
-        NpcKind::GiantWormTail => 31,
-        NpcKind::EaterOfWorldsHead => 32,
-        NpcKind::EaterOfWorldsBody => 33,
-        NpcKind::EaterOfWorldsTail => 34,
-        NpcKind::Merchant => 26,
-        NpcKind::Dryad => 35,
-        NpcKind::Nurse => 36,
-        NpcKind::ArmsDealer => 37,
-        NpcKind::Demolitionist => 38,
-        NpcKind::Painter => 39,
-        NpcKind::WitchDoctor => 40,
-        NpcKind::Clothier => 41,
-        NpcKind::EyeOfCthulhu => 43,
-        NpcKind::QueenBee => 44,
-        NpcKind::SkeletronHead => 45,
-        NpcKind::WallOfFlesh => 47,
-        NpcKind::Hungry => 48,
-        NpcKind::LeechHead => 49,
-        NpcKind::LeechBody => 50,
-        NpcKind::EyeOfCthulhu => 42,
-        NpcKind::QueenBee => 43,
-        NpcKind::SkeletronHead => 44,
-        NpcKind::WallOfFlesh => 46,
-        NpcKind::TheDestroyer => 50,
-        NpcKind::SkeletronPrime => 51,
-        NpcKind::Retinazer => 52,
-        NpcKind::Spazmatism => 53,
-        NpcKind::Plantera => 54,
-        NpcKind::BrainOfCthulhu => 55,
-        NpcKind::Creeper => 56,
-        NpcKind::GoblinThief => 57,
-        NpcKind::GoblinWarrior => 58,
-        NpcKind::GoblinArcher => 59,
-        NpcKind::GoblinPeon => 60,
-        NpcKind::GoblinSummoner => 61,
-        NpcKind::GoblinPeon => 57,
-        NpcKind::GoblinThief => 58,
-        NpcKind::GoblinWarrior => 59,
-        NpcKind::GoblinArcher => 60,
-        NpcKind::BoundGoblin => 61,
-        NpcKind::GoblinTinkerer => 62,
-        NpcKind::Golem => 53,
-        NpcKind::GolemHead => 54,
-        NpcKind::GolemFistLeft => 55,
-        NpcKind::GolemFistRight => 56,
-        NpcKind::GolemHeadFree => 57,
-        NpcKind::Deerclops => 58,
-        NpcKind::SnowmanGangsta => 48,
-        NpcKind::SnowBalla => 49,
-        NpcKind::MysterySnowman => 50,
-        NpcKind::PirateDeckhand => 51,
-        NpcKind::PirateCaptainsMate => 51,
-        NpcKind::PirateArcher => 51,
-        NpcKind::PirateCorsair => 51,
-        NpcKind::PirateCaptain => 52,
         NpcKind::Slime => 0,           // NPC_1
         NpcKind::DemonEye => 1,        // NPC_2
         NpcKind::WanderingEye => 2,    // NPC_133
@@ -534,8 +447,13 @@ fn portrait_data(
         NpcKind::GolemFistLeft => 73,  // NPC_247 (the FistRight shares it
         NpcKind::GolemFistRight => 73, // — NPC_248 is not loaded)
         NpcKind::GolemHeadFree => 74,  // NPC_249
-        NpcKind::MartianProbe => 75,   // NPC_399
-        NpcKind::Deerclops => 76,      // NPC_668
+        NpcKind::MartianProbe => 76,   // NPC_399
+        NpcKind::MartianDrone => 77,   // NPC_388
+        NpcKind::Deerclops => 75,      // NPC_668
+        NpcKind::BrainScrambler => 78, // NPC_381
+        NpcKind::RayGunner => 79,      // NPC_382
+        NpcKind::ScutlixRider => 80,   // NPC_390
+        NpcKind::Scutlix => 81,        // NPC_391
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -682,10 +600,39 @@ fn portrait_data(
         }
         // The probe: the 8-frame NPC_399 strip over the 42x72 frames.
         (NpcKind::MartianProbe, _) => {
-            let h = lookups.bestiary_npc_sheets[75]
+            let h = lookups.bestiary_npc_sheets[76]
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(72.0);
             (sheet_i, h, 42.0, h, white)
+        }
+        // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
+        (NpcKind::MartianDrone, _) => {
+            let h = lookups.bestiary_npc_sheets[77]
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // The shooters: the 9-frame NPC_381/382 strips over the 18x40
+        // frames.
+        (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {
+            let h = lookups.bestiary_npc_sheets[78]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+        (NpcKind::ScutlixRider, _) => {
+            let h = lookups.bestiary_npc_sheets[80]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+        (NpcKind::Scutlix, _) => {
+            let h = lookups.bestiary_npc_sheets[81]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

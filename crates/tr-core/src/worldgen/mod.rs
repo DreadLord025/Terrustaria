@@ -17,10 +17,11 @@ mod biome_detail;
 mod biomes;
 mod caves;
 mod config;
-mod evil;
+pub mod evil;
 mod islands;
 mod liquids;
 mod living_trees;
+pub mod meteor;
 mod mini_biomes;
 mod noise;
 mod pipeline;
@@ -588,10 +589,7 @@ mod tests {
             });
             for tx in 0..w.width {
                 for ty in 0..w.height {
-                    if !w
-                        .tile(tx, ty)
-                        .is_some_and(|t| t.active() && t.kind == 5)
-                    {
+                    if !w.tile(tx, ty).is_some_and(|t| t.active() && t.kind == 5) {
                         continue;
                     }
                     for dy in -2..=1 {
@@ -635,7 +633,10 @@ mod tests {
             .flat_map(|x| ((w.world_surface as i32 + 10)..(w.height - 350)).map(move |y| (x, y)))
             .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 5))
             .count();
-        assert!(underground_trees > 100, "underground trees ({underground_trees})");
+        assert!(
+            underground_trees > 100,
+            "underground trees ({underground_trees})"
+        );
         for t in w.tiles.iter().filter(|t| t.active() && t.kind == 5) {
             assert!(
                 matches!(t.frame_x, 0 | 22 | 44 | 66 | 88 | 110) && t.frame_y % 22 == 0,
@@ -677,7 +678,10 @@ mod tests {
                 }
             }
         }
-        assert!(wet_columns > 20, "wet surface jungle columns: {wet_columns}");
+        assert!(
+            wet_columns > 20,
+            "wet surface jungle columns: {wet_columns}"
+        );
     }
 
     /// DW-5.2 (dirty): the jungle plants — the 61 plants sit on the free

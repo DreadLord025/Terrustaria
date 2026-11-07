@@ -91,6 +91,10 @@ pub(super) enum Act {
     ResetKeys { map: bool },
     /// A vanilla screen that is not ported yet: clicking shows the reason.
     Hint(&'static str),
+    /// The language rows (`Main.cs:48519-48523`, `:48484-48490`):
+    /// `LanguageManager.SetLanguage(legacy id)` + `Main.SaveSettings()`, the
+    /// row index being the `GameCulture` legacy id (1..=12).
+    SetLanguage(i32),
 }
 
 impl Menu {
@@ -190,6 +194,22 @@ impl Menu {
             }
             Act::Hint(message) => {
                 self.hint = Some((*message).to_string());
+                Action::None
+            }
+            Act::SetLanguage(legacy_id) => {
+                // `Main.changeTheTitle = true; SetLanguage; SaveSettings`
+                // (`Main.cs:48519-48523`). 1213 stays on the language page so
+                // the rows redraw in the new language; the first-launch 1212
+                // jumps to the title (`Main.cs:48484-48490`).
+                let culture = crate::lang::culture_from_legacy_id(*legacy_id);
+                crate::lang::set_language(culture);
+                self.settings.language = culture.name().to_string();
+                if self.persist {
+                    let _ = self.settings.save();
+                }
+                if self.page == Page::LanguageInitial {
+                    self.nav_to(Page::Main);
+                }
                 Action::None
             }
         }

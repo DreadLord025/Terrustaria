@@ -198,9 +198,16 @@ mod tmp_dump {
     fn dump_flame0_tiles4_rgba() {
         let Some(dir) = std::env::var_os("TR_CONTENT") else { return };
         let dir = std::path::PathBuf::from(dir);
+        // The scratch directory this debug dump targets is not part of the
+        // repo; skip (instead of failing) wherever it has not been created.
+        let out_dir = std::path::Path::new(r"C:\Users\DreadLord\Desktop\TR-tile2-tmp");
+        if !out_dir.is_dir() {
+            eprintln!("skipping: {} does not exist", out_dir.display());
+            return;
+        }
         for (name, out) in [("Flame_0", "flame0.rgba"), ("Tiles_4", "tiles4.rgba")] {
             let img = crate::load_texture(dir.join(format!("Images/{name}.xnb"))).unwrap();
-            std::fs::write(std::path::Path::new(r"C:\Users\DreadLord\Desktop\TR-tile2-tmp").join(out), &img.pixels).unwrap();
+            std::fs::write(out_dir.join(out), &img.pixels).unwrap();
             println!("{name} {}x{}", img.width, img.height);
         }
     }

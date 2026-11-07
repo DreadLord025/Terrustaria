@@ -110,6 +110,27 @@ pub enum NpcKind {
     /// chaseable false, rarity 1; the escape machine runs
     /// `AI()`'s aiStyle-80 block).
     MartianProbe,
+    /// `NPCID.MartianDrone` (388) — the Martian Madness sky flyer (`NPC.cs`:
+    /// 40×30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
+    /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal false).
+    MartianDrone,
+    /// `NPCID.BrainScrambler` (381) — the martian ground shooter (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the
+    /// stop-and-fire cycle fires the projectile 436).
+    BrainScrambler,
+    /// `NPCID.RayGunner` (382) — the martian ground shooter (`NPC.cs`: the
+    /// 381/382 grouped row — 18×40, aiStyle 3, dmg 50, def 25, 350 HP,
+    /// kb 0.35, value 1000; fires the projectile 438 at its speed).
+    RayGunner,
+    /// `NPCID.ScutlixRider` (390) — the ray gunner mounted on a Scutlix
+    /// (`NPC.cs:13966-13977`: 18×40, aiStyle 75, dmg 65, def 30, 350 HP,
+    /// value 1200, npcSlots 0.5; the mount machine carries the carrier
+    /// spawn + the 438 ray at the 60/-60 cycle).
+    ScutlixRider,
+    /// `NPCID.Scutlix` (391) — the walker carrier (`NPC.cs:13979-13991`:
+    /// 60×40, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200;
+    /// walks through the walker params 5/0.25/0.7).
+    Scutlix,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -502,6 +523,11 @@ impl NpcKind {
             NpcKind::PirateCorsair => 81,
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
+            NpcKind::MartianDrone => 84,
+            NpcKind::BrainScrambler => 85,
+            NpcKind::RayGunner => 86,
+            NpcKind::ScutlixRider => 87,
+            NpcKind::Scutlix => 88,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -593,6 +619,7 @@ impl NpcKind {
             81 => NpcKind::PirateCorsair,
             82 => NpcKind::PirateCaptain,
             83 => NpcKind::MartianProbe,
+            84 => NpcKind::MartianDrone,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -777,6 +804,14 @@ impl NpcKind {
             NpcKind::MartianWalker => (34.0, 110.0),
             // The probe: 42x72 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => (42.0, 72.0),
+            // The drone: 40x30 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => (40.0, 30.0),
+            // The shooters: 18x40 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => (18.0, 40.0),
+            // The rider + its carrier: 18x40 / 60x40 (`NPC.cs`'s cases
+            // 390/391).
+            NpcKind::ScutlixRider => (18.0, 40.0),
+            NpcKind::Scutlix => (60.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -934,6 +969,13 @@ impl NpcKind {
             NpcKind::MartianWalker => 2000,
             // The probe: 500 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 500,
+            // The drone: 300 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => 300,
+            // The shooters: 350/350 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 350,
+            // The rider 350, the carrier 600 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 350,
+            NpcKind::Scutlix => 600,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1038,6 +1080,14 @@ impl NpcKind {
             NpcKind::MartianWalker => 60,
             // The probe: 5 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 5,
+            // The drone: 60 (`NPC.cs`'s case 388 — the explode arm's 80
+            // rides damage_override).
+            NpcKind::MartianDrone => 60,
+            // The shooters: 50/50 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 50,
+            // The rider 65, the carrier 85 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 65,
+            NpcKind::Scutlix => 85,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1200,6 +1250,14 @@ pub struct Npc {
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
     pub wants_martian_invasion: bool,
+    /// The Scutlix rider's carrier spawn request (`AI_075`'s type-390
+    /// `localAI[0]` 0 → 1 arm: the `NewNPC(..., 391, whoAmI)` — the sim
+    /// resolves it after the tick).
+    pub wants_scutlix: bool,
+    /// The carrier link the sim writes each tick (the WoF write-through
+    /// shape): the living 391's centre in pixels, (-1, -1) = none.
+    pub carrier_x: f32,
+    pub carrier_y: f32,
 }
 
 impl Npc {
@@ -1528,6 +1586,9 @@ impl Npc {
             swarm_done: false,
             wants_hostile_shot: None,
             wants_martian_invasion: false,
+            wants_scutlix: false,
+            carrier_x: -1.0,
+            carrier_y: -1.0,
         }
     }
 
@@ -1589,6 +1650,15 @@ impl Npc {
             NpcKind::MartianWalker => 0.0,
             // The probe: 0 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 0.0,
+            // The drone: 0.4 (`NPC.cs`'s case 388 — the hover's scaled
+            // value; the charge/dash arms zero it in the machine).
+            NpcKind::MartianDrone => 0.4,
+            // The shooters: 0.35 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 0.35,
+            // The rider: the field default 0.4 (case 390 sets nothing);
+            // the carrier 0.1 (case 391).
+            NpcKind::ScutlixRider => 0.4,
+            NpcKind::Scutlix => 0.1,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1718,6 +1788,13 @@ impl Npc {
             NpcKind::MartianWalker => 40,
             // The probe: 5 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 5,
+            // The drone: 16 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => 16,
+            // The shooters: 25/25 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 25,
+            // The rider 30, the carrier 30 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 30,
+            NpcKind::Scutlix => 30,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1843,6 +1920,14 @@ impl Npc {
             // The probe: 0 (`NPC.cs`'s case 399; the uniform drops don't
             // exist — the vanilla registers no loot for it).
             NpcKind::MartianProbe => 0.0,
+            // The drone: 1000 (`NPC.cs`'s case 388; the loot db registers
+            // no rules for 388 — nothing drops).
+            NpcKind::MartianDrone => 1000.0,
+            // The shooters: 1000/1000 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 1000.0,
+            // The rider 1200, the carrier 1200 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 1200.0,
+            NpcKind::Scutlix => 1200.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2090,6 +2175,20 @@ impl Npc {
             // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
             // aiStyle-80 block, `NPC.cs:36532-36624`).
             NpcKind::MartianProbe => self.update_martian_probe(world, player),
+            // The drone: aiStyle 74's approach/charge/dash machine (`AI()`'s
+            // aiStyle-74 block, `NPC.cs:35218-35500`).
+            NpcKind::MartianDrone => self.update_martian_drone(world, player, rng),
+            // The shooters: aiStyle 3's walker with the stop-and-fire
+            // cycle (`AI_003_Fighters`'s shooter block, `NPC.cs:59069-59623`).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => {
+                self.update_martian_shooter(world, player, rng)
+            }
+            // The rider: aiStyle 75's mount machine (the carrier spawn +
+            // the ride + the 438 ray, `NPC.cs:35506-35745`).
+            NpcKind::ScutlixRider => self.update_scutlix_rider(world, player, rng),
+            // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
+            // `NPC.cs:58203-58240`).
+            NpcKind::Scutlix => self.update_scutlix(world, player, dt),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2215,6 +2314,41 @@ impl Npc {
                 self.frame_counter =
                     (self.frame_counter + 0.25) % 4.0 + if self.ai[0] != 0.0 { 4.0 } else { 0.0 };
                 self.frame = self.frame_counter as u32;
+            }
+            // The drone: `case 388` (`NPC.cs:71731-71740`) — the 2-row strip
+            // advances one row every 6 ticks.
+            NpcKind::MartianDrone => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 2;
+                }
+            }
+            // The shooters: the 381/382/383/385/389 grouped arm
+            // (`NPC.cs:71623-71640`) — the humanoid walk strip over the
+            // 9-frame sheet, the grounded rows clamp at 2.
+            NpcKind::BrainScrambler | NpcKind::RayGunner => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            // The rider: the 5-frame mount strip.
+            NpcKind::ScutlixRider => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 5;
+                }
+            }
+            // The carrier: the 6-frame strip (`npcFrameCount[391]`).
+            NpcKind::Scutlix => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 6;
+                }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
             // accumulator).
@@ -2556,6 +2690,47 @@ impl Npc {
                 // machine lands with the full port).
                 self.frame_counter = 0.0;
                 self.frame = 0;
+            }
+            NpcKind::Golem => {
+                // `FindFrame`'s case 245 (`NPC.cs:72898-72930`): the
+                // grounded state selects the 5-row charge ramp over the
+                // `ai[1]` window (-20..0), row 0 while charging; the
+                // flight arm's literal `frame.Y = 1` pixel write folds
+                // to row 0 (the documented 1-px deviation).
+                if self.ai[0] == 0.0 {
+                    let c = self.cast_windup as f32;
+                    self.frame = if c < -16.0 {
+                        0
+                    } else if c < -12.0 {
+                        1
+                    } else if c < -8.0 {
+                        2
+                    } else if c < -4.0 {
+                        3
+                    } else if c < 0.0 {
+                        4
+                    } else {
+                        0
+                    };
+                } else {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::GolemHead => {
+                // `FindFrame`'s case 246 (`NPC.cs:72931-72961`): the mouth
+                // row rides the fireball window (the first/last 20 of the
+                // 300 cadence — `:31181`/`:31186`'s localAI[0]), the
+                // phase-1 head-turn rows (+2/+4) follow the side toward
+                // the player (`:31213`/`:31218`'s localAI[1]).
+                let mouth = self.ai[1] < 20.0 || self.ai[1] > 280.0;
+                // /'s localAI[1] side turns ride the
+                // facing (the machine faces the player): +2 left, +4 right
+                // (`:72955`/`:72959`'s row offsets).
+                let mut row = if mouth { 1 } else { 0 };
+                if self.ai[0] == 1.0 {
+                    row += if self.facing < 0 { 4 } else { 2 };
+                }
+                self.frame = row;
             }
             NpcKind::GoblinTinkerer => {
                 // The town 3-frame machine (`Main.npcFrameCount[107]`,
@@ -4063,9 +4238,10 @@ impl Npc {
             let mut num1138 = 30;
             if world.in_bounds(tx, ty) {
                 for dy in 0..30 {
-                    if world.tile(tx, ty + dy).is_some_and(|t| {
-                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
-                    }) {
+                    if world
+                        .tile(tx, ty + dy)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+                    {
                         num1138 = dy;
                         break;
                     }
@@ -4124,6 +4300,388 @@ impl Npc {
             self.y = ny;
         } else {
             self.vy = 0.0;
+        }
+    }
+
+    /// `AI()`'s aiStyle-74 block (`NPC.cs:35218-35500`) — the Martian
+    /// Drone's approach/charge/dash machine, the 388 parameter set (the
+    /// 418/Martian Walker Skull arm's different constants fold out).
+    /// `ai[0]` 0 = the hover approach (the 200-px-above-the-player
+    /// approach vector at speed 10 over a 30-tick damp; the line-of-sight
+    /// gate with the ±π/8 angle band; the 120-tick argue timer), 1 = the
+    /// 30-tick charge (the ×0.95 damp, then the jittered vector ×14), 2 =
+    /// the dash (the 20-lerp toward the player; the off-angle/time exit
+    /// at velocity < 7), 3 = the contact explosion (the 192×192 box,
+    /// the 80 damage, the 3-tick fuse → the death).
+    ///
+    /// Deviations (documented): the dust/light spawns are unmodelled (no
+    /// NPC light/dust systems); the phase-3 box resize (the vanilla's
+    /// `width = height = 192`) is a per-NPC hitbox the kind-fixed `size`
+    /// cannot follow — the explosion rides `damage_override` = 80 instead;
+    /// the `GetKnockbackMultiplier_ScaledByDifficulty`/`GetAttackDamage_
+    /// ScaledByDifficulty` difficulty arms run as the classic constants
+    /// (no difficulty flags).
+    fn update_martian_drone(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The vanilla's 388 param set.
+        let speed = 10.0;
+        let hover_height = 200.0;
+        let far_dist = 750.0;
+        let damp = 30.0;
+        let charge_ticks = 30.0;
+        let charge_decay = 0.95;
+        let jitter = 50.0;
+        let dash_speed = 14.0;
+        let dash_ticks = 30.0;
+        let turn_dist = 100.0;
+        let lerp = 20.0;
+        let speed_floor = 7.0;
+        // `num1038` (the 418-only 4/15 × 60 homing term) is 0 for the drone.
+        let home_term = 0.0;
+
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            // The approach vectors: `vector128` to the player, `vector129`
+            // 200 px above it (the xShift is 0 for the drone).
+            let (vx, vy) = (pcx - cx, pcy - cy);
+            let raw_dist = (vx * vx + vy * vy).sqrt();
+            let norm = if raw_dist > 0.0 { 1.0 / raw_dist } else { 0.0 };
+            // vector129 = normalize(raw - UnitY * 200) * speed.
+            let vy2 = vy - hover_height;
+            let d2 = (vx * vx + vy2 * vy2).sqrt();
+            let n2 = if d2 > 0.0 { speed / d2 } else { 0.0 };
+            // `vector128.ToRotation()`'s ±π/8 gate: the y-down rotation of
+            // the toward-player direction — the cone's 0..π half (the
+            // player below).
+            let angle = (vy * norm).atan2(vx * norm);
+            let can_hit = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+                && angle > std::f32::consts::PI / 8.0
+                && angle < std::f32::consts::PI - std::f32::consts::PI / 8.0;
+            // The ai[3] >= 120 argue-override: the drone stops dodging.
+            let can_hit = can_hit || self.ai[3] >= 120.0;
+            let too_far = raw_dist > far_dist;
+            if too_far || !can_hit {
+                // The 30-tick damp toward the above-the-player vector.
+                self.vx = (self.vx * (damp - 1.0) + vx * n2) / damp;
+                self.vy = (self.vy * (damp - 1.0) + vy2 * n2) / damp;
+                if !can_hit {
+                    if !too_far {
+                        self.ai[3] += 1.0;
+                    }
+                } else {
+                    self.ai[3] = 0.0;
+                }
+            } else {
+                self.ai[0] = 1.0;
+                self.ai[2] = vx * norm;
+                self.ai[3] = vy * norm;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The charge (`:35290-35300`).
+            self.vx *= charge_decay;
+            self.vy *= charge_decay;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= charge_ticks {
+                self.ai[0] = 2.0;
+                self.ai[1] = 0.0;
+                // The ai[2]/ai[3] vector + the ±50 × 0.04 jitter, normalized ×14.
+                let jx = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                let jy = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                let (dx, dy) = (self.ai[2] + jx, self.ai[3] + jy);
+                let len = (dx * dx + dy * dy).sqrt();
+                let inv = if len > 0.0 { dash_speed / len } else { 0.0 };
+                self.vx = dx * inv;
+                self.vy = dy * inv;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The dash (`:35303-35327`).
+            self.ai[1] += 1.0;
+            let dist = (pcx - cx).hypot(pcy - cy);
+            let past = dist > turn_dist && cy > pcy;
+            let slow = (self.vx * self.vx + self.vy * self.vy).sqrt() < speed_floor;
+            if (self.ai[1] >= dash_ticks && past) || slow {
+                self.ai[0] = 0.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+                self.vx /= 2.0;
+                self.vy /= 2.0;
+            } else {
+                let (dx, dy) = (pcx - cx, pcy - cy);
+                let len = (dx * dx + dy * dy).sqrt();
+                let (nx, ny) = if len > 0.0 {
+                    (dx / len, dy / len)
+                } else {
+                    (self.facing as f32, 0.0)
+                };
+                let vlen = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                self.vx = (self.vx * (lerp - 1.0) + nx * (vlen + home_term)) / lerp;
+                self.vy = (self.vy * (lerp - 1.0) + ny * (vlen + home_term)) / lerp;
+            }
+            // The solid-wall fold to the explosion (`:35329-35334`).
+            if crate::player::collides_rect(world, self.x, self.y, w, h) {
+                self.ai[0] = 3.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+        // The contact-too-close explosion (`:35336-35343`).
+        if self.ai[0] != 3.0 && player.hp > 0 {
+            let dist = (pcx - cx).hypot(pcy - cy);
+            if dist < 64.0 {
+                self.ai[0] = 3.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+        if self.ai[0] != 3.0 {
+            // The flying integration: noTileCollide + noGravity (`SetDefaults`).
+            self.x += self.vx;
+            self.y += self.vy;
+            return;
+        }
+        // The explosion (`:35345-35396`): the position centres, the box
+        // swells (the port keeps the kind size — `damage_override` carries
+        // the 80), the alpha darkens, the 3-tick fuse. The lights/dust are
+        // unmodelled.
+        self.damage_override = Some(80);
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 3.0 {
+            // `SoundEngine.PlaySound(Item14)` + `life = 0` + `HitEffect`:
+            // the death pass picks the zero HP up (the loot db registers no
+            // 388 rules — nothing drops).
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`) for the
+    /// BrainScrambler 381 / the RayGunner 382. The walk rides the walker
+    /// (the per-type speed folds); the stop-and-fire cycle: the
+    /// aggression arm (grounded, `ai[1] <= 0`, `ai[2] <= 0`) starts the
+    /// 80-tick shot timer with the aim octant on `ai[2]`, the fire at
+    /// `ai[1] == 40` launches the projectile at the player ±(0..100)×0.4
+    /// ×(0.85..1.15), and the sleep ends at `ai[1] <= 0`.
+    ///
+    /// Deviations: the player's `stealth`/`itemAnimation` gate (`:59644`)
+    /// is constants-off (the port's Player carries no swing timer — the
+    /// shooter engages a still player too); the walk params ride the
+    /// walker's (the per-type 5/0.25/0.7 table folds like the other
+    /// aiStyle-3 families).
+    fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // The octant table (the vanilla's `ai[2]` 1..5 rows).
+        let octant = |dx: f32, dy: f32| -> f32 {
+            if dy.abs() > dx.abs() * 2.0 {
+                if dy > 0.0 {
+                    1.0
+                } else {
+                    5.0
+                }
+            } else if dx.abs() > dy.abs() * 2.0 {
+                3.0
+            } else if dy > 0.0 {
+                2.0
+            } else {
+                4.0
+            }
+        };
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `justHit`'s interrupt (`:59094`): the shot cycle rests 30.
+        if self.hurt_cd > 0.0 && self.ai[1] > 30.0 {
+            self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+        }
+        if self.ai[2] > 0.0 {
+            if self.ai[1] == 40.0 {
+                // The fire (`:59204-59602`'s 381/382 arm).
+                let mut ax = dx;
+                let mut ay = dy;
+                // The ±100 × 0.4 jitter + the 0.85..1.15 scale.
+                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                ax *= 0.85 + 0.3 * crate::app::rand01(rng);
+                ay *= 0.85 + 0.3 * crate::app::rand01(rng);
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                // The speed: 11 (381) / 7 (382); the projectile 436 dmg 24
+                // (381) / 438 dmg 30 (382).
+                let (proj, dmg, speed) = if self.kind == NpcKind::RayGunner {
+                    (438u16, 30, 7.0)
+                } else {
+                    (436u16, 24, 11.0)
+                };
+                let inv = speed / len;
+                // The spawn: the centre + y 6, the velocity at the aim.
+                self.wants_hostile_shot = Some((
+                    proj,
+                    cx,
+                    cy + 6.0,
+                    ax * inv,
+                    ay * inv,
+                    dmg,
+                ));
+                self.ai[2] = octant(ax, ay);
+            }
+        } else {
+            // The aggression/stop entry (`:59630-59697`): grounded +
+            // `ai[1] <= 0` and the aim under 700 px → the stop with the
+            // 80-tick timer.
+            if self.ai[1] <= 0.0
+                && player.hp > 0
+                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            {
+                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
+                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
+                if (ax * ax + ay * ay).sqrt() < 700.0 {
+                    self.vx *= 0.5;
+                    self.ai[2] = octant(ax, ay);
+                    self.ai[1] = 80.0;
+                }
+                let _ = (&mut ax, &mut ay);
+            }
+        }
+        // The sleep's exit (`:59618-59623`).
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+            self.ai[1] = 0.0;
+        }
+        // The walk: the vanilla's walker step (the grounded damping and
+        // the 0.9 stop-damp ride it).
+        let params = crate::npc_ai::WalkerParams {
+            speed: 5.0,
+            jump: -6.2,
+            aggro_x: 80.0 * TILE_PX,
+            aggro_y: 40.0 * TILE_PX,
+        };
+        crate::npc_ai::walker_step(self, world, pcx, pcy, params, GRAVITY, MAX_FALL);
+        // The stop state's X damp (`:59626`'s `velocity.X *= 0.9`).
+        if self.ai[2] > 0.0 {
+            self.vx *= 0.9;
+        }
+    }
+
+    /// `AI_075`'s type-390 arm (`NPC.cs:35506-35745`) — the ray gunner
+    /// mounted on a Scutlix. The init spawns the 391 carrier through
+    /// `wants_scutlix` (the sim resolves); while the carrier lives the
+    /// rider rides 14 px above its centre and mirrors its velocity and
+    /// direction; the `ai[1]` cycle (60, hurt → -30) fires the 438 ray
+    /// (30 damage, 7 speed) from the centre - 4, the aim at the player
+    /// ±50 ×(0.8..1.2), under 700 px with the carrier-direction match.
+    ///
+    /// Deviations: the carrier link is the sim's write-through (the
+    /// port has no NPC indices — the nearest living 91 within 800 px
+    /// stands in); the idle aim octant rides the vanilla's table.
+    fn update_scutlix_rider(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The init (`NPC.cs:35506-35519`): `localAI[0]`'s one-time latch —
+        // `ai[0]` stands in (the mount block's own state rides `ai[1]`).
+        if self.ai[0] == 0.0 {
+            self.wants_scutlix = true;
+            self.ai[0] = 1.0;
+        }
+        if self.carrier_x < 0.0 {
+            // No carrier (yet / dead): the vanilla's mount block skips —
+            // the rider stands where it is.
+            return;
+        }
+        let (w, h) = self.size();
+        let (ccx, ccy) = (self.carrier_x, self.carrier_y);
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The ride (`:35657-35681`): the position centres on the carrier
+        // + UnitY * -14.
+        self.x = ccx - w * 0.5;
+        self.y = ccy - h * 0.5 - 14.0;
+        // The cycle (`:35682-35688`): ai[1] to 60, hurt → -30.
+        if self.ai[1] < 60.0 {
+            self.ai[1] += 1.0;
+        }
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = -30.0;
+        }
+        if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
+            let (px, py) = (pcx - cx, pcy - cy);
+            if (px * px + py * py).sqrt() < 700.0 {
+                if self.ai[1] == 60.0
+                    && (px > 0.0) == (self.facing == 1)
+                {
+                    // The fire (`:35700-35724`): the 438 ray, 30 damage,
+                    // 7 speed, from the centre - UnitY * 4, the aim
+                    // ±50 ×(0.8..1.2).
+                    self.ai[1] = -60.0;
+                    let mut ax = px;
+                    let mut ay = py;
+                    ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
+                    ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
+                    ax *= 0.8 + 0.4 * crate::app::rand01(rng);
+                    ay *= 0.8 + 0.4 * crate::app::rand01(rng);
+                    let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                    let inv = 7.0 / len;
+                    self.wants_hostile_shot = Some((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
+                } else {
+                    // The idle aim (`:35727-35749`): the octant + the X
+                    // damp.
+                    self.vx *= 0.5;
+                    let octant = if py.abs() > px.abs() * 2.0 {
+                        if py > 0.0 { 1.0 } else { 5.0 }
+                    } else if px.abs() > py.abs() * 2.0 {
+                        3.0
+                    } else if py > 0.0 {
+                        2.0
+                    } else {
+                        4.0
+                    };
+                    self.ai[2] = octant;
+                }
+            }
+        }
+    }
+
+    /// `AI_003_Fighters`'s 391-carrier arm (`NPC.cs:58203-58240`): the
+    /// walker with the params 5/0.25/0.7 (the per-type fold of the other
+    /// aiStyle-3 families) and the 50-px ground stop (`ai[2] = 1`,
+    /// `:58293-58301`).
+    fn update_scutlix(&mut self, world: &World, player: &Player, _dt: f32) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The 50-px stop: grounded + the player close + CanHit.
+        if self.on_ground
+            && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 50.0
+            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[2] = 1.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 5.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
+        if self.ai[2] > 0.0 && self.on_ground {
+            self.vx *= 0.7;
+        }
+        self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = (self.frame + 1) % 6;
         }
     }
 
@@ -4308,13 +4866,17 @@ impl Npc {
     /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
     /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
     /// invulnerability gate (the Creepers' orbit = the follow-ups).
-    /// The Golem family's v1 machines (the aiStyles 45-48): the body
-    /// hovers the EoC-cycle shape toward the player; the attached head
-    /// floats at the body's crown (the offset lock); the fists lunge
-    /// (the reach at the 120-tick interval, the retract); the free head
-    /// clears its spawn shield at 120 ticks and hovers. The full AI_045
-    /// through AI_048 (the fireballs, the head-retract, the laser eyes)
-    /// = the follow-ups.
+    /// The Golem family's machines: the aiStyle-45 body (the spawn init,
+    /// the charge-slam-flight states), the aiStyle-46 head (the tether,
+    /// the fireball cycles), the aiStyle-47 fists (the follow, the
+    /// wind-up, the dash), the aiStyle-48 free head (the permanent
+    /// shield, the volleys). The ai[] slots: the body's ai[0] = the
+    /// state (0 charge / 1 flight), ai[1] (cast_windup) = the charge
+    /// counter (300 -> -20 -> the slam at -1); the head's ai[0] = the
+    /// phase (1 under the half life), ai[1] = the fireball cadence (300),
+    /// ai[2] = the beam volley; the fists' ai[0] = the state (0 follow /
+    /// 1 wind-up / 2 dash), ai[1] = the contact cadence (60) then the
+    /// wind-up (30). The caster_counter boots the body's one-shot init.
     fn update_golem(&mut self, world: &World, player: &Player) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
@@ -4322,68 +4884,264 @@ impl Npc {
         let cy = self.y + h * 0.5;
         match self.kind {
             NpcKind::Golem => {
-                // The body: the EoC-cycle shape's hover arm (the target
-                // point 200 above the player, the +-0.07 accels, the 8
-                // cap — the established v1 hover).
-                let tx = pcx - cx;
-                let ty = (pcy - 200.0) - cy;
-                let d = (tx * tx + ty * ty).sqrt().max(1.0);
-                self.vx += (tx / d) * 0.07;
-                self.vy += (ty / d) * 0.07;
-                self.vx = self.vx.clamp(-8.0, 8.0);
-                self.vy = self.vy.clamp(-8.0, 8.0);
-            }
-            NpcKind::GolemHead => {
-                // The attached head: the same hover target as the body —
-                // they spawn together and hold formation (the offset
-                // lock through the roster link = the follow-up).
-                let tx = pcx - cx;
-                let ty = (pcy - 200.0) - cy;
-                let d = (tx * tx + ty * ty).sqrt().max(1.0);
-                self.vx += (tx / d) * 0.07;
-                self.vy += (ty / d) * 0.07;
-                self.vx = self.vx.clamp(-8.0, 8.0);
-                self.vy = self.vy.clamp(-8.0, 8.0);
-            }
-            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
-                // The fists: the lunge cycle — the reach toward the
-                // player at the 120-tick interval (the ai[0] counter),
-                // the straight flight, the decay to the stop.
-                if self.ai[0] <= 0.0 {
-                    self.caster_counter += 1;
-                    if self.caster_counter >= 120 {
-                        self.caster_counter = 0;
-                        let dx = pcx - cx;
-                        let dy = pcy - cy;
-                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
-                        self.vx = dx / d * 8.0;
-                        self.vy = dy / d * 8.0;
+                // The body (`AI_045_Golem`, `NPC.cs:19505-19780`).
+                // The init (the `localAI[0]` one-shot, `:19517-19525`):
+                // the parts spawn request — the sim resolves the offsets
+                // (247 at -84/-9, 248 at +78/-9, 246 at -3/-57).
+                if self.caster_counter == 0 && self.cast_windup == 0 {
+                    self.caster_counter = 1;
+                    self.wants_sphere = Some((NpcKind::GolemFistRight, cx - 84.0, cy - 9.0));
+                    self.wants_sphere = Some((NpcKind::GolemFistLeft, cx + 78.0, cy - 9.0));
+                    self.wants_sphere = Some((NpcKind::GolemHead, cx - 3.0, cy - 57.0));
+                }
+                if self.ai[0] == 0.0 {
+                    // The grounded charge (`:19638-19703`).
+                    self.vx *= 0.8;
+                    self.cast_windup += 1;
+                    if self.cast_windup >= 300 {
+                        self.cast_windup = -20;
+                    }
+                    if self.cast_windup == -1 {
+                        // The slam launch (`:19684-19700`).
+                        self.facing = if pcx >= cx { 1 } else { -1 };
+                        self.vx = 4.0 * self.facing as f32;
+                        self.vy = if self.hp < self.max_hp {
+                            (-12.1f32 * (1.0 + 9.0) / 10.0).max(-19.1)
+                        } else {
+                            -12.1
+                        };
                         self.ai[0] = 1.0;
+                        self.cast_windup = 0;
                     }
                 } else {
-                    self.vx *= 0.95;
-                    self.vy *= 0.95;
-                    if self.vx.abs() + self.vy.abs() < 0.5 {
+                    // The flight (`:19704-19766`).
+                    if self.on_ground {
+                        self.ai[0] = 0.0;
+                    } else {
+                        let over_x = self.x < pcx && self.x + w > pcx;
+                        if over_x {
+                            self.vx *= 0.9;
+                        } else {
+                            let dir = if self.facing < 0 { -1.0 } else { 1.0 };
+                            self.vx += dir * 0.2;
+                            let mut num7 = 3.0;
+                            if self.hp < self.max_hp {
+                                num7 += 1.0;
+                            }
+                            if self.hp < self.max_hp / 2 {
+                                num7 += 1.0;
+                            }
+                            if self.hp < self.max_hp / 4 {
+                                num7 += 1.0;
+                            }
+                            self.vx = self.vx.clamp(-num7, num7);
+                        }
+                    }
+                }
+            }
+            NpcKind::GolemHead => {
+                // The attached head (`aiStyle 46`, `NPC.cs:31129-31346`):
+                // the offset lock to the body's anchor (-3, -57), the
+                // phase-2 at the half life, the fireball cycles.
+                let scale = 1.0;
+                let tx = world.golem_x - cx - 3.0 * scale;
+                let ty = world.golem_y - cy - 57.0 * scale;
+                let d = (tx * tx + ty * ty).sqrt().max(0.001);
+                self.vx = (self.vx + tx / d * 9.0).clamp(-7.0, 7.0);
+                self.vy = (self.vy + ty / d * 9.0).clamp(-7.0, 7.0);
+                if self.hp < self.max_hp / 2 {
+                    self.ai[0] = 1.0;
+                } else {
+                    self.ai[0] = 0.0;
+                }
+                // The fireball cycle (`:31174-31258`): the 300 cadence,
+                // the 258 at 18 (phase 0) / 24 (phase 1), the spawn
+                // Center + (0, 10) with the phase-1 +-40 side offset.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    let ox = if self.ai[0] == 1.0 {
+                        if pcx < cx - w {
+                            -40.0 * scale
+                        } else if pcx > cx + w {
+                            40.0 * scale
+                        } else {
+                            0.0
+                        }
+                    } else {
+                        0.0
+                    };
+                    self.wants_hostile_shot = Some((
+                        crate::projectile::GOLEM_FIREBALL,
+                        cx + ox,
+                        cy + 10.0 * scale,
+                        pcx - cx,
+                        pcy - cy,
+                        if self.ai[0] == 1.0 { 24 } else { 18 },
+                    ));
+                }
+                // The beam volley (`:31261-31334`, the phase-1 arm): the
+                // two-shot EyeBeam 259 dmg 28 at the 11 speed with the
+                // 3-tick lead; the vanilla's 60+Next(600) cadence folds
+                // to the 300 average (the classic solo player).
+                if self.ai[0] == 1.0 {
+                    self.ai[2] += 1.0;
+                    if self.ai[2] > 300.0 {
+                        self.ai[2] = 0.0;
+                        for sx in [-18.0 * scale, 18.0 * scale] {
+                            let mut vx = pcx - (cx + sx);
+                            let mut vy = pcy - (cy - 22.0 * scale);
+                            let vd = (vx * vx + vy * vy).sqrt().max(0.001);
+                            vx = vx / vd * 11.0;
+                            vy = vy / vd * 11.0;
+                            self.wants_hostile_shot = Some((
+                                crate::projectile::GOLEM_EYE_BEAM,
+                                cx + sx + vx * 3.0,
+                                cy - 22.0 * scale + vy * 3.0,
+                                vx,
+                                vy,
+                                28,
+                            ));
+                        }
+                    }
+                }
+            }
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                // The fists (`AI_047_GolemFist`, `NPC.cs:19231-19503`):
+                // the tether (-84 / +78, -9), the follow with the contact
+                // cadence 60, the wind-up 30, the dash 12.
+                let anchor_x = world.golem_x
+                    + if self.kind == NpcKind::GolemFistLeft {
+                        -84.0
+                    } else {
+                        78.0
+                    };
+                let anchor_y = world.golem_y - 9.0;
+                if self.ai[0] == 0.0 {
+                    // The follow (`:19262-19330`).
+                    let dx = anchor_x - cx;
+                    let dy = anchor_y - cy;
+                    let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                    let num3 = 14.0;
+                    if d < 12.0 + num3 {
+                        self.vx = 0.0;
+                        self.vy = 0.0;
+                    } else {
+                        self.vx = dx / d * num3;
+                        self.vy = dy / d * num3;
+                    }
+                    // The contact cadence: +1, the body's damaged
+                    // tier adds 10x (`:19301`'s `10f * num5` — the
+                    // 16.7x charge under damage).
+                    self.ai[1] += if world.golem_hp_ratio < 1.0 {
+                        10.0
+                    } else {
+                        1.0
+                    };
+                    if self.ai[1] >= 60.0 {
+                        self.ai[0] = 1.0;
+                        self.ai[1] = 0.0;
+                    }
+                } else if self.ai[0] == 1.0 {
+                    // The wind-up (`:19331-19390`): the hard snap + the
+                    // 30-tick hold.
+                    self.x = anchor_x - w * 0.5;
+                    self.y = anchor_y - h * 0.5;
+                    self.vx = 0.0;
+                    self.vy = 0.0;
+                    self.ai[1] += 1.0;
+                    if self.ai[1] >= 30.0 {
+                        self.ai[0] = 2.0;
+                        self.ai[1] = 0.0;
+                    }
+                } else if self.ai[0] == 2.0 {
+                    // The dash (`:19361-19449`): the first tick sets the
+                    // 12-speed lunge; the 700-px distance return.
+                    if self.ai[1] == 0.0 {
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(0.001);
+                        // `:19362-19378`'s tiers: the base 12, the
+                        // body-damaged +10 (the own-life tiers fold), the
+                        // 48 clamp.
+                        let mut sp = 12.0;
+                        if world.golem_hp_ratio < 1.0 {
+                            sp += 10.0;
+                        }
+                        self.vx = dx / d * sp;
+                        self.vy = dy / d * sp;
+                    }
+                    self.ai[1] += 1.0;
+                    let ddx = anchor_x - cx;
+                    let ddy = anchor_y - cy;
+                    if (ddx * ddx + ddy * ddy).sqrt() > 700.0 {
                         self.ai[0] = 0.0;
                     }
                 }
             }
             NpcKind::GolemHeadFree => {
-                // The free head: the spawn shield clears at 120 ticks
-                // (the vanilla AI_048 clears `dontTakeDamage` — the
-                // exact arm lands with the full machine), then the
-                // EoC-shape hover.
-                self.caster_counter += 1;
-                if self.caster_counter > 120 {
-                    self.dont_take_damage = false;
-                }
+                // The free head (`aiStyle 48`, `NPC.cs:31351-31586`): the
+                // `dontTakeDamage` SetDefaults shield NEVER clears — the
+                // machine is the hover + the volleys only.
                 let tx = pcx - cx;
-                let ty = (pcy - 150.0) - cy;
-                let d = (tx * tx + ty * ty).sqrt().max(1.0);
-                self.vx += (tx / d) * 0.07;
-                self.vy += (ty / d) * 0.07;
+                let ty = (pcy - 300.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(0.001);
+                self.vx += tx / d * 0.05;
+                self.vy += ty / d * 0.05;
                 self.vx = self.vx.clamp(-7.0, 7.0);
                 self.vy = self.vy.clamp(-7.0, 7.0);
+                // The fireball salvo (`:31436-31465`): the 300 cadence,
+                // the 258 dmg 20 at the 8 speed.
+                self.ai[1] += 1.0;
+                if self.ai[1] >= 300.0 {
+                    self.ai[1] = 0.0;
+                    self.wants_hostile_shot = Some((
+                        crate::projectile::GOLEM_FIREBALL,
+                        cx,
+                        cy - 10.0,
+                        pcx - cx,
+                        pcy - cy,
+                        20,
+                    ));
+                }
+                // The eye-beam barrage (`:31506-31568`): the 100+Next(4800)
+                // cadence folds to the flat 1500 average; 2 per volley,
+                // the 259 dmg/speed tiers by the BODY's hp ratio
+                // (`:31524-31548`: 24->29 dmg, 11->12.25 at 50/40/30/20/10%),
+                // the +-14 spread, the 3-tick lead.
+                self.ai[2] += 1.0;
+                if self.ai[2] > 1500.0 {
+                    self.ai[2] = 0.0;
+                    let ratio = world.golem_hp_ratio;
+                    let (dmg, sp) = if ratio < 0.1 {
+                        (29, 12.25)
+                    } else if ratio < 0.2 {
+                        (28, 12.0)
+                    } else if ratio < 0.3 {
+                        (27, 11.75)
+                    } else if ratio < 0.4 {
+                        (26, 11.5)
+                    } else if ratio < 0.5 {
+                        (25, 11.25)
+                    } else {
+                        (24, 11.0)
+                    };
+                    for sx in [-14.0, 14.0] {
+                        let mut vx = pcx - (cx + sx);
+                        let mut vy = pcy - (cy - 50.0);
+                        let vd = (vx * vx + vy * vy).sqrt().max(0.001);
+                        vx = vx / vd * sp;
+                        vy = vy / vd * sp;
+                        self.wants_hostile_shot = Some((
+                            crate::projectile::GOLEM_EYE_BEAM,
+                            cx + sx + vx * 3.0,
+                            cy - 50.0 + vy * 3.0,
+                            vx,
+                            vy,
+                            dmg,
+                        ));
+                    }
+                }
             }
             _ => {}
         }
@@ -4795,6 +5553,11 @@ impl Npc {
             NpcKind::PirateCorsair => 81,
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
+            NpcKind::MartianDrone => 84,
+            NpcKind::BrainScrambler => 85,
+            NpcKind::RayGunner => 86,
+            NpcKind::ScutlixRider => 87,
+            NpcKind::Scutlix => 88,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -6738,6 +7501,121 @@ mod tests {
     }
 
     #[test]
+    fn the_golem_body_charges_slams_and_fires() {
+        // `AI_045_Golem` classic core (`NPC.cs:19638-19766`): the parts
+        // spawn request on the first tick (the fists + the head), the
+        // 300-charge -> -20 -> the slam at -1, the flight states. The
+        // shield (the head alive) rides the sim.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 115.0 * 16.0;
+        player.y = 90.0 * 16.0;
+        let mut body = Npc::new(NpcKind::Golem, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        body.hp = body.max_hp;
+        body.caster_counter = 0;
+        body.cast_windup = 0;
+        // The init tick spawn-requests the parts.
+        body.update_golem(&w, &player);
+        assert!(body.wants_sphere.is_some(), "the parts request");
+        // The charge: 300 ticks -> the counter flips negative (the
+        // countdown ticks past the cap).
+        for _ in 0..300 {
+            body.update_golem(&w, &player);
+        }
+        assert!(
+            body.cast_windup < 0,
+            "the charge cap flips ({})",
+            body.cast_windup
+        );
+        // The slam at -1: the launch velocity + the state flip.
+        for _ in 0..19 {
+            body.update_golem(&w, &player);
+        }
+        assert_eq!(body.ai[0], 1.0, "the flight state");
+        assert!(body.vy.abs() > 10.0, "the slam launch");
+    }
+
+    #[test]
+    fn the_golem_head_fireballs_beams_and_shield() {
+        // The head's tether (`:31146-31164`) + the fireball cycle
+        // (300, dmg 18/24) + the beam volley (phase-1, two 259 shots).
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 115.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut head = Npc::new(
+            NpcKind::GolemHead,
+            100.0 * 16.0,
+            100.0 * 16.0 - 57.0,
+            1,
+            0.0,
+        );
+        head.hp = head.max_hp;
+        // The phase-0 fireball at 300.
+        let mut fired = None;
+        for _ in 0..301 {
+            head.update_golem(&w, &player);
+            if let Some(p) = head.wants_hostile_shot.take() {
+                fired = Some(p);
+                break;
+            }
+        }
+        let (kind, _, _, _, _, dmg) = fired.expect("the head fireball");
+        assert_eq!(kind, crate::projectile::GOLEM_FIREBALL);
+        assert_eq!(dmg, 18, "the phase-0 damage");
+        // The phase-1 (half life): the 24-damage fireball + the beams.
+        head.hp = head.max_hp / 3;
+        head.ai[1] = 0.0;
+        let mut beam = 0;
+        for _ in 0..700 {
+            head.update_golem(&w, &player);
+            while let Some(p) = head.wants_hostile_shot.take() {
+                if p.0 == crate::projectile::GOLEM_EYE_BEAM && p.5 == 28 {
+                    beam += 1;
+                }
+            }
+        }
+        assert!(beam >= 2, "the two-shot beam volley ({beam})");
+    }
+
+    #[test]
+    fn the_golem_fists_follow_wind_up_and_dash() {
+        // `AI_047_GolemFist` (`NPC.cs:19231-19503`): the follow to the
+        // anchor, the 60-contact -> the 30 wind-up, the dash.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 110.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut fist = Npc::new(NpcKind::GolemFistLeft, 20.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        fist.hp = fist.max_hp;
+        // The follow: the fist approaches the anchor column.
+        for _ in 0..30 {
+            fist.update_golem(&w, &player);
+        }
+        assert!(fist.vx > 0.0, "the follow pulls toward the anchor");
+        // The contact (60) -> the wind-up (30) -> the dash: the 90 ticks,
+        // then the launch tick sets the 12-speed lunge.
+        for _ in 0..91 {
+            fist.update_golem(&w, &player);
+        }
+        assert_eq!(fist.ai[0], 2.0, "the dash state after the wind-up");
+        let dash_speed = (fist.vx * fist.vx + fist.vy * fist.vy).sqrt();
+        assert!(
+            (dash_speed - 12.0).abs() < 2.0,
+            "the 12-speed lunge ({dash_speed})"
+        );
+    }
+
+    #[test]
     fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
         // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
         // the 250/15/0.5 pair, the 18x34 vs 18x40 bodies, the kind<->u16
@@ -6843,6 +7721,45 @@ mod tests {
         assert_eq!(e.net_id, 245, "the parts fold onto the Golem entry");
     }
 
+    #[test]
+    fn the_golem_free_head_tiers_by_body_hp() {
+        // :31524-31548's tiers: the beams escalate by the body's hp ratio
+        // (24 -> 29 dmg, 11 -> 12.25 speed) — the ratio rides the World.
+        let mut w = ground_air();
+        w.golem_present = true;
+        w.golem_x = 100.0 * 16.0;
+        w.golem_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 115.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        let mut free = Npc::new(NpcKind::GolemHeadFree, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        free.hp = free.max_hp;
+        free.ai[2] = 1500.0;
+        let mut beam = None;
+        free.update_golem(&w, &player);
+        if let Some(p) = free.wants_hostile_shot.take() {
+            beam = Some(p);
+        }
+        let (kind, _, _, vx, vy, dmg) = beam.expect("the volley fires");
+        assert_eq!(kind, crate::projectile::GOLEM_EYE_BEAM);
+        assert_eq!(dmg, 24, "the full-body damage");
+        let sp = (vx * vx + vy * vy).sqrt();
+        assert!((sp - 11.0).abs() < 0.5, "the 11 speed ({sp})");
+        // The mortally wounded body: 29 dmg at 12.25.
+        w.golem_hp_ratio = 0.05;
+        free.ai[2] = 1500.0;
+        let mut beam2 = None;
+        free.update_golem(&w, &player);
+        for _ in 0..3 {
+            if let Some(p) = free.wants_hostile_shot.take() {
+                beam2 = Some(p);
+            }
+        }
+        let (_, _, _, vx2, vy2, dmg2) = beam2.expect("the escalated volley");
+        assert_eq!(dmg2, 29, "the low-body damage tier");
+        let sp2 = (vx2 * vx2 + vy2 * vy2).sqrt();
+        assert!((sp2 - 12.25).abs() < 0.5, "the 12.25 speed ({sp2})");
+    }
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
