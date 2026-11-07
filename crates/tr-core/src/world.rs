@@ -137,6 +137,11 @@ pub struct World {
     /// head/fists/free-head tethers read it (the WoF write-through
     /// shape).
     pub golem_present: bool,
+    /// `WorldGen.spawnMeteor` (`WorldGen.cs:4208`): the pending meteorite
+    /// landing — the night bookend's `Next(50)` after the boss-2 downing
+    /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
+    /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
+    pub spawn_meteor: bool,
     /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
     /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
     /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
@@ -237,6 +242,7 @@ impl World {
             downed_deerclops: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
+            spawn_meteor: false,
             golem_x: 0.0,
             golem_y: 0.0,
             slime_rain: false,
