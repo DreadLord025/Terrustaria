@@ -13,7 +13,7 @@
 //!   the `AddGenerationPass` anchor and the conditional-registration gate.
 //!   It is the model and the slot registry future passes register into —
 //!   it is never walked at runtime.
-//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 39 steps in
+//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 44 steps in
 //!   today's exact call order, each an adapter that calls the existing
 //!   `pub(crate)` pass fn unchanged. The order is NOT the vanilla order (the
 //!   deviations are pinned by the world contract — see the per-step
@@ -25,14 +25,15 @@
 //! adapters ignore it (the port's shape-level passes keep their own pinned
 //! constants), but future passes read their options from there instead of
 //! hardcoding. A future pass slots between existing steps only with its own
-//! RNG stream (`Rng(seed ^ fnv(name))` — vanilla's per-pass re-seed is what
-//! makes its chain insertion-safe); the three contract streams here must
-//! never shift.
+//! RNG stream ([`Streams::pass_rng`] — `Rng(seed ^ fnv1a64(name))`; vanilla's
+//! per-pass re-seed is what makes its chain insertion-safe); the three
+//! contract streams here must never shift.
 
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::caves;
 use super::config::{ConfigSection, WorldGenConfig};
+use super::evil;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -49,11 +50,31 @@ use crate::world::World;
 
 // --- streams ----------------------------------------------------------------
 
+/// FNV-1a 64-bit over a pass name — the mixer that keys each per-pass stream
+/// off the world seed. The offset basis and prime are the standard constants
+/// (the same numbers the embedded-config provenance pin in `config.rs`'s
+/// `the_embedded_copy_is_unmodified` hashes with).
+#[allow(dead_code)] // the per-pass stream contract — consumed from Phase 3 on
+pub(crate) fn fnv1a64(name: &str) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01B3;
+    let mut hash = OFFSET_BASIS;
+    for byte in name.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
+}
+
 /// The three worldgen xorshift streams. The seeds are contract constants
 /// (`noise.rs`: "the output streams of both are part of the world contract");
 /// `Rng` construction draws nothing, so creating all three up front (vanilla
 /// creates its per-pass stream inside `RunPass`) shifts no draw.
 pub(crate) struct Streams {
+    /// The world seed everything here derives from (`new`'s argument, kept so
+    /// `pass_rng` stays seed-keyed).
+    #[allow(dead_code)] // read only by `pass_rng` until Phase 3
+    seed: u64,
     /// The main stream — the biome, blob, ore, liquid, dungeon, tree and
     /// tail-till-the-end draws (`mod.rs`'s `rng`).
     pub(crate) rng: Rng,
@@ -68,14 +89,51 @@ pub(crate) struct Streams {
 impl Streams {
     pub(crate) fn new(seed: u64) -> Streams {
         Streams {
+            seed,
             rng: Rng(seed ^ 0xA076_1D64_78BD_642F),
             drng: Rng(seed ^ 0x5DEE_CE66_D1A4_9B5F),
             srng: Rng(seed ^ 0x9E37_79B9_7F4A_7C15),
         }
     }
+
+    /// The per-pass stream — the port's model of the vanilla per-pass
+    /// re-seed (`WorldGenerator.cs:497`: `Main.rand = new UnifiedRandom(
+    /// this._seed)` runs before every pass applies). Deviations from the
+    /// vanilla fact, both deliberate and recorded in `docs/ANALYSIS.md` as
+    /// the faithful passes land: xorshift stands in for the Knuth subtractive
+    /// `UnifiedRandom`, and each pass draws from its own name-mixed stream
+    /// (`seed ^ fnv1a64(name)`) instead of every pass re-drawing the same
+    /// world-seed sequence — the isolation is what makes a chain insertion
+    /// shift no other pass's draws. The three contract streams above are
+    /// untouched by this.
+    #[allow(dead_code)] // the per-pass stream contract — consumed from Phase 3 on
+    pub(crate) fn pass_rng(&self, name: &str) -> Rng {
+        Rng(self.seed ^ fnv1a64(name))
+    }
 }
 
 // --- cross-pass state (the GenVars slice) -----------------------------------
+
+/// The Lihzahrd temple bounds — the port's slice of the temple GenVars
+/// statics: the room-extent rectangle (`GenVars.cs:188-196` — `tLeft`/
+/// `tRight`/`tTop`/`tBottom`/`tRooms`, written by the temple pass
+/// `WorldGen.cs:34231-34235`) and the altar anchor (`GenVars.cs:198-200` —
+/// `lAltarX`/`lAltarY`, set when the altar tile places `WorldGen.cs:33999`).
+/// Plain ints with C# static zero-init semantics; `l_altar_x`/`l_altar_y`
+/// being 0 simply means "not placed yet" until the temple pass writes them.
+/// The M5-TEMPLE seam: Phase 6's placement search writes this, the later
+/// temple work reads it.
+#[allow(dead_code)] // written by the temple pass from Phase 6 on
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) struct TempleBounds {
+    pub(crate) t_left: i32,
+    pub(crate) t_right: i32,
+    pub(crate) t_top: i32,
+    pub(crate) t_bottom: i32,
+    pub(crate) t_rooms: i32,
+    pub(crate) l_altar_x: i32,
+    pub(crate) l_altar_y: i32,
+}
 
 /// The cross-pass generation state — the port's slice of the C# `GenVars`
 /// statics (`WorldBuilding/GenVars.cs`): the stage products every later pass
@@ -85,6 +143,34 @@ pub(crate) struct GenVars {
     layers: Option<Layers>,
     spans: Option<BiomeSpans>,
     shrine_spots: Vec<(i32, i32)>,
+    /// The jungle origin column — `GenVars.jungleOriginX`
+    /// (`GenVars.cs:166`). Vanilla draws it once in `Reset`, not in the
+    /// pass (`WorldGen.cs:11341-11376` — `Next(15, 30)` with the dungeon-side
+    /// sign mapping); the port's Reset stand-in is the spans step, which
+    /// draws it from Phase 3 on, and the faithful jungle pass consumes it
+    /// without redrawing.
+    #[allow(dead_code)] // written by the spans step from Phase 3 on
+    pub(crate) jungle_origin_x: i32,
+    /// `GenVars.jungleMinX`/`jungleMaxX` (`GenVars.cs:168,170`) — reset to
+    /// the C# unset sentinel −1 (`WorldGen.cs:11176-11177`) and filled by
+    /// the jungle-band scans (the origin-derived band from Phase 3, the
+    /// `MudsWallsInJungle` scan from Phase 5).
+    #[allow(dead_code)] // written from Phase 3 on
+    pub(crate) jungle_min_x: i32,
+    #[allow(dead_code)] // written from Phase 3 on
+    pub(crate) jungle_max_x: i32,
+    /// The temple bounds — the M5-TEMPLE seam (see [`TempleBounds`]).
+    #[allow(dead_code)] // written by the temple pass from Phase 6 on
+    pub(crate) temple: TempleBounds,
+    /// `GenVars.waterLine`/`lavaLine` (`GenVars.cs:62-64`) — the
+    /// `TerrainPass` products the mud runners read
+    /// (`TerrainPass.cs:211-236`: `(int)(rockLayer + maxTilesY)/2 +
+    /// Next(-100, 20)` and `+ Next(50, 80)`), drawn in the terrain-fill
+    /// step from the pass's own fresh stream.
+    #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
+    pub(crate) water_line: i32,
+    #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
+    pub(crate) lava_line: i32,
 }
 
 impl Default for GenVars {
@@ -94,6 +180,25 @@ impl Default for GenVars {
             layers: None,
             spans: None,
             shrine_spots: Vec::new(),
+            // The C# reset values: the jungle bounds to their unset
+            // sentinel (`WorldGen.cs:11176-11177`), the origin and the
+            // temple statics to plain zero-init (`GenVars.cs:166-200`).
+            jungle_origin_x: 0,
+            jungle_min_x: -1,
+            jungle_max_x: -1,
+            temple: TempleBounds {
+                t_left: 0,
+                t_right: 0,
+                t_top: 0,
+                t_bottom: 0,
+                t_rooms: 0,
+                l_altar_x: 0,
+                l_altar_y: 0,
+            },
+            // The C# statics are zero until `TerrainPass` writes them
+            // (`TerrainPass.cs:235-236`).
+            water_line: 0,
+            lava_line: 0,
         }
     }
 }
@@ -846,14 +951,24 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("terrain fill", "Terrain", step_terrain_fill),
     step!("plan biome spans", "", step_plan_biome_spans),
     step!("jungle", "Jungle", step_jungle),
-    step!("evil", "Corruption", step_evil),
+    step!(
+        "mud caves to grass",
+        "Mud Caves To Grass",
+        step_mud_caves_to_jungle_grass
+    ),
     step!("mushroom patches", "Mushroom Patches", step_mushroom),
     step!("granite and marble", "Marble", step_granite_marble),
     step!("cave fields", "Tunnels", step_cave_fields),
     step!("stone-in-dirt blobs", "Rocks In Dirt", step_stone_in_dirt),
     step!("dirt-in-stone blobs", "Dirt In Rocks", step_dirt_in_stone),
+    step!("dirt to mud", "Dirt To Mud", step_dirt_to_mud),
     step!("ash blobs", "Underworld", step_ash_blobs),
     step!("ores and gems", "Shinies", step_ores),
+    // The vanilla Corruption slot (`WorldGen.cs:13866`): after Shinies
+    // (`:13182`) and Underworld (`:13645`), before Lakes (`:14556`) — the
+    // M5-BIOME phase-4 move (was between `mud caves to grass` and
+    // `mushroom patches`).
+    step!("evil", "Corruption", step_evil),
     step!("liquids", "Lakes", step_liquids),
     step!("dungeon", "Dungeon", step_dungeon),
     step!("ocean caves", "Create Ocean Caves", step_ocean_caves),
@@ -867,6 +982,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
     step!("altars", "Altars", step_altars),
+    // The vanilla slot (`WorldGen.cs:15810`): immediately after Altars
+    // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
+    // insertion.
+    step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
     step!("beehives", "Hives", step_beehives),
@@ -881,7 +1000,19 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Glowing Mushrooms and Jungle Plants",
         step_mushroom_jungle_plants
     ),
+    // The vanilla slot (`WorldGen.cs:20165`): immediately after the plants
+    // pass (`:20122`), before Vines (`:20193`) — the M5-BIOME phase-5
+    // insertion.
+    step!("jungle plants", "Jungle Plants", step_jungle_plants),
     step!("vines", "Vines", step_vines),
+    // The vanilla slot (`WorldGen.cs:20813`): after Vines, before the
+    // islands step the plan pins it against — the M5-BIOME phase-5
+    // insertion.
+    step!(
+        "muds walls in jungle",
+        "Muds Walls In Jungle",
+        step_muds_walls_in_jungle
+    ),
     step!(
         "floating islands",
         "Floating Islands",
@@ -916,7 +1047,7 @@ fn step_terrain_height_map(
 fn step_terrain_fill(
     world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     noise: &Noise,
     _pass_config: &ConfigSection,
@@ -926,23 +1057,49 @@ fn step_terrain_fill(
         .map
         .as_ref()
         .expect("the terrain height-map step did not run");
-    gv.layers = Some(terrain::fill_terrain(world, width, height, noise, map));
+    let layers = terrain::fill_terrain(world, width, height, noise, map);
+    // `TerrainPass`'s water/lava lines (`TerrainPass.cs:211-236`):
+    // `num13 = (int)(rockLayer + maxTilesY) / 2 + Next(-100, 20)` →
+    // `GenVars.waterLine`, `lavaLine = num13 + Next(50, 80)`. Drawn from the
+    // pass's own fresh stream (the per-pass contract) — the port's Terrain
+    // stand-in otherwise draws nothing, so no existing draw shifts.
+    let (water_line, lava_line) = {
+        let mut trng = streams.pass_rng("Terrain");
+        let water_line = ((layers.rock_layer + height as f64) as i32) / 2 + trng.range(-100, 20);
+        let lava_line = water_line + trng.range(50, 80);
+        (water_line, lava_line)
+    };
+    gv.water_line = water_line;
+    gv.lava_line = lava_line;
+    gv.layers = Some(layers);
 }
 
 fn step_plan_biome_spans(
-    _world: &mut World,
+    world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // `Reset`'s jungle origin draw (`WorldGen.cs:11341-11376`): the port's
+    // Reset stand-in draws `Next(15, 30)` from a fresh "Jungle" stream — the
+    // dungeon-side sign is fixed Right because the port's dungeon sits on
+    // the right (`plan_spans`' `dungeon_x`), so the C# `Next(2)` side draw
+    // (`:11348`) is not portable. The pass consumes `jungle_origin_x`
+    // without redrawing.
+    let jungle_origin_x = {
+        let mut origin_rng = streams.pass_rng("Jungle");
+        let percent = origin_rng.range(15, 30);
+        (world.width as f64 * (percent as f64 * 0.01)) as i32
+    };
+    gv.jungle_origin_x = jungle_origin_x;
     let (width, beach) = {
         let map = gv.map();
-        (_world.width, map.beach)
+        (world.width, map.beach)
     };
     let surface = gv.map().heights.clone();
-    gv.spans = Some(biomes::plan_spans(width, &surface, beach));
+    gv.spans = Some(biomes::plan_spans(width, &surface, beach, jungle_origin_x));
 }
 
 fn step_jungle(
@@ -953,13 +1110,59 @@ fn step_jungle(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
+    // The faithful `JunglePass` draws from its own fresh per-pass stream
+    // (the `WorldGenerator.cs:497` re-seed model — the Phase-1 contract).
+    let jungle_origin_x = gv.jungle_origin_x;
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
+    let beach = gv.map().beach;
     biomes::pass_jungle(
         world,
-        &map.heights,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.rng,
+        jungle_origin_x,
+        world_surface,
+        rock_layer,
+        water_line,
+        lava_line,
+        beach,
+        &mut streams.pass_rng("Jungle"),
+    );
+}
+
+fn step_mud_caves_to_jungle_grass(
+    world: &mut World,
+    _gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    biomes::pass_mud_caves_to_jungle_grass(world);
+}
+
+fn step_dirt_to_mud(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (rock_low, rock_layer, world_surface) = {
+        let l = gv.layers();
+        (l.rock_low, l.rock_layer, l.world_surface)
+    };
+    let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
+    biomes::pass_dirt_to_mud(
+        world,
+        rock_low,
+        rock_layer,
+        water_line,
+        lava_line,
+        world_surface,
+        &mut streams.pass_rng("Dirt To Mud"),
     );
 }
 
@@ -971,12 +1174,22 @@ fn step_evil(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let map = gv.map();
-    biomes::pass_evil(
+    // The faithful `CorruptionAndCrimson` draws from its own fresh per-pass
+    // stream (the `WorldGenerator.cs:497` re-seed model — the Phase-1
+    // contract). The dungeon position rides `BiomeSpans.dungeon_x`
+    // (`GenVars.CurrentDungeonGenVars.dungeonLocation` — Decision #10).
+    let (world_surface_low, world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface, l.rock_layer)
+    };
+    let dungeon_location = gv.spans().dungeon_x;
+    evil::corruption_and_crimson(
         world,
-        &map.heights,
-        gv.spans(),
-        &mut streams.rng,
+        &mut streams.pass_rng("Corruption"),
+        world_surface_low,
+        world_surface,
+        rock_layer,
+        dungeon_location,
         opts.crimson,
     );
 }
@@ -1186,11 +1399,17 @@ fn step_underground_jungle_trees(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The faithful `UndergroundJungleTrees` draws from its own fresh
+    // per-pass stream (the `WorldGenerator.cs:497` re-seed model — the
+    // Phase-1 contract; the phase-5 dispatch's stated preference). Moving it
+    // off `drng` shifts the later `drng` consumers (`exposed gems`, `vines`,
+    // `floating islands`) along the stream — the accepted world change
+    // (the phase discovery Gap 6, ANALYSIS row in Phase 7).
+    let world_surface = gv.layers().world_surface;
     biome_detail::pass_underground_jungle_trees(
         world,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.drng,
+        world_surface,
+        &mut streams.pass_rng("Jungle Trees"),
     );
 }
 
@@ -1307,8 +1526,17 @@ fn step_temple(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let _altar =
-        temple::pass_lihzahrd_temple(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // The faithful placement search (`WorldGen.cs:15834-15926`) draws from
+    // the pass's own fresh stream (`Streams::pass_rng` — the per-pass
+    // re-seed model); the shape-level shell keeps the box body and publishes
+    // the GenVars the M5-TEMPLE passes read (the bounds `WorldGen.cs:34231-
+    // 34235`, the altar anchor `:34000-34001`). The shared `srng` stream
+    // loses this pass's draws — the later `srng` consumers shift along it
+    // (the accepted world change, recorded for ANALYSIS).
+    let dungeon_x = gv.spans().dungeon_x;
+    let rock_layer = gv.layers().rock_layer;
+    let mut trng = streams.pass_rng("Jungle Temple");
+    gv.temple = temple::pass_lihzahrd_temple(world, dungeon_x, rock_layer, &mut trng);
 }
 
 fn step_cave_houses(
@@ -1364,13 +1592,71 @@ fn step_sword_shrines(
 
 fn step_mushroom_jungle_plants(
     world: &mut World,
-    _gv: &mut GenVars,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The faithful jungle arms draw from the pass's own fresh stream; the
+    // mushroom half stays shape-level (M5-BIOME-2's row).
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    biome_detail::pass_mushroom_and_jungle_plants(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Glowing Mushrooms and Jungle Plants"),
+    );
+}
+
+fn step_wet_jungle(
+    world: &mut World,
+    gv: &mut GenVars,
     _streams: &mut Streams,
     _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biome_detail::pass_mushroom_and_jungle_plants(world);
+    // `SurfaceWaterInJungle` draws nothing — no stream needed.
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    biome_detail::pass_wet_jungle(world, surface_low, world_surface);
+}
+
+fn step_jungle_plants(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    biome_detail::pass_jungle_plants_part2(world, &mut streams.pass_rng("Jungle Plants"));
+}
+
+fn step_muds_walls_in_jungle(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The pass writes `GenVars.jungleMinX/jungleMaxX` (`WorldGen.cs:20854-
+    // 20855`) — the port's GenVars fields gain their writer here.
+    let world_surface = gv.layers().world_surface;
+    let (min_x, max_x) = biome_detail::pass_muds_walls_in_jungle(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Muds Walls In Jungle"),
+    );
+    gv.jungle_min_x = min_x;
+    gv.jungle_max_x = max_x;
 }
 
 fn step_vines(
@@ -1510,6 +1796,17 @@ pub(crate) fn boot_statics(world: &mut World) {
     // cascade reaches them.
     world.frame_important[27] = true;
     world.frame_important[28] = true;
+    // The demon altar 26 and the shadow orb 31 (`Main.cs:7661/:7666`) — the
+    // M5-BIOME phase-4 evil pass writes their style/frame data, which the
+    // framer must keep.
+    world.frame_important[26] = true;
+    world.frame_important[31] = true;
+    // The temple tiles the temple pass writes — the dart trap 137
+    // (`Main.cs:7431`) and the Lihzahrd altar 237 (`Main.cs:10234`) are
+    // frame-important, so the framer keeps their stored frames; the
+    // Lihzahrd brick 226 is not (bricks auto-frame).
+    world.frame_important[137] = true;
+    world.frame_important[237] = true;
     world.frame_important[78] = true;
     world.frame_important[82] = true;
     world.frame_important[83] = true;
@@ -1574,16 +1871,26 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_39_named_steps() {
+    fn the_executed_pipeline_is_44_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 39);
+        assert_eq!(names.len(), 44);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
         sorted.dedup();
         assert_eq!(sorted.len(), count, "step names must be unique");
-        // The order is the pre-scaffold generate() call order (pinned; the
-        // byte contract — see the module doc).
+        // The order: the pre-scaffold generate() call order with the two
+        // M5-BIOME phase-3 insertions — `mud caves to grass` right after
+        // `jungle` (vanilla `:12466` → `:12468`) and `dirt to mud` between
+        // `dirt-in-stone blobs` and `ash blobs` (satisfies the vanilla
+        // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) —
+        // the phase-4 move of `evil` to its vanilla slot between
+        // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`),
+        // and the three phase-5 insertions — `wet jungle` right after
+        // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
+        // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
+        // and `muds walls in jungle` between `vines` and `floating islands`
+        // (vanilla `:20193` → `:20813`).
         assert_eq!(
             names,
             vec![
@@ -1591,14 +1898,16 @@ mod tests {
                 "terrain fill",
                 "plan biome spans",
                 "jungle",
-                "evil",
+                "mud caves to grass",
                 "mushroom patches",
                 "granite and marble",
                 "cave fields",
                 "stone-in-dirt blobs",
                 "dirt-in-stone blobs",
+                "dirt to mud",
                 "ash blobs",
                 "ores and gems",
+                "evil",
                 "liquids",
                 "dungeon",
                 "ocean caves",
@@ -1608,6 +1917,7 @@ mod tests {
                 "jungle shrines",
                 "chests",
                 "altars",
+                "wet jungle",
                 "pyramids",
                 "pots",
                 "beehives",
@@ -1618,7 +1928,9 @@ mod tests {
                 "spike pits",
                 "sword shrines",
                 "mushroom and jungle plants",
+                "jungle plants",
                 "vines",
+                "muds walls in jungle",
                 "floating islands",
                 "slopes",
                 "living trees",
@@ -1628,6 +1940,79 @@ mod tests {
                 "world tail",
             ]
         );
+    }
+
+    /// DW-3.3: the two M5-BIOME phase-3 steps sit in their vanilla
+    /// positions — `mud caves to grass` immediately after `jungle`
+    /// (vanilla `:12466` → `:12468`) and `dirt to mud` between
+    /// `dirt-in-stone blobs` and `ash blobs` (the vanilla DirtToMud <
+    /// Shinies and DirtToMud < Underworld relative pairs, research §5.3).
+    #[test]
+    fn test_DW_3_3_new_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("mud caves to grass"), pos("jungle") + 1);
+        assert_eq!(pos("dirt to mud"), pos("dirt-in-stone blobs") + 1);
+        assert_eq!(names[pos("dirt to mud") + 1], "ash blobs");
+        // The vanilla chain carries both passes in the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Mud Caves To Grass") == cpos("Jungle") + 1);
+        assert!(cpos("Dirt To Mud") < cpos("Shinies") && cpos("Dirt To Mud") < cpos("Underworld"));
+    }
+
+    /// DW-4.3: the evil step sits between `ores and gems`/Shinies
+    /// (`WorldGen.cs:13182`) and `liquids`/Lakes (`:14556`) — the vanilla
+    /// Corruption slot (`:13866`), with Underworld (`:13645`) before it too.
+    #[test]
+    fn test_DW_4_3_evil_step_sits_between_ores_and_liquids() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("evil"), pos("ores and gems") + 1);
+        assert_eq!(names[pos("evil") + 1], "liquids");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Shinies") < cpos("Corruption"));
+        assert!(cpos("Underworld") < cpos("Corruption"));
+        assert!(cpos("Corruption") < cpos("Lakes"));
+    }
+
+    /// DW-5.3: the three M5-BIOME phase-5 steps sit in their vanilla
+    /// positions — `wet jungle` immediately after `altars` (the vanilla
+    /// adjacent pair Altars `:15750` → Wet Jungle `:15810` → Jungle Temple
+    /// `:15834`), `jungle plants` immediately after `mushroom and jungle
+    /// plants` (vanilla `:20122` → `:20165`, before Vines `:20193`) and
+    /// `muds walls in jungle` between `vines` and `floating islands` (the
+    /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
+    /// `:20193` → `:20813`).
+    #[test]
+    fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wet jungle"), pos("altars") + 1);
+        assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
+        assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
+        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // The vanilla chain carries the same relative pairs.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Wet Jungle") == cpos("Altars") + 1);
+        assert!(cpos("Jungle Temple") == cpos("Wet Jungle") + 1);
+        assert!(cpos("Jungle Plants") == cpos("Glowing Mushrooms and Jungle Plants") + 1);
+        assert!(cpos("Muds Walls In Jungle") > cpos("Vines"));
     }
 
     #[test]
@@ -1683,5 +2068,150 @@ mod tests {
         assert_eq!(direct.moon_phase, via_pipeline.moon_phase);
         assert_eq!(direct.hell_back_style, via_pipeline.hell_back_style);
         assert_eq!(direct.frame_important, via_pipeline.frame_important);
+    }
+
+    // --- Phase 1: stream scaffolding ----------------------------------------
+
+    /// DW-1.1: `fnv1a64` against the standard FNV-1a 64 reference vectors
+    /// (cross-checked against a Python reference) plus the pass names the
+    /// per-pass streams mix.
+    #[test]
+    fn test_DW_1_1_fnv1a64_known_vectors() {
+        assert_eq!(fnv1a64(""), 0xcbf2_9ce4_8422_2325); // the offset basis
+        assert_eq!(fnv1a64("a"), 0xaf63_dc4c_8601_ec8c);
+        assert_eq!(fnv1a64("foobar"), 0x8594_4171_f739_67e8);
+        assert_eq!(fnv1a64("Terrain"), 0x6a63_c902_245f_5e0e);
+        assert_eq!(fnv1a64("Jungle"), 0x416a_d620_6e03_3a84);
+        // Byte order matters (a sum-style hash would fold these together).
+        assert_ne!(fnv1a64("ab"), fnv1a64("ba"));
+    }
+
+    /// DW-1.1: `pass_rng` is deterministic (same seed + name replays the
+    /// identical draw sequence) and name-distinct (each name keys its own
+    /// stream, different from the three contract streams, with no two
+    /// vanilla pass names colliding).
+    #[test]
+    fn test_DW_1_1_pass_rng_deterministic_and_name_distinct() {
+        let streams = Streams::new(42);
+        // Deterministic replay across two independently built Streams.
+        let mut a = streams.pass_rng("Jungle");
+        let mut b = Streams::new(42).pass_rng("Jungle");
+        for _ in 0..64 {
+            assert_eq!(a.next_u32(), b.next_u32());
+        }
+        // Name-distinct: two pass names never share a stream seed.
+        let jungle = streams.pass_rng("Jungle").0;
+        let corruption = streams.pass_rng("Corruption").0;
+        assert_ne!(jungle, corruption);
+        assert_ne!(
+            streams.pass_rng("Jungle").next_u32(),
+            streams.pass_rng("Corruption").next_u32()
+        );
+        // Neither collides with the three contract streams' seeds.
+        assert_ne!(jungle, streams.rng.0);
+        assert_ne!(jungle, streams.drng.0);
+        assert_ne!(jungle, streams.srng.0);
+        // And every distinct vanilla pass name keys a distinct stream (the
+        // skyblock "Jungle" is a deliberate duplicate name → same stream).
+        let mut hashes: Vec<u64> = VANILLA_CHAIN
+            .iter()
+            .map(|p| streams.pass_rng(p.name).0)
+            .collect();
+        hashes.sort_unstable();
+        hashes.dedup();
+        let mut names: Vec<&'static str> = VANILLA_CHAIN.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(hashes.len(), names.len(), "pass names must not collide");
+    }
+
+    /// The GenVars defaults carry the C# reset values — the unset sentinels
+    /// (`WorldGen.cs:11176-11177`) and the static zero-inits
+    /// (`GenVars.cs:166-200`) — so adding the fields shifts no behaviour
+    /// (DW-1.2's "no behavioral change" arm on the state side).
+    #[test]
+    fn genvars_defaults_carry_the_csharp_reset_values() {
+        let gv = GenVars::default();
+        assert_eq!(gv.jungle_origin_x, 0);
+        assert_eq!(gv.jungle_min_x, -1);
+        assert_eq!(gv.jungle_max_x, -1);
+        assert_eq!(
+            gv.temple,
+            TempleBounds {
+                t_left: 0,
+                t_right: 0,
+                t_top: 0,
+                t_bottom: 0,
+                t_rooms: 0,
+                l_altar_x: 0,
+                l_altar_y: 0,
+            }
+        );
+    }
+
+    // --- Phase 6: temple stub -------------------------------------------------
+
+    /// DW-6.1: `step_temple` publishes the shell's bounds and the altar
+    /// anchor into `GenVars.temple` — the reachability seam the M5-TEMPLE
+    /// passes (`templePart2`/`LihzahrdAltar`) read. The 512-tall world has
+    /// no vanilla y band (`maxTilesY - 600 <= 0`), so the valve sends the
+    /// search to the fallback: `x = maxTilesX - dungeon_x`,
+    /// `y = (int)rockLayer + 100` (`WorldGen.cs:15926-15930`).
+    #[test]
+    fn test_DW_6_1_step_temple_writes_genvars_temple() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut gv = GenVars::default();
+        gv.spans = Some(biomes::BiomeSpans {
+            jungle_start: 0,
+            jungle_end: 512,
+            dungeon_x: 300,
+        });
+        gv.layers = Some(Layers {
+            avg_surface: 100.0,
+            world_surface: 100.0,
+            rock_layer: 280.0,
+            hell_top: 480,
+            surface_low: 80.0,
+            surface_high: 120.0,
+            rock_low: 260.0,
+            rock_high: 300.0,
+        });
+        let opts = GenOptions::default();
+        let noise = Noise { seed: opts.seed };
+        let config = WorldGenConfig::parse();
+        let config = config.pass("Jungle Temple");
+        let mut streams = Streams::new(opts.seed);
+        step_temple(&mut world, &mut gv, &mut streams, &opts, &noise, &config);
+        // The deterministic fallback bury point (212, 380) sits inside the
+        // published bounds; `t_rooms` carries the carved-room count.
+        let (bx, by) = (212, 380);
+        let tb = gv.temple;
+        assert_eq!(tb.t_rooms, 2, "t_rooms");
+        assert!(
+            tb.t_left <= bx && bx <= tb.t_right && tb.t_top <= by && by <= tb.t_bottom,
+            "the bury point inside the bounds {:?}",
+            tb
+        );
+        assert!(
+            tb.t_left <= tb.l_altar_x && tb.l_altar_x + 2 < tb.t_right,
+            "the altar anchor x inside the bounds"
+        );
+        assert!(
+            tb.t_top <= tb.l_altar_y && tb.l_altar_y + 1 < tb.t_bottom,
+            "the altar anchor y inside the bounds"
+        );
+    }
+
+    /// Decision #15 (verified): the temple tiles the shell writes — the dart
+    /// trap 137 (`Main.cs:7431`) and the Lihzahrd altar 237
+    /// (`Main.cs:10234`) are frame-important and the framer must keep their
+    /// stored frames; the Lihzahrd brick 226 is not.
+    #[test]
+    fn temple_tiles_carry_their_frame_important_boot_statics() {
+        let mut w = World::new("t".into(), 8, 8);
+        boot_statics(&mut w);
+        assert!(w.frame_important[137], "the dart trap 137");
+        assert!(w.frame_important[237], "the Lihzahrd altar 237");
+        assert!(!w.frame_important[226], "the Lihzahrd brick 226");
     }
 }

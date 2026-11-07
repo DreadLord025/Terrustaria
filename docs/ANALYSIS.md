@@ -5350,6 +5350,157 @@ positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
 
+## Biome passes fidelity (M5-BIOME)
+
+The evil + jungle worldgen replaced its shape-level approximation with the
+vanilla passes, each with its `WorldGen.cs` citation and a draw-order
+ledger test: `CorruptionAndCrimson` (`WorldGen.cs:13866-14554` + the
+`ChasmRunner`/`Crim*` walker family `:75259-76111` + `AddShadowOrb`
+`:32095`) in `worldgen/evil.rs`; `JunglePass` (`JunglePass.cs:19-257`) +
+`MudCavesToJungleGrass` (`WorldGen.cs:12468`) + `DirtToMud` (`:13123`) in
+`worldgen/biomes.rs`; the jungle detail family — the faithful
+`GrowUndergroundTree` (`:30849-31299`), `SurfaceWaterInJungle` ("Wet
+Jungle", `:15810`), the plants arms (`:20122-20192` incl.
+`JunglePlantsPart2`), `DirtWallsIntoMudWallsInJungleAndJungleMinMax`
+(`:20813`) — in `worldgen/biome_detail.rs`; and the `LihzahrdTemple`
+placement search (`:15834-15926`) in `worldgen/temple.rs`. The WGEN-1
+shape-level jungle/evil band painters (their "before the caves, so the
+caves cut through them" description) are retired by this; that entry
+remains the record for the still-shape-level mushroom / granite-marble /
+dungeon passes (M5-BIOME-2's and M5-DUNGEON's rows).
+
+- **The executed-order moves** (`pipeline.rs` `EXECUTED_PIPELINE`, now 44
+  steps): the faithful steps sit at vanilla-adjacent slots — `dirt to mud`
+  between `dirt-in-stone blobs` and `ash blobs`; `evil` between
+  `ores and gems` and `liquids` (the vanilla `Shinies` →
+  `CorruptionAndCrimson` → `Lakes` pair, so the chasms carve through the
+  finished caves instead of the caves cutting the band); `wet jungle`
+  immediately after `altars` (the vanilla `Altars :15750` →
+  `Wet Jungle :15810` → `Jungle Temple :15834` triple); `jungle plants`
+  (the `JunglePlantsPart2` detritus sweep) between `mushroom and jungle
+  plants` and `vines` (the vanilla `:20122`/`:20165` → `Vines :20193`
+  order); `muds walls in jungle` between `vines` and `floating islands`
+  (`:20813`). Two pre-existing executed-order deviations stay the pinned
+  world contract: `underground jungle trees` runs before `lihzahrd
+  temple` — vanilla runs the temple (`:15834`) first — and `jungle
+  shrines` (`:15977`) likewise precede it in the port.
+- **The per-pass stream model**: every faithful pass draws from its own
+  `Streams::pass_rng(name) = Rng(seed ^ fnv1a64(name))` — the port's
+  stand-in for vanilla's per-pass re-seed
+  `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`): insertions are
+  stream-isolated and the vanilla re-seed shape is represented without
+  disturbing the three shared contract streams' remaining consumers. The
+  trees step moved off `drng` onto `pass_rng("Jungle Trees")` and the
+  temple off `srng` onto `pass_rng("Jungle Temple")` — their later
+  shared-stream consumers shifted draw positions (accepted world change;
+  the pins re-pinned per phase).
+- **`jungle_origin_x` is drawn in `plan biome spans`** — the port's Reset
+  stand-in: the C# draws the jungle origin in `Reset`
+  (`WorldGen.cs:11341-11376`), not inside `JunglePass`, so the port draws
+  `width · Next(15,30) · 0.01` from a fresh `pass_rng("Jungle")` in the
+  spans step and the pass consumes it without redrawing; `dungeonSide` is
+  fixed `Right` (the port's dungeon sits right — the C# `Next(2)` side
+  draw is not portable), and the interim `BiomeSpans.jungle_*` band is
+  re-derived ±700·worldSurface around the origin so the four
+  still-shape-level consumers (shrines, beehives, mushroom patches;
+  underground trees until phase 5) stay aligned.
+- **`roll_crimson` stands**: the evil flavour remains the deterministic
+  seed-high-bit draw (`mod.rs::roll_crimson`, `(seed >> 56) & 1`) feeding
+  the UI `_optionEvil` Random choice — the C# rolls `WorldGen.crimson` at
+  menu/Reset time (`WorldGen.cs:11305-11315`); the port's
+  seed-side draw is the recorded stand-in, consumed by
+  `GenOptions.crimson` for the crimson twins.
+- **The research correction (altars)**: the `Next(10,15)` altar scatter is
+  crimson-branch-only (`:14186-14234`, `Place3x2(…, 26, 1)` behind the
+  crimstone-ground check) — the corruption branch has none; its altars
+  come from `ChasmRunner`'s `flag3` search (`:75989-76036`), whose never-re-armed
+  quirk (`:75991`) accumulates the multi-altar tails and is ported
+  verbatim.
+- **The temple-stub scope** (`temple.rs` module docs): the verbatim/shape
+  seam for M5-TEMPLE — verbatim: the placement search (the y band, the
+  `num3 = 0.25` x formula with the 1M-attempt widening to the exact-0.35
+  cap and the 11-stage give-up `:15900-15912`, acceptance on tile 60, the
+  fallback `x = width − dungeon_x` `:15914-15923`); shape-level:
+  `makeTemple`'s non-intersecting room crawl (`:33444-33548`),
+  `GenerateBricks` (`:34241+`), the carve sweeps, `templePather`
+  corridors, the style-11 door, the spike/platform loop, `templeCleaner`.
+  The stub publishes `GenVars.temple` (the filled extent ± 10, `t_rooms`)
+  and the altar anchor `l_altar_x/l_altar_y` (`:34000-34001` semantics) —
+  the fields `LihzahrdTemplePart2`/`LihzahrdAltar` consume.
+- **The sub-vanilla valves/gates** (deterministic skips where vanilla's
+  4200×1200 minimum never degenerates): the mud-wall arm bridges the
+  port's terrain-baseline walls — vanilla's pre-jungle wall writer stops
+  at `worldSurface + 10` ("Dirt Wall Backgrounds", `:11858-11880`) while
+  the port's `fill_terrain` pre-walls every solid row, so
+  `place_mud_arm_wall` treats the baseline as vanilla's wall-0 region and
+  the verbatim wall-above gate keeps the 15/64 lining to the
+  stone-baseline rows; the `MudWallRunner` holes re-roll valve (200 000
+  failed tries → skip — the C# re-roll is unbounded and hangs on
+  sub-vanilla worlds); the evil band-retry valve (200 000 retries →
+  accept-and-skip); the ≤1000-wide width gate (vanilla's
+  `Next(500, maxTilesX − 500)` throws below it — the port skips the whole
+  placement loop with no draws); the temple height valve
+  (`maxTilesY − 600 <= 0` → straight to the C# fallback); the two clamped
+  hang/crash spots — the crimson surface fill's empty `CanEvilReplace`
+  failure body (`:75706-75713` — an unprotected tile spins the loop
+  forever in C#) breaks instead, and the sideways Demonite tail's
+  unbounded down-walk (`:75429`) clamps at the world floor.
+- **The engine-state toggles**: `Main.tileSolid[379] = true` (the Bubble
+  toggle the trees pass performs, `TileID.cs:1387`) is skipped — the port
+  has no mutable tileSolid table and no consumer (the plan's Notes
+  authorize modelling toggles only where a consumer needs one); the
+  `liquidType(0)` (water) write is the flag-bit model — the port's `Tile`
+  carries the liquid amount plus the lava/honey/shimmer flag bits, so
+  water is `liquid = 255` with those bits cleared
+  (`biome_detail.rs:426-441`).
+- **The unported-by-scope list**: the TileRunner case-53 desert arm
+  (`:76934` — the port carries no desert rect, the arm draws nothing),
+  the 367/368 marble/granite wall placements (no in-scope caller), the
+  mushroom half of the plants pass (M5-BIOME-2), and every secret-seed
+  branch (`flipInfections` `:11300-11304`, the drunk per-blob re-rolls,
+  the remix branch `:15852-15876`).
+- **The `growth.rs::spread_grass` finding** (pre-existing, outside this
+  task's file scope — SPREAD-2's row, its own follow-up): the port's
+  neighbour gate is inverted vs the C# — `growth.rs:601` proceeds only
+  when NO 3×3 neighbour is active+solid and wipes the whole `Tile` (the
+  wall lost), while `SpreadGrass` (`WorldGen.cs:75183-75197`) proceeds
+  when ANY neighbour is inactive/non-solid (lava re-arms + breaks the
+  inner loop only) and writes `.type` only. This task's consumers port
+  the correct slice locally (`biomes.rs::spread_jungle_grass`,
+  `evil.rs::spread_evil_grass`); `growth.rs` keeps its inverted guard
+  for its own callers' phase.
+- **The kind-6 canopy resolution** (the M5-ORES-1 finding): the
+  underground jungle "canopy" now places the faithful tile-5 tree frames
+  on the 22 px trunk grid (`GrowUndergroundTree`'s frame table, off
+  `pass_rng("Jungle Trees")`) — the fictional kind-6 "TreeBranches" leaf
+  ball is gone from every generated world (the dirty regression test
+  sweeps the 512/4200 widths on three seeds). The ore-pair tests keep
+  their `wall != 0` filter for the real reason: the `OresAndShinies`
+  runner itself retypes wall-0 pocket tiles to bare iron (M5-ORES-1's
+  pinned behaviour, pre-existing).
+- **The pins** (`world_hash.rs`): re-pinned per world-changing phase
+  (3 → 4 → 5 → 6, each cause in the provenance comment); the final
+  constants are `SEED42_512 = 992682600` / `DEFAULT_WORLD = 1041482865`.
+  One test contract followed the world: the seed-44 sword-shrine count is
+  now 1 (< the old ≥ 2 threshold) because the corrected JunglePass RNG
+  order reshapes the cave terrain the shape shrines accept on —
+  `the_micro_biomes_place_the_content` recalibrated to `>= 1` with the
+  citation (the batch-3-4 review's authorized fix-forward).
+
+Deviations: the executed order is the port's byte contract, not the
+vanilla chain — the deltas above are the recorded moves and
+`VANILLA_CHAIN` stays the declaration of record; the per-pass xorshift
+streams are not `UnifiedRandom(worldSeed)` — the re-seed shape is
+represented, the exact draw values are not vanilla's; the two accepted
+shared-stream shifts (`drng` behind the trees step, `srng` behind the
+temple) re-rolled every downstream placement on those streams; the
+sub-vanilla valves exist only where vanilla's 4200×1200 minimum cannot
+degenerate; the still-shape-level neighbours (the jungle shrines, the
+hives, the mushroom patches, the pyramids/pots, the dungeon, the temple
+interior) wait for their own rows (M5-STRUCT / M5-BIOME-2 / M5-DUNGEON /
+M5-TEMPLE); the `growth.rs` inverted guard is SPREAD-2's follow-up, not
+fixed here.
+
 ## Chest/bank integration (M3-CHEST-INT)
 
 The three parallel storage merges (M3-CHEST-UI, M3-STORE-1/2, M3-STORE-3)

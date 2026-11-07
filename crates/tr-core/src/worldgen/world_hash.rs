@@ -67,9 +67,46 @@ mod tests {
     /// must reproduce them exactly, across two runs each. Re-pinned for
     /// M5-ORES-1: the ore step now runs the faithful `OresAndShinies`
     /// TileRunner pass (ANALYSIS "OresAndShinies fidelity (M5-ORES-1)"),
-    /// which changes every world on every seed by design.
-    const SEED42_512: u32 = 2612473380;
-    const DEFAULT_WORLD: u32 = 3104994150;
+    /// which changes every world on every seed by design. Re-pinned again
+    /// for M5-BIOME phase 3: the faithful `JunglePass` replaces the
+    /// shape-level band (and leaves the shared `rng` stream), `Mud Caves To
+    /// Grass` and `Dirt To Mud` join as their own steps, and the wall-arm /
+    /// slope-fix TileRunner semantics landed. Re-pinned for M5-BIOME
+    /// phase 4: the faithful `CorruptionAndCrimson` replaces the shape-level
+    /// evil band, moves to the vanilla slot between `ores and gems` and
+    /// `liquids` (its own `pass_rng("Corruption")` stream), and the
+    /// frame-important 26/31 boot statics landed — every world on every
+    /// seed changes by design (the ANALYSIS section lands in Phase 7).
+    /// `SEED42_512` is UNCHANGED by the phase-4 move: on a 512-wide world
+    /// the evil pass runs nothing (the sub-vanilla width gate skips it —
+    /// vanilla's centre draw `Next(500, maxTilesX - 500)` throws there) and
+    /// the old shape pass drew nothing either (its spans collapsed).
+    /// Re-pinned for the batch-review RNG-order fixes: the tunnel
+    /// side-branch direction now maps `Next(2) == 0` to +2 and the
+    /// finishing gem tail draws `type:` first (`JunglePass.cs:156-160`,
+    /// `:254` — named arguments evaluate in source order) — the same draw
+    /// counts with different outcomes, so every world shifts again.
+    /// Re-pinned for M5-BIOME phase 5: the faithful jungle detail passes
+    /// land — `UndergroundJungleTrees` on its own
+    /// `pass_rng("Jungle Trees")` stream (tile-5 trees replace the kind-6
+    /// canopy; the later `drng` consumers shift along that stream — the
+    /// accepted world change), `Wet Jungle` and `Muds Walls In Jungle`
+    /// join at their vanilla slots, the plants pass takes its faithful
+    /// jungle arms plus the `JunglePlantsPart2` detritus sweep, and
+    /// `GenVars.jungle_min_x/max_x` gain their writer — every world on
+    /// every seed changes by design (the ANALYSIS section lands in
+    /// Phase 7).
+    /// Re-pinned for M5-BIOME phase 6: the temple placement becomes the
+    /// faithful `LihzahrdTemple` search (`WorldGen.cs:15834-15926`) on its
+    /// own `pass_rng("Jungle Temple")` stream — the temple relocates to the
+    /// search's bury point (the sub-vanilla worlds take the C# fallback via
+    /// the height valve), the shared `srng` stream loses the pass's draws
+    /// (the later `srng` consumers shift — the accepted world change), the
+    /// shell publishes `GenVars.temple`, and 137/237 join the frame-
+    /// important boot statics — every world on every seed changes by
+    /// design (the ANALYSIS section lands in Phase 7).
+    const SEED42_512: u32 = 992682600;
+    const DEFAULT_WORLD: u32 = 1041482865;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

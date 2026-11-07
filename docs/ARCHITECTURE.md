@@ -113,15 +113,27 @@ an agent needs before touching code.
   light tint). The former `LiquidKindChecks` trait artifact is now the free function
   `any_liquid_kind`. It emits `WaterfallDraw` quads in world pixels; the app turns them
   into sprites.
-- `worldgen/` — a compact generator modelled on `WorldGen`'s shapes, split into passes:
-  `mod.rs` (GenOptions + orchestrator; call order and every RNG draw are pinned by
-  `deterministic_for_seed` — four FNV-1a hashes over the post-pass world state),
-  `noise.rs` (the xorshift `Noise`/`Rng`, byte-exact with `wind.rs`), `terrain.rs`
-  (height-noise surface + spawn plateau, smoothing to 1-tile steps, grass/dirt/stone/ash
-  layers, hill slope flags), `caves.rs` (two noise fields, walls, ore blobs, underworld
-  hellstone), `liquids.rs` (forest lake, lava puddles), `surface.rs` (snow biome, inland
-  desert band, common trees, tile-3 plants). 4200×1200 in ~175 ms; deterministic for a
-  seed.
+- `worldgen/` — the pass-pipeline generator over `WorldGen`'s shape: `mod.rs` (GenOptions +
+  the orchestrator; `deterministic_for_seed` pins four FNV-1a hashes over the post-pass
+  world state), `pipeline.rs` (the M5-GEN-1 scaffold — `VANILLA_CHAIN`'s vanilla
+  declarations as the model, `EXECUTED_PIPELINE`'s 44 steps as the byte contract,
+  `Streams`/`GenVars`/`boot_statics`; `Streams::pass_rng(name)` =
+  `Rng(seed ^ fnv1a64(name))` is every faithful pass's own stream), `config.rs` (the
+  verbatim embedded `WorldBuilding` config JSON), `world_hash.rs` (the `HashWorld` FNV
+  port, the world constants pinned), `noise.rs` (the xorshift `Noise`/`Rng`, byte-exact
+  with `wind.rs`), `terrain.rs` (height-noise surface + spawn plateau, grass/dirt/stone/
+  ash layers, hill slopes, the `Layers` quartet), `tile_runner.rs` (the `TileRunner` port
+  — the velocity walker with the mud-wall/liquid/kind-59 branch groups), `caves.rs`
+  (noise cave fields + walls + the faithful `OresAndShinies` ore bands), `liquids.rs`,
+  `surface.rs` (snow biome, desert band, trees, flora), `biomes.rs` (the faithful
+  `JunglePass` + `MudCavesToJungleGrass` + `DirtToMud` + `plan_spans`; the shape-level
+  mushroom/granite-marble/dungeon), `evil.rs` (the verbatim `CorruptionAndCrimson` + the
+  chasm/crimson walker family), `biome_detail.rs` (the ocean caves, fragile ice, the
+  faithful underground jungle trees, wet jungle, the plants arms, muds walls, vines),
+  `structures.rs` (shrines/chests/altars/pyramids/pots, hives/hell forts), `temple.rs`
+  (the faithful `LihzahrdTemple` placement search + the shape-level shell),
+  `mini_biomes.rs`, `islands.rs`, `living_trees.rs`; deterministic for a seed, the
+  fidelity rows in `ANALYSIS.md`.
 - `tree.rs` — `TileDrawing.DrawTrees` data: 20×20 trunks on the 22 px `Tiles_5` grid,
   marker detection (`frameX` 22/44/66, `frameY >= 198`), biome sheet sections, and the
   foliage style/size table used to place `Tree_Tops_*`/`Tree_Branches_*` sprites.
