@@ -320,6 +320,7 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::GolemFistLeft
         | crate::npc::NpcKind::GolemFistRight
         | crate::npc::NpcKind::GolemHeadFree
+        | crate::npc::NpcKind::Deerclops
         | crate::npc::NpcKind::Creeper => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
@@ -373,6 +374,8 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::MartianEngineer
         | crate::npc::NpcKind::GigaZapper
         | crate::npc::NpcKind::MartianWalker
+        | crate::npc::NpcKind::MartianProbe
+        | crate::npc::NpcKind::MartianDrone
         | crate::npc::NpcKind::PirateDeckhand
         | crate::npc::NpcKind::PirateCaptainsMate
         | crate::npc::NpcKind::PirateArcher

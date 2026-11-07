@@ -2247,9 +2247,14 @@ cites its builder chain. Deviations and seams:
   styles 13/25, `TileObjectData.cs:3182-3190`) and the gemspark/glow tiles
   stay excluded (research decision — they are wall/light render work, not
   placement); adding objects is data-only until the generator lands.
-- The chest is a pure tile object: the `Chest.FindEmptyChest`/`Chest.
-  AfterPlacement_Hook` hooks (`TileObjectData.cs:3464-3465`), chest indices
-  and item storage are NOT ported — the M3-CHEST-UI seam.
+- The chest is no longer a pure tile object (flipped 2026-11-07, M3-CHEST-UI):
+  the item storage and the open/lock/unlock/rename interaction are ported —
+  `crates/tr-app/src/chest.rs` owns the `Chest.cs` entity semantics and the
+  world-chest store, `crates/tr-app/src/ui/chest.rs` the `ChestUI.cs` panel
+  (see "Chest UI + world chests (M3-CHEST-UI)" below). The placement-time
+  entry hooks (`Chest.FindEmptyChest`/`Chest.AfterPlacement_Hook`,
+  `TileObjectData.cs:3464-3465`) stay unhooked — store entries are created
+  lazily on first open instead (empty-entry-equivalent; that section).
 - Net placement replication (`apply_edit` kind 1, `world_sim/editing.rs:548`)
   sends style 0 / dir 1: the generic replication path carries no
   style/alternate/direction (vanilla's `NetMessage.SendObjectPlacement`
@@ -2287,8 +2292,9 @@ cites its builder chain. Deviations and seams:
   (`WorldGen.cs:62219-62326`) refuses a locked door type 10 (`:62290-62295` —
   the already-ported `IsLockedDoor` frames, `:69191-69197`), a chest 21/467/88
   holding items (`:62311-62323` — the app's chest store answers
-  `CanDestroyChest`, `Chest.cs:609-623`; the store stays empty until
-  M3-CHEST-UI) and the tile under a container {21,26,72,77,88,467,488}
+  `CanDestroyChest`, `Chest.cs:609-623`; the store is populated since
+  M3-CHEST-UI, so a stocked chest refuses its break for real) and the tile
+  under a container {21,26,72,77,88,467,488}
   (`:62259-62270`); `edit::can_kill_tile` (`edit.rs:1798`) ports the three
   and gates the mining tick (`damage = 0`, `Player.cs:53830-53833`),
   `break_tile`, the replicated break (`apply_edit` kind 0) and the bomb
@@ -2302,8 +2308,10 @@ cites its builder chain. Deviations and seams:
   the outer break sources instead, one query shared by all of them); the
   per-tick `KillTile(fail: true)` sound/dust of a refused pick
   (`Player.cs:53822-53831`) has no ported path, so the refusal is silent;
-  explosion/replication pass `|_, _| false` for the chest store (not
-  reachable without the app — unobservable while the store is empty).
+  explosion/replication pass `|_, _| false` for the chest store — the
+  M3-CHEST-UI task left this unchanged (the M1.4-TO-6 deviation stands; the
+  store is populated now, so the widening is observable and is the PHYS-7
+  follow-up).
 - The mining break carries no net messages: vanilla syncs the break/fail
   with `SendData` 17/34/125 (`Player.cs:45685-45696`, `:53774-53819`); the
   SP port has no replication for it (the same seam as the door message 19
@@ -2546,6 +2554,68 @@ escape-when-spotted mechanic) is the event's entry — the follow-up.
 The five kinds carry their verbatim `SetDefaults` rows (the Officer's
 300-HP/def-50 body, the GrayGrunt's 750-HP/0-kb bruiser, the walker's
 34×110 2000-HP body) and the 9/11-frame sheets NPC_383/520.
+
+## The Martian Probe (M4-EVENT-4b)
+
+The event's entry. `AI()`'s aiStyle-80 block (`NPC.cs:36532-36624`):
+`ai[0] == 0` hovers (the 3·direction drift with the collideX flip, the
+30-tile vertical scan's 15/20 rise-damp-sink bands); `ai[0] == 1` is
+the 60-tick detect flash (the closest player within 352 px whose centre
+sits below the probe); `ai[0] == 2` escapes (the `noTileCollide` rise
+− 0.1/tick to −10, the `ai[3]` x-drift away from the player, the
+leave-world/180-tick arm's `StartInvasion(4); active = false`). The AI
+holds `&World`, so the resolve rides `wants_martian_invasion` — the sim
+starts the invasion (the type-4's 160+40x army) and removes the probe.
+`CheckActive`'s timeout latch is constants-off (no NPC timeLeft model).
+
+Both spawn sites: the skyMob dispatch (`NPC.cs:1354-1412` — the
+`FindSpawnTile` 0.35/0.45 bands' `skyMob` flag with the `Next(10)` roll,
+`flag5`'s edge band + `skyBehindPlayer`, the water-candle 3/10 vs 8/30
+tables, the `!downedMartians` short-circuit rolls, `AnyDanger`'s
+refusal; the Drone arm consumes the dispatch position and the Wyvern arm
+consumes its `Next(10)`, both returning nothing — the kinds land with
+their AI families) and the surfaceSpawn arm (`:4164-4199`, the 100/400
+rolls). The vanilla registers NO loot for the probe (neither
+`ItemDropDatabase` nor `NPCLoot`), so killing it drops nothing and does
+not trigger anything — only the escape does.
+
+The task also landed a reconciliation pass over the node's parallel
+slices: the `to_u16` id map's pirate/martian collision (both families
+had taken 68-72 across merges) renumbered to 78-82/83 through all three
+tables, the duplicated dead arms removed, the bestiary `sheet_i` table
+re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
+48-50 slot had silently drifted every later agent's rows), the Walker's
+11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
+0.55 middle cut ported.
+
+## The Martian Drone (M4-EVENT-4c)
+
+The type-4 sky mob (`NPC.cs:13935-13953`): 40×30, dmg 60, def 16, 300
+HP, kb 0.4, npcSlots 1.5, noTileCollide + noGravity.
+`AI()`'s aiStyle-74 block (`:35218-35500`, the 388 parameter set):
+`ai[0] == 0` hovers — the approach vector points 200 px above the player
+at speed 10, damped into the velocity over 30 ticks, gated by the
+line-of-sight + the ±π/8 angle cone (the cone only opens downward — the
+drone dives under the players it cannot see, with the 120-tick argue
+override); `ai[0] == 1` charges 30 ticks (the ×0.95 damp, then the
+±50×0.04 jittered vector ×14); `ai[0] == 2` dashes (the 20-lerp toward
+the player, the exit at velocity < 7 or the 100-px-past + 30-tick
+window, the solid-collision fold to the explosion); and within 64 px of
+the player the machine folds to `ai[0] == 3` — the 192×192 box, the 80
+damage, the 3-tick fuse. The loot db registers no 388 rules, so the
+explosion drops nothing.
+
+The spawn: the skyMob dispatch's drone arm (`:1395-1398` — `invaders &&
+invasionType == 4` → the Drone at the candidate tile) runs through the
+spawner verbatim, and the ground table's roll chain is complete now:
+`num6` `Next(7)` → the Saucer gate (`Next(45)` + the 30% progress +
+`!AnyNPCs(395)`) → the num6 >= 6 rider arm (`Next(20)` + the gate → the
+unported Scutlix Rider; the `Next(2)` split → the Engineer 386) → the
+num8 `Next(5)` ray arm (the RayGunner 382 / Scrambler 381 unported,
+`>= 4` → the Drone 388) → the else arm's ground chain (the `Next(4)`
+with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
+the stream where the C#'s short-circuit reaches it; the four unported
+kinds' hits map to the ground fallback until their AI families land.
 
 ## The invasion progress bar (M4-EVENT-1b)
 
@@ -4333,10 +4403,14 @@ world chests within 600 px of the player's feet
 (`NearbyChests.GetChestsInRangeOf`, `NearbyChests.cs:10-31`). Port subset:
 the tile chests (21/341) within 600 px over an in-memory `WorldChest` store
 gated by the new `craft_from_nearby_chests` setting wired to the panel's
-nearby-chests toggle. Deviations: the store's population is M3-CHEST-UI's
-(the chest tiles place with no inventories yet), the save/persistence is
-M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
-passes for every chest (no chest locking); the scan order is raster (the
+nearby-chests toggle. Deviations: the store's population landed with
+M3-CHEST-UI (2026-11-07 — `crates/tr-app/src/chest.rs`; entries appear
+lazily on first open, so a never-opened chest still contributes nothing to
+the scan — "Chest UI + world chests (M3-CHEST-UI)"), the save/persistence
+is M6-SAVE-2's, the banks/void bag are M3-STORE-1's; `Chest.IsLockedOrInUse`
+is ported with M3-CHEST-UI but the craft scan still passes every in-range
+chest (the lock gate is unwired here — a latent note, not fixed in that
+task); the scan order is raster (the
 vanilla iterates `Main.chest[]`'s instance order — the port has no instance
 registry); the group drain walks members in the group's registration order
 when the inventory pass runs per-member (the vanilla drains one flat pass
@@ -4625,6 +4699,72 @@ world (`TileID.cs`: the copper 7 / the tin 166, the iron 6 / the lead
 Deviations: the TileRunner-strength bands (the C#'s vein shapes carry the
 depth-dependent strengths) are the follow-up; the ore walls are out.
 
+*Superseded by "OresAndShinies fidelity (M5-ORES-1)" below — the
+TileRunner-strength follow-up landed and the roll moved into
+`ores.rs::SavedOreTiers` + `worldgen/caves.rs::roll_tiers` (which also
+fixed the flip polarity: the C# rolls the *alternate* on `Next(2) == 0`,
+the pools had it inverted).*
+
+## OresAndShinies fidelity (M5-ORES-1)
+
+The ore step now runs the vanilla `OresAndShinies` pass (`WorldGen.cs:
+13182-13606`, the normal branch `:13397-13603`) on the M5-GEN-1 scaffold
+— step 12 of 39, the same stream, the same anchor:
+
+- **The tier coin-flips** (`roll_tiers`, `WorldGen.cs:11274-11297`): four
+  `Next(2)` draws in the C# order copper → iron → silver → gold, the
+  *alternate* on `== 0`, writing the new `SavedOreTiers.{copper,iron,
+  silver,gold}` (the C# class carries all seven metals, `:3283-3297`).
+  The `dontStarveWorldGen` gate on iron/gold is dead without the seed;
+  the `GenVars.copperBar`-style bar mirrors need no roll (the port's
+  recipes carry both bar families statically).
+- **The `TileRunner` port** (`worldgen/tile_runner.rs`, `WorldGen.cs:
+  76770-77142`): the velocity walker with the shrinking Manhattan disc,
+  the per-candidate wobble draw testing against the *original*
+  `strength * 0.5`, the frame-important skip, the `flag4` protection
+  chain (`CanBeClearedDuringGeneration` — generated by `tools/GenTileData`
+  from `TileID.cs:573` — plus the tileStone / sand-53 / ebonstone-family /
+  sandstone-yields-to-ore cases), the type-write without activation, and
+  the flat threshold-table speed-up ladder. The normal-world draw ledger
+  (2 velocity draws, the no-op `Next(4)` lottery, the wobbles, 2 drift
+  draws per step) is pinned by a stream-equality test. Unported until a
+  caller needs them: the `mudWall` branch, the `type < 0` liquid path,
+  the 367/368 walls, the `type == 59` branches reading
+  `Main.rockLayer`/`GenVars.waterLine`, and every secret-seed modifier.
+- **The band table** (`WorldGen.cs:13399-13573`): twelve
+  `(kind, density, y0, y1, strength, steps)` loops with the per-tile-area
+  blob counts and the `GenVars` quartet bounds (truncated like the C#
+  casts), closed by the evil demonite/crimtane band from
+  `Main.rockLayer`. The remix branch (`:13189-13396`) differs only in the
+  silver/gold/evil bands and is out until remix worlds exist; the drunk
+  per-blob re-rolls are dead without drunk worlds.
+- **The `GenVars` quartet**: `Layers` gained
+  `surface_low/high` + `rock_low/high` (`TerrainPass.cs:230-234`) —
+  min/max of the per-column surface and of the model's per-column rock
+  start `top + dirt_depth`.
+- **The C# ≥ 20 recentering** (`TerrainPass.cs:217-228`) is deliberately
+  skipped: it guards a degenerate case of the C#'s deep rock walk (the
+  rock line sits 6-35 % of the world height below the surface), which the
+  compact model's shallow line (16-22 tiles) would trigger on every
+  world, dragging `surface_high` below the mean surface and shifting the
+  surface ore bands underground. A normal C# world never recenters, so
+  the raw quartet reproduces the normal-world band geometry.
+- **The gems and hellstone** keep their shape-model placement after the
+  ore bands in the same step — vanilla runs them in the separate `Gems`
+  (`WorldGen.cs:15050`) and `Underworld` (`:13805`) passes.
+- **The world hashes re-pinned** (`world_hash.rs`): every world on every
+  seed changes — the pre-M5-ORES-1 output was the recorded
+  approximation, not a byte contract with vanilla.
+
+Deviations: the remix/drunk/secret-seed branches above; the
+`SavedOreTiers` pre-hardmode quartet is not persisted in `.trwld`
+(vanilla saves it in the world header — a save-migration follow-up); the
+gems/hellstone placement (their vanilla passes are other rows). Found
+during the work: the underground jungle canopy places bare active
+*iron-ore* tiles (`biome_detail.rs` cites "TreeBranches" for kind 6 —
+in vanilla kind 6 is the iron ore; the canopy belongs to the jungle-tree
+tile family) — pre-existing, needs its own row.
+
 ## Progression recipe batch (M3-CRAFT-4)
 
 The first progression batch over the group-enabled table (20 recipes with
@@ -4794,14 +4934,85 @@ housing module) with the "Spawn point set!/removed!" texts; the top half is
 consumed-but-inert — the sleep state is not ported), the grandfather clock
 (104 — the `h:mm AM/PM` read, `Player.cs:32725-32759`).
 
-Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) is the
-render follow-up — the sitting player draws standing, shifted -4 px
-(`GetSittingOffsetInfo`'s seat adjustment); the sleep state is out; the
+Deviations: the sit POSE (the sliced-leg render, `DrawSittingLegs`) and the
+sleep state landed with M7-INTERACT-1 (the section below); the
 multiplayer seat-stack manager is out (one player); the chest/dresser
 inventories stay the M3-CHEST-UI seam; the exotic sub-tile styles (the
 metal/lava variants 8/42/56-64 &c.) wait for the full-registry generator —
 the style-0 wooden slice places. The DrawYOffset fields are preview-only
 (`TileObject.cs:864` — the only consumer), so the deferral is invisible.
+
+## The sit/sleep poses and the bed spawn (M7-INTERACT-1)
+
+The furniture interaction family completed: the right-click chain's
+chairs/benches/thrones/picnic tables/toilets sit, the beds sleep and set the
+spawn, the spawn survives saves and re-validates at revive.
+
+**Sitting** — the full `PlayerSittingHelper.GetSittingTargetInfo`
+(`PlayerSittingHelper.cs:144-321`): the per-kind anchors (chairs/toilets
+15/497 share the arm with the style-27 seat drop; thrones 102 the
+`frameX/18`+`frameY/18` shifts; picnic 487 the `frameX % 72 / 18` pick; the
+benches 89 the per-style `frameX / 54` seat-offset table with the `zero2`
+X-nudge and the `zero` (-1, 0) position shift), the 40-px snap gate
+(`IsWithinSnappngRangeToTile`, `Player.cs:17365-17372` — the tile centre to
+`(Center.X, Bottom.Y - 16)`), and `UpdateSitting`'s exit mask
+(`PlayerSittingHelper.cs:62-65` — any control input, the mount, or a facing
+mismatch; the port's merged jump binding covers `controlUp`, W/ArrowUp feed
+`control_jump`).
+
+**Sleeping** — `PlayerSleepingHelper`: `StartSleeping`'s anchor decode
+(`:192-224`, the anchor column `leftmost + 1` unflipped / `+ 2` flipped, the
+style = `frameY / 36`), the 96-px gate, `CanSnapToPosition` =
+`!Collision.SolidCollision` (`Player.cs:33401-33403`; the port's
+`SolidCollision` copy carries the `-1/+2` sample expansion, the half-brick
+cut and the `maxTilesY - 40` bottom clamp), the fully-asleep counter
+(`timeSleeping >= 120`) that arms `UpdateTimeRate`'s ×5 (`Main.cs:6209-6215`
+— the dial's 60 outranks it), and the wake set: the input mask, the blood
+moon night, the held-item swing (the counter reset) — the damage does NOT
+wake, matching vanilla.
+
+**The poses** — `DrawSittingLegs` (`PlayerDrawLayers.cs:1536-1707`): the
+standing legs cell (row 0) re-sliced into three strips (the 10-px bottom
+block fanned +4 px along the facing over two 2-px knee slices, dropped
+42 px, `+2·direction/+2` pre-shift, `-2` lift, `seatYOffset`), the torso
+sandwich drop (`PlayerDrawSet.cs:343-347`'s `torsoOffset` over the
+`LegacyPlayerRenderer.cs:183-225` ranges — torso/back arm/head drop, the
+front arm does not), and the sleep rotation (`TransformDrawData`,
+`:4092-4119` — every sprite's position rotates around `fullRotationOrigin`
+= the hitbox centre, `PlayerSleepingHelper.cs:73-74`'s `PI/2 * (-direction)`)
+plus `SetOffsetbyBed` (`:226-279`) verbatim.
+
+**The bed spawn** — the port keeps it world-side (`World::bed_spawn`), TRWLD
+**v5** (a presence byte + the cell; a corrupt/out-of-range payload degrades
+to `None`), while the vanilla persists it in the *player* file's spX/spY
+arrays (`Player.cs:54877-54888`) — the single-player shape, recorded. The
+re-validation runs the same `CheckSpawn` at revive (`Player.cs:37571-37575`)
+with the failure texts on the chat; the load-time fallback is silent (the
+chat monitor does not exist at join — the C# prints via `CheckSpawn`'s
+`Main.NewText`).
+
+**The housing flood fix (a real port bug the task caught):** the port's
+`CheckRoom` settled the fill on ANY active tile; the C# settles only on
+SOLID tiles and the open gates (11 at the frameX ends 0/54/72/126, 389, and
+386 at the open frame pairs — `WorldGen.cs:6176-6195`). The bed-spawn check
+starts its flood ON the bed's cell (`StartRoomCheck(x, y - 1)`), so the old
+semantics failed every bed room with "This room is too small." Furniture
+(non-solid actives) now keeps the fill running, exactly like vanilla; the
+town-NPC housing inherits the fix (rooms with furniture validate).
+
+**Deviations:** the 2-players-per-tile seat/sleep stack managers
+(`Main.sittingManager`/`sleepingManager`) are the multiplayer registries —
+SP no-op; the Skeletron-hat bench easter egg (`UpdateSitting`'s night arm)
+and the toilet's `TryToPoop` regen hook stay out (the NPC/regen sides); the
+armor-specific sitting rows (legs 106/143/226/217) wait for those armor
+sets; the `ForcesBreaksSleeping`/damaging-item wake arm waits for M3-ITEM's
+item stats (the swing itself already resets the counter); the eclipse wake
+condition waits for the hardmode state; the tile-379 solidity keeps the
+generated set's base state (solid) — the vanilla's per-frame non-solid
+window during `UpdateWorld_Players` (`Main.cs:17753`/`:17799`) is not
+emulated, which is exactly what `CheckSpawn`'s forced-solid window needs.
+`TR_POSE=sit|sleep` pins the debug scene (a dirt ledge + the furniture + the
+snap beside the spawn; the load-time NPC spawn is suppressed under the pin).
 
 ## The full SetupRecipes table (M3-CRAFT-6)
 
@@ -4899,6 +5110,130 @@ positions ride the generic centre anchor (the C# positions them via the
 composite arms' stretch-dependent offsets — the arms carry the pose; the
 item offset differences are sub-10px polish for the render pass).
 
+## Chest UI + world chests (M3-CHEST-UI)
+
+The storage loop landed 2026-11-07 (phases 1-5, commits `3d953e4`,
+`37949d5`, `ac0b326`, `7956aa9` + fix `1bfe0a4`, `c5eadd2`):
+`crates/tr-app/src/chest.rs` owns the `Chest.cs` entity — the indexed
+world-chest store over `App.world_chests` (`Chest.cs:522-533` find/find-empty
+with the coord-collision −1), the locked-frame decode `is_locked`
+(`Chest.cs:307-313`), `is_locked_or_in_use` (`Chest.cs:178-188`),
+`Lock`/`Unlock` frame shifts ±36/±180 (`Chest.cs:346-495`), the open-click
+path (`Player.cs:33056-33260`: the key-unlock arm with the frame-derived key
+ids 327/329/1533+(col−23)/4714, the unlock-consumes-the-click rule, the
+open/re-open sounds 10/12), the per-tick range close `tick_open`
+(`Player.cs:31015-31124`, sound 11), `OpenChest` (`Player.cs:33505`), the
+item-movement helpers (`try_placing_in_chest` ≈ `TryPlacingInChest`
+`ChestUI.cs:1209-1289`, `quick_transfer_from_slot`) and the rename flow
+(`ChestUI.cs:827-869`). `crates/tr-app/src/ui/chest.rs` mirrors the
+`ChestUI.Draw` half (the name line, the rename pair, the 10×4 slot window at
+scale 0.755); `ui/slot.rs` gained the context-3 `Inventory_Back5` arm
+(`ItemSlot.cs:2215-2221`) and `clicks.rs` the context-3 click arm. The
+rename rides the existing `FrontScreen::Keyboard` with a
+`KeyboardTail::ChestRename` session. Suite 1038/16/570/19 ok; `TR_CHEST`
+double-run SHA256 pairs `adbdaeac…` (phase 3) and `db882ea0…` (phase 5)
+equal, the latter byte-identical to the pre-change HEAD.
+
+Deviations (deliberate, in plan order):
+
+- **Lazy store entry on first open, not at placement.** The C# placement
+  path books the chest through `Chest.FindEmptyChest`/`Chest.
+  AfterPlacement_Hook` (`TileObjectData.cs:3464-3465`); the port's placement
+  hooks are unreachable without `editing.rs` edits, so the open path creates
+  the entry on first open (`chest.rs` `try_open_chest_at_cursor`'s
+  `create_chest` miss arm). Empty-entry-equivalent: a never-opened chest
+  behaves exactly like an absent store entry everywhere the store is read
+  (the craft scan, `CanDestroyChest`, `using_chest`), so the divergence is
+  player-invisible.
+- **No stale-entry sweep.** A broken chest leaves its store entry behind
+  (the sweep would need another `editing.rs` hook); every consumer filters
+  by live tile presence instead — `chests_in_range` structurally excludes
+  dead tiles (the tile-active scan) and a stocked chest refuses its break
+  through `can_kill_tile`/`CanDestroyChest` (M1.4-TO-6), so a stale entry is
+  always an empty one.
+- **The rigged/dead-man's chest branch is out** (`Player.cs:33253-33258` —
+  the explosive trap on chest open). It is a wiring system; the port has no
+  wiring trap to arm it with, and no owning task has claimed it yet.
+- **The chest lid animation is out.** `Chest.frame`/`UpdateChestFrames`
+  (`Chest.cs:3603`) animates the open/close lid through the tile draw; the
+  port's chest tiles render statically. Render follow-up — the open state
+  itself is correct.
+- **The PHYS-7 coordination lines.** Exactly two simulation-file lines ride
+  this task: the one-line `try_open_chest_at_cursor` interception beside
+  `try_open_shop_at_cursor` (`world_sim/editing.rs:582`'s pattern — the
+  tile-interaction dispatch, NOT the mining/break paths, which stay
+  untouched) and the one-line `crate::chest::tick_open(app);` per-tick hook
+  in `world_sim/player.rs` (the `HandleBeingInChestRange` slot,
+  `Player.cs:25290`/`:31015-31124`). Both are the plan's sanctioned
+  additive minimum (Decision Log #6/#9; the research doc's categorical
+  "no editing.rs edits" was waived by the owner — "делай как лучше").
+- **Explosion/replication `|_, _| false` unchanged.** The bomb-explosion
+  and apply-edit break paths still skip the chest-store refusal (the
+  M1.4-TO-6 deviation stands — the store was empty when it was written).
+  With the store populated the widening is now observable; it is the PHYS-7
+  follow-up, not done here.
+- **The `downed_plant_boss` gate has no world flag.** `spread.rs:232`'s
+  flag is a worldgen parameter, not the runtime world flag; `lock_chest`/
+  `unlock_chest` take a `plant_boss: bool` parameter and the call sites
+  pass `true` (Decision Log #8). Flip to the real flag when M4 lands it.
+- **Chest names are hardcoded strings, not localized.** `default_chest_name`
+  derives the vanilla names from the generated `itemdata::ITEMS`
+  (tile + place style) with the `"Locked " + twin` rule for the lock-shifted
+  frames (`Chest.Lock` shifts the style by +1; `default_chest_name(21, 72)`
+  = "Locked Gold Chest"). No localization content exists on disk
+  (`LegacyChestType.*` is embedded in the retail exe) — the house precedent
+  for hardcoded UI labels (Decision Log #11).
+- **The rename keyboard is a front screen, not an overlay.** The port opens
+  `FrontScreen::Keyboard` mid-game, so the world sim pauses and the HUD
+  hides while renaming; vanilla draws the keyboard as a `LegacyGameInterfaceLayer`
+  ("Vanilla: Fancy UI", `Main.cs:44778`) inside the same interface pass as
+  the inventory (`:44839`), with the game UI live underneath. The caret arm
+  (`ChestUI.cs:165-184`), the `inter[47]` "Save" label and the panel-button
+  clicks are ported and unit-tested but visually unreachable until an
+  overlay rework. The submit sounds converge: the port's unified submit
+  plays 10+12 where C#'s Enter path plays 12+11 (`UIVirtualKeyboard.cs`
+  submit tail). The panel-cancel closes the keyboard with the edit
+  discarded (`RenameChestCancel`, sound 12).
+- **The entity folds are parked at M6-SAVE-2.** `Chest.name` rides the
+  `App.chest_names` side map (the frozen `editing.rs:2680` literal keeps the
+  `WorldChest` name widening out until then); `maxItems` is the
+  `DEFAULT_MAX_ITEMS = 40` const, not a per-chest field. The prefix clause
+  is resolved (flipped 2026-11-07, M3-CHEST-INT: `ChestSlot` is gone — the
+  slots are `ItemSlot` and the prefix survives deposit/take; the "player
+  items have none" premise died with M3-PREFIX). The name and `maxItems`
+  fold into the entity when M6-SAVE-2 ports the `.wld` chest sections
+  (`WorldFile.cs` `SaveChests`/`LoadChests` `:1606`/`:2723`).
+- **Favorites are no longer stateless (flipped 2026-11-07, M3-CHEST-INT).**
+  The `canFavoriteAt`/`retainFavoriteOnMoveAt` RULE tables are joined by the
+  state: `App.favorite_slots` (slot-positional) with the C# Alt+left-click
+  toggle (`ItemSlot.cs:602-625`, sound 12) and the shift-transfer refusal
+  (`:631-634`) — see "Chest/bank integration (M3-CHEST-INT)" for the retain
+  semantics; M7-UI-2 still owns the per-item flag, and the cursor-override
+  TEXTURE display stays deferred (`Cursor_8/9` are on disk but not in the
+  packed atlas — the 8/9 state machinery is fully ported, Decision Log
+  #14).
+- **The context-0 inventory keeps its half-take.** Right-click in context 0
+  stays the half-take — the stack-split machinery (30/7/superFast) is
+  context-3 only, as in vanilla. `Player.ItemSpace`'s ammo-`FillAmmo`/
+  void-vault/`IsAPickup` arms (`Player.cs:39148-39347`) and `DoCoins`
+  (`:39246`) are unported; the keyboard's `Main.blockKey` guard
+  (`ChestUI.cs:868`), the IME composition (`UIVirtualKeyboard.cs:747`) and
+  the `Main.clrInput()` reset (`IngameFancyUI.cs:128`) are out.
+- **The open set vs the craft scan.** The chest interaction uses
+  `TileID.Sets.BasicChest` {21, 467} (`TileID.cs:570`); the craft scan's
+  `CHEST_TILES` froze [21, 341] (`craft.rs:392`) — 341 is
+  `LivingDemonFire` (`TileID.cs:1311`), not a chest. Latent M3-CRAFT-2
+  note, deliberately not fixed in this task (its file scope is closed).
+- **The wheel gate is dead at 40 slots.** The scroll clamp is
+  `0..ceil(maxItems/10) − 4` (`Main.cs:17436-17452`) — at the default 40
+  slots that is `0..0`, so the wheel never scrolls. 1:1 with vanilla.
+
+The stale notes flipped with this landing (located by content; the cited
+line numbers had drifted): "Tile objects (M1.4-TO)"'s "the chest is a pure
+tile object" bullet and the M1.4-TO-6 `CanKillTile` entry's "the store stays
+empty until M3-CHEST-UI" both now point at the landed implementation, and
+the M3-CRAFT-2 section's "the store's population is M3-CHEST-UI's"
+deviation is retired the same way.
 ## The ammo system (M3-ITEM-3)
 
 `Player.PickAmmo` (`Player.cs:53458-53676`): the pick order is
@@ -5076,3 +5411,290 @@ asymmetric invention. Testability: `TR_DYE=k1,k2,...` fills the dye slots
 positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
 stands in for `miscDyes[3]`; the UI dye column (context 12) already
 renders the slots.
+
+## Biome passes fidelity (M5-BIOME)
+
+The evil + jungle worldgen replaced its shape-level approximation with the
+vanilla passes, each with its `WorldGen.cs` citation and a draw-order
+ledger test: `CorruptionAndCrimson` (`WorldGen.cs:13866-14554` + the
+`ChasmRunner`/`Crim*` walker family `:75259-76111` + `AddShadowOrb`
+`:32095`) in `worldgen/evil.rs`; `JunglePass` (`JunglePass.cs:19-257`) +
+`MudCavesToJungleGrass` (`WorldGen.cs:12468`) + `DirtToMud` (`:13123`) in
+`worldgen/biomes.rs`; the jungle detail family — the faithful
+`GrowUndergroundTree` (`:30849-31299`), `SurfaceWaterInJungle` ("Wet
+Jungle", `:15810`), the plants arms (`:20122-20192` incl.
+`JunglePlantsPart2`), `DirtWallsIntoMudWallsInJungleAndJungleMinMax`
+(`:20813`) — in `worldgen/biome_detail.rs`; and the `LihzahrdTemple`
+placement search (`:15834-15926`) in `worldgen/temple.rs`. The WGEN-1
+shape-level jungle/evil band painters (their "before the caves, so the
+caves cut through them" description) are retired by this; that entry
+remains the record for the still-shape-level mushroom / granite-marble /
+dungeon passes (M5-BIOME-2's and M5-DUNGEON's rows).
+
+- **The executed-order moves** (`pipeline.rs` `EXECUTED_PIPELINE`, now 44
+  steps): the faithful steps sit at vanilla-adjacent slots — `dirt to mud`
+  between `dirt-in-stone blobs` and `ash blobs`; `evil` between
+  `ores and gems` and `liquids` (the vanilla `Shinies` →
+  `CorruptionAndCrimson` → `Lakes` pair, so the chasms carve through the
+  finished caves instead of the caves cutting the band); `wet jungle`
+  immediately after `altars` (the vanilla `Altars :15750` →
+  `Wet Jungle :15810` → `Jungle Temple :15834` triple); `jungle plants`
+  (the `JunglePlantsPart2` detritus sweep) between `mushroom and jungle
+  plants` and `vines` (the vanilla `:20122`/`:20165` → `Vines :20193`
+  order); `muds walls in jungle` between `vines` and `floating islands`
+  (`:20813`). Two pre-existing executed-order deviations stay the pinned
+  world contract: `underground jungle trees` runs before `lihzahrd
+  temple` — vanilla runs the temple (`:15834`) first — and `jungle
+  shrines` (`:15977`) likewise precede it in the port.
+- **The per-pass stream model**: every faithful pass draws from its own
+  `Streams::pass_rng(name) = Rng(seed ^ fnv1a64(name))` — the port's
+  stand-in for vanilla's per-pass re-seed
+  `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`): insertions are
+  stream-isolated and the vanilla re-seed shape is represented without
+  disturbing the three shared contract streams' remaining consumers. The
+  trees step moved off `drng` onto `pass_rng("Jungle Trees")` and the
+  temple off `srng` onto `pass_rng("Jungle Temple")` — their later
+  shared-stream consumers shifted draw positions (accepted world change;
+  the pins re-pinned per phase).
+- **`jungle_origin_x` is drawn in `plan biome spans`** — the port's Reset
+  stand-in: the C# draws the jungle origin in `Reset`
+  (`WorldGen.cs:11341-11376`), not inside `JunglePass`, so the port draws
+  `width · Next(15,30) · 0.01` from a fresh `pass_rng("Jungle")` in the
+  spans step and the pass consumes it without redrawing; `dungeonSide` is
+  fixed `Right` (the port's dungeon sits right — the C# `Next(2)` side
+  draw is not portable), and the interim `BiomeSpans.jungle_*` band is
+  re-derived ±700·worldSurface around the origin so the four
+  still-shape-level consumers (shrines, beehives, mushroom patches;
+  underground trees until phase 5) stay aligned.
+- **`roll_crimson` stands**: the evil flavour remains the deterministic
+  seed-high-bit draw (`mod.rs::roll_crimson`, `(seed >> 56) & 1`) feeding
+  the UI `_optionEvil` Random choice — the C# rolls `WorldGen.crimson` at
+  menu/Reset time (`WorldGen.cs:11305-11315`); the port's
+  seed-side draw is the recorded stand-in, consumed by
+  `GenOptions.crimson` for the crimson twins.
+- **The research correction (altars)**: the `Next(10,15)` altar scatter is
+  crimson-branch-only (`:14186-14234`, `Place3x2(…, 26, 1)` behind the
+  crimstone-ground check) — the corruption branch has none; its altars
+  come from `ChasmRunner`'s `flag3` search (`:75989-76036`), whose never-re-armed
+  quirk (`:75991`) accumulates the multi-altar tails and is ported
+  verbatim.
+- **The temple-stub scope** (`temple.rs` module docs): the verbatim/shape
+  seam for M5-TEMPLE — verbatim: the placement search (the y band, the
+  `num3 = 0.25` x formula with the 1M-attempt widening to the exact-0.35
+  cap and the 11-stage give-up `:15900-15912`, acceptance on tile 60, the
+  fallback `x = width − dungeon_x` `:15914-15923`); shape-level:
+  `makeTemple`'s non-intersecting room crawl (`:33444-33548`),
+  `GenerateBricks` (`:34241+`), the carve sweeps, `templePather`
+  corridors, the style-11 door, the spike/platform loop, `templeCleaner`.
+  The stub publishes `GenVars.temple` (the filled extent ± 10, `t_rooms`)
+  and the altar anchor `l_altar_x/l_altar_y` (`:34000-34001` semantics) —
+  the fields `LihzahrdTemplePart2`/`LihzahrdAltar` consume.
+- **The sub-vanilla valves/gates** (deterministic skips where vanilla's
+  4200×1200 minimum never degenerates): the mud-wall arm bridges the
+  port's terrain-baseline walls — vanilla's pre-jungle wall writer stops
+  at `worldSurface + 10` ("Dirt Wall Backgrounds", `:11858-11880`) while
+  the port's `fill_terrain` pre-walls every solid row, so
+  `place_mud_arm_wall` treats the baseline as vanilla's wall-0 region and
+  the verbatim wall-above gate keeps the 15/64 lining to the
+  stone-baseline rows; the `MudWallRunner` holes re-roll valve (200 000
+  failed tries → skip — the C# re-roll is unbounded and hangs on
+  sub-vanilla worlds); the evil band-retry valve (200 000 retries →
+  accept-and-skip); the ≤1000-wide width gate (vanilla's
+  `Next(500, maxTilesX − 500)` throws below it — the port skips the whole
+  placement loop with no draws); the temple height valve
+  (`maxTilesY − 600 <= 0` → straight to the C# fallback); the two clamped
+  hang/crash spots — the crimson surface fill's empty `CanEvilReplace`
+  failure body (`:75706-75713` — an unprotected tile spins the loop
+  forever in C#) breaks instead, and the sideways Demonite tail's
+  unbounded down-walk (`:75429`) clamps at the world floor.
+- **The engine-state toggles**: `Main.tileSolid[379] = true` (the Bubble
+  toggle the trees pass performs, `TileID.cs:1387`) is skipped — the port
+  has no mutable tileSolid table and no consumer (the plan's Notes
+  authorize modelling toggles only where a consumer needs one); the
+  `liquidType(0)` (water) write is the flag-bit model — the port's `Tile`
+  carries the liquid amount plus the lava/honey/shimmer flag bits, so
+  water is `liquid = 255` with those bits cleared
+  (`biome_detail.rs:426-441`).
+- **The unported-by-scope list**: the TileRunner case-53 desert arm
+  (`:76934` — the port carries no desert rect, the arm draws nothing),
+  the 367/368 marble/granite wall placements (no in-scope caller), the
+  mushroom half of the plants pass (M5-BIOME-2), and every secret-seed
+  branch (`flipInfections` `:11300-11304`, the drunk per-blob re-rolls,
+  the remix branch `:15852-15876`).
+- **The `growth.rs::spread_grass` finding** (pre-existing, outside this
+  task's file scope — SPREAD-2's row, its own follow-up): the port's
+  neighbour gate is inverted vs the C# — `growth.rs:601` proceeds only
+  when NO 3×3 neighbour is active+solid and wipes the whole `Tile` (the
+  wall lost), while `SpreadGrass` (`WorldGen.cs:75183-75197`) proceeds
+  when ANY neighbour is inactive/non-solid (lava re-arms + breaks the
+  inner loop only) and writes `.type` only. This task's consumers port
+  the correct slice locally (`biomes.rs::spread_jungle_grass`,
+  `evil.rs::spread_evil_grass`); `growth.rs` keeps its inverted guard
+  for its own callers' phase.
+- **The kind-6 canopy resolution** (the M5-ORES-1 finding): the
+  underground jungle "canopy" now places the faithful tile-5 tree frames
+  on the 22 px trunk grid (`GrowUndergroundTree`'s frame table, off
+  `pass_rng("Jungle Trees")`) — the fictional kind-6 "TreeBranches" leaf
+  ball is gone from every generated world (the dirty regression test
+  sweeps the 512/4200 widths on three seeds). The ore-pair tests keep
+  their `wall != 0` filter for the real reason: the `OresAndShinies`
+  runner itself retypes wall-0 pocket tiles to bare iron (M5-ORES-1's
+  pinned behaviour, pre-existing).
+- **The pins** (`world_hash.rs`): re-pinned per world-changing phase
+  (3 → 4 → 5 → 6, each cause in the provenance comment); the final
+  constants are `SEED42_512 = 992682600` / `DEFAULT_WORLD = 1041482865`.
+  One test contract followed the world: the seed-44 sword-shrine count is
+  now 1 (< the old ≥ 2 threshold) because the corrected JunglePass RNG
+  order reshapes the cave terrain the shape shrines accept on —
+  `the_micro_biomes_place_the_content` recalibrated to `>= 1` with the
+  citation (the batch-3-4 review's authorized fix-forward).
+
+Deviations: the executed order is the port's byte contract, not the
+vanilla chain — the deltas above are the recorded moves and
+`VANILLA_CHAIN` stays the declaration of record; the per-pass xorshift
+streams are not `UnifiedRandom(worldSeed)` — the re-seed shape is
+represented, the exact draw values are not vanilla's; the two accepted
+shared-stream shifts (`drng` behind the trees step, `srng` behind the
+temple) re-rolled every downstream placement on those streams; the
+sub-vanilla valves exist only where vanilla's 4200×1200 minimum cannot
+degenerate; the still-shape-level neighbours (the jungle shrines, the
+hives, the mushroom patches, the pyramids/pots, the dungeon, the temple
+interior) wait for their own rows (M5-STRUCT / M5-BIOME-2 / M5-DUNGEON /
+M5-TEMPLE); the `growth.rs` inverted guard is SPREAD-2's follow-up, not
+fixed here.
+
+## Chest/bank integration (M3-CHEST-INT)
+
+The three parallel storage merges (M3-CHEST-UI, M3-STORE-1/2, M3-STORE-3)
+left the loop split in two — world chests rode `App.chest` with `ChestSlot`
+tuple slots, banks rode `Player.chest` with `ItemSlot`s — and this task
+stitched them back together 2026-11-07 (commits `9069134`, `3418a59`→
+`c62e63b`, `56e46d3` + fixes `1acd887`/`01620fd`, `9b76a84`; final suite
+`test result: ok` ×7, 1882 passed / 0 failed):
+
+- **One open-container state.** `Player.chest/chest_x/chest_y` is the single
+  index (−1 closed, −2..−5 `bank_for_chest` → `Player.banks[i]`, ≥0 the
+  `App.world_chests` store index — `Player.cs:2876/:2878/:2880`); `App.chest`
+  is deleted and every reader re-pointed. Bank open/close rides
+  `chest::toggle_open` (the shared C# block `Player.cs:33233-33252`, sounds
+  10/11/12) behind the C# prologue (`close_shop` `:33087-33096`,
+  `bank_open_origin` `:33060-33079` incl. the 463/491 ±1/+=2 adjustment),
+  and `tick_open` is the full `HandleBeingInChestRange` port
+  (`:31015-31097`, minus the projectile trackers — remote opens are out)
+  with the per-tile hitbox table (`:31099-31124`, the Empty-rect two-if
+  `ClosestPointInRect` chain): banks now auto-close out of range or on a
+  dead tile, sound 11. The ctx-3 world-chest surfaces gate to `chest >= 0`
+  (banks keep the STORE-1 panel — see the ownership deviation below).
+- **World chests hold `ItemSlot`s.** `WorldChest.slots: Vec<ItemSlot>`
+  (implicit-air semantics kept, `ChestSlot` gone); the prefix survives
+  deposit/take end-to-end (the stale M3-CHEST-UI note is flipped below);
+  `bank::can_stack` is the shared `Item.CanStack` port
+  (`Item.cs:49865-49871`); `open_chest` materializes the browsed chest's
+  40-slot window (`Chest.cs:107-109`) so the transfers' free-slot walks see
+  the real window; `try_placing_in_chest`/`quick_transfer_from_slot`
+  retyped (`ChestUI.cs:1209-1289`).
+- **The world-chest panel gained its transfer buttons.** Anchors 0-3 draw
+  Loot All / Deposit All / Quick Stack / Restock (`ChestUI.cs:206-228`),
+  `chest_button_hit` generalises the hit rules, and the button dispatch
+  runs before the slot grid (`:281-308`) gated to `chest >= 0`. MoveCoins
+  lives at the dispatch layer: the bank call site runs it before DepositAll
+  (`:543-562`) and QuickStack (`:670-685`), the world chest's QuickStack
+  gets none. `move_coins` gained the no-container-coins early return
+  (`:1044`/`:1048-1051`) and the pInv coin-row favorite space
+  (`:1052-1054`); `restock` mirrors the demand walk (pInv 57..=0 with the
+  ammo rows 54-57 first, coin types 71-74 gated out of demand AND empties,
+  `:899-917`; the ammo-into-empty bonus inside the `:921` gate,
+  `:955-989`); `quick_stack`'s empty-slot phase is the C# per-slot
+  consolidation (`:772-812`); `loot_all` gained the `CanGoIntoVoidVault`
+  overflow arm (`GetItemSettings.cs:55-56`, `Player.cs:39395-39398`) via a
+  `vault: Option<&mut BankStore>` parameter.
+- **STORE-3 is wired per the C# binding.** Favorite = FavoriteKey LeftAlt
+  (`Main.cs:67196`) + left-click via the cursorOverride-3 arm
+  (`ItemSlot.cs:602-625`/`:745-755`/`:873-877`), sound 12, the
+  `can_favorite_at` gate (contexts 0/1/2/32); shift-transfer refuses
+  favorited slots (`:631-634`); the favorited visual is the
+  `OurFavoriteColor` tint fallback (255, 231, 69 — neither
+  `Inventory_Back10` `:2152-2156` nor `InventoryBack17` `:2331-2335` is in
+  the packed atlas); the trash slot (448, 258) is clickable — left-click
+  swaps held ↔ trash (`MouseItemSwap` `:1255-1263`, the Grab cue per
+  `:1008-1011`).
+
+Verification: `TR_CHEST` closed-panel double-run SHA256 `166e5f6a…` equal
+and byte-identical to the pre-change HEAD; the open-panel labels verified
+with `TR_XY=2103,354` (pair `3ed3c984…` equal); bank pixels unchanged
+(`ui/inventory.rs`'s bank feed untouched).
+
+Deviations (deliberate, in plan order):
+
+- **The favorite binding follows the C#, not the row's wording.** The
+  M3-STORE-3 row said "right-click toggles"; the C# has no right-click
+  favorite on PC — `ItemSlot.cs:602-625`/`:745-755` bind favorite to
+  FavoriteKey (LeftAlt, `Main.cs:67196`) + left-click via cursorOverride 3,
+  right-click stays the half-take ladder. The port follows the C# and the
+  row is corrected. FavoriteKey is LeftAlt only (the `KeyFavoriteModifier`
+  rebind has no port surface).
+- **Two-panel ownership.** The C# draws ONE panel for every container
+  (`ChestUI` regardless of the chest sign); the port keeps the STORE-1 bank
+  panel for banks (−2..−5) and the world-chest panel for `chest >= 0` — the
+  ctx-3 surfaces gate everything (labels, hit, dispatch) to `chest >= 0`,
+  so no phantom panel and no double button row. The C# single-panel
+  behaviour stays the standing STORE-1 panel-fidelity deviation (recorded
+  there); bank screenshots unchanged by design.
+- **DepositAll's MoveCoins pre-pass is a fix, not an addition.** The port's
+  `deposit_all` was the post-MoveCoins tail and the bank call site never
+  ran `move_coins` — the C# runs it for every container kind
+  (`ChestUI.cs:543-562`). Both call sites gained the pre-pass at the
+  dispatch layer.
+- **The `quick_stack` hoist.** MoveCoins lived folded inside the port's
+  `quick_stack`; hoisting keeps the bank behaviour byte-equal while the
+  world chest correctly skips it (the C# runs MoveCoins for banks only,
+  `:670-685`), and the empty-slot phase became the C# per-slot
+  consolidation (`:772-812`).
+- **LootAll's void-vault overflow arm.** With `IsVoidVaultEnabled` the
+  leftover fills the vault first (`GetItemSettings.cs:55-56`,
+  `Player.cs:39395-39398`) before staying in the chest.
+- **The prefix fix.** The `ChestSlot = (u16, u32)` tuple dropped the prefix
+  byte on every deposit/take; the `ItemSlot` retype preserves it (the
+  stale M3-CHEST-UI note flipped below).
+- **Bank auto-close is live.** Before the unification only world chests
+  range-closed; `tick_open` now covers banks (the `HandleBeingInChestRange`
+  port) — out of range or a dead tile closes with sound 11.
+- **The coin-row favorite gap.** `toggle_favorite`'s `idx >= INV` guard
+  keeps the coin/ammo rows unfavoritable; the favorited sell/drop pass or
+  M7-UI-2 rides it.
+- **The trash swap is a plain swap.** `trash_swap`'s doc claimed a
+  favorited guard; the C# swap (`MouseItemSwap` `ItemSlot.cs:1255-1263`)
+  has none — favorited held items CAN be trashed there; the can't-drop rule
+  lives in `DropSelectedItem` (`Player.cs:5170-5184`, the sell/drop pass's
+  seam). The doc is fixed. The separate `TrashItem` cue (`:1007`) has no
+  port cue; the swap plays Grab (7) per `:1008-1011`.
+- **Slot-positional retain semantics.** The favorite stays on the slot
+  through context-0 moves (`retainFavoriteOnMoveAt[0]`); the
+  `ItemSlot.cs:1728-1734` stack-1 carry and the `:1258-1261` non-retain
+  clearing are unrepresentable in the v1 slot-index model (a held favorite
+  has no index; the trash slot is not favoritable) — M7-UI-2 owns the
+  per-item flag.
+- **The `UpdateDead` reset is not ported.** The C# death path sets
+  `chest = -1` (`Player.cs:17020`); the port's `update_dead` resets only
+  deadTime/respawn timer — a death-path follow-up.
+- **The restock ammo bonus' empty-slot destination.** For the notAmmo
+  family (Acorn 27, Sand 169/370/408/1246 — `Item.FitsAmmoSlot`,
+  `ItemSlot.cs:1499-1503`) the bonus lands on the ammo row where vanilla
+  uses the first empty grid slot; a notAmmo/FitsAmmoSlot seam in the
+  generated item data is the future pass.
+- **The `move_coins` refill is single-pass largest-first** vs the C#
+  three-pass (`:1090-1196`); they coincide without carry, with a carry the
+  carry tier can land in a different slot. Bounded deviation.
+
+Out (unchanged): QuickStackAllChests (the 600 px scan), Sort/ItemSorting
+(anchor 4 stays label-less), Cursor_8/9 + cursorOverride display,
+persistence (M6-SAVE), net syncs, chest loot (M5), favorited sell/drop
+rules, remote opens (Void Lens/Money Trough), the keyboard overlay rework,
+the lid animation, `IsBlockedFromTransferIntoChest` (`ChestUI.cs:1291-1302`,
+bank-only — noted at `chest.rs`).
+
+The stale notes flipped with this landing (located by content): the
+M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
+items have none)" clause and its "Favorites are stateless" bullet now point
+at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
+favorite wording is corrected the same way.

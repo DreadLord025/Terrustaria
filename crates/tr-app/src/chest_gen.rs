@@ -27,12 +27,11 @@
 //! dungeon keys are approximated by the depth band and the wall/tile
 //! probes around the anchor — the full style dispatcher rides [7]).
 
-use crate::craft::WorldChest;
-use crate::item::ItemSlot;
+use crate::chest::WorldChest;
+use crate::item::{ItemSlot, EMPTY_SLOT};
 use crate::prefix;
 use tr_core::world::World;
 use tr_core::tile::FLAG_ACTIVE;
-use tr_core::tiledata::TILE_COUNT;
 
 /// The chest tile kinds an anchor can carry (`craft::CHEST_TILES`).
 const CHEST_KINDS: [u16; 2] = [21, 341];
@@ -733,10 +732,16 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
             if rows.is_empty() {
                 continue;
             }
-            let mut slots: Vec<(u16, u32)> = Vec::with_capacity(rows.len());
+            let mut slots: Vec<ItemSlot> = Vec::with_capacity(rows.len());
             for row in rows {
-                slots.push((row.kind, row.count.max(1)));
+                slots.push(ItemSlot {
+                    kind: row.kind,
+                    name: crate::registry::name(row.kind),
+                    count: row.count.max(1),
+                    prefix: row.prefix,
+                });
             }
+            let _ = EMPTY_SLOT;
             out.push(WorldChest {
                 tile: (x, y),
                 slots,
@@ -755,6 +760,17 @@ pub(crate) fn generate_world_chests(world: &World) -> Vec<WorldChest> {
 /// margin.
 fn doubled_hell_depth(world: &World, y: i32) -> bool {
     y > world.height - 205
+}
+
+/// Merges the load-time roll with a pre-seeded store (the `TR_CHEST`
+/// fixture): the fixture's chests keep their slots, the roll's own anchors
+/// append after them.
+pub(crate) fn merge_store(mut rolled: Vec<crate::chest::WorldChest>, seeded: Vec<crate::chest::WorldChest>) -> Vec<crate::chest::WorldChest> {
+    let taken: std::collections::HashSet<(i32, i32)> =
+        seeded.iter().map(|c| c.tile).collect();
+    rolled.retain(|c| !taken.contains(&c.tile));
+    rolled.extend(seeded);
+    rolled
 }
 
 #[cfg(test)]
@@ -808,9 +824,9 @@ mod tests {
         // The 1/11 weapon pick: any of the surface-table ids is faithful.
         let weapon = [280, 281, 284, 285, 953, 946, 3068, 3069, 3084, 4341, 6165];
         assert!(
-            rows.iter().any(|&(k, _)| weapon.contains(&k)),
+            rows.iter().any(|r| weapon.contains(&r.kind)),
             "a surface weapon row landed: {:?}",
-            rows.iter().map(|&(k, _)| k).collect::<Vec<_>>()
+            rows.iter().map(|r| r.kind).collect::<Vec<_>>()
         );
     }
 

@@ -471,6 +471,15 @@ string[] wantedSets =
     // Grass framing (WorldGen.TileFrameCosmetic 82143/82185/83395):
     // Conversion.Grass, Sets.Ore and ChecksForMerge gate the grass family path.
     "Grass", "Ore", "ChecksForMerge",
+    // Restored 2026-11-07: landed in sets.rs by M2-PHYS-1 without the generator
+    // (Conversion.* TileID.cs:92ff, IceSkateSlippery :481, Clouds :505) — the
+    // committed symbol names are kept via the dot-to-underscore emission below.
+    "Conversion.Sand", "Conversion.HardenedSand", "Conversion.Sandstone",
+    "IceSkateSlippery", "Clouds",
+    // `TileRunner`'s override check (`WorldGen.cs:76927`) — everything is clearable
+    // during generation except these 17 (`TileID.cs:573`, `CreateBoolSet(true, …)`),
+    // so the emitted set is the complement (default-true emission, Program.cs:92-96).
+    "CanBeClearedDuringGeneration",
 ];
 foreach (var name in wantedSets)
 {
@@ -480,7 +489,11 @@ foreach (var name in wantedSets)
         Console.Error.WriteLine($"warn: TileID.Sets.{key} not found");
         continue;
     }
-    EmitSet(sbSets, "SET_" + ToRustName(key).ToUpperInvariant(), ids);
+    // The Rust name follows the wanted entry with dots as underscores, so the
+    // parser's last-segment key (`Sand`) still emits as SET_CONVERSION_SAND;
+    // dot-less entries are unchanged.
+    var rustName = "SET_" + ToRustName(name.Replace('.', '_')).ToUpperInvariant();
+    EmitSet(sbSets, rustName, ids);
 }
 
 sbLight.AppendLine();

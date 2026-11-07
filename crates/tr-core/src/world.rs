@@ -88,6 +88,13 @@ pub struct World {
     pub eclipse: bool,
     /// `Main.bloodMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub blood_moon: bool,
+    /// `CurrentFrameFlags.SleepingPlayersCount == ActivePlayersCount &&
+    /// SleepingPlayersCount > 0` (`Main.cs:17856-17859` → `UpdateTimeRate`'s
+    /// all-asleep flag, `Main.cs:6209`): every present player is fully asleep
+    /// (`PlayerSleepingHelper.FullyFallenAsleep`, 120 ticks). The sim feeds it
+    /// per frame — `Main.UpdateWorld_Players` computes the counts before
+    /// `UpdateTime` reads them. Runtime-only, not saved.
+    pub all_players_asleep: bool,
     /// The downed-boss flags (`NPC.downed*` statics, `NPC.cs:6340-6380`):
     /// the world-persistent boss states. The save wire rides the .wld
     /// flags block (M6-SAVE's world sections).
@@ -123,6 +130,9 @@ pub struct World {
     /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
     /// flag 6, `NPC.cs:79346`'s case 245).
     pub downed_golem: bool,
+    /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
+    /// 25, `NPC.cs:79355`).
+    pub downed_deerclops: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -214,6 +224,7 @@ impl World {
             brain_x: 0.0,
             brain_y: 0.0,
             downed_golem: false,
+            downed_deerclops: false,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,
@@ -231,6 +242,7 @@ impl World {
             extras: std::collections::HashMap::new(),
             eclipse: false,
             blood_moon: false,
+            all_players_asleep: false,
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
@@ -263,13 +275,23 @@ impl World {
         self.fast_forward_to_dawn || self.fast_forward_to_dusk
     }
 
-    /// `Main.UpdateTimeRate`'s fast-forward arm (`Main.cs:6199-6206`): 60 while a
-    /// dial is fast-forwarding, 1 otherwise. The sleeping/creative-power branches
-    /// are not ported.
+    /// `Main.UpdateTimeRate` (`Main.cs:6199-6224`): 60 while a dial is
+    /// fast-forwarding (`:6201-6205`), **×5 while every player is fully
+    /// asleep** (`:6209-6215` — the `SleepingPlayersCount ==
+    /// ActivePlayersCount && > 0` flag), 1 otherwise. The creative-power
+    /// branches (`:6216-6218` freeze → 0) stay with the creative powers.
     pub fn day_rate(&self) -> i32 {
         // `Main.cs:6200-6203`: `if (IsFastForwardingTime()) { dayRate = 60; return; }`
+        if self.is_fast_forwarding() {
+            return 60;
+        }
+        // `:6212-6215`: `if (!Main.gameMenu && flag) num *= 5` — the SP port
+        // has no gameMenu state here; the flag is the all-asleep input.
+        if self.all_players_asleep {
+            return 5;
+        }
         // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
-        if self.is_fast_forwarding() { 60 } else { 1 }
+        1
     }
 
     /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the

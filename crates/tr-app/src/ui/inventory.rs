@@ -228,6 +228,7 @@ pub fn draw(
     lookups: &assets::Lookups,
     screen: Vec2,
     inventory: &[ItemSlot; INV],
+    favorites: &[usize],
     equip: &EquipSlots,
     selected: usize,
     equip_page: i32,
@@ -250,6 +251,19 @@ pub fn draw(
         for j in 0..GRID_ROWS {
             let slot_idx = i + j * GRID_COLS;
             let p = grid_pos(i, j, INVENTORY_SCALE);
+            // `ItemSlot.cs:2149-2156`: the favorited arm swaps the slot's
+            // background to the gold `Inventory_Back10`; the port's atlas
+            // lacks the sheet, so the fallback tints the default one
+            // (`slot::favorited_slot_tint` — the plan-authorized fallback).
+            let tint = if slot::favorited_background_active(
+                0,
+                favorites.contains(&slot_idx),
+                &inventory[slot_idx],
+            ) {
+                slot::favorited_slot_tint(INVENTORY_BACK)
+            } else {
+                INVENTORY_BACK
+            };
             slot::draw_slot(
                 r,
                 lookups,
@@ -260,7 +274,7 @@ pub fn draw(
                 slot_idx as i32,
                 slot_idx == selected,
                 INVENTORY_SCALE,
-                INVENTORY_BACK,
+                tint,
             );
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y, INVENTORY_SCALE, cell) {
                 hit.hovered = Some(HoverRef::Grid(slot_idx));
@@ -594,6 +608,14 @@ pub(crate) fn bank_slot_at(mouse: Vec2, m_h: f32) -> Option<usize> {
     None
 }
 
+/// The trash cell at `mouse` for the click pass — the same `hit_test` shape
+/// the draw pass's hover uses (`Main.cs:42349-42366`: (448, 258), scale 0.85).
+/// The slot is screen-anchored (no `m_h` — the draw and hover sit at the raw
+/// pivot), unlike the bank grid below it.
+pub(crate) fn trash_slot_at(mouse: Vec2) -> bool {
+    hit_test(mouse, TRASH_X, TRASH_Y, INVENTORY_SCALE, SLOT_FALLBACK_PX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -613,6 +635,22 @@ mod tests {
         assert_eq!(grid_pos(slot_ij(9).0, slot_ij(9).1, SCALE), Vec2::new(448.0, 20.0));
         assert_eq!(grid_pos(slot_ij(10).0, slot_ij(10).1, SCALE), Vec2::new(20.0, 67.0));
         assert_eq!(grid_pos(slot_ij(49).0, slot_ij(49).1, SCALE), Vec2::new(448.0, 210.0));
+    }
+
+    #[test]
+    fn trash_slot_hit_matches_the_draw_geometry() {
+        // `Main.cs:42352-42353`: (448, 258) at scale 0.85, cell 52 —
+        // inclusive edges, the same shape the draw pass's hover uses.
+        assert!(trash_slot_at(Vec2::new(448.0, 258.0)));
+        assert!(trash_slot_at(Vec2::new(470.0, 280.0)));
+        assert!(trash_slot_at(Vec2::new(
+            448.0 + 52.0 * 0.85,
+            258.0 + 52.0 * 0.85
+        )));
+        assert!(!trash_slot_at(Vec2::new(447.9, 280.0)));
+        assert!(!trash_slot_at(Vec2::new(470.0, 257.9)));
+        assert!(!trash_slot_at(Vec2::new(492.3, 280.0)));
+        assert!(!trash_slot_at(Vec2::new(470.0, 302.3)));
     }
 
     #[test]
