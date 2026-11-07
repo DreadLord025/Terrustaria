@@ -433,6 +433,11 @@ fn portrait_data(
         NpcKind::GoblinArcher => 60,
         NpcKind::BoundGoblin => 61,
         NpcKind::GoblinTinkerer => 62,
+        NpcKind::Golem => 53,
+        NpcKind::GolemHead => 54,
+        NpcKind::GolemFistLeft => 55,
+        NpcKind::GolemFistRight => 56,
+        NpcKind::GolemHeadFree => 57,
         NpcKind::SnowmanGangsta => 48,
         NpcKind::SnowBalla => 49,
         NpcKind::MysterySnowman => 50,
@@ -444,6 +449,11 @@ fn portrait_data(
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
+        (NpcKind::Golem, _) => (sheet_i, 140.0, 140.0, 140.0, white),
+        (NpcKind::GolemHead, _) => (sheet_i, 70.0, 70.0, 70.0, white),
+        (NpcKind::GolemFistLeft, _) => (sheet_i, 30.0, 40.0, 30.0, white),
+        (NpcKind::GolemFistRight, _) => (sheet_i, 30.0, 40.0, 30.0, white),
+        (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (

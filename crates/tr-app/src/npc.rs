@@ -522,6 +522,11 @@ impl NpcKind {
             NpcKind::Creeper => 56,
             NpcKind::BoundGoblin => 63,
             NpcKind::GoblinTinkerer => 64,
+            NpcKind::Golem => 73,
+            NpcKind::GolemHead => 74,
+            NpcKind::GolemFistLeft => 75,
+            NpcKind::GolemFistRight => 76,
+            NpcKind::GolemHeadFree => 77,
         }
     }
 
@@ -599,6 +604,11 @@ impl NpcKind {
             56 => NpcKind::Creeper,
             63 => NpcKind::BoundGoblin,
             64 => NpcKind::GoblinTinkerer,
+            73 => NpcKind::Golem,
+            74 => NpcKind::GolemHead,
+            75 => NpcKind::GolemFistLeft,
+            76 => NpcKind::GolemFistRight,
+            77 => NpcKind::GolemHeadFree,
             _ => return None,
         })
     }
@@ -732,6 +742,11 @@ impl NpcKind {
             | NpcKind::PirateArcher
             | NpcKind::PirateCorsair
             | NpcKind::PirateCaptain => (18.0, 40.0),
+            // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the body
+            // 140x140, the head/free head 70x70, the fists 40x30.
+            NpcKind::Golem => (140.0, 140.0),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (70.0, 70.0),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => (40.0, 30.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -874,6 +889,12 @@ impl NpcKind {
             NpcKind::PirateArcher => 225,
             NpcKind::PirateCorsair => 350,
             NpcKind::PirateCaptain => 3000,
+            // `SetDefaults` 245-249: the body 15000, the head 25000, the
+            // fists 10000, the free head 16000.
+            NpcKind::Golem => 15000,
+            NpcKind::GolemHead => 25000,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 10000,
+            NpcKind::GolemHeadFree => 16000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -962,6 +983,11 @@ impl NpcKind {
             NpcKind::PirateArcher => 30,
             NpcKind::PirateCorsair => 35,
             NpcKind::PirateCaptain => 70,
+            // `SetDefaults` 245-249: 72/64/59/59/80.
+            NpcKind::Golem => 72,
+            NpcKind::GolemHead => 64,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 59,
+            NpcKind::GolemHeadFree => 80,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1488,6 +1514,12 @@ impl Npc {
             NpcKind::PirateArcher => 0.3,
             NpcKind::PirateCorsair => 0.35,
             NpcKind::PirateCaptain => 0.0,
+            // The whole family: kb 0 (`:12171`/`:12188`/`:12204`/`:12218`).
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1598,6 +1630,11 @@ impl Npc {
             NpcKind::PirateArcher => 14,
             NpcKind::PirateCorsair => 20,
             NpcKind::PirateCaptain => 30,
+            // `SetDefaults` 245-249: 26/20/28/28/32.
+            NpcKind::Golem => 26,
+            NpcKind::GolemHead => 20,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 28,
+            NpcKind::GolemHeadFree => 32,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1704,6 +1741,13 @@ impl Npc {
             NpcKind::PirateArcher => 1000.0,
             NpcKind::PirateCorsair => 1500.0,
             NpcKind::PirateCaptain => 50000.0,
+            // The body carries `Item.buyPrice(0, 15)` = 15 gold = 150000
+            // copper (`:12173`); the parts none.
+            NpcKind::Golem => 150000.0,
+            NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
             // The frost trio: value 400.
             NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
@@ -2348,6 +2392,16 @@ impl Npc {
                         self.frame_counter = 0.0;
                     }
                 }
+            }
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => {
+                // The v1: the single-frame draws (the Golem's part
+                // animation cycles land with the full AI_045-48 machines).
+                self.frame_counter = 0.0;
+                self.frame = 0;
             }
             NpcKind::GoblinTinkerer => {
                 // The town 3-frame machine (`Main.npcFrameCount[107]`,
@@ -4526,6 +4580,11 @@ impl Npc {
             NpcKind::Creeper => 53,
             NpcKind::BoundGoblin => 58,
             NpcKind::GoblinTinkerer => 59,
+            NpcKind::Golem => 60,
+            NpcKind::GolemHead => 61,
+            NpcKind::GolemFistLeft => 62,
+            NpcKind::GolemFistRight => 63,
+            NpcKind::GolemHeadFree => 64,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -6494,6 +6553,37 @@ mod tests {
         assert_eq!(n.hp, 250);
         assert_eq!(w.saved_goblin, true);
     }
+    #[test]
+    fn the_golem_family_stats_and_maps() {
+        // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the
+        // kind<->u16 65-69, the bestiary fold (the parts -> the Golem
+        // entry net 245).
+        assert_eq!(NpcKind::Golem.max_hp(), 15000);
+        assert_eq!(NpcKind::GolemHead.max_hp(), 25000);
+        assert_eq!(NpcKind::GolemFistLeft.max_hp(), 10000);
+        assert_eq!(NpcKind::GolemHeadFree.max_hp(), 16000);
+        let b = Npc::new(NpcKind::Golem, 0.0, 0.0, 1, 0.0);
+        assert_eq!(b.defense(), 26);
+        let fh = Npc::new(NpcKind::GolemHeadFree, 0.0, 0.0, 1, 0.0);
+        assert_eq!(fh.defense(), 32);
+        assert_eq!(NpcKind::Golem.size(), (140.0, 140.0));
+        assert_eq!(NpcKind::GolemFistRight.size(), (40.0, 30.0));
+        assert_eq!(NpcKind::Golem.contact_damage(), 72);
+        assert_eq!(NpcKind::GolemHeadFree.contact_damage(), 80);
+        for (kind, v) in [
+            (NpcKind::Golem, 73),
+            (NpcKind::GolemHead, 74),
+            (NpcKind::GolemFistLeft, 75),
+            (NpcKind::GolemFistRight, 76),
+            (NpcKind::GolemHeadFree, 77),
+        ] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GolemHeadFree, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 245, "the parts fold onto the Golem entry");
+    }
+
     #[test]
     fn the_archer_stops_fires_and_staggers() {
         // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate

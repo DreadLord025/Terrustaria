@@ -1089,6 +1089,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     for npc in &dead {
         report_invasion_kill(app, npc.kind);
     }
+    // The Golem's death chain (`:79346`'s event-flag case 245 + the
+    // head's detach at `:84957`): the BODY's death raises
+    // `downedGolemBoss`; the attached head's death spawns the free head
+    // at its position (`NewNPC(..., 249, base.whoAmI)`).
+    for npc in &dead {
+        match npc.kind {
+            NpcKind::Golem => {
+                app.world.downed_golem = true;
+            }
+            NpcKind::GolemHead => {
+                let mut free =
+                    Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
+                free.dont_take_damage = true;
+                free.hp = free.max_hp;
+                app.npcs.push(free);
+            }
+            _ => {}
+        }
+    }
     // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
     // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
     // the first King) while no King lives (`!AnyNPCs(50)`); at the
@@ -2293,7 +2312,7 @@ mod pirate_invasion_tests {
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
     use crate::world_sim::editing::use_pirate_map;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -2301,7 +2320,10 @@ mod pirate_invasion_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -2321,16 +2343,24 @@ mod pirate_invasion_tests {
         player.x = 150.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
         assert!(use_pirate_map(&mut app));
         assert_eq!(app.world.invasion_type, 3);
         assert_eq!(app.world.invasion_size, 180);
         assert_eq!(app.world.invasion_size_start, 180);
         assert!(app.world.invasion_goblins, "the active-invasion flag");
         // The second map refuses while the invasion is active.
-        app.inventory[app.selected] =
-            crate::item::ItemSlot { kind: 1315, name: "Pirate Map".into(), count: 1, prefix: 0 };
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
         assert!(!use_pirate_map(&mut app), "the active invasion refuses");
         assert_eq!(app.inventory[app.selected].count, 1);
     }
@@ -2384,5 +2414,45 @@ mod pirate_invasion_tests {
             }
         }
         assert!(saw_captain, "the Captain roll fires");
+    }
+    #[test]
+    fn the_golem_death_chain() {
+        // `:79346`'s case 245 + `:84957`'s detach: the BODY's death
+        // raises `downed_golem`; the attached head's death spawns the
+        // shielded free head at its position.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        app.world = big;
+        // The head dies -> the free head spawns (the shield on).
+        let mut head = Npc::new(NpcKind::GolemHead, 30.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        head.hp = 0;
+        app.npcs.push(head);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let free = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::GolemHeadFree)
+            .expect("the free head spawns");
+        assert!(free.dont_take_damage, "the spawn shield");
+        // The body dies -> downed_golem.
+        let mut body = Npc::new(NpcKind::Golem, 40.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+        body.hp = 0;
+        app.npcs.push(body);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.world.downed_golem,
+            "the body's death is the fight's end"
+        );
     }
 }

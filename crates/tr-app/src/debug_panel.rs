@@ -501,6 +501,28 @@ fn spawn_boss(app: &mut App, kind: NpcKind) {
             h.worm_left = 65;
             Some(h)
         }
+        NpcKind::Golem => {
+            // The 4-piece set (`AI_045`'s init shape): the body at the
+            // click, the head locked above, the fists flanking.
+            let mut body = Npc::new(NpcKind::Golem, x_px, y_px, 1, 0.0);
+            body.hp = body.max_hp;
+            let mut head = Npc::new(
+                NpcKind::GolemHead,
+                x_px + (140.0 - 70.0) * 0.5,
+                y_px - 70.0,
+                1,
+                0.0,
+            );
+            head.hp = head.max_hp;
+            let mut fl = Npc::new(NpcKind::GolemFistLeft, x_px - 80.0, y_px + 40.0, 1, 0.0);
+            fl.hp = fl.max_hp;
+            let mut fr = Npc::new(NpcKind::GolemFistRight, x_px + 180.0, y_px + 40.0, 1, 0.0);
+            fr.hp = fr.max_hp;
+            app.npcs.push(head);
+            app.npcs.push(fl);
+            app.npcs.push(fr);
+            Some(body)
+        }
         NpcKind::TheDestroyer => {
             let mut h = Npc::spawn_worm_head(&app.world, x, y, kind);
             h.hp = h.max_hp;

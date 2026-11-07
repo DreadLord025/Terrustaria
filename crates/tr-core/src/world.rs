@@ -118,6 +118,9 @@ pub struct World {
     pub brain_present: bool,
     pub brain_x: f32,
     pub brain_y: f32,
+    /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
+    /// flag 6, `NPC.cs:79346`'s case 245).
+    pub downed_golem: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -208,6 +211,7 @@ impl World {
             brain_present: false,
             brain_x: 0.0,
             brain_y: 0.0,
+            downed_golem: false,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,

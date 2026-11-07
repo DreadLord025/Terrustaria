@@ -147,6 +147,10 @@ pub(crate) struct NpcAssets {
     pub(crate) creeper: Option<BgTex>,
     pub(crate) bound_goblin: Option<BgTex>,
     pub(crate) goblin_tinkerer: Option<BgTex>,
+    pub(crate) golem: Option<BgTex>,
+    pub(crate) golem_head: Option<BgTex>,
+    pub(crate) golem_fist: Option<BgTex>,
+    pub(crate) golem_head_free: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -230,6 +234,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         creeper: sky_tex(atlas, "NPC_267", None),
         bound_goblin: sky_tex(atlas, "NPC_105", None),
         goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
+        golem: sky_tex(atlas, "NPC_245", None),
+        golem_head: sky_tex(atlas, "NPC_246", None),
+        golem_fist: sky_tex(atlas, "NPC_247", None),
+        golem_head_free: sky_tex(atlas, "NPC_249", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -937,6 +945,28 @@ pub(crate) fn draw_npcs(
                 [34.0, 54.0],
                 [n.x - 8.0, n.y - 10.0],
             ),
+            // The Golem family (the v1 single-frame draws): the body
+            // 140x140, the heads 70x70, the fists 40x30 (the SetDefaults
+            // boxes; the sheets draw at the box size).
+            NpcKind::Golem => (
+                assets.golem.as_ref(),
+                assets.golem.as_ref().map_or(140.0, |t| t.h),
+                [140.0, 140.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (
+                if n.kind == NpcKind::GolemHead {
+                    assets.golem_head.as_ref()
+                } else {
+                    assets.golem_head_free.as_ref()
+                },
+                70.0,
+                [70.0, 70.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
+            }
             // The goblins: the 3-frame humanoid sheets (the vanilla
             // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
             NpcKind::GoblinPeon
