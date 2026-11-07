@@ -130,6 +130,9 @@ pub struct World {
     /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
     /// flag 6, `NPC.cs:79346`'s case 245).
     pub downed_golem: bool,
+    /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
+    /// 25, `NPC.cs:79355`).
+    pub downed_deerclops: bool,
     /// `Main.slimeRain` — the Slime Rain event.
     pub slime_rain: bool,
     /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
@@ -221,6 +224,7 @@ impl World {
             brain_x: 0.0,
             brain_y: 0.0,
             downed_golem: false,
+            downed_deerclops: false,
             slime_rain: false,
             slime_rain_time: 0.0,
             slime_rain_kills: 0,

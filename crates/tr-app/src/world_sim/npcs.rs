@@ -737,8 +737,7 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
     }
     if app.invasion_progress_near {
-        app.invasion_progress_display_left =
-            app.invasion_progress_display_left.max(160);
+        app.invasion_progress_display_left = app.invasion_progress_display_left.max(160);
     }
     // `invasion_goblins` rides the type (the debug panel's flag reads it).
     app.world.invasion_goblins = app.world.invasion_type == 1;
@@ -1250,6 +1249,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Golem => {
                 app.world.downed_golem = true;
             }
+            NpcKind::Deerclops => {
+                app.world.downed_deerclops = true;
+            }
             NpcKind::GolemHead => {
                 let mut free =
                     Npc::new(NpcKind::GolemHeadFree, npc.x, npc.y + npc.size().1, 1, 0.0);
@@ -1504,6 +1506,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.world.wof_present = false;
     }
 
+    // The probe's escape resolve (`AI()`'s aiStyle-80 phase-2 arm,
+    // `NPC.cs:36594-36599`: `Main.StartInvasion(4); active = false;`) —
+    // the invasion starts and the probe leaves (no loot either way; the
+    // vanilla registers no drops for the probe). The qualifying-player
+    // count is 1 (the single-player port).
+    if app.npcs.iter().any(|n| {
+        n.hp > 0 && n.kind == NpcKind::MartianProbe && n.wants_martian_invasion
+    }) {
+        start_invasion(&mut app.world, 1, 4);
+        app.npcs
+            .retain(|n| !(n.kind == NpcKind::MartianProbe && n.wants_martian_invasion));
+    }
+
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
     for n in app.npcs.iter_mut() {
@@ -1664,6 +1679,52 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     && !app.npcs.iter().any(|n| {
                         n.hp > 0 && matches!(n.kind, NpcKind::BoundGoblin | NpcKind::GoblinTinkerer)
                     }),
+                // The skyMob/probe gates (`SetSpawnFlags`' `invaders`, the
+                // `downedGolemBoss`/`downedMartians` rolls, the skyMob
+                // dispatch's type-4 read, and `AnyDanger`'s boss loop —
+                // the port's boss-flagged kinds; the pillar countdown and
+                // the moon events have no sources yet).
+                invaders: inv_input.is_some(),
+                downed_golem: app.world.downed_golem,
+                downed_martians: app.world.downed_martians,
+                invasion_type: app.world.invasion_type,
+                any_danger: app.world.invasion_type > 0
+                    || app.npcs.iter().any(|n| {
+                        n.hp > 0
+                            && matches!(
+                                n.kind,
+                                NpcKind::KingSlime
+                                    | NpcKind::EyeOfCthulhu
+                                    | NpcKind::QueenBee
+                                    | NpcKind::SkeletronHead
+                                    | NpcKind::WallOfFlesh
+                                    | NpcKind::TheDestroyer
+                                    | NpcKind::SkeletronPrime
+                                    | NpcKind::Retinazer
+                                    | NpcKind::Spazmatism
+                                    | NpcKind::Plantera
+                                    | NpcKind::BrainOfCthulhu
+                                    | NpcKind::Golem
+                                    | NpcKind::GolemHead
+                                    | NpcKind::GolemFistLeft
+                                    | NpcKind::GolemFistRight
+                                    | NpcKind::GolemHeadFree
+                            )
+                    }),
+                probe_exists: app
+                    .npcs
+                    .iter()
+                    .any(|n| n.hp > 0 && n.kind == NpcKind::MartianProbe),
+                // `SetSpawnFlags`' `skyBehindPlayer` (`NPC.cs:412`): the
+                // wall behind the player's tile is light-passing (`Main.
+                // wallLight`, the spawner's `LIGHT_WALLS`) or wall 73.
+                sky_behind_player: {
+                    let px = (pcx / TILE_PX) as i32;
+                    let py = (pcy / TILE_PX) as i32;
+                    app.world
+                        .tile(px, py)
+                        .is_some_and(|t| spawner::LIGHT_WALLS.contains(&t.wall) || t.wall == 73)
+                },
             })
         });
         let mut rng = spawner::FastRandom::new(app.npc_rng);
@@ -2366,20 +2427,23 @@ mod invasion_tests {
         use tr_core::tile::{FLAG_ACTIVE, Tile};
 
         fn surface_world() -> World {
-        let mut w = World::new("t".into(), 300, 200);
-        w.world_surface = 120.0;
-        for x in 0..w.width {
-            for y in 120..w.height {
-                let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
-                w.tiles[i].flags |= FLAG_ACTIVE;
+            let mut w = World::new("t".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
             }
+            w.compute_column_surface();
+            w
         }
-        w.compute_column_surface();
-        w
-    }
 
-    fn surface_world_orig() -> World {
+        fn surface_world_orig() -> World {
             let mut w = World::new("t".into(), 300, 200);
             w.world_surface = 120.0;
             for x in 0..w.width {
@@ -2628,16 +2692,19 @@ mod invasion_bar_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::World;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-        fn surface_world() -> World {
+    fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
         w.world_surface = 120.0;
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -2645,7 +2712,7 @@ mod invasion_bar_tests {
         w
     }
 
-#[test]
+    #[test]
     fn the_kill_credit_reports_the_bar_state() {
         // `ReportInvasionProgress` (`Main.cs:47687-47694`): the points
         // (sizeStart - size), the max (sizeStart), the icon (group + 3) and
@@ -2672,7 +2739,10 @@ mod invasion_bar_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -2686,8 +2756,13 @@ mod invasion_bar_tests {
         player.x = 100.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        let mut invader =
-            Npc::new(NpcKind::GoblinThief, 101.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        let mut invader = Npc::new(
+            NpcKind::GoblinThief,
+            101.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
         invader.hp = invader.max_hp;
         app.npcs.push(invader);
         check_invasion_progress_display(&mut app);
@@ -2715,7 +2790,10 @@ mod invasion_bar_tests {
         app.invasion_progress_display_left = 0;
         app.invasion_progress_alpha = 1.0;
         update_invasion_state(&mut app);
-        assert!((app.invasion_progress_alpha - 0.95).abs() < 1e-6, "the fade down");
+        assert!(
+            (app.invasion_progress_alpha - 0.95).abs() < 1e-6,
+            "the fade down"
+        );
     }
 
     #[test]
@@ -2789,4 +2867,123 @@ mod martian_invasion_tests {
     }
 }
 
+}
+
+#[cfg(test)]
+mod probe_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_probe_machine_detects_and_flashes() {
+        // aiStyle 80 phase 0 -> 1 -> 2 (`NPC.cs:36532-36600`): the hover
+        // holds while the player sits far away, the 352-px below-gate
+        // flips to the detect flash, and the 60-tick timer hands over to
+        // the escape with the drift-away `ai[3]`.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        // The player centre x 2400+12; the probe sits 100 px above and
+        // ~90 px left: inside the 352-px gate, player centre below.
+        let mut n = Npc::new(NpcKind::MartianProbe, 145.0 * TILE_PX, 1800.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 1.0, "the detect gate fires on the first tick");
+        assert_eq!(n.facing, 1, "TargetClosest resolves toward the player");
+        for _ in 0..59 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 1.0, "the 60-tick flash is still running");
+        n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.ai[0], 2.0, "the escape takes over at 60 ticks");
+        assert_eq!(n.ai[3], -1.0, "the drift runs away from the player");
+        assert!(!n.wants_martian_invasion, "the escape timer just reset");
+    }
+
+    #[test]
+    fn the_probe_hover_gate_needs_the_player_below() {
+        // The detect gate (`:36564-36569`): the player ABOVE the probe
+        // (the sky hover) never triggers it.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::MartianProbe, 150.0 * TILE_PX, 1700.0, 0, 0.0);
+        n.hp = n.max_hp;
+        // The player's centre y ~1900 is BELOW 1736 — move the probe under
+        // the ground line so the player's centre sits above: the probe at
+        // the surface keeps `pcy > cy` true, so instead drop the player's
+        // y above the probe.
+        player.y = 1600.0;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert_eq!(n.ai[0], 0.0, "the player-above gate refuses the detect");
+    }
+
+    #[test]
+    fn the_probe_escape_starts_the_martian_invasion_and_leaves() {
+        // The phase-2 arm (`:36594-36599`): the 180-tick timer fires
+        // `StartInvasion(4); active = false` — the sim resolves the
+        // invasion (the 160+40x type-4 army) and removes the probe; the
+        // defeat flag stays unset (the invasion only started).
+        let (mut app, mut player) = app_with_player();
+        let mut n = Npc::new(NpcKind::MartianProbe, 145.0 * TILE_PX, 1800.0, 0, 0.0);
+        n.hp = n.max_hp;
+        n.ai[0] = 2.0;
+        n.ai[1] = 179.0;
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.invasion_type, 4, "the type-4 invasion started");
+        assert_eq!(app.world.invasion_size, 200, "160 + 40 x 1 qualifying");
+        assert!(app.world.invasion_goblins, "the active-invasion latch");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::MartianProbe),
+            "the probe left without dropping anything"
+        );
+        assert!(!app.world.downed_martians, "the defeat is not the start");
+    }
+
+    #[test]
+    fn the_probe_killed_does_not_start_the_invasion() {
+        // The killed probe drops nothing (the vanilla registers no loot
+        // for 399) and no invasion rides its death.
+        let (mut app, _player) = app_with_player();
+        let mut n = Npc::new(NpcKind::MartianProbe, 145.0 * TILE_PX, 1800.0, 0, 0.0);
+        n.hp = 0;
+        app.npcs.push(n);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(app.world.invasion_type, 0, "the kill is not the trigger");
+        assert!(
+            !app.npcs.iter().any(|m| m.kind == NpcKind::MartianProbe),
+            "the dead probe is removed"
+        );
+    }
 }

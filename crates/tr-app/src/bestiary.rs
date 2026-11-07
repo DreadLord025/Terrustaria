@@ -589,6 +589,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Martian Walker",
     },
     BestiaryEntryDef {
+        credit_id: "MartianProbe",
+        net_id: 399,
+        kind: NpcKind::MartianProbe,
+        variant: None,
+        quick_unlock: false,
+        name: "Martian Probe",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,
@@ -635,6 +643,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: true,
         name: "Golem",
+    },
+    BestiaryEntryDef {
+        credit_id: "Deerclops",
+        net_id: 668,
+        kind: NpcKind::Deerclops,
+        variant: None,
+        quick_unlock: true,
+        name: "Deerclops",
     },
     BestiaryEntryDef {
         credit_id: "GoblinTinkerer",

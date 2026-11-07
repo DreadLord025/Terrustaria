@@ -71,6 +71,10 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     // `Main.cs:64899`'s `statLifeMax >= 120` scan, folded to the port's one
     // player (`Main.player[i].statLifeMax`).
     let any_player_120 = app.player.as_ref().is_some_and(|p| p.max_hp >= 120);
+    // The Deerclops's midnight-crossing sample (`Main.cs:65121`'s `num4`):
+    // the time BEFORE this tick's advance.
+    let night_pre = app.world.time < 16200.0;
+    let mut night_raining = false;
     let App {
         world_tick_step,
         world,
@@ -111,6 +115,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         if scene_state.forced_severity.is_none() {
             sandstorm.update_time(day_rate, wind.speed_current);
         }
+        night_raining = rain.is_raining();
         // (5) The Slime Rain event (`Main.cs:64925-64949`'s morning roll +
         // the time flow): the expiry decays dayRate-scaled (`StopSlimeRain`
         // at <= 0, `Main.cs:64788-64800`); the roll runs while the morning
@@ -153,6 +158,19 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         }
     });
     world_tick_step.cap_backlog();
+    // (6) The Deerclops arm (`Main.cs:65121-65134`): the tick that steps
+    // past 16200 while raining; the roll + the player gates ride
+    // `deerclops_roll`, the spawn `SpawnOnPlayer`'s shape.
+    let crossed = night_pre && world.time >= 16200.0 && night_raining;
+    if crossed {
+        let mut r = app.npc_rng;
+        let passed = crate::world_sim::weather::deerclops_roll(app, &mut r);
+        app.npc_rng = r;
+        if passed {
+            let at = app.player.as_ref().map(|p| p.center());
+            crate::world_sim::weather::spawn_deerclops(app, at);
+        }
+    }
 }
 
 /// `Main.cs:64938-64949`'s roll shape: `Next(450000/dayRate)` — halved
@@ -178,6 +196,40 @@ pub(crate) fn start_slime_rain(world: &mut tr_core::World, rng: &mut u64) {
     world.slime_rain = true;
     world.slime_rain_time = 32400.0 + (crate::app::rand01(rng) as f64) * 21600.0;
     world.slime_rain_kills = 0;
+}
+
+/// `Main.cs:65121-65134`'s midnight-crossing arm: the instantaneous
+/// `num4 < 16200 && time >= 16200` crossing while raining, the
+/// `!downedDeerclops || Next(4) == 0` repeat roll, and the player
+/// gates (above the surface, ZoneSnow, no nearby town NPCs,
+/// `statLifeMax2 >= 200 || statDefense >= 9`). The `CanSpawnEnemiesNear`
+/// and `AnyDanger` arms fold (no danger scan ported). Returns the
+/// player's centre to spawn at.
+pub(crate) fn deerclops_roll(app: &App, rng: &mut u64) -> bool {
+    if !(app.world.downed_deerclops || crate::app::rand01(rng) < 0.25) {
+        return false;
+    }
+    let Some(p) = app.player.as_ref() else {
+        return false;
+    };
+    if p.dead
+        || p.y >= (app.world.world_surface * 16.0) as f32
+        || !app.scene_metrics.zone_snow
+        || !(p.max_hp >= 200 || p.stat_defense >= 9)
+    {
+        return false;
+    }
+    true
+}
+
+/// `SpawnOnPlayer(668, ...)` at the player's feet.
+pub(crate) fn spawn_deerclops(app: &mut App, player: Option<(f32, f32)>) {
+    let Some((px, py)) = player else {
+        return;
+    };
+    let mut d = crate::npc::Npc::new(crate::npc::NpcKind::Deerclops, px, py, 1, 0.0);
+    d.hp = d.max_hp;
+    app.npcs.push(d);
 }
 
 #[cfg(test)]
@@ -447,5 +499,62 @@ mod tests {
                 .any(|n| n.kind == crate::npc::NpcKind::KingSlime),
             "the King spawned"
         );
+    }
+    #[test]
+    fn the_deerclops_roll_gates_the_death_flag() {
+        // `Main.cs:65121-65134`: the gates (the surface band, the zone
+        // snow, the 200-life/9-defense readiness, the dead) + the
+        // repeat roll (`!downed || Next(4)`); `NPC.cs:79355`'s case 668
+        // death raises downed_deerclops.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut big = tr_core::World::new("t".into(), 64, 200);
+        for x in 0..64 {
+            for y in 120..200 {
+                let i = big.index(x, y);
+                big.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                big.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        big.compute_column_surface();
+        big.world_surface = 120.0;
+        let mut player = crate::player::Player::spawn(&big);
+        player.x = 30.0 * 16.0;
+        player.y = 118.0 * 16.0;
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.world = big;
+        // The base life refuses.
+        app.player.as_mut().unwrap().max_hp = 100;
+        app.player.as_mut().unwrap().stat_defense = 0;
+        let mut rng = 1u64;
+        assert!(!crate::world_sim::weather::deerclops_roll(&app, &mut rng));
+        // The readiness passes the gates; the roll itself is the 1/4
+        // repeat (downed) or the guaranteed first — hunt a seed.
+        app.player.as_mut().unwrap().max_hp = 200;
+        app.scene_metrics.zone_snow = true;
+        let fired = (0..500u64).any(|seed| {
+            let mut r = seed + 1;
+            crate::world_sim::weather::deerclops_roll(&app, &mut r)
+        });
+        assert!(fired, "the roll fires within 500 seeds");
+        // The spawn + the death flag.
+        let at = app.player.as_ref().map(|p| p.center());
+        crate::world_sim::weather::spawn_deerclops(&mut app, at);
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::Deerclops)
+        );
+        let mut d = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == crate::npc::NpcKind::Deerclops)
+            .unwrap();
+        d.hp = 0;
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_deerclops, "the death flag");
     }
 }
