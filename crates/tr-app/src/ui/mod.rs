@@ -7,6 +7,7 @@ pub(crate) mod emotes;
 pub mod cards;
 pub mod char_creation;
 pub mod char_select;
+pub(crate) mod chest;
 pub mod chrome;
 pub mod color;
 pub mod crafting;
@@ -266,6 +267,7 @@ pub fn draw_hud(
     chat_state: &mut crate::chat::ChatMonitor,
     emotes_state: &crate::emotes::EmoteSystem,
     shop: Option<(&[u16], f32)>,
+    chest_panel: chest::PanelState<'_>,
     reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
     bank: Option<(&[ItemSlot], i32)>,
 ) {
@@ -390,6 +392,11 @@ pub fn draw_hud(
             let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
             text::hud_text(r, lookups, 120.0, 316.0 + m_h, 0.85, tint, &label);
         }
+        // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
+        // panel draws together with the inventory (`OpenChest` sets
+        // `playerInventory`, `Player.cs:33517`, chest.rs:409). The closed arm
+        // decays the button state (`ChestUI.cs:99-104`).
+        chest::draw(r, lookups, chest_panel, pulse, mouse_pos);
         // `Main.DrawPVPIcons` (`Main.cs:41003`): the icons ride the open
         // inventory's downward push (`Main.mH`) — the hardcoded 0.0 kept them
         // glued to the top while the minimap HUD pushed the panel down.

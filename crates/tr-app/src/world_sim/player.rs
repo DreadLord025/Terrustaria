@@ -260,6 +260,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             app.camera = app.camera.lerp(Vec2::new(cx, cy), 1.0 - (-dt * 12.0).exp());
         }
     }
+    crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
     if map_open {
         app.update_map_input();
     }

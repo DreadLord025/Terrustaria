@@ -2,9 +2,10 @@
 //! (`decompiled/Terraria/UI/ItemSlot.cs:2105-2776`).
 //!
 //! Covered contexts (the ones the P2 inventory panels use): 0 (main grid/hotbar),
-//! 1 (coins), 2 (ammo), 5 (reforge), 6 (trash), 7 (guide), 8-12 (armour/vanity/dye),
-//! 13 (the closed hotbar, `GUIHotbarDrawInner`), 21 (the mouse-carried item, no
-//! background — `Main.cs:45194`), 16-20 (misc equips) and 33 (misc dyes).
+//! 1 (coins), 2 (ammo), 3 (the world-chest panel, `Inventory_Back5`), 5 (reforge),
+//! 6 (trash), 7 (guide), 8-12 (armour/vanity/dye), 13 (the closed hotbar,
+//! `GUIHotbarDrawInner`), 21 (the mouse-carried item, no background —
+//! `Main.cs:45194`), 16-20 (misc equips) and 33 (misc dyes).
 
 use tr_render::{SheetRect, SpriteRenderer};
 
@@ -17,7 +18,7 @@ use crate::item::ItemSlot;
 /// The numbers are indices into this port's sheet set: `0` `Inventory_Back`,
 /// `1` `Inventory_Back9`, `2` `Inventory_Back4`, `3` `Inventory_Back7`,
 /// `4` `Inventory_Back13`, `5` `Inventory_Back3`, `6` `Inventory_Back12`,
-/// `7` `Inventory_Back18`.
+/// `7` `Inventory_Back18`, `8` `Inventory_Back5`.
 /// Tests assert on this because `SheetRect` has no `PartialEq`.
 fn context_texture_index(context: i32, index: i32) -> u8 {
     match context {
@@ -25,6 +26,9 @@ fn context_texture_index(context: i32, index: i32) -> u8 {
         0 if index < 10 => 1,
         // `ItemSlot.cs:2148-2149`: context 0 slot >= 10, coins (1) and ammo (2).
         0 | 1 | 2 => 0,
+        // `ItemSlot.cs:2215-2218`: the world-chest slots (3) are
+        // `Inventory_Back5`.
+        3 => 8,
         // `ItemSlot.cs:2222-2225`: reforge (5) and guide (7) are `Inventory_Back4`.
         5 | 7 => 2,
         // `ItemSlot.cs:2226-2228`: trash (6) is `Inventory_Back7`.
@@ -58,6 +62,7 @@ pub(crate) fn background_for(
         5 => lookups.ui_back3,       // Inventory_Back3
         6 => lookups.ui_back12,      // Inventory_Back12
         7 => lookups.ui_back18,      // Inventory_Back18
+        8 => lookups.ui_back5,       // Inventory_Back5
         _ => lookups.ui_back,        // Inventory_Back
     }
 }
@@ -451,6 +456,14 @@ mod tests {
         }
         // misc dye (33) is `Inventory_Back12`.
         assert_eq!(context_texture_index(33, 0), 6);
+        // the world-chest panel (3) is `Inventory_Back5` (`ItemSlot.cs:2215-2218`).
+        assert_eq!(context_texture_index(3, 0), 8);
+        assert_eq!(context_texture_index(3, 39), 8);
+        // The bank contexts (4/32) map to `Inventory_Back2` in the C#
+        // (`ItemSlot.cs:2219-2221`) — M3-STORE-1's; deliberately left on the
+        // default like contexts 22/34 below.
+        assert_eq!(context_texture_index(4, 0), 0);
+        assert_eq!(context_texture_index(32, 0), 0);
     }
 
     #[test]
@@ -465,12 +478,14 @@ mod tests {
         lk.ui_inv_bg13 = Some(rect(14));
         lk.ui_back3 = Some(rect(15));
         lk.ui_back12 = Some(rect(16));
+        lk.ui_back5 = Some(rect(17));
 
         let pick = |c, i| background_for(&lk, c, i).map(|r| r.x);
         assert_eq!(pick(0, 5), Some(11)); // hotbar row
         assert_eq!(pick(0, 15), Some(10)); // main grid
         assert_eq!(pick(1, 0), Some(10)); // coins
         assert_eq!(pick(2, 0), Some(10)); // ammo
+        assert_eq!(pick(3, 0), Some(17)); // the chest panel
         assert_eq!(pick(5, 0), Some(12)); // reforge
         assert_eq!(pick(7, 0), Some(12)); // guide
         assert_eq!(pick(6, 0), Some(13)); // trash
@@ -484,6 +499,7 @@ mod tests {
         let lk = assets::Lookups::default();
         assert!(background_for(&lk, 0, 0).is_none());
         assert!(background_for(&lk, 33, 0).is_none());
+        assert!(background_for(&lk, 3, 0).is_none());
     }
 
     #[test]

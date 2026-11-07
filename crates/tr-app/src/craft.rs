@@ -19,6 +19,11 @@
 
 use std::collections::HashMap;
 
+// The chest entity moved to `chest.rs` (M3-CHEST-UI phase 1); the re-export
+// keeps the existing `craft::WorldChest` paths valid — the `world_sim/
+// editing.rs` stocked-chest test constructs the type through this path.
+use crate::chest::ChestSlot;
+pub(crate) use crate::chest::WorldChest;
 use crate::item::{ItemSlot, INV};
 use crate::player::{self, Player};
 use crate::registry;
@@ -359,17 +364,6 @@ pub(crate) struct Zones {
     pub(crate) graveyard: bool,
 }
 
-/// One world chest's item store (`Main.chest[]`, `Chest.item`). The port's
-/// chest UI/storage owns filling it (`M3-CHEST-UI`); the world save skips the
-/// chest section (`M6-SAVE-2`), so this is in-memory only.
-#[derive(Clone, Debug, Default)]
-pub(crate) struct WorldChest {
-    /// The chest tile's top-left `(x, y)`.
-    pub(crate) tile: (i32, i32),
-    /// `(item id, stack)` stacks, `Chest.maxItems` = 40 at most.
-    pub(crate) slots: Vec<(u16, u32)>,
-}
-
 /// `Main.rand.Next(3) == 0` against the crafting stream — the port's
 /// per-consumer RNG convention (vanilla rolls the shared `Main.rand`).
 pub(crate) fn next_rand3(rng: &mut u64) -> bool {
@@ -561,22 +555,30 @@ fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, to_consume: &mut u32) {
 
 /// One drain pass over one chest's slots (`ConsumeItemsFrom`'s chest half,
 /// `CraftingRequests.cs:262-290`): the same partial-stack-then-clear shape,
-/// matching `RequiredItemEntry.Matches` (any group member).
-fn consume_chest(chest: &mut WorldChest, req: &Requirement, to_consume: &mut u32) {
+/// matching `RequiredItemEntry.Matches` (any group member). Cleared slots
+/// become air in place — chest slots are indexed with implicit air (see
+/// `chest.rs`), so the surviving stacks keep their slot positions the way the
+/// C# `chest.item[i] = new Item()` leaves them — and the trailing airs fold
+/// back into the implicit-air tail.
+fn consume_chest(slots: &mut Vec<ChestSlot>, req: &Requirement, to_consume: &mut u32) {
     if *to_consume == 0 {
         return;
     }
     let mut i = 0;
-    while i < chest.slots.len() && *to_consume > 0 {
-        let (kind, count) = chest.slots[i];
+    while i < slots.len() && *to_consume > 0 {
+        let (kind, count) = slots[i];
         if count > 0 && req.matches(kind) {
             if count > *to_consume {
-                chest.slots[i].1 -= *to_consume;
+                slots[i].1 -= *to_consume;
                 *to_consume = 0;
             } else {
                 *to_consume -= count;
-                chest.slots.remove(i);
-                continue;
+                slots[i] = (0, 0);
+                let mut end = slots.len();
+                while end > 0 && slots[end - 1] == (0, 0) {
+                    end -= 1;
+                }
+                slots.truncate(end);
             }
         }
         i += 1;
@@ -638,7 +640,7 @@ pub(crate) fn try_craft(
             if to_consume == 0 {
                 break;
             }
-            consume_chest(&mut chests[i], req, &mut to_consume);
+            consume_chest(&mut chests[i].slots, req, &mut to_consume);
         }
         debug_assert_eq!(to_consume, 0, "craftable checked the totals");
     }
@@ -976,8 +978,62 @@ mod tests {
         );
         assert_eq!(count_kind(&inv, 9), 0, "the inventory drained first");
         let chest = &chests[0];
-        assert_eq!(chest.slots.len(), 1, "6 wood consumed from the chest");
-        assert_eq!(chest.slots[0], (619, 4), "the mahogany stays");
+        // Chest slots are indexed with implicit air (`chest.rs`): the wood's
+        // slot drains to air in place, the mahogany keeps its slot.
+        assert_eq!(chest.slots, [(0, 0), (619, 4)]);
+    }
+
+    /// M3-CHEST-UI: draining a chest's last stocked slot folds it into the
+    /// implicit-air tail — `ConsumeItemsFrom` clears the slot to air in
+    /// place (`CraftingRequests.cs:262-290`), and the trailing air is
+    /// implied beyond the list length (see `chest.rs`).
+    #[test]
+    fn draining_the_last_stocked_chest_slot_trims_the_implicit_air_tail() {
+        let mut rng = 1u64;
+        let mut w = world_with_station(21, 33, 33);
+        let mut p = Player::spawn(&w);
+        p.x = 30.0 * 16.0;
+        p.y = 30.0 * 16.0;
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 6)] }];
+        let in_range = chests_in_range(&w, &p, &chests, true);
+        // The work bench needs 10 wood: 4 from the inventory drain the chest
+        // fully.
+        let mut inv = inv_with(&[(9, 4)]);
+        let adj = dry_adj();
+        let zones = Zones::default();
+        assert_eq!(
+            try_craft(&mut inv, &mut chests, &in_range, recipe_by_create(36), &adj, &zones, &mut rng),
+            Some((36, 1))
+        );
+        assert_eq!(chests[0].slots, [], "the drained slot folded into the tail");
+    }
+
+    /// M3-CHEST-UI DW-1.4: a store entry whose tile is dead (the chest broke
+    /// with no store cleanup — the `editing.rs` seam stays untouched) never
+    /// answers the range scan: `GetChestsInRangeOf` walks `Main.chest[]`
+    /// (`NearbyChests.cs:18-28`), and the port's tile scan matches entries
+    /// only against live chest tiles. Stale entries are always empty (a
+    /// stocked chest refuses its break), so the exclusion is the
+    /// empty-entry ≡ absent rule in action.
+    #[test]
+    fn a_stale_entry_with_a_dead_tile_is_filtered_from_the_range_scan() {
+        let mut w = World::new("t".into(), 120, 120);
+        let mut p = Player::spawn(&w);
+        p.x = 40.0 * 16.0;
+        p.y = 40.0 * 16.0;
+        // One live chest tile at (45, 45); the stale entry sits where its
+        // tile was broken — (60, 60) has no active tile but is within the
+        // 600 px reach, so the exclusion is the tile liveness, not the range.
+        let i = w.index(45, 45);
+        w.tiles[i].kind = 21;
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let chests = vec![
+            WorldChest { tile: (45, 45), slots: vec![(9, 20)] },
+            WorldChest { tile: (60, 60), slots: Vec::new() },
+        ];
+        let found = chests_in_range(&w, &p, &chests, true);
+        assert_eq!(found.len(), 1, "the stale entry is filtered");
+        assert_eq!(chests[found[0]].tile, (45, 45));
     }
 
     #[test]
