@@ -93,11 +93,16 @@ pub(crate) fn can_stack(a: &ItemSlot, b: &ItemSlot) -> bool {
 /// `Player.cs:39330` — the occupied coin slots first, then the empty);
 /// everything else rides the pickup stack (hotbar first, then the rows).
 /// The overflow STAYS in the container (`GetItem` returns the un-moved
-/// remainder).
+/// remainder) — unless `vault` is `Some`, the world-chest variant's
+/// `CanGoIntoVoidVault` delta (`LootAllFromChest`, `GetItemSettings.cs:55-56`;
+/// banks ride the default `LootAllFromBank`, :55, and pass `None`): the
+/// overflow then fills the void vault as `GetItem`'s per-item last resort
+/// (`Player.cs:39395-39398`) via the landed `void_vault_take`.
 pub(crate) fn loot_all(
     container: &mut [ItemSlot],
     inventory: &mut [ItemSlot; crate::item::INV],
     coins: &mut [ItemSlot; 4],
+    mut vault: Option<&mut BankStore>,
 ) {
     for slot in container.iter_mut() {
         if slot.kind == 0 || slot.count == 0 {
@@ -148,8 +153,25 @@ pub(crate) fn loot_all(
             item.count -= moved;
         }
         if item.count > 0 {
-            // The remainder rides back home (:400-414's returned item).
-            *slot = item;
+            // `Player.cs:39395-39398` — the vault is `GetItem`'s last resort
+            // after every inventory pass failed; `CanVoidVaultAccept` gates
+            // the kinds (`Player.cs:39425-39433`).
+            if let Some(vault) = vault.as_deref_mut() {
+                if can_void_vault_accept(item.kind) {
+                    let taken = void_vault_take(
+                        vault,
+                        item.kind,
+                        item.prefix,
+                        item.count,
+                        crate::registry::max_stack(item.kind),
+                    );
+                    item.count -= taken;
+                }
+            }
+            if item.count > 0 {
+                // The remainder rides back home (:400-414's returned item).
+                *slot = item;
+            }
         }
     }
 }
@@ -311,19 +333,21 @@ pub(crate) fn deposit_all(
     }
 }
 
-/// `ChestUI.QuickStack` (:661-825), the bank shape: MoveCoins first (banks
-/// only :670-685), the container's non-coin stacks are the merge targets
-/// (the coin exclusion 71-74 rides the TARGET side, :703-714), the source
-/// scan = the storage rows 10..50 (+ the coin rows when a bank is open,
-/// :715-725), the same-type filter (:726-732), the CanStack merge
-/// (:733-760) and the first-source-per-type empty-slot rule (:772-812).
+/// `ChestUI.QuickStack` (:661-825) after its MoveCoins gate: the container's
+/// non-coin stacks are the merge targets (the coin exclusion 71-74 rides the
+/// TARGET side, :703-714), the source scan = the storage rows 10..50 (+ the
+/// coin rows when a bank is open, :715-725), the same-type filter (:726-732),
+/// the CanStack merge (:733-760) and the first-source-per-type empty-slot
+/// rule (:772-812). The MoveCoins pre-pass is the DISPATCH layer's (M3-CHEST-INT
+/// decision): the C# runs it for the bank kinds only (:670-685 — the world
+/// chest gets none), so the bank call site does `move_coins` + `quick_stack`
+/// and the world call site calls this alone.
 pub(crate) fn quick_stack(
     container: &mut [ItemSlot],
     inventory: &mut [ItemSlot; crate::item::INV],
     coins: &mut [ItemSlot; 4],
     is_favorite: &dyn Fn(usize) -> bool,
 ) {
-    move_coins(container, inventory, coins, is_favorite);
     // The targets: the container's non-coin occupied stacks.
     let mut types: Vec<u16> = Vec::new();
     for cs in container.iter() {
@@ -483,7 +507,7 @@ mod tests {
         ];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         let mut coins = [slot(71, 10), slot(0, 0), slot(0, 0), slot(0, 0)];
-        loot_all(&mut container, &mut inventory, &mut coins);
+        loot_all(&mut container, &mut inventory, &mut coins, None);
         assert_eq!(coins[0].count, 60, "the coins merged into row 0");
         assert!(inventory.iter().any(|sl| sl.kind == 9 && sl.count == 5));
         assert!(inventory.iter().any(|sl| sl.kind == 1 && sl.count == 1));
@@ -499,7 +523,7 @@ mod tests {
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[40] = slot(9, 9499); // cap - 500: the whole stack fits
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
-        loot_all(&mut container, &mut inventory, &mut coins);
+        loot_all(&mut container, &mut inventory, &mut coins, None);
         assert_eq!(inventory[40].count, 9999, "the merge filled to the cap");
         assert_eq!(container[0].count, 0);
         // The true overflow: a full stack refuses.
@@ -507,9 +531,56 @@ mod tests {
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[40] = slot(9, 9999);
         let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
-        loot_all(&mut container, &mut inventory, &mut coins);
+        loot_all(&mut container, &mut inventory, &mut coins, None);
         assert_eq!(inventory[40].count, 9999);
         assert_eq!(container[0].count, 500, "no pickup slot accepted it");
+    }
+
+    #[test]
+    fn loot_all_routes_the_overflow_into_the_void_vault_when_allowed() {
+        // `Player.cs:39395-39398` — `LootAllFromChest`'s `CanGoIntoVoidVault`
+        // (`GetItemSettings.cs:55-56`) makes the vault `GetItem`'s per-item
+        // last resort: the inventory passes fail, the overflow fills the
+        // vault (occupied stackable slots then empty ones), the coins still
+        // ride the coin rows first. The bank variant (`LootAllFromBank`,
+        // :55) passes `None` and keeps the overflow in the chest.
+        let mut container = [slot(9, 5), slot(71, 50), slot(3, 500)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        for s in inventory.iter_mut() {
+            *s = slot(3, 9999); // stone everywhere: nothing else fits
+        }
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        let mut vault = empty_vault();
+        loot_all(&mut container, &mut inventory, &mut coins, Some(&mut vault));
+        assert_eq!(coins[0].count, 50, "the coins ride the coin rows first");
+        assert_eq!(container[0].count, 0, "the vault took the whole wood stack");
+        assert_eq!(container[2].count, 0, "the vault took the whole stone stack");
+        assert_eq!(vault[0].kind, 9);
+        assert_eq!(vault[0].count, 5);
+        assert_eq!(vault[1].kind, 3);
+        assert_eq!(vault[1].count, 500);
+        // Without the vault (`LootAllFromBank`, `GetItemSettings.cs:55`):
+        // the overflow stays in the chest.
+        let mut container = [slot(9, 5)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        for s in inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        loot_all(&mut container, &mut inventory, &mut coins, None);
+        assert_eq!(container[0].count, 5, "the overflow stays put");
+        // A kind the vault refuses (`CanVoidVaultAccept`, `Player.cs:
+        // 39425-39433` — the dirtiest-block projectile 3822) stays too.
+        let mut container = [slot(3822, 5)];
+        let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        for s in inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        let mut coins = [slot(0, 0), slot(0, 0), slot(0, 0), slot(0, 0)];
+        let mut vault = empty_vault();
+        loot_all(&mut container, &mut inventory, &mut coins, Some(&mut vault));
+        assert_eq!(container[0].count, 5, "CanVoidVaultAccept refused");
+        assert_eq!(vault[0].count, 0);
     }
 
     #[test]
@@ -535,24 +606,24 @@ mod tests {
 
     #[test]
     fn quick_stack_matches_types_and_excludes_coins_on_the_container_side() {
-        // `ChestUI.QuickStack` (:661-825): the container's non-coin stacks
-        // are the targets; the coins never match (the exclusion is
-        // container-side); the MoveCoins consolidation runs first.
+        // `ChestUI.QuickStack` (:661-825) after the M3-CHEST-INT hoist: the
+        // container's non-coin stacks are the targets; the coins never match
+        // (the exclusion is container-side, :703-714); NO MoveCoins runs
+        // here — the pre-pass is the dispatch layer's (the C# bank arm
+        // :670-685 vs the world chest :687+; the dispatch-level bank
+        // regression rides the clicks.rs tests).
         let mut container = [slot(9, 100), slot(71, 30), slot(0, 0)];
         let mut inventory: [ItemSlot; crate::item::INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         inventory[20] = slot(9, 150); // merges into the wood target
-        inventory[21] = slot(71, 200); // a grid coin stack: MoveCoins pulls it
+        inventory[21] = slot(71, 200); // a grid coin stack: no target, stays
         let mut coins = [slot(71, 5), slot(0, 0), slot(0, 0), slot(0, 0)];
         let fav = |_: usize| false;
         quick_stack(&mut container, &mut inventory, &mut coins, &fav);
         assert_eq!(container[0].count, 250, "the wood merged");
-        // The carry (:1082-1089): 235 copper rolls into 2 silver + 35
-        // copper, both landing in the container's free slots.
-        assert!(container.iter().any(|sl| sl.kind == 71 && sl.count == 35));
-        assert!(container.iter().any(|sl| sl.kind == 72 && sl.count == 2));
+        assert_eq!(container[1].count, 30, "the chest's coin stack is not a target");
         assert_eq!(inventory[20].count, 0);
-        assert_eq!(inventory[21].count, 0, "the grid coin stack drained");
-        assert_eq!(coins[0].count, 0, "the coin rows drained too");
+        assert_eq!(inventory[21].count, 200, "no MoveCoins ran (the dispatch owns it)");
+        assert_eq!(coins[0].count, 5, "the coin rows untouched");
     }
 
     #[test]

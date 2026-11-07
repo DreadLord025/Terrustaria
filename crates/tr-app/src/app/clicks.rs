@@ -387,27 +387,51 @@ impl App {
                         let favs = self.favorite_slots.clone();
                         let fav = move |i: usize| favs.contains(&i);
                         match id {
+                            // `ChestUI.LootAll`'s bank arm (:417-473) —
+                            // `LootAllFromBank` is the default settings
+                            // (`GetItemSettings.cs:55`): no vault arm, so
+                            // `None` (the overflow stays in the bank).
                             0 => crate::bank::loot_all(
                                 &mut p.banks[bi],
                                 &mut self.inventory,
                                 &mut self.equip.coins,
+                                None,
                             ),
-                            1 => crate::bank::deposit_all(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &fav,
-                            ),
-                            2 => crate::bank::quick_stack(
-                                &mut p.banks[bi],
-                                &mut self.inventory,
-                                &mut self.equip.coins,
-                                &fav,
-                            ),
-                            _ => {
-                                let _ = crate::bank::restock(
+                            // `ChestUI.DepositAll` (`:540-659`) — the
+                            // MoveCoins pre-pass runs for every container
+                            // kind (:543-562).
+                            1 => {
+                                crate::bank::move_coins(
                                     &mut p.banks[bi],
                                     &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
                                 );
+                                crate::bank::deposit_all(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &fav,
+                                );
+                            }
+                            // `ChestUI.QuickStack`'s bank arm (:670-685) —
+                            // the MoveCoins pre-pass rides the dispatch
+                            // (hoisted out of `quick_stack`, M3-CHEST-INT).
+                            2 => {
+                                crate::bank::move_coins(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
+                                );
+                                crate::bank::quick_stack(
+                                    &mut p.banks[bi],
+                                    &mut self.inventory,
+                                    &mut self.equip.coins,
+                                    &fav,
+                                );
+                            }
+                            _ => {
+                                let _ = crate::bank::restock(&mut p.banks[bi], &mut self.inventory);
                             }
                         }
                         return;
@@ -587,22 +611,17 @@ impl App {
         // single `ChestUI.Draw` covers all kinds — the recorded STORE-1
         // panel-fidelity deviation).
         if self.open_container() >= 0 && !self.crafting_open {
-            if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
-                self.chest_slot_click(abs, left, right_held);
-                self.ui_left_press = false;
-                self.ui_right_press = false;
-                return true;
-            }
-            // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:282-308`),
-            // the rename pair: ID 5 → `RenameChest` (`:827-838` — open the
-            // keyboard, or submit while the editor is live), ID 6 →
-            // `RenameChestCancel` (`:863-869`). Buttons 0-4 are
-            // M3-STORE-2's. The dispatch only exists inside `ChestUI.Draw`
-            // (the panel's visibility gate above); the port's modal rename
-            // keyboard parks the world routes, so the editing-state arms
-            // (`Save`/`Cancel` clicks) are the overlay shape's revive point.
+            // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:281-308`) —
+            // the C# `DrawButtons` pass runs before `DrawSlots`, so the
+            // buttons take the press before the slot grid sees it. IDs 0-3
+            // are the M3-STORE-2 transfers, 5/6 the rename pair (ID 5 →
+            // `RenameChest` :827-838, ID 6 → `RenameChestCancel` :863-869);
+            // Sort (4) stays label-less and takes no clicks. The port's
+            // modal rename keyboard parks the world routes, so the
+            // editing-state arms (`Save`/`Cancel` clicks) are the overlay
+            // shape's revive point.
             if left {
-                if let Some(id) = ui::chest::rename_button_hit(
+                if let Some(id) = ui::chest::chest_button_hit(
                     &self.lookups,
                     self.mouse_pos,
                     &self.chest_button_scales,
@@ -611,6 +630,7 @@ impl App {
                     self.chest_editing(),
                 ) {
                     match id {
+                        0..=3 => self.chest_transfer_click(id),
                         ui::chest::BUTTON_RENAME => chest::rename_button_click(self),
                         ui::chest::BUTTON_RENAME_CANCEL => {
                             chest::rename_cancel(self);
@@ -620,6 +640,12 @@ impl App {
                     self.ui_left_press = false;
                     return true;
                 }
+            }
+            if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
+                self.chest_slot_click(abs, left, right_held);
+                self.ui_left_press = false;
+                self.ui_right_press = false;
+                return true;
             }
         }
         // The open-inventory chest-tile click: only when no UI slot holds the
@@ -670,6 +696,69 @@ impl App {
                 if chest::try_placing_in_chest(self, slot, true) {
                     self.cursor_override = CURSOR_TO_CHEST;
                 }
+            }
+        }
+    }
+
+    /// The chest panel's transfer-button dispatch (`ChestUI.cs:281-308`'s
+    /// cases 0-3, M3-STORE-2) against the open world chest's slots, with the
+    /// C# world/bank deltas: LootAll rides the void vault when enabled, the
+    /// DepositAll MoveCoins pre-pass runs for every container kind
+    /// (`:543-562`) and QuickStack gets none (the pre-pass arms cover the
+    /// bank kinds only, `:670-685`).
+    fn chest_transfer_click(&mut self, id: usize) {
+        let idx = self.open_container() as usize;
+        // The open-container gate in `handle_chest_clicks` guarantees a live
+        // store entry (`open_chest` opened it); the `get_mut` keeps the click
+        // path panic-free regardless.
+        let Some(wc) = self.world_chests.get_mut(idx) else {
+            return;
+        };
+        let favs = self.favorite_slots.clone();
+        let fav = move |i: usize| favs.contains(&i);
+        let Some(p) = self.player.as_mut() else {
+            return;
+        };
+        // `LootAllFromChest`'s `CanGoIntoVoidVault` (`GetItemSettings.cs:55-56`)
+        // + `IsVoidVaultEnabled` (`Player.cs:24550-24553`): the vault is
+        // `GetItem`'s per-item last resort (`Player.cs:39395-39398`). Banks
+        // ride the default `LootAllFromBank` and never pass a vault.
+        let vault = if p.void_vault_enabled {
+            Some(&mut p.banks[3])
+        } else {
+            None
+        };
+        match id {
+            // `ChestUI.LootAll` (`:393-473`).
+            0 => crate::bank::loot_all(
+                &mut wc.slots,
+                &mut self.inventory,
+                &mut self.equip.coins,
+                vault,
+            ),
+            // `ChestUI.DepositAll` (`:540-659`) — the MoveCoins pre-pass runs
+            // for every container kind (`:543-562`).
+            1 => {
+                crate::bank::move_coins(
+                    &mut wc.slots,
+                    &mut self.inventory,
+                    &mut self.equip.coins,
+                    &fav,
+                );
+                crate::bank::deposit_all(&mut wc.slots, &mut self.inventory, &fav);
+            }
+            // `ChestUI.QuickStack` (`:661-825`) — NO MoveCoins for a world
+            // chest (`:670-685`'s arms are the bank kinds only).
+            2 => crate::bank::quick_stack(
+                &mut wc.slots,
+                &mut self.inventory,
+                &mut self.equip.coins,
+                &fav,
+            ),
+            // `ChestUI.Restock` (`:871-995`) — the single PlaySound(7) on a
+            // moved item (`:991-994`) stays out with the existing cue stance.
+            _ => {
+                let _ = crate::bank::restock(&mut wc.slots, &mut self.inventory);
             }
         }
     }
@@ -1452,5 +1541,332 @@ mod tests {
         assert!(app.handle_chest_clicks());
         assert!(!app.chest_editing(), "the Save click submitted");
         assert_eq!(chest::chest_name(&app, 0), "Saved");
+    }
+
+    // --- Phase 3 (M3-CHEST-INT): the STORE-2 transfer buttons ------------
+
+    /// A headless app with the inventory open and a piggy bank open
+    /// (`Player.chest = -2`, bank index 0) — the M3-STORE-1 dispatch
+    /// fixture.
+    fn bank_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.inventory_open = true;
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.player.as_mut().unwrap().chest = -2;
+        app
+    }
+
+    /// `chest_app` with the open chest's slots materialized to the browsed
+    /// 40-slot window (`open_chest`'s resize, Phase-2 decision #8) — the
+    /// transfers' free-slot walks need the real window shape.
+    fn stocked_chest_app(slots: Vec<ItemSlot>) -> App {
+        let mut app = chest_app(slots);
+        app.world_chests[0]
+            .slots
+            .resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
+        app
+    }
+
+    /// The button row at the drawn idle state — the dispatch reads the same
+    /// scales the draw pass animates (`ChestUI.ButtonScale`, the static
+    /// ctor's 0.0 decays to `buttonScaleMinimum` after one frame).
+    fn ready_buttons(app: &mut App) {
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+    }
+
+    /// DW-3.1 — LootAll on a world chest drains it into the player: the
+    /// coins ride the coin rows first (`Player.GetItem`'s isACoin arm,
+    /// `Player.cs:39340-39364`), the overflow stays in the chest with the
+    /// vault disabled (`LootAllFromBank`'s default settings — the port's
+    /// `void_vault_enabled` gates `CanGoIntoVoidVault`).
+    #[test]
+    fn test_DW_3_1_loot_all_drains_a_world_chest_coins_first_and_keeps_overflow() {
+        let mut app = stocked_chest_app(vec![slot(9, 5), slot(71, 50), slot(3, 500)]);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999); // stone everywhere: the wood/stone overflow
+        }
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0); // the Loot All row (id 0)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(!app.ui_left_press, "the press is consumed");
+        assert_eq!(
+            app.mouse_item.count, 0,
+            "the slot handler never saw the click"
+        );
+        assert_eq!(
+            app.equip.coins[0].count, 50,
+            "the coins ride the coin rows first"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[1].count, 0,
+            "the coin slot drained"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[0].count, 5,
+            "the wood overflow stayed in the chest"
+        );
+        assert_eq!(
+            app.world_chests[0].slots[2].count, 500,
+            "the stone overflow stayed in the chest"
+        );
+    }
+
+    /// DW-3.1 — with the void vault enabled (`IsVoidVaultEnabled`,
+    /// `Player.cs:24550-24553`) the overflow fills the vault first
+    /// (`GetItem`'s per-item last resort, `Player.cs:39395-39398`).
+    #[test]
+    fn test_DW_3_1_loot_all_overflow_fills_the_void_vault_when_enabled() {
+        let mut app = stocked_chest_app(vec![slot(9, 5), slot(71, 50), slot(3, 500)]);
+        for s in app.inventory.iter_mut() {
+            *s = slot(3, 9999);
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.void_vault_enabled = true;
+        }
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.equip.coins[0].count, 50,
+            "the coins still ride the rows"
+        );
+        assert!(
+            app.world_chests[0].slots.iter().all(|s| s.count == 0),
+            "the vault took the whole overflow"
+        );
+        let vault = &app.player.as_ref().unwrap().banks[3];
+        assert_eq!(vault[0].kind, 9);
+        assert_eq!(vault[0].count, 5, "the wood overflowed into the vault");
+        assert_eq!(vault[1].kind, 3);
+        assert_eq!(vault[1].count, 500, "the stone overflowed into the vault");
+    }
+
+    /// DW-3.2 — DepositAll on a world chest = MoveCoins + the rows 49..=10
+    /// descending scan, the favorited rows stay, the leftovers park in the
+    /// first empty slot (`ChestUI.cs:540-659`).
+    #[test]
+    fn test_DW_3_2_deposit_all_moves_coins_then_pours_rows_descending() {
+        let mut app = stocked_chest_app(vec![slot(9, 500)]);
+        app.inventory[0] = slot(9, 50); // the hotbar: untouched
+        app.inventory[20] = slot(9, 200); // merges 500 -> 700
+        app.inventory[22] = slot(71, 100); // grid coins: MoveCoins pulls them
+        app.inventory[25] = slot(3, 100); // favorited: stays
+        app.inventory[30] = slot(41, 1); // a non-merge kind: the first empty slot
+        app.favorite_slots.push(25);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0); // the Deposit All row (id 1)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        let chest = &app.world_chests[0].slots;
+        assert_eq!(chest[0].count, 700, "the wood merged");
+        assert!(
+            chest.iter().any(|s| s.kind == 72 && s.count == 1),
+            "MoveCoins carried 100 copper into 1 silver in the chest"
+        );
+        assert!(
+            chest.iter().any(|s| s.kind == 41 && s.count == 1),
+            "the leftover parked in the first empty slot"
+        );
+        assert_eq!(app.inventory[25].count, 100, "the favorited row stayed");
+        assert_eq!(app.inventory[0].count, 50, "the hotbar untouched");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[22].count, 0, "the grid coins drained");
+        assert_eq!(app.inventory[30].count, 0);
+        // The descending order: one free slot — row 40 scans before row 20
+        // (`ChestUI.cs:563`'s `for num = 49; num >= 10; num--`).
+        let mut slots = vec![slot(3, 9999); DEFAULT_MAX_ITEMS as usize - 1];
+        slots.push(EMPTY_SLOT);
+        let mut app = stocked_chest_app(slots);
+        app.inventory[20] = slot(41, 1); // the torch: scanned last
+        app.inventory[40] = slot(43, 5); // the arrows: scanned first
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 326.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[DEFAULT_MAX_ITEMS as usize - 1].kind,
+            43,
+            "row 40 won the free slot"
+        );
+        assert_eq!(app.inventory[20].count, 1, "row 20 found no free slot");
+    }
+
+    /// DW-3.3 — QuickStack on a world chest performs NO MoveCoins and only
+    /// merges types the chest already holds (`ChestUI.cs:661-825` — the
+    /// MoveCoins arms :670-685 cover the bank kinds only).
+    #[test]
+    fn test_DW_3_3_quick_stack_world_merges_only_held_types_without_move_coins() {
+        let mut app = stocked_chest_app(vec![slot(9, 100)]);
+        app.inventory[20] = slot(9, 150); // wood merges (the chest holds wood)
+        app.inventory[21] = slot(3, 40); // stone: the chest holds none — stays
+        app.inventory[22] = slot(71, 200); // grid coins: no MoveCoins — stay
+        app.equip.coins[0] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 352.0); // the Quick Stack row (id 2)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        let chest = &app.world_chests[0].slots;
+        assert_eq!(chest[0].count, 250, "the wood merged");
+        assert_eq!(app.inventory[21].count, 40, "only held types merge");
+        assert_eq!(app.inventory[22].count, 200, "no MoveCoins ran");
+        assert_eq!(app.equip.coins[0].count, 5, "the coin rows untouched");
+        assert!(
+            !chest.iter().any(|s| s.kind == 71 || s.kind == 72),
+            "no coin consolidation into the chest"
+        );
+    }
+
+    /// DW-3.3 — the bank regression: the bank QuickStack keeps its MoveCoins
+    /// pre-pass (`ChestUI.cs:670-685`) — the coins consolidate into the bank
+    /// (the carry: 205 copper rolls into 2 silver + 5 copper).
+    #[test]
+    fn test_DW_3_3_quick_stack_bank_keeps_the_move_coins_pre_pass() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        app.inventory[20] = slot(9, 150); // merges into the wood target
+        app.inventory[22] = slot(71, 200); // MoveCoins pulls the grid coins
+        app.equip.coins[0] = slot(71, 5);
+        app.mouse_pos = Vec2::new(510.0, 390.0); // the bank's Quick Stack row
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].count, 250, "the wood merged");
+        assert_eq!(bank[1].kind, 72);
+        assert_eq!(bank[1].count, 2, "the carry's silver");
+        assert_eq!(bank[2].kind, 71);
+        assert_eq!(bank[2].count, 5, "the carry's copper remainder");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[22].count, 0, "the grid coins drained");
+        assert_eq!(app.equip.coins[0].count, 0, "the coin rows drained too");
+    }
+
+    /// DW-3.4 — Restock from a world chest fills unprefixed demanded stacks
+    /// only (`ChestUI.cs:871-995`); prefixed chest stacks never move
+    /// (:921's `prefix != 0` gate).
+    #[test]
+    fn test_DW_3_4_restock_fills_unprefixed_demanded_stacks_only() {
+        let mut app = stocked_chest_app(vec![prefixed(9, 10, 2), slot(9, 30), slot(40, 20)]);
+        app.inventory[20] = slot(9, 50); // partial wood: the demand
+        app.inventory[21] = slot(40, 10); // partial arrows: the demand
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 378.0); // the Restock row (id 3)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.inventory[20].count, 80,
+            "the unprefixed supply filled it"
+        );
+        assert_eq!(app.inventory[21].count, 30);
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            prefixed(9, 10, 2),
+            "the prefixed stack never moves"
+        );
+        assert_eq!(app.world_chests[0].slots[1].count, 0);
+        assert_eq!(app.world_chests[0].slots[2].count, 0);
+    }
+
+    /// DW-3.5 — the button hit region swallows the click before
+    /// `chest_slot_click` sees it (`ChestUI.DrawButtons` runs before
+    /// `DrawSlots`): the transfer runs, the press is consumed and the cursor
+    /// never picked the slot up.
+    #[test]
+    fn test_DW_3_5_button_hit_consumes_the_press_before_the_slot_grid() {
+        let mut app = stocked_chest_app(vec![slot(40, 20)]);
+        app.inventory[21] = slot(40, 10); // partial arrows: the demand
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 378.0); // the Restock row (id 3)
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(!app.ui_left_press, "the press is consumed");
+        assert_eq!(app.mouse_item.count, 0, "the slot handler never ran");
+        assert_eq!(app.inventory[21].count, 30, "the transfer ran instead");
+        assert_eq!(app.world_chests[0].slots[0].count, 0);
+    }
+
+    /// DW-3.5 — a bank value never dispatches the chest panel's row (the
+    /// two-panel ownership): the click falls through unconsumed and the bank
+    /// keeps its contents.
+    #[test]
+    fn test_DW_3_5_bank_values_dispatch_no_chest_panel_row() {
+        let mut app = bank_app();
+        app.player.as_mut().unwrap().banks[0][0] = slot(9, 100);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0); // the chest panel's Loot All row
+        app.ui_left_press = true;
+        assert!(
+            !app.handle_chest_clicks(),
+            "the chest panel's dispatch is bank-hidden"
+        );
+        assert!(
+            app.ui_left_press,
+            "the press fell through to the bank panel"
+        );
+        assert_eq!(
+            app.player.as_ref().unwrap().banks[0][0].count,
+            100,
+            "the bank untouched by the chest row"
+        );
+    }
+
+    /// DW-3.6 — the bank DepositAll call site gains the MoveCoins pre-pass
+    /// per `ChestUI.cs:543-562` (it runs for every container kind): the
+    /// scattered coins consolidate into the bank on deposit.
+    #[test]
+    fn test_DW_3_6_bank_deposit_all_consolidates_coins_into_the_bank() {
+        let mut app = bank_app();
+        app.inventory[20] = slot(71, 35);
+        app.inventory[30] = slot(71, 5);
+        app.equip.coins[0] = slot(71, 60);
+        app.mouse_pos = Vec2::new(510.0, 360.0); // the bank's Deposit All row
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        let bank = &app.player.as_ref().unwrap().banks[0];
+        assert_eq!(bank[0].kind, 72);
+        assert_eq!(bank[0].count, 1, "100 copper carried into 1 silver");
+        assert_eq!(app.inventory[20].count, 0);
+        assert_eq!(app.inventory[30].count, 0);
+        assert_eq!(app.equip.coins[0].count, 0);
+    }
+
+    /// Dirty — an empty chest's LootAll is a no-op (the drain loop sees only
+    /// air slots).
+    #[test]
+    fn loot_all_empty_chest_is_a_noop() {
+        let mut app = stocked_chest_app(vec![]);
+        app.inventory[20] = slot(9, 10);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 300.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(
+            app.world_chests[0].slots.iter().all(|s| s.count == 0),
+            "the empty chest stays empty"
+        );
+        assert_eq!(app.inventory[20].count, 10, "the inventory untouched");
+    }
+
+    /// Dirty — a chest holding only coin types merges nothing on QuickStack
+    /// (the coin exclusion rides the target side, `ChestUI.cs:703-714`), and
+    /// no MoveCoins runs for a world chest.
+    #[test]
+    fn quick_stack_with_a_chest_holding_only_coins_merges_nothing() {
+        let mut app = stocked_chest_app(vec![slot(71, 30)]);
+        app.inventory[20] = slot(9, 50);
+        app.equip.coins[0] = slot(71, 5);
+        ready_buttons(&mut app);
+        app.mouse_pos = Vec2::new(510.0, 352.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            slot(71, 30),
+            "the chest's coin stack is not a target"
+        );
+        assert_eq!(app.inventory[20].count, 50, "nothing merged");
+        assert_eq!(app.equip.coins[0].count, 5, "no MoveCoins ran");
     }
 }

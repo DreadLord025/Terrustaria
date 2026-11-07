@@ -2402,7 +2402,7 @@ mod tests {
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| slot(3, 9999));
         inventory[40] = slot(9, 400); // the wood partial soaks the stack
         let mut coins = [slot(71, 10), EMPTY_SLOT, EMPTY_SLOT, EMPTY_SLOT];
-        crate::bank::loot_all(&mut chest.slots, &mut inventory, &mut coins);
+        crate::bank::loot_all(&mut chest.slots, &mut inventory, &mut coins, None);
         // The wood drained into the partial (the 9999 cap takes all 500).
         assert!(inventory.iter().any(|s| s.kind == 9 && s.count == 900));
         assert_eq!(chest.slots[0], EMPTY_SLOT, "the wood drained");
