@@ -1092,11 +1092,20 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Floating Islands",
         step_floating_islands
     ),
+    // The vanilla Remove Water From Sand / Shell Piles slots
+    // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
+    // World (`:16419`) — the M5-OCEAN phase-4 insertion.
+    step!("remove water", "Remove Water From Sand", step_remove_water),
+    step!("shell piles", "Shell Piles", step_shell_piles),
     step!("slopes", "Smooth World", step_slopes),
     step!("living trees", "Living Trees", step_living_trees),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
+    // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
+    // vegetation family, before the world tail — the M5-OCEAN phase-4
+    // insertion (the seaweed arm of the pass).
+    step!("water plants", "Water Plants", step_water_plants),
     step!("world tail", "", step_world_tail),
 ];
 
@@ -1895,6 +1904,45 @@ fn step_surface_flora(
     surface::plant_surface_flora(world, &mut streams.rng, width, heights);
 }
 
+fn step_remove_water(
+    world: &mut World,
+    gv: &mut GenVars,
+    _streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // `RemoveSurfaceWaterAboveSand` (`WorldGen.cs:16211`) — no RNG of its own.
+    let world_surface = gv.layers().world_surface;
+    ocean::remove_water_from_sand(world, world_surface);
+}
+
+fn step_shell_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The shell-pile blobs (`WorldGen.cs:16266`) over the Beaches anchors.
+    let world_surface = gv.layers().world_surface;
+    ocean::shell_piles(world, gv, world_surface, &mut streams.pass_rng("Shell Piles"));
+}
+
+fn step_water_plants(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The seaweed arm (`WorldGen.cs:21973-22036`).
+    let layers = *gv.layers();
+    ocean::water_plants(world, &layers, &mut streams.pass_rng("Water Plants"));
+}
+
 fn step_cacti(
     world: &mut World,
     gv: &mut GenVars,
@@ -2030,9 +2078,9 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_44_named_steps() {
+    fn the_executed_pipeline_is_50_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 47);
+        assert_eq!(names.len(), 50);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -2098,11 +2146,14 @@ mod tests {
                 "vines",
                 "muds walls in jungle",
                 "floating islands",
+                "remove water",
+                "shell piles",
                 "slopes",
                 "living trees",
                 "trees",
                 "surface flora",
                 "cacti",
+                "water plants",
                 "world tail",
             ]
         );
@@ -2158,6 +2209,30 @@ mod tests {
         assert!(cpos("Dungeon") < cpos("Beaches"));
         assert!(cpos("Beaches") < cpos("Gravitating Sand"));
         assert!(cpos("Gravitating Sand") < cpos("Create Ocean Caves"));
+    }
+
+    /// DW-4.4: the three M5-OCEAN phase-4 steps sit in their vanilla
+    /// positions — `remove water` + `shell piles` right before `slopes`
+    /// (vanilla `:16211`/`:16266` → Smooth World `:16419`), and
+    /// `water plants` right after `cacti` (vanilla `:21310` → `:21973`).
+    #[test]
+    fn test_DW_4_4_late_ocean_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(names[pos("remove water") + 1], "shell piles");
+        assert_eq!(names[pos("shell piles") + 1], "slopes");
+        assert_eq!(names[pos("water plants") - 1], "cacti");
+        assert_eq!(names[pos("water plants") + 1], "world tail");
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Remove Water From Sand") < cpos("Shell Piles"));
+        assert!(cpos("Shell Piles") < cpos("Smooth World"));
+        assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 
     /// DW-4.3: the evil step sits between `ores and gems`/Shinies

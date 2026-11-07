@@ -20,7 +20,7 @@
 //! read them from `GenVars` without redrawing.
 
 use crate::tiledata as td;
-use crate::tile::{Tile, FLAG_ACTIVE, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
+use crate::tile::{Tile, FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
 use crate::world::World;
 use super::noise::Rng;
 use super::pipeline::GenVars;
@@ -783,6 +783,426 @@ pub(crate) fn ocean_caves(
     }
 }
 
+// --- Remove Water From Sand / Shell Piles / Water Plants ----------------------
+
+/// The sand-family types `RemoveSurfaceWaterAboveSand` clears above
+/// (`WorldGen.cs:16221-16223`): sand 53, sandstone 396, hardened sand 397,
+/// fossil? — 404 DesertFossil, 407 the silt-ish variant, 151 mud.
+const WATER_ABOVE_SAND_TYPES: [u16; 6] = [53, 396, 397, 404, 407, 151];
+/// `WorldGen.beachDistance`'s inland exclusion: the pass runs over
+/// `[400, maxTilesX - 400)` (`WorldGen.cs:16216`) — the oceans are
+/// deliberately untouched.
+const REMOVE_WATER_MARGIN: i32 = 400;
+
+/// `Remove Water From Sand` / `RemoveSurfaceWaterAboveSand`
+/// (`WorldGen.cs:16211-16242`): the inland sand columns lose the stray water
+/// above them (a settling step after the caves) — the oceans (the outer 400
+/// columns per side) are excluded by design. The C# tail mutation
+/// `Main.tileSolid[192] = true` (`:16240`, `TileID.LeafBlock` — the living
+/// leaves become solid during generation) has no port counterpart: the
+/// tile sets are generated statics (`tiledata/`), so the runtime mutation is
+/// deferred to that owner (ANALYSIS "Ocean passes fidelity").
+pub(crate) fn remove_water_from_sand(world: &mut World, world_surface: f64) {
+    let (max_x, max_y) = (world.width, world.height);
+    let surface = world_surface as i32;
+    for i in REMOVE_WATER_MARGIN..max_x - REMOVE_WATER_MARGIN {
+        for j in 100..(surface - 1) {
+            let idx = world.index(i, j);
+            if world.tiles[idx].active() {
+                let kind = world.tiles[idx].kind;
+                if WATER_ABOVE_SAND_TYPES.contains(&kind) {
+                    let mut num = j;
+                    while num > 100 {
+                        num -= 1;
+                        let up = world.index(i, num);
+                        if world.tiles[up].active() {
+                            break;
+                        }
+                        world.tiles[up].liquid = 0;
+                    }
+                }
+                break;
+            }
+        }
+    }
+    let _ = max_y;
+}
+
+/// `TileID.ShellPile` = 495 (`TileID.cs:1619`).
+const TILE_SHELL_PILE: u16 = 495;
+
+/// `WorldGen.ShellPile(X, Y)` (`WorldGen.cs:10332-10448`): the oval shell
+/// blob — the sentinel walk down to the sand floor, the radius wobble per
+/// cell (`Next(70, 91) * 0.01`), the 495 core with the sand/hardened-sand
+/// support stack, the `Next(6)` outer scatter. The two `Utils.Clamp` calls
+/// at the walk's end discard their result in the original (`:10430-10431` —
+/// the wobble velocity is NOT clamped): ported verbatim, a no-op.
+pub(crate) fn shell_pile(world: &mut World, world_surface: f64, x: i32, y: i32, rng: &mut Rng) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return false;
+    }
+    let mut num = y;
+    while !solid_tile_at(world, x, num) {
+        num += 1;
+        if num as f64 > world_surface {
+            return false;
+        }
+    }
+    {
+        let idx = world.index(x, num);
+        if world.tiles[idx].kind != TILE_SAND || world.tiles[idx].wall > 0 {
+            return false;
+        }
+    }
+    num -= 1;
+    let (mut cx, mut cy) = (x as f64, num as f64);
+    let mut vel_x = rng.next_f64() * 0.6 - 0.3;
+    let mut vel_y = rng.next_f64() * 0.5 + 0.5;
+    let mut num2 = rng.range(2, 4) as f64;
+    if rng.chance(10) {
+        num2 += 1.0;
+    }
+    let mut num3 = rng.range(3, 6);
+    while num3 > 0 {
+        num3 -= 1;
+        for i in (x - (num2 as i32) * 4)..=(x + (num2 as i32) * 4) {
+            if i < 0 || i >= world.width {
+                continue;
+            }
+            let mut num4 = num + (num2 as i32) * 4;
+            while (num4 as f64) > num as f64 - num2 * 4.0 {
+                let num5 = num2 * rng.range(70, 91) as f64 * 0.01;
+                let (dx, dy) = (cx - i as f64, cy - num4 as f64);
+                let dist = ((dx * 0.6).powi(2) + dy * dy).sqrt();
+                if dist < num5 {
+                    let idx = world.index(i, num4);
+                    if num4 <= num + 1 || rng.chance(6) {
+                        // The 495 core with the support stack
+                        // (`:10382-10408`).
+                        let t = &mut world.tiles[idx];
+                        t.kind = TILE_SHELL_PILE;
+                        t.flags |= FLAG_ACTIVE;
+                        t.flags &= !FLAG_HALF_BRICK;
+                        t.set_slope(0);
+                        let idx2 = world.index(i, num4 + 1);
+                        if !world.tiles[idx2].active() {
+                            let t = &mut world.tiles[idx2];
+                            t.kind = TILE_SHELL_PILE;
+                            t.flags |= FLAG_ACTIVE;
+                            t.flags &= !FLAG_HALF_BRICK;
+                            t.set_slope(0);
+                            let idx3 = world.index(i, num4 + 2);
+                            if !world.tiles[idx3].active() {
+                                let t = &mut world.tiles[idx3];
+                                t.kind = TILE_SAND;
+                                t.flags |= FLAG_ACTIVE;
+                                t.flags &= !FLAG_HALF_BRICK;
+                                t.set_slope(0);
+                                let idx4 = world.index(i, num4 + 3);
+                                if !world.tiles[idx4].active() {
+                                    let t = &mut world.tiles[idx4];
+                                    t.kind = TILE_HARDENED_SAND;
+                                    t.flags |= FLAG_ACTIVE;
+                                    t.flags &= !FLAG_HALF_BRICK;
+                                    t.set_slope(0);
+                                }
+                            }
+                        }
+                    } else if world.tiles[idx].kind != TILE_SHELL_PILE {
+                        let t = &mut world.tiles[idx];
+                        t.flags |= FLAG_ACTIVE;
+                        t.flags &= !FLAG_HALF_BRICK;
+                        t.set_slope(0);
+                        t.kind = TILE_SAND;
+                    }
+                }
+                num4 -= 1;
+            }
+        }
+        cx += vel_x;
+        cy += vel_y;
+        vel_x += rng.next_f64() * 0.2 - 0.1;
+        vel_y += rng.next_f64() * 0.2 - 0.1;
+        // The C# clamps discard their result (`:10430-10431`) — the wobble
+        // velocity is unclamped in the original; verbatim no-op.
+        let _ = clampf(vel_x, -0.3, 0.3);
+        let _ = clampf(vel_y, 0.5, 1.0);
+    }
+    true
+}
+
+#[inline]
+fn solid_tile_at(world: &World, x: i32, y: i32) -> bool {
+    if x < 0 || y < 0 || x >= world.width || y >= world.height {
+        return true;
+    }
+    solid_tile(&world.tiles[world.index(x, y)])
+}
+
+/// `Shell Piles` / `ShellPilesMarblePilesAndSpikePits`
+/// (`WorldGen.cs:16266-16416`): the sand-adjacency scan over the
+/// `shellStart*` anchors, the y-shift, the five X offsets and the shell
+/// blobs. The DST marble-pile half and the FTW `AddSpikeCaves` call are
+/// seed-gated off (no draws in the port). The right branch's two offset
+/// arms write `GenVars.shellStartXLeft` — the vanilla quirk at `:16381`/
+/// `:16385` — ported verbatim.
+pub(crate) fn shell_piles(world: &mut World, gv: &mut GenVars, world_surface: f64, rng: &mut Rng) {
+    // Left ocean (`:16311-16349`).
+    if rng.chance(2) {
+        for j in gv.shell_start_x_left - 20..=gv.shell_start_x_left + 20 {
+            for k in gv.shell_start_y_left - 10..=gv.shell_start_y_left + 10 {
+                if j < 0 || k < 1 || j >= world.width || k >= world.height {
+                    continue;
+                }
+                let here = world.index(j, k);
+                let here_ok = world.tiles[here].active()
+                    && world.tiles[here].kind == TILE_SAND
+                    && !world.tiles[world.index(j, k - 1)].active()
+                    && world.tiles[world.index(j, k - 1)].liquid == 0;
+                let west = world.index(j - 1, k);
+                let west_ok = !world.tiles[west].active() && world.tiles[west].liquid > 0;
+                if here_ok && west_ok {
+                    gv.shell_start_x_left = j;
+                    gv.shell_start_y_left = k;
+                }
+            }
+        }
+        gv.shell_start_y_left -= 50;
+        gv.shell_start_x_left -= rng.range(0, 5);
+        if rng.chance(2) {
+            gv.shell_start_x_left -= rng.range(0, 10);
+        }
+        if rng.chance(3) {
+            gv.shell_start_x_left -= rng.range(0, 15);
+        }
+        if !rng.chance(4) {
+            shell_pile(world, world_surface, gv.shell_start_x_left, gv.shell_start_y_left, rng);
+        }
+        let max_value = rng.range(2, 4);
+        if rng.range(0, max_value) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_left - rng.range(10, 35),
+                gv.shell_start_y_left,
+                rng,
+            );
+        }
+        if rng.range(0, max_value) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_left - rng.range(40, 65),
+                gv.shell_start_y_left,
+                rng,
+            );
+        }
+        if rng.range(0, max_value) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_left - rng.range(70, 95),
+                gv.shell_start_y_left,
+                rng,
+            );
+        }
+        if rng.range(0, max_value) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_left - rng.range(100, 125),
+                gv.shell_start_y_left,
+                rng,
+            );
+        }
+        if rng.range(0, max_value) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_left + rng.range(10, 25),
+                gv.shell_start_y_left,
+                rng,
+            );
+        }
+    }
+    // Right ocean (`:16351-16413`).
+    if rng.chance(2) {
+        for l in gv.shell_start_x_right - 20..=gv.shell_start_x_right + 20 {
+            for m in gv.shell_start_y_right - 10..=gv.shell_start_y_right + 10 {
+                if l < 0 || m < 1 || l >= world.width || m >= world.height {
+                    continue;
+                }
+                let here = world.index(l, m);
+                let here_ok = world.tiles[here].active()
+                    && world.tiles[here].kind == TILE_SAND
+                    && !world.tiles[world.index(l, m - 1)].active()
+                    && world.tiles[world.index(l, m - 1)].liquid == 0;
+                let east = world.index(l + 1, m);
+                let east_ok = !world.tiles[east].active() && world.tiles[east].liquid > 0;
+                if here_ok && east_ok {
+                    gv.shell_start_x_right = l;
+                    gv.shell_start_y_right = m;
+                }
+            }
+        }
+        gv.shell_start_y_right -= 50;
+        gv.shell_start_x_right += rng.range(0, 5);
+        // The vanilla quirk: the right branch's offsets adjust the LEFT
+        // anchor (`:16381`, `:16385`) — never read again in the pass, so
+        // harmless, but ported verbatim.
+        if rng.chance(2) {
+            gv.shell_start_x_left += rng.range(0, 10);
+        }
+        if rng.chance(3) {
+            gv.shell_start_x_left += rng.range(0, 15);
+        }
+        if !rng.chance(4) {
+            shell_pile(world, world_surface, gv.shell_start_x_right, gv.shell_start_y_right, rng);
+        }
+        let max_value2 = rng.range(2, 4);
+        if rng.range(0, max_value2) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_right + rng.range(10, 35),
+                gv.shell_start_y_right,
+                rng,
+            );
+        }
+        if rng.range(0, max_value2) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_right + rng.range(40, 65),
+                gv.shell_start_y_right,
+                rng,
+            );
+        }
+        if rng.range(0, max_value2) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_right + rng.range(70, 95),
+                gv.shell_start_y_right,
+                rng,
+            );
+        }
+        if rng.range(0, max_value2) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_right + rng.range(100, 125),
+                gv.shell_start_y_right,
+                rng,
+            );
+        }
+        if rng.range(0, max_value2) == 0 {
+            shell_pile(
+                world,
+                world_surface,
+                gv.shell_start_x_right - rng.range(10, 25),
+                gv.shell_start_y_right,
+                rng,
+            );
+        }
+    }
+}
+
+/// `Water Plants` / `LilypadsCattailsBambooAndSeaweed` (`WorldGen.cs:
+/// 21973-22036`): the underwater sand grows seaweed. The lilypad / cattail /
+/// bamboo arms (the j-loop, `:21988-22017`) are out of this task's ocean
+/// scope — deferred whole, so their draws are deferred with them (the
+/// per-pass stream diverges from vanilla by those draws; recorded in
+/// ANALYSIS). `Main.UnderworldLayer` is `maxTilesY - 200` (`Main.cs:2790`).
+pub(crate) fn water_plants(world: &mut World, layers: &Layers, rng: &mut Rng) {
+    let (max_x, max_y) = (world.width, world.height);
+    let surface = layers.world_surface as i32;
+    for i in 20..max_x - 20 {
+        let mut num4 = max_y - 200; // Main.UnderworldLayer
+        while num4 > surface {
+            let idx = world.index(i, num4);
+            if world.tiles[idx].active() {
+                let kind = world.tiles[idx].kind;
+                if (kind == TILE_SAND && rng.range(0, 3) != 0) || kind == 549 {
+                    grow_check_seaweed(world, layers, i, num4, rng);
+                }
+            }
+            num4 -= 1;
+        }
+    }
+}
+
+/// `WorldGen.GrowCheckSeaweed(x, y)` (`WorldGen.cs:58917-58970`): the
+/// seaweed growth check — the dry-out kill arm (with `KillTile`'s
+/// generation-time strip), the density gate (30 in a 9×13 box), the floor
+/// distance roll (`k - y < 17 - Next(20)`), the 549 placement.
+fn grow_check_seaweed(world: &mut World, layers: &Layers, x: i32, y: i32, rng: &mut Rng) {
+    let (max_x, max_y) = (world.width, world.height);
+    let here = world.index(x, y);
+    let above = world.index(x, y - 1);
+    if (world.tiles[here].kind == 549 && world.tiles[here].liquid < 200)
+        || world.tiles[above].liquid < 200
+    {
+        if world.tiles[here].active() && world.tiles[here].kind == 549 && rng.chance(2) {
+            kill_tile_gen(&mut world.tiles[here]);
+        }
+        return;
+    }
+    let above2 = world.index(x, y - 2);
+    let above3 = world.index(x, y - 3);
+    if world.tiles[above].active()
+        || world.tiles[above2].active()
+        || rng.range(0, 1) != 0
+        || world.tiles[above2].liquid != 255
+        || world.tiles[above3].liquid != 255
+    {
+        return;
+    }
+    // The density gate: 30 seaweed tiles in the x±4 / y..y+12 box.
+    let mut num4 = 0;
+    'density: for i in (x - 4)..=(x + 4) {
+        for j in y..=(y + 12) {
+            if i < 0 || j >= max_y || i >= max_x {
+                continue;
+            }
+            let idx = world.index(i, j);
+            if world.tiles[idx].active() && world.tiles[idx].kind == 549 {
+                num4 += 1;
+                if num4 > 30 {
+                    break 'density;
+                }
+            }
+        }
+    }
+    if num4 > 30 {
+        return;
+    }
+    // The floor scan (`:58955-58958`).
+    let mut k = y;
+    while !solid_tile_at(world, x, k) && k < max_y - 50 {
+        k += 1;
+    }
+    if k - y < 17 - rng.range(0, 20) {
+        // `PlaceTile(x, y - 1, 549, mute: true)` (`:58964`).
+        world.tiles[above].kind = 549;
+        world.tiles[above].flags |= FLAG_ACTIVE;
+    }
+}
+
+/// `KillTile`'s generation-time strip (`WorldGen.cs:63517`, the
+/// `isGeneratingOrLoadingWorld → noItem` path): the tile goes inactive with
+/// its type cleared. The item-drop / frame / net arms do not exist in the
+/// port; the `SquareTileFrame` reframe is the port's later framing pass.
+fn kill_tile_gen(t: &mut Tile) {
+    if !t.active() {
+        return;
+    }
+    t.flags &= !FLAG_ACTIVE;
+    t.kind = 0;
+    t.frame_x = 0;
+    t.frame_y = 0;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1186,6 +1606,141 @@ mod tests {
         // A different seed carves a different world (the chain is live).
         let (kc, _) = run(0x5EED + 1);
         assert_ne!(ka, kc, "the chain consumes its stream");
+    }
+
+    /// DW-4.1: `RemoveSurfaceWaterAboveSand` clears the water above inland
+    /// sand columns and never touches the ocean band.
+    #[test]
+    fn remove_water_clears_inland_only() {
+        // A tall world: the pass runs over [400, 600) — the inland sand
+        // column sits at 500, the ocean one at 200 (the excluded band).
+        let mut world = World::new("rw".into(), 1000, 200);
+        for &x in &[500i32, 200] {
+            let ground = world.index(x, 120);
+            world.tiles[ground].kind = TILE_SAND;
+            world.tiles[ground].flags |= FLAG_ACTIVE;
+            for y in 110..120 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        let _ = &world;
+        remove_water_from_sand(&mut world, 130.0);
+        // The inland column lost its water.
+        let inland = (110..120).all(|y| world.tile(500, y).is_some_and(|t| t.liquid == 0));
+        assert!(inland, "the inland water clears");
+        // The ocean column keeps its water.
+        let ocean = (110..120).any(|y| world.tile(200, y).is_some_and(|t| t.liquid == 255));
+        assert!(ocean, "the ocean band keeps its water");
+    }
+
+    /// DW-4.2: `ShellPile` walks down to the sand floor and drops the 495
+    /// blob with the support stack; a non-sand floor is rejected.
+    #[test]
+    fn shell_pile_drops_on_sand_only() {
+        let mut world = World::new("sp".into(), 200, 200);
+        for x in 0..200 {
+            for y in 100..200 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let ok = shell_pile(&mut world, 110.0, 100, 100, &mut Rng(0x5EED));
+        assert!(ok, "the pile lands on sand");
+        let shells = world.tiles.iter().filter(|t| t.kind == TILE_SHELL_PILE).count();
+        assert!(shells > 4, "the blob is 495 ({shells})");
+        // A stone floor is rejected (the `type != 53` guard).
+        let mut stone = World::new("sp2".into(), 200, 200);
+        for x in 0..200 {
+            for y in 100..200 {
+                let i = stone.index(x, y);
+                stone.tiles[i].kind = 1;
+                stone.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        let rejected = shell_pile(&mut stone, 110.0, 100, 100, &mut Rng(0x5EED));
+        assert!(!rejected, "the stone floor is rejected");
+        assert_eq!(
+            stone.tiles.iter().filter(|t| t.kind == TILE_SHELL_PILE).count(),
+            0,
+            "nothing placed"
+        );
+    }
+
+    /// DW-4.3: the Shell Piles anchor scan — a sand tile with air above and
+    /// water to the WEST (left) / EAST (right) is picked, and the pile lands
+    /// near it. The right-side vanilla quirk (offsets writing
+    /// `shellStartXLeft`) does not crash.
+    #[test]
+    fn shell_piles_anchor_scan() {
+        let mut world = World::new("sa".into(), 400, 200);
+        // The left shore: water on the west, sand at x=100..160.
+        for x in 0..400 {
+            for y in 120..200 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 0..100 {
+            for y in 120..140 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        // Water on the east for the right anchor.
+        for x in 300..400 {
+            for y in 120..140 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        let mut gv = GenVars::default();
+        gv.shell_start_x_left = 100;
+        gv.shell_start_y_left = 120;
+        gv.shell_start_x_right = 300;
+        gv.shell_start_y_right = 120;
+        // Force both sides to run by picking a seed where chance(2) passes.
+        let mut ran = false;
+        for seed in 0..8u64 {
+            gv.shell_start_x_left = 100;
+            gv.shell_start_y_left = 120;
+            shell_piles(&mut world, &mut gv, 130.0, &mut Rng(seed));
+            if world.tiles.iter().any(|t| t.kind == TILE_SHELL_PILE) {
+                ran = true;
+                break;
+            }
+        }
+        assert!(ran, "at least one seed produces piles");
+        // The y-shift moved the anchor up by 50 (the pile anchor is ABOVE
+        // the scan point by construction).
+        assert!(gv.shell_start_y_left < 120, "the anchor rose by 50");
+    }
+
+    /// DW-4.4: the seaweed arm — underwater sand grows 549 under the
+    /// water-full, solid-free, low-density conditions.
+    #[test]
+    fn water_plants_grows_seaweed() {
+        let mut world = World::new("wp".into(), 400, 300);
+        // A wide sand seafloor at 80 with water from 50 to 79 — the pass
+        // scans from UnderworldLayer (300-200 = 100) down to worldSurface
+        // (50), so the floor sits inside the scan band.
+        for x in 0..400 {
+            for y in 80..300 {
+                let i = world.index(x, y);
+                world.tiles[i].kind = TILE_SAND;
+                world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            for y in 50..80 {
+                let i = world.index(x, y);
+                world.tiles[i].liquid = 255;
+            }
+        }
+        let layers = cave_layers();
+        water_plants(&mut world, &layers, &mut Rng(0x5EED));
+        let seaweed = world.tiles.iter().filter(|t| t.kind == 549).count();
+        assert!(seaweed > 0, "the seafloor grows seaweed ({seaweed})");
     }
 
 }

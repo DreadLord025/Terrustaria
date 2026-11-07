@@ -128,8 +128,15 @@ mod tests {
     /// `pass_rng("Create Ocean Caves")` stream (was `streams.drng` — the
     /// accepted world change, the later `drng` consumers shift) — every
     /// world on every seed changes by design.
-    const SEED42_512: u32 = 2167384932;
-    const DEFAULT_WORLD: u32 = 1139665945;
+    /// Re-pinned for M5-OCEAN phase 4: the late water/sand passes land —
+    /// `Remove Water From Sand` (`WorldGen.cs:16211`) and `Shell Piles`
+    /// (`:16266`) before `slopes` (vanilla `:16211`/`:16266` → Smooth World
+    /// `:16419`), and the `Water Plants` seaweed arm (`:21973`) after the
+    /// vegetation family (its per-pass stream) — the shell blobs retype the
+    /// shore sand, the inland water clears, the seaweed grows — every world
+    /// on every seed changes by design.
+    const SEED42_512: u32 = 4022829163;
+    const DEFAULT_WORLD: u32 = 586861008;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
