@@ -13,7 +13,7 @@
 //!   the `AddGenerationPass` anchor and the conditional-registration gate.
 //!   It is the model and the slot registry future passes register into —
 //!   it is never walked at runtime.
-//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 41 steps in
+//! - [`EXECUTED_PIPELINE`] — the port's pipeline: today's 44 steps in
 //!   today's exact call order, each an adapter that calls the existing
 //!   `pub(crate)` pass fn unchanged. The order is NOT the vanilla order (the
 //!   deviations are pinned by the world contract — see the per-step
@@ -982,6 +982,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
     step!("altars", "Altars", step_altars),
+    // The vanilla slot (`WorldGen.cs:15810`): immediately after Altars
+    // (`:15750`), before the temple (`:15834`) — the M5-BIOME phase-5
+    // insertion.
+    step!("wet jungle", "Wet Jungle", step_wet_jungle),
     step!("pyramids", "Pyramids", step_pyramids),
     step!("pots", "Pots", step_pots),
     step!("beehives", "Hives", step_beehives),
@@ -996,7 +1000,19 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "Glowing Mushrooms and Jungle Plants",
         step_mushroom_jungle_plants
     ),
+    // The vanilla slot (`WorldGen.cs:20165`): immediately after the plants
+    // pass (`:20122`), before Vines (`:20193`) — the M5-BIOME phase-5
+    // insertion.
+    step!("jungle plants", "Jungle Plants", step_jungle_plants),
     step!("vines", "Vines", step_vines),
+    // The vanilla slot (`WorldGen.cs:20813`): after Vines, before the
+    // islands step the plan pins it against — the M5-BIOME phase-5
+    // insertion.
+    step!(
+        "muds walls in jungle",
+        "Muds Walls In Jungle",
+        step_muds_walls_in_jungle
+    ),
     step!(
         "floating islands",
         "Floating Islands",
@@ -1383,11 +1399,17 @@ fn step_underground_jungle_trees(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The faithful `UndergroundJungleTrees` draws from its own fresh
+    // per-pass stream (the `WorldGenerator.cs:497` re-seed model — the
+    // Phase-1 contract; the phase-5 dispatch's stated preference). Moving it
+    // off `drng` shifts the later `drng` consumers (`exposed gems`, `vines`,
+    // `floating islands`) along the stream — the accepted world change
+    // (the phase discovery Gap 6, ANALYSIS row in Phase 7).
+    let world_surface = gv.layers().world_surface;
     biome_detail::pass_underground_jungle_trees(
         world,
-        gv.spans(),
-        gv.layers().rock_layer,
-        &mut streams.drng,
+        world_surface,
+        &mut streams.pass_rng("Jungle Trees"),
     );
 }
 
@@ -1561,13 +1583,71 @@ fn step_sword_shrines(
 
 fn step_mushroom_jungle_plants(
     world: &mut World,
-    _gv: &mut GenVars,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The faithful jungle arms draw from the pass's own fresh stream; the
+    // mushroom half stays shape-level (M5-BIOME-2's row).
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    biome_detail::pass_mushroom_and_jungle_plants(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Glowing Mushrooms and Jungle Plants"),
+    );
+}
+
+fn step_wet_jungle(
+    world: &mut World,
+    gv: &mut GenVars,
     _streams: &mut Streams,
     _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    biome_detail::pass_mushroom_and_jungle_plants(world);
+    // `SurfaceWaterInJungle` draws nothing — no stream needed.
+    let (surface_low, world_surface) = {
+        let l = gv.layers();
+        (l.surface_low, l.world_surface)
+    };
+    biome_detail::pass_wet_jungle(world, surface_low, world_surface);
+}
+
+fn step_jungle_plants(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    biome_detail::pass_jungle_plants_part2(world, &mut streams.pass_rng("Jungle Plants"));
+}
+
+fn step_muds_walls_in_jungle(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // The pass writes `GenVars.jungleMinX/jungleMaxX` (`WorldGen.cs:20854-
+    // 20855`) — the port's GenVars fields gain their writer here.
+    let world_surface = gv.layers().world_surface;
+    let (min_x, max_x) = biome_detail::pass_muds_walls_in_jungle(
+        world,
+        world_surface,
+        &mut streams.pass_rng("Muds Walls In Jungle"),
+    );
+    gv.jungle_min_x = min_x;
+    gv.jungle_max_x = max_x;
 }
 
 fn step_vines(
@@ -1776,9 +1856,9 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_41_named_steps() {
+    fn the_executed_pipeline_is_44_named_steps() {
         let names = executed_pass_names();
-        assert_eq!(names.len(), 41);
+        assert_eq!(names.len(), 44);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -1789,8 +1869,13 @@ mod tests {
         // `jungle` (vanilla `:12466` → `:12468`) and `dirt to mud` between
         // `dirt-in-stone blobs` and `ash blobs` (satisfies the vanilla
         // DirtToMud < Shinies and DirtToMud < Underworld relative pairs) —
-        // plus the phase-4 move of `evil` to its vanilla slot between
-        // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`).
+        // the phase-4 move of `evil` to its vanilla slot between
+        // `ores and gems`/Shinies (`:13182`) and `liquids`/Lakes (`:14556`),
+        // and the three phase-5 insertions — `wet jungle` right after
+        // `altars` (vanilla `:15750` → `:15810`), `jungle plants` right
+        // after `mushroom and jungle plants` (vanilla `:20122` → `:20165`)
+        // and `muds walls in jungle` between `vines` and `floating islands`
+        // (vanilla `:20193` → `:20813`).
         assert_eq!(
             names,
             vec![
@@ -1817,6 +1902,7 @@ mod tests {
                 "jungle shrines",
                 "chests",
                 "altars",
+                "wet jungle",
                 "pyramids",
                 "pots",
                 "beehives",
@@ -1827,7 +1913,9 @@ mod tests {
                 "spike pits",
                 "sword shrines",
                 "mushroom and jungle plants",
+                "jungle plants",
                 "vines",
+                "muds walls in jungle",
                 "floating islands",
                 "slopes",
                 "living trees",
@@ -1881,6 +1969,35 @@ mod tests {
         assert!(cpos("Shinies") < cpos("Corruption"));
         assert!(cpos("Underworld") < cpos("Corruption"));
         assert!(cpos("Corruption") < cpos("Lakes"));
+    }
+
+    /// DW-5.3: the three M5-BIOME phase-5 steps sit in their vanilla
+    /// positions — `wet jungle` immediately after `altars` (the vanilla
+    /// adjacent pair Altars `:15750` → Wet Jungle `:15810` → Jungle Temple
+    /// `:15834`), `jungle plants` immediately after `mushroom and jungle
+    /// plants` (vanilla `:20122` → `:20165`, before Vines `:20193`) and
+    /// `muds walls in jungle` between `vines` and `floating islands` (the
+    /// plan's slot; vanilla carries Muds Walls In Jungle after Vines,
+    /// `:20193` → `:20813`).
+    #[test]
+    fn test_DW_5_3_new_steps_sit_in_their_vanilla_positions() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("wet jungle"), pos("altars") + 1);
+        assert_eq!(pos("jungle plants"), pos("mushroom and jungle plants") + 1);
+        assert_eq!(pos("muds walls in jungle"), pos("vines") + 1);
+        assert_eq!(names[pos("muds walls in jungle") + 1], "floating islands");
+        // The vanilla chain carries the same relative pairs.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Wet Jungle") == cpos("Altars") + 1);
+        assert!(cpos("Jungle Temple") == cpos("Wet Jungle") + 1);
+        assert!(cpos("Jungle Plants") == cpos("Glowing Mushrooms and Jungle Plants") + 1);
+        assert!(cpos("Muds Walls In Jungle") > cpos("Vines"));
     }
 
     #[test]

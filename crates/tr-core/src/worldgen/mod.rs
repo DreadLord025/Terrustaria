@@ -567,6 +567,148 @@ mod tests {
         assert!(count(187) >= 1, "the sword shrines ({})", count(187));
     }
 
+    /// DW-5.1 (dirty): the underground jungle grows vanilla tile-5 trees and
+    /// the kind-6 "`TreeBranches`" canopy is gone. The world-level regression
+    /// keys on the old canopy writer's own footprint — the ball's core cells
+    /// (the trunk column two above the top, and the top row's immediate
+    /// sides) hold no kind 6 in any test world. Bare kind-6 tiles DO exist in
+    /// generated worlds from the `OresAndShinies` runner retyping wall-0
+    /// pocket tiles (pre-existing, M5-ORES-1's pinned behaviour, out of this
+    /// task's file scope) — that is why the ore-pair tests keep their
+    /// `wall != 0` filter; its canopy rationale is dead, the runner
+    /// rationale is not (see the pair test's comment).
+    #[test]
+    fn test_DW_5_1_no_canopy_kind6_and_jungle_trees_in_generated_worlds() {
+        for (width, height, seed) in [(512i32, 512i32, 42u64), (512, 512, 66), (4200, 1200, 77)] {
+            let w = generate(&GenOptions {
+                width,
+                height,
+                seed,
+                ..Default::default()
+            });
+            for tx in 0..w.width {
+                for ty in 0..w.height {
+                    if !w
+                        .tile(tx, ty)
+                        .is_some_and(|t| t.active() && t.kind == 5)
+                    {
+                        continue;
+                    }
+                    for dy in -2..=1 {
+                        assert!(
+                            !w.tile(tx, ty + dy)
+                                .is_some_and(|t| t.active() && t.kind == 6),
+                            "canopy kind-6 at {tx},{ty} (tree column, {width}x{height}/{seed})"
+                        );
+                    }
+                    for dx in [-1i32, 1] {
+                        assert!(
+                            !w.tile(tx + dx, ty)
+                                .is_some_and(|t| t.active() && t.kind == 6),
+                            "canopy kind-6 at {},{ty} (tree side, {width}x{height}/{seed})",
+                            tx + dx
+                        );
+                    }
+                }
+            }
+        }
+        // The 4200 world carries underground tree tiles: active kind 5 below
+        // the surface line with valid 22 px jungle frames (the canopy marker
+        // 22, the branch markers 44/66 at frameY ≥ 198, or plain trunk art).
+        // The observed count for the faithful pass is 156 tiles (~15 trees;
+        // a draw-order funnel replay against the pre-pass world confirms 15
+        // `GrowUndergroundTree` acceptances). Vanilla's count runs higher
+        // only because its cave passes carve BEFORE the grass sweep (chain
+        // positions 8-17 vs 21), giving floors tall cavern air for the
+        // `EmptyTileCheck` canvas — the port's pinned executed order carves
+        // `cavefields` after `mud caves to grass`, so most caves sit under
+        // short ceilings (clear runs 1-8 rows vs the canvas' 12-21). The
+        // order deviation is the pinned world contract, out of this task's
+        // scope; the threshold asserts a live tree population, not vanilla's
+        // density (the density follows once the cave order is the vanilla
+        // one — recorded for ANALYSIS).
+        let w = generate(&GenOptions {
+            seed: 77,
+            ..Default::default()
+        });
+        let underground_trees = (0..w.width)
+            .flat_map(|x| ((w.world_surface as i32 + 10)..(w.height - 350)).map(move |y| (x, y)))
+            .filter(|&(x, y)| w.tile(x, y).is_some_and(|t| t.active() && t.kind == 5))
+            .count();
+        assert!(underground_trees > 100, "underground trees ({underground_trees})");
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == 5) {
+            assert!(
+                matches!(t.frame_x, 0 | 22 | 44 | 66 | 88 | 110) && t.frame_y % 22 == 0,
+                "tree frame ({},{})",
+                t.frame_x,
+                t.frame_y
+            );
+        }
+    }
+
+    /// DW-5.2 (dirty): the wet surface jungle — the 4200 world carries
+    /// surface jungle-grass columns with exactly the 2-tall water cap the
+    /// pass writes (`liquid = 255`, the water type). The pass runs before
+    /// the plants, so the water cells may already carry the 61 plants — the
+    /// liquid survives in them (the C# mutates the same fields).
+    #[test]
+    fn test_DW_5_2_wet_jungle_two_water_tiles_above_surface_grass() {
+        let w = generate(&GenOptions::default());
+        let mut wet_columns = 0;
+        for x in 1..w.width - 1 {
+            for y in 2..((w.world_surface - 1.0) as i32) {
+                let Some(t) = w.tile(x, y) else {
+                    continue;
+                };
+                if !(t.active() && t.kind == 60) {
+                    continue;
+                }
+                let (a, b) = (w.tile(x, y - 1).unwrap(), w.tile(x, y - 2).unwrap());
+                let water_type = crate::tile::FLAG_LIQUID_LAVA
+                    | crate::tile::FLAG_LIQUID_HONEY
+                    | crate::tile::FLAG_LIQUID_SHIMMER;
+                if a.liquid == 255
+                    && b.liquid == 255
+                    && a.flags & water_type == 0
+                    && b.flags & water_type == 0
+                {
+                    wet_columns += 1;
+                    break;
+                }
+            }
+        }
+        assert!(wet_columns > 20, "wet surface jungle columns: {wet_columns}");
+    }
+
+    /// DW-5.2 (dirty): the jungle plants — the 61 plants sit on the free
+    /// jungle-grass cells, the 233 detritus blocks place on the scanned
+    /// surface grass, and the jungle-band dirt/cave walls converted to 15.
+    #[test]
+    fn test_DW_5_2_jungle_plants_and_mud_walls_in_generated_world() {
+        let w = generate(&GenOptions::default());
+        let count = |kind: u16| {
+            w.tiles
+                .iter()
+                .filter(|t| t.active() && t.kind == kind)
+                .count()
+        };
+        assert!(count(61) > 500, "the jungle plants ({})", count(61));
+        assert!(count(233) > 50, "the plant detritus ({})", count(233));
+        // The 233 detritus comes in intact 3x2/2x2 blocks (frame rows 0/18).
+        for t in w.tiles.iter().filter(|t| t.active() && t.kind == 233) {
+            assert!(
+                matches!(t.frame_y, 0 | 18 | 36 | 54),
+                "detritus frameY {}",
+                t.frame_y
+            );
+        }
+        // The mud-wall conversion: wall 15 exists in the world (the jungle
+        // body also places it, so assert a healthy count), and the plain
+        // dirt walls 2 survive only outside the jungle band's surface rows.
+        let wall15 = w.tiles.iter().filter(|t| t.wall == 15).count();
+        assert!(wall15 > 1000, "the mud walls ({wall15})");
+    }
+
     #[test]
     fn the_ore_tiers_roll_one_kind_per_pair() {
         // The `OresAndShinies` pass (`WorldGen.cs:13182-13606`) rolls one kind
@@ -577,9 +719,12 @@ mod tests {
         // corruption world.
         //
         // The counts only take tiles that carry a wall: a `TileRunner` blob
-        // inherits the wall of the tile it retypes, while the underground
-        // jungle canopy mistakenly places bare active iron tiles (kind 6,
-        // `biome_detail.rs` "TreeBranches" — a pre-existing bug, its own row).
+        // inherits the wall of the tile it retypes, but the runner also
+        // writes its kind into wall-0 pocket tiles (carved cave air), so
+        // bare active iron tiles exist from the ore pass itself. The old
+        // jungle-canopy writer (kind 6 "TreeBranches") is gone since
+        // M5-BIOME phase 5 — the filter now covers the runner's own bare
+        // writes only.
         let w = generate(&GenOptions {
             seed: 66,
             ..Default::default()

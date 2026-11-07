@@ -86,8 +86,18 @@ mod tests {
     /// finishing gem tail draws `type:` first (`JunglePass.cs:156-160`,
     /// `:254` — named arguments evaluate in source order) — the same draw
     /// counts with different outcomes, so every world shifts again.
-    const SEED42_512: u32 = 2202225353;
-    const DEFAULT_WORLD: u32 = 2961948300;
+    /// Re-pinned for M5-BIOME phase 5: the faithful jungle detail passes
+    /// land — `UndergroundJungleTrees` on its own
+    /// `pass_rng("Jungle Trees")` stream (tile-5 trees replace the kind-6
+    /// canopy; the later `drng` consumers shift along that stream — the
+    /// accepted world change), `Wet Jungle` and `Muds Walls In Jungle`
+    /// join at their vanilla slots, the plants pass takes its faithful
+    /// jungle arms plus the `JunglePlantsPart2` detritus sweep, and
+    /// `GenVars.jungle_min_x/max_x` gain their writer — every world on
+    /// every seed changes by design (the ANALYSIS section lands in
+    /// Phase 7).
+    const SEED42_512: u32 = 3531083183;
+    const DEFAULT_WORLD: u32 = 4268592363;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {
