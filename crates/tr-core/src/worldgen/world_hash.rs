@@ -96,8 +96,17 @@ mod tests {
     /// `GenVars.jungle_min_x/max_x` gain their writer — every world on
     /// every seed changes by design (the ANALYSIS section lands in
     /// Phase 7).
-    const SEED42_512: u32 = 3531083183;
-    const DEFAULT_WORLD: u32 = 4268592363;
+    /// Re-pinned for M5-BIOME phase 6: the temple placement becomes the
+    /// faithful `LihzahrdTemple` search (`WorldGen.cs:15834-15926`) on its
+    /// own `pass_rng("Jungle Temple")` stream — the temple relocates to the
+    /// search's bury point (the sub-vanilla worlds take the C# fallback via
+    /// the height valve), the shared `srng` stream loses the pass's draws
+    /// (the later `srng` consumers shift — the accepted world change), the
+    /// shell publishes `GenVars.temple`, and 137/237 join the frame-
+    /// important boot statics — every world on every seed changes by
+    /// design (the ANALYSIS section lands in Phase 7).
+    const SEED42_512: u32 = 992682600;
+    const DEFAULT_WORLD: u32 = 1041482865;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

@@ -1526,8 +1526,17 @@ fn step_temple(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let _altar =
-        temple::pass_lihzahrd_temple(world, gv.spans(), gv.layers().rock_layer, &mut streams.srng);
+    // The faithful placement search (`WorldGen.cs:15834-15926`) draws from
+    // the pass's own fresh stream (`Streams::pass_rng` — the per-pass
+    // re-seed model); the shape-level shell keeps the box body and publishes
+    // the GenVars the M5-TEMPLE passes read (the bounds `WorldGen.cs:34231-
+    // 34235`, the altar anchor `:34000-34001`). The shared `srng` stream
+    // loses this pass's draws — the later `srng` consumers shift along it
+    // (the accepted world change, recorded for ANALYSIS).
+    let dungeon_x = gv.spans().dungeon_x;
+    let rock_layer = gv.layers().rock_layer;
+    let mut trng = streams.pass_rng("Jungle Temple");
+    gv.temple = temple::pass_lihzahrd_temple(world, dungeon_x, rock_layer, &mut trng);
 }
 
 fn step_cave_houses(
@@ -1792,6 +1801,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     // framer must keep.
     world.frame_important[26] = true;
     world.frame_important[31] = true;
+    // The temple tiles the temple pass writes — the dart trap 137
+    // (`Main.cs:7431`) and the Lihzahrd altar 237 (`Main.cs:10234`) are
+    // frame-important, so the framer keeps their stored frames; the
+    // Lihzahrd brick 226 is not (bricks auto-frame).
+    world.frame_important[137] = true;
+    world.frame_important[237] = true;
     world.frame_important[78] = true;
     world.frame_important[82] = true;
     world.frame_important[83] = true;
@@ -2132,5 +2147,71 @@ mod tests {
                 l_altar_y: 0,
             }
         );
+    }
+
+    // --- Phase 6: temple stub -------------------------------------------------
+
+    /// DW-6.1: `step_temple` publishes the shell's bounds and the altar
+    /// anchor into `GenVars.temple` — the reachability seam the M5-TEMPLE
+    /// passes (`templePart2`/`LihzahrdAltar`) read. The 512-tall world has
+    /// no vanilla y band (`maxTilesY - 600 <= 0`), so the valve sends the
+    /// search to the fallback: `x = maxTilesX - dungeon_x`,
+    /// `y = (int)rockLayer + 100` (`WorldGen.cs:15926-15930`).
+    #[test]
+    fn test_DW_6_1_step_temple_writes_genvars_temple() {
+        let mut world = World::new("t".into(), 512, 512);
+        let mut gv = GenVars::default();
+        gv.spans = Some(biomes::BiomeSpans {
+            jungle_start: 0,
+            jungle_end: 512,
+            dungeon_x: 300,
+        });
+        gv.layers = Some(Layers {
+            avg_surface: 100.0,
+            world_surface: 100.0,
+            rock_layer: 280.0,
+            hell_top: 480,
+            surface_low: 80.0,
+            surface_high: 120.0,
+            rock_low: 260.0,
+            rock_high: 300.0,
+        });
+        let opts = GenOptions::default();
+        let noise = Noise { seed: opts.seed };
+        let config = WorldGenConfig::parse();
+        let config = config.pass("Jungle Temple");
+        let mut streams = Streams::new(opts.seed);
+        step_temple(&mut world, &mut gv, &mut streams, &opts, &noise, &config);
+        // The deterministic fallback bury point (212, 380) sits inside the
+        // published bounds; `t_rooms` carries the carved-room count.
+        let (bx, by) = (212, 380);
+        let tb = gv.temple;
+        assert_eq!(tb.t_rooms, 2, "t_rooms");
+        assert!(
+            tb.t_left <= bx && bx <= tb.t_right && tb.t_top <= by && by <= tb.t_bottom,
+            "the bury point inside the bounds {:?}",
+            tb
+        );
+        assert!(
+            tb.t_left <= tb.l_altar_x && tb.l_altar_x + 2 < tb.t_right,
+            "the altar anchor x inside the bounds"
+        );
+        assert!(
+            tb.t_top <= tb.l_altar_y && tb.l_altar_y + 1 < tb.t_bottom,
+            "the altar anchor y inside the bounds"
+        );
+    }
+
+    /// Decision #15 (verified): the temple tiles the shell writes — the dart
+    /// trap 137 (`Main.cs:7431`) and the Lihzahrd altar 237
+    /// (`Main.cs:10234`) are frame-important and the framer must keep their
+    /// stored frames; the Lihzahrd brick 226 is not.
+    #[test]
+    fn temple_tiles_carry_their_frame_important_boot_statics() {
+        let mut w = World::new("t".into(), 8, 8);
+        boot_statics(&mut w);
+        assert!(w.frame_important[137], "the dart trap 137");
+        assert!(w.frame_important[237], "the Lihzahrd altar 237");
+        assert!(!w.frame_important[226], "the Lihzahrd brick 226");
     }
 }
