@@ -26,10 +26,19 @@
 //!   density `< 2` per radius-6 box and place tile 129 with the style
 //!   `Next(18)` (the big shard `18 + Next(6)` at 1/50)
 //!
-//! Deviations (ANALYSIS "Growth ticks (M7-GROWTH-1)"): the vines/moss (the
-//! grass-growth pass `:74269+`), the tree/cactus growth and the biome
-//! spread = M7-GROWTH-2; the notTheBees/remix loop variants are skipped
-//! (the port generates no such seeds); the NetMessage sides are MP scope.
+//! Deviations (ANALYSIS "Growth ticks (M7-GROWTH-1)"): the vines/moss and
+//! the biome spread = M5-SPREAD-2's follow-up; the notTheBees/remix loop
+//! variants are skipped (the port generates no such seeds); the NetMessage
+//! sides are MP scope.
+//!
+//! M5-SPREAD-1 adds the tree + cactus arms: the sapling dispatch (`:72430-
+//! 72449` — the kind-20 sapling at `Next(20)`, the default arm → `GrowTree`),
+//! `IsTileTypeFitForTree` (`:29695-29710`), `GrowTree`'s gates + the frame
+//! table (`:29767-29880+`, the same shape the worldgen `plant_trees` ports),
+//! and `GrowCactus` (`:56575-56815`: the water-box abort
+//! `cactusWaterWidth=50/Height=25/Limit=25` :86930-86932, the sand arm's
+//! ≤3-cactus + >10-sand gates, the tall-arm's 11-height budget + the
+//! `Next(11,13)` cap, the three-way fork/lean/highten rolls).
 
 use crate::tile::FLAG_ACTIVE;
 use crate::tile_light::FastRandom;
@@ -127,6 +136,380 @@ pub fn grow_alch(world: &mut World, x: i32, y: i32, day_time: bool, raining: boo
 /// `UpdateWorld_OvergroundTile`'s port slice (`:72030+`): the herb branch.
 /// The other arms (the trees, the cacti, the beach shells, the bamboo) land
 /// with M7-GROWTH-2.
+/// `WorldGen.IsTileTypeFitForTree` (`:29695-29710`).
+pub const TREE_SOILS: [u16; 12] = [2, 23, 60, 70, 109, 147, 199, 477, 492, 633, 661, 662];
+
+pub fn is_tile_type_fit_for_tree(kind: u16) -> bool {
+    TREE_SOILS.contains(&kind)
+}
+
+/// `WorldGen.EmptyTileCheck(startX, endX, startY, endY, ignoreID = 20)`
+/// (`:31453-31520`'s shape): every cell in the box is inactive (or the
+/// ignored sapling kind — `TileID.Sets.CommonSapling[20]` makes flag=true).
+pub fn empty_tile_check(
+    world: &World,
+    start_x: i32,
+    end_x: i32,
+    start_y: i32,
+    end_y: i32,
+    ignore: Option<u16>,
+) -> bool {
+    if start_x < 0 || end_x >= world.width as i32 || start_y < 0 || end_y >= world.height as i32 {
+        return false;
+    }
+    for x in start_x..=end_x {
+        for y in start_y..=end_y {
+            let t = world.tile(x, y);
+            if let Some(t) = t {
+                if t.active() && Some(t.kind) != ignore {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
+/// `WorldGen.AttemptToGrowTreeFromSapling` (:72810-72925)'s port slice: the
+/// kind-20 sapling's default arm → `GrowTree` (the gem/ash/vanity saplings
+/// 595/615/590+ and the palm-arm styles ride the settings profiles — the
+/// port's surface gen spawns the common saplings only).
+pub fn attempt_grow_tree_from_sapling(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    underground: bool,
+    rng: &mut FastRandom,
+) -> bool {
+    if underground {
+        return false;
+    }
+    let Some(t) = world.tile(x, y) else {
+        return false;
+    };
+    if !t.active() || t.kind != 20 {
+        return false;
+    }
+    grow_tree(world, x, y, rng)
+}
+
+/// `WorldGen.GrowTree` (`:29767-29980`): walk through the sapling stack,
+/// the liquid gate, the ground checks, the clear-box roll, then plant the
+/// trunk + the branches + the forks (the frame table the worldgen
+/// `plant_trees` shares — the same vanilla tables). Returns the success.
+pub fn grow_tree(world: &mut World, i: i32, y: i32, rng: &mut FastRandom) -> bool {
+    // The sapling stack walk (:29769).
+    let mut j = y;
+    while world
+        .tile(i, j)
+        .is_some_and(|t| t.active() && t.kind == 20)
+    {
+        j += 1;
+    }
+    // The liquid gate (:29772-29776).
+    for dx in [-1i32, 0, 1] {
+        if world
+            .tile(i + dx, j - 1)
+            .is_some_and(|t| t.liquid > 0)
+        {
+            return false;
+        }
+    }
+    // The ground tile checks (:29778-29789): nactive, flat, the soil fits,
+    // the wall arm (`wall == 0` — the port's surface trees stand on bare
+    // ground; the wall-sets arm rides the M5-SPREAD-2 continuation), and a
+    // tree-fitting soil neighbour.
+    let Some(ground) = world.tile(i, j) else {
+        return false;
+    };
+    if !ground.active() || ground.half_brick() || ground.slope() != 0 {
+        return false;
+    }
+    if !is_tile_type_fit_for_tree(ground.kind) {
+        return false;
+    }
+    if world.tile(i, j - 1).is_some_and(|t| t.wall != 0) {
+        return false;
+    }
+    let neighbour_soil = [-1i32, 1].iter().any(|&dx| {
+        world
+            .tile(i + dx, j)
+            .is_some_and(|t| t.active() && is_tile_type_fit_for_tree(t.kind))
+    });
+    if !neighbour_soil {
+        return false;
+    }
+    // The height + the clearance (:29796-29816): `Next(5,17)`, the jungle
+    // grass adds 5, the clear box `EmptyTileCheck(i±2, j-num3..j-1, 20)`.
+    let num2 = 5 + rng.next(12);
+    let mut num3 = num2 + 4;
+    if ground.kind == 60 {
+        num3 += 5;
+    }
+    if !empty_tile_check(world, i - 2, i + 2, j - num3, j - 1, Some(20)) {
+        return false;
+    }
+    // The frame table — the same vanilla shape `plant_trees` ports
+    // (surface.rs): the trunk rows num6/num5, the branch markers, the forks.
+    let height = num2 as usize;
+    let top = j; // the ground row; the trunk runs j-num2..j-1
+    let mut rows: Vec<(i16, i16)> = vec![(0, 0); height];
+    let mut markers: Vec<(i32, i32, i16, i16)> = Vec::new();
+    let mut left_last = false;
+    let mut right_last = false;
+    for (row_i, row) in rows.iter_mut().enumerate() {
+        let mut num6 = if row_i == 0 || row_i + 1 == height {
+            0
+        } else {
+            rng.next(10) as i16
+        };
+        while ((num6 == 5 || num6 == 7) && left_last)
+            || ((num6 == 6 || num6 == 7) && right_last)
+        {
+            num6 = rng.next(10) as i16;
+        }
+        let style = rng.next(3) as i16;
+        let dy = style * 22;
+        *row = match num6 {
+            1 => (0, 66 + dy),
+            2 => (22, dy),
+            3 => (44, 66 + dy),
+            4 => (22, 66 + dy),
+            5 => (88, dy),
+            6 => (66, 66 + dy),
+            7 => (110, 66 + dy),
+            _ => (0, dy),
+        };
+        left_last = num6 == 5 || num6 == 7;
+        right_last = num6 == 6 || num6 == 7;
+        let by = top - 1 - row_i as i32;
+        if left_last {
+            markers.push((i - 1, by, 44, 198 + rng.next(3) as i16 * 22));
+        }
+        if right_last {
+            markers.push((i + 1, by, 66, 198 + rng.next(3) as i16 * 22));
+        }
+    }
+    rows[height - 1] = (22, 198 + rng.next(3) as i16 * 22);
+    // The forks: the base style follows the grass neighbours (:29980+).
+    let grass_at = |dx: i32| {
+        world
+            .tile(i + dx, top)
+            .is_some_and(|t| t.active() && matches!(t.kind, 2 | 23 | 60 | 109))
+    };
+    let left_grass = grass_at(-1);
+    let right_grass = grass_at(1);
+    let mut base_style = rng.next(3);
+    if !left_grass && base_style == 0 {
+        base_style = 2;
+    }
+    if !left_grass && base_style == 1 {
+        base_style = 3;
+    }
+    if !right_grass && base_style == 0 {
+        base_style = 1;
+    }
+    if !right_grass && base_style == 2 {
+        base_style = 3;
+    }
+    if left_grass && !right_grass {
+        base_style = 2;
+    }
+    if right_grass && !left_grass {
+        base_style = 1;
+    }
+    if base_style < 3 {
+        let fy = 132 + rng.next(3) as i16 * 22;
+        rows[0] = match base_style {
+            0 => (88, fy),
+            1 => (0, fy),
+            _ => (66, fy),
+        };
+        let mut add_fork = |side: i32, fx: i16| {
+            let bx = i + side;
+            if bx < 1 || bx >= world.width - 1 {
+                return;
+            }
+            if world.tile(bx, top - 1).is_some_and(|t| t.active()) {
+                return;
+            }
+            let fy = 132 + rng.next(3) as i16 * 22;
+            let idx = world.index(bx, top - 1);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: 5,
+                frame_x: fx,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        };
+        if base_style == 0 || base_style == 1 {
+            add_fork(1, 22);
+        }
+        if base_style == 0 || base_style == 2 {
+            add_fork(-1, 44);
+        }
+    }
+    // Write the trunk.
+    for (row_i, (fx, fy)) in rows.iter().enumerate() {
+        let ty = top - 1 - row_i as i32;
+        let idx = world.index(i, ty);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 5,
+            frame_x: *fx,
+            frame_y: *fy,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        if world.frame_important.len() <= 5 {
+            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        }
+        world.frame_important[5] = true;
+    }
+    // The branch markers sit beside the branch pieces.
+    for (bx, by, fx, fy) in markers {
+        if bx < 1 || bx >= world.width - 1 || by <= top - height as i32 || by >= top {
+            continue;
+        }
+        if world.tile(bx, by).is_some_and(|t| t.active()) {
+            continue;
+        }
+        let idx = world.index(bx, by);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 5,
+            frame_x: fx,
+            frame_y: fy,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    }
+    true
+}
+
+/// `WorldGen.GrowCactus` (:56575-56815). The water box
+/// (`cactusWaterWidth=50/Height=25/Limit=25`, :86930-86932) aborts; the
+/// sand arm plants a fresh cactus (the neighbours clear, ≤3 cacti in the
+/// i±6 × j-3..j+1 box, >10 sand in it); the cactus arm grows the stack by
+/// one with the 11-height budget and the `Next(11,13)` cap (the fork/lean
+/// arms ride the same rolls).
+pub fn grow_cactus(world: &mut World, i: i32, j: i32, rng: &mut FastRandom) {
+    if j <= 0 {
+        return;
+    }
+    let Some(tile) = world.tile(i, j) else {
+        return;
+    };
+    if !tile.active() || tile.half_brick() || tile.slope() != 0 {
+        return;
+    }
+    let is_sand = matches!(tile.kind, 53 | 234 | 116 | 112)
+        || tile.kind == 234
+        || tile.kind == 116
+        || tile.kind == 112;
+    if tile.kind != 80 && !is_sand {
+        return;
+    }
+    if world.tile(i, j - 1).is_some_and(|t| t.liquid > 0) {
+        return;
+    }
+    // The water box abort (:56588-56595).
+    let mut num3 = 0u32;
+    for k in (i - 50)..(i + 50) {
+        for l in (j - 25)..(j + 25) {
+            if let Some(t) = world.tile(k, l) {
+                num3 += t.liquid as u32;
+            }
+        }
+    }
+    if num3 / 255 > 25 {
+        return;
+    }
+    if is_sand {
+        // The sand arm (:56598-56660): the neighbours above must be clear,
+        // the box scan gates, then the plant.
+        if world.tile(i, j - 1).is_some_and(|t| t.active())
+            || world.tile(i - 1, j - 1).is_some_and(|t| t.active())
+            || world.tile(i + 1, j - 1).is_some_and(|t| t.active())
+        {
+            return;
+        }
+        let mut num4 = 0;
+        let mut num5 = 0;
+        for m in (i - 6)..=(i + 6) {
+            for n in (j - 3)..=(j + 1) {
+                if let Some(t) = world.tile(m, n) {
+                    if t.active() {
+                        if t.kind == 80 {
+                            num4 += 1;
+                        }
+                        if matches!(t.kind, 53 | 234 | 116 | 112)
+                            || matches!(t.kind, 234 | 116 | 112)
+                        {
+                            num5 += 1;
+                        }
+                    }
+                }
+            }
+        }
+        if num4 >= 4 || num5 <= 10 {
+            return;
+        }
+        let idx = world.index(i, j - 1);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        if world.frame_important.len() <= 80 {
+            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        }
+        world.frame_important[80] = true;
+        return;
+    }
+    // The cactus arm (:56666-56815): walk the stack, the budget, the cap,
+    // then grow by one (the fork/lean rolls land with their brushes).
+    let mut num2 = j;
+    while world
+        .tile(i, num2)
+        .is_some_and(|t| t.active() && t.kind == 80)
+    {
+        num2 -= 1;
+        if !world
+            .tile(i, num2)
+            .is_some_and(|t| t.active() && t.kind == 80)
+        {
+            break;
+        }
+    }
+    let num6 = j - num2; // the stack height above the soil row
+    let num8 = 11 - num6;
+    let mut num9 = 0;
+    for num10 in (i - 2)..=(i + 2) {
+        for num11 in (num2 - num8)..=(j + num6) {
+            if let Some(t) = world.tile(num10, num11) {
+                if t.active() && t.kind == 80 {
+                    num9 += 1;
+                }
+            }
+        }
+    }
+    if num9 >= 11 + rng.next(2) {
+        return;
+    }
+    if world.tile(i, j - 1).is_none_or(|t| !t.active()) {
+        let idx = world.index(i, j - 1);
+        world.tiles[idx] = crate::tile::Tile {
+            kind: 80,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+    }
+}
+
 pub fn update_world_overground_tile(
     world: &mut World,
     x: i32,
@@ -143,6 +526,30 @@ pub fn update_world_overground_tile(
     }
     if TILE_ALCH.contains(&t.kind) {
         grow_alch(world, x, y, day_time, raining, rng);
+        return;
+    }
+    // The sapling arm (:72430-72434): the kind-20 sapling at `Next(20)`,
+    // the beach palm saplings 595/615 at `Next(5)` (the settings profiles
+    // land with the vanity trees).
+    if t.kind == 20 && rng.next(20) == 0 {
+        attempt_grow_tree_from_sapling(world, x, y, false, rng);
+        return;
+    }
+    if (t.kind == 595 || t.kind == 615) && rng.next(5) == 0 {
+        // `AttemptToGrowTreeFromSapling`'s 595/615 arms — the settings
+        // profiles (Sakura/Willow) land with the vanity trees.
+        return;
+    }
+    // The cactus arm (:72229-72231): `Next(15)`.
+    if t.kind == 80 && rng.next(15) == 0 {
+        grow_cactus(world, x, y, rng);
+        return;
+    }
+    // The bare-sand arm (:72282-72284) rolls `Next(300)` inside the
+    // beach-distance bounds — the port has no beachDistanceYet; the
+    // water-box abort inside `grow_cactus` keeps the shore in check.
+    if matches!(t.kind, 53 | 234 | 116 | 112) && rng.next(300) == 0 {
+        grow_cactus(world, x, y, rng);
     }
 }
 
@@ -394,6 +801,58 @@ mod tests {
             }
         }
         assert!(max_density <= 2, "the density cap holds (max {max_density})");
+    }
+
+    #[test]
+    fn test_spread_1_sapling_grows_a_tree_with_the_gates() {
+        // `GrowTree` (:29767-29980): the sapling stack walk, the liquid
+        // gate, the soil + neighbour checks, the clear box, then the trunk
+        // plants over the sapling.
+        let mut w = world();
+        put(&mut w, 100, 200, 2, 0); // the grass
+        put(&mut w, 101, 200, 2, 0); // the neighbour soil
+        put(&mut w, 100, 199, 20, 0); // the sapling
+        let mut rng = FastRandom::new(7);
+        assert!(attempt_grow_tree_from_sapling(&mut w, 100, 199, false, &mut rng));
+        assert!(w.tile(100, 199).is_some_and(|t| t.kind == 5), "the trunk over the sapling");
+        let trunk = (0..20).filter(|&dy| {
+            w.tile(100, 199 - dy).is_some_and(|t| t.active() && t.kind == 5)
+        }).count();
+        assert!(trunk >= 5, "the trunk height in the Next(5,17) band: {trunk}");
+        // The liquid gate: a flooded neighbour refuses.
+        let mut w = world();
+        put(&mut w, 100, 200, 2, 0);
+        put(&mut w, 101, 200, 2, 0);
+        put(&mut w, 100, 199, 20, 0);
+        let i = w.index(101, 199);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let mut rng = FastRandom::new(7);
+        assert!(!attempt_grow_tree_from_sapling(&mut w, 100, 199, false, &mut rng));
+    }
+
+    #[test]
+    fn test_spread_1_cactus_plants_on_sand_with_the_box_gates() {
+        // `GrowCactus` (:56575-56660): the sand arm needs the neighbours
+        // above clear, <=3 cacti in the i±6 box and >10 sand in it.
+        let mut w = world();
+        for dx in -8..=8 {
+            put(&mut w, 100 + dx, 200, 53, 0); // the sand floor
+        }
+        let mut rng = FastRandom::new(7);
+        grow_cactus(&mut w, 100, 200, &mut rng);
+        assert!(w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 80), "the cactus planted");
+        // A cactus crowding (4 in the box) refuses.
+        let mut w = world();
+        for dx in -8..=8 {
+            put(&mut w, 100 + dx, 200, 53, 0);
+        }
+        for dx in [-3i32, 3, -5, 5] {
+            put(&mut w, 100 + dx, 199, 80, 0); // 4 existing cacti
+        }
+        let mut rng = FastRandom::new(7);
+        grow_cactus(&mut w, 100, 200, &mut rng);
+        assert!(w.tile(100, 199).is_none_or(|t| !t.active() || t.kind != 80), "the crowd gate");
     }
 
     #[test]
