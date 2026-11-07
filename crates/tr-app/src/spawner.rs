@@ -689,12 +689,20 @@ fn spawn_npc_at(
     // nothing — post-Lunar).
     if sky_mob {
         // The drone arm (`this.invaders && Main.invasionType == 4` → 388,
-        // `:1395-1398`): the vanilla spawns the Drone here; the port's
-        // invasion path resolves through `invasion_pick` before the
-        // spawner runs, so the arm only consumes the dispatch position
-        // (the Drone kind lands with its AI family).
+        // `:1395-1398`): the vanilla's sky-mob dispatch spawns the Drone
+        // here — verbatim through the spawner (`SpawnNPC(spawnTileX * 16 +
+        // 8, spawnTileY * 16, 388)`). The ground-table's num8 >= 4 arm (the
+        // `invasion_spawn_pick` side) is the second channel.
         if ctx.invaders && ctx.invasion_type == 4 {
-            return None;
+            let mut n = Npc::new(
+                NpcKind::MartianDrone,
+                x as f32 * TILE_PX + 8.0,
+                y as f32,
+                0,
+                0.0,
+            );
+            n.hp = n.max_hp;
+            return Some(n);
         }
         // The probe arm (`:1399-1402`): `flag5` — the 33% edge band +
         // `skyBehindPlayer`, then `AnyDanger`'s refusal (`:1385-1389`).

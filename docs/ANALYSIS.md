@@ -2588,6 +2588,35 @@ re-derived from `bestiary_npc_sheets`' order at once (the frost trio's
 11-frame slice corrected to the vanilla 8, and `FindSpawnTile`'s 0.45/
 0.55 middle cut ported.
 
+## The Martian Drone (M4-EVENT-4c)
+
+The type-4 sky mob (`NPC.cs:13935-13953`): 40×30, dmg 60, def 16, 300
+HP, kb 0.4, npcSlots 1.5, noTileCollide + noGravity.
+`AI()`'s aiStyle-74 block (`:35218-35500`, the 388 parameter set):
+`ai[0] == 0` hovers — the approach vector points 200 px above the player
+at speed 10, damped into the velocity over 30 ticks, gated by the
+line-of-sight + the ±π/8 angle cone (the cone only opens downward — the
+drone dives under the players it cannot see, with the 120-tick argue
+override); `ai[0] == 1` charges 30 ticks (the ×0.95 damp, then the
+±50×0.04 jittered vector ×14); `ai[0] == 2` dashes (the 20-lerp toward
+the player, the exit at velocity < 7 or the 100-px-past + 30-tick
+window, the solid-collision fold to the explosion); and within 64 px of
+the player the machine folds to `ai[0] == 3` — the 192×192 box, the 80
+damage, the 3-tick fuse. The loot db registers no 388 rules, so the
+explosion drops nothing.
+
+The spawn: the skyMob dispatch's drone arm (`:1395-1398` — `invaders &&
+invasionType == 4` → the Drone at the candidate tile) runs through the
+spawner verbatim, and the ground table's roll chain is complete now:
+`num6` `Next(7)` → the Saucer gate (`Next(45)` + the 30% progress +
+`!AnyNPCs(395)`) → the num6 >= 6 rider arm (`Next(20)` + the gate → the
+unported Scutlix Rider; the `Next(2)` split → the Engineer 386) → the
+num8 `Next(5)` ray arm (the RayGunner 382 / Scrambler 381 unported,
+`>= 4` → the Drone 388) → the else arm's ground chain (the `Next(4)`
+with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
+the stream where the C#'s short-circuit reaches it; the four unported
+kinds' hits map to the ground fallback until their AI families land.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

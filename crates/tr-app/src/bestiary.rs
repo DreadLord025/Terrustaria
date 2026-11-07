@@ -597,6 +597,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Martian Probe",
     },
     BestiaryEntryDef {
+        credit_id: "MartianDrone",
+        net_id: 388,
+        kind: NpcKind::MartianDrone,
+        variant: None,
+        quick_unlock: false,
+        name: "Martian Drone",
+    },
+    BestiaryEntryDef {
         credit_id: "PirateDeckhand",
         net_id: 212,
         kind: NpcKind::PirateDeckhand,

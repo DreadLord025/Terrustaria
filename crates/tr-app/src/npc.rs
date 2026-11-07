@@ -110,6 +110,10 @@ pub enum NpcKind {
     /// chaseable false, rarity 1; the escape machine runs
     /// `AI()`'s aiStyle-80 block).
     MartianProbe,
+    /// `NPCID.MartianDrone` (388) — the Martian Madness sky flyer (`NPC.cs`:
+    /// 40×30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
+    /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal false).
+    MartianDrone,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -498,6 +502,7 @@ impl NpcKind {
             NpcKind::PirateCorsair => 81,
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
+            NpcKind::MartianDrone => 84,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -588,6 +593,7 @@ impl NpcKind {
             81 => NpcKind::PirateCorsair,
             82 => NpcKind::PirateCaptain,
             83 => NpcKind::MartianProbe,
+            84 => NpcKind::MartianDrone,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -771,6 +777,8 @@ impl NpcKind {
             NpcKind::MartianWalker => (34.0, 110.0),
             // The probe: 42x72 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => (42.0, 72.0),
+            // The drone: 40x30 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => (40.0, 30.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -926,6 +934,8 @@ impl NpcKind {
             NpcKind::MartianWalker => 2000,
             // The probe: 500 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 500,
+            // The drone: 300 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => 300,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1028,6 +1038,9 @@ impl NpcKind {
             NpcKind::MartianWalker => 60,
             // The probe: 5 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 5,
+            // The drone: 60 (`NPC.cs`'s case 388 — the explode arm's 80
+            // rides damage_override).
+            NpcKind::MartianDrone => 60,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1577,6 +1590,9 @@ impl Npc {
             NpcKind::MartianWalker => 0.0,
             // The probe: 0 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 0.0,
+            // The drone: 0.4 (`NPC.cs`'s case 388 — the hover's scaled
+            // value; the charge/dash arms zero it in the machine).
+            NpcKind::MartianDrone => 0.4,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1701,6 +1717,8 @@ impl Npc {
             NpcKind::MartianWalker => 40,
             // The probe: 5 (`NPC.cs`'s case 399).
             NpcKind::MartianProbe => 5,
+            // The drone: 16 (`NPC.cs`'s case 388).
+            NpcKind::MartianDrone => 16,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1822,6 +1840,9 @@ impl Npc {
             // The probe: 0 (`NPC.cs`'s case 399; the uniform drops don't
             // exist — the vanilla registers no loot for it).
             NpcKind::MartianProbe => 0.0,
+            // The drone: 1000 (`NPC.cs`'s case 388; the loot db registers
+            // no rules for 388 — nothing drops).
+            NpcKind::MartianDrone => 1000.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2067,6 +2088,9 @@ impl Npc {
             // The probe: aiStyle 80's hover/detect/escape machine (`AI()`'s
             // aiStyle-80 block, `NPC.cs:36532-36624`).
             NpcKind::MartianProbe => self.update_martian_probe(world, player),
+            // The drone: aiStyle 74's approach/charge/dash machine (`AI()`'s
+            // aiStyle-74 block, `NPC.cs:35218-35500`).
+            NpcKind::MartianDrone => self.update_martian_drone(world, player, rng),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2192,6 +2216,15 @@ impl Npc {
                 self.frame_counter =
                     (self.frame_counter + 0.25) % 4.0 + if self.ai[0] != 0.0 { 4.0 } else { 0.0 };
                 self.frame = self.frame_counter as u32;
+            }
+            // The drone: `case 388` (`NPC.cs:71731-71740`) — the 2-row strip
+            // advances one row every 6 ticks.
+            NpcKind::MartianDrone => {
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 2;
+                }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
             // accumulator).
@@ -4098,6 +4131,158 @@ impl Npc {
         }
     }
 
+    /// `AI()`'s aiStyle-74 block (`NPC.cs:35218-35500`) — the Martian
+    /// Drone's approach/charge/dash machine, the 388 parameter set (the
+    /// 418/Martian Walker Skull arm's different constants fold out).
+    /// `ai[0]` 0 = the hover approach (the 200-px-above-the-player
+    /// approach vector at speed 10 over a 30-tick damp; the line-of-sight
+    /// gate with the ±π/8 angle band; the 120-tick argue timer), 1 = the
+    /// 30-tick charge (the ×0.95 damp, then the jittered vector ×14), 2 =
+    /// the dash (the 20-lerp toward the player; the off-angle/time exit
+    /// at velocity < 7), 3 = the contact explosion (the 192×192 box,
+    /// the 80 damage, the 3-tick fuse → the death).
+    ///
+    /// Deviations (documented): the dust/light spawns are unmodelled (no
+    /// NPC light/dust systems); the phase-3 box resize (the vanilla's
+    /// `width = height = 192`) is a per-NPC hitbox the kind-fixed `size`
+    /// cannot follow — the explosion rides `damage_override` = 80 instead;
+    /// the `GetKnockbackMultiplier_ScaledByDifficulty`/`GetAttackDamage_
+    /// ScaledByDifficulty` difficulty arms run as the classic constants
+    /// (no difficulty flags).
+    fn update_martian_drone(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The vanilla's 388 param set.
+        let speed = 10.0;
+        let hover_height = 200.0;
+        let far_dist = 750.0;
+        let damp = 30.0;
+        let charge_ticks = 30.0;
+        let charge_decay = 0.95;
+        let jitter = 50.0;
+        let dash_speed = 14.0;
+        let dash_ticks = 30.0;
+        let turn_dist = 100.0;
+        let lerp = 20.0;
+        let speed_floor = 7.0;
+        // `num1038` (the 418-only 4/15 × 60 homing term) is 0 for the drone.
+        let home_term = 0.0;
+
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        if self.ai[0] == 0.0 {
+            // The approach vectors: `vector128` to the player, `vector129`
+            // 200 px above it (the xShift is 0 for the drone).
+            let (vx, vy) = (pcx - cx, pcy - cy);
+            let raw_dist = (vx * vx + vy * vy).sqrt();
+            let norm = if raw_dist > 0.0 { 1.0 / raw_dist } else { 0.0 };
+            // vector129 = normalize(raw - UnitY * 200) * speed.
+            let vy2 = vy - hover_height;
+            let d2 = (vx * vx + vy2 * vy2).sqrt();
+            let n2 = if d2 > 0.0 { speed / d2 } else { 0.0 };
+            // `vector128.ToRotation()`'s ±π/8 gate: the y-down rotation of
+            // the toward-player direction — the cone's 0..π half (the
+            // player below).
+            let angle = (vy * norm).atan2(vx * norm);
+            let can_hit = crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+                && angle > std::f32::consts::PI / 8.0
+                && angle < std::f32::consts::PI - std::f32::consts::PI / 8.0;
+            // The ai[3] >= 120 argue-override: the drone stops dodging.
+            let can_hit = can_hit || self.ai[3] >= 120.0;
+            let too_far = raw_dist > far_dist;
+            if too_far || !can_hit {
+                // The 30-tick damp toward the above-the-player vector.
+                self.vx = (self.vx * (damp - 1.0) + vx * n2) / damp;
+                self.vy = (self.vy * (damp - 1.0) + vy2 * n2) / damp;
+                if !can_hit {
+                    if !too_far {
+                        self.ai[3] += 1.0;
+                    }
+                } else {
+                    self.ai[3] = 0.0;
+                }
+            } else {
+                self.ai[0] = 1.0;
+                self.ai[2] = vx * norm;
+                self.ai[3] = vy * norm;
+            }
+        } else if self.ai[0] == 1.0 {
+            // The charge (`:35290-35300`).
+            self.vx *= charge_decay;
+            self.vy *= charge_decay;
+            self.ai[1] += 1.0;
+            if self.ai[1] >= charge_ticks {
+                self.ai[0] = 2.0;
+                self.ai[1] = 0.0;
+                // The ai[2]/ai[3] vector + the ±50 × 0.04 jitter, normalized ×14.
+                let jx = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                let jy = (crate::app::rand01(rng) * 2.0 - 1.0) * jitter * 0.04;
+                let (dx, dy) = (self.ai[2] + jx, self.ai[3] + jy);
+                let len = (dx * dx + dy * dy).sqrt();
+                let inv = if len > 0.0 { dash_speed / len } else { 0.0 };
+                self.vx = dx * inv;
+                self.vy = dy * inv;
+            }
+        } else if self.ai[0] == 2.0 {
+            // The dash (`:35303-35327`).
+            self.ai[1] += 1.0;
+            let dist = (pcx - cx).hypot(pcy - cy);
+            let past = dist > turn_dist && cy > pcy;
+            let slow = (self.vx * self.vx + self.vy * self.vy).sqrt() < speed_floor;
+            if (self.ai[1] >= dash_ticks && past) || slow {
+                self.ai[0] = 0.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+                self.vx /= 2.0;
+                self.vy /= 2.0;
+            } else {
+                let (dx, dy) = (pcx - cx, pcy - cy);
+                let len = (dx * dx + dy * dy).sqrt();
+                let (nx, ny) = if len > 0.0 { (dx / len, dy / len) } else { (self.facing as f32, 0.0) };
+                let vlen = (self.vx * self.vx + self.vy * self.vy).sqrt();
+                self.vx = (self.vx * (lerp - 1.0) + nx * (vlen + home_term)) / lerp;
+                self.vy = (self.vy * (lerp - 1.0) + ny * (vlen + home_term)) / lerp;
+            }
+            // The solid-wall fold to the explosion (`:35329-35334`).
+            if crate::player::collides_rect(world, self.x, self.y, w, h) {
+                self.ai[0] = 3.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+        // The contact-too-close explosion (`:35336-35343`).
+        if self.ai[0] != 3.0 && player.hp > 0 {
+            let dist = (pcx - cx).hypot(pcy - cy);
+            if dist < 64.0 {
+                self.ai[0] = 3.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        }
+        if self.ai[0] != 3.0 {
+            // The flying integration: noTileCollide + noGravity (`SetDefaults`).
+            self.x += self.vx;
+            self.y += self.vy;
+            return;
+        }
+        // The explosion (`:35345-35396`): the position centres, the box
+        // swells (the port keeps the kind size — `damage_override` carries
+        // the 80), the alpha darkens, the 3-tick fuse. The lights/dust are
+        // unmodelled.
+        self.damage_override = Some(80);
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.ai[1] += 1.0;
+        if self.ai[1] >= 3.0 {
+            // `SoundEngine.PlaySound(Item14)` + `life = 0` + `HitEffect`:
+            // the death pass picks the zero HP up (the loot db registers no
+            // 388 rules — nothing drops).
+            self.hp = 0;
+        }
+    }
+
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
@@ -4766,6 +4951,7 @@ impl Npc {
             NpcKind::PirateCorsair => 81,
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
+            NpcKind::MartianDrone => 84,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

@@ -168,10 +168,11 @@ pub(crate) struct NpcAssets {
     /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
     /// `NPC_520` — the Martian Walker (8 frames of 34x110,
     /// `Main.npcFrameCount[520]`), `NPC_399` — the Martian Probe (8 frames
-    /// of 42x72).
+    /// of 42x72), `NPC_388` — the Martian Drone (2 frames of 40x30).
     pub(crate) martian_walkers: Option<BgTex>,
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
+    pub(crate) martian_drone: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -261,6 +262,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_walkers: sky_tex(atlas, "NPC_383", None),
         martian_walker_big: sky_tex(atlas, "NPC_520", None),
         martian_probe: sky_tex(atlas, "NPC_399", None),
+        martian_drone: sky_tex(atlas, "NPC_388", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -890,6 +892,13 @@ pub(crate) fn draw_npcs(
                 assets.martian_probe.as_ref(),
                 assets.martian_probe.as_ref().map_or(72.0, |t| t.h / 8.0),
                 [42.0, 72.0],
+                [n.x, n.y],
+            ),
+            // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
+            NpcKind::MartianDrone => (
+                assets.martian_drone.as_ref(),
+                assets.martian_drone.as_ref().map_or(30.0, |t| t.h / 2.0),
+                [40.0, 30.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (

@@ -448,6 +448,7 @@ fn portrait_data(
         NpcKind::GolemFistRight => 73, // — NPC_248 is not loaded)
         NpcKind::GolemHeadFree => 74,  // NPC_249
         NpcKind::MartianProbe => 75,   // NPC_399
+        NpcKind::MartianDrone => 76,   // NPC_388
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -597,6 +598,13 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 8.0)
                 .unwrap_or(72.0);
             (sheet_i, h, 42.0, h, white)
+        }
+        // The drone: the 2-frame NPC_388 strip over the 40x30 frames.
+        (NpcKind::MartianDrone, _) => {
+            let h = lookups.bestiary_npc_sheets[76]
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 40.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)
