@@ -272,6 +272,10 @@ pub enum NpcKind {
     /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` —
     /// the spawn-shielded free-flying phase).
     GolemHeadFree,
+    /// `NPCID.Deerclops` (668) — the frozen-boss (`SetDefaults`
+    /// `NPC.cs:17449-17466`: 60x154, aiStyle 123, dmg 20, def 10,
+    /// 7000 HP, kb 0, boss, noGravity, noTileCollide, 5 gold).
+    Deerclops,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -527,6 +531,7 @@ impl NpcKind {
             NpcKind::GolemFistLeft => 75,
             NpcKind::GolemFistRight => 76,
             NpcKind::GolemHeadFree => 77,
+            NpcKind::Deerclops => 78,
         }
     }
 
@@ -609,6 +614,7 @@ impl NpcKind {
             75 => NpcKind::GolemFistLeft,
             76 => NpcKind::GolemFistRight,
             77 => NpcKind::GolemHeadFree,
+            78 => NpcKind::Deerclops,
             _ => return None,
         })
     }
@@ -747,6 +753,8 @@ impl NpcKind {
             NpcKind::Golem => (140.0, 140.0),
             NpcKind::GolemHead | NpcKind::GolemHeadFree => (70.0, 70.0),
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => (40.0, 30.0),
+            // `SetDefaults` 668 (`:17451-17452`): 60x154.
+            NpcKind::Deerclops => (60.0, 154.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -895,6 +903,8 @@ impl NpcKind {
             NpcKind::GolemHead => 25000,
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 10000,
             NpcKind::GolemHeadFree => 16000,
+            // `:17456`: 7000.
+            NpcKind::Deerclops => 7000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -988,6 +998,8 @@ impl NpcKind {
             NpcKind::GolemHead => 64,
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 59,
             NpcKind::GolemHeadFree => 80,
+            // `:17455`: 20.
+            NpcKind::Deerclops => 20,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -1520,6 +1532,11 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => 0.0,
+            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
+            NpcKind::Deerclops => 50000.0,
+            NpcKind::Deerclops => 0.0,
+            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
+            NpcKind::Deerclops => 50000.0,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1635,6 +1652,8 @@ impl Npc {
             NpcKind::GolemHead => 20,
             NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 28,
             NpcKind::GolemHeadFree => 32,
+            // `:17457`: 10.
+            NpcKind::Deerclops => 10,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1713,6 +1732,8 @@ impl Npc {
         match self.kind {
             NpcKind::DemonEye => 75.0,
             NpcKind::WanderingEye => 500.0,
+            // `:17461`'s buyPrice(0, 5) = 5 gold = 50000 copper.
+            NpcKind::Deerclops => 50000.0,
             NpcKind::Zombie => 60.0,
             // `SetDefaults` case 21: value 100; case 44: 200; case 49: 60.
             NpcKind::Skeleton => 100.0,
@@ -1952,6 +1973,8 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => self.update_golem(world, player),
+            NpcKind::Deerclops => self.update_golem(world, player),
+            NpcKind::Deerclops => self.update_golem(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3): the walker speed
@@ -2400,6 +2423,12 @@ impl Npc {
             | NpcKind::GolemHeadFree => {
                 // The v1: the single-frame draws (the Golem's part
                 // animation cycles land with the full AI_045-48 machines).
+                self.frame_counter = 0.0;
+                self.frame = 0;
+            }
+            NpcKind::Deerclops => {
+                // The v1: the single-frame draw (the aiStyle-123 stomp
+                // machine lands with the full port).
                 self.frame_counter = 0.0;
                 self.frame = 0;
             }
@@ -4585,6 +4614,7 @@ impl Npc {
             NpcKind::GolemFistLeft => 62,
             NpcKind::GolemFistRight => 63,
             NpcKind::GolemHeadFree => 64,
+            NpcKind::Deerclops => 65,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;

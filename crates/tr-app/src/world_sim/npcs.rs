@@ -731,8 +731,7 @@ pub(crate) fn update_invasion_state(app: &mut App) {
         app.invasion_progress_alpha = (app.invasion_progress_alpha - 0.05).max(0.0);
     }
     if app.invasion_progress_near {
-        app.invasion_progress_display_left =
-            app.invasion_progress_display_left.max(160);
+        app.invasion_progress_display_left = app.invasion_progress_display_left.max(160);
     }
     // `invasion_goblins` rides the type (the debug panel's flag reads it).
     app.world.invasion_goblins = app.world.invasion_type == 1;
@@ -1147,6 +1146,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         match npc.kind {
             NpcKind::Golem => {
                 app.world.downed_golem = true;
+            }
+            NpcKind::Deerclops => {
+                app.world.downed_deerclops = true;
             }
             NpcKind::GolemHead => {
                 let mut free =
@@ -2264,20 +2266,23 @@ mod invasion_tests {
         use tr_core::tile::{FLAG_ACTIVE, Tile};
 
         fn surface_world() -> World {
-        let mut w = World::new("t".into(), 300, 200);
-        w.world_surface = 120.0;
-        for x in 0..w.width {
-            for y in 120..w.height {
-                let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
-                w.tiles[i].flags |= FLAG_ACTIVE;
+            let mut w = World::new("t".into(), 300, 200);
+            w.world_surface = 120.0;
+            for x in 0..w.width {
+                for y in 120..w.height {
+                    let i = w.index(x, y);
+                    w.tiles[i] = Tile {
+                        kind: 1,
+                        ..Default::default()
+                    };
+                    w.tiles[i].flags |= FLAG_ACTIVE;
+                }
             }
+            w.compute_column_surface();
+            w
         }
-        w.compute_column_surface();
-        w
-    }
 
-    fn surface_world_orig() -> World {
+        fn surface_world_orig() -> World {
             let mut w = World::new("t".into(), 300, 200);
             w.world_surface = 120.0;
             for x in 0..w.width {
@@ -2526,16 +2531,19 @@ mod invasion_bar_tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
     use crate::npc::Npc;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
     use tr_core::World;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
-        fn surface_world() -> World {
+    fn surface_world() -> World {
         let mut w = World::new("t".into(), 300, 200);
         w.world_surface = 120.0;
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -2543,7 +2551,7 @@ mod invasion_bar_tests {
         w
     }
 
-#[test]
+    #[test]
     fn the_kill_credit_reports_the_bar_state() {
         // `ReportInvasionProgress` (`Main.cs:47687-47694`): the points
         // (sizeStart - size), the max (sizeStart), the icon (group + 3) and
@@ -2570,7 +2578,10 @@ mod invasion_bar_tests {
         for x in 0..w.width {
             for y in 120..w.height {
                 let i = w.index(x, y);
-                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i] = Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
@@ -2584,8 +2595,13 @@ mod invasion_bar_tests {
         player.x = 100.0 * TILE_PX;
         player.y = 118.0 * TILE_PX;
         app.player = Some(player);
-        let mut invader =
-            Npc::new(NpcKind::GoblinThief, 101.0 * TILE_PX, 118.0 * TILE_PX, 1, 0.0);
+        let mut invader = Npc::new(
+            NpcKind::GoblinThief,
+            101.0 * TILE_PX,
+            118.0 * TILE_PX,
+            1,
+            0.0,
+        );
         invader.hp = invader.max_hp;
         app.npcs.push(invader);
         check_invasion_progress_display(&mut app);
@@ -2613,7 +2629,10 @@ mod invasion_bar_tests {
         app.invasion_progress_display_left = 0;
         app.invasion_progress_alpha = 1.0;
         update_invasion_state(&mut app);
-        assert!((app.invasion_progress_alpha - 0.95).abs() < 1e-6, "the fade down");
+        assert!(
+            (app.invasion_progress_alpha - 0.95).abs() < 1e-6,
+            "the fade down"
+        );
     }
 
     #[test]

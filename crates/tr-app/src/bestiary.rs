@@ -597,6 +597,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Golem",
     },
     BestiaryEntryDef {
+        credit_id: "Deerclops",
+        net_id: 668,
+        kind: NpcKind::Deerclops,
+        variant: None,
+        quick_unlock: true,
+        name: "Deerclops",
+    },
+    BestiaryEntryDef {
         credit_id: "GoblinTinkerer",
         net_id: 107,
         kind: NpcKind::GoblinTinkerer,

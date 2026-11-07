@@ -438,6 +438,7 @@ fn portrait_data(
         NpcKind::GolemFistLeft => 55,
         NpcKind::GolemFistRight => 56,
         NpcKind::GolemHeadFree => 57,
+        NpcKind::Deerclops => 58,
         NpcKind::SnowmanGangsta => 48,
         NpcKind::SnowBalla => 49,
         NpcKind::MysterySnowman => 50,
@@ -454,6 +455,7 @@ fn portrait_data(
         (NpcKind::GolemFistLeft, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::GolemFistRight, _) => (sheet_i, 30.0, 40.0, 30.0, white),
         (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
+        (NpcKind::Deerclops, _) => (sheet_i, 154.0, 60.0, 154.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
