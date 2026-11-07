@@ -258,7 +258,7 @@ impl Menu {
         vec![
             Item::new(on_off(s.pickup_text, &crate::lang::menu(71), &crate::lang::menu(72)), Act::Toggle(Toggle::PickupText)).scaled(0.6),
             Item::new(
-                format!("{} {}", crate::lang::menu(123), crate::lang::menu(124 + s.event_progress.min(2) as u32)),
+                format!("{} {}", crate::lang::menu(123), crate::lang::menu(124 + s.event_progress.min(2) as usize)),
                 Act::Toggle(Toggle::EventProgress),
             ).scaled(0.6),
             Item::new(on_off(s.placement_preview, &crate::lang::menu(128), &crate::lang::menu(129)), Act::Toggle(Toggle::PlacementPreview)).scaled(0.6),
@@ -355,14 +355,14 @@ impl Menu {
             // menuMode 1111 row 1 (`Main.cs:49996-50002`): `Lang.menu[52]`
             // opens the parallax slider (28).
             Item::new(crate::lang::menu(52), Act::Nav(Page::Parallax)).scaled(0.6),
-            Item::new(crate::lang::menu(247 + s.frame_skip.min(2) as u32), Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
+            Item::new(crate::lang::menu(247 + s.frame_skip.min(2) as usize), Act::Toggle(Toggle::FrameSkip)).scaled(0.6),
             Item::new(crate::lang::text(match s.light_mode {
         1 => "UI.LightMode_White",
         2 => "UI.LightMode_Retro",
         3 => "UI.LightMode_Trippy",
         _ => "UI.LightMode_Color",
     }), Act::Toggle(Toggle::LightMode)).scaled(0.6),
-            Item::new(crate::lang::menu(59 + s.quality.min(3) as u32), Act::Toggle(Toggle::Quality)).scaled(0.6),
+            Item::new(crate::lang::menu(59 + s.quality.min(3) as usize), Act::Toggle(Toggle::Quality)).scaled(0.6),
             Item::new(on_off(s.background, &crate::lang::menu(100), &crate::lang::menu(101)), Act::Toggle(Toggle::Background)).scaled(0.6),
             Item::new(on_off(s.blood, &crate::lang::menu(132), &crate::lang::menu(133)), Act::Toggle(Toggle::Blood)).scaled(0.6),
             Item::new(on_off(s.miners_wobble, &crate::lang::menu(250), &crate::lang::menu(251)), Act::Toggle(Toggle::MinersWobble)).scaled(0.6),
@@ -534,7 +534,7 @@ impl Menu {
         vec![
             Item::new("", Act::None),
             Item::new(crate::lang::menu(64), Act::None).at(10.0).heading(),
-            Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Cursor)).at(250.0),
         ]
     }
 
@@ -550,7 +550,7 @@ impl Menu {
         vec![
             Item::new("", Act::None),
             Item::new(crate::lang::menu(217), Act::None).at(10.0).heading(),
-            Item::new("Back", Act::Nav(Page::Cursor)).at(250.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Cursor)).at(250.0),
         ]
     }
 
@@ -751,11 +751,11 @@ impl Menu {
             // ? [224] : [223])`.
             Item::new(
                 if s.quick_trash {
-                    &crate::lang::menu(253)
+                    crate::lang::menu(253)
                 } else if s.disable_left_shift_trash {
-                    &crate::lang::menu(224)
+                    crate::lang::menu(224)
                 } else {
-                    &crate::lang::menu(223)
+                    crate::lang::menu(223)
                 },
                 Act::Toggle(Toggle::QuickTrash),
             )
@@ -796,10 +796,10 @@ impl Menu {
             // `array4 = 6`; resets the binds and closes the capture
             // (`:50559-50564`).
             rows.push(
-                Item::new("Reset to Default", Act::ResetKeys { map: false }).scaled(0.8).at(6.0),
+                Item::new(crate::lang::menu(86), Act::ResetKeys { map: false }).scaled(0.8).at(6.0),
             );
             // Row 15 (`Main.cs:50550-50552`): Back opens 11.
-            rows.push(Item::new("Back", Act::Nav(Page::Settings)).scaled(0.8).at(16.0));
+            rows.push(Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).scaled(0.8).at(16.0));
             rows
     }
 
@@ -825,13 +825,13 @@ impl Menu {
             // `array4 = 6`; restores the `:67190-67195` seeds
             // (`:50449-50459`).
             rows.push(
-                Item::new("Reset to Default", Act::ResetKeys { map: true }).scaled(0.8).at(6.0),
+                Item::new(crate::lang::menu(86), Act::ResetKeys { map: true }).scaled(0.8).at(6.0),
             );
             // Row 7 (`Main.cs:50441-50444`): `array4 = 16` but `array7[7]`
             // is never set here (the branch sets `array7[6]` twice,
             // `:50439-50440`), so Back keeps the 1.0 default — unlike the
             // mode-27 twin's 0.8 (`:50550`).
-            rows.push(Item::new("Back", Act::Nav(Page::Settings)).at(16.0));
+            rows.push(Item::new(crate::lang::menu(5), Act::Nav(Page::Settings)).at(16.0));
             rows
     }
 
@@ -846,7 +846,7 @@ impl Menu {
             // in 1..=65535 (`:50904-50923`).
             let accept_ready = port_is_valid(&self.get_port);
             vec![
-                Item::new("Enter Server Port:", Act::None).heading(),
+                Item::new(crate::lang::menu(90), Act::None).heading(),
                 // `array9[1] = Main.getPort` plus the blinker cursor and
                 // the `array5[1] = 1` nudge (`:50937-50946`).
                 if self.blink_on {
@@ -858,13 +858,13 @@ impl Menu {
                     Item::new(format!("{} ", self.get_port), Act::None).at(-20.0).heading()
                 },
                 if accept_ready {
-                    Item::new("Accept", Act::Nav(Page::JoinPassword)).at(20.0)
+                    Item::new(crate::lang::menu(4), Act::Nav(Page::JoinPassword)).at(20.0)
                 } else {
-                    Item::new("Accept", Act::None).at(20.0).heading()
+                    Item::new(crate::lang::menu(4), Act::None).at(20.0).heading()
                 },
                 // Row 3 (`:50954-50959`): vanilla Back returns to the
                 // character select, the port returns to the IP screen.
-                Item::new("Back", Act::Nav(Page::JoinIp)),
+                Item::new(crate::lang::menu(5), Act::Nav(Page::JoinIp)),
             ]
     }
 
@@ -878,7 +878,7 @@ impl Menu {
     // port screen (plan deviation).
     fn host_password_items(&self) -> Vec<Item> {
         vec![
-            Item::new("Enter Server Password:", Act::None).heading(),
+            Item::new(crate::lang::menu(91), Act::None).heading(),
             // `array9[1] = Netplay.ServerPassword`, `*`-masked while
             // `Main.HidePassword` is set (`:48691-48707`).
             if self.blink_on {
@@ -890,7 +890,7 @@ impl Menu {
                 Item::new(format!("{} ", password_display(self)), Act::None).at(-20.0).heading()
             },
             Item::new(
-                "Accept",
+                crate::lang::menu(4),
                 Act::Out(Action::Host {
                     port: 7777, // `Netplay.ListenPort = 7777` (`Main.cs:52011`)
                     password: self.server_password.clone(),
@@ -900,7 +900,7 @@ impl Menu {
             // Row 3 (`:48716-48720`): vanilla Back runs
             // `ExitServerPasswordMenu` (Steam 889, else the world select,
             // `:52018-52028`); the port returns to the multiplayer menu.
-            Item::new("Back", Act::Nav(Page::Multiplayer)),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Multiplayer)),
         ]
     }
 
@@ -913,7 +913,7 @@ impl Menu {
     // "Back" (`:48738`).
     fn join_password_items(&self) -> Vec<Item> {
         vec![
-            Item::new("Server Requires Password:", Act::None).heading(),
+            Item::new(crate::lang::menu(3), Act::None).heading(),
             if self.blink_on {
                 Item::new(format!("{}|", password_display(self)), Act::None)
                     .at(-20.0)
@@ -923,7 +923,7 @@ impl Menu {
                 Item::new(format!("{} ", password_display(self)), Act::None).at(-20.0).heading()
             },
             Item::new(
-                "Accept",
+                crate::lang::menu(4),
                 Act::Out(Action::Join {
                     // `OnSubmitServerPort` connects to `Main.getIP` on the
                     // parsed port (`Main.cs:52047-52054`).
@@ -936,7 +936,7 @@ impl Menu {
             // `CanceledGivingServerPassword` (back to menuMode 0 and
             // disconnects, `:51950-51957`); the port returns to the port
             // screen (plan deviation).
-            Item::new("Back", Act::Nav(Page::JoinIp)),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::JoinIp)),
         ]
     }
 
@@ -947,15 +947,15 @@ impl Menu {
     // (`:49424`), `num5 = 3` — the vanilla 250/80 defaults.
     fn server_settings_items(&self) -> Vec<Item> {
         vec![
-            Item::new("Server Settings", Act::None).heading(),
+            Item::new(crate::lang::menu(135), Act::None).heading(),
             // Row 1: `Lang.menu[136]` "Steam Multiplayer: Disabled", or
             // [137] "…: Enabled" while the Lobby bit is set. The click
             // XORs the flag (`:48784-48787`).
             Item::new(
                 on_off(
                     self.server_lobby,
-                    "Steam Multiplayer: Enabled",
-                    "Steam Multiplayer: Disabled",
+                    &crate::lang::menu(137),
+                    &crate::lang::menu(136),
                 ),
                 Act::Toggle(Toggle::ServerLobby),
             )
@@ -969,11 +969,11 @@ impl Menu {
             // Row 4 (`:48737`, `array4[4] = 70`): "Start" clears the
             // password and opens the host password screen
             // (`:48796-48802`).
-            Item::new("Start", Act::Nav(Page::HostPassword)).at(70.0),
+            Item::new(crate::lang::menu(144), Act::Nav(Page::HostPassword)).at(70.0),
             // Row 5 (`:48738`, `array4[5] = 70`): "Back" — vanilla opens
             // the world select (`:48804-48806`), the port returns to the
             // multiplayer menu (plan deviation).
-            Item::new("Back", Act::Nav(Page::Multiplayer)).at(70.0),
+            Item::new(crate::lang::menu(5), Act::Nav(Page::Multiplayer)).at(70.0),
         ]
     }
 
@@ -1029,6 +1029,6 @@ impl Menu {
     }
 
     fn credits_items(&self) -> Vec<Item> {
-        vec![Item::new("Back", Act::Nav(Page::Main)).scaled(0.9)]
+        vec![Item::new(crate::lang::menu(5), Act::Nav(Page::Main)).scaled(0.9)]
     }
 }
