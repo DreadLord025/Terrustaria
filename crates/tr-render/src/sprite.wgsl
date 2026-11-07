@@ -12,6 +12,9 @@ struct Globals {
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
 @group(0) @binding(3) var<uniform> dyes: array<DyeParam, 48>;
+/// The retail font glyph pages (`Fonts/*.xnb`, shipped DXT3 = BC2) packed into
+/// 8192x8192 layers; instances pick a layer with `layer` > 0.
+@group(0) @binding(4) var fonts: texture_2d_array<f32>;
 
 /// One dye row (`sprite.rs`'s `DyeParam`): the pass mode plus the two colors
 /// — the CPU constants `DyeInitializer` bakes at `BindShader` time
@@ -38,6 +41,9 @@ struct Instance {
     /// the per-instance channel for `DrawData.shader`
     /// (`PlayerDrawHelper.SetShaderForData`, `PlayerDrawHelper.cs:29-60`).
     @location(7) dye: u32,
+    /// Which texture to sample: 0 = the main atlas, otherwise the 1-based
+    /// layer into the font texture array (`fonts`).
+    @location(8) layer: u32,
 };
 
 struct VsOut {
@@ -52,6 +58,8 @@ struct VsOut {
     // The sprite-local vertical (0 at the top corner, 1 at the bottom), the
     // gradient axis of `Armor*Gradient` (uColor → uSecondaryColor).
     @location(4) grad_v: f32,
+    // The texture selector, corner-uniform; integer varyings need `flat`.
+    @location(5) @interpolate(flat) layer: u32,
 };
 
 @vertex
@@ -86,11 +94,18 @@ fn vs_main(@builtin(vertex_index) vi: u32, inst: Instance) -> VsOut {
     // land exactly on a pixel centre, and nearest sampling of uv = 1.0 would
     // pick the transparent padding texel outside the source rect (visible as
     // 1 px holes between tiles). Sampling the texel centres avoids that.
-    let half_texel = globals.texel * 0.5;
-    out.uv = mix(inst.uv0 + half_texel, inst.uv1 - half_texel, c);
+    // Font glyphs bake the inset at build time (their layers carry their own
+    // 8192 px texel grid), so only the main-atlas path insets here.
+    if (inst.layer == 0u) {
+        let half_texel = globals.texel * 0.5;
+        out.uv = mix(inst.uv0 + half_texel, inst.uv1 - half_texel, c);
+    } else {
+        out.uv = mix(inst.uv0, inst.uv1, c);
+    }
     out.color = inst.color;
     out.paint = inst.paint;
     out.dye = inst.dye;
+    out.layer = inst.layer;
     out.grad_v = c.y;
     return out;
 }
@@ -179,9 +194,20 @@ fn dye_recolor(tex: vec4<f32>, dye: u32, grad_v: f32) -> vec4<f32> {
     return tex;
 }
 
+/// One sample helper for both textures: the main atlas is D2, the font pages a
+/// D2 array. `textureSampleLevel` (explicit LOD 0) is legal in non-uniform
+/// control flow, unlike `textureSample`; the textures have no mips, so the
+/// result is identical.
+fn sample_tex(uv: vec2<f32>, layer: u32) -> vec4<f32> {
+    if (layer == 0u) {
+        return textureSampleLevel(atlas, atlas_sampler, uv, 0.0);
+    }
+    return textureSampleLevel(fonts, atlas_sampler, uv, f32(layer - 1u), 0.0);
+}
+
 @fragment
 fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
-    var tex = textureSample(atlas, atlas_sampler, in.uv);
+    var tex = sample_tex(in.uv, in.layer);
     if (tex.a < 0.01) {
         discard;
     }
@@ -189,8 +215,8 @@ fn fs_main(in: VsOut) -> @location(0) vec4<f32> {
     // original's glitch lighting.
     if (globals.aberration > 0.0) {
         let d = vec2<f32>(globals.aberration * globals.texel.x, 0.0);
-        let r = textureSample(atlas, atlas_sampler, in.uv + d).r;
-        let b = textureSample(atlas, atlas_sampler, in.uv - d).b;
+        let r = sample_tex(in.uv + d, in.layer).r;
+        let b = sample_tex(in.uv - d, in.layer).b;
         tex = vec4<f32>(r, tex.g, b, tex.a);
     }
     // `WorldGen.paintColor` (`WorldGen.cs:43921-44034`): the sRGB bytes of every

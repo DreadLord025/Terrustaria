@@ -108,13 +108,13 @@ fn main() -> Result<()> {
 
     app::log_world_diagnostics(&world);
 
-    let (atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
+    let (atlas, font_atlas, lookups, atlas_stats) = app::build_atlas(&world, &assets_dir)?;
 
     app::log_atlas_diagnostics(&atlas, &lookups);
 
     let event_loop = EventLoop::new()?;
     event_loop.set_control_flow(ControlFlow::Poll);
-    let mut app = app::App::new(world, world_path, atlas, lookups, atlas_stats);
+    let mut app = app::App::new(world, world_path, atlas, font_atlas, lookups, atlas_stats);
     // `MapHelper.LoadMap`: restore the explored map from the `.map` sidecar.
     app.load_map();
     event_loop.run_app(&mut app)?;

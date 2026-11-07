@@ -1299,6 +1299,7 @@ pub(crate) mod front_flow_tests {
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),
             atlas: None,
+            font_atlas: None,
             world,
             lookups: assets::Lookups::default(),
             clouds: Vec::new(),
