@@ -5598,3 +5598,57 @@ M3-CHEST-UI entry's "`ChestSlot` carries no prefix byte (the port's player
 items have none)" clause and its "Favorites are stateless" bullet now point
 at the landed implementation, and the M3-STORE-3 ROADMAP row's right-click
 favorite wording is corrected the same way.
+
+## Multiplayer protocol core (M6-NET-1)
+
+The handshake and the wire frame are 1:1 ports; the deliberate deviations
+(all resolved in M6-NET-2/3, where noted):
+
+- **`15 WorldChunk` is a port-internal id** (dead in 1.4.5.8): the whole-world
+  zlib blob (`save::to_bytes` + flate2) streams as `[i32 index][i32 count][u32
+  len][bytes]` slices under the 65535-byte frame cap, announced by `9 Status`
+  and closed by `49 WorldComplete`. The C# streams `10 TileBlock` sections
+  instead (`NetMessage.cs:1895-2240` `CompressTileBlock`); M6-NET-3 replaces
+  the producer — the client install hook stays.
+- **`NetworkText` is literal-mode only** (mode byte 0 + the string,
+  `NetworkText.cs:65-70`). Keyed/format texts and the substitution list
+  (`:72-80`) are not ported; every kick/status string is a literal. The keys
+  themselves (`Lang.mp[1..5]`, the `Net.*` name keys) ride as English text
+  with the C# strings quoted in `netglue.rs`'s `TXT_*` constants.
+- **`5 PlayerInventory` is accepted and dropped server-side.** The server
+  keeps no peer-inventory state yet (the C# `Main.player[i].inventory`); the
+  storage lands with M6-NET-2's peer-state sync. The client's push order is
+  already the C# one (`MessageBuffer.cs:230-282`'s list, adapted to the
+  port's slot layout: 59 grid + 20 armour + 10 dye + 5 misc dyes + 5 misc
+  equips + 4×40 banks + trash).
+- **`7 WorldInfo` fields without a port home ride as defaults** with the C#
+  write order preserved: the 11 background styles, `ice/jungle BackStyle`,
+  the tree/cave backups, the 13 tree-top bytes, the 14 world-flag groups,
+  the ore tiers, the dungeon point, the spawn-point list and `lobbyId`
+  (0 without a social API). The port-sourced fields are time/day flags,
+  the moon phase/type, the world size, the spawn, the surface/rock layer,
+  the dial cooldowns and the hell back style; `generator_version` carries
+  `save::VERSION` (the closest marker) pending the generator-version home.
+- **The clock rides the internal `205 Time` broadcast** (host → clients at
+  10 Hz). The C# sends `7 WorldInfo` only at join
+  (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
+  flags; the exact 1:1 clock path is pinned in M6-NET-2.
+- **The name gate is the ported C# gate** (`MessageBuffer.cs:360-396`): empty,
+  `> Player.nameLen` (20, `Player.cs:57105`) or already taken by another slot
+  → the C# kick texts. The creative-mode mismatch checks
+  (`Net.PlayerIsCreativeAndWorldIsNotCreative`) have no port flags yet and
+  are deferred.
+- **`4 PlayerInfo` carries the 1:1 body** (skin/voice, hair, colours, the
+  three `BitsByte` groups, `NetMessage.cs:147-197`); only the name has a port
+  home (`App.player_name`), the rest is vanilla defaults until the character
+  milestone.
+- **The in-process join replaces the relaunch.** The old flow saved the world
+  blob and re-executed the binary with `TR_JOINED` (`netglue.rs`'s
+  `relaunch_into_world`, deleted here); the client now swaps `App.world` and
+  rebuilds the world-derived systems (`LiquidSystem`, `WorldMap`, the player
+  spawn) in place — the C#'s `WorldGen.clearWorld` arm
+  (`Netplay.cs:484-505`) has no port equivalent.
+- **The idle sweep is the C# shape, port-tuned**: reader threads stamp a
+  `last_seen` per slot and a frame-paced sweep drops peers idle for
+  [`net::IDLE_TIMEOUT`] (120 s), the C#'s `TimeOutTimer > 7200` ticks
+  (`Main.cs:64610-64618`).

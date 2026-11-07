@@ -1430,7 +1430,8 @@ section in brackets before starting a row.
 | M6-AUDIO-1 | `M6-AUDIO-1-ambience` | ambience emitters [5] |
 | M6-LOCALIZE-wire | `M6-LOCALIZE-wire` | wire core into HUD/menus |
 | M6-NET-protocol | `M6-NET-protocol` | umbrella [27] |
-| M6-NET-1..5 | `M6-NET-1-handshake` … | protocol parts [27] |
+| ✅ M6-NET-1 | `M6-NET-1-handshake` | the protocol core + the join handshake: the `[u16 LE len][u8 id][body]` frame with the 65535 cap and the `len < 3` drop (`NetMessage.cs:118-129`,`:1677-1684`; `CheckBytes` `:2486-2556`), the `NetWriter`/`NetReader` primitives (7-bit strings, `BitsByte`, `RGB`, the literal-mode `NetworkText`), the handshake messages 1/37/38/3/4/5/6/7/8/9/12/14/15/16/49 with 1:1 bodies, the client FSM 0→10 and the server slot states with the `GetData` accept gate, the threaded transport kept (reader/writer per peer, mpsc to the game thread), the in-process world install replacing the relaunch [27] | done 2026-11-08: 16 tests (8 codec round-trips + 8 in-process handshake on loopback: happy path, password, wrong password/version, the state-0 gate, duplicate Connect, the blob round-trip, the status line); the deviations in `docs/ANALYSIS.md` "Multiplayer protocol core"; the join UI status rides `9 Status` |
+| M6-NET-2..5 | `M6-NET-2-entity-sync` … | entity sync + interpolation, tile sections, NetModules, back-targets [27] |
 | M6-SETTINGS | `M6-SETTINGS` | settings parity |
 | M6-SAVE-1 | `M6-SAVE-1-wld-sections` | remaining .wld sections [29] |
 | ✅ M6-SAVE-2 | `M6-SAVE-2-plr-reader` | vanilla `.plr` reader+writer: AES-128-CBC (`Player.cs:796-798`), `FileMetadata`, the release-279 section walk with the stat caps, `SavePlayer` mirror (sanitized name, starter items), `list_players` scans real files + the session stand-in dedup + the erase path [29] | done 2026-11-04: 4 round-trip tests (crypto+sections, magic/type, caps, key) + the scan test |
@@ -1500,7 +1501,9 @@ section in brackets before starting a row.
 
 - Modding API / tModLoader compatibility.
 - Mobile/console parity.
-- Exact network compatibility *until* M6-NET — single-player first.
+- Exact network compatibility *until* M6-NET is complete — the handshake (M6-NET-1)
+  is port-internal (two of our clients only); the entity/tile/module sync is still
+  single-player-first.
 - RGB peripheral lighting (`GameContent/RGB/*`) — platform-specific, excluded like
   `Social/*`.
  the movement framework + the walker/bat batches: `npc_ai.rs` — the movement archetypes extracted from the per-kind AI machines (`walker_step` = AI_003_Fighters' walk-and-jump with the `WalkerParams` tunables — the zombie + the town-wander presets; `flyer_step` = AI_002_FloatingEye's fly-and-bob with the `FlyerParams`); the first batches ported through it: the Skeleton (21) + the Undead Miner (44) cave walkers (`AI_003`, the 15-frame strips, the vanilla stats 60/70 HP — `NPC.cs` cases 21/44), the Cave Bat (49, `AI_014_Bats` — the erratic flight through the flyer step + the aiTimer direction reroll, 5 frames, 16 HP); the deep-cavern spawn arms in the ladder (the miner Next(20) `NPC.cs:5060` region, the skeleton Next(4)→Next(3) `:5133-5135`, the bat `:5233`); the `NpcKind` grew 7→10 variants (the ~14 match sites each: to_u16/from_u16/size/max_hp/contact/kb/def/value/find_frame/render_key/netglue/buffs/render assets/bestiary); the taxonomy doc `docs/NPC_AI_TAXONOMY.md` (the 243-id table → the archetype map + the follow-up batch tables: the hovers/casters/worms/swimmers) [14][15] | done 2026-11-05: 2 framework tests (the chase/jump/land over an obstacle, the homing/bounce) + 3 kind tests (the cave-walker spawns, the bat flies/bites, the bestiary round-trips) + the deep-cavern sweep (the miner/skeleton/bat all appear); the worms row stays its own task |
