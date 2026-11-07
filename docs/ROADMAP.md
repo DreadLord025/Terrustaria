@@ -972,7 +972,8 @@ framework.
 **C#** `Localization/*`, `Lang.cs` · **Rust** `localization/` ✅ core — `tr-app::lang` wired
 (title/settings/language screens, item names) · 🟡.
 
-**Tasks:** M6-LOCALIZE-wire — first slice done 2026-11-07 (`M6-LOCALIZE-wire-fonts`):
+**Tasks:** M6-LOCALIZE-wire — first slice done 2026-11-07 (`M6-LOCALIZE-wire-fonts`),
+second slice 2026-11-08 (`M6-LOCALIZE-2-settings-screens`):
 the `lang` runtime (84 shipped `Terraria.Localization.Content.*` resources, 12 cultures ×
 7 groups, loaded from `TR_LOCALE`/the `../decompiled` sibling of the content dir — the
 same retail-derived content model as `assets/Content`), the `LanguageManager.SetLanguage`
@@ -980,9 +981,11 @@ menu flow (`Main.cs:48519-48523`), `Settings.language` under the vanilla `"Langu
 key (`Main.cs:4099`) applied at startup (`Main.cs:4345`, `TR_LANG` = the `-lang` flag),
 plus the font fix the localized strings needed (the shipped `DynamicSpriteFont` parse —
 159 pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
-texture array the XNA `SurfaceFormat.Dxt3` path implies). Remaining: the video/volume/
-effects/controls sub-screens and the UIState screens still draw their English labels
-(next slice), then HUD/death-dialog text.
+texture array the XNA `SurfaceFormat.Dxt3` path implies). Remaining: the UIState screens (char/world
+creation and select, keyboard) still draw their English labels, then HUD/death-dialog
+text. Font groundwork done in slice 1: the shipped `DynamicSpriteFont` parse — 159
+pages / 38 636 glyphs covering Cyrillic, CJK, Kana, Hangul — uploaded as the BC2
+texture array the XNA `SurfaceFormat.Dxt3` path implies.
 
 ## 26. Audio & music
 
