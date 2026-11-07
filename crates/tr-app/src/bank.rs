@@ -81,7 +81,10 @@ pub(crate) fn void_vault_take(
 /// The coin types (`ItemID.CopperCoin..PlatinumCoin`).
 const COIN_TYPES: [u16; 4] = [71, 72, 73, 74];
 
-fn can_stack(a: &ItemSlot, b: &ItemSlot) -> bool {
+/// `Item.CanStack` (`Item.cs:49865-49871`): two slots stack only when the
+/// type AND the prefix match — the merge gate shared by every transfer
+/// (the world-chest paths call it from `chest.rs`/`clicks.rs` too).
+pub(crate) fn can_stack(a: &ItemSlot, b: &ItemSlot) -> bool {
     a.kind == b.kind && a.prefix == b.prefix
 }
 

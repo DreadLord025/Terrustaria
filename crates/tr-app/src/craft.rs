@@ -22,7 +22,6 @@ use std::collections::HashMap;
 // The chest entity moved to `chest.rs` (M3-CHEST-UI phase 1); the re-export
 // keeps the existing `craft::WorldChest` paths valid — the `world_sim/
 // editing.rs` stocked-chest test constructs the type through this path.
-use crate::chest::ChestSlot;
 pub(crate) use crate::chest::WorldChest;
 use crate::item::{ItemSlot, INV};
 use crate::player::{self, Player};
@@ -459,9 +458,9 @@ pub(crate) fn collect_owned(
         }
     }
     for &i in in_range {
-        for (kind, count) in &chests[i].slots {
-            if *count > 0 {
-                *owned.entry(*kind).or_insert(0) += count;
+        for slot in &chests[i].slots {
+            if slot.count > 0 {
+                *owned.entry(slot.kind).or_insert(0) += slot.count;
             }
         }
     }
@@ -560,22 +559,22 @@ fn consume_kind(inv: &mut [ItemSlot; INV], kind: u16, to_consume: &mut u32) {
 /// `chest.rs`), so the surviving stacks keep their slot positions the way the
 /// C# `chest.item[i] = new Item()` leaves them — and the trailing airs fold
 /// back into the implicit-air tail.
-fn consume_chest(slots: &mut Vec<ChestSlot>, req: &Requirement, to_consume: &mut u32) {
+fn consume_chest(slots: &mut Vec<ItemSlot>, req: &Requirement, to_consume: &mut u32) {
     if *to_consume == 0 {
         return;
     }
     let mut i = 0;
     while i < slots.len() && *to_consume > 0 {
-        let (kind, count) = slots[i];
+        let (kind, count) = (slots[i].kind, slots[i].count);
         if count > 0 && req.matches(kind) {
             if count > *to_consume {
-                slots[i].1 -= *to_consume;
+                slots[i].count -= *to_consume;
                 *to_consume = 0;
             } else {
                 *to_consume -= count;
-                slots[i] = (0, 0);
+                slots[i] = crate::item::EMPTY_SLOT;
                 let mut end = slots.len();
-                while end > 0 && slots[end - 1] == (0, 0) {
+                while end > 0 && slots[end - 1].kind == 0 && slots[end - 1].count == 0 {
                     end -= 1;
                 }
                 slots.truncate(end);
@@ -671,6 +670,17 @@ mod tests {
             }
         }
         inv
+    }
+
+    /// A chest-slot fixture (the store's `ItemSlot` shape; the name is the
+    /// registry's, matching `set_chest_slot`'s derive-at-write).
+    fn chest_slot(kind: u16, count: u32) -> ItemSlot {
+        ItemSlot {
+            kind,
+            name: registry::name(kind),
+            count,
+            prefix: 0,
+        }
     }
 
     fn recipe_by_create(create: u16) -> &'static Recipe {
@@ -943,7 +953,7 @@ mod tests {
             w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         }
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![(9, 20)] },
+            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)] },
             WorldChest { tile: (42, 40), slots: Vec::new() },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -963,7 +973,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 6), (619, 4)] }];
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6), chest_slot(619, 4)] }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 in the inventory + 10 in the chest.
         let mut inv = inv_with(&[(9, 4)]);
@@ -980,7 +990,7 @@ mod tests {
         let chest = &chests[0];
         // Chest slots are indexed with implicit air (`chest.rs`): the wood's
         // slot drains to air in place, the mahogany keeps its slot.
-        assert_eq!(chest.slots, [(0, 0), (619, 4)]);
+        assert_eq!(chest.slots, [crate::item::EMPTY_SLOT, chest_slot(619, 4)]);
     }
 
     /// M3-CHEST-UI: draining a chest's last stocked slot folds it into the
@@ -994,7 +1004,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 6)] }];
+        let mut chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 6)] }];
         let in_range = chests_in_range(&w, &p, &chests, true);
         // The work bench needs 10 wood: 4 from the inventory drain the chest
         // fully.
@@ -1028,7 +1038,7 @@ mod tests {
         w.tiles[i].kind = 21;
         w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
         let chests = vec![
-            WorldChest { tile: (45, 45), slots: vec![(9, 20)] },
+            WorldChest { tile: (45, 45), slots: vec![chest_slot(9, 20)] },
             WorldChest { tile: (60, 60), slots: Vec::new() },
         ];
         let found = chests_in_range(&w, &p, &chests, true);
@@ -1044,7 +1054,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         p.x = 30.0 * 16.0;
         p.y = 30.0 * 16.0;
-        let chests = vec![WorldChest { tile: (33, 33), slots: vec![(9, 20)] }];
+        let chests = vec![WorldChest { tile: (33, 33), slots: vec![chest_slot(9, 20)] }];
         let inv = inv_with(&[(9, 4)]);
         let adj = dry_adj();
         let zones = Zones::default();

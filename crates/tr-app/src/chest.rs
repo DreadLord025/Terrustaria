@@ -11,7 +11,10 @@
 //! which pin `craft::WorldChest { tile, slots }`; `craft.rs` re-exports the
 //! moved type). The slot encoding is indexed with implicit air:
 //! `slots[i]` is chest slot `i`, airs beyond `slots.len()` are implicit
-//! (`(0, 0)`), and there are no trailing airs. Entries are created lazily on
+//! ([`EMPTY_SLOT`]), and there are no trailing airs — except the browsed
+//! chest, whose 40-slot window [`open_chest`] materializes (the C#
+//! `Chest.item[]` shape the transfer free-slot walks scan; the craft drain's
+//! tail fold re-tidies it on a full drain). Entries are created lazily on
 //! the first open ([`try_open_chest_at_cursor`]); placement-time creation is
 //! unreachable without `editing.rs` edits (deviation recorded for
 //! `docs/ANALYSIS.md`).
@@ -25,18 +28,12 @@ use glam::Vec2;
 
 use crate::app::App;
 use crate::app::flow::KeyboardTail;
+use crate::bank::can_stack;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemSlot};
 use crate::player;
 use crate::registry;
 use crate::ui::keyboard::{self, Context, Request};
 use tr_core::{TILE_PX, World};
-
-/// One chest slot: `(item kind, stack)` — the C# `Chest.item[]` entry minus
-/// the prefix (the port's inventory slots carry no prefix yet; the save
-/// format's per-slot prefix byte, `WorldFile.cs:1671`, lands with M6-SAVE-2,
-/// which owns the chest slot type's widening). The 2-tuple shape is pinned by
-/// the existing `editing.rs` stocked-chest test literal (`slots: vec![(9, 6)]`).
-pub(crate) type ChestSlot = (u16, u32);
 
 /// `Main.maxChests` (`Main.cs:1033`), the array size (`Main.cs:66994`) and the
 /// scan bound baked into `Chest.FindEmptyChest` (`Chest.cs:524`).
@@ -58,9 +55,13 @@ pub(crate) const DEFAULT_MAX_ITEMS: u32 = 40;
 pub(crate) struct WorldChest {
     /// The chest tile's top-left `(x, y)`.
     pub(crate) tile: (i32, i32),
-    /// `(item id, stack)` stacks, at most [`DEFAULT_MAX_ITEMS`] real ones;
-    /// indexed with implicit air — see the module doc.
-    pub(crate) slots: Vec<ChestSlot>,
+    /// The C# `Chest.item[]` entries as full [`ItemSlot`]s (the M3-CHEST-INT
+    /// upgrade — prefixes survive deposits and take-backs, `Item.cs:504`'s
+    /// `Item.prefix` field; the save format's per-slot prefix byte,
+    /// `WorldFile.cs:1671`, lands with M6-SAVE-2), at most
+    /// [`DEFAULT_MAX_ITEMS`] real ones; indexed with implicit air — see the
+    /// module doc.
+    pub(crate) slots: Vec<ItemSlot>,
 }
 
 /// The removed-slot marker: `Main.chest[i] == null`'s stand-in inside the
@@ -80,9 +81,7 @@ impl WorldChest {
     /// beyond `slots.len()` are air by construction, so the scan covers the
     /// whole chest.
     pub(crate) fn is_empty(&self) -> bool {
-        self.slots
-            .iter()
-            .all(|&(kind, stack)| kind == 0 && stack == 0)
+        self.slots.iter().all(|s| s.kind == 0 && s.count == 0)
     }
 }
 
@@ -153,10 +152,10 @@ pub(crate) fn remove_chest(chests: &mut Vec<WorldChest>, idx: usize) {
 }
 
 /// The chest's slots at `idx` — the plan contract's
-/// `get(idx) -> Option<&[ChestSlot]>` over `Chest.item[]`
+/// `get(idx) -> Option<&[ItemSlot]>` over `Chest.item[]`
 /// (`Chest.cs:74-78`). `None` for an out-of-range index; a removed slot
 /// reads as absent.
-pub(crate) fn chest_slots(chests: &[WorldChest], idx: usize) -> Option<&[ChestSlot]> {
+pub(crate) fn chest_slots(chests: &[WorldChest], idx: usize) -> Option<&[ItemSlot]> {
     chests
         .get(idx)
         .filter(|c| !is_removed(c))
@@ -165,7 +164,7 @@ pub(crate) fn chest_slots(chests: &[WorldChest], idx: usize) -> Option<&[ChestSl
 
 /// Mutable [`chest_slots`] — the plan contract's `get_mut`
 /// (`Chest.cs:74-78`).
-pub(crate) fn chest_slots_mut(chests: &mut [WorldChest], idx: usize) -> Option<&mut [ChestSlot]> {
+pub(crate) fn chest_slots_mut(chests: &mut [WorldChest], idx: usize) -> Option<&mut [ItemSlot]> {
     chests
         .get_mut(idx)
         .filter(|c| !is_removed(c))
@@ -469,6 +468,15 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 /// for the banks too (`:33524-33525`), or the per-tick range close would
 /// probe a stale tile. The `ItemSlot.SetGlowForChest`/input-navigator arms
 /// are UI state the port does not carry (`:33508-33515`/:33518-33523).
+///
+/// The browsed chest's 40-slot window materializes on open: the C#
+/// `Chest.item[]` is 40 real entries for every chest (`Chest.cs:107-109`,
+/// `Chest.CreateWorldChest` fills them), and the generic `bank.rs` transfers
+/// walk all 40 free slots (`ChestUI.cs:1262-1287`'s `item2[j].stack == 0`,
+/// `:1115-1147`'s refill) — a scan the implicit-air `Vec` tail hides when it
+/// is not stored. Never-opened store entries stay empty, so the lazy-store
+/// memory shape (the plan's "`Vec<ItemSlot>` implicit-air kept" decision)
+/// only grows to the C#'s own per-chest shape for chests the player opens.
 fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
     let Some(p) = app.player.as_mut() else {
         return;
@@ -478,6 +486,11 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
     p.chest_y = y;
     app.crafting_open = false;
     app.inventory_open = true;
+    if new_chest >= 0 {
+        if let Some(c) = app.world_chests.get_mut(new_chest as usize) {
+            c.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
+        }
+    }
 }
 
 /// `Player.cs:33230-33252` — the open toggle shared by every container kind
@@ -765,33 +778,39 @@ fn in_interaction_range_to_multi_tile_hitbox(
 // cursor-override texture draw (see `App.cursor_override`).
 
 /// Reads chest slot `slot` of the store entry `idx` with the implicit-air
-/// encoding (decision #4): positions beyond `slots.len()` answer `(0, 0)`,
-/// the C#'s air `Chest.item[i]` entries. `None` for a missing/removed entry.
-pub(crate) fn chest_slot(chests: &[WorldChest], idx: usize, slot: usize) -> Option<ChestSlot> {
-    chest_slots(chests, idx).map(|slots| slots.get(slot).copied().unwrap_or((0, 0)))
+/// encoding (decision #4): positions beyond `slots.len()` answer
+/// [`EMPTY_SLOT`], the C#'s air `Chest.item[i]` entries. `None` for a
+/// missing/removed entry.
+pub(crate) fn chest_slot(chests: &[WorldChest], idx: usize, slot: usize) -> Option<ItemSlot> {
+    chest_slots(chests, idx).map(|slots| slots.get(slot).copied().unwrap_or(EMPTY_SLOT))
 }
 
 /// Writes chest slot `slot` of the entry `idx`, extending with airs first when
 /// the position is past the stored length (decision #4). The written value is
 /// normalized to air — the C#'s `SetDefaults(0)` / `new Item()` writes
 /// (`ItemSlot.cs:976-979`, `ChestUI.cs:1244/:1278`) — so the store never holds
-/// a half-air slot. `false` for a missing/removed entry.
+/// a half-air slot, and a real item's `name` is derived from the registry at
+/// write (the store's items are registry-named like the C#'s `SetDefaults`
+/// entries). `false` for a missing/removed entry.
 pub(crate) fn set_chest_slot(
     chests: &mut [WorldChest],
     idx: usize,
     slot: usize,
-    value: ChestSlot,
+    value: ItemSlot,
 ) -> bool {
     let Some(chest) = chests.get_mut(idx).filter(|c| !is_removed(c)) else {
         return false;
     };
-    let value = if value.0 == 0 || value.1 == 0 {
-        (0, 0)
+    let value = if value.kind == 0 || value.count == 0 {
+        EMPTY_SLOT
     } else {
-        value
+        ItemSlot {
+            name: registry::name(value.kind),
+            ..value
+        }
     };
     if slot >= chest.slots.len() {
-        chest.slots.resize(slot + 1, (0, 0));
+        chest.slots.resize(slot + 1, EMPTY_SLOT);
     }
     chest.slots[slot] = value;
     true
@@ -854,13 +873,16 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
         Some(p) if p.chest >= 0 => p.chest as usize,
         _ => return false, // `GetCurrentContainer`'s world-chest arm (`:1213`)
     };
-    let item = app.inventory[slot];
+    // The C# `Item item = inv[slot]` is a reference: every mutation below
+    // (`item.stack -= num`, the final `SetDefaults(0)`) writes through to
+    // `inv[slot]` — the port's copy + write-back replicates that, keeping
+    // kind, name AND prefix on the drained remainder (the M3-CHEST-INT
+    // deposit-prefix fix).
+    let mut item = app.inventory[slot];
     if item.kind == 0 || item.count == 0 {
         return false; // an air item never merges and never fills (`item.maxStack` 0)
     }
-    let kind = item.kind;
-    let max = registry::max_stack(kind);
-    let mut stack = item.count;
+    let max = registry::max_stack(item.kind);
     let mut placeable = false;
     // The merge pass (`ChestUI.cs:1221-1261`) — stackable kinds only.
     if max > 1 {
@@ -868,40 +890,49 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
             let Some(s) = chest_slot(&app.world_chests, chest, i) else {
                 break;
             };
-            // `:1225` — a full, air (an air slot's maxStack 0 fails
-            // `stack >= maxStack`) or alien-kind slot skips.
-            if s.0 == 0 || s.1 >= registry::max_stack(s.0) || s.0 != kind {
+            // `:1224-1225` — a full slot (an air slot's maxStack 0 fails
+            // `stack >= maxStack`) or one `Item.CanStack` refuses (alien
+            // kind OR different prefix, `Item.cs:49865-49871`) skips.
+            if s.count == 0 || s.count >= registry::max_stack(s.kind) || !can_stack(&item, &s) {
                 continue;
             }
-            let slot_max = registry::max_stack(s.0);
-            // `:1229-1233` — the amount, capped by the slot's room.
-            let mut num = stack;
-            if stack + s.1 > slot_max {
-                num = slot_max - s.1;
+            let slot_max = registry::max_stack(s.kind);
+            // `:1228-1233` — the amount, capped by the slot's room.
+            let mut num = item.count;
+            if item.count + s.count > slot_max {
+                num = slot_max - s.count;
             }
             if just_check {
                 placeable = placeable || num > 0; // `:1234-1237`
                 break;
             }
             // `:1239-1241` — the merge, sound 7. (The `:1251-1255`
-            // `item2[i].type == 0` re-clone arm is dead behind the `:1225`
-            // skip: a non-skipped slot already carries the transferring kind.)
-            set_chest_slot(&mut app.world_chests, chest, i, (kind, s.1 + num));
+            // `item2[i].type == 0` re-clone arm is dead behind the `:1224`
+            // skip: a non-skipped slot already stacks with the item.)
+            set_chest_slot(
+                &mut app.world_chests,
+                chest,
+                i,
+                ItemSlot {
+                    count: s.count + num,
+                    ..s
+                },
+            );
             app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1241`)
-            stack -= num;
-            if stack == 0 {
-                break; // `:1242-1249` — `SetDefaults(0)`
+            item.count -= num;
+            if item.count == 0 {
+                break; // `:1242-1249` — `SetDefaults(0)` (write-through)
             }
         }
     }
     // The empty-slot pass (`ChestUI.cs:1262-1287`) — one slot takes the whole
     // remainder.
-    if stack > 0 {
+    if item.count > 0 {
         for j in 0..DEFAULT_MAX_ITEMS as usize {
             let Some(s) = chest_slot(&app.world_chests, chest, j) else {
                 break;
             };
-            if s.1 != 0 {
+            if s.count != 0 {
                 continue; // `:1267`
             }
             if just_check {
@@ -909,24 +940,15 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
                 break;
             }
             app.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1276`)
-            set_chest_slot(&mut app.world_chests, chest, j, (kind, stack));
-            stack = 0; // `:1277-1278` — `item.Clone()` + `SetDefaults(0)`
+            set_chest_slot(&mut app.world_chests, chest, j, item); // `:1275` — the whole clone
+            item = EMPTY_SLOT; // `:1277-1278` — `SetDefaults(0)` (write-through)
             break;
         }
     }
     if !just_check {
         // The drained slot's remainder — air when fully moved
         // (`:1244`/:1278's `SetDefaults(0)` write-through).
-        app.inventory[slot] = if stack == 0 {
-            EMPTY_SLOT
-        } else {
-            ItemSlot {
-                kind,
-                name: registry::name(kind),
-                count: stack,
-                prefix: 0,
-            }
-        };
+        app.inventory[slot] = item;
     }
     placeable
 }
@@ -941,9 +963,12 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
 /// (`:39395-39398`).
 pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     /// `GetItem_FillIntoOccupiedSlot`'s merge step (`Player.cs:39485-39524`):
-    /// as much of `remainder` as the same-kind partial slot accepts.
-    fn merge_into(s: &mut ItemSlot, kind: u16, max: u32, remainder: &mut u32) -> u32 {
-        if s.count > 0 && s.kind == kind && s.count < max && *remainder > 0 {
+    /// as much of `remainder` as a partial slot accepts — the accept gate is
+    /// `CanItemSlotAcceptPickup` (`Player.cs:39487`), i.e. `Item.CanStack`
+    /// (same kind AND same prefix, `Item.cs:49865-49871`).
+    fn merge_into(s: &mut ItemSlot, item: &ItemSlot, remainder: &mut u32) -> u32 {
+        let max = registry::max_stack(item.kind);
+        if s.count > 0 && can_stack(s, item) && s.count < max && *remainder > 0 {
             let moved = (max - s.count).min(*remainder);
             s.count += moved;
             *remainder -= moved;
@@ -954,14 +979,13 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     }
 
     /// `GetItem_FillEmptyInventorySlot` (`Player.cs:39551-39578`): one empty
-    /// slot takes the whole remainder.
-    fn fill_empty(s: &mut ItemSlot, kind: u16, remainder: &mut u32) -> bool {
+    /// slot takes the whole remainder — `inventory[i] = returnItem` clones
+    /// the whole item, prefix included.
+    fn fill_empty(s: &mut ItemSlot, item: &ItemSlot, remainder: &mut u32) -> bool {
         if s.count == 0 && *remainder > 0 {
             *s = ItemSlot {
-                kind,
-                name: registry::name(kind),
                 count: *remainder,
-                prefix: 0,
+                ..*item
             };
             *remainder = 0;
             true
@@ -974,15 +998,14 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
         Some(p) if p.chest >= 0 => p.chest as usize,
         _ => return,
     };
-    let Some((kind, stack)) = chest_slot(&app.world_chests, chest_idx, chest_slot_idx) else {
+    let Some(src) = chest_slot(&app.world_chests, chest_idx, chest_slot_idx) else {
         return;
     };
-    if kind == 0 || stack == 0 {
+    if src.kind == 0 || src.count == 0 {
         return;
     }
-    let max = registry::max_stack(kind);
-    let is_coin = registry::is_coin(kind); // `Item.IsACoin` (`Item.cs:373-383`)
-    let mut remainder = stack;
+    let is_coin = registry::is_coin(src.kind); // `Item.IsACoin` (`Item.cs:373-383`)
+    let mut remainder = src.count;
     let App {
         inventory,
         equip,
@@ -996,7 +1019,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     // "Coin_0" (the drop-pickup precedent).
     if is_coin {
         for s in equip.coins.iter_mut() {
-            if merge_into(s, kind, max, &mut remainder) > 0 {
+            if merge_into(s, &src, &mut remainder) > 0 {
                 audio.play("Coin_0");
             }
             if remainder == 0 {
@@ -1005,7 +1028,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
         }
     }
     for s in inventory[..INV].iter_mut() {
-        if merge_into(s, kind, max, &mut remainder) > 0 {
+        if merge_into(s, &src, &mut remainder) > 0 {
             audio.play("Grab"); // `:39444` — the non-coin arm
         }
         if remainder == 0 {
@@ -1018,9 +1041,9 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     // favorited — [`can_favorite_at`] excludes ctx 3 — so the favorited
     // forward arm `:39375-39384` is unreachable here). Coins scan the coin
     // slots descending first (`num = 54`).
-    if remainder > 0 && crate::item::use_style(kind) != 0 {
+    if remainder > 0 && crate::item::use_style(src.kind) != 0 {
         for s in inventory[..HOTBAR].iter_mut() {
-            if fill_empty(s, kind, &mut remainder) {
+            if fill_empty(s, &src, &mut remainder) {
                 audio.play("Grab"); // `:39559`
                 break;
             }
@@ -1028,7 +1051,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     }
     if remainder > 0 && is_coin {
         for s in equip.coins.iter_mut().rev() {
-            if fill_empty(s, kind, &mut remainder) {
+            if fill_empty(s, &src, &mut remainder) {
                 audio.play("Coin_0"); // `:39559`
                 break;
             }
@@ -1036,15 +1059,24 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     }
     if remainder > 0 {
         for s in inventory[..INV].iter_mut().rev() {
-            if fill_empty(s, kind, &mut remainder) {
+            if fill_empty(s, &src, &mut remainder) {
                 audio.play("Grab"); // `:39559`
                 break;
             }
         }
     }
     // `:800-812`'s `inv[slot] = ...` — the unplaced remainder stays in the
-    // chest slot.
-    set_chest_slot(world_chests, chest_idx, chest_slot_idx, (kind, remainder));
+    // chest slot (its prefix rides along; an empty remainder normalises to
+    // air).
+    set_chest_slot(
+        world_chests,
+        chest_idx,
+        chest_slot_idx,
+        ItemSlot {
+            count: remainder,
+            ..src
+        },
+    );
 }
 
 // --- Rename flow (M3-CHEST-UI phase 5) ---------------------------------------
@@ -1244,13 +1276,13 @@ mod tests {
         let mut chests: Vec<WorldChest> = Vec::new();
         let idx = create_chest(&mut chests, 10, 18);
         assert!(chests[idx].is_empty());
-        chests[idx].slots = vec![(9, 6)];
+        chests[idx].slots = vec![slot(9, 6)];
         assert!(!chests[idx].is_empty());
         // A drained slot is air in place (`Item.IsAir`: type 0 and stack 0),
         // not a removed entry.
-        chests[idx].slots = vec![(0, 0), (619, 4)];
+        chests[idx].slots = vec![EMPTY_SLOT, slot(619, 4)];
         assert!(!chests[idx].is_empty());
-        chests[idx].slots = vec![(0, 0), (0, 0)];
+        chests[idx].slots = vec![EMPTY_SLOT, EMPTY_SLOT];
         assert!(chests[idx].is_empty());
         assert_eq!(
             find_chest(&chests, 10, 18),
@@ -1266,10 +1298,10 @@ mod tests {
     fn chest_slots_on_removed_and_out_of_range() {
         let mut chests: Vec<WorldChest> = Vec::new();
         let idx = create_chest(&mut chests, 10, 18);
-        chests[idx].slots = vec![(9, 6), (0, 0), (619, 4)];
+        chests[idx].slots = vec![slot(9, 6), EMPTY_SLOT, slot(619, 4)];
         assert_eq!(
             chest_slots(&chests, idx),
-            Some(&[(9, 6), (0, 0), (619, 4)][..])
+            Some(&[slot(9, 6), EMPTY_SLOT, slot(619, 4)][..])
         );
         assert_eq!(chest_slots(&chests, 5), None);
         remove_chest(&mut chests, idx);
@@ -1277,11 +1309,11 @@ mod tests {
         let other = create_chest(&mut chests, 40, 40);
         // The reuse claimed the tombstone's slot; a fresh chest is empty
         // until a slot is stocked (phase 4's placement grows the list).
-        chests[other].slots = vec![(9, 6)];
+        chests[other].slots = vec![slot(9, 6)];
         if let Some(slots) = chest_slots_mut(&mut chests, other) {
-            slots[0] = (48, 1);
+            slots[0] = slot(48, 1);
         }
-        assert_eq!(chests[other].slots[0], (48, 1));
+        assert_eq!(chests[other].slots[0], slot(48, 1));
     }
 
     /// DW-1.1 — `Main.maxChests` (`Main.cs:1033`) bounds the store: the 8000th
@@ -1473,10 +1505,35 @@ mod tests {
     fn slot(kind: u16, count: u32) -> ItemSlot {
         ItemSlot {
             kind,
-            name: "",
+            name: registry::name(kind),
             count,
             prefix: 0,
         }
+    }
+
+    /// A prefixed fixture slot (the M3-PREFIX rolled-prefix shape).
+    fn prefixed_slot(kind: u16, count: u32, prefix: u16) -> ItemSlot {
+        ItemSlot {
+            name: registry::name(kind),
+            prefix,
+            ..slot(kind, count)
+        }
+    }
+
+    /// A headless app whose open chest (index 0, tile origin (10, 18)) holds
+    /// `slots` — the shift-transfer helpers' fixture (the `chest_app` shape
+    /// from clicks.rs's tests, minus the screen geometry they need).
+    fn transfer_app(slots: Vec<ItemSlot>) -> App {
+        let mut app = interact_app(world());
+        app.world_chests.push(WorldChest {
+            tile: (10, 18),
+            slots,
+        });
+        let p = app.player.as_mut().unwrap();
+        p.chest = 0;
+        p.chest_x = 10;
+        p.chest_y = 18;
+        app
     }
 
     /// DW-2.1 — the open/close cycle (`Player.cs:33056-33260` +
@@ -2135,33 +2192,311 @@ mod tests {
         assert!(!retain_favorite_on_move_at(4));
     }
 
-    /// The implicit-air slot helpers (decision #4): reads past the stored
-    /// length answer air, writes extend with airs first and normalize
-    /// half-air values to air, and a removed/missing entry refuses.
+    /// DW-2.2 — the implicit-air slot helpers (decision #4, ported from the
+    /// tuple versions onto `ItemSlot`): reads past the stored length answer
+    /// air, writes extend with airs first and normalize half-air values to
+    /// air, real items carry the registry name derived at write, and a
+    /// removed/missing entry refuses.
     #[test]
-    fn chest_slot_read_write_with_implicit_air() {
+    fn test_DW_2_2_implicit_air_normalisation_holds_on_item_slots() {
         let mut chests: Vec<WorldChest> = Vec::new();
         let idx = create_chest(&mut chests, 10, 18);
         assert_eq!(
             chest_slot(&chests, idx, 5),
-            Some((0, 0)),
+            Some(EMPTY_SLOT),
             "beyond len is air"
         );
-        assert!(set_chest_slot(&mut chests, idx, 35, (9, 3)));
+        assert!(set_chest_slot(&mut chests, idx, 35, slot(9, 3)));
         assert_eq!(chests[idx].slots.len(), 36, "extended with airs first");
-        assert_eq!(chests[idx].slots[34], (0, 0), "the extension filled air");
-        assert_eq!(chest_slot(&chests, idx, 35), Some((9, 3)));
+        assert_eq!(
+            chests[idx].slots[34], EMPTY_SLOT,
+            "the extension filled air"
+        );
+        assert_eq!(chest_slot(&chests, idx, 35), Some(slot(9, 3)));
+        // The registry name is derived at write — even a nameless write
+        // stores the item's name (the plan's `name` from `registry::name`).
+        assert!(set_chest_slot(
+            &mut chests,
+            idx,
+            35,
+            ItemSlot {
+                kind: 9,
+                name: "",
+                count: 3,
+                prefix: 0
+            }
+        ));
+        assert_eq!(chests[idx].slots[35].name, "Wood");
         // Half-air values normalize to air (the `SetDefaults(0)` writes).
-        assert!(set_chest_slot(&mut chests, idx, 35, (9, 0)));
-        assert_eq!(chest_slot(&chests, idx, 35), Some((0, 0)));
-        assert!(set_chest_slot(&mut chests, idx, 36, (0, 7)));
-        assert_eq!(chest_slot(&chests, idx, 36), Some((0, 0)));
+        assert!(set_chest_slot(
+            &mut chests,
+            idx,
+            35,
+            ItemSlot {
+                count: 0,
+                ..slot(9, 3)
+            }
+        ));
+        assert_eq!(chest_slot(&chests, idx, 35), Some(EMPTY_SLOT));
+        assert!(set_chest_slot(
+            &mut chests,
+            idx,
+            36,
+            ItemSlot {
+                kind: 0,
+                ..slot(9, 3)
+            }
+        ));
+        assert_eq!(chest_slot(&chests, idx, 36), Some(EMPTY_SLOT));
+        // The prefix survives a partial drain and dies with the air write —
+        // a normalized half-air slot carries nothing.
+        assert!(set_chest_slot(&mut chests, idx, 35, prefixed_slot(9, 3, 2)));
+        assert_eq!(chest_slot(&chests, idx, 35), Some(prefixed_slot(9, 3, 2)));
+        assert!(set_chest_slot(
+            &mut chests,
+            idx,
+            35,
+            ItemSlot {
+                count: 0,
+                ..prefixed_slot(9, 3, 2)
+            }
+        ));
+        assert_eq!(chest_slot(&chests, idx, 35), Some(EMPTY_SLOT));
         assert!(chests[idx].is_empty(), "the writes left pure air");
         // A removed or out-of-range entry refuses both directions.
         remove_chest(&mut chests, idx);
         assert_eq!(chest_slot(&chests, idx, 0), None);
-        assert!(!set_chest_slot(&mut chests, idx, 0, (9, 1)));
+        assert!(!set_chest_slot(&mut chests, idx, 0, slot(9, 1)));
         assert_eq!(chest_slot(&chests, 9, 0), None);
+    }
+
+    /// DW-2.1 — the deposit-prefix-loss bug's regression test: depositing a
+    /// prefixed item into a world chest and taking it back preserves the
+    /// prefix end-to-end (the tuple store dropped it at every move — the
+    /// fabricated views wrote `prefix: 0`; the C# moves whole `Item`s).
+    #[test]
+    fn test_DW_2_1_prefix_survives_a_world_chest_round_trip() {
+        let mut app = transfer_app(vec![]);
+        // The shift-in deposit (`TryPlacingInChest`): a prefixed stack parks
+        // in the first empty chest slot with its prefix.
+        app.inventory[3] = prefixed_slot(9, 40, 2);
+        assert!(!try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(
+            chest_slot(&app.world_chests, 0, 0),
+            Some(prefixed_slot(9, 40, 2)),
+            "the deposit kept the prefix"
+        );
+        assert_eq!(
+            app.inventory[3].kind, 0,
+            "the inventory slot drained to air"
+        );
+        // The shift-out take (`GetItem`'s `FillEmptyInventorySlot` —
+        // `inventory[i] = returnItem`): the prefix rides back into the
+        // inventory.
+        quick_transfer_from_slot(&mut app, 0);
+        assert!(
+            app.inventory
+                .iter()
+                .any(|s| s.kind == 9 && s.prefix == 2 && s.count == 40),
+            "the take-back carried the prefix into the inventory"
+        );
+        assert!(app.world_chests[0].is_empty(), "the chest drained");
+    }
+
+    /// DW-2.1 (dirty) — a partial merge keeps the prefix on the inventory
+    /// remainder: the C# mutates `inv[slot]` in place (`Item item =
+    /// inv[slot]` is a reference, `ChestUI.cs:1214`), so the un-moved tail
+    /// returns with its prefix. The chest must be FULL for a remainder to
+    /// survive — the empty-slot pass (`:1262-1287`) reads the implicit airs
+    /// as deposit targets too (`item2[j].stack == 0`), so a roomy chest
+    /// always absorbs it.
+    #[test]
+    fn test_DW_2_1_partial_merge_keeps_the_prefix_on_the_remainder() {
+        // 39 full stacks + one partial: the merge soaks 9 into it and, with
+        // no empty slot left, the inventory remainder keeps its prefix.
+        let mut slots = vec![prefixed_slot(9, 9999, 2); 39];
+        slots.push(prefixed_slot(9, 9990, 2));
+        let mut app = transfer_app(slots);
+        app.inventory[3] = prefixed_slot(9, 20, 2);
+        assert!(!try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.world_chests[0].slots.len(), 40, "nothing new deposited");
+        assert_eq!(
+            app.world_chests[0].slots[39].count, 9999,
+            "the merge filled the partial"
+        );
+        assert_eq!(app.inventory[3].prefix, 2, "the remainder kept its prefix");
+        assert_eq!(app.inventory[3].count, 11);
+    }
+
+    /// DW-2.1 (dirty, Test Plan) — prefixed + unprefixed same-kind stacks
+    /// stay separate: `Item.CanStack` (`Item.cs:49865-49871`) requires the
+    /// type AND the prefix, so neither transfer ever blends them.
+    #[test]
+    fn test_DW_2_1_prefixed_and_unprefixed_same_kind_stacks_stay_separate() {
+        // The unprefixed chest stack does not absorb a prefixed deposit —
+        // the deposit parks in the first empty slot instead.
+        let mut app = transfer_app(vec![slot(9, 10)]);
+        app.inventory[3] = prefixed_slot(9, 20, 2);
+        assert!(!try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(
+            app.world_chests[0].slots[0],
+            slot(9, 10),
+            "no cross-prefix merge"
+        );
+        assert_eq!(app.world_chests[0].slots[1], prefixed_slot(9, 20, 2));
+        assert_eq!(app.inventory[3].kind, 0, "the deposit moved whole");
+        // And the reverse: a prefixed chest stack does not absorb an
+        // unprefixed deposit.
+        let mut app = transfer_app(vec![prefixed_slot(9, 10, 2)]);
+        app.inventory[3] = slot(9, 20);
+        assert!(!try_placing_in_chest(&mut app, 3, false));
+        assert_eq!(app.world_chests[0].slots[0], prefixed_slot(9, 10, 2));
+        assert_eq!(app.world_chests[0].slots[1], slot(9, 20));
+    }
+
+    /// DW-2.1 (dirty) — `quick_transfer_from_slot`'s merge gate is CanStack
+    /// too (`CanItemSlotAcceptPickup`, `Player.cs:39487`): a prefixed chest
+    /// stack never soaks into an unprefixed partial inventory stack; a
+    /// same-prefix partial does.
+    #[test]
+    fn test_DW_2_1_quick_transfer_refuses_a_cross_prefix_merge() {
+        let mut app = transfer_app(vec![prefixed_slot(9, 100, 2)]);
+        app.inventory[5] = slot(9, 10); // unprefixed partial — refuses
+        quick_transfer_from_slot(&mut app, 0);
+        assert_eq!(
+            app.inventory[5].count, 10,
+            "the unprefixed partial did not soak the prefixed stack"
+        );
+        assert!(
+            app.inventory
+                .iter()
+                .any(|s| s.kind == 9 && s.prefix == 2 && s.count == 100),
+            "the whole prefixed stack parked on an empty slot"
+        );
+        assert!(app.world_chests[0].is_empty());
+        // Same prefix: the partial soaks the whole stack.
+        let mut app = transfer_app(vec![prefixed_slot(9, 100, 2)]);
+        app.inventory[5] = prefixed_slot(9, 10, 2);
+        quick_transfer_from_slot(&mut app, 0);
+        assert_eq!(
+            app.inventory[5].count, 110,
+            "the same-prefix partial soaked it"
+        );
+        assert!(app.world_chests[0].is_empty());
+    }
+
+    /// DW-2.3 — the plan contract: `bank::loot_all` takes a `WorldChest`
+    /// directly (`fn(&mut world_chest.slots, ...)`, no bridge) — the drain,
+    /// the coin-row routing and the overflow-stays rule all hold against the
+    /// store's `ItemSlot` slots.
+    #[test]
+    fn test_DW_2_3_loot_all_runs_against_a_world_chest() {
+        let mut chest = WorldChest {
+            tile: (10, 18),
+            slots: vec![
+                slot(9, 500),            // the wood stack → the pickup
+                slot(71, 50),            // the copper coins → the coin rows
+                prefixed_slot(48, 7, 3), // the prefixed item → stays (no room)
+            ],
+        };
+        let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| slot(3, 9999));
+        inventory[40] = slot(9, 400); // the wood partial soaks the stack
+        let mut coins = [slot(71, 10), EMPTY_SLOT, EMPTY_SLOT, EMPTY_SLOT];
+        crate::bank::loot_all(&mut chest.slots, &mut inventory, &mut coins);
+        // The wood drained into the partial (the 9999 cap takes all 500).
+        assert!(inventory.iter().any(|s| s.kind == 9 && s.count == 900));
+        assert_eq!(chest.slots[0], EMPTY_SLOT, "the wood drained");
+        // The coins consolidated into the coin rows.
+        assert_eq!(coins[0].count, 60);
+        assert_eq!(chest.slots[1], EMPTY_SLOT, "the coins drained");
+        // The prefixed item: no pickup slot accepts it — the overflow STAYS
+        // in the chest with its prefix (`GetItem`'s returned remainder).
+        assert_eq!(
+            chest.slots[2],
+            prefixed_slot(48, 7, 3),
+            "the overflow stayed with its prefix"
+        );
+    }
+
+    /// The plan contract's other half: `deposit_all`/`quick_stack`/`restock`
+    /// take `&mut world_chest.slots` directly — no bridge, no tuple adapter
+    /// (the `**Produces:**` seam Phase 3's dispatch calls through). The
+    /// container is the transfer configuration [`open_chest`] guarantees —
+    /// the browsed chest's 40-slot window materialized, exactly the C#'s
+    /// `Chest.item[]` (`Chest.cs:107-109`) the free-slot walks scan.
+    #[test]
+    fn the_other_bank_transfers_take_a_world_chest_directly() {
+        let mut chest = WorldChest {
+            tile: (10, 18),
+            slots: Vec::new(),
+        };
+        chest.slots.resize(DEFAULT_MAX_ITEMS as usize, EMPTY_SLOT);
+        chest.slots[0] = slot(9, 500);
+        let mut inventory: [ItemSlot; INV] = std::array::from_fn(|_| EMPTY_SLOT);
+        inventory[5] = slot(9, 50); // the hotbar partial — restock's demand
+        inventory[20] = slot(9, 100);
+        inventory[21] = slot(3, 10);
+        let fav = |_: usize| false;
+        // `quick_stack` merges only the types the chest already holds
+        // (wood — the stone and the hotbar row stay put).
+        crate::bank::quick_stack(&mut chest.slots, &mut inventory, &mut [EMPTY_SLOT; 4], &fav);
+        assert_eq!(chest.slots[0].count, 600, "quick_stack merged the wood");
+        assert_eq!(inventory[20].count, 0);
+        assert_eq!(inventory[21].count, 10, "the stone is not a target type");
+        // `deposit_all` parks the stone on the first free slot
+        // (`ChestUI.cs:579-655`'s walk) and leaves the hotbar alone.
+        crate::bank::deposit_all(&mut chest.slots, &mut inventory, &fav);
+        assert_eq!(chest.slots[1], slot(3, 10), "deposit_all parked the stone");
+        assert_eq!(inventory[21].count, 0);
+        assert_eq!(inventory[5].count, 50, "the hotbar is not a deposit source");
+        // `restock` fills the hotbar partial from the unprefixed chest stack
+        // (the prefix-0 supply gate reads the chest's real prefixes now).
+        assert!(
+            crate::bank::restock(&mut chest.slots, &mut inventory),
+            "restock filled the partial"
+        );
+        assert_eq!(inventory[5].count, 650);
+        assert_eq!(chest.slots[0].count, 0, "the wood drained");
+    }
+
+    /// The transfer window's guarantee: opening a chest materializes its
+    /// 40-slot tail (`Chest.cs:107-109`'s shape — the free-slot walks the
+    /// `bank.rs` transfers run need it), a fresh open grows the lazy entry
+    /// to the C# per-chest shape, and a never-opened entry stays empty.
+    #[test]
+    fn open_chest_materializes_the_browsed_transfer_window() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert_eq!(app.player.as_ref().unwrap().chest, 0);
+        assert_eq!(
+            app.world_chests[0].slots.len(),
+            DEFAULT_MAX_ITEMS as usize,
+            "the browsed chest's 40-slot window is materialized"
+        );
+        assert!(
+            app.world_chests[0]
+                .slots
+                .iter()
+                .all(|s| s.kind == 0 && s.count == 0),
+            "the materialized tail is air"
+        );
+        // The store keeps the window after the close (`Chest.item[]` stays
+        // materialized in the C# too).
+        assert_eq!(toggle_open(&mut app, 10, 18, 0), 11);
+        assert_eq!(app.world_chests[0].slots.len(), DEFAULT_MAX_ITEMS as usize);
+        // A stocked slot survives the resize.
+        app.world_chests[0].slots[5] = slot(9, 4);
+        assert_eq!(toggle_open(&mut app, 10, 18, 0), 10, "re-open");
+        assert_eq!(app.world_chests[0].slots[5], slot(9, 4));
+        // A never-opened entry stays lazy (the memory shape the plan pins).
+        create_chest(&mut app.world_chests, 30, 40);
+        assert_eq!(
+            app.world_chests[1].slots.len(),
+            0,
+            "no open, no materialization"
+        );
     }
 
     // --- Phase 5: the rename flow ----------------------------------------

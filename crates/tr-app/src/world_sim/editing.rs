@@ -872,7 +872,7 @@ fn chest_holds_items(app: &App) -> impl Fn(i32, i32) -> bool + '_ {
     move |x, y| {
         app.world_chests
             .iter()
-            .any(|c| c.tile == (x, y) && c.slots.iter().any(|&(_, stack)| stack > 0))
+            .any(|c| c.tile == (x, y) && c.slots.iter().any(|s| s.count > 0))
     }
 }
 
@@ -3026,7 +3026,12 @@ mod tests {
         let mut app = mining_app(w, 10, 18);
         app.world_chests.push(crate::craft::WorldChest {
             tile: (10, 18),
-            slots: vec![(9, 6)],
+            slots: vec![crate::item::ItemSlot {
+                kind: 9,
+                name: crate::registry::name(9),
+                count: 6,
+                prefix: 0,
+            }],
         });
         mine_frames(&mut app, 40);
         for x in [10, 11] {

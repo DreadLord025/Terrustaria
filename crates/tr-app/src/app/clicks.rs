@@ -58,7 +58,10 @@ fn left_click_movement(held: &mut ItemSlot, target: &mut ItemSlot) -> bool {
     } else if target.count == 0 {
         *target = *held;
         *held = EMPTY_SLOT;
-    } else if target.kind == held.kind && target.count < max {
+    } else if target.kind == held.kind && target.prefix == held.prefix && target.count < max {
+        // The merge gate is `Item.CanStack` (`ItemSlot.cs:1000`'s case-0
+        // merge, `Item.cs:49865-49871`) — same type AND same prefix; a
+        // prefixed stack never blends into an unprefixed one.
         let moved = (max - target.count).min(held.count);
         target.count += moved;
         held.count -= moved;
@@ -654,10 +657,8 @@ impl App {
         // panel-fidelity deviation; `TryPlacingInChest` refuses banks too).
         if chest >= 0 && !self.crafting_open {
             if let Some(abs) = ui::chest::slot_at(self.mouse_pos, self.chest_scroll_row) {
-                if let Some((kind, stack)) =
-                    chest::chest_slot(&self.world_chests, chest as usize, abs)
-                {
-                    if kind != 0 && stack > 0 && chest::inventory_has_room_for(self, kind) {
+                if let Some(s) = chest::chest_slot(&self.world_chests, chest as usize, abs) {
+                    if s.kind != 0 && s.count > 0 && chest::inventory_has_room_for(self, s.kind) {
                         self.cursor_override = CURSOR_FROM_CHEST;
                     }
                 }
@@ -688,31 +689,19 @@ impl App {
         }
         if left {
             let mut held = self.mouse_item;
-            let (kind, stack) =
-                chest::chest_slot(&self.world_chests, chest_idx, abs).unwrap_or((0, 0));
-            let mut target = if kind != 0 {
-                ItemSlot {
-                    kind,
-                    name: registry::name(kind),
-                    count: stack,
-                    prefix: 0,
-                }
-            } else {
-                EMPTY_SLOT
-            };
+            // The chest slot IS an `ItemSlot` now (M3-CHEST-INT) — the
+            // fabricated view is gone and the slot's prefix rides the whole
+            // movement (take / place / CanStack merge / swap).
+            let mut target =
+                chest::chest_slot(&self.world_chests, chest_idx, abs).unwrap_or(EMPTY_SLOT);
             // `PickItemMovementAction` ctx 3 → action 0 (`ItemSlot.cs:1505-1507`)
             // — the shared movement.
             if left_click_movement(&mut held, &mut target) {
                 self.audio.play("Grab"); // `:1010` — `SoundEngine.PlaySound(7)`
             }
-            // `:976-979` — the emptied slot turns to air; the store keeps its
-            // `(kind, stack)` encoding (the air-normalizing write).
-            chest::set_chest_slot(
-                &mut self.world_chests,
-                chest_idx,
-                abs,
-                (target.kind, target.count),
-            );
+            // `:976-979` — the emptied slot turns to air (the air-normalizing
+            // write; the moved-in item keeps its prefix).
+            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, target);
             self.mouse_item = held;
         }
         if right_held {
@@ -734,36 +723,42 @@ impl App {
         let chest_idx = self.open_container() as usize;
         let transfers = self.super_fast_stack + 1; // `:1704`
         for _ in 0..transfers {
-            let Some((kind, stack)) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
+            let Some(s) = chest::chest_slot(&self.world_chests, chest_idx, abs) else {
                 break;
             };
-            if kind == 0 || stack == 0 {
+            if s.kind == 0 || s.count == 0 {
                 break; // `:1700`'s `inv[slot].IsAir`
             }
-            let max = registry::max_stack(kind);
+            let max = registry::max_stack(s.kind);
             // `:1707` — `CanStack(mouseItem, inv[slot]) && mouseItem.stack <
-            // maxStack`, or an air cursor (`Item.CanStack` is the type match,
-            // `Item.cs:49865-49872`; the port has no prefix, decision #2).
-            let can_take = (self.mouse_item.kind == kind && self.mouse_item.count < max)
+            // maxStack`, or an air cursor (`Item.CanStack` = same type AND
+            // same prefix, `Item.cs:49865-49871`).
+            let can_take = (crate::bank::can_stack(&self.mouse_item, &s)
+                && self.mouse_item.count < max)
                 || self.mouse_item.count == 0;
             if !can_take {
                 break;
             }
             // `PickupItemIntoMouse` (`:1717-1747`): an air cursor clones the
-            // slot at stack 0, then +1/−1; the emptied slot turns to air
-            // (`:1743-1746`). (The `:1728-1735` favorite carry is
+            // slot at stack 0 — name and prefix included (`:1721`'s
+            // `inv[slot].Clone()`) — then +1/−1; the emptied slot turns to
+            // air (`:1743-1746`). (The `:1728-1735` favorite carry is
             // unreachable — chest slots cannot be favorited.)
             if self.mouse_item.count == 0 {
-                self.mouse_item = ItemSlot {
-                    kind,
-                    name: registry::name(kind),
-                    count: 0,
-                    prefix: 0,
-                };
+                self.mouse_item = s;
+                self.mouse_item.count = 0;
             }
             self.mouse_item.count += 1;
-            let left_in_slot = stack - 1;
-            chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, (kind, left_in_slot));
+            let left_in_slot = s.count - 1;
+            chest::set_chest_slot(
+                &mut self.world_chests,
+                chest_idx,
+                abs,
+                ItemSlot {
+                    count: left_in_slot,
+                    ..s
+                },
+            );
             self.audio.play("Menu_Tick"); // `:1710` — `SoundEngine.PlaySound(12)`
             // `RefreshStackSplitCooldown` (`:1774-1784`).
             self.stack_split = if self.stack_split == 0 {
@@ -897,7 +892,7 @@ impl App {
 mod tests {
     use super::*;
     use crate::app::flow::front_flow_tests::flow_app;
-    use crate::chest::{ChestSlot, DEFAULT_MAX_ITEMS, WorldChest};
+    use crate::chest::{DEFAULT_MAX_ITEMS, WorldChest};
     use tr_core::World;
 
     /// Inside the chest grid's cell (0, 0) — the drawn 52·0.755 px cell at
@@ -918,10 +913,18 @@ mod tests {
         }
     }
 
+    /// A prefixed fixture slot (the M3-PREFIX rolled-prefix shape).
+    fn prefixed(kind: u16, count: u32, prefix: u16) -> ItemSlot {
+        ItemSlot {
+            prefix,
+            ..slot(kind, count)
+        }
+    }
+
     /// A headless app with the inventory open and an open chest (index 0,
     /// tile origin (20, 10)) whose store holds `slots`. The open state is
     /// the player's (`Player.chest`, the M3-CHEST-INT unify).
-    fn chest_app(slots: Vec<ChestSlot>) -> App {
+    fn chest_app(slots: Vec<ItemSlot>) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.inventory_open = true;
         app.world_chests.push(WorldChest {
@@ -960,33 +963,33 @@ mod tests {
     /// semantics: both drive the shared [`left_click_movement`].
     #[test]
     fn dw_4_1_take_place_swap_stack_on_chest_slots() {
-        let mut app = chest_app(vec![(9, 6)]);
+        let mut app = chest_app(vec![slot(9, 6)]);
         // Take: an empty cursor takes the whole stack.
         app.mouse_pos = CHEST_SLOT_0;
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
         assert_eq!(app.mouse_item.kind, 9);
         assert_eq!(app.mouse_item.count, 6);
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((0, 0)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
         // Place: the cursor stack lands on an empty chest cell.
         app.mouse_item = slot(9, 3);
         app.mouse_pos = CHEST_SLOT_1;
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some((9, 3)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(9, 3)));
         assert_eq!(app.mouse_item.count, 0);
         // Swap: a different kind exchanges with the cursor.
         app.mouse_item = slot(5, 2);
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some((5, 2)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(5, 2)));
         assert_eq!(app.mouse_item.kind, 9);
         assert_eq!(app.mouse_item.count, 3);
         // Stack-merge: the same kind pours into the partial slot.
         app.mouse_item = slot(5, 4);
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some((5, 6)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 1), Some(slot(5, 6)));
         assert_eq!(app.mouse_item.count, 0);
     }
 
@@ -995,17 +998,23 @@ mod tests {
     /// merging (`ItemSlot.cs:980-998`).
     #[test]
     fn dw_4_1_stack_merge_respects_max_stack_boundary() {
-        let mut app = chest_app(vec![(9, 9990)]);
+        let mut app = chest_app(vec![slot(9, 9990)]);
         app.mouse_pos = CHEST_SLOT_0;
         app.mouse_item = slot(9, 20);
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((9, 9999)));
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(9, 9999))
+        );
         assert_eq!(app.mouse_item.count, 11);
         // The now-full slot exchanges with the cursor stack.
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((9, 11)));
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(slot(9, 11))
+        );
         assert_eq!(app.mouse_item.count, 9999);
     }
 
@@ -1017,14 +1026,14 @@ mod tests {
     fn dw_4_2_shift_transfer_full_chest_is_noop() {
         let full_count = DEFAULT_MAX_ITEMS as usize;
         // Alien kinds at full stack.
-        let mut app = chest_app(vec![(3, 9999); full_count]);
+        let mut app = chest_app(vec![slot(3, 9999); full_count]);
         app.inventory[3] = slot(9, 10);
         assert!(!chest::try_placing_in_chest(&mut app, 3, true));
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
         assert_eq!(app.inventory[3].count, 10);
-        assert_eq!(app.world_chests[0].slots, vec![(3, 9999); full_count]);
+        assert_eq!(app.world_chests[0].slots, vec![slot(3, 9999); full_count]);
         // Same kind, every stack full: the merge skip rule (`:1225`).
-        let mut app = chest_app(vec![(9, 9999); full_count]);
+        let mut app = chest_app(vec![slot(9, 9999); full_count]);
         app.inventory[3] = slot(9, 10);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
         assert_eq!(app.inventory[3].count, 10);
@@ -1035,7 +1044,7 @@ mod tests {
     /// `:1271-1274`).
     #[test]
     fn dw_4_2_just_check_mutates_nothing() {
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.inventory[3] = slot(9, 10);
         let store_before = app.world_chests[0].slots.clone();
         let inv_before: Vec<(u16, u32)> = app.inventory.iter().map(|s| (s.kind, s.count)).collect();
@@ -1053,25 +1062,25 @@ mod tests {
     #[test]
     fn try_placing_in_chest_merges_then_fills_the_first_empty_slot() {
         // Everything merges into the one partial slot.
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.inventory[3] = slot(9, 12);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
-        assert_eq!(app.world_chests[0].slots[0], (9, 17));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 17));
         assert_eq!(app.inventory[3].count, 0);
         // A remainder overflows into the first empty slot only.
-        let mut app = chest_app(vec![(9, 9990)]);
+        let mut app = chest_app(vec![slot(9, 9990)]);
         app.inventory[3] = slot(9, 20);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
-        assert_eq!(app.world_chests[0].slots[0], (9, 9999));
-        assert_eq!(app.world_chests[0].slots[1], (9, 11));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 9999));
+        assert_eq!(app.world_chests[0].slots[1], slot(9, 11));
         assert_eq!(app.inventory[3].count, 0);
         // Two partials soak their room in slot order before the empty pass.
-        let mut app = chest_app(vec![(9, 9995), (0, 0), (9, 9995)]);
+        let mut app = chest_app(vec![slot(9, 9995), EMPTY_SLOT, slot(9, 9995)]);
         app.inventory[3] = slot(9, 12);
         assert!(!chest::try_placing_in_chest(&mut app, 3, false));
-        assert_eq!(app.world_chests[0].slots[0], (9, 9999));
-        assert_eq!(app.world_chests[0].slots[1], (9, 4));
-        assert_eq!(app.world_chests[0].slots[2], (9, 9999));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 9999));
+        assert_eq!(app.world_chests[0].slots[1], slot(9, 4));
+        assert_eq!(app.world_chests[0].slots[2], slot(9, 9999));
         assert_eq!(app.inventory[3].count, 0);
     }
 
@@ -1124,14 +1133,14 @@ mod tests {
     /// first 30-frame cooldown (`PickupItemIntoMouse` `:1717-1747`).
     #[test]
     fn dw_4_3_right_click_stack_one_takes_one() {
-        let mut app = chest_app(vec![(9, 1)]);
+        let mut app = chest_app(vec![slot(9, 1)]);
         app.mouse_pos = CHEST_SLOT_0;
         app.place_down = true;
         app.ui_right_press = true;
         assert!(app.handle_chest_clicks());
         assert_eq!(app.mouse_item.kind, 9);
         assert_eq!(app.mouse_item.count, 1);
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((0, 0)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
         assert_eq!(app.stack_split, 30);
     }
 
@@ -1140,7 +1149,7 @@ mod tests {
     /// `stackDelay` (`:1774-1784`).
     #[test]
     fn dw_4_3_right_click_repeat_paced_by_stack_split() {
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         // The accelerator's idle arm has installed `stackDelay` 7 by the time
         // any repeat runs (`Main.cs:61782-61787`).
         app.stack_delay = 7;
@@ -1169,21 +1178,77 @@ mod tests {
     #[test]
     fn right_click_split_respects_the_cursor_room_and_kind() {
         // A full cursor of the same kind cannot take more.
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.mouse_pos = CHEST_SLOT_0;
         app.mouse_item = slot(9, 9999);
         app.place_down = true;
         app.handle_chest_clicks();
         assert_eq!(app.mouse_item.count, 9999);
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((9, 5)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(slot(9, 5)));
         // An alien cursor never splits.
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.mouse_pos = CHEST_SLOT_0;
         app.mouse_item = slot(3, 1);
         app.place_down = true;
         app.handle_chest_clicks();
         assert_eq!(app.mouse_item.kind, 3);
-        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some((9, 5)));
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(slot(9, 5)));
+    }
+
+    /// DW-2.1 — the ctx-3 left-click take carries the chest slot's prefix
+    /// into the cursor and back (`PickItemMovementAction` ctx 3 → action 0
+    /// through the shared movement; the C# moves whole `Item`s, so the
+    /// prefix rides every swap).
+    #[test]
+    fn test_DW_2_1_prefix_survives_the_left_click_take() {
+        let mut app = chest_app(vec![prefixed(48, 7, 3)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.prefix, 3, "the take carried the prefix");
+        assert_eq!(app.mouse_item.kind, 48);
+        assert_eq!(app.mouse_item.count, 7);
+        assert_eq!(chest::chest_slot(&app.world_chests, 0, 0), Some(EMPTY_SLOT));
+        // Placing it back keeps the prefix in the store.
+        app.mouse_pos = CHEST_SLOT_1;
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 1),
+            Some(prefixed(48, 7, 3))
+        );
+        assert_eq!(app.mouse_item.count, 0);
+    }
+
+    /// DW-2.1 (dirty) — the right-click stack-split's cursor clone carries
+    /// the chest slot's prefix (`PickupItemIntoMouse`'s `inv[slot].Clone()`,
+    /// `ItemSlot.cs:1721`), and the take gate is CanStack — a different
+    /// prefix never splits into the cursor's stack (`ItemSlot.cs:1707`).
+    #[test]
+    fn test_DW_2_1_stack_split_carries_the_prefix_and_refuses_cross_prefix() {
+        let mut app = chest_app(vec![prefixed(9, 3, 2)]);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_chest_clicks());
+        assert_eq!(app.mouse_item.prefix, 2, "the clone carried the prefix");
+        assert_eq!(app.mouse_item.count, 1);
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(prefixed(9, 2, 2))
+        );
+        // An unprefixed cursor never splits a prefixed chest stack.
+        let mut app = chest_app(vec![prefixed(9, 3, 2)]);
+        app.mouse_item = slot(9, 5);
+        app.mouse_pos = CHEST_SLOT_0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        app.handle_chest_clicks();
+        assert_eq!(app.mouse_item.count, 5, "the cross-prefix split refused");
+        assert_eq!(
+            chest::chest_slot(&app.world_chests, 0, 0),
+            Some(prefixed(9, 3, 2))
+        );
     }
 
     /// DW-4.5 — the shift hover evaluation (`GetAlternateClickAction`,
@@ -1193,7 +1258,7 @@ mod tests {
     /// recorded follow-up — the state is what the click arms consume.)
     #[test]
     fn dw_4_5_cursor_override_eval_per_hover_and_shift() {
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.keys.insert(KeyCode::ShiftLeft);
         app.mouse_pos = CHEST_SLOT_0;
         app.handle_chest_clicks();
@@ -1222,13 +1287,13 @@ mod tests {
     /// false)` `:846`) and consumes the press.
     #[test]
     fn shift_click_transfers_inventory_into_the_chest() {
-        let mut app = chest_app(vec![(9, 5)]);
+        let mut app = chest_app(vec![slot(9, 5)]);
         app.inventory[5] = slot(9, 10);
         app.mouse_pos = INV_SLOT_5;
         app.keys.insert(KeyCode::ShiftLeft);
         app.ui_left_press = true;
         assert!(app.handle_chest_clicks());
-        assert_eq!(app.world_chests[0].slots[0], (9, 15));
+        assert_eq!(app.world_chests[0].slots[0], slot(9, 15));
         assert_eq!(app.inventory[5].count, 0);
         assert!(!app.ui_left_press, "the press is consumed");
     }
@@ -1240,7 +1305,7 @@ mod tests {
     /// everything else full), and nothing stays behind.
     #[test]
     fn shift_click_from_chest_slot_transfers_to_the_inventory() {
-        let mut app = chest_app(vec![(9, 500)]);
+        let mut app = chest_app(vec![slot(9, 500)]);
         for s in app.inventory.iter_mut() {
             *s = slot(3, 9999);
         }
@@ -1255,7 +1320,7 @@ mod tests {
         assert_eq!(app.inventory[49].count, 496);
         assert_eq!(
             chest::chest_slot(&app.world_chests, 0, 0),
-            Some((0, 0)),
+            Some(EMPTY_SLOT),
             "the whole stack moved"
         );
     }
@@ -1265,7 +1330,7 @@ mod tests {
     /// press is consumed.
     #[test]
     fn re_click_on_the_open_chest_tile_closes_it() {
-        let mut app = chest_app(vec![(9, 1)]);
+        let mut app = chest_app(vec![slot(9, 1)]);
         app.world = World::new("t".into(), 120, 120);
         place_tile_chest(&mut app, 20, 10);
         app.mouse_pos = tile_click(20, 10);

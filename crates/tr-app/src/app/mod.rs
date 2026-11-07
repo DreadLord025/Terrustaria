@@ -1586,9 +1586,30 @@ impl App {
             let idx = crate::chest::create_chest(&mut tr_chest_store, cx, cy);
             // A few stocked slots so the screenshot shows the item-icon path
             // (`draw_slot`'s existing item draw — verified, not reinvented).
+            // The store's `ItemSlot`s since the M3-CHEST-INT upgrade — the
+            // same kinds/counts, so the screenshot pixels are unchanged.
             tr_chest_store[idx]
                 .slots
-                .extend_from_slice(&[(9, 6), (166, 42), (71, 3)]);
+                .extend_from_slice(&[
+                    crate::item::ItemSlot {
+                        kind: 9,
+                        name: crate::registry::name(9),
+                        count: 6,
+                        prefix: 0,
+                    },
+                    crate::item::ItemSlot {
+                        kind: 166,
+                        name: crate::registry::name(166),
+                        count: 42,
+                        prefix: 0,
+                    },
+                    crate::item::ItemSlot {
+                        kind: 71,
+                        name: crate::registry::name(71),
+                        count: 3,
+                        prefix: 0,
+                    },
+                ]);
             Some((idx as i32, cx, cy))
         } else {
             None

@@ -63,7 +63,7 @@ pub(crate) fn hold_style(kind: u16) -> u8 {
     registry::get(kind).map_or(0, |d| d.hold_style)
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct ItemSlot {
     pub(crate) kind: u16,
     pub(crate) name: &'static str,

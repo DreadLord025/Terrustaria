@@ -22,7 +22,7 @@ use tr_render::SpriteRenderer;
 use super::{slot, text};
 use crate::assets;
 use crate::audio;
-use crate::chest::{ChestSlot, DEFAULT_MAX_ITEMS};
+use crate::chest::DEFAULT_MAX_ITEMS;
 use crate::item::{EMPTY_SLOT, ItemSlot};
 
 /// `ChestUI.ButtonID.Count` (`ChestUI.cs:36-41`): LootAll 0, DepositAll 1,
@@ -79,9 +79,10 @@ pub(crate) struct PanelState<'a> {
     /// The active tile at the origin: `(kind, frameX)` — the name default's
     /// lookup piece (`ChestUI.cs:124-139`).
     pub(crate) tile: Option<(u16, i16)>,
-    /// `Main.chest[chest].item` while a world chest is open (`chest > -1`).
-    /// The bank slots (`chest < -1`) are M3-STORE-1's.
-    pub(crate) slots: Option<&'a [ChestSlot]>,
+    /// `Main.chest[chest].item` while a world chest is open (`chest > -1`) —
+    /// full `ItemSlot`s since the M3-CHEST-INT upgrade. The bank slots
+    /// (`chest < -1`) are M3-STORE-1's.
+    pub(crate) slots: Option<&'a [ItemSlot]>,
     /// `NewCraftingUI.Visible` — the covering-crafting gate (`ChestUI.cs:86`).
     pub(crate) crafting_open: bool,
     /// `Main.editChest` (`Main.cs:1747`) — the live chest-rename editor (the
@@ -322,18 +323,11 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
                 continue;
             }
             let pos = slot_pos(i, j);
-            // The `(u16, u32)` store slot becomes the draw view — the implicit
-            // airs beyond `slots.len()` are the C#'s air items (the
-            // `chest.rs` indexed encoding).
-            let view = match slots.get(abs).copied() {
-                Some((kind, stack)) if kind != 0 => ItemSlot {
-                    kind,
-                    name: crate::registry::name(kind),
-                    count: stack,
-                    prefix: 0,
-                },
-                _ => EMPTY_SLOT,
-            };
+            // The store slot IS the draw view since the M3-CHEST-INT upgrade —
+            // the fabricated view is gone; the implicit airs beyond
+            // `slots.len()` are the C#'s air items (the `chest.rs` indexed
+            // encoding).
+            let view = slots.get(abs).copied().unwrap_or(EMPTY_SLOT);
             slot::draw_slot(
                 r,
                 lookups,
