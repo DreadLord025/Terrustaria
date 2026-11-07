@@ -228,7 +228,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             p.mount_cart();
         }
         app.player_step.tick(dt, |_| {
-            p.update_with_grapple(&app.world, input, grapple_for_tick);
+            // `player.itemAnimation > 0` for the sleeping state — the same
+            // gate the swing render uses (`self.swing > 0.0` with a held
+            // item, `frame.rs:483`). The danger gate rides the M2-DEATH-2
+            // stand-in (no `DangerThatPreventsOtherDangers` members yet).
+            let item_in_use = app.swing > 0.0 && app.inventory[app.selected].count > 0;
+            p.update_with_grapple(&app.world, input, grapple_for_tick, item_in_use, false);
             // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
             // (`Minecart.cs:1281-1288`): the pressure-track trip fires
             // `Wiring.HitSwitch` at the magnet tile (net message 59 is out of

@@ -324,6 +324,28 @@ pub struct Player {
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
+    /// `PlayerSleepingHelper.isSleeping` (`PlayerSleepingHelper.cs:13`) — the
+    /// bed-sleep state; the bottom is snapped to the bed anchor and the pose
+    /// rotates through `full_rotation`.
+    pub sleeping: bool,
+    /// `PlayerSleepingHelper.timeSleeping` (`:17`): the fully-asleep counter
+    /// — `>= 120` (`TimeToFullyFallAsleep`, `:11`) arms the clock's ×5
+    /// (`World::day_rate`).
+    pub sleep_time: u32,
+    /// `PlayerSleepingHelper.visualOffsetOfBedBase`'s key: the bed style
+    /// (`frameY / 36`, `GetSleepingTargetInfo` `:222`) refreshed per tick —
+    /// the renderer derives the offset from the `SetOffsetbyBed` table.
+    pub sleeping_style: u32,
+    /// `PlayerSittingHelper.offsetForSeat` (`:14`): the per-style seat drop
+    /// the decoder returned, refreshed by `update_sitting` (`:84`).
+    offset_for_seat: (f32, f32),
+    /// `PlayerSittingHelper.GetSittingOffsetInfo`'s `posOffset`
+    /// (`PlayerSittingHelper.cs:18-32`, `sittingIndex` 0 in SP): the seat
+    /// offset mirrored to the facing — the draw pass reads it.
+    pub seat_pos_offset: (f32, f32),
+    /// `GetSittingOffsetInfo`'s `seatAdjustment` (`:23-24`): `-4 +
+    /// (int)offsetForSeat.Y` — the torso drop while seated.
+    pub seat_y_offset: i32,
     /// `Player.noKnockback` (`Player.cs:1950`) - the Cobalt Shield's grant
     /// (`Player.cs:15025-15028`); the Hurt gate reads it.
     pub no_knockback: bool,
@@ -636,6 +658,12 @@ impl Player {
             liquid_step: 1.0,
             in_water: false,
             sitting: false,
+            sleeping: false,
+            sleep_time: 0,
+            sleeping_style: 0,
+            offset_for_seat: (0.0, 0.0),
+            seat_pos_offset: (0.0, 0.0),
+            seat_y_offset: 0,
             no_knockback: false,
             accessory_life_regen: 0,
             swing_aim: 0.0,
@@ -758,15 +786,77 @@ impl Player {
         }
     }
 
-    /// Moves the player to a pixel position without changing health or breath.
+    /// `Collision.SolidCollision` (`Collision.cs:2700-2734`): any active
+    /// solid non-solidTop tile overlapping the box — the `-1/+2` sample
+    /// expansion, the half-brick top cut and the C#'s `maxTilesY - 40`
+    /// bottom clamp included.
+    fn solid_collision(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
+        let value = (x / 16.0) as i32 - 1;
+        let value2 = ((x + w) / 16.0) as i32 + 2;
+        let value3 = (y / 16.0) as i32 - 1;
+        let value4 = ((y + h) / 16.0) as i32 + 2;
+        let num = value.clamp(0, world.width as i32 - 1);
+        let value2 = value2.clamp(0, world.width as i32 - 1);
+        let value3 = value3.clamp(0, world.height as i32 - 40);
+        let value4 = value4.clamp(0, world.height as i32 - 40);
+        for i in num..value2 {
+            for j in value3..value4 {
+                let Some(t) = world.tile(i, j) else {
+                    continue;
+                };
+                if !t.active()
+                    || !tr_core::tiledata::TILE_SOLID.has(t.kind)
+                    || tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+                {
+                    continue;
+                }
+                let vx = i as f32 * 16.0;
+                let mut vy = j as f32 * 16.0;
+                let mut vh = 16.0f32;
+                if t.half_brick() {
+                    vy += 8.0;
+                    vh -= 8.0;
+                }
+                if x + w > vx && x < vx + 16.0 && y + h > vy && y < vy + vh {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// `Player.CanSnapToPosition` (`Player.cs:33401-33417`): the snap box
+    /// (`position + offset`, the live 20x42) must be free of solid tiles.
+    /// The mount-size override branch is unreachable for the port's mounts.
+    pub fn can_snap_to(&self, world: &World, offset_x: f32, offset_y: f32) -> bool {
+        !Player::solid_collision(
+            world,
+            self.x + offset_x,
+            self.y + offset_y,
+            WIDTH,
+            self.height,
+        )
+    }
+
     /// `PlayerSittingHelper.SitDown` (`PlayerSittingHelper.cs:104-142`): the
-    /// bottom snaps to the seat, the facing flips to the chair's, the
-    /// velocity zeroes; a repeat click at the same seat stands up
-    /// (`:119-123`). The grapple/mount teardown stands in for
-    /// `RemoveAllGrapplingHooks`/`mount.TryDismount`.
-    pub fn sit_down(&mut self, seat_x: f32, seat_y: f32, direction: i32) {
+    /// snap box is validated (`CanSnapToPosition`, `:110`), a repeat click
+    /// at the same seat stands up (`:119-123`), then the bottom snaps to
+    /// the seat, the facing flips to the seat's, the velocity zeroes and
+    /// the seat offset stores (`:130-137`). The grapple/mount teardown
+    /// stands in for `RemoveAllGrapplingHooks`/`mount.TryDismount`.
+    pub fn sit_down(
+        &mut self,
+        world: &World,
+        seat_x: f32,
+        seat_y: f32,
+        direction: i32,
+        seat_offset: (f32, f32),
+    ) {
         let bottom_x = self.x + WIDTH as f32 * 0.5;
         let bottom_y = self.y + self.height;
+        if !self.can_snap_to(world, seat_x - bottom_x, seat_y - bottom_y) {
+            return;
+        }
         if self.sitting && (bottom_x - seat_x).abs() < 0.01 && (bottom_y - seat_y).abs() < 0.01 {
             self.sit_up();
             return;
@@ -776,13 +866,128 @@ impl Player {
         self.y = seat_y - self.height;
         self.facing = direction;
         self.sitting = true;
+        self.offset_for_seat = seat_offset;
+        // `GetSittingOffsetInfo` (`:22-25`) with `sittingIndex` 0 (SP):
+        // `posOffset = offsetForSeat * (direction, gravDir)`,
+        // `seatAdjustment = -4 + (int)offsetForSeat.Y`.
+        self.seat_pos_offset = (seat_offset.0 * direction as f32, seat_offset.1);
+        self.seat_y_offset = -4 + seat_offset.1 as i32;
         self.vx = 0.0;
         self.vy = 0.0;
     }
 
-    /// `PlayerSittingHelper.SitUp` (`:144-155`).
+    /// `PlayerSittingHelper.SitUp` (`:89-102`).
     pub fn sit_up(&mut self) {
         self.sitting = false;
+        self.offset_for_seat = (0.0, 0.0);
+        self.seat_pos_offset = (0.0, 0.0);
+        self.seat_y_offset = 0;
+    }
+
+    /// `PlayerSleepingHelper.StartSleeping` (`PlayerSleepingHelper.cs:155-190`):
+    /// the snap box is validated (`:158`), a repeat click at the same anchor
+    /// wakes up (`:167-171`), the vanity/teardown strip runs (`:172-178`),
+    /// the bottom snaps to the bed anchor, the facing flips to the bed's and
+    /// the pose rotation arms (`:184` → `SetIsSleepingAndAdjustPlayerRotation`,
+    /// `:66-83`: `fullRotation = PI/2 * (-direction)`, origin `Size / 2`).
+    pub fn sleep_down(
+        &mut self,
+        world: &World,
+        anchor_x: f32,
+        anchor_y: f32,
+        direction: i32,
+        bed_style: u32,
+    ) {
+        let bottom_x = self.x + WIDTH as f32 * 0.5;
+        let bottom_y = self.y + self.height;
+        if !self.can_snap_to(world, anchor_x - bottom_x, anchor_y - bottom_y) {
+            return;
+        }
+        if self.sleeping && (bottom_x - anchor_x).abs() < 0.01 && (bottom_y - anchor_y).abs() < 0.01
+        {
+            self.stop_sleeping();
+            return;
+        }
+        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping (+ the
+        // petting stop — not ported).
+        self.sit_up();
+        self.stop_sleeping();
+        self.grappling_active = false;
+        // `RemoveAllFishingBobbers` — no bobbers in the port yet;
+        // `mount.TryDismount` (`:175-178`).
+        if self.cart_mounted || self.mount.is_active() {
+            let _ = self.dismount(world, false);
+        }
+        self.x = anchor_x - WIDTH as f32 * 0.5;
+        self.y = anchor_y - self.height;
+        self.facing = direction;
+        self.sleeping = true;
+        self.sleeping_style = bed_style;
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.full_rotation = std::f32::consts::FRAC_PI_2 * -(direction as f32);
+        self.full_rotation_origin = (WIDTH / 2.0, HEIGHT / 2.0);
+    }
+
+    /// `PlayerSleepingHelper.StopSleeping` (`:140-153`) +
+    /// `SetIsSleepingAndAdjustPlayerRotation(false)` (`:76-81`).
+    pub fn stop_sleeping(&mut self) {
+        if self.sleeping {
+            self.sleeping = false;
+            self.full_rotation = 0.0;
+            self.full_rotation_origin = (0.0, 0.0);
+            self.sleep_time = 0;
+        }
+    }
+
+    /// `PlayerSleepingHelper.UpdateState` (`PlayerSleepingHelper.cs:85-138`).
+    /// `item_in_use` is the caller's `player.itemAnimation > 0`; the
+    /// `danger_near` gate rides the M2-DEATH-2 stand-in (false — the port
+    /// has no `DangerThatPreventsOtherDangers` members), and the eclipse
+    /// arm (`:55-58`) waits for the hardmode state.
+    pub fn update_sleeping(&mut self, world: &World, item_in_use: bool, danger_near: bool) {
+        if !self.sleeping {
+            self.sleep_time = 0;
+            return;
+        }
+        self.sleep_time += 1;
+        // `DoesPlayerHaveReasonToActUpInBed` (`:45-64`): the danger/blood
+        // moon/item checks only reset the fully-asleep counter.
+        if danger_near || (world.blood_moon && !world.day_time) || item_in_use {
+            self.sleep_time = 0;
+        }
+        let bx = self.x + WIDTH as f32 * 0.5;
+        let by = self.y + self.height - 2.0;
+        let tx = (bx / 16.0).floor() as i32;
+        let ty = (by / 16.0).floor() as i32;
+        // `:97-102`: the bed tile re-decodes; a gone bed stops the sleep.
+        let Some((_, _, target_direction, bed_style)) =
+            tr_core::edit::sleeping_target_info(world, tx, ty)
+        else {
+            self.stop_sleeping();
+            return;
+        };
+        // `:103-106`: the same exit mask as sitting (`controlUp` rides the
+        // port's merged jump binding — W/ArrowUp feed `control_jump`).
+        if self.control_left
+            || self.control_right
+            || self.control_jump
+            || self.control_down
+            || self.cart_mounted
+            || self.mount.is_active()
+            || target_direction != self.facing
+        {
+            self.stop_sleeping();
+            return;
+        }
+        // `:107-128`: a damaging/fishing/`ForcesBreaksSleeping` held item
+        // breaks the sleep — the item stats land with M3-ITEM; the swing
+        // itself already reset the counter above.
+        // `:129-132`: the 2-players-per-tile stack (`Main.sleepingManager`)
+        // is the multiplayer registry — SP no-op. `:133-137`: the offset
+        // refresh — the port stores the style; the renderer derives the
+        // table value.
+        self.sleeping_style = bed_style;
     }
 
     /// The body height the sim feeds `base.height` with — 52 while the cart is
@@ -879,30 +1084,44 @@ impl Player {
         std::mem::take(&mut self.pending_cart_sounds)
     }
 
-    /// `PlayerSittingHelper.UpdateSitting` (`:47-102`): any control input,
-    /// a direction change, or the chair going away stands the player up.
-    /// The seat-stack cap (`Main.sittingManager`, 2 per tile) is the
-    /// multiplayer seat registry — the port has one player.
+    /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
+    /// the seat tile re-decodes through `GetSittingTargetInfo` (`:56-61`),
+    /// any control input / the mount / a facing mismatch stands up
+    /// (`:62-65`), and the seat offset refreshes (`:84-85`). The 2-per-tile
+    /// seat stack (`Main.sittingManager`, `:66-69`) and the Skeletron-hat
+    /// bench easter egg (`:74-83`) are the multiplayer/NPC sides — SP no-op /
+    /// not ported. (`controlUp` rides the port's merged jump binding —
+    /// W/ArrowUp feed `control_jump`.)
     pub fn update_sitting(&mut self, world: &World) {
         if !self.sitting {
             return;
         }
-        if self.control_left || self.control_right || self.control_jump || self.control_down {
-            self.sit_up();
-            return;
-        }
-        // `TryGetSittingBlock` (`:33-45`): the tile at the bottom - 2 px must
-        // still decode as a sit-able chair.
+        // `TryGetSittingBlock` (`:33-48`): the tile at the bottom - 2 px
+        // re-decodes as a sit-able seat.
         let bx = self.x + WIDTH as f32 * 0.5;
         let by = self.y + self.height - 2.0;
         let tx = (bx / 16.0).floor() as i32;
         let ty = (by / 16.0).floor() as i32;
-        let chair_gone = world
-            .tile(tx, ty)
-            .is_none_or(|t| !t.active() || t.kind != 15);
-        if chair_gone {
+        let Some((_, _, target_direction, seat_down_offset)) =
+            tr_core::edit::sitting_target_info(world, tx, ty, self.facing)
+        else {
             self.sit_up();
+            return;
+        };
+        if self.control_left
+            || self.control_right
+            || self.control_jump
+            || self.control_down
+            || self.cart_mounted
+            || self.mount.is_active()
+            || target_direction != self.facing
+        {
+            self.sit_up();
+            return;
         }
+        self.offset_for_seat = seat_down_offset;
+        self.seat_pos_offset = (seat_down_offset.0 * self.facing as f32, seat_down_offset.1);
+        self.seat_y_offset = -4 + seat_down_offset.1 as i32;
     }
 
     /// The test/inspection reads for the private speed fields.
@@ -977,6 +1196,10 @@ impl Player {
         self.pending_sparks.clear();
         self.pending_cart_sounds.clear();
         self.buffs.clear_buff(CART_MOUNT_BUFF);
+        // `Player.Spawn`'s `StopVanityActions` (`Player.cs:37556`): the
+        // revive clears the sit/sleep state.
+        self.sit_up();
+        self.stop_sleeping();
     }
 
     /// `Player.KillMe`'s respawn setup (`Player.cs:38908-38910`): the dead
@@ -1172,17 +1395,21 @@ impl Player {
 
     /// One fixed 60 Hz step.
     pub fn update(&mut self, world: &World, input: PlayerInput) {
-        self.update_with_grapple(world, input, None)
+        self.update_with_grapple(world, input, None, false, false)
     }
 
     /// The full tick with the optional grappling pull (`GrappleMovement`):
     /// while a hook is attached the pull REPLACES the normal movement
     /// (`Player.cs:27395-27399` gates the whole run/jump/wing/dash block).
+    /// `item_in_use` is `player.itemAnimation > 0` and `danger_near` the
+    /// `NPC.AnyDanger` stand-in — both feed the sleeping state's checks.
     pub fn update_with_grapple(
         &mut self,
         world: &World,
         input: PlayerInput,
         grapple: Option<(Vec2, i32)>,
+        item_in_use: bool,
+        danger_near: bool,
     ) {
         // `Player.grappling[0] != -1` is rebuilt per tick by the attached
         // hook's AI (`Player.cs:28300` + `Projectile.cs:52860-52864`) — the
@@ -1231,12 +1458,14 @@ impl Player {
         // The run keys ride on the player like the C#'s `controlLeft`/`controlRight`
         // (input struct → fields early in `Player.Update`).
         self.control_left = input.left;
-        // `PlayerSittingHelper.UpdateSitting` (`Player.cs`'s update call): the
-        // stand-up gates run before the movement applies.
-        self.update_sitting(world);
         self.control_right = input.right;
         self.control_jump = input.jump;
         self.control_down = input.down;
+        // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
+        // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
+        // gates run after the controls land, before the movement applies.
+        self.update_sitting(world);
+        self.update_sleeping(world, item_in_use, danger_near);
         let (cx, cy) = self.center();
         let mid = world.tile((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
         // `Collision.WetCollision` / `LavaCollision` set the four wet flags
@@ -3650,7 +3879,7 @@ impl Player {
                 dot_fast_lane: dots.fast_lane,
                 dot_death_fast: dots.death_fast,
                 dot_death_generic: dots.death_generic,
-                sitting_or_sleeping: self.sitting,
+                sitting_or_sleeping: self.sitting || self.sleeping,
                 extra_regen: self.accessory_life_regen,
                 ..RegenInputs::default()
             };
@@ -4644,7 +4873,7 @@ mod tests {
         let mut p = Player::spawn(&w);
         let hook_center = Vec2::new(p.x + 80.0, p.y - 60.0);
         let grapple = Some((hook_center, 13));
-        p.update_with_grapple(&w, PlayerInput::default(), grapple);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         // The pull toward the hook: dx +, dy -.
         assert!(p.vx > 0.0 && p.vy < 0.0, "pulling toward the hook");
         // The speed cap 11 px/tick for the Hook (13).
@@ -4666,7 +4895,7 @@ mod tests {
         let start_row = (p.y / TILE_PX) as i32;
         let grapple = Some((Vec2::new(p.x, p.y - 300.0), 13));
         for _ in 0..40 {
-            p.update_with_grapple(&w, PlayerInput::default(), grapple);
+            p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
             // GrappleMovement refreshes the origin BEFORE the position
             // integrates — one row behind the current position, like the
             // original's call order (:27645 vs the collision block).
@@ -4702,6 +4931,8 @@ mod tests {
                 ..Default::default()
             },
             grapple,
+            false,
+            false,
         );
         assert!(!p.grappling_active, "detached");
         assert!(p.vy < 0.0, "the full jump impulse: vy={}", p.vy);
@@ -4728,6 +4959,8 @@ mod tests {
                 ..Default::default()
             },
             grapple,
+            false,
+            false,
         );
         assert!(!p.grappling_active, "detached");
         // The nudge path (`velocity.Y += 0.01f`) does NOT grant the jump
@@ -4746,7 +4979,7 @@ mod tests {
         p.grapple_hook_center = Vec2::new(p.x + WIDTH * 0.5, p.y + 120.0);
         p.grapple_hook_type = 13;
         let grapple = Some((p.grapple_hook_center, 13));
-        p.update_with_grapple(&w, PlayerInput::default(), grapple);
+        p.update_with_grapple(&w, PlayerInput::default(), grapple, false, false);
         assert!(p.going_down_with_grapple, "the pull points down");
     }
 
@@ -7606,5 +7839,142 @@ mod tests {
             }
         }
         assert!(airborne_ticks > 10, "the hop stayed airborne");
+    }
+
+    /// A 40x120 world with a dirt floor at y 20 — the sit/sleep rigs (the
+    /// height clears `SolidCollision`'s `maxTilesY - 40` bottom clamp).
+    fn sit_world() -> World {
+        let mut w = World::new("t".into(), 40, 120);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for x in 0..40 {
+            let i = w.index(x, 20);
+            w.tiles[i] = tr_core::tile::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    #[test]
+    fn the_sit_state_exits_on_a_facing_flip_or_a_gone_seat() {
+        // DW-1.1 — `PlayerSittingHelper.UpdateSitting` (`:50-87`): the seat
+        // re-decode at `Bottom + (0, -2)` (`:56-61`), the input mask
+        // (`:62-65` — `controlUp` rides the port's merged jump binding) and
+        // the facing mismatch stand the player up.
+        let mut w = sit_world();
+        // The chair's BOTTOM cell at (10, 19) — one row above the floor —
+        // with `frameY % 40 == 18`: the decode reads the row above and
+        // anchors the seat to this cell's bottom edge — `(168 - 6, 320)`
+        // for the left-facing frame.
+        let i = w.index(10, 19);
+        w.tiles[i] = tr_core::tile::Tile {
+            kind: 15,
+            frame_y: 18,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.sit_down(&w, 162.0, 320.0, -1, (0.0, 0.0));
+        assert!(p.sitting);
+        // The seat re-decode still resolves (the mask holds) — the state
+        // survives a quiet tick.
+        p.update_sitting(&w);
+        assert!(p.sitting);
+        // The facing mismatch (`targetDirection != player.direction`).
+        p.facing = 1;
+        p.update_sitting(&w);
+        assert!(!p.sitting);
+        // The seat tile going away fails the decode → stand up.
+        p.sit_down(&w, 162.0, 320.0, -1, (0.0, 0.0));
+        assert!(p.sitting);
+        w.tiles[i].flags &= !tr_core::tile::FLAG_ACTIVE;
+        p.update_sitting(&w);
+        assert!(!p.sitting);
+    }
+
+    #[test]
+    fn the_sleep_state_arms_the_rotation_and_wakes_on_input() {
+        // DW-1.5 — `PlayerSleepingHelper`'s `StartSleeping` (`:155-190`),
+        // `UpdateState` (`:85-138`) and `StopSleeping` (`:140-153`): the
+        // anchor snap, the π/2 rotation (`:73-74`), the fully-asleep counter
+        // with the ActUp resets (`:45-64`) and the input wake (`:103-106`).
+        let mut w = sit_world();
+        // The bed's BOTTOM cell at (10, 19) — one row above the floor —
+        // style 0 (`frameY 18`): the anchor is column `10 - 18/18 + 1 = 10`,
+        // row `19` → `(168, 320)`.
+        let bed = w.index(10, 19);
+        w.tiles[bed] = tr_core::tile::Tile {
+            kind: 79,
+            frame_y: 18,
+            ..Default::default()
+        };
+        w.tiles[bed].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&w);
+        p.sleep_down(&w, 168.0, 320.0, -1, 0);
+        assert!(p.sleeping);
+        assert_eq!(p.sleeping_style, 0);
+        assert_eq!(p.facing, -1);
+        assert_eq!(p.vx, 0.0);
+        assert_eq!(p.vy, 0.0);
+        // `fullRotation = PI/2 * (-direction)` = +π/2, origin `Size / 2`.
+        assert!((p.full_rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        assert_eq!(p.full_rotation_origin, (10.0, 21.0));
+        // The counter climbs while quiet and resets on an item swing.
+        p.update_sleeping(&w, false, false);
+        assert_eq!(p.sleep_time, 1);
+        p.update_sleeping(&w, true, false);
+        assert_eq!(p.sleep_time, 0);
+        for _ in 0..120 {
+            p.update_sleeping(&w, false, false);
+        }
+        assert_eq!(p.sleep_time, 120);
+        // The blood-moon night keeps resetting the counter (`:51-54`).
+        w.blood_moon = true;
+        w.day_time = false;
+        p.update_sleeping(&w, false, false);
+        assert_eq!(p.sleep_time, 0);
+        assert!(p.sleeping);
+        w.blood_moon = false;
+        // The input mask wakes (`:103-106`).
+        p.control_jump = true;
+        p.update_sleeping(&w, false, false);
+        assert!(!p.sleeping);
+        assert_eq!(p.sleep_time, 0);
+        assert_eq!(p.full_rotation, 0.0);
+        // The bed going away wakes too (`:97-102`).
+        p.sleep_down(&w, 168.0, 320.0, -1, 0);
+        assert!(p.sleeping);
+        w.tiles[bed].flags &= !tr_core::tile::FLAG_ACTIVE;
+        p.update_sleeping(&w, false, false);
+        assert!(!p.sleeping);
+    }
+
+    #[test]
+    fn the_snap_refuses_a_solid_box_and_respawn_clears_the_states() {
+        // `Player.CanSnapToPosition` (`Player.cs:33401-33403`) and `Spawn`'s
+        // `StopVanityActions` (`:37556`) via `respawn`.
+        let mut w = sit_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 278.0; // the box spans rows 17..20 at column 10 — all air
+        assert!(p.can_snap_to(&w, 0.0, 0.0));
+        let i = w.index(10, 19);
+        w.tiles[i] = tr_core::tile::Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        assert!(!p.can_snap_to(&w, 0.0, 0.0));
+        // The respawn clears the sit/sleep state (`Player.cs:37556`).
+        p.sitting = true;
+        p.sleeping = true;
+        p.full_rotation = 1.5;
+        p.respawn();
+        assert!(!p.sitting);
+        assert!(!p.sleeping);
+        assert_eq!(p.full_rotation, 0.0);
     }
 }

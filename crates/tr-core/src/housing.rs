@@ -351,4 +351,26 @@ mod tests {
             Err(RoomFailure::HoleInWallIsTooBig)
         ));
     }
+
+    #[test]
+    fn the_candelabra_counts_solid_for_the_spawn_check() {
+        // `Player.CheckSpawn`'s `tileSolid[379]` window
+        // (`Player.cs:54535-54538` + the frame toggle `Main.cs:9468`,
+        // `:17753`, `:17799`): the candelabra is solid at base, non-solid
+        // only during the `UpdateWorld_Players` window and re-forced solid
+        // for the whole `CheckSpawn_Internal`. The generated `TILE_SOLID`
+        // carries the C# base state (379 set), so the plain scan already
+        // matches `CheckSpawn`'s forced view — no special-casing.
+        let mut w = ground();
+        let i = w.index(55, 105);
+        w.tiles[i] = Tile {
+            kind: 379,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        assert!(matches!(
+            check_room(&w, 55, 105),
+            Err(RoomFailure::StartedInASolidTile)
+        ));
+    }
 }

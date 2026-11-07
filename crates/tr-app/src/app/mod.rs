@@ -2607,6 +2607,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                 edit::TileInteraction::ChairSit { .. } => {
                     log::info!("TR_TOGGLE {},{} -> chair sit", op.x, op.y)
                 }
+                edit::TileInteraction::BedSleep { .. } => {
+                    log::info!("TR_TOGGLE -> bed sleep (no player at load)")
+                }
                 edit::TileInteraction::BedInteract { set_spawn, .. } => log::info!(
                     "TR_TOGGLE {},{} -> bed ({})",
                     op.x,

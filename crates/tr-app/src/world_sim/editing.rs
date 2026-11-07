@@ -697,8 +697,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     {
         return;
     }
-    if app.place_down && !app.place_prev_down && !app.inventory_open && crate::chest::try_open_chest_at_cursor(app, world_pos) { return; }
-    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+    if app.place_down
+        && !app.place_prev_down
+        && !app.inventory_open
+        && crate::chest::try_open_chest_at_cursor(app, world_pos)
+    {
         return;
     }
     if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
@@ -2180,9 +2183,15 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             seat_x,
             seat_y,
             direction,
+            seat_offset,
         } => {
+            // `Player.cs:32313-32330`: the 40-px snap gate
+            // (`IsWithinSnappngRangeToTile`) wraps the `sitting.SitDown`
+            // call; a refused snap still consumes the click.
             if let Some(p) = app.player.as_mut() {
-                p.sit_down(*seat_x, *seat_y, *direction);
+                if within_snapping_range(p, tx, ty, 40.0) {
+                    p.sit_down(&app.world, *seat_x, *seat_y, *direction, *seat_offset);
+                }
             }
             app.world_key = None;
             return true;
@@ -2220,8 +2229,25 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
                         .new_text("Spawn point set!", crate::chat::COLOR_SERVER_MESSAGE);
                 }
             }
-            // The top half (`sleeping.StartSleeping`) is consumed but inert —
-            // the sleep state is not ported yet (documented in ANALYSIS).
+            // The sleep half arrives as `BedSleep` below — this arm is the
+            // spawn toggle (and the consumed-but-inert decode fallback).
+            app.world_key = None;
+            return true;
+        }
+        edit::TileInteraction::BedSleep {
+            anchor_x,
+            anchor_y,
+            direction,
+            bed_style,
+        } => {
+            // `Player.cs:32669-32677`: the 96-px snap gate wraps
+            // `sleeping.StartSleeping`; a refused snap still consumes the
+            // click.
+            if let Some(p) = app.player.as_mut() {
+                if within_snapping_range(p, tx, ty, 96.0) {
+                    p.sleep_down(&app.world, *anchor_x, *anchor_y, *direction, *bed_style);
+                }
+            }
             app.world_key = None;
             return true;
         }
@@ -2249,6 +2275,17 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     true
 }
 
+/// `Player.IsWithinSnappngRangeToTile` (`Player.cs:17365-17372`): the tile
+/// centre to `(Center.X, Bottom.Y - 16)` distance — the sit (40 px) and
+/// sleep (96 px) snap gates.
+fn within_snapping_range(p: &crate::player::Player, tx: i32, ty: i32, distance: f32) -> bool {
+    let cx = tx as f32 * TILE_PX + 8.0;
+    let cy = ty as f32 * TILE_PX + 8.0;
+    let dx = cx - (p.x + crate::player::WIDTH * 0.5);
+    let dy = cy - (p.y + p.height - 16.0);
+    (dx * dx + dy * dy).sqrt() <= distance
+}
+
 /// The App-free half of [`interact_tile`]: maps the dispatcher result to the
 /// door/dial cue and the drop spawns. `None` = no interaction (fall-through
 /// to the place path); a blocked door or a refused dial yields no cue
@@ -2274,6 +2311,7 @@ fn interaction_events(
         edit::TileInteraction::CandleToggled => (None, Vec::new()),
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
+        edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
@@ -2308,6 +2346,10 @@ fn check_bed_spawn(
     for i in x - 1..=x + 1 {
         for j in y - 3..y {
             if let Some(t) = world.tile(i, j) {
+                // `CheckSpawn`'s `tileSolid[379]` window (`Player.cs:54535`,
+                // the frame toggle `Main.cs:9468`/`:17753`/`:17799`): the
+                // candelabra is solid for the whole check — the generated
+                // `TILE_SOLID` already carries that base state.
                 if (t.active() || t.has_any_liquid())
                     && td::TILE_SOLID.has(t.kind)
                     && !td::TILE_SOLID_TOP.has(t.kind)
@@ -2428,6 +2470,96 @@ mod tests {
         npc.y = 260.0 * TILE_PX;
         app.npcs.push(npc);
         app
+    }
+
+    /// The bed rig: a floor row at y 60 with a style-0 bed placed at
+    /// (40, 59) — columns 39-42, rows 58-59 (`place_item_tile`'s y is the
+    /// bottom row) — and the player parked near the sleep anchor.
+    fn bed_app() -> App {
+        let mut w = World::new("t".into(), 80, 200);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        for x in 0..80 {
+            let i = w.index(x, 60);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        assert!(edit::place_item_tile(&mut w, 40, 59, 79, 0, -1));
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // The sleep anchor for the clicked top-half cell (41, 58)
+        // (`GetSleepingTargetInfo`): column `41 - 36/18 + 1 = 40`, row `59`
+        // → `(648, 960)` — the player's bottom starts 17.9 px from the tile
+        // centre, inside the 96-px gate.
+        player.x = 638.0;
+        player.y = 918.0;
+        app.player = Some(player);
+        app
+    }
+
+    #[test]
+    fn the_bed_sleep_half_snaps_within_96_px_and_toggles_off() {
+        // DW-1.3/DW-1.6 — `Player.cs:32669-32677`: the 96-px gate wraps
+        // `sleeping.StartSleeping`; the same-anchor re-click wakes
+        // (`PlayerSleepingHelper.cs:167-171`); the pose rotation arms
+        // (`:73-74`).
+        let mut app = bed_app();
+        assert!(interact_tile(&mut app, 41, 58));
+        let p = app.player.as_ref().unwrap();
+        assert!(p.sleeping);
+        assert_eq!(p.facing, -1);
+        assert_eq!(p.sleeping_style, 0);
+        assert!((p.full_rotation - std::f32::consts::FRAC_PI_2).abs() < 1e-6);
+        // The spawn cell stayed untouched (the sleep half is not the spawn
+        // half, `IsHoveringOverABottomSideOfABed`).
+        assert_eq!(app.world.bed_spawn, None);
+        // The same anchor re-click wakes.
+        assert!(interact_tile(&mut app, 41, 58));
+        assert!(!app.player.as_ref().unwrap().sleeping);
+    }
+
+    #[test]
+    fn the_bed_sleep_refuses_beyond_96_px_but_consumes_the_click() {
+        // The gate at `Player.cs:32670-32676`: an out-of-range click still
+        // sets `flag2 = true` (consumed, no fall-through to the place path)
+        // but `StartSleeping` never runs.
+        let mut app = bed_app();
+        let p = app.player.as_mut().unwrap();
+        p.x = 638.0 + 7.0 * 16.0; // ~130 px from the tile centre
+        assert!(interact_tile(&mut app, 41, 58));
+        assert!(!app.player.as_ref().unwrap().sleeping);
+    }
+
+    #[test]
+    fn the_spawn_scan_counts_the_candelabra_solid() {
+        // DW-1.4 — `CheckSpawn`'s `tileSolid[379]` window (`Player.cs:54535`,
+        // the frame toggle `Main.cs:9468`/`:17753`/`:17799`): the candelabra
+        // is solid for the whole check — one hovering inside the 3x3 box
+        // above the spawn cell obstructs it (the generated `TILE_SOLID`
+        // already carries that base state).
+        let mut app = bed_app();
+        // The spawn cell for the bottom-half click (40, 59): column
+        // `39 + 2 = 41`, row `60`. The open-air room check fails on its own,
+        // so the scan is isolated by its message.
+        let mut chat = crate::chat::ChatMonitor::default();
+        let _ = check_bed_spawn(&app.world, 41, 60, &mut chat);
+        let open_air = chat.messages.last().unwrap().text.clone();
+        // The candelabra at (40, 57) — inside the scan box (40..=42,
+        // 57..=59), above the bed's top row.
+        let i = app.world.index(40, 57);
+        app.world.tiles[i] = Tile {
+            kind: 379,
+            ..Default::default()
+        };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        let mut chat = crate::chat::ChatMonitor::default();
+        assert!(!check_bed_spawn(&app.world, 41, 60, &mut chat));
+        assert_eq!(chat.messages.last().unwrap().text, "The bed is obstructed.");
+        assert_ne!(open_air, "The bed is obstructed.");
     }
 
     #[test]
