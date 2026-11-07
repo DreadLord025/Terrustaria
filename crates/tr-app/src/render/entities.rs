@@ -157,6 +157,10 @@ pub(crate) struct NpcAssets {
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
     pub(crate) goblin_sorcerer: Option<BgTex>,
+    /// `NPC_143/144/145` — the Frost Legion strips (4/5/7 frames of 26x40).
+    pub(crate) snowman_gangsta: Option<BgTex>,
+    pub(crate) snow_balla: Option<BgTex>,
+    pub(crate) mystery_snowman: Option<BgTex>,
     /// `NPC_26/27/28/111` — the invasion fighters (16/21-frame humanoid
     /// strips; the port renders the 16-frame family shape the zombie arm
     /// walks).
@@ -233,6 +237,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         hornet: sky_tex(atlas, "NPC_42", None),
         meteor_head: sky_tex(atlas, "NPC_23", None),
         goblin_sorcerer: sky_tex(atlas, "NPC_29", None),
+        snowman_gangsta: sky_tex(atlas, "NPC_143", None),
+        snow_balla: sky_tex(atlas, "NPC_144", None),
+        mystery_snowman: sky_tex(atlas, "NPC_145", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
         goblin_warrior: sky_tex(atlas, "NPC_27", None),
         goblin_archer: sky_tex(atlas, "NPC_28", None),
@@ -829,6 +836,20 @@ pub(crate) fn draw_npcs(
                 [14.0, 14.0],
                 [n.x, n.y],
             ),
+            // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::SnowmanGangsta => (assets.snowman_gangsta.as_ref(), 4.0),
+                    NpcKind::SnowBalla => (assets.snow_balla.as_ref(), 5.0),
+                    _ => (assets.mystery_snowman.as_ref(), 7.0),
+                };
+                (
+                    tex,
+                    tex.map_or(40.0, |t| t.h / frames),
+                    [26.0, 40.0],
+                    [n.x, n.y],
+                )
+            }
             // The Destroyer: the single-frame 48x48 sheet.
             NpcKind::TheDestroyer => (
                 assets.destroyer.as_ref(),

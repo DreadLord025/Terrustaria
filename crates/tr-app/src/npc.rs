@@ -76,6 +76,20 @@ pub enum NpcKind {
     /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000;
     /// `GetNPCInvasionGroup`'s 10-point kill).
     GoblinSummoner,
+
+    /// `NPCID.SnowmanGangsta` (143) — the Frost Legion's bottle-thrower
+    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7; the throw
+    /// arm lands with the projectile work), dmg 50, def 20, 200 HP,
+    /// kb 0.6, value 400).
+    SnowmanGangsta,
+    /// `NPCID.SnowBalla` (144) — the kicker (`NPC.cs`: 26×40, aiStyle 38
+    /// (the speed 3.5/accel 0.8; the kick arm = the follow-up), dmg 65,
+    /// def 26, 240 HP, kb 0.6, value 400).
+    SnowBalla,
+    /// `NPCID.MysterySnowman` (145) — the jumper (`NPC.cs`: 26×40,
+    /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
+    /// 220 HP, kb 0.6, value 400).
+    MysterySnowman,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -410,6 +424,21 @@ impl NpcKind {
             NpcKind::GoblinArcher => 59,
             NpcKind::GoblinPeon => 60,
             NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -479,6 +508,9 @@ impl NpcKind {
             59 => NpcKind::GoblinArcher,
             60 => NpcKind::GoblinPeon,
             61 => NpcKind::GoblinSummoner,
+            65 => NpcKind::SnowmanGangsta,
+            66 => NpcKind::SnowBalla,
+            67 => NpcKind::MysterySnowman,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -647,6 +679,8 @@ impl NpcKind {
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon
             | NpcKind::GoblinSummoner => (18.0, 38.0),
+            // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
             // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
             // (`:10274-10275`).
             NpcKind::BoundGoblin => (18.0, 34.0),
@@ -779,6 +813,10 @@ impl NpcKind {
             NpcKind::GoblinArcher => 110,
             NpcKind::GoblinSorcerer => 40,
             NpcKind::GoblinSummoner => 2000,
+            // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
+            NpcKind::SnowmanGangsta => 200,
+            NpcKind::SnowBalla => 240,
+            NpcKind::MysterySnowman => 220,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -857,6 +895,10 @@ impl NpcKind {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
             NpcKind::GoblinArcher => 25,
             NpcKind::GoblinSummoner => 80,
+            // The frost trio: 50/65/55.
+            NpcKind::SnowmanGangsta => 50,
+            NpcKind::SnowBalla => 65,
+            NpcKind::MysterySnowman => 55,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -994,6 +1036,10 @@ pub struct Npc {
     /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
     /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
     pub swarm_done: bool,
+    /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
+    /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
+    /// into the pool (the `wants_sphere` shape).
+    pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
 }
 
 impl Npc {
@@ -1298,6 +1344,7 @@ impl Npc {
             defense_override: None,
             dont_take_damage: false,
             swarm_done: false,
+            wants_hostile_shot: None,
         }
     }
 
@@ -1348,7 +1395,9 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
             NpcKind::GoblinArcher => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
+            // The frost trio: kb 0.6.
             NpcKind::GoblinSummoner => 0.15,
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1449,7 +1498,10 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
             NpcKind::GoblinArcher => 8,
             NpcKind::GoblinSorcerer => 2,
-            NpcKind::GoblinSummoner => 26,
+            // The frost trio: 20/26/22.
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1509,6 +1561,11 @@ impl Npc {
             // final phase) / `:8721` (the servant 0).
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::ServantOfCthulhu => 0,
+            // `SetDefaults` case 471: defense 26; the frost trio: 20/26/22.
+            NpcKind::GoblinSummoner => 26,
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1543,6 +1600,10 @@ impl Npc {
             NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
             NpcKind::GoblinArcher => 150.0,
             NpcKind::GoblinSummoner => 5000.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
@@ -1736,10 +1797,10 @@ impl Npc {
             NpcKind::Creeper => self.update_creeper(world, player, rng),
             // aiStyle 0 (`:10252`): the bound stand still until the talk.
             NpcKind::BoundGoblin => {}
-            NpcKind::GoblinPeon
-            | NpcKind::GoblinThief
-            | NpcKind::GoblinWarrior
-            | NpcKind::GoblinArcher => self.update_goblin(world, player),
+            NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
+                self.update_goblin(world, player)
+            }
+            NpcKind::GoblinArcher => self.update_archer(world, player, rng),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3): the walker speed
@@ -1751,11 +1812,16 @@ impl Npc {
             | NpcKind::GoblinWarrior
             | NpcKind::GoblinArcher
             | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
+            // The frost trio: aiStyle 38's movement core rides the walker
+            // (the per-type speeds 3/3.5/4 fold into the walker params —
+            // the throw/kick/jump arms land with the projectile work).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.update_skeleton(world, player, dt)
+            }
             NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                self.update_cave_bat(world, player, dt)
+            }
             NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.update_cave_bat(world, player, dt)
             }
@@ -1825,6 +1891,20 @@ impl Npc {
                     let count = match self.kind {
                         NpcKind::GoblinPeon => 21,
                         _ => 16,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The frost trio: the 4/5/7-frame strips (the same walker
+            // accumulator).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::SnowmanGangsta => 4,
+                        NpcKind::SnowBalla => 5,
+                        _ => 7,
                     };
                     self.frame = (self.frame + 1) % count;
                 }
@@ -3883,6 +3963,103 @@ impl Npc {
         }
     }
 
+    /// The Goblin Archer (`AI_003`'s ranged family, `NPC.cs:59069-59700`):
+    /// the walk until the shot gate — grounded, `CanHit`, the distance
+    /// < 700 (`num179`), `ai[1] <= 0` — then the stop state (`ai[2] = 1`,
+    /// `ai[1] = num162 = 180` for 111, `velocity.X *= 0.5`); the state
+    /// damps `velocity.X *= 0.9` (`:59614-59616`'s `!flag16` arm) and
+    /// fires at the midpoint tick `ai[1] == 90` (`num163 = num162 / 2`):
+    /// the aim = the player's centre minus the archer's, the vertical
+    /// lead `|dx| * 0.1` (`num166`), the aim jitter +-40 px (`:59370`'s
+    /// `Next(-40, 41)` fallthrough), the normalized speed 9 (`num164 =
+    /// 9f` for 111), the hostile Wooden Arrow Hostile 81 at the damage
+    /// 11 (`num170 = 81`, `num169 = 11`, the `:59571` call). The justHit
+    /// staggers (`ai[1] = 30`, `ai[2] = 0`, `:59088-59094` — the port's
+    /// `hurt_cd` window re-arms it, the same ~30-tick pause); the state
+    /// exits on the cooldown end (`:59611-59615`'s `ai[1] <= 0` arm —
+    /// the airborne exit folds).
+    fn update_archer(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[2] > 0.0 {
+            if self.hurt_cd > 0.0 {
+                self.ai[1] = 30.0;
+                self.ai[2] = 0.0;
+            } else {
+                self.vx *= 0.9;
+                self.ai[1] -= 1.0;
+                self.facing = if pcx >= cx { 1 } else { -1 };
+                if self.ai[1] == 90.0 {
+                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        let mut dx = pcx - cx;
+                        let mut dy = pcy - cy - dx.abs() * 0.1;
+                        dx += crate::app::rand01(rng) * 81.0 - 40.0;
+                        dy += crate::app::rand01(rng) * 81.0 - 40.0;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        self.wants_hostile_shot = Some((
+                            crate::projectile::WOODEN_ARROW_HOSTILE,
+                            cx,
+                            cy,
+                            dx / d * 9.0,
+                            dy / d * 9.0,
+                            11,
+                        ));
+                    }
+                }
+                if self.ai[1] <= 0.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            // The stand: the zero-speed walker keeps the gravity.
+            crate::npc_ai::walker_step(
+                self,
+                world,
+                pcx,
+                pcy,
+                crate::npc_ai::WalkerParams {
+                    speed: 0.0,
+                    jump: 0.0,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+            return;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The shot gate (`:59658-59676`): grounded, the clear line, the
+        // distance < 700, the cooldown spent.
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if self.on_ground
+            && self.ai[1] <= 0.0
+            && dist < 700.0
+            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[2] = 1.0;
+            self.ai[1] = 180.0;
+            self.vx *= 0.5;
+        }
+    }
+
     /// The Goblin AI (`AI_003`'s walker family): the goblins chase the
     /// player and jump the obstacles (the same machine as the zombie).
     fn update_goblin(&mut self, world: &World, player: &mut Player) {
@@ -4079,6 +4256,9 @@ impl Npc {
             NpcKind::GoblinArcher => 59,
             NpcKind::GoblinPeon => 60,
             NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -5042,12 +5222,12 @@ mod tests {
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
-        // The head dies: the chain falls.
+        // The head dies: `NPC.cs:51507-51511`'s split — the first orphan
+        // becomes its own head (`Transform(13)`), the back part lives.
         npcs[0].hp = 0;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        for seg in &npcs {
-            assert!(seg.hp <= 0, "the segment followed the head down");
-        }
+        assert_eq!(npcs[1].kind, NpcKind::DevourerHead, "the orphan head");
+        assert!(npcs[1].hp > 0, "the split worm lives");
     }
 
     #[test]
@@ -6055,11 +6235,7 @@ mod tests {
         // `TinkererReforge` (`NPCInteractions.cs:407-423`): the Tinkerer's
         // talk opens the reforge menu beside the shop; the other shop
         // keepers do not.
-        let mut app_tinkerer = crate::app::flow::front_flow_tests::flow_app(
-            None,
-            vec![],
-            vec![],
-        );
+        let mut app_tinkerer = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
         let t = crate::npc::Npc::new(
             NpcKind::GoblinTinkerer,
             app_tinkerer.mouse_pos.x,
@@ -6097,5 +6273,50 @@ mod tests {
         assert_eq!(n.max_hp, 250);
         assert_eq!(n.hp, 250);
         assert_eq!(w.saved_goblin, true);
+    }
+    #[test]
+    fn the_archer_stops_fires_and_staggers() {
+        // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
+        // (grounded, the line, the dist < 700) enters the stop state
+        // (`ai[2] = 1`, `ai[1] = 180`, the brake x0.5), the midpoint tick
+        // fires the hostile arrow 81 at 9 px/tick, the hit staggers
+        // (`ai[1] = 30`, `ai[2] = 0`), the cooldown end exits.
+        let w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 30.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut a =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        let mut rng = 1u64;
+        // The gate: the walk tick with the clear line enters the stop.
+        a.update_archer(&w, &mut player, &mut rng);
+        if a.ai[2] > 0.0 {
+            assert_eq!(a.ai[1], 180.0, "the 180-tick cadence");
+            assert!(a.vx.abs() < 1.5, "the entry brake");
+            // Ticking to the midpoint fires the arrow (180 - 90 = the
+            // 90th tick).
+            for _ in 0..90 {
+                a.update_archer(&w, &mut player, &mut rng);
+            }
+            assert!(a.wants_hostile_shot.is_some(), "the midpoint fires");
+            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.take().unwrap();
+            assert_eq!(kind, crate::projectile::WOODEN_ARROW_HOSTILE);
+            assert_eq!(dmg, 11);
+            let sp = (vx * vx + vy * vy).sqrt();
+            assert!((sp - 9.0).abs() < 0.5, "the 9-speed aim ({sp})");
+            // The cooldown end exits the state.
+            a.ai[1] = 1.0;
+            a.update_archer(&w, &mut player, &mut rng);
+            assert_eq!(a.ai[2], 0.0, "the state exits");
+        }
+        // The stagger: a hit during the state resets it.
+        let mut a2 =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        a2.ai[2] = 1.0;
+        a2.ai[1] = 100.0;
+        a2.hurt(10, a2.x - 5.0, 5.0, false);
+        a2.update_archer(&w, &mut player, &mut rng);
+        assert_eq!(a2.ai[2], 0.0, "the hit staggers");
+        assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
     }
 }

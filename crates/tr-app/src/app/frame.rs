@@ -1181,6 +1181,21 @@ impl App {
                                 .map(|bi| (&p.banks[bi][..], p.chest))
                         }),
                     );
+                    // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
+                    // the death broadcast + the softcore "Dropped coins"
+                    // line while the respawn timer runs.
+                    if let Some(p) = player.as_ref() {
+                        if p.hp <= 0 {
+                            ui::draw_death_screen(
+                                renderer,
+                                lookups,
+                                screen,
+                                &self.death_text,
+                                self.lost_coins,
+                                &self.lost_coin_string,
+                            );
+                        }
+                    }
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
                 }

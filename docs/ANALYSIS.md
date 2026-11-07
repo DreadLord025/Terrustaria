@@ -1885,7 +1885,9 @@ The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`
 commits `9c84351..028daba`) moved code, gave the moved functions readable Rust
 names (overriding the C#-name rule for this pass) and added three C#-shaped
 trait seams. Behaviour and RNG streams were pinned unchanged: the worldgen
-byte-proof's four FNV-1a state hashes and a post-refactor determinism pair
+byte-proof (four FNV-1a state hashes — at the time an out-of-tree harness;
+now in-tree as `worldgen/world_hash.rs`'s pinned constants, M5-GEN-1) and a
+post-refactor determinism pair
 (SHA256-equal repeat screenshots) both pass; the workspace tests read
 399/10/147. The new tree, the "where to look" map and the frame flow live in
 `docs/ARCHITECTURE.md`; the `PORT_MAP.md` rows are re-pointed. The movements,
@@ -2522,6 +2524,61 @@ the pot-loot roll order (fixed-seed `item_rng`).
   (the Bladed Glove request is produced and then skipped until its item data
   registers), green/baby nothing. The executor drops only registry-known
   items.
+
+## The Frost Legion (M4-EVENT-2)
+
+The invasion framework's second slice: `StartInvasion(2)` generalizes
+the start fn over the invasion type (the goblin slice passes 1), the
+warning fn carries the type-2 literals (`Main.InvasionWarning`'s
+`Lang.misc[4..7]` — the en strings stand in), the defeat ride sets the
+new `World.downed_frost` (`SetEventFlagCleared(ref downedFrost, 1)`),
+and the spawn table gets the type-2 arm: the SnowmanGangsta 1/7, the
+SnowBalla 1/3, else the MysterySnowman (`NPC.cs:1450-1459`).
+
+The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
+(`Player.cs:43941-43956`) — the Snow Globe 602 with the
+`CanStartInvasion(2, ignoreDelay: true)` gate (no active invasion, a
+200+ max-hp player; the delay folds out), the roar and
+`invasionDelay = 0; StartInvasion(2)` — the march state rides the World
+(the morning-roll resolve's shape; the size 80+40, the far-side roll).
+
+The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145)
+carry their verbatim `SetDefaults` rows (26×40, 200/240/220 HP, dmg
+50/65/55, def 20/26/22, kb 0.6, value 400) and ride aiStyle 38's
+movement core through the walker (the per-type speeds 3/3.5/4 fold into
+the walker params; the Gangsta's bottle throw, the Balla's kick and the
+Mystery's jump arms land with the projectile work).
+
+Deviations: the throw/kick/jump sub-arms are the projectile-work
+follow-ups; the Mystery's jump-dodge `ai[1] >= 3` state rides the
+walker's generic hop.
+
+## The death-screen coin loss (M4-REVENGE-1)
+
+The drop half rode the earlier death.rs (`drop_gems`/`drop_coins`/
+`roll_tombstone`); the display half lands here:
+
+- **`value_to_coins`** (`Main.ValueToCoins`, `Main.cs:55220-55262`) —
+  the greedy copper→platinum split, the zero tiers skipped, the bare
+  copper still prints (`"0 copper"`), the en currency literals stand in
+  for the `Currency.*` keys.
+- **The KillMe arm** (`Player.cs:38931-38936`): `lostCoins =
+  DropCoins()` (the drop pass returns the dropped copper total),
+  `lostCoinString = ValueToCoins(lostCoins)` and the full death
+  broadcast — the App's `lost_coins`/`lost_coin_string`/`death_text`
+  fields set at `on_player_death`.
+- **The death screen** (`Main.DrawDeathText`, `Main.cs:45324-45341`):
+  the broadcast through the `DeathText` font (centered 60 px above the
+  screen's midpoint), the softcore `Dropped coins: X` line through the
+  `MouseText` font 50 px lower — `ui::draw_death_screen`, drawn from
+  frame.rs while the player is dead (`hp <= 0`). The death-tint alpha
+  rides fixed full-bright (the respawn fade = the death-screen pass).
+
+Deviations: the expert `/4` and master `0` drop tiers and the PvP
+zero-coin arm wait for the difficulty/pvp flags; the C# drops the coins
+from the INVENTORY coin stacks (`Item.IsACoin`), the port's aggregate
+`App.coins` purse splits greedily into the coin item stacks (the same
+denominations, the 999 caps).
 
 ## The Goblin Army invasion (M4-EVENT-1)
 
@@ -3968,6 +4025,59 @@ tree/cactus growth and the biome spread are M7-GROWTH-2; the
 notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
+
+## Worldgen pass pipeline (M5-GEN-1)
+
+The scaffold wraps the already-landed passes in the vanilla pipeline shape
+(`worldgen/pipeline.rs`) without touching a single pass body or stream constant:
+
+- **Two tables.** `VANILLA_CHAIN` declares the vanilla chain as data — 109
+  `AddGenerationPass` registrations (106 for a classic world; the skyblock
+  `Jungle`+`Skyblock` pair and the dual-dungeons `DitherSnakePass` are
+  conditional) with the `GenPassNameID` display names, the `PassLegacy._weightMap`
+  progress weights and the `WorldGen.cs` anchors. It is the model and the slot
+  registry for future passes; the runtime never walks it. `EXECUTED_PIPELINE`
+  declares the port's 39 steps in the pre-scaffold `generate()` call order,
+  each an adapter over the unchanged `pub(crate)` pass fns.
+- **The order is NOT vanilla, deliberately.** The port's execution order
+  deviates from the vanilla chain in several slots (the evil band runs before
+  the mushroom patches; the floating islands run near the end; the slopes
+  precede the living trees; ...) — the shared xorshift streams make any
+  reorder byte-breaking, and the world contract pins the order. The vanilla
+  chain stays the declaration of record; unported vanilla passes simply have
+  no executed step yet (vanilla's disabled-pass shape).
+- **The GenVars slice** — `SurfaceMap`/`Layers`/`BiomeSpans` + the shrine
+  spots — moved into `pipeline::GenVars`; the three seed constants moved into
+  `pipeline::Streams` verbatim; the frame-important boot statics into
+  `pipeline::boot_statics`. `generate()` is now the `Reset`-equivalent setup
+  (boot statics, `Noise`, streams, the parsed config) + `pipeline::run`.
+- **The config layer** (`worldgen/config.rs`): the game's embedded
+  `Terraria.GameContent.WorldBuilding.Configuration.json` copied verbatim
+  (it IS in the decompile root — the old ROADMAP note said otherwise) next to
+  the module, parsed through a BOM/`//`-comment prefilter into typed
+  lookups: `pass(name)`/`biome(name)` sections (`GameConfiguration.Get`),
+  `WorldGenRange::get_random` with the exact C# scaling (WorldArea
+  `maxTilesX·maxTilesY/5040000`, WorldWidth `maxTilesX/4200`, truncating) and
+  the inclusive-max `Next(min, max+1)`. The runner hands every step its
+  config view like vanilla `RunPass` (`WorldGenerator.cs:501`); today's
+  adapters ignore it — the shape-level passes keep their own pinned constants
+  (e.g. the living-tree count stays `Next(4)` per side, not the vanilla
+  `Micro Biomes.LivingTreeCount 6-11`) — future passes read their options
+  from there.
+- **Determinism, proven.** Vanilla gives every pass a fresh
+  `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`) — pass streams are
+  independent, which is what makes its fixed chain insertion-safe. The port
+  keeps its three contract streams (main `seed ^ 0xA076_1D64_78BD_642F`,
+  detail `seed ^ 0x5DEE_CE66_D1A4_9B5F`, structures
+  `seed ^ 0x9E37_79B9_7F4A_7C15`); a FUTURE pass slots between existing
+  steps only with its own stream (`Rng(seed ^ fnv(pass_name))`), never by
+  joining these. The proof: `worldgen/world_hash.rs` ports
+  `WorldGenerator.HashWorld` (`:517-545`) — the per-column
+  `rotl13(h)*5 + 3864292196` FNV fold over every stored `Tile` field — and
+  pins the constants captured from the PRE-scaffold output (512×512/seed 42
+  `3510339375`, the default 4200×1200/seed-1 world `3248003836`); the pins
+  held through the rewiring. The seam test additionally proved the runner
+  tile-for-tile equal to the old straight-line body before it was replaced.
 
 ## Biome passes (M1.4-WGEN-1)
 

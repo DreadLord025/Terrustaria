@@ -85,6 +85,18 @@ pub fn biome_preferences(kind: NpcKind) -> &'static [BiomePreference] {
                 biome: BiomeKind::Hallow,
             },
         ],
+        // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`):
+        // the Tinkerer likes the Underground, dislikes the Jungle.
+        NpcKind::GoblinTinkerer => &[
+            BiomePreference {
+                level: AffectionLevel::Like,
+                biome: BiomeKind::Underground,
+            },
+            BiomePreference {
+                level: AffectionLevel::Dislike,
+                biome: BiomeKind::Jungle,
+            },
+        ],
         // `Register(228)` (`PersonalityDatabasePopulator.cs:87-91`): the
         // Witch Doctor likes the Jungle, dislikes the Hallow.
         NpcKind::WitchDoctor => &[
@@ -199,7 +211,13 @@ pub struct Mood {
 /// calculation like the player-side scans. The loveStruck ×0.9 rides the
 /// buff pass (the port's buff 87 hook); the port's town set (the Guide)
 /// skips the 663 Princess branches.
-pub fn process_mood(world: &World, all_npcs: &[crate::npc::Npc], npc: &crate::npc::Npc, player_center: (f32, f32), raining: bool) -> Mood {
+pub fn process_mood(
+    world: &World,
+    all_npcs: &[crate::npc::Npc],
+    npc: &crate::npc::Npc,
+    player_center: (f32, f32),
+    raining: bool,
+) -> Mood {
     let mut flags: Vec<MoodFlag> = Vec::new();
     // `:97-98`: the reset.
     let mut adjustment = 1.0f32;
@@ -234,7 +252,13 @@ pub fn process_mood(world: &World, all_npcs: &[crate::npc::Npc], npc: &crate::np
     // `:115-118`: the player in the evil biomes (`:28-34`'s three) pushes
     // the sentinel too.
     if adjustment < 1000.0 {
-        let pm = scan_scene_at(world, [player_center.0, player_center.1], raining, false, false);
+        let pm = scan_scene_at(
+            world,
+            [player_center.0, player_center.1],
+            raining,
+            false,
+            false,
+        );
         if pm.zone_corrupt || pm.zone_crimson || pm.zone_dungeon {
             flags.push(MoodFlag::HateBiomeEvil);
             adjustment = 1000.0;
@@ -289,10 +313,7 @@ pub fn process_mood(world: &World, all_npcs: &[crate::npc::Npc], npc: &crate::np
     // anchor's scene (`ShopHelper` reads `info.npc`'s surroundings through
     // the HelperInfo rows; the biome traits test the NPC's position).
     if adjustment < 1000.0 {
-        let home_center = [
-            home_x * 16.0,
-            home_y * 16.0,
-        ];
+        let home_center = [home_x * 16.0, home_y * 16.0];
         let pm = scan_scene_at(world, home_center, raining, false, false);
         let home_biome = classify_biome(&pm);
         for pref in biome_preferences(npc.kind) {
@@ -349,8 +370,8 @@ fn classify_biome(pm: &tr_core::scene::SceneMetrics) -> BiomeKind {
 mod tests {
     use super::*;
     use crate::npc::{Npc, NpcKind};
-    use tr_core::tile::{FLAG_ACTIVE, Tile};
     use tr_core::World;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// The forest test ground: dirt from y = 120 — no special zones (the
     /// home rows sit below the beach's ocean level, so the Forest
@@ -395,7 +416,11 @@ mod tests {
             (60.0 * 16.0, 110.0 * 16.0),
             false,
         );
-        assert!((mood.multiplier - 0.89).abs() < 0.001, "the multiplier {}", mood.multiplier);
+        assert!(
+            (mood.multiplier - 0.89).abs() < 0.001,
+            "the multiplier {}",
+            mood.multiplier
+        );
         assert!(mood.flags.contains(&MoodFlag::LoveSpace));
         assert!(mood.flags.contains(&MoodFlag::BiomeAffection(
             AffectionLevel::Like,
@@ -471,7 +496,11 @@ mod tests {
         }
         let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
         // 4 neighbors → 1 × 1.05; the forest Like ×0.94 → 0.987 → 0.99.
-        assert!((mood.multiplier - 0.99).abs() < 0.001, "the multiplier {}", mood.multiplier);
+        assert!(
+            (mood.multiplier - 0.99).abs() < 0.001,
+            "the multiplier {}",
+            mood.multiplier
+        );
         assert!(mood.flags.contains(&MoodFlag::DislikeCrowded));
         assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
     }
@@ -492,7 +521,11 @@ mod tests {
         let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
         // within_house = 0, within_village = 4 → no LoveSpace; the forest
         // Like alone → 0.94.
-        assert!((mood.multiplier - 0.94).abs() < 0.001, "the multiplier {}", mood.multiplier);
+        assert!(
+            (mood.multiplier - 0.94).abs() < 0.001,
+            "the multiplier {}",
+            mood.multiplier
+        );
         assert!(!mood.flags.contains(&MoodFlag::LoveSpace));
     }
     #[test]
@@ -510,5 +543,26 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_tinkerer_judges_the_underground_and_the_jungle() {
+        // `Register(107)` (`PersonalityDatabasePopulator.cs:117-121`): the
+        // Like Underground / Dislike Jungle rows.
+        assert_eq!(biome_preferences(NpcKind::GoblinTinkerer).len(), 2);
+        assert_eq!(
+            biome_preferences(NpcKind::GoblinTinkerer)[0].level,
+            AffectionLevel::Like
+        );
+        assert_eq!(
+            biome_preferences(NpcKind::GoblinTinkerer)[0].biome,
+            BiomeKind::Underground
+        );
+        assert_eq!(
+            biome_preferences(NpcKind::GoblinTinkerer)[1].level,
+            AffectionLevel::Dislike
+        );
+        assert_eq!(
+            biome_preferences(NpcKind::GoblinTinkerer)[1].biome,
+            BiomeKind::Jungle
+        );
+    }
 }
-
