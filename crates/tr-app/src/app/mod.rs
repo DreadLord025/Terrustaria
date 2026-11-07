@@ -234,6 +234,19 @@ pub(crate) struct App {
     /// 599-627`); the Cursors_8/9 texture draw is a recorded follow-up (the
     /// phase-4 file scope excludes assets.rs/cursor.rs).
     pub(crate) cursor_override: i32,
+    /// The stored `Chest.name` (`Chest.cs:82`) per store index — the panel's
+    /// name line and the rename submit's write target (`App.chest_names`
+    /// feeds `chest::chest_name`). A side map until M6-SAVE-2 widens the
+    /// `WorldChest` entity: the frozen `editing.rs` stocked-chest test
+    /// literal pins the struct shape (the phase-5 discovery, Gap #2).
+    pub(crate) chest_names: HashMap<usize, String>,
+    /// `Main.defaultChestName` (`Main.cs:1753`) — the tile default captured
+    /// at the rename keyboard's open (`IngameFancyUI.cs:103-123`); the
+    /// submit's empty-if-default read (`ChestUI.cs:849-852`).
+    pub(crate) chest_default_name: String,
+    /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
+    /// chest-panel name editor's caret blinker (`ui::chest::TextBlinker`).
+    pub(crate) text_blinker: ui::chest::TextBlinker,
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
@@ -896,15 +909,17 @@ impl App {
     /// menu side closes with the settings sync first, so exactly one of
     /// `front`/`menu` stays live (Review Focus 1).
     pub(crate) fn open_keyboard(&mut self, request: ui::keyboard::Request, back: FrontScreen) {
-        self.open_keyboard_with_tail(request, back, KeyboardTail::Rename);
+        self.open_keyboard_with_tail(request, Some(back), KeyboardTail::Rename);
     }
 
     /// The [`App::open_keyboard`] twin for the creator's naming flows — the
-    /// `tail` selects the submit behaviour (`KeyboardTail`).
+    /// `tail` selects the submit behaviour (`KeyboardTail`). `back: None`
+    /// backs the in-game chest rename (`IngameFancyUI.Close` returns to
+    /// gameplay, `:162-188`).
     pub(crate) fn open_keyboard_with_tail(
         &mut self,
         request: ui::keyboard::Request,
-        back: FrontScreen,
+        back: Option<FrontScreen>,
         tail: KeyboardTail,
     ) {
         let state = ui::keyboard::KeyboardState::new(&request);
@@ -917,31 +932,64 @@ impl App {
         })));
     }
 
+    /// `Main.editChest` (`Main.cs:1747`) — the port's editor is exactly "the
+    /// chest-rename keyboard session is open" (`IngameFancyUI.cs:124` sets
+    /// it, the submit/cancel closures clear it).
+    pub(crate) fn chest_editing(&self) -> bool {
+        matches!(
+            self.front.as_ref(),
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::ChestRename
+        )
+    }
+
+    /// `Main.npcChatText`'s editor read (`ChestUI.cs:113`) — the live
+    /// keyboard text while the chest editor is open
+    /// (`UIVirtualKeyboard.cs:1061-1067`'s sync), "" otherwise.
+    pub(crate) fn chest_edit_text(&self) -> &str {
+        match self.front.as_ref() {
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::ChestRename => {
+                s.state.text.as_str()
+            }
+            _ => "",
+        }
+    }
+
     /// The submit tail. The rename tail keeps Task 6's notice (no `.plr`
     /// writer, spec §9.4); the creator's naming tails run
     /// `OnFinishedNaming` (`:1684-1689`: the trimmed name lands in the draft,
     /// `SetState(this)` restores the screen) and `OnFinishedNamingAndCreating`
-    /// (`:1696-1702`: the same, then `FinishCreatingCharacter`).
+    /// (`:1696-1702`: the same, then `FinishCreatingCharacter`). The chest
+    /// rename tail runs `ChestUI.RenameChestSubmit` + `Close(quiet: true)`
+    /// (`IngameFancyUI.cs:148-156`).
     pub(crate) fn keyboard_submit(&mut self) {
         let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
             return;
         };
         let name = session.state.text.trim().to_string();
+        // The chest submit reads the live untrimmed text — the C# submit
+        // closure ignores its trimmed argument (`UIVirtualKeyboard.cs:363`,
+        // `Main.npcChatText`'s sync `:1061-1067`).
+        let chest_text = session.state.text.clone();
+        let back = session.back.clone();
+        // `InternalSubmit`'s cue (`SoundEngine.PlaySound(10)`,
+        // `UIVirtualKeyboard.cs:975`) — the callers' `TextIsValidForSubmit`
+        // gates already ran (`:358-365`'s click gate, `keyboard_enter`'s
+        // `CanSubmit`).
+        self.audio.play("Menu_Open");
         match session.tail {
             KeyboardTail::Rename => {
-                let back = session.back.clone();
                 self.front_hint = Some("Renaming is not ported yet (no save-file writer)".into());
-                self.enter_front(back);
+                self.enter_front(back.expect("the rename tail is built with a back screen"));
             }
             KeyboardTail::Name => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the naming tail is built with a back screen");
                 if let FrontScreen::CharCreation(state) = &mut back {
                     state.draft.name = name;
                 }
                 self.enter_front(back);
             }
             KeyboardTail::NameAndCreate => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the naming tail is built with a back screen");
                 if let FrontScreen::CharCreation(state) = &mut back {
                     state.draft.name = name;
                 }
@@ -952,7 +1000,7 @@ impl App {
             // trimmed name lands (`UpdateInputFields` -> `SetContents`), the
             // creation screen returns through `GoBackHere` (`:730`).
             KeyboardTail::WorldName => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the world-name tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.name = name;
                 }
@@ -962,7 +1010,7 @@ impl App {
             // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
             // scope Advanced tab, plan Uncertainty 4).
             KeyboardTail::WorldSeed => {
-                let mut back = session.back.clone();
+                let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.seed = name;
                 }
@@ -971,7 +1019,8 @@ impl App {
             // `OnFinishedNamingAndCreating` (`:838-842`): the name lands,
             // then `FinishCreatingWorld` (`:845-863`).
             KeyboardTail::WorldNameAndCreate => {
-                let mut back = session.back.clone();
+                let mut back =
+                    back.expect("the world-name-and-create tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.name = name;
                 }
@@ -980,19 +1029,37 @@ impl App {
                     self.finish_creating_world(draft);
                 }
             }
+            // `ChestUI.RenameChestSubmit` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:148-156`) — the name lands, the keyboard
+            // closes back into gameplay.
+            KeyboardTail::ChestRename => {
+                crate::chest::rename_submit(self, &chest_text);
+            }
         }
     }
 
     /// The cancel tail — `_cancelAction` (`UIVirtualKeyboard.cs:86`) is the
     /// card lists' `GoBackHere` (`UICharacterListItem.cs:214-216`,
     /// `UIWorldListItem.cs:428-430`): reopen the screen the keyboard came
-    /// from, no rename, no notice.
+    /// from, no rename, no notice. The chest rename tail runs
+    /// `ChestUI.RenameChestCancel` + `Close(quiet: true)`
+    /// (`IngameFancyUI.cs:152-156`) — back into gameplay, nothing written.
     pub(crate) fn keyboard_cancel(&mut self) {
         let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
             return;
         };
+        let is_chest = session.tail == KeyboardTail::ChestRename;
         let back = session.back.clone();
-        self.enter_front(back);
+        // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
+        // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
+        // `_cancelAction` (the buttons `:321`/:387, Escape's
+        // `TryEscapingMenu` :806-810).
+        self.audio.play("Menu_Close");
+        if is_chest {
+            crate::chest::rename_cancel(self);
+            return;
+        }
+        self.enter_front(back.expect("the cancel tail is built with a back screen"));
     }
 
     /// One printable character from the physical keyboard — `Main.GetInputText`'s
@@ -1016,12 +1083,15 @@ impl App {
     /// The physical Enter — `Main.inputTextEnter && UIVirtualKeyboard.CanSubmit`
     /// fires the submit (`:763-766`); `CanSubmit` is `ValidateText`'s cached
     /// `TextIsValidForSubmit` (`:108-145`, `:585-626`), so an invalid text
-    /// keeps the keyboard open, exactly like the dead Submit click.
+    /// keeps the keyboard open, exactly like the dead Submit click. The chest
+    /// context is always valid (`:615-626`'s `_editingChest` gate).
     pub(crate) fn keyboard_enter(&mut self) {
         let valid = match self.front.as_ref() {
-            Some(FrontScreen::Keyboard(session)) => {
-                ui::keyboard::text_valid(&session.state.text, session.request.allow_empty)
-            }
+            Some(FrontScreen::Keyboard(session)) => ui::keyboard::text_valid_for(
+                &session.state.text,
+                session.request.allow_empty,
+                session.request.context,
+            ),
             _ => return,
         };
         if valid {
@@ -1621,6 +1691,9 @@ impl App {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
+            chest_names: HashMap::new(),
+            chest_default_name: String::new(),
+            text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
             menu: menu_state,
             front: None,

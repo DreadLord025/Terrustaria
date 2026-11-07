@@ -47,7 +47,7 @@ const VISIBLE_ROWS: usize = 4;
 const GRID_X: f32 = 73.0;
 const PITCH: f32 = 56.0;
 /// `ChestUI.cs:44-46`: `buttonScaleMinimum` / `buttonScaleMaximum`.
-const BUTTON_SCALE_MIN: f32 = 0.75;
+pub(crate) const BUTTON_SCALE_MIN: f32 = 0.75;
 const BUTTON_SCALE_MAX: f32 = 1.0;
 /// `Main.cs:66748`: `Main.OurFavoriteColor = new Color(255, 231, 69)` — the
 /// hovered button's tint (`ChestUI.cs:243`).
@@ -81,8 +81,18 @@ pub(crate) struct PanelState<'a> {
     pub(crate) slots: Option<&'a [ChestSlot]>,
     /// `NewCraftingUI.Visible` — the covering-crafting gate (`ChestUI.cs:86`).
     pub(crate) crafting_open: bool,
-    /// `Main.editChest` — phase 5's rename state; always false until then.
+    /// `Main.editChest` (`Main.cs:1747`) — the live chest-rename editor (the
+    /// port's shape: the chest-rename keyboard session is open).
     pub(crate) editing: bool,
+    /// `Main.chest[chest].name` while a world chest is open (`ChestUI.cs:
+    /// 115-122`) — the rename store (`App.chest_names`), "" until renamed.
+    pub(crate) name: &'a str,
+    /// `Main.npcChatText` while the editor is live (`ChestUI.cs:113` — the
+    /// keyboard's live text, `UIVirtualKeyboard.cs:1061-1067`'s sync).
+    pub(crate) edit_text: &'a str,
+    /// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the
+    /// DrawName caret's blinker, advanced only while the editor draws.
+    pub(crate) blinker: &'a mut TextBlinker,
     /// `ChestUI.StartingRowForDrawing` (`ChestUI.cs:52`).
     pub(crate) scroll_row: &'a mut i32,
     /// `ChestUI.ButtonScale` (`ChestUI.cs:48`; the static ctor's
@@ -107,7 +117,7 @@ pub(crate) fn draw(
     mouse: Vec2,
 ) {
     if p.chest != -1 && !p.crafting_open {
-        draw_name(r, lookups, &p, pulse);
+        draw_name(r, lookups, &mut p, pulse);
         draw_buttons(r, lookups, &mut p, pulse, mouse);
         draw_slots(r, lookups, &mut p);
     } else {
@@ -119,22 +129,61 @@ pub(crate) fn draw(
     }
 }
 
+/// `Main.instance.textBlinkerCount/State` (`Main.cs:2287-2289`) — the caret
+/// blinker the DrawName edit arm advances (the port's chat keeps its own
+/// `blink_timer`, `ui/mod.rs:410`; the chest editor owns this one).
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct TextBlinker {
+    /// `textBlinkerCount`.
+    pub(crate) count: u32,
+    /// `textBlinkerState` — the caret draws while `true` (`:180`).
+    pub(crate) on: bool,
+}
+
+impl TextBlinker {
+    /// `ChestUI.cs:175-179`: `if (++textBlinkerCount >= 20) { toggle
+    /// textBlinkerState; textBlinkerCount = 0; }` — the 20-frame half-period
+    /// of the 40-frame blink.
+    pub(crate) fn advance(&mut self) {
+        self.count += 1;
+        if self.count >= 20 {
+            self.on = !self.on;
+            self.count = 0;
+        }
+    }
+}
+
+/// `ChestUI.DrawName`'s text chain (`ChestUI.cs:110-141`): the live edit text
+/// while `Main.editChest` (:111-114), else the stored `Chest.name`, else the
+/// tile-style default (:115-141).
+pub(crate) fn draw_name_text(
+    editing: bool,
+    edit_text: &str,
+    name: &str,
+    tile: Option<(u16, i16)>,
+) -> String {
+    if editing {
+        return edit_text.to_string();
+    }
+    if !name.is_empty() {
+        return name.to_string(); // `:115-122`
+    }
+    match tile {
+        Some((kind, frame_x)) => crate::chest::default_chest_name(kind, frame_x),
+        None => String::new(),
+    }
+}
+
 /// `ChestUI.DrawName` (`ChestUI.cs:107-185`): the chest's name line at
-/// (504, invBottom) — the stored name, else the tile-style default. The
-/// stored-name branch (`chest.name != ""`, `:115-122`) joins phase 5's
-/// `WorldChest.name`; the inline-edit caret arm (`:165-184`) is phase 5's too.
+/// (504, invBottom) — the stored name, else the tile-style default, and the
+/// inline edit text with the blinking caret while `Main.editChest` is live.
 fn draw_name(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
-    p: &PanelState<'_>,
+    p: &mut PanelState<'_>,
     pulse: super::UiPulse,
 ) {
-    // `ChestUI.cs:124-140` — the tile-style default (the stored-name branch
-    // is phase 5's; every store name is "" until rename lands).
-    let text = match p.tile {
-        Some((kind, frame_x)) => crate::chest::default_chest_name(kind, frame_x),
-        None => String::new(),
-    };
+    let text = draw_name_text(p.editing, p.edit_text, p.name, p.tile);
     // `ChestUI.cs:159-161`: `Color.White * (1f - (255f - mouseTextColor) / 255f
     // * 0.5f)` with the alpha forced back to opaque — `pulse.text` is
     // `Main.mouseTextColor / 255`.
@@ -142,6 +191,18 @@ fn draw_name(
     // `ChestUI.cs:163-164`: `DrawColorCodedStringWithShadow(..., (504, invBottom),
     // origin zero, scale one, spread 1.5)`.
     hud_text_shadowed(r, lookups, 504.0, INV_BOTTOM, 1.0, [f, f, f, 1.0], &text);
+    if p.editing {
+        // `ChestUI.cs:165-184` — the caret after the text (`vector.X +=
+        // MeasureString(text).X`); the IME panel/composition arms (:168-174)
+        // are out per plan. The blinker advances once per editing draw
+        // (:175-179) and the caret draws while `textBlinkerState == 1`
+        // (:180-183) in the text's own colour.
+        p.blinker.advance();
+        if p.blinker.on {
+            let x = 504.0 + text::hud_text_width(r, lookups, &text, 1.0);
+            hud_text_shadowed(r, lookups, x, INV_BOTTOM, 1.0, [f, f, f, 1.0], "|");
+        }
+    }
 }
 
 /// `ChestUI.DrawButtons` (`ChestUI.cs:187-193`): every button anchor sits at
@@ -432,13 +493,13 @@ fn button_visible(id: usize, chest: i32, editing: bool) -> bool {
 /// `ChestUI.cs:205-229`: the text buttons' labels. IDs 0-4
 /// (`Lang.inter[29/30/31/82/122]`) are M3-STORE-2's — their anchors reserve
 /// the rows but draw no text here. The rename strings are the vanilla en-US
-/// localization (`Lang.inter[61]`/`[63]`), carried like the port's hardcoded
-/// "Inventory"/"Coins"/"Ammo" labels; the editing-state label
-/// (`Lang.inter[47]`, `:221`) joins phase 5's rename flow.
-fn button_label(id: usize, _editing: bool) -> Option<&'static str> {
+/// localization (`Lang.inter[Main.editChest ? 47 : 61]`/`Lang.inter[63]`,
+/// `:221`/:224 — inter[47] "Save", inter[61] "Rename", inter[63] "Cancel"),
+/// carried like the port's hardcoded "Inventory"/"Coins"/"Ammo" labels.
+fn button_label(id: usize, editing: bool) -> Option<&'static str> {
     match id {
         // `Lang.inter[Main.editChest ? 47 : 61]` (:221).
-        BUTTON_RENAME => Some("Rename"),
+        BUTTON_RENAME => Some(if editing { "Save" } else { "Rename" }),
         // `Lang.inter[63]` (:224).
         BUTTON_RENAME_CANCEL => Some("Cancel"),
         _ => None,
@@ -677,6 +738,9 @@ mod tests {
             slots: None,
             crafting_open: false,
             editing: false,
+            name: "",
+            edit_text: "",
+            blinker: &mut app.text_blinker,
             scroll_row: &mut app.chest_scroll_row,
             button_scales: &mut app.chest_button_scales,
             button_hovered: &mut app.chest_button_hovered,
@@ -704,5 +768,54 @@ mod tests {
         // Leaving and re-entering the rect fires the edge sound again.
         assert_eq!(update_hover(&mut p, BUTTON_RENAME, true), 12);
         assert!((p.button_scales[BUTTON_RENAME] - 0.8).abs() < 1e-6);
+    }
+
+    #[test]
+    fn draw_name_text_follows_the_draw_name_chain() {
+        // `ChestUI.cs:110-141`: the edit text while `Main.editChest`
+        // (:111-114), else the stored name (:115-122), else the tile-style
+        // default (:124-140).
+        assert_eq!(draw_name_text(true, "Editing", "Old", Some((21, 0))), "Editing");
+        assert_eq!(draw_name_text(false, "Editing", "Custom", Some((21, 0))), "Custom");
+        assert_eq!(draw_name_text(false, "", "", Some((21, 0))), "Chest");
+        assert_eq!(draw_name_text(false, "", "", Some((21, 72))), "Locked Gold Chest");
+        assert_eq!(draw_name_text(false, "", "", Some((467, 144))), "Dead Mans Chest");
+        assert_eq!(draw_name_text(false, "", "", None), "");
+    }
+
+    #[test]
+    fn button_label_shows_save_while_editing() {
+        // `ChestUI.cs:221` — `Lang.inter[Main.editChest ? 47 : 61]`:
+        // inter[47] "Save", inter[61] "Rename" (the en-US localization;
+        // the dispatch's "Cancel" note was the pre-verification guess).
+        assert_eq!(button_label(BUTTON_RENAME, false), Some("Rename"));
+        assert_eq!(button_label(BUTTON_RENAME, true), Some("Save"));
+        // `Lang.inter[63]` (:224) — the cancel button's label never changes.
+        assert_eq!(button_label(BUTTON_RENAME_CANCEL, false), Some("Cancel"));
+        assert_eq!(button_label(BUTTON_RENAME_CANCEL, true), Some("Cancel"));
+    }
+
+    #[test]
+    fn text_blinker_toggles_every_twentieth_edit_frame() {
+        // `ChestUI.cs:175-183` — `++textBlinkerCount >= 20` flips
+        // `textBlinkerState`; the caret draws only while the state is 1. The
+        // counter starts at 0/state 0 (`Main.cs:2287-2289`'s zero init), so
+        // the first 20 editing draws show no caret.
+        let mut b = TextBlinker::default();
+        assert!(!b.on);
+        for _ in 0..19 {
+            b.advance();
+            assert!(!b.on, "the first 20 draws stay dark");
+        }
+        b.advance(); // the 20th: count hits 20 → state 1, count resets
+        assert!(b.on);
+        assert_eq!(b.count, 0);
+        for _ in 0..19 {
+            b.advance();
+            assert!(b.on, "the next 20 draws show the caret");
+        }
+        b.advance(); // the 40th: state flips back
+        assert!(!b.on);
+        assert_eq!(b.count, 0);
     }
 }

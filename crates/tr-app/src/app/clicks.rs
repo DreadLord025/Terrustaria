@@ -445,6 +445,34 @@ impl App {
                 self.ui_right_press = false;
                 return true;
             }
+            // `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:282-308`),
+            // the rename pair: ID 5 → `RenameChest` (`:827-838` — open the
+            // keyboard, or submit while the editor is live), ID 6 →
+            // `RenameChestCancel` (`:863-869`). Buttons 0-4 are
+            // M3-STORE-2's. The dispatch only exists inside `ChestUI.Draw`
+            // (the panel's visibility gate above); the port's modal rename
+            // keyboard parks the world routes, so the editing-state arms
+            // (`Save`/`Cancel` clicks) are the overlay shape's revive point.
+            if left {
+                if let Some(id) = ui::chest::rename_button_hit(
+                    &self.lookups,
+                    self.mouse_pos,
+                    &self.chest_button_scales,
+                    &self.chest_button_hovered,
+                    self.chest,
+                    self.chest_editing(),
+                ) {
+                    match id {
+                        ui::chest::BUTTON_RENAME => chest::rename_button_click(self),
+                        ui::chest::BUTTON_RENAME_CANCEL => {
+                            chest::rename_cancel(self);
+                        }
+                        _ => {}
+                    }
+                    self.ui_left_press = false;
+                    return true;
+                }
+            }
         }
         // The open-inventory chest-tile click: only when no UI slot holds the
         // pointer (the C#'s `mouseInterface` rule — the drawn cell rects
@@ -1132,5 +1160,75 @@ mod tests {
         app.handle_inventory_clicks();
         assert_eq!(app.mouse_item.count, 6);
         assert_eq!(app.inventory[0].count, 0);
+    }
+
+    // --- Phase 5: the rename button dispatch -----------------------------
+
+    /// `ChestUI.DrawButton`'s click dispatch (`ChestUI.cs:282-308`): the ID-5
+    /// click opens the ctx-2 keyboard (`RenameChest` :827-838 →
+    /// `IngameFancyUI.OpenVirtualKeyboard(2)`), the ID-6 click (the editor is
+    /// live) cancels it (`RenameChestCancel` :863-869).
+    #[test]
+    fn dw_5_rename_button_click_routes_to_the_keyboard_and_cancel() {
+        let mut app = chest_app(vec![]);
+        // A real style-0 chest tile at the open origin, so the prefill
+        // decodes the tile default (`IngameFancyUI.cs:103-107`).
+        place_tile_chest(&mut app, 2, 2);
+        app.chest_x = 2;
+        app.chest_y = 2;
+        // The rename button's row anchor (506, invBottom + 40 + 5*26) at the
+        // idle scale (the static-ctor 0.0 only precedes the first drawn
+        // frame), probed a few px in (the headless font estimate).
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the button took the click");
+        assert!(
+            app.chest_editing(),
+            "the rename keyboard opened (the ChestRename tail session)"
+        );
+        assert!(
+            matches!(
+                app.front.as_ref(),
+                Some(crate::app::flow::FrontScreen::Keyboard(s))
+                    if s.tail == crate::app::flow::KeyboardTail::ChestRename
+                        && s.request.context == ui::keyboard::Context::Chest
+            ),
+            "the session is the chest-rename keyboard"
+        );
+        assert_eq!(app.chest_edit_text(), "Chest", "the tile default prefills");
+        // The cancel button's row (ID 6, y = 454) is only live while editing;
+        // the click cancels the editor back into gameplay.
+        app.mouse_pos = Vec2::new(510.0, 454.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks(), "the cancel button took the click");
+        assert!(!app.chest_editing(), "the editor closed");
+        assert_eq!(app.front, None, "back into gameplay");
+        assert!(app.chest_names.is_empty(), "the cancel never wrote");
+    }
+
+    /// The editing-state Save arm (`ChestUI.RenameChest`'s else, `:834-837`):
+    /// clicking ID 5 while the editor is live submits the live text.
+    #[test]
+    fn rename_button_click_submits_while_editing() {
+        let mut app = chest_app(vec![]);
+        place_tile_chest(&mut app, 2, 2);
+        app.chest_x = 2;
+        app.chest_y = 2;
+        app.chest_button_scales = [ui::chest::BUTTON_SCALE_MIN; ui::chest::BUTTON_COUNT];
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(app.chest_editing());
+        // Type, then click the Save-labelled button again.
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            ui::keyboard::write_str(&mut s.state, "Saved");
+        }
+        app.mouse_pos = Vec2::new(510.0, 428.0);
+        app.ui_left_press = true;
+        assert!(app.handle_chest_clicks());
+        assert!(!app.chest_editing(), "the Save click submitted");
+        assert_eq!(chest::chest_name(&app, 0), "Saved");
     }
 }

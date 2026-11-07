@@ -52,12 +52,14 @@ pub(crate) enum FrontScreen {
 /// both the on-screen keys and the physical keyboard edit, and the screen the
 /// Cancel/Submit tails return to (the `_cancelAction` target,
 /// `UIVirtualKeyboard.cs:86`; the tails reopen the select screens,
-/// `UICharacterListItem.cs:205-216`, `UIWorldListItem.cs:420-433`).
+/// `UICharacterListItem.cs:205-216`, `UIWorldListItem.cs:420-433`). `None`
+/// backs the in-game chest rename — the tail returns to gameplay
+/// (`IngameFancyUI.Close`'s `inFancyUI = false`, `:162-188`).
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct KeyboardSession {
     pub(crate) request: ui::keyboard::Request,
     pub(crate) state: ui::keyboard::KeyboardState,
-    pub(crate) back: FrontScreen,
+    pub(crate) back: Option<FrontScreen>,
     /// Which submit tail runs — the rename notice (Task 6) or the character
     /// creator's naming flows (`Click_Naming` -> `OnFinishedNaming`,
     /// `UICharacterCreation.cs:1659-1689`; `Click_NamingAndCreating` ->
@@ -88,6 +90,11 @@ pub(crate) enum KeyboardTail {
     /// `Click_NamingAndCreating` with an empty name (`UIWorldCreation.cs:
     /// 710-719`): the name lands, then `FinishCreatingWorld` runs.
     WorldNameAndCreate,
+    /// The chest rename (`IngameFancyUI.cs:147-156`): submit runs
+    /// `ChestUI.RenameChestSubmit` + `Close(quiet: true)`, cancel runs
+    /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
+    /// back in gameplay.
+    ChestRename,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -458,6 +465,7 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 20,
+                                context: ui::keyboard::Context::Text,
                             },
                             FrontScreen::CharSelect,
                         );
@@ -552,8 +560,9 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::char_creation::MAX_NAME_LENGTH,
+                                context: ui::keyboard::Context::Text,
                             },
-                            back,
+                            Some(back),
                             KeyboardTail::Name,
                         );
                     }
@@ -569,8 +578,9 @@ impl FrontScreenBehaviours for FrontScreen {
                                     initial: String::new(),
                                     allow_empty: false,
                                     max_length: ui::char_creation::MAX_NAME_LENGTH,
+                                    context: ui::keyboard::Context::Text,
                                 },
-                                back,
+                                Some(back),
                                 KeyboardTail::NameAndCreate,
                             );
                         } else {
@@ -677,8 +687,9 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
+                                context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldCreation(draft),
+                            Some(FrontScreen::WorldCreation(draft)),
                             KeyboardTail::WorldName,
                         );
                     }
@@ -693,8 +704,9 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: String::new(),
                                 allow_empty: true,
                                 max_length: usize::MAX,
+                                context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldCreation(draft),
+                            Some(FrontScreen::WorldCreation(draft)),
                             KeyboardTail::WorldSeed,
                         );
                     }
@@ -705,8 +717,9 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: String::new(),
                                 allow_empty: false,
                                 max_length: ui::world_creation::MAX_NAME_LENGTH,
+                                context: ui::keyboard::Context::Text,
                             },
-                            FrontScreen::WorldCreation(draft),
+                            Some(FrontScreen::WorldCreation(draft)),
                             KeyboardTail::WorldNameAndCreate,
                         );
                     }
@@ -788,6 +801,7 @@ impl FrontScreenBehaviours for FrontScreen {
                                 initial: name,
                                 allow_empty: true,
                                 max_length: 27,
+                                context: ui::keyboard::Context::Text,
                             },
                             FrontScreen::WorldSelect,
                         );
@@ -842,10 +856,13 @@ impl FrontScreenBehaviours for FrontScreen {
                     // The desktop pair's handler checks the validation first
                     // (`:358-365`); the small pair's `InternalSubmit` re-checks
                     // too (`:970-978`) — the invalid click is dead either way.
+                    // The chest context is always valid (`:615-626`'s
+                    // `_editingChest` gate).
                     ui::keyboard::Click::Submit => {
-                        if ui::keyboard::text_valid(
+                        if ui::keyboard::text_valid_for(
                             &session.state.text,
                             session.request.allow_empty,
+                            session.request.context,
                         ) {
                             app.keyboard_submit();
                         }
@@ -1146,12 +1163,13 @@ pub(crate) mod front_flow_tests {
                 initial: String::new(),
                 allow_empty: true,
                 max_length: 20,
+                context: ui::keyboard::Context::Text,
             };
             let state = ui::keyboard::KeyboardState::new(&request);
             Box::new(KeyboardSession {
                 request,
                 state,
-                back: FrontScreen::CharSelect,
+                back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
             })
         };
@@ -1346,6 +1364,9 @@ pub(crate) mod front_flow_tests {
             super_fast_stack: 0,
             times_tried_to_fast_stack: 0,
             cursor_override: -1,
+            chest_names: HashMap::new(),
+            chest_default_name: String::new(),
+            text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
             menu: None,
             front,
@@ -1747,13 +1768,14 @@ pub(crate) mod front_flow_tests {
             initial: "Bob".into(),
             allow_empty: true,
             max_length: 20,
+            context: ui::keyboard::Context::Text,
         };
         let state = ui::keyboard::KeyboardState::new(&request);
         flow_app(
             Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
                 request,
                 state,
-                back: FrontScreen::CharSelect,
+                back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
             }))),
             vec![entry("Bob", false)],
@@ -1786,7 +1808,7 @@ pub(crate) mod front_flow_tests {
         assert_eq!(session.request.initial, "Bob");
         assert!(session.request.allow_empty);
         assert_eq!(session.request.max_length, 20);
-        assert_eq!(session.back, FrontScreen::CharSelect);
+        assert_eq!(session.back, Some(FrontScreen::CharSelect));
         // The state seeds from the request (`UIVirtualKeyboard.cs:429-433`) —
         // a non-empty start stays Default.
         assert_eq!(session.state.text, "Bob");
@@ -1830,13 +1852,14 @@ pub(crate) mod front_flow_tests {
             initial: String::new(),
             allow_empty: false,
             max_length: 20,
+            context: ui::keyboard::Context::Text,
         };
         let state = ui::keyboard::KeyboardState::new(&request);
         let mut app = flow_app(
             Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
                 request,
                 state,
-                back: FrontScreen::CharSelect,
+                back: Some(FrontScreen::CharSelect),
                 tail: KeyboardTail::Rename,
             }))),
             vec![],
@@ -1885,7 +1908,44 @@ pub(crate) mod front_flow_tests {
             ui::keyboard::KeyState::Shift,
             "the empty text seeds Shift (`UIVirtualKeyboard.cs:430-433`)"
         );
-        assert_eq!(session.back, FrontScreen::CharSelect);
+        assert_eq!(session.back, Some(FrontScreen::CharSelect));
+    }
+
+    #[test]
+    fn the_chest_keyboards_save_click_submits_the_empty_text() {
+        // `:358-365`'s gate with the ctx-2 `TextIsValidForSubmit`
+        // (`:615-626` — `_editingChest` lifts the empty rule): the empty
+        // session text submits, and the `ChestUI.RenameChestSubmit` +
+        // `Close(quiet: true)` tail (`IngameFancyUI.cs:148-156`) closes into
+        // gameplay even on the chest<0 no-op (`ChestUI.cs:844-848`).
+        let request = ui::keyboard::Request {
+            label: ui::keyboard::ENTER_NEW_NAME.into(),
+            initial: String::new(),
+            allow_empty: false,
+            max_length: 20,
+            context: ui::keyboard::Context::Chest,
+        };
+        let state = ui::keyboard::KeyboardState::new(&request);
+        let mut app = flow_app(
+            Some(FrontScreen::Keyboard(Box::new(KeyboardSession {
+                request,
+                state,
+                back: None,
+                tail: KeyboardTail::ChestRename,
+            }))),
+            vec![],
+            vec![],
+        );
+        let (sw, sh) = app.screen_size();
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        app.mouse_pos = Vec2::new(
+            l.submit[0] + l.submit[2] * 0.5,
+            l.submit[1] + l.submit[3] * 0.5,
+        );
+        app.handle_front_click();
+        assert_eq!(app.front, None, "the Save click closed into gameplay");
+        assert!(app.chest_names.is_empty(), "chest < 0 wrote nothing");
+        assert!(app.menu.is_none(), "the single-mode invariant holds");
     }
 
     // --- Task 7: the character creator's flow hops ---------------------------
@@ -2038,10 +2098,10 @@ pub(crate) mod front_flow_tests {
             session.request.max_length,
             ui::char_creation::MAX_NAME_LENGTH
         );
-        assert!(matches!(session.back, FrontScreen::CharCreation(_)));
+        assert!(matches!(session.back, Some(FrontScreen::CharCreation(_))));
         assert_eq!(session.tail, KeyboardTail::Name);
         // The empty name also cleared the draft's own (`:1662`).
-        if let FrontScreen::CharCreation(back) = &session.back {
+        if let Some(FrontScreen::CharCreation(back)) = &session.back {
             assert!(back.draft.name.is_empty());
         }
         if let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() {

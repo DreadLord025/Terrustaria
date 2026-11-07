@@ -23,10 +23,12 @@
 
 use glam::Vec2;
 
+use crate::app::flow::KeyboardTail;
 use crate::app::App;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemSlot};
 use crate::player;
 use crate::registry;
+use crate::ui::keyboard::{self, Context, Request};
 use tr_core::{TILE_PX, World};
 
 /// One chest slot: `(item kind, stack)` — the C# `Chest.item[]` entry minus
@@ -518,10 +520,18 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     };
     // `:33087-33090` — `CloseSign`/`SetTalkNPC(-1)`/the chat-text clears:
     // the port's dialog + shop close (`Main.SetNPCShopIndex(-1)`'s
-    // equivalent). The `Main.editChest` flush (`:33091-33096`, sound 12)
-    // joins with phase 5's rename state; the `editedChestName` net flush
-    // (`:33097-33101`) and the MP arm (`:33103-33119`) are out.
+    // equivalent). The `editedChestName` net flush (`:33097-33101`) and the
+    // MP arm (`:33103-33119`) are out.
     app.close_shop();
+    // `:33091-33096` — a chest-tile click while the rename editor is live
+    // flushes it: sound 12, `editChest = false`, `npcChatText = ""`. The
+    // port's modal keyboard parks the world routes, so production never
+    // reaches this with an open editor — the arm is the overlay shape's
+    // revive point (the phase-5 discovery, Gap #6).
+    if app.chest_editing() {
+        play_menu_sound(app, 12);
+        app.front = None;
+    }
     // `:33142-33228` — the single-player default arm (`num73 == 0` for the
     // `BasicChest` tiles): `flag14` marks a locked-chest click, which blocks
     // the `FindChest` at `:33223-33226`, so the click is consumed without
@@ -944,6 +954,133 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
     // `:800-812`'s `inv[slot] = ...` — the unplaced remainder stays in the
     // chest slot.
     set_chest_slot(world_chests, chest_idx, chest_slot_idx, (kind, remainder));
+}
+
+// --- Rename flow (M3-CHEST-UI phase 5) ---------------------------------------
+//
+// `ChestUI.RenameChest`/`RenameChestSubmit`/`RenameChestCancel`
+// (`ChestUI.cs:827-869`) + `IngameFancyUI.OpenVirtualKeyboard(2)`
+// (`IngameFancyUI.cs:86-129`). The port's keyboard is the front-end screen:
+// the rename opens `FrontScreen::Keyboard` mid-game with the
+// `KeyboardTail::ChestRename` session whose submit/cancel tails land here.
+// Shape deviations (phase-5 discovery Gaps #1/#2/#6): the keyboard parks the
+// world routes, so `Main.editChest` is exactly "the rename session is open"
+// and the panel hides while it is; IME/`blockKey`/`clrInput` have no port
+// route; the name store is `App.chest_names` until M6-SAVE-2 widens the
+// `WorldChest` entity (the frozen `editing.rs` test literal).
+
+/// `Chest.MaxNameLength` (`Chest.cs:70`) — also the `UIVirtualKeyboard` ctor's
+/// `maxLength` default the chest context opens with (`:159`).
+pub(crate) const CHEST_MAX_NAME_LENGTH: usize = 20;
+
+/// The stored `Chest.name` (`Chest.cs:82`) at the store index — the panel's
+/// name line (`ChestUI.cs:115-122`) and the rename submit's write target.
+/// The map folds into the `WorldChest` entity at M6-SAVE-2.
+pub(crate) fn chest_name(app: &App, idx: i32) -> &str {
+    if idx < 0 {
+        return "";
+    }
+    app.chest_names
+        .get(&(idx as usize))
+        .map(String::as_str)
+        .unwrap_or("")
+}
+
+/// `ChestUI.RenameChest` (`ChestUI.cs:827-838`): the rename button's dispatch
+/// — open the keyboard while no editor is live, submit the live text
+/// otherwise.
+pub(crate) fn rename_button_click(app: &mut App) {
+    if !app.chest_editing() {
+        open_rename(app);
+    } else {
+        let text = app.chest_edit_text().to_string();
+        rename_submit(app, &text);
+    }
+}
+
+/// `IngameFancyUI.OpenVirtualKeyboard(2)` (`IngameFancyUI.cs:86-129`): sound
+/// 12, the prefill (the stored name, else the tile default at the open
+/// chest's origin) and the ctx-2 keyboard (`UI.EnterNewName`, the ctor
+/// defaults `allowEmpty: false, maxLength: 20` — 20 is also
+/// [`CHEST_MAX_NAME_LENGTH`], `Chest.cs:70`). `chest < 0` no-ops (`false`):
+/// the C# would index `Main.chest[-1]`, unreachable in vanilla because the
+/// rename button only draws with a chest open — the port answers calmly
+/// (DW-5.4). `CanDisplay(2)` is unconditionally true
+/// (`UIVirtualKeyboard.cs:1022-1029`); `Main.clrInput` (`:128`) has no port
+/// route (the front screen parks the world input routes).
+pub(crate) fn open_rename(app: &mut App) -> bool {
+    if app.chest < 0 {
+        return false; // the DW-5.4 guard
+    }
+    app.audio.play("Menu_Tick"); // `:90` — `SoundEngine.PlaySound(12)`
+    // `:103-119` — the tile-default decode at the open chest's origin (the
+    // phase-3 `default_chest_name` chain).
+    let default_name = app
+        .world
+        .tile(app.chest_x, app.chest_y)
+        .map(|t| default_chest_name(t.kind, t.frame_x))
+        .unwrap_or_default();
+    // `:102-123` — `npcChatText = chest.name`; an empty name falls to the
+    // default, which becomes the keyboard's starting text.
+    let initial = {
+        let stored = chest_name(app, app.chest);
+        if stored.is_empty() {
+            default_name.clone()
+        } else {
+            stored.to_string()
+        }
+    };
+    app.chest_default_name = default_name;
+    // `:124` — `Main.editChest = true`; `:133-156` — the ctx-2 keyboard onto
+    // `Main.InGameUI` with the submit/cancel closures
+    // (`ChestUI.RenameChestSubmit`/`RenameChestCancel` + `Close`).
+    app.open_keyboard_with_tail(
+        Request {
+            label: keyboard::ENTER_NEW_NAME.into(),
+            initial,
+            allow_empty: false,
+            max_length: CHEST_MAX_NAME_LENGTH,
+            context: Context::Chest,
+        },
+        None,
+        KeyboardTail::ChestRename,
+    );
+    true
+}
+
+/// `ChestUI.RenameChestSubmit` (`ChestUI.cs:840-861`) + the submit closure's
+/// `IngameFancyUI.Close(quiet: true)` (`IngameFancyUI.cs:148-156`): sound 12,
+/// the editor closes, then the chest<0 no-op (:844-848), the
+/// default-name-to-empty rule (:849-852) and the write-if-different
+/// (:853-860 — the `editedChestName` net flag is MP, out). `text` is the live
+/// keyboard text — `Main.npcChatText`'s per-tick sync
+/// (`UIVirtualKeyboard.cs:1061-1067`); the C# submit closure ignores its
+/// trimmed argument (`:363`), so the untrimmed text is what lands.
+pub(crate) fn rename_submit(app: &mut App, text: &str) -> u32 {
+    app.audio.play("Menu_Tick"); // `:842`
+    app.front = None; // `Main.editChest = false` (:843) + `Close(quiet: true)`
+    if app.chest < 0 {
+        return 12; // `:844-848`
+    }
+    let mut name = text.to_string();
+    if name == app.chest_default_name {
+        name = String::new(); // `:849-852`
+    }
+    if chest_name(app, app.chest) != name {
+        app.chest_names.insert(app.chest as usize, name); // `:853-860`
+    }
+    12
+}
+
+/// `ChestUI.RenameChestCancel` (`ChestUI.cs:863-869`): sound 12, the editor
+/// closes without writing (`editChest = false`, `npcChatText = ""`). The
+/// port's modal shape closes the keyboard screen with the edit — the C#
+/// panel-cancel (ID 6) leaves the keyboard open (recorded deviation).
+/// `Main.blockKey` (`:868`) has no port route.
+pub(crate) fn rename_cancel(app: &mut App) -> u32 {
+    app.audio.play("Menu_Tick"); // `:865`
+    app.front = None;
+    12
 }
 
 #[cfg(test)]
@@ -1673,5 +1810,264 @@ mod tests {
         assert_eq!(chest_slot(&chests, idx, 0), None);
         assert!(!set_chest_slot(&mut chests, idx, 0, (9, 1)));
         assert_eq!(chest_slot(&chests, 9, 0), None);
+    }
+
+    // --- Phase 5: the rename flow ----------------------------------------
+
+    /// DW-5.1 — the submit writes the store name and the second submit with
+    /// the unchanged text re-writes nothing (`ChestUI.cs:853-860`'s
+    /// write-if-different guard). The submitted text is the keyboard
+    /// session's live text (`Main.npcChatText`'s sync,
+    /// `UIVirtualKeyboard.cs:1061-1067`).
+    #[test]
+    fn dw_5_1_submit_sets_the_store_name() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(open_rename(&mut app), "the editor opens");
+        // Type through the live session (the on-screen/physical path).
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            keyboard::write_str(&mut s.state, "Custom");
+        }
+        assert_eq!(rename_submit(&mut app, "Custom"), 12, "`:842` — sound 12");
+        assert_eq!(chest_name(&app, 0), "Custom");
+        assert!(!app.chest_editing(), "the editor closed (`:843` + `Close`)");
+        // The unchanged-name submit skips the write (`:853-860`).
+        let before = app.chest_names.clone();
+        assert_eq!(rename_submit(&mut app, "Custom"), 12);
+        assert_eq!(app.chest_names, before, "no rewrite for the same name");
+    }
+
+    /// DW-5.1 — the empty-if-default rule (`ChestUI.cs:849-852`): a submit
+    /// whose text equals `Main.defaultChestName` stores "" — on an unnamed
+    /// chest the equal write is skipped, on a renamed chest it clears.
+    #[test]
+    fn dw_5_1_submit_the_default_name_writes_empty() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        // The unnamed chest prefills the default; submitting it untouched
+        // writes nothing ("" == "" after the default-name rule).
+        assert!(open_rename(&mut app));
+        assert_eq!(app.chest_default_name, "Chest");
+        let default = app.chest_default_name.clone();
+        assert_eq!(rename_submit(&mut app, &default), 12);
+        assert!(
+            !app.chest_names.contains_key(&0),
+            "the default-name submit on an unnamed chest stores nothing"
+        );
+        // A renamed chest submitting the default string clears to "".
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            keyboard::write_str(&mut s.state, "Custom");
+        }
+        rename_submit(&mut app, "Custom");
+        assert_eq!(chest_name(&app, 0), "Custom");
+        assert!(open_rename(&mut app), "the editor reopens with the stored name");
+        assert_eq!(rename_submit(&mut app, "Chest"), 12);
+        assert_eq!(
+            chest_name(&app, 0), "",
+            "the default-name submit cleared the stored name (:849-852)"
+        );
+    }
+
+    /// DW-5.1 (dirty) — the 20-character cap (`Chest.cs:70`'s
+    /// `MaxNameLength` = the ctx-2 ctor's `maxLength`, `UIVirtualKeyboard.cs:
+    /// 159`) lives in the keyboard session: the 21st+ characters never land
+    /// and the submit stores exactly the capped 20.
+    #[test]
+    fn dw_5_1_twenty_char_cap_caps_the_session_text() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(open_rename(&mut app));
+        let long_name = "0123456789ABCDEFGHIJKLM";
+        let session_text;
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear(); // the user cleared the prefill before typing
+            keyboard::write_str(&mut s.state, long_name);
+            assert_eq!(s.state.text.len(), 20, "`SetTextMaxLength(20)` caps");
+            session_text = s.state.text.clone();
+        } else {
+            unreachable!("the rename keyboard is live");
+        }
+        rename_submit(&mut app, &session_text);
+        assert_eq!(chest_name(&app, 0), &long_name[..20]);
+    }
+
+    /// DW-5.2 — the cancel closes the editor without writing and plays 12
+    /// (`ChestUI.cs:863-869`).
+    #[test]
+    fn dw_5_2_cancel_closes_editing_without_writing_sound_12() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            keyboard::write_str(&mut s.state, "Old");
+        }
+        assert_eq!(rename_submit(&mut app, "Old"), 12);
+        // Re-open (prefills "Old"), edit, cancel.
+        assert!(open_rename(&mut app));
+        assert_eq!(app.chest_edit_text(), "Old", "the prefill read the store");
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            keyboard::write_str(&mut s.state, "New");
+        }
+        assert_eq!(rename_cancel(&mut app), 12, "`:865` — sound 12");
+        assert!(!app.chest_editing(), "the editor closed");
+        assert_eq!(chest_name(&app, 0), "Old", "the cancel never wrote");
+    }
+
+    /// DW-5.3 — the ctx-2 keyboard prefills from the chest: the stored name,
+    /// or the tile default for an unnamed one, with the `IngameFancyUI.cs:
+    /// 98-125` request shape (`UI.EnterNewName`, `allowEmpty: false`,
+    /// `maxLength: 20`, context 2).
+    #[test]
+    fn dw_5_3_keyboard_context_2_prefills_from_the_chest() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        // The unnamed chest prefills the tile default.
+        assert!(open_rename(&mut app));
+        {
+            let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_ref() else {
+                panic!("the rename keyboard is live");
+            };
+            assert_eq!(s.request.label, keyboard::ENTER_NEW_NAME);
+            assert_eq!(s.request.initial, "Chest", "the tile default prefills");
+            assert_eq!(s.state.text, "Chest");
+            assert_eq!(s.request.allow_empty, false, "the ctor default (:147-156)");
+            assert_eq!(s.request.max_length, 20, "the ctor default == MaxNameLength");
+            assert_eq!(s.request.context, Context::Chest);
+            assert_eq!(s.tail, KeyboardTail::ChestRename);
+            assert!(s.back.is_none(), "the chest tail returns to gameplay");
+        }
+        assert!(app.menu.is_none(), "the single-mode invariant holds");
+        rename_cancel(&mut app);
+        // A stored name prefills over the default.
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            keyboard::write_str(&mut s.state, "Custom");
+        }
+        rename_submit(&mut app, "Custom");
+        assert!(open_rename(&mut app));
+        let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_ref() else {
+            panic!("the rename keyboard is live");
+        };
+        assert_eq!(s.state.text, "Custom", "the stored name prefills");
+    }
+
+    /// DW-5.3 — Enter routes to the submit tail (the name lands, the
+    /// keyboard closes into gameplay) and Escape to the cancel tail (no
+    /// write), through the real App routes (`keyboard_enter`/
+    /// `keyboard_cancel` — the front-screen key path, flow.rs).
+    #[test]
+    fn dw_5_3_enter_and_escape_route_to_submit_and_cancel() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            keyboard::write_str(&mut s.state, "Named");
+        }
+        // Enter (`Main.inputTextEnter`'s chest arm, `UIVirtualKeyboard.cs:
+        // 757-762` → `RenameChestSubmit`): the chest text is always valid
+        // (`TextIsValidForSubmit`'s `_editingChest` gate).
+        app.keyboard_enter();
+        assert!(!app.chest_editing(), "Enter closed the editor");
+        assert_eq!(app.front, None, "back into gameplay");
+        assert_eq!(chest_name(&app, 0), "Named");
+        // Escape (`Main.inputTextEscape` → `TryEscapingMenu` → `Cancel()`,
+        // `:771-774`/:804-819 → `RenameChestCancel`).
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            keyboard::write_str(&mut s.state, "Other");
+        }
+        app.keyboard_cancel();
+        assert!(!app.chest_editing(), "Escape closed the editor");
+        assert_eq!(app.front, None);
+        assert_eq!(chest_name(&app, 0), "Named", "Escape never writes");
+    }
+
+    /// DW-5.4 — the rename click no-ops without an open chest: `open_rename`
+    /// refuses (`false`, no session — the C# would index `Main.chest[-1]`,
+    /// unreachable because the button only draws with a chest), and the
+    /// click on the button's anchor consumes nothing.
+    #[test]
+    fn dw_5_4_rename_click_no_ops_without_an_open_chest() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert_eq!(app.chest, -1);
+        assert!(!open_rename(&mut app), "chest < 0 refuses");
+        assert!(app.front.is_none(), "no keyboard opened");
+        assert!(app.chest_names.is_empty(), "nothing stored");
+        // The dirty click: the button's anchor with no chest open.
+        app.inventory_open = true;
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(510.0, 428.0); // the ID-5 row
+        assert!(!app.handle_chest_clicks(), "the click falls through");
+        assert!(app.front.is_none());
+        assert!(
+            app.ui_left_press,
+            "the press rides on to the crafting/inventory handlers"
+        );
+    }
+
+    /// `ChestUI.RenameChest` (`ChestUI.cs:827-838`) — the button's dispatch:
+    /// not editing → the keyboard opens; editing → the live text submits.
+    #[test]
+    fn rename_button_click_opens_or_submits() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        // Not editing: the keyboard opens (`:830-833`).
+        rename_button_click(&mut app);
+        assert!(app.chest_editing(), "the keyboard opened");
+        // Editing: the live text submits (`:834-837` → `RenameChestSubmit`).
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            keyboard::write_str(&mut s.state, "Clicked");
+        }
+        rename_button_click(&mut app);
+        assert!(!app.chest_editing());
+        assert_eq!(chest_name(&app, 0), "Clicked");
+    }
+
+    /// `Player.cs:33091-33096` — a chest-tile click while the editor is live
+    /// flushes it (sound 12, editor closed, nothing written) before the open
+    /// toggle runs.
+    #[test]
+    fn the_open_path_flushes_a_live_rename_editor() {
+        let mut w = world();
+        place_chest(&mut w, 10, 18, 21, 0);
+        place_chest(&mut w, 30, 40, 21, 0);
+        let mut app = interact_app(w);
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(open_rename(&mut app));
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text.clear();
+            keyboard::write_str(&mut s.state, "Flushed");
+        }
+        // The same chest's tile click: the flush, then the open toggle
+        // closes the chest (sound 12 flush → 11 close).
+        assert!(try_open_chest_at_cursor(&mut app, click(10, 18)));
+        assert!(!app.chest_editing(), "the flush cleared the editor");
+        assert!(app.front.is_none());
+        assert_eq!(app.chest, -1, "the toggle-close followed the flush");
+        assert!(
+            !app.chest_names.contains_key(&0),
+            "the flush never writes (`npcChatText = \"\"`)"
+        );
     }
 }

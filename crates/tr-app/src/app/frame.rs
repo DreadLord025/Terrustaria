@@ -481,6 +481,23 @@ impl App {
         let mut stats = tr_render::sprite::RenderStats::default();
         let mut tile_stats = self.tile_stats;
 
+        // The chest-rename editor's per-frame reads — `Main.editChest`
+        // (`Main.cs:1747`), `Main.npcChatText`'s editor copy
+        // (`UIVirtualKeyboard.cs:1061-1067`) and the stored `Chest.name`
+        // (`ChestUI.cs:115-122`) — parked before the draw site's field
+        // borrows (the keyboard session owns the editor state; the name
+        // reads the map field directly so the borrow stays field-scoped).
+        let chest_editing = self.chest_editing();
+        let chest_edit_text = self.chest_edit_text().to_string();
+        let chest_stored_name = if self.chest > -1 {
+            self.chest_names
+                .get(&(self.chest as usize))
+                .map(String::as_str)
+                .unwrap_or("")
+        } else {
+            ""
+        };
+
         {
             let App {
                 gpu,
@@ -1210,7 +1227,10 @@ impl App {
                                     )
                                 })
                                 .flatten(),
-                            editing: false, // `Main.editChest` — phase 5's rename state
+                            editing: chest_editing,
+                            name: chest_stored_name,
+                            edit_text: &chest_edit_text,
+                            blinker: &mut self.text_blinker,
                             scroll_row: &mut self.chest_scroll_row,
                             button_scales: &mut self.chest_button_scales,
                             button_hovered: &mut self.chest_button_hovered,
