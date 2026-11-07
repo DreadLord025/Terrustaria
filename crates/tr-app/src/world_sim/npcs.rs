@@ -1066,6 +1066,20 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     app.npcs.append(&mut servants);
+    // The hostile shots (`NPC.cs`'s `Projectile.NewProjectile` arms —
+    // the archer's Wooden Arrow Hostile 81): the update pass set
+    // `wants_hostile_shot`, this pass resolves it into the pool (the
+    // knockback 0 — the C# call's `KnockBack: 0f`).
+    let mut shots = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if let Some((kind, sx, sy, svx, svy, dmg)) = n.wants_hostile_shot.take() {
+            shots.push((kind, sx, sy, svx, svy, dmg));
+        }
+    }
+    for (kind, sx, sy, svx, svy, dmg) in shots {
+        app.projectiles
+            .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+    }
     // The WoF's spawn requests + the World state the Hungry reads
     // (`AI_027`'s `wofDrawArea*` ease + `wofNPCIndex`'s presence; the AI
     // holds `&World`, so the writes land here).

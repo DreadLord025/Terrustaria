@@ -42,6 +42,9 @@ use crate::npc::Npc;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.WoodenArrow` (`Projectile.cs:807-815`).
 pub const WOODEN_ARROW: u16 = 1;
+/// `ProjectileID.WoodenArrowHostile` (`ProjectileID.cs:716`) — the
+/// Goblin Archer's shot; the box/flight mirror the wooden arrow.
+pub const WOODEN_ARROW_HOSTILE: u16 = 81;
 /// `ProjectileID.FlameArrow` (`Projectile.cs:817-827`).
 pub const FLAME_ARROW: u16 = 2;
 /// `ProjectileID.Bullet` — the musket ball (`Projectile.cs:950-961`).
@@ -140,6 +143,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:807-815` / `:817-827` (the flame arrow shares the
             // box; `timeLeft = 1200` on both).
             WOODEN_ARROW | FLAME_ARROW => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
+            // `:817-827`'s hostile twin — the same 10x10 box, the aiStyle-1
+            // flight, `timeLeft = 1200`.
+            WOODEN_ARROW_HOSTILE => (10.0, 10.0, 1, 1, 1200, 0, true, true, false),
             // `:950-961`: 4×4, `extraUpdates = 1`, `timeLeft = 600`.
             MUSKET_BALL => (4.0, 4.0, 1, 1, 600, 1, true, false, false),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts and
