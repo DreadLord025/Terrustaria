@@ -60,13 +60,9 @@ fn nactive(t: &Tile) -> bool {
 /// The ocean caves (`OceanCaves`, `:15167-15191`): one winding shaft per
 /// ocean side (a `Next(3)` gate per side) from the surface down past the
 /// ocean floor, carved wide enough to walk. The shaft reuses the port's
-/// blob carve aimed at the beach ramps.
-pub(crate) fn pass_ocean_caves(
-    world: &mut World,
-    surface: &[i32],
-    beach: i32,
-    rng: &mut Rng,
-) {
+/// blob carve aimed at the beach ramps. Shape-level placeholder — the
+/// faithful `WorldGen.oceanCave` port replaces it (M5-OCEAN phase 3).
+pub(crate) fn pass_ocean_caves(world: &mut World, surface: &[i32], rng: &mut Rng) {
     for side in 0..2 {
         if rng.range(0, 3) != 0 {
             continue;
@@ -117,7 +113,6 @@ pub(crate) fn pass_ocean_caves(
                 }
             }
         }
-        let _ = beach;
     }
 }
 

@@ -171,6 +171,21 @@ pub(crate) struct GenVars {
     pub(crate) water_line: i32,
     #[allow(dead_code)] // written by the terrain fill step from Phase 3 on
     pub(crate) lava_line: i32,
+    /// `GenVars.leftBeachEnd`/`rightBeachStart` (`GenVars.cs:90-92`) — the
+    /// inland beach anchors drawn in `Reset` (`WorldGen.cs:11415-11440`).
+    /// The port draws them at the head of the terrain height-map step (the
+    /// first consumer; the spans step remains the stand-in for the jungle
+    /// draw): `Next(300, 340)` per side, the tenth-anniversary fixed 340
+    /// skipped (no seed framework), the dungeon-side extra widths applied —
+    /// the port's dungeon side is fixed Right (M5-BIOME), so the left side
+    /// always takes `beachSandDungeonExtraWidth` (40, `:11194`) and the right
+    /// side the `beachSandJungleExtraWidth` arm (20, `:11195`,
+    /// `:11420-11427` / `:11433-11440`). Ocean Sand (P2) and Beaches (P2)
+    /// consume them without redrawing.
+    #[allow(dead_code)] // written here; consumed from Phase 2 on
+    pub(crate) left_beach_end: i32,
+    #[allow(dead_code)] // written here; consumed from Phase 2 on
+    pub(crate) right_beach_start: i32,
 }
 
 impl Default for GenVars {
@@ -199,6 +214,10 @@ impl Default for GenVars {
             // (`TerrainPass.cs:235-236`).
             water_line: 0,
             lava_line: 0,
+            // The C# Reset zeroes the beach anchors before drawing them
+            // (`WorldGen.cs:11199-11200`).
+            left_beach_end: 0,
+            right_beach_start: 0,
         }
     }
 }
@@ -1035,13 +1054,36 @@ pub(crate) fn executed_pass_names() -> Vec<&'static str> {
 fn step_terrain_height_map(
     _world: &mut World,
     gv: &mut GenVars,
-    _streams: &mut Streams,
+    streams: &mut Streams,
     _opts: &GenOptions,
     noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     let (width, height) = (_world.width, _world.height);
-    gv.map = Some(terrain::surface_height_map(width, height, noise));
+    // `Reset`'s beach draws (`WorldGen.cs:11415-11440`), taken at the head of
+    // the terrain step — the first consumer of the anchors (vanilla draws
+    // them in Reset before every pass; the spans step stays the stand-in for
+    // the later jungle draw). `Next(300, 340)` per side; the tenth-anniversary
+    // fixed 340 is skipped (no seed framework, always the random branch); the
+    // dungeon side is fixed Right (M5-BIOME) so the left side always adds
+    // `beachSandDungeonExtraWidth` = 40 and the right side always takes the
+    // `beachSandJungleExtraWidth` = 20 arm (`:11194-11195`,
+    // `:11420-11427` / `:11433-11440`).
+    let (left_beach_end, right_beach_start) = {
+        let mut brng = streams.pass_rng("Beaches");
+        let left = brng.range(300, 340) + 40;
+        let right = width - (brng.range(300, 340) + 20);
+        (left, right)
+    };
+    gv.left_beach_end = left_beach_end;
+    gv.right_beach_start = right_beach_start;
+    gv.map = Some(terrain::surface_height_map(
+        width,
+        height,
+        noise,
+        left_beach_end,
+        right_beach_start,
+    ));
 }
 
 fn step_terrain_fill(
@@ -1094,12 +1136,22 @@ fn step_plan_biome_spans(
         (world.width as f64 * (percent as f64 * 0.01)) as i32
     };
     gv.jungle_origin_x = jungle_origin_x;
-    let (width, beach) = {
+    let (width, left_beach_end, right_beach_start) = {
         let map = gv.map();
-        (world.width, map.beach)
+        (
+            world.width,
+            map.left_beach_end,
+            map.right_beach_start,
+        )
     };
     let surface = gv.map().heights.clone();
-    gv.spans = Some(biomes::plan_spans(width, &surface, beach, jungle_origin_x));
+    gv.spans = Some(biomes::plan_spans(
+        width,
+        &surface,
+        left_beach_end,
+        right_beach_start,
+        jungle_origin_x,
+    ));
 }
 
 fn step_jungle(
@@ -1118,7 +1170,7 @@ fn step_jungle(
         (l.world_surface, l.rock_layer)
     };
     let (water_line, lava_line) = (gv.water_line as f64, gv.lava_line as f64);
-    let beach = gv.map().beach;
+    let map = gv.map();
     biomes::pass_jungle(
         world,
         jungle_origin_x,
@@ -1126,7 +1178,8 @@ fn step_jungle(
         rock_layer,
         water_line,
         lava_line,
-        beach,
+        map.left_beach_end,
+        map.right_beach_start,
         &mut streams.pass_rng("Jungle"),
     );
 }
@@ -1373,11 +1426,11 @@ fn step_ocean_caves(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let (heights, beach) = {
+    let heights = {
         let map = gv.map();
-        (&map.heights, map.beach)
+        &map.heights
     };
-    biome_detail::pass_ocean_caves(world, heights, beach, &mut streams.drng);
+    biome_detail::pass_ocean_caves(world, heights, &mut streams.drng);
 }
 
 fn step_fragile_ice(
@@ -1707,7 +1760,8 @@ fn step_living_trees(
         world,
         &mut streams.rng,
         &map.heights,
-        map.beach,
+        map.left_beach_end,
+        map.right_beach_start,
         (map.desert_start, map.desert_end),
     );
 }
@@ -2147,6 +2201,12 @@ mod tests {
                 l_altar_y: 0,
             }
         );
+        // The beach anchors zero until the Reset draws write them
+        // (`WorldGen.cs:11199-11200`).
+        assert_eq!(gv.left_beach_end, 0);
+        assert_eq!(gv.right_beach_start, 0);
+        assert_eq!(gv.water_line, 0);
+        assert_eq!(gv.lava_line, 0);
     }
 
     // --- Phase 6: temple stub -------------------------------------------------

@@ -105,8 +105,17 @@ mod tests {
     /// shell publishes `GenVars.temple`, and 137/237 join the frame-
     /// important boot statics — every world on every seed changes by
     /// design (the ANALYSIS section lands in Phase 7).
-    const SEED42_512: u32 = 992682600;
-    const DEFAULT_WORLD: u32 = 1041482865;
+    /// Re-pinned for M5-OCEAN phase 1: the vanilla beach geometry lands —
+    /// `GenVars.leftBeachEnd`/`rightBeachStart` drawn at the head of the
+    /// terrain step from the `Beaches` stream (`WorldGen.cs:11415-11440`:
+    /// `Next(300,340)`, the fixed-Right dungeon side adds 40 left / 20
+    /// right), the compact t²·30 edge ramp retires for the vanilla flat
+    /// shelf at sea level, and `SurfaceMap.beach` splits into the two
+    /// anchors (the living-tree anchors, the jungle/dungeon spans, the
+    /// edge flood and the sand-top rule all ride the new values — every
+    /// world on every seed changes by design).
+    const SEED42_512: u32 = 2847927285;
+    const DEFAULT_WORLD: u32 = 847770346;
 
     #[test]
     fn the_512_seed_42_world_hashes_to_the_pinned_constant() {

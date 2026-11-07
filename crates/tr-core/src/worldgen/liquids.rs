@@ -30,7 +30,7 @@ pub(crate) fn place_liquids(
     let lake_half = map.lake_half;
     let lake_level = map.lake_level;
     let sea_level = map.sea_level;
-    let beach = map.beach;
+    let (left_beach_end, right_beach_start) = (map.left_beach_end, map.right_beach_start);
     let avg_surface = layers.avg_surface;
     let hell_top = layers.hell_top;
     let surface = &mut map.heights;
@@ -93,8 +93,10 @@ pub(crate) fn place_liquids(
             }
         }
     }
-    // Ocean water at both shores.
-    for shore_x in (0..beach).chain(width - beach..width) {
+    // Ocean water at both shores. Interim — the faithful `Beaches` pass
+    // (M5-OCEAN phase 2) carves the ocean prism and owns the water; this
+    // flood only keeps the pre-shelf edge wet until then.
+    for shore_x in (0..left_beach_end).chain(right_beach_start..width) {
         if shore_x < 0 || shore_x >= width {
             continue;
         }

@@ -323,9 +323,14 @@ mod tests {
 
     #[test]
     fn has_surface_trees_and_caves() {
+        // 1600×900, not the old 1024×600: the vanilla beach widths
+        // (`leftBeachEnd` 340-380 / `rightBeachStart` −320..−360,
+        // `WorldGen.cs:11415-11440`) overlap the 2/3 snow band below 1212
+        // wide — vanilla never generates that small (min 4200), so the snow
+        // assert needs a non-degenerate span.
         let opts = GenOptions {
-            width: 1024,
-            height: 600,
+            width: 1600,
+            height: 900,
             seed: 7,
             ..Default::default()
         };
@@ -397,7 +402,12 @@ mod tests {
         assert!(count(25) > 200, "the ebonstone ({})", count(25));
         assert!(count(23) > 50, "the corrupt grass ({})", count(23));
         assert!(count(70) > 50, "the mushroom grass ({})", count(70));
-        assert!(count(368) > 300, "the granite ({})", count(368));
+        // The granite threshold is 150, not the old 300: the vanilla beach
+        // shelf removed the compact ramp's deep edge dip, so the model's
+        // `surface_low` quartet anchor rose and the granite band narrowed on
+        // this seed (201 tiles — recalibrated per the M5-ORES-1 precedent,
+        // ANALYSIS "Ocean passes fidelity (M5-OCEAN)").
+        assert!(count(368) > 150, "the granite ({})", count(368));
         assert!(count(367) > 300, "the marble ({})", count(367));
         // The dungeon colour rides the roll (the blue 41 / the green 43 /
         // the pink 44 — one per world).
