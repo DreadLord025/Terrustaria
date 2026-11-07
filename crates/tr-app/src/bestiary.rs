@@ -2,7 +2,7 @@
 //! `BestiaryDatabase`'s rows (`BestiaryDatabaseNPCsPopulator.cs` builds one
 //! entry per NPC net id; the port has the same twelve).
 
-use tr_core::bestiary::{get_unlock_state_by_kill_count, KillTracker, UnlockState};
+use tr_core::bestiary::{KillTracker, UnlockState, get_unlock_state_by_kill_count};
 
 use crate::npc::{NpcKind, SlimeVariant};
 
@@ -116,6 +116,38 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: true,
         name: "King Slime",
+    },
+    BestiaryEntryDef {
+        credit_id: "EyeofCthulhu",
+        net_id: 4,
+        kind: NpcKind::EyeOfCthulhu,
+        variant: None,
+        quick_unlock: true,
+        name: "Eye of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheHungry",
+        net_id: 115,
+        kind: NpcKind::Hungry,
+        variant: None,
+        quick_unlock: false,
+        name: "The Hungry",
+    },
+    BestiaryEntryDef {
+        credit_id: "LeechHead",
+        net_id: 117,
+        kind: NpcKind::LeechHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Leech",
+    },
+    BestiaryEntryDef {
+        credit_id: "ServantofCthulhu",
+        net_id: 5,
+        kind: NpcKind::ServantOfCthulhu,
+        variant: None,
+        quick_unlock: false,
+        name: "Servant of Cthulhu",
     },
     BestiaryEntryDef {
         credit_id: "WanderingEye",
@@ -373,14 +405,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         name: "Clothier",
     },
     BestiaryEntryDef {
-        credit_id: "EyeofCthulhu",
-        net_id: 4,
-        kind: NpcKind::EyeOfCthulhu,
-        variant: None,
-        quick_unlock: false,
-        name: "Eye of Cthulhu",
-    },
-    BestiaryEntryDef {
         credit_id: "QueenBee",
         net_id: 222,
         kind: NpcKind::QueenBee,
@@ -403,6 +427,222 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Wall of Flesh",
+    },
+    BestiaryEntryDef {
+        credit_id: "TheDestroyer",
+        net_id: 134,
+        kind: NpcKind::TheDestroyer,
+        variant: None,
+        quick_unlock: false,
+        name: "The Destroyer",
+    },
+    BestiaryEntryDef {
+        credit_id: "SkeletronPrime",
+        net_id: 127,
+        kind: NpcKind::SkeletronPrime,
+        variant: None,
+        quick_unlock: false,
+        name: "Skeletron Prime",
+    },
+    BestiaryEntryDef {
+        credit_id: "Retinazer",
+        net_id: 125,
+        kind: NpcKind::Retinazer,
+        variant: None,
+        quick_unlock: false,
+        name: "Retinazer",
+    },
+    BestiaryEntryDef {
+        credit_id: "Spazmatism",
+        net_id: 126,
+        kind: NpcKind::Spazmatism,
+        variant: None,
+        quick_unlock: false,
+        name: "Spazmatism",
+    },
+    BestiaryEntryDef {
+        credit_id: "Plantera",
+        net_id: 262,
+        kind: NpcKind::Plantera,
+        variant: None,
+        quick_unlock: false,
+        name: "Plantera",
+    },
+    BestiaryEntryDef {
+        credit_id: "BrainofCthulhu",
+        net_id: 266,
+        kind: NpcKind::BrainOfCthulhu,
+        variant: None,
+        quick_unlock: false,
+        name: "Brain of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "Creeper",
+        net_id: 267,
+        kind: NpcKind::Creeper,
+        variant: None,
+        quick_unlock: false,
+        name: "Brain of Cthulhu",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinThief",
+        net_id: 26,
+        kind: NpcKind::GoblinThief,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Thief",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinWarrior",
+        net_id: 27,
+        kind: NpcKind::GoblinWarrior,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Warrior",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinArcher",
+        net_id: 28,
+        kind: NpcKind::GoblinArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinPeon",
+        net_id: 111,
+        kind: NpcKind::GoblinPeon,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Peon",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinSummoner",
+        net_id: 471,
+        kind: NpcKind::GoblinSummoner,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Summoner",
+    },
+    BestiaryEntryDef {
+        credit_id: "SnowmanGangsta",
+        net_id: 143,
+        kind: NpcKind::SnowmanGangsta,
+        variant: None,
+        quick_unlock: false,
+        name: "Snowman Gangsta",
+    },
+    BestiaryEntryDef {
+        credit_id: "SnowBalla",
+        net_id: 144,
+        kind: NpcKind::SnowBalla,
+        variant: None,
+        quick_unlock: false,
+        name: "Snow Balla",
+    },
+    BestiaryEntryDef {
+        credit_id: "MysterySnowman",
+        net_id: 145,
+        kind: NpcKind::MysterySnowman,
+        variant: None,
+        quick_unlock: false,
+        name: "Mystery Snowman",
+    },
+    BestiaryEntryDef {
+        credit_id: "MartianOfficer",
+        net_id: 383,
+        kind: NpcKind::MartianOfficer,
+        variant: None,
+        quick_unlock: false,
+        name: "Martian Officer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GrayGrunt",
+        net_id: 385,
+        kind: NpcKind::GrayGrunt,
+        variant: None,
+        quick_unlock: false,
+        name: "Gray Grunt",
+    },
+    BestiaryEntryDef {
+        credit_id: "MartianEngineer",
+        net_id: 386,
+        kind: NpcKind::MartianEngineer,
+        variant: None,
+        quick_unlock: false,
+        name: "Martian Engineer",
+    },
+    BestiaryEntryDef {
+        credit_id: "GigaZapper",
+        net_id: 389,
+        kind: NpcKind::GigaZapper,
+        variant: None,
+        quick_unlock: false,
+        name: "Giga Zapper",
+    },
+    BestiaryEntryDef {
+        credit_id: "MartianWalker",
+        net_id: 520,
+        kind: NpcKind::MartianWalker,
+        variant: None,
+        quick_unlock: false,
+        name: "Martian Walker",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateDeckhand",
+        net_id: 212,
+        kind: NpcKind::PirateDeckhand,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate Deckhand",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateCaptainsMate",
+        net_id: 213,
+        kind: NpcKind::PirateCaptainsMate,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate Captains Mate",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateArcher",
+        net_id: 214,
+        kind: NpcKind::PirateArcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate Archer",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateCorsair",
+        net_id: 215,
+        kind: NpcKind::PirateCorsair,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate Corsair",
+    },
+    BestiaryEntryDef {
+        credit_id: "PirateCaptain",
+        net_id: 216,
+        kind: NpcKind::PirateCaptain,
+        variant: None,
+        quick_unlock: false,
+        name: "Pirate Captain",
+    },
+    BestiaryEntryDef {
+        credit_id: "Golem",
+        net_id: 245,
+        kind: NpcKind::Golem,
+        variant: None,
+        quick_unlock: true,
+        name: "Golem",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoblinTinkerer",
+        net_id: 107,
+        kind: NpcKind::GoblinTinkerer,
+        variant: None,
+        quick_unlock: false,
+        name: "Goblin Tinkerer",
     },
     BestiaryEntryDef {
         credit_id: "EaterofWorldsHead",
@@ -436,15 +676,22 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerHead,
         NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormHead,
         NpcKind::EaterOfWorldsBody | NpcKind::EaterOfWorldsTail => NpcKind::EaterOfWorldsHead,
+        // The Golem's parts fold onto the body's entry (the Brain's
+        // Creeper precedent — one credit per boss).
+        NpcKind::GolemHead
+        | NpcKind::GolemFistLeft
+        | NpcKind::GolemFistRight
+        | NpcKind::GolemHeadFree => NpcKind::Golem,
         other => other,
     };
     ENTRIES
         .iter()
         .find(|e| {
-            e.kind == kind && match (e.variant, kind) {
-                (Some(v), NpcKind::Slime) => v == variant,
-                _ => true,
-            }
+            e.kind == kind
+                && match (e.variant, kind) {
+                    (Some(v), NpcKind::Slime) => v == variant,
+                    _ => true,
+                }
         })
         .expect("every ported NPC kind has a bestiary entry")
 }

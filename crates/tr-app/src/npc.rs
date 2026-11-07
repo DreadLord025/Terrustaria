@@ -3,8 +3,8 @@
 
 use tr_core::{TILE_PX, World};
 
-use crate::npc_buffs::NpcBuffs;
 use crate::npc_ai::HoverParams;
+use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
 pub(crate) const GRAVITY: f32 = 0.4;
@@ -58,6 +58,70 @@ pub enum NpcKind {
     Hornet,
     /// `NPCID.MeteorHead` (23) — the meteor hover (`aiStyle 5`).
     MeteorHead,
+    /// `NPCID.GoblinThief` (26) — the invasion runner (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 12, def 4, 60 HP, kb 0.8, value 100).
+    GoblinThief,
+    /// `NPCID.GoblinWarrior` (27) — the invasion fighter (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
+    GoblinWarrior,
+    /// `NPCID.GoblinArcher` (28) — the invasion archer (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 25, def 8, 110 HP, kb 0.5, value 150; the arrows
+    /// ride the projectile work).
+    GoblinArcher,
+    /// `NPCID.GoblinPeon` (111) — the invasion grunt (`NPC.cs`: 18×38,
+    /// aiStyle 3, dmg 20, def 6, 80 HP, kb 0.7, value 200).
+    GoblinPeon,
+    /// `NPCID.GoblinSummoner` (471) — the hardmode invasion caster
+    /// (`NPC.cs`: 18×38, aiStyle 3 (the summoner's cast arms ride the
+    /// caster work), dmg 80, def 26, 2000 HP, kb 0.15, value 5000;
+    /// `GetNPCInvasionGroup`'s 10-point kill).
+    GoblinSummoner,
+
+    /// `NPCID.SnowmanGangsta` (143) — the Frost Legion's bottle-thrower
+    /// (`NPC.cs`: 26×40, aiStyle 38 (the speed 3/accel 0.7; the throw
+    /// arm lands with the projectile work), dmg 50, def 20, 200 HP,
+    /// kb 0.6, value 400).
+    SnowmanGangsta,
+    /// `NPCID.SnowBalla` (144) — the kicker (`NPC.cs`: 26×40, aiStyle 38
+    /// (the speed 3.5/accel 0.8; the kick arm = the follow-up), dmg 65,
+    /// def 26, 240 HP, kb 0.6, value 400).
+    SnowBalla,
+    /// `NPCID.MysterySnowman` (145) — the jumper (`NPC.cs`: 26×40,
+    /// aiStyle 38 (the speed 4/accel 1 + the jump arm), dmg 55, def 22,
+    /// 220 HP, kb 0.6, value 400).
+    MysterySnowman,
+    /// `NPCID.MartianOfficer` (383) — the martian officer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 50, 300 HP, kb 0.25, value 1200).
+    MartianOfficer,
+    /// `NPCID.GrayGrunt` (385) — the martian grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 80, def 30, 750 HP, kb 0, value 600).
+    GrayGrunt,
+    /// `NPCID.MartianEngineer` (386) — the martian engineer (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 40, def 34, 400 HP, kb 0.4, value 1200).
+    MartianEngineer,
+    /// `NPCID.GigaZapper` (389) — the martian zapper (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 75, def 38, 600 HP, kb 0.3, value 1200).
+    GigaZapper,
+    /// `NPCID.MartianWalker` (520) — the martian walker (`NPC.cs`: 34×110,
+    /// aiStyle 3, dmg 60, def 40, 2000 HP, kb 0).
+    MartianWalker,
+    /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
+    PirateDeckhand,
+    /// `NPCID.PirateCaptainsMate` (213) — the pirate bruiser (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 50, def 22, 450 HP, kb 0.2, value 1000).
+    PirateCaptainsMate,
+    /// `NPCID.PirateArcher` (214) — the pirate archer (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 30, def 14, 225 HP, kb 0.3, value 1000; the arrows
+    /// ride the projectile work).
+    PirateArcher,
+    /// `NPCID.PirateCorsair` (215) — the pirate elite (`NPC.cs`: 18×40,
+    /// aiStyle 3, dmg 35, def 20, 350 HP, kb 0.35, value 1500).
+    PirateCorsair,
+    /// `NPCID.PirateCaptain` (216) — the pirate boss-minion (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 70, def 30, 3000 HP, kb 0, value 50000;
+    /// `GetNPCInvasionGroup`'s 5-point kill).
+    PirateCaptain,
     /// `NPCID.GoblinSorcerer` (29) — the goblin-invasion caster (`aiStyle 8`:
     /// 18x38, 40 HP).
     GoblinSorcerer,
@@ -143,7 +207,8 @@ pub enum NpcKind {
     Clothier,
     /// `NPCID.EyeofCthulhu` (4) — the first boss (`NPC.cs:8703-8719`:
     /// 100x110, dmg 15, def 12, 2800 HP, noGravity/noTileCollide; the
-    /// death sets `downed_eoc` and opens the Dryad's arrival).
+    /// death sets `downed_eoc` and opens the Dryad's arrival). The full
+    /// aiStyle-4 phase machine rides M4-BOSS-2b.
     EyeOfCthulhu,
     /// `NPCID.QueenBee` (222) — the jungle boss (`NPC.cs:11855-11872`:
     /// 66x66, dmg 30, def 8, 3400 HP; the death sets `downed_queen_bee`
@@ -153,10 +218,74 @@ pub enum NpcKind {
     /// (`NPC.cs:9166-9182`: 80x102, dmg 32, def 10, 4400 HP; the death
     /// sets `downed_skeletron` and opens the Clothier's arrival).
     SkeletronHead,
+    /// `NPCID.ServantofCthulhu` (5) — the EoC minion (`NPC.cs:8717-8727`:
+    /// 20×20, aiStyle 5 (the generic hover, num 5 / num2 0.03
+    /// `NPC.cs:50299-50301`), damage 12, lifeMax 8, noGravity,
+    /// noTileCollide).
+    ServantOfCthulhu,
     /// `NPCID.WallofFlesh` (113) — the underworld wall (`NPC.cs:10342`:
     /// 100x100 x1.2, dmg 50, def 12, 8000 HP; the death starts hardmode —
     /// `WorldGen.StartHardmode()`, `NPC.cs:79485`).
     WallOfFlesh,
+    /// `NPCID.TheHungry` (115) — the wall's minion (`NPC.cs:10363+`:
+    /// 30×30, aiStyle 29, dmg 30, def 10, 240 HP, noGravity,
+    /// noTileCollide). The AI anchors to the wall's draw band
+    /// (`Main.wofNPCIndex`/`wofDrawArea*` → the World fields) and reads the
+    /// wall's hp for the damage/defense tiers.
+    Hungry,
+    /// `NPCID.LeechHead` (117) — the tongue-phase worm head
+    /// (`NPC.cs`: 14×14, aiStyle 6 (the worm engine), dmg 26, def 2,
+    /// 60 HP, noGravity/noTileCollide, behindTiles).
+    LeechHead,
+    /// `NPCID.LeechBody` (118) — the worm's link (`NPC.cs`: 14×14,
+    /// aiStyle 6, dmg 22, def 6, 60 HP).
+    LeechBody,
+    /// `NPCID.TheDestroyer` (134) — the mech worm (`NPC.cs:10659+`,
+    /// the same-kind chain; M4-BOSS-7).
+    TheDestroyer,
+    /// `NPCID.SkeletronPrime` (127) — the mech skull (`NPC.cs:10556+`,
+    /// M4-BOSS-8).
+    SkeletronPrime,
+    /// `NPCID.Retinazer` (125) — the Twins' laser eye (`NPC.cs:10522+`,
+    /// M4-BOSS-9).
+    Retinazer,
+    /// `NPCID.Spazmatism` (126) — the Twins' cursed eye (M4-BOSS-9).
+    Spazmatism,
+    /// `NPCID.Plantera` (262) — the jungle bulb boss (`NPC.cs:12379+`,
+    /// M4-BOSS-10).
+    Plantera,
+    /// `NPCID.BrainofCthulhu` (266) — the crimson boss (`NPC.cs:12438`:
+    /// 160x110, dmg 30, def 14, 1250 HP, dontTakeDamage in the phase 1;
+    /// the death sets the downedBoss2 equivalent).
+    BrainOfCthulhu,
+    /// `NPCID.Creeper` (267) — the Brain's satellite (`NPC.cs:12456`:
+    /// 30x30, dmg 20, def 10, 100 HP).
+    Creeper,
+    /// `NPCID.BoundGoblin` (105) — the tied Tinkerer awaiting the rescue
+    /// (`SetDefaults` `NPC.cs:10245-10257`: 18x34, aiStyle 0 — no
+    /// movement, dmg 10, def 15, 250 HP, kb 0.5, friendly).
+    BoundGoblin,
+    /// `NPCID.GoblinTinkerer` (107) — the freed Tinkerer (`SetDefaults`
+    /// `NPC.cs:10271-10283`: 18x40, aiStyle 7 the town walker, 250 HP,
+    /// def 15, kb 0.5).
+    GoblinTinkerer,
+    /// `NPCID.Golem` (245) — the BODY (`SetDefaults` `NPC.cs:12163-12177`:
+    /// 140x140, aiStyle 45, dmg 72, def 26, 15000 HP, kb 0, boss, value
+    /// 15 gold). Its death is the fight's end (`:79346`'s event flag).
+    Golem,
+    /// `NPCID.GolemHead` (246) — the attached head (`:12178-12192`: 70x70,
+    /// aiStyle 46, dmg 64, def 20, 25000 HP, the silent death — the head
+    /// detaches rather than dies).
+    GolemHead,
+    /// `NPCID.GolemFistLeft` (247) — the lunging fist (`:12193-12206`:
+    /// 40x30, aiStyle 47, dmg 59, def 28, 10000 HP).
+    GolemFistLeft,
+    /// `NPCID.GolemFistRight` (248) — the mirrored fist (the same stats).
+    GolemFistRight,
+    /// `NPCID.GolemHeadFree` (249) — the detached head (`:12207-12220`:
+    /// 70x70, aiStyle 48, dmg 80, def 32, 16000 HP, `dontTakeDamage` —
+    /// the spawn-shielded free-flying phase).
+    GolemHeadFree,
 }
 
 /// The slime colour variants. Blue is `NPCID.BlueSlime` (1); the rest are the
@@ -339,6 +468,41 @@ impl NpcKind {
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
             NpcKind::GoblinSorcerer => 15,
+            NpcKind::GoblinThief => 57,
+            NpcKind::GoblinWarrior => 58,
+            NpcKind::GoblinArcher => 59,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -368,7 +532,25 @@ impl NpcKind {
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
-            NpcKind::WallOfFlesh => 45,
+            NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
+            NpcKind::Hungry => 47,
+            NpcKind::LeechHead => 48,
+            NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
+            NpcKind::BrainOfCthulhu => 55,
+            NpcKind::Creeper => 56,
+            NpcKind::BoundGoblin => 63,
+            NpcKind::GoblinTinkerer => 64,
+            NpcKind::Golem => 73,
+            NpcKind::GolemHead => 74,
+            NpcKind::GolemFistLeft => 75,
+            NpcKind::GolemFistRight => 76,
+            NpcKind::GolemHeadFree => 77,
         }
     }
 
@@ -390,6 +572,24 @@ impl NpcKind {
             13 => NpcKind::Hornet,
             14 => NpcKind::MeteorHead,
             15 => NpcKind::GoblinSorcerer,
+            57 => NpcKind::GoblinThief,
+            58 => NpcKind::GoblinWarrior,
+            59 => NpcKind::GoblinArcher,
+            60 => NpcKind::GoblinPeon,
+            61 => NpcKind::GoblinSummoner,
+            65 => NpcKind::SnowmanGangsta,
+            66 => NpcKind::SnowBalla,
+            67 => NpcKind::MysterySnowman,
+            68 => NpcKind::MartianOfficer,
+            69 => NpcKind::GrayGrunt,
+            70 => NpcKind::MartianEngineer,
+            71 => NpcKind::GigaZapper,
+            72 => NpcKind::MartianWalker,
+            68 => NpcKind::PirateDeckhand,
+            69 => NpcKind::PirateCaptainsMate,
+            70 => NpcKind::PirateArcher,
+            71 => NpcKind::PirateCorsair,
+            72 => NpcKind::PirateCaptain,
             16 => NpcKind::Tim,
             17 => NpcKind::DarkCaster,
             18 => NpcKind::FireImp,
@@ -419,7 +619,25 @@ impl NpcKind {
             42 => NpcKind::EyeOfCthulhu,
             43 => NpcKind::QueenBee,
             44 => NpcKind::SkeletronHead,
-            45 => NpcKind::WallOfFlesh,
+            45 => NpcKind::ServantOfCthulhu,
+            46 => NpcKind::WallOfFlesh,
+            47 => NpcKind::Hungry,
+            48 => NpcKind::LeechHead,
+            49 => NpcKind::LeechBody,
+            50 => NpcKind::TheDestroyer,
+            51 => NpcKind::SkeletronPrime,
+            52 => NpcKind::Retinazer,
+            53 => NpcKind::Spazmatism,
+            54 => NpcKind::Plantera,
+            55 => NpcKind::BrainOfCthulhu,
+            56 => NpcKind::Creeper,
+            63 => NpcKind::BoundGoblin,
+            64 => NpcKind::GoblinTinkerer,
+            73 => NpcKind::Golem,
+            74 => NpcKind::GolemHead,
+            75 => NpcKind::GolemFistLeft,
+            76 => NpcKind::GolemFistRight,
+            77 => NpcKind::GolemHeadFree,
             _ => return None,
         })
     }
@@ -439,35 +657,53 @@ impl NpcKind {
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::EaterOfWorldsBody
                 | NpcKind::EaterOfWorldsTail
+                | NpcKind::LeechHead
+                | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
         )
     }
 
-    /// The head kinds (`:51436`'s list minus the unported families).
+    /// The Destroyer: the head of its own same-kind chain (`AI_037`).
     pub fn is_worm_head(self) -> bool {
         matches!(
             self,
-            NpcKind::DevourerHead | NpcKind::GiantWormHead | NpcKind::EaterOfWorldsHead
+            NpcKind::DevourerHead
+                | NpcKind::GiantWormHead
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::LeechHead
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The mid-body kinds that spawn another of themselves while the
-    /// budget holds (`:51350`'s list).
+    /// budget holds (`:51350`'s list plus the Destroyer's same-kind
+    /// chain).
     pub fn is_worm_mid(self) -> bool {
         matches!(
             self,
-            NpcKind::DevourerBody | NpcKind::GiantWormBody | NpcKind::EaterOfWorldsBody
+            NpcKind::DevourerBody
+                | NpcKind::GiantWormBody
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::LeechBody
+                | NpcKind::TheDestroyer
         )
     }
 
     /// The next segment's kind down the chain (`type + 1` in the vanilla
     /// spawns, `:51347`/`:51357`).
     pub fn worm_next(self) -> NpcKind {
+        if self == NpcKind::TheDestroyer {
+            // The same-kind chain: every segment IS the head type.
+            return self;
+        }
         match self {
             NpcKind::DevourerHead => NpcKind::DevourerBody,
             NpcKind::DevourerBody | NpcKind::DevourerTail => NpcKind::DevourerTail,
             NpcKind::GiantWormHead => NpcKind::GiantWormBody,
             NpcKind::GiantWormBody | NpcKind::GiantWormTail => NpcKind::GiantWormTail,
             NpcKind::EaterOfWorldsHead => NpcKind::EaterOfWorldsBody,
+            NpcKind::LeechHead => NpcKind::LeechBody,
+            NpcKind::LeechBody => NpcKind::LeechBody,
             _ => NpcKind::EaterOfWorldsTail,
         }
     }
@@ -508,6 +744,48 @@ impl NpcKind {
             NpcKind::SkeletronHead => (80.0, 102.0),
             // `SetDefaults` case 113 (`NPC.cs:10344`): 100x100 x1.2 = 120.
             NpcKind::WallOfFlesh => (120.0, 120.0),
+            // `SetDefaults` case 134 (`NPC.cs:10662`): 38x38 x1.25.
+            NpcKind::TheDestroyer => (48.0, 48.0),
+            // `SetDefaults` case 127 (`NPC.cs:10558`): 80x102.
+            NpcKind::SkeletronPrime => (80.0, 102.0),
+            // The Twins: `SetDefaults` cases 125/126 are 100x110.
+            NpcKind::Retinazer => (100.0, 110.0),
+            NpcKind::Spazmatism => (100.0, 110.0),
+            // `SetDefaults` case 262 (`NPC.cs:12381`): 86x86.
+            NpcKind::Plantera => (86.0, 86.0),
+            // `SetDefaults` case 266 (`NPC.cs:12440`): 160x110.
+            NpcKind::BrainOfCthulhu => (160.0, 110.0),
+            // `SetDefaults` case 267 (`NPC.cs:12458`): 30x30.
+            NpcKind::Creeper => (30.0, 30.0),
+            // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/111/29/471).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner => (18.0, 38.0),
+            // The frost trio: 26x40 (`NPC.cs`'s cases 143/144/145).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => (26.0, 40.0),
+            // The martians: 18x40 (`NPC.cs`'s cases 383/385/386/389) + the walker's 34x110.
+            NpcKind::MartianOfficer => (18.0, 40.0),
+            NpcKind::GrayGrunt => (18.0, 40.0),
+            NpcKind::MartianEngineer => (18.0, 40.0),
+            NpcKind::GigaZapper => (18.0, 40.0),
+            NpcKind::MartianWalker => (34.0, 110.0),
+            // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => (18.0, 40.0),
+            // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the body
+            // 140x140, the head/free head 70x70, the fists 40x30.
+            NpcKind::Golem => (140.0, 140.0),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (70.0, 70.0),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => (40.0, 30.0),
+            // The bound: 18x34 (`NPC.cs:10249-10250`), the freed: 18x40
+            // (`:10274-10275`).
+            NpcKind::BoundGoblin => (18.0, 34.0),
+            NpcKind::GoblinTinkerer => (18.0, 40.0),
             // The skeleton humanoids ride the zombie's 18x40 frame
             // (`SetDefaults` case 21/44: width 18, height 40).
             NpcKind::Skeleton => (18.0, 40.0),
@@ -524,7 +802,13 @@ impl NpcKind {
             NpcKind::MeteorHead => (22.0, 22.0),
             // The casters: `SetDefaults` case 29 is 18x38, the cases
             // 45/32/24 18x40 (`NPC.cs:8951`/`:9322`/`:9121`/`:9078`).
-            NpcKind::GoblinSorcerer => (18.0, 38.0),
+            // The goblins: 18x38 (`NPC.cs`'s cases 26/27/28/29/111/471).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner
+            | NpcKind::GoblinSorcerer => (18.0, 38.0),
             NpcKind::Tim => (18.0, 40.0),
             NpcKind::DarkCaster => (18.0, 40.0),
             NpcKind::FireImp => (18.0, 40.0),
@@ -539,9 +823,7 @@ impl NpcKind {
             NpcKind::Shark => (100.0, 24.0),
             // The worms: the Devourer 22x22 (`:8763`), the Giant Worm 14x14
             // (`:8850`), the Eater of Worlds 38x38 (`:8903`).
-            NpcKind::DevourerHead
-            | NpcKind::DevourerBody
-            | NpcKind::DevourerTail => (22.0, 22.0),
+            NpcKind::DevourerHead | NpcKind::DevourerBody | NpcKind::DevourerTail => (22.0, 22.0),
             NpcKind::GiantWormHead | NpcKind::GiantWormBody | NpcKind::GiantWormTail => {
                 (14.0, 14.0)
             }
@@ -550,6 +832,12 @@ impl NpcKind {
             | NpcKind::EaterOfWorldsTail => (38.0, 38.0),
             NpcKind::CaveBat => (22.0, 18.0),
             NpcKind::KingSlime => (98.0, 92.0),
+            // `NPC.cs:8705` (the eye 100×110) / `:8717` (the servant 20×20).
+            NpcKind::EyeOfCthulhu => (100.0, 110.0),
+            NpcKind::ServantOfCthulhu => (20.0, 20.0),
+            // `NPC.cs`'s 115 (30×30) / 117-118 (14×14).
+            NpcKind::Hungry => (30.0, 30.0),
+            NpcKind::LeechHead | NpcKind::LeechBody => (14.0, 14.0),
         }
     }
 
@@ -585,6 +873,26 @@ impl NpcKind {
             NpcKind::SkeletronHead => 4400,
             // `SetDefaults` case 113 (`NPC.cs:10348`): 8000 HP.
             NpcKind::WallOfFlesh => 8000,
+            // `NPC.cs`'s 115 (240) / 117-118 (60).
+            NpcKind::Hungry => 240,
+            NpcKind::LeechHead | NpcKind::LeechBody => 60,
+            // `SetDefaults` case 134 (`NPC.cs:10666`): 8000 HP (the
+            // vanilla's realLife pool — the v1 carries the per-segment HP).
+            NpcKind::TheDestroyer => 8000,
+            // `SetDefaults` case 127 (`NPC.cs:10562`): 28000 HP.
+            NpcKind::SkeletronPrime => 28000,
+            // `SetDefaults` cases 125/126.
+            NpcKind::Retinazer => 20000,
+            NpcKind::Spazmatism => 23000,
+            // `SetDefaults` case 262 (`NPC.cs:12385`): 30000 HP.
+            NpcKind::Plantera => 30000,
+            // `SetDefaults` cases 266/267.
+            NpcKind::BrainOfCthulhu => 1250,
+            NpcKind::Creeper => 100,
+            // The goblins.
+            // 250 HP both (`:10255`, `:10280`).
+            NpcKind::BoundGoblin => 250,
+            NpcKind::GoblinTinkerer => 250,
             // `NPC.cs:53945`'s table: the Skeleton 60, the Undead Miner 70,
             // the Cave Bat 16.
             NpcKind::Skeleton => 60,
@@ -599,7 +907,35 @@ impl NpcKind {
             NpcKind::Hornet => 48,
             NpcKind::MeteorHead => 26,
             // The casters: `SetDefaults` cases 29/45/32/24.
+            // `NPC.cs`'s cases 26 (60) / 27+111 (80) / 28 (110) / 29 (40) /
+            // 471 (2000).
+            NpcKind::GoblinThief => 60,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 80,
+            NpcKind::GoblinArcher => 110,
             NpcKind::GoblinSorcerer => 40,
+            NpcKind::GoblinSummoner => 2000,
+            // The frost trio: 200/240/220 (`NPC.cs`'s cases 143-145).
+            NpcKind::SnowmanGangsta => 200,
+            NpcKind::SnowBalla => 240,
+            NpcKind::MysterySnowman => 220,
+            // The martians: 300/750/400/600/2000 (`NPC.cs`'s cases 383-520).
+            NpcKind::MartianOfficer => 300,
+            NpcKind::GrayGrunt => 750,
+            NpcKind::MartianEngineer => 400,
+            NpcKind::GigaZapper => 600,
+            NpcKind::MartianWalker => 2000,
+            // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 300,
+            NpcKind::PirateCaptainsMate => 450,
+            NpcKind::PirateArcher => 225,
+            NpcKind::PirateCorsair => 350,
+            NpcKind::PirateCaptain => 3000,
+            // `SetDefaults` 245-249: the body 15000, the head 25000, the
+            // fists 10000, the free head 16000.
+            NpcKind::Golem => 15000,
+            NpcKind::GolemHead => 25000,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 10000,
+            NpcKind::GolemHeadFree => 16000,
             NpcKind::Tim => 200,
             NpcKind::DarkCaster => 50,
             NpcKind::FireImp => 70,
@@ -618,6 +954,9 @@ impl NpcKind {
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => 150,
             NpcKind::KingSlime => 2000,
+            // `NPC.cs:8710` (the eye) / `:8722` (the servant).
+            NpcKind::EyeOfCthulhu => 2800,
+            NpcKind::ServantOfCthulhu => 8,
         }
     }
 
@@ -641,6 +980,21 @@ impl NpcKind {
             NpcKind::QueenBee => 30,
             NpcKind::SkeletronHead => 32,
             NpcKind::WallOfFlesh => 50,
+            // `NPC.cs`'s 115 (30) / 117 (26) / 118 (22).
+            NpcKind::Hungry => 30,
+            NpcKind::LeechHead => 26,
+            NpcKind::LeechBody => 22,
+            NpcKind::TheDestroyer => 70,
+            NpcKind::SkeletronPrime => 47,
+            NpcKind::Retinazer => 45,
+            NpcKind::Spazmatism => 50,
+            NpcKind::Plantera => 50,
+            NpcKind::BrainOfCthulhu => 30,
+            NpcKind::Creeper => 20,
+            // The `friendly` pair (`:10246`/`:10272`) — the contact gate
+            // excludes them; 0 stands for the vanilla's unused dmg 10.
+            NpcKind::BoundGoblin => 0,
+            NpcKind::GoblinTinkerer => 0,
             // `SetDefaults` case 21: damage 20; case 44: 22; case 49: 13.
             NpcKind::Skeleton => 20,
             NpcKind::UndeadMiner => 22,
@@ -654,7 +1008,33 @@ impl NpcKind {
             NpcKind::Hornet => 26,
             NpcKind::MeteorHead => 40,
             // The casters: `SetDefaults` damage 20/20/20/30.
-            NpcKind::GoblinSorcerer => 20,
+            // `NPC.cs`'s cases 26 (12) / 27+111 (20) / 28 (25) / 29 (20) /
+            // 471 (80).
+            NpcKind::GoblinThief => 12,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 20,
+            NpcKind::GoblinArcher => 25,
+            NpcKind::GoblinSummoner => 80,
+            // The frost trio: 50/65/55.
+            NpcKind::SnowmanGangsta => 50,
+            NpcKind::SnowBalla => 65,
+            NpcKind::MysterySnowman => 55,
+            // The martians: 75/80/40/75/60.
+            NpcKind::MartianOfficer => 75,
+            NpcKind::GrayGrunt => 80,
+            NpcKind::MartianEngineer => 40,
+            NpcKind::GigaZapper => 75,
+            NpcKind::MartianWalker => 60,
+            // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 35,
+            NpcKind::PirateCaptainsMate => 50,
+            NpcKind::PirateArcher => 30,
+            NpcKind::PirateCorsair => 35,
+            NpcKind::PirateCaptain => 70,
+            // `SetDefaults` 245-249: 72/64/59/59/80.
+            NpcKind::Golem => 72,
+            NpcKind::GolemHead => 64,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 59,
+            NpcKind::GolemHeadFree => 80,
             NpcKind::Tim => 20,
             NpcKind::DarkCaster => 20,
             NpcKind::FireImp => 30,
@@ -678,12 +1058,19 @@ impl NpcKind {
             NpcKind::EaterOfWorldsTail => 11,
             NpcKind::Guide => 0,
             NpcKind::KingSlime => 40,
+            // `NPC.cs:8707` (the eye damage 15) / `:8720` (the servant 12).
+            NpcKind::EyeOfCthulhu => 15,
+            NpcKind::ServantOfCthulhu => 12,
         }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct Npc {
+    /// `NPC.extraValue` (`WorldItem.cs:1125-1200`'s carrier): the coins a
+    /// revenge enemy picked up, dropped on kill via `NPCLoot_DropMoney`'s
+    /// `+= extraValue` (:79680).
+    pub extra_value: u64,
     pub kind: NpcKind,
     /// The slime colour variant (`SlimeVariant`); only meaningful while
     /// `kind == NpcKind::Slime`.
@@ -750,6 +1137,19 @@ pub struct Npc {
     /// The init latch — `ai[0] == 0`'s "no child spawned yet" analog: the
     /// link spawns its child on the first worm pass.
     pub worm_inited: bool,
+    /// The WoF's Leech-head spawn request (the tongue-phase
+    /// `NPC.CountNPCS(117) < 10` spawn; the sim counts and spawns).
+    pub wants_leech: bool,
+    /// The WoF's Hungry init request (`localAI[0]` 1 → 2's 11 spawns).
+    pub wants_hungry: bool,
+    /// The AI's per-tick contact-damage override (the Hungry's
+    /// damage tiers, `aiStyle 29`'s `num388`).
+    pub damage_override: Option<i32>,
+    /// The WoF's draw-band scan targets (`AI_027`'s bottom/top walks) —
+    /// the world sim eases `World.wof_draw_*` toward them (the AI holds
+    /// `&World`, so the band state lives on the sim side).
+    pub wof_bottom_target: f32,
+    pub wof_top_target: f32,
     /// The caster's sphere spawn request — the vanilla `NPC.NewNPC` at the
     /// shoot tick (`AI_008`), resolved by the world sim after the update
     /// pass (the borrow-checker-safe `wants_minion` shape). The payload is
@@ -757,6 +1157,29 @@ pub struct Npc {
     pub wants_sphere: Option<(NpcKind, f32, f32)>,
     /// `ai[3]`: x position while descending through water, for the bounce flip.
     wet_x: f32,
+    /// `NPC.ai[0..4]` — the EoC phase machine's state
+    /// (`ai[0]` the phase, `ai[1]` the sub-state, `ai[2]` the timer,
+    /// `ai[3]` the dash/servant counter; `AI()`'s aiStyle-4 block).
+    pub ai: [f32; 4],
+    /// The servant spawn request — the `NPC.NewNPC(..., 5)` calls in the
+    /// aiStyle-4 block (`NPC.cs:4598`/`:4651` of the AI()), resolved by the
+    /// world sim after the update pass (the `wants_sphere` shape; the payload
+    /// is the (x, y, vx, vy) spawn state).
+    pub wants_servant: Option<(f32, f32, f32, f32)>,
+    /// `this.defense = 0` — the AI's per-frame stat override (the EoC's
+    /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
+    /// makes it negative).
+    pub defense_override: Option<i32>,
+    /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
+    /// it holds (the Brain of Cthulhu's Creeper shield).
+    pub dont_take_damage: bool,
+    /// The brain's Creeper-swarm init mark (`AI_054`'s `localAI[0]`
+    /// 0 -> 1): the 20 Creepers spawn once, at the first sim tick.
+    pub swarm_done: bool,
+    /// The hostile-shot request (`NPC.cs`'s `Projectile.NewProjectile`
+    /// arms): the (kind, x, y, vx, vy, damage) payload the sim resolves
+    /// into the pool (the `wants_sphere` shape).
+    pub wants_hostile_shot: Option<(u16, f32, f32, f32, f32, i32)>,
 }
 
 impl Npc {
@@ -800,6 +1223,27 @@ impl Npc {
         Some(npc)
     }
 
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// the random sky tile): the position is the caller's — the slime
+    /// falls through the air under its own gravity. The seed-facing
+    /// variation and the variant stats ride the ground ctor's shape.
+    pub fn spawn_slime_sky(x_px: f32, y_px: f32, variant: SlimeVariant) -> Self {
+        let stats = variant.stats();
+        let mut seed = ((x_px / 16.0) as i32 as u32).wrapping_mul(2_654_435_761);
+        seed ^= seed >> 15;
+        let mut npc = Self::new(
+            NpcKind::Slime,
+            x_px,
+            y_px,
+            if seed & 1 == 0 { 1 } else { -1 },
+            0.4 + (seed % 80) as f32 * 0.01,
+        );
+        npc.slime = variant;
+        npc.max_hp = stats.life;
+        npc.hp = stats.life;
+        npc
+    }
+
     /// `NPCID.KingSlime`: the first boss, spawned by the `B` debug key or `TR_BOSS`.
     pub fn spawn_king_slime(world: &World, x_tile: i32) -> Option<Self> {
         let top = world.surface_of(x_tile);
@@ -815,6 +1259,41 @@ impl Npc {
         let mut npc = Self::new(NpcKind::KingSlime, x, y, -1, 1.2);
         npc.hp = npc.max_hp;
         Some(npc)
+    }
+
+    /// `NPC.SpawnOnPlayer(plr, 4)` (`NPC.cs:80475+`): the boss spawn scan
+    /// looks for open space around the player's tile; the flying,
+    /// no-tile-collide eye only needs an in-bounds spot above the player —
+    /// the AI flies to the target from wherever it appears (the tile-scan
+    /// fidelity is the M4-BOSS polish follow-up).
+    pub fn spawn_eye_of_cthulhu(world: &World, player_x: f32, player_y: f32) -> Option<Self> {
+        let (w, h) = NpcKind::EyeOfCthulhu.size();
+        // SpawnBoss' tile-anchored position: the player's centre column,
+        // one screen above (the vanilla scan prefers off-screen space).
+        let x = player_x - w * 0.5;
+        // Clamped into the world: near the surface the 600-px lift would
+        // leave it; the AI flies to the target from wherever it appears.
+        let y = (player_y - 600.0 - h * 0.5).max(16.0);
+        if x < 0.0
+            || y < 0.0
+            || x + w > world.width as f32 * TILE_PX
+            || y + h > world.height as f32 * TILE_PX
+        {
+            return None;
+        }
+        let mut npc = Self::new(NpcKind::EyeOfCthulhu, x, y, -1, 0.0);
+        npc.hp = npc.max_hp;
+        Some(npc)
+    }
+
+    /// The aiStyle-4 block's `NPC.NewNPC(..., 5)` minion spawn
+    /// (`NPC.cs:4598` of the AI()): the servant appears 10 px out along the
+    /// aim and inherits the launch velocity (`vector3.X/Y`).
+    pub fn spawn_servant_of_cthulhu(x: f32, y: f32, vx: f32, vy: f32) -> Self {
+        let mut npc = Self::new(NpcKind::ServantOfCthulhu, x - 10.0, y - 10.0, 1, 0.0);
+        npc.vx = vx;
+        npc.vy = vy;
+        npc
     }
 
     /// Zombies walk on the surface and burn away at dawn.
@@ -834,7 +1313,13 @@ impl Npc {
         if world.tile(x_tile, top).is_some_and(|t| t.liquid > 128) {
             return None;
         }
-        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
     }
 
     /// Spawns a caster standing on the found ground tile (`SpawnNPC`'s
@@ -909,7 +1394,13 @@ impl Npc {
         if !world.in_bounds(x_tile, (y / TILE_PX) as i32 + 1) {
             return None;
         }
-        Some(Self::new(kind, x, y, if (x_tile % 2) as i32 == 0 { 1 } else { -1 }, 0.0))
+        Some(Self::new(
+            kind,
+            x,
+            y,
+            if (x_tile % 2) as i32 == 0 { 1 } else { -1 },
+            0.0,
+        ))
     }
 
     /// Spawns the Guide homeless at the surface tile (`NPC.NewNPC`'s
@@ -974,6 +1465,7 @@ impl Npc {
     pub(crate) fn new(kind: NpcKind, x: f32, y: f32, facing: i32, hop_timer: f32) -> Self {
         Self {
             kind,
+            extra_value: 0,
             slime: SlimeVariant::Blue,
             x,
             y,
@@ -1003,7 +1495,18 @@ impl Npc {
             seg_index: 0,
             worm_left: 0,
             worm_inited: false,
+            wants_leech: false,
+            wants_hungry: false,
+            damage_override: None,
+            wof_bottom_target: -1.0,
+            wof_top_target: -1.0,
             wet_x: 0.0,
+            ai: [0.0; 4],
+            wants_servant: None,
+            defense_override: None,
+            dont_take_damage: false,
+            swarm_done: false,
+            wants_hostile_shot: None,
         }
     }
 
@@ -1048,7 +1551,33 @@ impl Npc {
             NpcKind::Hornet => 0.5,
             NpcKind::MeteorHead => 0.4,
             // The casters: `SetDefaults` knockBackResist 0.6/0.6/0.6/0.5.
+            // `NPC.cs`'s cases 26 (0.8) / 27+111 (0.7) / 28 (0.5) / 29 (0.6)
+            // / 471 (0.15).
+            NpcKind::GoblinThief => 0.8,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 0.7,
+            NpcKind::GoblinArcher => 0.5,
             NpcKind::GoblinSorcerer => 0.6,
+            // The frost trio: kb 0.6.
+            NpcKind::GoblinSummoner => 0.15,
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 0.6,
+            // The martians: 0.25/0/0.4/0.3/0.
+            NpcKind::MartianOfficer => 0.25,
+            NpcKind::GrayGrunt => 0.0,
+            NpcKind::MartianEngineer => 0.4,
+            NpcKind::GigaZapper => 0.3,
+            NpcKind::MartianWalker => 0.0,
+            // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 0.4,
+            NpcKind::PirateCaptainsMate => 0.2,
+            NpcKind::PirateArcher => 0.3,
+            NpcKind::PirateCorsair => 0.35,
+            NpcKind::PirateCaptain => 0.0,
+            // The whole family: kb 0 (`:12171`/`:12188`/`:12204`/`:12218`).
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
             NpcKind::Tim => 0.6,
             NpcKind::DarkCaster => 0.6,
             NpcKind::FireImp => 0.5,
@@ -1087,7 +1616,30 @@ impl Npc {
             NpcKind::QueenBee => 0.0,
             NpcKind::SkeletronHead => 0.0,
             NpcKind::WallOfFlesh => 0.0,
+            NpcKind::TheDestroyer => 0.0,
+            // `SetDefaults` case 127: knockBackResist 0.
+            NpcKind::SkeletronPrime => 0.0,
+            NpcKind::Retinazer => 0.0,
+            NpcKind::Spazmatism => 0.0,
+            NpcKind::Plantera => 0.0,
+            NpcKind::BrainOfCthulhu => 0.45,
+            NpcKind::Creeper => 0.8,
+            NpcKind::GoblinPeon => 0.8,
+            NpcKind::GoblinThief => 0.7,
+            NpcKind::GoblinWarrior => 0.5,
+            NpcKind::GoblinArcher => 0.7,
+            NpcKind::BoundGoblin => 0.5,
+            NpcKind::GoblinTinkerer => 0.5,
+            NpcKind::SkeletronPrime => 0.0,
+            NpcKind::Retinazer => 0.0,
+            NpcKind::Spazmatism => 0.0,
             NpcKind::KingSlime => 0.0,
+            // 115/117/118: knockBackResist 0.
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // The eye/servant blocks set no knockBackResist — the
+            // SetDefaults head's default applies.
+            NpcKind::EyeOfCthulhu => 1.0,
+            NpcKind::ServantOfCthulhu => 1.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1097,6 +1649,9 @@ impl Npc {
     /// King Slime 10; the slime variants ride their `SetDefaultsFromNetId`
     /// lines).
     pub fn defense(&self) -> i32 {
+        if let Some(d) = self.defense_override {
+            return d;
+        }
         if self.kind == NpcKind::Slime {
             return self.slime.stats().defense;
         }
@@ -1117,7 +1672,33 @@ impl Npc {
             NpcKind::Hornet => 12,
             NpcKind::MeteorHead => 6,
             // The casters: `SetDefaults` defense 2/4/2/16.
+            // `NPC.cs`'s cases 26 (4) / 27+111 (6) / 28 (8) / 29 (2) /
+            // 471 (26).
+            NpcKind::GoblinThief => 4,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon => 6,
+            NpcKind::GoblinArcher => 8,
             NpcKind::GoblinSorcerer => 2,
+            // The frost trio: 20/26/22.
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
+            // The martians: 50/30/34/38/40.
+            NpcKind::MartianOfficer => 50,
+            NpcKind::GrayGrunt => 30,
+            NpcKind::MartianEngineer => 34,
+            NpcKind::GigaZapper => 38,
+            NpcKind::MartianWalker => 40,
+            // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 17,
+            NpcKind::PirateCaptainsMate => 22,
+            NpcKind::PirateArcher => 14,
+            NpcKind::PirateCorsair => 20,
+            NpcKind::PirateCaptain => 30,
+            // `SetDefaults` 245-249: 26/20/28/28/32.
+            NpcKind::Golem => 26,
+            NpcKind::GolemHead => 20,
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => 28,
+            NpcKind::GolemHeadFree => 32,
             NpcKind::Tim => 4,
             NpcKind::DarkCaster => 2,
             NpcKind::FireImp => 16,
@@ -1153,7 +1734,35 @@ impl Npc {
             NpcKind::QueenBee => 8,
             NpcKind::SkeletronHead => 10,
             NpcKind::WallOfFlesh => 12,
+            NpcKind::TheDestroyer => 0,
+            NpcKind::SkeletronPrime => 24,
+            NpcKind::Retinazer => 10,
+            NpcKind::Spazmatism => 10,
+            NpcKind::Plantera => 14,
+            NpcKind::BrainOfCthulhu => 14,
+            NpcKind::Creeper => 10,
+            NpcKind::GoblinPeon => 4,
+            NpcKind::GoblinThief => 6,
+            NpcKind::GoblinWarrior => 8,
+            NpcKind::GoblinArcher => 6,
+            // def 15 both (`:10254`, `:10279`).
+            NpcKind::BoundGoblin => 15,
+            NpcKind::GoblinTinkerer => 15,
             NpcKind::KingSlime => 10,
+            // `NPC.cs`'s 115 (10) / 117 (2) / 118 (6) — the hungry's
+            // per-tick tiers ride `defense_override`.
+            NpcKind::Hungry => 10,
+            NpcKind::LeechHead => 2,
+            NpcKind::LeechBody => 6,
+            // `NPC.cs:8709` (the eye defense 12; the AI zeroes it in the
+            // final phase) / `:8721` (the servant 0).
+            NpcKind::EyeOfCthulhu => 12,
+            NpcKind::ServantOfCthulhu => 0,
+            // `SetDefaults` case 471: defense 26; the frost trio: 20/26/22.
+            NpcKind::GoblinSummoner => 26,
+            NpcKind::SnowmanGangsta => 20,
+            NpcKind::SnowBalla => 26,
+            NpcKind::MysterySnowman => 22,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1182,7 +1791,36 @@ impl Npc {
             NpcKind::Hornet => 200.0,
             NpcKind::MeteorHead => 250.0,
             // The casters: `SetDefaults` value 200/5000/140/350.
-            NpcKind::GoblinSorcerer => 200.0,
+            // `NPC.cs`'s cases 26 (100) / 27+111 (200) / 28 (150) / 29 (200)
+            // / 471 (5000).
+            NpcKind::GoblinThief => 100.0,
+            NpcKind::GoblinWarrior | NpcKind::GoblinPeon | NpcKind::GoblinSorcerer => 200.0,
+            NpcKind::GoblinArcher => 150.0,
+            NpcKind::GoblinSummoner => 5000.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
+            // The martians: 1200/600/1200/1200/0 (the walker has no value row —
+            // the vanilla's 2000-HP body drops through the kill chain).
+            NpcKind::MartianOfficer => 1200.0,
+            NpcKind::GrayGrunt => 600.0,
+            NpcKind::MartianEngineer => 1200.0,
+            NpcKind::GigaZapper => 1200.0,
+            NpcKind::MartianWalker => 0.0,
+            // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
+            NpcKind::PirateDeckhand => 700.0,
+            NpcKind::PirateCaptainsMate => 1000.0,
+            NpcKind::PirateArcher => 1000.0,
+            NpcKind::PirateCorsair => 1500.0,
+            NpcKind::PirateCaptain => 50000.0,
+            // The body carries `Item.buyPrice(0, 15)` = 15 gold = 150000
+            // copper (`:12173`); the parts none.
+            NpcKind::Golem => 150000.0,
+            NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => 0.0,
+            // The frost trio: value 400.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => 400.0,
             NpcKind::Tim => 5000.0,
             NpcKind::DarkCaster => 140.0,
             NpcKind::FireImp => 350.0,
@@ -1218,7 +1856,25 @@ impl Npc {
             NpcKind::QueenBee => 50000.0,
             NpcKind::SkeletronHead => 50000.0,
             NpcKind::WallOfFlesh => 80000.0,
+            NpcKind::TheDestroyer => 120000.0,
+            NpcKind::SkeletronPrime => 120000.0,
+            NpcKind::Retinazer => 120000.0,
+            NpcKind::Spazmatism => 120000.0,
+            NpcKind::Plantera => 150000.0,
+            NpcKind::BrainOfCthulhu => 50000.0,
+            NpcKind::Creeper => 0.0,
+            NpcKind::GoblinPeon => 100.0,
+            NpcKind::GoblinThief => 200.0,
+            NpcKind::GoblinWarrior => 150.0,
+            NpcKind::GoblinArcher => 200.0,
+            NpcKind::BoundGoblin => 0.0,
+            NpcKind::GoblinTinkerer => 0.0,
             NpcKind::KingSlime => 10_000.0,
+            // The hungry/leech rows carry no value line.
+            NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => 0.0,
+            // `NPC.cs:8713` (the eye value 30000); the servant has no row.
+            NpcKind::EyeOfCthulhu => 30_000.0,
+            NpcKind::ServantOfCthulhu => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -1246,6 +1902,11 @@ impl Npc {
     /// `knock_back` the weapon's `Item.knockBack`.
     pub fn hurt(&mut self, amount: i32, from_x: f32, knock_back: f32, crit: bool) -> bool {
         if self.hurt_cd > 0.0 || self.hp <= 0 {
+            return false;
+        }
+        // `NPC.dontTakeDamage` (`NPC.cs:6525`): the shielded boss takes
+        // nothing (the Brain of Cthulhu's Creeper shield).
+        if self.dont_take_damage {
             return false;
         }
         self.hp -= amount;
@@ -1338,27 +1999,82 @@ impl Npc {
             | NpcKind::Demolitionist
             | NpcKind::Painter
             | NpcKind::WitchDoctor
-            | NpcKind::Clothier => self.update_guide(world, dt),
-            NpcKind::EyeOfCthulhu => self.update_eoc(world, player),
+            | NpcKind::Clothier
+            | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
             NpcKind::QueenBee => self.update_queen_bee(world, player),
             NpcKind::SkeletronHead => self.update_skeletron(world, player),
             NpcKind::WallOfFlesh => self.update_wof(world, player),
+            NpcKind::Hungry => self.update_hungry(world, player),
+            // The leeches ride the worm pass (aiStyle 6 — the chain move).
+            NpcKind::TheDestroyer => {}
+            NpcKind::SkeletronPrime => self.update_prime(world, player),
+            NpcKind::Retinazer | NpcKind::Spazmatism => self.update_twin(world, player),
+            NpcKind::Plantera => self.update_plantera(world, player),
+            NpcKind::BrainOfCthulhu => self.update_brain(world, player),
+            NpcKind::Creeper => self.update_creeper(world, player, rng),
+            // aiStyle 0 (`:10252`): the bound stand still until the talk.
+            NpcKind::BoundGoblin => {}
+            NpcKind::GoblinPeon | NpcKind::GoblinThief | NpcKind::GoblinWarrior => {
+                self.update_goblin(world, player)
+            }
+            NpcKind::GoblinArcher => self.update_archer(world, player, rng),
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => self.update_golem(world, player),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => self.update_cave_bat(world, player, dt),
-            NpcKind::EaterOfSouls => {
-                self.update_hover(world, player, HoverParams::EATER_OF_SOULS)
+            // The goblin army's fighters (aiStyle 3): the walker speed
+            // rides the skeleton's, the peon/warrior/summoner carry the
+            // family's 0.85 hop (the vanilla's per-type velocity.X table
+            // folds into the walker params — the faithful per-type rows
+            // land with the AI_003's velocity table pass).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon => self.update_skeleton(world, player, dt),
+            // The frost trio: aiStyle 38's movement core rides the walker
+            // (the per-type speeds 3/3.5/4 fold into the walker params —
+            // the throw/kick/jump arms land with the projectile work).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.update_skeleton(world, player, dt)
             }
+            // The martians: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Scrambler/RayGunner/zapper
+            // shot arms land with the projectile work).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper
+            | NpcKind::MartianWalker => self.update_skeleton(world, player, dt),
+            // The pirates: aiStyle 3 rides the walker (the per-type speeds
+            // fold into the walker params — the Captain's cannon and the
+            // Deadeye's shots land with the projectile work).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => self.update_skeleton(world, player, dt),
+            NpcKind::GoblinSummoner => self.update_caster(world, player, rng),
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                self.update_cave_bat(world, player, dt)
+            }
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
+                self.update_cave_bat(world, player, dt)
+            }
+            NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
             NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
-            NpcKind::MeteorHead => {
-                self.update_hover(world, player, HoverParams::METEOR_HEAD)
-            }
+            NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
             NpcKind::KingSlime => self.update_king_slime(world, player, dt),
-            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster
-            | NpcKind::FireImp => self.update_caster(world, player, rng),
+            NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
+            NpcKind::ServantOfCthulhu => {
+                self.update_hover(world, player, HoverParams::SERVANT_OF_CTHULHU)
+            }
+            // The leeches ride the worm pass (aiStyle 6 — the chain move).
+            NpcKind::GoblinSorcerer | NpcKind::Tim | NpcKind::DarkCaster | NpcKind::FireImp => {
+                self.update_caster(world, player, rng)
+            }
             NpcKind::ChaosBall | NpcKind::BurningSphere | NpcKind::WaterSphere => {
                 self.update_sphere(world, player)
             }
@@ -1376,7 +2092,9 @@ impl Npc {
             | NpcKind::GiantWormTail
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
-            | NpcKind::EaterOfWorldsTail => {}
+            | NpcKind::EaterOfWorldsTail
+            | NpcKind::LeechHead
+            | NpcKind::LeechBody => {}
         }
         self.find_frame();
         self.contact(player);
@@ -1399,10 +2117,123 @@ impl Npc {
             0
         };
         match self.kind {
+            // The goblins: the 16/21/20-frame humanoid strips (the same
+            // accumulator as the zombie's).
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::GoblinPeon => 21,
+                        _ => 16,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The frost trio: the 4/5/7-frame strips (the same walker
+            // accumulator).
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::SnowmanGangsta => 4,
+                        NpcKind::SnowBalla => 5,
+                        _ => 7,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            // The martians: the 9-frame strips (the walker's 11) — the same
+            // accumulator.
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            NpcKind::MartianWalker => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 11;
+                }
+            }
+            // The pirates: the 16/20-frame humanoid strips (the same
+            // accumulator).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    let count = match self.kind {
+                        NpcKind::PirateDeckhand | NpcKind::PirateCaptainsMate => 16,
+                        _ => 20,
+                    };
+                    self.frame = (self.frame + 1) % count;
+                }
+            }
+            NpcKind::GoblinSummoner => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 20;
+                }
+            }
+            // The hungry (3 frames) / the leech segments (1).
+            NpcKind::Hungry => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 3 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::LeechHead | NpcKind::LeechBody => {
+                self.frame = 0;
+            }
             // Case 1 — blue slime (`NPC.cs:70801-70826`): the counter ticks once
             // per step, again when moving and a third time while attacking; at
             // 8.0 the frame advances and wraps over the 2-frame strip.
             NpcKind::Slime => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            // Case 4/5 — the eye and the servant (`NPC.cs:67247-67256`): the
+            // counter ticks with the motion class, the frame wraps over the
+            // 6-frame (the eye) / 2-frame (the servant) strip.
+            NpcKind::EyeOfCthulhu => {
+                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 6 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::ServantOfCthulhu => {
                 self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
@@ -1550,10 +2381,7 @@ impl Npc {
                     };
                 }
             }
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => {
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => {
                 self.frame_counter += 1.0;
                 if self.frame_counter >= 4.0 {
                     self.frame_counter = 0.0;
@@ -1634,6 +2462,111 @@ impl Npc {
             | NpcKind::EaterOfWorldsHead
             | NpcKind::EaterOfWorldsBody
             | NpcKind::EaterOfWorldsTail => {}
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => {
+                // The goblins: the walker 3-frame machine (aiStyle 3).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::Golem
+            | NpcKind::GolemHead
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::GolemHeadFree => {
+                // The v1: the single-frame draws (the Golem's part
+                // animation cycles land with the full AI_045-48 machines).
+                self.frame_counter = 0.0;
+                self.frame = 0;
+            }
+            NpcKind::GoblinTinkerer => {
+                // The town 3-frame machine (`Main.npcFrameCount[107]`,
+                // aiStyle 7's FindFrame — the Guide's arm).
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 8.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 16.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 32.0 {
+                        self.frame = 1;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                }
+            }
+            NpcKind::BoundGoblin => {
+                // The tied pose: the single frame holds (`aiStyle 0` runs
+                // no FindFrame cycle).
+                self.frame_counter = 0.0;
+                self.frame = 0;
+            }
+            NpcKind::BrainOfCthulhu | NpcKind::Creeper => {
+                // `Main.npcFrameCount[266]` = 1, [267] = 1 (`Main.cs:67082`).
+            }
+            NpcKind::Plantera => {
+                // `Main.npcFrameCount[262]` = 5 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 5 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                // `Main.npcFrameCount[125/126]` = 2 (`Main.cs:67082`).
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.frame + 1 >= 2 {
+                        0
+                    } else {
+                        self.frame + 1
+                    };
+                }
+            }
+            NpcKind::SkeletronPrime => {
+                // `Main.npcFrameCount[127]` = 1 (`Main.cs:67082`).
+            }
+            NpcKind::TheDestroyer => {
+                // `Main.npcFrameCount[134]` = 1 (`Main.cs:67082`).
+            }
             NpcKind::WallOfFlesh => {
                 // `Main.npcFrameCount[113]` = 1 (`Main.cs:67082`).
             }
@@ -2074,6 +3007,307 @@ impl Npc {
     /// Simplified `AI_015_KingSlime`: big hops toward the player, a teleport when the
     /// player escapes, and a burst of blue slimes when it lands. Minion spawning is
     /// reported through `spawn_minion` so the app can add them to its NPC list.
+    /// `AI()`'s aiStyle-4 block — the Eye of Cthulhu's phase machine
+    /// (`NPC.cs`'s aiStyle-4 `if` in `AI()`, 841 C# lines). The state:
+    /// `ai[0]` the phase (0 the hover, 1/2 the spins, 3 the final),
+    /// `ai[1]` the sub-state, `ai[2]` the timer, `ai[3]` the dash/servant
+    /// counter. The expert-mode and `getGoodWorld` branches are out (the
+    /// port has neither difficulty flag) — the classic path is verbatim,
+    /// the skips carry the C# cites. The movement integrates directly
+    /// (`noTileCollide` + `noGravity`).
+    fn update_eye_of_cthulhu(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let dead = player.hp <= 0;
+        // `num6`: the aim angle — `Math.Atan2(y: bottom - 59 - target.Y - h/2,
+        // x: center.X - target.X - w/2) + 1.57` wrapped to 2π.
+        let mut num6 = (self.y + h - 59.0 - pcy).atan2(self.x + w * 0.5 - pcx) + 1.57;
+        if num6 < 0.0 {
+            num6 += 6.283;
+        } else if num6 > 6.283 {
+            num6 -= 6.283;
+        }
+        // `num7`: the turn rate by the state (the C# num7 table).
+        let mut num7 = 0.0;
+        if self.ai[0] == 0.0 && self.ai[1] == 0.0 {
+            num7 = 0.02;
+        }
+        if self.ai[0] == 0.0 && self.ai[1] == 2.0 && self.ai[2] > 40.0 {
+            num7 = 0.05;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 0.0 {
+            num7 = 0.05;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 2.0 && self.ai[2] > 40.0 {
+            num7 = 0.08;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 4.0 && self.ai[2] > 20.0 {
+            num7 = 0.15;
+        }
+        if self.ai[0] == 3.0 && self.ai[1] == 5.0 {
+            num7 = 0.05;
+        }
+        if self.rotation < num6 {
+            if num6 - self.rotation > 3.1415 {
+                self.rotation -= num7;
+            } else {
+                self.rotation += num7;
+            }
+        } else if self.rotation > num6 {
+            if self.rotation - num6 > 3.1415 {
+                self.rotation += num7;
+            } else {
+                self.rotation -= num7;
+            }
+        }
+        if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
+            self.rotation = num6;
+        }
+        if self.rotation < 0.0 {
+            self.rotation += 6.283;
+        } else if self.rotation > 6.283 {
+            self.rotation -= 6.283;
+        }
+        if self.rotation > num6 - num7 && self.rotation < num6 + num7 {
+            self.rotation = num6;
+        }
+        // `Main.IsItDay() | dead`: the climb-away
+        // (`velocity.Y -= 0.04f; EncourageDespawn(10)` — the removal rides
+        // the world sim's distance cull).
+        if world.day_time || dead {
+            self.vy -= 0.04;
+            self.integrate_no_tile_collide();
+            return;
+        }
+        if self.ai[0] == 0.0 {
+            if self.ai[1] == 0.0 {
+                // The hover: 5 speed, 0.04 accel toward 200 px above the
+                // player (`num9`/`num10` classic).
+                let cx = self.x + w * 0.5;
+                let cy = self.y + h * 0.5;
+                let num11 = pcx - cx;
+                let num12 = pcy - 200.0 - cy;
+                let num14 = (num11 * num11 + num12 * num12).sqrt();
+                let num13 = if num14 != 0.0 { 5.0 / num14 } else { 0.0 };
+                let (dx, dy) = (num11 * num13, num12 * num13);
+                if self.vx < dx {
+                    self.vx += 0.04;
+                    if self.vx < 0.0 && dx > 0.0 {
+                        self.vx += 0.04;
+                    }
+                } else if self.vx > dx {
+                    self.vx -= 0.04;
+                    if self.vx > 0.0 && dx < 0.0 {
+                        self.vx -= 0.04;
+                    }
+                }
+                if self.vy < dy {
+                    self.vy += 0.04;
+                    if self.vy < 0.0 && dy > 0.0 {
+                        self.vy += 0.04;
+                    }
+                } else if self.vy > dy {
+                    self.vy -= 0.04;
+                    if self.vy > 0.0 && dy < 0.0 {
+                        self.vy -= 0.04;
+                    }
+                }
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 600.0 {
+                    self.ai[1] = 1.0;
+                    self.ai[2] = 0.0;
+                    self.ai[3] = 0.0;
+                } else if (self.y + h < player.y && num14 < 500.0) && !dead {
+                    self.ai[3] += 1.0;
+                    if self.ai[3] >= 110.0 {
+                        // The servant burst (the `NPC.NewNPC(..., 5)` arm).
+                        self.ai[3] = 0.0;
+                        self.rotation = num6;
+                        let num18 = pcx - cx;
+                        let num19 = pcy - cy;
+                        let num20 = 5.0 / (num18 * num18 + num19 * num19).sqrt();
+                        let (vx, vy) = (num18 * num20, num19 * num20);
+                        self.wants_servant = Some((cx + vx * 10.0, cy + vy * 10.0, vx, vy));
+                    }
+                }
+            } else if self.ai[1] == 1.0 {
+                // The dash wind-up: the velocity locks onto the target
+                // (6 speed classic).
+                self.rotation = num6;
+                let cx = self.x + w * 0.5;
+                let cy = self.y + h * 0.5;
+                let num23 = pcx - cx;
+                let num24 = pcy - cy;
+                let num25 = 6.0 / (num23 * num23 + num24 * num24).sqrt();
+                self.vx = num23 * num25;
+                self.vy = num24 * num25;
+                self.ai[1] = 2.0;
+            } else if self.ai[1] == 2.0 {
+                // The dash flight: 40 free ticks, then the 0.98 damp; the
+                // chain resets at 150.
+                self.ai[2] += 1.0;
+                if self.ai[2] >= 40.0 {
+                    self.vx *= 0.98;
+                    self.vy *= 0.98;
+                    if self.vx.abs() < 0.1 {
+                        self.vx = 0.0;
+                    }
+                    if self.vy.abs() < 0.1 {
+                        self.vy = 0.0;
+                    }
+                } else {
+                    self.rotation = self.vy.atan2(self.vx) - 1.57;
+                }
+                if self.ai[2] >= 150.0 {
+                    self.ai[3] += 1.0;
+                    self.ai[2] = 0.0;
+                    self.rotation = num6;
+                    if self.ai[3] >= 3.0 {
+                        self.ai[1] = 0.0;
+                        self.ai[3] = 0.0;
+                    } else {
+                        self.ai[1] = 1.0;
+                    }
+                }
+            }
+            if (self.hp as f32) < self.max_hp as f32 * 0.5 {
+                self.ai[0] = 1.0;
+                self.ai[1] = 0.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+            self.integrate_no_tile_collide();
+            return;
+        }
+        if self.ai[0] == 1.0 || self.ai[0] == 2.0 {
+            // The spin: `ai[2]` ramps to 0.5 while phase 1 (or the
+            // getGood half-spin `ai[3] == 1`), rotation spins, `ai[1]`
+            // counts to 100 → the next phase (the classic path; the
+            // expert servant bursts and the `reflectsProjectiles` flag
+            // are the getGood/expert arms).
+            if self.ai[0] == 1.0 || self.ai[3] == 1.0 {
+                self.ai[2] += 0.005;
+                if self.ai[2] > 0.5 {
+                    self.ai[2] = 0.5;
+                }
+            } else {
+                self.ai[2] -= 0.005;
+                if self.ai[2] < 0.0 {
+                    self.ai[2] = 0.0;
+                }
+            }
+            self.rotation += self.ai[2];
+            self.ai[1] += 1.0;
+            if self.ai[1] >= 100.0 {
+                if self.ai[3] == 1.0 {
+                    self.ai[3] = 0.0;
+                    self.ai[1] = 0.0;
+                } else {
+                    self.ai[0] += 1.0;
+                    self.ai[1] = 0.0;
+                    if self.ai[0] != 3.0 {
+                        self.ai[2] = 0.0;
+                    }
+                }
+            }
+            self.vx *= 0.98;
+            self.vy *= 0.98;
+            if self.vx.abs() < 0.1 {
+                self.vx = 0.0;
+            }
+            if self.vy.abs() < 0.1 {
+                self.vy = 0.0;
+            }
+            self.integrate_no_tile_collide();
+            return;
+        }
+        // Phase 3: `this.defense = 0` and the faster dash machine (6.8
+        // speed, 130-tick chains; the expert rage sub-states
+        // `ai[1] = 3/4/5` are out with the flag2/flag3 gates).
+        self.defense_override = Some(0);
+        if self.ai[1] == 0.0 {
+            // The hover at 120 px above (6 speed, 0.07 accel).
+            let cx = self.x + w * 0.5;
+            let cy = self.y + h * 0.5;
+            let num39 = pcx - cx;
+            let num40 = pcy - 120.0 - cy;
+            let num41 = (num39 * num39 + num40 * num40).sqrt();
+            let num42 = if num41 != 0.0 { 6.0 / num41 } else { 0.0 };
+            let (dx, dy) = (num39 * num42, num40 * num42);
+            if self.vx < dx {
+                self.vx += 0.07;
+                if self.vx < 0.0 && dx > 0.0 {
+                    self.vx += 0.07;
+                }
+            } else if self.vx > dx {
+                self.vx -= 0.07;
+                if self.vx > 0.0 && dx < 0.0 {
+                    self.vx -= 0.07;
+                }
+            }
+            if self.vy < dy {
+                self.vy += 0.07;
+                if self.vy < 0.0 && dy > 0.0 {
+                    self.vy += 0.07;
+                }
+            } else if self.vy > dy {
+                self.vy -= 0.07;
+                if self.vy > 0.0 && dy < 0.0 {
+                    self.vy -= 0.07;
+                }
+            }
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 200.0 {
+                self.ai[1] = 1.0;
+                self.ai[2] = 0.0;
+                self.ai[3] = 0.0;
+            }
+        } else if self.ai[1] == 1.0 {
+            self.rotation = num6;
+            let cx = self.x + w * 0.5;
+            let cy = self.y + h * 0.5;
+            let num43 = pcx - cx;
+            let num44 = pcy - cy;
+            let num45 = 6.8 / (num43 * num43 + num44 * num44).sqrt();
+            self.vx = num43 * num45;
+            self.vy = num44 * num45;
+            self.ai[1] = 2.0;
+        } else if self.ai[1] == 2.0 {
+            self.ai[2] += 1.0;
+            if self.ai[2] >= 40.0 {
+                self.vx *= 0.97;
+                self.vy *= 0.97;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+            } else {
+                self.rotation = self.vy.atan2(self.vx) - 1.57;
+            }
+            if self.ai[2] >= 130.0 {
+                self.ai[3] += 1.0;
+                self.ai[2] = 0.0;
+                self.rotation = num6;
+                if self.ai[3] >= 3.0 {
+                    self.ai[1] = 0.0;
+                    self.ai[3] = 0.0;
+                } else {
+                    self.ai[1] = 1.0;
+                }
+            }
+        }
+        self.integrate_no_tile_collide();
+    }
+
+    /// `noTileCollide` + `noGravity` movement: the raw integration, no
+    /// tile interaction (`SetDefaults` cases 4/5 set both flags).
+    fn integrate_no_tile_collide(&mut self) {
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
     fn update_king_slime(&mut self, world: &World, player: &mut Player, dt: f32) {
         let (w, h) = NpcKind::KingSlime.size();
         let (pcx, pcy) = player.center();
@@ -2308,9 +3542,7 @@ impl Npc {
                     (self.x + w * 0.5, self.y - 8.0)
                 }
                 // `:21171`: `(pos.X + width/2 + direction*8, pos.Y + 20)`.
-                NpcKind::FireImp => {
-                    (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0)
-                }
+                NpcKind::FireImp => (self.x + w * 0.5 + self.facing as f32 * 8.0, self.y + 20.0),
                 _ => return,
             };
             let sphere = match self.kind {
@@ -2320,95 +3552,6 @@ impl Npc {
                 _ => return,
             };
             self.wants_sphere = Some((sphere, sx, sy));
-        }
-    }
-
-    /// `AI_004`'s EoC machine (`NPC.cs:19960-20700`) — the v1 phase
-    /// cycle without the Servant spawns and the <50% transformation (the
-    /// follow-ups): the hover accelerations toward the target (`ai[0]==0`'s
-    /// num10/num12 pair), the charge cycle (`ai[1]` 0→1→2 — the aim, the
-    /// velocity = the direct delta × 6, the 40-tick decel ×0.98), the day
-    /// flee (`Main.IsItDay() | dead` → the rise 0.04, `:20100` region).
-    fn update_eoc(&mut self, world: &World, player: &Player) {
-        let (w, h) = self.size();
-        let (pcx, pcy) = player.center();
-        let cx = self.x + w * 0.5;
-        let cy = self.y + h * 0.5;
-        // The day flee (`:20100`'s `Main.IsItDay() | dead` arm): the boss
-        // rises away and despawns off-world (the framework's guard).
-        if world.day_time {
-            self.vy -= 0.04;
-            self.x += self.vx;
-            self.y += self.vy;
-            if self.y < -500.0 {
-                self.hp = 0;
-            }
-            return;
-        }
-        // The hover target: above the player (the vanilla's
-        // `vector = target.Center - (0, num12)` offset — the num12
-        // accelerations seek the offset point).
-        let hover_y = pcy - 300.0;
-        // `ai[0]==0 && ai[1]==0` — the hover phase (the counter counts
-        // within it; the cast_windup selects the phase).
-        if self.cast_windup == 0 {
-            // The X: toward the player (num10 = 0.05? the vanilla's
-            // num10/num11 pair — the X accel to the player's X).
-            let dx = pcx - cx;
-            self.vx += dx.signum() * 0.07;
-            if self.vx.abs() > 8.0 {
-                self.vx = 8.0 * self.vx.signum();
-            }
-            // The Y: toward the hover point (num10 = 0.05, the cap 8).
-            let dy = hover_y - cy;
-            self.vy += dy.signum() * 0.07;
-            if self.vy.abs() > 8.0 {
-                self.vy = 8.0 * self.vy.signum();
-            }
-            // `:20131-20144`: the charge timer — 600 ticks (the expert
-            // 0.35x) then the charge phase.
-            self.caster_counter += 1;
-            if self.caster_counter >= 600 {
-                self.cast_windup = 1;
-                self.caster_counter = 0;
-            }
-        } else if self.cast_windup == 1 {
-            // `ai[1]==1` (`:20196-20216`): the aim + the direct velocity.
-            self.rotation = self.vy.atan2(self.vx);
-            let dx = pcx - cx;
-            let dy = pcy - cy;
-            let d = (dx * dx + dy * dy).sqrt().max(1.0);
-            self.vx = dx / d * 6.0;
-            self.vy = dy / d * 6.0;
-            self.cast_windup = 2;
-        } else {
-            // `ai[1]==2` (`:20217-20245`): the charge flies; after 40
-            // ticks the decel ×0.98 to the stop, then the hover resets.
-            self.caster_counter += 1;
-            if self.caster_counter >= 40 {
-                self.vx *= 0.98;
-                self.vy *= 0.98;
-                if self.vx.abs() < 0.1 {
-                    self.vx = 0.0;
-                }
-                if self.vy.abs() < 0.1 {
-                    self.vy = 0.0;
-                }
-                if self.vx == 0.0 && self.vy == 0.0 {
-                    self.cast_windup = 0;
-                    self.caster_counter = 0;
-                }
-            }
-        }
-        // The rotation tracks the motion (the vanilla's eye spin — the
-        // port's hover arms set it on the charge only).
-        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
-        // `noTileCollide` — the direct integration (`:90495-90498`).
-        self.x += self.vx;
-        self.y += self.vy;
-        // The off-world guard.
-        if self.y > world.height as f32 * TILE_PX + 400.0 {
-            self.hp = 0;
         }
     }
 
@@ -2542,34 +3685,770 @@ impl Npc {
         }
     }
 
-    /// `AI_027`'s WoF v1 (`NPC.cs`'s aiStyle 27 machine): the wall slides
-    /// HORIZONTALLY across the underworld toward the player's side (the
-    /// vanilla locks the vertical drift to keep the wall level) at the
-    /// accelerating pace; the off-edge despawn (`AI_027`'s end-of-world
-    /// check). The Hungrys (114/115) and the eye/mouth mirrors = the
-    /// follow-ups.
+    /// `AI()`'s aiStyle-27 block — the Wall of Flesh's machine
+    /// (`NPC.cs:25635-26050`, the 416-line `else if (this.aiStyle == 27)`).
+    /// The classic path verbatim: the off-edge kill, the tongue timer
+    /// (`ai[1]`/`ai[2]` → the Leech spawns), the underworld draw-band scan
+    /// (`Main.wofDrawArea*` → the World fields) with the Y pinning, the
+    /// slide speed by the hp thresholds, the direction lock, the
+    /// dead-player abandonment (the `localAI[1]` timer folded into
+    /// `ai[0]`), the init Hungry spawns (`localAI[0]` → `ai[3]`).
+    /// The expert-mode burst block and the `getGoodWorld` spawn are out
+    /// (no difficulty flags); the wall's eye/mouth mirrors (114) are the
+    /// render-machinery follow-up, so the init spawns the 11 Hungries
+    /// only; the roar sound rides `localAI[3]`'s cosmetic timer — skipped.
     fn update_wof(&mut self, world: &World, player: &Player) {
-        let (pcx, _) = player.center();
-        // The slide: accelerate toward the player's side, cap at 4.5
-        // (the vanilla's speed band ~2..5 scaled by the progress).
-        let dir = if pcx >= self.x + self.size().0 * 0.5 {
-            1
-        } else {
-            -1
-        };
-        self.vx += dir as f32 * 0.02;
-        if self.vx.abs() > 4.5 {
-            self.vx = 4.5 * self.vx.signum();
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        // The world-edge kill (`position.X < 160 || > (maxTilesX - 10) * 16`).
+        if self.x < 160.0 || self.x > (world.width as f32 - 10.0) * TILE_PX {
+            self.hp = 0;
+            return;
         }
-        // The vertical: pin to the spawn level (the wall stays level).
+        // The tongue timer (`ai[1]` with the hp-ratio bonuses; 2700 → the
+        // phase machine `ai[2]`).
+        self.ai[1] += 1.0;
+        if self.ai[2] == 0.0 {
+            if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
+                self.ai[1] += 1.0;
+            }
+            if (self.hp as f64) < (self.max_hp as f64) * 0.2 {
+                self.ai[1] += 1.0;
+            }
+            if self.ai[1] > 2700.0 {
+                self.ai[2] = 1.0;
+            }
+        }
+        if self.ai[2] > 0.0 && self.ai[1] > 60.0 {
+            let mut num344 = 3;
+            if (self.hp as f64) < (self.max_hp as f64) * 0.3 {
+                num344 += 1;
+            }
+            self.ai[2] += 1.0;
+            self.ai[1] = 0.0;
+            if self.ai[2] > num344 as f32 {
+                self.ai[2] = 0.0;
+            }
+            // The Leech head spawn (`NPC.CountNPCS(117) < 10` — the count
+            // check rides the sim resolve; the worm pass grows the chain).
+            self.wants_leech = true;
+        }
+        // The underworld draw-band scan (`num346` = UnderworldLayer + 10,
+        // `num347` = +70): the bottom walk finds 15 solid/liquid tiles down
+        // the wall's column span, the top walk mirrors it; the areas ease
+        // 1 px per tick toward the found rows and clamp to a 160 px band.
+        // `Main.UnderworldLayer = maxTilesY - 200` (`Main.cs:2790`).
+        let underworld_layer = world.height as i32 - 200;
+        let num346 = underworld_layer + 10;
+        let num347 = num346 + 70;
+        let num348 = (self.x / TILE_PX) as i32;
+        let num349 = ((self.x + w) / TILE_PX) as i32;
+        let num350 = ((self.y + h * 0.5) / TILE_PX) as i32;
+        // The `WorldGen.SolidTile` analog (the active + the solid set).
+        let solid_tile = |x: i32, y: i32| -> bool {
+            world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind))
+        };
+        // The bottom: start at +7, walk down until 15 solid/liquid tiles.
+        let mut num351 = 0;
+        let mut num352 = num350 + 7;
+        while num351 < 15 && num352 > underworld_layer {
+            num352 += 1;
+            if num352 > world.height as i32 - 10 {
+                num352 = world.height as i32 - 10;
+                break;
+            }
+            if num352 < num346 {
+                continue;
+            }
+            for num353 in num348..=num349 {
+                if solid_tile(num353, num352) {
+                    num351 += 1;
+                }
+            }
+        }
+        num352 += 4;
+        let bottom_target = num352 as f32 * TILE_PX;
+        self.wof_bottom_target = bottom_target;
+        // The top: start at -7, walk up.
+        num351 = 0;
+        num352 = num350 - 7;
+        while num351 < 15 && num352 < world.height as i32 - 10 {
+            num352 -= 1;
+            if num352 <= 10 {
+                num352 = 10;
+                break;
+            }
+            if num352 > num347 {
+                continue;
+            }
+            if num352 < num346 {
+                num352 = num346;
+                break;
+            }
+            for num354 in num348..=num349 {
+                // The liquid counts toward the band like the solid
+                // (`SolidTile || liquid > 0`, `:25747`'s inner test).
+                let liquid = world.tile(num354, num352).is_some_and(|t| t.liquid > 0);
+                if solid_tile(num354, num352) || liquid {
+                    num351 += 1;
+                }
+            }
+        }
+        num352 -= 4;
+        let top_target = num352 as f32 * TILE_PX;
+        self.wof_top_target = top_target;
+        // The band lives on the World (the sim eases toward the targets);
+        // the Y pinning rides the CURRENT band midpoint.
+        let num355 = (world.wof_draw_bottom + world.wof_draw_top) / 2.0 - h / 2.0;
         self.vy = 0.0;
-        self.facing = dir;
+        self.y = num355;
+        // The slide speed by the hp thresholds (the classic rows; the
+        // expert/getGood arms are out).
+        let mut num356 = 1.5f32;
+        if (self.hp as f64) < (self.max_hp as f64) * 0.75 {
+            num356 += 0.25;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.5 {
+            num356 += 0.4;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.25 {
+            num356 += 0.5;
+        }
+        if (self.hp as f64) < (self.max_hp as f64) * 0.1 {
+            num356 += 0.6;
+        }
+        // The direction: locked to the sign, never damped (the wall slides
+        // at the full speed toward its side).
+        if self.vx == 0.0 {
+            self.facing = if pcx >= self.x + w * 0.5 { 1 } else { -1 };
+            self.vx = self.facing as f32;
+        }
+        if self.vx < 0.0 {
+            self.vx = -num356;
+            self.facing = -1;
+        } else {
+            self.vx = num356;
+            self.facing = 1;
+        }
+        // The dead-player abandonment (`localAI[1]` += 1/180 → the wall
+        // kills itself at 1; the recovery −1/30; folded into `ai[0]`).
+        if player.hp <= 0 {
+            self.ai[0] += 1.0 / 180.0;
+            if self.ai[0] >= 1.0 {
+                self.hp = 0;
+                return;
+            }
+        } else {
+            self.ai[0] = (self.ai[0] - 1.0 / 30.0).clamp(0.0, 1.0);
+        }
+        self.facing = self.vx.signum() as i32;
+        // The rotation: the eye aims at the player when the player crosses
+        // the wall's plane (`:25992-26010`).
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let num361 = pcx - cx;
+        let num362 = pcy - cy;
+        if self.facing > 0 {
+            if pcx > self.x + w * 0.5 {
+                self.rotation = (-num362).atan2(-num361) + 3.14;
+            } else {
+                self.rotation = 0.0;
+            }
+        } else if pcx < self.x + w * 0.5 {
+            self.rotation = num362.atan2(num361) + 3.14;
+        } else {
+            self.rotation = 0.0;
+        }
+        // The Hungry init (`localAI[0] == 1 → 2`): the 11 Hungries along
+        // the band (`ai[0] = i * 0.1 - 0.05`); the mirrors (114) are the
+        // render follow-up. The request resolves in the world sim.
+        if self.ai[3] == 0.0 {
+            self.ai[3] = 1.0;
+            self.wants_hungry = true;
+        }
+        // `noTileCollide` + `noGravity`: the raw integration.
         self.x += self.vx;
         self.y += self.vy;
-        // The off-edge despawn (the wall crosses the world and despawns).
-        if self.x < -2000.0 || self.x > world.width as f32 * TILE_PX + 2000.0 {
+    }
+
+    /// `AI()`'s aiStyle-29 block — the Hungry's machine
+    /// (`NPC.cs:26054-26210`): the anchor = the wall's x + the draw-band
+    /// row at `ai[0]`, the chase toward the player clamped to `num387`
+    /// from the anchor (300/500/700 by the wall's hp), the defense/damage
+    /// tiers (30/20 by the hp), the 4-speed cap, the justHit recoil
+    /// (`ai[1] = 10`, folded onto `hurt_cd > 0`). The wall's death
+    /// (`wof_present` off) deactivates the minion. The expert arms are out.
+    fn update_hungry(&mut self, world: &World, player: &Player) {
+        if !world.wof_present {
+            self.hp = 0;
+            return;
+        }
+        // `justHit → ai[1] = 10` (the recoil pause; the hurt cooldown
+        // stands in for the flag).
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = 10.0;
+        }
+        // The tiers by the wall's hp (`num388` the damage, the defense,
+        // `num387` the leash radius).
+        let mut num387 = 300.0f32;
+        let mut num388 = 0;
+        if (world.wof_hp_ratio as f64) < 0.5 {
+            num388 = 60;
+            self.defense_override = Some(30);
+            num387 = 700.0;
+        } else if (world.wof_hp_ratio as f64) < 0.75 {
+            num388 = 45;
+            self.defense_override = Some(20);
+            num387 = 500.0;
+        } else {
+            self.defense_override = None;
+        }
+        if num388 > 0 {
+            self.damage_override = Some(num388);
+        } else {
+            self.damage_override = None;
+        }
+        // The dive cycle: after 100 ticks the leash grows ×1.3, resetting
+        // at 200.
+        self.ai[2] += 1.0;
+        if self.ai[2] > 100.0 {
+            num387 = (num387 * 1.3) as i32 as f32;
+            if self.ai[2] > 200.0 {
+                self.ai[2] = 0.0;
+            }
+        }
+        // The anchor: the wall's x, the band row at `ai[0]`.
+        let num389 = world.wof_x;
+        let num390 = world.wof_draw_bottom - world.wof_draw_top;
+        let y2 = world.wof_draw_top + num390 * self.ai[0];
+        let (pcx, pcy) = player.center();
+        let (w, h) = self.size();
+        let mut num391 = pcx - w * 0.5 - num389;
+        let mut num392 = pcy - h * 0.5 - y2;
+        let mut num393 = (num391 * num391 + num392 * num392).sqrt();
+        if self.ai[1] == 0.0 {
+            if num393 > num387 {
+                num393 = num387 / num393;
+                num391 *= num393;
+                num392 *= num393;
+            }
+            // The approach with the double-add on the sign flips
+            // (0.1 accel, the ×2.5 flip bonus).
+            if self.x < num389 + num391 {
+                self.vx += 0.1;
+                if self.vx < 0.0 && num391 > 0.0 {
+                    self.vx += 0.25;
+                }
+            } else if self.x > num389 + num391 {
+                self.vx -= 0.1;
+                if self.vx > 0.0 && num391 < 0.0 {
+                    self.vx -= 0.25;
+                }
+            }
+            if self.y < y2 + num392 {
+                self.vy += 0.1;
+                if self.vy < 0.0 && num392 > 0.0 {
+                    self.vy += 0.25;
+                }
+            } else if self.y > y2 + num392 {
+                self.vy -= 0.1;
+                if self.vy > 0.0 && num392 < 0.0 {
+                    self.vy -= 0.25;
+                }
+            }
+            // The speed cap 4.
+            self.vx = self.vx.clamp(-4.0, 4.0);
+            self.vy = self.vy.clamp(-4.0, 4.0);
+        } else if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // The rotation toward the player.
+        if num391 > 0.0 {
+            self.rotation = num392.atan2(num391);
+        }
+        if num391 < 0.0 {
+            self.rotation = num392.atan2(num391);
+        }
+        // `noTileCollide` + `noGravity`: the raw integration.
+        self.x += self.vx;
+        self.y += self.vy;
+    }
+
+    /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
+    /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
+    /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
+    /// x 9), the decel (the 40 ticks x0.98). The 4 limbs = the follow-ups.
+    fn update_prime(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 280.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.12;
+            if self.vx.abs() > 9.0 {
+                self.vx = 9.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.12;
+            if self.vy.abs() > 9.0 {
+                self.vy = 9.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 9.0;
+            self.vy = dy / d * 9.0;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
             self.hp = 0;
         }
+    }
+
+    /// `AI_030`/`AI_031`'s Twins v1 (`NPC.cs`'s aiStyle 30/31 machines) —
+    /// the EoC cycle shape per eye: the hover (the ±0.09, the 8.5 cap),
+    /// the charge (the 480-tick cycle, the direct velocity x 8.5), the
+    /// decel (the 40 ticks x0.98). The laser/spit phases and the second-
+    /// form transformations = the follow-ups.
+    fn update_twin(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 270.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.09;
+            if self.vx.abs() > 8.5 {
+                self.vx = 8.5 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.09;
+            if self.vy.abs() > 8.5 {
+                self.vy = 8.5 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 8.5;
+            self.vy = dy / d * 8.5;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_051`'s Plantera v1 (`NPC.cs`'s aiStyle 51 machine) — the EoC
+    /// cycle shape with Plantera's numbers: the hover (the ±0.1, the 8
+    /// cap), the charge (the 480-tick cycle, the direct velocity x 7.5),
+    /// the decel (the 40 ticks x0.98). The vine hooks and the second-form
+    /// rage = the follow-ups.
+    fn update_plantera(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        let hover_y = pcy - 250.0;
+        if self.cast_windup == 0 {
+            let dx = pcx - cx;
+            self.vx += dx.signum() * 0.1;
+            if self.vx.abs() > 8.0 {
+                self.vx = 8.0 * self.vx.signum();
+            }
+            let dy = hover_y - cy;
+            self.vy += dy.signum() * 0.1;
+            if self.vy.abs() > 8.0 {
+                self.vy = 8.0 * self.vy.signum();
+            }
+            self.caster_counter += 1;
+            if self.caster_counter >= 480 {
+                self.cast_windup = 1;
+                self.caster_counter = 0;
+            }
+        } else if self.cast_windup == 1 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 7.5;
+            self.vy = dy / d * 7.5;
+            self.cast_windup = 2;
+        } else {
+            self.caster_counter += 1;
+            if self.caster_counter >= 40 {
+                self.vx *= 0.98;
+                self.vy *= 0.98;
+                if self.vx.abs() < 0.1 {
+                    self.vx = 0.0;
+                }
+                if self.vy.abs() < 0.1 {
+                    self.vy = 0.0;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.cast_windup = 0;
+                    self.caster_counter = 0;
+                }
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// `AI_054`'s Brain of Cthulhu v1 (`NPC.cs`'s aiStyle 54 machine) —
+    /// the teleport-charge cycle: the telegraph pause, the dash at the
+    /// player; the `dontTakeDamage` until the Creepers die (the vanilla's
+    /// `ai[3]` tracks them). The v1: the teleport-dash cycle without the
+    /// invulnerability gate (the Creepers' orbit = the follow-ups).
+    /// The Golem family's v1 machines (the aiStyles 45-48): the body
+    /// hovers the EoC-cycle shape toward the player; the attached head
+    /// floats at the body's crown (the offset lock); the fists lunge
+    /// (the reach at the 120-tick interval, the retract); the free head
+    /// clears its spawn shield at 120 ticks and hovers. The full AI_045
+    /// through AI_048 (the fireballs, the head-retract, the laser eyes)
+    /// = the follow-ups.
+    fn update_golem(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        match self.kind {
+            NpcKind::Golem => {
+                // The body: the EoC-cycle shape's hover arm (the target
+                // point 200 above the player, the +-0.07 accels, the 8
+                // cap — the established v1 hover).
+                let tx = pcx - cx;
+                let ty = (pcy - 200.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-8.0, 8.0);
+                self.vy = self.vy.clamp(-8.0, 8.0);
+            }
+            NpcKind::GolemHead => {
+                // The attached head: the same hover target as the body —
+                // they spawn together and hold formation (the offset
+                // lock through the roster link = the follow-up).
+                let tx = pcx - cx;
+                let ty = (pcy - 200.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-8.0, 8.0);
+                self.vy = self.vy.clamp(-8.0, 8.0);
+            }
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                // The fists: the lunge cycle — the reach toward the
+                // player at the 120-tick interval (the ai[0] counter),
+                // the straight flight, the decay to the stop.
+                if self.ai[0] <= 0.0 {
+                    self.caster_counter += 1;
+                    if self.caster_counter >= 120 {
+                        self.caster_counter = 0;
+                        let dx = pcx - cx;
+                        let dy = pcy - cy;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        self.vx = dx / d * 8.0;
+                        self.vy = dy / d * 8.0;
+                        self.ai[0] = 1.0;
+                    }
+                } else {
+                    self.vx *= 0.95;
+                    self.vy *= 0.95;
+                    if self.vx.abs() + self.vy.abs() < 0.5 {
+                        self.ai[0] = 0.0;
+                    }
+                }
+            }
+            NpcKind::GolemHeadFree => {
+                // The free head: the spawn shield clears at 120 ticks
+                // (the vanilla AI_048 clears `dontTakeDamage` — the
+                // exact arm lands with the full machine), then the
+                // EoC-shape hover.
+                self.caster_counter += 1;
+                if self.caster_counter > 120 {
+                    self.dont_take_damage = false;
+                }
+                let tx = pcx - cx;
+                let ty = (pcy - 150.0) - cy;
+                let d = (tx * tx + ty * ty).sqrt().max(1.0);
+                self.vx += (tx / d) * 0.07;
+                self.vy += (ty / d) * 0.07;
+                self.vx = self.vx.clamp(-7.0, 7.0);
+                self.vy = self.vy.clamp(-7.0, 7.0);
+            }
+            _ => {}
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// The Creeper (`AI_055`, `NPC.cs:32657-32735`): the orbit around
+    /// the brain — beyond the 90 px ring the velocity blends home
+    /// (`x15/16`), inside it the speed amplifies x1.05 under the 8 cap;
+    /// the 1/200 roll (the classic; the expert's 1/100 folds out)
+    /// lunges at the player at 8 px/tick; the lunge holds until the
+    /// justHit recoil (`hurt_cd` stands in for `justHit`) sends it back
+    /// to the orbit. The brainless Creepers die in the sim
+    /// (`NPC.crimsonBoss < 0` -> `active = false`); the brain's anchor
+    /// rides the World fields (the WoF's write-through shape).
+    fn update_creeper(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        if !world.brain_present {
+            return;
+        }
+        let (w, h) = self.size();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[0] == 0.0 {
+            self.ai[1] = 0.0;
+            let dx = world.brain_x - cx;
+            let dy = world.brain_y - cy;
+            let d = (dx * dx + dy * dy).sqrt();
+            if d > 90.0 {
+                let s = 8.0 / d;
+                self.vx = (self.vx * 15.0 + dx * s) / 16.0;
+                self.vy = (self.vy * 15.0 + dy * s) / 16.0;
+                return;
+            }
+            if self.vx.abs() + self.vy.abs() < 8.0 {
+                self.vy *= 1.05;
+                self.vx *= 1.05;
+            }
+            if crate::app::rand01(rng) < 1.0 / 200.0 {
+                let (pcx, pcy) = player.center();
+                let dx = pcx - cx;
+                let dy = pcy - cy;
+                let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                self.vx = dx / d * 8.0;
+                self.vy = dy / d * 8.0;
+                self.ai[0] = 1.0;
+            }
+            return;
+        }
+        // The lunge: the straight flight until the justHit recoil.
+        if self.hurt_cd <= 0.0 {
+            return;
+        }
+        self.ai[0] = 0.0;
+    }
+
+    fn update_brain(&mut self, world: &World, player: &Player) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.caster_counter == 0 && self.cast_windup == 0 {
+            self.caster_counter = 1;
+        }
+        if self.cast_windup == 2 && self.caster_counter > 40 {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            let d = (dx * dx + dy * dy).sqrt().max(1.0);
+            self.vx = dx / d * 9.0;
+            self.vy = dy / d * 9.0;
+            self.cast_windup = 3;
+            self.caster_counter = 0;
+        } else if self.cast_windup == 3 {
+            self.vx *= 0.98;
+            self.vy *= 0.98;
+            if self.vx.abs() < 0.1 && self.vy.abs() < 0.1 {
+                self.cast_windup = 0;
+                self.caster_counter = 0;
+            }
+        } else {
+            let dx = pcx - cx;
+            let dy = pcy - cy;
+            self.vx += dx.signum() * 0.05;
+            self.vy += dy.signum() * 0.05;
+            self.caster_counter += 1;
+            if self.caster_counter >= 60 {
+                self.cast_windup = 2;
+            }
+        }
+        self.facing = if self.vx >= 0.0 { 1 } else { -1 };
+        self.x += self.vx;
+        self.y += self.vy;
+        if self.y > world.height as f32 * TILE_PX + 400.0 {
+            self.hp = 0;
+        }
+    }
+
+    /// The Goblin Archer (`AI_003`'s ranged family, `NPC.cs:59069-59700`):
+    /// the walk until the shot gate — grounded, `CanHit`, the distance
+    /// < 700 (`num179`), `ai[1] <= 0` — then the stop state (`ai[2] = 1`,
+    /// `ai[1] = num162 = 180` for 111, `velocity.X *= 0.5`); the state
+    /// damps `velocity.X *= 0.9` (`:59614-59616`'s `!flag16` arm) and
+    /// fires at the midpoint tick `ai[1] == 90` (`num163 = num162 / 2`):
+    /// the aim = the player's centre minus the archer's, the vertical
+    /// lead `|dx| * 0.1` (`num166`), the aim jitter +-40 px (`:59370`'s
+    /// `Next(-40, 41)` fallthrough), the normalized speed 9 (`num164 =
+    /// 9f` for 111), the hostile Wooden Arrow Hostile 81 at the damage
+    /// 11 (`num170 = 81`, `num169 = 11`, the `:59571` call). The justHit
+    /// staggers (`ai[1] = 30`, `ai[2] = 0`, `:59088-59094` — the port's
+    /// `hurt_cd` window re-arms it, the same ~30-tick pause); the state
+    /// exits on the cooldown end (`:59611-59615`'s `ai[1] <= 0` arm —
+    /// the airborne exit folds).
+    fn update_archer(&mut self, world: &World, player: &mut Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (pcx, pcy) = player.center();
+        let cx = self.x + w * 0.5;
+        let cy = self.y + h * 0.5;
+        if self.ai[2] > 0.0 {
+            if self.hurt_cd > 0.0 {
+                self.ai[1] = 30.0;
+                self.ai[2] = 0.0;
+            } else {
+                self.vx *= 0.9;
+                self.ai[1] -= 1.0;
+                self.facing = if pcx >= cx { 1 } else { -1 };
+                if self.ai[1] == 90.0 {
+                    if crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy)) {
+                        let mut dx = pcx - cx;
+                        let mut dy = pcy - cy - dx.abs() * 0.1;
+                        dx += crate::app::rand01(rng) * 81.0 - 40.0;
+                        dy += crate::app::rand01(rng) * 81.0 - 40.0;
+                        let d = (dx * dx + dy * dy).sqrt().max(1.0);
+                        self.wants_hostile_shot = Some((
+                            crate::projectile::WOODEN_ARROW_HOSTILE,
+                            cx,
+                            cy,
+                            dx / d * 9.0,
+                            dy / d * 9.0,
+                            11,
+                        ));
+                    }
+                }
+                if self.ai[1] <= 0.0 {
+                    self.ai[2] = 0.0;
+                    self.ai[1] = 0.0;
+                }
+            }
+            // The stand: the zero-speed walker keeps the gravity.
+            crate::npc_ai::walker_step(
+                self,
+                world,
+                pcx,
+                pcy,
+                crate::npc_ai::WalkerParams {
+                    speed: 0.0,
+                    jump: 0.0,
+                    aggro_x: 0.0,
+                    aggro_y: 0.0,
+                },
+                GRAVITY,
+                MAX_FALL,
+            );
+            return;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The shot gate (`:59658-59676`): grounded, the clear line, the
+        // distance < 700, the cooldown spent.
+        let dx = pcx - cx;
+        let dy = pcy - cy;
+        let dist = (dx * dx + dy * dy).sqrt();
+        if self.on_ground
+            && self.ai[1] <= 0.0
+            && dist < 700.0
+            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[2] = 1.0;
+            self.ai[1] = 180.0;
+            self.vx *= 0.5;
+        }
+    }
+
+    /// The Goblin AI (`AI_003`'s walker family): the goblins chase the
+    /// player and jump the obstacles (the same machine as the zombie).
+    fn update_goblin(&mut self, world: &World, player: &mut Player) {
+        let (pcx, pcy) = player.center();
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 1.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
     }
 
     /// `AI_009` through the framework's `sphere_step` (`NPC.cs`'s aiStyle 9
@@ -2700,11 +4579,14 @@ impl Npc {
                     | NpcKind::WitchDoctor
                     | NpcKind::Clothier
                     | NpcKind::EyeOfCthulhu
+                    | NpcKind::BoundGoblin
+                    | NpcKind::GoblinTinkerer
             ) {
                 let dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
                 } else {
-                    self.kind.contact_damage()
+                    self.damage_override
+                        .unwrap_or_else(|| self.kind.contact_damage())
                 };
                 if dmg > 0 {
                     player.hurt(dmg, cx);
@@ -2740,6 +4622,24 @@ impl Npc {
             NpcKind::Hornet => 13,
             NpcKind::MeteorHead => 14,
             NpcKind::GoblinSorcerer => 15,
+            NpcKind::GoblinThief => 57,
+            NpcKind::GoblinWarrior => 58,
+            NpcKind::GoblinArcher => 59,
+            NpcKind::GoblinPeon => 60,
+            NpcKind::GoblinSummoner => 61,
+            NpcKind::SnowmanGangsta => 65,
+            NpcKind::SnowBalla => 66,
+            NpcKind::MysterySnowman => 67,
+            NpcKind::MartianOfficer => 68,
+            NpcKind::GrayGrunt => 69,
+            NpcKind::MartianEngineer => 70,
+            NpcKind::GigaZapper => 71,
+            NpcKind::MartianWalker => 72,
+            NpcKind::PirateDeckhand => 68,
+            NpcKind::PirateCaptainsMate => 69,
+            NpcKind::PirateArcher => 70,
+            NpcKind::PirateCorsair => 71,
+            NpcKind::PirateCaptain => 72,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -2769,7 +4669,25 @@ impl Npc {
             NpcKind::EyeOfCthulhu => 42,
             NpcKind::QueenBee => 43,
             NpcKind::SkeletronHead => 44,
-            NpcKind::WallOfFlesh => 45,
+            NpcKind::ServantOfCthulhu => 45,
+            NpcKind::WallOfFlesh => 46,
+            NpcKind::Hungry => 47,
+            NpcKind::LeechHead => 48,
+            NpcKind::LeechBody => 49,
+            NpcKind::TheDestroyer => 50,
+            NpcKind::SkeletronPrime => 51,
+            NpcKind::Retinazer => 52,
+            NpcKind::Spazmatism => 53,
+            NpcKind::Plantera => 54,
+            NpcKind::BrainOfCthulhu => 55,
+            NpcKind::Creeper => 53,
+            NpcKind::BoundGoblin => 58,
+            NpcKind::GoblinTinkerer => 59,
+            NpcKind::Golem => 60,
+            NpcKind::GolemHead => 61,
+            NpcKind::GolemFistLeft => 62,
+            NpcKind::GolemFistRight => 63,
+            NpcKind::GolemHeadFree => 64,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -2816,8 +4734,8 @@ mod tests {
         assert_eq!(eos.size(), (30.0, 30.0));
         let hornet = Npc::spawn_hover(&w, 24, 30, NpcKind::Hornet).expect("the hornet spawns");
         assert_eq!(hornet.max_hp, 48);
-        let meteor = Npc::spawn_hover(&w, 28, 30, NpcKind::MeteorHead)
-            .expect("the meteor head spawns");
+        let meteor =
+            Npc::spawn_hover(&w, 28, 30, NpcKind::MeteorHead).expect("the meteor head spawns");
         assert_eq!(meteor.max_hp, 26);
         // The bestiary entries round-trip.
         let e = crate::bestiary::entry_for_npc(NpcKind::EaterOfSouls, SlimeVariant::Blue);
@@ -2858,7 +4776,6 @@ mod tests {
         let dist = ((npc.x - target.0) / 16.0).abs();
         assert!(dist < 20.0, "the hover homed (dist {dist} tiles)");
     }
-
 
     #[test]
     fn the_cave_walker_spawn_and_the_bestiary_map() {
@@ -2910,11 +4827,10 @@ mod tests {
         assert_eq!(bat.max_hp, 16);
         assert_eq!(bat.size(), (22.0, 18.0));
         // The jungle/hellbat/voodoo variants: the same frame, the vanilla stats.
-        let jb = Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat)
-            .expect("the jungle bat spawns");
+        let jb =
+            Npc::spawn_cave_flyer(&w, 22, 30, NpcKind::JungleBat).expect("the jungle bat spawns");
         assert_eq!(jb.max_hp, 34);
-        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat)
-            .expect("the hellbat spawns");
+        let hb = Npc::spawn_cave_flyer(&w, 24, 30, NpcKind::Hellbat).expect("the hellbat spawns");
         assert_eq!(hb.max_hp, 46);
         let vd = Npc::spawn_cave_flyer(&w, 26, 30, NpcKind::VoodooDemon)
             .expect("the voodoo demon spawns");
@@ -2936,7 +4852,6 @@ mod tests {
         let e = crate::bestiary::entry_for_npc(NpcKind::VoodooDemon, SlimeVariant::Blue);
         assert_eq!(e.net_id, 66);
     }
-
 
     use super::*;
     use tr_core::tile::{FLAG_ACTIVE, Tile};
@@ -3397,8 +5312,14 @@ mod tests {
         let mut ball = Npc::new(NpcKind::ChaosBall, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         ball.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         let speed = (ball.vx * ball.vx + ball.vy * ball.vy).sqrt();
-        assert!((speed - 6.0).abs() < 0.05, "the launch speed is 6 ({speed})");
-        assert!(ball.vx > 0.0 && ball.vy > 0.0, "the ball dives at the player");
+        assert!(
+            (speed - 6.0).abs() < 0.05,
+            "the launch speed is 6 ({speed})"
+        );
+        assert!(
+            ball.vx > 0.0 && ball.vy > 0.0,
+            "the ball dives at the player"
+        );
         let v = (ball.vx, ball.vy);
         // The straight fly: the velocity never re-aims and the dirt passes
         // through (the floor line sits at y = 120*16).
@@ -3408,7 +5329,10 @@ mod tests {
         assert_eq!(ball.vx, v.0);
         assert_eq!(ball.vy, v.1);
         assert!(ball.x > pcx, "the ball crossed the player's column");
-        assert!(ball.y > 120.0 * 16.0, "the ball flew through the floor line");
+        assert!(
+            ball.y > 120.0 * 16.0,
+            "the ball flew through the floor line"
+        );
         // The Burning Sphere's speed is 5 (`:21395-21399`).
         let mut sphere = Npc::new(NpcKind::BurningSphere, 80.0 * 16.0, 100.0 * 16.0, 1, 0.0);
         sphere.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
@@ -3422,13 +5346,13 @@ mod tests {
         // `Bottom = (x*16+8, y*16)`), the stats ride the verified
         // `SetDefaults` rows, and the bestiary entries round-trip.
         let mut w = ground_air();
-        let imp = Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp)
-            .expect("the imp spawns on the ground");
+        let imp =
+            Npc::spawn_caster(&w, 30, 120, NpcKind::FireImp).expect("the imp spawns on the ground");
         assert_eq!(imp.size(), (18.0, 40.0));
         assert_eq!(imp.max_hp, 70);
         assert!((imp.y - (120.0 * 16.0 - 40.0)).abs() < 0.01);
-        let sorcerer = Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer)
-            .expect("the sorcerer spawns");
+        let sorcerer =
+            Npc::spawn_caster(&w, 34, 120, NpcKind::GoblinSorcerer).expect("the sorcerer spawns");
         assert_eq!(sorcerer.size(), (18.0, 38.0));
         assert_eq!(sorcerer.max_hp, 40);
         let tim = Npc::new(NpcKind::Tim, 0.0, 0.0, 1, 0.0);
@@ -3503,9 +5427,15 @@ mod tests {
             // (`:23905-23914`).
             assert!(fish.vx.abs() <= 2.01, "the idle X drift ({})", fish.vx);
         }
-        assert!(rose && sank, "the bob cycled both ways (rose {rose} sank {sank})");
+        assert!(
+            rose && sank,
+            "the bob cycled both ways (rose {rose} sank {sank})"
+        );
         // The fish stayed inside the pool's water column.
-        assert!(fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0, "the pool held");
+        assert!(
+            fish.x > 55.0 * 16.0 && fish.x < 145.0 * 16.0,
+            "the pool held"
+        );
     }
 
     #[test]
@@ -3596,13 +5526,12 @@ mod tests {
         // `spawn_swimmer` plants the feet on the pool floor; the stats ride
         // the verified `SetDefaults` rows; the bestiary entries round-trip.
         let w = water_pool();
-        let shark = Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark)
-            .expect("the shark spawns in the pool");
+        let shark =
+            Npc::spawn_swimmer(&w, 100, 135, NpcKind::Shark).expect("the shark spawns in the pool");
         assert_eq!(shark.size(), (100.0, 24.0));
         assert_eq!(shark.max_hp, 300);
         assert!((shark.y - (135.0 * 16.0 - 24.0)).abs() < 0.01);
-        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish)
-            .expect("the goldfish spawns");
+        let fish = Npc::spawn_swimmer(&w, 80, 135, NpcKind::Goldfish).expect("the goldfish spawns");
         assert_eq!(fish.size(), (20.0, 18.0));
         assert_eq!(fish.max_hp, 5);
         assert_eq!(fish.knock_back_resist(), 0.5);
@@ -3634,7 +5563,11 @@ mod tests {
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         // The chain: the head + the bodies + the tail; the Giant Worm's
         // budget is Next(4, 7) → 4..=6 bodies → the total 6..=8 segments.
-        assert!(npcs.len() >= 6 && npcs.len() <= 8, "the chain length {}", npcs.len());
+        assert!(
+            npcs.len() >= 6 && npcs.len() <= 8,
+            "the chain length {}",
+            npcs.len()
+        );
         assert_eq!(npcs[0].kind, NpcKind::GiantWormHead);
         assert_eq!(npcs[0].worm_left, npcs.len() as u32 - 2);
         assert_eq!(npcs[0].worm_id, 1);
@@ -3671,12 +5604,12 @@ mod tests {
         let mut next_id = 1u32;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
         assert!(npcs.len() >= 10, "the devourer assembled ({})", npcs.len());
-        // The head dies: the chain falls.
+        // The head dies: `NPC.cs:51507-51511`'s split — the first orphan
+        // becomes its own head (`Transform(13)`), the back part lives.
         npcs[0].hp = 0;
         crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
-        for seg in &npcs {
-            assert!(seg.hp <= 0, "the segment followed the head down");
-        }
+        assert_eq!(npcs[1].kind, NpcKind::DevourerHead, "the orphan head");
+        assert!(npcs[1].hp > 0, "the split worm lives");
     }
 
     #[test]
@@ -3716,13 +5649,7 @@ mod tests {
         flyer.worm_id = 2;
         let mut npcs2 = vec![flyer];
         let pc2 = (100.0 * 16.0, 116.0 * 16.0);
-        crate::world_sim::npcs::update_worms_in(
-            &w2,
-            Some(pc2),
-            &mut npcs2,
-            &mut rng,
-            &mut next_id,
-        );
+        crate::world_sim::npcs::update_worms_in(&w2, Some(pc2), &mut npcs2, &mut rng, &mut next_id);
         let f0 = &npcs2[0];
         assert!(f0.vy > 0.0, "the open-air head falls (+0.11 gravity)");
     }
@@ -3769,12 +5696,21 @@ mod tests {
         assert!(!spawn_allowed_merchant(&[(71, 4999)]), "49.99 silver waits");
         assert!(spawn_allowed_merchant(&[(71, 5000)]), "50 silver arrives");
         assert!(spawn_allowed_merchant(&[(72, 50)]), "the gold counts x100");
-        assert!(spawn_allowed_merchant(&[(73, 1)]), "the gold coin alone is 10000");
-        assert!(spawn_allowed_merchant(&[(74, 1)]), "the platinum alone clears");
+        assert!(
+            spawn_allowed_merchant(&[(73, 1)]),
+            "the gold coin alone is 10000"
+        );
+        assert!(
+            spawn_allowed_merchant(&[(74, 1)]),
+            "the platinum alone clears"
+        );
         assert!(!spawn_allowed_merchant(&[(72, 49)]), "49 gold = 4900 waits");
         assert!(!spawn_allowed_merchant(&[]), "the empty inventory waits");
         // The mixed stacks accumulate.
-        assert!(spawn_allowed_merchant(&[(71, 1000), (72, 41)]), "10 silver + 41 gold");
+        assert!(
+            spawn_allowed_merchant(&[(71, 1000), (72, 41)]),
+            "10 silver + 41 gold"
+        );
     }
 
     #[test]
@@ -3893,7 +5829,10 @@ mod tests {
         assert!(spawn_allowed_demolitionist(&[168]), "the grenade arrives");
         assert!(spawn_allowed_demolitionist(&[166]), "the bomb arrives");
         assert!(spawn_allowed_demolitionist(&[157]), "the dynamite arrives");
-        assert!(!spawn_allowed_demolitionist(&[97, 8]), "the bullets don't count");
+        assert!(
+            !spawn_allowed_demolitionist(&[97, 8]),
+            "the bullets don't count"
+        );
         assert!(!spawn_allowed_demolitionist(&[]), "the empty waits");
     }
 
@@ -3946,8 +5885,108 @@ mod tests {
             assert!(stock.contains(&id), "the paint row {id} missing");
         }
     }
+    #[test]
+    fn eoc_hovers_dashes_and_phases() {
+        // The aiStyle-4 machine: the hover (ai[0]=0) approaches 200 px above
+        // the player, the dash chain (ai[1]=1→2×3) fires at 600 ticks, the
+        // spin phase (ai[0]=1/2) at <50% hp, the final (ai[0]=3) zeroes the
+        // defense.
+        let mut w = ground();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        assert_eq!(eye.hp, 2800);
+        assert_eq!(eye.defense(), 12);
+        // The hover: the velocity steers toward the 200-px-above point.
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        eye.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(eye.ai[0], 0.0);
+        assert_eq!(eye.ai[1], 0.0);
+        assert!(eye.vy != 0.0 || eye.vx != 0.0, "the hover steers");
+        // 600 hover ticks flip to the dash chain.
+        for _ in 0..600 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(
+            eye.ai[1] == 1.0 || eye.ai[1] == 2.0,
+            "the dash chain runs (the wind-up is instantaneous)"
+        );
+        // The dash locks the velocity onto the target, then the flight
+        // counts to 150 and returns to the hover after 3 dashes — the
+        // machine cycles (the second hover's 600-tick arm may be mid-chain
+        // at the probe point).
+        for _ in 0..600 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(
+            eye.ai[3] <= 3.0 && eye.ai[0] == 0.0,
+            "the machine cycles inside phase 0"
+        );
+        // The half-hp spin phase: the rotation ramps, then the final phase.
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        eye.hp = 1000;
+        for _ in 0..4 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(eye.ai[0], 1.0, "phase 1 at <50% hp");
+        // The spin counts 100 ticks per phase → phase 2 → phase 3.
+        for _ in 0..300 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert_eq!(eye.ai[0], 3.0, "the final phase");
+        assert_eq!(eye.defense(), 0, "the final phase zeroes the defense");
+    }
 
     #[test]
+    fn eoc_climbs_away_at_dawn() {
+        // `Main.IsItDay() | dead`: `velocity.Y -= 0.04` per tick.
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, player.center().0, player.center().1).unwrap();
+        let start_y = eye.y;
+        for _ in 0..30 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(eye.y < start_y, "the dawn climb");
+    }
+
+    #[test]
+    fn eoc_bursts_servants_when_below_the_player() {
+        // The hover arm's servant burst: the eye below the player within
+        // 500 px counts `ai[3]` to 110 and requests the spawn.
+        let mut w = ground();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        for _ in 0..60 {
+            player.update(&w, crate::player::PlayerInput::default());
+        }
+        let (pcx, pcy) = player.center();
+        let mut eye = Npc::spawn_eye_of_cthulhu(&w, pcx, pcy).unwrap();
+        // Re-anchor the eye below the player: the spawn put it 600 px above;
+        // the burst condition reads `self.y + h < player.y` (the eye ABOVE
+        // the player) — flip the positions: put the EYE high and the PLAYER
+        // below by moving the eye down and the player's Y under it.
+        eye.y = pcy - 300.0 - 110.0;
+        eye.ai = [0.0, 0.0, 0.0, 0.0];
+        for _ in 0..130 {
+            eye.update(&w, &mut player, 1.0 / 60.0);
+        }
+        assert!(eye.wants_servant.is_some(), "the servant burst request");
+        let (sx, sy, svx, svy) = eye.wants_servant.unwrap();
+        assert!(svx != 0.0 || svy != 0.0, "the launch velocity");
+        // The world sim resolves the request into a real servant.
+        let mut servant = Npc::spawn_servant_of_cthulhu(sx, sy, svx, svy);
+        assert_eq!(servant.max_hp, 8);
+        assert_eq!(servant.kind, NpcKind::ServantOfCthulhu);
+        servant.update(&w, &mut player, 1.0 / 60.0);
+        assert!(servant.hp > 0);
+    }
     fn the_witch_doctor_arrival_gate_and_shop() {
         // The arrival: the downedQueenBee gate (constants-off in the port).
         assert!(!crate::spawner::spawn_allowed_witch_doctor(false));
@@ -3964,8 +6003,7 @@ mod tests {
         // The stats ride `SetDefaults` case 228 (the town twin); the
         // bestiary entry round-trips; the prefs ride Register(228).
         let w = ground_air();
-        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor)
-            .expect("the witch doctor spawns");
+        let n = Npc::spawn_town(&w, 60, NpcKind::WitchDoctor).expect("the witch doctor spawns");
         assert_eq!(n.size(), (18.0, 40.0));
         assert_eq!(n.max_hp, 250);
         let e = crate::bestiary::entry_for_npc(NpcKind::WitchDoctor, SlimeVariant::Blue);
@@ -4017,11 +6055,16 @@ mod tests {
         let mut player = surface_player(&w);
         player.x = 100.0 * TILE_PX;
         player.y = 116.0 * TILE_PX;
-        // The hover phase: 600 ticks moves the boss toward the hover point.
+        // The hover phase: 600 ticks move the boss toward the hover point,
+        // then the dash chain arms (`ai[1]` = 1, the wind-up — the full
+        // aiStyle-4 machine's state, not the v1 `cast_windup` latch).
         for _ in 0..600 {
             eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         }
-        assert!(eoc.cast_windup == 1, "the charge phase armed");
+        assert!(
+            eoc.ai[1] == 1.0 || eoc.ai[1] == 2.0,
+            "the charge phase armed"
+        );
         // The charge: the velocity 6 toward the player.
         eoc.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
         let speed = (eoc.vx * eoc.vx + eoc.vy * eoc.vy).sqrt();
@@ -4161,18 +6204,532 @@ mod tests {
         assert_eq!(wof.max_hp, 8000);
         let _ = (&w, &mut wof);
     }
+    #[test]
+    fn wof_slides_with_the_hp_speed_tiers_and_pins_y() {
+        // AI_027: the wall slides at 1.5 (+0.25/0.4/0.5/0.6 by the hp
+        // thresholds), the Y rides the draw-band midpoint, the direction
+        // locks to the sign.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            40.0 * TILE_PX,
+            580.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        eoc_wall.hp = eoc_wall.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        // The direction locks from the standstill.
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc_wall.vx > 0.0, "the slide locks onto the player's side");
+        let start_x = eoc_wall.x;
+        for _ in 0..60 {
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(eoc_wall.x > start_x, "the slide advances");
+        let speed = eoc_wall.vx;
+        assert!(
+            (speed - 1.5).abs() < 0.01,
+            "full hp slides at 1.5 ({speed})"
+        );
+        // The hp thresholds: 0.75 → 1.75, below-0.5 → 2.15 (the C#
+        // compares `<` — the exact half keeps the 0.25 tier).
+        eoc_wall.hp = eoc_wall.max_hp / 2 - 1;
+        eoc_wall.vx = 0.0;
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!((eoc_wall.vx - 2.15).abs() < 0.01, "half hp slides at 2.15");
+        // The Y pinning: the wall rides the band's midpoint (vy forced 0;
+        // the band starts unset (-1) — the first tick's scan pins it).
+        assert_eq!(eoc_wall.vy, 0.0);
+    }
 
+    #[test]
+    fn wof_dies_crossing_the_world_edge() {
+        // `position.X < 160 || > (maxTilesX - 10) * 16` → `active = false`.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            60.0 * TILE_PX,
+            580.0 * TILE_PX,
+            -1,
+            0.0,
+        );
+        eoc_wall.hp = eoc_wall.max_hp;
+        eoc_wall.x = 100.0; // inside the 160 kill line
+        eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(eoc_wall.hp <= 0, "the edge crossing kills the wall");
+    }
+
+    #[test]
+    fn wof_abandons_when_the_player_stays_dead() {
+        // The `localAI[1]` timer (folded into `ai[0]`): 180 ticks dead →
+        // the wall kills itself; the recovery drains at 1/30.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut eoc_wall = Npc::new(
+            NpcKind::WallOfFlesh,
+            40.0 * TILE_PX,
+            580.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        eoc_wall.hp = eoc_wall.max_hp;
+        player.hp = 0;
+        for _ in 0..200 {
+            eoc_wall.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+            if eoc_wall.hp <= 0 {
+                break;
+            }
+        }
+        assert!(eoc_wall.hp <= 0, "the abandoned wall dies");
+    }
+
+    #[test]
+    fn the_hungry_anchors_to_the_band_and_tiers_by_the_wall_hp() {
+        // aiStyle 29: the anchor = the wall's x + the band row at `ai[0]`;
+        // the leash 300/500/700 and the defense/damage tiers by the wall's
+        // hp; the wall's death deactivates the minion.
+        let mut w = ground_air();
+        w.day_time = false;
+        w.wof_present = true;
+        w.wof_hp_ratio = 1.0;
+        w.wof_x = 40.0 * TILE_PX;
+        w.wof_draw_top = 580.0 * TILE_PX;
+        w.wof_draw_bottom = 600.0 * TILE_PX;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        let mut hungry = Npc::new(NpcKind::Hungry, 40.0 * TILE_PX, 590.0 * TILE_PX, 1, 0.0);
+        hungry.hp = hungry.max_hp;
+        hungry.ai[0] = 0.45;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(hungry.hp > 0, "the wall is alive");
+        assert_eq!(hungry.defense(), 10, "full-hp wall keeps the base defense");
+        // The wall's hp drops: the defense tier 20 (75%) then 30 (50%).
+        w.wof_hp_ratio = 0.6;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(hungry.defense(), 20);
+        w.wof_hp_ratio = 0.4;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert_eq!(hungry.defense(), 30);
+        assert_eq!(hungry.damage_override, Some(60));
+        // The wall dies → the minion deactivates.
+        w.wof_present = false;
+        hungry.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        assert!(hungry.hp <= 0, "the hungry dies with the wall");
+    }
+
+    #[test]
+    fn the_leech_head_grows_the_chain() {
+        // The leech head rides the worm pass: the init rolls the 3..5
+        // budget (`AI_006`'s `Next(3, 6)`), the links chain via
+        // `worm_next`.
+        let w = ground_air();
+        let mut leech = Npc::new(NpcKind::LeechHead, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        leech.hp = leech.max_hp;
+        assert!(leech.kind.is_worm() && leech.kind.is_worm_head());
+        assert_eq!(leech.kind.worm_next(), NpcKind::LeechBody);
+        assert_eq!(NpcKind::LeechBody.worm_next(), NpcKind::LeechBody);
+        assert_eq!(leech.max_hp, 60);
+        assert_eq!(leech.defense(), 2);
+        let mut body = Npc::new(NpcKind::LeechBody, 40.0 * TILE_PX, 580.0 * TILE_PX, 1, 0.0);
+        assert_eq!(body.max_hp, 60);
+        assert_eq!(body.defense(), 6);
+        assert_eq!(body.kind.contact_damage(), 22);
+    }
+
+    #[test]
+    fn the_destroyer_chain_assembles_same_kind() {
+        // `AI_037`: the all-same-type chain — the head spawns the
+        // Destroyer segments through the worm pass (the 80 budget).
+        let w = ground_air();
+        let mut head = Npc::spawn_worm_head(&w, 100, 130, NpcKind::TheDestroyer);
+        head.hp = head.max_hp;
+        head.worm_left = 80;
+        let mut npcs = vec![head];
+        let mut rng = 3u64;
+        let mut next_id = 1u32;
+        crate::world_sim::npcs::update_worms_in(&w, None, &mut npcs, &mut rng, &mut next_id);
+        // The chain: the head + 80 segments = 81 (the same-kind stop).
+        assert_eq!(npcs.len(), 81, "the destroyer chain length {}", npcs.len());
+        for seg in &npcs {
+            assert_eq!(seg.kind, NpcKind::TheDestroyer);
+        }
+        // The trail: the second segment trails the head.
+        let (lw, lh) = npcs[1].size();
+        let dx = npcs[1].x + lw * 0.5 - (npcs[0].x + lw * 0.5);
+        let dy = npcs[1].y + lh * 0.5 - (npcs[0].y + npcs[0].size().1 * 0.5);
+        let dist = (dx * dx + dy * dy).sqrt();
+        assert!((dist - lw).abs() < 0.5, "the rigid trail ({dist})");
+    }
+
+    #[test]
+    fn the_destroyer_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::TheDestroyer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 134);
+        assert_eq!(e.credit_id, "TheDestroyer");
+        let mut d = Npc::new(NpcKind::TheDestroyer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(d.size(), (48.0, 48.0));
+        assert_eq!(d.max_hp, 8000);
+        assert_eq!(d.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::TheDestroyer.contact_damage(), 70);
+        let _ = (&w, &mut d);
+    }
+
+    #[test]
+    fn the_prime_cycles() {
+        // `AI_032`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 9) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pr.hp = pr.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pr.cast_windup == 1, "the charge phase armed");
+        pr.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pr.vx * pr.vx + pr.vy * pr.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.1, "the charge speed ({speed})");
+    }
+
+    #[test]
+    fn the_prime_spawns_and_maps() {
+        let w = ground_air();
+        let e = crate::bestiary::entry_for_npc(NpcKind::SkeletronPrime, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 127);
+        assert_eq!(e.credit_id, "SkeletronPrime");
+        let mut pr = Npc::new(NpcKind::SkeletronPrime, 0.0, 0.0, 1, 0.0);
+        assert_eq!(pr.size(), (80.0, 102.0));
+        assert_eq!(pr.max_hp, 28000);
+        assert_eq!(pr.knock_back_resist(), 0.0);
+        assert_eq!(NpcKind::SkeletronPrime.contact_damage(), 47);
+        let _ = (&w, &mut pr);
+    }
+
+    #[test]
+    fn the_twin_cycles_and_maps() {
+        // `AI_030/031`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 8.5) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut ret = Npc::new(NpcKind::Retinazer, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        ret.hp = ret.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(ret.cast_windup == 1, "the charge phase armed");
+        ret.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (ret.vx * ret.vx + ret.vy * ret.vy).sqrt();
+        assert!((speed - 8.5).abs() < 0.1, "the charge speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(ret.size(), (100.0, 110.0));
+        assert_eq!(ret.max_hp, 20000);
+        let spaz = Npc::new(NpcKind::Spazmatism, 0.0, 0.0, 1, 0.0);
+        assert_eq!(spaz.max_hp, 23000);
+        assert_eq!(NpcKind::Spazmatism.contact_damage(), 50);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Retinazer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 125);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Spazmatism, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 126);
+    }
+
+    #[test]
+    fn the_plantera_cycles_and_maps() {
+        // `AI_051`'s v1 cycle: the hover 480 ticks → the charge (the
+        // velocity 7.5) → the decel.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut pl = Npc::new(NpcKind::Plantera, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        pl.hp = pl.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..480 {
+            pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(pl.cast_windup == 1, "the charge phase armed");
+        pl.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (pl.vx * pl.vx + pl.vy * pl.vy).sqrt();
+        assert!((speed - 7.5).abs() < 0.1, "the charge speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(pl.size(), (86.0, 86.0));
+        assert_eq!(pl.max_hp, 30000);
+        assert_eq!(NpcKind::Plantera.contact_damage(), 50);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Plantera, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 262);
+        assert_eq!(e.credit_id, "Plantera");
+    }
+
+    #[test]
+    fn the_brain_teleport_dashes() {
+        // `AI_054`'s v1 cycle: the telegraph 60 ticks -> the dash (the
+        // velocity 9) -> the decay -> the telegraph reset.
+        let mut w = ground_air();
+        w.day_time = false;
+        let mut br = Npc::new(NpcKind::BrainOfCthulhu, 80.0 * 16.0, 20.0 * 16.0, 1, 0.0);
+        br.hp = br.max_hp;
+        let mut player = surface_player(&w);
+        player.x = 100.0 * TILE_PX;
+        player.y = 116.0 * TILE_PX;
+        for _ in 0..59 {
+            br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        }
+        assert!(br.cast_windup == 2, "the dash armed");
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        br.update_rng(&w, &mut player, 1.0 / 60.0, &mut 0u64);
+        let speed = (br.vx * br.vx + br.vy * br.vy).sqrt();
+        assert!((speed - 9.0).abs() < 0.2, "the dash speed ({speed})");
+        // The stats round-trip.
+        assert_eq!(br.size(), (160.0, 110.0));
+        assert_eq!(br.max_hp, 1250);
+        let cr = Npc::new(NpcKind::Creeper, 0.0, 0.0, 1, 0.0);
+        assert_eq!(cr.size(), (30.0, 30.0));
+        assert_eq!(cr.max_hp, 100);
+        let e = crate::bestiary::entry_for_npc(NpcKind::BrainOfCthulhu, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 266);
+        let e = crate::bestiary::entry_for_npc(NpcKind::Creeper, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 267);
+    }
+
+    #[test]
+    fn the_goblin_kinds_spawn_and_maps() {
+        // `SetDefaults` cases 26/27/28/111: the stats + the kind↔u16
+        // round-trip + the bestiary rows (the vanilla ids: the Thief 26,
+        // the Warrior 27, the Archer 28, the Peon 111).
+        let w = ground_air();
+        let thief = Npc::spawn_cave_walker(&w, 20, NpcKind::GoblinThief).expect("the thief spawns");
+        assert_eq!(thief.max_hp, 60);
+        assert_eq!(NpcKind::GoblinThief.contact_damage(), 12);
+        let archer =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        assert_eq!(archer.max_hp, 110);
+        assert_eq!(NpcKind::GoblinArcher.contact_damage(), 25);
+        for (kind, net) in [
+            (NpcKind::GoblinThief, 26),
+            (NpcKind::GoblinWarrior, 27),
+            (NpcKind::GoblinArcher, 28),
+            (NpcKind::GoblinPeon, 111),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net);
+        }
+    }
+    #[test]
+    fn the_creeper_orbits_brain_and_lunges() {
+        // `AI_055` (`NPC.cs:32657-32735`): beyond the 90 px ring the
+        // velocity blends home (x15/16); inside it the drift amplifies;
+        // the 1/200 roll lunges at 8 px/tick and holds until the
+        // justHit recoil.
+        let mut w = ground_air();
+        w.brain_present = true;
+        w.brain_x = 100.0 * 16.0;
+        w.brain_y = 100.0 * 16.0;
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 120.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        // Far: the blend pulls home (the 10-tile offset clears the 90 px
+        // ring).
+        let mut c = Npc::new(NpcKind::Creeper, 110.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        c.hp = c.max_hp;
+        let mut rng = 1u64;
+        c.update_creeper(&w, &player, &mut rng);
+        assert!(c.vx < 0.0, "the orbit pulls toward the brain");
+        // At the ring: the roll may lunge — hunt a no-lunge seed and a
+        // lunge seed.
+        let mut lunge = None;
+        for seed in 0..20000u64 {
+            let mut c = Npc::new(NpcKind::Creeper, 100.2 * 16.0, 100.0 * 16.0, 1, 0.0);
+            c.hp = c.max_hp;
+            let mut rng = seed;
+            c.update_creeper(&w, &player, &mut rng);
+            if c.ai[0] == 1.0 {
+                lunge = Some((seed, c));
+                break;
+            }
+        }
+        let (seed, c) = lunge.expect("a lunge seed exists");
+        let (pcx, _) = player.center();
+        let (ccx, _) = c.center();
+        assert!(
+            (c.vx - 8.0).abs() < 0.5 && pcx > ccx,
+            "the lunge aims at the player"
+        );
+        // The lunge holds while the justHit recoil is silent.
+        let mut c = c;
+        let mut rng = seed;
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 1.0, "the lunge holds");
+        // The hit sends it back to the orbit.
+        c.hurt(10, c.x - 5.0, 5.0, false);
+        c.update_creeper(&w, &player, &mut rng);
+        assert_eq!(c.ai[0], 0.0, "the justHit returns to the orbit");
+    }
+
+    #[test]
+    fn the_tinkerer_kinds_stats_roundtrip_and_shop() {
+        // `SetDefaults` 105 (`NPC.cs:10245-10257`) and 107 (`:10271-10283`):
+        // the 250/15/0.5 pair, the 18x34 vs 18x40 bodies, the kind<->u16
+        // round-trip, the bestiary row and the shop map.
+        assert_eq!(NpcKind::BoundGoblin.max_hp(), 250);
+        assert_eq!(NpcKind::GoblinTinkerer.max_hp(), 250);
+        let t = Npc::new(NpcKind::GoblinTinkerer, 0.0, 0.0, 1, 0.0);
+        assert_eq!(t.defense(), 15);
+        assert_eq!(t.knock_back_resist(), 0.5);
+        assert_eq!(NpcKind::BoundGoblin.contact_damage(), 0);
+        assert_eq!(NpcKind::BoundGoblin.size(), (18.0, 34.0));
+        assert_eq!(NpcKind::GoblinTinkerer.size(), (18.0, 40.0));
+        for (kind, v) in [(NpcKind::BoundGoblin, 63), (NpcKind::GoblinTinkerer, 64)] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GoblinTinkerer, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 107);
+        // The shop map (`NPCInteractions.cs:488-498`): the Tinkerer's
+        // shop 6; the Guide has none.
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::GoblinTinkerer),
+            Some(6)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Merchant),
+            Some(1)
+        );
+        assert_eq!(
+            crate::world_sim::npcs::shop_index_for_kind(NpcKind::Guide),
+            None
+        );
+        // `TinkererReforge` (`NPCInteractions.cs:407-423`): the Tinkerer's
+        // talk opens the reforge menu beside the shop; the other shop
+        // keepers do not.
+        let mut app_tinkerer = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let t = crate::npc::Npc::new(
+            NpcKind::GoblinTinkerer,
+            app_tinkerer.mouse_pos.x,
+            app_tinkerer.mouse_pos.y,
+            1,
+            0.0,
+        );
+        app_tinkerer.npcs.push(t);
+        let cursor = app_tinkerer.mouse_pos;
+        assert!(crate::world_sim::npcs::try_open_shop_at_cursor(
+            &mut app_tinkerer,
+            cursor
+        ));
+        assert!(
+            app_tinkerer.in_reforge_menu,
+            "the Tinkerer's talk opens the reforge menu"
+        );
+        assert_eq!(app_tinkerer.shop_npc, Some(0));
+        // The stock (`Chest.cs:1989-2003`): the 7 rows in order, no gating.
+        let ids = crate::shop::resolve_stock(6, &crate::shop::ShopFlags::default(), &[]);
+        assert_eq!(ids, vec![128, 486, 398, 84, 407, 161, 5324]);
+    }
+
+    #[test]
+    fn the_bound_goblin_rescues_into_tinkerer() {
+        // `AI_000_TransformBoundNPC` (`NPC.cs:44884-44896`): the talk
+        // swaps 105 -> 107, the freed stats restore, `savedGoblin` raises.
+        let mut w = ground_air();
+        let mut n = Npc::new(NpcKind::BoundGoblin, 20.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        n.max_hp = 250;
+        n.hp = 250;
+        assert_eq!(w.saved_goblin, false);
+        crate::world_sim::npcs::rescue_bound_goblin(&mut n, &mut w);
+        assert_eq!(n.kind, NpcKind::GoblinTinkerer);
+        assert_eq!(n.max_hp, 250);
+        assert_eq!(n.hp, 250);
+        assert_eq!(w.saved_goblin, true);
+    }
+    #[test]
+    fn the_golem_family_stats_and_maps() {
+        // `SetDefaults` 245-249 (`NPC.cs:12163-12220`): the stats, the
+        // kind<->u16 65-69, the bestiary fold (the parts -> the Golem
+        // entry net 245).
+        assert_eq!(NpcKind::Golem.max_hp(), 15000);
+        assert_eq!(NpcKind::GolemHead.max_hp(), 25000);
+        assert_eq!(NpcKind::GolemFistLeft.max_hp(), 10000);
+        assert_eq!(NpcKind::GolemHeadFree.max_hp(), 16000);
+        let b = Npc::new(NpcKind::Golem, 0.0, 0.0, 1, 0.0);
+        assert_eq!(b.defense(), 26);
+        let fh = Npc::new(NpcKind::GolemHeadFree, 0.0, 0.0, 1, 0.0);
+        assert_eq!(fh.defense(), 32);
+        assert_eq!(NpcKind::Golem.size(), (140.0, 140.0));
+        assert_eq!(NpcKind::GolemFistRight.size(), (40.0, 30.0));
+        assert_eq!(NpcKind::Golem.contact_damage(), 72);
+        assert_eq!(NpcKind::GolemHeadFree.contact_damage(), 80);
+        for (kind, v) in [
+            (NpcKind::Golem, 73),
+            (NpcKind::GolemHead, 74),
+            (NpcKind::GolemFistLeft, 75),
+            (NpcKind::GolemFistRight, 76),
+            (NpcKind::GolemHeadFree, 77),
+        ] {
+            assert_eq!(kind.to_u16(), v);
+            assert_eq!(NpcKind::from_u16(v), Some(kind));
+        }
+        let e = crate::bestiary::entry_for_npc(NpcKind::GolemHeadFree, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 245, "the parts fold onto the Golem entry");
+    }
+
+    #[test]
+    fn the_archer_stops_fires_and_staggers() {
+        // `AI_003`'s ranged family (`NPC.cs:59069-59700`): the shot gate
+        // (grounded, the line, the dist < 700) enters the stop state
+        // (`ai[2] = 1`, `ai[1] = 180`, the brake x0.5), the midpoint tick
+        // fires the hostile arrow 81 at 9 px/tick, the hit staggers
+        // (`ai[1] = 30`, `ai[2] = 0`), the cooldown end exits.
+        let w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 30.0 * 16.0;
+        player.y = 115.0 * 16.0;
+        let mut a =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        let mut rng = 1u64;
+        // The gate: the walk tick with the clear line enters the stop.
+        a.update_archer(&w, &mut player, &mut rng);
+        if a.ai[2] > 0.0 {
+            assert_eq!(a.ai[1], 180.0, "the 180-tick cadence");
+            assert!(a.vx.abs() < 1.5, "the entry brake");
+            // Ticking to the midpoint fires the arrow (180 - 90 = the
+            // 90th tick).
+            for _ in 0..90 {
+                a.update_archer(&w, &mut player, &mut rng);
+            }
+            assert!(a.wants_hostile_shot.is_some(), "the midpoint fires");
+            let (kind, _, _, vx, vy, dmg) = a.wants_hostile_shot.take().unwrap();
+            assert_eq!(kind, crate::projectile::WOODEN_ARROW_HOSTILE);
+            assert_eq!(dmg, 11);
+            let sp = (vx * vx + vy * vy).sqrt();
+            assert!((sp - 9.0).abs() < 0.5, "the 9-speed aim ({sp})");
+            // The cooldown end exits the state.
+            a.ai[1] = 1.0;
+            a.update_archer(&w, &mut player, &mut rng);
+            assert_eq!(a.ai[2], 0.0, "the state exits");
+        }
+        // The stagger: a hit during the state resets it.
+        let mut a2 =
+            Npc::spawn_cave_walker(&w, 24, NpcKind::GoblinArcher).expect("the archer spawns");
+        a2.ai[2] = 1.0;
+        a2.ai[1] = 100.0;
+        a2.hurt(10, a2.x - 5.0, 5.0, false);
+        a2.update_archer(&w, &mut player, &mut rng);
+        assert_eq!(a2.ai[2], 0.0, "the hit staggers");
+        assert_eq!(a2.ai[1], 30.0, "the 30-tick stagger");
+    }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -118,6 +118,19 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
         // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
         // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
         // painting row (num6) rides the moon-pair pass.
+        // The Goblin Tinkerer (`Chest.cs:1989-2003`): the 7 rows, no
+        // gating — the Rocket Boots 128, the Ruler 486, the Tinkerer's
+        // Workshop 398, the Grappling Hook 84, the Toolbelt 407, the
+        // Spiky Balls 161, the Rubblemaker (small) 5324.
+        6 => vec![
+            row(128, StockWhen::Always),
+            row(486, StockWhen::Always),
+            row(398, StockWhen::Always),
+            row(84, StockWhen::Always),
+            row(407, StockWhen::Always),
+            row(161, StockWhen::Always),
+            row(5324, StockWhen::Always),
+        ],
         15 => vec![
             row(1071, StockWhen::Always),
             row(1072, StockWhen::Always),
@@ -141,10 +154,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16]) -> Vec<ShopEntry> {
         // jungle 6147/1167, the night 1158, the hardmode 1159, the
         // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
         // constants-off until their flags land.
-        16 => vec![
-            row(1430, StockWhen::Always),
-            row(986, StockWhen::Always),
-        ],
+        16 => vec![row(1430, StockWhen::Always), row(986, StockWhen::Always)],
         // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
         // 242; the moon-phase hats; the full set in the tail — the v1
         // carries the always-on rows (the moon-phase and the clown rows
@@ -215,11 +225,7 @@ fn row(item: u16, when: StockWhen) -> ShopEntry {
 /// The resolved stock — the gated rows filtered by the world state. The
 /// `PlayerHasItem` rows read `inventory_ids` (the player inventory's item
 /// ids, `:1468-1475`'s 58-slot scan).
-pub fn resolve_stock(
-    shop_index: u32,
-    flags: &ShopFlags,
-    inventory_ids: &[u16],
-) -> Vec<u16> {
+pub fn resolve_stock(shop_index: u32, flags: &ShopFlags, inventory_ids: &[u16]) -> Vec<u16> {
     resolve_stock_moon(shop_index, flags, inventory_ids, 0)
 }
 
@@ -260,6 +266,23 @@ pub fn resolve_stock_moon(
 pub fn buy_price(item: u16, adjustment: f32) -> i32 {
     let store = ITEMS[item as usize].value as f32;
     round_half_to_even(store * adjustment)
+}
+
+/// The reforge cost (`Main.DrawInventory`'s inline block,
+/// `Main.cs:41584-41601`): `value * stack`, ×0.8 behind the Discount Card
+/// (not ported — no discount accessory yet), × the happiness
+/// `PriceAdjustment`, then the integer `/3`. The vanilla `<1 → 1` clamp is
+/// the DISPLAY only — the actual charge at `:41658` is the unclamped
+/// product (`BuyItem(0)` always succeeds on a value-0 item). `value` is
+/// the instance's CURRENT value — the kind's defaults after the current
+/// prefix's ×value² (`Item.cs:614-615`), so the cost scales with prefix
+/// quality; the reforge slot always holds exactly one item
+/// (`ItemSlot.cs:821-836`'s transfer splits stacks), so `stack` is 1.
+pub(crate) fn reforge_cost(value: i32, stack: u32, mood: f32) -> u64 {
+    // `Main.cs:41584-41601`'s order: value×stack (long), the float mood
+    // multiply, THEN the integer /3.
+    let product = (value as f32 * stack as f32 * mood) as i64;
+    (product / 3).max(0) as u64
 }
 
 /// The selling half (`:35388`): the store value ÷ the adjustment — the
@@ -314,12 +337,26 @@ mod tests {
             downed_boss3: true,
         };
         let stock = resolve_stock(1, &flags, &[930]);
-        for id in [188, 189, 488, 1348, 3198, 967, 33, 279, 282, 346, 4063, 4673, 931, 1614] {
+        for id in [
+            188, 189, 488, 1348, 3198, 967, 33, 279, 282, 346, 4063, 4673, 931, 1614,
+        ] {
             assert!(stock.contains(&id), "the gated row {id} missing");
         }
         // The PlayerHasItem rows need the scan hit.
         let without = resolve_stock(1, &flags, &[]);
         assert!(!without.contains(&931));
+    }
+
+    #[test]
+    fn the_reforge_cost_follows_the_inline_block() {
+        // `Main.cs:41584-41601`: the value × the stack, × the mood, then the
+        // integer /3 — 2000 copper at mood 1 = 666, the happiness 1.25 =
+        // 833; the <1 → 1 clamp is the display only, so a value-0 item
+        // costs 0 and `BuyItem(0)` always succeeds.
+        assert_eq!(reforge_cost(2000, 1, 1.0), 666);
+        assert_eq!(reforge_cost(2000, 1, 1.25), 833);
+        assert_eq!(reforge_cost(0, 1, 1.0), 0);
+        assert_eq!(reforge_cost(1, 1, 1.0), 0);
     }
 
     #[test]
@@ -376,7 +413,10 @@ mod town5_tests {
             assert!(base.contains(&id), "the base row {id} missing");
         }
         assert!(!base.contains(&67), "the blood-moon row leaked");
-        assert!(base.contains(&4430) && base.contains(&4431), "the pair 0 rows");
+        assert!(
+            base.contains(&4430) && base.contains(&4431),
+            "the pair 0 rows"
+        );
         assert!(!base.contains(&4433), "the pair 1 rows leaked at phase 0");
         // The phase 4 (the pair 2): 4436/4437.
         let p4 = resolve_stock_moon(3, &ShopFlags::default(), &[], 4);
@@ -399,6 +439,4 @@ mod town5_tests {
         // The unknown index stays empty.
         assert!(resolve_stock_moon(9, &ShopFlags::default(), &[], 0).is_empty());
     }
-
 }
-

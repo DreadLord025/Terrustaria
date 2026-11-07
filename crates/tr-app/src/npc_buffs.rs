@@ -171,6 +171,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::QueenBee => &[],
         NpcKind::SkeletronHead => &[],
         NpcKind::WallOfFlesh => &[],
+        NpcKind::TheDestroyer => &[],
+        NpcKind::SkeletronPrime => &[],
+        NpcKind::Retinazer => &[],
+        NpcKind::Spazmatism => &[],
+        NpcKind::Plantera => &[],
+        NpcKind::BrainOfCthulhu => &[],
+        NpcKind::Creeper => &[],
+        NpcKind::GoblinPeon => &[],
+        NpcKind::GoblinThief => &[],
+        NpcKind::GoblinWarrior => &[],
+        NpcKind::GoblinArcher => &[],
+        NpcKind::BoundGoblin => &[],
+        NpcKind::GoblinTinkerer => &[],
         // The skeleton family/ the cave bat: no immunity data rows.
         NpcKind::Skeleton | NpcKind::UndeadMiner | NpcKind::CaveBat => &[],
         NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => &[],
@@ -195,6 +208,35 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::EaterOfWorldsBody
         | NpcKind::EaterOfWorldsTail => &[],
         NpcKind::KingSlime => &[20, 31],
+        // The eye and the servant: no `DebuffImmunitySets` rows.
+        NpcKind::EyeOfCthulhu | NpcKind::ServantOfCthulhu => &[],
+        // The hungry/leeches: no `DebuffImmunitySets` rows.
+        NpcKind::Hungry | NpcKind::LeechHead | NpcKind::LeechBody => &[],
+        // The goblins: no `DebuffImmunitySets` rows.
+        NpcKind::GoblinThief
+        | NpcKind::GoblinWarrior
+        | NpcKind::GoblinArcher
+        | NpcKind::GoblinPeon
+        | NpcKind::GoblinSummoner => &[],
+        // The frost trio: no `DebuffImmunitySets` rows.
+        NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => &[],
+        // The martians: no `DebuffImmunitySets` rows.
+        NpcKind::MartianOfficer
+        | NpcKind::GrayGrunt
+        | NpcKind::MartianEngineer
+        | NpcKind::GigaZapper
+        | NpcKind::MartianWalker => &[],
+        // The pirates: no `DebuffImmunitySets` rows.
+        NpcKind::PirateDeckhand
+        | NpcKind::PirateCaptainsMate
+        | NpcKind::PirateArcher
+        | NpcKind::PirateCorsair
+        | NpcKind::PirateCaptain => &[],
+        NpcKind::Golem
+        | NpcKind::GolemHead
+        | NpcKind::GolemFistLeft
+        | NpcKind::GolemFistRight
+        | NpcKind::GolemHeadFree => &[],
         NpcKind::DemonEye | NpcKind::Zombie | NpcKind::WanderingEye => &[],
     }
 }

@@ -4,12 +4,12 @@
 
 use glam::Vec2;
 use tr_core::tiledata as td;
-use tr_core::{edit, World, TILE_PX};
+use tr_core::{TILE_PX, World, edit};
 
 use crate::achievements;
 use crate::app::App;
 use crate::item::ItemSlot;
-use crate::npc::Npc;
+use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::projectile::Projectile;
 use crate::registry;
@@ -32,10 +32,16 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
         .as_ref()
         .map(|p| p.center())
         .unwrap_or((app.camera.x, app.camera.y));
-    app.swing_aim = (mouse_world - Vec2::new(cx, cy)).y.atan2((mouse_world - Vec2::new(cx, cy)).x);
+    app.swing_aim = (mouse_world - Vec2::new(cx, cy))
+        .y
+        .atan2((mouse_world - Vec2::new(cx, cy)).x);
 }
 
 pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
+    #[cfg(test)]
+    if std::env::var("AMMO_TRACE").is_ok() {
+        eprintln!("[trace-top] entered, screen={}x{}", screen.x, screen.y);
+    }
     app.swing = (app.swing - dt).max(0.0);
     // `Player.itemRotation`'s per-tick update for the aimed styles (useStyle
     // 5 reads the mouse; `ItemCheck`'s shoot block, `Player.cs:47349-47376`).
@@ -116,6 +122,44 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.mine_timer = 0.0;
         return;
     }
+    // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
+    // `Player.cs:43742-43771`) fire before the world-editing gates — the C#
+    // runs them in the item-use tick, not the cursor path; the eye arm takes
+    // `app` wholesale (before the fn's `player` borrow).
+    if app.mine_down && !app.inventory_open {
+        let held = app.inventory[app.selected];
+        if held.kind == 43 && held.count > 0 && use_suspicious_looking_eye(app) {
+            return;
+        }
+        // The event items ride the same tick (`ItemCheck_UseEventItems`,
+        // `Player.cs:43920-43940`): the Goblin Battle Standard 361 starts
+        // the invasion through `CanStartInvasion(1, ignoreDelay: true)`.
+        if held.kind == 361 && held.count > 0 && use_goblin_battle_standard(app) {
+            return;
+        }
+        // `ItemCheck_UseBossSpawners`' Frost Legion arm (`Player.cs:43941-43956`):
+        // the Snow Globe 602 — `CanStartInvasion(2, ignoreDelay: true)`, the
+        // roar, then `invasionDelay = 0; StartInvasion(2)` while no invasion
+        // is active.
+        if held.kind == 602 && held.count > 0 && use_snow_globe(app) {
+            return;
+        }
+        // `ItemCheck_UseBossSpawners`' Pirate Invasion arm
+        // (`Player.cs:43957-43971`): the Pirate Map 1315 — the
+        // `CanStartInvasion(3, ignoreDelay: true)` gate, the roar, then
+        // `invasionDelay = 0; StartInvasion(3)` while no invasion is
+        // active.
+        if held.kind == 1315 && held.count > 0 && use_pirate_map(app) {
+            return;
+        }
+        // `ItemCheck_UseBossSpawners`' pre-hardmode summons
+        // (`Player.cs:43751-43900`): the Worm Food 70, the Slime Crown
+        // 560, the Abeemination 1133, the Bloody Spine 1331 (the eye 43
+        // keeps its own fn above).
+        if held.count > 0 && use_boss_summon_item(app) {
+            return;
+        }
+    }
     let world_pos = app.camera + (m - screen * 0.5) / app.zoom;
     let tx = (world_pos.x / TILE_PX).floor() as i32;
     let ty = (world_pos.y / TILE_PX).floor() as i32;
@@ -123,22 +167,33 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         app.edit_target = None;
         return;
     }
-    let Some(player) = &app.player else {
-        app.edit_target = None;
-        return;
-    };
-    let (pcx, pcy) = player.center();
-    let dx = tx as f32 * TILE_PX + 8.0 - pcx;
-    let dy = ty as f32 * TILE_PX + 8.0 - pcy;
-    let reach = 6.0 * TILE_PX;
-    if dx * dx + dy * dy > reach * reach {
+    // The reach gate: the borrow ends at the statement (the arms below
+    // re-borrow `app.player` individually, and the shooters' swing start
+    // mutates `app` after the gate).
+    let player_in_reach = app.player.as_ref().is_some_and(|p| {
+        let (pcx, pcy) = p.center();
+        let dx = tx as f32 * TILE_PX + 8.0 - pcx;
+        let dy = ty as f32 * TILE_PX + 8.0 - pcy;
+        let reach = 6.0 * TILE_PX;
+        dx * dx + dy * dy <= reach * reach
+    });
+    if !player_in_reach {
         app.edit_target = None;
         app.mine_target = None;
         app.mine_timer = 0.0;
         return;
     }
     app.edit_target = Some((tx, ty));
+    #[cfg(test)]
+    if std::env::var("AMMO_TRACE").is_ok() {
+        eprintln!("[trace] past the reach gate");
+    }
     let held = app.inventory[app.selected];
+    #[cfg(test)]
+    eprintln!(
+        "[flow-dbg] reached: kind={} mine_down={}",
+        held.kind, app.mine_down
+    );
     let held_weapon = held.count > 0 && registry::is_weapon(held.kind);
     // `Player.ItemCheck`'s consumable arms: the food (buff 26/206/207,
     // gated by `CanUseItem`'s wellFed check `:14353`), the healing potions
@@ -150,7 +205,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             let Some(def) = def else { unreachable!() };
             // The sim-context player borrow is immutable; the fed flag was
             // derived by this tick's scan, so the gate reads it directly.
-            let can_eat = !player.well_fed;
+            let can_eat = !app.player.as_ref().is_some_and(|p| p.well_fed);
             if can_eat {
                 let time = if def.buff_time > 0 {
                     def.buff_time
@@ -166,7 +221,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if app.inventory[app.selected].count == 0 {
                     app.inventory[app.selected].kind = 0;
                 }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -182,43 +237,73 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| d.potion && d.heal_life > 0) {
             let Some(def) = def else { unreachable!() };
-            let sick = player.buffs.find_buff_index(21).is_some();
-            if !sick {
-                let heal = def.heal_life;
-                if let Some(p) = app.player.as_mut() {
-                    p.hp = (p.hp + heal).min(p.max_hp);
-                    // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
-                    // rides `Item.potionDelay` = 3600 (60 s).
-                    p.buffs.add_buff(21, 3600);
-                }
-                app.inventory[app.selected].count =
-                    app.inventory[app.selected].count.saturating_sub(1);
-                if app.inventory[app.selected].count == 0 {
-                    app.inventory[app.selected].kind = 0;
-                }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
-                app.swing = app.swing_max;
-                start_swing_extras(app, held.kind);
-                app.attack_cd = app.swing_max;
-                app.mine_target = None;
-                app.mine_timer = 0.0;
-                return;
+            let sick = app
+                .player
+                .as_ref()
+                .and_then(|p| p.buffs.find_buff_index(21))
+                .is_some();
+            let heal = def.heal_life;
+            if let Some(p) = app.player.as_mut() {
+                p.hp = (p.hp + heal).min(p.max_hp);
+                // `ApplyPotionDelay` (`Player.cs:51853`): the buff 21
+                // rides `Item.potionDelay` = 3600 (60 s).
+                p.buffs.add_buff(21, 3600);
             }
+            app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+            if app.inventory[app.selected].count == 0 {
+                app.inventory[app.selected].kind = 0;
+            }
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.attack_cd = app.swing_max;
+            app.mine_target = None;
+            app.mine_timer = 0.0;
+            return;
         }
     }
-    let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
+    // The held item's prefixed stats (`Item.Prefix`'s application on a
+    // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
+    // cost, the throw damage and the crit all read the instance values.
+    let held_fx = crate::prefix::prefixed_stats(held.kind, held.prefix);
+    let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
     if app.mine_down && held_weapon && !app.inventory_open {
         // Weapons use LMB toward the cursor instead of mining. The shuriken
         // is not `autoReuse` (`Item.cs:1869-1885`): one throw per press edge
         // (`Player.cs:42733` `controlUseItem && releaseUseItem && itemAnimation == 0`).
         let throw_ready = registry::get(held.kind).is_some_and(|d| d.auto_reuse)
             || (app.mine_released && !app.mine_prev_down);
-        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+        // The ammo shooters take the shooter path below — the throw's
+        // `Item.projectile` is the ammo's projectile for them, and the shot
+        // fires at `ItemTimeIsZero` mid-swing, not on the press.
+        #[cfg(test)]
+        eprintln!(
+            "[shooter-dbg] mine_down={} held_weapon={} cd={} reuse={} ready={throw_ready}",
+            app.mine_down, held_weapon, app.attack_cd, app.reuse_delay
+        );
+        if held_use_ammo > 0 && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready {
+            // The shooter's use start — regardless of the ammo
+            // (`ItemCheck_TryStartUse` sets the timers before
+            // `ItemCheck_Shoot`'s `canShoot` gate). The shot itself fires at
+            // `ItemTimeIsZero` (the fire block below).
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+            app.swing = app.swing_max;
+            start_swing_extras(app, held.kind);
+            app.item_time = registry::get(held.kind)
+                .map(|d| d.use_time as f32 / 60.0)
+                .filter(|t| *t > 0.0)
+                .unwrap_or(app.swing_max);
+            app.attack_cd = app.swing_max;
+            app.shot_fired = false;
+            app.world_key = None;
+        }
+        if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && throw_ready && held_use_ammo == 0 {
             // `Player.CheckMana` (`Player.cs:52576`): the magic items pay
             // `item.mana * manaCost` (the multiplier is the 1f base — the
             // accessories fold out); a failed check blocks the use. The pay
             // resets the mana regen delay (`apply_mana_regen_delay`).
-            let mana_cost = registry::get(held.kind).map(|d| d.mana).unwrap_or(0);
+            let mana_cost = held_fx.map(|s| s.mana).unwrap_or(0);
             // The mutable player borrow covers the whole throw (the mana
             // pay + the reads the block makes through it).
             let Some(p) = app.player.as_mut() else {
@@ -234,9 +319,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             }
             // `SetItemAnimation`'s tail (`Player.cs:4496`): the reuse lock
             // rides the use start.
-            if let Some(d) = registry::get(held.kind) {
-                app.reuse_delay = d.reuse_delay as f32 / 60.0;
-            }
+            app.reuse_delay = held_fx.map_or(0.0, |s| s.reuse_delay as f32 / 60.0);
             // `Player.ItemCheck_Shoot` (`Player.cs:47056+`): the generic
             // `Item.shoot` firing — the aim vector normalized to
             // `shootSpeed` (`:47274-47292`; the melee `speed /= meleeSpeed`
@@ -251,7 +334,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if dir != Vec2::ZERO {
                     let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
                     let class = def.class;
-                    let raw = def.damage as f32 * p.weapon_damage_multiplier(class);
+                    let (fx_dmg, fx_spd, fx_kb) = held_fx
+                        .map_or((def.damage, def.shoot_speed, def.knock_back), |s| {
+                            (s.damage, s.shoot_speed, s.knock_back)
+                        });
+                    let raw = fx_dmg as f32 * p.weapon_damage_multiplier(class);
                     // The crit rolls at throw time (the class crit + the
                     // item's crit; `Projectile.Damage` consumes it on hit) —
                     // the item stream lives here, not in the projectile step.
@@ -262,10 +349,10 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                         proj,
                         spawn.x,
                         spawn.y,
-                        dir.x * def.shoot_speed,
-                        dir.y * def.shoot_speed,
+                        dir.x * fx_spd,
+                        dir.y * fx_spd,
                         raw as i32,
-                        def.knock_back,
+                        fx_kb,
                     );
                     if let Some(slot) = slot {
                         app.projectiles.set_crit(slot, crit);
@@ -277,22 +364,37 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                     // `Player.ApplyItemAnimation` (`Player.cs:4449-4451`): the
                     // swing lasts the item's `useAnimation` ticks; `attack_cd`
                     // matches so the throw repeats only when the swing is over.
-                    app.swing_max = crate::item::use_animation_secs(held.kind);
+                    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                     app.swing = app.swing_max;
                     start_swing_extras(app, held.kind);
                     app.attack_cd = app.swing_max;
                 }
             }
         }
-        return;
+
+        // The ammo shooters fall through to the fire block below — the
+        // vanilla's `ItemCheck_Shoot` runs inside `ItemCheck`, before the
+        // mining/placing arms return.
+        if held_use_ammo == 0 {
+            return;
+        }
     }
     if app.reuse_delay > 0.0 {
         app.reuse_delay = (app.reuse_delay - dt).max(0.0);
     }
     // Melee: LMB over an NPC within four tiles hits it instead of mining.
-    if app.mine_down && app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && !app.inventory_open {
+    // The ammo shooters skip it — they fire their `useAmmo` projectile
+    // instead (`Player.ItemCheck_Shoot`'s gate, `Player.cs:47069-47075`).
+    let held_use_ammo = registry::get(held.kind).map_or(0, |d| d.use_ammo);
+    if app.mine_down
+        && held_use_ammo == 0
+        && app.attack_cd <= 0.0
+        && app.reuse_delay <= 0.0
+        && !app.inventory_open
+    {
         let ax = world_pos.x;
         let ay = world_pos.y;
+        let (pcx, pcy) = app.player.as_ref().map(|p| p.center()).unwrap_or((ax, ay));
         let reach2 = 4.0 * TILE_PX;
         if (ax - pcx).powi(2) + (ay - pcy).powi(2) <= reach2 * reach2 {
             if let Some(n) = app.npcs.iter_mut().find(|n| n.contains(ax, ay)) {
@@ -308,19 +410,27 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 } else {
                     registry::DamageClass::Melee
                 };
-                let item_crit = registry::get(held.kind).map(|d| d.crit).unwrap_or(0);
+                let item_crit = held_fx.map(|s| s.crit).unwrap_or(0);
                 let raw = if held_weapon {
-                    registry::damage(held.kind) as f32 * player.weapon_damage_multiplier(class)
+                    held_fx.map_or(registry::damage(held.kind), |s| s.damage) as f32
+                        * app
+                            .player
+                            .as_ref()
+                            .map(|p| p.weapon_damage_multiplier(class))
+                            .unwrap_or(1.0)
                 } else {
                     15.0
                 };
                 // `Main.DamageVar(dmg, this.luck)` — the player-dealt roll
                 // passes the raw value (`ProcessHitAgainstNPC`,
                 // `Player.cs:44342`; damage taken negates it, `:31387`).
-                let luck = player.luck();
+                let (luck, class_crit) = app
+                    .player
+                    .as_ref()
+                    .map(|p| (p.luck(), p.class_crit(class)))
+                    .unwrap_or((0.0, 0));
                 let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
-                let crit =
-                    tr_core::damage::crit_roll(&mut loot_rng, player.class_crit(class) + item_crit);
+                let crit = tr_core::damage::crit_roll(&mut loot_rng, class_crit + item_crit);
                 let dmg = tr_core::damage::damage_var(&mut loot_rng, raw, luck);
                 let dmg = tr_core::damage::strike_npc_damage(dmg, n.defense(), crit);
                 // `NPC.StrikeNPC` plays `this.HitSound` at `base.position`
@@ -332,7 +442,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 n.hurt(dmg, pcx, 5.5, crit);
                 app.audio.play_at("NPC_Hit_1", nx, ny, 1.0);
                 // One swing per `useAnimation` (`Player.cs:4449-4451`).
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -348,7 +458,11 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let def = registry::get(held.kind);
         if def.is_some_and(|d| d.potion && d.heal_life > 0) {
             let Some(def) = def else { unreachable!() };
-            let sick = player.buffs.find_buff_index(21).is_some();
+            let sick = app
+                .player
+                .as_ref()
+                .and_then(|p| p.buffs.find_buff_index(21))
+                .is_some();
             if !sick {
                 let heal = def.heal_life;
                 if let Some(p) = app.player.as_mut() {
@@ -362,7 +476,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 if app.inventory[app.selected].count == 0 {
                     app.inventory[app.selected].kind = 0;
                 }
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
                 app.attack_cd = app.swing_max;
@@ -401,7 +515,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             if p.mount.is_active() && p.mount.dismount_on_item_use() {
                 let same = crate::mount::mount_type_of_item(held.kind) == Some(p.mount.kind());
                 if !same {
-                    p.try_dismount();
+                    p.try_dismount(&app.world);
                 }
             }
         }
@@ -441,7 +555,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             app.mine_timer = 0.0;
         } else {
             if app.swing <= 0.0 {
-                app.swing_max = crate::item::use_animation_secs(held.kind);
+                app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
                 app.swing = app.swing_max;
                 start_swing_extras(app, held.kind);
             }
@@ -487,7 +601,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     } else if app.mine_down && !tile.active() && tile.wall != 0 && !app.inventory_open {
         // No block in the cell: mining it removes the exposed wall.
         if app.swing <= 0.0 {
-            app.swing_max = crate::item::use_animation_secs(held.kind);
+            app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
             app.swing = app.swing_max;
             start_swing_extras(app, held.kind);
         }
@@ -586,6 +700,101 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if app.place_down && !app.place_prev_down && !app.inventory_open && crate::chest::try_open_chest_at_cursor(app, world_pos) { return; }
     if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
         return;
+    }
+    if app.place_down && !app.place_prev_down && !app.inventory_open && interact_tile(app, tx, ty) {
+        return;
+    }
+    // `ItemCheck_Shoot` (`Player.cs:47056+`): the ammo shooters fire at
+    // `ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
+    // `itemAnimation > 0 && ItemTimeIsZero` gate). `PickAmmo`
+    // (`Player.cs:53458-53676`) picks the ammo, fuses the damage/speed and
+    // drains it through the not-consume rolls; `canShoot = false` (no
+    // matching ammo) fires nothing but the swing still played.
+    // The swing decay and `item_time`'s decrement share this tick — the shot
+    // fires on the tick `item_time` hits zero (`ItemTimeIsZero`,
+    // `Player.cs:43544`), gated by `swing_max > 0` (a swing was started) and
+    // the latch.
+    if held_weapon
+        && held_use_ammo > 0
+        && app.item_time <= 0.0
+        && app.swing_max > 0.0
+        && !app.shot_fired
+    {
+        app.shot_fired = true;
+        let Some(src) = crate::ammo::pick(&app.inventory, &app.equip, held_use_ammo) else {
+            // `canShoot = false` (`Player.cs:53462-53466`): the use plays
+            // out dry — no shot, no drain.
+            return;
+        };
+        let ammo_kind = crate::ammo::slot(src, &app.inventory, &app.equip).kind;
+        let Some(ammo_def) = registry::get(ammo_kind) else {
+            return;
+        };
+        // `Player.cs:53667-53672`: the drain behind the not-consume rolls.
+        if !crate::ammo::not_consume(held.kind, &mut app.item_rng) {
+            let mut equip = std::mem::take(&mut app.equip);
+            let mut inv = app.inventory;
+            let drained = crate::ammo::drain(src, &mut inv, &mut equip);
+            app.inventory = inv;
+            app.equip = equip;
+            if !drained {
+                return;
+            }
+        }
+        // `Player.cs:53473-53480`: the projectile is the ammo's own
+        // `Item.shoot` (`item.shoot > 0 → projToShoot = item.shoot`); the
+        // specific-pair table (`PickAmmo_TryFindingSpecificMatches`) waits
+        // for its combos.
+        let Some(proj) = ammo_def.projectile else {
+            return;
+        };
+        // `Player.cs:53541-53546` + `:13121-13122`: the damage = the weapon
+        // damage plus the ammo's `Item.damage` through the weapon's class
+        // multiplier; the speed = the weapon's `shootSpeed` plus the ammo's.
+        let Some(weapon_def) = registry::get(held.kind) else {
+            return;
+        };
+        let class = weapon_def.class;
+        let (w_dmg, w_spd, w_kb, w_crit) = held_fx.map_or(
+            (
+                weapon_def.damage,
+                weapon_def.shoot_speed,
+                weapon_def.knock_back,
+                weapon_def.crit,
+            ),
+            |s| (s.damage, s.shoot_speed, s.knock_back, s.crit),
+        );
+        if let Some(p) = app.player.as_mut() {
+            let weapon_damage = w_dmg as f32 * p.weapon_damage_multiplier(class);
+            let mut damage = weapon_damage;
+            if ammo_def.damage > 0 {
+                damage += ammo_def.damage as f32 * p.weapon_damage_multiplier(class);
+            }
+            let speed = w_spd + ammo_def.shoot_speed;
+            let (pcx, pcy) = p.center();
+            let dir = (world_pos - Vec2::new(pcx, pcy)).normalize_or_zero();
+            if dir == Vec2::ZERO {
+                return;
+            }
+            let spawn = Vec2::new(pcx, pcy) + dir * 10.0;
+            let crit = {
+                let mut loot_rng = crate::world_sim::npcs::LootRng(&mut app.item_rng);
+                tr_core::damage::crit_roll(&mut loot_rng, p.class_crit(class) + w_crit)
+            };
+            let slot = app.projectiles.spawn_with_data(
+                proj,
+                spawn.x,
+                spawn.y,
+                dir.x * speed,
+                dir.y * speed,
+                damage as i32,
+                w_kb,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_crit(slot, crit);
+            }
+            app.audio.play_at("Item_1", pcx, pcy, 1.0);
+        }
     }
     if app.place_down && !app.inventory_open && (starting || inside_swing) {
         let used = if held_wall {
@@ -1102,11 +1311,7 @@ fn herb_drops(
 /// margin.)
 fn get_fruit_for_pot(pot_style: i32, gen_rand: &mut tr_core::tile_light::FastRandom) -> u16 {
     let pick = |gen_rand: &mut tr_core::tile_light::FastRandom, a: u16, b: u16| {
-        if gen_rand.next_range(0, 2) == 0 {
-            a
-        } else {
-            b
-        }
+        if gen_rand.next_range(0, 2) == 0 { a } else { b }
     };
     if (4..=6).contains(&pot_style) {
         return pick(gen_rand, 4286, 4295);
@@ -1952,6 +2157,30 @@ fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     let result = edit::interact_at(&mut app.world, tx, ty, direction, &cell_blocked);
     // The furniture interactions that touch the player/world state ahead of
     // the cue/drop mapping.
+    if let edit::TileInteraction::BankOpen { bank } = result {
+        // `Player.OpenChest`'s toggle (`Player.cs:33245-33255` + the
+        // num73 switch :33122-33138): the same bank re-clicked closes
+        // (`chest = -1`), another switches; the inventory opens with it
+        // (`Main.playerInventory = true`, `Player.cs:33516`).
+        let (next, opening) = {
+            let p = app.player.as_ref().map(|p| p.chest).unwrap_or(crate::bank::CHEST_CLOSED);
+            if p == bank {
+                (crate::bank::CHEST_CLOSED, false)
+            } else {
+                (bank, true)
+            }
+        };
+        if let Some(p) = app.player.as_mut() {
+            p.chest = next;
+        }
+        // `OpenChest`'s `Main.playerInventory = true` (`Player.cs:33516`);
+        // the close drops the panel too (the vanilla keeps the inventory
+        // open on the chest close — the port closes the pair, the
+        // text-panel fidelity).
+        app.inventory_open = opening;
+        app.world_key = None;
+        return true;
+    }
     match &result {
         edit::TileInteraction::ChairSit {
             seat_x,
@@ -2052,6 +2281,9 @@ fn interaction_events(
         edit::TileInteraction::ChairSit { .. } => (None, Vec::new()),
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
+        // The bank open is consumed in `interact_tile` ahead of this
+        // mapping (the SoundID 10/11/12 keys are absent from the cue set).
+        edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
     };
     let events = object_drops
         .iter()
@@ -2176,7 +2408,7 @@ pub(crate) fn apply_edit(world: &mut World, x: i32, y: i32, kind: u8, tile: u16)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tr_core::tile::{Tile, FLAG_ACTIVE};
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
 
     /// DW-3.2 — the melee-hit rig: the `mining_app` shape with a blue slime
     /// parked under the screen-centre cursor and no tile there, so the
@@ -2249,6 +2481,7 @@ mod tests {
             kind,
             name: "",
             count,
+            prefix: 0,
         }
     }
     /// The App-free [`break_drop_events`] harness for the record tests: a
@@ -2557,6 +2790,126 @@ mod tests {
     /// main (pick 40, `tr_core::tool`); the axe test swaps in the Iron Axe;
     /// the pick carries no projectile so the weapon branch falls through, and
     /// `flow_app`'s NPC list is empty so the melee branch does too.
+    /// The shooter rig: the Wooden Bow held, the arrows in the ammo slots
+    /// (and optionally the grid), the cursor to the right of the player.
+    fn held_use_ammo_dbg(app: &App) -> i32 {
+        crate::registry::get(app.inventory[app.selected].kind).map_or(0, |d| d.use_ammo)
+    }
+
+    fn shooter_app() -> App {
+        let mut w = World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        let mut app = mining_app(w, 30, 260);
+        // The Cobalt Repeater (auto_reuse, useAmmo 40, shoot 15): the press
+        // fires without the release edge (`Player.cs`'s autoReuse gate).
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 435,
+            name: "Cobalt Repeater",
+            count: 1,
+            prefix: 0,
+        };
+        app.mine_down = true;
+        app
+    }
+
+    #[test]
+    fn the_bow_pulls_ammo_from_the_ammo_slots_first() {
+        // `AmmoSlotOrder_Default` (`Player.cs:57141`): the ammo slots 54-57
+        // precede the grid — the bow fires the ammo-slot stack, not the
+        // grid's.
+        let mut app = shooter_app();
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 7,
+            prefix: 0,
+        };
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 99,
+            prefix: 0,
+        };
+        let mut inv = app.inventory;
+        let mut equip = std::mem::take(&mut app.equip);
+        let pick = crate::ammo::pick(&inv, &equip, 40).unwrap();
+        assert_eq!(pick, crate::ammo::AmmoSource::Ammo(0));
+        crate::ammo::drain(pick, &mut inv, &mut equip);
+        app.inventory = inv;
+        app.equip = equip;
+        assert_eq!(app.equip.ammo[0].count, 6, "the ammo slot drained");
+        assert_eq!(app.inventory[20].count, 99, "the grid untouched");
+    }
+
+    #[test]
+    fn the_bow_without_ammo_plays_a_dry_swing() {
+        // `canShoot = false` (`Player.cs:53462-53466`): no ammo — the use
+        // plays out (the swing starts) but nothing spawns and nothing drains.
+        let mut app = shooter_app();
+        let before = app.inventory[app.selected].count;
+        // The swing start runs through the mine_down pass; the cursor sits
+        // 80 px right of the screen centre (within the 6-tile reach).
+        let (sw, sh) = app.screen_size();
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        let screen = Vec2::new(sw, sh);
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        // The swing started (the timers set).
+        assert!(app.swing > 0.0, "the swing plays");
+        assert_eq!(app.swing_style, 5, "the bow's useStyle is Shoot");
+        // The fire tick: no ammo — no shot, no drain.
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        assert!(app.projectiles.slots().iter().all(|p| !p.active));
+        assert_eq!(app.inventory[app.selected].count, before);
+    }
+
+    #[test]
+    fn the_bow_with_arrows_fires_and_drains() {
+        // `ItemCheck_Shoot` (`Player.cs:47056+`): the projectile = the ammo's
+        // `Item.shoot` (the Wooden Arrow's 1), the damage = the weapon's
+        // + the ammo's through the class multiplier, the speed = the
+        // weapon's + the ammo's `shootSpeed`.
+        let mut app = shooter_app();
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 40,
+            name: "Wooden Arrow",
+            count: 7,
+            prefix: 0,
+        };
+        let (sw, sh) = app.screen_size();
+        // The cursor 80 px right of the screen centre: within the reach, the
+        // aim direction +x.
+        app.mouse_pos = Vec2::new(sw * 0.5 + 80.0, sh * 0.5);
+        let screen = Vec2::new(sw, sh);
+        // The swing start + the fire tick.
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        for _ in 0..40 {
+            update_editing(&mut app, 1.0 / 60.0, screen);
+        }
+        let fired: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(fired.len(), 1, "one arrow");
+        assert_eq!(
+            fired[0].kind, 1,
+            "the ammo's Item.shoot — the WoodenArrowFriendly"
+        );
+        assert!(fired[0].vel.x > 0.0, "flies at the cursor");
+        assert_eq!(app.equip.ammo[0].count, 6, "the arrow drained");
+    }
+
     fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
@@ -3612,7 +3965,7 @@ mod tests {
         let mut app = break_app(w, 0xBEA5);
         app.world.day_time = false; // night: `IsAlchemyPlantHarvestable(0)` false
         app.inventory[app.selected] = slot(307, 5); // Daybloom seeds
-                                                    // The cut rule kills (no pot below), then the seed plants itself.
+        // The cut rule kills (no pot below), then the seed plants itself.
         assert!(use_tile_item(&mut app, 10, 18));
         let t = app.world.tile(10, 18).unwrap();
         assert!(t.active() && t.kind == 82, "the seed planted itself");
@@ -3715,6 +4068,72 @@ mod tests {
 
     // DW-3.6: the Staff-of-Regrowth replant support matrix 78/380/579
     // (`Player.cs:45826`, called from the `flag` block :41279/:41290).
+    // ---- M3-STORE-1: the bank open toggle + the void-vault pickup -------
+
+    #[test]
+    fn test_store_1_the_piggy_right_click_toggles_the_bank() {
+        // `Player.cs:33122-33138` + `OpenChest`'s toggle (:33245-33255): the
+        // right-click opens chest -2 (the piggy), the re-click closes to -1;
+        // the inventory opens with the bank. The furniture interact tests
+        // drive `interact_tile` directly (the route's press edge is latched
+        // at `update_editing`'s head).
+        let mut w = object_world();
+        // The piggy rides ON a table: the table row at 20, the piggy at 19.
+        set_tile(&mut w, 10, 20, 14);
+        set_tile(&mut w, 11, 20, 14);
+        set_tile(&mut w, 12, 20, 14);
+        set_tile(&mut w, 10, 19, 29);
+        set_tile(&mut w, 11, 19, 29);
+        w.frame_important[29] = true;
+        if let Some(t) = w.tile_mut(10, 19) {
+            t.frame_x = 0;
+        }
+        if let Some(t) = w.tile_mut(11, 19) {
+            t.frame_x = 18;
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        app.player = Some(Player::spawn(&app.world));
+        // The first click opens chest -2.
+        assert!(interact_tile(&mut app, 10, 19));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -2, "the piggy opens chest -2");
+        assert!(app.inventory_open, "the bank opens the inventory");
+        // The re-click closes.
+        assert!(interact_tile(&mut app, 10, 19));
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "the re-click closes");
+        assert!(!app.inventory_open, "closing drops the inventory");
+    }
+
+    #[test]
+    fn test_store_1_the_void_lens_routes_pickups_into_bank4() {
+        // `Player.cs:39395`'s pickup arm: holding 4131 (the Void Lens)
+        // enables the vault (`IsVoidVaultEnabled`), `GetItem_VoidVault`
+        // fills bank4 first.
+        let mut app = mining_app(object_world(), 14, 260);
+        app.inventory[20] = crate::item::ItemSlot {
+            kind: 4131,
+            name: "Void Lens",
+            count: 1,
+            prefix: 0,
+        };
+        // The per-tick refresh rides update_player; drive it directly here.
+        app.player.as_mut().unwrap().void_vault_enabled = true;
+        crate::world_sim::items::spawn_item_drop(&mut app, 9, 5, 14, 260);
+        for _ in 0..40 {
+            crate::world_sim::items::update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert!(
+            p.banks[3].iter().any(|sl| sl.kind == 9 && sl.count == 5),
+            "the wood stack landed in bank4"
+        );
+        assert!(
+            !app.inventory.iter().any(|sl| sl.kind == 9),
+            "the inventory stayed out of it"
+        );
+    }
+
     #[test]
     fn test_DW_3_6_replant_support_78_380_579() {
         let replant_world = |support: u16| {
@@ -3928,4 +4347,579 @@ mod tests {
         assert_eq!(drops[0].0, 313);
         assert_eq!(drops[1].0, 307);
     }
+}
+
+/// `Player.ItemCheck_UseBossSpawners`'s eye arm (`Player.cs:43759-43771`):
+/// the night gate, the roar (`SoundEngine.PlaySound(15, ...)`, `SoundID.Roar`
+/// = 15), then `NPC.SpawnOnPlayer(onWhichPlayer, 4)`. The
+/// `SummonItemCheck` (`Player.cs:42162-42176`) refuses while an EoC is
+/// already alive; `ApplyItemTime`'s re-fire guard rides the swing timers
+/// (the food/potion arms' shape).
+/// `SummonItemCheck` (`Player.cs:42162-42179`): the item's own boss
+/// living anywhere refuses the use — the pre-hardmode summon pairs.
+fn summon_item_check(app: &App, item: u16) -> bool {
+    let boss = match item {
+        43 => NpcKind::EyeOfCthulhu,
+        70 => NpcKind::EaterOfWorldsHead,
+        560 => NpcKind::KingSlime,
+        1133 => NpcKind::QueenBee,
+        1331 => NpcKind::BrainOfCthulhu,
+        // 544 refuses while EITHER twin lives (`:42168-42169`'s 125/126
+        // pair); 556 rides the Destroyer 134, 557 the Prime 127.
+        544 => NpcKind::Retinazer,
+        556 => NpcKind::TheDestroyer,
+        557 => NpcKind::SkeletronPrime,
+        _ => return true,
+    };
+    !app.npcs
+        .iter()
+        .any(|n| n.hp > 0 && (n.kind == boss || (item == 544 && n.kind == NpcKind::Spazmatism)))
+}
+
+/// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
+/// `Player.cs:43751-43900`): the Worm Food 70 (`ZoneCorrupt` -> the EoW
+/// head 13), the Slime Crown 560 (ungated -> the King 50), the
+/// Abeemination 1133 (ungated -> the Queen Bee 222; the vanilla's
+/// Item173 sound rides the roar — the port's bank holds the one), the
+/// Bloody Spine 1331 (`ZoneCrimson` -> the Brain 266). The mech trio
+/// 544/556/557 and the later
+/// 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts the boss at
+/// the player; the EoW rides the worm engine (the chain assembles in the
+/// worm pass); the Brain arrives alone (the Creepers' orbit = the
+/// follow-up).
+pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
+    let item = app.inventory[app.selected].kind;
+    if !matches!(item, 70 | 560 | 1133 | 1331 | 544 | 556 | 557) {
+        return false;
+    }
+    if !summon_item_check(app, item) {
+        return false;
+    }
+    // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
+    // 560/1133 run ungated). The mech trio swaps the biome for the clock:
+    // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
+    // variant's DisabledBossSummonVariant folds out (no variant system).
+    let zone_ok = match item {
+        70 => app.scene_metrics.zone_corrupt,
+        1331 => app.scene_metrics.zone_crimson,
+        544 | 556 | 557 => !app.world.day_time,
+        _ => true,
+    };
+    if !zone_ok {
+        return false;
+    }
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or((0.0, 0.0));
+    let xt = ((px / TILE_PX) as i32).clamp(2, app.world.width - 3);
+    let yt = ((py / TILE_PX) as i32).clamp(2, app.world.height - 3);
+    let boss = match item {
+        70 => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::EaterOfWorldsHead);
+            h.hp = h.max_hp;
+            h.worm_left = 65;
+            Some(h)
+        }
+        560 => {
+            // SpawnOnPlayer's at-the-player semantics — the surface scan of
+            // spawn_king_slime refuses the deep/indoor spawns the vanilla
+            // allows.
+            let mut k = Npc::new(NpcKind::KingSlime, px, py, 1, 0.0);
+            k.hp = k.max_hp;
+            Some(k)
+        }
+        1133 => {
+            let mut b = Npc::new(NpcKind::QueenBee, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+        // The mech trio (`:43838-43876`): the Eye spawns BOTH eyes
+        // (SpawnOnPlayer(125) + SpawnOnPlayer(126)); the Worm rides the
+        // 80-budget chain; the Skull lands as the Prime. The port pushes
+        // the pair through the one returned boss + the direct list push.
+        544 => {
+            let mut a = Npc::new(NpcKind::Retinazer, px, py, 1, 0.0);
+            a.hp = a.max_hp;
+            let mut b = Npc::new(NpcKind::Spazmatism, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            app.npcs.push(a);
+            Some(b)
+        }
+        556 => {
+            let mut h = Npc::spawn_worm_head(&app.world, xt, yt, NpcKind::TheDestroyer);
+            h.hp = h.max_hp;
+            h.worm_left = 80;
+            Some(h)
+        }
+        557 => {
+            let mut b = Npc::new(NpcKind::SkeletronPrime, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+        _ => {
+            let mut b = Npc::new(NpcKind::BrainOfCthulhu, px, py, 1, 0.0);
+            b.hp = b.max_hp;
+            Some(b)
+        }
+    };
+    let Some(boss) = boss else {
+        return false;
+    };
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.npcs.push(boss);
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// The Goblin Battle Standard (`Player.ItemCheck_UseEventItems`,
+/// `Player.cs:43920-43940`): the use through `CanStartInvasion(1,
+/// ignoreDelay: true)` — the refusal leaves the stack intact — then
+/// `StartInvasion()` sizes `80 + 40 x the qualifying players` and the
+/// stack pays one (`Item.consumable`); the roar rides the eye's sound.
+pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let life_max = player.max_hp;
+    if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
+        return false;
+    }
+    crate::world_sim::npcs::start_invasion(&mut app.world, 1, 1);
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+/// `ItemCheck_UseBossSpawners`' Frost Legion arm (`Player.cs:43941-43956`):
+/// the Snow Globe (602) — the `CanStartInvasion(2, ignoreDelay: true)` gate
+/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
+/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(2)` —
+/// the march state rides the World (the morning-roll resolve's shape).
+pub fn use_snow_globe(app: &mut App) -> bool {
+    if app.world.invasion_type != 0 {
+        return false;
+    }
+    let qualified = app
+        .player
+        .as_ref()
+        .map(|p| p.max_hp >= 200)
+        .unwrap_or(false);
+    if !qualified {
+        return false;
+    }
+    app.audio.play("Roar_0");
+    app.world.invasion_delay = 0;
+    app.world.invasion_goblins = true;
+    app.world.invasion_type = 2;
+    app.world.invasion_warn = 0;
+    app.world.invasion_size = 80 + 40;
+    app.world.invasion_size_start = app.world.invasion_size;
+    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
+}
+
+pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
+    let eye_alive = app
+        .npcs
+        .iter()
+        .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0);
+    if app.world.day_time || eye_alive {
+        return false;
+    }
+    let Some(player) = app.player.as_ref() else {
+        return false;
+    };
+    let (pcx, pcy) = player.center();
+    let Some(eye) = Npc::spawn_eye_of_cthulhu(&app.world, pcx, pcy) else {
+        return false;
+    };
+    app.audio.play("Roar_0");
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    app.npcs.push(eye);
+    true
+}
+
+#[cfg(test)]
+mod loot_summon_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+
+    #[test]
+    fn the_boss_summon_items_gate_and_consume() {
+        // `ItemCheck_UseBossSpawners` (`Player.cs:43751-43900`): the
+        // ungated crown/abee, the corruption/crimson gates, the
+        // SummonItemCheck refusal, the stack pay.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        // The Worm Food outside the corruption refuses free.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 70,
+            name: "Worm Food".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the corruption gate holds");
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.scene_metrics.zone_corrupt = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EaterOfWorldsHead && n.hp > 0)
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        // The Bloody Spine under the corruption refuses (the crimson gate).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the crimson gate holds");
+        app.scene_metrics.zone_crimson = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::BrainOfCthulhu && n.hp > 0)
+        );
+        // The re-summon refuses while the boss lives (`SummonItemCheck`).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the living brain refuses");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The ungated Slime Crown: the first use summons the king.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 560,
+            name: "Slime Crown".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+        );
+    }
+
+    #[test]
+    fn the_bloody_spine_brain_spawns_swarm_and_shields() {
+        // `AI_054`'s init + the shield: the Bloody Spine's brain gets the
+        // 20-Creeper swarm at the first state pass (`localAI[0]` 0 -> 1),
+        // the shield holds while a Creeper lives (`dontTakeDamage`), and
+        // the last Creeper's death frees the brain.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.scene_metrics.zone_crimson = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1331,
+            name: "Bloody Spine".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        crate::world_sim::npcs::update_brain_state(&mut app);
+        let creepers = app
+            .npcs
+            .iter()
+            .filter(|n| n.kind == NpcKind::Creeper && n.hp > 0)
+            .count();
+        assert_eq!(creepers, 20, "the init swarm");
+        let brain = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .expect("the brain");
+        assert!(brain.dont_take_damage, "the Creeper shield holds");
+        assert!(app.world.brain_present);
+        // The shielded brain refuses the hit (`StrikeNPC`'s no-op).
+        let mut brain_mut = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .unwrap();
+        let hp_before = brain_mut.hp;
+        assert!(
+            !brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false),
+            "the shield refuses"
+        );
+        assert_eq!(brain_mut.hp, hp_before);
+        drop(brain_mut);
+        // The last Creeper's death frees the brain.
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Creeper {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_brain_state(&mut app);
+        let mut brain_mut = app
+            .npcs
+            .iter_mut()
+            .find(|n| n.kind == NpcKind::BrainOfCthulhu)
+            .unwrap();
+        assert!(!brain_mut.dont_take_damage, "the shield falls");
+        assert!(brain_mut.hurt(50, brain_mut.x - 10.0, 5.0, false));
+        assert!(brain_mut.hp < hp_before);
+    }
+
+    #[test]
+    fn the_mech_summons_night_gated_pair_and_refusals() {
+        // `ItemCheck_UseBossSpawners`' mech arms (`Player.cs:43838-43876`):
+        // day refuses free; night summons — the Eye spawns BOTH eyes, the
+        // Worm the 80-budget chain, the Skull the Prime; the living-boss
+        // refusal rides `SummonItemCheck`'s 125/126 pair.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 544,
+            name: "Mechanical Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "day refuses");
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.world.day_time = false;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
+        );
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
+        );
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        // Either twin living refuses the re-summon (`:42168-42169`).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 544,
+            name: "Mechanical Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_boss_summon_item(&mut app), "the living twins refuse");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Mechanical Worm rides the chain engine.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 556,
+            name: "Mechanical Worm".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        let head = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::TheDestroyer)
+            .expect("the destroyer head");
+        assert_eq!(head.worm_left, 80, "the mech worm budget");
+        // The Mechanical Skull lands the Prime.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 557,
+            name: "Mechanical Skull".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::SkeletronPrime && n.hp > 0)
+        );
+    }
+    #[test]
+    fn the_battle_standard_gates_and_sizing() {
+        // `Main.CanStartInvasion` (`Main.cs:64414-64432`): the 200-life
+        // gate; `StartInvasion(1)` (`:64435-64460`): 80 + 40 x qualifying.
+        use crate::world_sim::npcs::{can_start_invasion, start_invasion};
+        let mut w = tr_core::World::new("t".into(), 64, 64);
+        assert!(!can_start_invasion(&w, 100), "the base life waits");
+        assert!(can_start_invasion(&w, 200));
+        start_invasion(&mut w, 1, 1);
+        assert!(w.invasion_goblins);
+        assert_eq!(w.invasion_size, 120, "80 + 40 x one qualifying player");
+        start_invasion(&mut w, 1, 1);
+        assert_eq!(w.invasion_size, 120, "the active invasion blocks");
+    }
+
+    #[test]
+    fn the_battle_standard_starts_the_invasion_and_consumes() {
+        // `ItemCheck_UseEventItems` (`Player.cs:43920-43940`): the use
+        // starts the invasion + pays the stack; the refusal keeps it.
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.max_hp = 200;
+        player.hp = player.max_hp;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 361,
+            name: "Goblin Battle Standard".into(),
+            count: 2,
+            prefix: 0,
+        };
+        assert!(use_goblin_battle_standard(&mut app));
+        assert!(app.world.invasion_goblins);
+        assert_eq!(app.world.invasion_size, 120);
+        assert_eq!(app.inventory[app.selected].count, 1, "the use paid one");
+        assert!(
+            !use_goblin_battle_standard(&mut app),
+            "the active invasion refuses"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+    }
+
+    #[test]
+    fn the_suspicious_eye_summons_only_at_night_and_once() {
+        // `ItemCheck_UseBossSpawners`' gates: day → refused; night → the
+        // roar + the spawn + the consumption; alive → refused
+        // (`SummonItemCheck`).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(!use_suspicious_looking_eye(&mut app), "day refuses");
+        app.world.day_time = false;
+        assert!(use_suspicious_looking_eye(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 0, "the use consumed");
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
+        );
+        app.inventory[app.selected] = ItemSlot {
+            kind: 43,
+            name: "Suspicious Looking Eye".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !use_suspicious_looking_eye(&mut app),
+            "SummonItemCheck refuses while alive"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    #[test]
+    fn the_eoc_kill_sets_the_downed_flag() {
+        // `NPC.downedBoss1 = true` rides the death pass; the loot resolves
+        // against the full database (the executor skips the unregistered
+        // items).
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        app.world.day_time = false;
+        let mut eye = crate::npc::Npc::spawn_eye_of_cthulhu(&app.world, 64.0, 64.0).unwrap();
+        eye.hp = 0;
+        app.npcs.push(eye);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_eoc);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::EyeOfCthulhu));
+    }
+}
+
+/// `ItemCheck_UseBossSpawners`' Pirate Invasion arm (`Player.cs:43957-43971`):
+/// the Pirate Map (1315) — the `CanStartInvasion(3, ignoreDelay: true)` gate
+/// (`invasionType == 0` + a 200+ max-hp player; the delay folds out), the
+/// roar (`SoundID.Roar` 15), then `invasionDelay = 0; StartInvasion(3)` —
+/// the march state rides the World (the morning-roll resolve's shape).
+pub fn use_pirate_map(app: &mut App) -> bool {
+    if app.world.invasion_type != 0 {
+        return false;
+    }
+    let qualified = app
+        .player
+        .as_ref()
+        .map(|p| p.max_hp >= 200)
+        .unwrap_or(false);
+    if !qualified {
+        return false;
+    }
+    app.audio.play("Roar_0");
+    app.world.invasion_delay = 0;
+    app.world.invasion_goblins = true;
+    app.world.invasion_type = 3;
+    app.world.invasion_warn = 0;
+    app.world.invasion_size = 80 + 40 + 40 + 20;
+    app.world.invasion_size_start = app.world.invasion_size;
+    let roll = (crate::app::frame::rand01(&mut app.item_rng) * 2.0) as u32;
+    app.world.invasion_x = if roll == 0 { 0.0 } else { app.world.width as f64 };
+    app.inventory[app.selected].count =
+        app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    let held = app.inventory[app.selected];
+    app.swing_max = crate::item::use_animation_secs(held.kind);
+    app.swing = app.swing_max;
+    app.attack_cd = app.swing_max;
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    true
 }

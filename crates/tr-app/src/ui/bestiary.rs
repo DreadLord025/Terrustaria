@@ -56,7 +56,12 @@ pub fn panel_rect(screen: Vec2) -> [f32; 4] {
 /// -25, centred, half the container's width (-10).
 pub fn back_rect(panel: &[f32; 4]) -> [f32; 4] {
     let w = (panel[2] - 10.0) * 0.5;
-    [panel[0] + panel[2] * 0.5 - w * 0.5, panel[1] + panel[3] - 25.0 - 50.0, w, 50.0]
+    [
+        panel[0] + panel[2] * 0.5 - w * 0.5,
+        panel[1] + panel[3] - 25.0 - 50.0,
+        w,
+        50.0,
+    ]
 }
 
 /// The grid area — the `-12px wide, -4px tall` bestiary space above the
@@ -89,9 +94,9 @@ pub fn card_at(screen: Vec2, mouse: Vec2) -> Option<usize> {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
-    if mouse.x < rect[0] || mouse.y < rect[1] {
-        return None;
-    }
+    // `GetEntriesToShow`'s raw CELL lattice (the space divided by 72 — no
+    // insets): the draw and the hit-test share it, so the overflow rows
+    // keep the hits.
     let cx = ((mouse.x - rect[0]) / CELL) as usize;
     let cy = ((mouse.y - rect[1]) / CELL) as usize;
     if cx >= cols || cy >= rows {
@@ -133,8 +138,20 @@ pub fn draw_inventory_button(r: &mut SpriteRenderer, lookups: &Lookups, mouse: V
     let frame_h = sheet.height as f32;
     let cx = BUTTON_RECT[0] + BUTTON_RECT[2] * 0.5;
     let cy = BUTTON_RECT[1] + BUTTON_RECT[3] * 0.5;
-    let dst = [cx - (frame_w - 2.0) * 0.5, cy - (frame_h - 2.0) * 0.5, frame_w - 2.0, frame_h - 2.0];
-    draw_sheet_frame(r, lookups, &sheet, button_hit(mouse) as usize, dst, [1.0; 4]);
+    let dst = [
+        cx - (frame_w - 2.0) * 0.5,
+        cy - (frame_h - 2.0) * 0.5,
+        frame_w - 2.0,
+        frame_h - 2.0,
+    ];
+    draw_sheet_frame(
+        r,
+        lookups,
+        &sheet,
+        button_hit(mouse) as usize,
+        dst,
+        [1.0; 4],
+    );
 }
 
 /// The whole screen: the dim backdrop, the container panel, the title, the
@@ -171,7 +188,11 @@ pub fn draw_screen(
                 == tr_core::bestiary::UnlockState::CanShowDropsWithDropRates
         })
         .count() as f32;
-    let pct = if total > 0.0 { done / total * 100.0 } else { 0.0 };
+    let pct = if total > 0.0 {
+        done / total * 100.0
+    } else {
+        0.0
+    };
     text::hud_text(
         r,
         lookups,
@@ -186,7 +207,15 @@ pub fn draw_screen(
     let r0 = back_rect(&panel);
     let style = super::cards::fat_button_style();
     let text_w = text::hud_text_width(r, lookups, "Back", style.text_scale);
-    super::uistate::draw_text_panel(r, lookups, r0, &style, "Back", text_w, back_hit(screen, mouse));
+    super::uistate::draw_text_panel(
+        r,
+        lookups,
+        r0,
+        &style,
+        "Back",
+        text_w,
+        back_hit(screen, mouse),
+    );
 }
 
 fn draw_panel_chrome(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2) {
@@ -198,14 +227,33 @@ fn draw_panel_chrome(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2) {
         [p[0], p[1]],
         [p[2], p[3]],
         r.white_uv(),
-        [33.0 / 255.0 * 0.8, 43.0 / 255.0 * 0.8, 79.0 / 255.0 * 0.8, 0.8],
+        [
+            33.0 / 255.0 * 0.8,
+            43.0 / 255.0 * 0.8,
+            79.0 / 255.0 * 0.8,
+            0.8,
+        ],
     );
     // The header text — the screen has no title element; the port labels the
     // panel with the inventory button's tooltip name.
-    text::hud_text(r, lookups, p[0] + 12.0, p[1] + 10.0, 1.0, [1.0; 4], "Bestiary");
+    text::hud_text(
+        r,
+        lookups,
+        p[0] + 12.0,
+        p[1] + 10.0,
+        1.0,
+        [1.0; 4],
+        "Bestiary",
+    );
 }
 
-fn draw_grid(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2, tracker: &KillTracker, mouse: Vec2) {
+fn draw_grid(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    screen: Vec2,
+    tracker: &KillTracker,
+    mouse: Vec2,
+) {
     let panel = panel_rect(screen);
     let rect = grid_rect(&panel);
     let (cols, rows) = grid_metrics(&rect);
@@ -216,8 +264,8 @@ fn draw_grid(r: &mut SpriteRenderer, lookups: &Lookups, screen: Vec2, tracker: &
     {
         let col = idx % cols;
         let row = idx / cols;
-        let x = rect[0] + col as f32 * CELL + (rect[2] - cols as f32 * CELL) * 0.5;
-        let y = rect[1] + row as f32 * CELL + (rect[3] - rows as f32 * CELL) * 0.5;
+        let x = rect[0] + col as f32 * CELL;
+        let y = rect[1] + row as f32 * CELL;
         let cell = [x, y, CELL, CELL];
         let hover = card_at(screen, mouse) == Some(idx);
         draw_card(r, lookups, cell, entry, tracker, idx, hover);
@@ -264,7 +312,15 @@ fn draw_card(
         }
     }
     // The display index (`:58-66` — `IBestiaryEntryDisplayIndex`'s number).
-    text::hud_text(r, lookups, cell[0] + 10.0, cell[1] + 10.0, 0.9, [1.0; 4], &format!("{}", idx + 1));
+    text::hud_text(
+        r,
+        lookups,
+        cell[0] + 10.0,
+        cell[1] + 10.0,
+        0.9,
+        [1.0; 4],
+        &format!("{}", idx + 1),
+    );
 }
 
 /// `UnlockableNPCEntryIcon.Draw` (`:194-211`) — the NPC drawn through
@@ -272,7 +328,14 @@ fn draw_card(
 /// `topLeft + size*(0.5, 1) + (0, -8)` (`UpdatePosition`, `:112-123`),
 /// floaters centred. The UI draws with full light; the slime variants keep
 /// their `NPC.color` tint.
-fn draw_portrait(r: &mut SpriteRenderer, lookups: &Lookups, entry: &crate::bestiary::BestiaryEntryDef, cx: f32, cy: f32, box_h: f32) {
+fn draw_portrait(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    entry: &crate::bestiary::BestiaryEntryDef,
+    cx: f32,
+    cy: f32,
+    box_h: f32,
+) {
     let (sheet_i, frame_h, w, h, tint) = portrait_data(entry, lookups);
     let Some(sheet) = lookups.bestiary_npc_sheets[sheet_i] else {
         return;
@@ -302,6 +365,8 @@ fn portrait_data(
         NpcKind::WanderingEye => 2,
         NpcKind::Zombie => 3,
         NpcKind::KingSlime => 4,
+        NpcKind::EyeOfCthulhu => 41,
+        NpcKind::ServantOfCthulhu => 42,
         NpcKind::Guide => 5,
         NpcKind::Skeleton => 6,
         NpcKind::UndeadMiner => 7,
@@ -323,15 +388,15 @@ fn portrait_data(
         NpcKind::Piranha => 23,
         NpcKind::Shark => 24,
         NpcKind::DevourerHead => 25,
-        NpcKind::DevourerBody => 26,
-        NpcKind::DevourerTail => 27,
-        NpcKind::GiantWormHead => 28,
-        NpcKind::GiantWormBody => 29,
-        NpcKind::GiantWormTail => 30,
-        NpcKind::EaterOfWorldsHead => 31,
-        NpcKind::EaterOfWorldsBody => 32,
-        NpcKind::EaterOfWorldsTail => 33,
-        NpcKind::Merchant => 34,
+        NpcKind::DevourerBody => 27,
+        NpcKind::DevourerTail => 28,
+        NpcKind::GiantWormHead => 29,
+        NpcKind::GiantWormBody => 30,
+        NpcKind::GiantWormTail => 31,
+        NpcKind::EaterOfWorldsHead => 32,
+        NpcKind::EaterOfWorldsBody => 33,
+        NpcKind::EaterOfWorldsTail => 34,
+        NpcKind::Merchant => 26,
         NpcKind::Dryad => 35,
         NpcKind::Nurse => 36,
         NpcKind::ArmsDealer => 37,
@@ -339,13 +404,61 @@ fn portrait_data(
         NpcKind::Painter => 39,
         NpcKind::WitchDoctor => 40,
         NpcKind::Clothier => 41,
+        NpcKind::EyeOfCthulhu => 43,
+        NpcKind::QueenBee => 44,
+        NpcKind::SkeletronHead => 45,
+        NpcKind::WallOfFlesh => 47,
+        NpcKind::Hungry => 48,
+        NpcKind::LeechHead => 49,
+        NpcKind::LeechBody => 50,
         NpcKind::EyeOfCthulhu => 42,
         NpcKind::QueenBee => 43,
         NpcKind::SkeletronHead => 44,
-        NpcKind::WallOfFlesh => 45,
+        NpcKind::WallOfFlesh => 46,
+        NpcKind::TheDestroyer => 50,
+        NpcKind::SkeletronPrime => 51,
+        NpcKind::Retinazer => 52,
+        NpcKind::Spazmatism => 53,
+        NpcKind::Plantera => 54,
+        NpcKind::BrainOfCthulhu => 55,
+        NpcKind::Creeper => 56,
+        NpcKind::GoblinThief => 57,
+        NpcKind::GoblinWarrior => 58,
+        NpcKind::GoblinArcher => 59,
+        NpcKind::GoblinPeon => 60,
+        NpcKind::GoblinSummoner => 61,
+        NpcKind::GoblinPeon => 57,
+        NpcKind::GoblinThief => 58,
+        NpcKind::GoblinWarrior => 59,
+        NpcKind::GoblinArcher => 60,
+        NpcKind::BoundGoblin => 61,
+        NpcKind::GoblinTinkerer => 62,
+        NpcKind::Golem => 53,
+        NpcKind::GolemHead => 54,
+        NpcKind::GolemFistLeft => 55,
+        NpcKind::GolemFistRight => 56,
+        NpcKind::GolemHeadFree => 57,
+        NpcKind::SnowmanGangsta => 48,
+        NpcKind::SnowBalla => 49,
+        NpcKind::MysterySnowman => 50,
+        NpcKind::MartianOfficer => 51,
+        NpcKind::GrayGrunt => 51,
+        NpcKind::MartianEngineer => 51,
+        NpcKind::GigaZapper => 51,
+        NpcKind::MartianWalker => 52,
+        NpcKind::PirateDeckhand => 51,
+        NpcKind::PirateCaptainsMate => 51,
+        NpcKind::PirateArcher => 51,
+        NpcKind::PirateCorsair => 51,
+        NpcKind::PirateCaptain => 52,
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
+        (NpcKind::Golem, _) => (sheet_i, 140.0, 140.0, 140.0, white),
+        (NpcKind::GolemHead, _) => (sheet_i, 70.0, 70.0, 70.0, white),
+        (NpcKind::GolemFistLeft, _) => (sheet_i, 30.0, 40.0, 30.0, white),
+        (NpcKind::GolemFistRight, _) => (sheet_i, 30.0, 40.0, 30.0, white),
+        (NpcKind::GolemHeadFree, _) => (sheet_i, 70.0, 70.0, 70.0, white),
         (NpcKind::Slime, Some(v)) => {
             let s = v.stats();
             (
@@ -361,22 +474,36 @@ fn portrait_data(
                 ],
             )
         }
+        // The hungry (3 frames) / the leech segments (1).
+        (NpcKind::Hungry, _) => {
+            let h = lookups.bestiary_npc_sheets[48]
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::LeechHead, _) | (NpcKind::LeechBody, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        // The eye: the 6-frame sheet's frame height rides the sheet
+        // (the 100x110 frames).
+        (NpcKind::EyeOfCthulhu, _) => {
+            let h = lookups.bestiary_npc_sheets[43]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::ServantOfCthulhu, _) => (sheet_i, 20.0, 20.0, 20.0, white),
         (NpcKind::Slime, None) => (sheet_i, 26.0, 32.0, 26.0, white),
         (NpcKind::DemonEye, _) => (sheet_i, 24.0, 38.0, 24.0, white),
         (NpcKind::WanderingEye, _) => {
             // The 4-frame sheet's frame height rides the sheet itself
             // (`draw_npcs`'s `t.h / 4`).
-            let h = lookups
-                .bestiary_npc_sheets[2]
+            let h = lookups.bestiary_npc_sheets[2]
                 .map(|s| s.height as f32 / 4.0)
                 .unwrap_or(24.0);
             (sheet_i, h, 38.0, h, white)
         }
         (NpcKind::Zombie, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::Guide, _) => (sheet_i, 48.0, 38.0, 48.0, white),
-        (NpcKind::Skeleton | NpcKind::UndeadMiner, _) => {
-            (sheet_i, 48.0, 38.0, 48.0, white)
-        }
+        (NpcKind::Skeleton | NpcKind::UndeadMiner, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::CaveBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::JungleBat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
         (NpcKind::Hellbat, _) => (sheet_i, 18.0, 26.0, 18.0, white),
@@ -418,7 +545,104 @@ fn portrait_data(
         (NpcKind::QueenBee, _) => (sheet_i, 66.0, 66.0, 66.0, white),
         (NpcKind::SkeletronHead, _) => (sheet_i, 102.0, 80.0, 102.0, white),
         (NpcKind::WallOfFlesh, _) => (sheet_i, 120.0, 120.0, 120.0, white),
+        (NpcKind::TheDestroyer, _) => (sheet_i, 48.0, 48.0, 48.0, white),
+        (NpcKind::SkeletronPrime, _) => (sheet_i, 102.0, 80.0, 102.0, white),
+        (NpcKind::Retinazer, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Spazmatism, _) => (sheet_i, 110.0, 100.0, 110.0, white),
+        (NpcKind::Plantera, _) => (sheet_i, 86.0, 86.0, 86.0, white),
+        (NpcKind::BrainOfCthulhu, _) => (sheet_i, 110.0, 160.0, 110.0, white),
+        (NpcKind::Creeper, _) => (sheet_i, 30.0, 30.0, 30.0, white),
+        (NpcKind::GoblinPeon, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinThief, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinWarrior, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::GoblinArcher, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        (NpcKind::BoundGoblin, _) => (sheet_i, 48.0, 34.0, 54.0, white),
+        (NpcKind::GoblinTinkerer, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
+        (NpcKind::SnowmanGangsta, _) => {
+            let h = lookups.bestiary_npc_sheets[48]
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::SnowBalla, _) => {
+            let h = lookups.bestiary_npc_sheets[49]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::MysterySnowman, _) => {
+            let h = lookups.bestiary_npc_sheets[50]
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        // The martians: the 9-frame strips over the 18x40 frames (the
+        // walker's 11-frame 34x110 sheet).
+        (NpcKind::MartianOfficer, _)
+        | (NpcKind::GrayGrunt, _)
+        | (NpcKind::MartianEngineer, _)
+        | (NpcKind::GigaZapper, _) => {
+            let h = lookups.bestiary_npc_sheets[51]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::MartianWalker, _) => {
+            let h = lookups.bestiary_npc_sheets[52]
+                .map(|s| s.height as f32 / 11.0)
+                .unwrap_or(110.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        // The pirates: the 16/20-frame strips over the 18x40 frames.
+        (NpcKind::PirateDeckhand, _)
+        | (NpcKind::PirateCaptainsMate, _)
+        | (NpcKind::PirateArcher, _)
+        | (NpcKind::PirateCorsair, _) => {
+            let h = lookups.bestiary_npc_sheets[51]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::PirateCaptain, _) => {
+            let h = lookups.bestiary_npc_sheets[52]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
         (NpcKind::KingSlime, _) => (sheet_i, 120.0, 174.0, 120.0, white),
+        // The goblins: the 16/21/20-frame humanoid strips over the 38-wide
+        // display boxes (the frame height rides each sheet).
+        (NpcKind::GoblinThief, _) => {
+            let h = lookups.bestiary_npc_sheets[57]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinWarrior, _) => {
+            let h = lookups.bestiary_npc_sheets[58]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinArcher, _) => {
+            let h = lookups.bestiary_npc_sheets[59]
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinPeon, _) => {
+            let h = lookups.bestiary_npc_sheets[60]
+                .map(|s| s.height as f32 / 21.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::GoblinSummoner, _) => {
+            let h = lookups.bestiary_npc_sheets[61]
+                .map(|s| s.height as f32 / 20.0)
+                .unwrap_or(48.0);
+            (sheet_i, h, 38.0, h, white)
+        }
     }
 }
 
@@ -470,11 +694,46 @@ fn draw_info_page(
     if state >= UnlockState::CanShowStats {
         let stats =
             crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_hp, &format!("{}", stats.hp));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_attack, &format!("{}", stats.damage));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_defense, &format!("{}", stats.defense));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_knockback, &format!("{:.2}", stats.kb));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_copper, &format!("{}", stats.value as i64));
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_hp,
+            &format!("{}", stats.hp),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_attack,
+            &format!("{}", stats.damage),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_defense,
+            &format!("{}", stats.defense),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_knockback,
+            &format!("{:.2}", stats.kb),
+        );
+        stat_row(
+            r,
+            lookups,
+            &mut ty,
+            tx,
+            lookups.ui_bestiary_stat_copper,
+            &format!("{}", stats.value as i64),
+        );
         ty += 10.0;
     }
 
@@ -510,7 +769,15 @@ fn draw_info_page(
             ty += 22.0;
         }
         if crate::loot_db::drop_lines(entry.net_id).is_empty() {
-            text::hud_text(r, lookups, tx, ty, 0.8, [0.7; 4], "  (nothing recorded yet)");
+            text::hud_text(
+                r,
+                lookups,
+                tx,
+                ty,
+                0.8,
+                [0.7; 4],
+                "  (nothing recorded yet)",
+            );
         }
     }
 }
@@ -568,9 +835,11 @@ mod tests {
         let rect = grid_rect(&panel);
         let (cols, rows) = grid_metrics(&rect);
         assert!(cols * rows >= crate::bestiary::ENTRIES.len());
-        // The first cell's centre hits entry 0.
-        let first_x = rect[0] + (rect[2] - cols as f32 * CELL) * 0.5 + CELL * 0.5;
-        let first_y = rect[1] + (rect[3] - rows as f32 * CELL) * 0.5 + CELL * 0.5;
+        // The first cell's centre hits entry 0 — the probe rides
+        // `card_at`'s own lattice (the raw CELL grid, no insets) so the
+        // overflow rows keep the hit.
+        let first_x = rect[0] + CELL * 0.5;
+        let first_y = rect[1] + CELL * 0.5;
         assert_eq!(card_at(screen, Vec2::new(first_x, first_y)), Some(0));
         // The Back panel sits inside the container above the bottom edge.
         let back = back_rect(&panel);

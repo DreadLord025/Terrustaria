@@ -119,6 +119,126 @@ impl Default for UiPulse {
 /// `map_style` is `Main.mapStyle` (`Main.cs:66750`), driving the map-style icon
 /// row's active tint (`Main.cs:41083-41086`).
 #[allow(clippy::too_many_arguments)]
+/// The death screen's text block — `Main.DrawDeathText`'s shape
+/// (`Main.cs:45324-45341`): the death broadcast (the big `DeathText` font,
+/// centered 60 px above the screen's midpoint) and the softcore
+/// "Dropped coins: X" line 50 px lower (the small `MouseText` font). The
+/// alpha rides the death-screen fade — the port draws at the fixed
+/// full-bright (the respawn timer's fade lands with the death-screen pass).
+pub(crate) fn draw_death_screen(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    death_text: &str,
+    lost_coins: u64,
+    lost_coin_string: &str,
+) {
+    let color = [1.0, 1.0, 1.0, 1.0];
+    text::draw_death_string(r, lookups, screen.x, screen.y / 2.0 - 60.0, color, death_text);
+    if lost_coins > 0 {
+        let line = format!("Dropped coins: {lost_coin_string}");
+        text::draw_dropped_coins(r, lookups, screen.x, screen.y / 2.0 - 10.0, color, &line);
+    }
+}
+
+/// The invasion progress bar — `Main.DrawInvasionProgress`'s non-wave arm
+/// (`Main.cs:47807-47830`): the 200x45 `DrawInvBG` panel at
+/// `(screenWidth - 120, screenHeight - 40)` (the centre-anchored rect), the
+/// `ColorBar` track, the yellow fill (255,241,51), the orange edge
+/// (255,165,0,127), the black rest, and the `{label}` + `{percent}%` text
+/// through `DrawBorderString`. The alpha ramps 0.05 per tick toward the
+/// display timer; the icon's texture row is the group's Extra sheet (the
+/// port draws the label only — the Extra sheets land with the icon row).
+pub(crate) fn draw_invasion_progress(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    screen: Vec2,
+    progress: i32,
+    progress_max: i32,
+    progress_icon: i32,
+    alpha: f32,
+) {
+    // The label: `Lang.inter[88]` (the goblins) / `[85]` (the pirates) /
+    // `[86]` (the frost) — the en literals stand in.
+    let label = match progress_icon {
+        4 => "Goblin Army",
+        5 => "Pirate Invasion",
+        6 => "Frost Legion",
+        _ => "Invasion",
+    };
+    let num = 0.5 + alpha * 0.5;
+    let num7 = (200.0 * num) as i32;
+    let num8 = (45.0 * num) as i32;
+    // The panel centre: `(screenWidth - 120, screenHeight - 40)`.
+    let cx = screen.x - 120.0;
+    let cy = screen.y - 40.0;
+    let px = cx - num7 as f32 / 2.0;
+    let py = cy - num8 as f32 / 2.0;
+    // `Utils.DrawInvBG`'s fill (the (63,65,151,255) * 0.785 backdrop).
+    r.push_fx_rect(
+        [px, py],
+        [num7 as f32, num8 as f32],
+        [
+            63.0 / 255.0 * 0.785,
+            65.0 / 255.0 * 0.785,
+            151.0 / 255.0 * 0.785,
+            255.0 / 255.0 * 0.785,
+        ],
+    );
+    if progress_max != 0 {
+        let frac = (progress as f32 / progress_max as f32).clamp(0.0, 1.0);
+        let num11 = 169.0 * num;
+        let num12 = 8.0 * num;
+        // The `ColorBar` track.
+        r.push_fx_rect(
+            [cx - num11 / 2.0, cy - num12 / 2.0],
+            [num11, num12],
+            [1.0, 1.0, 1.0, alpha],
+        );
+        let fill_x = cx - num11 / 2.0 + (frac - 0.5) * num11;
+        let fill_w = num11 * frac;
+        // The yellow fill.
+        r.push_fx_rect(
+            [fill_x, cy - num12 / 2.0],
+            [fill_w, num12],
+            [1.0, 241.0 / 255.0, 51.0 / 255.0, alpha],
+        );
+        // The orange edge (the 2-px strip).
+        r.push_fx_rect(
+            [fill_x, cy - num12 / 2.0],
+            [2.0, num12],
+            [1.0, 165.0 / 255.0, 0.0, 127.0 / 255.0 * alpha],
+        );
+        // The black rest.
+        r.push_fx_rect(
+            [fill_x + fill_w, cy - num12 / 2.0],
+            [num11 * (1.0 - frac), num12],
+            [0.0, 0.0, 0.0, alpha],
+        );
+        // The percent line above the bar (`DrawBorderString`, the MouseText).
+        let percent = format!("{}%", (progress as f32 * 100.0 / progress_max as f32) as i32);
+        let w = text::hud_text_width(r, lookups, &percent, num);
+        text::border_string(
+            r,
+            lookups,
+            cx - w / 2.0,
+            cy - num12 / 2.0 - 14.0,
+            [1.0, 1.0, 1.0, alpha],
+            &percent,
+        );
+    }
+    // The label line under the bar (`DrawBorderString`).
+    let w = text::hud_text_width(r, lookups, label, num);
+    text::border_string(
+        r,
+        lookups,
+        cx - w / 2.0,
+        cy + num8 as f32 / 2.0,
+        [1.0, 1.0, 1.0, alpha],
+        label,
+    );
+}
+
 pub fn draw_hud(
     r: &mut SpriteRenderer,
     camera: Vec2,
@@ -148,6 +268,8 @@ pub fn draw_hud(
     emotes_state: &crate::emotes::EmoteSystem,
     shop: Option<(&[u16], f32)>,
     chest_panel: chest::PanelState<'_>,
+    reforge: Option<(&crate::item::ItemSlot, u64, i32)>,
+    bank: Option<(&[ItemSlot], i32)>,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -201,6 +323,7 @@ pub fn draw_hud(
             equip_page,
             mouse_pos,
             m_h,
+            bank,
         );
         open_hover = hit.hovered;
         // `num20 = 174 + Main.mH` (`Main.cs:41146`).
@@ -237,6 +360,38 @@ pub fn draw_hud(
                 );
             }
         }
+        // The reforge menu (`Main.DrawInventory`'s inline block,
+        // `Main.cs:41557-41685`): the (50, 270) input slot, the (120, 310)
+        // button (30x30), the cost label above the button (`Lang.inter[46]`
+        // + the coin breakdown — the port prints the copper total), the
+        // `Lang.inter[20]` "place an item here" hint on the empty slot and
+        // the held item's name; the cooldown greys the label. The port's
+        // text-panel fidelity rides the same coordinates + m_h offset.
+        if let Some((slot, cost, cooldown)) = reforge {
+            text::hud_text(r, lookups, 50.0, 250.0 + m_h, 0.85, [1.0; 4], "Reforge");
+            if slot.count > 0 {
+                let def = &crate::itemdata::ITEMS[slot.kind as usize];
+                text::hud_text(
+                    r,
+                    lookups,
+                    76.0,
+                    274.0 + m_h,
+                    0.85,
+                    [1.0; 4],
+                    &format!("{} x{}", def.name, slot.count),
+                );
+            } else {
+                text::hud_text(r, lookups, 76.0, 274.0 + m_h, 0.85, [0.8; 4], "place an item here");
+            }
+            let label = if cooldown > 0 {
+                "cooling down".to_string()
+            } else {
+                format!("Reforge - {} copper", cost)
+            };
+            let ready = cooldown == 0;
+            let tint: [f32; 4] = if ready { [1.0; 4] } else { [0.55; 4] };
+            text::hud_text(r, lookups, 120.0, 316.0 + m_h, 0.85, tint, &label);
+        }
         // `Main.cs:41831`: `ChestUI.Draw` runs after the shop pass — the chest
         // panel draws together with the inventory (`OpenChest` sets
         // `playerInventory`, `Player.cs:33517`, chest.rs:409). The closed arm
@@ -266,6 +421,7 @@ pub fn draw_hud(
                     kind,
                     name: crate::registry::name(kind),
                     count,
+                    prefix: 0,
                 };
                 tooltip::draw_item_tooltip(r, lookups, mouse_pos, Some(&hover), screen, pulse);
             }
@@ -341,7 +497,7 @@ pub fn draw_hud(
     // cursor. With the inventory open the hover comes from the panel layout
     // (`inventory::draw`); closed, only the hotbar row is hoverable.
     let hover_item: Option<&ItemSlot> = if inventory_open {
-        open_hover.and_then(|h| hover_item_for(equip, inventory, h))
+        open_hover.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0)))
     } else {
         tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
             .map(|i| &inventory[i])
@@ -360,10 +516,14 @@ fn hover_item_for<'a>(
     equip: &'a inv::EquipSlots,
     inventory: &'a [ItemSlot; INV],
     hit: inventory::HoverRef,
+    bank: Option<&'a [ItemSlot]>,
 ) -> Option<&'a ItemSlot> {
     use inventory::HoverRef as H;
     match hit {
         H::Grid(i) => inventory.get(i),
+        H::Bank(i) => bank.and_then(|b| b.get(i)),
+        // The buttons carry no item: the tooltip stays off.
+        H::BankButton(_) => None,
         H::Coin(i) => equip.coins.get(i),
         H::Ammo(i) => equip.ammo.get(i),
         H::Armor(i) => equip.armor.get(i),

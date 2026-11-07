@@ -96,6 +96,41 @@ pub struct World {
     pub downed_eow: bool,
     pub downed_skeletron: bool,
     pub downed_queen_bee: bool,
+    pub downed_mech_boss1: bool,
+    pub downed_mech_boss3: bool,
+    pub downed_mech_boss2: bool,
+    pub downed_plant_boss: bool,
+    /// The Goblin Army invasion (`Main.invasionType = 1`).
+    pub invasion_goblins: bool,
+    /// The remaining invasion enemies (`Main.invasionSize`).
+    pub invasion_size: i32,
+    /// `World.downedGoblins` — the Goblin Tinkerer's gate.
+    pub downed_goblins: bool,
+    /// `NPC.downedFrost` (`NPC.cs:6339`): the defeated Frost Legion.
+    pub downed_frost: bool,
+    /// `NPC.downedPirates` (`NPC.cs:6343`): the defeated Pirate Invasion.
+    pub downed_pirates: bool,
+    /// `NPC.downedMartians` (`NPC.cs:6347`): the defeated Martian Madness.
+    pub downed_martians: bool,
+    /// `NPC.savedGoblin` — the rescue flag (`AI_007_TownEntities_
+    /// UpdateSavedStates` case 107, `NPC.cs:52944-52946`).
+    pub saved_goblin: bool,
+    /// The Brain of Cthulhu's anchor (`NPC.crimsonBoss`'s centre) — the
+    /// Creepers' orbit reads it (the WoF's write-through shape).
+    pub brain_present: bool,
+    pub brain_x: f32,
+    pub brain_y: f32,
+    /// `NPC.downedGolemBoss` (`:6365`) — the Golem's defeat (the event
+    /// flag 6, `NPC.cs:79346`'s case 245).
+    pub downed_golem: bool,
+    /// `Main.slimeRain` — the Slime Rain event.
+    pub slime_rain: bool,
+    /// `Main.slimeRainTime` — the remaining event ticks (32400-54000 at
+    /// the start, the dayRate-scaled decay).
+    pub slime_rain_time: f64,
+    /// `Main.slimeRainKillCount` — the kill counter (the negative half
+    /// after the King spawns = the vanilla's hysteresis).
+    pub slime_rain_kills: i32,
     /// `Main.pumpkinMoon` (`AmbienceServer.cs:50`). Runtime-only, not saved.
     pub pumpkin_moon: bool,
     /// `Main.snowMoon` (`AmbienceServer.cs:52`). Runtime-only, not saved.
@@ -105,6 +140,37 @@ pub struct World {
     /// `WorldGen.altarCount` (`WorldGen.cs:4202`): the smashed altars drive
     /// the hardmode ore tiers.
     pub altars_smashed: i32,
+    /// `WorldGen.shadowOrbSmashed` (`WorldGen.cs:4158`): the broken crimson/
+    /// corruption orb arms the morning invasion rolls.
+    pub shadow_orb_smashed: bool,
+    /// `Main.invasionType` (`Main.cs:64455`): 1 = the Goblin Army.
+    pub invasion_type: i32,
+    /// `Main.invasionSizeStart` (`Main.cs:64457`): the initial invasion
+    /// points (`invasion_size` rides the Goblin Army block's field).
+    pub invasion_size_start: i32,
+    /// `Main.invasionX` (`Main.cs:64475`'s assign): the marching column
+    /// (the tile X the army stands at).
+    pub invasion_x: f64,
+    /// `Main.invasionWarn` (`Main.cs:64422`'s 3600): the ticks between the
+    /// approaching broadcasts.
+    pub invasion_warn: i32,
+    /// `Main.invasionDelay` (`UpdateTime_StartDay`'s decrement): the armed
+    /// days before the invasion may start.
+    pub invasion_delay: i32,
+    /// The morning roll's `StartInvasion` request — the app resolves it
+    /// wholesale (the players' life-max gate + the size/position assign).
+    pub invasion_arm_pending: bool,
+    /// `Main.wofDrawAreaTop`/`Bottom` (`Main.cs`'s statics): the WoF's
+    /// underworld draw band, written by the wall's AI_027 scan and read by
+    /// the Hungry's anchor (`aiStyle 29`). Runtime-only.
+    pub wof_draw_top: f32,
+    pub wof_draw_bottom: f32,
+    /// A WoF is alive (the Hungry deactivates without one) + its hp ratio
+    /// and x (the Hungry's anchor reads).
+    pub wof_present: bool,
+    pub wof_hp_ratio: f32,
+    pub wof_x: f32,
+
     /// `NPC.butterflyChance` (`NPC.cs:6115`): the ambience Butterflies gate reads
     /// `< 6` (`AmbienceServer.cs:65`). Reset to 0 each world load/day
     /// (`NPC.cs:95172`); its update logic is NPC-spawn-owned (`NPC.cs:93378-93397`)
@@ -136,6 +202,21 @@ impl World {
             downed_eow: false,
             downed_skeletron: false,
             downed_queen_bee: false,
+            downed_mech_boss1: false,
+            downed_mech_boss3: false,
+            downed_mech_boss2: false,
+            downed_plant_boss: false,
+            invasion_goblins: false,
+            invasion_size: 0,
+
+            saved_goblin: false,
+            brain_present: false,
+            brain_x: 0.0,
+            brain_y: 0.0,
+            downed_golem: false,
+            slime_rain: false,
+            slime_rain_time: 0.0,
+            slime_rain_kills: 0,
             sundial_cooldown: 0,
             moondial_cooldown: 0,
             fast_forward_to_dawn: false,
@@ -153,7 +234,24 @@ impl World {
             pumpkin_moon: false,
             snow_moon: false,
             hard_mode: false,
+
             altars_smashed: 0,
+            shadow_orb_smashed: false,
+            downed_goblins: false,
+            downed_frost: false,
+            downed_pirates: false,
+            downed_martians: false,
+            invasion_type: 0,
+            invasion_size_start: 0,
+            invasion_x: 0.0,
+            invasion_warn: 0,
+            invasion_delay: 0,
+            invasion_arm_pending: false,
+            wof_draw_top: -1.0,
+            wof_draw_bottom: -1.0,
+            wof_present: false,
+            wof_hp_ratio: 1.0,
+            wof_x: 0.0,
             butterfly_chance: 0,
         }
     }
@@ -172,6 +270,31 @@ impl World {
         // `Main.cs:6200-6203`: `if (IsFastForwardingTime()) { dayRate = 60; return; }`
         // `dayRate = 1` is the ported fallback (`:6221-6224` gameMenu arm).
         if self.is_fast_forwarding() { 60 } else { 1 }
+    }
+
+    /// `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`): the
+    /// smashed orb arms the goblin rolls — 1/3 before the first defeat,
+    /// 1/30 (hardmode) / 1/30-1/60 (the classic) after. `rng01` is the
+    /// deterministic day-roll (the caller's stream).
+    pub fn roll_morning_invasion(&mut self, rng01: f64) {
+        if !self.shadow_orb_smashed {
+            return;
+        }
+        if !self.downed_goblins {
+            if rng01 < 1.0 / 3.0 {
+                self.invasion_delay = 0;
+                self.invasion_arm_pending = true;
+            }
+        } else if rng01
+            < if self.hard_mode {
+                1.0 / 60.0
+            } else {
+                1.0 / 30.0
+            }
+        {
+            self.invasion_delay = 0;
+            self.invasion_arm_pending = true;
+        }
     }
 
     /// `Main.Sundialing` (`Main.cs:6169-6181`), single-player branch: arm the

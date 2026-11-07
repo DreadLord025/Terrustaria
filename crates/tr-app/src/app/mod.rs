@@ -40,13 +40,13 @@ use crate::achievements;
 use crate::app::flow::{FrontScreen, KeyboardSession, KeyboardTail, tr_fake_count, tr_ui_preset};
 use crate::app::netglue::compressed_world;
 use crate::assets;
-use crate::craft;
 use crate::audio;
 use crate::banners;
 use crate::biome::{
     advance_bg_alphas, advance_bg_style, is_desert_biome, is_ocean_biome, is_snow_biome,
 };
 use crate::chat;
+use crate::craft;
 use crate::emotes;
 use crate::inv;
 use crate::item::{EMPTY_SLOT, HOTBAR, INV, ItemDrop, ItemSlot};
@@ -136,6 +136,14 @@ pub(crate) struct App {
     pub(crate) next_worm_id: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// The debug cheat-sheet panel (`debug_panel.rs` — the self-contained
+    /// module; delete the field + the module + the call sites to remove).
+    pub(crate) debug_panel: crate::debug_panel::DebugPanel,
+    /// The favorited inventory slots (`Item.favorited`'s port — the slot
+    /// indices, not the per-item flag; the v1 tracks the slot positions).
+    pub(crate) favorite_slots: Vec<usize>,
+    /// The Goblin Army spawn cadence (the 2-second invasion pass).
+    pub(crate) invasion_spawn_timer: f32,
     /// The open shop — the NPC's Vec index (`Main.npcShop`; the stock and
     /// the mood captured at the open).
     pub(crate) shop_npc: Option<usize>,
@@ -147,6 +155,15 @@ pub(crate) struct App {
     /// The closed shop — the state cleared (`Main.npcShop = -1`'s
     /// equivalent).
     pub(crate) shop_closed_flag: bool,
+    /// `Main.InReforgeMenu` (`Main.cs:40022-40029`): the Tinkerer's chat
+    /// option flips it beside the shop; `close_shop` clears it.
+    pub(crate) in_reforge_menu: bool,
+    /// `Main.reforgeItem` — the slot at the menu's (50, 270); the transfer
+    /// keeps it at one item (`ItemSlot.cs:821-836`).
+    pub(crate) reforge_slot: ItemSlot,
+    /// `Main.reforgeCooldown` (`Main.cs:67053`): 60 ticks after a top-tier
+    /// roll (`:41924`), decremented per tick (`:17121-17123`).
+    pub(crate) reforge_cooldown: i32,
     pub(crate) npc_rng: u64,
     /// `NPC.noSpawnCycle` (`NPC.cs:6179`): one spawn call is suppressed while
     /// set, then the flag clears (`:80171-80174`).
@@ -250,6 +267,12 @@ pub(crate) struct App {
     /// The crafting RNG stream (`Main.rand`'s per-consumer stand-in) — the
     /// alchemy discount rolls.
     pub(crate) craft_rng: u64,
+    /// `NPC.RevengeManager._markers` (`NPC.cs:6437`, `CoinLossRevengeSystem
+    /// .cs:315`): the cached coin carriers. Session-only — cleared on the
+    /// world unload (the vanilla never saves them).
+    pub(crate) revenge_markers: Vec<crate::revenge::RevengeMarker>,
+    /// `CoinLossRevengeSystem._gameTime` (:382-389) — the revenge clock.
+    pub(crate) revenge_tick: u64,
     /// Main menu; `None` while playing.
     pub(crate) menu: Option<menu::Menu>,
     /// `Main.menuMode == 888`'s half of the single-mode invariant
@@ -396,6 +419,10 @@ pub(crate) struct App {
     pub(crate) rain: Rain,
     /// The sandstorm's flying sand (`Sandstorm.EmitDust`).
     pub(crate) sand: crate::sand::Sand,
+    /// The minecart wheel sparks (`Minecart.WheelSparks` → the type-213 dust)
+    /// — the `Main.dust` stand-in for the cart's pool, fed by the `world_sim`
+    /// drain and ticked/drawn with the other world dust.
+    pub(crate) minecart_sparks: crate::minecart::Sparks,
     /// `Main.ambientWaterfallX/Y/Strength` (`Main.cs:2201-2211`): the
     /// waterfall-scan accumulators `Main.Ambience` reads every ¼ s.
     pub(crate) ambient_waterfall: (f32, f32, f32),
@@ -460,6 +487,9 @@ pub(crate) struct App {
     /// The aim angle (the mouse direction, radians) the shooting/throwing
     /// styles read — `Player.itemRotation`'s source for useStyle 5.
     pub(crate) swing_aim: f32,
+    /// The shot-fired latch of the current swing (`ItemTimeIsZero` fires
+    /// once per use — the refire waits for the next `TryStartUse`).
+    pub(crate) shot_fired: bool,
     /// The swing's full duration (`Player.itemAnimationMax` in seconds); the
     /// body-row thirds and the hand key read `swing / swing_max`.
     pub(crate) swing_max: f32,
@@ -478,6 +508,21 @@ pub(crate) struct App {
     pub(crate) projectiles: ProjectilePool,
     /// The falling tombstone projectiles (`Player.DropTombstone`).
     pub(crate) tomb_falls: Vec<crate::death::TombFall>,
+    /// `Player.lostCoins`/`lostCoinString` + the last death text — the
+    /// death screen's "Dropped coins" line (`Main.cs:45333-45338`).
+    pub(crate) lost_coins: u64,
+    pub(crate) lost_coin_string: String,
+    /// The full death broadcast text (`{name} {text}`).
+    pub(crate) death_text: String,
+    /// `Main.invasionProgress*` (`Main.cs:1913-1921`): the invasion bar's
+    /// state — the points, the max, the icon (the group + 3), the 160-tick
+    /// display timer, the fade alpha and the near-invasion flag.
+    pub(crate) invasion_progress: i32,
+    pub(crate) invasion_progress_max: i32,
+    pub(crate) invasion_progress_icon: i32,
+    pub(crate) invasion_progress_display_left: i32,
+    pub(crate) invasion_progress_alpha: f32,
+    pub(crate) invasion_progress_near: bool,
     /// The placed tombstones' epitaphs keyed by the tile anchor
     /// (vanilla stores the text in the projectile's `miscText` and then the
     /// tile render reads it — `Projectile.miscText`).
@@ -557,6 +602,21 @@ pub(crate) fn no_hud() -> bool {
 pub(crate) fn deterministic_pointer_park() -> bool {
     static V: OnceLock<bool> = OnceLock::new();
     *V.get_or_init(|| std::env::var_os("TR_SHOT").is_some() && mouse_pin().is_none())
+}
+
+/// The `TR_DYE=k1,k2,...` pin parse: the first ten comma-separated kinds fill
+/// `Player.dye` positionally; garbage and 0 leave the slot empty.
+fn parse_tr_dye(list: &str) -> [u16; 10] {
+    let mut out = [0u16; 10];
+    for (slot, kind) in out.iter_mut().zip(list.split(',')) {
+        *slot = kind.trim().parse().unwrap_or(0);
+    }
+    out
+}
+
+/// The `TR_DMOUNT=<kind>` pin parse (`App.equip.misc_dyes[3]`); garbage → 0.
+fn parse_tr_dmount(s: &str) -> u16 {
+    s.trim().parse().unwrap_or(0)
 }
 
 /// `TR_MOUSE=x,y` pins the logical pointer position and ignores real cursor
@@ -744,7 +804,7 @@ impl App {
         if self.coins < price {
             return false;
         }
-        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item) {
+        let idx = match crate::item::slot_for_pickup(&mut self.inventory, item, 0) {
             Some(i) => i,
             None => return false,
         };
@@ -758,10 +818,56 @@ impl App {
                 kind: item,
                 name: crate::itemdata::ITEMS[item as usize].name,
                 count: 1,
+                prefix: 0,
             };
         }
         self.coins -= price;
         true
+    }
+
+    /// The reforge slot transfer (`ItemSlot.cs:821-836`): swap with the
+    /// cursor when the cursor's item is single; a stack splits one item in
+    /// (only into the empty slot), mirroring the vanilla's clone-1 rule.
+    pub(crate) fn reforge_slot_click(&mut self) {
+        if self.mouse_item.count > 1 {
+            if self.reforge_slot.count == 0 {
+                self.reforge_slot = self.mouse_item;
+                self.reforge_slot.count = 1;
+                self.mouse_item.count -= 1;
+            }
+            return;
+        }
+        std::mem::swap(&mut self.mouse_item, &mut self.reforge_slot);
+    }
+
+    /// `Main.ReforgeItemInReforgeSlot` (`Main.cs:41902-41933`): the charge
+    /// (`BuyItem`'s purse gate) precedes the roll; then the reset-to-
+    /// defaults + `Prefix(-2)` — the port recomputes the stats from the
+    /// kind's defaults, so the reset is the prefix-field write — and the
+    /// top-tier 60-tick cooldown (`Main.cs:41924`). The vanilla plays
+    /// `BestReforge`/`Item37`; the port's cue set has no such key yet.
+    pub(crate) fn reforge_click(&mut self) {
+        let Some(def) = crate::registry::get(self.reforge_slot.kind) else {
+            return;
+        };
+        let cost = crate::shop::reforge_cost(
+            crate::prefix::prefixed_stats(self.reforge_slot.kind, self.reforge_slot.prefix)
+                .map(|s| s.value)
+                .unwrap_or(def.value),
+            self.reforge_slot.count.max(1),
+            self.shop_mood,
+        );
+        if self.reforge_cooldown > 0 || self.coins < cost {
+            return;
+        }
+        self.coins -= cost;
+        let mut rng = self.npc_rng;
+        let (prefix, top_tier) = crate::prefix::reforge_roll(self.reforge_slot.kind, &mut rng);
+        self.npc_rng = rng;
+        self.reforge_slot.prefix = prefix;
+        if top_tier {
+            self.reforge_cooldown = 60;
+        }
     }
 
     /// `StartDayImmediately`/`StartNightImmediately`/`SetNoon`/`SetMidnight`
@@ -777,11 +883,53 @@ impl App {
         true
     }
 
-    /// `Main.SetNPCShopIndex(-1)`'s equivalent.
+    /// The favorite toggle on an inventory slot (`Item.favorited`'s
+    /// right-click toggle).
+    pub(crate) fn toggle_favorite(&mut self, idx: usize) {
+        if idx >= crate::item::INV {
+            return;
+        }
+        if let Some(pos) = self.favorite_slots.iter().position(|&i| i == idx) {
+            self.favorite_slots.remove(pos);
+        } else {
+            self.favorite_slots.push(idx);
+        }
+    }
+
+    pub(crate) fn is_favorite(&self, idx: usize) -> bool {
+        self.favorite_slots.contains(&idx)
+    }
+
+    /// The trash swap: the held item goes to the trash, the old trash
+    /// returns. The favorited held items can't be trashed.
+    pub(crate) fn trash_swap(&mut self) -> bool {
+        let old = self.equip.trash;
+        self.equip.trash = self.mouse_item;
+        self.mouse_item = old;
+        true
+    }
+
+    /// `Main.SetNPCShopIndex(-1)`'s equivalent. The reforge menu force-
+    /// closes with the shop (`Main.cs:41574-41578`'s talk/chest change
+    /// `dropItemCheck`); the slot item returns to the cursor if held there
+    /// is impossible, so it drops to the inventory's first free slot.
     pub(crate) fn close_shop(&mut self) {
         self.shop_npc = None;
         self.shop_stock.clear();
         self.shop_mood = 1.0;
+        self.in_reforge_menu = false;
+        if self.reforge_slot.count > 0 {
+            if let Some(i) = crate::item::slot_for_pickup(
+                &mut self.inventory,
+                self.reforge_slot.kind,
+                self.reforge_slot.prefix,
+            ) {
+                self.inventory[i].count =
+                    (self.inventory[i].count + self.reforge_slot.count)
+                        .min(crate::registry::max_stack(self.reforge_slot.kind));
+                self.reforge_slot = EMPTY_SLOT;
+            }
+        }
     }
 
     /// `Main.GetNurseHealCost` (`Main.cs:40054-40100`): the missing life
@@ -800,13 +948,8 @@ impl App {
             .filter(|t| crate::buffs::is_debuff(**t))
             .count() as i32;
         let npc = &self.npcs[nurse_idx];
-        let mood = crate::happiness::process_mood(
-            &self.world,
-            &self.npcs,
-            npc,
-            player.center(),
-            false,
-        );
+        let mood =
+            crate::happiness::process_mood(&self.world, &self.npcs, npc, player.center(), false);
         nurse_heal_cost_for(missing, debuffs, mood.multiplier)
     }
 
@@ -1167,26 +1310,32 @@ impl App {
         }
         // `Player.armor[0..3]`'s item kinds, restored from the sidecar below.
         let mut armor_kinds = [0u16; 3];
+        // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
+        let mut dye_kinds = [0u16; 10];
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
                 name: registry::name(2),
                 count: 50,
+                prefix: 0,
             },
             1 => ItemSlot {
                 kind: 3, // ItemID.StoneBlock
                 name: registry::name(3),
                 count: 50,
+                prefix: 0,
             },
             2 => ItemSlot {
                 kind: 8, // ItemID.Torch
                 name: registry::name(8),
                 count: 99,
+                prefix: 0,
             },
             3 => ItemSlot {
                 kind: 42, // ItemID.Shuriken
                 name: registry::name(42),
                 count: 99,
+                prefix: 0,
             },
             // The vanilla starter tools (`Player.cs:54356-54360`'s copper
             // trio) plus the copper hammer — the port has no shop yet, so
@@ -1196,26 +1345,31 @@ impl App {
                 kind: 3509, // ItemID.CopperPickaxe
                 name: registry::name(3509),
                 count: 1,
+                prefix: 0,
             },
             5 => ItemSlot {
                 kind: 3506, // ItemID.CopperAxe
                 name: registry::name(3506),
                 count: 1,
+                prefix: 0,
             },
             6 => ItemSlot {
                 kind: 3505, // ItemID.CopperHammer
                 name: registry::name(3505),
                 count: 1,
+                prefix: 0,
             },
             7 => ItemSlot {
                 kind: 3507, // ItemID.CopperShortsword
                 name: registry::name(3507),
                 count: 1,
+                prefix: 0,
             },
             _ => ItemSlot {
                 kind: 0,
                 name: "",
                 count: 0,
+                prefix: 0,
             },
         });
         if world_path.extension().is_some_and(|e| e == "trwld") {
@@ -1228,11 +1382,13 @@ impl App {
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     coins = saved.coins;
                     armor_kinds = saved.armor;
+                    dye_kinds = saved.dye;
                     for (i, (kind, count)) in saved.inventory.iter().enumerate().take(INV) {
                         inventory[i] = ItemSlot {
                             kind: *kind,
                             name: registry::name(*kind),
                             count: *count,
+                            prefix: 0, // the M6-SAVE sidecar carries (kind, count)
                         };
                     }
                 }
@@ -1523,6 +1679,7 @@ impl App {
             post: None,
             noise_tex: None,
             sand: crate::sand::Sand::new(1),
+            minecart_sparks: crate::minecart::Sparks::new(),
             water_mask: None,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
@@ -1560,9 +1717,15 @@ impl App {
             next_worm_id: 1,
             shop_npc: None,
             shop_stock: Vec::new(),
+            in_reforge_menu: false,
+            reforge_slot: EMPTY_SLOT,
+            reforge_cooldown: 0,
             shop_mood: 1.0,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            debug_panel: crate::debug_panel::DebugPanel::new(),
+            favorite_slots: Vec::new(),
+            invasion_spawn_timer: 0.0,
             npc_rng: world_seed,
             spawn_no_cycle: false,
             attack_cd: 0.0,
@@ -1579,6 +1742,22 @@ impl App {
                             kind,
                             name: registry::name(kind),
                             count: 1,
+                            prefix: 0,
+                        };
+                    }
+                }
+                // The saved character's dye slots (sidecar v6; each restores as
+                // a single stack — the vanilla keeps dyes at stack 1 in
+                // `Player.dye`, `ItemSlot.cs:1182-1187`).
+                for (slot, kind) in equip.dye.iter_mut().zip(dye_kinds) {
+                    if kind != 0 {
+                        *slot = ItemSlot {
+                            kind,
+                            name: registry::name(kind),
+                            count: 1,
+                            // The sidecar v6 persists kinds only — a restored
+                            // dye is prefixless.
+                            prefix: 0,
                         };
                     }
                 }
@@ -1599,9 +1778,37 @@ impl App {
                                 kind,
                                 name: registry::name(kind),
                                 count: 1,
+                                prefix: 0,
                             };
                         }
                     }
+                }
+                // `TR_DYE=1007,1015,...`: fill the dye slots positionally — the
+                // vanilla equips dyes through the `ItemSlot` swap paths
+                // (deferred to the inventory-interaction task), so the plumbing
+                // stays screenshotable through the pin.
+                if let Ok(list) = std::env::var("TR_DYE") {
+                    for (slot, kind) in equip.dye.iter_mut().zip(parse_tr_dye(&list)) {
+                        if kind != 0 {
+                            *slot = ItemSlot {
+                                kind,
+                                name: registry::name(kind),
+                                count: 1,
+                                prefix: 0,
+                            };
+                        }
+                    }
+                }
+                // `TR_DMOUNT=<kind>`: the saddle-dye stand-in — `miscDyes[3]`
+                // (`Player.cs:1484`, the vanilla mount dye slot).
+                let dmount = std::env::var("TR_DMOUNT").map_or(0, |s| parse_tr_dmount(&s));
+                if dmount != 0 {
+                    equip.misc_dyes[3] = ItemSlot {
+                        kind: dmount,
+                        name: registry::name(dmount),
+                        count: 1,
+                        prefix: 0,
+                    };
                 }
                 equip
             },
@@ -1695,6 +1902,8 @@ impl App {
             chest_default_name: String::new(),
             text_blinker: ui::chest::TextBlinker::default(),
             craft_rng: 1,
+            revenge_markers: Vec::new(),
+            revenge_tick: 0,
             menu: menu_state,
             front: None,
             front_backup: None,
@@ -1825,6 +2034,7 @@ impl App {
             swing: 0.0,
             swing_style: 0,
             swing_aim: 0.0,
+            shot_fired: false,
             swing_max: 0.0,
             place_prev_down: false,
             place_released: false,
@@ -1834,6 +2044,15 @@ impl App {
             coins,
             projectiles: ProjectilePool::new(),
             tomb_falls: Vec::new(),
+            lost_coins: 0,
+            lost_coin_string: String::new(),
+            death_text: String::new(),
+            invasion_progress: -1,
+            invasion_progress_max: 0,
+            invasion_progress_icon: 0,
+            invasion_progress_display_left: 0,
+            invasion_progress_alpha: 0.0,
+            invasion_progress_near: false,
             tomb_texts: Vec::new(),
             projectile_step: FixedStepper::new(1.0 / 60.0, 8),
             dev_throw: std::env::var_os("TR_THROW").is_some(),
@@ -2351,10 +2570,17 @@ fn apply_tr_toggles(world: &mut World, ops: &[TrToggle]) {
                     "TR_TOGGLE {},{} -> bed ({})",
                     op.x,
                     op.y,
-                    if set_spawn { "spawn half" } else { "sleep half" }
+                    if set_spawn {
+                        "spawn half"
+                    } else {
+                        "sleep half"
+                    }
                 ),
                 edit::TileInteraction::ClockRead { text } => {
                     log::info!("TR_TOGGLE {},{} -> clock {text}", op.x, op.y)
+                }
+                edit::TileInteraction::BankOpen { bank } => {
+                    log::info!("TR_TOGGLE {},{} -> bank {bank}", op.x, op.y)
                 }
             }
         }
@@ -2810,7 +3036,15 @@ mod tr_hooks {
         let ops = parse_tr_tiles("5,6,82,0,18;7,8,82,18,-1");
         assert_eq!(ops.len(), 2, "groups split on ';'");
         assert_eq!(
-            (ops[0].x, ops[0].y, ops[0].kind, ops[0].fx, ops[0].fy, ops[0].w, ops[0].h),
+            (
+                ops[0].x,
+                ops[0].y,
+                ops[0].kind,
+                ops[0].fx,
+                ops[0].fy,
+                ops[0].w,
+                ops[0].h
+            ),
             (5, 6, 82, 0, 18, 1, 1)
         );
         assert_eq!(
@@ -2820,7 +3054,13 @@ mod tr_hooks {
         let clear = parse_tr_tiles("10,10,3,2");
         assert_eq!(clear.len(), 1);
         assert_eq!(
-            (clear[0].x, clear[0].y, clear[0].w, clear[0].h, clear[0].kind),
+            (
+                clear[0].x,
+                clear[0].y,
+                clear[0].w,
+                clear[0].h,
+                clear[0].kind
+            ),
             (10, 10, 3, 2, -1)
         );
         assert_eq!((clear[0].fx, clear[0].fy), (0, 0));
@@ -2835,12 +3075,24 @@ mod tr_hooks {
     fn tr_tiles_parsing_skips_malformed_groups() {
         // The fixture is one env value; a malformed group must be dropped whole
         // without aborting the well-formed ones around it.
-        assert!(parse_tr_tiles("").is_empty(), "the empty string places nothing");
+        assert!(
+            parse_tr_tiles("").is_empty(),
+            "the empty string places nothing"
+        );
         assert!(parse_tr_tiles("1,2").is_empty(), "2 tokens is not a form");
         assert!(parse_tr_tiles("1,2,3").is_empty(), "3 tokens is not a form");
-        assert!(parse_tr_tiles("1,2,3,4,5,6").is_empty(), "6 tokens is not a form");
-        assert!(parse_tr_tiles("x,y,82,0,18").is_empty(), "non-numeric coords");
-        assert!(parse_tr_tiles("1,2,82,0,z").is_empty(), "non-numeric frames");
+        assert!(
+            parse_tr_tiles("1,2,3,4,5,6").is_empty(),
+            "6 tokens is not a form"
+        );
+        assert!(
+            parse_tr_tiles("x,y,82,0,18").is_empty(),
+            "non-numeric coords"
+        );
+        assert!(
+            parse_tr_tiles("1,2,82,0,z").is_empty(),
+            "non-numeric frames"
+        );
         assert_eq!(parse_tr_tiles("1,2,3;5,6,82,0,18").len(), 1);
     }
 
@@ -2867,7 +3119,10 @@ mod tr_hooks {
         assert_eq!((t.frame_x, t.frame_y), (0, 18));
         assert!(t.active(), "the fixture cell renders");
         assert_eq!(t.wall, 0, "the write replaces the whole cell");
-        assert!(w.frame_important[82], "the written kind is marked frame-important");
+        assert!(
+            w.frame_important[82],
+            "the written kind is marked frame-important"
+        );
         assert!(!w.frame_important[1], "only the written kind is marked");
         assert!(w.revision > rev_before, "a write bumps the world revision");
         assert!(!w.tile(6, 6).unwrap().active(), "the write stays 1x1");
@@ -2903,7 +3158,10 @@ mod tr_hooks {
             }
         }
         assert!(w.revision > rev_before, "a clear bumps the world revision");
-        assert!(!w.tile(9, 10).unwrap().active(), "the clear stays inside w*h");
+        assert!(
+            !w.tile(9, 10).unwrap().active(),
+            "the clear stays inside w*h"
+        );
     }
 
     #[test]
@@ -2978,4 +3236,33 @@ mod tr_hooks {
 /// constants-off.
 pub(crate) fn nurse_heal_cost_for(missing: i32, debuff_count: i32, mood: f32) -> i32 {
     ((missing + debuff_count * 100) as f32 * mood) as i32
+}
+
+#[cfg(test)]
+mod dye_pin_tests {
+    use super::*;
+
+    /// DW-2.3: the `TR_DYE`/`TR_DMOUNT` pin parses — positional fills,
+    /// garbage and empty entries stay empty slots.
+    #[test]
+    fn tr_dye_pin_fills_positionally_and_forgives_garbage() {
+        let dyes = parse_tr_dye("1007, 1015 ,, 1023");
+        assert_eq!(dyes[0], 1007);
+        assert_eq!(dyes[1], 1015);
+        assert_eq!(dyes[2], 0, "empty entry leaves the slot empty");
+        assert_eq!(dyes[3], 1023);
+        assert_eq!(dyes[4..], [0; 6]);
+        assert_eq!(parse_tr_dye(""), [0; 10]);
+        assert_eq!(parse_tr_dye("nope,x")[..2], [0, 0]);
+        // Overlong lists clip to the ten dye slots.
+        assert_eq!(parse_tr_dye("1,2,3,4,5,6,7,8,9,10,11,12")[9], 10);
+    }
+
+    #[test]
+    fn tr_dmount_pin_parses_one_kind() {
+        assert_eq!(parse_tr_dmount("1007"), 1007);
+        assert_eq!(parse_tr_dmount(" 2871 "), 2871);
+        assert_eq!(parse_tr_dmount("nope"), 0);
+        assert_eq!(parse_tr_dmount(""), 0);
+    }
 }

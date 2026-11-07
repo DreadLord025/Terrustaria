@@ -835,6 +835,7 @@ pub(crate) fn try_placing_in_chest(app: &mut App, slot: usize, just_check: bool)
                 kind,
                 name: registry::name(kind),
                 count: stack,
+                prefix: 0,
             }
         };
     }
@@ -871,6 +872,7 @@ pub(crate) fn quick_transfer_from_slot(app: &mut App, chest_slot_idx: usize) {
                 kind,
                 name: registry::name(kind),
                 count: *remainder,
+                prefix: 0,
             };
             *remainder = 0;
             true
@@ -1380,6 +1382,7 @@ mod tests {
             kind,
             name: "",
             count,
+            prefix: 0,
         }
     }
 

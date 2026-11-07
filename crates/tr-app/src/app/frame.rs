@@ -245,6 +245,13 @@ impl App {
                 }
             }
             self.update_player(dt);
+            // `Dust.UpdateDust` (`Main.cs`'s dust pass — after the world
+            // update, once per frame): the minecart sparks ride the same
+            // per-frame slot the rain/sand dust get in
+            // `world_sim::scene_scan::update_scene`.
+            let (sw, sh) = self.screen_size();
+            self.minecart_sparks
+                .tick(self.camera, Vec2::new(sw, sh), self.zoom);
             let hp = self.player.as_ref().map_or(0, |p| p.hp);
             if hp < self.last_hp {
                 self.audio.play("Player_Hit_0");
@@ -261,6 +268,7 @@ impl App {
             let (sw, sh) = self.screen_size();
             let screen_rect = [self.camera.x - sw * 0.5, self.camera.y - sh * 0.5, sw, sh];
             let mut king_near = false;
+            let mut eoc_near = false;
             let mut generic_boss_near = false;
             for n in &self.npcs {
                 if n.hp <= 0 {
@@ -277,13 +285,18 @@ impl App {
                 if n.kind == NpcKind::KingSlime {
                     king_near = true;
                 }
+                if n.kind == NpcKind::EyeOfCthulhu {
+                    eoc_near = true;
+                }
                 // `if (num3 == 0 && Main.npc[j].boss) num3 = 1;` (`:12366`).
             }
             let boss_music = if king_near {
                 Some(93) // MusicID.KingSlime (flag19, `:12596`)
+            } else if eoc_near {
+                Some(5) // MusicID.Boss1 (the generic boss slot, `:12611`)
             } else {
                 // No other ported kind sets `boss` — the generic slot stays
-                // out until a second boss lands.
+                // out until a third boss lands.
                 None
             };
             let underworld_px = (self.world.height - 200) as f32 * TILE_PX;
@@ -539,6 +552,7 @@ impl App {
                 waterfall,
                 rain,
                 sand,
+                minecart_sparks,
                 liquid_alpha,
                 wind,
                 tree_wind_counter,
@@ -1040,6 +1054,10 @@ impl App {
                 // world-effect range as the rain (`Main.DrawRain`'s draw call
                 // site — world content, under the map batches and the UI).
                 sand.draw(renderer, lookups, light, draw_cam, *zoom, screen);
+                // The type-213 wheel sparks — `Main.DrawDust`'s generic
+                // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
+                // world-content range as the rain/sand dust.
+                minecart_sparks.draw(renderer, lookups, draw_cam, *zoom, screen);
                 crate::render::foliage::draw_leaves(
                     renderer, lookups, light, draw_cam, *zoom, screen, leaves,
                 );
@@ -1056,7 +1074,13 @@ impl App {
 
                 let boss = npcs
                     .iter()
-                    .find(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+                    .find(
+                        |n| {
+                            (n.kind == NpcKind::KingSlime
+                                || n.kind == NpcKind::EyeOfCthulhu)
+                                && n.hp > 0
+                        },
+                    )
                     .map(|n| (n.hp, n.max_hp));
                 // `Main.cs:62147-62181`: while the fullscreen map is open `Main.Draw`
                 // returns early after `DrawMap`, before `DrawInterface` (`62432`), so
@@ -1236,6 +1260,57 @@ impl App {
                             button_hovered: &mut self.chest_button_hovered,
                             audio: &mut self.audio,
                         },
+                        self.in_reforge_menu.then(|| {
+                            let cost = self
+                                .reforge_slot
+                                .kind
+                                .gt(&0)
+                                .then(|| {
+                                    crate::shop::reforge_cost(
+                                        crate::prefix::prefixed_stats(
+                                            self.reforge_slot.kind,
+                                            self.reforge_slot.prefix,
+                                        )
+                                        .map(|s| s.value)
+                                        .unwrap_or(0),
+                                        self.reforge_slot.count.max(1),
+                                        self.shop_mood,
+                                    )
+                                })
+                                .unwrap_or(0);
+                            (&self.reforge_slot, cost, self.reforge_cooldown)
+                        }),
+                        player.as_ref().and_then(|p| {
+                            crate::bank::bank_for_chest(p.chest)
+                                .map(|bi| (&p.banks[bi][..], p.chest))
+                        }),
+                    );
+                    // `Main.DrawDeathText`'s overlay (`Main.cs:45324-45341`):
+                    // the death broadcast + the softcore "Dropped coins"
+                    // line while the respawn timer runs.
+                    if let Some(p) = player.as_ref() {
+                        if p.hp <= 0 {
+                            ui::draw_death_screen(
+                                renderer,
+                                lookups,
+                                screen,
+                                &self.death_text,
+                                self.lost_coins,
+                                &self.lost_coin_string,
+                            );
+                        }
+                    }
+                    // `Main.DrawInvasionProgress` (`Main.cs:47696-47840`):
+                    // the bar draws while the fade alpha holds (the
+                    // display-timer decay rides the world tick).
+                    ui::draw_invasion_progress(
+                        renderer,
+                        lookups,
+                        screen,
+                        self.invasion_progress,
+                        self.invasion_progress_max,
+                        self.invasion_progress_icon,
+                        self.invasion_progress_alpha,
                     );
                 } else if let Some(menu) = menu.as_mut() {
                     menu.draw(renderer, lookups, screen, dt);
@@ -1325,6 +1400,18 @@ impl App {
                         rain.visual_alpha(),
                         rain.drop_count(),
                         rain.snow_count(),
+                    );
+
+                }
+
+                // The debug cheat-sheet panel (the self-contained
+                // debug_panel.rs) — independent of F1.
+                if self.debug_panel.open {
+                    crate::debug_panel::draw(
+                        renderer, lookups, screen,
+                        &self.debug_panel,
+                        npcs,
+                        world,
                     );
                 }
 

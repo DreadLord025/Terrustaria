@@ -1595,8 +1595,11 @@ The deviations below are deliberate and are the places the port is **not** pixel
   (`EquipPage 1`) are not drawn yet.
 * `Main.inventoryBack`-tinted labels use white instead of the pulsing
   `Main.mouseTextColor` (`ui/inventory.rs` `LABEL_COLOR`).
-* The reforge/guide/crafting slots are drawn from `Main.DrawInventory`'s constants but
-  their menus are not opened, so they show as empty frames.
+* The reforge slot's menu opened with M3-REFORGE-1 — the (50,270) slot, the
+  (120,310) button and the cost label ride the text-panel fidelity at the
+  vanilla coordinates (`ui/mod.rs` + `clicks.rs`; the Reforge[0]/[1] button
+  textures and the coin breakdown stay out). The guide/crafting slots keep
+  their empty frames.
 
 ### Closed hotbar and mouse item (`ui/mod.rs`, `ui/slot.rs`)
 
@@ -1882,7 +1885,9 @@ The god-file split (`docs/superpowers/plans/2026-11-01-architecture-refactor.md`
 commits `9c84351..028daba`) moved code, gave the moved functions readable Rust
 names (overriding the C#-name rule for this pass) and added three C#-shaped
 trait seams. Behaviour and RNG streams were pinned unchanged: the worldgen
-byte-proof's four FNV-1a state hashes and a post-refactor determinism pair
+byte-proof (four FNV-1a state hashes — at the time an out-of-tree harness;
+now in-tree as `worldgen/world_hash.rs`'s pinned constants, M5-GEN-1) and a
+post-refactor determinism pair
 (SHA256-equal repeat screenshots) both pass; the workspace tests read
 399/10/147. The new tree, the "where to look" map and the frame flow live in
 `docs/ARCHITECTURE.md`; the `PORT_MAP.md` rows are re-pointed. The movements,
@@ -2527,6 +2532,303 @@ the pot-loot roll order (fixed-seed `item_rng`).
   (the Bladed Glove request is produced and then skipped until its item data
   registers), green/baby nothing. The executor drops only registry-known
   items.
+
+## The Martian Madness (M4-EVENT-4)
+
+The framework's fourth slice: `StartInvasion(4)` (`Main.cs:64463-64464`)
+overrides the size to **160+40x** (the base 80+40x replaced — the
+C#'s assignment, not a bonus); `Main.InvasionWarning`'s type-4 literals;
+the defeat ride sets the new `World.downed_martians`
+(`SetEventFlagCleared(ref downedMartians, 3)`).
+
+The spawn table (`NPC.cs:1487-1540`) ports with the ground-four arms:
+the else arm's GrayGrunt 385/GigaZapper 389/Officer 383 (the num9
+Next(4) roll) and the num6<4 fallback. The remaining arms — the Saucer
+395 (the Next(45) + the 30% progress gate), the ScutlixRider 390/the
+RayGunner 382/the BrainScrambler 381 (num6 >= 6/4), the Drone 388 (the
+aiStyle-74 flyer) and the Walker 520's walk-in gate (`!AnyNPCs(520)`)
+— land with their AI families (the Saucer boss, the mounted Scutlix,
+the ray flyer). The Martian Probe 399 trigger (the scout's
+escape-when-spotted mechanic) is the event's entry — the follow-up.
+
+The five kinds carry their verbatim `SetDefaults` rows (the Officer's
+300-HP/def-50 body, the GrayGrunt's 750-HP/0-kb bruiser, the walker's
+34×110 2000-HP body) and the 9/11-frame sheets NPC_383/520.
+
+## The invasion progress bar (M4-EVENT-1b)
+
+The UI half of the invasion framework. The report:
+`Main.ReportInvasionProgress` (`Main.cs:47687-47694`) rides the kill
+credit — the points (`invasionSizeStart - invasionSize`), the max
+(`invasionSizeStart`), the icon (the `GetNPCInvasionGroup` group + 3 —
+the goblins' 4) and the 160-tick display timer.
+
+The near-scan: `Main.CheckInvasionProgressDisplay`
+(`Main.cs:47599-47649`) runs per tick — a living NPC whose
+`GetNPCInvasionGroup` matches the active `invasionType` within the
+±5000-px window around the player marks `invasion_progress_near` and
+refreshes the report while the icon is set (the C#'s moon/DD2 arms are
+their own slices). The bar draws through
+`Main.DrawInvasionProgress`'s non-wave arm (`:47807-47830`): the
+200×45 `DrawInvBG` panel at `(screenWidth - 120, screenHeight - 40)`,
+the `ColorBar` track, the yellow fill (255,241,51), the orange 2-px
+edge (255,165,0,127), the black rest and the `{percent}%` +
+group-label text. The fade head (the display timer's decay + the 0.05
+alpha ramp) rides the World tick; the icon's `Extra[7..12]` texture
+rows are the follow-up.
+
+The pipeline lesson: the insertion pass's doc-comment `{label}
+{label}`
+escapes — a raw newline split the `///` comment and the orphan
+`{percent}%` line broke the parser (the "prefix is unknown" errors),
+which cascaded into an "unterminated string" at the chat line. The
+heredoc-written doc text now avoids inline `
+` escapes.
+
+## The Pirate Invasion (M4-EVENT-3)
+
+The framework's third slice: `StartInvasion`'s pirate bonus (`Main.cs:
+64460-64464`) — the size 80+40x **plus 40+20x** per qualified player
+(the single player → 180 points); `Main.InvasionWarning`'s type-3
+literals; the defeat ride sets the new `World.downed_pirates`
+(`SetEventFlagCleared(ref downedPirates, 2)`).
+
+The spawn table (`NPC.cs:1460-1484`): the Flying Dutchman 491 spawns
+through the half-points window (`invasionSize < invasionSizeStart/2` +
+the `SolidTiles` clear-scan) — the boss-minion follow-up; the port's
+table carries the Captain 216 1/30 (while none alive), the Deadeye 1/11,
+the Corsair 1/9, the Archer 1/7, the CaptainsMate 1/3, else the
+Deckhand. The kill points ride `:78238-78241`'s num9 table — the
+Captain's 5-point kill.
+
+The summon: the Pirate Map 1315 through
+`ItemCheck_UseBossSpawners`'s pirate arm (`Player.cs:43957-43971`) —
+the same `CanStartInvasion(3, ignoreDelay: true)` + roar + march-state
+shape the Snow Globe uses. The map's own drop gate rides the loot db's
+`Cond::PirateMap` (the depth/ocean band condition already ported in
+M4-LOOT-2).
+
+The five kinds (PirateDeckhand 212/PirateCaptainsMate 213/PirateArcher
+214/PirateCorsair 215/PirateCaptain 216) carry their verbatim
+`SetDefaults` rows (18×40, the aiStyle-3 walker, the Captain's
+3000-HP/50k-value boss-minion body) and the 16/20-frame sheets
+NPC_212/216.
+
+Deviations: the Flying Dutchman (the 350×120 aiStyle-93 ship boss) and
+the Deadeye/Corsair ranged shots are the follow-ups; the Captain's
+`GetNPCInvasionGroup` 5-point kill rides the port's num9 table.
+
+## The Frost Legion (M4-EVENT-2)
+
+The invasion framework's second slice: `StartInvasion(2)` generalizes
+the start fn over the invasion type (the goblin slice passes 1), the
+warning fn carries the type-2 literals (`Main.InvasionWarning`'s
+`Lang.misc[4..7]` — the en strings stand in), the defeat ride sets the
+new `World.downed_frost` (`SetEventFlagCleared(ref downedFrost, 1)`),
+and the spawn table gets the type-2 arm: the SnowmanGangsta 1/7, the
+SnowBalla 1/3, else the MysterySnowman (`NPC.cs:1450-1459`).
+
+The summon: `ItemCheck_UseBossSpawners`' Snow Globe arm
+(`Player.cs:43941-43956`) — the Snow Globe 602 with the
+`CanStartInvasion(2, ignoreDelay: true)` gate (no active invasion, a
+200+ max-hp player; the delay folds out), the roar and
+`invasionDelay = 0; StartInvasion(2)` — the march state rides the World
+(the morning-roll resolve's shape; the size 80+40, the far-side roll).
+
+The three kinds (SnowmanGangsta 143/SnowBalla 144/MysterySnowman 145)
+carry their verbatim `SetDefaults` rows (26×40, 200/240/220 HP, dmg
+50/65/55, def 20/26/22, kb 0.6, value 400) and ride aiStyle 38's
+movement core through the walker (the per-type speeds 3/3.5/4 fold into
+the walker params; the Gangsta's bottle throw, the Balla's kick and the
+Mystery's jump arms land with the projectile work).
+
+Deviations: the throw/kick/jump sub-arms are the projectile-work
+follow-ups; the Mystery's jump-dodge `ai[1] >= 3` state rides the
+walker's generic hop.
+
+## The death-screen coin loss (M4-REVENGE-1)
+
+The drop half rode the earlier death.rs (`drop_gems`/`drop_coins`/
+`roll_tombstone`); the display half lands here:
+
+- **`value_to_coins`** (`Main.ValueToCoins`, `Main.cs:55220-55262`) —
+  the greedy copper→platinum split, the zero tiers skipped, the bare
+  copper still prints (`"0 copper"`), the en currency literals stand in
+  for the `Currency.*` keys.
+- **The KillMe arm** (`Player.cs:38931-38936`): `lostCoins =
+  DropCoins()` (the drop pass returns the dropped copper total),
+  `lostCoinString = ValueToCoins(lostCoins)` and the full death
+  broadcast — the App's `lost_coins`/`lost_coin_string`/`death_text`
+  fields set at `on_player_death`.
+- **The death screen** (`Main.DrawDeathText`, `Main.cs:45324-45341`):
+  the broadcast through the `DeathText` font (centered 60 px above the
+  screen's midpoint), the softcore `Dropped coins: X` line through the
+  `MouseText` font 50 px lower — `ui::draw_death_screen`, drawn from
+  frame.rs while the player is dead (`hp <= 0`). The death-tint alpha
+  rides fixed full-bright (the respawn fade = the death-screen pass).
+
+Deviations: the expert `/4` and master `0` drop tiers and the PvP
+zero-coin arm wait for the difficulty/pvp flags; the C# drops the coins
+from the INVENTORY coin stacks (`Item.IsACoin`), the port's aggregate
+`App.coins` purse splits greedily into the coin item stacks (the same
+denominations, the 999 caps).
+
+## The Goblin Army invasion (M4-EVENT-1)
+
+The event framework's first slice. The state machine (`Main.UpdateInvasion`,
+`Main.cs:64328-64386`): at `invasionSize <= 0` the defeat rides
+(`SetEventFlagCleared(ref downedGoblins, 0)` + the broadcast), else the
+army's `invasionX` marches toward `spawnTileX` by `max(dayRate, 1)` —
+the arrival broadcast fires on the reach and every 3600 ticks
+(`Main.InvasionWarning`; the port's literals stand in for
+`Lang.misc[0..3]`). The morning trigger (`UpdateTime_StartDay`,
+`:65439-65462`): the smashed shadow orb arms the goblin rolls — 1/3
+before the first defeat, 1/30 (hardmode) / 1/60 (the classic) after —
+and the `StartInvasion` request resolves in the app pass (the
+`CanStartInvasion` gates: no active type, no delay, the 200+ max-hp
+player; the size 80+40 per qualified player; the march column on the
+world's far side).
+
+The spawn: `Spawner.ShouldSpawnInvasionEnemies` (`NPC.cs:442-463`) —
+the px-space surface band (`position.Y < worldSurface*16 + sHeight` = 200)
+plus the ±3000 px window around `invasionX` — overrides the natural roll
+with the goblin table (`:1419-1450`): the hardmode Summoner 1/30 (while
+none alive), the Sorcerer 1/9, the Thief 1/5, the Peon 1/3, the Warrior
+1/3, else the Archer. The five kinds carry their verbatim `SetDefaults`
+rows (18×38, the aiStyle-3 walker — the Sorcerer keeps its caster arm,
+the Summoner rides it in hardmode).
+
+The kill credit (`NPC.cs:78236-78279`): the dead goblin's
+`GetNPCInvasionGroup` (1) matches the active `invasionType` →
+`invasionSize -= num9` (the Summoner's 10-point kill, the rest 1) — the
+progress `ReportInvasionProgress` fields land with the UI-bar slice.
+
+The borrow shape: the invasion spawn ride reads the world/player/roster
+BEFORE the npc_step split borrows and resolves the spawn AFTER the tick
+(the wholesale-app pass) — the same shape the voodoo sacrifice uses.
+
+Deviations: the town-NPC fallback window (the `maxTilesX/2 ± 5` arm of
+`ShouldSpawnInvasionEnemies`) needs the town roster scan — the follow-up;
+the UI progress bar (`DrawInvasionProgress`), the invasion-delay timer's
+save persistence and the waves 2-4 (the Frost Legion/Pirates/Martians)
+are the follow-ups.
+
+## The lava burn (M1.5-ITEM-lava-burn)
+
+`CheckLavaDeath`'s non-doll arm: the drops touching lava vanish
+(`TurnToAirAndSync`) unless `ItemID.Sets.IsLavaImmuneRegardlessOfRarity`
+(the 18-row set — the obsidian family, the Fireblossom, the
+Hellstone-bar rows — rides the port's `LAVA_IMMUNE` const) or the item's
+rarity clears the `rare 0/-1` gate. The rare drops keep their loot:
+the rarity gate is the whole reason the mid-game items survive the hell
+pools. The voodoo arm rides the same lava read; the burn lands inside
+the drops pass before the pickup (a drop in lava vanishes the same tick
+it would be collected — the C# runs `CheckLavaDeath` before the pickup
+chain too, `WorldItem.cs:405-425`).
+
+## The voodoo sacrifice (M4-BOSS-6c)
+
+The gameplay hardmode gate: the dropped Guide Voodoo Doll (267) touching
+lava (`WorldItem.CheckLavaDeath`'s arm — `lavaWet` → `VoodooDollLavaDeath`)
+is consumed and strikes the town NPCs dead — the Guide FIRST
+(`StrikeNPCNoInteraction(9999)` → the port kills outright; the death pass
+picks the kill credit up), then the stack's remainder across the other
+town NPCs (the C# `isLikeATownNPC` list walks a shuffled copy; the port
+walks the spawn order). `NPC.SpawnWOF` ports the gates (the depth
+`maxTilesY - 205`, one living wall), the 1200-px player-clearance scan
+(the spawn x steps 16 px away from the world centre's side while a player
+sits within 1200 px), the free-row search (the solid/liquid>=100 blocker,
+the ±1000-step expand), the `UnderworldLayer+10..+80` row clamp and the
+`Announcement.HasAwoken` broadcast (the literal stands in for the
+localization key).
+
+The borrow shape: the items pass (`update_items`) reads the tile under
+each drop inside its tick closure and collects the lava-hit doll; the
+sacrifice resolves AFTER the tick (the spawn/kill pass takes `app`
+wholesale). The doll items never burn silently — the non-doll lava
+consumption (`rare 0/-1` items without the lava-immunity set) is the
+follow-up.
+
+## The Wall of Flesh + the Hungry + the Leeches (M4-BOSS-6b)
+
+The aiStyle-27 machine (`npc.rs::update_wof`, the classic path
+verbatim over BOSS-6's v1): the off-edge kill, the underworld
+draw-band scan (`UnderworldLayer = maxTilesY - 200`; the 15-tile
+solid/liquid walks ease the band 1 px per tick with the 160-px clamp),
+the Y pinning to the band midpoint, the slide speed by the hp
+thresholds (1.5 → 2.75 across the 75/50/25/10% steps — the direction
+locks and never damps), the dead-player abandonment (3 s dead → the
+wall kills itself), the tongue phase (`ai[1]` 2700 with the hp bonuses
+→ the 3-4 phase cycle → the Leech spawns) and the Hungry init (11
+minions along the band).
+
+A structural note: the AI arms hold `&World`, so the wall cannot write
+the band — the wall's AI computes the scan targets onto its own
+`wof_bottom_target`/`wof_top_target` fields and the world sim eases
+`World.wof_draw_top/bottom` toward them, alongside
+`wof_present`/`wof_hp_ratio`/`wof_x` (the Hungry's read set). The same
+borrow shape carried the spawn requests (`wants_leech` with the
+`CountNPCS(117) < 10` gate, `wants_hungry`).
+
+**The Hungry (115)** — the aiStyle-29 verbatim: the anchor = the wall's
+x + the band row at `ai[0]`, the chase toward the player clamped to the
+leash (300/500/700 by the wall's hp; the dive cycle ×1.3 after 100
+ticks), the defense/damage tiers (30/60 at <50%, 20/45 at <75%) through
+the new `defense_override`/`damage_override` fields (the contact path
+prefers the override), the justHit recoil (the hurt cooldown stands in
+for the C# flag), the wall's death deactivates the minion.
+
+**The Leeches (117/118)** — the aiStyle-6 worm family: the head rides
+the worm engine's chain assembly (the `Next(3, 6)` budget, the AI_006
+default tunables, the 14×14/60 HP segments).
+
+Deviations: the eye/mouth mirrors (114, the 100×100 8000-HP wall parts)
+are the render-machinery follow-up (the vanilla draws them inside the
+wall's band); the expert burst block (the hp-scaled spawn odds) and the
+`getGoodWorld` spawn are out; the roar timer (`localAI[3]`'s sound 4)
+is cosmetic and skipped. The bestiary `card_at` now matches the draw's
+centred lattice — the stale top-left guard dropped cards once the
+roster's rows overflowed the panel.
+
+## The Eye of Cthulhu (M4-BOSS-1)
+
+The first boss lands through the aiStyle-4 block's classic path
+(`npc.rs::update_eye_of_cthulhu`; the 841-line C# `if (this.aiStyle == 4)`
+in `AI()`). The machine state rides the new `Npc.ai[0..4]` (the phase /
+the sub-state / the timer / the dash-servant counter):
+
+- **Phase 0** — the hover at 200 px above the player (5 speed, 0.04
+  accel); `ai[2]` counts to 600 unconditionally and flips into the 3×
+  dash chain (`ai[1] = 1→2` at 6 speed, 150-tick flights, the 0.98 damp
+  after 40 ticks); while the eye is above + within 500 px the servant
+  counter `ai[3]` reaches 110 and requests the servant spawn (10 px out
+  along the aim, the launch velocity inherited — the
+  `wants_servant` → the world-sim resolve).
+- **Phases 1/2** — the spins: the rotation ramps `ai[2]` 0.005→0.5
+  rad/tick while `ai[1]` counts to 100, then the phase increments (the
+  getGood expert servant bursts + `reflectsProjectiles` are out).
+- **Phase 3** — the final: `defense_override = 0` (the new `Npc` field
+  the damage path reads), the faster machine (6.8 dashes, 130-tick
+  chains).
+
+Deviations: the expert rage arms (`flag2/flag3` at 12%/4% hp, the
+`ai[1] = 3/4/5` spread-dash sub-states, the ×1.5 turn rate) are out with
+the port's missing difficulty flags (the skips carry the C# cites);
+`EncourageDespawn(10)`'s off-screen counter becomes the distance cull
+(the dawn climb `velocity.Y -= 0.04` + the sim's removal above the
+player); `SpawnOnPlayer`'s tile scan simplifies to the clamped
+600-px-above position (the boss flies to the target from wherever it
+appears); `WorldGen.spawnEye` (the natural night spawn) is not modeled —
+the Suspicious Looking Eye (43) is the only summon path.
+
+The summon rides the new boss-spawner arm
+(`editing.rs::use_suspicious_looking_eye` — the night gate, the
+`SummonItemCheck` aliveness refusal, the roar cue `("Roar_0", 15)` =
+`SoundID.Roar` 15, the consumption + the swing timers) — hoisted before
+the editing fn's `player` borrow (the arm takes `app` wholesale). The
+kill sets `World.downed_boss1`, fed into the loot flags (the `Cond::`
+gates read it); the boss bar and the `MusicID.Boss1` (5) music extend
+the King Slime hooks (the 93-then-5 ladder order kept).
 
 ## The full drop database (M4-LOOT-2)
 
@@ -3817,6 +4119,59 @@ notTheBees/remix loop variants are skipped (no such seeds); the
 `hardUpdateWorld` shards run unconditionally in the port (the hardmode
 gate waits for M5-HARDFORCE); the NetMessage sides are MP scope.
 
+## Worldgen pass pipeline (M5-GEN-1)
+
+The scaffold wraps the already-landed passes in the vanilla pipeline shape
+(`worldgen/pipeline.rs`) without touching a single pass body or stream constant:
+
+- **Two tables.** `VANILLA_CHAIN` declares the vanilla chain as data — 109
+  `AddGenerationPass` registrations (106 for a classic world; the skyblock
+  `Jungle`+`Skyblock` pair and the dual-dungeons `DitherSnakePass` are
+  conditional) with the `GenPassNameID` display names, the `PassLegacy._weightMap`
+  progress weights and the `WorldGen.cs` anchors. It is the model and the slot
+  registry for future passes; the runtime never walks it. `EXECUTED_PIPELINE`
+  declares the port's 39 steps in the pre-scaffold `generate()` call order,
+  each an adapter over the unchanged `pub(crate)` pass fns.
+- **The order is NOT vanilla, deliberately.** The port's execution order
+  deviates from the vanilla chain in several slots (the evil band runs before
+  the mushroom patches; the floating islands run near the end; the slopes
+  precede the living trees; ...) — the shared xorshift streams make any
+  reorder byte-breaking, and the world contract pins the order. The vanilla
+  chain stays the declaration of record; unported vanilla passes simply have
+  no executed step yet (vanilla's disabled-pass shape).
+- **The GenVars slice** — `SurfaceMap`/`Layers`/`BiomeSpans` + the shrine
+  spots — moved into `pipeline::GenVars`; the three seed constants moved into
+  `pipeline::Streams` verbatim; the frame-important boot statics into
+  `pipeline::boot_statics`. `generate()` is now the `Reset`-equivalent setup
+  (boot statics, `Noise`, streams, the parsed config) + `pipeline::run`.
+- **The config layer** (`worldgen/config.rs`): the game's embedded
+  `Terraria.GameContent.WorldBuilding.Configuration.json` copied verbatim
+  (it IS in the decompile root — the old ROADMAP note said otherwise) next to
+  the module, parsed through a BOM/`//`-comment prefilter into typed
+  lookups: `pass(name)`/`biome(name)` sections (`GameConfiguration.Get`),
+  `WorldGenRange::get_random` with the exact C# scaling (WorldArea
+  `maxTilesX·maxTilesY/5040000`, WorldWidth `maxTilesX/4200`, truncating) and
+  the inclusive-max `Next(min, max+1)`. The runner hands every step its
+  config view like vanilla `RunPass` (`WorldGenerator.cs:501`); today's
+  adapters ignore it — the shape-level passes keep their own pinned constants
+  (e.g. the living-tree count stays `Next(4)` per side, not the vanilla
+  `Micro Biomes.LivingTreeCount 6-11`) — future passes read their options
+  from there.
+- **Determinism, proven.** Vanilla gives every pass a fresh
+  `UnifiedRandom(worldSeed)` (`WorldGenerator.cs:497`) — pass streams are
+  independent, which is what makes its fixed chain insertion-safe. The port
+  keeps its three contract streams (main `seed ^ 0xA076_1D64_78BD_642F`,
+  detail `seed ^ 0x5DEE_CE66_D1A4_9B5F`, structures
+  `seed ^ 0x9E37_79B9_7F4A_7C15`); a FUTURE pass slots between existing
+  steps only with its own stream (`Rng(seed ^ fnv(pass_name))`), never by
+  joining these. The proof: `worldgen/world_hash.rs` ports
+  `WorldGenerator.HashWorld` (`:517-545`) — the per-column
+  `rotl13(h)*5 + 3864292196` FNV fold over every stored `Tile` field — and
+  pins the constants captured from the PRE-scaffold output (512×512/seed 42
+  `3510339375`, the default 4200×1200/seed-1 world `3248003836`); the pins
+  held through the rewiring. The seam test additionally proved the runner
+  tile-for-tile equal to the old straight-line body before it was replaced.
+
 ## Biome passes (M1.4-WGEN-1)
 
 The overworld biomes the compact generator lacked — the jungle, the evil
@@ -4342,8 +4697,6 @@ station chain craftable end-to-end from the vanilla iron bar.
 Deviations: the platinum candle variant waits for the platinum-bar rows
 (the generator batch); the cauldron 1791/piano 333 skip (the cauldron
 crafts at the cooking-pot tile, the piano needs bone + book).
-<<<<<<< HEAD
->>>>>>> origin/main
 
 ## The accessory effect flags (M3-EQUIP-3)
 
@@ -4391,11 +4744,11 @@ not ported — `Collision.cs:3220`), the Shark Tooth's `armorPenetration`
 (the NPC-defense consumer is M4's), the Band of Starpower (no grant site
 in this decompile's equip pass — do not invent; the real-vanilla +20 max
 mana is absent here), the wings' `wingSlot` grant (no `ItemDef` field —
-M3-EQUIP-4's plumbing), the prefixes (M3-PREFIX's
-`GrantPrefixBenefits`), the vanity slots (the vanilla grants the
+M3-EQUIP-4's plumbing; M3-PREFIX's `GrantPrefixBenefits` landed — the
+62-80 accessory prefixes ride the `equipped_prefix` snapshot in the
+grant pass), the vanity slots (the vanilla grants the
 functional 0..9 only), the balloon combos beyond the id list (the
 exclusive-combination items land as their ids appear).
-=======
 ### M1.4-TO-4 merge sync (2026-11-06)
 
 - The M4-TOWN furniture merge registered the piano 87, which re-routed the
@@ -4515,7 +4868,6 @@ flag exists, no row sets it); the deco/shimmer variant rows
 (`AddCustomShimmerResult`) keep their craft direction and drop the
 shimmer extras; the alchemy auto-set rides the same `requiredTile == 13`
 rule (`AddRecipe`, `:16720-16724`).
->>>>>>> origin/main
 
 ## The use styles + body dispatch (M3-ITEM-2)
 
@@ -4679,3 +5031,180 @@ tile object" bullet and the M1.4-TO-6 `CanKillTile` entry's "the store stays
 empty until M3-CHEST-UI" both now point at the landed implementation, and
 the M3-CRAFT-2 section's "the store's population is M3-CHEST-UI's"
 deviation is retired the same way.
+## The ammo system (M3-ITEM-3)
+
+`Player.PickAmmo` (`Player.cs:53458-53676`): the pick order is
+`AmmoSlotOrder_Default` (`:57141-57144`) — the coin slots 50-53, the ammo
+slots 54-57, the main grid 0-53; the first slot whose item's `ammo` field
+matches the weapon's `useAmmo` and whose stack is positive wins (the
+vanilla's `ammoCyclingMode` defaults to None — no cycling). The drain
+lives INSIDE `PickAmmo` (`:53667-53672`: `if (!flag &&
+item.consumable) { item.stack--; TurnToAir at 0 }`) — `flag` starts as
+the `dontConsume` argument (`ItemID.Sets.gunProj`, only 4 endgame items —
+`ItemID.cs:1327`) and the not-consume rolls set it.
+
+The port: `crates/tr-app/src/ammo.rs` — `pick` returns an `AmmoSource`
+enum (Coin/Ammo/Grid) over `equip.coins` → `equip.ammo` →
+`App.inventory`; `drain` decrements and clears; `not_consume` ports the
+rolls for the shooters the registry carries (the Minishark 1/3, the
+Megashark 1/2, the Gatligator 1/2, the Candy Corn Rifle 1/3, the Chain
+Gun 2/3 and the SDMG 2/3 — the code's `Next(3) != 0` is verbatim even
+where the wiki disagrees).
+
+The shooter wire (world_sim/editing.rs): the shooters (`useAmmo > 0`)
+skip the melee-hit and throw arms; on the press the use starts (the
+swing + `item_time` + `shot_fired = false`); the shot fires at
+`ItemTimeIsZero` mid-swing (`Player.cs:43544`'s
+`itemAnimation > 0 && ItemTimeIsZero` gate) — `PickAmmo` → the
+not-consume roll → the drain → the projectile = the ammo's `Item.shoot`,
+the damage = the weapon's + the ammo's through the class multiplier
+(`:53541-53546`), the speed = the weapon's + the ammo's `shootSpeed`
+(`:53544`). No ammo → a dry swing (the use plays, nothing spawns).
+
+The reach gate's player borrow was restructured: the old single `&app.player`
+borrow spanned the whole `update_editing` body and blocked the shooter's
+mutable `App` access — the reach check became `player_in_reach` via
+`is_some_and` (the borrow ends at the statement) and the food/potion/melee
+arms re-borrow through `app.player`.
+
+Deviations: the specific-pair table (`PickAmmo_TryFindingSpecificMatches`,
+`Player.cs:53448`) waits for its combo items; the ammo-cycling modes are
+M3-STORE-2's; the accessory ammo saves (the magic quiver, the ammo box,
+the ammo potion, the Chlorophyte 80%) wait for their accessories/buffs;
+the volley specials (the Clockwork's 3-shot volley, the Fairy Queen's
+first-8-ticks window) have no port volley state — every shot is the
+first, so those items consume every shot (documented); the gunProj
+`dontConsume` covers only 4 endgame items (`ItemID.cs:1327`).
+## Minecart riding (M2-PHYS-7)
+
+The 1.4.5.8 minecart (tile 314 riding) landed as the crate-root leaf
+`crates/tr-app/src/minecart.rs` (the `grapple.rs` pattern) with the ride
+integrated into the fixed step at the exact C# tick order:
+
+- **The track state machine** — the 36-frame decode tables
+  (`Minecart.cs:103-547`: the per-frame side connections, the
+  `_tileHeight[frame][8]` 2-px sub-columns with the −1..−4 sentinels
+  (bumper / bouncy / ramp / open end), `_trackType` (pressure = frames
+  20-23, booster = 30-35) and `_boostLeft`); `track_collision`
+  (`Minecart.cs:562-941`: the bottom-center magnet marched in 2-px steps,
+  the OnFront/OnBack ambiguity resolved by followDown/followUp, the Y snap
+  rounded to 2 decimals `:935`, X never moved here); `on_track`/
+  `get_on_track`/`track_rotation` (`:1200-1265`).
+- **The ride** — the `TR_CART` env pin mounts (`world_sim/player.rs`);
+  the tick slots follow `Player.cs:26623-28161` — the cart stats 13/13/0.04
+  with jump 15/5.15 (`Mount.cs:2747-2799`), boost ±4 applied next tick
+  pre-input and clamped (`:19818-19833`), input accel gated on
+  `velocity.Y == 0` (`:19849`), the coast clamp + friction 0.04 on-track /
+  0.2 off with the direction-key dismount (`:26665-26681`), the jump nudge
+  −0.001 (`:20672-20675`), the `cartRampTime` gravity freeze
+  (`:27352-27359`), `TrackCollision` before the integration (X moves in
+  `DryCollision`), `TileCollision` at `height − 10` on rails
+  (`:23596-23603`), fall damage zeroed on rails (`:25311-25314`), the
+  switch/pressure trip → `Wiring::hit_switch` (local; net 59 = MP).
+- **Sparks + sounds** — the dust-213 emitter (`DelegateMethods.cs:223-242`
+  with the `Dust.NewDust` internal rolls, 14 rolls per spark) queued on the
+  Player's named `spark_rng` stream (`world.seed ^ 0x0CA4_75B1_A5E5_DD1D`),
+  drained by `world_sim` into the App-owned `Sparks` pool (tick + draw in
+  `app/frame.rs`, the rain/sand pattern); the rolling thresholds 33/66 % of
+  `maxRunSpeed` (`Player.cs:19868-19958`) and the landing 10-spark burst
+  (`Minecart.cs:809-813`); Item53/55/56 registered in `SFX_CUES`.
+
+Deviations: no `minecartDelay`/`MinecartObjectiveCheck` in 1.4.5.8 (grep
+zero hits — 1.4.4-era mechanics, not ported; off-track dismount = key
+release, not a timer); carts are NOT in the mount `JumpHeight`/`JumpSpeed`
+scaling cases in this decompile — fixed 15/5.15 (verified
+`Mount.cs:2809-2858`; the |vx| scaling cases are bunny/slime types 0/1);
+the rolling-spark gate is **direction-opposite** (`Player.cs:19868`: the
+left arm's gate is `velocity.X >= 0f`, `:19926`: the right arm's is
+`velocity.X <= 0f`) — sparks + Item55 fire while braking a same-sign roll
+or at rest, not while accelerating forward; the spark pool caps at 500 and
+drops new sparks when full with the C# pool-pressure rolls pinned off (the
+6000-slot `Main.dust` never reaches pressure at ≤13 sparks/tick — the
+sand.rs precedent); the sound-cue availability risk the plan flagged did
+not materialise — `Item_53/55/56.xnb` exist and load through the
+`SFX_CUES` rows (no silent-cue deviation); the rail sprite does not
+render — the port's tile renderer treats `frame_x/frame_y` as pixel sheet
+coords and skips `frame_y < 0` (`render/tiles.rs:147-159`) while tile
+314's frames are the 0..35 track INDICES (`Minecart.cs:1632-1650`) —
+pre-existing frame semantics; the track sprite draw is M2-MOUNT-1/3 work;
+`followUp` is pinned false (the port's input has no up bit; single-rail
+rides never read it — M2-MOUNT-3 adds the key); the base-cart dismount
+cannot be geometrically blocked (52→42 bottom-anchored shrink,
+`Collision.cs:2505-2510`; `DontDismountWhenCCed` excludes carts,
+`MountID.cs:47`) — the `CanDismountWithResult` space check is ported 1:1
+and unit-tested at the growth direction instead. Batch-review (3-4)
+verified-equivalent notes, applied forward: the `sparks_one` side-roll
+ternary is transcribed inverted vs `DelegateMethods.cs` (the two arms
+swapped; the per-roll distribution is identical, so the RNG stream
+position is unchanged); the spark draw anchors the 8×8 dust frame at
+its top-left where the C# centres it with origin (4,4) — a 4·zoom px
+offset shared with the existing sand-dust baseline; the below-view
+spark death check is tighter than the C# screen-reject at zoom > 1
+(the emitter has no camera at tick time — the camera is taken at the
+per-frame tick); the `itemAnimation == 0` gate at `Player.cs:19868` is
+omitted (the port has no item-animation field; the gate is dead for a
+riding player in every reachable state).
+
+## The dye plumbing (M3-EQUIP-4)
+
+The vanilla chain: `Player.dye[10]` mirrors the first ten armor slots
+(`Player.cs:1490`, the pair `dye[i] ↔ armor[i]` / `armor[i+10]`), the tick
+refills the `c*` cache in `UpdateDyes` (`:9587-9614`, right after
+`ResetEffects`, before `UpdateEquips`), and the draw applies one shader pass
+per draw entry — `DrawData.shader` → `PlayerDrawHelper.SetShaderForData`
+(`PlayerDrawHelper.cs:29-60`) → `GameShaders.Armor.Apply`. The port: the
+registry (`dye.rs`, the 120 `BindShader` bindings of
+`DyeInitializer.LoadArmorDyes` + `LoadBasicColorDyes` verbatim with their
+1-based ids), the tick cache (`Player.c_head/c_body/c_legs` + the misc five;
+`snapshots` filled from `App.equip` next to `equipped`), and the render
+channel (`SpriteInstance.dye` → a 48-row uniform table uploaded once — the
+C# bakes the parameters at `BindShader` time too). The layer→cache mapping
+(`apply_dye`): helmet=`cHead`, the composite torso/shoulder/arm armor
+=`cBody`, the armor legs=`cLegs`, the mount strips=`cMount`
+(`Mount.currentShader`, `PlayerDrawSet.cs:432-437`).
+
+**HLSL reconstruction (the .fx bytecode is not in the decompile —
+`Main.Assets["PixelShader"]`, `Main.cs:10804`):** the port implements two
+cores in `sprite.wgsl` — `colored` = dye color × texel luminance (the same
+shape as the tile-paint `paint_recolor`), `gradient` = vertical
+uColor→uSecondaryColor lerp (uColor at the top) then the wash. The C#
+colors are constants (the item's own color is never read —
+`DyeInitializer.cs:16-140`). Deviations: `ArmorColoredAndBlack` and
+`ArmorColoredAndSilverTrim` ride the `colored` core (their dark/trim masks
+are inside the unavailable HLSL), the `ArmorBrightness*` family likewise;
+every other pass (rainbow/flame/ocean/noise/reflective/team/void/hades/
+wisp/... — 48 of the 120 bindings) renders **plain** until its pass is
+ported; `uSaturation` is folded on the CPU — for every binding either the
+color is already fully saturated or the value is the 1.0 default (pinned
+by `dye::tests::vanilla_dye_colors_are_saturated`; the brown bright
+variants are the only S<1 colors and bind with the default). The plain
+path is byte-identical: `dye == 0` returns the texel untouched (empty-dye
+screenshot SHA256-equal to the baseline; two dyed runs SHA256-equal; the
+diff vs the baseline is confined to the player's bbox).
+
+**Cache scope:** `UpdateItemDye`'s ~27 accessory effect-slot fields
+(`handOnSlot→cHandOn`, `backSlot→cBackpack/cTail/cBack`, ...) are not
+ported — the port's `ItemDef` has no effect-slot fields and the accessory
+visuals are not drawn yet; the `wearsRobe → cLegs = cBody` rule
+(`:9596-9599`) waits for robes. The misc five mirror `:9600-9604`; only
+`cMount` has a draw consumer today. Hair dyes are the separate legacy CPU
+channel (`GameShaders.Hair.GetColor` → the vertex `colorHair`) — out of
+this task. Loadouts (`GetEffectiveDye`'s shared-dye lookup, `:5742-5764`)
+don't exist in the port — the slot itself is the source.
+
+**Persistence:** sidecar v6 writes the ten dye kinds on their own line
+after the bestiary kills (the vanilla order keeps dye straight after the
+armor, `Player.cs:54818-54822`, `type, prefix, favorited` without a
+stack); the port persists kinds only (the slot model carries no
+prefix/favorited) and restores each as a single stack. The v4/v5 files
+load unchanged. `miscEquips`/`miscDyes` stay unpersisted (they already
+were).
+
+**Slot interaction:** the click equipping (the `ItemSlot` case-2 swap
+paths, `DyeSwap`'s round-robin with the per-frame counter) stays with the
+inventory-interaction task, together with the armor equipping — the C#
+handles armor and dye in one click path, so a dye-only branch would be an
+asymmetric invention. Testability: `TR_DYE=k1,k2,...` fills the dye slots
+positionally (overriding the save, like `TR_ARMOR`), `TR_DMOUNT=<kind>`
+stands in for `miscDyes[3]`; the UI dye column (context 12) already
+renders the slots.

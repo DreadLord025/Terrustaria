@@ -145,7 +145,7 @@ impl App {
                     .iter()
                     .map(|it| {
                         let mut d =
-                            item::ItemDrop::new(it.item, it.count, it.x, it.y, 0.0, 0.0, 0.0);
+                            item::ItemDrop::new(it.item, it.count, 0, it.x, it.y, 0.0, 0.0, 0.0);
                         d.age = 60.0;
                         d
                     })
@@ -300,27 +300,48 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         | crate::npc::NpcKind::Demolitionist
         | crate::npc::NpcKind::Painter
         | crate::npc::NpcKind::WitchDoctor
-        | crate::npc::NpcKind::Clothier => crate::npc::Npc::spawn_guide(world, tx)?,
+        | crate::npc::NpcKind::Clothier
+        | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
-        crate::npc::NpcKind::QueenBee | crate::npc::NpcKind::SkeletronHead | crate::npc::NpcKind::WallOfFlesh => {
+        crate::npc::NpcKind::QueenBee
+        | crate::npc::NpcKind::SkeletronHead
+        | crate::npc::NpcKind::WallOfFlesh
+        | crate::npc::NpcKind::TheDestroyer
+        | crate::npc::NpcKind::SkeletronPrime
+        | crate::npc::NpcKind::Retinazer
+        | crate::npc::NpcKind::Spazmatism
+        | crate::npc::NpcKind::Plantera
+        | crate::npc::NpcKind::BrainOfCthulhu
+        | crate::npc::NpcKind::Golem
+        | crate::npc::NpcKind::GolemHead
+        | crate::npc::NpcKind::GolemFistLeft
+        | crate::npc::NpcKind::GolemFistRight
+        | crate::npc::NpcKind::GolemHeadFree
+        | crate::npc::NpcKind::Creeper => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
-        crate::npc::NpcKind::Skeleton | crate::npc::NpcKind::UndeadMiner => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
-        crate::npc::NpcKind::EaterOfSouls | crate::npc::NpcKind::Hornet | crate::npc::NpcKind::MeteorHead => {
+        crate::npc::NpcKind::Skeleton
+        | crate::npc::NpcKind::UndeadMiner
+        | crate::npc::NpcKind::GoblinPeon
+        | crate::npc::NpcKind::GoblinThief
+        | crate::npc::NpcKind::GoblinWarrior
+        | crate::npc::NpcKind::GoblinArcher
+        | crate::npc::NpcKind::BoundGoblin => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::EaterOfSouls
+        | crate::npc::NpcKind::Hornet
+        | crate::npc::NpcKind::MeteorHead => {
             let y = (n.y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
         // The swimmers: the ctor plants the feet on the column surface —
         // the net state overwrites the position below.
-        crate::npc::NpcKind::Goldfish | crate::npc::NpcKind::Piranha | crate::npc::NpcKind::Shark => {
-            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
-        }
+        crate::npc::NpcKind::Goldfish
+        | crate::npc::NpcKind::Piranha
+        | crate::npc::NpcKind::Shark => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         // The worm segments: the net spawns each link standalone (the chain
         // links rebuild through the init — the head; a lone body/tail dies
         // finding no leader — the net-chain sync lands with the netglue
@@ -339,6 +360,24 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
         // The casters/spheres: the ctor only seeds the stats — the net
         // state overwrites the position below (the hover arm's shape).
         crate::npc::NpcKind::GoblinSorcerer
+        | crate::npc::NpcKind::GoblinThief
+        | crate::npc::NpcKind::GoblinWarrior
+        | crate::npc::NpcKind::GoblinArcher
+        | crate::npc::NpcKind::GoblinPeon
+        | crate::npc::NpcKind::GoblinSummoner
+        | crate::npc::NpcKind::SnowmanGangsta
+        | crate::npc::NpcKind::SnowBalla
+        | crate::npc::NpcKind::MysterySnowman
+        | crate::npc::NpcKind::MartianOfficer
+        | crate::npc::NpcKind::GrayGrunt
+        | crate::npc::NpcKind::MartianEngineer
+        | crate::npc::NpcKind::GigaZapper
+        | crate::npc::NpcKind::MartianWalker
+        | crate::npc::NpcKind::PirateDeckhand
+        | crate::npc::NpcKind::PirateCaptainsMate
+        | crate::npc::NpcKind::PirateArcher
+        | crate::npc::NpcKind::PirateCorsair
+        | crate::npc::NpcKind::PirateCaptain
         | crate::npc::NpcKind::Tim
         | crate::npc::NpcKind::DarkCaster
         | crate::npc::NpcKind::FireImp
@@ -357,6 +396,20 @@ fn npc_from_net(world: &World, n: &net::NpcNet) -> Option<crate::npc::Npc> {
             crate::npc::Npc::spawn_cave_flyer(world, tx, y, kind)?
         }
         crate::npc::NpcKind::KingSlime => crate::npc::Npc::spawn_king_slime(world, tx)?,
+        // The hungry/leeches: the ctor seeds the stats — the net state
+        // overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::Hungry
+        | crate::npc::NpcKind::LeechHead
+        | crate::npc::NpcKind::LeechBody => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // The eye and the servant: the ctor seeds the stats — the net state
+        // overwrites the position below (the hover arm's shape).
+        crate::npc::NpcKind::EyeOfCthulhu | crate::npc::NpcKind::ServantOfCthulhu => {
+            let y = (n.y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     };
     npc.x = n.x;
     npc.y = n.y;

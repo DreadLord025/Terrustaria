@@ -1,20 +1,20 @@
 //! Entity drawing: the player/NPC texture atlases and frame-UV helpers, the
 //! world-space player and NPC passes, the held-item swing, the fullscreen-map
 //! head icon and the UI-space character preview.
+use super::BgTex;
 use super::player_layers::{
-    assemble_layers, front_arm_cell, swing_stand_in, CompositeArmState, LayerSprite,
-    PlayerCompositeState,
+    CompositeArmState, LayerSprite, PlayerCompositeState, assemble_layers, front_arm_cell,
+    swing_stand_in,
 };
 use super::sky::sky_tex;
-use super::BgTex;
 use crate::assets;
 use crate::npc::{Npc, NpcKind};
 use crate::player::Player;
 use crate::registry;
 use crate::ui;
 use glam::Vec2;
-use tr_core::lighting::{LightMap, LightStyle};
 use tr_core::TILE_PX;
+use tr_core::lighting::{LightMap, LightStyle};
 use tr_render::{Atlas, SpriteRenderer};
 
 /// Default-player texture parts (`PlayerTextureID`): head, eyes, torso skin, shirt,
@@ -93,26 +93,22 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
         // The mount strips resolve by the rows' own sheet names (`Mount.cs:
         // 696-2567`); a missing file stays `None` and the draw skips it.
         mount_back: std::array::from_fn(|i| {
-            crate::mount::MOUNTS
-                .get(i)
-                .and_then(|row| {
-                    if row.back_sheet.is_empty() {
-                        None
-                    } else {
-                        sky_tex(atlas, row.back_sheet, None)
-                    }
-                })
+            crate::mount::MOUNTS.get(i).and_then(|row| {
+                if row.back_sheet.is_empty() {
+                    None
+                } else {
+                    sky_tex(atlas, row.back_sheet, None)
+                }
+            })
         }),
         mount_front: std::array::from_fn(|i| {
-            crate::mount::MOUNTS
-                .get(i)
-                .and_then(|row| {
-                    if row.front_sheet.is_empty() {
-                        None
-                    } else {
-                        sky_tex(atlas, row.front_sheet, None)
-                    }
-                })
+            crate::mount::MOUNTS.get(i).and_then(|row| {
+                if row.front_sheet.is_empty() {
+                    None
+                } else {
+                    sky_tex(atlas, row.front_sheet, None)
+                }
+            })
         }),
     }
 }
@@ -142,6 +138,19 @@ pub(crate) struct NpcAssets {
     pub(crate) queen_bee: Option<BgTex>,
     pub(crate) skeletron_head: Option<BgTex>,
     pub(crate) wof: Option<BgTex>,
+    pub(crate) destroyer: Option<BgTex>,
+    pub(crate) prime: Option<BgTex>,
+    pub(crate) retinazer: Option<BgTex>,
+    pub(crate) spazmatism: Option<BgTex>,
+    pub(crate) plantera: Option<BgTex>,
+    pub(crate) brain: Option<BgTex>,
+    pub(crate) creeper: Option<BgTex>,
+    pub(crate) bound_goblin: Option<BgTex>,
+    pub(crate) goblin_tinkerer: Option<BgTex>,
+    pub(crate) golem: Option<BgTex>,
+    pub(crate) golem_head: Option<BgTex>,
+    pub(crate) golem_fist: Option<BgTex>,
+    pub(crate) golem_head_free: Option<BgTex>,
     pub(crate) skeleton: Option<BgTex>,
     pub(crate) undead_miner: Option<BgTex>,
     pub(crate) cave_bat: Option<BgTex>,
@@ -152,6 +161,26 @@ pub(crate) struct NpcAssets {
     pub(crate) hornet: Option<BgTex>,
     pub(crate) meteor_head: Option<BgTex>,
     pub(crate) goblin_sorcerer: Option<BgTex>,
+    /// `NPC_143/144/145` — the Frost Legion strips (4/5/7 frames of 26x40).
+    pub(crate) snowman_gangsta: Option<BgTex>,
+    pub(crate) snow_balla: Option<BgTex>,
+    pub(crate) mystery_snowman: Option<BgTex>,
+    /// `NPC_383/385/386/389` — the martian walkers (9-frame strips of 18x40),
+    /// `NPC_520` — the Martian Walker (11 frames of 34x110).
+    pub(crate) martian_walkers: Option<BgTex>,
+    pub(crate) martian_walker_big: Option<BgTex>,
+    /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
+    pub(crate) pirates: Option<BgTex>,
+    pub(crate) pirate_captain: Option<BgTex>,
+    /// `NPC_26/27/28/111` — the invasion fighters (16/21-frame humanoid
+    /// strips; the port renders the 16-frame family shape the zombie arm
+    /// walks).
+    pub(crate) goblin_thief: Option<BgTex>,
+    pub(crate) goblin_warrior: Option<BgTex>,
+    pub(crate) goblin_archer: Option<BgTex>,
+    pub(crate) goblin_peon: Option<BgTex>,
+    /// `NPC_471` — the Goblin Summoner (20 frames).
+    pub(crate) goblin_summoner: Option<BgTex>,
     pub(crate) tim: Option<BgTex>,
     pub(crate) dark_caster: Option<BgTex>,
     pub(crate) fire_imp: Option<BgTex>,
@@ -171,6 +200,14 @@ pub(crate) struct NpcAssets {
     pub(crate) eow_body: Option<BgTex>,
     pub(crate) eow_tail: Option<BgTex>,
     pub(crate) king_slime: Option<BgTex>,
+    /// `NPC_4.xnb` — the Eye of Cthulhu sheet (6 frames of 100×110).
+    pub(crate) eye_of_cthulhu: Option<BgTex>,
+    /// `NPC_5.xnb` — the Servant of Cthulhu sheet (2 frames of 20×20).
+    pub(crate) servant_of_cthulhu: Option<BgTex>,
+    /// `NPC_115.xnb` — the Hungry sheet (3 frames).
+    pub(crate) hungry: Option<BgTex>,
+    /// `NPC_117.xnb`/`NPC_118.xnb` — the Leech segments (1 frame).
+    pub(crate) leech: Option<BgTex>,
 }
 
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
@@ -192,6 +229,19 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         queen_bee: sky_tex(atlas, "NPC_222", None),
         skeletron_head: sky_tex(atlas, "NPC_35", None),
         wof: sky_tex(atlas, "NPC_113", None),
+        destroyer: sky_tex(atlas, "NPC_134", None),
+        prime: sky_tex(atlas, "NPC_127", None),
+        retinazer: sky_tex(atlas, "NPC_125", None),
+        spazmatism: sky_tex(atlas, "NPC_126", None),
+        plantera: sky_tex(atlas, "NPC_262", None),
+        brain: sky_tex(atlas, "NPC_266", None),
+        creeper: sky_tex(atlas, "NPC_267", None),
+        bound_goblin: sky_tex(atlas, "NPC_105", None),
+        goblin_tinkerer: sky_tex(atlas, "NPC_107", None),
+        golem: sky_tex(atlas, "NPC_245", None),
+        golem_head: sky_tex(atlas, "NPC_246", None),
+        golem_fist: sky_tex(atlas, "NPC_247", None),
+        golem_head_free: sky_tex(atlas, "NPC_249", None),
         skeleton: sky_tex(atlas, "NPC_21", None),
         undead_miner: sky_tex(atlas, "NPC_44", None),
         cave_bat: sky_tex(atlas, "NPC_49", None),
@@ -202,6 +252,18 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         hornet: sky_tex(atlas, "NPC_42", None),
         meteor_head: sky_tex(atlas, "NPC_23", None),
         goblin_sorcerer: sky_tex(atlas, "NPC_29", None),
+        snowman_gangsta: sky_tex(atlas, "NPC_143", None),
+        snow_balla: sky_tex(atlas, "NPC_144", None),
+        mystery_snowman: sky_tex(atlas, "NPC_145", None),
+        martian_walkers: sky_tex(atlas, "NPC_383", None),
+        martian_walker_big: sky_tex(atlas, "NPC_520", None),
+        pirates: sky_tex(atlas, "NPC_212", None),
+        pirate_captain: sky_tex(atlas, "NPC_216", None),
+        goblin_thief: sky_tex(atlas, "NPC_26", None),
+        goblin_warrior: sky_tex(atlas, "NPC_27", None),
+        goblin_archer: sky_tex(atlas, "NPC_28", None),
+        goblin_peon: sky_tex(atlas, "NPC_111", None),
+        goblin_summoner: sky_tex(atlas, "NPC_471", None),
         tim: sky_tex(atlas, "NPC_45", None),
         dark_caster: sky_tex(atlas, "NPC_32", None),
         fire_imp: sky_tex(atlas, "NPC_24", None),
@@ -221,6 +283,10 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         eow_body: sky_tex(atlas, "NPC_14", None),
         eow_tail: sky_tex(atlas, "NPC_15", None),
         king_slime: sky_tex(atlas, "NPC_50", None),
+        eye_of_cthulhu: sky_tex(atlas, "NPC_4", None),
+        servant_of_cthulhu: sky_tex(atlas, "NPC_5", None),
+        hungry: sky_tex(atlas, "NPC_115", None),
+        leech: sky_tex(atlas, "NPC_117", None),
     }
 }
 
@@ -279,7 +345,11 @@ pub(crate) fn push_layers(
 ) -> u32 {
     let mut quads = 0;
     for s in layers {
-        if s.rotation != 0.0 {
+        if s.dye != 0 {
+            // `DrawData.shader` ≠ 0 — the layer draws through its dye pass
+            // (`PlayerDrawHelper.SetShaderForData`, `PlayerDrawHelper.cs:29-60`).
+            r.push_sprite_dye(s.pos, s.size, s.uv, s.color, s.rotation, s.dye);
+        } else if s.rotation != 0.0 {
             r.push_sprite_rot(s.pos, s.size, s.uv, s.color, s.rotation);
         } else {
             r.push_sprite(
@@ -366,15 +436,24 @@ pub(crate) fn draw_player(
         // `DrawPlayer_02_MountBehindPlayer`/`DrawPlayer_23_MountFront`
         // (`PlayerDrawLayers.cs:211`, `:2912`) — the live mount's inputs.
         mount: if player.mount.is_active() {
-            player.mount.data().map(|d| super::player_layers::MountDraw {
-                id: d.id,
-                frame: player.mount.frame(),
-                player_offset: player.mount.player_offset(),
-                is_idle: player.mount.is_at_idle(),
-            })
+            player
+                .mount
+                .data()
+                .map(|d| super::player_layers::MountDraw {
+                    id: d.id,
+                    frame: player.mount.frame(),
+                    player_offset: player.mount.player_offset(),
+                    is_idle: player.mount.is_at_idle(),
+                })
         } else {
             None
         },
+        // `UpdateDyes`' cache (`Player.cs:9587-9614`): the per-layer dye the
+        // builders stamp onto the armor/mount pieces (`apply_dye`).
+        c_head: player.c_head,
+        c_body: player.c_body,
+        c_legs: player.c_legs,
+        c_mount: player.c_mount,
     };
     push_layers(r, &assemble_layers(&state, assets), camera, zoom, screen)
 }
@@ -643,7 +722,10 @@ pub(crate) fn draw_npcs(
                 // frame centre over the hitbox centre (`Main.DrawNPC`'s
                 // `origin = frame.Size() / 2`).
                 [32.0 * n.slime.stats().scale, 26.0 * n.slime.stats().scale],
-                [cx - 16.0 * n.slime.stats().scale, cy - 13.0 * n.slime.stats().scale],
+                [
+                    cx - 16.0 * n.slime.stats().scale,
+                    cy - 13.0 * n.slime.stats().scale,
+                ],
             ),
             NpcKind::DemonEye => (
                 assets.eye.as_ref(),
@@ -759,6 +841,174 @@ pub(crate) fn draw_npcs(
                 [120.0, 120.0],
                 [n.x, n.y],
             ),
+            // The hungry: `Main.npcFrameCount[115] = 3` frames of 30×30; the
+            // leech segments: 1 frame of 14×14.
+            NpcKind::Hungry => (
+                assets.hungry.as_ref(),
+                assets.hungry.as_ref().map_or(30.0, |t| t.h / 3.0),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            NpcKind::LeechHead | NpcKind::LeechBody => (
+                assets.leech.as_ref(),
+                assets.leech.as_ref().map_or(14.0, |t| t.h),
+                [14.0, 14.0],
+                [n.x, n.y],
+            ),
+            // The frost trio: the 4/5/7-frame strips over the 26x40 frames.
+            NpcKind::SnowmanGangsta | NpcKind::SnowBalla | NpcKind::MysterySnowman => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::SnowmanGangsta => (assets.snowman_gangsta.as_ref(), 4.0),
+                    NpcKind::SnowBalla => (assets.snow_balla.as_ref(), 5.0),
+                    _ => (assets.mystery_snowman.as_ref(), 7.0),
+                };
+                (
+                    tex,
+                    tex.map_or(40.0, |t| t.h / frames),
+                    [26.0, 40.0],
+                    [n.x, n.y],
+                )
+            }
+            // The martians: the 9-frame strips over the 18x40 frames (the
+            // walker's 11-frame 34x110 sheet rides NPC_520).
+            NpcKind::MartianOfficer
+            | NpcKind::GrayGrunt
+            | NpcKind::MartianEngineer
+            | NpcKind::GigaZapper => (
+                assets.martian_walkers.as_ref(),
+                assets.martian_walkers.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            NpcKind::MartianWalker => (
+                assets.martian_walker_big.as_ref(),
+                assets.martian_walker_big.as_ref().map_or(110.0, |t| t.h / 11.0),
+                [34.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The pirates: the 16/20-frame strips over the 18x40 frames
+            // (the Captain's 20-frame sheet rides NPC_216).
+            NpcKind::PirateDeckhand
+            | NpcKind::PirateCaptainsMate
+            | NpcKind::PirateArcher
+            | NpcKind::PirateCorsair
+            | NpcKind::PirateCaptain => {
+                let (tex, frames) = if n.kind == NpcKind::PirateCaptain {
+                    (assets.pirate_captain.as_ref(), 20.0)
+                } else {
+                    (assets.pirates.as_ref(), 16.0)
+                };
+                (
+                    tex,
+                    tex.map_or(40.0, |t| t.h / frames),
+                    [18.0, 40.0],
+                    [n.x, n.y],
+                )
+            }
+            // The Destroyer: the single-frame 48x48 sheet.
+            NpcKind::TheDestroyer => (
+                assets.destroyer.as_ref(),
+                assets.destroyer.as_ref().map_or(48.0, |t| t.h),
+                [48.0, 48.0],
+                [n.x, n.y],
+            ),
+            // The Prime: the single-frame 80x102 sheet.
+            NpcKind::SkeletronPrime => (
+                assets.prime.as_ref(),
+                assets.prime.as_ref().map_or(102.0, |t| t.h),
+                [80.0, 102.0],
+                [n.x, n.y],
+            ),
+            // The Twins: the 2-frame 100x110 sheets.
+            NpcKind::Retinazer | NpcKind::Spazmatism => {
+                let tex = if n.kind == NpcKind::Retinazer {
+                    assets.retinazer.as_ref()
+                } else {
+                    assets.spazmatism.as_ref()
+                };
+                (
+                    tex,
+                    tex.map_or(110.0, |t| t.h / 2.0),
+                    [100.0, 110.0],
+                    [n.x, n.y],
+                )
+            }
+            // The Plantera: the 5-frame 86x86 sheet.
+            NpcKind::Plantera => (
+                assets.plantera.as_ref(),
+                assets.plantera.as_ref().map_or(86.0, |t| t.h / 5.0),
+                [86.0, 86.0],
+                [n.x, n.y],
+            ),
+            // The Brain: the single-frame 160x110 sheet.
+            NpcKind::BrainOfCthulhu => (
+                assets.brain.as_ref(),
+                assets.brain.as_ref().map_or(110.0, |t| t.h),
+                [160.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The Creeper: the single-frame 30x30 sheet.
+            NpcKind::Creeper => (
+                assets.creeper.as_ref(),
+                assets.creeper.as_ref().map_or(30.0, |t| t.h),
+                [30.0, 30.0],
+                [n.x, n.y],
+            ),
+            // The Goblin Tinkerer: the 3-frame town sheet over NPC_107.
+            NpcKind::GoblinTinkerer => (
+                assets.goblin_tinkerer.as_ref(),
+                48.0,
+                [38.0, 48.0],
+                [n.x - 10.0, n.y - 5.0],
+            ),
+            // The bound goblin: the single tied frame over NPC_105.
+            NpcKind::BoundGoblin => (
+                assets.bound_goblin.as_ref(),
+                assets.bound_goblin.as_ref().map_or(48.0, |t| t.h),
+                [34.0, 54.0],
+                [n.x - 8.0, n.y - 10.0],
+            ),
+            // The Golem family (the v1 single-frame draws): the body
+            // 140x140, the heads 70x70, the fists 40x30 (the SetDefaults
+            // boxes; the sheets draw at the box size).
+            NpcKind::Golem => (
+                assets.golem.as_ref(),
+                assets.golem.as_ref().map_or(140.0, |t| t.h),
+                [140.0, 140.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemHead | NpcKind::GolemHeadFree => (
+                if n.kind == NpcKind::GolemHead {
+                    assets.golem_head.as_ref()
+                } else {
+                    assets.golem_head_free.as_ref()
+                },
+                70.0,
+                [70.0, 70.0],
+                [n.x, n.y],
+            ),
+            NpcKind::GolemFistLeft | NpcKind::GolemFistRight => {
+                (assets.golem_fist.as_ref(), 30.0, [40.0, 30.0], [n.x, n.y])
+            }
+            // The goblins: the 3-frame humanoid sheets (the vanilla
+            // `Main.npcFrameCount[26/27/28/111]` = 3; 38x48 each frame).
+            NpcKind::GoblinPeon
+            | NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher => {
+                let tex = match n.kind {
+                    NpcKind::GoblinPeon => assets.goblin_peon.as_ref(),
+                    NpcKind::GoblinThief => assets.goblin_thief.as_ref(),
+                    NpcKind::GoblinWarrior => assets.goblin_warrior.as_ref(),
+                    _ => assets.goblin_archer.as_ref(),
+                };
+                (
+                    tex,
+                    tex.map_or(48.0, |t| t.h / 3.0),
+                    [38.0, 48.0],
+                    [n.x - 10.0, n.y - 5.0],
+                )
+            }
             // The skeleton family: the same humanoid frame shape — the
             // strip's frame height rides the sheet (15 frames).
             NpcKind::Skeleton | NpcKind::UndeadMiner => (
@@ -767,13 +1017,32 @@ pub(crate) fn draw_npcs(
                 } else {
                     assets.undead_miner.as_ref()
                 },
-                assets
-                    .skeleton
-                    .as_ref()
-                    .map_or(48.0, |t| t.h / 15.0),
+                assets.skeleton.as_ref().map_or(48.0, |t| t.h / 15.0),
                 [38.0, 48.0],
                 [n.x - 10.0, n.y - 5.0],
             ),
+            // The goblin army's fighters: the humanoid strips (the 16-frame
+            // family 26/27/28/111, the summoner's 20) — the frame height
+            // rides each sheet, the display box the zombie's 38x48 shape.
+            NpcKind::GoblinThief
+            | NpcKind::GoblinWarrior
+            | NpcKind::GoblinArcher
+            | NpcKind::GoblinPeon
+            | NpcKind::GoblinSummoner => {
+                let (tex, frames) = match n.kind {
+                    NpcKind::GoblinThief => (assets.goblin_thief.as_ref(), 16.0),
+                    NpcKind::GoblinWarrior => (assets.goblin_warrior.as_ref(), 16.0),
+                    NpcKind::GoblinArcher => (assets.goblin_archer.as_ref(), 16.0),
+                    NpcKind::GoblinPeon => (assets.goblin_peon.as_ref(), 21.0),
+                    _ => (assets.goblin_summoner.as_ref(), 20.0),
+                };
+                (
+                    tex,
+                    tex.map_or(48.0, |t| t.h / frames),
+                    [38.0, 48.0],
+                    [n.x - 10.0, n.y - 5.0],
+                )
+            }
             // The Cave Bat: the 5-frame flap over the 22x18 frames.
             // The casters: the humanoid sheets — the sorcerer's strip is 3
             // frames, the Dark Caster's 6 (`Main.npcFrameCount` 29/32/45,
@@ -873,17 +1142,9 @@ pub(crate) fn draw_npcs(
                 };
                 let fh = tex.map_or(30.0, |t| t.h / frames);
                 let (bw, bh) = n.size();
-                (
-                    tex,
-                    fh,
-                    [bw + 4.0, bh],
-                    [n.x - 2.0, n.y - 2.0],
-                )
+                (tex, fh, [bw + 4.0, bh], [n.x - 2.0, n.y - 2.0])
             }
-            NpcKind::CaveBat
-            | NpcKind::JungleBat
-            | NpcKind::Hellbat
-            | NpcKind::VoodooDemon => (
+            NpcKind::CaveBat | NpcKind::JungleBat | NpcKind::Hellbat | NpcKind::VoodooDemon => (
                 match n.kind {
                     NpcKind::JungleBat => assets.jungle_bat.as_ref(),
                     NpcKind::Hellbat => assets.hellbat.as_ref(),
@@ -899,6 +1160,24 @@ pub(crate) fn draw_npcs(
                 120.0,
                 [174.0, 120.0],
                 [n.x - 38.0, n.y - 25.0],
+            ),
+            // The eye: `Main.npcFrameCount[4] = 6` frames of 100x110, the
+            // frame == the hitbox (the `Main.DrawNPC` anchor).
+            NpcKind::EyeOfCthulhu => (
+                assets.eye_of_cthulhu.as_ref(),
+                assets.eye_of_cthulhu.as_ref().map_or(110.0, |t| t.h / 6.0),
+                [100.0, 110.0],
+                [n.x, n.y],
+            ),
+            // The servant: `Main.npcFrameCount[5] = 2` frames of 20x20.
+            NpcKind::ServantOfCthulhu => (
+                assets.servant_of_cthulhu.as_ref(),
+                assets
+                    .servant_of_cthulhu
+                    .as_ref()
+                    .map_or(20.0, |t| t.h / 2.0),
+                [20.0, 20.0],
+                [n.x, n.y],
             ),
         };
         let Some(tex) = tex else {
@@ -923,9 +1202,8 @@ pub(crate) fn draw_npcs(
         } else {
             base
         };
-        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing < 0);
-        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0
-            {
+        let uv = flip_uv(npc_frame_uv(tex, frame_h, n.frame()), n.facing > 0);
+        if matches!(n.kind, NpcKind::DemonEye | NpcKind::WanderingEye) && n.rotation != 0.0 {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight

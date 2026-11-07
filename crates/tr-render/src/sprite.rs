@@ -34,7 +34,28 @@ pub struct SpriteInstance {
     /// `PaintID` for the fragment-shader recolor (0 = unpainted). Matches
     /// `Main.ConvertPaintIdToTileShaderIndex`'s input ids.
     pub paint: f32,
+    /// The armor-dye slot (0 = plain): 1-based index into the dye uniform
+    /// table `set_dye_params` uploads — the per-instance channel for the
+    /// port's `DrawData.shader` (`PlayerDrawHelper.cs:29-60` unpacks the C#
+    /// side per draw entry).
+    pub dye: u32,
 }
+
+/// One dye uniform-table row: the pass mode and the two colors. Mirrors
+/// `sprite.wgsl`'s `DyeParam` (mode 1 = colored wash, 2 = gradient, 0/other =
+/// plain — the unused-slot fallback).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, Debug)]
+pub struct DyeParam {
+    pub mode: u32,
+    pub _pad: [u32; 3],
+    pub color: [f32; 4],
+    pub secondary: [f32; 4],
+}
+
+/// The dye uniform table's fixed length (`sprite.wgsl` declares the same
+/// array bound; the vanilla registry's 36 deduped slots fit with headroom).
+pub const DYE_TABLE_LEN: usize = 48;
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct RenderStats {
@@ -56,6 +77,9 @@ pub struct SpriteRenderer {
     map_size: (u32, u32),
     globals_world: wgpu::Buffer,
     globals_ui: wgpu::Buffer,
+    /// The dye pass-parameter table (`set_dye_params`); bound in every sprite
+    /// bind group, read by `sprite.wgsl`'s dye dispatch.
+    dye_table: wgpu::Buffer,
     /// Ring of instance buffers so the CPU never rewrites a buffer the GPU may still
     /// be reading (B3). Three buffers stay ahead of `desired_maximum_frame_latency` (≤2).
     instances: Vec<wgpu::Buffer>,
@@ -136,6 +160,12 @@ impl SpriteRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        let dye_table = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("dye-table"),
+            size: (DYE_TABLE_LEN * std::mem::size_of::<DyeParam>()) as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
 
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("sprite-bgl"),
@@ -166,11 +196,39 @@ impl SpriteRenderer {
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(
+                            DYE_TABLE_LEN as u64 * std::mem::size_of::<DyeParam>() as u64,
+                        ),
+                    },
+                    count: None,
+                },
             ],
         });
 
-        let bind_world = Self::mk_bind(device, &layout, &sampler, &globals_world, &view, "bg-world");
-        let bind_ui = Self::mk_bind(device, &layout, &sampler, &globals_ui, &view, "bg-ui");
+        let bind_world = Self::mk_bind(
+            device,
+            &layout,
+            &sampler,
+            &globals_world,
+            &view,
+            &dye_table,
+            "bg-world",
+        );
+        let bind_ui = Self::mk_bind(
+            device,
+            &layout,
+            &sampler,
+            &globals_ui,
+            &view,
+            &dye_table,
+            "bg-ui",
+        );
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("sprite"),
@@ -200,6 +258,7 @@ impl SpriteRenderer {
                         4 => Float32x4,
                         5 => Float32,
                         6 => Float32,
+                        7 => Uint32,
                     ],
                 })],
                 compilation_options: Default::default(),
@@ -293,6 +352,7 @@ impl SpriteRenderer {
             map_size: (0, 0),
             globals_world,
             globals_ui,
+            dye_table,
             instances,
             frame_index: 0,
             capacity,
@@ -313,13 +373,15 @@ impl SpriteRenderer {
     }
 
     /// Builds one sprite bind group: globals uniform + a texture view + the shared
-    /// sampler. Used for the atlas view (`bg-world`/`bg-ui`) and the map view.
+    /// sampler + the dye table. Used for the atlas view (`bg-world`/`bg-ui`) and
+    /// the map view.
     fn mk_bind(
         device: &wgpu::Device,
         bgl: &wgpu::BindGroupLayout,
         sampler: &wgpu::Sampler,
         buf: &wgpu::Buffer,
         tex: &wgpu::TextureView,
+        dye: &wgpu::Buffer,
         label: &str,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -337,6 +399,10 @@ impl SpriteRenderer {
                 wgpu::BindGroupEntry {
                     binding: 2,
                     resource: wgpu::BindingResource::Sampler(sampler),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: dye.as_entire_binding(),
                 },
             ],
         })
@@ -375,6 +441,7 @@ impl SpriteRenderer {
             &self.sampler,
             &self.globals_ui,
             &view,
+            &self.dye_table,
             "bg-map",
         ));
         self.map_tex = Some(tex);
@@ -383,7 +450,15 @@ impl SpriteRenderer {
 
     /// `MapRenderer.DrawChangesToMap` upload: writes an RGBA8 region (row-major) into
     /// the map texture; `rgba.len() == (w * h) as usize`.
-    pub fn write_map_region(&mut self, gpu: &Gpu, x: u32, y: u32, w: u32, h: u32, rgba: &[[u8; 4]]) {
+    pub fn write_map_region(
+        &mut self,
+        gpu: &Gpu,
+        x: u32,
+        y: u32,
+        w: u32,
+        h: u32,
+        rgba: &[[u8; 4]],
+    ) {
         gpu.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: self.map_tex.as_ref().expect("map texture"),
@@ -428,7 +503,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -448,7 +524,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -469,7 +546,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -492,7 +570,45 @@ impl SpriteRenderer {
             color,
             rot,
             paint: paint as f32,
+            dye: 0,
         });
+    }
+
+    /// `push_sprite_rot` with a dye slot: the fragment shader runs the dye
+    /// pass over the texel — the per-instance channel for the port's
+    /// `DrawData.shader` (`PlayerDrawHelper.SetShaderForData`,
+    /// `PlayerDrawHelper.cs:29-60`). `dye` is the 1-based `dye_params()` slot
+    /// (0 = plain).
+    pub fn push_sprite_dye(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+        rot: f32,
+        dye: u32,
+    ) {
+        self.world.push(SpriteInstance {
+            pos,
+            size,
+            uv0: [uv[0], uv[1]],
+            uv1: [uv[2], uv[3]],
+            color,
+            rot,
+            paint: 0.0,
+            dye,
+        });
+    }
+
+    /// Uploads the dye uniform table (`dye::dye_params()`'s rows on the
+    /// tr-app side); call once after the renderer is created. Slots beyond
+    /// `params.len()` stay zeroed (mode 0 = the shader's plain fallback).
+    pub fn set_dye_params(&mut self, gpu: &Gpu, params: &[DyeParam]) {
+        assert!(params.len() <= DYE_TABLE_LEN, "dye table overflow");
+        let mut table = [DyeParam::zeroed(); DYE_TABLE_LEN];
+        table[..params.len()].copy_from_slice(params);
+        gpu.queue
+            .write_buffer(&self.dye_table, 0, bytemuck::cast_slice(&table));
     }
 
     /// Rotated world sprite. Used by the held item, which the original draws with
@@ -512,13 +628,14 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
     /// Rotated screen-space sprite. Used by rain, which the original draws rotated by
     /// `atan2(velocity.x, -velocity.y)` around the top-left origin. Rain lives in the
-/// `SpriteBatch.Draw` with an arbitrary origin: `pos` is the unrotated
+    /// `SpriteBatch.Draw` with an arbitrary origin: `pos` is the unrotated
     /// top-left and `origin` the sprite-local anchor the rotation keeps in
     /// place. The instance pipeline rotates about the top-left, so the
     /// top-left is shifted by `origin − R(rot)·origin`.
@@ -555,7 +672,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -576,7 +694,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -589,7 +708,8 @@ impl SpriteRenderer {
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -602,7 +722,8 @@ impl SpriteRenderer {
             uv1: [self.white_uv[2], self.white_uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -615,7 +736,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -635,12 +757,19 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
     /// Screen-space sprite sampling the map texture (the per-tile map quad).
-    pub fn push_map_sprite(&mut self, pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
+    pub fn push_map_sprite(
+        &mut self,
+        pos: [f32; 2],
+        size: [f32; 2],
+        uv: [f32; 4],
+        color: [f32; 4],
+    ) {
         self.map.push(SpriteInstance {
             pos,
             size,
@@ -648,7 +777,8 @@ impl SpriteRenderer {
             uv1: [uv[2], uv[3]],
             color,
             rot: 0.0,
-        paint: 0.0,
+            paint: 0.0,
+            dye: 0,
         });
     }
 
@@ -670,7 +800,8 @@ impl SpriteRenderer {
                     uv1: [u1, self.font_uv1[1]],
                     color,
                     rot: 0.0,
-        paint: 0.0,
+                    paint: 0.0,
+                    dye: 0,
                 });
             }
             cx += gw * scale;
@@ -951,8 +1082,7 @@ impl SpriteRenderer {
                     + self.world.len()
                     + self.fx.len()
                     + self.map_back.len()
-                    + self.map.len())
-                    as u32;
+                    + self.map.len()) as u32;
                 pass.set_bind_group(0, &self.bind_ui, &[]);
                 pass.draw(0..6, start..(start + self.ui.len() as u32));
                 stats.draw_calls += 1;
@@ -980,8 +1110,18 @@ fn probe(pos: [f32; 2], size: [f32; 2], uv: [f32; 4], color: [f32; 4]) {
         if p[0] >= pos[0] && p[0] < pos[0] + size[0] && p[1] >= pos[1] && p[1] < pos[1] + size[1] {
             eprintln!(
                 "PROBE pos {:.1},{:.1} size {:.1}x{:.1} uv {:.4},{:.4}-{:.4},{:.4} color {:.2},{:.2},{:.2},{:.2}",
-                pos[0], pos[1], size[0], size[1], uv[0], uv[1], uv[2], uv[3],
-                color[0], color[1], color[2], color[3]
+                pos[0],
+                pos[1],
+                size[0],
+                size[1],
+                uv[0],
+                uv[1],
+                uv[2],
+                uv[3],
+                color[0],
+                color[1],
+                color[2],
+                color[3]
             );
         }
     }

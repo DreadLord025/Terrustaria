@@ -323,6 +323,7 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
                     kind,
                     name: crate::registry::name(kind),
                     count: stack,
+                    prefix: 0,
                 },
                 _ => EMPTY_SLOT,
             };

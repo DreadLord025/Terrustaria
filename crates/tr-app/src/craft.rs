@@ -664,7 +664,7 @@ mod tests {
         for (id, count) in entries {
             let mut left = *count;
             while left > 0 {
-                let i = slot_for_pickup(&mut inv, *id).expect("fixture overflow");
+                let i = slot_for_pickup(&mut inv, *id, 0).expect("fixture overflow");
                 let add = left.min(999 - inv[i].count);
                 inv[i].count += add;
                 left -= add;
@@ -1157,8 +1157,8 @@ mod tests {
         // Wood spread across three slots (4 + 4 + 2): a 10x-wood recipe
         // consumes all three, exact amounts.
         let mut inv = inv_with(&[(9, 4)]);
-        inv[1] = ItemSlot { kind: 9, name: "Wood", count: 4 };
-        inv[2] = ItemSlot { kind: 9, name: "Wood", count: 2 };
+        inv[1] = ItemSlot { kind: 9, name: "Wood", count: 4, prefix: 0 };
+        inv[2] = ItemSlot { kind: 9, name: "Wood", count: 2, prefix: 0 };
         let wb = recipe_by_create(36);
         let adj = dry_adj();
         let zones = Zones::default();
@@ -1199,7 +1199,7 @@ mod tests {
         let mut inv = inv_with(&[(23, 1)]);
         let torch = recipe_by_create(8);
         assert!(!can_craft(&inv, &[], &[], torch, &adj, &zones));
-        slot_for_pickup(&mut inv, 9);
+        slot_for_pickup(&mut inv, 9, 0);
         inv.iter_mut().find(|s| s.kind == 9).unwrap().count = 1;
         assert!(can_craft(&inv, &[], &[], torch, &adj, &zones));
     }
@@ -1212,7 +1212,7 @@ mod tests {
         // vanilla `Item.giveItem` dropping on the ground).
         let mut inv = inv_with(&[(9, 10)]);
         for slot in inv.iter_mut().skip(1) {
-            *slot = ItemSlot { kind: 3, name: "Stone Block", count: 999 };
+            *slot = ItemSlot { kind: 3, name: "Stone Block", count: 999, prefix: 0 };
         }
         let wb = recipe_by_create(36);
         let adj = dry_adj();

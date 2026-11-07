@@ -318,7 +318,8 @@ mod tests {
 
     #[test]
     fn hovered_slot_none_when_not_over_a_cell() {
-        let inv: [ItemSlot; INV] = std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0 });
+        let inv: [ItemSlot; INV] =
+        std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
         assert_eq!(hovered_slot(Vec2::new(2.0, 2.0), false, 0, &[1.0; HOTBAR], &inv), None);
     }
 }

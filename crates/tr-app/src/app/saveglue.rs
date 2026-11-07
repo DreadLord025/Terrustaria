@@ -19,12 +19,18 @@ impl App {
                 // `Player.armor[0..3]`'s kinds — the equipped armor persists
                 // with the rest of the character (vanilla `Player.SavePlayer`).
                 let armor: [u16; 3] = std::array::from_fn(|i| self.equip.armor[i].kind);
+                // `Player.dye[0..10]`'s kinds — version 6 of the sidecar (the
+                // vanilla writes the dye array straight after the armor,
+                // `Player.cs:54818-54822`).
+                let dye: [u16; 10] = std::array::from_fn(|i| self.equip.dye[i].kind);
                 let kills: Vec<(String, i32)> = self
                     .kill_tracker
                     .pairs()
                     .map(|(id, count)| (id.to_string(), count))
                     .collect();
-                if let Err(e) = persist::save(&self.world_path, p, inv, self.coins, armor, &kills) {
+                if let Err(e) =
+                    persist::save(&self.world_path, p, inv, self.coins, armor, &dye, &kills)
+                {
                     log::warn!("player save failed: {e}");
                 }
             }

@@ -3,8 +3,8 @@
 //! `PlayerDrawLayers`. No render types — the builders turn these tables
 //! into `LayerSprite` lists and the render passes only push them.
 
-use super::entities::PlayerAssets;
 use super::BgTex;
+use super::entities::PlayerAssets;
 
 /// The starter palette of `Player_0_*` (`colorBodySkin`/`colorShirt`/... from
 /// the default skin; the M3-EQUIP equipment palette will replace these).
@@ -66,6 +66,11 @@ pub(crate) struct LayerSprite {
     pub(crate) uv: [f32; 4],
     pub(crate) color: [f32; 4],
     pub(crate) rotation: f32,
+    /// The dye pass this layer draws with (0 = plain) — `DrawData.shader`'s
+    /// source, the `c*` cache value `PlayerDrawHelper.SetShaderForData`
+    /// unpacks (`PlayerDrawHelper.cs:29-60`). Assigned by `apply_dye` after
+    /// assembly; the builders keep 0.
+    pub(crate) dye: u32,
 }
 
 /// `Player.CompositeArmStretchAmount` (`Player.cs`, рядом с
@@ -213,6 +218,14 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) front_arm: CompositeArmState,
     /// `Player.compositeBackArm`.
     pub(crate) back_arm: CompositeArmState,
+    /// `UpdateDyes`' cache for the layers with draw consumers: `cHead/
+    /// cBody/cLegs` read the dye slots directly (`Player.cs:9593-9595`) and
+    /// `cMount` mirrors `miscDyes[3].dye` (`:9600-9604` — `Mount.currentShader`,
+    /// `PlayerDrawSet.cs:432-437`). 0 = plain.
+    pub(crate) c_head: u32,
+    pub(crate) c_body: u32,
+    pub(crate) c_legs: u32,
+    pub(crate) c_mount: u32,
 }
 
 /// `WeaponDrawOrder` (`PlayerDrawSet.cs:358`): which of the three
@@ -263,11 +276,7 @@ pub(crate) const BACK_SHOULDER_CELL: (u32, u32) = (1, 1);
 /// Torso skin cell — `pt3 = default` with the case-5 override to column 1
 /// (`PlayerDrawSet.cs:1940,1975`).
 pub(crate) fn torso_cell(frame: u32) -> (u32, u32) {
-    if frame == 5 {
-        (1, 0)
-    } else {
-        (0, 0)
-    }
+    if frame == 5 { (1, 0) } else { (0, 0) }
 }
 
 /// `compShoulderOverFrontArm`: when true the shoulder stack draws after (over)
@@ -385,6 +394,7 @@ fn push_part(
             uv: uv(&tex),
             color,
             rotation,
+            dye: 0,
         });
     }
 }
@@ -440,7 +450,11 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     push_part(
         &mut out,
         PlayerPart::BackUnder,
-        if s.body_armor >= 0 { None } else { a.undershirt },
+        if s.body_armor >= 0 {
+            None
+        } else {
+            a.undershirt
+        },
         |t| flip_uv(player_cell_uv(t, back_cell.0, back_cell.1), flip),
         back_pos,
         back_rotation,
@@ -463,7 +477,12 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
             &mut out,
             PlayerPart::BackShoulderArmor,
             a.armor_body.get(s.body_armor as usize).copied().flatten(),
-            |t| flip_uv(player_cell_uv(t, BACK_SHOULDER_CELL.0, BACK_SHOULDER_CELL.1), flip),
+            |t| {
+                flip_uv(
+                    player_cell_uv(t, BACK_SHOULDER_CELL.0, BACK_SHOULDER_CELL.1),
+                    flip,
+                )
+            },
             part_pos(s, shift, [0.0, 0.0], 0.0),
             0.0,
             tint(s.light, ARMOR_WHITE),
@@ -508,7 +527,11 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
     // draws the shirt instead).
     push_part(
         &mut out,
-        if s.body_armor >= 0 { PlayerPart::ArmorTorso } else { PlayerPart::Shirt },
+        if s.body_armor >= 0 {
+            PlayerPart::ArmorTorso
+        } else {
+            PlayerPart::Shirt
+        },
         if s.body_armor >= 0 {
             a.armor_body.get(s.body_armor as usize).copied().flatten()
         } else {
@@ -522,7 +545,14 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
         },
         part_pos(s, shift, [0.0, 0.0], 0.0),
         0.0,
-        tint(s.light, if s.body_armor >= 0 { ARMOR_WHITE } else { SHIRT }),
+        tint(
+            s.light,
+            if s.body_armor >= 0 {
+                ARMOR_WHITE
+            } else {
+                SHIRT
+            },
+        ),
     );
     // 21_Head: head, eye whites, eyes, hair.
     push_part(
@@ -712,6 +742,7 @@ fn arm_stack(
             uv: flip_uv(player_cell_uv(&tex, cell.0, cell.1), flip),
             color,
             rotation,
+            dye: 0,
         });
     }
     out
@@ -924,8 +955,10 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
                     rotation = -1.3 * dir;
                 } else {
                     rotation = 0.8 * dir;
-                    let num14 = (s.swing * w * dir * 1.2 - 10.0 * dir)
-                        .clamp(if dir < 0.0 { -8.0 } else { f32::MIN }, if dir > 0.0 { 8.0 } else { f32::MAX });
+                    let num14 = (s.swing * w * dir * 1.2 - 10.0 * dir).clamp(
+                        if dir < 0.0 { -8.0 } else { f32::MIN },
+                        if dir > 0.0 { 8.0 } else { f32::MAX },
+                    );
                     anchor = [
                         s.origin[0] + 20.0 + (w * 0.5 - 4.0) * dir - num14,
                         s.origin[1] + 10.0 + s.gfx_off_y + 24.0,
@@ -967,6 +1000,7 @@ pub(crate) fn held_item_layers(s: &PlayerCompositeState) -> Vec<LayerSprite> {
         uv: flip_uv(uv, dir < 0.0),
         color: [s.light[0], s.light[1], s.light[2], 1.0],
         rotation,
+        dye: 0,
     }]
 }
 
@@ -987,7 +1021,11 @@ fn mount_layer(s: &PlayerCompositeState, a: &PlayerAssets, front: bool) -> Optio
     .as_ref()?;
     // An empty sheet name is the C# `Asset<Texture2D>.Empty` default — the
     // drawType draws nothing (`Mount.cs:5509-5535`).
-    let sheet = if front { row.front_sheet } else { row.back_sheet };
+    let sheet = if front {
+        row.front_sheet
+    } else {
+        row.back_sheet
+    };
     if sheet.is_empty() {
         return None;
     }
@@ -1009,8 +1047,12 @@ fn mount_layer(s: &PlayerCompositeState, a: &PlayerAssets, front: bool) -> Optio
     let dir = if s.facing < 0.0 { -1.0 } else { 1.0 };
     let height = 42.0 + row.height_boost as f32;
     let cx = s.origin[0] + 20.0 + row.x_offset as f32 * dir;
-    let cy = s.origin[1] + 10.0 + height / 2.0
-        + row.y_offset as f32 + m.player_offset as f32 + s.gfx_off_y;
+    let cy = s.origin[1]
+        + 10.0
+        + height / 2.0
+        + row.y_offset as f32
+        + m.player_offset as f32
+        + s.gfx_off_y;
     let pos = [cx - tex.w / 2.0, cy - frame_h / 2.0];
     Some(LayerSprite {
         part: PlayerPart::Mount,
@@ -1019,7 +1061,29 @@ fn mount_layer(s: &PlayerCompositeState, a: &PlayerAssets, front: bool) -> Optio
         uv: flip_uv(uv, dir < 0.0),
         color: [s.light[0], s.light[1], s.light[2], 1.0],
         rotation: 0.0,
+        dye: 0,
     })
+}
+
+/// The per-layer dye assignment (`DrawData.shader`'s sources): the helmet
+/// pieces take `cHead`, the composite torso/shoulder/arm armor pieces
+/// `cBody`, the armor legs `cLegs` and the mount strips `cMount`
+/// (`Mount.currentShader`). Skin/shirt/held-item pieces draw plain — the C#
+/// skin passes `shader = 0` explicitly (`PlayerDrawLayers.cs:1504`).
+fn apply_dye(layers: &mut [LayerSprite], s: &PlayerCompositeState) {
+    for l in layers {
+        l.dye = match l.part {
+            PlayerPart::Helmet => s.c_head,
+            PlayerPart::ArmorTorso
+            | PlayerPart::BackShoulderArmor
+            | PlayerPart::BackArmArmor
+            | PlayerPart::FrontArmArmor
+            | PlayerPart::FrontShoulderArmor => s.c_body,
+            PlayerPart::Pants => s.c_legs,
+            PlayerPart::Mount => s.c_mount,
+            _ => 0,
+        };
+    }
 }
 
 /// The full player composition: body, then the held item in its
@@ -1056,6 +1120,7 @@ pub(crate) fn assemble_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec
     if let Some(front) = mount_front {
         out.push(front);
     }
+    apply_dye(&mut out, s);
     out
 }
 
@@ -1353,7 +1418,7 @@ mod tests {
             facing: 1.0,
             swing: 0.0,
             use_style: 1,
-        aim: 0.0,
+            aim: 0.0,
             item_uv: None,
             item_size: [16.0, 16.0],
             light: [1.0, 1.0, 1.0],
@@ -1363,6 +1428,10 @@ mod tests {
             front_arm: CompositeArmState::DISABLED,
             back_arm: CompositeArmState::DISABLED,
             mount: None,
+            c_head: 0,
+            c_body: 0,
+            c_legs: 0,
+            c_mount: 0,
         }
     }
 
@@ -1592,6 +1661,58 @@ mod tests {
     }
 
     #[test]
+    fn test_dye_follows_the_c_cache() {
+        // `apply_dye` stamps the `DrawData.shader` sources: the helmet takes
+        // cHead, the composite torso/shoulder/arm armor cBody, the armor legs
+        // cLegs and the mount strips cMount; skin/shirt/held-item pieces stay
+        // plain (the C# skin passes `shader = 0`, `PlayerDrawLayers.cs:1504`).
+        let tex = || Some(sheet());
+        let armor = [None, tex(), None, None, None];
+        let a = PlayerAssets {
+            armor_head: armor,
+            armor_body: armor,
+            armor_legs: armor,
+            ..fixture()
+        };
+        let mut s = state();
+        s.head_armor = 1;
+        s.body_armor = 1;
+        s.leg_armor = 1;
+        s.mount = Some(MountDraw {
+            id: 0,
+            frame: 0,
+            player_offset: 0,
+            is_idle: false,
+        });
+        s.c_head = 7;
+        s.c_body = 5;
+        s.c_legs = 3;
+        s.c_mount = 9;
+        for l in assemble_layers(&s, &a) {
+            let expected = match l.part {
+                PlayerPart::Helmet => 7,
+                PlayerPart::ArmorTorso
+                | PlayerPart::BackShoulderArmor
+                | PlayerPart::BackArmArmor
+                | PlayerPart::FrontArmArmor
+                | PlayerPart::FrontShoulderArmor => 5,
+                PlayerPart::Pants => 3,
+                PlayerPart::Mount => 9,
+                _ => 0,
+            };
+            assert_eq!(l.dye, expected, "part {:?}", l.part);
+        }
+        // Zero cache → the plain path everywhere (DW-3.3's pixel identity).
+        let mut plain = state();
+        plain.head_armor = 1;
+        plain.body_armor = 1;
+        plain.leg_armor = 1;
+        for l in assemble_layers(&plain, &a) {
+            assert_eq!(l.dye, 0, "part {:?}", l.part);
+        }
+    }
+
+    #[test]
     fn test_dw_2_5_dirty_inputs() {
         let a = fixture();
         // swing = 0: no item layer anywhere.
@@ -1639,22 +1760,52 @@ mod tests {
         // (after the arms).
         let a = fixture();
         let mut s = state();
-        s.mount = Some(MountDraw { id: 10, frame: 3, player_offset: 30, is_idle: false });
+        s.mount = Some(MountDraw {
+            id: 10,
+            frame: 3,
+            player_offset: 30,
+            is_idle: false,
+        });
         let out = assemble_layers(&s, &a);
-        assert_eq!(out.first().unwrap().part, PlayerPart::Mount, "back layer first");
+        assert_eq!(
+            out.first().unwrap().part,
+            PlayerPart::Mount,
+            "back layer first"
+        );
         // The Unicorn has no front strip (`Mount.cs:1469-1471` — only the
         // back texture), so exactly one mount sprite draws.
-        assert_eq!(out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(), 1);
+        assert_eq!(
+            out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(),
+            1
+        );
         // Rudolph draws the front strip over the arms (idle hides it).
-        s.mount = Some(MountDraw { id: 0, frame: 0, player_offset: 30, is_idle: false });
+        s.mount = Some(MountDraw {
+            id: 0,
+            frame: 0,
+            player_offset: 30,
+            is_idle: false,
+        });
         let out = assemble_layers(&s, &a);
         assert_eq!(out.first().unwrap().part, PlayerPart::Mount, "back first");
         assert_eq!(out.last().unwrap().part, PlayerPart::Mount, "front last");
-        s.mount = Some(MountDraw { id: 0, frame: 0, player_offset: 30, is_idle: true });
+        s.mount = Some(MountDraw {
+            id: 0,
+            frame: 0,
+            player_offset: 30,
+            is_idle: true,
+        });
         let out = assemble_layers(&s, &a);
-        assert_eq!(out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(), 1, "the front hides while idle, the back stays first");
+        assert_eq!(
+            out.iter().filter(|sp| sp.part == PlayerPart::Mount).count(),
+            1,
+            "the front hides while idle, the back stays first"
+        );
         let s = state();
-        assert!(assemble_layers(&s, &a).iter().all(|sp| sp.part != PlayerPart::Mount));
+        assert!(
+            assemble_layers(&s, &a)
+                .iter()
+                .all(|sp| sp.part != PlayerPart::Mount)
+        );
     }
 
     #[test]
@@ -1664,7 +1815,12 @@ mod tests {
         // flip mirrors both the UV and the `xOffset * direction` offset.
         let a = fixture(); // sheet(): uv [0,0,1,1], 360x224
         let mut s = state(); // origin [100, 200], facing 1
-        s.mount = Some(MountDraw { id: 10, frame: 3, player_offset: 30, is_idle: false });
+        s.mount = Some(MountDraw {
+            id: 10,
+            frame: 3,
+            player_offset: 30,
+            is_idle: false,
+        });
         let sprite = mount_layer(&s, &a, false).expect("the unicorn draws its back strip");
         // frameH = 224 / 16 = 14; the drawn band is 12 tall.
         assert_eq!(sprite.size, [360.0, 12.0]);
@@ -1677,7 +1833,10 @@ mod tests {
         let cx = 100.0 + 20.0 + 5.0;
         let cy = 200.0 + 10.0 + 38.0 + 1.0 + 30.0;
         assert!((sprite.pos[0] - (cx - 180.0)).abs() < 1e-5);
-        assert!((sprite.pos[1] - (cy - 7.0)).abs() < 1e-5, "the frame center anchors the quad");
+        assert!(
+            (sprite.pos[1] - (cy - 7.0)).abs() < 1e-5,
+            "the frame center anchors the quad"
+        );
         // Facing away: the offset mirrors and the UV flips.
         s.facing = -1.0;
         let flipped = mount_layer(&s, &a, false).unwrap();
@@ -1685,9 +1844,13 @@ mod tests {
         assert_eq!(flipped.uv[0], sprite.uv[2], "the UV mirrors");
         // The empty-back rows (Pogo 43 draws front only) skip the back pass.
         let mut s = state();
-        s.mount = Some(MountDraw { id: 43, frame: 0, player_offset: 14, is_idle: false });
+        s.mount = Some(MountDraw {
+            id: 43,
+            frame: 0,
+            player_offset: 14,
+            is_idle: false,
+        });
         assert!(mount_layer(&s, &a, false).is_none(), "no back sheet");
         assert!(mount_layer(&s, &a, true).is_some(), "the front strip draws");
     }
-
 }

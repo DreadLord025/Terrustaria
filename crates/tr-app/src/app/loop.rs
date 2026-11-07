@@ -17,7 +17,7 @@ use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
 use crate::app::flow::FrontScreenBehaviours;
-use crate::app::{deterministic_pointer_park, mouse_pin, App};
+use crate::app::{App, deterministic_pointer_park, mouse_pin};
 use crate::item::HOTBAR;
 use crate::map;
 use crate::menu;
@@ -33,16 +33,13 @@ impl ApplicationHandler for App {
             .with_title("Terraria-Rust")
             .with_inner_size(PhysicalSize::new(1600, 900));
         // Window/taskbar icon, generated from the game logo by `build.rs`.
-        if let Ok(img) = image::load_from_memory(include_bytes!(concat!(
-            env!("OUT_DIR"),
-            "/icon.png"
-        ))) {
+        if let Ok(img) =
+            image::load_from_memory(include_bytes!(concat!(env!("OUT_DIR"), "/icon.png")))
+        {
             let rgba = img.to_rgba8();
-            if let Ok(icon) = winit::window::Icon::from_rgba(
-                rgba.clone().into_raw(),
-                rgba.width(),
-                rgba.height(),
-            ) {
+            if let Ok(icon) =
+                winit::window::Icon::from_rgba(rgba.clone().into_raw(), rgba.width(), rgba.height())
+            {
                 attrs = attrs.with_window_icon(Some(icon));
             }
         }
@@ -50,7 +47,22 @@ impl ApplicationHandler for App {
 
         let gpu = pollster::block_on(Gpu::new(window.clone())).expect("gpu init");
         let atlas = self.atlas.as_ref().expect("atlas");
-        let renderer = SpriteRenderer::new(&gpu, atlas, 8);
+        let mut renderer = SpriteRenderer::new(&gpu, atlas, 8);
+        // The dye pass table is static vanilla data (`DyeInitializer`'s
+        // binding constants, deduped in `dye::dye_params`) — one upload at
+        // startup, like the C# `Load()` bakes the shader parameters once.
+        renderer.set_dye_params(
+            &gpu,
+            &crate::dye::dye_params()
+                .iter()
+                .map(|p| tr_render::sprite::DyeParam {
+                    mode: p.mode,
+                    _pad: p._pad,
+                    color: p.color,
+                    secondary: p.secondary,
+                })
+                .collect::<Vec<_>>(),
+        );
 
         let fmt = gpu.config.format;
         let info = gpu.adapter.get_info();
@@ -206,28 +218,13 @@ impl ApplicationHandler for App {
                                 }
                             }
                             KeyCode::F1 => self.debug = !self.debug,
+                            KeyCode::F3 => {
+                                crate::debug_panel::handle_key(self, KeyCode::F3);
+                            }
                             KeyCode::F2 => {
                                 self.light_mode = self.light_mode.next();
                                 self.world_key = None;
                                 log::info!("light mode: {}", self.light_mode.label());
-                            }
-                            KeyCode::F5 => {
-                                if let Some(p) = self.player.as_mut() {
-                                    p.respawn();
-                                }
-                                if self.follow_player {
-                                    if let Some(p) = &self.player {
-                                        let (cx, cy) = p.center();
-                                        self.camera = Vec2::new(cx, cy);
-                                    }
-                                } else {
-                                    self.camera = Vec2::new(
-                                        self.world.width as f32 * TILE_PX * 0.5,
-                                        self.world.spawn_y as f32 * TILE_PX,
-                                    );
-                                }
-                                self.zoom = self.settings.zoom;
-                                self.world_key = None;
                             }
                             KeyCode::F9 => self.save_world(),
                             KeyCode::KeyM => {
@@ -240,145 +237,7 @@ impl ApplicationHandler for App {
                                     }
                                 }
                             }
-                            KeyCode::KeyE => {
-                                // The EoC debug spawn (the vanilla's
-                                // Suspicious Looking Eye + the night roll
-                                // land with the boss-item work).
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::EyeOfCthulhu && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 15)
-                                            .clamp(2, self.world.width - 3);
-                                        let (w2, h2) = NpcKind::EyeOfCthulhu.size();
-                                        let mut boss = Npc::new(
-                                            NpcKind::EyeOfCthulhu,
-                                            xt as f32 * TILE_PX,
-                                            ((p.y / TILE_PX) as i32 - 20) as f32 * TILE_PX,
-                                            1,
-                                            0.0,
-                                        );
-                                        boss.hp = boss.max_hp;
-                                        boss.caster_counter = 0;
-                                        boss.cast_windup = 0;
-                                        let _ = (w2, h2);
-                                        log::info!("Eye of Cthulhu spawned");
-                                        self.npcs.push(boss);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyF => {
-                                // The WoF debug spawn (the Voodoo Doll
-                                // sacrifice = the follow-up). The wall
-                                // spawns at the underworld depth.
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::WallOfFlesh && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 - 25)
-                                            .clamp(2, self.world.width - 3);
-                                        let mut boss = Npc::new(
-                                            NpcKind::WallOfFlesh,
-                                            xt as f32 * TILE_PX,
-                                            ((p.y / TILE_PX) as i32 + 5) as f32 * TILE_PX,
-                                            1,
-                                            0.0,
-                                        );
-                                        boss.hp = boss.max_hp;
-                                        log::info!("Wall of Flesh spawned");
-                                        self.npcs.push(boss);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyS => {
-                                // The Skeletron debug spawn (the Old Man's
-                                // curse dialog = the follow-up).
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::SkeletronHead && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 14)
-                                            .clamp(2, self.world.width - 3);
-                                        let mut boss = Npc::new(
-                                            NpcKind::SkeletronHead,
-                                            xt as f32 * TILE_PX,
-                                            ((p.y / TILE_PX) as i32 - 18) as f32 * TILE_PX,
-                                            1,
-                                            0.0,
-                                        );
-                                        boss.hp = boss.max_hp;
-                                        log::info!("Skeletron spawned");
-                                        self.npcs.push(boss);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyQ => {
-                                // The Queen Bee debug spawn (the Abeemination
-                                // item = the follow-up).
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 10)
-                                            .clamp(2, self.world.width - 3);
-                                        let mut boss = Npc::new(
-                                            NpcKind::QueenBee,
-                                            xt as f32 * TILE_PX,
-                                            ((p.y / TILE_PX) as i32 - 15) as f32 * TILE_PX,
-                                            1,
-                                            0.0,
-                                        );
-                                        boss.hp = boss.max_hp;
-                                        log::info!("Queen Bee spawned");
-                                        self.npcs.push(boss);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyW => {
-                                // The EoW debug spawn (the Worm Food item +
-                                // the orb breaks = the follow-ups): the
-                                // head in the air — the chain assembles
-                                // through the worm pass.
-                                if !app_has_eow(self) {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 12)
-                                            .clamp(2, self.world.width - 3);
-                                        let mut head = Npc::spawn_worm_head(
-                                            &self.world,
-                                            xt,
-                                            (p.y / TILE_PX) as i32 - 8,
-                                            NpcKind::EaterOfWorldsHead,
-                                        );
-                                        head.hp = head.max_hp;
-                                        log::info!("Eater of Worlds spawned");
-                                        self.npcs.push(head);
-                                    }
-                                }
-                            }
-                            KeyCode::KeyB => {
-                                if !self
-                                    .npcs
-                                    .iter()
-                                    .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-                                {
-                                    if let Some(p) = &self.player {
-                                        let xt = ((p.x / TILE_PX) as i32 + 12)
-                                            .clamp(2, self.world.width - 3);
-                                        if let Some(n) = Npc::spawn_king_slime(&self.world, xt) {
-                                            log::info!("King Slime spawned");
-                                            self.npcs.push(n);
-                                        }
-                                    }
-                                }
-                            }
+                            _ if crate::debug_panel::handle_key(self, code) => {}
                             KeyCode::Digit1 => {
                                 // The shop open: the 1 key buys the first
                                 // stock slot (the click-buy lands with the
@@ -477,9 +336,16 @@ impl ApplicationHandler for App {
                             }
                             return;
                         }
+                        if !pressed {
+                            crate::debug_panel::end_drag(self);
+                        }
                         self.mine_down = pressed;
                         if pressed {
                             self.ui_left_press = true;
+                            // The debug panel's click (the self-contained
+                            // cheat-sheet — the panel consumes the clicks
+                            // inside its rect).
+                            crate::debug_panel::handle_click(self, self.mouse_pos);
                         }
                     }
                     MouseButton::Right => {
@@ -493,6 +359,11 @@ impl ApplicationHandler for App {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let p = Vec2::new(position.x as f32, position.y as f32);
+                // The debug panel's drag (the title-bar drag moves the
+                // panel).
+                if crate::debug_panel::handle_drag(self, p) {
+                    // The drag consumed the move.
+                }
                 // A `TR_SHOT` capture without `TR_MOUSE` parks the pointer
                 // offscreen and ignores real motion (`deterministic_pointer_park`).
                 if mouse_pin().is_none() && !deterministic_pointer_park() {

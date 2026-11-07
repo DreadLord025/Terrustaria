@@ -53,6 +53,10 @@ pub(crate) fn advance_time(world: &mut World, dt: f32) {
         } else {
             world.moon_phase + 1
         };
+        // `UpdateTime_StartDay`'s invasion roll (`Main.cs:65439-65462`):
+        // the smashed orb arms the goblin rolls; the `StartInvasion`
+        // request resolves in the app pass (the players' gate).
+        world.roll_morning_invasion((t / 32400.0).fract().abs() as f64 * 0.9999);
     }
     world.time = t;
 }
