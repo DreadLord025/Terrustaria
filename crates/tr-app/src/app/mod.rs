@@ -1528,6 +1528,10 @@ impl App {
                 .unwrap_or(1);
             ty.map(|ty| (ty, seed))
         });
+        // The chests roll their loot here — before the struct literal moves
+        // `world` (`AddBuriedChest`'s stock inline with the placement, the
+        // port's load-time re-roll).
+        let world_chests = crate::chest_gen::generate_world_chests(&world);
         let mut app = App {
             window: None,
             gpu: None,
@@ -1732,7 +1736,8 @@ impl App {
             // (the `TR_INV` presence pattern).
             crafting_open: std::env::var_os("TR_NOCRAFT").is_none()
                 || std::env::var_os("TR_CRAFT").is_some(),
-            world_chests: Vec::new(),
+            // The load-time loot roll (see the hoist above).
+            world_chests,
             craft_rng: 1,
             revenge_markers: Vec::new(),
             revenge_tick: 0,
