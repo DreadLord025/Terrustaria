@@ -450,6 +450,10 @@ fn portrait_data(
         NpcKind::MartianProbe => 76,   // NPC_399
         NpcKind::MartianDrone => 77,   // NPC_388
         NpcKind::Deerclops => 75,      // NPC_668
+        NpcKind::BrainScrambler => 78, // NPC_381
+        NpcKind::RayGunner => 79,      // NPC_382
+        NpcKind::ScutlixRider => 80,   // NPC_390
+        NpcKind::Scutlix => 81,        // NPC_391
     };
     let white = [1.0, 1.0, 1.0, 1.0];
     match (entry.kind, entry.variant) {
@@ -607,6 +611,28 @@ fn portrait_data(
                 .map(|s| s.height as f32 / 2.0)
                 .unwrap_or(30.0);
             (sheet_i, h, 40.0, h, white)
+        }
+        // The shooters: the 9-frame NPC_381/382 strips over the 18x40
+        // frames.
+        (NpcKind::BrainScrambler | NpcKind::RayGunner, _) => {
+            let h = lookups.bestiary_npc_sheets[78]
+                .map(|s| s.height as f32 / 9.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+        (NpcKind::ScutlixRider, _) => {
+            let h = lookups.bestiary_npc_sheets[80]
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+        (NpcKind::Scutlix, _) => {
+            let h = lookups.bestiary_npc_sheets[81]
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 60.0, h, white)
         }
         // The pirates: the 16/20-frame strips over the 18x40 frames.
         (NpcKind::PirateDeckhand, _)

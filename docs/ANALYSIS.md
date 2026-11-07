@@ -2617,6 +2617,36 @@ with the 520 walk-in gate's `Next(3)` fallback). Every roll consumes
 the stream where the C#'s short-circuit reaches it; the four unported
 kinds' hits map to the ground fallback until their AI families land.
 
+## The martian riders (M4-EVENT-4d)
+
+The 381 BrainScrambler / 382 RayGunner pair (the grouped `SetDefaults`
+row: 18×40, dmg 50, def 25, 350 HP, kb 0.35) walk through the walker
+step and run `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`):
+the stop entry (an aim under 700 px with `ai[2] <= 0` and `ai[1] <= 0`
+arms the 80-tick timer and the aim octant), the fire at `ai[1] == 40`
+(the ±100×0.4 jitter re-scaled ×(0.85..1.15), the spawn at the centre
++ 6 — the 436 ray at 24 damage and speed 11 for the Scrambler, the
+438 at 30 and 7 for the RayGunner), the hurt interrupt (the 30-tick
+rest), the sleep's exit. The vanilla's `stealth`/`itemAnimation`
+aggression gate is constants-off (the port's Player carries no swing
+timer).
+
+The 390 ScutlixRider (`AI_075`'s type-390 arm, `:35506-35745`) is a
+MOUNT machine: it spawns its 391 Scutlix carrier once through the
+sim (`wants_scutlix` → the carrier at the rider's feet), rides 14 px
+above its centre with the carrier's velocity, and fires the same 438
+ray at a 60/−60 cycle (the 700-px window, the carrier-direction match,
+the ±50×(0.8..1.2) aim). The port has no NPC indices, so the link is
+the sim's write-through (the WoF shape) in a pre-pass — the vanilla
+reads the carrier's live centre inside its own pass, the port's is one
+tick earlier (documented). The rider falls with its carrier: the
+`timeLeft` latch has no port model, so the retirement rides the
+carrier's death instead of the 750-tick decay.
+
+The type-4 table is complete but for the Saucer 395 family: the
+`num8` arm ports the RayGunner (<2) / the BrainScrambler (==2) / the
+Drone (>=4), and the num6 >= 6 arm's `Next(2)` split ports the Rider.
+
 ## The invasion progress bar (M4-EVENT-1b)
 
 The UI half of the invasion framework. The report:

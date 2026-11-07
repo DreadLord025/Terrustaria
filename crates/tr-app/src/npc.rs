@@ -114,6 +114,23 @@ pub enum NpcKind {
     /// 40×30, aiStyle 74, dmg 60, def 16, 300 HP, kb 0.4, value 1000,
     /// noTileCollide, noGravity, npcSlots 1.5, canGhostHeal false).
     MartianDrone,
+    /// `NPCID.BrainScrambler` (381) — the martian ground shooter (`NPC.cs`:
+    /// 18×40, aiStyle 3, dmg 50, def 25, 350 HP, kb 0.35, value 1000; the
+    /// stop-and-fire cycle fires the projectile 436).
+    BrainScrambler,
+    /// `NPCID.RayGunner` (382) — the martian ground shooter (`NPC.cs`: the
+    /// 381/382 grouped row — 18×40, aiStyle 3, dmg 50, def 25, 350 HP,
+    /// kb 0.35, value 1000; fires the projectile 438 at its speed).
+    RayGunner,
+    /// `NPCID.ScutlixRider` (390) — the ray gunner mounted on a Scutlix
+    /// (`NPC.cs:13966-13977`: 18×40, aiStyle 75, dmg 65, def 30, 350 HP,
+    /// value 1200, npcSlots 0.5; the mount machine carries the carrier
+    /// spawn + the 438 ray at the 60/-60 cycle).
+    ScutlixRider,
+    /// `NPCID.Scutlix` (391) — the walker carrier (`NPC.cs:13979-13991`:
+    /// 60×40, aiStyle 3, dmg 85, def 30, 600 HP, kb 0.1, value 1200;
+    /// walks through the walker params 5/0.25/0.7).
+    Scutlix,
     /// `NPCID.PirateDeckhand` (212) — the pirate grunt (`NPC.cs`: 18×40,
     /// aiStyle 3, dmg 35, def 17, 300 HP, kb 0.4, value 700).
     PirateDeckhand,
@@ -507,6 +524,10 @@ impl NpcKind {
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
             NpcKind::MartianDrone => 84,
+            NpcKind::BrainScrambler => 85,
+            NpcKind::RayGunner => 86,
+            NpcKind::ScutlixRider => 87,
+            NpcKind::Scutlix => 88,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,
@@ -785,6 +806,12 @@ impl NpcKind {
             NpcKind::MartianProbe => (42.0, 72.0),
             // The drone: 40x30 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => (40.0, 30.0),
+            // The shooters: 18x40 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => (18.0, 40.0),
+            // The rider + its carrier: 18x40 / 60x40 (`NPC.cs`'s cases
+            // 390/391).
+            NpcKind::ScutlixRider => (18.0, 40.0),
+            NpcKind::Scutlix => (60.0, 40.0),
             // The pirates: 18x40 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand
             | NpcKind::PirateCaptainsMate
@@ -944,6 +971,11 @@ impl NpcKind {
             NpcKind::MartianProbe => 500,
             // The drone: 300 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => 300,
+            // The shooters: 350/350 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 350,
+            // The rider 350, the carrier 600 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 350,
+            NpcKind::Scutlix => 600,
             // The pirates: 300/450/225/350/3000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 300,
             NpcKind::PirateCaptainsMate => 450,
@@ -1051,6 +1083,11 @@ impl NpcKind {
             // The drone: 60 (`NPC.cs`'s case 388 — the explode arm's 80
             // rides damage_override).
             NpcKind::MartianDrone => 60,
+            // The shooters: 50/50 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 50,
+            // The rider 65, the carrier 85 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 65,
+            NpcKind::Scutlix => 85,
             // The pirates: 35/50/30/35/70 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 35,
             NpcKind::PirateCaptainsMate => 50,
@@ -1213,6 +1250,14 @@ pub struct Npc {
     /// `Main.StartInvasion(4); active = false;`) — the AI holds `&World`,
     /// so the sim resolves the invasion and removes the NPC.
     pub wants_martian_invasion: bool,
+    /// The Scutlix rider's carrier spawn request (`AI_075`'s type-390
+    /// `localAI[0]` 0 → 1 arm: the `NewNPC(..., 391, whoAmI)` — the sim
+    /// resolves it after the tick).
+    pub wants_scutlix: bool,
+    /// The carrier link the sim writes each tick (the WoF write-through
+    /// shape): the living 391's centre in pixels, (-1, -1) = none.
+    pub carrier_x: f32,
+    pub carrier_y: f32,
 }
 
 impl Npc {
@@ -1541,6 +1586,9 @@ impl Npc {
             swarm_done: false,
             wants_hostile_shot: None,
             wants_martian_invasion: false,
+            wants_scutlix: false,
+            carrier_x: -1.0,
+            carrier_y: -1.0,
         }
     }
 
@@ -1605,6 +1653,12 @@ impl Npc {
             // The drone: 0.4 (`NPC.cs`'s case 388 — the hover's scaled
             // value; the charge/dash arms zero it in the machine).
             NpcKind::MartianDrone => 0.4,
+            // The shooters: 0.35 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 0.35,
+            // The rider: the field default 0.4 (case 390 sets nothing);
+            // the carrier 0.1 (case 391).
+            NpcKind::ScutlixRider => 0.4,
+            NpcKind::Scutlix => 0.1,
             // The pirates: 0.4/0.2/0.3/0.35/0 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 0.4,
             NpcKind::PirateCaptainsMate => 0.2,
@@ -1736,6 +1790,11 @@ impl Npc {
             NpcKind::MartianProbe => 5,
             // The drone: 16 (`NPC.cs`'s case 388).
             NpcKind::MartianDrone => 16,
+            // The shooters: 25/25 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 25,
+            // The rider 30, the carrier 30 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 30,
+            NpcKind::Scutlix => 30,
             // The pirates: 17/22/14/20/30 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 17,
             NpcKind::PirateCaptainsMate => 22,
@@ -1864,6 +1923,11 @@ impl Npc {
             // The drone: 1000 (`NPC.cs`'s case 388; the loot db registers
             // no rules for 388 — nothing drops).
             NpcKind::MartianDrone => 1000.0,
+            // The shooters: 1000/1000 (`NPC.cs`'s 381/382 grouped row).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => 1000.0,
+            // The rider 1200, the carrier 1200 (`NPC.cs`'s cases 390/391).
+            NpcKind::ScutlixRider => 1200.0,
+            NpcKind::Scutlix => 1200.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
@@ -2114,6 +2178,17 @@ impl Npc {
             // The drone: aiStyle 74's approach/charge/dash machine (`AI()`'s
             // aiStyle-74 block, `NPC.cs:35218-35500`).
             NpcKind::MartianDrone => self.update_martian_drone(world, player, rng),
+            // The shooters: aiStyle 3's walker with the stop-and-fire
+            // cycle (`AI_003_Fighters`'s shooter block, `NPC.cs:59069-59623`).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => {
+                self.update_martian_shooter(world, player, rng)
+            }
+            // The rider: aiStyle 75's mount machine (the carrier spawn +
+            // the ride + the 438 ray, `NPC.cs:35506-35745`).
+            NpcKind::ScutlixRider => self.update_scutlix_rider(world, player, rng),
+            // The carrier: aiStyle 3's walker (the params 5/0.25/0.7,
+            // `NPC.cs:58203-58240`).
+            NpcKind::Scutlix => self.update_scutlix(world, player, dt),
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
             // Deadeye's shots land with the projectile work).
@@ -2247,6 +2322,32 @@ impl Npc {
                 if self.frame_counter >= 6.0 {
                     self.frame_counter = 0.0;
                     self.frame = (self.frame + 1) % 2;
+                }
+            }
+            // The shooters: the 381/382/383/385/389 grouped arm
+            // (`NPC.cs:71623-71640`) — the humanoid walk strip over the
+            // 9-frame sheet, the grounded rows clamp at 2.
+            NpcKind::BrainScrambler | NpcKind::RayGunner => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 9;
+                }
+            }
+            // The rider: the 5-frame mount strip.
+            NpcKind::ScutlixRider => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 5;
+                }
+            }
+            // The carrier: the 6-frame strip (`npcFrameCount[391]`).
+            NpcKind::Scutlix => {
+                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = (self.frame + 1) % 6;
                 }
             }
             // The pirates: the 16/20-frame humanoid strips (the same
@@ -4312,6 +4413,232 @@ impl Npc {
         }
     }
 
+    /// `AI_003_Fighters`'s shooter block (`NPC.cs:59069-59623`) for the
+    /// BrainScrambler 381 / the RayGunner 382. The walk rides the walker
+    /// (the per-type speed folds); the stop-and-fire cycle: the
+    /// aggression arm (grounded, `ai[1] <= 0`, `ai[2] <= 0`) starts the
+    /// 80-tick shot timer with the aim octant on `ai[2]`, the fire at
+    /// `ai[1] == 40` launches the projectile at the player ±(0..100)×0.4
+    /// ×(0.85..1.15), and the sleep ends at `ai[1] <= 0`.
+    ///
+    /// Deviations: the player's `stealth`/`itemAnimation` gate (`:59644`)
+    /// is constants-off (the port's Player carries no swing timer — the
+    /// shooter engages a still player too); the walk params ride the
+    /// walker's (the per-type 5/0.25/0.7 table folds like the other
+    /// aiStyle-3 families).
+    fn update_martian_shooter(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (dx, dy) = (pcx - cx, pcy - cy);
+        // The octant table (the vanilla's `ai[2]` 1..5 rows).
+        let octant = |dx: f32, dy: f32| -> f32 {
+            if dy.abs() > dx.abs() * 2.0 {
+                if dy > 0.0 {
+                    1.0
+                } else {
+                    5.0
+                }
+            } else if dx.abs() > dy.abs() * 2.0 {
+                3.0
+            } else if dy > 0.0 {
+                2.0
+            } else {
+                4.0
+            }
+        };
+        if self.ai[1] > 0.0 {
+            self.ai[1] -= 1.0;
+        }
+        // `justHit`'s interrupt (`:59094`): the shot cycle rests 30.
+        if self.hurt_cd > 0.0 && self.ai[1] > 30.0 {
+            self.ai[1] = 30.0;
+            self.ai[2] = 0.0;
+        }
+        if self.ai[2] > 0.0 {
+            if self.ai[1] == 40.0 {
+                // The fire (`:59204-59602`'s 381/382 arm).
+                let mut ax = dx;
+                let mut ay = dy;
+                // The ±100 × 0.4 jitter + the 0.85..1.15 scale.
+                ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 100.0 * 0.4;
+                ax *= 0.85 + 0.3 * crate::app::rand01(rng);
+                ay *= 0.85 + 0.3 * crate::app::rand01(rng);
+                let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                // The speed: 11 (381) / 7 (382); the projectile 436 dmg 24
+                // (381) / 438 dmg 30 (382).
+                let (proj, dmg, speed) = if self.kind == NpcKind::RayGunner {
+                    (438u16, 30, 7.0)
+                } else {
+                    (436u16, 24, 11.0)
+                };
+                let inv = speed / len;
+                // The spawn: the centre + y 6, the velocity at the aim.
+                self.wants_hostile_shot = Some((
+                    proj,
+                    cx,
+                    cy + 6.0,
+                    ax * inv,
+                    ay * inv,
+                    dmg,
+                ));
+                self.ai[2] = octant(ax, ay);
+            }
+        } else {
+            // The aggression/stop entry (`:59630-59697`): grounded +
+            // `ai[1] <= 0` and the aim under 700 px → the stop with the
+            // 80-tick timer.
+            if self.ai[1] <= 0.0
+                && player.hp > 0
+                && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+            {
+                let mut ax = dx + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
+                let mut ay = dy + (crate::app::rand01(rng) * 2.0 - 1.0) * 40.0;
+                if (ax * ax + ay * ay).sqrt() < 700.0 {
+                    self.vx *= 0.5;
+                    self.ai[2] = octant(ax, ay);
+                    self.ai[1] = 80.0;
+                }
+                let _ = (&mut ax, &mut ay);
+            }
+        }
+        // The sleep's exit (`:59618-59623`).
+        if self.ai[1] <= 0.0 {
+            self.ai[2] = 0.0;
+            self.ai[1] = 0.0;
+        }
+        // The walk: the vanilla's walker step (the grounded damping and
+        // the 0.9 stop-damp ride it).
+        let params = crate::npc_ai::WalkerParams {
+            speed: 5.0,
+            jump: -6.2,
+            aggro_x: 80.0 * TILE_PX,
+            aggro_y: 40.0 * TILE_PX,
+        };
+        crate::npc_ai::walker_step(self, world, pcx, pcy, params, GRAVITY, MAX_FALL);
+        // The stop state's X damp (`:59626`'s `velocity.X *= 0.9`).
+        if self.ai[2] > 0.0 {
+            self.vx *= 0.9;
+        }
+    }
+
+    /// `AI_075`'s type-390 arm (`NPC.cs:35506-35745`) — the ray gunner
+    /// mounted on a Scutlix. The init spawns the 391 carrier through
+    /// `wants_scutlix` (the sim resolves); while the carrier lives the
+    /// rider rides 14 px above its centre and mirrors its velocity and
+    /// direction; the `ai[1]` cycle (60, hurt → -30) fires the 438 ray
+    /// (30 damage, 7 speed) from the centre - 4, the aim at the player
+    /// ±50 ×(0.8..1.2), under 700 px with the carrier-direction match.
+    ///
+    /// Deviations: the carrier link is the sim's write-through (the
+    /// port has no NPC indices — the nearest living 91 within 800 px
+    /// stands in); the idle aim octant rides the vanilla's table.
+    fn update_scutlix_rider(&mut self, world: &World, player: &Player, rng: &mut u64) {
+        // The init (`NPC.cs:35506-35519`): `localAI[0]`'s one-time latch —
+        // `ai[0]` stands in (the mount block's own state rides `ai[1]`).
+        if self.ai[0] == 0.0 {
+            self.wants_scutlix = true;
+            self.ai[0] = 1.0;
+        }
+        if self.carrier_x < 0.0 {
+            // No carrier (yet / dead): the vanilla's mount block skips —
+            // the rider stands where it is.
+            return;
+        }
+        let (w, h) = self.size();
+        let (ccx, ccy) = (self.carrier_x, self.carrier_y);
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The ride (`:35657-35681`): the position centres on the carrier
+        // + UnitY * -14.
+        self.x = ccx - w * 0.5;
+        self.y = ccy - h * 0.5 - 14.0;
+        // The cycle (`:35682-35688`): ai[1] to 60, hurt → -30.
+        if self.ai[1] < 60.0 {
+            self.ai[1] += 1.0;
+        }
+        if self.hurt_cd > 0.0 {
+            self.ai[1] = -30.0;
+        }
+        if crate::npc_ai::line_clear(world, (ccx, ccy - 14.0), (pcx, pcy)) {
+            let (px, py) = (pcx - cx, pcy - cy);
+            if (px * px + py * py).sqrt() < 700.0 {
+                if self.ai[1] == 60.0
+                    && (px > 0.0) == (self.facing == 1)
+                {
+                    // The fire (`:35700-35724`): the 438 ray, 30 damage,
+                    // 7 speed, from the centre - UnitY * 4, the aim
+                    // ±50 ×(0.8..1.2).
+                    self.ai[1] = -60.0;
+                    let mut ax = px;
+                    let mut ay = py;
+                    ax += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
+                    ay += (crate::app::rand01(rng) * 2.0 - 1.0) * 50.0;
+                    ax *= 0.8 + 0.4 * crate::app::rand01(rng);
+                    ay *= 0.8 + 0.4 * crate::app::rand01(rng);
+                    let len = (ax * ax + ay * ay).sqrt().max(0.001);
+                    let inv = 7.0 / len;
+                    self.wants_hostile_shot = Some((438u16, cx, cy - 4.0, ax * inv, ay * inv, 30));
+                } else {
+                    // The idle aim (`:35727-35749`): the octant + the X
+                    // damp.
+                    self.vx *= 0.5;
+                    let octant = if py.abs() > px.abs() * 2.0 {
+                        if py > 0.0 { 1.0 } else { 5.0 }
+                    } else if px.abs() > py.abs() * 2.0 {
+                        3.0
+                    } else if py > 0.0 {
+                        2.0
+                    } else {
+                        4.0
+                    };
+                    self.ai[2] = octant;
+                }
+            }
+        }
+    }
+
+    /// `AI_003_Fighters`'s 391-carrier arm (`NPC.cs:58203-58240`): the
+    /// walker with the params 5/0.25/0.7 (the per-type fold of the other
+    /// aiStyle-3 families) and the 50-px ground stop (`ai[2] = 1`,
+    /// `:58293-58301`).
+    fn update_scutlix(&mut self, world: &World, player: &Player, _dt: f32) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        // The 50-px stop: grounded + the player close + CanHit.
+        if self.on_ground
+            && ((pcx - cx).powi(2) + (pcy - cy).powi(2)).sqrt() < 50.0
+            && crate::npc_ai::line_clear(world, (cx, cy), (pcx, pcy))
+        {
+            self.ai[2] = 1.0;
+        }
+        crate::npc_ai::walker_step(
+            self,
+            world,
+            pcx,
+            pcy,
+            crate::npc_ai::WalkerParams {
+                speed: 5.0,
+                jump: -6.2,
+                aggro_x: 80.0 * TILE_PX,
+                aggro_y: 40.0 * TILE_PX,
+            },
+            GRAVITY,
+            MAX_FALL,
+        );
+        // The stop's park (`:58295`'s `velocity.X *= 0.7` when grounded).
+        if self.ai[2] > 0.0 && self.on_ground {
+            self.vx *= 0.7;
+        }
+        self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
+        if self.frame_counter >= 8.0 {
+            self.frame_counter = 0.0;
+            self.frame = (self.frame + 1) % 6;
+        }
+    }
+
     /// `AI_032`'s Skeletron Prime v1 (`NPC.cs`'s aiStyle 32 machine) — the
     /// EoC cycle shape with the Prime's numbers: the hover (the ±0.12,
     /// the 9 cap), the charge (the 480-tick cycle, the direct velocity
@@ -4981,6 +5308,10 @@ impl Npc {
             NpcKind::PirateCaptain => 82,
             NpcKind::MartianProbe => 83,
             NpcKind::MartianDrone => 84,
+            NpcKind::BrainScrambler => 85,
+            NpcKind::RayGunner => 86,
+            NpcKind::ScutlixRider => 87,
+            NpcKind::Scutlix => 88,
             NpcKind::Tim => 16,
             NpcKind::DarkCaster => 17,
             NpcKind::FireImp => 18,

@@ -174,6 +174,12 @@ pub(crate) struct NpcAssets {
     pub(crate) martian_walker_big: Option<BgTex>,
     pub(crate) martian_probe: Option<BgTex>,
     pub(crate) martian_drone: Option<BgTex>,
+    /// `NPC_381/382` — the martian shooter strips (9 frames of 18x40),
+    /// `NPC_390` — the Scutlix ray rider (5 frames of 18x40), `NPC_391` —
+    /// the Scutlix carrier (6 frames of 60x40).
+    pub(crate) martian_shooters: Option<BgTex>,
+    pub(crate) scutlix_rider: Option<BgTex>,
+    pub(crate) scutlix: Option<BgTex>,
     /// `NPC_212-216` — the pirate strips (16/20 frames of 18x40).
     pub(crate) pirates: Option<BgTex>,
     pub(crate) pirate_captain: Option<BgTex>,
@@ -265,6 +271,9 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
         martian_walker_big: sky_tex(atlas, "NPC_520", None),
         martian_probe: sky_tex(atlas, "NPC_399", None),
         martian_drone: sky_tex(atlas, "NPC_388", None),
+        martian_shooters: sky_tex(atlas, "NPC_382", None),
+        scutlix_rider: sky_tex(atlas, "NPC_390", None),
+        scutlix: sky_tex(atlas, "NPC_391", None),
         pirates: sky_tex(atlas, "NPC_212", None),
         pirate_captain: sky_tex(atlas, "NPC_216", None),
         goblin_thief: sky_tex(atlas, "NPC_26", None),
@@ -935,6 +944,28 @@ pub(crate) fn draw_npcs(
                 assets.martian_drone.as_ref(),
                 assets.martian_drone.as_ref().map_or(30.0, |t| t.h / 2.0),
                 [40.0, 30.0],
+                [n.x, n.y],
+            ),
+            // The shooters: the 9-frame NPC_382 strip over the 18x40
+            // frames (the 181/382 sheets are the shared humanoid shape).
+            NpcKind::BrainScrambler | NpcKind::RayGunner => (
+                assets.martian_shooters.as_ref(),
+                assets.martian_shooters.as_ref().map_or(40.0, |t| t.h / 9.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The rider: the 5-frame NPC_390 strip over the 18x40 frames.
+            NpcKind::ScutlixRider => (
+                assets.scutlix_rider.as_ref(),
+                assets.scutlix_rider.as_ref().map_or(40.0, |t| t.h / 5.0),
+                [18.0, 40.0],
+                [n.x, n.y],
+            ),
+            // The carrier: the 6-frame NPC_391 strip over the 60x40 frames.
+            NpcKind::Scutlix => (
+                assets.scutlix.as_ref(),
+                assets.scutlix.as_ref().map_or(40.0, |t| t.h / 6.0),
+                [60.0, 40.0],
                 [n.x, n.y],
             ),
             NpcKind::MartianWalker => (

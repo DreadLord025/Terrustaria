@@ -944,24 +944,25 @@ fn invasion_spawn_pick(
         }
         if num6 >= 6 {
             if crate::app::frame::rand01(rng) * 20.0 < 1.0 && flag6 {
-                // The Scutlix Rider 390: unported — same shape.
-                return NpcKind::GrayGrunt;
+                // The Scutlix Rider 390: the mount spawns its 391 carrier
+                // (the machine's init arm).
+                return NpcKind::ScutlixRider;
             }
-            // `Next(2)`: 0 → the Rider 390 (unported), 1 → the Engineer.
+            // `Next(2)`: 0 → the Rider 390, 1 → the Engineer 386.
             return if crate::app::frame::rand01(rng) * 2.0 < 1.0 {
-                NpcKind::GrayGrunt
+                NpcKind::ScutlixRider
             } else {
                 NpcKind::MartianEngineer
             };
         }
         if num6 >= 4 {
             let num8 = (crate::app::frame::rand01(rng) * 5.0) as u32;
-            // num8 < 2 → the RayGunner 382, == 2 → the Scrambler 381
-            // (both unported); num8 >= 4 → the Drone 388.
-            return if num8 >= 4 {
-                NpcKind::MartianDrone
-            } else {
-                NpcKind::GrayGrunt
+            // num8 < 2 → the RayGunner 382, == 2 → the BrainScrambler 381,
+            // >= 4 → the Drone 388.
+            return match num8 {
+                0 | 1 => NpcKind::RayGunner,
+                2 => NpcKind::BrainScrambler,
+                _ => NpcKind::MartianDrone,
             };
         }
         let mut num9 = (crate::app::frame::rand01(rng) * 4.0) as u32;
@@ -1016,6 +1017,43 @@ fn invasion_spawn_pick(
 }
 
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
+    // The Scutlix rider's carrier write-through (`AI_075`'s type-390
+    // arm) — the PRE-pass: the rider's `carrier_x/y` reads the carrier's
+    // live centre before the AI tick (the vanilla reads `nPC5.Center`
+    // live in the same pass), and a rider whose carrier died falls with
+    // it (the retire lands before the retain pass below).
+    for i in 0..app.npcs.len() {
+        if app.npcs[i].kind != NpcKind::ScutlixRider {
+            continue;
+        }
+        let (rcx, rcy) = app.npcs[i].center();
+        let mut best: Option<(usize, f32)> = None;
+        for (j, m) in app.npcs.iter().enumerate() {
+            if m.kind != NpcKind::Scutlix || m.hp <= 0 {
+                continue;
+            }
+            let (mcx, mcy) = m.center();
+            let d = (mcx - rcx).hypot(mcy - rcy);
+            if d < 800.0 && best.is_none_or(|(_, bd)| d < bd) {
+                best = Some((j, d));
+            }
+        }
+        match best {
+            Some((j, _)) => {
+                let (mcx, mcy) = app.npcs[j].center();
+                app.npcs[i].carrier_x = mcx;
+                app.npcs[i].carrier_y = mcy;
+            }
+            None => {
+                if app.npcs[i].carrier_x >= 0.0 {
+                    // The carrier just died: the rider falls.
+                    app.npcs[i].carrier_x = -1.0;
+                    app.npcs[i].carrier_y = -1.0;
+                    app.npcs[i].hp = 0;
+                }
+            }
+        }
+    }
     // `UpdateTime_StartDay`'s `StartInvasion()` resolve (`Main.cs:65454`):
     // the morning roll's pending flag + the players' life-max gate. The
     // march state (the type/x/warn) rides the World — `invasion_goblins`
@@ -1558,6 +1596,30 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs
             .retain(|n| !(n.kind == NpcKind::MartianProbe && n.wants_martian_invasion));
     }
+
+    // The Scutlix rider's carrier pair (`AI_075`'s type-390 arm,
+    // `NPC.cs:35506-35745`): the init spawns the 391 carrier once at the
+    // rider's centre; the carrier's centre is written onto the rider
+    // each tick (the WoF write-through shape); the rider falls with its
+    // carrier (the vanilla's `timeLeft` latch has no port model — the
+    // retirement rides the carrier's death, documented).
+    let mut new_carriers = Vec::new();
+    for n in app.npcs.iter_mut() {
+        if n.kind != NpcKind::ScutlixRider {
+            continue;
+        }
+        if n.wants_scutlix {
+            // The init arm: the carrier at the rider's feet.
+            n.wants_scutlix = false;
+            let (w, h) = n.size();
+            let mut c = Npc::new(NpcKind::Scutlix, n.x, n.y + h, 1, 0.0);
+            c.hp = c.max_hp;
+            new_carriers.push(c);
+            n.carrier_x = n.x + w * 0.5;
+            n.carrier_y = n.y + h * 0.5;
+        }
+    }
+    app.npcs.extend(new_carriers);
 
     let mut minions = app.npcs.iter().filter(|n| n.kind == NpcKind::Slime).count();
     let mut spawned = Vec::new();
@@ -2931,6 +2993,9 @@ mod martian_invasion_tests {
                         | NpcKind::MartianWalker
                         | NpcKind::MartianEngineer
                         | NpcKind::MartianDrone
+                        | NpcKind::RayGunner
+                        | NpcKind::BrainScrambler
+                        | NpcKind::ScutlixRider
                 ),
                 "the unported kinds never surface: {kind:?}"
             );
@@ -2941,6 +3006,21 @@ mod martian_invasion_tests {
         assert!(seen_engineer, "the num6 >= 6 arm's Engineer half");
         assert!(seen_drone, "the num8 >= 4 arm's Drone");
         assert!(seen_walker, "the walk-in gate's Walker");
+        let mut rng = 3u64;
+        let mut seen_ray = false;
+        let mut seen_scrambler = false;
+        let mut seen_rider = false;
+        for _ in 0..1200 {
+            match invasion_spawn_pick(&mut rng, false, false, 4, true, false, false) {
+                NpcKind::RayGunner => seen_ray = true,
+                NpcKind::BrainScrambler => seen_scrambler = true,
+                NpcKind::ScutlixRider => seen_rider = true,
+                _ => {}
+            }
+        }
+        assert!(seen_ray, "the num8 < 2 arm's RayGunner");
+        assert!(seen_scrambler, "the num8 == 2 arm's BrainScrambler");
+        assert!(seen_rider, "the num6 >= 6 arm's Rider half");
         // The walker's uniqueness: while one lives, the num9 == 3 arm
         // re-rolls the ground chain instead.
         let mut rng = 5u64;
@@ -2952,6 +3032,9 @@ mod martian_invasion_tests {
                     | NpcKind::MartianOfficer
                     | NpcKind::MartianEngineer
                     | NpcKind::MartianDrone
+                    | NpcKind::RayGunner
+                    | NpcKind::BrainScrambler
+                    | NpcKind::ScutlixRider
             ));
         }
     }
@@ -3190,5 +3273,171 @@ mod drone_tests {
         app.world.invasion_type = 0;
         crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
         assert!(!app.npcs.iter().any(|m| m.kind == NpcKind::MartianDrone));
+    }
+}
+
+#[cfg(test)]
+
+#[cfg(test)]
+mod rider_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn surface_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        for x in 0..w.width {
+            for y in 120..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        w
+    }
+
+    fn app_with_player() -> (App, Player) {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        app.player = Some(player.clone());
+        (app, player)
+    }
+
+    #[test]
+    fn the_rider_spawns_its_carrier_and_rides_it() {
+        // `AI_075`'s type-390 arm (`NPC.cs:35506-35745`): the first tick
+        // spawns the 391 carrier at the rider's feet; the write-through
+        // carries its centre and the ride sits 14 px above it.
+        let (mut app, _player) = app_with_player();
+        let mut rng = 7u64;
+        let mut rider = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        rider.hp = rider.max_hp;
+        app.npcs.push(rider);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix),
+            "the carrier spawns at the rider's feet"
+        );
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::ScutlixRider),
+            "the rider lives"
+        );
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let rider = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::ScutlixRider)
+            .unwrap();
+        // The ride equation against the pre-pass link (the carrier's
+        // own move lands after the rider's in the tick — the vanilla
+        // reads the live centre inside its pass, the port's write-through
+        // is one tick earlier: the documented deviation).
+        assert!((rider.x + 9.0 - rider.carrier_x).abs() < 0.01, "the ride centres X");
+        assert!(
+            (rider.y + 20.0 + 14.0 - rider.carrier_y).abs() < 0.01,
+            "the ride +14 Y"
+        );
+        assert!(rider.carrier_x > 0.0, "the link is live");
+    }
+
+    #[test]
+    fn the_rider_falls_with_its_carrier() {
+        // The carrier's death retires the rider (the vanilla's timeLeft
+        // latch has no port model — documented).
+        let (mut app, _player) = app_with_player();
+        let mut rider = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        rider.hp = rider.max_hp;
+        app.npcs.push(rider);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix));
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Scutlix {
+                n.hp = 0;
+            }
+        }
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::ScutlixRider));
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::Scutlix));
+    }
+
+    #[test]
+    fn the_rider_fires_the_ray_at_the_cycle() {
+        // The 438 ray at `ai[1] == 60` with the direction match: the cycle
+        // resets to -60 after the shot (the payload itself resolves
+        // through the sim).
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::ScutlixRider, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.wants_scutlix = true;
+        n.carrier_x = n.x + 9.0;
+        n.carrier_y = n.y + 20.0;
+        player.x = 150.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut shot_seen = false;
+        for _ in 0..62 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if let Some(s) = n.wants_hostile_shot {
+                shot_seen = true;
+                assert_eq!(s.0, 438, "the rider's ray");
+                assert_eq!(s.5, 30, "the classic damage");
+            }
+        }
+        assert!(shot_seen, "the ray fires within 62 ticks");
+        assert_eq!(n.ai[1], -58.0, "the cycle reset (two ticks past the fire)");
+    }
+
+    #[test]
+    fn the_shooter_stops_and_fires_the_scrambler_ray() {
+        // The stop-and-fire cycle: the 80-tick timer starts on the stop,
+        // the 436 ray (24 damage) fires at `ai[1] == 40`.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 7u64;
+        let mut n = Npc::new(NpcKind::BrainScrambler, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..2 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+        }
+        assert!(n.ai[2] > 0.0, "the stop state");
+        assert_eq!(n.ai[1], 79.0, "the 80-tick timer runs down");
+        for _ in 0..45 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_hostile_shot.is_some() {
+                break;
+            }
+        }
+        let shot = n.wants_hostile_shot.expect("the ray fires");
+        assert_eq!(shot.0, 436, "the Scrambler's projectile");
+        assert_eq!(shot.5, 24, "the classic damage");
+    }
+
+    #[test]
+    fn the_ray_gunner_fires_the_438() {
+        // The RayGunner's arm of the same cycle: the 438 projectile at 30.
+        let (_app, mut player) = app_with_player();
+        let world = surface_world();
+        let mut rng = 11u64;
+        let mut n = Npc::new(NpcKind::RayGunner, 145.0 * TILE_PX, 110.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        player.x = 160.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        for _ in 0..120 {
+            n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
+            if n.wants_hostile_shot.is_some() {
+                break;
+            }
+        }
+        let shot = n.wants_hostile_shot.expect("the ray fires");
+        assert_eq!(shot.0, 438);
+        assert_eq!(shot.5, 30);
     }
 }
